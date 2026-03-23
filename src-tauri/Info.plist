@@ -3,15 +3,15 @@
 <plist version="1.0">
 <dict>
   <key>CFBundleIdentifier</key>
-  <string>jan.ai.app</string>
+  <string>chat.atomic.app</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
       <key>CFBundleURLName</key>
-      <string>jan.ai.app</string>
+      <string>chat.atomic.app</string>
       <key>CFBundleURLSchemes</key>
       <array>
-        <string>jan</string>
+        <string>atomic-chat</string>
       </array>
     </dict>
   </array>

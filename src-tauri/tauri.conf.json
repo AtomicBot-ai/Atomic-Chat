@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Overchat",
+  "productName": "Atomic Chat",
   "version": "0.6.599",
-  "identifier": "jan.ai.app",
+  "identifier": "chat.atomic.app",
   "build": {
     "frontendDist": "../web-app/dist",
     "devUrl": "http://localhost:1420",
@@ -54,7 +54,7 @@
     }
   },
   "bundle": {
-    "publisher": "Menlo Research Pte. Ltd.",
+    "publisher": "Spaceship Intelligence",
     "active": true,
     "createUpdaterArtifacts": false,
     "icon": [

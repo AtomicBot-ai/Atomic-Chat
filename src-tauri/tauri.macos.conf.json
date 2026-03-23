@@ -3,7 +3,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Jan",
+        "title": "Atomic Chat",
         "width": 1200,
         "minWidth": 1024,
         "height": 800,
