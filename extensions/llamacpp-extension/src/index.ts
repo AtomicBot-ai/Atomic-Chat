@@ -174,7 +174,11 @@ export default class llamacpp_extension extends AIEngine {
       events.emit(DownloadEvent.onModelValidationStarted, event.payload)
     })
 
-    this.configureBackends()
+    //* configureBackends может долго качать движок — не await, иначе весь UI ждёт завершения.
+    void this.configureBackends().catch((err) => {
+      //! Раньше отклонённый промис терялся; без лога сложно понять вечный «loading» в настройках.
+      logger.error('configureBackends failed:', err)
+    })
   }
 
   private getStoredBackendType(): string | null {
@@ -1603,7 +1607,7 @@ export default class llamacpp_extension extends AIEngine {
 
     if (!version || !backend) {
       throw new Error(
-        'Initial setup for the backend failed due to a network issue. Please restart the app!'
+        'Llama.cpp backend is not configured (version_backend is missing or invalid). Check Settings → Llama.cpp — Version & Backend, internet access to GitHub for engine list, or install a backend manually.'
       )
     }
 
@@ -1999,7 +2003,7 @@ export default class llamacpp_extension extends AIEngine {
     const [version, backend] = cfg.version_backend.split('/')
     if (!version || !backend) {
       throw new Error(
-        'Backend setup was not successful. Please restart the app in a stable internet connection.'
+        'Llama.cpp backend is not configured (version_backend is missing or invalid). Open Settings → Llama.cpp and wait for the engine list, or pick/install a backend.'
       )
     }
     // set envs

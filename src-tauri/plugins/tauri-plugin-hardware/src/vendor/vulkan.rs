@@ -1,6 +1,9 @@
 use crate::types::GpuInfo;
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(all(
+    not(any(target_os = "android", target_os = "ios")),
+    not(target_os = "macos")
+))]
 use {
     crate::types::Vendor,
     vulkano::device::physical::PhysicalDeviceType,
@@ -17,7 +20,10 @@ pub struct VulkanInfo {
     pub device_id: u32,
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(all(
+    not(any(target_os = "android", target_os = "ios")),
+    not(target_os = "macos")
+))]
 fn parse_uuid(bytes: &[u8; 16]) -> String {
     format!(
         "{:02x}{:02x}{:02x}{:02x}-\
@@ -65,8 +71,18 @@ pub fn get_vulkan_gpus() -> Vec<GpuInfo> {
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn get_vulkan_gpus_internal() -> Result<Vec<GpuInfo>, Box<dyn std::error::Error>> {
+    //* На macOS инференс идёт через Metal; MoltenVK тянется через относительный dlopen и ломается под Hardened Runtime.
+    //? Пустой список GPU — ожидаемый путь: дальше используется unified memory / RAM.
+    #[cfg(target_os = "macos")]
+    {
+        log::debug!("Skipping Vulkan GPU probe on macOS (Metal backend; avoids MoltenVK dlopen under hardened runtime)");
+        return Ok(vec![]);
+    }
+
+    #[cfg(not(target_os = "macos"))]
     let library = VulkanLibrary::new()?;
 
+    #[cfg(not(target_os = "macos"))]
     let instance = Instance::new(
         library,
         InstanceCreateInfo {
@@ -76,8 +92,10 @@ fn get_vulkan_gpus_internal() -> Result<Vec<GpuInfo>, Box<dyn std::error::Error>
         },
     )?;
 
+    #[cfg(not(target_os = "macos"))]
     let mut device_info_list = vec![];
 
+    #[cfg(not(target_os = "macos"))]
     for (i, physical_device) in instance.enumerate_physical_devices()?.enumerate() {
         let properties = physical_device.properties();
 
@@ -118,5 +136,6 @@ fn get_vulkan_gpus_internal() -> Result<Vec<GpuInfo>, Box<dyn std::error::Error>
         device_info_list.push(device_info);
     }
 
+    #[cfg(not(target_os = "macos"))]
     Ok(device_info_list)
 }
