@@ -247,10 +247,11 @@ function createLocalStreamingFetch(
     }
 
     // Connection-level error before any data: return a proper error Response
-    if (error && chunks.length === 0) {
-      const m = error.match(/^HTTP (\d+):\s*([\s\S]*)$/)
+    const currentError: string | null = error
+    if (currentError && chunks.length === 0) {
+      const m = currentError.match(/^HTTP (\d+):\s*([\s\S]*)$/)
       return new Response(
-        m ? m[2] : JSON.stringify({ error: { message: error } }),
+        m ? m[2] : JSON.stringify({ error: { message: currentError } }),
         {
           status: m ? parseInt(m[1]) : 502,
           headers: { 'Content-Type': 'application/json' },
