@@ -1,34 +1,47 @@
-# Atomic Chat - Open-source ChatGPT replacement
+<img src="https://github.com/AtomicBot-ai/Atomic-Chat/raw/main/assets/logo.png" width="80" alt="Atomic Chat" />
 
-[Getting Started](https://atomic.chat/docs/desktop) - [Discord](https://discord.gg/AbWHHdKT) - [X / Twitter](https://x.com/atomic_chat_hq) - [Bug reports](https://github.com/AtomicBot-ai/Atomic-Chat/issues)
+# Atomic Chat
 
-Atomic Chat is bringing the best of open-source AI in an easy-to-use product. Download and run LLMs with **full control** and **privacy**.
+Open-source ChatGPT alternative. Run local LLMs or connect cloud models — with full control and privacy.
 
-The easiest way to get started is to download the macOS version:
+<a href="https://github.com/AtomicBot-ai/Atomic-Chat/stargazers"><img src="https://img.shields.io/github/stars/AtomicBot-ai/Atomic-Chat?style=flat&logo=github&label=Stars&color=f5c542" alt="Stars" /></a>&nbsp;
+<a href="https://github.com/AtomicBot-ai/Atomic-Chat/network/members"><img src="https://img.shields.io/github/forks/AtomicBot-ai/Atomic-Chat?style=flat&logo=github&label=Forks&color=4ac1f2" alt="Forks" /></a>&nbsp;
+<a href="https://github.com/AtomicBot-ai/Atomic-Chat/commits/main"><img src="https://img.shields.io/github/last-commit/AtomicBot-ai/Atomic-Chat?style=flat&label=Last%20Commit&color=blueviolet" alt="Last Commit" /></a>&nbsp;
+<img src="https://img.shields.io/badge/Built_with-Tauri-FFC131?style=flat&logo=tauri&logoColor=white" alt="Tauri" />&nbsp;
+<img src="https://img.shields.io/badge/Runtime-Node.js_≥20-339933?style=flat&logo=nodedotjs&logoColor=white" alt="Node.js" />
 
+[Getting Started](https://atomic.chat/) · [Discord](https://discord.com/invite/AbWHHdKT) · [X / Twitter](https://x.com/atomic_chat_hq) · [Bug Reports](https://github.com/AtomicBot-ai/Atomic-Chat/issues)
+
+<p align="center">
+  <img src="https://github.com/AtomicBot-ai/Atomic-Chat/raw/main/assets/preview.png" width="100%" alt="Atomic Chat Interface" />
+</p>
+
+---
+
+### Download
 
 |                       |                                                                          |
 | --------------------- | ------------------------------------------------------------------------ |
-| **Platform**          | **Download**                                                             |
-| **macOS (Universal)** | [atomic-chat.dmg](https://app.atomic.chat/download/latest/mac-universal) |
-
+| **macOS (Universal)** | [atomic-chat.dmg](https://github.com/AtomicBot-ai/Atomic-Chat/releases/tag/v1.0.23) |
 
 Download from [atomic.chat](https://atomic.chat/) or [GitHub Releases](https://github.com/AtomicBot-ai/Atomic-Chat/releases).
 
-## Features
+---
 
-- **Local AI Models**: Download and run LLMs (Llama, Gemma, Qwen, GPT-oss etc.) from HuggingFace
-- **Cloud Integration**: Connect to GPT models via OpenAI, Claude models via Anthropic, Mistral, Groq, MiniMax, and others
-- **Custom Assistants**: Create specialized AI assistants for your tasks
-- **OpenAI-Compatible API**: Local server at `localhost:1337` for other applications
-- **Model Context Protocol**: MCP integration for agentic capabilities
-- **Privacy First**: Everything runs locally when you want it to
+### Features
 
-## Build from Source
+- 🧠 **Local AI Models** — download and run LLMs (Llama, Gemma, Qwen, and more) from HuggingFace
+- ☁️ **Cloud Integration** — connect to OpenAI, Anthropic, Mistral, Groq, MiniMax, and others
+- 🤖 **Custom Assistants** — create specialized AI assistants for your tasks
+- 🔌 **OpenAI-Compatible API** — local server at `localhost:1337` for other applications
+- 🔗 **Model Context Protocol** — MCP integration for agentic capabilities
+- 🔒 **Privacy First** — everything runs locally when you want it to
 
-For those who enjoy the scenic route:
+---
 
-### Prerequisites
+### Build from Source
+
+#### Prerequisites
 
 - Node.js ≥ 20.0.0
 - Yarn ≥ 4.5.3
@@ -36,7 +49,7 @@ For those who enjoy the scenic route:
 - Rust (for Tauri)
 - (Apple Silicon) MetalToolchain `xcodebuild -downloadComponent MetalToolchain`
 
-### Run with Make
+#### Run with Make
 
 ```bash
 git clone https://github.com/AtomicBot-ai/Atomic-Chat
@@ -48,12 +61,12 @@ This handles everything: installs dependencies, builds core components, and laun
 
 **Available make targets:**
 
-- `make dev` - Full development setup and launch
-- `make build` - Production build
-- `make test` - Run tests and linting
-- `make clean` - Delete everything and start fresh
+- `make dev` — full development setup and launch
+- `make build` — production build
+- `make test` — run tests and linting
+- `make clean` — delete everything and start fresh
 
-### Manual Commands
+#### Manual Commands
 
 ```bash
 yarn install
@@ -63,42 +76,49 @@ yarn build:extensions
 yarn dev
 ```
 
-## System Requirements
+---
 
-**Minimum specs for a decent experience:**
+### System Requirements
 
 - **macOS**: 13.6+ (8GB RAM for 3B models, 16GB for 7B, 32GB for 13B)
 
-For detailed compatibility, check our [installation guides](https://atomic.chat/docs/desktop/mac).
+---
 
-## Troubleshooting
+### Troubleshooting
 
-If things go sideways:
+If something isn't working:
 
-1. Check our [troubleshooting docs](https://atomic.chat/docs/desktop/troubleshooting)
-2. Copy your error logs and system specs
-3. Ask for help in our [Discord](https://discord.gg/AbWHHdKT) `#🆘|atomic-chat-help` channel
+1. Copy your error logs and system specs
+2. Open an issue on [GitHub](https://github.com/AtomicBot-ai/Atomic-Chat/issues)
+3. Or ask for help in our [Discord](https://discord.com/invite/AbWHHdKT) `#🆘|atomic-chat-help` channel
 
-## Contributing
+---
 
-Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full spiel.
+### Contributing
 
-## Links
+Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
-- [Discord](https://discord.gg/AbWHHdKT) - Where the community lives
-- [X / Twitter](https://x.com/atomic_chat_hq) - Follow for updates
+<p align="center">
+  <a href="https://discord.com/invite/AbWHHdKT"><img src="https://img.shields.io/badge/💬_Chat_on-Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord" /></a>&nbsp;
+  <a href="https://github.com/AtomicBot-ai/Atomic-Chat/issues"><img src="https://img.shields.io/badge/🐛_Report-Issues-FF4444?style=for-the-badge" alt="Report Issues" /></a>&nbsp;
+  <a href="https://github.com/AtomicBot-ai/Atomic-Chat/pulls"><img src="https://img.shields.io/badge/🔀_Submit-PRs-44CC11?style=for-the-badge" alt="Submit PRs" /></a>
+</p>
 
-## Contact
+---
+
+### Contact
 
 - **Bugs**: [GitHub Issues](https://github.com/AtomicBot-ai/Atomic-Chat/issues)
-- **General Discussion**: [Discord](https://discord.gg/AbWHHdKT)
+- **General Discussion**: [Discord](https://discord.com/invite/AbWHHdKT)
 - **Updates**: [X / Twitter](https://x.com/atomic_chat_hq)
 
-## License
+---
 
-Apache 2.0 - Because sharing is caring.
+### License
 
-## Acknowledgements
+Apache 2.0 — see [LICENSE](LICENSE) for details.
+
+### Acknowledgements
 
 Built on the shoulders of giants:
 
@@ -106,3 +126,8 @@ Built on the shoulders of giants:
 - [Tauri](https://tauri.app/)
 - [Scalar](https://github.com/scalar/scalar)
 
+---
+
+<p align="center">
+  <sub>© 2026 Atomic Chat · Built with ❤️ · <a href="https://atomic.chat">atomic.chat</a></sub>
+</p>
