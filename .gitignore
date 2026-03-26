@@ -44,8 +44,11 @@ Cargo.lock
 src-tauri/resources/
 src-tauri/resources/lib
 src-tauri/resources/bin
-src-tauri/icons
+src-tauri/icons/*
 !src-tauri/icons/icon.png
+!src-tauri/icons/dmg/
+src-tauri/icons/dmg/*
+!src-tauri/icons/dmg/background.png
 src-tauri/gen/apple
 src-tauri/gen/android
 
