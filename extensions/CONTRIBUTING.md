@@ -1,4 +1,4 @@
-# Contributing to Jan Extensions
+# Contributing to Atomic Chat Extensions
 
 [← Back to Main Contributing Guide](../CONTRIBUTING.md)
 
