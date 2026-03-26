@@ -109,6 +109,12 @@ export default defineConfig(({ mode }) => {
       ),
     },
 
+    build: {
+      rollupOptions: {
+        external: ['vscode-languageserver-protocol', 'vscode-languageserver-types'],
+      },
+    },
+
     // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
     //
     // 1. prevent vite from obscuring rust errors
