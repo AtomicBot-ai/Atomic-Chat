@@ -1,4 +1,4 @@
-# Contributing to Jan Core
+# Contributing to Atomic Chat Core
 
 [← Back to Main Contributing Guide](../CONTRIBUTING.md)
 
