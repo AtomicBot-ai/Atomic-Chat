@@ -58,7 +58,7 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
       nodePolyfills({
         include: ['path'],
-        globals: { process: false },
+        globals: { process: false, Buffer: false, global: false },
       }),
       injectGoogleAnalytics(env.GA_MEASUREMENT_ID),
     ],
