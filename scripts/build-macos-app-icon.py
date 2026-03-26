@@ -1,20 +1,30 @@
 #!/usr/bin/env python3
-#* 1024×1024 PNG для tauri icon: логотип по центру, прозрачные углы (скруглённая маска).
+#* 1024×1024 для tauri: поле по краю (как у системных иконок) + плашка внутри safe area + крупный знак.
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parent.parent
 LOGO_PATH = ROOT / "web-app" / "public" / "images" / "atomic-chat-logo.png"
 OUT_PATH = ROOT / "src-tauri" / "icons" / "icon.png"
 SIZE = 1024
-#? Внутреннее поле под глиф (~как у Apple template)
-PADDING_FRAC = 0.11
-#? Радиус скругления маски холста (доля стороны) — ближе к squircle в Dock
+#? Прозрачный отступ от края холста (~шаблон Apple / размер «плитки» в Dock рядом с системными)
+SAFE_INSET_FRAC = 0.115
+#? Скругление плашки — доля стороны именно внутреннего квадрата
 RADIUS_FRAC = 0.223
+PLATE_RGBA = (44, 44, 46, 255)
+#? Глиф занимает долю стороны *внутренней плашки* (крупнее знак, плашка уже по safe area)
+GLYPH_IN_PLATE_FRAC = 0.76
+
+
+def glyph_white_from_alpha(src: Image.Image) -> Image.Image:
+    a = src.split()[3]
+    white = Image.new("RGBA", src.size, (255, 255, 255, 255))
+    white.putalpha(a)
+    return white
 
 
 def main() -> None:
@@ -22,29 +32,31 @@ def main() -> None:
         print(f"Missing {LOGO_PATH}", file=sys.stderr)
         sys.exit(1)
 
+    inset = max(1, int(SIZE * SAFE_INSET_FRAC))
+    x1, y1 = inset, inset
+    x2, y2 = SIZE - 1 - inset, SIZE - 1 - inset
+    plate_side = x2 - x1 + 1
+    radius = max(1, int(plate_side * RADIUS_FRAC))
+
     logo = Image.open(LOGO_PATH).convert("RGBA")
-    inner = max(1, int(SIZE * (1 - 2 * PADDING_FRAC)))
-    lw, lh = logo.size
-    scale = min(inner / lw, inner / lh)
-    nw, nh = max(1, int(lw * scale)), max(1, int(lh * scale))
-    logo = logo.resize((nw, nh), Image.Resampling.LANCZOS)
+    glyph = glyph_white_from_alpha(logo)
 
     canvas = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(canvas)
+    draw.rounded_rectangle((x1, y1, x2, y2), radius=radius, fill=PLATE_RGBA)
+
+    gmax = max(1, int(plate_side * GLYPH_IN_PLATE_FRAC))
+    gw, gh = glyph.size
+    scale = min(gmax / gw, gmax / gh)
+    nw, nh = max(1, int(gw * scale)), max(1, int(gh * scale))
+    glyph = glyph.resize((nw, nh), Image.Resampling.LANCZOS)
+
     ox, oy = (SIZE - nw) // 2, (SIZE - nh) // 2
-    canvas.paste(logo, (ox, oy), logo)
-
-    radius = max(1, int(SIZE * RADIUS_FRAC))
-    mask = Image.new("L", (SIZE, SIZE), 0)
-    draw = ImageDraw.Draw(mask)
-    draw.rounded_rectangle((0, 0, SIZE - 1, SIZE - 1), radius=radius, fill=255)
-
-    alpha = canvas.split()[3]
-    alpha = ImageChops.multiply(alpha, mask)
-    canvas.putalpha(alpha)
+    canvas.alpha_composite(glyph, (ox, oy))
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(OUT_PATH, "PNG")
-    print(f"Wrote {OUT_PATH}")
+    print(f"Wrote {OUT_PATH} (plate {plate_side}px, inset {inset}px)")
 
 
 if __name__ == "__main__":
