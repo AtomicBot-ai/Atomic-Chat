@@ -247,7 +247,7 @@ function createLocalStreamingFetch(
     }
 
     // Connection-level error before any data: return a proper error Response
-    const currentError: string | null = error
+    const currentError = error as string | null
     if (currentError && chunks.length === 0) {
       const m = currentError.match(/^HTTP (\d+):\s*([\s\S]*)$/)
       return new Response(
