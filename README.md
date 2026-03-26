@@ -1,24 +1,26 @@
-# Jan - Open-source ChatGPT replacement
+# Atomic Chat - Open-source ChatGPT replacement
 
-<img width="2048" height="280" alt="github jan banner" src="https://github.com/user-attachments/assets/f3f87889-c133-433b-b250-236218150d3f" />
+<p align="center">
+  <img width="128" height="128" alt="Atomic Chat logo" src="web-app/public/images/atomic-chat-logo.png" />
+</p>
 
 <p align="center">
   <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
-  <img alt="GitHub commit activity" src="https://img.shields.io/github/commit-activity/m/janhq/jan"/>
-  <img alt="Github Last Commit" src="https://img.shields.io/github/last-commit/janhq/jan"/>
-  <img alt="Github Contributors" src="https://img.shields.io/github/contributors/janhq/jan"/>
-  <img alt="GitHub closed issues" src="https://img.shields.io/github/issues-closed/janhq/jan"/>
+  <img alt="GitHub commit activity" src="https://img.shields.io/github/commit-activity/m/AtomicBot-ai/Atomic-Chat"/>
+  <img alt="Github Last Commit" src="https://img.shields.io/github/last-commit/AtomicBot-ai/Atomic-Chat"/>
+  <img alt="Github Contributors" src="https://img.shields.io/github/contributors/AtomicBot-ai/Atomic-Chat"/>
+  <img alt="GitHub closed issues" src="https://img.shields.io/github/issues-closed/AtomicBot-ai/Atomic-Chat"/>
   <img alt="Discord" src="https://img.shields.io/discord/1107178041848909847?label=discord"/>
 </p>
 
 <p align="center">
-  <a href="https://jan.ai/docs/desktop">Getting Started</a>
+  <a href="https://atomic.chat/docs/desktop">Getting Started</a>
   - <a href="https://discord.gg/Exe46xPMbK">Community</a>
-  - <a href="https://jan.ai/changelog">Changelog</a>
-  - <a href="https://github.com/janhq/jan/issues">Bug reports</a>
+  - <a href="https://atomic.chat/changelog">Changelog</a>
+  - <a href="https://github.com/AtomicBot-ai/Atomic-Chat/issues">Bug reports</a>
 </p>
 
-Jan is bringing the best of open-source AI in an easy-to-use product. Download and run LLMs with **full control** and **privacy**.
+Atomic Chat is bringing the best of open-source AI in an easy-to-use product. Download and run LLMs with **full control** and **privacy**.
 
 ## Installation
 
@@ -38,7 +40,7 @@ Jan is bringing the best of open-source AI in an easy-to-use product. Download a
       <td width="20"></td>
       <!-- Flathub Official Badge -->
       <td align="center" valign="middle">
-        <a href="https://flathub.org/apps/ai.jan.Jan">
+        <a href="https://flathub.org/apps/chat.atomic.AtomicChat">
           <img height="60"
             width="200"
                alt="Get it on Flathub"
@@ -58,28 +60,28 @@ The easiest way to get started is by downloading one of the following versions f
   </tr>
   <tr>
     <td><b>Windows</b></td>
-    <td><a href='https://app.jan.ai/download/latest/win-x64'>jan.exe</a></td>
+    <td><a href='https://app.atomic.chat/download/latest/win-x64'>atomic-chat.exe</a></td>
   </tr>
   <tr>
     <td><b>macOS</b></td>
-    <td><a href='https://app.jan.ai/download/latest/mac-universal'>jan.dmg</a></td>
+    <td><a href='https://app.atomic.chat/download/latest/mac-universal'>atomic-chat.dmg</a></td>
   </tr>
   <tr>
     <td><b>Linux (deb)</b></td>
-    <td><a href='https://app.jan.ai/download/latest/linux-amd64-deb'>jan.deb</a></td>
+    <td><a href='https://app.atomic.chat/download/latest/linux-amd64-deb'>atomic-chat.deb</a></td>
   </tr>
   <tr>
     <td><b>Linux (AppImage)</b></td>
-    <td><a href='https://app.jan.ai/download/latest/linux-amd64-appimage'>jan.AppImage</a></td>
+    <td><a href='https://app.atomic.chat/download/latest/linux-amd64-appimage'>atomic-chat.AppImage</a></td>
   </tr>
   <tr>
     <td><b>Linux (Arm64)</b></td>
-    <td><a href='https://github.com/janhq/jan/issues/4543#issuecomment-3734911349'>How-to</a></td>
+    <td><a href='https://github.com/AtomicBot-ai/Atomic-Chat/issues/4543#issuecomment-3734911349'>How-to</a></td>
   </tr>
 </table>
 
 
-Download from [jan.ai](https://jan.ai/) or [GitHub Releases](https://github.com/janhq/jan/releases).
+Download from [atomic.chat](https://atomic.chat/) or [GitHub Releases](https://github.com/AtomicBot-ai/Atomic-Chat/releases).
 
 ## Features
 
@@ -105,8 +107,8 @@ For those who enjoy the scenic route:
 ### Run with Make
 
 ```bash
-git clone https://github.com/janhq/jan
-cd jan
+git clone https://github.com/AtomicBot-ai/Atomic-Chat
+cd Atomic-Chat
 make dev
 ```
 
@@ -136,15 +138,15 @@ yarn dev
 - **Windows**: 10+ with GPU support for NVIDIA/AMD/Intel Arc
 - **Linux**: Most distributions work, GPU acceleration available
 
-For detailed compatibility, check our [installation guides](https://jan.ai/docs/desktop/mac).
+For detailed compatibility, check our [installation guides](https://atomic.chat/docs/desktop/mac).
 
 ## Troubleshooting
 
 If things go sideways:
 
-1. Check our [troubleshooting docs](https://jan.ai/docs/desktop/troubleshooting)
+1. Check our [troubleshooting docs](https://atomic.chat/docs/desktop/troubleshooting)
 2. Copy your error logs and system specs
-3. Ask for help in our [Discord](https://discord.gg/FTk2MvZwJH) `#🆘|jan-help` channel
+3. Ask for help in our [Discord](https://discord.gg/FTk2MvZwJH) `#🆘|atomic-chat-help` channel
 
 
 ## Contributing
@@ -153,16 +155,16 @@ Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full spiel
 
 ## Links
 
-- [Documentation](https://jan.ai/docs) - The manual you should read
-- [API Reference](https://jan.ai/api-reference) - For the technically inclined
-- [Changelog](https://jan.ai/changelog) - What we broke and fixed
+- [Documentation](https://atomic.chat/docs) - The manual you should read
+- [API Reference](https://atomic.chat/api-reference) - For the technically inclined
+- [Changelog](https://atomic.chat/changelog) - What we broke and fixed
 - [Discord](https://discord.gg/FTk2MvZwJH) - Where the community lives
 
 ## Contact
 
-- **Bugs**: [GitHub Issues](https://github.com/janhq/jan/issues)
-- **Business**: hello@jan.ai
-- **Jobs**: hr@jan.ai
+- **Bugs**: [GitHub Issues](https://github.com/AtomicBot-ai/Atomic-Chat/issues)
+- **Business**: hello@atomic.chat
+- **Jobs**: hr@atomic.chat
 - **General Discussion**: [Discord](https://discord.gg/FTk2MvZwJH)
 
 ## License
