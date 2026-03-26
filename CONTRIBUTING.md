@@ -225,10 +225,10 @@ docs: update installation instructions
 
 If things go sideways:
 
-1. **Check our [troubleshooting docs](https://atomic.chat/docs/desktop/troubleshooting)**
+1. **Check [GitHub Issues](https://github.com/AtomicBot-ai/Atomic-Chat/issues) for known problems**
 2. **Clear everything and start fresh:** `make clean` then `make dev`
 3. **Copy your error logs and system specs**
-4. **Ask for help in our [Discord](https://discord.gg/AbWHHdKT)** `#🆘|atomic-chat-help` channel
+4. **Ask for help in our [Discord](https://discord.com/invite/AbWHHdKT)** `#🆘|atomic-chat-help` channel
 
 Common issues:
 - **Build failures**: Check Node.js and Rust versions
@@ -237,8 +237,8 @@ Common issues:
 
 ## Getting Help
 
-- [Documentation](https://atomic.chat/docs) - The manual you should read
-- [Discord Community](https://discord.gg/AbWHHdKT) - Where the community lives
+- [Documentation](https://github.com/AtomicBot-ai/Atomic-Chat#readme) - Project overview and setup
+- [Discord Community](https://discord.com/invite/AbWHHdKT) - Where the community lives
 - [GitHub Issues](https://github.com/AtomicBot-ai/Atomic-Chat/issues) - Report bugs here
 - [GitHub Discussions](https://github.com/AtomicBot-ai/Atomic-Chat/discussions) - Ask questions
 
