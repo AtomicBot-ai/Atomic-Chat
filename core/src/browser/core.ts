@@ -1,4 +1,4 @@
-import { SystemInformation } from '../types'
+import type { SystemInformation as _SystemInformation } from '../types'
 
 /**
  * Gets Jan's data folder path.

@@ -1,4 +1,4 @@
-import { ContentType, ContentValue } from '../message'
+import type { ContentType as _ContentType, ContentValue as _ContentValue } from '../message'
 
 /**
  * The role of the author of this message.
