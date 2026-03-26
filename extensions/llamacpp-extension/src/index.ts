@@ -33,7 +33,7 @@ import {
   getBackendExePath,
   getBackendDir,
 } from './backend'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke, Channel } from '@tauri-apps/api/core'
 import {
   getProxyConfig,
   buildEmbedBatches,
@@ -152,7 +152,10 @@ export default class llamacpp_extension extends AIEngine {
     // Migration v1: upgrade f16 KV cache defaults to q8_0
     await this.migrateKvCacheDefaults()
 
-    // Migration v2: disable fit by default
+    // Migration v2: upgrade KV cache defaults to turbo3 (turboquant)
+    await this.migrateKvCacheToTurbo3()
+
+    // Migration v3: disable fit by default
     await this.migrateFitDefault()
 
     this.autoUnload = this.config.auto_unload
@@ -234,6 +237,37 @@ export default class llamacpp_extension extends AIEngine {
         if (this.config[k] === 'f16') this.config[k] = 'q8_0'
       }
       logger.info('Migrated KV cache types from f16 to q8_0')
+    }
+
+    localStorage.setItem(MIGRATION_KEY, '1')
+  }
+
+  private async migrateKvCacheToTurbo3(): Promise<void> {
+    const MIGRATION_KEY = 'llamacpp_kv_cache_migrated_turbo3_v2'
+    if (localStorage.getItem(MIGRATION_KEY)) return
+
+    const keysToMigrate = ['cache_type_k', 'cache_type_v'] as const
+    const needsMigration = keysToMigrate.some(
+      (k) => this.config[k] !== 'turbo3'
+    )
+
+    if (needsMigration) {
+      const settings = await this.getSettings()
+      await this.updateSettings(
+        settings.map((item) => {
+          if (
+            keysToMigrate.includes(item.key as (typeof keysToMigrate)[number]) &&
+            item.controllerProps.value !== 'turbo3'
+          ) {
+            item.controllerProps.value = 'turbo3'
+          }
+          return item
+        })
+      )
+      for (const k of keysToMigrate) {
+        if (this.config[k] !== 'turbo3') this.config[k] = 'turbo3'
+      }
+      logger.info('Migrated KV cache types to turbo3')
     }
 
     localStorage.setItem(MIGRATION_KEY, '1')
@@ -1758,61 +1792,98 @@ export default class llamacpp_extension extends AIEngine {
     body: string,
     abortController?: AbortController
   ): AsyncIterable<chatCompletionChunk> {
-    // AbortSignal.any() is not available in all runtimes (e.g. WebKit/JavaScriptCore),
-    // so we manually combine the timeout and external abort signals.
-    const combinedController = new AbortController()
-    const timeoutId = setTimeout(
-      () => combinedController.abort(new Error('Request timed out')),
-      this.timeout * 1000
-    )
-    if (abortController?.signal) {
-      if (abortController.signal.aborted) {
-        combinedController.abort(abortController.signal.reason)
-      } else {
-        abortController.signal.addEventListener(
-          'abort',
-          () => combinedController.abort(abortController.signal.reason),
-          { once: true }
-        )
+    // Stream via Tauri IPC Channel instead of the intercepted global fetch.
+    // tauri_plugin_http overrides window.fetch and routes requests through
+    // reqwest, but its ReadableStream bridge may not properly relay SSE chunks
+    // back to the webview. Using a dedicated Tauri command + Channel bypasses
+    // the plugin entirely.
+
+    const rawChunks: string[] = []
+    let streamDone = false
+    let streamError: Error | null = null
+    let wakeUp: (() => void) | null = null
+
+    const channel = new Channel<{ data: string }>()
+    channel.onmessage = (event: { data: string }) => {
+      logger.info('[stream] chunk received, length:', event.data.length)
+      rawChunks.push(event.data)
+      if (wakeUp) {
+        wakeUp()
+        wakeUp = null
       }
     }
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
+
+    const headersRecord: Record<string, string> = {}
+    if (headers && typeof headers === 'object') {
+      for (const [k, v] of Object.entries(headers)) {
+        headersRecord[k] = String(v)
+      }
+    }
+
+    const timeoutNum = Number(this.timeout) || 600
+    logger.info(
+      '[stream] invoking stream_local_http, url:', url,
+      'timeout:', timeoutNum
+    )
+
+    const requestPromise = invoke<number>('stream_local_http', {
+      url,
+      headers: headersRecord,
       body,
-      connectTimeout: Number(this.timeout) * 1000, // default 10 minutes
-      signal: combinedController.signal,
-    }).finally(() => clearTimeout(timeoutId))
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => null)
-      throw new Error(
-        `API request failed with status ${response.status}: ${JSON.stringify(
-          errorData
-        )}`
-      )
-    }
+      timeoutSecs: timeoutNum,
+      onChunk: channel,
+    })
 
-    if (!response.body) {
-      throw new Error('Response body is null')
-    }
-
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder('utf-8')
-    let buffer = ''
-    let jsonStr = ''
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-
-        if (done) {
-          break
+    requestPromise
+      .then((status) => {
+        logger.info('[stream] invoke resolved, status:', status)
+        streamDone = true
+        if (wakeUp) {
+          wakeUp()
+          wakeUp = null
         }
+      })
+      .catch((e) => {
+        logger.error('[stream] invoke rejected:', String(e))
+        streamError = new Error(String(e))
+        streamDone = true
+        if (wakeUp) {
+          wakeUp()
+          wakeUp = null
+        }
+      })
 
-        buffer += decoder.decode(value, { stream: true })
+    if (abortController?.signal) {
+      const onAbort = () => {
+        streamError = streamError ?? new Error('Request aborted')
+        streamDone = true
+        if (wakeUp) {
+          wakeUp()
+          wakeUp = null
+        }
+      }
+      if (abortController.signal.aborted) {
+        onAbort()
+      } else {
+        abortController.signal.addEventListener('abort', onAbort, {
+          once: true,
+        })
+      }
+    }
 
-        // Process complete lines in the buffer
+    let buffer = ''
+
+    while (true) {
+      while (rawChunks.length === 0 && !streamDone) {
+        await new Promise<void>((resolve) => {
+          wakeUp = resolve
+        })
+      }
+
+      while (rawChunks.length > 0) {
+        buffer += rawChunks.shift()!
         const lines = buffer.split('\n')
-        buffer = lines.pop() || '' // Keep the last incomplete line in the buffer
+        buffer = lines.pop() || ''
 
         for (const line of lines) {
           const trimmedLine = line.trim()
@@ -1820,6 +1891,7 @@ export default class llamacpp_extension extends AIEngine {
             continue
           }
 
+          let jsonStr = ''
           if (trimmedLine.startsWith('data: ')) {
             jsonStr = trimmedLine.slice(6)
           } else if (trimmedLine.startsWith('error: ')) {
@@ -1827,29 +1899,28 @@ export default class llamacpp_extension extends AIEngine {
             const error = JSON.parse(jsonStr)
             throw new Error(error.message)
           } else {
-            // it should not normally reach here
             throw new Error('Malformed chunk')
           }
           try {
             const data = JSON.parse(jsonStr)
             const chunk = data as chatCompletionChunk
 
-            // Check for out-of-context error conditions
             if (chunk.choices?.[0]?.finish_reason === 'length') {
-              // finish_reason 'length' indicates context limit was hit
               throw new Error(OUT_OF_CONTEXT_SIZE)
             }
 
             yield chunk
           } catch (e) {
             logger.error('Error parsing JSON from stream or server error:', e)
-            // re‑throw so the async iterator terminates with an error
             throw e
           }
         }
       }
-    } finally {
-      reader.releaseLock()
+
+      if (streamDone) {
+        if (streamError) throw streamError
+        break
+      }
     }
   }
 

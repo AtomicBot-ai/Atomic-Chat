@@ -1,5 +1,6 @@
 import { getJanDataFolderPath, fs, joinPath, events } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 import { getProxyConfig, basenameNoExt } from './util'
 import { dirname } from '@tauri-apps/api/path'
 import { getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
@@ -36,33 +37,45 @@ export async function getLocalInstalledBackends(): Promise<
 async function fetchRemoteSupportedBackends(
   supportedBackends: string[]
 ): Promise<{ version: string; backend: string }[]> {
-  // Pull the latest releases from the repo
-  const { releases } = await _fetchGithubReleases('janhq', 'llama.cpp')
+  const { releases } = await _fetchGithubReleases('Vect0rM', 'atomic-llama-cpp-turboquant')
   releases.sort((a, b) => b.tag_name.localeCompare(a.tag_name))
-  releases.splice(10) // keep only the latest 10 releases
+  releases.splice(10)
 
-  // Walk the assets and keep only those that match a supported backend
   const remote: { version: string; backend: string }[] = []
+  const TURBOQUANT_PREFIX = 'llama-turboquant-'
 
   for (const release of releases) {
     const version = release.tag_name
-    const prefix = `llama-${version}-bin-`
 
     for (const asset of release.assets) {
-      const name = asset.name
+      const name: string = asset.name
 
-      if (!name.startsWith(prefix)) continue
-
-      const backend = basenameNoExt(name).slice(prefix.length)
-
-      if (supportedBackends.includes(backend)) {
-        remote.push({ version, backend })
+      // Turboquant assets: llama-turboquant-{backend}.tar.gz
+      if (name.startsWith(TURBOQUANT_PREFIX)) {
+        const backend = basenameNoExt(name).slice(TURBOQUANT_PREFIX.length)
+        if (supportedBackends.includes(backend)) {
+          remote.push({ version, backend })
+          continue
+        }
+        const mappedNew = await mapOldBackendToNew(backend)
+        if (mappedNew !== backend && supportedBackends.includes(mappedNew)) {
+          remote.push({ version, backend })
+        }
         continue
       }
-      const mappedNew = await mapOldBackendToNew(backend)
-      if (mappedNew !== backend && supportedBackends.includes(mappedNew)) {
-        // Push the ORIGINAL backend name here, as this is the name of the file on the server.
-        remote.push({ version, backend })
+
+      // Legacy assets: llama-{version}-bin-{backend}.tar.gz
+      const legacyPrefix = `llama-${version}-bin-`
+      if (name.startsWith(legacyPrefix)) {
+        const backend = basenameNoExt(name).slice(legacyPrefix.length)
+        if (supportedBackends.includes(backend)) {
+          remote.push({ version, backend })
+          continue
+        }
+        const mappedNew = await mapOldBackendToNew(backend)
+        if (mappedNew !== backend && supportedBackends.includes(mappedNew)) {
+          remote.push({ version, backend })
+        }
       }
     }
   }
@@ -79,31 +92,48 @@ export async function listSupportedBackends(): Promise<BackendVersion[]> {
   const osType = sysInfo.os_type
   const arch = sysInfo.cpu.arch
 
+  console.info('[listSupportedBackends] sysInfo:', osType, arch)
+
   const rawFeatures = await _getSupportedFeatures()
   const features = normalizeFeatures(rawFeatures)
 
-  // Get supported backend names from Rust
   const supportedBackends = await determineSupportedBackends(
     osType,
     arch,
     features
   )
+  console.info('[listSupportedBackends] supportedBackends:', supportedBackends)
 
-  // Get remote backends from Github
   let remoteBackendVersions: BackendVersion[] = []
   try {
-    remoteBackendVersions =
-      await fetchRemoteSupportedBackends(supportedBackends)
+    console.info('[listSupportedBackends] fetching remote backends...')
+    const REMOTE_TIMEOUT_MS = 10_000
+    remoteBackendVersions = await Promise.race([
+      fetchRemoteSupportedBackends(supportedBackends),
+      new Promise<BackendVersion[]>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`remote fetch timed out after ${REMOTE_TIMEOUT_MS}ms`)),
+          REMOTE_TIMEOUT_MS
+        )
+      ),
+    ])
+    console.info(
+      '[listSupportedBackends] remote backends:',
+      remoteBackendVersions.length
+    )
   } catch (e) {
-    console.debug(
-      `Not able to get remote backends, Jan might be offline or network problem: ${String(e)}`
+    console.warn(
+      `[listSupportedBackends] remote fetch failed (will use local): ${String(e)}`
     )
   }
 
-  // Get locally installed versions
   const localBackendVersions = await getLocalInstalledBackends()
+  console.info(
+    '[listSupportedBackends] local backends:',
+    localBackendVersions.length,
+    localBackendVersions
+  )
 
-  // Merge & sort via Rust
   return listSupportedBackendsFromRust(
     remoteBackendVersions,
     localBackendVersions
@@ -153,7 +183,6 @@ export async function isBackendInstalled(
 export async function downloadBackend(
   backend: string,
   version: string,
-  source: 'github' | 'cdn' = 'github'
 ): Promise<void> {
   const backendDir = await getBackendDir(backend, version)
 
@@ -166,11 +195,14 @@ export async function downloadBackend(
 
   const platformName = IS_WINDOWS ? 'win' : 'linux'
 
-  // Build URLs per source
+  // Turboquant releases use "llama-turboquant-{backend}" naming;
+  // fall back to legacy "{version}-bin-{backend}" for older tags.
+  const isTurboquantRelease = version.startsWith('turboquant-')
+  const assetName = isTurboquantRelease
+    ? `llama-turboquant-${backend}.tar.gz`
+    : `llama-${version}-bin-${backend}.tar.gz`
   const backendUrl =
-    source === 'github'
-      ? `https://github.com/janhq/llama.cpp/releases/download/${version}/llama-${version}-bin-${backend}.tar.gz`
-      : `https://catalog.jan.ai/llama.cpp/releases/${version}/llama-${version}-bin-${backend}.tar.gz`
+    `https://github.com/Vect0rM/atomic-llama-cpp-turboquant/releases/download/${version}/${assetName}`
 
   const taskId = `llamacpp-${version}-${backend}`.replace(/\./g, '-')
 
@@ -190,9 +222,7 @@ export async function downloadBackend(
   ) {
     downloadItems.push({
       url:
-        source === 'github'
-          ? `https://github.com/janhq/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu11.7-x64.tar.gz`
-          : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu11.7-x64.tar.gz`,
+        `https://github.com/Vect0rM/atomic-llama-cpp-turboquant/releases/download/${version}/cudart-llama-bin-${platformName}-cu11.7-x64.tar.gz`,
       save_path: await joinPath([backendDir, 'build', 'bin', 'cuda11.tar.gz']),
       proxy: proxyConfig,
       model_id: taskId,
@@ -203,9 +233,7 @@ export async function downloadBackend(
   ) {
     downloadItems.push({
       url:
-        source === 'github'
-          ? `https://github.com/janhq/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`
-          : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`,
+        `https://github.com/Vect0rM/atomic-llama-cpp-turboquant/releases/download/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`,
       save_path: await joinPath([backendDir, 'build', 'bin', 'cuda12.tar.gz']),
       proxy: proxyConfig,
       model_id: taskId,
@@ -216,9 +244,7 @@ export async function downloadBackend(
   ) {
     downloadItems.push({
       url:
-        source === 'github'
-          ? `https://github.com/janhq/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu13.0-x64.tar.gz`
-          : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu13.0-x64.tar.gz`,
+        `https://github.com/Vect0rM/atomic-llama-cpp-turboquant/releases/download/${version}/cudart-llama-bin-${platformName}-cu13.0-x64.tar.gz`,
       save_path: await joinPath([backendDir, 'build', 'bin', 'cuda13.tar.gz']),
       proxy: proxyConfig,
       model_id: taskId,
@@ -227,7 +253,7 @@ export async function downloadBackend(
   const downloadType = 'Engine'
 
   console.log(
-    `Downloading backend ${backend} version ${version} from ${source}: ${JSON.stringify(
+    `Downloading backend ${backend} version ${version}: ${JSON.stringify(
       downloadItems
     )}`
   )
@@ -260,16 +286,19 @@ export async function downloadBackend(
       }
     }
 
+    // Legacy tarballs may extract to llama-{version}/ flat structure.
+    // The app expects build/bin/llama-server — rearrange if needed.
+    // Turboquant tarballs already extract to build/bin/, so this is a no-op for them.
+    const extractedDir = await joinPath([backendDir, `llama-${version}`])
+    if (await fs.existsSync(extractedDir)) {
+      const buildDir = await joinPath([backendDir, 'build'])
+      await fs.mkdir(buildDir)
+      const buildBinDir = await joinPath([buildDir, 'bin'])
+      await fs.mv(extractedDir, buildBinDir)
+    }
+
     events.emit('onFileDownloadSuccess', { modelId: taskId, downloadType })
   } catch (error) {
-    // Fallback: if GitHub fails, retry once with CDN
-    if (
-      source === 'github' &&
-      error?.toString() !== 'Error: Download cancelled'
-    ) {
-      console.warn(`GitHub download failed, falling back to CDN:`, error)
-      return await downloadBackend(backend, version, 'cdn')
-    }
     console.error(`Failed to download backend ${backend}: `, error)
     events.emit('onFileDownloadError', { modelId: taskId, downloadType })
     throw error
@@ -286,30 +315,36 @@ async function _getSupportedFeatures() {
 }
 
 /**
- * Fetch releases with GitHub-first strategy and fallback to CDN on any error.
- * CDN endpoint is expected to mirror GitHub releases JSON shape.
+ * Fetch releases from GitHub with timeout and optional proxy passthrough.
  */
 async function _fetchGithubReleases(
   owner: string,
   repo: string
-): Promise<{ releases: any[]; source: 'github' | 'cdn' }> {
+): Promise<{ releases: any[] }> {
   const githubUrl = `https://api.github.com/repos/${owner}/${repo}/releases`
+
+  const proxyConfig = getProxyConfig()
+  const fetchInit: Record<string, unknown> = {
+    connectTimeout: 15_000,
+  }
+  if (proxyConfig?.url) {
+    fetchInit.proxy = { all: { url: proxyConfig.url } }
+  }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 20_000)
+  fetchInit.signal = controller.signal
+
   try {
-    const response = await fetch(githubUrl)
+    const response = await tauriFetch(githubUrl, fetchInit as any)
     if (!response.ok)
-      throw new Error(`GitHub error: ${response.status} ${response.statusText}`)
-    const releases = await response.json()
-    return { releases, source: 'github' }
-  } catch (_err) {
-    const cdnUrl = 'https://catalog.jan.ai/llama.cpp/releases/releases.json'
-    const response = await fetch(cdnUrl)
-    if (!response.ok) {
       throw new Error(
-        `Failed to fetch releases from both sources. CDN error: ${response.status} ${response.statusText}`
+        `GitHub error: ${response.status} ${response.statusText}`
       )
-    }
     const releases = await response.json()
-    return { releases, source: 'cdn' }
+    return { releases }
+  } finally {
+    clearTimeout(timeout)
   }
 }
 

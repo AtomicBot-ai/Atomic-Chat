@@ -52,7 +52,7 @@ import {
 } from '@ai-sdk/openai-compatible'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createXai } from '@ai-sdk/xai'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke, Channel } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 
@@ -143,6 +143,147 @@ function createCustomFetch(
 }
 
 /**
+ * Fetch that bypasses tauri_plugin_http for localhost POST requests.
+ * The plugin's ReadableStream bridge does not properly deliver SSE chunks
+ * from local inference servers, causing the UI to hang. This uses the
+ * stream_local_http Tauri command + IPC Channel to relay response bytes
+ * directly to a standard ReadableStream that the AI SDK can consume.
+ */
+function createLocalStreamingFetch(
+  fallbackFetch: typeof httpFetch,
+  parameters: Record<string, unknown>
+): typeof httpFetch {
+  const normalFetch = createCustomFetch(fallbackFetch, parameters)
+
+  return async (
+    input: RequestInfo | URL,
+    init?: RequestInit
+  ): Promise<Response> => {
+    const urlStr =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url
+
+    const isLocal =
+      urlStr.startsWith('http://localhost:') ||
+      urlStr.startsWith('http://127.0.0.1:')
+    const isPost = !init?.method || init.method.toUpperCase() === 'POST'
+
+    if (!isLocal || !isPost) return normalFetch(input, init)
+
+    let bodyStr = (init?.body as string) ?? ''
+    if (bodyStr) {
+      try {
+        bodyStr = JSON.stringify({ ...JSON.parse(bodyStr), ...parameters })
+      } catch {
+        /* non-JSON body, leave as-is */
+      }
+    }
+
+    const hdrs: Record<string, string> = {}
+    if (init?.headers) {
+      const h = init.headers
+      if (h instanceof Headers) h.forEach((v, k) => { hdrs[k] = v })
+      else if (Array.isArray(h))
+        for (const [k, v] of h) hdrs[k] = String(v)
+      else
+        for (const [k, v] of Object.entries(h)) hdrs[k] = String(v)
+    }
+
+    const chunks: string[] = []
+    let done = false
+    let error: string | null = null
+    let notifyPull: (() => void) | null = null
+    let notifyFirst: (() => void) | null = null
+
+    const channel = new Channel<{ data: string }>()
+    channel.onmessage = ({ data }: { data: string }) => {
+      chunks.push(data)
+      notifyFirst?.()
+      notifyFirst = null
+      notifyPull?.()
+      notifyPull = null
+    }
+
+    const markDone = () => {
+      done = true
+      notifyFirst?.()
+      notifyFirst = null
+      notifyPull?.()
+      notifyPull = null
+    }
+
+    const cmdPromise = invoke<number>('stream_local_http', {
+      url: urlStr,
+      headers: hdrs,
+      body: bodyStr,
+      timeoutSecs: 600,
+      onChunk: channel,
+    })
+
+    cmdPromise
+      .then(() => markDone())
+      .catch((e) => {
+        error = String(e)
+        markDone()
+      })
+
+    if (init?.signal) {
+      const onAbort = () => {
+        if (!error) error = 'Request aborted'
+        markDone()
+      }
+      if (init.signal.aborted) onAbort()
+      else init.signal.addEventListener('abort', onAbort, { once: true })
+    }
+
+    // Wait for either first data chunk or early connection error
+    if (chunks.length === 0 && !done) {
+      await new Promise<void>((r) => {
+        notifyFirst = r
+      })
+    }
+
+    // Connection-level error before any data: return a proper error Response
+    if (error && chunks.length === 0) {
+      const m = error.match(/^HTTP (\d+):\s*([\s\S]*)$/)
+      return new Response(
+        m ? m[2] : JSON.stringify({ error: { message: error } }),
+        {
+          status: m ? parseInt(m[1]) : 502,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
+    const enc = new TextEncoder()
+    const readable = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        while (chunks.length === 0 && !done) {
+          await new Promise<void>((r) => {
+            notifyPull = r
+          })
+        }
+        while (chunks.length > 0) {
+          controller.enqueue(enc.encode(chunks.shift()!))
+        }
+        if (done) {
+          if (error) controller.error(new Error(error))
+          else controller.close()
+        }
+      },
+    })
+
+    return new Response(readable, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    })
+  }
+}
+
+/**
  * Factory for creating language models based on provider type.
  * Supports native AI SDK providers (Anthropic, Google) and OpenAI-compatible providers.
  */
@@ -229,7 +370,7 @@ export class ModelFactory {
       throw new Error(`No running session found for model: ${modelId}`)
     }
 
-    const customFetch = createCustomFetch(httpFetch, parameters)
+    const customFetch = createLocalStreamingFetch(httpFetch, parameters)
 
     const model = new OpenAICompatibleChatLanguageModel(modelId, {
       provider: 'llamacpp',

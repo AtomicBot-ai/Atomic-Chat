@@ -423,10 +423,15 @@ pub fn get_destination_path(original_path: &str, prefix: &str) -> String {
 
 use tauri_plugin_mlx::state::{MlxBackendSession, SessionInfo};
 
+fn is_local_url(url: &str) -> bool {
+    url.contains("://localhost") || url.contains("://127.0.0.1") || url.contains("://0.0.0.0") || url.contains("://[::1]")
+}
+
 /// Handles the proxy request logic
 async fn proxy_request(
     req: Request<Body>,
     client: Client,
+    local_client: Client,
     config: ProxyConfig,
     sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
     mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
@@ -1271,7 +1276,8 @@ async fn proxy_request(
         "Proxying request to model server at base URL {upstream_url}, path: {destination_path}"
     );
 
-    let mut outbound_req = client.request(method.clone(), upstream_url);
+    let effective_client = if is_local_url(&upstream_url) { &local_client } else { &client };
+    let mut outbound_req = effective_client.request(method.clone(), upstream_url);
 
     for (name, value) in headers.iter() {
         if name != hyper::header::HOST && name != hyper::header::AUTHORIZATION {
@@ -1346,10 +1352,11 @@ async fn proxy_request(
                     let chat_url = format!("{}/chat/completions", url);
                     log::info!("Fallback to chat completions: {chat_url}");
 
-                    // Create a fresh client for the fallback to avoid connection pool issues
-                    let fallback_client = Client::builder()
-                        .build()
-                        .expect("Failed to create fallback client");
+                    let fallback_client = if is_local_url(&chat_url) {
+                        Client::builder().no_proxy().build().expect("Failed to create fallback client")
+                    } else {
+                        Client::builder().build().expect("Failed to create fallback client")
+                    };
 
                     let mut fallback_req = fallback_client.post(&chat_url);
 
@@ -1618,8 +1625,16 @@ async fn start_server_internal(
         .pool_idle_timeout(std::time::Duration::from_secs(30))
         .build()?;
 
+    let local_client = Client::builder()
+        .timeout(std::time::Duration::from_secs(proxy_timeout))
+        .pool_max_idle_per_host(10)
+        .pool_idle_timeout(std::time::Duration::from_secs(30))
+        .no_proxy()
+        .build()?;
+
     let make_svc = make_service_fn(move |_conn| {
         let client = client.clone();
+        let local_client = local_client.clone();
         let config = config.clone();
         let sessions = sessions.clone();
         let mlx_sessions = mlx_sessions.clone();
@@ -1630,6 +1645,7 @@ async fn start_server_internal(
                 proxy_request(
                     req,
                     client.clone(),
+                    local_client.clone(),
                     config.clone(),
                     sessions.clone(),
                     mlx_sessions.clone(),
