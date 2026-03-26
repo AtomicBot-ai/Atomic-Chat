@@ -43,7 +43,7 @@
       "resolve": true
     },
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJFNDEzMEVCMUEzNUFENDQKUldSRXJUVWE2ekJCTGc1Mm1BVXgrWmtES3huUlBFR0lCdG5qbWFvMzgyNDhGN3VTTko5Q1NtTW0K",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg2QzBERDIyODEyNTc2RDcKUldUWGRpV0JJdDNBaGdkQXBhUEk1ZzJQMDJQWC9DK1I3QVNuZmhDaWFvUDlxVklpdWRlMHRkTzEK",
       "endpoints": [
         "https://github.com/AtomicBot-ai/Atomic-Chat/releases/latest/download/latest.json"
       ],

@@ -1,8 +1,8 @@
-# Contributing to Jan
+# Contributing to Atomic Chat
 
-First off, thank you for considering contributing to Jan. It's people like you that make Jan such an amazing project.
+First off, thank you for considering contributing to Atomic Chat. It's people like you that make Atomic Chat such an amazing project.
 
-Jan is an AI assistant that can run 100% offline on your device. Think ChatGPT, but private, local, and under your complete control. If you're thinking about contributing, you're already awesome - let's make AI accessible to everyone, one commit at a time.
+Atomic Chat is an AI assistant that can run 100% offline on your device. Think ChatGPT, but private, local, and under your complete control. If you're thinking about contributing, you're already awesome - let's make AI accessible to everyone, one commit at a time.
 
 ## Quick Links to Component Guides
 
@@ -12,9 +12,9 @@ Jan is an AI assistant that can run 100% offline on your device. Think ChatGPT, 
 - **[Tauri Backend](./src-tauri/CONTRIBUTING.md)** - Rust native integration
 - **[Tauri Plugins](./src-tauri/plugins/CONTRIBUTING.md)** - Hardware and system plugins
 
-## How Jan Actually Works
+## How Atomic Chat Actually Works
 
-Jan is a desktop app that runs local AI models. Here's how the components actually connect:
+Atomic Chat is a desktop app that runs local AI models. Here's how the components actually connect:
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -109,7 +109,7 @@ Here's what actually happens when you click "Download Llama 3":
 ## Project Structure
 
 ```
-jan/
+Atomic-Chat/
 ├── web-app/              # React frontend (what users see)
 ├── src-tauri/            # Rust backend (system integration)
 │   ├── src/core/         # Core Tauri commands
@@ -144,8 +144,8 @@ jan/
 
 **Option 1: The Easy Way (Make)**
 ```bash
-git clone https://github.com/janhq/jan
-cd jan
+git clone https://github.com/AtomicBot-ai/Atomic-Chat
+cd Atomic-Chat
 make dev
 ```
 
@@ -153,8 +153,8 @@ make dev
 
 ### Reporting Bugs
 
-- **Ensure the bug was not already reported** by searching on GitHub under [Issues](https://github.com/janhq/jan/issues)
-- If you're unable to find an open issue addressing the problem, [open a new one](https://github.com/janhq/jan/issues/new)
+- **Ensure the bug was not already reported** by searching on GitHub under [Issues](https://github.com/AtomicBot-ai/Atomic-Chat/issues)
+- If you're unable to find an open issue addressing the problem, [open a new one](https://github.com/AtomicBot-ai/Atomic-Chat/issues/new)
 - Include your system specs and error logs - it helps a ton
 
 ### Suggesting Enhancements
@@ -225,10 +225,10 @@ docs: update installation instructions
 
 If things go sideways:
 
-1. **Check our [troubleshooting docs](https://jan.ai/docs/desktop/troubleshooting)**
+1. **Check our [troubleshooting docs](https://atomic.chat/docs/desktop/troubleshooting)**
 2. **Clear everything and start fresh:** `make clean` then `make dev`
 3. **Copy your error logs and system specs**
-4. **Ask for help in our [Discord](https://discord.gg/FTk2MvZwJH)** `#🆘|jan-help` channel
+4. **Ask for help in our [Discord](https://discord.gg/FTk2MvZwJH)** `#🆘|atomic-chat-help` channel
 
 Common issues:
 - **Build failures**: Check Node.js and Rust versions
@@ -237,10 +237,10 @@ Common issues:
 
 ## Getting Help
 
-- [Documentation](https://jan.ai/docs) - The manual you should read
+- [Documentation](https://atomic.chat/docs) - The manual you should read
 - [Discord Community](https://discord.gg/FTk2MvZwJH) - Where the community lives
-- [GitHub Issues](https://github.com/janhq/jan/issues) - Report bugs here
-- [GitHub Discussions](https://github.com/janhq/jan/discussions) - Ask questions
+- [GitHub Issues](https://github.com/AtomicBot-ai/Atomic-Chat/issues) - Report bugs here
+- [GitHub Discussions](https://github.com/AtomicBot-ai/Atomic-Chat/discussions) - Ask questions
 
 ## License
 
@@ -248,6 +248,6 @@ Apache 2.0 - Because sharing is caring. See [LICENSE](./LICENSE) for the legal s
 
 ## Additional Notes
 
-We're building something pretty cool here - an AI assistant that respects your privacy and runs entirely on your machine. Every contribution, no matter how small, helps make AI more accessible to everyone.
+We're building something pretty cool here — an AI assistant that respects your privacy and runs entirely on your machine. Every contribution, no matter how small, helps make AI more accessible to everyone.
 
 Thanks for being part of the journey. Let's build the future of local AI together! 🚀
