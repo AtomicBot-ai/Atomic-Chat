@@ -56,6 +56,9 @@ jobs:
       - name: Install jq
         run: brew install jq
 
+      - name: Install Python dependencies
+        run: pip3 install Pillow
+
       - name: Set Xcode version
         run: |
           if [ -d "/Applications/Xcode_26.2.app" ]; then
