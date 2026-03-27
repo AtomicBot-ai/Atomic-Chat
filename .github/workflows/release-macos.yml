@@ -53,21 +53,6 @@ jobs:
         with:
           targets: x86_64-apple-darwin,aarch64-apple-darwin
 
-      - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.7
-
-      - name: Cache Rust build artifacts
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src-tauri/target
-          key: rust-macos-universal-${{ hashFiles('src-tauri/Cargo.lock') }}-${{ hashFiles('src-tauri/**/*.rs') }}
-          restore-keys: |
-            rust-macos-universal-${{ hashFiles('src-tauri/Cargo.lock') }}-
-            rust-macos-universal-
-
       - name: Cache Yarn
         uses: actions/cache@v4
         with:
@@ -126,8 +111,6 @@ jobs:
       - name: Build app (universal binary)
         env:
           NODE_OPTIONS: "--max-old-space-size=4196"
-          RUSTC_WRAPPER: sccache
-          SCCACHE_GHA_ENABLED: "true"
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
