@@ -52,7 +52,7 @@ export function HuggingFaceAuthorAvatar({
 
   return (
     <img
-      src={src}
+      src={src ?? undefined}
       alt=""
       className={cn('shrink-0 rounded-md object-cover', className)}
       onError={handleError}
