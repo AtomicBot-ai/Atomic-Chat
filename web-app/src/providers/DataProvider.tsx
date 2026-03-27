@@ -9,6 +9,8 @@ import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
+import { useAppUpdater } from '@/hooks/useAppUpdater'
+import { isDev } from '@/lib/utils'
 import { AppEvent, events } from '@janhq/core'
 import { SystemEvent } from '@/types/events'
 import { invoke } from '@tauri-apps/api/core'
@@ -89,6 +91,7 @@ export function DataProvider() {
   const { setThreads } = useThreads()
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
+  const { checkForUpdate } = useAppUpdater()
 
   // Local API Server hooks
   const {
@@ -180,20 +183,19 @@ export function DataProvider() {
     syncRemoteProviders()
   }, [providers])
 
-  //* Авто-проверка обновлений при старте и по таймеру отключена (попап DialogAppUpdater закомментирован в __root).
-  // useEffect(() => {
-  //   if (isDev()) {
-  //     return
-  //   }
-  //   checkForUpdate()
-  //   const intervalId = setInterval(() => {
-  //     console.log('Periodic update check triggered')
-  //     checkForUpdate()
-  //   }, Number(UPDATE_CHECK_INTERVAL_MS))
-  //   return () => {
-  //     clearInterval(intervalId)
-  //   }
-  // }, [checkForUpdate])
+  useEffect(() => {
+    if (isDev()) {
+      return
+    }
+    checkForUpdate()
+    const intervalId = setInterval(() => {
+      console.log('Periodic update check triggered')
+      checkForUpdate()
+    }, Number(UPDATE_CHECK_INTERVAL_MS))
+    return () => {
+      clearInterval(intervalId)
+    }
+  }, [checkForUpdate])
 
   useEffect(() => {
     events.on(AppEvent.onModelImported, () => {
