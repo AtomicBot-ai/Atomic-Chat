@@ -37,7 +37,6 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 
 import { useAppState } from '@/hooks/useAppState'
-import { MovingBorder } from './MovingBorder'
 import type { ChatStatus } from 'ai'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
@@ -1486,18 +1485,6 @@ const ChatInput = memo(function ChatInput({
             isStreaming && 'opacity-70'
           )}
         >
-          {isStreaming && (
-            <div className="absolute inset-0">
-              <MovingBorder rx="10%" ry="10%">
-                <div
-                  className={cn(
-                    'h-100 w-100 bg-[radial-gradient(var(--app-primary),transparent_60%)]'
-                  )}
-                />
-              </MovingBorder>
-            </div>
-          )}
-
           <div
             className={cn(
               'relative z-20 px-0 pb-10 border rounded-3xl border-input bg-white dark:bg-input/30',
