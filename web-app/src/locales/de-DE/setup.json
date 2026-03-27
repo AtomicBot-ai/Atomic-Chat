@@ -5,9 +5,12 @@
   "quickStart": "Schnellstart mit Atomic Bot Model",
   "quickStartDescription": "Keine Einrichtung erforderlich",
   "quickStartFailed": "Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.",
-  "downloading": "Atomic Bot Model wird heruntergeladen...",
+  "downloading": "Wird heruntergeladen…",
   "downloadingDescription": "Bitte warten Sie, während wir das Modell herunterladen. Dies kann einige Minuten dauern.",
   "orDivider": "oder",
   "localModel": "Lokales Modell einrichten",
-  "remoteProvider": "Fernen Anbieter einrichten"
+  "remoteProvider": "Fernen Anbieter einrichten",
+  "turboQuantTagline": "Lokale KI-Modelle auf Ihrem Gerät mit Googles TurboQuant - blitzschnell auf durchschnittlicher Hardware.",
+  "skip": "Überspringen",
+  "modelUnavailable": "Noch nicht im Katalog — Hub nach der Verbindung öffnen."
 }

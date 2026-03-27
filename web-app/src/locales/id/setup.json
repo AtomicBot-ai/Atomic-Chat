@@ -5,9 +5,12 @@
   "quickStart": "Mulai cepat dengan Atomic Bot Model",
   "quickStartDescription": "Tidak perlu pengaturan",
   "quickStartFailed": "Terjadi kesalahan. Silakan coba lagi.",
-  "downloading": "Mengunduh Atomic Bot Model...",
+  "downloading": "Mengunduh…",
   "downloadingDescription": "Harap tunggu saat kami mengunduh model. Ini mungkin memakan waktu beberapa menit.",
   "orDivider": "atau",
   "localModel": "Siapkan model lokal",
-  "remoteProvider": "Siapkan penyedia jarak jauh"
+  "remoteProvider": "Siapkan penyedia jarak jauh",
+  "turboQuantTagline": "Model AI lokal di perangkat Anda dengan TurboQuant dari Google - cepat di perangkat keras rata-rata.",
+  "skip": "Lewati",
+  "modelUnavailable": "Belum ada di katalog — buka Hub setelah terhubung."
 }

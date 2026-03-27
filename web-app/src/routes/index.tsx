@@ -10,6 +10,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import SetupScreen from '@/containers/SetupScreen'
 import { route } from '@/constants/routes'
 import { predefinedProviders } from '@/constants/providers'
+import { localStorageKey } from '@/constants/localStorage'
 
 type ThreadModel = {
   id: string
@@ -42,6 +43,11 @@ function Index() {
   const { setCurrentThreadId } = useThreads()
   useTools()
 
+  //* Нельзя useState: при SetupScreen родитель Index не размонтируется — после Skip читаем заново
+  const setupCompletedOrSkipped =
+    typeof window !== 'undefined' &&
+    localStorage.getItem(localStorageKey.setupCompleted) === 'true'
+
   // Conditional to check if there are any valid providers
   // required min 1 api_key or 1 model in llama.cpp or jan provider
   // Custom providers (not in predefinedProviders) don't require api_key but need models
@@ -67,7 +73,7 @@ function Index() {
     setCurrentThreadId(undefined)
   }, [setCurrentThreadId])
 
-  if (!hasValidProviders) {
+  if (!hasValidProviders && !setupCompletedOrSkipped) {
     return <SetupScreen />
   }
 

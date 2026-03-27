@@ -5,9 +5,12 @@
   "quickStart": "Início rápido com Atomic Bot Model",
   "quickStartDescription": "Nenhuma configuração necessária",
   "quickStartFailed": "Algo deu errado. Por favor, tente novamente.",
-  "downloading": "Baixando Atomic Bot Model...",
+  "downloading": "Baixando…",
   "downloadingDescription": "Por favor, aguarde enquanto baixamos o modelo. Isso pode levar alguns minutos.",
   "orDivider": "ou",
   "localModel": "Configurar modelo local",
-  "remoteProvider": "Configurar provedor remoto"
+  "remoteProvider": "Configurar provedor remoto",
+  "turboQuantTagline": "Modelos de IA locais no seu dispositivo com o TurboQuant do Google - rápidos em hardware comum.",
+  "skip": "Pular",
+  "modelUnavailable": "Ainda não está no catálogo — abra o Hub após conectar."
 }

@@ -5,13 +5,12 @@
   "quickStart": "Quick start with Atomic Bot Model",
   "quickStartDescription": "No setup needed",
   "quickStartFailed": "Something went wrong. Please try again.",
-  "downloading": "Downloading Atomic Bot Model...",
+  "downloading": "Downloading…",
   "downloadingDescription": "Please wait while we download the model. This may take a few minutes.",
   "orDivider": "or",
   "localModel": "Set up local model",
   "remoteProvider": "Set up remote provider",
-  "turboQuantTagline": "Atomic Chat runs local AI models on your device with TurboQuant—blazing fast on everyday hardware.",
+  "turboQuantTagline": "Local AI models on your device with Google's TurboQuant - blazing fast on average hardware.",
   "skip": "Skip",
-  "downloading": "Downloading…",
   "modelUnavailable": "Not in catalog yet — open Hub after connection."
 }

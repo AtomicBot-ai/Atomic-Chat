@@ -197,7 +197,8 @@ function HubContent() {
               ?.models.some(
                 (m: { id: string }) =>
                   m.id === variant.model_id ||
-                  m.id === `${model.developer}/${sanitizeModelId(variant.model_id)}`
+                  m.id ===
+                    `${model.developer}/${sanitizeModelId(variant.model_id)}`
               )
 
             const isMlxDownloaded = useModelProvider
@@ -206,7 +207,8 @@ function HubContent() {
               ?.models.some(
                 (m: { id: string }) =>
                   m.id === variant.model_id ||
-                  m.id === `${model.developer}/${sanitizeModelId(variant.model_id)}`
+                  m.id ===
+                    `${model.developer}/${sanitizeModelId(variant.model_id)}`
               )
 
             return isLlamaCppDownloaded || isMlxDownloaded
@@ -238,9 +240,7 @@ function HubContent() {
   )
 
   const showRecommendedBlock =
-    sortSelected === 'newest' &&
-    !debouncedSearchValue &&
-    !showOnlyDownloaded
+    sortSelected === 'newest' && !debouncedSearchValue && !showOnlyDownloaded
 
   //* На вкладке Newest рекомендации дублируются в блоке сверху — из списка ниже убираем те же модели
   const virtualListModels = useMemo(() => {
@@ -277,7 +277,8 @@ function HubContent() {
           getScrollElement: () => parentRef.current,
           estimateSize,
           overscan: 8,
-          measureElement: (el: HTMLElement) => el.getBoundingClientRect().height,
+          measureElement: (el: HTMLElement) =>
+            el.getBoundingClientRect().height,
         }
       : { count: 0, getScrollElement: () => null, estimateSize: () => 0 }
   )
@@ -468,7 +469,12 @@ function HubContent() {
     <div className="flex flex-col h-svh w-full">
       <div className="flex flex-col h-full w-full ">
         <HeaderPage>
-          <div className={cn("pr-3 py-3  h-10 w-full flex items-center justify-between relative z-20", !IS_MACOS && "pr-30")}>
+          <div
+            className={cn(
+              'pr-3 py-3  h-10 w-full flex items-center justify-between relative z-20',
+              !IS_MACOS && 'pr-30'
+            )}
+          >
             <div className="flex items-center gap-2 w-full min-w-0">
               {isSearching ? (
                 <Loader className="shrink-0 size-4 animate-spin text-muted-foreground" />
@@ -491,363 +497,378 @@ function HubContent() {
             </div>
           </div>
         </HeaderPage>
-        <div ref={parentRef} className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto!">
+        <div
+          ref={parentRef}
+          className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto!"
+        >
           <div className="flex flex-col h-full justify-between gap-4 w-full md:w-4/5 xl:w-4/6 mx-auto">
             {/* Рекомендации сверху списка Newest (без поиска и без фильтра «только скачанные») */}
             {showRecommendedBlock && (
-            <section className="shrink-0 border-b border-border pb-4">
-              <h2 className="text-sm font-medium mb-3 text-muted-foreground">
-                {t('hub:recTitle')}
-              </h2>
-              <div className="flex flex-col gap-1">
-                {recommendedItems.map(({ rec, model }) => {
-                  const goToModel = () => {
-                    navigate({
-                      to: route.hub.model,
-                      params: {
-                        modelId: model ? model.model_name : rec.modelName,
-                      },
-                    })
-                  }
-                  const recChip = (
-                    <span
-                      className="shrink-0 truncate rounded-full bg-black/70 px-2.5 py-1 text-center text-xs font-semibold text-white shadow-sm max-w-44 sm:max-w-56 dark:bg-white/70 dark:text-black"
-                      title={t(rec.descriptionKey)}
-                    >
-                      {t(rec.descriptionKey)}
-                    </span>
-                  )
-                  return model ? (
-                    <div key={`${rec.modelName}-${rec.descriptionKey}`}>
-                      <Card
-                      header={
-                        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-                          <div
-                            className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5"
-                            onClick={goToModel}
-                          >
-                            <h1
-                              className={cn(
-                                'min-w-0 shrink truncate text-foreground font-medium text-base capitalize',
-                                isRecommendedModel(model.model_name)
-                                  ? 'hub-model-card-step'
-                                  : ''
-                              )}
-                              title={
-                                extractModelName(model.model_name) || ''
-                              }
-                            >
-                              {extractModelName(model.model_name) || ''}
-                            </h1>
-                            {recChip}
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2 justify-end shrink-0">
-                            <span className="text-muted-foreground font-medium text-xs whitespace-nowrap">
-                              {model.is_mlx
-                                ? model.safetensors_files?.[0]?.file_size
-                                : (
+              <section className="shrink-0 border-b border-border pb-4">
+                <h2 className="text-sm font-medium mb-3 text-muted-foreground">
+                  {t('hub:recTitle')}
+                </h2>
+                <div className="flex flex-col gap-1">
+                  {recommendedItems.map(({ rec, model }) => {
+                    const goToModel = () => {
+                      navigate({
+                        to: route.hub.model,
+                        params: {
+                          modelId: model ? model.model_name : rec.modelName,
+                        },
+                      })
+                    }
+                    const recChip = (
+                      <span
+                        className="shrink-0 truncate rounded-full bg-black/90 px-2.5 py-1 text-center text-xs font-semibold text-white shadow-sm max-w-44 sm:max-w-56 dark:bg-white/90 dark:text-black"
+                        title={t(rec.descriptionKey)}
+                      >
+                        {t(rec.descriptionKey)}
+                      </span>
+                    )
+                    return model ? (
+                      <div key={`${rec.modelName}-${rec.descriptionKey}`}>
+                        <Card
+                          header={
+                            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+                              <div
+                                className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5"
+                                onClick={goToModel}
+                              >
+                                <h1
+                                  className={cn(
+                                    'min-w-0 shrink truncate text-foreground font-medium text-base capitalize',
+                                    isRecommendedModel(model.model_name)
+                                      ? 'hub-model-card-step'
+                                      : ''
+                                  )}
+                                  title={
+                                    extractModelName(model.model_name) || ''
+                                  }
+                                >
+                                  {extractModelName(model.model_name) || ''}
+                                </h1>
+                                {recChip}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2 justify-end shrink-0">
+                                <span className="text-muted-foreground font-medium text-xs whitespace-nowrap">
+                                  {model.is_mlx
+                                    ? model.safetensors_files?.[0]?.file_size
+                                    : (
+                                        model.quants?.find((m) =>
+                                          DEFAULT_MODEL_QUANTIZATIONS.some(
+                                            (e) =>
+                                              m.model_id
+                                                .toLowerCase()
+                                                .includes(e)
+                                          )
+                                        ) ?? model.quants?.[0]
+                                      )?.file_size}
+                                </span>
+                                <ModelInfoHoverCard
+                                  model={model}
+                                  defaultModelQuantizations={
+                                    DEFAULT_MODEL_QUANTIZATIONS
+                                  }
+                                  variant={
                                     model.quants?.find((m) =>
                                       DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
                                         m.model_id.toLowerCase().includes(e)
                                       )
                                     ) ?? model.quants?.[0]
-                                  )?.file_size}
-                            </span>
-                            <ModelInfoHoverCard
-                              model={model}
-                              defaultModelQuantizations={
-                                DEFAULT_MODEL_QUANTIZATIONS
-                              }
-                              variant={
-                                model.quants?.find((m) =>
-                                  DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
-                                    m.model_id.toLowerCase().includes(e)
-                                  )
-                                ) ?? model.quants?.[0]
-                              }
-                              isDefaultVariant={true}
-                              modelSupportStatus={modelSupportStatus}
-                              onCheckModelSupport={checkModelSupport}
-                            />
-                            {model.is_mlx ? (
-                              <MlxModelDownloadAction model={model} />
-                            ) : (
-                              <DownloadButtonPlaceholder
-                                model={model}
-                                handleUseModel={handleUseModel}
-                              />
-                            )}
-                          </div>
-                        </div>
-                      }
-                    >
-                      <div
-                        className="line-clamp-2 mt-3 text-muted-foreground leading-normal cursor-pointer"
-                        onClick={(e) => {
-                          if (!(e.target as HTMLElement).closest('a')) {
-                            goToModel()
-                          }
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault()
-                            goToModel()
-                          }
-                        }}
-                        role="button"
-                        tabIndex={0}
-                      >
-                        <RenderMarkdown
-                          className="select-none reset-heading"
-                          components={{
-                            a: ({ ...props }) => (
-                              <a
-                                {...props}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                              />
-                            ),
-                          }}
-                          content={
-                            extractDescription(model?.description) || ''
-                          }
-                        />
-                      </div>
-                      <div
-                        className="flex items-center gap-2 mt-2 cursor-pointer"
-                        onClick={goToModel}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault()
-                            goToModel()
-                          }
-                        }}
-                        role="button"
-                        tabIndex={0}
-                      >
-                        <span className="capitalize text-foreground">
-                          {t('hub:by')} {model?.developer}
-                        </span>
-                        <div className="flex items-center gap-4 ml-2">
-                          <div className="flex items-center gap-1">
-                            <IconDownload
-                              size={18}
-                              className="text-muted-foreground"
-                              title={t('hub:downloads')}
-                            />
-                            <span className="text-foreground">
-                              {model.downloads || 0}
-                            </span>
-                          </div>
-                          {!model.is_mlx && (
-                            <div className="flex items-center gap-1">
-                              <IconFileCode
-                                size={20}
-                                className="text-muted-foreground"
-                                title={t('hub:variants')}
-                              />
-                              <span className="text-foreground">
-                                {model.quants?.length || 0}
-                              </span>
+                                  }
+                                  isDefaultVariant={true}
+                                  modelSupportStatus={modelSupportStatus}
+                                  onCheckModelSupport={checkModelSupport}
+                                />
+                                {model.is_mlx ? (
+                                  <MlxModelDownloadAction model={model} />
+                                ) : (
+                                  <DownloadButtonPlaceholder
+                                    model={model}
+                                    handleUseModel={handleUseModel}
+                                  />
+                                )}
+                              </div>
                             </div>
-                          )}
-                          {model.is_mlx && (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">
-                                  MLX
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Requires MLX engine (Apple Silicon only)</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          )}
-                          <div className="flex gap-1.5 items-center">
-                            {(model.num_mmproj ?? 0) > 0 && (
-                              <div className="flex items-center gap-1">
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <div>
-                                      <IconEye
-                                      size={17}
-                                      className="text-muted-foreground"
-                                    />
-                                    </div>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>{t('vision')}</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </div>
-                            )}
-                            {model.tools && (
-                              <div className="flex items-center gap-1">
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <div>
-                                      <IconTool
-                                        size={17}
-                                        className="text-muted-foreground"
-                                      />
-                                    </div>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>{t('tools')}</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        {(model.quants?.length ?? 0) > 1 && (
-                          <button
-                            className="flex items-center gap-1 hub-show-variants-step ml-auto"
-                            onClick={() =>
-                              toggleModelExpansion(model.model_name)
-                            }
-                          >
-                            <span className="text-foreground">
-                              {t('hub:showVariants')}
-                            </span>
-                            {expandedModels[model.model_name] ? (
-                              <IconChevronUp
-                                size={18}
-                                className="text-muted-foreground"
-                              />
-                            ) : (
-                              <IconChevronDown
-                                size={18}
-                                className="text-muted-foreground"
-                              />
-                            )}
-                          </button>
-                        )}
-                      </div>
-                      {expandedModels[model.model_name] &&
-                        (model.quants?.length ?? 0) > 0 && (
-                          <div className="mt-5">
-                            {model.quants?.map((variant) => (
-                              <CardItem
-                                key={variant.model_id}
-                                title={
-                                  <>
-                                    <div className="flex items-center gap-1">
-                                      <span className="mr-2">
-                                        {variant.model_id}
-                                      </span>
-                                      {(model.num_mmproj ?? 0) > 0 && (
-                                        <div className="flex items-center gap-1">
-                                          <Tooltip>
-                                            <TooltipTrigger asChild>
-                                              <div>
-                                                <IconEye
-                                                  size={17}
-                                                  className="text-muted-foreground"
-                                                />
-                                              </div>
-                                            </TooltipTrigger>
-                                            <TooltipContent>
-                                              <p>{t('vision')}</p>
-                                            </TooltipContent>
-                                          </Tooltip>
-                                        </div>
-                                      )}
-                                      {model.tools && (
-                                        <div className="flex items-center gap-1">
-                                          <Tooltip>
-                                            <TooltipTrigger asChild>
-                                              <div>
-                                                <IconTool
-                                                  size={17}
-                                                  className="text-muted-foreground"
-                                                />
-                                              </div>
-                                            </TooltipTrigger>
-                                            <TooltipContent>
-                                              <p>{t('tools')}</p>
-                                            </TooltipContent>
-                                          </Tooltip>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </>
-                                }
-                                actions={
-                                  <div className="flex items-center gap-2">
-                                    <p className="text-muted-foreground font-medium text-xs">
-                                      {variant.file_size}
-                                    </p>
-                                    <ModelInfoHoverCard
-                                      model={model}
-                                      variant={variant}
-                                      defaultModelQuantizations={
-                                        DEFAULT_MODEL_QUANTIZATIONS
-                                      }
-                                      modelSupportStatus={modelSupportStatus}
-                                      onCheckModelSupport={checkModelSupport}
-                                    />
-                                    {model.is_mlx ? (
-                                      <MlxModelDownloadAction model={model} />
-                                    ) : (
-                                      <ModelDownloadAction
-                                        variant={variant}
-                                        model={model}
-                                      />
-                                    )}
-                                  </div>
-                                }
-                              />
-                            ))}
-                          </div>
-                        )}
-                    </Card>
-                    </div>
-                  ) : (
-                    <div key={`${rec.modelName}-${rec.descriptionKey}`}>
-                      <Card
-                      header={
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                          }
+                        >
                           <div
-                            className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5"
+                            className="line-clamp-2 mt-3 text-muted-foreground leading-normal cursor-pointer"
+                            onClick={(e) => {
+                              if (!(e.target as HTMLElement).closest('a')) {
+                                goToModel()
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault()
+                                goToModel()
+                              }
+                            }}
+                            role="button"
+                            tabIndex={0}
+                          >
+                            <RenderMarkdown
+                              className="select-none reset-heading"
+                              components={{
+                                a: ({ ...props }) => (
+                                  <a
+                                    {...props}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  />
+                                ),
+                              }}
+                              content={
+                                extractDescription(model?.description) || ''
+                              }
+                            />
+                          </div>
+                          <div
+                            className="flex items-center gap-2 mt-2 cursor-pointer"
+                            onClick={goToModel}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault()
+                                goToModel()
+                              }
+                            }}
+                            role="button"
+                            tabIndex={0}
+                          >
+                            <span className="capitalize text-foreground">
+                              {t('hub:by')} {model?.developer}
+                            </span>
+                            <div className="flex items-center gap-4 ml-2">
+                              <div className="flex items-center gap-1">
+                                <IconDownload
+                                  size={18}
+                                  className="text-muted-foreground"
+                                  title={t('hub:downloads')}
+                                />
+                                <span className="text-foreground">
+                                  {model.downloads || 0}
+                                </span>
+                              </div>
+                              {!model.is_mlx && (
+                                <div className="flex items-center gap-1">
+                                  <IconFileCode
+                                    size={20}
+                                    className="text-muted-foreground"
+                                    title={t('hub:variants')}
+                                  />
+                                  <span className="text-foreground">
+                                    {model.quants?.length || 0}
+                                  </span>
+                                </div>
+                              )}
+                              {model.is_mlx && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">
+                                      MLX
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>
+                                      Requires MLX engine (Apple Silicon only)
+                                    </p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              )}
+                              <div className="flex gap-1.5 items-center">
+                                {(model.num_mmproj ?? 0) > 0 && (
+                                  <div className="flex items-center gap-1">
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div>
+                                          <IconEye
+                                            size={17}
+                                            className="text-muted-foreground"
+                                          />
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>{t('vision')}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </div>
+                                )}
+                                {model.tools && (
+                                  <div className="flex items-center gap-1">
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div>
+                                          <IconTool
+                                            size={17}
+                                            className="text-muted-foreground"
+                                          />
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>{t('tools')}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            {(model.quants?.length ?? 0) > 1 && (
+                              <button
+                                className="flex items-center gap-1 hub-show-variants-step ml-auto"
+                                onClick={() =>
+                                  toggleModelExpansion(model.model_name)
+                                }
+                              >
+                                <span className="text-foreground">
+                                  {t('hub:showVariants')}
+                                </span>
+                                {expandedModels[model.model_name] ? (
+                                  <IconChevronUp
+                                    size={18}
+                                    className="text-muted-foreground"
+                                  />
+                                ) : (
+                                  <IconChevronDown
+                                    size={18}
+                                    className="text-muted-foreground"
+                                  />
+                                )}
+                              </button>
+                            )}
+                          </div>
+                          {expandedModels[model.model_name] &&
+                            (model.quants?.length ?? 0) > 0 && (
+                              <div className="mt-5">
+                                {model.quants?.map((variant) => (
+                                  <CardItem
+                                    key={variant.model_id}
+                                    title={
+                                      <>
+                                        <div className="flex items-center gap-1">
+                                          <span className="mr-2">
+                                            {variant.model_id}
+                                          </span>
+                                          {(model.num_mmproj ?? 0) > 0 && (
+                                            <div className="flex items-center gap-1">
+                                              <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                  <div>
+                                                    <IconEye
+                                                      size={17}
+                                                      className="text-muted-foreground"
+                                                    />
+                                                  </div>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                  <p>{t('vision')}</p>
+                                                </TooltipContent>
+                                              </Tooltip>
+                                            </div>
+                                          )}
+                                          {model.tools && (
+                                            <div className="flex items-center gap-1">
+                                              <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                  <div>
+                                                    <IconTool
+                                                      size={17}
+                                                      className="text-muted-foreground"
+                                                    />
+                                                  </div>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                  <p>{t('tools')}</p>
+                                                </TooltipContent>
+                                              </Tooltip>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </>
+                                    }
+                                    actions={
+                                      <div className="flex items-center gap-2">
+                                        <p className="text-muted-foreground font-medium text-xs">
+                                          {variant.file_size}
+                                        </p>
+                                        <ModelInfoHoverCard
+                                          model={model}
+                                          variant={variant}
+                                          defaultModelQuantizations={
+                                            DEFAULT_MODEL_QUANTIZATIONS
+                                          }
+                                          modelSupportStatus={
+                                            modelSupportStatus
+                                          }
+                                          onCheckModelSupport={
+                                            checkModelSupport
+                                          }
+                                        />
+                                        {model.is_mlx ? (
+                                          <MlxModelDownloadAction
+                                            model={model}
+                                          />
+                                        ) : (
+                                          <ModelDownloadAction
+                                            variant={variant}
+                                            model={model}
+                                          />
+                                        )}
+                                      </div>
+                                    }
+                                  />
+                                ))}
+                              </div>
+                            )}
+                        </Card>
+                      </div>
+                    ) : (
+                      <div key={`${rec.modelName}-${rec.descriptionKey}`}>
+                        <Card
+                          header={
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                              <div
+                                className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5"
+                                onClick={goToModel}
+                              >
+                                <h1 className="min-w-0 shrink truncate text-foreground font-medium text-base capitalize">
+                                  {extractModelName(rec.modelName) ||
+                                    rec.modelName}
+                                </h1>
+                                {recChip}
+                              </div>
+                            </div>
+                          }
+                        >
+                          <div
+                            className="mt-3 text-muted-foreground text-sm cursor-pointer"
+                            onClick={goToModel}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault()
+                                goToModel()
+                              }
+                            }}
+                            role="button"
+                            tabIndex={0}
+                          >
+                            {t(rec.descriptionKey)}
+                          </div>
+                          <p
+                            className="mt-2 text-xs text-muted-foreground cursor-pointer"
                             onClick={goToModel}
                           >
-                            <h1 className="min-w-0 shrink truncate text-foreground font-medium text-base capitalize">
-                              {extractModelName(rec.modelName) || rec.modelName}
-                            </h1>
-                            {recChip}
-                          </div>
-                        </div>
-                      }
-                    >
-                      <div
-                        className="mt-3 text-muted-foreground text-sm cursor-pointer"
-                        onClick={goToModel}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault()
-                            goToModel()
-                          }
-                        }}
-                        role="button"
-                        tabIndex={0}
-                      >
-                        {t(rec.descriptionKey)}
+                            {t('hub:by')} {rec.modelName.split('/')[0]}
+                          </p>
+                        </Card>
                       </div>
-                      <p
-                        className="mt-2 text-xs text-muted-foreground cursor-pointer"
-                        onClick={goToModel}
-                      >
-                        {t('hub:by')} {rec.modelName.split('/')[0]}
-                      </p>
-                    </Card>
-                    </div>
-                  )
-                })}
+                    )
+                  })}
                 </div>
               </section>
             )}
-            {(isInitialLoad || (loading && !filteredModels.length)) ? (
+            {isInitialLoad || (loading && !filteredModels.length) ? (
               // Skeleton loading state for better perceived performance
               <div className="flex flex-col gap-3 animate-pulse">
                 {[...Array(5)].map((_, i) => (
@@ -944,7 +965,8 @@ function HubContent() {
                                 }
                               >
                                 {extractModelName(
-                                  virtualListModels[virtualItem.index].model_name
+                                  virtualListModels[virtualItem.index]
+                                    .model_name
                                 ) || ''}
                               </h1>
                             </div>
@@ -1013,7 +1035,8 @@ function HubContent() {
                             }}
                             content={
                               extractDescription(
-                                virtualListModels[virtualItem.index]?.description
+                                virtualListModels[virtualItem.index]
+                                  ?.description
                               ) || ''
                             }
                           />
@@ -1056,13 +1079,15 @@ function HubContent() {
                                   </span>
                                 </TooltipTrigger>
                                 <TooltipContent>
-                                  <p>Requires MLX engine (Apple Silicon only)</p>
+                                  <p>
+                                    Requires MLX engine (Apple Silicon only)
+                                  </p>
                                 </TooltipContent>
                               </Tooltip>
                             )}
                             <div className="flex gap-1.5 items-center">
-                              {(virtualListModels[virtualItem.index].num_mmproj ?? 0) >
-                                0 && (
+                              {(virtualListModels[virtualItem.index]
+                                .num_mmproj ?? 0) > 0 && (
                                 <div className="flex items-center gap-1">
                                   <Tooltip>
                                     <TooltipTrigger asChild>
@@ -1098,8 +1123,8 @@ function HubContent() {
                               )}
                             </div>
                           </div>
-                          {(virtualListModels[virtualItem.index].quants?.length ?? 0) >
-                            1 && (
+                          {(virtualListModels[virtualItem.index].quants
+                            ?.length ?? 0) > 1 && (
                             <button
                               className="flex items-center gap-1 hub-show-variants-step ml-auto"
                               onClick={() =>
@@ -1131,8 +1156,8 @@ function HubContent() {
                         {expandedModels[
                           virtualListModels[virtualItem.index].model_name
                         ] &&
-                          (virtualListModels[virtualItem.index].quants?.length ?? 0) >
-                            0 && (
+                          (virtualListModels[virtualItem.index].quants
+                            ?.length ?? 0) > 0 && (
                             <div className="mt-5">
                               {virtualListModels[virtualItem.index].quants?.map(
                                 (variant) => (
@@ -1144,7 +1169,8 @@ function HubContent() {
                                           <span className="mr-2">
                                             {variant.model_id}
                                           </span>
-                                          {(virtualListModels[virtualItem.index].num_mmproj ?? 0) > 0 && (
+                                          {(virtualListModels[virtualItem.index]
+                                            .num_mmproj ?? 0) > 0 && (
                                             <div className="flex items-center gap-1">
                                               <Tooltip>
                                                 <TooltipTrigger asChild>
@@ -1206,14 +1232,18 @@ function HubContent() {
                                           .is_mlx ? (
                                           <MlxModelDownloadAction
                                             model={
-                                              virtualListModels[virtualItem.index]
+                                              virtualListModels[
+                                                virtualItem.index
+                                              ]
                                             }
                                           />
                                         ) : (
                                           <ModelDownloadAction
                                             variant={variant}
                                             model={
-                                              virtualListModels[virtualItem.index]
+                                              virtualListModels[
+                                                virtualItem.index
+                                              ]
                                             }
                                           />
                                         )}

@@ -5,9 +5,12 @@
   "quickStart": "Rychlý start s Atomic Bot Model",
   "quickStartDescription": "Není potřeba žádné nastavení",
   "quickStartFailed": "Něco se pokazilo. Zkuste to prosím znovu.",
-  "downloading": "Stahování Atomic Bot Model...",
+  "downloading": "Stahování…",
   "downloadingDescription": "Počkejte prosím, než stáhneme model. Může to trvat několik minut.",
   "orDivider": "nebo",
   "localModel": "Nastavit místní model",
-  "remoteProvider": "Nastavit vzdáleného poskytovatele"
+  "remoteProvider": "Nastavit vzdáleného poskytovatele",
+  "turboQuantTagline": "Lokální AI modely na vašem zařízení s TurboQuant od Google - rychlé i na běžném hardwaru.",
+  "skip": "Přeskočit",
+  "modelUnavailable": "Zatím není v katalogu — po připojení otevřete Hub."
 }

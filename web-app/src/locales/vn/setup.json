@@ -5,9 +5,12 @@
   "quickStart": "Khởi động nhanh với Atomic Bot Model",
   "quickStartDescription": "Không cần thiết lập",
   "quickStartFailed": "Đã xảy ra lỗi. Vui lòng thử lại.",
-  "downloading": "Đang tải xuống Atomic Bot Model...",
+  "downloading": "Đang tải…",
   "downloadingDescription": "Vui lòng đợi trong khi chúng tôi tải xuống mô hình. Điều này có thể mất vài phút.",
   "orDivider": "hoặc",
   "localModel": "Thiết lập mô hình cục bộ",
-  "remoteProvider": "Thiết lập nhà cung cấp từ xa"
+  "remoteProvider": "Thiết lập nhà cung cấp từ xa",
+  "turboQuantTagline": "Mô hình AI cục bộ trên thiết bị với TurboQuant của Google - nhanh trên phần cứng phổ thông.",
+  "skip": "Bỏ qua",
+  "modelUnavailable": "Chưa có trong danh mục — mở Hub sau khi kết nối."
 }

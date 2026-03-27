@@ -5,9 +5,12 @@
   "quickStart": "Atomic Bot Modelでクイックスタート",
   "quickStartDescription": "セットアップ不要",
   "quickStartFailed": "エラーが発生しました。もう一度お試しください。",
-  "downloading": "Atomic Bot Modelをダウンロード中...",
+  "downloading": "ダウンロード中…",
   "downloadingDescription": "モデルをダウンロードしていますのでお待ちください。数分かかる場合があります。",
   "orDivider": "または",
   "localModel": "ローカルモデルをセットアップ",
-  "remoteProvider": "リモートプロバイダーをセットアップ"
+  "remoteProvider": "リモートプロバイダーをセットアップ",
+  "turboQuantTagline": "Google の TurboQuant でお使いのデバイス上のローカル AI モデル - 一般的な環境でも高速に動作します。",
+  "skip": "スキップ",
+  "modelUnavailable": "まだカタログにありません — 接続後に Hub を開いてください。"
 }

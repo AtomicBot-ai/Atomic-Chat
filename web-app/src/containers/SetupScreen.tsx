@@ -188,7 +188,12 @@ function SetupScreen() {
 
   const handleSkip = useCallback(() => {
     localStorage.setItem(localStorageKey.setupCompleted, 'true')
-    navigate({ to: route.home, replace: true })
+    localStorage.removeItem(localStorageKey.lastUsedModel)
+    navigate({
+      to: route.home,
+      replace: true,
+      search: {},
+    })
   }, [navigate])
 
   return (
@@ -236,10 +241,7 @@ function SetupScreen() {
               >
                 {anyDownloading
                   ? 'This may take a few minutes.'
-                  : t('setup:turboQuantTagline', {
-                      defaultValue:
-                        "Local AI models on your device with Google's TurboQuant—blazing fast on average hardware.",
-                    })}
+                  : t('setup:turboQuantTagline')}
               </p>
             </div>
 
@@ -317,7 +319,7 @@ function SetupScreen() {
                                 ) : null}
                               </h2>
                               <span
-                                className="mt-1.5 inline-block max-w-full truncate rounded-full bg-black/85 px-2.5 py-0.5 text-xs font-semibold text-white dark:bg-white/85 dark:text-black sm:max-w-md"
+                                className="mt-1.5 inline-block max-w-full truncate rounded-full bg-black/90 px-2.5 py-0.5 text-xs font-semibold text-white shadow-sm dark:bg-white/90 dark:text-black sm:max-w-md"
                                 title={t(rec.descriptionKey)}
                               >
                                 {t(rec.descriptionKey)}
@@ -326,10 +328,7 @@ function SetupScreen() {
                                 <p className="mt-1 text-xs text-muted-foreground">
                                   {sourcesLoading
                                     ? t('hub:loadingModels')
-                                    : t('setup:modelUnavailable', {
-                                        defaultValue:
-                                          'Not in catalog yet — open Hub after connection.',
-                                      })}
+                                    : t('setup:modelUnavailable')}
                                 </p>
                               )}
                             </div>
@@ -350,9 +349,7 @@ function SetupScreen() {
                             {rowDownloaded
                               ? t('hub:downloaded')
                               : rowDownloading
-                                ? t('setup:downloading', {
-                                    defaultValue: 'Downloading…',
-                                  })
+                                ? t('setup:downloading')
                                 : t('hub:download')}
                           </Button>
                         </div>
@@ -368,7 +365,7 @@ function SetupScreen() {
                     onClick={handleSkip}
                     className="text-muted-foreground/60 hover:text-muted-foreground h-auto p-0 text-xs font-normal underline-offset-4"
                   >
-                    {t('setup:skip', { defaultValue: 'Skip' })}
+                    {t('setup:skip')}
                   </Button>
                 </div>
               </div>
