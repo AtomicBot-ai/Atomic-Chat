@@ -352,10 +352,26 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
     let quit_i = MenuItem::with_id(app.handle(), "quit", "Quit", true, None::<&str>)?;
     let separator_i = PredefinedMenuItem::separator(app.handle())?;
     let menu = Menu::with_items(app.handle(), &[&show_i, &separator_i, &quit_i])?;
-    TrayIconBuilder::with_id("tray")
-        .icon(app.default_window_icon().unwrap().clone())
+
+    //* Иконка в строке меню macOS: отдельный asset; icon_as_template(false) — показывать PNG как есть
+    let mut tray_builder = TrayIconBuilder::with_id("tray")
         .menu(&menu)
-        .show_menu_on_left_click(false)
+        .show_menu_on_left_click(false);
+
+    #[cfg(target_os = "macos")]
+    {
+        let menu_bar_icon = tauri::image::Image::from_bytes(include_bytes!(
+            "../../../web-app/public/images/app-icon.png"
+        ))?;
+        tray_builder = tray_builder.icon(menu_bar_icon).icon_as_template(false);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        tray_builder = tray_builder.icon(app.default_window_icon().unwrap().clone());
+    }
+
+    tray_builder
         .on_tray_icon_event(|tray, event| match event {
             TrayIconEvent::Click {
                 button: MouseButton::Left,
