@@ -28,7 +28,7 @@ export function LeftSidebar() {
               title="Atomic Bot"
             >
               <img
-                src="/images/atomic-chat-logo.png"
+                src="/images/transparent-logo.png"
                 alt="Atomic Bot"
                 className="size-full min-h-0 min-w-0 object-contain invert dark:invert-0"
               />

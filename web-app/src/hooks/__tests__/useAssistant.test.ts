@@ -150,7 +150,7 @@ describe('useAssistant', () => {
     expect(result.current.currentAssistant.id).toBe('jan')
     expect(result.current.currentAssistant.name).toBe('Atomic Chat')
     expect(result.current.currentAssistant.avatar).toBe(
-      '/images/atomic-chat-logo.png'
+      '/images/transparent-logo.png'
     )
     expect(result.current.currentAssistant.instructions).toContain(
       'Before engaging any tools, articulate your complete thought process in natural language'
@@ -181,6 +181,8 @@ describe('useAssistant', () => {
       result.current.updateAssistant(updatedDefaultAssistant)
     })
 
-    expect(result.current.currentAssistant.name).toBe('Updated Atomic Chat Name')
+    expect(result.current.currentAssistant.name).toBe(
+      'Updated Atomic Chat Name'
+    )
   })
 })

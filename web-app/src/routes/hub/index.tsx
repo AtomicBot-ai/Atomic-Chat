@@ -16,6 +16,7 @@ import {
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { Card, CardItem } from '@/containers/Card'
 import { extractModelName, extractDescription } from '@/lib/models'
+import { useResolvedRecommendedModels } from '@/hooks/useResolvedRecommendedModels'
 import {
   IconChevronDown,
   IconChevronUp,
@@ -159,18 +160,7 @@ function HubContent() {
     return () => clearTimeout(handler)
   }, [searchValue])
 
-  //* Resolve recommended: match by display name (e.g. bartowski/Llama-3.2-3B-Instruct-GGUF matches rec)
-  const recommendedItems = useMemo(
-    () =>
-      HUB_RECOMMENDED_MODELS.map((rec) => {
-        const recDisplayName = extractModelName(rec.modelName)
-        const model = sources.find(
-          (s) => extractModelName(s.model_name) === recDisplayName
-        )
-        return { rec, model }
-      }),
-    [sources]
-  )
+  const recommendedItems = useResolvedRecommendedModels(sources)
 
   const filteredModels = useMemo(() => {
     let filtered = sortedModels

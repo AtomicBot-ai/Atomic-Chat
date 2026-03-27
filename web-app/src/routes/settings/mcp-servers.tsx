@@ -499,7 +499,7 @@ function MCPServersDesktop() {
                           {config.official && (
                             <div className="flex items-center gap-1.5 px-2 py-0.5 text-xs bg-secondary border rounded-sm">
                               <img
-                                src="/images/atomic-chat-logo.png"
+                                src="/images/transparent-logo.png"
                                 alt="Atomic Bot"
                                 className="w-3 h-3 object-contain"
                               />

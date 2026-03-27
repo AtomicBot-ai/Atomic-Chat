@@ -15,7 +15,7 @@ function MermaidErrorComponent({ error }: MermaidErrorComponentProps) {
   return (
     <div className="flex flex-col items-center justify-center p-6 gap-3">
       <img
-        src="/images/atomic-chat-logo.png"
+        src="/images/transparent-logo.png"
         alt="Atomic Bot"
         className="h-12 w-12 dark:brightness-0 dark:invert"
       />

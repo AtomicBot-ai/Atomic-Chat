@@ -1,4 +1,5 @@
 import { providerModels as models } from '@/constants/models'
+import type { CatalogModel } from '@/services/models/types'
 import { ModelCapabilities } from '@/types/models'
 
 export const defaultModel = (provider?: string) => {
@@ -80,6 +81,20 @@ export const removeYamlFrontMatter = (content: string): string => {
  */
 export const extractModelName = (model?: string) => {
   return model?.split('/')[1] ?? model
+}
+
+//* Hub / setup: рекомендованный repo id ↔ запись каталога (регистр, полный путь)
+export function findCatalogModelForRecommendedRepo(
+  sources: readonly CatalogModel[],
+  recommendedRepoId: string
+): CatalogModel | undefined {
+  const recTail = extractModelName(recommendedRepoId)?.toLowerCase() ?? ''
+  if (!recTail) return undefined
+  return sources.find((s) => {
+    if (s.model_name === recommendedRepoId) return true
+    const st = extractModelName(s.model_name)?.toLowerCase() ?? ''
+    return st === recTail
+  })
 }
 
 /**

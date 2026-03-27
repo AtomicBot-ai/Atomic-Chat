@@ -642,7 +642,7 @@ async fn select_model_interactively(select_quantization: bool) -> String {
     }
 
     if all.is_empty() {
-        let default_model = "unsloth/Qwen3.5-4B-GGUF";
+        let default_model = "Jackrong/Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-GGUF";
         println!();
         let msg = Style::new().yellow().apply_to(
             "No models found. Downloading default model..."

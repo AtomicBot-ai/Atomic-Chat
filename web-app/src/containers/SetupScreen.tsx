@@ -8,14 +8,12 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useMemo, useCallback, useRef } from 'react'
 import { AppEvent, events } from '@janhq/core'
 import type { CatalogModel, ModelQuant } from '@/services/models/types'
-import {
-  DEFAULT_MODEL_QUANTIZATIONS,
-  HUB_RECOMMENDED_MODELS,
-} from '@/constants/models'
+import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { cn, sanitizeModelId } from '@/lib/utils'
 import { extractModelName } from '@/lib/models'
+import { useResolvedRecommendedModels } from '@/hooks/useResolvedRecommendedModels'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import HeaderPage from './HeaderPage'
 import { useModelSources } from '@/hooks/useModelSources'
@@ -79,17 +77,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     fetchSources()
   }, [fetchSources])
 
-  const recommendedItems = useMemo(
-    () =>
-      HUB_RECOMMENDED_MODELS.map((rec) => {
-        const recDisplayName = extractModelName(rec.modelName)
-        const model = sources.find(
-          (s) => extractModelName(s.model_name) === recDisplayName
-        )
-        return { rec, model }
-      }),
-    [sources]
-  )
+  const recommendedItems = useResolvedRecommendedModels(sources)
 
   const downloadProcesses = useMemo(
     () =>
@@ -213,7 +201,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                 <div className="mb-5 flex items-center justify-center gap-3 font-studio text-5xl font-semibold leading-none tracking-tight sm:text-6xl">
                   <div className="flex h-[1em] w-[1em] shrink-0 items-center justify-center rounded-lg bg-neutral-950 p-[3px] shadow-sm dark:bg-white dark:shadow-none">
                     <img
-                      src="/images/atomic-chat-logo.png"
+                      src="/images/transparent-logo.png"
                       alt=""
                       className="size-full min-h-0 min-w-0 object-contain invert dark:invert-0"
                       draggable={false}

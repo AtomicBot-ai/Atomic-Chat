@@ -196,7 +196,7 @@ export function PromptVisionModel({
     <div className="fixed bottom-4 right-4 z-50 p-4 shadow-lg bg-background w-4/5 md:w-100 border rounded-lg">
       <div className="flex items-center gap-2">
         <img
-          src="/images/atomic-chat-logo.png"
+          src="/images/transparent-logo.png"
           alt="Atomic Bot"
           className="size-5 dark:brightness-0 dark:invert"
         />

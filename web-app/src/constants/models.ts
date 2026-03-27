@@ -2,7 +2,8 @@
  * Model-related constants
  */
 
-export const NEW_JAN_MODEL_HF_REPO = 'unsloth/Qwen3.5-4B-GGUF'
+export const NEW_JAN_MODEL_HF_REPO =
+  'Jackrong/Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-GGUF'
 export const JAN_CODE_HF_REPO = 'janhq/Jan-Code-4b-Gguf'
 export const DEFAULT_MODEL_QUANTIZATIONS = ['iq4_xs', 'q4_k_m']
 
@@ -18,7 +19,8 @@ export const HUB_RECOMMENDED_MODELS: ReadonlyArray<{
   descriptionKey: string
 }> = [
   {
-    modelName: 'unsloth/Qwen3.5-4B-GGUF',
+    modelName:
+      'Jackrong/Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-GGUF',
     descriptionKey: 'hub:recEverydayUse',
   },
   {

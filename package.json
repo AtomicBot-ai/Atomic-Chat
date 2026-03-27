@@ -43,7 +43,7 @@
     "build:tauri:darwin:native": "yarn download:bin && yarn build:mlx-server && yarn build:foundation-models-server && cd src-tauri && cargo build --release --features cli --bin jan-cli && cp target/release/jan-cli resources/bin/jan-cli && chmod +x resources/bin/jan-cli && cd .. && yarn tauri build",
     "build:tauri": "yarn build:icon && yarn copy:assets:tauri && run-script-os",
     "build:tauri:plugin:api": "cd src-tauri/plugins && yarn install && yarn workspaces foreach -Apt run build",
-    "build:icon": "python3 scripts/build-macos-app-icon.py && tauri icon ./src-tauri/icons/icon.png",
+    "build:icon": "python3 scripts/build-macos-app-icon.py && tauri icon ./src-tauri/icons/icon.png && python3 scripts/build-macos-app-icon.py",
     "build:core": "cd core && yarn build && yarn pack",
     "build:web": "yarn workspace @janhq/web-app build",
     "build:extensions": "rimraf ./pre-install/*.tgz || true && yarn workspace @janhq/core build && cd extensions && yarn install && cd .. && run-script-os",

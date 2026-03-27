@@ -46,7 +46,7 @@ export const defaultAssistant: Assistant = {
     top_p: 0.8,
     repeat_penalty: 1.12,
   },
-  avatar: '/images/atomic-chat-logo.png',
+  avatar: '/images/transparent-logo.png',
   description:
     "Atomic Chat is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user's behalf.",
   instructions: `You are Atomic Chat, a helpful AI assistant who assists users with their requests. Atomic Chat is trained by Menlo Research (https://www.menlo.ai).

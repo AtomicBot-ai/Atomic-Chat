@@ -98,12 +98,12 @@ export function PromptJanModel() {
     <div className="fixed bottom-4 right-4 z-50 p-4 shadow-lg bg-background w-4/5 md:w-100 border rounded-lg">
       <div className="flex items-center gap-2">
         <img
-          src="/images/atomic-chat-logo.png"
+          src="/images/transparent-logo.png"
           alt="Atomic Bot"
           className="size-5 dark:brightness-0 dark:invert"
         />
         <h2 className="font-medium">
-          Qwen3.5 4B
+          Qwen3.5 4B reasoning
           {defaultVariant && (
             <span className="text-muted-foreground">
               {' '}
@@ -113,8 +113,8 @@ export function PromptJanModel() {
         </h2>
       </div>
       <p className="mt-2 text-sm text-muted-foreground">
-        Get started with Qwen3.5 4B, our recommended local AI model optimized
-        for your device.
+        Get started with Qwen3.5 4B Claude Opus reasoning distill, our
+        recommended local model for your device.
       </p>
       <div className="mt-4 flex justify-end space-x-2">
         <Button
