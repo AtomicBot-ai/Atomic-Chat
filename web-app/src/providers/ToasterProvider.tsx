@@ -4,13 +4,14 @@ export function ToasterProvider() {
   return (
     <Toaster
       richColors
+      closeButton
       position="top-right"
       offset={{ top: 8, right: 8 }}
       toastOptions={{
         style: {
           background: 'var(--background)',
           padding: '1rem 0.8rem',
-          alignItems: 'start',
+          alignItems: 'center',
           borderColor: 'var(--border)',
           userSelect: 'none',
           WebkitUserSelect: 'none',
@@ -21,6 +22,8 @@ export function ToasterProvider() {
           toast: 'toast select-none',
           title: 'text-foreground! select-none',
           description: 'text-muted-foreground! select-none',
+          closeButton:
+            '!border-border !bg-background text-foreground hover:!bg-muted',
         },
       }}
     />

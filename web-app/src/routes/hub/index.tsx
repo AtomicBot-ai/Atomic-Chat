@@ -94,7 +94,6 @@ function HubContent() {
   const { t } = useTranslation()
 
   const sortOptions = [
-    { value: 'recommended', name: t('hub:recTitle') },
     { value: 'newest', name: t('hub:sortNewest') },
     { value: 'most-downloaded', name: t('hub:sortMostDownloaded') },
     ...(IS_MACOS
@@ -122,7 +121,7 @@ function HubContent() {
   )
 
   const [searchValue, setSearchValue] = useState('')
-  const [sortSelected, setSortSelected] = useState('recommended')
+  const [sortSelected, setSortSelected] = useState('newest')
   const [expandedModels, setExpandedModels] = useState<Record<string, boolean>>(
     {}
   )
@@ -246,10 +245,36 @@ function HubContent() {
     searchOptions,
   ])
 
+  const recommendedDisplayNames = useMemo(
+    () =>
+      new Set(
+        HUB_RECOMMENDATIONS.map(
+          (r) => extractModelName(r.modelName) || ''
+        ).filter(Boolean)
+      ),
+    []
+  )
+
+  const showRecommendedBlock =
+    sortSelected === 'newest' &&
+    !debouncedSearchValue &&
+    !showOnlyDownloaded
+
+  //* На вкладке Newest рекомендации дублируются в блоке сверху — из списка ниже убираем те же модели
+  const virtualListModels = useMemo(() => {
+    if (!showRecommendedBlock) {
+      return filteredModels
+    }
+    return filteredModels.filter((m) => {
+      const name = extractModelName(m.model_name)
+      return !name || !recommendedDisplayNames.has(name)
+    })
+  }, [filteredModels, showRecommendedBlock, recommendedDisplayNames])
+
   // Dynamic estimate size based on model state
   const estimateSize = useCallback(
     (index: number) => {
-      const model = filteredModels[index]
+      const model = virtualListModels[index]
       if (!model) return 100
       // Base height + variants height if expanded
       const baseHeight = 95
@@ -259,14 +284,14 @@ function HubContent() {
         ? baseHeight + (model.quants?.length ?? 0) * variantHeight
         : baseHeight
     },
-    [expandedModels, filteredModels]
+    [expandedModels, virtualListModels]
   )
 
   // The virtualizer - only enable when we have models
   const rowVirtualizer = useVirtualizer(
-    filteredModels.length > 0
+    virtualListModels.length > 0
       ? {
-          count: filteredModels.length,
+          count: virtualListModels.length,
           getScrollElement: () => parentRef.current,
           estimateSize,
           overscan: 8,
@@ -485,8 +510,8 @@ function HubContent() {
         </HeaderPage>
         <div ref={parentRef} className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto! first-step-setup-local-provider">
           <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-full md:w-4/5 xl:w-4/6 mx-auto">
-            {/* Recommended models - only when "Recommended" is selected in the filter */}
-            {sortSelected === 'recommended' && (
+            {/* Рекомендации сверху списка Newest (без поиска и без фильтра «только скачанные») */}
+            {showRecommendedBlock && (
             <section className="shrink-0 mb-4">
               <h2 className="text-sm font-medium mb-3 text-muted-foreground">
                 {t('hub:recTitle')}
@@ -837,9 +862,7 @@ function HubContent() {
                 </div>
               </section>
             )}
-            {/* Main list: only when not "Recommended" (Recommended shows only the 4 cards above) */}
-            {sortSelected !== 'recommended' && (
-            (isInitialLoad || (loading && !filteredModels.length)) ? (
+            {(isInitialLoad || (loading && !filteredModels.length)) ? (
               // Skeleton loading state for better perceived performance
               <div className="flex flex-col gap-3 animate-pulse">
                 {[...Array(5)].map((_, i) => (
@@ -863,7 +886,7 @@ function HubContent() {
                   </div>
                 ))}
               </div>
-            ) : filteredModels.length === 0 ? (
+            ) : filteredModels.length === 0 && !showRecommendedBlock ? (
               <div className="flex items-center justify-center">
                 <div className="text-center text-muted-foreground">
                   {t('hub:noModels')}
@@ -910,7 +933,7 @@ function HubContent() {
                                   to: route.hub.model,
                                   params: {
                                     modelId:
-                                      filteredModels[virtualItem.index]
+                                      virtualListModels[virtualItem.index]
                                         .model_name,
                                   },
                                 })
@@ -920,7 +943,7 @@ function HubContent() {
                                 className={cn(
                                   'text-foreground font-medium text-base capitalize sm:max-w-none',
                                   isRecommendedModel(
-                                    filteredModels[virtualItem.index]
+                                    virtualListModels[virtualItem.index]
                                       .model_name
                                   )
                                     ? 'hub-model-card-step'
@@ -928,60 +951,60 @@ function HubContent() {
                                 )}
                                 title={
                                   extractModelName(
-                                    filteredModels[virtualItem.index]
+                                    virtualListModels[virtualItem.index]
                                       .model_name
                                   ) || ''
                                 }
                               >
                                 {extractModelName(
-                                  filteredModels[virtualItem.index].model_name
+                                  virtualListModels[virtualItem.index].model_name
                                 ) || ''}
                               </h1>
                             </div>
                             <div className="shrink-0 space-x-3 flex items-center">
                               <span className="text-muted-foreground font-medium text-xs">
-                                {filteredModels[virtualItem.index].is_mlx
-                                  ? filteredModels[virtualItem.index]
+                                {virtualListModels[virtualItem.index].is_mlx
+                                  ? virtualListModels[virtualItem.index]
                                       .safetensors_files?.[0]?.file_size
                                   : (
-                                      filteredModels[
+                                      virtualListModels[
                                         virtualItem.index
                                       ].quants?.find((m) =>
                                         DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
                                           m.model_id.toLowerCase().includes(e)
                                         )
                                       ) ??
-                                      filteredModels[virtualItem.index]
+                                      virtualListModels[virtualItem.index]
                                         .quants?.[0]
                                     )?.file_size}
                               </span>
                               <ModelInfoHoverCard
-                                model={filteredModels[virtualItem.index]}
+                                model={virtualListModels[virtualItem.index]}
                                 defaultModelQuantizations={
                                   DEFAULT_MODEL_QUANTIZATIONS
                                 }
                                 variant={
-                                  filteredModels[
+                                  virtualListModels[
                                     virtualItem.index
                                   ].quants?.find((m) =>
                                     DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
                                       m.model_id.toLowerCase().includes(e)
                                     )
                                   ) ??
-                                  filteredModels[virtualItem.index]
+                                  virtualListModels[virtualItem.index]
                                     .quants?.[0]
                                 }
                                 isDefaultVariant={true}
                                 modelSupportStatus={modelSupportStatus}
                                 onCheckModelSupport={checkModelSupport}
                               />
-                              {filteredModels[virtualItem.index].is_mlx ? (
+                              {virtualListModels[virtualItem.index].is_mlx ? (
                                 <MlxModelDownloadAction
-                                  model={filteredModels[virtualItem.index]}
+                                  model={virtualListModels[virtualItem.index]}
                                 />
                               ) : (
                                 <DownloadButtonPlaceholder
-                                  model={filteredModels[virtualItem.index]}
+                                  model={virtualListModels[virtualItem.index]}
                                   handleUseModel={handleUseModel}
                                 />
                               )}
@@ -1003,7 +1026,7 @@ function HubContent() {
                             }}
                             content={
                               extractDescription(
-                                filteredModels[virtualItem.index]?.description
+                                virtualListModels[virtualItem.index]?.description
                               ) || ''
                             }
                           />
@@ -1011,7 +1034,7 @@ function HubContent() {
                         <div className="flex items-center gap-2 mt-2">
                           <span className="capitalize text-foreground">
                             {t('hub:by')}{' '}
-                            {filteredModels[virtualItem.index]?.developer}
+                            {virtualListModels[virtualItem.index]?.developer}
                           </span>
                           <div className="flex items-center gap-4 ml-2">
                             <div className="flex items-center gap-1">
@@ -1021,11 +1044,11 @@ function HubContent() {
                                 title={t('hub:downloads')}
                               />
                               <span className="text-foreground">
-                                {filteredModels[virtualItem.index]
+                                {virtualListModels[virtualItem.index]
                                   .downloads || 0}
                               </span>
                             </div>
-                            {!filteredModels[virtualItem.index].is_mlx && (
+                            {!virtualListModels[virtualItem.index].is_mlx && (
                               <div className="flex items-center gap-1">
                                 <IconFileCode
                                   size={20}
@@ -1033,12 +1056,12 @@ function HubContent() {
                                   title={t('hub:variants')}
                                 />
                                 <span className="text-foreground">
-                                  {filteredModels[virtualItem.index].quants
+                                  {virtualListModels[virtualItem.index].quants
                                     ?.length || 0}
                                 </span>
                               </div>
                             )}
-                            {filteredModels[virtualItem.index].is_mlx && (
+                            {virtualListModels[virtualItem.index].is_mlx && (
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">
@@ -1051,7 +1074,7 @@ function HubContent() {
                               </Tooltip>
                             )}
                             <div className="flex gap-1.5 items-center">
-                              {(filteredModels[virtualItem.index].num_mmproj ?? 0) >
+                              {(virtualListModels[virtualItem.index].num_mmproj ?? 0) >
                                 0 && (
                                 <div className="flex items-center gap-1">
                                   <Tooltip>
@@ -1069,7 +1092,7 @@ function HubContent() {
                                   </Tooltip>
                                 </div>
                               )}
-                              {filteredModels[virtualItem.index].tools && (
+                              {virtualListModels[virtualItem.index].tools && (
                                 <div className="flex items-center gap-1">
                                   <Tooltip>
                                     <TooltipTrigger asChild>
@@ -1088,13 +1111,13 @@ function HubContent() {
                               )}
                             </div>
                           </div>
-                          {(filteredModels[virtualItem.index].quants?.length ?? 0) >
+                          {(virtualListModels[virtualItem.index].quants?.length ?? 0) >
                             1 && (
                             <button
                               className="flex items-center gap-1 hub-show-variants-step ml-auto"
                               onClick={() =>
                                 toggleModelExpansion(
-                                  filteredModels[virtualItem.index]
+                                  virtualListModels[virtualItem.index]
                                     .model_name
                                 )
                               }
@@ -1103,7 +1126,7 @@ function HubContent() {
                                 {t('hub:showVariants')}
                               </span>
                               {expandedModels[
-                                filteredModels[virtualItem.index].model_name
+                                virtualListModels[virtualItem.index].model_name
                               ] ? (
                                 <IconChevronUp
                                   size={18}
@@ -1119,12 +1142,12 @@ function HubContent() {
                           )}
                         </div>
                         {expandedModels[
-                          filteredModels[virtualItem.index].model_name
+                          virtualListModels[virtualItem.index].model_name
                         ] &&
-                          (filteredModels[virtualItem.index].quants?.length ?? 0) >
+                          (virtualListModels[virtualItem.index].quants?.length ?? 0) >
                             0 && (
                             <div className="mt-5">
-                              {filteredModels[virtualItem.index].quants?.map(
+                              {virtualListModels[virtualItem.index].quants?.map(
                                 (variant) => (
                                   <CardItem
                                     key={variant.model_id}
@@ -1134,7 +1157,7 @@ function HubContent() {
                                           <span className="mr-2">
                                             {variant.model_id}
                                           </span>
-                                          {(filteredModels[virtualItem.index].num_mmproj ?? 0) > 0 && (
+                                          {(virtualListModels[virtualItem.index].num_mmproj ?? 0) > 0 && (
                                             <div className="flex items-center gap-1">
                                               <Tooltip>
                                                 <TooltipTrigger asChild>
@@ -1151,7 +1174,7 @@ function HubContent() {
                                               </Tooltip>
                                             </div>
                                           )}
-                                          {filteredModels[virtualItem.index]
+                                          {virtualListModels[virtualItem.index]
                                             .tools && (
                                             <div className="flex items-center gap-1">
                                               <Tooltip>
@@ -1179,7 +1202,7 @@ function HubContent() {
                                         </p>
                                         <ModelInfoHoverCard
                                           model={
-                                            filteredModels[virtualItem.index]
+                                            virtualListModels[virtualItem.index]
                                           }
                                           variant={variant}
                                           defaultModelQuantizations={
@@ -1192,18 +1215,18 @@ function HubContent() {
                                             checkModelSupport
                                           }
                                         />
-                                        {filteredModels[virtualItem.index]
+                                        {virtualListModels[virtualItem.index]
                                           .is_mlx ? (
                                           <MlxModelDownloadAction
                                             model={
-                                              filteredModels[virtualItem.index]
+                                              virtualListModels[virtualItem.index]
                                             }
                                           />
                                         ) : (
                                           <ModelDownloadAction
                                             variant={variant}
                                             model={
-                                              filteredModels[virtualItem.index]
+                                              virtualListModels[virtualItem.index]
                                             }
                                           />
                                         )}
@@ -1219,7 +1242,6 @@ function HubContent() {
                   ))}
                 </div>
               </div>
-            )
             )}
           </div>
         </div>

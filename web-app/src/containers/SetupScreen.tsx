@@ -429,17 +429,26 @@ function SetupScreen() {
         <HeaderPage />
 
         <div className="flex h-[calc(100%-60px)] items-center">
-          <div className="shrink-0 px-10 w-[480px] mx-auto overflow-auto pb-10 pointer-events-auto -mt-20">
-            <div className="mb-4">
-              <h1 className="font-studio font-medium text-2xl mb-1">
-                {isDownloading
-                  ? 'Sit tight, Atomic Chat is getting ready...'
-                  : 'Hey, welcome to Atomic Chat!'}
+          <div className="pointer-events-auto -mt-20 mx-auto w-full max-w-[560px] shrink-0 overflow-auto px-10 pb-10">
+            <div className="mb-4 text-left">
+              <h1 className="font-studio mb-2 text-4xl font-bold leading-none tracking-tight sm:text-5xl">
+                {isDownloading ? (
+                  'Sit tight, Atomic Chat is getting ready...'
+                ) : (
+                  <>
+                    <span className="block">Local AI</span>
+                    <div className="min-w-0 overflow-x-auto">
+                      <span className="inline-block text-lg font-bold leading-none whitespace-nowrap sm:text-xl md:text-2xl">
+                        No rate limits. No subscriptions. No cloud.
+                      </span>
+                    </div>
+                  </>
+                )}
               </h1>
-              <p className="text-muted-foreground leading-normal w-full mt-1">
+              <p className="text-muted-foreground w-full text-base leading-relaxed sm:text-lg">
                 {isDownloading
                   ? 'This may take a few minutes.'
-                  : 'Atomic Chat needs a model to begin. Let’s set it up.'}
+                  : 'Atomic Chat uses TurboQuant to run blazing fast on everyday hardware.'}
               </p>
             </div>
             <div className="flex gap-4 flex-col mt-6 relative z-50">
@@ -449,17 +458,15 @@ function SetupScreen() {
                 </span>
                 <div
                   className={cn(
-                    'bg-secondary/50 p-3 rounded-lg border transition-all hover:shadow disabled:opacity-60 flex justify-between items-start'
+                    'bg-secondary/50 p-3 rounded-lg border transition-all hover:shadow disabled:opacity-60 flex justify-between items-center'
                   )}
                 >
-                  <div className="flex w-full items-start gap-4">
-                    <div className="shrink-0 size-12 bg-background rounded-xl flex items-center justify-center">
-                      <img
-                        src="/images/atomic-chat-logo.png"
-                        alt="Atomic Chat"
-                        className="size-6 dark:brightness-0 dark:invert"
-                      />
-                    </div>
+                  <div className="flex w-full items-center gap-4">
+                    <img
+                      src="/svg/qwen-color.svg"
+                      alt="Qwen"
+                      className="h-10 w-10 shrink-0 object-contain sm:h-11 sm:w-11"
+                    />
                     <div className="flex flex-col w-full h-full justify-center">
                       <div className="flex flex-1 items-center justify-between">
                         <h1 className="font-semibold text-sm mb-1">
