@@ -20,7 +20,7 @@ type ThreadModel = {
 type SearchParams = {
   threadModel?: ThreadModel
 }
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useThreads } from '@/hooks/useThreads'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 
@@ -43,10 +43,13 @@ function Index() {
   const { setCurrentThreadId } = useThreads()
   useTools()
 
-  //* Нельзя useState: при SetupScreen родитель Index не размонтируется — после Skip читаем заново
+  //* После Skip без перемонтирования роутера — поднимаем флаг, иначе ре-рендер не гарантирован
+  const [setupSkippedThisSession, setSetupSkippedThisSession] =
+    useState(false)
   const setupCompletedOrSkipped =
-    typeof window !== 'undefined' &&
-    localStorage.getItem(localStorageKey.setupCompleted) === 'true'
+    setupSkippedThisSession ||
+    (typeof window !== 'undefined' &&
+      localStorage.getItem(localStorageKey.setupCompleted) === 'true')
 
   // Conditional to check if there are any valid providers
   // required min 1 api_key or 1 model in llama.cpp or jan provider
@@ -74,7 +77,11 @@ function Index() {
   }, [setCurrentThreadId])
 
   if (!hasValidProviders && !setupCompletedOrSkipped) {
-    return <SetupScreen />
+    return (
+      <SetupScreen
+        onSkipped={() => setSetupSkippedThisSession(true)}
+      />
+    )
   }
 
   return (

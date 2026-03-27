@@ -360,10 +360,11 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
 
     #[cfg(target_os = "macos")]
     {
+        //* Template: система красит чёрный контур как батарею; PNG со скруглением и «пустой» звездой
         let menu_bar_icon = tauri::image::Image::from_bytes(include_bytes!(
-            "../../../web-app/public/images/app-icon.png"
+            "../../../web-app/public/images/tray-macos-template.png"
         ))?;
-        tray_builder = tray_builder.icon(menu_bar_icon).icon_as_template(false);
+        tray_builder = tray_builder.icon(menu_bar_icon).icon_as_template(true);
     }
 
     #[cfg(not(target_os = "macos"))]

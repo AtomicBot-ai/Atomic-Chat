@@ -44,7 +44,11 @@ function recommendedSetupModelIconSrc(hfRepoId: string): string | null {
   return null
 }
 
-function SetupScreen() {
+type SetupScreenProps = {
+  onSkipped?: () => void
+}
+
+function SetupScreen({ onSkipped }: SetupScreenProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { getProviderByName, selectModelProvider, setProviders } =
@@ -189,12 +193,13 @@ function SetupScreen() {
   const handleSkip = useCallback(() => {
     localStorage.setItem(localStorageKey.setupCompleted, 'true')
     localStorage.removeItem(localStorageKey.lastUsedModel)
-    navigate({
+    onSkipped?.()
+    void navigate({
       to: route.home,
       replace: true,
       search: {},
     })
-  }, [navigate])
+  }, [navigate, onSkipped])
 
   return (
     <div className="relative flex h-svh w-full flex-col overflow-hidden">
@@ -358,12 +363,12 @@ function SetupScreen() {
                   </div>
                 </div>
 
-                <div className="flex shrink-0 flex-col items-center pt-3">
+                <div className="relative z-60 flex shrink-0 flex-col items-center pt-3">
                   <Button
                     type="button"
                     variant="link"
                     onClick={handleSkip}
-                    className="text-muted-foreground/60 hover:text-muted-foreground h-auto p-0 text-xs font-normal underline-offset-4"
+                    className="text-muted-foreground/60 hover:text-muted-foreground relative z-60 h-auto p-0 text-xs font-normal underline-offset-4"
                   >
                     {t('setup:skip')}
                   </Button>
