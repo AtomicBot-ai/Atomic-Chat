@@ -31,6 +31,11 @@ function pickPreferredVariant(model: CatalogModel): ModelQuant | null {
   return preferred ?? model.quants?.[0] ?? null
 }
 
+//* ГБ для строки прогресса (как в DownloadManagement)
+function formatDownloadGb(bytes: number): string {
+  return (bytes / 1024 ** 3).toFixed(2)
+}
+
 //* Иконка бренда по id репозитория HF (public/svg)
 function recommendedSetupModelIconSrc(hfRepoId: string): string | null {
   const id = hfRepoId.toLowerCase()
@@ -277,6 +282,11 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                       const brandIconSrc = recommendedSetupModelIconSrc(
                         rec.modelName
                       )
+                      const rowDownloadProgress = variant
+                        ? downloadProcesses.find(
+                            (p) => p.id === variant.model_id
+                          )
+                        : undefined
 
                       return (
                         <div
@@ -326,25 +336,40 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                               )}
                             </div>
                           </div>
-                          <Button
-                            size="sm"
-                            disabled={
-                              !model ||
-                              !variant ||
-                              rowDownloading ||
-                              rowDownloaded
-                            }
-                            onClick={() =>
-                              model && variant && startDownload(model, variant)
-                            }
-                            className="w-full shrink-0 rounded-full px-5 font-semibold sm:w-auto"
-                          >
-                            {rowDownloaded
-                              ? t('hub:downloaded')
-                              : rowDownloading
-                                ? t('setup:downloading')
-                                : t('hub:download')}
-                          </Button>
+                          <div className="flex w-full flex-col items-center gap-1 sm:w-auto sm:shrink-0">
+                            <Button
+                              size="sm"
+                              disabled={
+                                !model ||
+                                !variant ||
+                                rowDownloading ||
+                                rowDownloaded
+                              }
+                              onClick={() =>
+                                model &&
+                                variant &&
+                                startDownload(model, variant)
+                              }
+                              className="w-full shrink-0 rounded-full px-5 font-semibold sm:w-auto"
+                            >
+                              {rowDownloaded
+                                ? t('hub:downloaded')
+                                : rowDownloading
+                                  ? t('setup:downloading')
+                                  : t('hub:download')}
+                            </Button>
+                            {rowDownloading && variant ? (
+                              <p
+                                className="w-full text-center text-xs text-muted-foreground tabular-nums sm:w-auto sm:max-w-full"
+                                aria-live="polite"
+                              >
+                                {rowDownloadProgress &&
+                                rowDownloadProgress.total > 0
+                                  ? `${Math.round((rowDownloadProgress.progress ?? 0) * 100)}% · ${formatDownloadGb(rowDownloadProgress.current)} / ${formatDownloadGb(rowDownloadProgress.total)} GB`
+                                  : t('setup:downloadPreparing')}
+                              </p>
+                            ) : null}
+                          </div>
                         </div>
                       )
                     })}

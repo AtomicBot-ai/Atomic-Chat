@@ -17,6 +17,10 @@ import { route } from '@/constants/routes'
 import { DownloadIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
+//* Полупрозрачная зелень: текст % и ГБ остаётся читаемым в светлой и тёмной теме
+const DOWNLOAD_PROGRESS_INDICATOR =
+  'bg-emerald-400/50 dark:bg-emerald-400/45'
+
 export function DownloadManagement() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -409,17 +413,18 @@ export function DownloadManagement() {
                           App Update
                         </p>
                       </div>
-                      <div className="relative z-40">
+                      <div className="relative z-40 my-2 h-6">
                         <Progress
                           value={appUpdateState.downloadProgress * 100}
-                          className="my-2 h-6 bg-muted-foreground/10 relative rounded-md"
+                          indicatorClassName={DOWNLOAD_PROGRESS_INDICATOR}
+                          className="absolute inset-0 h-full bg-muted-foreground/15 dark:bg-muted-foreground/20 rounded-md"
                         />
-                        <div className="absolute w-full top-1/2 transform -translate-y-1/2 flex items-center justify-between px-2">
-                          <p className="text-xs">
+                        <div className="pointer-events-none absolute inset-0 z-1 flex items-center justify-between px-2">
+                          <p className="text-xs font-medium tabular-nums text-foreground">
                             {Math.round(appUpdateState.downloadProgress * 100)}
                             %
                           </p>
-                          <p className="text-xs">
+                          <p className="text-xs font-medium tabular-nums text-foreground">
                             {`${renderGB(appUpdateState.downloadedBytes)} / ${renderGB(appUpdateState.totalBytes)}`}{' '}
                             GB
                           </p>
@@ -474,20 +479,22 @@ export function DownloadManagement() {
                           </Button>
                         </div>
                       </div>
-                      <div className="relative z-40">
+                      <div className="relative z-40 my-2 h-6">
                         <Progress
                           value={download.progress * 100}
-                          className="my-2 h-6 bg-muted-foreground/10 relative rounded-md"
+                          indicatorClassName={DOWNLOAD_PROGRESS_INDICATOR}
+                          className="absolute inset-0 h-full bg-muted-foreground/15 dark:bg-muted-foreground/20 rounded-md"
                         />
-                        <div className="absolute w-full top-1/2 transform -translate-y-1/2 flex items-center justify-between px-2">
-                          <p className="text-xs">
+                        <div className="pointer-events-none absolute inset-0 z-1 flex items-center justify-between px-2">
+                          <p className="text-xs font-medium tabular-nums text-foreground">
                             {download.total > 0
                               ? `${Math.round(download.progress * 100)}%`
                               : 'Initializing download...'}
                           </p>
-                          <p className="text-xs">
+                          <p className="text-xs font-medium tabular-nums text-foreground">
                             {download.total > 0
-                              && `${renderGB(download.current)} / ${renderGB(download.total)} GB`}
+                              ? `${renderGB(download.current)} / ${renderGB(download.total)} GB`
+                              : ''}
                           </p>
                         </div>
                       </div>

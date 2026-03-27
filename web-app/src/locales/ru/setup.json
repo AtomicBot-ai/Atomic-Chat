@@ -6,6 +6,7 @@
   "quickStartDescription": "Настройка не требуется",
   "quickStartFailed": "Что-то пошло не так Пожалуйста, попробуйте ещё раз.",
   "downloading": "Загрузка…",
+  "downloadPreparing": "Запуск загрузки…",
   "downloadingDescription": "Подождите, пока модель загружается. Это может занять несколько минут.",
   "orDivider": "или",
   "localModel": "Настроить локальную модель",
