@@ -210,6 +210,7 @@ else
 endif
 
 # Download latest llamacpp turboquant backend for bundling
+# Supports GH_TOKEN env var for authenticated GitHub API requests (avoids rate limits in CI)
 download-llamacpp-backend:
 ifeq ($(shell uname -s),Darwin)
 	@echo "Downloading latest llamacpp turboquant backend for macOS..."
@@ -217,18 +218,34 @@ ifeq ($(shell uname -s),Darwin)
 	@ARCH=$$(uname -m); \
 	if [ "$$ARCH" = "arm64" ]; then BACKEND="macos-arm64"; else BACKEND="macos-x64"; fi; \
 	echo "Platform: $$BACKEND"; \
-	TAG=$$(curl -sf "https://api.github.com/repos/Vect0rM/atomic-llama-cpp-turboquant/releases" \
-		| python3 -c "import sys,json; rs=json.load(sys.stdin); ts=[r for r in rs if r['tag_name'].startswith('turboquant-'+sys.argv[1])]; print(ts[0]['tag_name'] if ts else '')" "$$BACKEND" 2>/dev/null); \
-	if [ -z "$$TAG" ]; then \
-		echo "No turboquant release found for $$BACKEND, trying legacy release..."; \
-		TAG=$$(curl -sf "https://api.github.com/repos/Vect0rM/atomic-llama-cpp-turboquant/releases" \
-			| python3 -c "import sys,json; rs=json.load(sys.stdin); lg=[r for r in rs if not r['tag_name'].startswith('turboquant-')]; print(lg[0]['tag_name'] if lg else '')" 2>/dev/null); \
-		if [ -z "$$TAG" ]; then echo "Error: No release found"; exit 1; fi; \
-		URL="https://github.com/Vect0rM/atomic-llama-cpp-turboquant/releases/download/$$TAG/llama-$$TAG-bin-$$BACKEND.tar.gz"; \
+	AUTH_HEADER=""; \
+	if [ -n "$$GH_TOKEN" ]; then AUTH_HEADER="Authorization: Bearer $$GH_TOKEN"; fi; \
+	API_URL="https://api.github.com/repos/Vect0rM/atomic-llama-cpp-turboquant/releases"; \
+	if [ -n "$$AUTH_HEADER" ]; then \
+		RELEASES_JSON=$$(curl -sf -H "$$AUTH_HEADER" "$$API_URL"); \
 	else \
-		URL="https://github.com/Vect0rM/atomic-llama-cpp-turboquant/releases/download/$$TAG/llama-turboquant-$$BACKEND.tar.gz"; \
+		RELEASES_JSON=$$(curl -sf "$$API_URL"); \
 	fi; \
+	if [ -z "$$RELEASES_JSON" ]; then echo "Error: Failed to fetch releases from GitHub API"; exit 1; fi; \
+	if command -v jq >/dev/null 2>&1; then \
+		TAG=$$(echo "$$RELEASES_JSON" | jq -r --arg b "$$BACKEND" '[.[] | select(.tag_name | startswith("turboquant-" + $$b))][0].tag_name // empty'); \
+		if [ -z "$$TAG" ]; then \
+			echo "No turboquant release found for $$BACKEND, trying legacy release..."; \
+			TAG=$$(echo "$$RELEASES_JSON" | jq -r '[.[] | select(.tag_name | startswith("turboquant-") | not)][0].tag_name // empty'); \
+		fi; \
+	else \
+		TAG=$$(echo "$$RELEASES_JSON" | python3 -c "import sys,json; rs=json.load(sys.stdin); ts=[r for r in rs if r['tag_name'].startswith('turboquant-'+sys.argv[1])]; print(ts[0]['tag_name'] if ts else '')" "$$BACKEND" 2>/dev/null); \
+		if [ -z "$$TAG" ]; then \
+			echo "No turboquant release found for $$BACKEND, trying legacy release..."; \
+			TAG=$$(echo "$$RELEASES_JSON" | python3 -c "import sys,json; rs=json.load(sys.stdin); lg=[r for r in rs if not r['tag_name'].startswith('turboquant-')]; print(lg[0]['tag_name'] if lg else '')" 2>/dev/null); \
+		fi; \
+	fi; \
+	if [ -z "$$TAG" ]; then echo "Error: No release found"; exit 1; fi; \
 	echo "Latest release: $$TAG"; \
+	case "$$TAG" in \
+		turboquant-*) URL="https://github.com/Vect0rM/atomic-llama-cpp-turboquant/releases/download/$$TAG/llama-turboquant-$$BACKEND.tar.gz" ;; \
+		*) URL="https://github.com/Vect0rM/atomic-llama-cpp-turboquant/releases/download/$$TAG/llama-$$TAG-bin-$$BACKEND.tar.gz" ;; \
+	esac; \
 	echo "$$TAG" > src-tauri/resources/llamacpp-backend/version.txt; \
 	echo "$$BACKEND" > src-tauri/resources/llamacpp-backend/backend.txt; \
 	echo "Downloading: $$URL"; \

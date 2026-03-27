@@ -106,6 +106,8 @@ jobs:
           yarn config set -H enableImmutableInstalls false
 
       - name: Download llamacpp backend
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make download-llamacpp-backend
 
       - name: Build app (universal binary)
