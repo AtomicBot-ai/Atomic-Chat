@@ -1,7 +1,7 @@
 use flate2::read::GzDecoder;
 use std::{
     fs::{self, File},
-    io::{BufWriter, Read},
+    io::Read,
     path::PathBuf,
     sync::Arc,
 };
@@ -151,85 +151,6 @@ pub fn install_extensions<R: Runtime>(app: tauri::AppHandle<R>, force: bool) -> 
     .map_err(|e| e.to_string())?;
 
     Ok(())
-}
-
-//* Копирует MiniLM GGUF из бандла в data/llamacpp/models (как после import), если model.yml ещё нет
-pub fn seed_bundled_sentence_transformer_model<R: Runtime>(app: &tauri::AppHandle<R>) {
-    //? Путь к ресурсам приложения (в пакете — рядом с бинарником)
-    let resource_dir = match app.path().resource_dir() {
-        Ok(p) => p,
-        Err(e) => {
-            // ! Нет resource_dir (редко) — пропускаем сид
-            log::warn!("seed_bundled_sentence_transformer_model: resource_dir: {e}");
-            return;
-        }
-    };
-    let bundled_gguf = resource_dir
-        .join("resources")
-        .join("bundled-models")
-        .join("sentence-transformer-mini")
-        .join("model.gguf");
-    if !bundled_gguf.is_file() {
-        // ! Дев без copy:assets / мобильный билд без бандла
-        log::debug!(
-            "Bundled embedding GGUF missing at {:?} — run yarn copy:assets:tauri before packaging",
-            bundled_gguf
-        );
-        return;
-    }
-
-    let data_dir = get_jan_data_folder_path(app.clone());
-    let model_dir = data_dir
-        .join("llamacpp")
-        .join("models")
-        .join("sentence-transformer-mini");
-    let dest_yml = model_dir.join("model.yml");
-    if dest_yml.exists() {
-        // ! Уже ставили вручную или через import — не перезаписываем
-        log::debug!("sentence-transformer-mini already installed, skipping bundled seed");
-        return;
-    }
-
-    let dest_gguf = model_dir.join("model.gguf");
-    if let Err(e) = fs::create_dir_all(&model_dir) {
-        log::error!("seed_bundled_sentence_transformer_model: mkdir: {e}");
-        return;
-    }
-    if let Err(e) = fs::copy(&bundled_gguf, &dest_gguf) {
-        log::error!("seed_bundled_sentence_transformer_model: copy GGUF: {e}");
-        return;
-    }
-
-    let size_bytes = fs::metadata(&dest_gguf).map(|m| m.len()).unwrap_or(0);
-
-    let yaml_data = serde_json::json!({
-        "model_path": "llamacpp/models/sentence-transformer-mini/model.gguf",
-        "name": "sentence-transformer-mini",
-        "size_bytes": size_bytes,
-        "embedding": true,
-    });
-
-    let file = match fs::File::create(&dest_yml) {
-        Ok(f) => f,
-        Err(e) => {
-            // ! Откат частично скопированного GGUF
-            log::error!("seed_bundled_sentence_transformer_model: create model.yml: {e}");
-            let _ = fs::remove_file(&dest_gguf);
-            return;
-        }
-    };
-    let mut writer = BufWriter::new(file);
-    if let Err(e) = serde_yaml::to_writer(&mut writer, &yaml_data) {
-        log::error!("seed_bundled_sentence_transformer_model: write model.yml: {e}");
-        let _ = fs::remove_file(&dest_yml);
-        let _ = fs::remove_file(&dest_gguf);
-        return;
-    }
-
-    log::info!(
-        "Seeded bundled embedding model sentence-transformer-mini ({} bytes)",
-        size_bytes
-    );
 }
 
 // Migrate MCP servers configuration
