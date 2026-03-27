@@ -53,7 +53,6 @@ import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
-import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
 import { McpExtensionToolLoader } from './McpExtensionToolLoader'
 import {
@@ -151,13 +150,6 @@ const ChatInput = memo(function ChatInput({
     toggleAgentMode(agentModeKey)
   }, [agentModeKey, toggleAgentMode])
 
-  // Get current thread messages for token counting
-  const threadMessages = useMessages(
-    useShallow((state) =>
-      currentThreadId ? state.messages[currentThreadId] : []
-    )
-  )
-
   const maxRows = 10
   const ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES = 512 * 1024
 
@@ -175,8 +167,6 @@ const ChatInput = memo(function ChatInput({
   const [showVisionModelPrompt, setShowVisionModelPrompt] = useState(false)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
 
-  // Check if selected model is currently loaded/active
-  const isModelActive = selectedModel?.id ? activeModels.includes(selectedModel.id) : false
   const [selectedAssistant, setSelectedAssistant] = useState<Assistant | undefined>(
     () => assistants.find((a) => a.id === defaultAssistantId) ?? assistants[0]
   )
