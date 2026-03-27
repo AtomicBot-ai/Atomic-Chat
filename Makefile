@@ -258,7 +258,7 @@ ifeq ($(shell uname -s),Darwin)
 		echo "Signing llamacpp backend binaries..."; \
 		for bin in src-tauri/resources/llamacpp-backend/build/bin/*; do \
 			if [ -f "$$bin" ] && file "$$bin" | grep -q "Mach-O"; then \
-				codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" "$$bin"; \
+				codesign --force --options runtime --timestamp --entitlements src-tauri/Entitlements.plist --sign "$$SIGNING_IDENTITY" "$$bin"; \
 			fi; \
 		done; \
 		echo "Code signing completed"; \

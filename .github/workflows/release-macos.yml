@@ -110,6 +110,22 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make download-llamacpp-backend
 
+      - name: Install dependencies and build core
+        run: |
+          make install-and-build
+          make install-rust-targets
+
+      - name: Build web app and generate icons
+        run: |
+          yarn build:web
+          yarn build:icon
+
+      - name: Restore DMG background after icon generation
+        run: |
+          mkdir -p src-tauri/icons/dmg
+          git checkout -- src-tauri/icons/dmg/background.png
+          ls -la src-tauri/icons/dmg/background.png
+
       - name: Build app (universal binary)
         env:
           NODE_OPTIONS: "--max-old-space-size=4196"
@@ -121,7 +137,9 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: make build
+        run: |
+          yarn copy:assets:tauri
+          yarn build:tauri:darwin
 
       - name: Collect artifact metadata
         id: metadata

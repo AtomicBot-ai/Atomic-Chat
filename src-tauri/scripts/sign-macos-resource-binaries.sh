@@ -30,4 +30,12 @@ for name in jan-cli mlx-server foundation-models-server; do
   sign_if_macho "$BIN/$name"
 done
 
+#? llamacpp-backend Mach-O binaries
+LLAMA_BIN="$HERE/resources/llamacpp-backend/build/bin"
+if [[ -d "$LLAMA_BIN" ]]; then
+  for f in "$LLAMA_BIN"/*; do
+    sign_if_macho "$f"
+  done
+fi
+
 #? sqlite-vec и др. — при появлении ошибок notary добавить сюда или расширить цикл.
