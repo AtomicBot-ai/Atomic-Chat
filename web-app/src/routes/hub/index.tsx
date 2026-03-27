@@ -32,6 +32,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { RecommendedModelChip } from '@/components/RecommendedModelChip'
+import { chipVariantForRecommendedDescriptionKey } from '@/constants/recommendedModelChip'
 import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
 import {
   DropdownMenu,
@@ -509,12 +511,14 @@ function HubContent() {
                       })
                     }
                     const recChip = (
-                      <span
-                        className="shrink-0 truncate rounded-full bg-black/90 px-2.5 py-1 text-center text-xs font-semibold text-white shadow-sm max-w-44 sm:max-w-56 dark:bg-white/90 dark:text-black"
+                      <RecommendedModelChip
+                        variant={chipVariantForRecommendedDescriptionKey(
+                          rec.descriptionKey
+                        )}
                         title={t(rec.descriptionKey)}
                       >
                         {t(rec.descriptionKey)}
-                      </span>
+                      </RecommendedModelChip>
                     )
                     return model ? (
                       <div key={`${rec.modelName}-${rec.descriptionKey}`}>
