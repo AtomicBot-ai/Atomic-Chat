@@ -41,12 +41,12 @@
       "dmg": {
         "background": "./icons/dmg/background.png",
         "appPosition": {
-          "x": 180,
-          "y": 170
+          "x": 144,
+          "y": 260
         },
         "applicationFolderPosition": {
-          "x": 480,
-          "y": 170
+          "x": 511,
+          "y": 260
         },
         "windowSize": {
           "width": 660,

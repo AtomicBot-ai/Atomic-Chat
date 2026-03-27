@@ -253,6 +253,8 @@ ifeq ($(shell uname -s),Darwin)
 	tar -xzf /tmp/llamacpp-backend.tar.gz -C src-tauri/resources/llamacpp-backend/; \
 	rm -f /tmp/llamacpp-backend.tar.gz; \
 	echo "Downloaded and extracted llamacpp backend successfully"
+	@echo "Fixing non-system dylib references (OpenSSL etc.)..."
+	@bash src-tauri/scripts/fix-llamacpp-dylibs.sh src-tauri/resources/llamacpp-backend/build/bin
 	@SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
 	if [ -n "$$SIGNING_IDENTITY" ]; then \
 		echo "Signing llamacpp backend binaries..."; \
