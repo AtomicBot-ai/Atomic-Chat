@@ -32,7 +32,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-macos:
-    runs-on: macos-latest-large
+    runs-on: macos-latest-xlarge
     needs: create-draft-release
     outputs:
       mac_sig: ${{ steps.metadata.outputs.mac_sig }}
@@ -188,7 +188,7 @@ jobs:
           TAR_NAME: ${{ needs.build-macos.outputs.tar_name }}
         run: |
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
-          DARWIN_URL="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v${VERSION}/${TAR_NAME// /%20}"
+          DARWIN_URL="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v${VERSION}/${TAR_NAME// /.}"
 
           jq --arg version "$VERSION" \
              --arg pub_date "$PUB_DATE" \
