@@ -86,6 +86,26 @@ impl ArgumentBuilder {
             .and_then(|s| s.parse::<u32>().ok())
     }
 
+    fn is_turboquant(&self) -> bool {
+        self.version.starts_with("turboquant-")
+    }
+
+    /// Standard cache types supported by upstream llama.cpp.
+    /// Extended types like `turbo3` are only available in turboquant builds.
+    const STANDARD_CACHE_TYPES: &'static [&'static str] =
+        &["f32", "f16", "bf16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1"];
+
+    fn sanitize_cache_type(&self, value: &str) -> String {
+        if Self::STANDARD_CACHE_TYPES.contains(&value) || self.is_turboquant() {
+            return value.to_string();
+        }
+        log::warn!(
+            "Cache type '{}' is not supported by non-turboquant backend {}/{}; falling back to q8_0",
+            value, self.version, self.backend
+        );
+        "q8_0".to_string()
+    }
+
     /// Build all arguments based on configuration
     pub fn build(
         mut self,
@@ -326,19 +346,23 @@ impl ArgumentBuilder {
         }
 
         if !self.config.cache_type_k.is_empty() && self.config.cache_type_k != "f16" {
-            self.args.push("--cache-type-k".to_string());
-            self.args.push(self.config.cache_type_k.clone());
+            let safe_k = self.sanitize_cache_type(&self.config.cache_type_k);
+            if safe_k != "f16" {
+                self.args.push("--cache-type-k".to_string());
+                self.args.push(safe_k);
+            }
         }
 
-        // cache_type_v only if flash_attn is not 'off' and value is not f16/f32
-        // cache_type_v needs divisibility check but since users want to tinker around it, should allow them to do so
         if self.config.flash_attn != "off"
             && !self.config.cache_type_v.is_empty()
             && self.config.cache_type_v != "f16"
             && self.config.cache_type_v != "f32"
         {
-            self.args.push("--cache-type-v".to_string());
-            self.args.push(self.config.cache_type_v.clone());
+            let safe_v = self.sanitize_cache_type(&self.config.cache_type_v);
+            if safe_v != "f16" && safe_v != "f32" {
+                self.args.push("--cache-type-v".to_string());
+                self.args.push(safe_v);
+            }
         }
 
         if (self.config.defrag_thold - 0.1).abs() > f32::EPSILON {
@@ -874,6 +898,43 @@ mod tests {
         let args = builder.build("test", "/path", 8080, None);
 
         assert_no_flag(&args, "--cache-type-v");
+    }
+
+    #[test]
+    fn test_cache_type_turbo3_falls_back_on_non_turboquant() {
+        let mut config = default_config();
+        config.version_backend = "b8149/macos-arm64".to_string();
+        config.cache_type_k = "turbo3".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--cache-type-k", "q8_0");
+    }
+
+    #[test]
+    fn test_cache_type_turbo3_kept_on_turboquant() {
+        let mut config = default_config();
+        config.version_backend = "turboquant-macos-arm64-abc123/macos-arm64".to_string();
+        config.cache_type_k = "turbo3".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--cache-type-k", "turbo3");
+    }
+
+    #[test]
+    fn test_cache_type_v_turbo3_falls_back_on_non_turboquant() {
+        let mut config = default_config();
+        config.version_backend = "b8149/macos-arm64".to_string();
+        config.flash_attn = "on".to_string();
+        config.cache_type_v = "turbo3".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--cache-type-v", "q8_0");
     }
 
     #[test]

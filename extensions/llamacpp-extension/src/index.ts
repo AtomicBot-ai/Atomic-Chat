@@ -295,7 +295,7 @@ export default class llamacpp_extension extends AIEngine {
     localStorage.setItem(MIGRATION_KEY, '1')
   }
 
-  private async tryInstallBundledBackend(): Promise<void> {
+  private async tryInstallBundledBackend(): Promise<string | null> {
     try {
       const janDataFolderPath = await getJanDataFolderPath()
       const backendsDir = await joinPath([
@@ -310,11 +310,14 @@ export default class llamacpp_extension extends AIEngine {
         logger.info(
           `Bundled backend installed: ${result.backend_string}`
         )
+        return result.backend_string
       } else {
         logger.info('No bundled backend available or already installed')
+        return null
       }
     } catch (e) {
       logger.warn('Failed to install bundled backend:', e)
+      return null
     }
   }
 
@@ -330,7 +333,7 @@ export default class llamacpp_extension extends AIEngine {
 
     try {
       // Install bundled backend from app resources if no local backends exist
-      await this.tryInstallBundledBackend()
+      const bundledBackendString = await this.tryInstallBundledBackend()
 
       let version_backends: { version: string; backend: string }[] = []
 
@@ -480,6 +483,22 @@ export default class llamacpp_extension extends AIEngine {
 
       let effectiveBackendString = this.config.version_backend
       let backendWasDownloaded = false
+
+      // If a bundled turboquant backend exists and current backend is not turboquant,
+      // force-switch to the bundled one so users don't stay on an old non-turboquant build
+      // that doesn't support extended features like turbo3 cache type.
+      if (
+        bundledBackendString &&
+        effectiveBackendString &&
+        effectiveBackendString.includes('/') &&
+        !effectiveBackendString.startsWith('turboquant-')
+      ) {
+        logger.info(
+          `Current backend '${effectiveBackendString}' is not turboquant; switching to bundled '${bundledBackendString}'`
+        )
+        effectiveBackendString = bundledBackendString
+        bestAvailableBackendString = bundledBackendString
+      }
 
       // Handle fresh installation case where version_backend might be 'none' or invalid
       if (
