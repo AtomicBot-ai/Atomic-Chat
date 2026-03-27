@@ -124,6 +124,8 @@ jobs:
         run: |
           mkdir -p src-tauri/icons/dmg
           git checkout -- src-tauri/icons/dmg/background.png
+          echo "=== DMG background restored ==="
+          file src-tauri/icons/dmg/background.png
           ls -la src-tauri/icons/dmg/background.png
 
       - name: Build app (universal binary)
@@ -139,6 +141,12 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           yarn copy:assets:tauri
+
+          echo "=== Pre-build DMG verification ==="
+          file src-tauri/icons/dmg/background.png
+          grep -A2 '"background"' src-tauri/tauri.macos.conf.json
+          echo "=== Building ==="
+
           yarn build:tauri:darwin
 
       - name: Collect artifact metadata
