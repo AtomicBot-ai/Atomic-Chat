@@ -52,7 +52,7 @@ install-ios-rust-targets:
 
 dev: install-and-build
 	yarn download:bin
-	make download-llamacpp-backend-if-exists
+	make download-llamacpp-backend
 	make build-mlx-server-if-exists
 	make build-foundation-models-server-if-exists
 	make build-cli-dev
@@ -218,28 +218,28 @@ ifeq ($(shell uname -s),Darwin)
 	@ARCH=$$(uname -m); \
 	if [ "$$ARCH" = "arm64" ]; then BACKEND="macos-arm64"; else BACKEND="macos-x64"; fi; \
 	echo "Platform: $$BACKEND"; \
-	AUTH_HEADER=""; \
-	if [ -n "$$GH_TOKEN" ]; then AUTH_HEADER="Authorization: Bearer $$GH_TOKEN"; fi; \
+	TMPREL=$$(mktemp /tmp/llamacpp-releases-XXXXXX.json); \
 	API_URL="https://api.github.com/repos/Vect0rM/atomic-llama-cpp-turboquant/releases"; \
-	if [ -n "$$AUTH_HEADER" ]; then \
-		RELEASES_JSON=$$(curl -sf -H "$$AUTH_HEADER" "$$API_URL"); \
+	if [ -n "$$GH_TOKEN" ]; then \
+		curl -sf -H "Authorization: Bearer $$GH_TOKEN" "$$API_URL" -o "$$TMPREL"; \
 	else \
-		RELEASES_JSON=$$(curl -sf "$$API_URL"); \
+		curl -sf "$$API_URL" -o "$$TMPREL"; \
 	fi; \
-	if [ -z "$$RELEASES_JSON" ]; then echo "Error: Failed to fetch releases from GitHub API"; exit 1; fi; \
+	if [ ! -s "$$TMPREL" ]; then rm -f "$$TMPREL"; echo "Error: Failed to fetch releases from GitHub API"; exit 1; fi; \
 	if command -v jq >/dev/null 2>&1; then \
-		TAG=$$(echo "$$RELEASES_JSON" | jq -r --arg b "$$BACKEND" '[.[] | select(.tag_name | startswith("turboquant-" + $$b))][0].tag_name // empty'); \
+		TAG=$$(jq -r --arg b "$$BACKEND" '[.[] | select(.tag_name | startswith("turboquant-" + $$b))][0].tag_name // empty' "$$TMPREL"); \
 		if [ -z "$$TAG" ]; then \
 			echo "No turboquant release found for $$BACKEND, trying legacy release..."; \
-			TAG=$$(echo "$$RELEASES_JSON" | jq -r '[.[] | select(.tag_name | startswith("turboquant-") | not)][0].tag_name // empty'); \
+			TAG=$$(jq -r '[.[] | select(.tag_name | startswith("turboquant-") | not)][0].tag_name // empty' "$$TMPREL"); \
 		fi; \
 	else \
-		TAG=$$(echo "$$RELEASES_JSON" | python3 -c "import sys,json; rs=json.load(sys.stdin); ts=[r for r in rs if r['tag_name'].startswith('turboquant-'+sys.argv[1])]; print(ts[0]['tag_name'] if ts else '')" "$$BACKEND" 2>/dev/null); \
+		TAG=$$(python3 -c "import sys,json; rs=json.load(open(sys.argv[2])); ts=[r for r in rs if r['tag_name'].startswith('turboquant-'+sys.argv[1])]; print(ts[0]['tag_name'] if ts else '')" "$$BACKEND" "$$TMPREL" 2>/dev/null); \
 		if [ -z "$$TAG" ]; then \
 			echo "No turboquant release found for $$BACKEND, trying legacy release..."; \
-			TAG=$$(echo "$$RELEASES_JSON" | python3 -c "import sys,json; rs=json.load(sys.stdin); lg=[r for r in rs if not r['tag_name'].startswith('turboquant-')]; print(lg[0]['tag_name'] if lg else '')" 2>/dev/null); \
+			TAG=$$(python3 -c "import sys,json; rs=json.load(open(sys.argv[1])); lg=[r for r in rs if not r['tag_name'].startswith('turboquant-')]; print(lg[0]['tag_name'] if lg else '')" "$$TMPREL" 2>/dev/null); \
 		fi; \
 	fi; \
+	rm -f "$$TMPREL"; \
 	if [ -z "$$TAG" ]; then echo "Error: No release found"; exit 1; fi; \
 	echo "Latest release: $$TAG"; \
 	case "$$TAG" in \
