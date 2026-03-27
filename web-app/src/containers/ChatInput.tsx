@@ -53,7 +53,6 @@ import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
-import { TokenCounter } from '@/components/TokenCounter'
 import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
 import { McpExtensionToolLoader } from './McpExtensionToolLoader'
@@ -131,9 +130,6 @@ const ChatInput = memo(function ChatInput({
   const { t } = useTranslation()
   const spellCheckChatInput = useGeneralSetting(
     (state) => state.spellCheckChatInput
-  )
-  const tokenCounterCompact = useGeneralSetting(
-    (state) => state.tokenCounterCompact
   )
   useTools()
   const router = useRouter()
@@ -1947,27 +1943,7 @@ const ChatInput = memo(function ChatInput({
             </div>
 
             <div className="flex items-center gap-2">
-              {selectedProvider === 'llamacpp' &&
-                tokenCounterCompact &&
-                !effectiveAgentMode &&
-                !initialMessage &&
-                (threadMessages?.length > 0 || prompt.trim().length > 0) && (
-                  <div className="flex-1 flex justify-center">
-                    <TokenCounter
-                      messages={threadMessages || []}
-                      compact={true}
-                      uploadedFiles={attachments
-                        .filter((a) => a.type === 'image' && a.dataUrl)
-                        .map((a) => ({
-                          name: a.name,
-                          type: a.mimeType || getFileTypeFromExtension(a.name),
-                          size: a.size || 0,
-                          base64: a.base64 || '',
-                          dataUrl: a.dataUrl!,
-                        }))}
-                    />
-                  </div>
-                )}
+              {/* TokenCounter hidden: custom llama.cpp server lacks /apply-template and /tokenize endpoints */}
 
               {isStreaming ? (
                 <Button
@@ -2015,27 +1991,7 @@ const ChatInput = memo(function ChatInput({
         </div>
       )}
 
-      {selectedProvider === 'llamacpp' &&
-        isModelActive &&
-        !effectiveAgentMode &&
-        !tokenCounterCompact &&
-        !initialMessage &&
-        (threadMessages?.length > 0 || prompt.trim().length > 0) && (
-          <div className="flex-1 w-full flex justify-start px-2">
-            <TokenCounter
-              messages={threadMessages || []}
-              uploadedFiles={attachments
-                .filter((a) => a.type === 'image' && a.dataUrl)
-                .map((a) => ({
-                  name: a.name,
-                  type: a.mimeType || getFileTypeFromExtension(a.name),
-                  size: a.size || 0,
-                  base64: a.base64 || '',
-                  dataUrl: a.dataUrl!,
-                }))}
-            />
-          </div>
-        )}
+      {/* TokenCounter hidden: custom llama.cpp server lacks /apply-template and /tokenize endpoints */}
 
       <JanBrowserExtensionDialog
         open={extensionDialogOpen}
