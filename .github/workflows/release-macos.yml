@@ -147,7 +147,11 @@ jobs:
           grep -A2 '"background"' src-tauri/tauri.macos.conf.json
           echo "=== Building ==="
 
-          yarn build:tauri:darwin
+          yarn download:bin
+          yarn build:mlx-server
+          yarn build:foundation-models-server
+          yarn build:cli
+          yarn tauri build --target universal-apple-darwin --config src-tauri/tauri.macos.conf.json
 
       - name: Collect artifact metadata
         id: metadata
