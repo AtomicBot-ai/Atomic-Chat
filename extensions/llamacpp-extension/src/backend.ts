@@ -1,18 +1,12 @@
-import { getJanDataFolderPath, fs, joinPath, events } from '@janhq/core'
-import { invoke } from '@tauri-apps/api/core'
-import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
-import { getProxyConfig, basenameNoExt } from './util'
-import { dirname } from '@tauri-apps/api/path'
+import { getJanDataFolderPath, fs, joinPath } from '@janhq/core'
 import { getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 import {
-  mapOldBackendToNew,
   getLocalInstalledBackendsInternal,
   normalizeFeatures,
   determineSupportedBackends,
   listSupportedBackendsFromRust,
   BackendVersion,
   getSupportedFeaturesFromRust,
-  isCudaInstalledFromRust,
 } from '@janhq/tauri-plugin-llamacpp-api'
 
 /*
@@ -23,88 +17,12 @@ export async function getLocalInstalledBackends(): Promise<
   { version: string; backend: string }[]
 > {
   const janDataFolderPath = await getJanDataFolderPath()
-  const backendDir = await joinPath([
-    janDataFolderPath,
-    'llamacpp',
-    'backends',
-  ])
+  const backendDir = await joinPath([janDataFolderPath, 'llamacpp', 'backends'])
   return await getLocalInstalledBackendsInternal(backendDir)
 }
-/*
- * currently reads available backends in remote
- *
- */
-async function fetchRemoteSupportedBackends(
-  supportedBackends: string[]
-): Promise<{ version: string; backend: string; order?: number }[]> {
-  console.info('[fetchRemoteSupportedBackends] supportedBackends:', supportedBackends)
-  const { releases } = await _fetchGithubReleases('Vect0rM', 'atomic-llama-cpp-turboquant')
-  // Sort by publish date (newest first) — tag names contain commit hashes
-  // so lexicographic order is meaningless.
-  releases.sort((a: any, b: any) =>
-    new Date(b.published_at ?? b.created_at).getTime() -
-    new Date(a.published_at ?? a.created_at).getTime()
-  )
-  releases.splice(10)
-
-  console.info(
-    '[fetchRemoteSupportedBackends] releases after sort/trim:',
-    releases.map((r: any) => `${r.tag_name} (assets: ${r.assets?.length ?? 0}, published: ${r.published_at ?? r.created_at})`)
-  )
-
-  const remote: { version: string; backend: string; order?: number }[] = []
-  const TURBOQUANT_PREFIX = 'llama-turboquant-'
-
-  for (let i = 0; i < releases.length; i++) {
-    const release = releases[i]
-    const version = release.tag_name
-    const order = releases.length - i
-
-    for (const asset of release.assets) {
-      const name: string = asset.name
-
-      // Turboquant assets: llama-turboquant-{backend}.tar.gz
-      if (name.startsWith(TURBOQUANT_PREFIX)) {
-        const backend = basenameNoExt(name).slice(TURBOQUANT_PREFIX.length)
-        console.info(`[fetchRemoteSupportedBackends] turboquant asset: ${name} → backend="${backend}" (supported: ${supportedBackends.includes(backend)})`)
-        if (supportedBackends.includes(backend)) {
-          remote.push({ version, backend, order })
-          continue
-        }
-        const mappedNew = await mapOldBackendToNew(backend)
-        if (mappedNew !== backend && supportedBackends.includes(mappedNew)) {
-          remote.push({ version, backend, order })
-        }
-        continue
-      }
-
-      // Legacy assets: llama-{version}-bin-{backend}.tar.gz
-      const legacyPrefix = `llama-${version}-bin-`
-      if (name.startsWith(legacyPrefix)) {
-        const backend = basenameNoExt(name).slice(legacyPrefix.length)
-        if (supportedBackends.includes(backend)) {
-          remote.push({ version, backend, order })
-          continue
-        }
-        const mappedNew = await mapOldBackendToNew(backend)
-        if (mappedNew !== backend && supportedBackends.includes(mappedNew)) {
-          remote.push({ version, backend, order })
-        }
-      }
-    }
-  }
-
-  console.info(
-    '[fetchRemoteSupportedBackends] matched remote backends:',
-    remote.map(r => `${r.version}/${r.backend} (order=${r.order})`)
-  )
-  return remote
-}
-
 // folder structure
 // <Jan's data folder>/llamacpp/backends/<backend_version>/<backend_type>
 
-// what should be available to the user for selection?
 export async function listSupportedBackends(): Promise<BackendVersion[]> {
   const sysInfo = await getSystemInfo()
   const osType = sysInfo.os_type
@@ -122,30 +40,6 @@ export async function listSupportedBackends(): Promise<BackendVersion[]> {
   )
   console.info('[listSupportedBackends] supportedBackends:', supportedBackends)
 
-  let remoteBackendVersions: BackendVersion[] = []
-  try {
-    console.info('[listSupportedBackends] fetching remote backends...')
-    const REMOTE_TIMEOUT_MS = 10_000
-    remoteBackendVersions = await Promise.race([
-      fetchRemoteSupportedBackends(supportedBackends),
-      new Promise<BackendVersion[]>((_, reject) =>
-        setTimeout(
-          () => reject(new Error(`remote fetch timed out after ${REMOTE_TIMEOUT_MS}ms`)),
-          REMOTE_TIMEOUT_MS
-        )
-      ),
-    ])
-    console.info(
-      '[listSupportedBackends] remote backends:',
-      remoteBackendVersions.length,
-      remoteBackendVersions.map(b => `${b.version}/${b.backend} (order=${b.order})`)
-    )
-  } catch (e) {
-    console.warn(
-      `[listSupportedBackends] remote fetch failed (will use local): ${String(e)}`
-    )
-  }
-
   const localBackendVersions = await getLocalInstalledBackends()
   console.info(
     '[listSupportedBackends] local backends:',
@@ -153,10 +47,7 @@ export async function listSupportedBackends(): Promise<BackendVersion[]> {
     localBackendVersions
   )
 
-  return listSupportedBackendsFromRust(
-    remoteBackendVersions,
-    localBackendVersions
-  )
+  return listSupportedBackendsFromRust([], localBackendVersions)
 }
 
 export async function getBackendDir(
@@ -199,196 +90,11 @@ export async function isBackendInstalled(
   return result
 }
 
-export async function downloadBackend(
-  backend: string,
-  version: string,
-): Promise<void> {
-  const backendDir = await getBackendDir(backend, version)
-
-  const downloadManager = window.core.extensionManager.getByName(
-    '@janhq/download-extension'
-  )
-
-  // Get proxy configuration from localStorage
-  const proxyConfig = getProxyConfig()
-
-  const platformName = IS_WINDOWS ? 'win' : 'linux'
-
-  // Turboquant releases use "llama-turboquant-{backend}" naming;
-  // fall back to legacy "{version}-bin-{backend}" for older tags.
-  const isTurboquantRelease = version.startsWith('turboquant-')
-  const assetName = isTurboquantRelease
-    ? `llama-turboquant-${backend}.tar.gz`
-    : `llama-${version}-bin-${backend}.tar.gz`
-  const backendUrl =
-    `https://github.com/Vect0rM/atomic-llama-cpp-turboquant/releases/download/${version}/${assetName}`
-
-  const taskId = `llamacpp-${version}-${backend}`.replace(/\./g, '-')
-
-  const downloadItems = [
-    {
-      url: backendUrl,
-      save_path: await joinPath([backendDir, 'backend.tar.gz']),
-      proxy: proxyConfig,
-      model_id: taskId,
-    },
-  ]
-
-  // also download CUDA runtime + cuBLAS + cuBLASLt if needed
-  if (
-    (backend.includes('cu11.7') || backend.includes('cuda-11')) &&
-    !(await _isCudaInstalled(backendDir, '11.7'))
-  ) {
-    downloadItems.push({
-      url:
-        `https://github.com/Vect0rM/atomic-llama-cpp-turboquant/releases/download/${version}/cudart-llama-bin-${platformName}-cu11.7-x64.tar.gz`,
-      save_path: await joinPath([backendDir, 'build', 'bin', 'cuda11.tar.gz']),
-      proxy: proxyConfig,
-      model_id: taskId,
-    })
-  } else if (
-    (backend.includes('cu12.0') || backend.includes('cuda-12')) &&
-    !(await _isCudaInstalled(backendDir, '12.0'))
-  ) {
-    downloadItems.push({
-      url:
-        `https://github.com/Vect0rM/atomic-llama-cpp-turboquant/releases/download/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`,
-      save_path: await joinPath([backendDir, 'build', 'bin', 'cuda12.tar.gz']),
-      proxy: proxyConfig,
-      model_id: taskId,
-    })
-  } else if (
-    backend.includes('cuda-13') &&
-    !(await _isCudaInstalled(backendDir, '13.0'))
-  ) {
-    downloadItems.push({
-      url:
-        `https://github.com/Vect0rM/atomic-llama-cpp-turboquant/releases/download/${version}/cudart-llama-bin-${platformName}-cu13.0-x64.tar.gz`,
-      save_path: await joinPath([backendDir, 'build', 'bin', 'cuda13.tar.gz']),
-      proxy: proxyConfig,
-      model_id: taskId,
-    })
-  }
-  const downloadType = 'Engine'
-
-  console.log(
-    `Downloading backend ${backend} version ${version}: ${JSON.stringify(
-      downloadItems
-    )}`
-  )
-  let downloadCompleted = false
-  try {
-    const onProgress = (transferred: number, total: number) => {
-      events.emit('onFileDownloadUpdate', {
-        modelId: taskId,
-        percent: transferred / total,
-        size: { transferred, total },
-        downloadType,
-      })
-      downloadCompleted = transferred === total
-    }
-    await downloadManager.downloadFiles(downloadItems, taskId, onProgress)
-
-    // once we reach this point, it either means download finishes or it was cancelled.
-    // if there was an error, it would have been caught above
-    if (!downloadCompleted) {
-      events.emit('onFileDownloadStopped', { modelId: taskId, downloadType })
-      return
-    }
-
-    // decompress the downloaded tar.gz files
-    for (const { save_path } of downloadItems) {
-      if (save_path.endsWith('.tar.gz')) {
-        const parentDir = await dirname(save_path)
-        await invoke('decompress', { path: save_path, outputDir: parentDir })
-        await fs.rm(save_path)
-      }
-    }
-
-    // Legacy tarballs may extract to llama-{version}/ flat structure.
-    // The app expects build/bin/llama-server — rearrange if needed.
-    // Turboquant tarballs already extract to build/bin/, so this is a no-op for them.
-    const extractedDir = await joinPath([backendDir, `llama-${version}`])
-    if (await fs.existsSync(extractedDir)) {
-      const buildDir = await joinPath([backendDir, 'build'])
-      await fs.mkdir(buildDir)
-      const buildBinDir = await joinPath([buildDir, 'bin'])
-      await fs.mv(extractedDir, buildBinDir)
-    }
-
-    events.emit('onFileDownloadSuccess', { modelId: taskId, downloadType })
-  } catch (error) {
-    console.error(`Failed to download backend ${backend}: `, error)
-    events.emit('onFileDownloadError', { modelId: taskId, downloadType })
-    throw error
-  }
-}
-
 async function _getSupportedFeatures() {
   const sysInfo = await getSystemInfo()
   return await getSupportedFeaturesFromRust(
     sysInfo.os_type,
     sysInfo.cpu.extensions,
     sysInfo.gpus
-  )
-}
-
-/**
- * Fetch releases from GitHub with timeout and optional proxy passthrough.
- */
-async function _fetchGithubReleases(
-  owner: string,
-  repo: string
-): Promise<{ releases: any[] }> {
-  const githubUrl = `https://api.github.com/repos/${owner}/${repo}/releases`
-
-  const proxyConfig = getProxyConfig()
-  const fetchInit: Record<string, unknown> = {
-    connectTimeout: 15_000,
-  }
-  if (proxyConfig?.url) {
-    fetchInit.proxy = { all: { url: proxyConfig.url } }
-  }
-
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 20_000)
-  fetchInit.signal = controller.signal
-
-  try {
-    console.info(`[_fetchGithubReleases] GET ${githubUrl}`)
-    const response = await tauriFetch(githubUrl, fetchInit as any)
-    const rateRemaining = response.headers.get('x-ratelimit-remaining')
-    const rateLimit = response.headers.get('x-ratelimit-limit')
-    const rateReset = response.headers.get('x-ratelimit-reset')
-    console.info(
-      `[_fetchGithubReleases] status=${response.status} rate-limit=${rateLimit} remaining=${rateRemaining} reset=${rateReset ? new Date(Number(rateReset) * 1000).toISOString() : 'n/a'}`
-    )
-    if (!response.ok) {
-      const body = await response.text().catch(() => '<unreadable>')
-      throw new Error(
-        `GitHub error: ${response.status} ${response.statusText} — ${body}`
-      )
-    }
-    const releases = await response.json()
-    console.info(`[_fetchGithubReleases] fetched ${Array.isArray(releases) ? releases.length : '?'} releases`)
-    return { releases }
-  } finally {
-    clearTimeout(timeout)
-  }
-}
-
-// accept backendDir (full path) and cuda version (e.g. '11.7' or '12.0' or '13.0')
-async function _isCudaInstalled(
-  backendDir: string,
-  version: string
-): Promise<boolean> {
-  const sysInfo = await getSystemInfo()
-  const janDataFolderPath = await getJanDataFolderPath()
-
-  return isCudaInstalledFromRust(
-    backendDir,
-    version,
-    sysInfo.os_type,
-    janDataFolderPath
   )
 }

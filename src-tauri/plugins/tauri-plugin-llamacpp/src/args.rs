@@ -6,7 +6,6 @@ fn default_parallel() -> i32 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlamacppConfig {
     pub version_backend: String,
-    pub auto_update_engine: bool,
     pub auto_unload: bool,
     pub timeout: i32,
     pub llamacpp_env: String,
@@ -425,7 +424,6 @@ mod tests {
     fn default_config() -> LlamacppConfig {
         LlamacppConfig {
             version_backend: "v1.0/standard".to_string(),
-            auto_update_engine: false,
             auto_unload: false,
             timeout: 120,
             llamacpp_env: String::new(),

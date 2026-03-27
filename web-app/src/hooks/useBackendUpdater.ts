@@ -94,47 +94,6 @@ export const useBackendUpdater = () => {
     }
   }, [])
 
-  // Check auto update setting from llamacpp extension
-  useEffect(() => {
-    const checkAutoUpdateSetting = async () => {
-      try {
-        // Get llamacpp extension instance
-        const allExtensions = ExtensionManager.getInstance().listExtensions()
-        let llamacppExtension =
-          ExtensionManager.getInstance().getByName('llamacpp-extension')
-
-        if (!llamacppExtension) {
-          // Try to find by type or other properties
-          llamacppExtension =
-            allExtensions.find(
-              (ext) =>
-                ext.constructor.name.toLowerCase().includes('llamacpp') ||
-                (ext.type &&
-                  ext.type()?.toString().toLowerCase().includes('inference'))
-            ) || undefined
-        }
-
-        if (llamacppExtension && 'getSettings' in llamacppExtension) {
-          const extension = llamacppExtension as LlamacppExtension
-          const settings = await extension.getSettings?.()
-          const autoUpdateSetting = settings?.find(
-            (s) => s.key === 'auto_update_engine'
-          )
-
-          setUpdateState((prev) => ({
-            ...prev,
-            autoUpdateEnabled:
-              autoUpdateSetting?.controllerProps?.value === true,
-          }))
-        }
-      } catch (error) {
-        console.error('Failed to check auto update setting:', error)
-      }
-    }
-
-    checkAutoUpdateSetting()
-  }, [])
-
   const syncStateToOtherInstances = useCallback(
     (partialState: Partial<BackendUpdateState>) => {
       // Emit event to sync state across all useBackendUpdater instances
@@ -311,9 +270,8 @@ export const useBackendUpdater = () => {
 
         if (rawParts.length !== 2 || !versionPart || !backendTypePart) {
           // Malformed targetBackend; fall back to constructing from current settings
-          const currentBackendType = await getCurrentBackendTypeFromSettings(
-            extension
-          )
+          const currentBackendType =
+            await getCurrentBackendTypeFromSettings(extension)
           targetBackendString = `${updateState.updateInfo.newVersion}/${currentBackendType}`
         } else {
           // Normalize to "version/backendType" with trimmed parts
@@ -321,9 +279,8 @@ export const useBackendUpdater = () => {
         }
       } else {
         // Fallback: construct from current settings if targetBackend wasn't provided
-        const currentBackendType = await getCurrentBackendTypeFromSettings(
-          extension
-        )
+        const currentBackendType =
+          await getCurrentBackendTypeFromSettings(extension)
         targetBackendString = `${updateState.updateInfo.newVersion}/${currentBackendType}`
       }
 
@@ -345,7 +302,8 @@ export const useBackendUpdater = () => {
         syncStateToOtherInstances(newState)
       } else if (
         result?.wasUpdated === false &&
-        (result.reason === 'in_progress' || typeof result.reason === 'undefined')
+        (result.reason === 'in_progress' ||
+          typeof result.reason === 'undefined')
       ) {
         // Benign no-op (e.g., another update is already in progress or the
         // extension returned a no-op response without a reason). Do not treat
@@ -372,7 +330,11 @@ export const useBackendUpdater = () => {
       }))
       throw error
     }
-  }, [updateState.updateInfo, updateState.isUpdating, syncStateToOtherInstances])
+  }, [
+    updateState.updateInfo,
+    updateState.isUpdating,
+    syncStateToOtherInstances,
+  ])
 
   const installBackend = useCallback(async (filePath: string) => {
     try {

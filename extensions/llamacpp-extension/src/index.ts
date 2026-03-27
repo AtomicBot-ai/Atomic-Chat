@@ -28,7 +28,6 @@ import { error, info, warn } from '@tauri-apps/plugin-log'
 import { listen } from '@tauri-apps/api/event'
 import {
   listSupportedBackends,
-  downloadBackend,
   isBackendInstalled,
   getBackendExePath,
   getBackendDir,
@@ -56,7 +55,6 @@ import {
   mapOldBackendToNew,
   findLatestVersionForBackend,
   prioritizeBackends,
-  checkBackendForUpdates,
   removeOldBackendVersions,
   shouldMigrateBackend,
   handleSettingUpdate,
@@ -125,7 +123,6 @@ export default class llamacpp_extension extends AIEngine {
   private config: LlamacppConfig
   private providerPath!: string
   private apiSecret: string = 'JustAskNow'
-  private pendingDownloads: Map<string, Promise<void>> = new Map()
   private isConfiguringBackends: boolean = false
   private isUpdatingBackend: boolean = false
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
@@ -217,16 +214,16 @@ export default class llamacpp_extension extends AIEngine {
     if (localStorage.getItem(MIGRATION_KEY)) return
 
     const keysToMigrate = ['cache_type_k', 'cache_type_v'] as const
-    const needsMigration = keysToMigrate.some(
-      (k) => this.config[k] === 'f16'
-    )
+    const needsMigration = keysToMigrate.some((k) => this.config[k] === 'f16')
 
     if (needsMigration) {
       const settings = await this.getSettings()
       await this.updateSettings(
         settings.map((item) => {
           if (
-            keysToMigrate.includes(item.key as (typeof keysToMigrate)[number]) &&
+            keysToMigrate.includes(
+              item.key as (typeof keysToMigrate)[number]
+            ) &&
             item.controllerProps.value === 'f16'
           ) {
             item.controllerProps.value = 'q8_0'
@@ -257,7 +254,9 @@ export default class llamacpp_extension extends AIEngine {
       await this.updateSettings(
         settings.map((item) => {
           if (
-            keysToMigrate.includes(item.key as (typeof keysToMigrate)[number]) &&
+            keysToMigrate.includes(
+              item.key as (typeof keysToMigrate)[number]
+            ) &&
             item.controllerProps.value !== 'turbo3'
           ) {
             item.controllerProps.value = 'turbo3'
@@ -307,9 +306,7 @@ export default class llamacpp_extension extends AIEngine {
       const result = await installBundledBackend(backendsDir)
 
       if (result.installed && result.backend_string) {
-        logger.info(
-          `Bundled backend installed: ${result.backend_string}`
-        )
+        logger.info(`Bundled backend installed: ${result.backend_string}`)
         return result.backend_string
       } else {
         logger.info('No bundled backend available or already installed')
@@ -482,7 +479,6 @@ export default class llamacpp_extension extends AIEngine {
       this.registerSettings(settings)
 
       let effectiveBackendString = this.config.version_backend
-      let backendWasDownloaded = false
 
       // If a bundled turboquant backend exists and current backend is not turboquant,
       // force-switch to the bundled one so users don't stay on an old non-turboquant build
@@ -505,12 +501,9 @@ export default class llamacpp_extension extends AIEngine {
         (!effectiveBackendString ||
           effectiveBackendString === 'none' ||
           !effectiveBackendString.includes('/') ||
-          // If the selected backend is not in the list of supported backends
-          // Need to reset too
           !version_backends.some(
             (e) => `${e.version}/${e.backend}` === effectiveBackendString
           )) &&
-        // Ensure we have a valid best available backend
         bestAvailableBackendString
       ) {
         effectiveBackendString = bestAvailableBackendString
@@ -518,10 +511,8 @@ export default class llamacpp_extension extends AIEngine {
           `Fresh installation or invalid backend detected, using: ${effectiveBackendString}`
         )
 
-        // Update the config immediately
         this.config.version_backend = effectiveBackendString
 
-        // Update the settings to reflect the change in UI
         const updatedSettings = await this.getSettings()
         await this.updateSettings(
           updatedSettings.map((item) => {
@@ -533,46 +524,12 @@ export default class llamacpp_extension extends AIEngine {
         )
         logger.info(`Updated UI settings to show: ${effectiveBackendString}`)
 
-        // Emit for updating fe
         if (events && typeof events.emit === 'function') {
-          logger.info(
-            `Emitting settingsChanged event for version_backend with value: ${effectiveBackendString}`
-          )
           events.emit('settingsChanged', {
             key: 'version_backend',
             value: effectiveBackendString,
           })
         }
-      }
-
-      // Download and install the backend if not already present
-      if (effectiveBackendString) {
-        const [version, backend] = effectiveBackendString.split('/')
-        if (version && backend) {
-          const isInstalled = await isBackendInstalled(backend, version)
-          if (!isInstalled) {
-            logger.info(`Installing initial backend: ${effectiveBackendString}`)
-            await this.ensureBackendReady(backend, version)
-            backendWasDownloaded = true
-            logger.info(
-              `Successfully installed initial backend: ${effectiveBackendString}`
-            )
-          }
-        }
-      }
-
-      if (this.config.auto_update_engine) {
-        const updateResult = await this.handleAutoUpdate(
-          bestAvailableBackendString
-        )
-        if (updateResult.wasUpdated) {
-          effectiveBackendString = updateResult.newBackend
-          backendWasDownloaded = true
-        }
-      }
-
-      if (!backendWasDownloaded && effectiveBackendString) {
-        await this.ensureFinalBackendInstallation(effectiveBackendString)
       }
     } finally {
       this.isConfiguringBackends = false
@@ -612,7 +569,9 @@ export default class llamacpp_extension extends AIEngine {
     targetBackendString: string
   ): Promise<{ wasUpdated: boolean; newBackend: string }> {
     if (this.isUpdatingBackend) {
-      logger.warn('Backend update already in progress, skipping new update request')
+      logger.warn(
+        'Backend update already in progress, skipping new update request'
+      )
       // Treat concurrent update requests as a benign no-op and report that no new update
       // was performed, while still returning the current backend value.
       return { wasUpdated: false, newBackend: this.config.version_backend }
@@ -727,91 +686,12 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  private async handleAutoUpdate(
-    bestAvailableBackendString: string
-  ): Promise<{ wasUpdated: boolean; newBackend: string }> {
-    logger.info(
-      `Auto-update engine is enabled. Current backend: ${this.config.version_backend}. Best available: ${bestAvailableBackendString}`
-    )
-
-    if (!bestAvailableBackendString) {
-      logger.warn(
-        'Auto-update enabled, but no best available backend determined'
-      )
-      return { wasUpdated: false, newBackend: this.config.version_backend }
-    }
-
-    // If version_backend is empty, invalid, or 'none', use the best available backend
-    if (
-      !this.config.version_backend ||
-      this.config.version_backend === '' ||
-      this.config.version_backend === 'none' ||
-      !this.config.version_backend.includes('/')
-    ) {
-      logger.info(
-        'No valid backend currently selected, using best available backend'
-      )
-
-      return await this.updateBackend(bestAvailableBackendString)
-    }
-
-    // Use Rust checkBackendForUpdates logic implicitly here by using the helpers
-    const version_backends = await listSupportedBackends()
-    const checkResult = await checkBackendForUpdates(
-      this.config.version_backend,
-      version_backends
-    )
-
-    if (checkResult.update_needed && checkResult.target_backend) {
-      logger.info(
-        `Auto-updating to new version: ${checkResult.new_version} (${checkResult.target_backend})`
-      )
-      return await this.updateBackend(checkResult.target_backend)
-    }
-
-    // If no update needed, check if we need to fall back (e.g. current backend not supported anymore)
-    // The Rust check_backend_for_updates handles finding the latest version for current type.
-    // If it returns no target_backend, it means current type is not found.
-    if (!checkResult.target_backend) {
-      const [currentVersion, currentBackend] =
-        this.config.version_backend.split('/')
-      const currentEffectiveType = await mapOldBackendToNew(currentBackend)
-      const bestEffectiveType = await mapOldBackendToNew(
-        bestAvailableBackendString.split('/')[1]
-      )
-
-      if (currentEffectiveType !== bestEffectiveType) {
-        logger.info(
-          `Current backend type ${currentEffectiveType} not available, falling back to best available: ${bestAvailableBackendString}`
-        )
-        return await this.updateBackend(bestAvailableBackendString)
-      }
-    }
-
-    return { wasUpdated: false, newBackend: this.config.version_backend }
-  }
-
   async checkBackendForUpdates(): Promise<{
     updateNeeded: boolean
     newVersion: string
     targetBackend?: string
   }> {
-    try {
-      const version_backends = await listSupportedBackends()
-      const result = await checkBackendForUpdates(
-        this.config.version_backend,
-        version_backends
-      )
-
-      return {
-        updateNeeded: result.update_needed,
-        newVersion: result.new_version,
-        targetBackend: result.target_backend,
-      }
-    } catch (e) {
-      logger.warn('Failed to check for updates via Rust command:', e)
-      return { updateNeeded: false, newVersion: '0' }
-    }
+    return { updateNeeded: false, newVersion: '0' }
   }
 
   private async ensureFinalBackendInstallation(
@@ -1687,7 +1567,7 @@ export default class llamacpp_extension extends AIEngine {
 
     if (!version || !backend) {
       throw new Error(
-        'Llama.cpp backend is not configured (version_backend is missing or invalid). Check Settings → Llama.cpp — Version & Backend, internet access to GitHub for engine list, or install a backend manually.'
+        'Llama.cpp backend is not configured (version_backend is missing or invalid). Check Settings → Llama.cpp — Version & Backend, or reinstall the application.'
       )
     }
 
@@ -1805,31 +1685,13 @@ export default class llamacpp_extension extends AIEngine {
     version: string
   ): Promise<void> {
     const backendKey = `${version}/${backend}`
-
-    // Check if backend is already installed
     const isInstalled = await isBackendInstalled(backend, version)
     if (isInstalled) {
       return
     }
-
-    // Check if download is already in progress
-    if (this.pendingDownloads.has(backendKey)) {
-      logger.info(
-        `Backend ${backendKey} download already in progress, waiting...`
-      )
-      await this.pendingDownloads.get(backendKey)
-      return
-    }
-
-    // Start new download
-    logger.info(`Backend ${backendKey} not installed, downloading...`)
-    const downloadPromise = downloadBackend(backend, version).finally(() => {
-      this.pendingDownloads.delete(backendKey)
-    })
-
-    this.pendingDownloads.set(backendKey, downloadPromise)
-    await downloadPromise
-    logger.info(`Backend ${backendKey} download completed`)
+    throw new Error(
+      `Backend ${backendKey} is not installed. The backend should be bundled with the application. Try reinstalling the app.`
+    )
   }
 
   private async *handleStreamingResponse(
@@ -1868,8 +1730,10 @@ export default class llamacpp_extension extends AIEngine {
 
     const timeoutNum = Number(this.timeout) || 600
     logger.info(
-      '[stream] invoking stream_local_http, url:', url,
-      'timeout:', timeoutNum
+      '[stream] invoking stream_local_http, url:',
+      url,
+      'timeout:',
+      timeoutNum
     )
 
     const requestPromise = invoke<number>('stream_local_http', {
@@ -2120,7 +1984,7 @@ export default class llamacpp_extension extends AIEngine {
     const [version, backend] = cfg.version_backend.split('/')
     if (!version || !backend) {
       throw new Error(
-        'Llama.cpp backend is not configured (version_backend is missing or invalid). Open Settings → Llama.cpp and wait for the engine list, or pick/install a backend.'
+        'Llama.cpp backend is not configured (version_backend is missing or invalid). Check Settings → Llama.cpp — Version & Backend, or reinstall the application.'
       )
     }
     // set envs

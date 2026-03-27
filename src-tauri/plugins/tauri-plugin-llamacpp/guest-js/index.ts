@@ -35,7 +35,6 @@ function asString(v: any, defaultValue = ''): string {
 export function normalizeLlamacppConfig(config: any): LlamacppConfig {
   return {
     version_backend: asString(config.version_backend),
-    auto_update_engine: asBool(config.auto_update_engine),
     auto_unload: asBool(config.auto_unload),
     timeout: asNumber(config.timeout, 600),
 
@@ -204,7 +203,9 @@ export async function cleanupLlamaProcesses(): Promise<void> {
  * This is used for migrating stored user preferences.
  */
 export async function mapOldBackendToNew(oldBackend: string): Promise<string> {
-  return await invoke<string>('plugin:llamacpp|map_old_backend_to_new', { oldBackend })
+  return await invoke<string>('plugin:llamacpp|map_old_backend_to_new', {
+    oldBackend,
+  })
 }
 
 export async function getLocalInstalledBackendsInternal(

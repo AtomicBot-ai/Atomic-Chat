@@ -1303,7 +1303,6 @@ async fn start_model_server(
 fn build_llamacpp_config(n_gpu_layers: i32, ctx_size: i32, timeout: i32, fit: bool, threads: i32) -> LlamacppConfig {
     LlamacppConfig {
         version_backend: "cli/llama-server".to_string(),
-        auto_update_engine: false,
         auto_unload: false,
         timeout,
         llamacpp_env: String::new(),

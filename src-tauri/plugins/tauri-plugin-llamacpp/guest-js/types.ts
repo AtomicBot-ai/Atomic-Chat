@@ -29,7 +29,6 @@ export interface GgufMetadata {
 // llama.cpp settings
 export type LlamacppConfig = {
   version_backend: string
-  auto_update_engine: boolean
   auto_unload: boolean
   timeout: number
   llamacpp_env: string
@@ -127,7 +126,11 @@ export interface SystemMemory {
 }
 
 // backend types
-export type BackendVersion = { version: string; backend: string; order?: number }
+export type BackendVersion = {
+  version: string
+  backend: string
+  order?: number
+}
 
 export type BackendFeatures = {
   cuda11: boolean
