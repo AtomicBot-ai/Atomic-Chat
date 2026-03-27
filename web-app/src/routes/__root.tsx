@@ -1,7 +1,7 @@
 import { createRootRoute, Outlet } from '@tanstack/react-router'
 // import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 
-// import DialogAppUpdater from '@/containers/dialogs/AppUpdater'
+import DialogAppUpdater from '@/containers/dialogs/AppUpdater'
 import BackendUpdater from '@/containers/dialogs/BackendUpdater'
 import { Fragment } from 'react/jsx-runtime'
 import { ThemeProvider } from '@/providers/ThemeProvider'
@@ -56,8 +56,7 @@ const AppLayout = () => {
         {/* Fake absolute panel top to enable window drag */}
         {IS_WINDOWS && <WindowControls />}
         {!IS_LINUX && <div className="fixed w-full h-12 z-20 top-0" data-tauri-drag-region />}
-        {/* Попап новой версии приложения отключён (см. также DataProvider — нет авто-проверки) */}
-        {/* <DialogAppUpdater /> */}
+        <DialogAppUpdater />
         <BackendUpdater />
         <LeftSidebar />
         <SidebarInset>

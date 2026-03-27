@@ -204,13 +204,6 @@ function General() {
       const update = await checkForUpdate(true)
       if (!update) {
         toast.info(t('settings:general.noUpdateAvailable'))
-      } else {
-        // Попап DialogAppUpdater отключён в __root — показываем версию в toast
-        toast.info(
-          t('updater:newVersion', { version: update.version }) +
-            ' — ' +
-            t('updater:updateAvailable')
-        )
       }
     } catch (error) {
       console.error('Failed to check for updates:', error)
