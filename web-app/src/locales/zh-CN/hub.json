@@ -15,9 +15,9 @@
   "tools": "工具",
   "searchPlaceholder": "在 Hugging Face 上搜索模型...",
   "recTitle": "推荐",
-  "rec8gb": "适合 8GB 内存设备",
-  "recChatting": "适合聊天",
-  "recAnalyzing": "适合分析文件",
-  "recCoding": "适合编程",
+  "recEverydayUse": "日常使用",
+  "recVisionKnowledge": "视觉与知识",
+  "recFinetuningChat": "微调与对话",
+  "recMathReasoning": "数学与推理",
   "backToModels": "返回模型列表"
 }

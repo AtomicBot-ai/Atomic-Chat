@@ -12,6 +12,29 @@ export const DEFAULT_MODEL_QUANTIZATIONS = ['iq4_xs', 'q4_k_m']
  */
 export const SETUP_SCREEN_QUANTIZATIONS = ['q4_k_m']
 
+//* Рекомендуемые модели: Hub и экран первичной настройки (совпадение с каталогом по extractModelName)
+export const HUB_RECOMMENDED_MODELS: ReadonlyArray<{
+  modelName: string
+  descriptionKey: string
+}> = [
+  {
+    modelName: 'unsloth/Qwen3.5-4B-GGUF',
+    descriptionKey: 'hub:recEverydayUse',
+  },
+  {
+    modelName: 'unsloth/Qwen3.5-9B-GGUF',
+    descriptionKey: 'hub:recVisionKnowledge',
+  },
+  {
+    modelName: 'meta-llama/Meta-Llama-3.1-8B-Instruct-GGUF',
+    descriptionKey: 'hub:recFinetuningChat',
+  },
+  {
+    modelName: 'mradermacher/DeepSeek-R1-Distill-Qwen-14B-Uncensored-GGUF',
+    descriptionKey: 'hub:recMathReasoning',
+  },
+]
+
 export const JAN_V2_VL_MODEL_HF_REPO = 'janhq/Jan-v2-VL-high-gguf'
 export const JAN_V2_VL_QUANTIZATIONS = ['q4_k_m', 'q4_k_s', 'q4_0', 'q3_k_m']
 

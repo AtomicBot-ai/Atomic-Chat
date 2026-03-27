@@ -93,6 +93,28 @@ def rgba_remove_edge_connected_background(im: Image.Image, tolerance: int) -> Im
     return out
 
 
+def ink_weighted_centroid(im: Image.Image) -> tuple[float, float]:
+    #* Центр тяжести тёмного знака без лёгкой тени (bbox смещён вниз-вправо из‑за тени).
+    w, h = im.size
+    px = im.load()
+    sx, sy, wsum = 0.0, 0.0, 0.0
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = px[x, y]
+            if a < 12:
+                continue
+            darkness = (255.0 - max(r, g, b)) / 255.0
+            if darkness < 0.28:
+                continue
+            wt = (a / 255.0) * darkness
+            sx += x * wt
+            sy += y * wt
+            wsum += wt
+    if wsum < 1e-6:
+        return (w / 2.0, h / 2.0)
+    return (sx / wsum, sy / wsum)
+
+
 def main() -> None:
     if not LOGO_PATH.is_file():
         print(f"Missing {LOGO_PATH}", file=sys.stderr)
@@ -122,7 +144,10 @@ def main() -> None:
     nw, nh = max(1, int(gw * scale)), max(1, int(gh * scale))
     scaled = logo.resize((nw, nh), Image.Resampling.LANCZOS)
 
-    ox, oy = (SIZE - nw) // 2, (SIZE - nh) // 2
+    #? Совмещаем центр «чернил», а не центр прямоугольника с тенью — иначе звезда визуально уезжает.
+    cx, cy = ink_weighted_centroid(scaled)
+    ox = int(round(SIZE / 2 - cx))
+    oy = int(round(SIZE / 2 - cy))
     canvas.alpha_composite(scaled, (ox, oy))
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)

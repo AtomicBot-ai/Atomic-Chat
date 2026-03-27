@@ -15,9 +15,9 @@
   "tools": "Công cụ",
   "searchPlaceholder": "Tìm kiếm các mô hình trên Hugging Face...",
   "recTitle": "Đề xuất",
-  "rec8gb": "Tốt nhất cho thiết bị 8GB RAM",
-  "recChatting": "Tốt nhất cho trò chuyện",
-  "recAnalyzing": "Tốt nhất để phân tích tệp",
-  "recCoding": "Tốt nhất cho lập trình",
+  "recEverydayUse": "Dùng hằng ngày",
+  "recVisionKnowledge": "Thị giác & kiến thức",
+  "recFinetuningChat": "Tinh chỉnh & trò chuyện",
+  "recMathReasoning": "Toán & suy luận",
   "backToModels": "Quay lại mô hình"
 }

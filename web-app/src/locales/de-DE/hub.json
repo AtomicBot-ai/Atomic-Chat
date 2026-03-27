@@ -16,9 +16,9 @@
   "searchPlaceholder": "Suche nach Modellen auf Hugging Face...",
   "editTheme": "Bearbeite Erscheinungsbild",
   "recTitle": "Empfohlen",
-  "rec8gb": "Am besten für Geräte mit 8 GB RAM",
-  "recChatting": "Am besten für Chats",
-  "recAnalyzing": "Am besten für Dateianalyse",
-  "recCoding": "Am besten für Code",
+  "recEverydayUse": "Alltag",
+  "recVisionKnowledge": "Sehen & Wissen",
+  "recFinetuningChat": "Feintuning & Chat",
+  "recMathReasoning": "Mathe & Schlussfolgern",
   "backToModels": "Zurück zu Modellen"
 }

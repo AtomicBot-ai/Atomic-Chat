@@ -14,7 +14,7 @@ type LeftPanelStoreState = {
 export const useLeftPanel = create<LeftPanelStoreState>()(
   persist(
     (set) => ({
-      open: true,
+      open: false,
       size: 20, // Default size of 20%
       width: '15rem', // Default sidebar width
       setLeftPanel: (value) => set({ open: value }),

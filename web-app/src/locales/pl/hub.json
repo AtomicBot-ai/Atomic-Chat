@@ -15,9 +15,9 @@
   "tools": "Narzędzia",
   "searchPlaceholder": "Szukaj modeli na Hugging Face…",
   "recTitle": "Polecane",
-  "rec8gb": "Dla urządzeń z 8 GB RAM",
-  "recChatting": "Do czatu",
-  "recAnalyzing": "Do analizy plików",
-  "recCoding": "Do kodowania",
+  "recEverydayUse": "Codzienne użycie",
+  "recVisionKnowledge": "Wizja i wiedza",
+  "recFinetuningChat": "Dostrajanie i czat",
+  "recMathReasoning": "Matematyka i rozumowanie",
   "backToModels": "Powrót do modeli"
 }

@@ -9,5 +9,9 @@
   "downloadingDescription": "Please wait while we download the model. This may take a few minutes.",
   "orDivider": "or",
   "localModel": "Set up local model",
-  "remoteProvider": "Set up remote provider"
+  "remoteProvider": "Set up remote provider",
+  "turboQuantTagline": "Atomic Chat runs local AI models on your device with TurboQuant—blazing fast on everyday hardware.",
+  "skip": "Skip",
+  "downloading": "Downloading…",
+  "modelUnavailable": "Not in catalog yet — open Hub after connection."
 }

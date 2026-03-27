@@ -5,6 +5,7 @@ type CardProps = {
   title?: string
   children?: ReactNode
   header?: ReactNode
+  className?: string
 }
 
 type CardItemProps = {
@@ -70,9 +71,15 @@ export function CardItem({
   )
 }
 
-export function Card({ title, children, header }: CardProps) {
+export function Card({ title, children, header, className }: CardProps) {
   return (
-    <div className="bg-card p-4 rounded-lg text-muted-foreground w-full">
+    <div
+      className={cn(
+        'p-4 text-muted-foreground w-full',
+        !className && 'bg-card rounded-lg',
+        className
+      )}
+    >
       {title && (
         <h1 className="text-foreground font-studio font-medium text-base mb-4">
           {title}

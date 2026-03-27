@@ -24,13 +24,13 @@ describe('useLeftPanel', () => {
     vi.clearAllMocks()
     // Reset store state to defaults
     const store = useLeftPanel.getState()
-    store.setLeftPanel(true)
+    store.setLeftPanel(false)
   })
 
   it('should initialize with default values', () => {
     const { result } = renderHook(() => useLeftPanel())
 
-    expect(result.current.open).toBe(true)
+    expect(result.current.open).toBe(false)
     expect(typeof result.current.setLeftPanel).toBe('function')
   })
 

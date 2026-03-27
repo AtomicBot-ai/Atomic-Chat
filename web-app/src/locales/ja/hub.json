@@ -15,9 +15,9 @@
   "tools": "ツール",
   "searchPlaceholder": "Hugging Faceでモデルを検索...",
   "recTitle": "おすすめ",
-  "rec8gb": "8GB RAM端末向け",
-  "recChatting": "チャット向け",
-  "recAnalyzing": "ファイル分析向け",
-  "recCoding": "コーディング向け",
+  "recEverydayUse": "日常利用",
+  "recVisionKnowledge": "画像と知識",
+  "recFinetuningChat": "ファインチューニングとチャット",
+  "recMathReasoning": "数学と推論",
   "backToModels": "モデル一覧に戻る"
 }

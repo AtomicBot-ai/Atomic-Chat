@@ -15,9 +15,9 @@
   "tools": "工具",
   "searchPlaceholder": "在 Hugging Face 上搜尋模型...",
   "recTitle": "推薦",
-  "rec8gb": "適合 8GB 記憶體裝置",
-  "recChatting": "適合聊天",
-  "recAnalyzing": "適合分析檔案",
-  "recCoding": "適合程式設計",
+  "recEverydayUse": "日常使用",
+  "recVisionKnowledge": "視覺與知識",
+  "recFinetuningChat": "微調與對話",
+  "recMathReasoning": "數學與推理",
   "backToModels": "返回模型列表"
 }

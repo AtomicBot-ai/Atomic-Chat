@@ -230,6 +230,13 @@
   * {
     @apply border-border outline-ring/50;
   }
+
+  /* Hub: без анимированных градиентов/«блуждающего» блика на поле поиска */
+  .hub-models-search-input {
+    animation: none !important;
+    background-image: none !important;
+  }
+
   body {
     @apply bg-background text-foreground;
   }

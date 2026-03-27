@@ -49,34 +49,16 @@ import { DownloadButtonPlaceholder } from '@/containers/DownloadButton'
 import { useShallow } from 'zustand/shallow'
 import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
 import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
-import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
+import {
+  DEFAULT_MODEL_QUANTIZATIONS,
+  HUB_RECOMMENDED_MODELS,
+} from '@/constants/models'
 import { Button } from '@/components/ui/button'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 
 type SearchParams = {
   repo: string
 }
-
-//* Recommended models: HF repo id + description i18n key (matched in catalog by display name)
-const HUB_RECOMMENDATIONS: Array<{ modelName: string; descriptionKey: string }> =
-  [
-    {
-      modelName: 'meta-llama/Llama-3.2-3B-Instruct-GGUF',
-      descriptionKey: 'hub:rec8gb',
-    },
-    {
-      modelName: 'meta-llama/Meta-Llama-3.1-8B-Instruct-GGUF',
-      descriptionKey: 'hub:recChatting',
-    },
-    {
-      modelName: 'unsloth/Qwen3.5-122B-A10B-GGUF',
-      descriptionKey: 'hub:recAnalyzing',
-    },
-    {
-      modelName: 'Qwen/Qwen2.5-Coder-3B-Instruct-GGUF',
-      descriptionKey: 'hub:recCoding',
-    },
-  ]
 
 export const Route = createFileRoute(route.hub.index as any)({
   component: HubContent,
@@ -180,7 +162,7 @@ function HubContent() {
   //* Resolve recommended: match by display name (e.g. bartowski/Llama-3.2-3B-Instruct-GGUF matches rec)
   const recommendedItems = useMemo(
     () =>
-      HUB_RECOMMENDATIONS.map((rec) => {
+      HUB_RECOMMENDED_MODELS.map((rec) => {
         const recDisplayName = extractModelName(rec.modelName)
         const model = sources.find(
           (s) => extractModelName(s.model_name) === recDisplayName
@@ -248,7 +230,7 @@ function HubContent() {
   const recommendedDisplayNames = useMemo(
     () =>
       new Set(
-        HUB_RECOMMENDATIONS.map(
+        HUB_RECOMMENDED_MODELS.map(
           (r) => extractModelName(r.modelName) || ''
         ).filter(Boolean)
       ),
@@ -487,7 +469,7 @@ function HubContent() {
       <div className="flex flex-col h-full w-full ">
         <HeaderPage>
           <div className={cn("pr-3 py-3  h-10 w-full flex items-center justify-between relative z-20", !IS_MACOS && "pr-30")}>
-            <div className="flex items-center gap-2 w-full">
+            <div className="flex items-center gap-2 w-full min-w-0">
               {isSearching ? (
                 <Loader className="shrink-0 size-4 animate-spin text-muted-foreground" />
               ) : (
@@ -500,7 +482,8 @@ function HubContent() {
                 placeholder={t('hub:searchPlaceholder')}
                 value={searchValue}
                 onChange={handleSearchChange}
-                className="w-full focus:outline-none"
+                autoComplete="off"
+                className="hub-models-search-input w-full min-w-0 flex-1 bg-transparent bg-clip-padding text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none animate-none transition-none"
               />
             </div>
             <div className="sm:flex items-center gap-2 shrink-0 hidden">
@@ -508,15 +491,15 @@ function HubContent() {
             </div>
           </div>
         </HeaderPage>
-        <div ref={parentRef} className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto! first-step-setup-local-provider">
-          <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-full md:w-4/5 xl:w-4/6 mx-auto">
+        <div ref={parentRef} className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto!">
+          <div className="flex flex-col h-full justify-between gap-4 w-full md:w-4/5 xl:w-4/6 mx-auto">
             {/* Рекомендации сверху списка Newest (без поиска и без фильтра «только скачанные») */}
             {showRecommendedBlock && (
-            <section className="shrink-0 mb-4">
+            <section className="shrink-0 border-b border-border pb-4">
               <h2 className="text-sm font-medium mb-3 text-muted-foreground">
                 {t('hub:recTitle')}
               </h2>
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
                 {recommendedItems.map(({ rec, model }) => {
                   const goToModel = () => {
                     navigate({
@@ -526,27 +509,26 @@ function HubContent() {
                       },
                     })
                   }
-                  const badge = (
+                  const recChip = (
                     <span
-                      className="absolute top-0 left-4 z-10 px-2.5 py-1 text-xs font-semibold rounded-full shadow-sm bg-black/85 text-white dark:bg-white/85 dark:text-black"
-                      aria-hidden
+                      className="shrink-0 truncate rounded-full bg-black/70 px-2.5 py-1 text-center text-xs font-semibold text-white shadow-sm max-w-44 sm:max-w-56 dark:bg-white/70 dark:text-black"
+                      title={t(rec.descriptionKey)}
                     >
                       {t(rec.descriptionKey)}
                     </span>
                   )
                   return model ? (
-                    <div key={`${rec.modelName}-${rec.descriptionKey}`} className="relative pt-3">
-                      {badge}
+                    <div key={`${rec.modelName}-${rec.descriptionKey}`}>
                       <Card
                       header={
-                        <div className="flex items-center justify-between gap-x-2">
+                        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
                           <div
-                            className="cursor-pointer"
+                            className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5"
                             onClick={goToModel}
                           >
                             <h1
                               className={cn(
-                                'text-foreground font-medium text-base capitalize sm:max-w-none',
+                                'min-w-0 shrink truncate text-foreground font-medium text-base capitalize',
                                 isRecommendedModel(model.model_name)
                                   ? 'hub-model-card-step'
                                   : ''
@@ -557,9 +539,10 @@ function HubContent() {
                             >
                               {extractModelName(model.model_name) || ''}
                             </h1>
+                            {recChip}
                           </div>
-                          <div className="shrink-0 space-x-3 flex items-center">
-                            <span className="text-muted-foreground font-medium text-xs">
+                          <div className="flex flex-wrap items-center gap-2 justify-end shrink-0">
+                            <span className="text-muted-foreground font-medium text-xs whitespace-nowrap">
                               {model.is_mlx
                                 ? model.safetensors_files?.[0]?.file_size
                                 : (
@@ -821,17 +804,19 @@ function HubContent() {
                     </Card>
                     </div>
                   ) : (
-                    <div key={`${rec.modelName}-${rec.descriptionKey}`} className="relative pt-3">
-                      {badge}
+                    <div key={`${rec.modelName}-${rec.descriptionKey}`}>
                       <Card
                       header={
-                        <div
-                          className="flex items-center justify-between gap-x-2 cursor-pointer"
-                          onClick={goToModel}
-                        >
-                          <h1 className="text-foreground font-medium text-base capitalize">
-                            {extractModelName(rec.modelName) || rec.modelName}
-                          </h1>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                          <div
+                            className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5"
+                            onClick={goToModel}
+                          >
+                            <h1 className="min-w-0 shrink truncate text-foreground font-medium text-base capitalize">
+                              {extractModelName(rec.modelName) || rec.modelName}
+                            </h1>
+                            {recChip}
+                          </div>
                         </div>
                       }
                     >
@@ -920,7 +905,9 @@ function HubContent() {
                         left: 0,
                         width: '100%',
                         transform: `translateY(${virtualItem.start}px)`,
-                        paddingBottom: 8,
+                        //* Симметрия вокруг разделителя: раньше был только paddingBottom — зазор визуально смещался вниз
+                        paddingTop: 4,
+                        paddingBottom: 0,
                       }}
                     >
                       <Card

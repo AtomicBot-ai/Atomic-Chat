@@ -2,83 +2,47 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { localStorageKey, CACHE_EXPIRY_MS } from '@/constants/localStorage'
+import { localStorageKey } from '@/constants/localStorage'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useEffect, useMemo, useCallback, useState, useRef } from 'react'
+import { useEffect, useMemo, useCallback, useRef } from 'react'
 import { AppEvent, events } from '@janhq/core'
-import type { CatalogModel } from '@/services/models/types'
+import type { CatalogModel, ModelQuant } from '@/services/models/types'
 import {
-  NEW_JAN_MODEL_HF_REPO,
-  SETUP_SCREEN_QUANTIZATIONS,
+  DEFAULT_MODEL_QUANTIZATIONS,
+  HUB_RECOMMENDED_MODELS,
 } from '@/constants/models'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { IconEye, IconSquareCheck } from '@tabler/icons-react'
-import { cn } from '@/lib/utils'
+import { cn, sanitizeModelId } from '@/lib/utils'
+import { extractModelName } from '@/lib/models'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import HeaderPage from './HeaderPage'
+import { useModelSources } from '@/hooks/useModelSources'
+import { useShallow } from 'zustand/shallow'
+import { HuggingFaceAuthorAvatar } from '@/components/HuggingFaceAuthorAvatar'
 
-type CacheEntry = {
-  status: 'RED' | 'YELLOW' | 'GREEN' | 'GREY'
-  timestamp: number
+//* Вариант загрузки: приоритет квантов как в Hub
+function pickPreferredVariant(model: CatalogModel): ModelQuant | null {
+  const preferred =
+    model.quants?.find((m) =>
+      DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
+        m.model_id.toLowerCase().includes(e)
+      )
+    ) ?? null
+  return preferred ?? model.quants?.[0] ?? null
 }
 
-const modelSupportCache = new Map<string, CacheEntry>()
-
-function loadCacheFromStorage() {
-  try {
-    const stored = localStorage.getItem(localStorageKey.modelSupportCache)
-    if (stored) {
-      const parsed = JSON.parse(stored)
-      Object.entries(parsed).forEach(([key, value]) => {
-        modelSupportCache.set(key, value as CacheEntry)
-      })
-    }
-  } catch (error) {
-    console.error('Failed to load model support cache:', error)
-  }
+//* Иконка бренда по id репозитория HF (public/svg)
+function recommendedSetupModelIconSrc(hfRepoId: string): string | null {
+  const id = hfRepoId.toLowerCase()
+  //? Distill-Qwen в названии DeepSeek — сначала deepseek, иначе попадём в Qwen
+  if (id.includes('deepseek')) return '/svg/deepseek-color.svg'
+  if (id.includes('qwen')) return '/svg/qwen-color.svg'
+  if (id.includes('llama') || id.includes('meta-llama'))
+    return '/svg/meta-color.svg'
+  return null
 }
-
-function saveCacheToStorage() {
-  try {
-    const cacheObj = Object.fromEntries(modelSupportCache.entries())
-    localStorage.setItem(
-      localStorageKey.modelSupportCache,
-      JSON.stringify(cacheObj)
-    )
-  } catch (error) {
-    console.error('Failed to save model support cache:', error)
-  }
-}
-
-function getCachedSupport(
-  modelId: string
-): 'RED' | 'YELLOW' | 'GREEN' | 'GREY' | null {
-  const entry = modelSupportCache.get(modelId)
-  if (!entry) return null
-
-  const now = Date.now()
-  if (now - entry.timestamp > CACHE_EXPIRY_MS) {
-    modelSupportCache.delete(modelId)
-    return null
-  }
-
-  return entry.status
-}
-
-function setCachedSupport(
-  modelId: string,
-  status: 'RED' | 'YELLOW' | 'GREEN' | 'GREY'
-) {
-  modelSupportCache.set(modelId, {
-    status,
-    timestamp: Date.now(),
-  })
-  saveCacheToStorage()
-}
-
-loadCacheFromStorage()
 
 function SetupScreen() {
   const { t } = useTranslation()
@@ -90,159 +54,38 @@ function SetupScreen() {
     useDownloadStore()
   const serviceHub = useServiceHub()
   const llamaProvider = getProviderByName('llamacpp')
-  const [quickStartInitiated, setQuickStartInitiated] = useState(false)
-  const [quickStartQueued, setQuickStartQueued] = useState(false)
-  const [janNewModel, setJanNewModel] = useState<CatalogModel | null>(null)
-  const [supportedVariants, setSupportedVariants] = useState<
-    Map<string, 'RED' | 'YELLOW' | 'GREEN' | 'GREY'>
-  >(new Map())
-  const [metadataFetchFailed, setMetadataFetchFailed] = useState(false)
-  const supportCheckInProgress = useRef(false)
-  const checkedModelId = useRef<string | null>(null)
-  const [isSupportCheckComplete, setIsSupportCheckComplete] = useState(false)
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
 
-  const fetchJanModel = useCallback(async () => {
-    setMetadataFetchFailed(false)
-    try {
-      const repo = await serviceHub
-        .models()
-        .fetchHuggingFaceRepo(NEW_JAN_MODEL_HF_REPO, huggingfaceToken)
+  const {
+    sources,
+    fetchSources,
+    loading: sourcesLoading,
+  } = useModelSources(
+    useShallow((state) => ({
+      sources: state.sources,
+      fetchSources: state.fetchSources,
+      loading: state.loading,
+    }))
+  )
 
-      if (repo) {
-        const catalogModel = serviceHub
-          .models()
-          .convertHfRepoToCatalogModel(repo)
-        setJanNewModel(catalogModel)
-      } else {
-        setMetadataFetchFailed(true)
-      }
-    } catch (error) {
-      console.error('Error fetching Atomic Chat model V2:', error)
-      setMetadataFetchFailed(true)
-    }
-  }, [serviceHub, huggingfaceToken])
-
-  // Check model support for variants when janNewModel is available
-  useEffect(() => {
-    const checkModelSupport = async () => {
-      if (!janNewModel) return
-
-      if (
-        supportCheckInProgress.current ||
-        checkedModelId.current === janNewModel.model_name
-      ) {
-        return
-      }
-
-      supportCheckInProgress.current = true
-      checkedModelId.current = janNewModel.model_name
-      setIsSupportCheckComplete(false)
-
-      const variantSupportMap = new Map<
-        string,
-        'RED' | 'YELLOW' | 'GREEN' | 'GREY'
-      >()
-
-      for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
-        const variant = janNewModel.quants?.find((quant) =>
-          quant.model_id.toLowerCase().includes(quantization)
-        )
-
-        if (variant) {
-          const cached = getCachedSupport(variant.model_id)
-          if (cached) {
-            console.log(`[SetupScreen] ${variant.model_id}: ${cached} (cached)`)
-            variantSupportMap.set(variant.model_id, cached)
-            continue
-          }
-
-          try {
-            console.log(
-              `[SetupScreen] Checking support for ${variant.model_id}...`
-            )
-            const supportStatus = await serviceHub
-              .models()
-              .isModelSupported(variant.path)
-
-            console.log(`[SetupScreen] ${variant.model_id}: ${supportStatus}`)
-            setCachedSupport(variant.model_id, supportStatus)
-            variantSupportMap.set(variant.model_id, supportStatus)
-          } catch (error) {
-            console.error(
-              `[SetupScreen] Error checking support for ${variant.model_id}:`,
-              error
-            )
-            variantSupportMap.set(variant.model_id, 'GREY')
-            setCachedSupport(variant.model_id, 'GREY')
-          }
-        }
-      }
-
-      setSupportedVariants(variantSupportMap)
-      supportCheckInProgress.current = false
-      setIsSupportCheckComplete(true)
-    }
-
-    checkModelSupport()
-  }, [janNewModel, serviceHub])
+  const trackedImportIdsRef = useRef<Set<string>>(new Set())
+  const hasNavigatedRef = useRef(false)
 
   useEffect(() => {
-    fetchJanModel()
-  }, [fetchJanModel])
+    fetchSources()
+  }, [fetchSources])
 
-  const defaultVariant = useMemo(() => {
-    if (!janNewModel) return null
-
-    const priorityOrder: Array<'GREEN' | 'YELLOW' | 'GREY'> = [
-      'GREEN',
-      'YELLOW',
-      'GREY',
-    ]
-
-    for (const status of priorityOrder) {
-      for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
-        const variant = janNewModel.quants?.find((quant) =>
-          quant.model_id.toLowerCase().includes(quantization)
+  const recommendedItems = useMemo(
+    () =>
+      HUB_RECOMMENDED_MODELS.map((rec) => {
+        const recDisplayName = extractModelName(rec.modelName)
+        const model = sources.find(
+          (s) => extractModelName(s.model_name) === recDisplayName
         )
-
-        if (variant && supportedVariants.get(variant.model_id) === status) {
-          return variant
-        }
-      }
-    }
-
-    for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
-      if (quantization === 'q8_0') continue
-
-      const variant = janNewModel.quants?.find((quant) =>
-        quant.model_id.toLowerCase().includes(quantization)
-      )
-
-      if (variant && supportedVariants.get(variant.model_id) === 'RED') {
-        return variant
-      }
-    }
-
-    for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
-      const variant = janNewModel.quants?.find((quant) =>
-        quant.model_id.toLowerCase().includes(quantization)
-      )
-
-      if (variant && supportedVariants.get(variant.model_id) === 'RED') {
-        return variant
-      }
-    }
-
-    for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
-      const variant = janNewModel.quants?.find((quant) =>
-        quant.model_id.toLowerCase().includes(quantization)
-      )
-      if (variant) return variant
-    }
-
-    return janNewModel.quants?.[0]
-  }, [janNewModel, supportedVariants])
+        return { rec, model }
+      }),
+    [sources]
+  )
 
   const downloadProcesses = useMemo(
     () =>
@@ -256,88 +99,65 @@ function SetupScreen() {
     [downloads]
   )
 
-  const isDownloading = useMemo(() => {
-    if (!defaultVariant) return false
-    return (
-      localDownloadingModels.has(defaultVariant.model_id) ||
-      downloadProcesses.some((e) => e.id === defaultVariant.model_id)
-    )
-  }, [defaultVariant, localDownloadingModels, downloadProcesses])
+  const isVariantDownloading = useCallback(
+    (variantId: string) =>
+      localDownloadingModels.has(variantId) ||
+      downloadProcesses.some((e) => e.id === variantId),
+    [localDownloadingModels, downloadProcesses]
+  )
 
-  const downloadedSize = useMemo(() => {
-    if (!defaultVariant) return { current: 0, total: 0 }
-    const process = downloadProcesses.find(
-      (e) => e.id === defaultVariant.model_id
-    )
-    return {
-      current: process?.current || 0,
-      total: process?.total || 0,
+  const isVariantDownloaded = useCallback(
+    (catalog: CatalogModel, variant: ModelQuant) =>
+      llamaProvider?.models.some(
+        (m: { id: string }) =>
+          m.id === variant.model_id ||
+          m.id === `${catalog.developer}/${sanitizeModelId(variant.model_id)}`
+      ) ?? false,
+    [llamaProvider]
+  )
+
+  const anyDownloading = useMemo(() => {
+    for (const { model } of recommendedItems) {
+      if (!model) continue
+      const v = pickPreferredVariant(model)
+      if (v && isVariantDownloading(v.model_id)) return true
     }
-  }, [defaultVariant, downloadProcesses])
+    return false
+  }, [recommendedItems, isVariantDownloading])
 
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return '0'
-    const gb = bytes / (1024 * 1024 * 1024)
-    return gb.toFixed(1)
-  }
+  const startDownload = useCallback(
+    (catalog: CatalogModel, variant: ModelQuant) => {
+      trackedImportIdsRef.current.add(variant.model_id)
+      addLocalDownloadingModel(variant.model_id)
+      serviceHub
+        .models()
+        .pullModelWithMetadata(
+          variant.model_id,
+          variant.path,
+          (
+            catalog.mmproj_models?.find(
+              (e) => e.model_id.toLowerCase() === 'mmproj-f16'
+            ) || catalog.mmproj_models?.[0]
+          )?.path,
+          huggingfaceToken,
+          true
+        )
+    },
+    [addLocalDownloadingModel, serviceHub, huggingfaceToken]
+  )
 
-  const isDownloaded = useMemo(() => {
-    if (!defaultVariant) return false
-    return llamaProvider?.models.some(
-      (m: { id: string }) => m.id === defaultVariant.model_id
-    )
-  }, [defaultVariant, llamaProvider])
-
-  const handleQuickStart = useCallback(() => {
-    // If metadata is still loading, queue the download
-    if (!defaultVariant || !janNewModel || !isSupportCheckComplete) {
-      setQuickStartQueued(true)
-      setQuickStartInitiated(true)
-      return
-    }
-
-    setQuickStartInitiated(true)
-    addLocalDownloadingModel(defaultVariant.model_id)
-    serviceHub.models().pullModelWithMetadata(
-      defaultVariant.model_id,
-      defaultVariant.path,
-      (
-        janNewModel.mmproj_models?.find(
-          (e) => e.model_id.toLowerCase() === 'mmproj-f16'
-        ) || janNewModel.mmproj_models?.[0]
-      )?.path,
-      huggingfaceToken, // Use HF token from general settings
-      true // Skip verification for faster download
-    )
-  }, [
-    defaultVariant,
-    janNewModel,
-    isSupportCheckComplete,
-    addLocalDownloadingModel,
-    serviceHub,
-    huggingfaceToken,
-  ])
-
-  // Use ref to track if we've already navigated
-  const hasNavigatedRef = useRef(false)
-
-  // Navigate when download completes - using event listener for reliability
   useEffect(() => {
     const onModelImported = async (payload: { modelId: string }) => {
-      if (!defaultVariant || hasNavigatedRef.current) return
-      if (payload.modelId !== defaultVariant.model_id) return
+      if (hasNavigatedRef.current) return
+      if (!trackedImportIdsRef.current.has(payload.modelId)) return
 
       hasNavigatedRef.current = true
+      trackedImportIdsRef.current.delete(payload.modelId)
 
-      console.log('SetupScreen: Model imported, navigating to home...')
-
-      // Refresh providers so the model is available in the store before selecting
       const providers = await serviceHub.providers().getProviders()
       setProviders(providers)
 
-      // On Windows the provider may list model IDs with backslashes (from filesystem paths)
-      // while the catalog uses forward slashes, so try both formats
-      const catalogId = defaultVariant.model_id
+      const catalogId = payload.modelId
       const backslashId = catalogId.replace(/\//g, '\\')
       const found =
         selectModelProvider('llamacpp', catalogId) ||
@@ -364,168 +184,191 @@ function SetupScreen() {
     return () => {
       events.off(AppEvent.onModelImported, onModelImported)
     }
-  }, [defaultVariant, navigate, selectModelProvider, serviceHub, setProviders])
+  }, [navigate, selectModelProvider, serviceHub, setProviders])
 
-  useEffect(() => {
-    if (
-      quickStartQueued &&
-      defaultVariant &&
-      janNewModel &&
-      isSupportCheckComplete
-    ) {
-      setQuickStartQueued(false)
-      addLocalDownloadingModel(defaultVariant.model_id)
-      serviceHub
-        .models()
-        .pullModelWithMetadata(
-          defaultVariant.model_id,
-          defaultVariant.path,
-          (
-            janNewModel.mmproj_models?.find(
-              (e) => e.model_id.toLowerCase() === 'mmproj-f16'
-            ) || janNewModel.mmproj_models?.[0]
-          )?.path,
-          undefined,
-          true
-        )
-    }
-  }, [
-    quickStartQueued,
-    defaultVariant,
-    janNewModel,
-    isSupportCheckComplete,
-    addLocalDownloadingModel,
-    serviceHub,
-  ])
-
-  // Handle error when quick start is queued but metadata fetch fails
-  useEffect(() => {
-    if (quickStartQueued && metadataFetchFailed) {
-      setQuickStartQueued(false)
-      setQuickStartInitiated(false)
-      toast.error(
-        t('setup:quickStartFailed', {
-          defaultValue: 'Something went wrong. Please try again.',
-        })
-      )
-    }
-  }, [quickStartQueued, metadataFetchFailed, t])
-
-  useEffect(() => {
-    if (
-      quickStartInitiated &&
-      !quickStartQueued &&
-      isDownloading &&
-      !isDownloaded
-    ) {
-      setQuickStartInitiated(false)
-    }
-  }, [quickStartInitiated, quickStartQueued, isDownloading, isDownloaded])
+  const handleSkip = useCallback(() => {
+    localStorage.setItem(localStorageKey.setupCompleted, 'true')
+    navigate({ to: route.home, replace: true })
+  }, [navigate])
 
   return (
-    <div className="relative flex flex-col h-svh w-full overflow-hidden">
-      {/* Content overlay */}
-      <div className="flex flex-col h-svh w-full">
+    <div className="relative flex h-svh w-full flex-col overflow-hidden">
+      <div className="flex h-svh min-h-0 w-full flex-col">
         <HeaderPage />
 
-        <div className="flex h-[calc(100%-60px)] items-center">
-          <div className="pointer-events-auto -mt-20 mx-auto w-full max-w-[560px] shrink-0 overflow-auto px-10 pb-10">
-            <div className="mb-4 text-left">
-              <h1 className="font-studio mb-2 text-4xl font-bold leading-none tracking-tight sm:text-5xl">
-                {isDownloading ? (
-                  'Sit tight, Atomic Chat is getting ready...'
-                ) : (
-                  <>
-                    <span className="block">Local AI</span>
-                    <div className="min-w-0 overflow-x-auto">
-                      <span className="inline-block text-lg font-bold leading-none whitespace-nowrap sm:text-xl md:text-2xl">
-                        No rate limits. No subscriptions. No cloud.
-                      </span>
-                    </div>
-                  </>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="pointer-events-auto mx-auto flex min-h-0 w-full max-w-[840px] flex-1 flex-col px-6 pb-4 pt-2 sm:px-10">
+            <div className="mb-4 shrink-0 text-center sm:mb-5">
+              {!anyDownloading && (
+                <div className="mb-5 flex items-center justify-center gap-3 font-studio text-5xl font-semibold leading-none tracking-tight sm:text-6xl">
+                  <div className="flex h-[1em] w-[1em] shrink-0 items-center justify-center rounded-lg bg-neutral-950 p-[3px] shadow-sm dark:bg-white dark:shadow-none">
+                    <img
+                      src="/images/atomic-chat-logo.png"
+                      alt=""
+                      className="size-full min-h-0 min-w-0 object-contain invert dark:invert-0"
+                      draggable={false}
+                    />
+                  </div>
+                  <span>Atomic Chat</span>
+                </div>
+              )}
+              <h1
+                className={cn(
+                  'font-studio mb-3 font-bold leading-none tracking-tight',
+                  anyDownloading
+                    ? 'text-4xl sm:text-5xl'
+                    : 'text-3xl sm:text-4xl md:text-[2.5rem]'
                 )}
+              >
+                {anyDownloading && 'Sit tight, Atomic Chat is getting ready...'}
               </h1>
-              <p className="text-muted-foreground w-full text-base leading-relaxed sm:text-lg">
-                {isDownloading
+              {!anyDownloading && (
+                <div className="mb-3 min-w-0">
+                  <span className="inline-block text-lg font-bold leading-snug sm:text-xl md:text-2xl">
+                    No rate limits. No subscriptions. No cloud.
+                  </span>
+                </div>
+              )}
+              <p
+                className={cn(
+                  'text-muted-foreground mx-auto max-w-full text-pretty leading-relaxed text-base sm:text-lg'
+                )}
+              >
+                {anyDownloading
                   ? 'This may take a few minutes.'
-                  : 'Atomic Chat uses TurboQuant to run blazing fast on everyday hardware.'}
+                  : t('setup:turboQuantTagline', {
+                      defaultValue:
+                        "Local AI models on your device with Google's TurboQuant—blazing fast on average hardware.",
+                    })}
               </p>
             </div>
-            <div className="flex gap-4 flex-col mt-6 relative z-50">
-              <div className="w-full text-left">
-                <span className="mb-2 block text-sm font-medium">
-                  Recommended model
+
+            <div className="relative z-50 flex min-h-0 flex-1 flex-col justify-start gap-2">
+              <div className="flex flex-col gap-2">
+                <span className="shrink-0 text-left text-xs font-medium text-muted-foreground">
+                  {t('hub:recTitle')}
                 </span>
                 <div
                   className={cn(
-                    'bg-secondary/50 p-3 rounded-lg border transition-all hover:shadow disabled:opacity-60 flex justify-between items-center'
+                    'w-full shrink-0 rounded-lg border bg-secondary/50 p-3 sm:p-4',
+                    //* Высота по контенту; при длинном списке — скролл, без flex-1 на весь экран
+                    'max-h-[min(70vh,36rem)] overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable]'
                   )}
                 >
-                  <div className="flex w-full items-center gap-4">
-                    <img
-                      src="/svg/qwen-color.svg"
-                      alt="Qwen"
-                      className="h-10 w-10 shrink-0 object-contain sm:h-11 sm:w-11"
-                    />
-                    <div className="flex flex-col w-full h-full justify-center">
-                      <div className="flex flex-1 items-center justify-between">
-                        <h1 className="font-semibold text-sm mb-1">
-                          <span>Qwen3.5 4B</span>&nbsp;
-                          <span className="text-xs text-muted-foreground">
-                            · {defaultVariant?.file_size}
-                          </span>
-                        </h1>
-                        {isDownloading && (
-                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                            <svg
-                              className="size-3 animate-spin"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                            >
-                              <circle
-                                className="opacity-25"
-                                cx="12"
-                                cy="12"
-                                r="10"
-                                stroke="currentColor"
-                                strokeWidth="4"
+                  <div className="flex flex-col divide-y divide-border/60">
+                    {recommendedItems.map(({ rec, model }) => {
+                      const variant = model ? pickPreferredVariant(model) : null
+                      const rowDownloading = variant
+                        ? isVariantDownloading(variant.model_id)
+                        : false
+                      const rowDownloaded =
+                        model && variant
+                          ? isVariantDownloaded(model, variant)
+                          : false
+                      const hfAuthor =
+                        model?.developer?.trim() ||
+                        rec.modelName.split('/')[0]?.trim() ||
+                        ''
+                      const nameForInitials =
+                        extractModelName(rec.modelName) || rec.modelName || '?'
+                      const rowInitials =
+                        nameForInitials
+                          .replace(/\.(gguf|GGUF)$/i, '')
+                          .replace(/[^a-zA-Z0-9]/g, '')
+                          .slice(0, 2) ||
+                        hfAuthor.slice(0, 2) ||
+                        '?'
+
+                      const brandIconSrc = recommendedSetupModelIconSrc(
+                        rec.modelName
+                      )
+
+                      return (
+                        <div
+                          key={`${rec.modelName}-${rec.descriptionKey}`}
+                          className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
+                        >
+                          <div className="flex min-w-0 flex-1 items-start gap-3">
+                            {brandIconSrc ? (
+                              <img
+                                src={brandIconSrc}
+                                alt=""
+                                className="size-11 shrink-0 object-contain sm:size-12"
+                                draggable={false}
+                                aria-hidden
                               />
-                              <path
-                                className="opacity-75"
-                                fill="currentColor"
-                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                            ) : (
+                              <HuggingFaceAuthorAvatar
+                                author={hfAuthor}
+                                initials={rowInitials}
+                                className="size-11 shrink-0 sm:size-12"
                               />
-                            </svg>
-                            <span>
-                              {formatBytes(downloadedSize.current)} /{' '}
-                              {formatBytes(downloadedSize.total)}GB
-                            </span>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <h2 className="font-semibold text-sm leading-tight sm:text-base sm:whitespace-nowrap">
+                                {model
+                                  ? extractModelName(model.model_name)
+                                  : extractModelName(rec.modelName)}
+                                {variant?.file_size ? (
+                                  <span className="text-xs font-normal text-muted-foreground">
+                                    {' '}
+                                    · {variant.file_size}
+                                  </span>
+                                ) : null}
+                              </h2>
+                              <span
+                                className="mt-1.5 inline-block max-w-full truncate rounded-full bg-black/85 px-2.5 py-0.5 text-xs font-semibold text-white dark:bg-white/85 dark:text-black sm:max-w-md"
+                                title={t(rec.descriptionKey)}
+                              >
+                                {t(rec.descriptionKey)}
+                              </span>
+                              {!model && (
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {sourcesLoading
+                                    ? t('hub:loadingModels')
+                                    : t('setup:modelUnavailable', {
+                                        defaultValue:
+                                          'Not in catalog yet — open Hub after connection.',
+                                      })}
+                                </p>
+                              )}
+                            </div>
                           </div>
-                        )}
-                      </div>
-                      <div className="text-muted-foreground text-sm mt-1.5 ">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full mr-1">
-                          <IconSquareCheck size={12} />
-                          General
-                        </span>
-                        {(janNewModel?.mmproj_models?.length ?? 0) > 0 && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full">
-                            <IconEye size={12} />
-                            Vision
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                          <Button
+                            size="sm"
+                            disabled={
+                              !model ||
+                              !variant ||
+                              rowDownloading ||
+                              rowDownloaded
+                            }
+                            onClick={() =>
+                              model && variant && startDownload(model, variant)
+                            }
+                            className="w-full shrink-0 rounded-full px-5 font-semibold sm:w-auto"
+                          >
+                            {rowDownloaded
+                              ? t('hub:downloaded')
+                              : rowDownloading
+                                ? t('setup:downloading', {
+                                    defaultValue: 'Downloading…',
+                                  })
+                                : t('hub:download')}
+                          </Button>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
-                <div className="flex flex-col relative z-50 items-start gap-2 mt-4">
+
+                <div className="flex shrink-0 flex-col items-center pt-3">
                   <Button
-                    size="sm"
-                    disabled={isDownloading}
-                    onClick={handleQuickStart}
-                    className="flex items-center gap-2 w-full"
+                    type="button"
+                    variant="link"
+                    onClick={handleSkip}
+                    className="text-muted-foreground/60 hover:text-muted-foreground h-auto p-0 text-xs font-normal underline-offset-4"
                   >
-                    {isDownloading ? 'Downloading' : 'Download'}
+                    {t('setup:skip', { defaultValue: 'Skip' })}
                   </Button>
                 </div>
               </div>

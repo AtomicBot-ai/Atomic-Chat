@@ -15,9 +15,9 @@
   "tools": "Alat",
   "searchPlaceholder": "Cari model di Hugging Face...",
   "recTitle": "Rekomendasi",
-  "rec8gb": "Terbaik untuk perangkat 8GB RAM",
-  "recChatting": "Terbaik untuk obrolan",
-  "recAnalyzing": "Terbaik untuk menganalisis file",
-  "recCoding": "Terbaik untuk coding",
+  "recEverydayUse": "Pemakaian sehari-hari",
+  "recVisionKnowledge": "Visi & pengetahuan",
+  "recFinetuningChat": "Fine-tuning & obrolan",
+  "recMathReasoning": "Matematika & penalaran",
   "backToModels": "Kembali ke model"
 }
