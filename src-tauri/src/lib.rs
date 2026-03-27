@@ -283,6 +283,8 @@ pub fn run() {
                 log::error!("Failed to install extensions: {e}");
             }
 
+            setup::seed_bundled_sentence_transformer_model(&app.handle());
+
             // Migrate MCP servers
             if let Err(e) = setup::migrate_mcp_servers(app.handle().clone(), store.clone()) {
                 log::error!("Failed to migrate MCP servers: {e}");
