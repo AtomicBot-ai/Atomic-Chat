@@ -127,7 +127,7 @@ export interface SystemMemory {
 }
 
 // backend types
-export type BackendVersion = { version: string; backend: string }
+export type BackendVersion = { version: string; backend: string; order?: number }
 
 export type BackendFeatures = {
   cuda11: boolean
@@ -175,6 +175,13 @@ export interface SettingUpdateResult {
   backend_type_updated: boolean
   effective_backend_type?: string
   needs_backend_installation: boolean
+  version?: string
+  backend?: string
+}
+
+export interface BundledBackendResult {
+  installed: boolean
+  backend_string?: string
   version?: string
   backend?: string
 }

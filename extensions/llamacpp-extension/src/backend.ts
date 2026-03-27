@@ -36,16 +36,29 @@ export async function getLocalInstalledBackends(): Promise<
  */
 async function fetchRemoteSupportedBackends(
   supportedBackends: string[]
-): Promise<{ version: string; backend: string }[]> {
+): Promise<{ version: string; backend: string; order?: number }[]> {
+  console.info('[fetchRemoteSupportedBackends] supportedBackends:', supportedBackends)
   const { releases } = await _fetchGithubReleases('Vect0rM', 'atomic-llama-cpp-turboquant')
-  releases.sort((a, b) => b.tag_name.localeCompare(a.tag_name))
+  // Sort by publish date (newest first) — tag names contain commit hashes
+  // so lexicographic order is meaningless.
+  releases.sort((a: any, b: any) =>
+    new Date(b.published_at ?? b.created_at).getTime() -
+    new Date(a.published_at ?? a.created_at).getTime()
+  )
   releases.splice(10)
 
-  const remote: { version: string; backend: string }[] = []
+  console.info(
+    '[fetchRemoteSupportedBackends] releases after sort/trim:',
+    releases.map((r: any) => `${r.tag_name} (assets: ${r.assets?.length ?? 0}, published: ${r.published_at ?? r.created_at})`)
+  )
+
+  const remote: { version: string; backend: string; order?: number }[] = []
   const TURBOQUANT_PREFIX = 'llama-turboquant-'
 
-  for (const release of releases) {
+  for (let i = 0; i < releases.length; i++) {
+    const release = releases[i]
     const version = release.tag_name
+    const order = releases.length - i
 
     for (const asset of release.assets) {
       const name: string = asset.name
@@ -53,13 +66,14 @@ async function fetchRemoteSupportedBackends(
       // Turboquant assets: llama-turboquant-{backend}.tar.gz
       if (name.startsWith(TURBOQUANT_PREFIX)) {
         const backend = basenameNoExt(name).slice(TURBOQUANT_PREFIX.length)
+        console.info(`[fetchRemoteSupportedBackends] turboquant asset: ${name} → backend="${backend}" (supported: ${supportedBackends.includes(backend)})`)
         if (supportedBackends.includes(backend)) {
-          remote.push({ version, backend })
+          remote.push({ version, backend, order })
           continue
         }
         const mappedNew = await mapOldBackendToNew(backend)
         if (mappedNew !== backend && supportedBackends.includes(mappedNew)) {
-          remote.push({ version, backend })
+          remote.push({ version, backend, order })
         }
         continue
       }
@@ -69,17 +83,21 @@ async function fetchRemoteSupportedBackends(
       if (name.startsWith(legacyPrefix)) {
         const backend = basenameNoExt(name).slice(legacyPrefix.length)
         if (supportedBackends.includes(backend)) {
-          remote.push({ version, backend })
+          remote.push({ version, backend, order })
           continue
         }
         const mappedNew = await mapOldBackendToNew(backend)
         if (mappedNew !== backend && supportedBackends.includes(mappedNew)) {
-          remote.push({ version, backend })
+          remote.push({ version, backend, order })
         }
       }
     }
   }
 
+  console.info(
+    '[fetchRemoteSupportedBackends] matched remote backends:',
+    remote.map(r => `${r.version}/${r.backend} (order=${r.order})`)
+  )
   return remote
 }
 
@@ -119,7 +137,8 @@ export async function listSupportedBackends(): Promise<BackendVersion[]> {
     ])
     console.info(
       '[listSupportedBackends] remote backends:',
-      remoteBackendVersions.length
+      remoteBackendVersions.length,
+      remoteBackendVersions.map(b => `${b.version}/${b.backend} (order=${b.order})`)
     )
   } catch (e) {
     console.warn(
@@ -336,12 +355,22 @@ async function _fetchGithubReleases(
   fetchInit.signal = controller.signal
 
   try {
+    console.info(`[_fetchGithubReleases] GET ${githubUrl}`)
     const response = await tauriFetch(githubUrl, fetchInit as any)
-    if (!response.ok)
+    const rateRemaining = response.headers.get('x-ratelimit-remaining')
+    const rateLimit = response.headers.get('x-ratelimit-limit')
+    const rateReset = response.headers.get('x-ratelimit-reset')
+    console.info(
+      `[_fetchGithubReleases] status=${response.status} rate-limit=${rateLimit} remaining=${rateRemaining} reset=${rateReset ? new Date(Number(rateReset) * 1000).toISOString() : 'n/a'}`
+    )
+    if (!response.ok) {
+      const body = await response.text().catch(() => '<unreadable>')
       throw new Error(
-        `GitHub error: ${response.status} ${response.statusText}`
+        `GitHub error: ${response.status} ${response.statusText} — ${body}`
       )
+    }
     const releases = await response.json()
+    console.info(`[_fetchGithubReleases] fetched ${Array.isArray(releases) ? releases.length : '?'} releases`)
     return { releases }
   } finally {
     clearTimeout(timeout)

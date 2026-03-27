@@ -12,6 +12,7 @@ import {
   BestBackendResult,
   UpdateCheckResult,
   SettingUpdateResult,
+  BundledBackendResult,
 } from './types'
 
 // Helpers
@@ -348,6 +349,12 @@ export async function handleSettingUpdate(
     value,
     currentStoredBackend,
   })
+}
+
+export async function installBundledBackend(
+  backendsDir: string
+): Promise<BundledBackendResult> {
+  return invoke('plugin:llamacpp|install_bundled_backend', { backendsDir })
 }
 
 export * from './types'

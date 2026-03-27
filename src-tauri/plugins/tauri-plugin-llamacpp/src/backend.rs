@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use tauri::{Manager, Runtime};
 
 #[tauri::command]
 pub fn map_old_backend_to_new(old_backend: String) -> String {
@@ -171,6 +172,8 @@ fn is_backend_installed(backend_dir: &PathBuf) -> bool {
 pub struct BackendInfo {
     version: String,
     backend: String,
+    #[serde(default)]
+    order: u32,
 }
 
 #[derive(Deserialize)]
@@ -253,7 +256,13 @@ pub async fn list_supported_backends(
     remote_backend_versions: Vec<BackendInfo>,
     local_backend_versions: Vec<BackendInfo>,
 ) -> Result<Vec<BackendInfo>, String> {
-    // Merge remote and local backend versions with deduplication
+    for entry in &remote_backend_versions {
+        log::info!(
+            "[list_supported_backends] remote: {}/{} order={}",
+            entry.version, entry.backend, entry.order
+        );
+    }
+
     let mut merged_map: HashMap<String, BackendInfo> = HashMap::new();
 
     for entry in remote_backend_versions {
@@ -263,21 +272,33 @@ pub async fn list_supported_backends(
 
     for entry in local_backend_versions {
         let key = format!("{}|{}", entry.version, entry.backend);
-        merged_map.insert(key, entry);
+        merged_map
+            .entry(key)
+            .and_modify(|existing| {
+                if entry.order > existing.order {
+                    *existing = entry.clone();
+                }
+            })
+            .or_insert(entry);
     }
 
-    // Convert to vector and sort
     let mut merged: Vec<BackendInfo> = merged_map.into_values().collect();
 
-    // Sort newest version first; if versions tie, sort by backend name
     merged.sort_by(|a, b| {
-        let version_cmp = b.version.cmp(&a.version);
-        if version_cmp == std::cmp::Ordering::Equal {
+        let order_cmp = b.order.cmp(&a.order);
+        if order_cmp == std::cmp::Ordering::Equal {
             a.backend.cmp(&b.backend)
         } else {
-            version_cmp
+            order_cmp
         }
     });
+
+    for entry in &merged {
+        log::info!(
+            "[list_supported_backends] sorted: {}/{} order={}",
+            entry.version, entry.backend, entry.order
+        );
+    }
 
     Ok(merged)
 }
@@ -489,10 +510,9 @@ pub fn find_latest_version_for_backend(
         return None;
     }
 
-    // Sort by version (newest first)
-    matching_backends.sort_by(|a, b| b.version.cmp(&a.version));
+    // Sort by order (higher = newer)
+    matching_backends.sort_by(|a, b| b.order.cmp(&a.order));
 
-    // Return the full string including the original asset name
     Some(format!(
         "{}/{}",
         matching_backends[0].version, matching_backends[0].backend
@@ -637,7 +657,6 @@ pub async fn check_backend_for_updates(
         ));
     }
 
-    let current_version = parts[0];
     let current_backend = parts[1];
 
     // Get the effective/migrated backend type
@@ -663,13 +682,11 @@ pub async fn check_backend_for_updates(
     let target_parts: Vec<&str> = target_backend_string.split('/').collect();
     let latest_version = target_parts[0];
 
-    // Check if update is needed
-    if parse_backend_version(latest_version.to_string())
-        > parse_backend_version(current_version.to_string())
-    {
+    // Update is needed when the order-based latest target differs from current
+    if target_backend_string != current_backend_string {
         log::info!(
             "New update available: {} -> {}",
-            latest_version,
+            current_backend_string,
             target_backend_string
         );
         Ok(UpdateCheckResult {
@@ -679,9 +696,8 @@ pub async fn check_backend_for_updates(
         })
     } else {
         log::info!(
-            "Already at latest version: {} = {}",
-            current_version,
-            latest_version
+            "Already at latest version: {}",
+            current_backend_string
         );
         Ok(UpdateCheckResult {
             update_needed: false,
@@ -871,6 +887,131 @@ pub fn handle_setting_update(
     })
 }
 
+// ============================================================================
+// Bundled Backend Installation
+// ============================================================================
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct BundledBackendResult {
+    pub installed: bool,
+    pub backend_string: Option<String>,
+    pub version: Option<String>,
+    pub backend: Option<String>,
+}
+
+fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> Result<(), String> {
+    fs::create_dir_all(dst).map_err(|e| format!("mkdir {}: {}", dst.display(), e))?;
+
+    for entry in fs::read_dir(src).map_err(|e| format!("readdir {}: {}", src.display(), e))? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+
+        if src_path.is_dir() {
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            fs::copy(&src_path, &dst_path).map_err(|e| {
+                format!("copy {} → {}: {}", src_path.display(), dst_path.display(), e)
+            })?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn install_bundled_backend<R: Runtime>(
+    app: tauri::AppHandle<R>,
+    backends_dir: String,
+) -> Result<BundledBackendResult, String> {
+    let not_bundled = Ok(BundledBackendResult {
+        installed: false,
+        backend_string: None,
+        version: None,
+        backend: None,
+    });
+
+    let resource_dir = app
+        .path()
+        .resolve("llamacpp-backend", tauri::path::BaseDirectory::Resource)
+        .map_err(|e| format!("Failed to resolve resource path: {}", e))?;
+
+    let version_file = resource_dir.join("version.txt");
+    let backend_file = resource_dir.join("backend.txt");
+    let build_dir = resource_dir.join("build");
+
+    if !version_file.exists() || !backend_file.exists() || !build_dir.exists() {
+        log::info!("[install_bundled_backend] No bundled backend found at {}", resource_dir.display());
+        return not_bundled;
+    }
+
+    let version = fs::read_to_string(&version_file)
+        .map_err(|e| format!("read version.txt: {}", e))?
+        .trim()
+        .to_string();
+    let backend = fs::read_to_string(&backend_file)
+        .map_err(|e| format!("read backend.txt: {}", e))?
+        .trim()
+        .to_string();
+
+    if version.is_empty() || backend.is_empty() {
+        log::warn!("[install_bundled_backend] Empty version or backend in meta files");
+        return not_bundled;
+    }
+
+    let target_dir = PathBuf::from(&backends_dir).join(&version).join(&backend);
+
+    if is_backend_installed(&target_dir) {
+        log::info!(
+            "[install_bundled_backend] Bundled backend already installed: {}/{}",
+            version, backend
+        );
+        return Ok(BundledBackendResult {
+            installed: true,
+            backend_string: Some(format!("{}/{}", version, backend)),
+            version: Some(version),
+            backend: Some(backend),
+        });
+    }
+
+    log::info!(
+        "[install_bundled_backend] Installing bundled backend {}/{} from {}",
+        version, backend, resource_dir.display()
+    );
+
+    let target_build_dir = target_dir.join("build");
+    copy_dir_recursive(&build_dir, &target_build_dir)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let bin_dir = target_build_dir.join("bin");
+        if bin_dir.exists() {
+            for entry in fs::read_dir(&bin_dir).map_err(|e| e.to_string())? {
+                let entry = entry.map_err(|e| e.to_string())?;
+                if entry.file_type().map_err(|e| e.to_string())?.is_file() {
+                    let mut perms = fs::metadata(entry.path())
+                        .map_err(|e| e.to_string())?
+                        .permissions();
+                    perms.set_mode(0o755);
+                    fs::set_permissions(entry.path(), perms).map_err(|e| e.to_string())?;
+                }
+            }
+        }
+    }
+
+    log::info!(
+        "[install_bundled_backend] Successfully installed bundled backend: {}/{}",
+        version, backend
+    );
+
+    Ok(BundledBackendResult {
+        installed: true,
+        backend_string: Some(format!("{}/{}", version, backend)),
+        version: Some(version),
+        backend: Some(backend),
+    })
+}
+
 // ---------------------------- Tests ------------------------------------------
 
 #[cfg(test)]
@@ -1042,38 +1183,37 @@ mod tests {
             BackendInfo {
                 version: "b7523".into(),
                 backend: "backend-a".into(),
+                order: 1,
             },
             BackendInfo {
                 version: "b7523".into(),
                 backend: "backend-b".into(),
+                order: 1,
             },
         ];
 
         let local = vec![
-            // Should override remote
             BackendInfo {
                 version: "b7523".into(),
                 backend: "backend-a".into(),
+                order: 0,
             },
-            // Newer version
             BackendInfo {
                 version: "b7524".into(),
                 backend: "backend-c".into(),
+                order: 2,
             },
         ];
 
         let result = list_supported_backends(remote, local).await.unwrap();
 
-        // Expect 3 items: b7524(c), b7523(a), b7523(b)
         assert_eq!(result.len(), 3);
 
-        // Check sorting: Version desc (b7524 > b7523)
+        // Sorted by order desc: b7524(order=2), then b7523 entries (order=1) by backend asc
         assert_eq!(result[0].version, "b7524");
         assert_eq!(result[1].version, "b7523");
         assert_eq!(result[2].version, "b7523");
 
-        // Check sorting: Backend asc for same version
-        // backend-a comes before backend-b
         assert_eq!(result[1].backend, "backend-a");
         assert_eq!(result[2].backend, "backend-b");
     }
@@ -1200,14 +1340,17 @@ mod tests {
             BackendInfo {
                 version: "b7523".into(),
                 backend: "linux-common_cpus-x64".into(),
+                order: 2,
             },
             BackendInfo {
                 version: "b7524".into(),
                 backend: "linux-common_cpus-x64".into(),
+                order: 3,
             },
             BackendInfo {
                 version: "b7522".into(),
                 backend: "linux-common_cpus-x64".into(),
+                order: 1,
             },
         ];
 
@@ -1220,15 +1363,16 @@ mod tests {
         let backends = vec![
             BackendInfo {
                 version: "b7523".into(),
-                backend: "linux-avx2-x64".into(), // Old format
+                backend: "linux-avx2-x64".into(),
+                order: 1,
             },
             BackendInfo {
                 version: "b7524".into(),
-                backend: "linux-common_cpus-x64".into(), // New format
+                backend: "linux-common_cpus-x64".into(),
+                order: 2,
             },
         ];
 
-        // Both should map to linux-common_cpus-x64
         let result = find_latest_version_for_backend(backends, "linux-common_cpus-x64".to_string());
         assert_eq!(result, Some("b7524/linux-common_cpus-x64".to_string()));
     }
@@ -1237,39 +1381,43 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_backend_for_updates_needs_update() {
-        let current = "b7523/linux-common_cpus-x64".to_string();
+        let current = "turboquant-macos-arm64-e3dad20/macos-arm64".to_string();
         let available = vec![
             BackendInfo {
-                version: "b7523".into(),
-                backend: "linux-common_cpus-x64".into(),
+                version: "turboquant-macos-arm64-e3dad20".into(),
+                backend: "macos-arm64".into(),
+                order: 1,
             },
             BackendInfo {
-                version: "b7524".into(),
-                backend: "linux-common_cpus-x64".into(),
+                version: "turboquant-macos-arm64-18a8ef1".into(),
+                backend: "macos-arm64".into(),
+                order: 2,
             },
         ];
 
         let result = check_backend_for_updates(current, available).await.unwrap();
 
         assert!(result.update_needed);
-        assert_eq!(result.new_version, "b7524");
+        assert_eq!(result.new_version, "turboquant-macos-arm64-18a8ef1");
         assert_eq!(
             result.target_backend,
-            Some("b7524/linux-common_cpus-x64".to_string())
+            Some("turboquant-macos-arm64-18a8ef1/macos-arm64".to_string())
         );
     }
 
     #[tokio::test]
     async fn test_check_backend_for_updates_already_latest() {
-        let current = "b7524/linux-common_cpus-x64".to_string();
+        let current = "turboquant-macos-arm64-18a8ef1/macos-arm64".to_string();
         let available = vec![
             BackendInfo {
-                version: "b7523".into(),
-                backend: "linux-common_cpus-x64".into(),
+                version: "turboquant-macos-arm64-e3dad20".into(),
+                backend: "macos-arm64".into(),
+                order: 1,
             },
             BackendInfo {
-                version: "b7524".into(),
-                backend: "linux-common_cpus-x64".into(),
+                version: "turboquant-macos-arm64-18a8ef1".into(),
+                backend: "macos-arm64".into(),
+                order: 2,
             },
         ];
 
@@ -1303,6 +1451,7 @@ mod tests {
         let available = vec![BackendInfo {
             version: "b7524".into(),
             backend: "linux-common_cpus-x64".into(),
+            order: 1,
         }];
 
         let result = should_migrate_backend(old_backend, available).unwrap();
@@ -1315,6 +1464,7 @@ mod tests {
         let available = vec![BackendInfo {
             version: "b7524".into(),
             backend: "linux-common_cpus-x64".into(),
+            order: 1,
         }];
 
         let result = should_migrate_backend(new_backend, available).unwrap();

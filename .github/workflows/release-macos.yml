@@ -32,7 +32,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-macos:
-    runs-on: macos-latest
+    runs-on: macos-latest-xlarge
     needs: create-draft-release
     outputs:
       mac_sig: ${{ steps.metadata.outputs.mac_sig }}
@@ -52,6 +52,28 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-apple-darwin,aarch64-apple-darwin
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
+
+      - name: Cache Rust build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: rust-macos-universal-${{ hashFiles('src-tauri/Cargo.lock') }}-${{ hashFiles('src-tauri/**/*.rs') }}
+          restore-keys: |
+            rust-macos-universal-${{ hashFiles('src-tauri/Cargo.lock') }}-
+            rust-macos-universal-
+
+      - name: Cache Yarn
+        uses: actions/cache@v4
+        with:
+          path: .yarn/cache
+          key: yarn-macos-${{ hashFiles('yarn.lock') }}
+          restore-keys: yarn-macos-
 
       - name: Install jq
         run: brew install jq
@@ -98,9 +120,14 @@ jobs:
           corepack prepare yarn@4.5.3 --activate
           yarn config set -H enableImmutableInstalls false
 
+      - name: Download llamacpp backend
+        run: make download-llamacpp-backend
+
       - name: Build app (universal binary)
         env:
           NODE_OPTIONS: "--max-old-space-size=4196"
+          RUSTC_WRAPPER: sccache
+          SCCACHE_GHA_ENABLED: "true"
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}

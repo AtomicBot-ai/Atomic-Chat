@@ -52,6 +52,7 @@ install-ios-rust-targets:
 
 dev: install-and-build
 	yarn download:bin
+	make download-llamacpp-backend-if-exists
 	make build-mlx-server-if-exists
 	make build-foundation-models-server-if-exists
 	make build-cli-dev
@@ -206,6 +207,61 @@ ifeq ($(shell uname -s),Darwin)
 	fi
 else
 	@echo "Skipping Foundation Models server build (macOS only)"
+endif
+
+# Download latest llamacpp turboquant backend for bundling
+download-llamacpp-backend:
+ifeq ($(shell uname -s),Darwin)
+	@echo "Downloading latest llamacpp turboquant backend for macOS..."
+	@mkdir -p src-tauri/resources/llamacpp-backend
+	@ARCH=$$(uname -m); \
+	if [ "$$ARCH" = "arm64" ]; then BACKEND="macos-arm64"; else BACKEND="macos-x64"; fi; \
+	echo "Platform: $$BACKEND"; \
+	TAG=$$(curl -sf "https://api.github.com/repos/Vect0rM/atomic-llama-cpp-turboquant/releases" \
+		| python3 -c "import sys,json; rs=json.load(sys.stdin); ts=[r for r in rs if r['tag_name'].startswith('turboquant-'+sys.argv[1])]; print(ts[0]['tag_name'] if ts else '')" "$$BACKEND" 2>/dev/null); \
+	if [ -z "$$TAG" ]; then \
+		echo "No turboquant release found for $$BACKEND, trying legacy release..."; \
+		TAG=$$(curl -sf "https://api.github.com/repos/Vect0rM/atomic-llama-cpp-turboquant/releases" \
+			| python3 -c "import sys,json; rs=json.load(sys.stdin); lg=[r for r in rs if not r['tag_name'].startswith('turboquant-')]; print(lg[0]['tag_name'] if lg else '')" 2>/dev/null); \
+		if [ -z "$$TAG" ]; then echo "Error: No release found"; exit 1; fi; \
+		URL="https://github.com/Vect0rM/atomic-llama-cpp-turboquant/releases/download/$$TAG/llama-$$TAG-bin-$$BACKEND.tar.gz"; \
+	else \
+		URL="https://github.com/Vect0rM/atomic-llama-cpp-turboquant/releases/download/$$TAG/llama-turboquant-$$BACKEND.tar.gz"; \
+	fi; \
+	echo "Latest release: $$TAG"; \
+	echo "$$TAG" > src-tauri/resources/llamacpp-backend/version.txt; \
+	echo "$$BACKEND" > src-tauri/resources/llamacpp-backend/backend.txt; \
+	echo "Downloading: $$URL"; \
+	curl -fSL "$$URL" -o /tmp/llamacpp-backend.tar.gz; \
+	tar -xzf /tmp/llamacpp-backend.tar.gz -C src-tauri/resources/llamacpp-backend/; \
+	rm -f /tmp/llamacpp-backend.tar.gz; \
+	echo "Downloaded and extracted llamacpp backend successfully"
+	@SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
+	if [ -n "$$SIGNING_IDENTITY" ]; then \
+		echo "Signing llamacpp backend binaries..."; \
+		for bin in src-tauri/resources/llamacpp-backend/build/bin/*; do \
+			if [ -f "$$bin" ] && file "$$bin" | grep -q "Mach-O"; then \
+				codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" "$$bin"; \
+			fi; \
+		done; \
+		echo "Code signing completed"; \
+	else \
+		echo "Warning: No Developer ID Application identity found. Skipping code signing."; \
+	fi
+else
+	@echo "Skipping llamacpp backend download (macOS only for now)"
+endif
+
+# Download llamacpp backend only if not already present (for dev)
+download-llamacpp-backend-if-exists:
+ifeq ($(shell uname -s),Darwin)
+	@if [ -f "src-tauri/resources/llamacpp-backend/build/bin/llama-server" ]; then \
+		echo "llamacpp backend already exists, skipping download..."; \
+	else \
+		$(MAKE) download-llamacpp-backend; \
+	fi
+else
+	@echo "Skipping llamacpp backend (macOS only)"
 endif
 
 # Build jan CLI (release, platform-aware) → src-tauri/resources/bin/jan[.exe]

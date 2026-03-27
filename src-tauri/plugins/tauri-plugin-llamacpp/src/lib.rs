@@ -54,7 +54,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             backend::remove_old_backend_versions,
             backend::validate_backend_string,
             backend::should_migrate_backend,
-            backend::handle_setting_update
+            backend::handle_setting_update,
+            backend::install_bundled_backend
         ])
         .setup(|app, _api| {
             // Initialize and manage the plugin state

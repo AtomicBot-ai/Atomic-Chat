@@ -60,6 +60,7 @@ import {
   removeOldBackendVersions,
   shouldMigrateBackend,
   handleSettingUpdate,
+  installBundledBackend,
 } from '@janhq/tauri-plugin-llamacpp-api'
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
@@ -294,6 +295,29 @@ export default class llamacpp_extension extends AIEngine {
     localStorage.setItem(MIGRATION_KEY, '1')
   }
 
+  private async tryInstallBundledBackend(): Promise<void> {
+    try {
+      const janDataFolderPath = await getJanDataFolderPath()
+      const backendsDir = await joinPath([
+        janDataFolderPath,
+        'llamacpp',
+        'backends',
+      ])
+
+      const result = await installBundledBackend(backendsDir)
+
+      if (result.installed && result.backend_string) {
+        logger.info(
+          `Bundled backend installed: ${result.backend_string}`
+        )
+      } else {
+        logger.info('No bundled backend available or already installed')
+      }
+    } catch (e) {
+      logger.warn('Failed to install bundled backend:', e)
+    }
+  }
+
   async configureBackends(): Promise<void> {
     if (this.isConfiguringBackends) {
       logger.info(
@@ -305,6 +329,9 @@ export default class llamacpp_extension extends AIEngine {
     this.isConfiguringBackends = true
 
     try {
+      // Install bundled backend from app resources if no local backends exist
+      await this.tryInstallBundledBackend()
+
       let version_backends: { version: string; backend: string }[] = []
 
       try {
@@ -314,7 +341,7 @@ export default class llamacpp_extension extends AIEngine {
             'No supported backend binaries found for this system. Backend selection and auto-update will be unavailable.'
           )
         } else {
-          version_backends.sort((a, b) => b.version.localeCompare(a.version))
+          version_backends.sort((a, b) => (b.order ?? 0) - (a.order ?? 0))
         }
       } catch (error) {
         throw new Error(
