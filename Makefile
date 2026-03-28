@@ -219,7 +219,7 @@ ifeq ($(shell uname -s),Darwin)
 	if [ "$$ARCH" = "arm64" ]; then BACKEND="macos-arm64"; else BACKEND="macos-x64"; fi; \
 	echo "Platform: $$BACKEND"; \
 	TMPREL=$$(mktemp /tmp/llamacpp-releases-XXXXXX.json); \
-	API_URL="https://api.github.com/repos/Vect0rM/atomic-llama-cpp-turboquant/releases"; \
+	API_URL="https://api.github.com/repos/AtomicBot-ai/atomic-llama-cpp-turboquant/releases"; \
 	if [ -n "$$GH_TOKEN" ]; then \
 		curl -sf -H "Authorization: Bearer $$GH_TOKEN" "$$API_URL" -o "$$TMPREL"; \
 	else \
@@ -243,8 +243,8 @@ ifeq ($(shell uname -s),Darwin)
 	if [ -z "$$TAG" ]; then echo "Error: No release found"; exit 1; fi; \
 	echo "Latest release: $$TAG"; \
 	case "$$TAG" in \
-		turboquant-*) URL="https://github.com/Vect0rM/atomic-llama-cpp-turboquant/releases/download/$$TAG/llama-turboquant-$$BACKEND.tar.gz" ;; \
-		*) URL="https://github.com/Vect0rM/atomic-llama-cpp-turboquant/releases/download/$$TAG/llama-$$TAG-bin-$$BACKEND.tar.gz" ;; \
+		turboquant-*) URL="https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/$$TAG/llama-turboquant-$$BACKEND.tar.gz" ;; \
+		*) URL="https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/$$TAG/llama-$$TAG-bin-$$BACKEND.tar.gz" ;; \
 	esac; \
 	echo "$$TAG" > src-tauri/resources/llamacpp-backend/version.txt; \
 	echo "$$BACKEND" > src-tauri/resources/llamacpp-backend/backend.txt; \
