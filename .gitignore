@@ -1,72 +1,109 @@
-.env
-error.log
-node_modules
-*.tgz
-dist
-build
-.DS_Store
-package-lock.json
-coverage
-*.log
-core/lib/**
+# Dependencies
+node_modules/
+**/node_modules
+.pnp
+.pnp.js
 .yarn
 .yarnrc
-*.tsbuildinfo
-test_results.html
-pre-install
-.build
+.yarnrc.yml
+*.tgz
+package-lock.json
 
-# docs
-docs/yarn.lock
+# Build & dist
+dist/
+dist-ssr
+dist-web
+build/
+*.tsbuildinfo
+.turbo
+.vite/
+.next/
+out/
+.astro/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+*.local
+**/.env
+**/.env.*
+
+# Logs & debug
+logs/
+*.log
+error.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Rust / Cargo
+target/
+Cargo.lock
+src-tauri/resources/
 src-tauri/resources/lib
+src-tauri/resources/bin
 src-tauri/icons
 !src-tauri/icons/icon.png
 src-tauri/gen/apple
 src-tauri/gen/android
-src-tauri/resources/bin
 
-# Helper tools
+# Swift / SPM
+.build/
+
+# Test & coverage
+coverage/
+.nyc_output/
+test_results.html
+__pycache__/
+.pytest_cache/
+*.pyc
+.venv/
+venv/
+
+# OS & IDE
+.DS_Store
+.DS_Store?
+Thumbs.db
+*.sw?
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Cache & temp
+.cache/
+.temp
+tmp/
+temp/
+
+# Project-specific
+pre-install
 .opencode
 OpenCode.md
 Claude.md
 archive/
-.cache/
+test-data
+llm-docs
+.claude/
+.claude/agents
+core/lib/**
+core/dist/
 
-# auto qa
+# Docs & website
+docs/yarn.lock
+docs/out/
+docs/.next/
+docs/src/content/config.ts.timestamp-*
+website/dist/
+website/.astro/
+
+# Auto QA
 autoqa/trajectories
 autoqa/recordings
 autoqa/__pycache__
-
-# Astro / Starlight specific
-website/dist/
-website/.astro/
-website/src/content/config.ts.timestamp-*
-
-# Nextra specific
-docs/out/
-docs/.next/
-
-# General Node.js
-**/node_modules
-**/.env
-**/.env.*
-**/npm-debug.log*
-**/yarn-debug.log*
-**/yarn-error.log*
-**/pnpm-debug.log*
-
-## Swift Package Manager (Foundation Models server)
-src-tauri/plugins/tauri-plugin-foundation-models/swift-server/.build/
-src-tauri/plugins/tauri-plugin-foundation-models/swift-server/.swiftpm/
-src-tauri/plugins/tauri-plugin-foundation-models/swift-server/Package.resolved
-
-## cargo
-target
-Cargo.lock
-src-tauri/resources/
-
-## test
-test-data
-llm-docs
-.claude/agents
-.claude

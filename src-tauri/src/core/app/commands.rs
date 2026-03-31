@@ -50,7 +50,7 @@ pub fn resolve_jan_data_folder() -> PathBuf {
     }
 
     // Default: data_dir/Jan/data  (mirrors default_data_folder_path)
-    let app_name = std::env::var("APP_NAME").unwrap_or_else(|_| "Jan".to_string());
+    let app_name = std::env::var("APP_NAME").unwrap_or_else(|_| "Atomic Chat".to_string());
     if let Some(data_dir) = dirs::data_dir() {
         return data_dir.join(&app_name).join("data");
     }
@@ -93,8 +93,6 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
                 Ok(app_configurations) => app_configurations,
                 Err(err) => {
                     log::error!("Failed to parse app config, returning default config instead. Error: {err}");
-                    // Use the proper default data folder path, not the relative "./data"
-                    app_default_configuration.data_folder = default_data_folder;
                     app_default_configuration
                 }
             }
@@ -103,8 +101,6 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
             log::error!(
                 "Failed to read app config, returning default config instead. Error: {err}"
             );
-            // Use the proper default data folder path, not the relative "./data"
-            app_default_configuration.data_folder = default_data_folder;
             app_default_configuration
         }
     }

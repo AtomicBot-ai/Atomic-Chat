@@ -1,10 +1,9 @@
 import { useModelProvider } from '@/hooks/useModelProvider'
 
-import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect } from 'react'
 import { useMCPServers, DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
-import { useAssistant } from '@/hooks/useAssistant'
+import { useAssistant, defaultAssistant } from '@/hooks/useAssistant'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
@@ -12,7 +11,6 @@ import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { AppEvent, events } from '@janhq/core'
 import { SystemEvent } from '@/types/events'
-import { isDev } from '@/lib/utils'
 import { invoke } from '@tauri-apps/api/core'
 
 type ProviderCustomHeader = {
@@ -86,9 +84,8 @@ export function DataProvider() {
   const { setProviders, getProviderByName } =
     useModelProvider()
 
-  const { checkForUpdate } = useAppUpdater()
   const { setServers, setSettings } = useMCPServers()
-  const { setAssistants } = useAssistant()
+  const { setAssistants, initializeWithLastUsed } = useAssistant()
   const { setThreads } = useThreads()
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
@@ -134,11 +131,15 @@ export function DataProvider() {
       .assistants()
       .getAssistants()
       .then((data) => {
-        // Only update assistants if we have valid data
         if (data && Array.isArray(data) && data.length > 0) {
-          setAssistants(data as unknown as Assistant[])
-        } else {
-          setAssistants(null)
+          //? Миграция: ассистент с id 'jan' всегда подменяем на дефолт Atomic Chat (name/description/avatar)
+          const migrated = (data as unknown as Assistant[]).map((a) =>
+            a.id === 'jan'
+              ? { ...defaultAssistant, id: 'jan', created_at: a.created_at }
+              : a
+          )
+          setAssistants(migrated)
+          initializeWithLastUsed()
         }
       })
       .catch((error) => {
@@ -179,29 +180,20 @@ export function DataProvider() {
     syncRemoteProviders()
   }, [providers])
 
-  // Check for app updates - initial check and periodic interval
-  useEffect(() => {
-    // Only check for updates if the auto updater is not disabled
-    // App might be distributed via other package managers
-    // or methods that handle updates differently
-    if (isDev()) {
-      return
-    }
-
-    // Initial check on mount
-    checkForUpdate()
-
-    // Set up periodic update checks (singleton - only runs in DataProvider)
-    const intervalId = setInterval(() => {
-      console.log('Periodic update check triggered')
-      checkForUpdate()
-    }, Number(UPDATE_CHECK_INTERVAL_MS))
-
-    // Cleanup interval on unmount
-    return () => {
-      clearInterval(intervalId)
-    }
-  }, [checkForUpdate])
+  //* Авто-проверка обновлений при старте и по таймеру отключена (попап DialogAppUpdater закомментирован в __root).
+  // useEffect(() => {
+  //   if (isDev()) {
+  //     return
+  //   }
+  //   checkForUpdate()
+  //   const intervalId = setInterval(() => {
+  //     console.log('Periodic update check triggered')
+  //     checkForUpdate()
+  //   }, Number(UPDATE_CHECK_INTERVAL_MS))
+  //   return () => {
+  //     clearInterval(intervalId)
+  //   }
+  // }, [checkForUpdate])
 
   useEffect(() => {
     events.on(AppEvent.onModelImported, () => {

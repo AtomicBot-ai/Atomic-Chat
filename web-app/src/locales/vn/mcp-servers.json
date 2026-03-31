@@ -6,8 +6,8 @@
       "checking": "Đang kiểm tra trạng thái tiện ích..."
     },
     "notInstalled": {
-      "title": "Jan hoàn thành các tác vụ trong trình duyệt của bạn",
-      "description": "Cài đặt tiện ích để cho phép Jan truy cập trình duyệt",
+      "title": "Atomic Bot hoàn thành các tác vụ trong trình duyệt của bạn",
+      "description": "Cài đặt tiện ích để cho phép Atomic Bot truy cập trình duyệt",
       "getExtension": "Tải tiện ích"
     }
   },
@@ -56,7 +56,7 @@
   "serverStatusInactive": "Máy chủ {{serverKey}} đã được hủy kích hoạt thành công",
   "runtimeSettings": {
     "title": "Cài đặt thời gian chạy",
-    "description": "Cấu hình cách Jan quản lý và thử lại các máy chủ MCP.",
+    "description": "Cấu hình cách Atomic Bot quản lý và thử lại các máy chủ MCP.",
     "toolCallTimeout": "Thời gian chờ lệnh (giây)",
     "toolCallTimeoutDesc": "Thời gian tối đa chờ phản hồi từ công cụ MCP trước khi hết thời gian."
   }

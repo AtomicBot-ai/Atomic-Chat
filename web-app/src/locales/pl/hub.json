@@ -13,5 +13,11 @@
   "useModel": "Użyj tego modelu",
   "downloadModel": "Pobierz model",
   "tools": "Narzędzia",
-  "searchPlaceholder": "Szukaj modeli na Hugging Face…"
+  "searchPlaceholder": "Szukaj modeli na Hugging Face…",
+  "recTitle": "Polecane",
+  "rec8gb": "Dla urządzeń z 8 GB RAM",
+  "recChatting": "Do czatu",
+  "recAnalyzing": "Do analizy plików",
+  "recCoding": "Do kodowania",
+  "backToModels": "Powrót do modeli"
 }

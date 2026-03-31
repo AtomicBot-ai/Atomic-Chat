@@ -44,7 +44,7 @@ describe('useInterfaceSettings', () => {
     const { result } = renderHook(() => useInterfaceSettings())
 
     expect(result.current.fontSize).toBe('16px')
-    expect(result.current.accentColor).toBe('gray')
+    expect(result.current.accentColor).toBe('primary')
     expect(typeof result.current.setFontSize).toBe('function')
     expect(typeof result.current.setAccentColor).toBe('function')
     expect(typeof result.current.resetInterface).toBe('function')
@@ -65,10 +65,10 @@ describe('useInterfaceSettings', () => {
       const { result } = renderHook(() => useInterfaceSettings())
 
       act(() => {
-        result.current.setAccentColor('blue')
+        result.current.setAccentColor('primary')
       })
 
-      expect(result.current.accentColor).toBe('blue')
+      expect(result.current.accentColor).toBe('primary')
     })
 
     it('should not update for invalid accent color', () => {
@@ -96,7 +96,7 @@ describe('useInterfaceSettings', () => {
     // Change some values first
     act(() => {
       result.current.setFontSize('18px')
-      result.current.setAccentColor('blue')
+      result.current.setAccentColor('primary')
     })
 
     // Reset
@@ -105,7 +105,7 @@ describe('useInterfaceSettings', () => {
     })
 
     expect(result.current.fontSize).toBe('16px')
-    expect(result.current.accentColor).toBe('gray')
+    expect(result.current.accentColor).toBe('primary')
   })
 
   describe('Reset interface functionality', () => {

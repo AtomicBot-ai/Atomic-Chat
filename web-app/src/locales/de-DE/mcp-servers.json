@@ -6,8 +6,8 @@
       "checking": "Erweiterungsstatus wird überprüft..."
     },
     "notInstalled": {
-      "title": "Jan erledigt Aufgaben in Ihrem Browser",
-      "description": "Installieren Sie die Erweiterung, um Jan Browserzugriff zu gewähren",
+      "title": "Atomic Bot erledigt Aufgaben in Ihrem Browser",
+      "description": "Installieren Sie die Erweiterung, um Atomic Bot Browserzugriff zu gewähren",
       "getExtension": "Erweiterung holen"
     }
   },
@@ -56,7 +56,7 @@
   "serverStatusInactive": "Server {{serverKey}} erfolgreich deaktiviert",
   "runtimeSettings": {
     "title": "Laufzeiteinstellungen",
-    "description": "Konfiguriere, wie Jan MCP-Server verwaltet und erneut versucht.",
+    "description": "Konfiguriere, wie Atomic Bot MCP-Server verwaltet und erneut versucht.",
     "toolCallTimeout": "Zeitlimit für Tool-Aufruf (Sekunden)",
     "toolCallTimeoutDesc": "Maximale Wartezeit auf eine Antwort eines MCP-Tools, bevor abgebrochen wird."
   }

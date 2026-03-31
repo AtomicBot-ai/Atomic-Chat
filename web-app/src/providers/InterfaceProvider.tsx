@@ -26,7 +26,6 @@ export function InterfaceProvider() {
     const sidebarColor = isDark ? color.sidebar.dark : color.sidebar.light
 
     root.style.setProperty('--sidebar', sidebarColor)
-    root.style.setProperty('--primary', color.primary)
   }, [accentColor, isDark])
 
   return null

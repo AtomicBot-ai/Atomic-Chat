@@ -113,7 +113,7 @@ export function createLanguageModel(
       ...(provider.provider === 'openrouter'
         ? {
             'HTTP-Referer': 'https://jan.ai',
-            'X-Title': 'Jan',
+            'X-Title': 'Atomic Bot',
           }
         : {}),
     },

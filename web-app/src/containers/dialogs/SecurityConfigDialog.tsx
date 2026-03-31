@@ -784,7 +784,7 @@ export function SecurityConfigDialog({
       case 'change_auth_mode':
         title = 'Change Authentication Mode'
         description =
-          'Changing the authentication mode will affect how clients access your Jan instance. Are you sure you want to continue?'
+          'Changing the authentication mode will affect how clients access your Atomic Bot instance. Are you sure you want to continue?'
         confirmText = 'Change'
         onConfirm = () => changeAuthMode(confirmAction.data as AuthMode)
         break

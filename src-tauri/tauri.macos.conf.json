@@ -1,9 +1,13 @@
 {
+  "build": {
+    "beforeBundleCommand": "bash src-tauri/scripts/strip-macos-xattrs.sh && bash src-tauri/scripts/sign-macos-resource-binaries.sh"
+  },
   "app": {
     "windows": [
       {
         "label": "main",
-        "title": "Jan",
+        "title": "Atomic Chat",
+        "devtools": true,
         "width": 1200,
         "minWidth": 1024,
         "height": 800,
@@ -30,7 +34,7 @@
   },
   "bundle": {
     "targets": ["app", "dmg"],
-    "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/bin/mlx-server", "resources/bin/mlx-swift_Cmlx.bundle", "resources/bin/jan-cli"],
+    "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/bin/mlx-server", "resources/bin/mlx-swift_Cmlx.bundle", "resources/bin/foundation-models-server", "resources/bin/jan-cli"],
     "externalBin": ["resources/bin/bun", "resources/bin/uv"],
     "macOS": {
       "entitlements": "./Entitlements.plist"

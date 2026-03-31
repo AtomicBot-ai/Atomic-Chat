@@ -160,15 +160,8 @@ pub fn open_app_directory<R: Runtime>(app: AppHandle<R>) {
 pub fn open_file_explorer(path: String) {
     let path = PathBuf::from(path);
     if cfg!(target_os = "windows") {
-        // Normalize extended-length paths (\\?\...) for explorer compatibility.
-        let mut path_str = path.to_string_lossy().into_owned();
-        if let Some(stripped) = path_str.strip_prefix(r"\\?\UNC\") {
-            path_str = format!(r"\\{}", stripped);
-        } else if let Some(stripped) = path_str.strip_prefix(r"\\?\") {
-            path_str = stripped.to_string();
-        }
         std::process::Command::new("explorer")
-            .arg(path_str)
+            .arg(path)
             .status()
             .expect("Failed to open file explorer");
     } else if cfg!(target_os = "macos") {
@@ -637,7 +630,7 @@ fn jan_cli_bin_dir_windows() -> Result<PathBuf, String> {
         .map_err(|_| "Cannot determine LOCALAPPDATA".to_string())?;
     Ok(PathBuf::from(local_app_data)
         .join("Programs")
-        .join("Jan")
+        .join("Atomic Chat")
         .join("resources")
         .join("bin"))
 }

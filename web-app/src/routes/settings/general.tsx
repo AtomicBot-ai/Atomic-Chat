@@ -78,18 +78,25 @@ function General() {
 
   useEffect(() => {
     if (!IS_TAURI) return
-    invoke<{ installed: boolean; path: string | null }>('check_jan_cli_installed')
-      .then((s) => { setCliInstalled(s.installed); setCliPath(s.path) })
+    invoke<{ installed: boolean; path: string | null }>(
+      'check_jan_cli_installed'
+    )
+      .then((s) => {
+        setCliInstalled(s.installed)
+        setCliPath(s.path)
+      })
       .catch(() => setCliInstalled(false))
   }, [])
 
   const handleInstallCli = async () => {
     setIsCliLoading(true)
     try {
-      const s = await invoke<{ installed: boolean; path: string | null }>('install_jan_cli')
+      const s = await invoke<{ installed: boolean; path: string | null }>(
+        'install_jan_cli'
+      )
       setCliInstalled(s.installed)
       setCliPath(s.path)
-      toast.success(`Jan CLI installed to ${s.path}`)
+      toast.success(`Atomic Bot CLI installed to ${s.path}`)
     } catch (e) {
       toast.error('Install failed', { description: String(e) })
     } finally {
@@ -103,7 +110,7 @@ function General() {
       await invoke('uninstall_jan_cli')
       setCliInstalled(false)
       setCliPath(null)
-      toast.success('Jan CLI uninstalled')
+      toast.success('Atomic Bot CLI uninstalled')
     } catch (e) {
       toast.error('Uninstall failed', { description: String(e) })
     } finally {
@@ -197,8 +204,14 @@ function General() {
       const update = await checkForUpdate(true)
       if (!update) {
         toast.info(t('settings:general.noUpdateAvailable'))
+      } else {
+        // Попап DialogAppUpdater отключён в __root — показываем версию в toast
+        toast.info(
+          t('updater:newVersion', { version: update.version }) +
+            ' — ' +
+            t('updater:updateAvailable')
+        )
       }
-      // If update is available, the AppUpdater dialog will automatically show
     } catch (error) {
       console.error('Failed to check for updates:', error)
       toast.error(t('settings:general.updateError'))
@@ -211,14 +224,15 @@ function General() {
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
         <div className="flex items-center gap-2 w-full">
-          <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
+          <span className="font-medium text-base font-studio">
+            {t('common:settings')}
+          </span>
         </div>
       </HeaderPage>
       <div className="flex h-[calc(100%-60px)]">
         <SettingsMenu />
         <div className="p-4 pt-0 w-full overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
-
             {/* General */}
             <Card title={t('common:general')}>
               <CardItem
@@ -292,7 +306,10 @@ function General() {
                       >
                         {isCopied ? (
                           <div className="flex items-center gap-1">
-                            <IconCopyCheck size={14} className="text-green-500 dark:text-green-600" />
+                            <IconCopyCheck
+                              size={14}
+                              className="text-green-500 dark:text-green-600"
+                            />
                             <span className="text-xs leading-0">
                               {t('settings:general.copied')}
                             </span>
@@ -315,11 +332,8 @@ function General() {
                       title={t('settings:dataFolder.appData')}
                       onClick={handleDataFolderChange}
                     >
-                        <IconFolder
-                          size={12}
-                          className="text-muted-foreground"
-                        />
-                        <span>{t('settings:general.changeLocation')}</span>
+                      <IconFolder size={12} className="text-muted-foreground" />
+                      <span>{t('settings:general.changeLocation')}</span>
                     </Button>
                     {selectedNewPath && (
                       <ChangeDataFolderLocation
@@ -355,10 +369,7 @@ function General() {
                       onClick={async () => {
                         if (janDataFolder) {
                           try {
-                            const logsPath = await serviceHub.path().join(
-                              janDataFolder,
-                              'logs'
-                            )
+                            const logsPath = `${janDataFolder}/logs`
                             await serviceHub.opener().revealItemInDir(logsPath)
                           } catch (error) {
                             console.error(
@@ -370,10 +381,7 @@ function General() {
                       }}
                       title={t('settings:general.revealLogs')}
                     >
-                      <IconFolder
-                        size={12}
-                        className="text-muted-foreground"
-                      />
+                      <IconFolder size={12} className="text-muted-foreground" />
                       <span>{openFileTitle()}</span>
                     </Button>
                     <Button
@@ -394,11 +402,11 @@ function General() {
             <Card title="Advanced">
               {IS_TAURI && (
                 <CardItem
-                  title="Jan CLI"
+                  title="Atomic Bot CLI"
                   description={
                     cliInstalled && cliPath
-                      ? `Installed at ${cliPath} — use jan from your terminal to serve models.`
-                      : 'Use jan from your terminal to serve models without opening the app.'
+                      ? `Installed at ${cliPath} — run jan-cli from your terminal to serve models.`
+                      : 'Run jan-cli from your terminal to serve models without opening the app.'
                   }
                   actions={
                     cliInstalled ? (
@@ -474,7 +482,7 @@ function General() {
                     />
                     <Button
                       variant="outline"
-                      size='sm'
+                      size="sm"
                       disabled={isValidatingToken}
                       onClick={async () => {
                         const token = (huggingfaceToken || '').trim()
@@ -537,109 +545,117 @@ function General() {
               />
             </Card>
 
-            {/* Resources */}
-            <Card title={t('settings:general.resources')}>
-              <CardItem
-                title={t('settings:general.documentation')}
-                description={t('settings:general.documentationDesc')}
-                actions={
-                  <a
-                    href="https://jan.ai/docs"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <div className="flex items-center gap-1">
-                      <span>{t('settings:general.viewDocs')}</span>
-                      <IconExternalLink size={14} />
-                    </div>
-                  </a>
-                }
-              />
-              <CardItem
-                title={t('settings:general.releaseNotes')}
-                description={t('settings:general.releaseNotesDesc')}
-                actions={
-                  <a
-                    href="https://github.com/janhq/jan/releases"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <div className="flex items-center gap-1">
-                      <span>{t('settings:general.viewReleases')}</span>
-                      <IconExternalLink size={14} />
-                    </div>
-                  </a>
-                }
-              />
-            </Card>
+            {/* Resources — закомментировано */}
+            {false && (
+              <Card title={t('settings:general.resources')}>
+                <CardItem
+                  title={t('settings:general.documentation')}
+                  description={t('settings:general.documentationDesc')}
+                  actions={
+                    <a
+                      href="https://jan.ai/docs"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>{t('settings:general.viewDocs')}</span>
+                        <IconExternalLink size={14} />
+                      </div>
+                    </a>
+                  }
+                />
+                <CardItem
+                  title={t('settings:general.releaseNotes')}
+                  description={t('settings:general.releaseNotesDesc')}
+                  actions={
+                    <a
+                      href="https://github.com/AtomicBot-ai/Atomic-Chat/releases"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>{t('settings:general.viewReleases')}</span>
+                        <IconExternalLink size={14} />
+                      </div>
+                    </a>
+                  }
+                />
+              </Card>
+            )}
 
-            {/* Community */}
-            <Card title={t('settings:general.community')}>
-              <CardItem
-                title={t('settings:general.github')}
-                description={t('settings:general.githubDesc')}
-                actions={
-                  <a
-                    href="https://github.com/janhq/jan"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
+            {/* Community — закомментировано */}
+            {false && (
+              <Card title={t('settings:general.community')}>
+                <CardItem
+                  title={t('settings:general.github')}
+                  description={t('settings:general.githubDesc')}
+                  actions={
+                    <a
+                      href="https://github.com/AtomicBot-ai/Atomic-Chat"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
                       <IconBrandGithub
                         size={18}
                         className="text-muted-foreground"
                       />
-                  </a>
-                }
-              />
-              <CardItem
-                title={t('settings:general.discord')}
-                description={t('settings:general.discordDesc')}
-                actions={
-                  <a
-                    href="https://discord.com/invite/FTk2MvZwJH"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <IconBrandDiscord
-                      size={18}
-                      className="text-muted-foreground"
-                    />
-                  </a>
-                }
-              />
-            </Card>
+                    </a>
+                  }
+                />
+                <CardItem
+                  title={t('settings:general.discord')}
+                  description={t('settings:general.discordDesc')}
+                  actions={
+                    <a
+                      href="https://discord.com/invite/FTk2MvZwJH"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <IconBrandDiscord
+                        size={18}
+                        className="text-muted-foreground"
+                      />
+                    </a>
+                  }
+                />
+              </Card>
+            )}
 
-            {/* Support */}
-            <Card title={t('settings:general.support')}>
-              <CardItem
-                title={t('settings:general.reportAnIssue')}
-                description={t('settings:general.reportAnIssueDesc')}
-                actions={
-                  <a
-                    href="https://github.com/janhq/jan/issues/new"
-                    target="_blank"
-                  >
-                    <div className="flex items-center gap-1">
-                      <span>{t('settings:general.reportIssue')}</span>
-                      <IconExternalLink size={14} />
+            {/* Support — закомментировано */}
+            {false && (
+              <Card title={t('settings:general.support')}>
+                <CardItem
+                  title={t('settings:general.reportAnIssue')}
+                  description={t('settings:general.reportAnIssueDesc')}
+                  actions={
+                    <a
+                      href="https://github.com/AtomicBot-ai/Atomic-Chat/issues/new"
+                      target="_blank"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>{t('settings:general.reportIssue')}</span>
+                        <IconExternalLink size={14} />
+                      </div>
+                    </a>
+                  }
+                />
+              </Card>
+            )}
+
+            {/* Credits — закомментировано */}
+            {false && (
+              <Card title={t('settings:general.credits')}>
+                <CardItem
+                  align="start"
+                  description={
+                    <div className="text-muted-foreground -mt-2">
+                      <p>{t('settings:general.creditsDesc1')}</p>
+                      <p className="mt-2">{t('settings:general.creditsDesc2')}</p>
                     </div>
-                  </a>
-                }
-              />
-            </Card>
-
-            {/* Credits */}
-            <Card title={t('settings:general.credits')}>
-              <CardItem
-                align="start"
-                description={
-                  <div className="text-muted-foreground -mt-2">
-                    <p>{t('settings:general.creditsDesc1')}</p>
-                    <p className="mt-2">{t('settings:general.creditsDesc2')}</p>
-                  </div>
-                }
-              />
-            </Card>
+                  }
+                />
+              </Card>
+            )}
           </div>
         </div>
       </div>

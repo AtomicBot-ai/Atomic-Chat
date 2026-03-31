@@ -25,36 +25,32 @@
   #initial-loader {
     background: rgb(25, 25, 25);
   }
+
+  #initial-loader .loader-logo-spin img {
+    filter: invert(1);
+  }
 }
 
-#initial-loader img {
+/* Вращение логотипа (без «помахивания»); инверсия только на img внутри */
+#initial-loader .loader-logo-spin {
   width: 5rem;
   height: 5rem;
-  animation: wave 2s ease-in-out infinite;
-  transform-origin: 70% 70%;
+  animation: loader-logo-rotate 1.1s linear infinite;
 }
 
-@keyframes wave {
-  0%,
-  100% {
+#initial-loader .loader-logo-spin img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+@keyframes loader-logo-rotate {
+  from {
     transform: rotate(0deg);
   }
-  10%,
-  30% {
-    transform: rotate(14deg);
-  }
-  20% {
-    transform: rotate(-8deg);
-  }
-  40%,
-  60% {
-    transform: rotate(14deg);
-  }
-  50% {
-    transform: rotate(-8deg);
-  }
-  70% {
-    transform: rotate(0deg);
+  to {
+    transform: rotate(360deg);
   }
 }
 

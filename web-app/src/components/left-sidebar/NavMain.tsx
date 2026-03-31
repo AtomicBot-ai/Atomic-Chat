@@ -124,7 +124,7 @@ const getNavMainItems = (
     ),
   },
   {
-    title: 'common:hub',
+    title: 'common:models',
     url: route.hub.index,
     animatedIcon: BlocksIcon,
   },

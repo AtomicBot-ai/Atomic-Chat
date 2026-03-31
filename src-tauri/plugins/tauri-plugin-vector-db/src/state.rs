@@ -8,7 +8,7 @@ impl VectorDBState {
     pub fn new() -> Self {
         // Default vector db path: /Jan/data/db
         let mut base = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
-        base.push("Jan");
+        base.push("Atomic Chat");
         base.push("data");
         base.push("db");
         std::fs::create_dir_all(&base).ok();

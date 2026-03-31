@@ -13,5 +13,11 @@
   "useModel": "Sử dụng mô hình này",
   "downloadModel": "Tải xuống mô hình",
   "tools": "Công cụ",
-  "searchPlaceholder": "Tìm kiếm các mô hình trên Hugging Face..."
+  "searchPlaceholder": "Tìm kiếm các mô hình trên Hugging Face...",
+  "recTitle": "Đề xuất",
+  "rec8gb": "Tốt nhất cho thiết bị 8GB RAM",
+  "recChatting": "Tốt nhất cho trò chuyện",
+  "recAnalyzing": "Tốt nhất để phân tích tệp",
+  "recCoding": "Tốt nhất cho lập trình",
+  "backToModels": "Quay lại mô hình"
 }

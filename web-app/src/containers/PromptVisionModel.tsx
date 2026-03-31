@@ -67,7 +67,7 @@ export function PromptVisionModel({
         setJanV2VLModel(catalogModel)
       }
     } catch (error) {
-      console.error('Error fetching Jan V2 VL Model:', error)
+      console.error('Error fetching Atomic Bot V2 VL Model:', error)
     } finally {
       setIsLoading(false)
     }
@@ -178,13 +178,15 @@ export function PromptVisionModel({
     downloadStartedModelId.current = defaultVariant.model_id
     addLocalDownloadingModel(defaultVariant.model_id)
 
-    serviceHub.models().pullModelWithMetadata(
-      defaultVariant.model_id,
-      defaultVariant.path,
-      janV2VLModel.mmproj_models?.[0]?.path,
-      huggingfaceToken,
-      true
-    )
+    serviceHub
+      .models()
+      .pullModelWithMetadata(
+        defaultVariant.model_id,
+        defaultVariant.path,
+        janV2VLModel.mmproj_models?.[0]?.path,
+        huggingfaceToken,
+        true
+      )
   }
 
   if (!open || existingModel) return null
@@ -193,22 +195,22 @@ export function PromptVisionModel({
   return (
     <div className="fixed bottom-4 right-4 z-50 p-4 shadow-lg bg-background w-4/5 md:w-100 border rounded-lg">
       <div className="flex items-center gap-2">
-        <img src="/images/jan-logo.png" alt="Jan" className="size-5" />
+        <img
+          src="/images/atomic-chat-logo.png"
+          alt="Atomic Bot"
+          className="size-5 dark:brightness-0 dark:invert"
+        />
         <h2 className="font-medium">
-          Jan V2 VL Model
+          Atomic Bot V2 VL Model
           <span className="text-muted-foreground"> (~5GB)</span>
         </h2>
       </div>
       <p className="mt-2 text-sm text-muted-foreground">
-        Add vision capabilities to chat with images. Download Jan V2 VL, our
-        recommended vision model.
+        Add vision capabilities to chat with images. Download Atomic Bot V2 VL,
+        our recommended vision model.
       </p>
       <div className="mt-4 flex justify-end space-x-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onClose}
-        >
+        <Button variant="ghost" size="sm" onClick={onClose}>
           {isDownloading ? 'Close' : 'Cancel'}
         </Button>
         <Button

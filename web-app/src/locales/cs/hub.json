@@ -13,5 +13,11 @@
   "useModel": "Použít tento model",
   "downloadModel": "Stáhnout model",
   "tools": "Nástroje",
-  "searchPlaceholder": "Hledat modely na Hugging Face..."
+  "searchPlaceholder": "Hledat modely na Hugging Face...",
+  "recTitle": "Doporučené",
+  "rec8gb": "Vhodné pro zařízení s 8 GB RAM",
+  "recChatting": "Vhodné pro chat",
+  "recAnalyzing": "Vhodné pro analýzu souborů",
+  "recCoding": "Vhodný pro programování",
+  "backToModels": "Zpět k modelům"
 }

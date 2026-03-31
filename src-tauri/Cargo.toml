@@ -1,5 +1,5 @@
 [package]
-name = "Jan"
+name = "Atomic-Chat"
 version = "0.6.599"
 description = "Use offline LLMs with your own data. Run open source models like Llama2 or Falcon on your internal computers/servers."
 authors = ["Jan <service@jan.ai>"]
@@ -8,7 +8,7 @@ repository = "https://github.com/janhq/jan"
 edition = "2021"
 rust-version = "1.77.2"
 resolver = "2"
-default-run = "Jan"
+default-run = "Atomic-Chat"
 
 [lib]
 name = "app_lib"
@@ -47,7 +47,6 @@ mobile = [
     "tauri/wry",
     "dep:sqlx",
 ]
-# foundation-models excluded from test-tauri - framework not available in CI
 test-tauri = [
     "tauri/wry",
     "tauri/x11",
@@ -55,15 +54,12 @@ test-tauri = [
     "tauri/macos-private-api",
     "tauri/tray-icon",
     "tauri/test",
-    "deep-link",
-    "hardware",
-    "mlx",
+    "desktop",
 ]
 cli = ["dep:env_logger", "dep:dialoguer", "dep:indicatif", "dep:console"]
 
 [build-dependencies]
 tauri-build = { version = "2.0.2", features = [] }
-serde_json = "1.0"
 
 [dependencies]
 dirs = "6.0.0"
@@ -134,7 +130,7 @@ console = { version = "0.15", optional = true }
 [dependencies.tauri]
 version = "2.8.5"
 default-features = false
-features = ["protocol-asset", "macos-private-api", "test"]
+features = ["protocol-asset", "macos-private-api", "test", "devtools"]
 
 [target.'cfg(windows)'.dev-dependencies]
 tempfile = "3.20.0"

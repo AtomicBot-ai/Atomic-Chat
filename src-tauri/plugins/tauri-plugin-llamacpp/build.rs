@@ -7,7 +7,6 @@ const COMMANDS: &[&str] = &[
     "get_devices",
     "generate_api_key",
     "is_process_running",
-    "ensure_session_ready",
     "get_random_port",
     "find_session_by_model",
     "get_loaded_models",

@@ -3,7 +3,6 @@ use tauri_plugin_llamacpp::state::LlamacppState;
 use tauri_plugin_mlx::state::MlxState;
 
 use crate::core::server::proxy;
-use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::AppState;
 
 
@@ -15,7 +14,6 @@ pub struct StartServerConfig {
     pub api_key: String,
     pub trusted_hosts: Vec<String>,
     pub proxy_timeout: u64,
-    pub enable_server_tool_execution: Option<bool>,
 }
 
 #[tauri::command]
@@ -31,7 +29,6 @@ pub async fn start_server<R: Runtime>(
         api_key,
         trusted_hosts,
         proxy_timeout,
-        enable_server_tool_execution,
     } = config;
     let server_handle = state.server_handle.clone();
     let llama_state: State<LlamacppState> = app_handle.state();
@@ -51,10 +48,6 @@ pub async fn start_server<R: Runtime>(
         vec![trusted_hosts],
         proxy_timeout,
         state.provider_configs.clone(),
-        state.mcp_servers.clone(),
-        state.mcp_settings.clone(),
-        get_jan_data_folder_path(app_handle.clone()).to_string_lossy().into_owned(),
-        enable_server_tool_execution.unwrap_or(false),
     )
     .await
     .map_err(|e| e.to_string())?;

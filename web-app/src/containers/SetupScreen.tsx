@@ -7,8 +7,11 @@ import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react'
 import { AppEvent, events } from '@janhq/core'
-import { SETUP_SCREEN_QUANTIZATIONS } from '@/constants/models'
-import { useLatestJanModel } from '@/hooks/useLatestJanModel'
+import type { CatalogModel } from '@/services/models/types'
+import {
+  NEW_JAN_MODEL_HF_REPO,
+  SETUP_SCREEN_QUANTIZATIONS,
+} from '@/constants/models'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { IconEye, IconSquareCheck } from '@tabler/icons-react'
@@ -89,18 +92,36 @@ function SetupScreen() {
   const llamaProvider = getProviderByName('llamacpp')
   const [quickStartInitiated, setQuickStartInitiated] = useState(false)
   const [quickStartQueued, setQuickStartQueued] = useState(false)
-  const {
-    model: janNewModel,
-    error: metadataFetchFailed,
-    fetchLatestJanModel,
-  } = useLatestJanModel()
+  const [janNewModel, setJanNewModel] = useState<CatalogModel | null>(null)
   const [supportedVariants, setSupportedVariants] = useState<
     Map<string, 'RED' | 'YELLOW' | 'GREEN' | 'GREY'>
   >(new Map())
+  const [metadataFetchFailed, setMetadataFetchFailed] = useState(false)
   const supportCheckInProgress = useRef(false)
   const checkedModelId = useRef<string | null>(null)
   const [isSupportCheckComplete, setIsSupportCheckComplete] = useState(false)
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
+
+  const fetchJanModel = useCallback(async () => {
+    setMetadataFetchFailed(false)
+    try {
+      const repo = await serviceHub
+        .models()
+        .fetchHuggingFaceRepo(NEW_JAN_MODEL_HF_REPO, huggingfaceToken)
+
+      if (repo) {
+        const catalogModel = serviceHub
+          .models()
+          .convertHfRepoToCatalogModel(repo)
+        setJanNewModel(catalogModel)
+      } else {
+        setMetadataFetchFailed(true)
+      }
+    } catch (error) {
+      console.error('Error fetching Atomic Chat model V2:', error)
+      setMetadataFetchFailed(true)
+    }
+  }, [serviceHub, huggingfaceToken])
 
   // Check model support for variants when janNewModel is available
   useEffect(() => {
@@ -167,8 +188,8 @@ function SetupScreen() {
   }, [janNewModel, serviceHub])
 
   useEffect(() => {
-    fetchLatestJanModel(true)
-  }, [fetchLatestJanModel])
+    fetchJanModel()
+  }, [fetchJanModel])
 
   const defaultVariant = useMemo(() => {
     if (!janNewModel) return null
@@ -243,7 +264,7 @@ function SetupScreen() {
     )
   }, [defaultVariant, localDownloadingModels, downloadProcesses])
 
-   const downloadedSize = useMemo(() => {
+  const downloadedSize = useMemo(() => {
     if (!defaultVariant) return { current: 0, total: 0 }
     const process = downloadProcesses.find(
       (e) => e.id === defaultVariant.model_id
@@ -297,21 +318,11 @@ function SetupScreen() {
     huggingfaceToken,
   ])
 
-  // Auto-start download when screen is shown
-  const hasAutoStarted = useRef(false)
-  useEffect(() => {
-    if (hasAutoStarted.current || isDownloaded) return
-    hasAutoStarted.current = true
-    handleQuickStart()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   // Use ref to track if we've already navigated
   const hasNavigatedRef = useRef(false)
 
   // Navigate when download completes - using event listener for reliability
   useEffect(() => {
-
     const onModelImported = async (payload: { modelId: string }) => {
       if (!defaultVariant || hasNavigatedRef.current) return
       if (payload.modelId !== defaultVariant.model_id) return
@@ -328,8 +339,9 @@ function SetupScreen() {
       // while the catalog uses forward slashes, so try both formats
       const catalogId = defaultVariant.model_id
       const backslashId = catalogId.replace(/\//g, '\\')
-      const found = selectModelProvider('llamacpp', catalogId)
-        || selectModelProvider('llamacpp', backslashId)
+      const found =
+        selectModelProvider('llamacpp', catalogId) ||
+        selectModelProvider('llamacpp', backslashId)
       const modelId = found ? found.id : catalogId
 
       toast.dismiss(`model-validation-started-${catalogId}`)
@@ -410,37 +422,53 @@ function SetupScreen() {
     }
   }, [quickStartInitiated, quickStartQueued, isDownloading, isDownloaded])
 
-
   return (
     <div className="relative flex flex-col h-svh w-full overflow-hidden">
       {/* Content overlay */}
-        <div className="flex flex-col h-svh w-full">
+      <div className="flex flex-col h-svh w-full">
         <HeaderPage />
-        
+
         <div className="flex h-[calc(100%-60px)] items-center">
           <div className="shrink-0 px-10 w-[480px] mx-auto overflow-auto pb-10 pointer-events-auto -mt-20">
             <div className="mb-4">
               <h1 className="font-studio font-medium text-2xl mb-1">
-                {isDownloading ?  'Sit tight, Jan is getting ready...' : 'Hey, welcome to Jan!'}
+                {isDownloading
+                  ? 'Sit tight, Atomic Chat is getting ready...'
+                  : 'Hey, welcome to Atomic Chat!'}
               </h1>
-              <p className='text-muted-foreground leading-normal w-full mt-1'>{isDownloading ? 'This may take a few minutes.' : 'Jan needs a model to begin. Let’s set it up.'}</p>
+              <p className="text-muted-foreground leading-normal w-full mt-1">
+                {isDownloading
+                  ? 'This may take a few minutes.'
+                  : 'Atomic Chat needs a model to begin. Let’s set it up.'}
+              </p>
             </div>
             <div className="flex gap-4 flex-col mt-6 relative z-50">
-              <div
-                className="w-full text-left"
-              >
-                <span className='mb-2 block text-sm font-medium'>Recommended model</span>
-                <div className={cn("bg-secondary/50 p-3 rounded-lg border transition-all hover:shadow disabled:opacity-60 flex justify-between items-start")}>
+              <div className="w-full text-left">
+                <span className="mb-2 block text-sm font-medium">
+                  Recommended model
+                </span>
+                <div
+                  className={cn(
+                    'bg-secondary/50 p-3 rounded-lg border transition-all hover:shadow disabled:opacity-60 flex justify-between items-start'
+                  )}
+                >
                   <div className="flex w-full items-start gap-4">
                     <div className="shrink-0 size-12 bg-background rounded-xl flex items-center justify-center">
-                      <img src="/images/jan-logo.png" alt="Jan Logo" className='size-6' />
+                      <img
+                        src="/images/atomic-chat-logo.png"
+                        alt="Atomic Chat"
+                        className="size-6 dark:brightness-0 dark:invert"
+                      />
                     </div>
                     <div className="flex flex-col w-full h-full justify-center">
                       <div className="flex flex-1 items-center justify-between">
                         <h1 className="font-semibold text-sm mb-1">
-                          <span>{janNewModel?.display_name ?? janNewModel?.model_name ?? 'Jan Model'}</span>&nbsp;<span className='text-xs text-muted-foreground'>· {defaultVariant?.file_size}</span>
+                          <span>Qwen3.5 4B</span>&nbsp;
+                          <span className="text-xs text-muted-foreground">
+                            · {defaultVariant?.file_size}
+                          </span>
                         </h1>
-                        {(isDownloading) && (
+                        {isDownloading && (
                           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                             <svg
                               className="size-3 animate-spin"
@@ -461,33 +489,41 @@ function SetupScreen() {
                                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                               />
                             </svg>
-                            <span>{formatBytes(downloadedSize.current)} / {formatBytes(downloadedSize.total)}GB</span>
+                            <span>
+                              {formatBytes(downloadedSize.current)} /{' '}
+                              {formatBytes(downloadedSize.total)}GB
+                            </span>
                           </div>
                         )}
-
                       </div>
                       <div className="text-muted-foreground text-sm mt-1.5 ">
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full mr-1">
                           <IconSquareCheck size={12} />
                           General
                         </span>
-                        {(janNewModel?.mmproj_models?.length ?? 0) > 0 && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full">
-                          <IconEye size={12} />
-                          Vision
-                        </span>}
+                        {(janNewModel?.mmproj_models?.length ?? 0) > 0 && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full">
+                            <IconEye size={12} />
+                            Vision
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
                 </div>
                 <div className="flex flex-col relative z-50 items-start gap-2 mt-4">
-                  <Button size="sm" disabled={isDownloading}  onClick={handleQuickStart} className='flex items-center gap-2 w-full'>
+                  <Button
+                    size="sm"
+                    disabled={isDownloading}
+                    onClick={handleQuickStart}
+                    className="flex items-center gap-2 w-full"
+                  >
                     {isDownloading ? 'Downloading' : 'Download'}
                   </Button>
                 </div>
               </div>
             </div>
           </div>
-
         </div>
       </div>
     </div>

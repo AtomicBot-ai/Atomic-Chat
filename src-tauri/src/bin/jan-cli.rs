@@ -642,7 +642,7 @@ async fn select_model_interactively(select_quantization: bool) -> String {
     }
 
     if all.is_empty() {
-        let default_model = "janhq/Jan-v3-4B-base-instruct-gguf";
+        let default_model = "unsloth/Qwen3.5-4B-GGUF";
         println!();
         let msg = Style::new().yellow().apply_to(
             "No models found. Downloading default model..."
@@ -1305,7 +1305,6 @@ fn build_llamacpp_config(n_gpu_layers: i32, ctx_size: i32, timeout: i32, fit: bo
         version_backend: "cli/llama-server".to_string(),
         auto_update_engine: false,
         auto_unload: false,
-        auto_restart_on_crash: false,
         timeout,
         llamacpp_env: String::new(),
         fit,

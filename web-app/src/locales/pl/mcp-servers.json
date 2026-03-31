@@ -6,8 +6,8 @@
       "checking": "Sprawdzanie statusu rozszerzenia..."
     },
     "notInstalled": {
-      "title": "Jan wykonuje zadania w Twojej przeglądarce",
-      "description": "Zainstaluj rozszerzenie, aby dać Janowi dostęp do przeglądarki",
+      "title": "Atomic Bot wykonuje zadania w Twojej przeglądarce",
+      "description": "Zainstaluj rozszerzenie, aby dać Atomic Botowi dostęp do przeglądarki",
       "getExtension": "Pobierz rozszerzenie"
     }
   },
@@ -56,7 +56,7 @@
   "serverStatusInactive": "Pomyślnie dezaktywowano serwer {{serverKey}}",
   "runtimeSettings": {
     "title": "Ustawienia środowiska uruchomieniowego",
-    "description": "Skonfiguruj, jak Jan zarządza i ponawia próby połączenia z serwerami MCP.",
+    "description": "Skonfiguruj, jak Atomic Bot zarządza i ponawia próby połączenia z serwerami MCP.",
     "toolCallTimeout": "Limit czasu wywołania narzędzia (sekundy)",
     "toolCallTimeoutDesc": "Maksymalny czas oczekiwania na odpowiedź narzędzia MCP przed przekroczeniem limitu czasu."
   }

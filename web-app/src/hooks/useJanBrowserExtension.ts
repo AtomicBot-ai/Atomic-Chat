@@ -67,7 +67,7 @@ export function useJanBrowserExtension() {
   const handleConnectionSuccess = useCallback(() => {
     setDialogOpen(false)
     setDialogState('closed')
-    toast.success('Jan Browser MCP enabled')
+    toast.success('Atomic Bot browser tools enabled')
   }, [])
 
   /**
@@ -114,7 +114,7 @@ export function useJanBrowserExtension() {
 
     try {
       if (!janBrowserConfig) {
-        toast.error('Jan Browser MCP not found', {
+        toast.error('Browser extension MCP not found', {
           description: 'Please check your MCP server configuration',
         })
         return
@@ -165,7 +165,7 @@ export function useJanBrowserExtension() {
       } else {
         // Deactivate the server
         await serviceHub.mcp().deactivateMCPServer(JAN_BROWSER_MCP_NAME)
-        toast.success('Jan Browser MCP disabled')
+        toast.success('Atomic Bot browser tools disabled')
 
         editServer(JAN_BROWSER_MCP_NAME, {
           ...janBrowserConfig,

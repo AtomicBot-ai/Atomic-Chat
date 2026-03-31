@@ -96,22 +96,17 @@ describe('SettingsMenu', () => {
     render(<SettingsMenu />)
 
     expect(screen.getByText('common:general')).toBeInTheDocument()
-    expect(screen.getByText('common:appearance')).toBeInTheDocument()
+    expect(screen.getByText('common:interface')).toBeInTheDocument()
     expect(screen.getByText('common:privacy')).toBeInTheDocument()
   })
 
-  it('renders core settings links', () => {
+  it('renders keyboard shortcuts and other settings', () => {
     render(<SettingsMenu />)
     expect(screen.getByText('common:keyboardShortcuts')).toBeInTheDocument()
-    expect(screen.getByText('common:assistants')).toBeInTheDocument()
+    expect(screen.getByText('common:hardware')).toBeInTheDocument()
     expect(screen.getByText('common:local_api_server')).toBeInTheDocument()
-    expect(screen.getByText('common:privacy')).toBeInTheDocument()
-  })
-
-  it('renders integrations links', () => {
-    render(<SettingsMenu />)
-    expect(screen.getByText('common:connectors')).toBeInTheDocument()
-    expect(screen.getByText('common:claude_code')).toBeInTheDocument()
+    expect(screen.getByText('common:https_proxy')).toBeInTheDocument()
+    expect(screen.getByText('common:mcp-servers')).toBeInTheDocument()
   })
 
   it('shows provider expansion chevron when providers are active', () => {

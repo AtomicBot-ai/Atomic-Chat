@@ -3,10 +3,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ErrorCode {
-    NotLoaded,
-    Unavailable,
-    InvalidRequest,
-    InferenceError,
+    BinaryNotFound,
+    FoundationModelsUnavailable,
+    ServerStartFailed,
+    ServerStartTimedOut,
+    ProcessError,
+    IoError,
     InternalError,
 }
 
@@ -20,43 +22,86 @@ pub struct FoundationModelsError {
 }
 
 impl FoundationModelsError {
-    pub fn not_loaded() -> Self {
+    pub fn new(code: ErrorCode, message: String, details: Option<String>) -> Self {
         Self {
-            code: ErrorCode::NotLoaded,
-            message: "Foundation Models are not loaded. Please load the model first.".into(),
-            details: None,
+            code,
+            message,
+            details,
         }
     }
 
-    pub fn unavailable(details: String) -> Self {
-        Self {
-            code: ErrorCode::Unavailable,
-            message: "Foundation Models are not available on this device.".into(),
-            details: Some(details),
-        }
-    }
+    /// Interpret stderr output from the server binary and produce a descriptive error.
+    pub fn from_stderr(stderr: &str) -> Self {
+        let lower = stderr.to_lowercase();
 
-    pub fn invalid_request(details: String) -> Self {
-        Self {
-            code: ErrorCode::InvalidRequest,
-            message: "Invalid request.".into(),
-            details: Some(details),
+        if lower.contains("device is not eligible")
+            || lower.contains("devicenoteligible")
+        {
+            return Self::new(
+                ErrorCode::FoundationModelsUnavailable,
+                "This device is not eligible for Apple Intelligence.".into(),
+                Some(stderr.into()),
+            );
         }
-    }
 
-    pub fn inference_error(details: String) -> Self {
-        Self {
-            code: ErrorCode::InferenceError,
-            message: "An error occurred during inference.".into(),
-            details: Some(details),
+        if lower.contains("apple intelligence is not enabled")
+            || lower.contains("appleintelligencenotenabled")
+        {
+            return Self::new(
+                ErrorCode::FoundationModelsUnavailable,
+                "Apple Intelligence is not enabled. Please enable it in System Settings → Apple Intelligence & Siri.".into(),
+                Some(stderr.into()),
+            );
         }
-    }
 
-    pub fn internal_error(details: String) -> Self {
-        Self {
-            code: ErrorCode::InternalError,
-            message: "An internal error occurred.".into(),
-            details: Some(details),
+        if lower.contains("model not ready") || lower.contains("modelnotready") {
+            return Self::new(
+                ErrorCode::FoundationModelsUnavailable,
+                "The Foundation Model is still downloading or not yet ready. Please wait and try again.".into(),
+                Some(stderr.into()),
+            );
         }
+
+        Self::new(
+            ErrorCode::ProcessError,
+            "The Foundation Models server encountered an unexpected error.".into(),
+            Some(stderr.into()),
+        )
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum ServerError {
+    #[error(transparent)]
+    FoundationModels(#[from] FoundationModelsError),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Tauri error: {0}")]
+    Tauri(#[from] tauri::Error),
+}
+
+impl serde::Serialize for ServerError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let err = match self {
+            ServerError::FoundationModels(e) => e.clone(),
+            ServerError::Io(e) => FoundationModelsError::new(
+                ErrorCode::IoError,
+                "An input/output error occurred.".into(),
+                Some(e.to_string()),
+            ),
+            ServerError::Tauri(e) => FoundationModelsError::new(
+                ErrorCode::InternalError,
+                "A Tauri internal error occurred.".into(),
+                Some(e.to_string()),
+            ),
+        };
+        err.serialize(serializer)
+    }
+}
+
+pub type ServerResult<T> = Result<T, ServerError>;

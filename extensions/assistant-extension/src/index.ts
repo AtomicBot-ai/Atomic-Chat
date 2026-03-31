@@ -223,8 +223,7 @@ Current date: {{current_date}}`
         console.error(`Failed to read assistant ${assistant}:`, error)
       }
     }
-    // Return loaded assistants, or fall back to default if none found
-    return assistantsData.length > 0 ? assistantsData : [this.defaultAssistant]
+    return assistantsData
   }
 
   async createAssistant(assistant: Assistant): Promise<void> {

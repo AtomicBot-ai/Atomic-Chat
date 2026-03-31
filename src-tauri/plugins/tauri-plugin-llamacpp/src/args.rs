@@ -8,8 +8,6 @@ pub struct LlamacppConfig {
     pub version_backend: String,
     pub auto_update_engine: bool,
     pub auto_unload: bool,
-    #[serde(default)]
-    pub auto_restart_on_crash: bool,
     pub timeout: i32,
     pub llamacpp_env: String,
     pub fit: bool,
@@ -405,7 +403,6 @@ mod tests {
             version_backend: "v1.0/standard".to_string(),
             auto_update_engine: false,
             auto_unload: false,
-            auto_restart_on_crash: false,
             timeout: 120,
             llamacpp_env: String::new(),
             fit: false,

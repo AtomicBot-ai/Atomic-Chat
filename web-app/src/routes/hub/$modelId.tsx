@@ -237,7 +237,7 @@ function HubModelDetailContent() {
           size="sm"
         >
           <IconArrowLeft size={18} className="text-muted-foreground" />
-          <span className="text-foreground">Back to Hub</span>
+          <span className="text-foreground">{t('hub:backToModels')}</span>
         </Button>
         </HeaderPage>
         <div className="flex-1 flex items-center justify-center">
@@ -259,7 +259,7 @@ function HubModelDetailContent() {
             className='relative z-20'
           >
             <IconArrowLeft size={18} className="text-muted-foreground" />
-            <span className="text-foreground">Back to Hub</span>
+            <span className="text-foreground">{t('hub:backToModels')}</span>
           </Button>
         </div>
       </HeaderPage>

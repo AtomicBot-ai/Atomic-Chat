@@ -69,8 +69,6 @@ function LocalAPIServerContent() {
     apiKey,
     trustedHosts,
     proxyTimeout,
-    enableServerToolExecution,
-    setEnableServerToolExecution,
     setLastServerModels,
     defaultModelLocalApiServer,
     setDefaultModelLocalApiServer,
@@ -167,7 +165,6 @@ function LocalAPIServerContent() {
             isCorsEnabled: corsEnabled,
             isVerboseEnabled: verboseLogs,
             proxyTimeout: proxyTimeout,
-            enableServerToolExecution,
           })
         })
         .then((actualPort: number) => {
@@ -361,21 +358,6 @@ function LocalAPIServerContent() {
                   </h2>
                 </div>
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <p className="text-sm font-medium">
-                        Execute tools on server
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Run tools server-side for chat endpoints.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={enableServerToolExecution}
-                      onCheckedChange={setEnableServerToolExecution}
-                      disabled={isServerRunning}
-                    />
-                  </div>
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <p className="text-sm font-medium">

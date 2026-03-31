@@ -29,6 +29,12 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { ThreadMessage } from '@janhq/core'
 
+//* Заголовок приветственного треда: новый бренд и старая строка из прошлых версий
+const WELCOME_THREAD_TITLES = new Set([
+  'What is Atomic Bot?',
+  'What is Overchat?',
+])
+
 const ThreadItem = memo(
   ({
     thread,
@@ -96,7 +102,9 @@ const ThreadItem = memo(
       const userMessages = messages.filter((m) => m.role === 'user')
       const lastUserMessage = userMessages[userMessages.length - 1]
       if (!lastUserMessage) return undefined
-      const textContent = lastUserMessage.content?.find((c) => c.type === 'text')
+      const textContent = lastUserMessage.content?.find(
+        (c) => c.type === 'text'
+      )
       return textContent?.text?.value
     }, [messages])
 
@@ -136,27 +144,34 @@ const ThreadItem = memo(
 
     return (
       <SidebarMenuItem>
-        {currentProjectId ? 
-          <Link to="/threads/$threadId" params={{ threadId: thread.id }} className="bg-card dark:bg-secondary/20 mb-2 px-4 py-4 border hover:dark:bg-secondary/30 rounded-lg block">
-              <span>{thread.title || t('common:newThread')}</span>
-              {currentProjectId && lastUserMessageText && (
-                <div className="text-muted-foreground text-xs mt-1 line-clamp-1 pr-10">
-                  {lastUserMessageText}
-                </div>
-              )}
+        {currentProjectId ? (
+          <Link
+            to="/threads/$threadId"
+            params={{ threadId: thread.id }}
+            className="bg-card dark:bg-secondary/20 mb-2 px-4 py-4 border hover:dark:bg-secondary/30 rounded-lg block"
+          >
+            <span>{thread.title || t('common:newThread')}</span>
+            {currentProjectId && lastUserMessageText && (
+              <div className="text-muted-foreground text-xs mt-1 line-clamp-1 pr-10">
+                {lastUserMessageText}
+              </div>
+            )}
           </Link>
-          : 
+        ) : (
           <SidebarMenuButton asChild>
             <Link to="/threads/$threadId" params={{ threadId: thread.id }}>
               <span>{thread.title || t('common:newThread')}</span>
             </Link>
           </SidebarMenuButton>
-        }
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <SidebarMenuAction
               showOnHover
-              className={cn("hover:bg-sidebar-foreground/8", currentProjectId && 'mt-4 mr-2')}
+              className={cn(
+                'hover:bg-sidebar-foreground/8',
+                currentProjectId && 'mt-4 mr-2'
+              )}
             >
               <MoreHorizontal />
               <span className="sr-only">More</span>
@@ -227,9 +242,15 @@ const ThreadItem = memo(
             <DropdownMenuSeparator />
             <DropdownMenuItem
               variant="destructive"
-              disabled={thread.title === 'What is Jan?' && !localStorage.getItem('setup-completed')}
+              disabled={
+                WELCOME_THREAD_TITLES.has(thread.title) &&
+                !localStorage.getItem('setup-completed')
+              }
               onSelect={() => {
-                if (thread.title !== 'What is Jan?' || localStorage.getItem('setup-completed')) {
+                if (
+                  !WELCOME_THREAD_TITLES.has(thread.title) ||
+                  localStorage.getItem('setup-completed')
+                ) {
                   setDeleteConfirmOpen(true)
                 }
               }}
@@ -248,7 +269,7 @@ const ThreadItem = memo(
           onOpenChange={setRenameOpen}
           withoutTrigger
         />
-        
+
         <DeleteThreadDialog
           thread={thread}
           onDelete={deleteThread}

@@ -14,5 +14,11 @@
   "downloadModel": "Modell herunterladen",
   "tools": "Werkzeuge",
   "searchPlaceholder": "Suche nach Modellen auf Hugging Face...",
-  "editTheme": "Bearbeite Erscheinungsbild"
+  "editTheme": "Bearbeite Erscheinungsbild",
+  "recTitle": "Empfohlen",
+  "rec8gb": "Am besten für Geräte mit 8 GB RAM",
+  "recChatting": "Am besten für Chats",
+  "recAnalyzing": "Am besten für Dateianalyse",
+  "recCoding": "Am besten für Code",
+  "backToModels": "Zurück zu Modellen"
 }

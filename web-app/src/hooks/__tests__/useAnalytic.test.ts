@@ -25,7 +25,7 @@ describe('useAnalytic', () => {
     vi.clearAllMocks()
     // Reset stores to initial state
     useProductAnalyticPrompt.setState({
-      productAnalyticPrompt: true,
+      productAnalyticPrompt: false,
       setProductAnalyticPrompt: useProductAnalyticPrompt.getState().setProductAnalyticPrompt,
     })
     useProductAnalytic.setState({
@@ -35,10 +35,10 @@ describe('useAnalytic', () => {
   })
 
   describe('useProductAnalyticPrompt', () => {
-    it('should initialize with default value true', () => {
+    it('should initialize with default value false', () => {
       const { result } = renderHook(() => useProductAnalyticPrompt())
       
-      expect(result.current.productAnalyticPrompt).toBe(true)
+      expect(result.current.productAnalyticPrompt).toBe(false)
     })
 
     it('should update productAnalyticPrompt value', async () => {
@@ -138,7 +138,7 @@ describe('useAnalytic', () => {
     it('should return default values on initial render', () => {
       const { result } = renderHook(() => useAnalytic())
       
-      expect(result.current.productAnalyticPrompt).toBe(true)
+      expect(result.current.productAnalyticPrompt).toBe(false)
       expect(result.current.productAnalytic).toBe(false)
     })
   })

@@ -53,7 +53,7 @@ describe('useAssistant', () => {
 
     const updatedAssistant = {
       ...defaultAssistant,
-      name: 'Updated Jan',
+      name: 'Updated Atomic Chat',
       description: 'Updated description',
     }
 
@@ -61,7 +61,7 @@ describe('useAssistant', () => {
       result.current.updateAssistant(updatedAssistant)
     })
 
-    expect(result.current.assistants[0].name).toBe('Updated Jan')
+    expect(result.current.assistants[0].name).toBe('Updated Atomic Chat')
     expect(result.current.assistants[0].description).toBe('Updated description')
   })
 
@@ -136,13 +136,9 @@ describe('useAssistant', () => {
       },
     ]
 
-    expect(result.current.loading).toBe(true)
-
     act(() => {
       result.current.setAssistants(assistants)
     })
-
-    expect(result.current.loading).toBe(false)
 
     expect(result.current.assistants).toEqual(assistants)
     expect(result.current.assistants).toHaveLength(2)
@@ -152,8 +148,10 @@ describe('useAssistant', () => {
     const { result } = renderHook(() => useAssistant())
 
     expect(result.current.currentAssistant.id).toBe('jan')
-    expect(result.current.currentAssistant.name).toBe('Jan')
-    expect(result.current.currentAssistant.avatar).toBe('👋')
+    expect(result.current.currentAssistant.name).toBe('Atomic Chat')
+    expect(result.current.currentAssistant.avatar).toBe(
+      '/images/atomic-chat-logo.png'
+    )
     expect(result.current.currentAssistant.instructions).toContain(
       'Before engaging any tools, articulate your complete thought process in natural language'
     )
@@ -176,13 +174,13 @@ describe('useAssistant', () => {
 
     const updatedDefaultAssistant = {
       ...defaultAssistant,
-      name: 'Updated Jan Name',
+      name: 'Updated Atomic Chat Name',
     }
 
     act(() => {
       result.current.updateAssistant(updatedDefaultAssistant)
     })
 
-    expect(result.current.currentAssistant.name).toBe('Updated Jan Name')
+    expect(result.current.currentAssistant.name).toBe('Updated Atomic Chat Name')
   })
 })

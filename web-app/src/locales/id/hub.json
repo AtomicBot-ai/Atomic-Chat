@@ -13,5 +13,11 @@
   "useModel": "Gunakan model ini",
   "downloadModel": "Unduh model",
   "tools": "Alat",
-  "searchPlaceholder": "Cari model di Hugging Face..."
+  "searchPlaceholder": "Cari model di Hugging Face...",
+  "recTitle": "Rekomendasi",
+  "rec8gb": "Terbaik untuk perangkat 8GB RAM",
+  "recChatting": "Terbaik untuk obrolan",
+  "recAnalyzing": "Terbaik untuk menganalisis file",
+  "recCoding": "Terbaik untuk coding",
+  "backToModels": "Kembali ke model"
 }

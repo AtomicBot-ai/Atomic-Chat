@@ -36,7 +36,8 @@ export const useProductAnalyticPrompt = create<ProductAnalyticPromptState>()(
   persist(
     (set) => {
       const initialState = {
-        productAnalyticPrompt: true,
+        //! Пока не показываем попап аналитики при первом запуске
+        productAnalyticPrompt: false,
         setProductAnalyticPrompt: async (value: boolean) => {
           set(() => ({ productAnalyticPrompt: value }))
         },

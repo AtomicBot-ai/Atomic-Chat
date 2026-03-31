@@ -11,12 +11,14 @@ interface MermaidErrorComponentProps {
  * Mermaid diagram error component
  * Displays an error message when mermaid diagram fails to render
  */
-function MermaidErrorComponent({
-  error,
-}: MermaidErrorComponentProps) {
+function MermaidErrorComponent({ error }: MermaidErrorComponentProps) {
   return (
     <div className="flex flex-col items-center justify-center p-6 gap-3">
-      <img src="/images/jan-logo.png" alt="Jan Logo" className="h-12 w-12" />
+      <img
+        src="/images/atomic-chat-logo.png"
+        alt="Atomic Bot"
+        className="h-12 w-12 dark:brightness-0 dark:invert"
+      />
       <p className="text-sm text-muted-foreground text-center">
         Diagram error detected
       </p>

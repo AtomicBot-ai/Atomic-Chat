@@ -148,7 +148,9 @@ describe('DefaultThreadsService', () => {
         id: '1',
         title: 'New Thread',
         updated: 1234567890,
-        assistants: [{ ...realAssistant, model: { id: 'gpt-4', engine: 'openai' } }],
+        assistants: [
+          { ...realAssistant, model: { id: 'gpt-4', engine: 'openai' } },
+        ],
         metadata: { order: 1 },
       }
 
@@ -165,7 +167,11 @@ describe('DefaultThreadsService', () => {
         model: { id: 'gpt-4', provider: 'openai' },
         order: 1,
         // Real assistants (with instructions) are preserved
-        assistants: [expect.objectContaining({ instructions: 'You are a helpful assistant.' })],
+        assistants: [
+          expect.objectContaining({
+            instructions: 'You are a helpful assistant.',
+          }),
+        ],
       })
     })
 
@@ -352,7 +358,9 @@ describe('DefaultThreadsService', () => {
         id: '1',
         title: 'New Thread',
         updated: 1234567890,
-        assistants: [{ ...realAssistant, model: { id: '*', engine: 'llamacpp' } }],
+        assistants: [
+          { ...realAssistant, model: { id: '*', engine: 'llamacpp' } },
+        ],
         metadata: { order: 1 },
       }
 
@@ -386,7 +394,13 @@ describe('DefaultThreadsService', () => {
         id: '1',
         title: 'New Thread',
         updated: 1234567890,
-        assistants: [{ id: 'model-only', name: 'Model', model: { id: 'gpt-4', engine: 'openai' } }],
+        assistants: [
+          {
+            id: 'model-only',
+            name: 'Model',
+            model: { id: 'gpt-4', engine: 'openai' },
+          },
+        ],
         metadata: { order: 1 },
       }
 
@@ -428,7 +442,7 @@ describe('DefaultThreadsService', () => {
             {
               model: { id: 'gpt-4', engine: 'openai' },
               id: 'jan',
-              name: 'Jan',
+              name: 'Atomic Chat',
             },
           ],
         })

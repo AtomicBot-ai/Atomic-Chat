@@ -6,8 +6,8 @@
       "checking": "正在检查扩展状态..."
     },
     "notInstalled": {
-      "title": "Jan 在您的浏览器中完成任务",
-      "description": "安装扩展以授予 Jan 浏览器访问权限",
+      "title": "Atomic Bot 在您的浏览器中完成任务",
+      "description": "安装扩展以授予 Atomic Bot 浏览器访问权限",
       "getExtension": "获取扩展"
     }
   },
@@ -56,7 +56,7 @@
   "serverStatusInactive": "服务器 {{serverKey}} 停用成功",
   "runtimeSettings": {
     "title": "运行时设置",
-    "description": "配置 Jan 如何管理和重试 MCP 服务器。",
+    "description": "配置 Atomic Bot 如何管理和重试 MCP 服务器。",
     "toolCallTimeout": "工具调用超时时间（秒）",
     "toolCallTimeoutDesc": "在超时前等待 MCP 工具响应的最长时间。"
   }

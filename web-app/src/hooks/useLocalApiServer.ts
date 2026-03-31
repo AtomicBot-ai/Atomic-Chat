@@ -39,9 +39,6 @@ type LocalApiServerState = {
   // Server request timeout (default 600 sec)
   proxyTimeout: number
   setProxyTimeout: (value: number) => void
-  // Execute tools on the Local API server for chat endpoints
-  enableServerToolExecution: boolean
-  setEnableServerToolExecution: (value: boolean) => void
 }
 
 export const useLocalApiServer = create<LocalApiServerState>()(
@@ -54,7 +51,7 @@ export const useLocalApiServer = create<LocalApiServerState>()(
         set({ defaultModelLocalApiServer: model }),
       lastServerModels: [],
       setLastServerModels: (models) => set({ lastServerModels: models }),
-      serverHost: '127.0.0.1',
+      serverHost: '0.0.0.0',
       setServerHost: (value) => set({ serverHost: value }),
       // Use port 0 (auto-assign) for mobile to avoid conflicts, 1337 for desktop
       serverPort: (typeof window !== 'undefined' && (window as { IS_ANDROID?: boolean }).IS_ANDROID) || (typeof window !== 'undefined' && (window as { IS_IOS?: boolean }).IS_IOS) ? 0 : 1337,
@@ -77,16 +74,13 @@ export const useLocalApiServer = create<LocalApiServerState>()(
       setTrustedHosts: (hosts) => set({ trustedHosts: hosts }),
       proxyTimeout: 600,
       setProxyTimeout: (value) => set({ proxyTimeout: value }),
-      enableServerToolExecution: false,
-      setEnableServerToolExecution: (value) =>
-        set({ enableServerToolExecution: value }),
       apiKey: '',
       setApiKey: (value) => set({ apiKey: value }),
     }),
     {
       name: localStorageKey.settingLocalApiServer,
       storage: createJSONStorage(() => localStorage),
-      version: 3,
+      version: 2,
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as Partial<LocalApiServerState>
         if (version < 1) {
@@ -96,10 +90,6 @@ export const useLocalApiServer = create<LocalApiServerState>()(
         if (version < 2) {
           // v1 → v2: add defaultModelLocalApiServer field
           state.defaultModelLocalApiServer = null
-        }
-        if (version < 3) {
-          // v2 -> v3: add server-side tool execution toggle
-          state.enableServerToolExecution = false
         }
         return state
       },

@@ -31,7 +31,6 @@ export type LlamacppConfig = {
   version_backend: string
   auto_update_engine: boolean
   auto_unload: boolean
-  auto_restart_on_crash: boolean
   timeout: number
   llamacpp_env: string
   fit: boolean

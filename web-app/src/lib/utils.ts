@@ -34,12 +34,20 @@ export function basenameNoExt(filePath: string): string {
 export function disableIndentedCodeBlockPlugin() {
   return (tree: Node, file: VFile) => {
     visit(tree, 'code', (node: Code, index, parent: Parent | undefined) => {
-      // Convert indented code blocks (nodes without lang / meta property, 
+      // Convert indented code blocks (nodes without lang / meta property,
       // and are not surrounded by backticks) to plain text
       // Check if the parent exists so we can replace the node safely
-      if (node.lang === null && node.meta === null && parent && typeof index === 'number') {
+      if (
+        node.lang === null &&
+        node.meta === null &&
+        parent &&
+        typeof index === 'number'
+      ) {
         const nodePosition: Position | undefined = node.position
-        if (nodePosition !== undefined && file.value.at(nodePosition.start.offset!) !== '`') {
+        if (
+          nodePosition !== undefined &&
+          file.value.at(nodePosition.start.offset!) !== '`'
+        ) {
           const textNode: Text = {
             type: 'text',
             value: node.value,
@@ -72,8 +80,6 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/llamacpp.svg'
     case 'mlx':
       return '/images/model-provider/mlx.png'
-    case 'foundation-models':
-      return '/images/model-provider/apple-intelligence.svg'
     case 'anthropic':
       return '/images/model-provider/anthropic.svg'
     case 'huggingface':
@@ -106,13 +112,11 @@ export function getProviderLogo(provider: string) {
 export const getProviderTitle = (provider: string) => {
   switch (provider) {
     case 'jan':
-      return 'Jan'
+      return 'Atomic Chat'
     case 'llamacpp':
       return 'Llama.cpp'
     case 'mlx':
       return 'MLX'
-    case 'foundation-models':
-      return 'Apple Intelligence'
     case 'openai':
       return 'OpenAI'
     case 'openrouter':

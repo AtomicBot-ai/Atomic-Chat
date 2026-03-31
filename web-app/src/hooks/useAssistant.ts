@@ -5,18 +5,27 @@ import { localStorageKey } from '@/constants/localStorage'
 
 interface AssistantState {
   assistants: Assistant[]
-  currentAssistant: Assistant | undefined
-  loading: boolean
+  currentAssistant: Assistant | null
   defaultAssistantId: string
   addAssistant: (assistant: Assistant) => void
   updateAssistant: (assistant: Assistant) => void
   deleteAssistant: (id: string) => void
-  setCurrentAssistant: (
-    assistant: Assistant | undefined,
-    saveToStorage?: boolean
-  ) => void
+  setCurrentAssistant: (assistant: Assistant, saveToStorage?: boolean) => void
   setDefaultAssistant: (id: string) => void
-  setAssistants: (assistants: Assistant[] | null) => void
+  setAssistants: (assistants: Assistant[]) => void
+  getLastUsedAssistant: () => string | null
+  setLastUsedAssistant: (assistantId: string) => void
+  initializeWithLastUsed: () => void
+}
+
+// Helper functions for localStorage
+const getLastUsedAssistantId = (): string | null => {
+  try {
+    return localStorage.getItem(localStorageKey.lastUsedAssistant)
+  } catch (error) {
+    console.debug('Failed to get last used assistant from localStorage:', error)
+    return null
+  }
 }
 
 const setLastUsedAssistantId = (assistantId: string) => {
@@ -29,7 +38,7 @@ const setLastUsedAssistantId = (assistantId: string) => {
 
 export const defaultAssistant: Assistant = {
   id: 'jan',
-  name: 'Jan',
+  name: 'Atomic Chat',
   created_at: 1747029866.542,
   parameters: {
     temperature: 0.7,
@@ -37,10 +46,10 @@ export const defaultAssistant: Assistant = {
     top_p: 0.8,
     repeat_penalty: 1.12,
   },
-  avatar: '👋',
+  avatar: '/images/atomic-chat-logo.png',
   description:
-    "Jan is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user's behalf.",
-  instructions: `You are Jan, a helpful AI assistant who assists users with their requests. Jan is trained by Menlo Research (https://www.menlo.ai).
+    "Atomic Chat is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user's behalf.",
+  instructions: `You are Atomic Chat, a helpful AI assistant who assists users with their requests. Atomic Chat is trained by Menlo Research (https://www.menlo.ai).
 
 You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.
 
@@ -62,46 +71,25 @@ You have tools to search for and access real-time, up-to-date data. Use them. Se
 Current date: {{current_date}}`,
 }
 
-const getLastUsedAssistantId = (assistants: Assistant[]): string => {
-  let lastUsedId
+const getDefaultAssistantIdFromStorage = (): string => {
   try {
-    lastUsedId = localStorage.getItem(localStorageKey.lastUsedAssistant)
+    const stored = localStorage.getItem(localStorageKey.defaultAssistantId)
+    if (stored) return stored
+    // First install: persist the built-in default so it's explicit
+    localStorage.setItem(
+      localStorageKey.defaultAssistantId,
+      defaultAssistant.id
+    )
+    return defaultAssistant.id
   } catch (error) {
-    console.debug('Failed to get last used assistant from localStorage:', error)
+    console.debug('Failed to get default assistant from localStorage:', error)
+    return defaultAssistant.id
   }
-
-  if (lastUsedId) {
-    const lastUsedAssistant = assistants.find((a) => a.id === lastUsedId)
-    if (lastUsedAssistant) {
-      return lastUsedId
-    }
-  }
-
-  if (lastUsedId === '') return ''
-
-  return defaultAssistant.id
 }
 
-const getDefaultAssistantId = (): string | null => {
-  let defaultAssistantId: string | null = null
-
+const setDefaultAssistantIdToStorage = (assistantId: string) => {
   try {
-    defaultAssistantId = localStorage.getItem(localStorageKey.defaultAssistantId)
-  } catch (error) {
-    console.debug('Failed to get last used assistant from localStorage:', error)
-  }
-
-  return defaultAssistantId
-}
-
-const setDefaultAssistantId = (assistantId: string) => {
-  try {
-    if (!assistantId) {
-      localStorage.removeItem(localStorageKey.defaultAssistantId)
-    }
-    else {
-      localStorage.setItem(localStorageKey.defaultAssistantId, assistantId)
-    }
+    localStorage.setItem(localStorageKey.defaultAssistantId, assistantId)
   } catch (error) {
     console.debug('Failed to set default assistant in localStorage:', error)
   }
@@ -112,8 +100,7 @@ const getInitialAssistantState = () => {
   return {
     assistants: [defaultAssistant],
     currentAssistant: defaultAssistant,
-    defaultAssistantId: '',
-    loading: true,
+    defaultAssistantId: getDefaultAssistantIdFromStorage(),
   }
 }
 
@@ -167,52 +154,50 @@ export const useAssistant = create<AssistantState>((set, get) => ({
 
     // If the deleted assistant was current, fallback to default and update localStorage
     if (wasCurrentAssistant) {
-      set({ currentAssistant: state.assistants.find(a => a.id === defaultAssistant.id) })
+      set({ currentAssistant: defaultAssistant })
       setLastUsedAssistantId(defaultAssistant.id)
     }
 
     // If the deleted assistant was the default, reset to the built-in default
     if (wasDefaultAssistant) {
-      setDefaultAssistantId(defaultAssistant.id)
+      set({ defaultAssistantId: defaultAssistant.id })
+      setDefaultAssistantIdToStorage(defaultAssistant.id)
     }
   },
   setDefaultAssistant: (id) => {
-    const newAssistant = get().assistants?.find(a => a.id === id)
-    if (newAssistant) {
-      set({ defaultAssistantId: id, currentAssistant: newAssistant })
-      setLastUsedAssistantId(id)
-    }
-    else {
-      set({ defaultAssistantId: id })
-    }
-    setDefaultAssistantId(id)
+    set({ defaultAssistantId: id })
+    setDefaultAssistantIdToStorage(id)
   },
   setCurrentAssistant: (assistant, saveToStorage = true) => {
-    const currentAssistant = get().currentAssistant
-    const defaultAssistantId = get().defaultAssistantId
-    if (defaultAssistantId && currentAssistant?.id === defaultAssistantId) return
-    if (currentAssistant !== assistant) {
+    if (assistant !== get().currentAssistant) {
       set({ currentAssistant: assistant })
       if (saveToStorage) {
-        setLastUsedAssistantId(assistant?.id || '')
+        setLastUsedAssistantId(assistant.id)
       }
     }
   },
   setAssistants: (assistants) => {
-    if (assistants) {
-      assistants.forEach((a) => (a.id = a.id?.toString())) // new String("id") !== "id"
-      const lastUsedId = getLastUsedAssistantId(assistants)
-      const lastUsedAssist = assistants.find((a) => a.id === lastUsedId)
-      const defaultAssistantId = getDefaultAssistantId() || ''
-      const defaultAssistant = assistants.find((a) => a.id === defaultAssistantId)
-      set({
-        assistants,
-        currentAssistant: defaultAssistant || lastUsedAssist,
-        defaultAssistantId,
-        loading: false
-      })
-    } else {
-      set({ loading: false })
+    set({ assistants })
+  },
+  getLastUsedAssistant: () => {
+    return getLastUsedAssistantId()
+  },
+  setLastUsedAssistant: (assistantId) => {
+    setLastUsedAssistantId(assistantId)
+  },
+  initializeWithLastUsed: () => {
+    const lastUsedId = getLastUsedAssistantId()
+    if (lastUsedId) {
+      const lastUsedAssistant = get().assistants.find(
+        (a) => a.id === lastUsedId
+      )
+      if (lastUsedAssistant) {
+        set({ currentAssistant: lastUsedAssistant })
+      } else {
+        // Fallback to default if last used assistant was deleted
+        set({ currentAssistant: defaultAssistant })
+        setLastUsedAssistantId(defaultAssistant.id)
+      }
     }
   },
 }))

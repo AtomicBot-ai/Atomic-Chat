@@ -6,8 +6,8 @@
       "checking": "正在檢查擴充功能狀態..."
     },
     "notInstalled": {
-      "title": "Jan 在您的瀏覽器中完成任務",
-      "description": "安裝擴充功能以授予 Jan 瀏覽器存取權限",
+      "title": "Atomic Bot 在您的瀏覽器中完成任務",
+      "description": "安裝擴充功能以授予 Atomic Bot 瀏覽器存取權限",
       "getExtension": "取得擴充功能"
     }
   },
@@ -56,7 +56,7 @@
   "serverStatusInactive": "伺服器 {{serverKey}} 停用成功",
   "runtimeSettings": {
     "title": "執行階段設定",
-    "description": "設定 Jan 如何管理及重試 MCP 伺服器。",
+    "description": "設定 Atomic Bot 如何管理及重試 MCP 伺服器。",
     "toolCallTimeout": "工具呼叫逾時（秒）",
     "toolCallTimeoutDesc": "等待 MCP 工具回應的最長時間，超過即逾時。"
   }

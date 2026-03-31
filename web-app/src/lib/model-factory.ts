@@ -34,8 +34,6 @@ export interface ModelParameters {
   top_p?: number
   repeat_penalty?: number
   max_output_tokens?: number
-  max_context_tokens?: number
-  auto_compact?: boolean
   presence_penalty?: number
   frequency_penalty?: number
   stop_sequences?: string[]
@@ -57,7 +55,6 @@ import { createXai } from '@ai-sdk/xai'
 import { invoke } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
-import { isPlatformTauri } from '@/lib/platform/utils'
 
 /**
  * Llama.cpp timings structure from the response
@@ -121,145 +118,27 @@ const providerMetadataExtractor: MetadataExtractor = {
 }
 
 /**
- * Keys from inference parameters that are client-side only and must not
- * be forwarded in the HTTP body to remote APIs.
- */
-const CLIENT_SIDE_PARAM_KEYS: ReadonlySet<string> = new Set([
-  'ctx_len',
-  'max_context_tokens',
-  'auto_compact',
-])
-
-/**
- * Create a custom fetch function that injects additional parameters into the
- * request body, normalising key names for OpenAI-compatible APIs:
- * - `max_output_tokens` is remapped to `max_tokens`
- * - client-side-only keys (e.g. `ctx_len`) are stripped
+ * Create a custom fetch function that injects additional parameters into the request body
  */
 function createCustomFetch(
-  baseFetch: typeof globalThis.fetch,
+  baseFetch: typeof httpFetch,
   parameters: Record<string, unknown>
-): typeof globalThis.fetch {
+): typeof httpFetch {
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    // Only transform POST requests with JSON body
     if (init?.method === 'POST' || !init?.method) {
       const body = init?.body ? JSON.parse(init.body as string) : {}
 
-      // Normalise and merge inference parameters
-      const normalised: Record<string, unknown> = {}
-      for (const [key, value] of Object.entries(parameters)) {
-        if (CLIENT_SIDE_PARAM_KEYS.has(key)) continue
-        // max_output_tokens → max_tokens (OpenAI-compatible field name)
-        const targetKey = key === 'max_output_tokens' ? 'max_tokens' : key
-        normalised[targetKey] = value
-      }
+      // Merge parameters into the request body
+      const mergedBody = { ...body, ...parameters }
 
-      init = { ...init, body: JSON.stringify({ ...body, ...normalised }) }
+      init = {
+        ...init,
+        body: JSON.stringify(mergedBody),
+      }
     }
 
     return baseFetch(input, init)
-  }
-}
-
-function getRuntimeFetch(): typeof globalThis.fetch {
-  const maybeWindow = globalThis as typeof globalThis & {
-    __TAURI__?: unknown
-    __TAURI_INTERNALS__?: unknown
-  }
-  const hasTauriRuntime =
-    typeof maybeWindow.__TAURI__ !== 'undefined' ||
-    typeof maybeWindow.__TAURI_INTERNALS__ !== 'undefined'
-
-  return isPlatformTauri() && hasTauriRuntime
-    ? (httpFetch as typeof globalThis.fetch)
-    : globalThis.fetch
-}
-
-/**
- * Custom fetch for Foundation Models that routes through Tauri IPC
- * instead of HTTP, emulating an OpenAI-compatible fetch interface.
- */
-function createFoundationModelsFetch(
-  parameters: Record<string, unknown>
-): typeof globalThis.fetch {
-  return async (
-    _input: RequestInfo | URL,
-    init?: RequestInit
-  ): Promise<Response> => {
-    const rawBody = init?.body ? JSON.parse(init.body as string) : {}
-    const body = { ...rawBody, ...parameters }
-    const isStreaming = body.stream === true
-
-    if (!isStreaming) {
-      const result = await invoke<string>(
-        'plugin:foundation-models|foundation_models_chat_completion',
-        { body: JSON.stringify(body) }
-      )
-      return new Response(result, {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    }
-
-    const requestId = crypto.randomUUID()
-    const { listen } = await import('@tauri-apps/api/event')
-
-    let unlistenFn: (() => void) | null = null
-    const stream = new ReadableStream<Uint8Array>({
-      async start(controller) {
-        const encoder = new TextEncoder()
-
-        unlistenFn = await listen(
-          `foundation-models-stream-${requestId}`,
-          (event: { payload: { data?: string; done?: boolean; error?: string } }) => {
-            const payload = event.payload
-            if (payload.done) {
-              controller.enqueue(encoder.encode('data: [DONE]\n\n'))
-              try {
-                controller.close()
-              } catch {
-                /* already closed */
-              }
-              unlistenFn?.()
-            } else if (payload.error) {
-              try {
-                controller.error(new Error(payload.error))
-              } catch {
-                /* already errored */
-              }
-              unlistenFn?.()
-            } else if (payload.data) {
-              controller.enqueue(
-                encoder.encode(`data: ${payload.data}\n\n`)
-              )
-            }
-          }
-        )
-
-        invoke(
-          'plugin:foundation-models|foundation_models_chat_completion_stream',
-          { body: JSON.stringify(body), requestId }
-        ).catch((err) => {
-          try {
-            controller.error(err)
-          } catch {
-            /* already errored */
-          }
-          unlistenFn?.()
-        })
-      },
-      cancel() {
-        unlistenFn?.()
-        invoke(
-          'plugin:foundation-models|abort_foundation_models_stream',
-          { requestId }
-        ).catch(() => {})
-      },
-    })
-
-    return new Response(stream, {
-      status: 200,
-      headers: { 'Content-Type': 'text/event-stream' },
-    })
   }
 }
 
@@ -467,8 +346,8 @@ export class ModelFactory {
   }
 
   /**
-   * Create a Foundation Models model (Apple on-device) via direct Tauri IPC
-   * to the fm-rs Rust bindings — no HTTP server involved.
+   * Create a Foundation Models model (Apple on-device) by starting the local
+   * Swift server via the Tauri plugin and connecting over localhost.
    */
   private static async createFoundationModelsModel(
     modelId: string,
@@ -488,6 +367,8 @@ export class ModelFactory {
           'Apple Intelligence is not enabled. Please enable it in System Settings > Apple Intelligence & Siri.',
         modelNotReady:
           'The Apple on-device model is still preparing. Please wait and try again shortly.',
+        binaryNotFound:
+          'The Foundation Models server binary is missing. Please reinstall the app.',
         unavailable:
           'Apple Foundation Models are currently unavailable on this device.',
       }
@@ -510,24 +391,30 @@ export class ModelFactory {
       }
     }
 
-    const loaded = await invoke<boolean>(
-      'plugin:foundation-models|is_foundation_models_loaded',
+    const sessionInfo = await invoke<SessionInfo | null>(
+      'plugin:foundation-models|find_foundation_models_session',
       {}
     )
 
-    if (!loaded) {
+    if (!sessionInfo) {
       throw new Error(
-        'No running Foundation Models session. The model may have failed to load — please check the logs.'
+        'No running Foundation Models session. The server may have failed to start — please check the logs.'
       )
     }
 
-    const customFetch = createFoundationModelsFetch(parameters)
+    const baseUrl = `http://localhost:${sessionInfo.port}`
+    const authHeaders = {
+      Authorization: `Bearer ${sessionInfo.api_key}`,
+      Origin: 'tauri://localhost',
+    }
+
+    const customFetch = createCustomFetch(httpFetch, parameters)
 
     const model = new OpenAICompatibleChatLanguageModel(modelId, {
       provider: 'foundation-models',
-      headers: () => ({}),
-      url: ({ path }) => `foundation-models://local/v1${path}`,
-      fetch: customFetch as typeof httpFetch,
+      headers: () => authHeaders,
+      url: ({ path }) => new URL(`${baseUrl}/v1${path}`).toString(),
+      fetch: customFetch,
       metadataExtractor: providerMetadataExtractor,
     })
 
@@ -561,7 +448,7 @@ export class ModelFactory {
       apiKey: provider.api_key,
       baseURL: provider.base_url,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
-      fetch: createCustomFetch(getRuntimeFetch(), parameters),
+      fetch: createCustomFetch(httpFetch, parameters),
     })
 
     return anthropic(modelId)
@@ -588,7 +475,7 @@ export class ModelFactory {
       apiKey: provider.api_key,
       baseURL: provider.base_url,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
-      fetch: createCustomFetch(getRuntimeFetch(), parameters),
+      fetch: createCustomFetch(httpFetch, parameters),
     })
 
     return openai(modelId)
@@ -615,7 +502,7 @@ export class ModelFactory {
       apiKey: provider.api_key,
       baseURL: provider.base_url,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
-      fetch: createCustomFetch(getRuntimeFetch(), parameters),
+      fetch: createCustomFetch(httpFetch, parameters),
     })
 
     return xai(modelId)
@@ -648,7 +535,7 @@ export class ModelFactory {
       baseURL: provider.base_url || 'https://api.openai.com/v1',
       headers,
       includeUsage: true,
-      fetch: createCustomFetch(getRuntimeFetch(), parameters),
+      fetch: createCustomFetch(httpFetch, parameters),
     })
 
     return openAICompatible.languageModel(modelId)

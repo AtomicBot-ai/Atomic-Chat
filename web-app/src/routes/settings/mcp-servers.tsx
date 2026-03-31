@@ -15,7 +15,7 @@ import {
   MCPSettings,
   DEFAULT_MCP_SETTINGS,
 } from '@/hooks/useMCPServers'
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import AddEditMCPServer from '@/containers/dialogs/AddEditMCPServer'
 import DeleteMCPServerConfirm from '@/containers/dialogs/DeleteMCPServerConfirm'
 import EditJsonMCPserver from '@/containers/dialogs/EditJsonMCPserver'
@@ -32,6 +32,8 @@ import { SystemEvent } from '@/types/events'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
+//! Совпадает с useJanBrowserExtension; скрыто вместе с кнопкой Browse в чате
+const JAN_BROWSER_MCP_SERVER_KEY = 'Jan Browser MCP'
 
 // Function to mask sensitive URL parameters
 const maskSensitiveUrl = (url: string) => {
@@ -135,6 +137,14 @@ function MCPServersDesktop() {
     [key: string]: boolean
   }>({})
   const setErrorMessage = useAppState((state) => state.setErrorMessage)
+
+  const visibleMcpServerEntries = useMemo(
+    () =>
+      Object.entries(mcpServers).filter(
+        ([key]) => key !== JAN_BROWSER_MCP_SERVER_KEY
+      ),
+    [mcpServers]
+  )
 
   const updateToolCallTimeout = (rawValue: string) => {
     if (rawValue === '') {
@@ -364,9 +374,21 @@ function MCPServersDesktop() {
     <Fragment>
       <div className="flex flex-col h-svh w-full">
         <HeaderPage>
-          <div className={cn("flex items-center justify-between w-full mr-2 pr-3", !IS_MACOS && "pr-30")}>
-            <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
-            <Button variant="outline" size="sm" onClick={() => handleOpenDialog()} className="relative z-50">
+          <div
+            className={cn(
+              'flex items-center justify-between w-full mr-2 pr-3',
+              !IS_MACOS && 'pr-30'
+            )}
+          >
+            <span className="font-medium text-base font-studio">
+              {t('common:settings')}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleOpenDialog()}
+              className="relative z-50"
+            >
               <IconPlus size={18} className="text-muted-foreground" />
               {t('mcp-servers:addServer')}
             </Button>
@@ -450,31 +472,14 @@ function MCPServersDesktop() {
                     />
                   }
                 />
-                <CardItem
-                  title={t('mcp-servers:runtimeSettings.smartToolRouting')}
-                  description={t(
-                    'mcp-servers:runtimeSettings.smartToolRoutingDesc'
-                  )}
-                  actions={
-                    <div className="shrink-0 ml-4">
-                      <Switch
-                        checked={settings.enableSmartToolRouting}
-                        onCheckedChange={(checked) => {
-                          updateSettings({ enableSmartToolRouting: checked })
-                          void syncServers()
-                        }}
-                      />
-                    </div>
-                  }
-                />
               </Card>
 
-              {Object.keys(mcpServers).length === 0 ? (
+              {visibleMcpServerEntries.length === 0 ? (
                 <div className="py-4 text-center font-medium text-muted-foreground">
                   {t('mcp-servers:noServers')}
                 </div>
               ) : (
-                Object.entries(mcpServers).map(([key, config], index) => (
+                visibleMcpServerEntries.map(([key, config], index) => (
                   <Card key={`${key}-${index}`}>
                     <CardItem
                       align="start"
@@ -494,8 +499,8 @@ function MCPServersDesktop() {
                           {config.official && (
                             <div className="flex items-center gap-1.5 px-2 py-0.5 text-xs bg-secondary border rounded-sm">
                               <img
-                                src="/images/jan-logo.png"
-                                alt="Jan"
+                                src="/images/atomic-chat-logo.png"
+                                alt="Atomic Bot"
                                 className="w-3 h-3 object-contain"
                               />
                               <span>Official</span>
@@ -533,8 +538,8 @@ function MCPServersDesktop() {
                               {config.official && (
                                 <div className="mt-2 text-xs text-muted-foreground pt-2">
                                   <p className="mb-1">
-                                    Requires Jan Browser Extension to be installed
-                                    in your Chrome-based browser.
+                                    Requires the Atomic Bot browser extension to
+                                    be installed in your Chrome-based browser.
                                   </p>
                                   <a
                                     href="https://chromewebstore.google.com/detail/jan-browser-mcp/mkciifcjehgnpaigoiaakdgabbpfppal"

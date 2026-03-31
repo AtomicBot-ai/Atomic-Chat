@@ -64,6 +64,7 @@ import {
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 // Error message constant - matches web-app/src/utils/error.ts
+const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
 
 /**
  * Override the default app.log function to use Jan's logging system.
@@ -173,7 +174,11 @@ export default class llamacpp_extension extends AIEngine {
       events.emit(DownloadEvent.onModelValidationStarted, event.payload)
     })
 
-    this.configureBackends()
+    //* configureBackends может долго качать движок — не await, иначе весь UI ждёт завершения.
+    void this.configureBackends().catch((err) => {
+      //! Раньше отклонённый промис терялся; без лога сложно понять вечный «loading» в настройках.
+      logger.error('configureBackends failed:', err)
+    })
   }
 
   private getStoredBackendType(): string | null {
@@ -1602,7 +1607,7 @@ export default class llamacpp_extension extends AIEngine {
 
     if (!version || !backend) {
       throw new Error(
-        'Initial setup for the backend failed due to a network issue. Please restart the app!'
+        'Llama.cpp backend is not configured (version_backend is missing or invalid). Check Settings → Llama.cpp — Version & Backend, internet access to GitHub for engine list, or install a backend manually.'
       )
     }
 
@@ -1829,6 +1834,12 @@ export default class llamacpp_extension extends AIEngine {
             const data = JSON.parse(jsonStr)
             const chunk = data as chatCompletionChunk
 
+            // Check for out-of-context error conditions
+            if (chunk.choices?.[0]?.finish_reason === 'length') {
+              // finish_reason 'length' indicates context limit was hit
+              throw new Error(OUT_OF_CONTEXT_SIZE)
+            }
+
             yield chunk
           } catch (e) {
             logger.error('Error parsing JSON from stream or server error:', e)
@@ -1857,17 +1868,28 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  private async ensureHealthySession(modelId: string): Promise<SessionInfo> {
-    return invoke<SessionInfo>('plugin:llamacpp|ensure_session_ready', {
-      modelId,
-    })
-  }
-
   override async chat(
     opts: chatCompletionRequest,
     abortController?: AbortController
   ): Promise<chatCompletion | AsyncIterable<chatCompletionChunk>> {
-    const sessionInfo = await this.ensureHealthySession(opts.model)
+    const sessionInfo = await this.findSessionByModel(opts.model)
+    if (!sessionInfo) {
+      throw new Error(`No active session found for model: ${opts.model}`)
+    }
+    // check if the process is alive
+    const result = await invoke<boolean>('plugin:llamacpp|is_process_running', {
+      pid: sessionInfo.pid,
+    })
+    if (result) {
+      try {
+        await fetch(`http://localhost:${sessionInfo.port}/health`)
+      } catch (e) {
+        this.unload(sessionInfo.model_id)
+        throw new Error('Model appears to have crashed! Please reload!')
+      }
+    } else {
+      throw new Error('Model have crashed! Please reload!')
+    }
     const baseUrl = `http://localhost:${sessionInfo.port}/v1`
     const url = `${baseUrl}/chat/completions`
     const headers = {
@@ -1904,6 +1926,12 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     const completionResponse = (await response.json()) as chatCompletion
+
+    // Check for out-of-context error conditions
+    if (completionResponse.choices?.[0]?.finish_reason === 'length') {
+      // finish_reason 'length' indicates context limit was hit
+      throw new Error(OUT_OF_CONTEXT_SIZE)
+    }
 
     return completionResponse
   }
@@ -1975,7 +2003,7 @@ export default class llamacpp_extension extends AIEngine {
     const [version, backend] = cfg.version_backend.split('/')
     if (!version || !backend) {
       throw new Error(
-        'Backend setup was not successful. Please restart the app in a stable internet connection.'
+        'Llama.cpp backend is not configured (version_backend is missing or invalid). Open Settings → Llama.cpp and wait for the engine list, or pick/install a backend.'
       )
     }
     // set envs
@@ -2249,23 +2277,19 @@ export default class llamacpp_extension extends AIEngine {
       throw new Error(`No active session found for model: ${opts.model}`)
     }
 
-    // Token counting should be side-effect free (no auto-restart/unload).
-    const isRunning = await invoke<boolean>('plugin:llamacpp|is_process_running', {
+    // Check if the process is alive
+    const result = await invoke<boolean>('plugin:llamacpp|is_process_running', {
       pid: sessionInfo.pid,
     })
-    if (!isRunning) {
-      throw new Error('Model has crashed! Please reload!')
-    }
-
-    try {
-      const healthResponse = await fetch(
-        `http://localhost:${sessionInfo.port}/health`
-      )
-      if (!healthResponse.ok) {
-        throw new Error('unhealthy')
+    if (result) {
+      try {
+        await fetch(`http://localhost:${sessionInfo.port}/health`)
+      } catch (e) {
+        this.unload(sessionInfo.model_id)
+        throw new Error('Model appears to have crashed! Please reload!')
       }
-    } catch (_e) {
-      throw new Error('Model appears to have crashed! Please reload!')
+    } else {
+      throw new Error('Model has crashed! Please reload!')
     }
 
     const baseUrl = `http://localhost:${sessionInfo.port}`
