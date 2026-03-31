@@ -133,6 +133,7 @@ jobs:
 
       - name: Build app (universal binary)
         env:
+          TAURI_BUNDLER_DMG_IGNORE_CI: "true"
           NODE_OPTIONS: "--max-old-space-size=4196"
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}

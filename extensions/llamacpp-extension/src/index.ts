@@ -332,7 +332,7 @@ export default class llamacpp_extension extends AIEngine {
       // Install bundled backend from app resources if no local backends exist
       const bundledBackendString = await this.tryInstallBundledBackend()
 
-      let version_backends: { version: string; backend: string }[] = []
+      let version_backends: { version: string; backend: string; order?: number }[] = []
 
       try {
         version_backends = await listSupportedBackends()
@@ -437,11 +437,16 @@ export default class llamacpp_extension extends AIEngine {
         ) {
           const [savedVersion, savedBackend] = savedBackendSetting.split('/')
           if (savedVersion && savedBackend) {
-            // Map saved backend to new format if needed
             const normalizedBackend = await mapOldBackendToNew(savedBackend)
-            initialUiDefault = `${savedVersion}/${normalizedBackend}`
 
-            // Store the backend type from the saved setting only if different
+            // Always prefer the latest downloaded version for the saved backend type
+            const latestForType = await findLatestVersionForBackend(
+              version_backends,
+              normalizedBackend
+            )
+            initialUiDefault =
+              latestForType || `${savedVersion}/${normalizedBackend}`
+
             const currentStoredBackend = this.getStoredBackendType()
             if (currentStoredBackend !== normalizedBackend) {
               this.setStoredBackendType(normalizedBackend)
@@ -479,6 +484,42 @@ export default class llamacpp_extension extends AIEngine {
       this.registerSettings(settings)
 
       let effectiveBackendString = this.config.version_backend
+
+      // Auto-upgrade to the latest downloaded version of the same backend type
+      if (
+        effectiveBackendString &&
+        bestAvailableBackendString &&
+        effectiveBackendString !== bestAvailableBackendString &&
+        effectiveBackendString.includes('/')
+      ) {
+        const currentType = effectiveBackendString.split('/')[1]?.trim()
+        const bestType = bestAvailableBackendString.split('/')[1]?.trim()
+        if (currentType && bestType && currentType === bestType) {
+          logger.info(
+            `Auto-upgrading backend to latest version: ${effectiveBackendString} → ${bestAvailableBackendString}`
+          )
+          effectiveBackendString = bestAvailableBackendString
+
+          this.config.version_backend = effectiveBackendString
+
+          const updatedSettings = await this.getSettings()
+          await this.updateSettings(
+            updatedSettings.map((item) => {
+              if (item.key === 'version_backend') {
+                item.controllerProps.value = effectiveBackendString
+              }
+              return item
+            })
+          )
+
+          if (events && typeof events.emit === 'function') {
+            events.emit('settingsChanged', {
+              key: 'version_backend',
+              value: effectiveBackendString,
+            })
+          }
+        }
+      }
 
       // Force-switch to the bundled backend when:
       // 1. Current backend is not turboquant (migration to new format), OR
@@ -1131,10 +1172,35 @@ export default class llamacpp_extension extends AIEngine {
       )
     }
 
+    const newBackendString = `${version}/${backendIdentifier}`
+
     try {
       await this.configureBackends()
+
+      // Auto-select the newly installed backend
+      const effectiveBackendType = await mapOldBackendToNew(backendIdentifier)
+      this.setStoredBackendType(effectiveBackendType)
+      this.config.version_backend = newBackendString
+
+      const settings = await this.getSettings()
+      await this.updateSettings(
+        settings.map((item) => {
+          if (item.key === 'version_backend') {
+            item.controllerProps.value = newBackendString
+          }
+          return item
+        })
+      )
+
+      if (events && typeof events.emit === 'function') {
+        events.emit('settingsChanged', {
+          key: 'version_backend',
+          value: newBackendString,
+        })
+      }
+
       logger.info(
-        `Backend ${backendIdentifier}/${version} installed and UI refreshed`
+        `Backend ${newBackendString} installed and auto-selected`
       )
     } catch (e) {
       logger.error('Backend installed but failed to refresh UI', e)

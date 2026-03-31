@@ -4,17 +4,6 @@ import { useEffect } from 'react'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useAnalytic } from '@/hooks/useAnalytic'
 
-const DAILY_ACTIVE_KEY = 'posthog_last_daily_active'
-
-function captureDailyActive() {
-  const today = new Date().toISOString().slice(0, 10)
-  const last = localStorage.getItem(DAILY_ACTIVE_KEY)
-  if (last !== today) {
-    posthog.capture('daily_active_user')
-    localStorage.setItem(DAILY_ACTIVE_KEY, today)
-  }
-}
-
 export function AnalyticProvider() {
   const { productAnalytic } = useAnalytic()
   const serviceHub = useServiceHub()
@@ -69,7 +58,6 @@ export function AnalyticProvider() {
           serviceHub.analytic().updateDistinctId(posthog.get_distinct_id())
 
           posthog.capture('app_opened')
-          captureDailyActive()
         })
     } else {
       posthog.opt_out_capturing()

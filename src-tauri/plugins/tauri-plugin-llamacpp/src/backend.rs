@@ -72,25 +72,17 @@ pub fn map_old_backend_to_new(old_backend: String) -> String {
     old_backend
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct InstalledBackend {
-    version: String,
-    backend: String,
-}
-
 #[tauri::command]
 pub async fn get_local_installed_backends(
     backends_dir: String,
-) -> Result<Vec<InstalledBackend>, String> {
-    let mut local: Vec<InstalledBackend> = Vec::new();
+) -> Result<Vec<BackendInfo>, String> {
+    let mut local: Vec<BackendInfo> = Vec::new();
     let backends_path = PathBuf::from(&backends_dir);
 
-    // Check if backends directory exists
     if !backends_path.exists() {
         return Ok(local);
     }
 
-    // Read version directories
     let version_dirs = fs::read_dir(&backends_path)
         .map_err(|e| format!("Failed to read backends directory: {}", e))?;
 
@@ -100,7 +92,6 @@ pub async fn get_local_installed_backends(
 
         let version_path = version_entry.path();
 
-        // Check if it's a directory
         let metadata =
             fs::metadata(&version_path).map_err(|e| format!("Failed to get metadata: {}", e))?;
 
@@ -108,13 +99,11 @@ pub async fn get_local_installed_backends(
             continue;
         }
 
-        // Get version name from path
         let version_name = match version_path.file_name() {
             Some(name) => name.to_string_lossy().to_string(),
             None => continue,
         };
 
-        // Read backend types in this version directory
         let backend_types = fs::read_dir(&version_path)
             .map_err(|e| format!("Failed to read version directory: {}", e))?;
 
@@ -124,17 +113,25 @@ pub async fn get_local_installed_backends(
 
             let backend_path = backend_entry.path();
 
-            // Get backend name from path
             let backend_name = match backend_path.file_name() {
                 Some(name) => name.to_string_lossy().to_string(),
                 None => continue,
             };
 
-            // Check if backend is actually installed
             if is_backend_installed(&backend_path) {
-                local.push(InstalledBackend {
+                let order = fs::metadata(&backend_path)
+                    .and_then(|m| m.modified())
+                    .map(|t| {
+                        t.duration_since(std::time::SystemTime::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs() as u32
+                    })
+                    .unwrap_or(0);
+
+                local.push(BackendInfo {
                     version: version_name.clone(),
                     backend: backend_name,
+                    order,
                 });
             }
         }
@@ -1045,6 +1042,7 @@ mod tests {
     use super::*;
     use std::fs::File;
     use std::io::Write;
+    use filetime;
 
     // --- Tests for map_old_backend_to_new ---
 
@@ -1291,6 +1289,54 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].version, "b7523");
         assert_eq!(result[0].backend, "backend-a");
+        assert!(result[0].order > 0, "order should be set from directory mtime");
+    }
+
+    #[tokio::test]
+    async fn test_get_local_installed_backends_order_by_mtime() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let root = temp_dir.path();
+
+        let exe_name = if cfg!(target_os = "windows") {
+            "llama-server.exe"
+        } else {
+            "llama-server"
+        };
+
+        // Create older backend first
+        let v_old = root.join("turboquant-macos-arm64-old");
+        let backend_old = v_old.join("macos-arm64");
+        fs::create_dir_all(&backend_old.join("build").join("bin")).unwrap();
+        File::create(backend_old.join("build").join("bin").join(exe_name)).unwrap();
+
+        // Set old mtime (1 second in the past)
+        let old_time = std::time::SystemTime::now() - std::time::Duration::from_secs(2);
+        filetime::set_file_mtime(
+            &backend_old,
+            filetime::FileTime::from_system_time(old_time),
+        )
+        .unwrap();
+
+        // Create newer backend
+        let v_new = root.join("turboquant-macos-arm64-new");
+        let backend_new = v_new.join("macos-arm64");
+        fs::create_dir_all(&backend_new.join("build").join("bin")).unwrap();
+        File::create(backend_new.join("build").join("bin").join(exe_name)).unwrap();
+
+        let result = get_local_installed_backends(root.to_string_lossy().to_string())
+            .await
+            .unwrap();
+
+        assert_eq!(result.len(), 2);
+
+        let old_entry = result.iter().find(|b| b.version == "turboquant-macos-arm64-old").unwrap();
+        let new_entry = result.iter().find(|b| b.version == "turboquant-macos-arm64-new").unwrap();
+
+        assert!(
+            new_entry.order > old_entry.order,
+            "Newer backend (order={}) should have higher order than older (order={})",
+            new_entry.order, old_entry.order
+        );
     }
 
     #[tokio::test]

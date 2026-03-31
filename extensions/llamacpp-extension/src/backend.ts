@@ -13,9 +13,7 @@ import {
  * Reads currently installed backends in janDataFolderPath
  *
  */
-export async function getLocalInstalledBackends(): Promise<
-  { version: string; backend: string }[]
-> {
+export async function getLocalInstalledBackends(): Promise<BackendVersion[]> {
   const janDataFolderPath = await getJanDataFolderPath()
   const backendDir = await joinPath([janDataFolderPath, 'llamacpp', 'backends'])
   return await getLocalInstalledBackendsInternal(backendDir)

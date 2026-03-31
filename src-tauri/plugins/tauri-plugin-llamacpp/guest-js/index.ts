@@ -210,8 +210,8 @@ export async function mapOldBackendToNew(oldBackend: string): Promise<string> {
 
 export async function getLocalInstalledBackendsInternal(
   backendsDir: string
-): Promise<{ version: string; backend: string }[]> {
-  return await invoke<{ version: string; backend: string }[]>(
+): Promise<BackendVersion[]> {
+  return await invoke<BackendVersion[]>(
     'plugin:llamacpp|get_local_installed_backends',
     {
       backendsDir,
