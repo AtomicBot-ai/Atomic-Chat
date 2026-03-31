@@ -89,7 +89,7 @@ export default class JanAssistantExtension extends AssistantExtension {
    */
   private async migrateAssistantInstructions(): Promise<void> {
     const OLD_INSTRUCTION = 'You are a helpful AI assistant.'
-    const NEW_INSTRUCTION = 'You are Jan, a helpful AI assistant.' // TODO: Update with new instruction
+    const NEW_INSTRUCTION = 'You are Atomic Chat, a helpful AI assistant.'
 
     if (!(await fs.existsSync('file://assistants'))) {
       return
@@ -131,7 +131,7 @@ export default class JanAssistantExtension extends AssistantExtension {
    */
   private async migrateToMenloInstructions(): Promise<void> {
     const OLD_INSTRUCTION_PREFIX = 'You are Jan, a helpful AI assistant.'
-    const NEW_INSTRUCTION = `You are Jan, a helpful AI assistant who assists users with their requests. Jan is trained by Menlo Research (https://www.menlo.ai).
+    const NEW_INSTRUCTION = `You are Atomic Chat, a helpful AI assistant who assists users with their requests. Atomic Chat is trained by Menlo Research (https://www.menlo.ai).
 
 You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.
 
@@ -256,11 +256,11 @@ Current date: {{current_date}}`
     id: 'jan',
     object: 'assistant',
     created_at: Date.now() / 1000,
-    name: 'Jan',
+    name: 'Atomic Chat',
     description:
-      'Jan is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user’s behalf.',
+      'Atomic Chat is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user’s behalf.',
     model: '*',
-    instructions: `You are Jan, a helpful AI assistant who assists users with their requests. Jan is trained by Menlo Research (https://www.menlo.ai).
+    instructions: `You are Atomic Chat, a helpful AI assistant who assists users with their requests. Atomic Chat is trained by Menlo Research (https://www.menlo.ai).
 
 You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.
 
