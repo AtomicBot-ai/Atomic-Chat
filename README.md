@@ -122,7 +122,7 @@ Apache 2.0 — see [LICENSE](LICENSE) for details.
 
 Built on the shoulders of giants:
 
-- [Llama.cpp](https://github.com/ggerganov/llama.cpp)
+- [Llama.cpp](https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant)
 - [Tauri](https://tauri.app/)
 - [Scalar](https://github.com/scalar/scalar)
 

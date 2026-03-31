@@ -116,6 +116,9 @@ jobs:
           make install-rust-targets
 
       - name: Build web app and generate icons
+        env:
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
         run: |
           yarn build:web
           yarn build:icon

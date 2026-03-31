@@ -61,7 +61,7 @@ export const useProductAnalytic = create<ProductAnalyticState>()(
   persist(
     (set) => {
       const initialState = {
-        productAnalytic: false,
+        productAnalytic: true,
         setProductAnalytic: async (value: boolean) => {
           set(() => ({ productAnalytic: value }))
         },
