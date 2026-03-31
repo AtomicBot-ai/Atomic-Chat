@@ -42,11 +42,11 @@
         "background": "./icons/dmg/background.png",
         "appPosition": {
           "x": 144,
-          "y": 255
+          "y": 250
         },
         "applicationFolderPosition": {
           "x": 511,
-          "y": 255
+          "y": 250
         },
         "windowSize": {
           "width": 660,
