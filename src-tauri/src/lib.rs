@@ -108,6 +108,8 @@ pub fn run() {
         core::system::commands::install_jan_cli,
         core::system::commands::uninstall_jan_cli,
         core::system::commands::clear_claude_code_env,
+        core::system::commands::configure_hermes_agent,
+        core::system::commands::clear_hermes_agent_config,
         // Server commands
         core::server::commands::start_server,
         core::server::commands::stop_server,
@@ -193,6 +195,8 @@ pub fn run() {
         core::system::commands::install_jan_cli,
         core::system::commands::uninstall_jan_cli,
         core::system::commands::clear_claude_code_env,
+        core::system::commands::configure_hermes_agent,
+        core::system::commands::clear_hermes_agent_config,
         // Server commands
         core::server::commands::start_server,
         core::server::commands::stop_server,

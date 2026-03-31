@@ -260,6 +260,12 @@ const SettingsMenu = () => {
               >
                 <span>{t('common:claude_code')}</span>
               </Link>
+              <Link
+                to={route.settings.hermes_agent}
+                className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
+              >
+                <span>{t('common:hermes_agent')}</span>
+              </Link>
             </div>
           </div>
 

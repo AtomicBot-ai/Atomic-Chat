@@ -8,6 +8,7 @@
   "openclaw": "OpenClaw",
   "experimental": "Experimental",
   "claude_code": "Claude Code",
+  "hermes_agent": "Hermes Agent",
   "https_proxy": "Proxy HTTPS",
   "extensions": "Extensiones",
   "attachments": "Adjuntos",

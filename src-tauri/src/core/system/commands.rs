@@ -783,3 +783,349 @@ fn remove_from_path_windows(dir: &PathBuf) -> Result<(), String> {
     }
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Hermes Agent integration
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn configure_hermes_agent(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+    context_length: Option<u32>,
+) -> Result<(), String> {
+    let home_dir = if cfg!(windows) {
+        std::env::var("USERPROFILE").map_err(|e| e.to_string())?
+    } else {
+        std::env::var("HOME").map_err(|e| e.to_string())?
+    };
+
+    let hermes_dir = std::path::PathBuf::from(&home_dir).join(".hermes");
+    let config_path = hermes_dir.join("config.yaml");
+    let env_path = hermes_dir.join(".env");
+
+    if !config_path.exists() {
+        return Err(
+            "Hermes Agent is not installed (~/.hermes/config.yaml not found). \
+             Install it first: https://github.com/NousResearch/hermes-agent"
+                .to_string(),
+        );
+    }
+
+    let content = std::fs::read_to_string(&config_path)
+        .map_err(|e| format!("Failed to read config.yaml: {}", e))?;
+
+    // --- Patch model section (first occurrence of each key) ---
+    let mut did_default = false;
+    let mut did_provider = false;
+    let mut did_base_url = false;
+
+    let patched: Vec<String> = content
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim();
+            if !did_default && trimmed.starts_with("default:") && trimmed.contains('"') {
+                did_default = true;
+                return replace_yaml_quoted_value(line, &model);
+            }
+            if !did_provider && trimmed.starts_with("provider:") && trimmed.contains('"') {
+                did_provider = true;
+                return replace_yaml_quoted_value(line, "custom");
+            }
+            if !did_base_url && trimmed.starts_with("base_url:") && trimmed.contains('"') {
+                did_base_url = true;
+                return replace_yaml_quoted_value(line, &api_url);
+            }
+            line.to_string()
+        })
+        .collect();
+
+    let after_model_patch = patched.join("\n");
+
+    // --- Upsert only our entry in custom_providers (preserves user's other providers) ---
+    let ctx = context_length.unwrap_or(20000);
+    let after_cp = upsert_atomic_provider(
+        &after_model_patch,
+        &api_url,
+        &model,
+        ctx,
+    );
+
+    let final_content = if content.ends_with('\n') && !after_cp.ends_with('\n') {
+        format!("{}\n", after_cp)
+    } else {
+        after_cp
+    };
+
+    std::fs::write(&config_path, &final_content)
+        .map_err(|e| format!("Failed to write config.yaml: {}", e))?;
+
+    // --- Ensure NO_PROXY is set in .env to bypass system proxy for localhost ---
+    let no_proxy_line = "NO_PROXY=localhost,127.0.0.1,0.0.0.0";
+    let no_proxy_lower = "export no_proxy=localhost,127.0.0.1,0.0.0.0";
+
+    if env_path.exists() {
+        let env_content = std::fs::read_to_string(&env_path)
+            .map_err(|e| format!("Failed to read .env: {}", e))?;
+        if !env_content.contains("NO_PROXY=") && !env_content.contains("no_proxy=") {
+            let separator = if env_content.ends_with('\n') { "" } else { "\n" };
+            let patched = format!(
+                "{}{}\n{}\n{}",
+                env_content, separator, no_proxy_line, no_proxy_lower
+            );
+            std::fs::write(&env_path, patched)
+                .map_err(|e| format!("Failed to write .env: {}", e))?;
+        }
+    }
+
+    let _ = api_key; // reserved for future use
+
+    log::info!(
+        "Hermes Agent configured: model={}, base_url={}, context_length={}",
+        model,
+        api_url,
+        ctx
+    );
+    Ok(())
+}
+
+#[tauri::command]
+pub fn clear_hermes_agent_config() -> Result<(), String> {
+    let home_dir = if cfg!(windows) {
+        std::env::var("USERPROFILE").map_err(|e| e.to_string())?
+    } else {
+        std::env::var("HOME").map_err(|e| e.to_string())?
+    };
+
+    let hermes_dir = std::path::PathBuf::from(&home_dir).join(".hermes");
+    let config_path = hermes_dir.join("config.yaml");
+
+    if !config_path.exists() {
+        return Ok(());
+    }
+
+    let content = std::fs::read_to_string(&config_path)
+        .map_err(|e| format!("Failed to read config.yaml: {}", e))?;
+
+    let mut did_default = false;
+    let mut did_provider = false;
+    let mut did_base_url = false;
+
+    let patched: Vec<String> = content
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim();
+            if !did_default && trimmed.starts_with("default:") && trimmed.contains('"') {
+                did_default = true;
+                return replace_yaml_quoted_value(line, "anthropic/claude-opus-4.6");
+            }
+            if !did_provider && trimmed.starts_with("provider:") && trimmed.contains('"') {
+                did_provider = true;
+                return replace_yaml_quoted_value(line, "auto");
+            }
+            if !did_base_url && trimmed.starts_with("base_url:") && trimmed.contains('"') {
+                did_base_url = true;
+                return replace_yaml_quoted_value(line, "https://openrouter.ai/api/v1");
+            }
+            line.to_string()
+        })
+        .collect();
+
+    let after_model_patch = patched.join("\n");
+
+    // Remove only our entry from custom_providers (preserves user's other providers)
+    let after_cp = remove_atomic_provider(&after_model_patch);
+
+    let final_content = if content.ends_with('\n') && !after_cp.ends_with('\n') {
+        format!("{}\n", after_cp)
+    } else {
+        after_cp
+    };
+
+    std::fs::write(&config_path, &final_content)
+        .map_err(|e| format!("Failed to write config.yaml: {}", e))?;
+
+    // Remove NO_PROXY lines from .env
+    let env_path = hermes_dir.join(".env");
+    if env_path.exists() {
+        let env_content = std::fs::read_to_string(&env_path)
+            .map_err(|e| format!("Failed to read .env: {}", e))?;
+        let cleaned: String = env_content
+            .lines()
+            .filter(|line| {
+                let trimmed = line.trim();
+                !trimmed.starts_with("NO_PROXY=") && !trimmed.starts_with("no_proxy=")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let cleaned = if cleaned.ends_with('\n') {
+            cleaned
+        } else {
+            format!("{}\n", cleaned)
+        };
+        std::fs::write(&env_path, cleaned)
+            .map_err(|e| format!("Failed to write .env: {}", e))?;
+    }
+
+    log::info!("Hermes Agent config reset to defaults");
+    Ok(())
+}
+
+/// Replace the quoted value in a YAML line like `  key: "old"` -> `  key: "new"`,
+/// preserving leading whitespace and the key name.
+fn replace_yaml_quoted_value(line: &str, new_value: &str) -> String {
+    if let Some(first_quote) = line.find('"') {
+        if let Some(second_quote) = line[first_quote + 1..].find('"') {
+            let end = first_quote + 1 + second_quote;
+            return format!(
+                "{}\"{}\"{}",
+                &line[..first_quote],
+                new_value,
+                &line[end + 1..],
+            );
+        }
+    }
+    line.to_string()
+}
+
+const ATOMIC_PROVIDER_NAME: &str = "atomic-chat";
+
+/// Split the config into (before, entries, after) around `custom_providers:`.
+/// `entries` is a Vec of Vec<String>, one per YAML list item.
+fn split_custom_providers(content: &str) -> (Vec<String>, Vec<Vec<String>>, Vec<String>) {
+    let mut before: Vec<String> = Vec::new();
+    let mut block_lines: Vec<String> = Vec::new();
+    let mut after: Vec<String> = Vec::new();
+
+    #[derive(PartialEq)]
+    enum Phase { Before, InBlock, After }
+    let mut phase = Phase::Before;
+
+    for line in content.lines() {
+        match phase {
+            Phase::Before => {
+                let t = line.trim();
+                if t == "custom_providers:"
+                    || t == "custom_providers: []"
+                    || t == "custom_providers:[]"
+                {
+                    phase = if t.contains("[]") { Phase::After } else { Phase::InBlock };
+                } else {
+                    before.push(line.to_string());
+                }
+            }
+            Phase::InBlock => {
+                let first = line.chars().next();
+                match first {
+                    None | Some(' ') | Some('\t') | Some('-') => {
+                        block_lines.push(line.to_string());
+                    }
+                    _ => {
+                        phase = Phase::After;
+                        after.push(line.to_string());
+                    }
+                }
+            }
+            Phase::After => {
+                after.push(line.to_string());
+            }
+        }
+    }
+
+    let mut entries: Vec<Vec<String>> = Vec::new();
+    let mut current: Vec<String> = Vec::new();
+
+    for line in &block_lines {
+        if line.starts_with("- ") {
+            if !current.is_empty() {
+                entries.push(std::mem::take(&mut current));
+            }
+        }
+        if !line.trim().is_empty() {
+            current.push(line.clone());
+        }
+    }
+    if !current.is_empty() {
+        entries.push(current);
+    }
+
+    (before, entries, after)
+}
+
+fn entry_is_ours(entry: &[String]) -> bool {
+    entry.iter().any(|l| {
+        let t = l.trim();
+        let name_val = if t.starts_with("- name:") {
+            t.trim_start_matches("- name:").trim()
+        } else if t.starts_with("name:") {
+            t.trim_start_matches("name:").trim()
+        } else {
+            return false;
+        };
+        name_val == ATOMIC_PROVIDER_NAME
+            || name_val == format!("\"{}\"", ATOMIC_PROVIDER_NAME)
+    })
+}
+
+fn rebuild_custom_providers(
+    before: &[String],
+    entries: &[Vec<String>],
+    after: &[String],
+) -> String {
+    let mut result: Vec<String> = before.to_vec();
+
+    while result.last().map_or(false, |l| l.trim().is_empty()) {
+        result.pop();
+    }
+
+    if entries.is_empty() {
+        result.push("custom_providers: []".to_string());
+    } else {
+        result.push("custom_providers:".to_string());
+        for entry in entries {
+            for line in entry {
+                result.push(line.clone());
+            }
+        }
+    }
+
+    for line in after {
+        result.push(line.clone());
+    }
+
+    let out = result.join("\n");
+    if out.ends_with('\n') { out } else { format!("{}\n", out) }
+}
+
+/// Add or update only the `atomic-chat` entry in `custom_providers`,
+/// leaving all other user entries (Telegram, WhatsApp, etc.) intact.
+fn upsert_atomic_provider(
+    content: &str,
+    api_url: &str,
+    model: &str,
+    context_length: u32,
+) -> String {
+    let (before, mut entries, after) = split_custom_providers(content);
+
+    entries.retain(|e| !entry_is_ours(e));
+
+    entries.push(vec![
+        format!("- name: {}", ATOMIC_PROVIDER_NAME),
+        format!("  base_url: {}", api_url),
+        format!("  model: {}", model),
+        "  models:".to_string(),
+        format!("    {}:", model),
+        format!("      context_length: {}", context_length),
+    ]);
+
+    rebuild_custom_providers(&before, &entries, &after)
+}
+
+/// Remove only the `atomic-chat` entry from `custom_providers`,
+/// leaving all other user entries intact.
+fn remove_atomic_provider(content: &str) -> String {
+    let (before, mut entries, after) = split_custom_providers(content);
+    entries.retain(|e| !entry_is_ours(e));
+    rebuild_custom_providers(&before, &entries, &after)
+}

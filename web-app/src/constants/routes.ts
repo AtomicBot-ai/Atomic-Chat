@@ -20,6 +20,7 @@ export const route = {
     hardware: '/settings/hardware',
     assistant: '/settings/assistant',
     claude_code: '/settings/claude-code',
+    hermes_agent: '/settings/hermes-agent',
   },
   hub: {
     index: '/hub/',
