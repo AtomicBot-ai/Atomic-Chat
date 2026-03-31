@@ -930,17 +930,43 @@ pub async fn install_bundled_backend<R: Runtime>(
         backend: None,
     });
 
-    let resource_dir = app
-        .path()
-        .resolve("llamacpp-backend", tauri::path::BaseDirectory::Resource)
-        .map_err(|e| format!("Failed to resolve resource path: {}", e))?;
+    let mut resource_dir: Option<PathBuf> = None;
+
+    // Try Tauri resource resolution (works in production builds)
+    for candidate in &["resources/llamacpp-backend", "llamacpp-backend"] {
+        if let Ok(p) = app.path().resolve(candidate, tauri::path::BaseDirectory::Resource) {
+            log::info!("[install_bundled_backend] Trying resource path '{}' → {}", candidate, p.display());
+            if p.join("version.txt").exists() {
+                resource_dir = Some(p);
+                break;
+            }
+        }
+    }
+
+    // Dev mode fallback: resources live in src-tauri/resources/ relative to plugin crate
+    if resource_dir.is_none() {
+        let dev_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../resources/llamacpp-backend");
+        log::info!("[install_bundled_backend] Trying dev fallback → {}", dev_path.display());
+        if dev_path.join("version.txt").exists() {
+            resource_dir = Some(dev_path);
+        }
+    }
+
+    let resource_dir = match resource_dir {
+        Some(p) => p,
+        None => {
+            log::info!("[install_bundled_backend] No bundled backend found in any candidate path");
+            return not_bundled;
+        }
+    };
 
     let version_file = resource_dir.join("version.txt");
     let backend_file = resource_dir.join("backend.txt");
     let build_dir = resource_dir.join("build");
 
     if !version_file.exists() || !backend_file.exists() || !build_dir.exists() {
-        log::info!("[install_bundled_backend] No bundled backend found at {}", resource_dir.display());
+        log::info!("[install_bundled_backend] Missing files at {}", resource_dir.display());
         return not_bundled;
     }
 

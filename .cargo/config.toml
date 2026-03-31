@@ -2,8 +2,6 @@
 # workaround needed to prevent `STATUS_ENTRYPOINT_NOT_FOUND` error in tests
 # see https://github.com/tauri-apps/tauri/pull/4383#issuecomment-1212221864
 __TAURI_WORKSPACE__ = "true"
-#* Должен читаться при `yarn tauri dev` из корня репо (Cargo не подхватывает src-tauri/.cargo/)
-#* Без этого setup_tray не вызывается — иконка в строке меню не обновится
 ENABLE_SYSTEM_TRAY_ICON = "true"
 
 [target.aarch64-linux-android]

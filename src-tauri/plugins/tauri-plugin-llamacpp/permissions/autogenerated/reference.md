@@ -34,6 +34,7 @@ Default permissions for the llamacpp plugin
 - `allow-validate-backend-string`
 - `allow-should-migrate-backend`
 - `allow-handle-setting-update`
+- `allow-install-bundled-backend`
 
 ## Permission Table
 
@@ -456,6 +457,32 @@ Enables the handle_setting_update command without any pre-configured scope.
 <td>
 
 Denies the handle_setting_update command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-install-bundled-backend`
+
+</td>
+<td>
+
+Enables the install_bundled_backend command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-install-bundled-backend`
+
+</td>
+<td>
+
+Denies the install_bundled_backend command without any pre-configured scope.
 
 </td>
 </tr>
