@@ -42,7 +42,7 @@
   "reportAnIssueDesc": "Found a bug? Help us out by filing an issue on GitHub.",
   "reportIssue": "Report Issue",
   "credits": "Credits",
-  "creditsDesc1": "👋 Atomic Bot is built with ❤️ by the Menlo Research team.",
+  "creditsDesc1": "👋 Atomic Bot is built with ❤️ by the Atomic Chat team.",
   "creditsDesc2": "Special thanks to our open-source dependencies—especially llama.cpp and Tauri—and to our amazing AI community.",
   "appVersion": "App Version",
   "dataFolder": {
@@ -261,7 +261,7 @@
     "reportAnIssueDesc": "Found a bug? Help us out by filing an issue on GitHub.",
     "reportIssue": "Report Issue",
     "credits": "Credits",
-    "creditsDesc1": "👋 Atomic Bot is built with ❤️ by the Menlo Research team.",
+    "creditsDesc1": "👋 Atomic Bot is built with ❤️ by the Atomic Chat team.",
     "creditsDesc2": "Special thanks to our open-source dependencies—especially llama.cpp and Tauri—and to our amazing AI community."
   },
   "extensions": {

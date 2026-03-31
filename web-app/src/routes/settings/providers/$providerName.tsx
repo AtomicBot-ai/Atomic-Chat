@@ -57,11 +57,9 @@ function ProviderDetail() {
   )
   const [loadingModels, setLoadingModels] = useState<string[]>([])
   const [refreshingModels, setRefreshingModels] = useState(false)
-  const [isCheckingBackendUpdate, setIsCheckingBackendUpdate] = useState(false)
   const [isInstallingBackend, setIsInstallingBackend] = useState(false)
   const [importingModel, setImportingModel] = useState<string | null>(null)
-  const { checkForUpdate: checkForBackendUpdate, installBackend } =
-    useBackendUpdater()
+  const { installBackend } = useBackendUpdater()
   const { providerName } = useParams({ from: Route.id })
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
   const provider = getProviderByName(providerName)
@@ -301,25 +299,6 @@ function ProviderDetail() {
       })
   }
 
-  const handleCheckForBackendUpdate = useCallback(async () => {
-    if (provider?.provider !== 'llamacpp' && provider?.provider !== 'mlx')
-      return
-
-    setIsCheckingBackendUpdate(true)
-    try {
-      const update = await checkForBackendUpdate(true)
-      if (!update) {
-        toast.info(t('settings:noBackendUpdateAvailable'))
-      }
-      // If update is available, the BackendUpdater dialog will automatically show
-    } catch (error) {
-      console.error('Failed to check for backend updates:', error)
-      toast.error(t('settings:backendUpdateError'))
-    } finally {
-      setIsCheckingBackendUpdate(false)
-    }
-  }, [provider, checkForBackendUpdate, t])
-
   const handleInstallBackendFromFile = useCallback(async () => {
     if (provider?.provider !== 'llamacpp' && provider?.provider !== 'mlx')
       return
@@ -546,28 +525,6 @@ function ProviderDetail() {
                             (provider?.provider === 'llamacpp' ||
                               provider?.provider === 'mlx') && (
                               <div className="mt-2 flex flex-wrap gap-2">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className={cn(
-                                    isCheckingBackendUpdate &&
-                                      'pointer-events-none'
-                                  )}
-                                  onClick={handleCheckForBackendUpdate}
-                                >
-                                  <IconRefresh
-                                    size={12}
-                                    className={cn(
-                                      'text-muted-foreground',
-                                      isCheckingBackendUpdate && 'animate-spin'
-                                    )}
-                                  />
-                                  <span>
-                                    {isCheckingBackendUpdate
-                                      ? t('settings:checkingForBackendUpdates')
-                                      : t('settings:checkForBackendUpdates')}
-                                  </span>
-                                </Button>
                                 <Button
                                   variant="outline"
                                   size="sm"

@@ -42,7 +42,7 @@
   "reportAnIssueDesc": "Encontrou um bug? Ajude-nos relatando um problema no GitHub.",
   "reportIssue": "Reportar Problema",
   "credits": "Créditos",
-  "creditsDesc1": "👋 Atomic Bot é construído com ❤️ pela equipe Menlo Research.",
+  "creditsDesc1": "👋 Atomic Bot é construído com ❤️ pela equipe Atomic Chat.",
   "creditsDesc2": "Agradecimentos especiais às nossas dependências de código aberto—especialmente llama.cpp e Tauri—e à nossa incrível comunidade de IA.",
   "appVersion": "Versão do App",
   "dataFolder": {
@@ -248,7 +248,7 @@
     "reportAnIssueDesc": "Encontrou um bug? Ajude-nos relatando um problema no GitHub.",
     "reportIssue": "Reportar Problema",
     "credits": "Créditos",
-    "creditsDesc1": "👋 Atomic Bot é construído com ❤️ pela equipe Menlo Research.",
+    "creditsDesc1": "👋 Atomic Bot é construído com ❤️ pela equipe Atomic Chat.",
     "creditsDesc2": "Agradecimentos especiais às nossas dependências de código aberto—especialmente llama.cpp e Tauri—e à nossa incrível comunidade de IA."
   },
   "extensions": {

@@ -3,7 +3,7 @@
   <id>ai.jan.Jan</id>
   <metadata_license>FSFAP</metadata_license>
   <project_license>Apache-2.0</project_license>
-  <developer_name>Menlo Research Pte. Ltd.</developer_name>
+  <developer_name>Atomic Chat</developer_name>
 
   <name>Jan</name>
   <icon type="stock">ai.jan.Jan</icon>
@@ -48,11 +48,11 @@
     </ul>
 
     <p>
-      Jan is actively maintained by Menlo Research.  
+      Jan is actively maintained by Atomic Chat.  
       Feedback, bug reports and feature requests are welcomed through GitHub.
     </p>
     <p xml:lang="pl">
-      Aplikacja Jan jest aktywnie utrzymywana przez Menlo Research.
+      Aplikacja Jan jest aktywnie utrzymywana przez Atomic Chat.
       Informacje zwrotne, zgłoszenia błędów i prośby o nowe funkcje są mile widziane za pośrednictwem platformy GitHub.
     </p>
   </description>

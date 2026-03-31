@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-#* Полная macOS-сборка: подпись Developer ID + нотаризация Apple (Tauri CLI).
-#? Запуск из корня репозитория: bash scripts/macos-build-signed-notarized.sh
-#? Перед запуском экспортируйте переменные (см. ниже).
+#* Full macOS build: Developer ID signing + Apple notarization (Tauri CLI).
+#? Run from the repo root: bash scripts/macos-build-signed-notarized.sh
+#? Export the required environment variables before running (see below).
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 if [[ -z "${APPLE_SIGNING_IDENTITY:-}" ]]; then
-  echo "Ошибка: не задан APPLE_SIGNING_IDENTITY."
+  echo "Error: APPLE_SIGNING_IDENTITY is not set."
   echo "  security find-identity -v -p codesigning"
   exit 1
 fi
@@ -21,24 +21,24 @@ elif [[ -n "${APPLE_API_KEY:-}" && -n "${APPLE_API_ISSUER:-}" && -f "${APPLE_API
 fi
 
 if [[ "$NOTARIZE_OK" -ne 1 ]]; then
-  echo "Ошибка: для нотаризации нужен один из наборов переменных:"
+  echo "Error: notarization requires one of the following sets of variables:"
   echo ""
-  echo "  Вариант A (Apple ID + пароль приложения):"
+  echo "  Option A (Apple ID + app-specific password):"
   echo "    export APPLE_ID=\"you@email.com\""
-  echo "    export APPLE_PASSWORD=\"xxxx-xxxx-xxxx-xxxx\"  # пароль приложения, appleid.apple.com"
-  echo "    export APPLE_TEAM_ID=\"UT6WGPGTGR\"             # 10 символов, Developer"
+  echo "    export APPLE_PASSWORD=\"xxxx-xxxx-xxxx-xxxx\"  # app-specific password, appleid.apple.com"
+  echo "    export APPLE_TEAM_ID=\"UT6WGPGTGR\"             # 10 chars, Developer portal"
   echo ""
-  echo "  Вариант B (ключ App Store Connect API):"
+  echo "  Option B (App Store Connect API key):"
   echo "    export APPLE_API_KEY=\"XXXXXXXXXX\""
   echo "    export APPLE_API_ISSUER=\"xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\""
   echo "    export APPLE_API_KEY_PATH=\"\$HOME/AuthKey_XXXXXXXXXX.p8\""
   echo ""
-  echo "Плюс всегда:"
-  echo "    export APPLE_SIGNING_IDENTITY=\"Developer ID Application: …\""
+  echo "Additionally, always set:"
+  echo "    export APPLE_SIGNING_IDENTITY=\"Developer ID Application: ...\""
   exit 1
 fi
 
-echo "Сборка с подписью и нотаризацией (CI=false)…"
+echo "Building with signing and notarization (CI=false)..."
 cp -f src-tauri/resources/pre-install/*.tgz pre-install/ 2>/dev/null || true
 
 export CI=false

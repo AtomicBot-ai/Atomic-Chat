@@ -74,8 +74,8 @@ export default class JanAssistantExtension extends AssistantExtension {
     }
 
     if (currentVersion < 2) {
-      console.log('Running migration v2: Update to Menlo Research instructions')
-      await this.migrateToMenloInstructions()
+      console.log('Running migration v2: Update to Atomic Chat instructions')
+      await this.migrateToAtomicChatInstructions()
       await this.saveMigrationVersion(2)
     }
 
@@ -127,11 +127,11 @@ export default class JanAssistantExtension extends AssistantExtension {
   }
 
   /**
-   * Migration v2: Update assistant instructions to Menlo Research format and set default parameters
+   * Migration v2: Update assistant instructions to Atomic Chat format and set default parameters
    */
-  private async migrateToMenloInstructions(): Promise<void> {
+  private async migrateToAtomicChatInstructions(): Promise<void> {
     const OLD_INSTRUCTION_PREFIX = 'You are Jan, a helpful AI assistant.'
-    const NEW_INSTRUCTION = `You are Atomic Chat, a helpful AI assistant who assists users with their requests. Atomic Chat is trained by Menlo Research (https://www.menlo.ai).
+    const NEW_INSTRUCTION = `You are Atomic Chat, a helpful AI assistant who assists users with their requests. Atomic Chat is trained by Atomic Chat (https://atomic.chat).
 
 You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.
 
@@ -260,7 +260,7 @@ Current date: {{current_date}}`
     description:
       'Atomic Chat is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user’s behalf.',
     model: '*',
-    instructions: `You are Atomic Chat, a helpful AI assistant who assists users with their requests. Atomic Chat is trained by Menlo Research (https://www.menlo.ai).
+    instructions: `You are Atomic Chat, a helpful AI assistant who assists users with their requests. Atomic Chat is trained by Atomic Chat (https://atomic.chat).
 
 You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.
 

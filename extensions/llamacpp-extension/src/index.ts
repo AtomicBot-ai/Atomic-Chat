@@ -480,20 +480,25 @@ export default class llamacpp_extension extends AIEngine {
 
       let effectiveBackendString = this.config.version_backend
 
-      // If a bundled turboquant backend exists and current backend is not turboquant,
-      // force-switch to the bundled one so users don't stay on an old non-turboquant build
-      // that doesn't support extended features like turbo3 cache type.
-      if (
-        bundledBackendString &&
-        effectiveBackendString &&
-        effectiveBackendString.includes('/') &&
-        !effectiveBackendString.startsWith('turboquant-')
-      ) {
-        logger.info(
-          `Current backend '${effectiveBackendString}' is not turboquant; switching to bundled '${bundledBackendString}'`
-        )
-        effectiveBackendString = bundledBackendString
-        bestAvailableBackendString = bundledBackendString
+      // Force-switch to the bundled backend when:
+      // 1. Current backend is not turboquant (migration to new format), OR
+      // 2. Current backend IS turboquant but a different version with the same
+      //    backend type was bundled with this app release (app update scenario).
+      if (bundledBackendString && effectiveBackendString && effectiveBackendString.includes('/')) {
+        const bundledType = bundledBackendString.split('/')[1]
+        const currentType = effectiveBackendString.split('/')[1]
+        const isNotTurboquant = !effectiveBackendString.startsWith('turboquant-')
+        const isBundledNewer =
+          effectiveBackendString !== bundledBackendString && bundledType === currentType
+
+        if (isNotTurboquant || isBundledNewer) {
+          logger.info(
+            `Switching backend from '${effectiveBackendString}' to bundled '${bundledBackendString}'` +
+              (isNotTurboquant ? ' (non-turboquant migration)' : ' (app update)')
+          )
+          effectiveBackendString = bundledBackendString
+          bestAvailableBackendString = bundledBackendString
+        }
       }
 
       // Handle fresh installation case where version_backend might be 'none' or invalid
