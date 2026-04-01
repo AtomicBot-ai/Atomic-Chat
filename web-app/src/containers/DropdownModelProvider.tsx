@@ -6,6 +6,8 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useAppState } from '@/hooks/useAppState'
+import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
 import { highlightFzfMatch } from '@/utils/highlight'
 import Capabilities from './Capabilities'
@@ -443,6 +445,59 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
             )
           }
         )
+      }
+
+      // Restart Local API Server with the new model if it's running
+      const currentServerStatus = useAppState.getState().serverStatus
+      if (currentServerStatus === 'running') {
+        ;(async () => {
+          const { setServerStatus } = useAppState.getState()
+          const serverState = useLocalApiServer.getState()
+
+          setServerStatus('pending')
+
+          try {
+            await window.core?.api?.stopServer()
+
+            if (
+              searchableModel.provider.provider === 'llamacpp' ||
+              searchableModel.provider.provider === 'mlx'
+            ) {
+              await serviceHub.models().startModel(
+                searchableModel.provider,
+                searchableModel.model.id,
+                true
+              )
+              await new Promise((resolve) => setTimeout(resolve, 500))
+            }
+
+            const actualPort = await window.core?.api?.startServer({
+              host: serverState.serverHost,
+              port: serverState.serverPort,
+              prefix: serverState.apiPrefix,
+              apiKey: serverState.apiKey,
+              trustedHosts: serverState.trustedHosts,
+              isCorsEnabled: serverState.corsEnabled,
+              isVerboseEnabled: serverState.verboseLogs,
+              proxyTimeout: serverState.proxyTimeout,
+            })
+
+            if (actualPort && actualPort !== serverState.serverPort) {
+              serverState.setServerPort(actualPort)
+            }
+            setServerStatus('running')
+
+            serverState.setLastServerModels([
+              {
+                model: searchableModel.model.id,
+                provider: searchableModel.provider.provider,
+              },
+            ])
+          } catch (error) {
+            console.error('Failed to restart API server with new model:', error)
+            useAppState.getState().setServerStatus('stopped')
+          }
+        })()
       }
     },
     [

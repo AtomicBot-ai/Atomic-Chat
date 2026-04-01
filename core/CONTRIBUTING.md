@@ -2,7 +2,7 @@
 
 [← Back to Main Contributing Guide](../CONTRIBUTING.md)
 
-TypeScript SDK providing extension system, APIs, and type definitions for all Jan components.
+TypeScript SDK providing extension system, APIs, and type definitions for all Atomic Chat components.
 
 ## Key Directories
 

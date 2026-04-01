@@ -198,13 +198,65 @@ export function DataProvider() {
   }, [checkForUpdate])
 
   useEffect(() => {
-    events.on(AppEvent.onModelImported, () => {
-      serviceHub.providers().getProviders().then((providers) => {
-        setProviders(providers)
-        syncRemoteProviders()
-      })
-    })
-  }, [serviceHub, setProviders])
+    const handleModelImported = async (eventData?: Record<string, unknown>) => {
+      const newProviders = await serviceHub.providers().getProviders()
+      setProviders(newProviders)
+      syncRemoteProviders()
+
+      const modelId = eventData?.modelId as string | undefined
+      if (!modelId) return
+
+      const currentStatus = useAppState.getState().serverStatus
+      if (currentStatus !== 'stopped') return
+
+      setServerStatus('pending')
+
+      try {
+        const allProviders = useModelProvider.getState().providers
+        const provider = allProviders.find((p) =>
+          p?.models?.some((m: { id: string }) => m.id === modelId)
+        )
+
+        if (provider) {
+          await serviceHub.models().startModel(provider, modelId, true)
+          await new Promise((resolve) => setTimeout(resolve, 500))
+        }
+
+        const serverState = useLocalApiServer.getState()
+
+        const actualPort = await window.core?.api?.startServer({
+          host: serverState.serverHost,
+          port: serverState.serverPort,
+          prefix: serverState.apiPrefix,
+          apiKey: serverState.apiKey,
+          trustedHosts: serverState.trustedHosts,
+          isCorsEnabled: serverState.corsEnabled,
+          isVerboseEnabled: serverState.verboseLogs,
+          proxyTimeout: serverState.proxyTimeout,
+        })
+
+        if (actualPort && actualPort !== serverState.serverPort) {
+          serverState.setServerPort(actualPort)
+        }
+        setServerStatus('running')
+
+        const providerName = provider?.provider ?? 'llamacpp'
+        serverState.setLastServerModels([
+          { model: modelId, provider: providerName },
+        ])
+
+        console.log('Auto-started Local API Server with model:', modelId)
+      } catch (error) {
+        console.error('Failed to auto-start API server after model import:', error)
+        setServerStatus('stopped')
+      }
+    }
+
+    events.on(AppEvent.onModelImported, handleModelImported)
+    return () => {
+      events.off(AppEvent.onModelImported, handleModelImported)
+    }
+  }, [serviceHub, setProviders, setServerStatus])
 
   // Auto-start Local API Server on app startup if enabled
   useEffect(() => {

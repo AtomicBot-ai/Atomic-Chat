@@ -11,7 +11,7 @@ import { useAppState } from '@/hooks/useAppState'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { cn } from '@/lib/utils'
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { toast } from 'sonner'
 import { getModelToStart } from '@/utils/getModelToStart'
 import { invoke } from '@tauri-apps/api/core'
@@ -59,6 +59,26 @@ function HermesAgentIntegration() {
     apiUrl: string
     contextLength: number
   } | null>(null)
+
+  const availableModels = useMemo(() => {
+    return providers
+      .filter((p) => p.active)
+      .flatMap((p) =>
+        p.models.map((m) => ({
+          ...m,
+          providerName: p.provider,
+          isLocal: isLocalProvider(p.provider),
+          hasApiKey: !!p.api_key?.length,
+        }))
+      )
+      .filter((m) => (m.isLocal ? m.id : m.hasApiKey))
+  }, [providers])
+
+  useEffect(() => {
+    if (!config.model && availableModels.length > 0) {
+      setModel(availableModels[0].id)
+    }
+  }, [config.model, availableModels, setModel])
 
   const MIN_HERMES_CTX = 20000
 
