@@ -15,8 +15,8 @@ export const modelSettings = {
     description: 'Size of the prompt context (0 = loaded from model).',
     controller_type: 'input',
     controller_props: {
-      value: 8192,
-      placeholder: '8192',
+      value: 16384,
+      placeholder: '16384',
       type: 'number',
     },
   },

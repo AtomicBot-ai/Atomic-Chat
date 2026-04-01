@@ -31,18 +31,21 @@ export function ModelSetting({
   const serviceHub = useServiceHub()
   const setActiveModels = useAppState((state) => state.setActiveModels)
 
-  // Create a debounced version of stopModel that waits 500ms after the last call
-  const debouncedStopModel = debounce((modelId: string) => {
-    serviceHub
-      .models()
-      .stopModel(modelId)
-      .then(() => {
-        // Refresh active models after stopping
-        serviceHub
-          .models()
-          .getActiveModels()
-          .then((models) => setActiveModels(models || []))
-      })
+  // Create a debounced version that stops and restarts the model with updated settings
+  const debouncedRestartModel = debounce(async (modelId: string, providerName: string) => {
+    try {
+      await serviceHub.models().stopModel(modelId)
+
+      const freshProvider = useModelProvider.getState().getProviderByName(providerName)
+      if (freshProvider) {
+        await serviceHub.models().startModel(freshProvider, modelId, true)
+      }
+
+      const models = await serviceHub.models().getActiveModels()
+      setActiveModels(models || [])
+    } catch (error) {
+      console.error('Failed to restart model after settings change:', error)
+    }
   }, 500)
 
   const handleSettingChange = (
@@ -92,13 +95,13 @@ export function ModelSetting({
         key === 'cpu_moe' ||
         key === 'n_cpu_moe'
       ) {
-        // Check if model is running before stopping it
+        // Check if model is running before restarting it with new settings
         serviceHub
           .models()
           .getActiveModels()
           .then((activeModels) => {
             if (activeModels.includes(model.id)) {
-              debouncedStopModel(model.id)
+              debouncedRestartModel(model.id, provider.provider)
             }
           })
       }

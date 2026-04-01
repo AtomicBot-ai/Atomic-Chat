@@ -91,7 +91,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   // Helper function to get context size from model settings
   const getContextSize = useCallback((): number => {
     if (!selectedModel?.settings?.ctx_len?.controller_props?.value) {
-      return 8192 // Default context size
+      return 16384 // Default context size
     }
     return selectedModel.settings.ctx_len.controller_props.value as number
   }, [selectedModel?.settings?.ctx_len?.controller_props?.value])
@@ -450,6 +450,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
       // Restart Local API Server with the new model if it's running
       const currentServerStatus = useAppState.getState().serverStatus
       if (currentServerStatus === 'running') {
+        console.log('[LocalAPI] Restarting server with model:', searchableModel.model.id)
         ;(async () => {
           const { setServerStatus } = useAppState.getState()
           const serverState = useLocalApiServer.getState()
@@ -457,8 +458,26 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
           setServerStatus('pending')
 
           try {
-            await window.core?.api?.stopServer()
+            // 1. Stop all currently loaded local models
+            const activeModels = await serviceHub.models().getActiveModels()
+            if (activeModels && activeModels.length > 0) {
+              await Promise.all(
+                activeModels.map(async (modelId) => {
+                  try {
+                    await serviceHub.models().stopModel(modelId)
+                    console.log('[LocalAPI] Stopped old model:', modelId)
+                  } catch (err) {
+                    console.warn('[LocalAPI] Failed to stop model:', modelId, err)
+                  }
+                })
+              )
+            }
 
+            // 2. Stop the API server
+            await window.core?.api?.stopServer()
+            console.log('[LocalAPI] Server stopped for model switch')
+
+            // 3. Start the new model
             if (
               searchableModel.provider.provider === 'llamacpp' ||
               searchableModel.provider.provider === 'mlx'
@@ -468,9 +487,11 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 searchableModel.model.id,
                 true
               )
+              console.log('[LocalAPI] New model started:', searchableModel.model.id)
               await new Promise((resolve) => setTimeout(resolve, 500))
             }
 
+            // 4. Start the API server
             const actualPort = await window.core?.api?.startServer({
               host: serverState.serverHost,
               port: serverState.serverPort,
@@ -481,12 +502,17 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               isVerboseEnabled: serverState.verboseLogs,
               proxyTimeout: serverState.proxyTimeout,
             })
+            console.log('[LocalAPI] Server restarted on port:', actualPort)
 
             if (actualPort && actualPort !== serverState.serverPort) {
               serverState.setServerPort(actualPort)
             }
             setServerStatus('running')
 
+            serverState.setDefaultModelLocalApiServer({
+              model: searchableModel.model.id,
+              provider: searchableModel.provider.provider,
+            })
             serverState.setLastServerModels([
               {
                 model: searchableModel.model.id,
@@ -494,7 +520,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               },
             ])
           } catch (error) {
-            console.error('Failed to restart API server with new model:', error)
+            console.error('[LocalAPI] Failed to restart server:', error)
             useAppState.getState().setServerStatus('stopped')
           }
         })()

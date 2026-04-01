@@ -11,6 +11,7 @@ import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { isDev } from '@/lib/utils'
+import { toast } from 'sonner'
 import { AppEvent, events } from '@janhq/core'
 import { SystemEvent } from '@/types/events'
 import { invoke } from '@tauri-apps/api/core'
@@ -83,8 +84,7 @@ const syncRemoteProviders = () => {
 }
 
 export function DataProvider() {
-  const { setProviders, getProviderByName } =
-    useModelProvider()
+  const { setProviders } = useModelProvider()
 
   const { setServers, setSettings } = useMCPServers()
   const { setAssistants, initializeWithLastUsed } = useAssistant()
@@ -93,22 +93,6 @@ export function DataProvider() {
   const serviceHub = useServiceHub()
   const { checkForUpdate } = useAppUpdater()
 
-  // Local API Server hooks
-  const {
-    enableOnStartup,
-    serverHost,
-    serverPort,
-    setServerPort,
-    apiPrefix,
-    apiKey,
-    trustedHosts,
-    corsEnabled,
-    verboseLogs,
-    proxyTimeout,
-    lastServerModels,
-    setLastServerModels,
-    defaultModelLocalApiServer,
-  } = useLocalApiServer()
   const setServerStatus = useAppState((state) => state.setServerStatus)
 
   useEffect(() => {
@@ -199,30 +183,183 @@ export function DataProvider() {
 
   useEffect(() => {
     const handleModelImported = async (eventData?: Record<string, unknown>) => {
-      const newProviders = await serviceHub.providers().getProviders()
-      setProviders(newProviders)
-      syncRemoteProviders()
+      console.log('[LocalAPI] onModelImported fired, eventData:', eventData)
+
+      let newProviders: ModelProvider[]
+      try {
+        newProviders = await serviceHub.providers().getProviders()
+        setProviders(newProviders)
+        syncRemoteProviders()
+      } catch (err) {
+        console.error('[LocalAPI] Failed to refresh providers after model import:', err)
+        return
+      }
 
       const modelId = eventData?.modelId as string | undefined
-      if (!modelId) return
+      if (!modelId) {
+        console.warn('[LocalAPI] onModelImported: no modelId in event data, skipping')
+        return
+      }
+
+      // Find provider — try exact match first, then with normalized separators
+      let provider = newProviders.find((p) =>
+        p?.models?.some((m: { id: string }) => m.id === modelId)
+      )
+      if (!provider) {
+        const altId = modelId.replace(/\//g, '\\')
+        provider = newProviders.find((p) =>
+          p?.models?.some((m: { id: string }) => m.id === altId)
+        )
+      }
+      if (!provider) {
+        // Fallback: assume llamacpp provider
+        provider = newProviders.find((p) => p?.provider === 'llamacpp') ?? undefined
+        console.warn('[LocalAPI] Could not find provider for model', modelId, '— falling back to llamacpp')
+      }
+      const providerName = provider?.provider ?? 'llamacpp'
+      console.log('[LocalAPI] Provider for model:', providerName)
 
       const currentStatus = useAppState.getState().serverStatus
-      if (currentStatus !== 'stopped') return
+      console.log('[LocalAPI] Current server status:', currentStatus)
+
+      if (currentStatus === 'running') {
+        try {
+          if (provider) {
+            console.log('[LocalAPI] Loading model into running server:', modelId)
+            await serviceHub.models().startModel(provider, modelId, true)
+          }
+          const serverState = useLocalApiServer.getState()
+          serverState.setDefaultModelLocalApiServer({ model: modelId, provider: providerName })
+          serverState.setLastServerModels([{ model: modelId, provider: providerName }])
+          console.log('[LocalAPI] Model loaded into running server, default updated')
+        } catch (error) {
+          console.error('[LocalAPI] Failed to load model into running server:', error)
+        }
+        return
+      }
+
+      if (currentStatus !== 'stopped') {
+        console.log('[LocalAPI] Server status is', currentStatus, '— skipping auto-start')
+        return
+      }
 
       setServerStatus('pending')
+      console.log('[LocalAPI] Starting API server with model:', modelId)
+      toast.info('Starting Local API Server...', { id: 'local-api-autostart' })
 
       try {
-        const allProviders = useModelProvider.getState().providers
-        const provider = allProviders.find((p) =>
-          p?.models?.some((m: { id: string }) => m.id === modelId)
-        )
-
         if (provider) {
           await serviceHub.models().startModel(provider, modelId, true)
+          console.log('[LocalAPI] Model started:', modelId)
           await new Promise((resolve) => setTimeout(resolve, 500))
         }
 
         const serverState = useLocalApiServer.getState()
+
+        console.log('[LocalAPI] Calling startServer on port', serverState.serverPort)
+        const actualPort = await window.core?.api?.startServer({
+          host: serverState.serverHost,
+          port: serverState.serverPort,
+          prefix: serverState.apiPrefix,
+          apiKey: serverState.apiKey,
+          trustedHosts: serverState.trustedHosts,
+          isCorsEnabled: serverState.corsEnabled,
+          isVerboseEnabled: serverState.verboseLogs,
+          proxyTimeout: serverState.proxyTimeout,
+        })
+        console.log('[LocalAPI] startServer returned port:', actualPort)
+
+        if (actualPort && actualPort !== serverState.serverPort) {
+          serverState.setServerPort(actualPort)
+        }
+        setServerStatus('running')
+
+        serverState.setDefaultModelLocalApiServer({ model: modelId, provider: providerName })
+        serverState.setLastServerModels([{ model: modelId, provider: providerName }])
+        serverState.setEnableOnStartup(true)
+
+        toast.success('Local API Server started', {
+          id: 'local-api-autostart',
+          description: `http://${serverState.serverHost}:${actualPort ?? serverState.serverPort}${serverState.apiPrefix}`,
+        })
+        console.log('[LocalAPI] Auto-started Local API Server with model:', modelId)
+      } catch (error) {
+        console.error('[LocalAPI] Failed to auto-start API server:', error)
+        setServerStatus('stopped')
+        toast.error('Failed to start Local API Server', {
+          id: 'local-api-autostart',
+          description: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+
+    events.on(AppEvent.onModelImported, handleModelImported)
+    console.log('[LocalAPI] Registered onModelImported handler')
+    return () => {
+      events.off(AppEvent.onModelImported, handleModelImported)
+      console.log('[LocalAPI] Unregistered onModelImported handler')
+    }
+  }, [serviceHub, setProviders, setServerStatus])
+
+  // Auto-start Local API Server on app startup when local models exist
+  useEffect(() => {
+    const autoStartServer = async () => {
+      try {
+        const isRunning = await serviceHub.app().getServerStatus()
+        if (isRunning) {
+          console.log('[LocalAPI:startup] Server already running')
+          setServerStatus('running')
+          return
+        }
+
+        // Fetch providers to check for local models
+        const allProviders = await serviceHub.providers().getProviders()
+        const localModels = allProviders
+          .filter((p) => p.provider === 'llamacpp' || p.provider === 'mlx')
+          .flatMap((p) => p.models)
+
+        if (localModels.length === 0) {
+          console.log('[LocalAPI:startup] No local models found, skipping auto-start')
+          return
+        }
+
+        setServerStatus('pending')
+        console.log('[LocalAPI:startup] Auto-starting server, local models found:', localModels.length)
+
+        const serverState = useLocalApiServer.getState()
+
+        // Pick model to load: saved default > last server models > first available local model
+        const modelsToStart = (() => {
+          if (serverState.defaultModelLocalApiServer) {
+            return [serverState.defaultModelLocalApiServer]
+          }
+          if (serverState.lastServerModels.length > 0) {
+            return serverState.lastServerModels
+          }
+          const firstLocal = localModels[0]
+          const providerName = allProviders.find((p) =>
+            p.models.some((m) => m.id === firstLocal.id)
+          )?.provider ?? 'llamacpp'
+          return [{ model: firstLocal.id, provider: providerName }]
+        })()
+
+        console.log('[LocalAPI:startup] Models to start:', modelsToStart)
+
+        await Promise.allSettled(
+          modelsToStart.map(async ({ model, provider: providerName }) => {
+            const provider = allProviders.find((p) => p.provider === providerName)
+            if (!provider) {
+              console.warn(`[LocalAPI:startup] Provider '${providerName}' not found for model '${model}'`)
+              return
+            }
+            try {
+              await serviceHub.models().startModel(provider, model, true)
+              console.log(`[LocalAPI:startup] Model started: ${model}`)
+            } catch (err) {
+              console.warn(`[LocalAPI:startup] Failed to start model ${model}:`, err)
+            }
+          })
+        )
 
         const actualPort = await window.core?.api?.startServer({
           host: serverState.serverHost,
@@ -234,103 +371,28 @@ export function DataProvider() {
           isVerboseEnabled: serverState.verboseLogs,
           proxyTimeout: serverState.proxyTimeout,
         })
+        console.log('[LocalAPI:startup] Server started on port:', actualPort)
 
         if (actualPort && actualPort !== serverState.serverPort) {
           serverState.setServerPort(actualPort)
         }
         setServerStatus('running')
+        serverState.setEnableOnStartup(true)
 
-        const providerName = provider?.provider ?? 'llamacpp'
-        serverState.setLastServerModels([
-          { model: modelId, provider: providerName },
-        ])
-
-        console.log('Auto-started Local API Server with model:', modelId)
+        // Persist running models for next startup
+        if (modelsToStart.length > 0) {
+          serverState.setLastServerModels(modelsToStart)
+          if (!serverState.defaultModelLocalApiServer) {
+            serverState.setDefaultModelLocalApiServer(modelsToStart[0])
+          }
+        }
       } catch (error) {
-        console.error('Failed to auto-start API server after model import:', error)
+        console.error('[LocalAPI:startup] Failed to auto-start server:', error)
         setServerStatus('stopped')
       }
     }
 
-    events.on(AppEvent.onModelImported, handleModelImported)
-    return () => {
-      events.off(AppEvent.onModelImported, handleModelImported)
-    }
-  }, [serviceHub, setProviders, setServerStatus])
-
-  // Auto-start Local API Server on app startup if enabled
-  useEffect(() => {
-    if (enableOnStartup) {
-      // Check if server is already running
-      serviceHub
-        .app()
-        .getServerStatus()
-        .then(async (isRunning) => {
-          if (isRunning) {
-            console.log('Local API Server is already running')
-            setServerStatus('running')
-            return
-          }
-
-          setServerStatus('pending')
-
-          // Start model(s): prefer user-configured default, fall back to last session's models
-          const modelsToStart = (() => {
-            if (defaultModelLocalApiServer) {
-              return [defaultModelLocalApiServer]
-            }
-            return lastServerModels
-          })()
-
-          if (modelsToStart.length > 0) {
-            await Promise.allSettled(
-              modelsToStart.map(async ({ model, provider: providerName }) => {
-                const provider = getProviderByName(providerName)
-                if (!provider) return
-                try {
-                  await serviceHub.models().startModel(provider, model, true)
-                  console.log(`Auto-started server model: ${model}`)
-                } catch (err) {
-                  console.warn(`Failed to auto-start server model ${model}:`, err)
-                }
-              })
-            )
-          }
-
-          return window.core?.api
-            ?.startServer({
-              host: serverHost,
-              port: serverPort,
-              prefix: apiPrefix,
-              apiKey,
-              trustedHosts,
-              isCorsEnabled: corsEnabled,
-              isVerboseEnabled: verboseLogs,
-              proxyTimeout: proxyTimeout,
-            })
-            .then(async (actualPort: number) => {
-              // Store the actual port that was assigned (important for mobile with port 0)
-              if (actualPort && actualPort !== serverPort) {
-                setServerPort(actualPort)
-              }
-              setServerStatus('running')
-              // Persist whichever models are actually running so next startup can restore them
-              const activeModels = await serviceHub.models().getActiveModels().catch(() => [] as string[])
-              if (activeModels.length > 0) {
-                const allProviders = useModelProvider.getState().providers
-                const serverModels = activeModels.flatMap((id) => {
-                  const p = allProviders.find((p) => p?.models?.some((m: { id: string }) => m.id === id))
-                  return p ? [{ model: id, provider: p.provider }] : []
-                })
-                if (serverModels.length > 0) setLastServerModels(serverModels)
-              }
-            })
-        })
-        .catch((error: unknown) => {
-          console.error('Failed to start Local API Server on startup:', error)
-          setServerStatus('stopped')
-        })
-    }
+    autoStartServer()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serviceHub])
 

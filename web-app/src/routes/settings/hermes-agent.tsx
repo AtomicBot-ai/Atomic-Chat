@@ -322,29 +322,7 @@ function HermesAgentIntegration() {
                 >
                   Reset
                 </Button>
-                {serverStatus === 'running' && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="text-destructive border-destructive/30 hover:bg-destructive/10"
-                    onClick={async () => {
-                      try {
-                        await invoke('clear_hermes_agent_config')
-                        await serviceHub.models().stopAllModels()
-                        setServerStatus('pending')
-                        await window.core?.api?.stopServer()
-                        setServerStatus('stopped')
-                        setConfiguredValues(null)
-                        toast.success('Hermes Agent stopped — server and models shut down')
-                      } catch (e) {
-                        setServerStatus('stopped')
-                        toast.error(`Failed to stop: ${e}`)
-                      }
-                    }}
-                  >
-                    Stop
-                  </Button>
-                )}
+
                 <Button
                   size="sm"
                   onClick={handleSaveEnable}

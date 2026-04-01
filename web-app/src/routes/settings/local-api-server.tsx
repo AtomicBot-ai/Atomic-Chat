@@ -18,7 +18,7 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { IconSettings2 } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 import { ApiKeyInput } from '@/containers/ApiKeyInput'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { LogViewer } from '@/components/LogViewer'
 import { ensureModelForServer } from '@/utils/ensureModelForServer'
@@ -28,12 +28,6 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from '@/components/ui/popover'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import {
   Collapsible,
   CollapsibleTrigger,
@@ -45,7 +39,6 @@ import {
   IconExternalLink,
   IconLoader2,
 } from '@tabler/icons-react'
-import { ChevronsUpDown } from 'lucide-react'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
@@ -60,8 +53,6 @@ function LocalAPIServerContent() {
     setCorsEnabled,
     verboseLogs,
     setVerboseLogs,
-    enableOnStartup,
-    setEnableOnStartup,
     serverHost,
     serverPort,
     setServerPort,
@@ -71,17 +62,7 @@ function LocalAPIServerContent() {
     proxyTimeout,
     setLastServerModels,
     defaultModelLocalApiServer,
-    setDefaultModelLocalApiServer,
   } = useLocalApiServer()
-
-  const providers = useModelProvider((state) => state.providers)
-  const localModelIds = useMemo(
-    () =>
-      providers
-        .filter((p) => p.provider === 'llamacpp')
-        .flatMap((p) => p.models.map((m) => m.id)),
-    [providers]
-  )
 
   const { serverStatus, setServerStatus } = useAppState()
   const [showApiKeyError, setShowApiKeyError] = useState(false)
@@ -425,58 +406,13 @@ function LocalAPIServerContent() {
                 }
               >
                 <CardItem
-                  title={t('settings:localApiServer.runOnStartup')}
-                  description={t('settings:localApiServer.runOnStartupDesc')}
-                  actions={
-                    <Switch
-                      checked={enableOnStartup}
-                      onCheckedChange={(checked) => {
-                        setEnableOnStartup(checked)
-                      }}
-                    />
-                  }
-                />
-                <CardItem
                   title={t('settings:localApiServer.defaultModel')}
                   description={t('settings:localApiServer.defaultModelDesc')}
                   actions={
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-40 justify-between"
-                        >
-                          <span className="truncate">
-                            {defaultModelLocalApiServer?.model ??
-                              t(
-                                'settings:localApiServer.defaultModelPlaceholder'
-                              )}
-                          </span>
-                          <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground ml-2" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-64 max-h-60 overflow-y-auto">
-                        {localModelIds.map((modelId) => (
-                          <DropdownMenuItem
-                            key={modelId}
-                            className={cn(
-                              'cursor-pointer my-0.5',
-                              defaultModelLocalApiServer?.model === modelId &&
-                                'bg-secondary-foreground/8'
-                            )}
-                            onClick={() =>
-                              setDefaultModelLocalApiServer({
-                                model: modelId,
-                                provider: 'llamacpp',
-                              })
-                            }
-                          >
-                            <span className="truncate">{modelId}</span>
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <span className="text-sm text-muted-foreground truncate max-w-60">
+                      {defaultModelLocalApiServer?.model ??
+                        t('settings:localApiServer.defaultModelPlaceholder')}
+                    </span>
                   }
                 />
               </Card>
@@ -499,29 +435,6 @@ function LocalAPIServerContent() {
                   }
                 />
 
-                <CardItem
-                  title={t('settings:localApiServer.swaggerDocs')}
-                  description={t('settings:localApiServer.swaggerDocsDesc')}
-                  actions={
-                    <a
-                      href={`http://${serverHost}:${serverPort}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={cn(
-                        isServerRunning ? '' : 'pointer-events-none'
-                      )}
-                    >
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={!isServerRunning}
-                        title={t('settings:localApiServer.swaggerDocs')}
-                      >
-                        <span>{t('settings:localApiServer.openDocs')}</span>
-                      </Button>
-                    </a>
-                  }
-                />
               </Card>
             </div>
           </div>

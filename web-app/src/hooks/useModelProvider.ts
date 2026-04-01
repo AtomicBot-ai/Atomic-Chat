@@ -520,9 +520,27 @@ export const useModelProvider = create<ModelProviderState>()(
             }
           })
         }
+        if (version <= 11 && state?.providers) {
+          state.providers.forEach((provider) => {
+            if (provider.models && (provider.provider === 'llamacpp' || provider.provider === 'mlx')) {
+              provider.models.forEach((model) => {
+                if (model.settings?.ctx_len?.controller_props) {
+                  const current = model.settings.ctx_len.controller_props.value
+                  if (current === 8192 || current === '8192') {
+                    model.settings.ctx_len.controller_props.value = 16384
+                  }
+                  if (model.settings.ctx_len.controller_props.placeholder === '8192') {
+                    model.settings.ctx_len.controller_props.placeholder = '16384'
+                  }
+                }
+              })
+            }
+          })
+        }
+
         return state
       },
-      version: 11,
+      version: 12,
     }
   )
 )
