@@ -1,14 +1,14 @@
 {
   "openapi": "3.0.0",
   "info": {
-    "title": "Jan API Server Endpoints",
-    "description": "Jan API server provides a REST API interface for seamless interaction with large language models (LLMs) for third party apps. Compatible with the OpenAI API spec, it enables straightforward API access of models available in Jan.",
+    "title": "Atomic Chat API Server Endpoints",
+    "description": "Atomic Chat API server provides a REST API interface for seamless interaction with large language models (LLMs) for third party apps. Compatible with the OpenAI API spec, it enables straightforward API access of models available in Atomic Chat.",
     "version": "1.0"
   },
   "servers": [
     {
       "url": "http://localhost:1337/v1",
-      "description": "Jan API server"
+      "description": "Atomic Chat API server"
     }
   ],
   "tags": [

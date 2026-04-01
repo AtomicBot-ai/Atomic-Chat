@@ -6,7 +6,7 @@ This website is built using [Nextra](https://nextra.site/), a modern static webs
 
 We try to **keep routes consistent** to maintain SEO.
 
-- **`/guides/`**: Guides on how to use the Jan application. For end users who are directly using Jan.
+- **`/guides/`**: Guides on how to use the Atomic Chat application. For end users who are directly using Jan.
 
 - **`/developer/`**: Developer docs on how to extend Jan. These pages are about what people can build with our software.
 
