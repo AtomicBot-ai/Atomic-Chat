@@ -211,7 +211,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                   No rate limits. No subscriptions. No cloud.
                 </span>
               </div>
-              <p className="text-muted-foreground mx-auto max-w-full text-pretty leading-relaxed text-base sm:text-lg">
+              <p className="text-muted-foreground mx-auto max-w-full whitespace-nowrap text-sm leading-relaxed sm:text-base">
                 {t('setup:turboQuantTagline')}
               </p>
             </div>
