@@ -570,7 +570,9 @@ export class DefaultModelsService implements ModelsService {
     messages: ThreadMessage[]
   ): Promise<number> {
     try {
-      const engine = this.getEngine('llamacpp') as AIEngine & {
+      const engine = this.getEngine('llamacpp')
+      console.debug('[TokenCounter:service] engine found:', !!engine, 'hasMethod:', typeof (engine as any)?.getTokensCount)
+      const typedEngine = engine as AIEngine & {
         getTokensCount?: (opts: {
           model: string
           messages: Array<{
@@ -592,7 +594,7 @@ export class DefaultModelsService implements ModelsService {
         }) => Promise<number>
       }
 
-      if (engine && typeof engine.getTokensCount === 'function') {
+      if (typedEngine && typeof typedEngine.getTokensCount === 'function') {
         // Transform Jan's ThreadMessage format to OpenAI chat completion format
         const transformedMessages = messages
           .map((message) => {
@@ -662,20 +664,28 @@ export class DefaultModelsService implements ModelsService {
               : Array.isArray(msg.content) && msg.content.length > 0
           ) // Filter out empty messages
 
-        return await engine.getTokensCount({
-          model: modelId,
-          messages: transformedMessages,
-          chat_template_kwargs: {
-            enable_thinking: false,
-          },
-        })
+        console.debug('[TokenCounter:service] calling engine.getTokensCount with', { modelId, msgCount: transformedMessages.length })
+        const timeoutMs = 30000
+        const result = await Promise.race([
+          typedEngine.getTokensCount({
+            model: modelId,
+            messages: transformedMessages,
+            chat_template_kwargs: {
+              enable_thinking: false,
+            },
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('getTokensCount timed out')), timeoutMs)
+          ),
+        ])
+        console.debug('[TokenCounter:service] engine returned', result)
+        return result
       }
 
-      // Fallback if method is not available
-      console.warn('getTokensCount method not available in llamacpp engine')
+      console.warn('[TokenCounter:service] getTokensCount method not available in llamacpp engine')
       return 0
     } catch (error) {
-      console.error(`Error getting tokens count for model ${modelId}:`, error)
+      console.error('[TokenCounter:service] error getting tokens count:', error)
       return 0
     }
   }

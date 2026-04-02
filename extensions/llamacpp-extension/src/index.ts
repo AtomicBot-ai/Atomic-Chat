@@ -115,7 +115,7 @@ function parseBuildNumber(version: string): number | null {
 
 export default class llamacpp_extension extends AIEngine {
   provider: string = 'llamacpp'
-  autoUnload: boolean = true
+  autoUnload: boolean = false
   timeout: number = 600
   llamacpp_env: string = ''
   readonly providerId: string = 'llamacpp'
@@ -126,6 +126,7 @@ export default class llamacpp_extension extends AIEngine {
   private isConfiguringBackends: boolean = false
   private isUpdatingBackend: boolean = false
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
+  private sessionCache = new Map<string, SessionInfo>()
   private unlistenValidationStarted?: () => void
 
   override async onLoad(): Promise<void> {
@@ -156,9 +157,9 @@ export default class llamacpp_extension extends AIEngine {
     // Migration v3: disable fit by default
     await this.migrateFitDefault()
 
-    this.autoUnload = this.config.auto_unload
     this.timeout = this.config.timeout
     this.llamacpp_env = this.config.llamacpp_env
+    this.autoUnload = this.config.auto_unload ?? true
 
     // This sets the base directory where model files for this provider are stored.
     this.getProviderPath()
@@ -834,8 +835,6 @@ export default class llamacpp_extension extends AIEngine {
           logger.error('Error in onSettingUpdate async block:', e)
         }
       })()
-    } else if (key === 'auto_unload') {
-      this.autoUnload = value as boolean
     } else if (key === 'llamacpp_env') {
       this.llamacpp_env = value as string
     } else if (key === 'timeout') {
@@ -1610,7 +1609,7 @@ export default class llamacpp_extension extends AIEngine {
         const sessionInfos: (SessionInfo | null)[] = await Promise.all(
           allLoadedModels.map(async (modelId) => {
             try {
-              return await this.findSessionByModel(modelId)
+              return this.sessionCache.get(modelId) ?? await this.findSessionByModel(modelId)
             } catch (e) {
               logger.warn(`Unable to find session for model "${modelId}": ${e}`)
               return null
@@ -1709,6 +1708,7 @@ export default class llamacpp_extension extends AIEngine {
         isEmbedding,
         Number(this.timeout)
       )
+      this.sessionCache.set(modelId, sInfo)
       return sInfo
     } catch (error) {
       logger.error('Error in load command:\n', error)
@@ -1717,17 +1717,16 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   override async unload(modelId: string): Promise<UnloadResult> {
-    const sInfo: SessionInfo = await this.findSessionByModel(modelId)
+    const sInfo: SessionInfo = this.sessionCache.get(modelId) ?? await this.findSessionByModel(modelId)
     if (!sInfo) {
       throw new Error(`No active session found for model: ${modelId}`)
     }
     const pid = sInfo.pid
     try {
-      // Pass the PID as the session_id
       const result = await unloadLlamaModel(pid)
 
-      // If successful, remove from active sessions
       if (result.success) {
+        this.sessionCache.delete(modelId)
         logger.info(`Successfully unloaded model with PID ${pid}`)
       } else {
         logger.warn(`Failed to unload model: ${result.error}`)
@@ -1924,11 +1923,10 @@ export default class llamacpp_extension extends AIEngine {
     opts: chatCompletionRequest,
     abortController?: AbortController
   ): Promise<chatCompletion | AsyncIterable<chatCompletionChunk>> {
-    const sessionInfo = await this.findSessionByModel(opts.model)
+    const sessionInfo = this.sessionCache.get(opts.model) ?? await this.findSessionByModel(opts.model)
     if (!sessionInfo) {
       throw new Error(`No active session found for model: ${opts.model}`)
     }
-    // check if the process is alive
     const result = await invoke<boolean>('plugin:llamacpp|is_process_running', {
       pid: sessionInfo.pid,
     })
@@ -1936,6 +1934,7 @@ export default class llamacpp_extension extends AIEngine {
       try {
         await fetch(`http://localhost:${sessionInfo.port}/health`)
       } catch (e) {
+        this.sessionCache.delete(opts.model)
         this.unload(sessionInfo.model_id)
         throw new Error('Model appears to have crashed! Please reload!')
       }
@@ -2324,33 +2323,21 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   async getTokensCount(opts: chatCompletionRequest): Promise<number> {
-    const sessionInfo = await this.findSessionByModel(opts.model)
+    if (!opts.messages || opts.messages.length === 0) {
+      return 0
+    }
+
+    const sessionInfo = this.sessionCache.get(opts.model) ?? await this.findSessionByModel(opts.model)
     if (!sessionInfo) {
       throw new Error(`No active session found for model: ${opts.model}`)
     }
 
-    // Check if the process is alive
-    const result = await invoke<boolean>('plugin:llamacpp|is_process_running', {
-      pid: sessionInfo.pid,
-    })
-    if (result) {
-      try {
-        await fetch(`http://localhost:${sessionInfo.port}/health`)
-      } catch (e) {
-        this.unload(sessionInfo.model_id)
-        throw new Error('Model appears to have crashed! Please reload!')
-      }
-    } else {
-      throw new Error('Model has crashed! Please reload!')
-    }
-
     const baseUrl = `http://localhost:${sessionInfo.port}`
-    const headers = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${sessionInfo.api_key}`,
     }
 
-    // Count image tokens first
     let imageTokens = 0
     const hasImages = opts.messages.some(
       (msg) =>
@@ -2361,9 +2348,7 @@ export default class llamacpp_extension extends AIEngine {
     if (hasImages) {
       logger.info('Conversation has images')
       try {
-        // Read mmproj metadata to get vision parameters
         logger.info(`MMPROJ PATH: ${sessionInfo.mmproj_path}`)
-
         const metadata = await readGgufMetadata(sessionInfo.mmproj_path)
         logger.info(`mmproj metadata: ${JSON.stringify(metadata.metadata)}`)
         imageTokens = await this.calculateImageTokens(
@@ -2372,13 +2357,10 @@ export default class llamacpp_extension extends AIEngine {
         )
       } catch (error) {
         logger.warn('Failed to calculate image tokens:', error)
-        // Fallback to a rough estimate if metadata reading fails
         imageTokens = this.estimateImageTokensFallback(opts.messages)
       }
     }
 
-    // Calculate text tokens
-    // Use chat_template_kwargs from opts if provided, otherwise default to disable enable_thinking
     const tokenizeRequest = {
       messages: opts.messages,
       chat_template_kwargs: opts.chat_template_kwargs || {
@@ -2387,46 +2369,29 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     try {
-      let parseResponse = await fetch(`${baseUrl}/apply-template`, {
-        method: 'POST',
-        headers: headers,
+      console.debug('[TokenCounter:ext] calling /apply-template via invoke')
+      const applyResult = await invoke<string>('post_local_http', {
+        url: `${baseUrl}/apply-template`,
+        headers,
         body: JSON.stringify(tokenizeRequest),
+        timeoutSecs: 10,
       })
+      const parsedPrompt = JSON.parse(applyResult)
+      console.debug('[TokenCounter:ext] /apply-template done, promptLen:', parsedPrompt.prompt?.length)
 
-      if (!parseResponse.ok) {
-        const errorData = await parseResponse.json().catch(() => null)
-        throw new Error(
-          `API request failed with status ${
-            parseResponse.status
-          }: ${JSON.stringify(errorData)}`
-        )
-      }
-
-      const parsedPrompt = await parseResponse.json()
-
-      const response = await fetch(`${baseUrl}/tokenize`, {
-        method: 'POST',
-        headers: headers,
-        body: JSON.stringify({
-          content: parsedPrompt.prompt,
-        }),
+      const tokenizeResult = await invoke<string>('post_local_http', {
+        url: `${baseUrl}/tokenize`,
+        headers,
+        body: JSON.stringify({ content: parsedPrompt.prompt }),
+        timeoutSecs: 10,
       })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null)
-        throw new Error(
-          `API request failed with status ${response.status}: ${JSON.stringify(
-            errorData
-          )}`
-        )
-      }
-
-      const dataTokens = await response.json()
+      const dataTokens = JSON.parse(tokenizeResult)
       const textTokens = dataTokens.tokens?.length || 0
+      console.debug('[TokenCounter:ext] done, textTokens:', textTokens, 'imageTokens:', imageTokens)
 
       return textTokens + imageTokens
     } catch (e) {
-      console.warn(String(e))
+      console.warn('[TokenCounter:ext] error in tokenize chain:', String(e))
     }
     return 0
   }

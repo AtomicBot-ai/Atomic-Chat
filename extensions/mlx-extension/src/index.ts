@@ -54,7 +54,7 @@ const logger = {
 
 export default class mlx_extension extends AIEngine {
   provider: string = 'mlx'
-  autoUnload: boolean = true
+  autoUnload: boolean = false
   timeout: number = 600
   readonly providerId: string = 'mlx'
 
@@ -79,8 +79,8 @@ export default class mlx_extension extends AIEngine {
     }
     this.config = loadedConfig
 
-    this.autoUnload = this.config.auto_unload ?? true
     this.timeout = this.config.timeout ?? 600
+    this.autoUnload = this.config.auto_unload ?? true
 
     this.getProviderPath()
   }
@@ -100,9 +100,7 @@ export default class mlx_extension extends AIEngine {
   onSettingUpdate<T>(key: string, value: T): void {
     this.config[key] = value
 
-    if (key === 'auto_unload') {
-      this.autoUnload = value as boolean
-    } else if (key === 'timeout') {
+    if (key === 'timeout') {
       this.timeout = value as number
     }
   }

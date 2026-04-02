@@ -148,7 +148,8 @@ pub fn run() {
         // Custom updater commands (desktop only)
         core::updater::commands::check_for_app_updates,
         core::updater::commands::is_update_available,
-        // HTTP streaming (bypasses tauri_plugin_http fetch interception)
+        // HTTP (bypasses tauri_plugin_http fetch interception)
+        core::http::post_local_http,
         core::http::stream_local_http,
     ]);
 

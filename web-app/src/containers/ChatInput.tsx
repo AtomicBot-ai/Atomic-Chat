@@ -53,6 +53,8 @@ import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
+import { TokenCounter } from '@/components/TokenCounter'
+import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
 import { McpExtensionToolLoader } from './McpExtensionToolLoader'
 import {
@@ -130,6 +132,9 @@ const ChatInput = memo(function ChatInput({
   const spellCheckChatInput = useGeneralSetting(
     (state) => state.spellCheckChatInput
   )
+  const tokenCounterCompact = useGeneralSetting(
+    (state) => state.tokenCounterCompact
+  )
   useTools()
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
@@ -150,6 +155,13 @@ const ChatInput = memo(function ChatInput({
     toggleAgentMode(agentModeKey)
   }, [agentModeKey, toggleAgentMode])
 
+  // Get current thread messages for token counting
+  const threadMessages = useMessages(
+    useShallow((state) =>
+      currentThreadId ? state.messages[currentThreadId] : []
+    )
+  )
+
   const maxRows = 10
   const ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES = 512 * 1024
 
@@ -167,6 +179,7 @@ const ChatInput = memo(function ChatInput({
   const [showVisionModelPrompt, setShowVisionModelPrompt] = useState(false)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
 
+  const isModelActive = selectedModel?.id ? activeModels.includes(selectedModel.id) : false
   const [selectedAssistant, setSelectedAssistant] = useState<Assistant | undefined>(
     () => assistants.find((a) => a.id === defaultAssistantId) ?? assistants[0]
   )
@@ -1933,7 +1946,27 @@ const ChatInput = memo(function ChatInput({
             </div>
 
             <div className="flex items-center gap-2">
-              {/* TokenCounter hidden: custom llama.cpp server lacks /apply-template and /tokenize endpoints */}
+              {selectedProvider === 'llamacpp' &&
+                tokenCounterCompact &&
+                !effectiveAgentMode &&
+                !initialMessage &&
+                (threadMessages?.length > 0 || prompt.trim().length > 0) && (
+                  <div className="flex-1 flex justify-center">
+                    <TokenCounter
+                      messages={threadMessages || []}
+                      compact={true}
+                      uploadedFiles={attachments
+                        .filter((a) => a.type === 'image' && a.dataUrl)
+                        .map((a) => ({
+                          name: a.name,
+                          type: a.mimeType || getFileTypeFromExtension(a.name),
+                          size: a.size || 0,
+                          base64: a.base64 || '',
+                          dataUrl: a.dataUrl!,
+                        }))}
+                    />
+                  </div>
+                )}
 
               {isStreaming ? (
                 <Button
@@ -1981,7 +2014,27 @@ const ChatInput = memo(function ChatInput({
         </div>
       )}
 
-      {/* TokenCounter hidden: custom llama.cpp server lacks /apply-template and /tokenize endpoints */}
+      {selectedProvider === 'llamacpp' &&
+        isModelActive &&
+        !effectiveAgentMode &&
+        !tokenCounterCompact &&
+        !initialMessage &&
+        (threadMessages?.length > 0 || prompt.trim().length > 0) && (
+          <div className="flex-1 w-full flex justify-start px-2">
+            <TokenCounter
+              messages={threadMessages || []}
+              uploadedFiles={attachments
+                .filter((a) => a.type === 'image' && a.dataUrl)
+                .map((a) => ({
+                  name: a.name,
+                  type: a.mimeType || getFileTypeFromExtension(a.name),
+                  size: a.size || 0,
+                  base64: a.base64 || '',
+                  dataUrl: a.dataUrl!,
+                }))}
+            />
+          </div>
+        )}
 
       <JanBrowserExtensionDialog
         open={extensionDialogOpen}
