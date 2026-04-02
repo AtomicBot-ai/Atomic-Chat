@@ -1,7 +1,7 @@
 {
   "name": "@janhq/web-app",
   "private": true,
-  "version": "1.1.24",
+  "version": "1.1.25",
   "type": "module",
   "scripts": {
     "dev": "vite",
