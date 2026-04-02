@@ -27,11 +27,6 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 import { ChevronsUpDown } from 'lucide-react'
 
-type DropdownModelProviderProps = {
-  model?: ThreadModel
-  useLastUsedModel?: boolean
-}
-
 interface SearchableModel {
   provider: ModelProvider
   model: Model
@@ -52,10 +47,7 @@ const setLastUsedModel = (provider: string, model: string) => {
   }
 }
 
-const DropdownModelProvider = memo(function DropdownModelProvider({
-  model,
-  useLastUsedModel = false,
-}: DropdownModelProviderProps) {
+const DropdownModelProvider = memo(function DropdownModelProvider() {
   const {
     providers,
     getProviderByName,
@@ -142,55 +134,36 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     [getProviderByName, updateProvider, serviceHub]
   )
 
-  // Initialize model provider - avoid race conditions with manual selections
+  // Initialize model provider on first mount (no model selected yet)
   useEffect(() => {
     const initializeModel = async () => {
-      // Auto select model when existing thread is passed
-      if (model) {
-        selectModelProvider(model?.provider as string, model?.id as string)
-        if (!checkModelExists(model.provider, model.id)) {
-          selectModelProvider('', '')
-        }
-        // Check mmproj existence for llamacpp models
-        if (model?.provider === 'llamacpp') {
+      if (selectedProvider && selectedModel) {
+        return
+      }
+
+      const lastUsed = getLastUsedModel()
+      if (lastUsed && checkModelExists(lastUsed.provider, lastUsed.model)) {
+        selectModelProvider(lastUsed.provider, lastUsed.model)
+        if (lastUsed.provider === 'llamacpp') {
           await serviceHub
             .models()
             .checkMmprojExistsAndUpdateOffloadMMprojSetting(
-              model.id as string,
+              lastUsed.model,
               updateProvider,
               getProviderByName
             )
-          // Also check vision capability
-          await checkAndUpdateModelVisionCapability(model.id as string)
+          await checkAndUpdateModelVisionCapability(lastUsed.model)
         }
-      } else if (useLastUsedModel) {
-        // Try to use last used model only when explicitly requested (for new chat)
-        const lastUsed = getLastUsedModel()
-        if (lastUsed && checkModelExists(lastUsed.provider, lastUsed.model)) {
-          selectModelProvider(lastUsed.provider, lastUsed.model)
-          if (lastUsed.provider === 'llamacpp') {
-            await serviceHub
-              .models()
-              .checkMmprojExistsAndUpdateOffloadMMprojSetting(
-                lastUsed.model,
-                updateProvider,
-                getProviderByName
-              )
-            // Also check vision capability
-            await checkAndUpdateModelVisionCapability(lastUsed.model)
-          }
+      } else {
+        const llamacppProvider = providers.find(
+          (p) => p.provider === 'llamacpp' && p.active && p.models.length > 0
+        )
+        if (llamacppProvider && llamacppProvider.models.length > 0) {
+          const firstModel = llamacppProvider.models[0]
+          selectModelProvider('llamacpp', firstModel.id)
+          setLastUsedModel('llamacpp', firstModel.id)
         } else {
-          // Fallback: auto-select first llamacpp model if available
-          const llamacppProvider = providers.find(
-            (p) => p.provider === 'llamacpp' && p.active && p.models.length > 0
-          )
-          if (llamacppProvider && llamacppProvider.models.length > 0) {
-            const firstModel = llamacppProvider.models[0]
-            selectModelProvider('llamacpp', firstModel.id)
-            setLastUsedModel('llamacpp', firstModel.id)
-          } else {
-            selectModelProvider('', '')
-          }
+          selectModelProvider('', '')
         }
       }
     }
@@ -198,16 +171,12 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     initializeModel()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    model,
-    selectModelProvider,
-    updateCurrentThreadModel,
     providers,
+    selectModelProvider,
     checkModelExists,
     updateProvider,
     getProviderByName,
     checkAndUpdateModelVisionCapability,
-
-    // selectedModel and selectedProvider intentionally excluded to prevent race conditions
   ])
 
   // Update display model when selection changes

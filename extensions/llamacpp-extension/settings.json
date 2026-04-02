@@ -23,13 +23,6 @@
     }
   },
   {
-    "key": "auto_unload",
-    "title": "Auto-Unload Old Models",
-    "description": "Automatically unloads models that are not in use to free up memory. Ensure only one model is loaded at a time.",
-    "controllerType": "checkbox",
-    "controllerProps": { "value": true }
-  },
-  {
     "key": "timeout",
     "title": "Timeout for llamacpp",
     "description": "Llamacpp connection and load timeout in seconds",

@@ -58,7 +58,8 @@ export const useTokensCount = (
 
   const debounceTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined)
   const latestCalculationRef = useRef<(() => Promise<void>) | null>(null)
-  const requestIdRef = useRef(0)
+  const inFlightRef = useRef(false)
+  const needsRecalcRef = useRef(false)
   const isIncreasingContextSize = useRef<boolean>(false)
   const serviceHub = useServiceHub()
   const { selectedModel, selectedProvider } = useModelProvider()
@@ -131,45 +132,63 @@ export const useTokensCount = (
     })
   }, [messages, prompt, uploadedFiles])
 
+  const getMaxTokens = useCallback(() => {
+    const maxTokensValue =
+      selectedModel?.settings?.ctx_len?.controller_props?.value
+    if (typeof maxTokensValue === 'string') {
+      const parsed = parseInt(maxTokensValue, 10)
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
+    }
+    if (typeof maxTokensValue === 'number' && maxTokensValue > 0) {
+      return maxTokensValue
+    }
+    return undefined
+  }, [selectedModel?.settings?.ctx_len?.controller_props?.value])
+
   // Debounced calculation that includes current prompt
   const runTokenCalculation = useCallback(async () => {
-    const requestId = ++requestIdRef.current
     const modelId = selectedModel?.id
+    const maxTokensNum = getMaxTokens()
 
     if (
       !modelId ||
       selectedProvider !== 'llamacpp' ||
       messagesWithPrompt.length === 0
     ) {
-      if (requestId === requestIdRef.current) {
-        setTokenData({
-          tokenCount: 0,
-          loading: false,
-          isNearLimit: false,
-        })
-      }
+      setTokenData({
+        tokenCount: 0,
+        maxTokens: maxTokensNum,
+        loading: false,
+        isNearLimit: false,
+      })
       return
     }
 
-    setTokenData((prev) => ({ ...prev, loading: true, error: undefined }))
+    if (inFlightRef.current) {
+      needsRecalcRef.current = true
+      console.debug('[TokenCounter] skipping — call already in flight')
+      return
+    }
+
+    inFlightRef.current = true
+    needsRecalcRef.current = false
+
+    console.debug('[TokenCounter] calculating', {
+      modelId,
+      provider: selectedProvider,
+      messagesCount: messagesWithPrompt.length,
+      maxTokensNum,
+      ctxLenRaw: selectedModel?.settings?.ctx_len,
+    })
+
+    setTokenData((prev) => ({ ...prev, loading: true, error: undefined, maxTokens: maxTokensNum }))
 
     try {
       const tokenCount = await serviceHub
         .models()
         .getTokensCount(modelId, messagesWithPrompt)
 
-      if (requestId !== requestIdRef.current) {
-        return
-      }
-
-      const maxTokensValue =
-        selectedModel?.settings?.ctx_len?.controller_props?.value
-      const maxTokensNum =
-        typeof maxTokensValue === 'string'
-          ? parseInt(maxTokensValue)
-          : typeof maxTokensValue === 'number'
-            ? maxTokensValue
-            : undefined
+      console.debug('[TokenCounter] result', { tokenCount, maxTokensNum })
 
       const percentage = maxTokensNum
         ? (tokenCount / maxTokensNum) * 100
@@ -184,24 +203,29 @@ export const useTokensCount = (
         loading: false,
       })
     } catch (error) {
-      if (requestId !== requestIdRef.current) {
-        return
-      }
+      console.error('[TokenCounter] failed to calculate tokens:', error)
 
-      console.error('Failed to calculate tokens:', error)
       setTokenData((prev) => ({
         ...prev,
+        maxTokens: maxTokensNum,
         loading: false,
         error:
           error instanceof Error ? error.message : 'Failed to calculate tokens',
       }))
+    } finally {
+      inFlightRef.current = false
+      if (needsRecalcRef.current) {
+        needsRecalcRef.current = false
+        console.debug('[TokenCounter] re-running queued calculation')
+        void latestCalculationRef.current?.()
+      }
     }
   }, [
     selectedModel?.id,
     selectedProvider,
     messagesWithPrompt,
     serviceHub,
-    selectedModel?.settings?.ctx_len?.controller_props?.value,
+    getMaxTokens,
   ])
 
   useEffect(() => {
@@ -230,10 +254,9 @@ export const useTokensCount = (
         void latestCalculationRef.current?.()
       }, 500) // 500ms debounce to reduce repeated token calculations
     } else {
-      // Reset immediately if no content
-      requestIdRef.current += 1
       setTokenData({
         tokenCount: 0,
+        maxTokens: getMaxTokens(),
         loading: false,
         isNearLimit: false,
       })
@@ -251,7 +274,7 @@ export const useTokensCount = (
     selectedProvider,
     messagesWithPrompt.length,
     messagesWithPrompt,
-    selectedModel?.settings?.ctx_len?.controller_props?.value,
+    getMaxTokens,
   ])
 
   // Manual calculation function (for click events)
