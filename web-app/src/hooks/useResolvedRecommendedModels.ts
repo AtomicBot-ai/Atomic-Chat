@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { HUB_RECOMMENDED_MODELS } from '@/constants/models'
+import { HUB_RECOMMENDED_MODELS, RECOMMENDED_MODEL_FALLBACKS } from '@/constants/models'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { findCatalogModelForRecommendedRepo } from '@/lib/models'
@@ -10,7 +10,7 @@ import type { CatalogModel } from '@/services/models/types'
 export function useResolvedRecommendedModels(sources: CatalogModel[]) {
   const serviceHub = useServiceHub()
   const huggingfaceToken = useGeneralSetting((s) => s.huggingfaceToken)
-  const [fetched, setFetched] = useState<Record<string, CatalogModel>>({})
+  const [fetched, setFetched] = useState<Record<string, CatalogModel>>({ ...RECOMMENDED_MODEL_FALLBACKS })
   const fetchingRef = useRef(new Set<string>())
 
   const items = useMemo(

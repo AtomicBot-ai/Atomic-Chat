@@ -34,7 +34,7 @@ mod tests {
 
     #[test]
     fn test_messages_in_cors_whitelist() {
-        let whitelisted_paths = ["/", "/openapi.json", "/favicon.ico", "/messages"];
+        let whitelisted_paths = ["/", "/openapi.json", "/messages"];
         assert!(whitelisted_paths.contains(&"/messages"));
     }
 
@@ -43,7 +43,6 @@ mod tests {
         let whitelisted_paths = [
             "/",
             "/openapi.json",
-            "/favicon.ico",
             "/docs/swagger-ui.css",
             "/docs/swagger-ui-bundle.js",
             "/docs/swagger-ui-standalone-preset.js",
@@ -54,7 +53,7 @@ mod tests {
 
     #[test]
     fn test_messages_subpath_not_in_exact_whitelist() {
-        let whitelisted_paths = ["/", "/openapi.json", "/favicon.ico", "/messages"];
+        let whitelisted_paths = ["/", "/openapi.json", "/messages"];
         // Only exact match
         assert!(!whitelisted_paths.contains(&"/messages/threads"));
         assert!(!whitelisted_paths.contains(&"/messages/api"));

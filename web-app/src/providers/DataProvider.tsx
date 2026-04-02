@@ -1,4 +1,5 @@
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { localStorageKey } from '@/constants/localStorage'
 
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect } from 'react'
@@ -94,6 +95,13 @@ export function DataProvider() {
   const { checkForUpdate } = useAppUpdater()
 
   const setServerStatus = useAppState((state) => state.setServerStatus)
+
+  useEffect(() => {
+    if (localStorage.getItem(localStorageKey.factoryResetPending) === 'true') {
+      localStorage.clear()
+      console.log('Factory reset detected — localStorage force-cleared on startup')
+    }
+  }, [])
 
   useEffect(() => {
     console.log('Initializing DataProvider...')

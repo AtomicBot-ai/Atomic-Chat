@@ -4,6 +4,7 @@
 
 import { invoke } from '@tauri-apps/api/core'
 import { AppConfiguration } from '@janhq/core'
+import { localStorageKey } from '@/constants/localStorage'
 import type { LogEntry } from './types'
 import { DefaultAppService } from './default'
 
@@ -20,6 +21,7 @@ export class TauriAppService extends DefaultAppService {
       }
     }
     window.localStorage.clear()
+    window.localStorage.setItem(localStorageKey.factoryResetPending, 'true')
     await invoke('factory_reset')
   }
 

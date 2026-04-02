@@ -2,6 +2,8 @@
  * Model-related constants
  */
 
+import type { CatalogModel } from '@/services/models/types'
+
 export const NEW_JAN_MODEL_HF_REPO =
   'Jackrong/Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-GGUF'
 export const JAN_CODE_HF_REPO = 'janhq/Jan-Code-4b-Gguf'
@@ -19,8 +21,7 @@ export const HUB_RECOMMENDED_MODELS: ReadonlyArray<{
   descriptionKey: string
 }> = [
   {
-    modelName:
-      'Jackrong/Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-GGUF',
+    modelName: 'unsloth/gemma-4-E4B-it-GGUF',
     descriptionKey: 'hub:recEverydayUse',
   },
   {
@@ -36,6 +37,71 @@ export const HUB_RECOMMENDED_MODELS: ReadonlyArray<{
     descriptionKey: 'hub:recMathReasoning',
   },
 ]
+
+const GEMMA4_HF = 'https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main'
+const DEEPSEEK_HF = 'https://huggingface.co/mradermacher/DeepSeek-R1-Distill-Qwen-14B-Uncensored-GGUF/resolve/main'
+
+export const RECOMMENDED_MODEL_FALLBACKS: Readonly<Record<string, CatalogModel>> = {
+  'unsloth/gemma-4-E4B-it-GGUF': {
+    model_name: 'unsloth/gemma-4-E4B-it-GGUF',
+    developer: 'unsloth',
+    description: '**Tags**: Image-Text-to-Text, GGUF, gemma4, unsloth, gemma, google, conversational',
+    downloads: 0,
+    num_quants: 22,
+    quants: [
+      { model_id: 'unsloth/gemma-4-E4B-it-BF16', path: `${GEMMA4_HF}/gemma-4-E4B-it-BF16.gguf`, file_size: '15.1 GB' },
+      { model_id: 'unsloth/gemma-4-E4B-it-Q8_0', path: `${GEMMA4_HF}/gemma-4-E4B-it-Q8_0.gguf`, file_size: '8.2 GB' },
+      { model_id: 'unsloth/gemma-4-E4B-it-Q6_K', path: `${GEMMA4_HF}/gemma-4-E4B-it-Q6_K.gguf`, file_size: '7.1 GB' },
+      { model_id: 'unsloth/gemma-4-E4B-it-Q5_K_M', path: `${GEMMA4_HF}/gemma-4-E4B-it-Q5_K_M.gguf`, file_size: '5.5 GB' },
+      { model_id: 'unsloth/gemma-4-E4B-it-Q5_K_S', path: `${GEMMA4_HF}/gemma-4-E4B-it-Q5_K_S.gguf`, file_size: '5.4 GB' },
+      { model_id: 'unsloth/gemma-4-E4B-it-Q4_1', path: `${GEMMA4_HF}/gemma-4-E4B-it-Q4_1.gguf`, file_size: '5.1 GB' },
+      { model_id: 'unsloth/gemma-4-E4B-it-Q4_K_M', path: `${GEMMA4_HF}/gemma-4-E4B-it-Q4_K_M.gguf`, file_size: '5.0 GB' },
+      { model_id: 'unsloth/gemma-4-E4B-it-IQ4_NL', path: `${GEMMA4_HF}/gemma-4-E4B-it-IQ4_NL.gguf`, file_size: '4.8 GB' },
+      { model_id: 'unsloth/gemma-4-E4B-it-Q4_K_S', path: `${GEMMA4_HF}/gemma-4-E4B-it-Q4_K_S.gguf`, file_size: '4.8 GB' },
+      { model_id: 'unsloth/gemma-4-E4B-it-Q4_0', path: `${GEMMA4_HF}/gemma-4-E4B-it-Q4_0.gguf`, file_size: '4.8 GB' },
+      { model_id: 'unsloth/gemma-4-E4B-it-IQ4_XS', path: `${GEMMA4_HF}/gemma-4-E4B-it-IQ4_XS.gguf`, file_size: '4.7 GB' },
+      { model_id: 'unsloth/gemma-4-E4B-it-Q3_K_M', path: `${GEMMA4_HF}/gemma-4-E4B-it-Q3_K_M.gguf`, file_size: '4.1 GB' },
+      { model_id: 'unsloth/gemma-4-E4B-it-Q3_K_S', path: `${GEMMA4_HF}/gemma-4-E4B-it-Q3_K_S.gguf`, file_size: '3.9 GB' },
+      { model_id: 'unsloth/gemma-4-E4B-it-UD-Q8_K_XL', path: `${GEMMA4_HF}/gemma-4-E4B-it-UD-Q8_K_XL.gguf`, file_size: '8.7 GB' },
+      { model_id: 'unsloth/gemma-4-E4B-it-UD-Q6_K_XL', path: `${GEMMA4_HF}/gemma-4-E4B-it-UD-Q6_K_XL.gguf`, file_size: '7.5 GB' },
+      { model_id: 'unsloth/gemma-4-E4B-it-UD-Q5_K_XL', path: `${GEMMA4_HF}/gemma-4-E4B-it-UD-Q5_K_XL.gguf`, file_size: '6.7 GB' },
+      { model_id: 'unsloth/gemma-4-E4B-it-UD-Q4_K_XL', path: `${GEMMA4_HF}/gemma-4-E4B-it-UD-Q4_K_XL.gguf`, file_size: '5.1 GB' },
+      { model_id: 'unsloth/gemma-4-E4B-it-UD-Q3_K_XL', path: `${GEMMA4_HF}/gemma-4-E4B-it-UD-Q3_K_XL.gguf`, file_size: '4.6 GB' },
+      { model_id: 'unsloth/gemma-4-E4B-it-UD-Q2_K_XL', path: `${GEMMA4_HF}/gemma-4-E4B-it-UD-Q2_K_XL.gguf`, file_size: '3.7 GB' },
+      { model_id: 'unsloth/gemma-4-E4B-it-UD-IQ3_XXS', path: `${GEMMA4_HF}/gemma-4-E4B-it-UD-IQ3_XXS.gguf`, file_size: '3.7 GB' },
+      { model_id: 'unsloth/gemma-4-E4B-it-UD-IQ2_M', path: `${GEMMA4_HF}/gemma-4-E4B-it-UD-IQ2_M.gguf`, file_size: '3.5 GB' },
+      { model_id: 'unsloth/gemma-4-E4B-it-UD-IQ2_XXS', path: `${GEMMA4_HF}/gemma-4-E4B-it-UD-IQ2_XXS.gguf`, file_size: '3.3 GB' },
+    ],
+    num_mmproj: 3,
+    mmproj_models: [
+      { model_id: 'mmproj-F16', path: `${GEMMA4_HF}/mmproj-F16.gguf`, file_size: '990.0 MB' },
+      { model_id: 'mmproj-BF16', path: `${GEMMA4_HF}/mmproj-BF16.gguf`, file_size: '992.0 MB' },
+      { model_id: 'mmproj-F32', path: `${GEMMA4_HF}/mmproj-F32.gguf`, file_size: '1.9 GB' },
+    ],
+    readme: `${GEMMA4_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
+  },
+  'mradermacher/DeepSeek-R1-Distill-Qwen-14B-Uncensored-GGUF': {
+    model_name: 'mradermacher/DeepSeek-R1-Distill-Qwen-14B-Uncensored-GGUF',
+    developer: 'mradermacher',
+    description: '**Tags**: gguf, generated_from_trainer, en, conversational',
+    downloads: 18981,
+    num_quants: 11,
+    quants: [
+      { model_id: 'mradermacher/DeepSeek-R1-Distill-Qwen-14B-Uncensored_Q8_0', path: `${DEEPSEEK_HF}/DeepSeek-R1-Distill-Qwen-14B-Uncensored.Q8_0.gguf`, file_size: '14.6 GB' },
+      { model_id: 'mradermacher/DeepSeek-R1-Distill-Qwen-14B-Uncensored_Q6_K', path: `${DEEPSEEK_HF}/DeepSeek-R1-Distill-Qwen-14B-Uncensored.Q6_K.gguf`, file_size: '11.3 GB' },
+      { model_id: 'mradermacher/DeepSeek-R1-Distill-Qwen-14B-Uncensored_Q5_K_M', path: `${DEEPSEEK_HF}/DeepSeek-R1-Distill-Qwen-14B-Uncensored.Q5_K_M.gguf`, file_size: '9.8 GB' },
+      { model_id: 'mradermacher/DeepSeek-R1-Distill-Qwen-14B-Uncensored_Q5_K_S', path: `${DEEPSEEK_HF}/DeepSeek-R1-Distill-Qwen-14B-Uncensored.Q5_K_S.gguf`, file_size: '9.6 GB' },
+      { model_id: 'mradermacher/DeepSeek-R1-Distill-Qwen-14B-Uncensored_Q4_K_M', path: `${DEEPSEEK_HF}/DeepSeek-R1-Distill-Qwen-14B-Uncensored.Q4_K_M.gguf`, file_size: '8.4 GB' },
+      { model_id: 'mradermacher/DeepSeek-R1-Distill-Qwen-14B-Uncensored_Q4_K_S', path: `${DEEPSEEK_HF}/DeepSeek-R1-Distill-Qwen-14B-Uncensored.Q4_K_S.gguf`, file_size: '8.0 GB' },
+      { model_id: 'mradermacher/DeepSeek-R1-Distill-Qwen-14B-Uncensored_IQ4_XS', path: `${DEEPSEEK_HF}/DeepSeek-R1-Distill-Qwen-14B-Uncensored.IQ4_XS.gguf`, file_size: '7.6 GB' },
+      { model_id: 'mradermacher/DeepSeek-R1-Distill-Qwen-14B-Uncensored_Q3_K_L', path: `${DEEPSEEK_HF}/DeepSeek-R1-Distill-Qwen-14B-Uncensored.Q3_K_L.gguf`, file_size: '7.4 GB' },
+      { model_id: 'mradermacher/DeepSeek-R1-Distill-Qwen-14B-Uncensored_Q3_K_M', path: `${DEEPSEEK_HF}/DeepSeek-R1-Distill-Qwen-14B-Uncensored.Q3_K_M.gguf`, file_size: '6.8 GB' },
+      { model_id: 'mradermacher/DeepSeek-R1-Distill-Qwen-14B-Uncensored_Q3_K_S', path: `${DEEPSEEK_HF}/DeepSeek-R1-Distill-Qwen-14B-Uncensored.Q3_K_S.gguf`, file_size: '6.2 GB' },
+      { model_id: 'mradermacher/DeepSeek-R1-Distill-Qwen-14B-Uncensored_Q2_K', path: `${DEEPSEEK_HF}/DeepSeek-R1-Distill-Qwen-14B-Uncensored.Q2_K.gguf`, file_size: '5.4 GB' },
+    ],
+    readme: `${DEEPSEEK_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
+  },
+}
 
 export const JAN_V2_VL_MODEL_HF_REPO = 'janhq/Jan-v2-VL-high-gguf'
 export const JAN_V2_VL_QUANTIZATIONS = ['q4_k_m', 'q4_k_s', 'q4_0', 'q3_k_m']

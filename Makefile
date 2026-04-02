@@ -209,39 +209,47 @@ else
 	@echo "Skipping Foundation Models server build (macOS only)"
 endif
 
-# Download latest llamacpp turboquant backend for bundling
+# Download llamacpp turboquant backend for bundling
 # Supports GH_TOKEN env var for authenticated GitHub API requests (avoids rate limits in CI)
+# Override LLAMACPP_TAG to pin a specific release, e.g.:
+#   make download-llamacpp-backend LLAMACPP_TAG=turboquant-macos-arm64-7c01058
+LLAMACPP_TAG ?=
 download-llamacpp-backend:
 ifeq ($(shell uname -s),Darwin)
-	@echo "Downloading latest llamacpp turboquant backend for macOS..."
 	@mkdir -p src-tauri/resources/llamacpp-backend
 	@ARCH=$$(uname -m); \
 	if [ "$$ARCH" = "arm64" ]; then BACKEND="macos-arm64"; else BACKEND="macos-x64"; fi; \
 	echo "Platform: $$BACKEND"; \
-	TMPREL=$$(mktemp /tmp/llamacpp-releases-XXXXXX.json); \
-	API_URL="https://api.github.com/repos/AtomicBot-ai/atomic-llama-cpp-turboquant/releases"; \
-	if [ -n "$$GH_TOKEN" ]; then \
-		curl -sf -H "Authorization: Bearer $$GH_TOKEN" "$$API_URL" -o "$$TMPREL"; \
+	if [ -n "$(LLAMACPP_TAG)" ]; then \
+		TAG="$(LLAMACPP_TAG)"; \
+		echo "Using pinned release: $$TAG"; \
 	else \
-		curl -sf "$$API_URL" -o "$$TMPREL"; \
-	fi; \
-	if [ ! -s "$$TMPREL" ]; then rm -f "$$TMPREL"; echo "Error: Failed to fetch releases from GitHub API"; exit 1; fi; \
-	if command -v jq >/dev/null 2>&1; then \
-		TAG=$$(jq -r --arg b "$$BACKEND" '[.[] | select(.tag_name | startswith("turboquant-" + $$b))][0].tag_name // empty' "$$TMPREL"); \
-		if [ -z "$$TAG" ]; then \
-			echo "No turboquant release found for $$BACKEND, trying legacy release..."; \
-			TAG=$$(jq -r '[.[] | select(.tag_name | startswith("turboquant-") | not)][0].tag_name // empty' "$$TMPREL"); \
+		echo "Fetching latest llamacpp turboquant release..."; \
+		TMPREL=$$(mktemp /tmp/llamacpp-releases-XXXXXX.json); \
+		API_URL="https://api.github.com/repos/AtomicBot-ai/atomic-llama-cpp-turboquant/releases"; \
+		if [ -n "$$GH_TOKEN" ]; then \
+			curl -sf -H "Authorization: Bearer $$GH_TOKEN" "$$API_URL" -o "$$TMPREL"; \
+		else \
+			curl -sf "$$API_URL" -o "$$TMPREL"; \
 		fi; \
-	else \
-		TAG=$$(python3 -c "import sys,json; rs=json.load(open(sys.argv[2])); ts=[r for r in rs if r['tag_name'].startswith('turboquant-'+sys.argv[1])]; print(ts[0]['tag_name'] if ts else '')" "$$BACKEND" "$$TMPREL" 2>/dev/null); \
-		if [ -z "$$TAG" ]; then \
-			echo "No turboquant release found for $$BACKEND, trying legacy release..."; \
-			TAG=$$(python3 -c "import sys,json; rs=json.load(open(sys.argv[1])); lg=[r for r in rs if not r['tag_name'].startswith('turboquant-')]; print(lg[0]['tag_name'] if lg else '')" "$$TMPREL" 2>/dev/null); \
+		if [ ! -s "$$TMPREL" ]; then rm -f "$$TMPREL"; echo "Error: Failed to fetch releases from GitHub API"; exit 1; fi; \
+		if command -v jq >/dev/null 2>&1; then \
+			TAG=$$(jq -r --arg b "$$BACKEND" '[.[] | select(.tag_name | startswith("turboquant-" + $$b))][0].tag_name // empty' "$$TMPREL"); \
+			if [ -z "$$TAG" ]; then \
+				echo "No turboquant release found for $$BACKEND, trying legacy release..."; \
+				TAG=$$(jq -r '[.[] | select(.tag_name | startswith("turboquant-") | not)][0].tag_name // empty' "$$TMPREL"); \
+			fi; \
+		else \
+			TAG=$$(python3 -c "import sys,json; rs=json.load(open(sys.argv[2])); ts=[r for r in rs if r['tag_name'].startswith('turboquant-'+sys.argv[1])]; print(ts[0]['tag_name'] if ts else '')" "$$BACKEND" "$$TMPREL" 2>/dev/null); \
+			if [ -z "$$TAG" ]; then \
+				echo "No turboquant release found for $$BACKEND, trying legacy release..."; \
+				TAG=$$(python3 -c "import sys,json; rs=json.load(open(sys.argv[1])); lg=[r for r in rs if not r['tag_name'].startswith('turboquant-')]; print(lg[0]['tag_name'] if lg else '')" "$$TMPREL" 2>/dev/null); \
+			fi; \
 		fi; \
+		rm -f "$$TMPREL"; \
+		if [ -z "$$TAG" ]; then echo "Error: No release found"; exit 1; fi; \
 	fi; \
-	rm -f "$$TMPREL"; \
-	if [ -z "$$TAG" ]; then echo "Error: No release found"; exit 1; fi; \
-	echo "Latest release: $$TAG"; \
+	echo "Release: $$TAG"; \
 	case "$$TAG" in \
 		turboquant-*) URL="https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/$$TAG/llama-turboquant-$$BACKEND.tar.gz" ;; \
 		*) URL="https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/$$TAG/llama-$$TAG-bin-$$BACKEND.tar.gz" ;; \

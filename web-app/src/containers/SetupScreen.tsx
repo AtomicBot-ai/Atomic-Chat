@@ -43,6 +43,7 @@ function recommendedSetupModelIconSrc(hfRepoId: string): string | null {
   const id = hfRepoId.toLowerCase()
   //? Distill-Qwen в названии DeepSeek — сначала deepseek, иначе попадём в Qwen
   if (id.includes('deepseek')) return '/svg/deepseek-color.svg'
+  if (id.includes('gemma')) return '/svg/gemma-color.svg'
   if (id.includes('qwen')) return '/svg/qwen-color.svg'
   if (id.includes('llama') || id.includes('meta-llama'))
     return '/svg/meta-color.svg'

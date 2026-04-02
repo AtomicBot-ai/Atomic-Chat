@@ -478,7 +478,7 @@ async fn proxy_request(
         }
 
         let request_path = req.uri().path();
-        let whitelisted_paths = ["/", "/openapi.json", "/favicon.ico"];
+        let whitelisted_paths = ["/", "/openapi.json"];
         let is_whitelisted_path = whitelisted_paths.contains(&request_path);
 
         let is_trusted = if is_whitelisted_path {
@@ -611,7 +611,6 @@ async fn proxy_request(
     let whitelisted_paths = [
         "/",
         "/openapi.json",
-        "/favicon.ico",
         "/docs/swagger-ui.css",
         "/docs/swagger-ui-bundle.js",
         "/docs/swagger-ui-standalone-preset.js",
@@ -1167,6 +1166,7 @@ async fn proxy_request(
 <head>
   <meta charset="UTF-8">
   <title>API Docs</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" type="text/css" href="/docs/swagger-ui.css">
 </head>
 <body>
@@ -1213,15 +1213,6 @@ async fn proxy_request(
                 .status(StatusCode::OK)
                 .header(hyper::header::CONTENT_TYPE, "application/javascript")
                 .body(Body::from(js))
-                .unwrap());
-        }
-
-        (hyper::Method::GET, "/favicon.ico") => {
-            let icon = include_bytes!("../../../static/swagger-ui/favicon.ico");
-            return Ok(Response::builder()
-                .status(StatusCode::OK)
-                .header(hyper::header::CONTENT_TYPE, "image/x-icon")
-                .body(Body::from(icon.as_ref()))
                 .unwrap());
         }
 
