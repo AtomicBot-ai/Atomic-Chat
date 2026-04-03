@@ -1,5 +1,5 @@
 {
-	"name": "Jan",
+	"name": "Atomic Chat",
 	"image": "mcr.microsoft.com/devcontainers/base:jammy",
 	"features": {
 		"ghcr.io/devcontainers/features/node:1": {

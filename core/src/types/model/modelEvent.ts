@@ -1,5 +1,5 @@
 /**
- * The `EventName` enumeration contains the names of all the available events in the Jan platform.
+ * The `EventName` enumeration contains the names of all the available events in the Atomic Chat platform.
  */
 export enum ModelEvent {
   /** The `OnModelInit` event is emitted when a model inits. */

@@ -6,7 +6,7 @@ This website is built using [Nextra](https://nextra.site/), a modern static webs
 
 We try to **keep routes consistent** to maintain SEO.
 
-- **`/guides/`**: Guides on how to use the Atomic Chat application. For end users who are directly using Jan.
+- **`/guides/`**: Guides on how to use the Atomic Chat application. For end users who are directly using Atomic Chat.
 
 - **`/developer/`**: Developer docs on how to extend Jan. These pages are about what people can build with our software.
 
@@ -18,7 +18,7 @@ We try to **keep routes consistent** to maintain SEO.
 
 ## How to Contribute
 
-Refer to the [Contributing Guide](https://github.com/janhq/jan/blob/main/CONTRIBUTING.md) for more comprehensive information on how to contribute to the Jan project.
+Refer to the [Contributing Guide](https://github.com/janhq/jan/blob/main/CONTRIBUTING.md) for more comprehensive information on how to contribute to the Atomic Chat project.
 
 ### Pre-requisites and Installation
 
@@ -62,5 +62,3 @@ If you are using GitHub pages for hosting, this command is a convenient way to b
 ### Preview URL, Pre-release and Publishing Documentation
 
 - When a pull request is created, the preview URL will be automatically commented on the pull request.
-
-- The documentation will then be published to [https://jan.ai/](https://jan.ai/) when the pull request is merged to `main`.

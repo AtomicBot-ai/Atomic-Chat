@@ -1,10 +1,10 @@
 # E2E Test Runner with ReportPortal Integration
 
-🚀 An automated end-to-end test runner for Jan application with ReportPortal integration, screen recording, and comprehensive test monitoring.
+🚀 An automated end-to-end test runner for Atomic Chat application with ReportPortal integration, screen recording, and comprehensive test monitoring.
 
 ## Features
 
-- ✅ **Automated Jan App Testing**: Automatically starts/stops Jan application
+- ✅ **Automated Atomic Chat App Testing**: Automatically starts/stops Atomic Chat application
 - 🖥️ **Auto Computer Server**: Automatically starts computer server in background
 - 📹 **Screen Recording**: Records test execution for debugging
 - 📊 **ReportPortal Integration**: Optional test results upload to ReportPortal
@@ -16,7 +16,7 @@
 ## Prerequisites
 
 - Python 3.8+
-- Jan application installed
+- Atomic Chat application installed
 - Windows Sandbox (for computer provider)
 - Computer server package installed
 - Required Python packages (see requirements.txt)
@@ -37,7 +37,7 @@ cd autoqa
 pip install -r requirements.txt
 ```
 
-3. Ensure Jan application is installed in one of the default locations:
+3. Ensure Atomic Chat application is installed in one of the default locations:
    - Windows: `%LOCALAPPDATA%\Programs\jan\Jan.exe`
    - macOS: `~/Applications/Jan.app/Contents/MacOS/Jan`
    - Linux: `jan` (in PATH)
@@ -114,7 +114,7 @@ RP_ENDPOINT=https://reportportal.example.com
 RP_PROJECT=my_project
 RP_TOKEN=your_secret_token
 
-# Jan Application
+# Atomic Chat Application
 JAN_APP_PATH=C:\Custom\Path\Jan.exe
 JAN_PROCESS_NAME=Jan.exe
 

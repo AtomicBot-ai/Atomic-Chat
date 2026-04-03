@@ -83,7 +83,7 @@ const getGgufFiles: (paths: string[]) => Promise<any> = (paths) =>
  * Gets the file's stats.
  *
  * @param path - The path to the file.
- * @param outsideJanDataFolder - Whether the file is outside the Jan data folder.
+ * @param outsideJanDataFolder - Whether the file is outside the  data folder.
  * @returns {Promise<FileStat>} - A promise that resolves with the file's stats.
  */
 const fileStat: (path: string) => Promise<FileStat | undefined> = (path) =>

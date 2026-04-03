@@ -11,7 +11,7 @@ Before testing, set-up the following in the old version to make sure that we can
 - [ ] Modify MCP servers list and add some ENV value to MCP servers
 - [ ] Modify Local API Server 
 - [ ] HTTPS proxy config value 
-- [ ] Add 2 custom assistants to Jan 
+- [ ] Add 2 custom assistants to Atomic Chat 
 - [ ] Create a new chat with the custom assistant 
 - [ ] Change the `App Data` to some other folder
 - [ ] Create a Custom Provider 
@@ -46,7 +46,7 @@ Before testing, set-up the following in the old version to make sure that we can
 
 #### In `Settings -> Extensions`, check that following exists:
 - [ ] Conversational 
-- [ ] Jan Assistant
+- [ ] Atomic Chat Assistant
 - [ ] Download Manager 
 - [ ] llama.cpp Inference Engine
 
@@ -90,7 +90,7 @@ In `Llama.cpp`:
 - [ ] Enable  `Context Shift` and ensure that context can run for long without encountering memory error. Use the `banana test` by turn on fetch MCP => ask local model to fetch and summarize the history of banana (banana has a very long history on wiki it turns out). It should run out of context memory sufficiently fast if `Context Shift` is not enabled.
 - [ ] Ensure that user can change the Jinja chat template of individual model and it doesn't affect the template of other model
 - [ ] Ensure that there is a recommended `llama.cpp` for each system and that it works out of the box for users.
-- [ ] [0.6.9] Take a `gguf` file and delete the `.gguf` extensions from the file name, import it into Jan and verify that it works.
+- [ ] [0.6.9] Take a `gguf` file and delete the `.gguf` extensions from the file name, import it into Atomic Chat and verify that it works.
 
 In Remote Model Providers:
 - [ ] Check that the following providers are presence:
@@ -107,7 +107,7 @@ In Remote Model Providers:
 - [ ] Delete a model and ensure that it doesn't show up in the `Modesl` list view or in the selectable dropdown in chat input.
 - [ ] Ensure that a deleted model also not selectable or appear in old threads that used it.
 - [ ] Adding of new model manually works and user can chat with the newly added model without error (you can add back the model you just delete for testing)
-- [ ] [0.6.9] Make sure that Ollama set-up  as a custom provider work with Jan
+- [ ] [0.6.9] Make sure that Ollama set-up  as a custom provider work with Atomic Chat
 In Custom Providers:
 - [ ] Ensure that user can create a new custom providers with the right baseURL and API key.
 - [ ] Click `Refresh` should retrieve a list of available models from the Custom Providers.
@@ -167,7 +167,7 @@ Ensure that the following section information show up for hardware
 - [ ] `Open Logs` show the correct query log send to the server and return from the server
 - [ ] Make sure that changing all the parameter in `Server Configuration` is reflected when `Start Server`
 - [ ] [0.6.9] When the startup configuration, the last used model is also automatically start (users does not have to manually start a model before starting the server)
-- [ ] [0.6.9] Make sure that you can send an image to a Local API Server and it also works (can set up Local API Server as a Custom Provider in Jan to test)
+- [ ] [0.6.9] Make sure that you can send an image to a Local API Server and it also works (can set up Local API Server as a Custom Provider in Atomic Chat to test)
 
 #### In `HTTPS Proxy`:
 - [ ] Model download request goes through proxy endpoint
@@ -176,7 +176,7 @@ Ensure that the following section information show up for hardware
 - [ ] User can click `Download` to download a model
 - [ ] User can cancel a model in the middle of downloading
 - [ ] User can add a Hugging Face model detail to the list by pasting a model name / model url into the search bar and press enter
-- [ ] Clicking on a listing will open up the model card information within Jan and render the HTML properly
+- [ ] Clicking on a listing will open up the model card information within Atomic Chat and render the HTML properly
 - [ ] Clicking download work on the `Show variants` section
 - [ ] Clicking download work inside the Model card HTML
 - [ ] [0.6.9] Check that the model recommendation base on user hardware work as expected in the Model Hub
@@ -217,8 +217,8 @@ Ensure that the following section information show up for hardware
 - [ ] [0.6.9] Make sure that user can favourite a model in the model selection in chat input
 
 ## E. Assistants
-- [ ] There is always at least one default Assistant which is Jan
-- [ ] The default Jan assistant has `stream = True` by default 
+- [ ] There is always at least one default Assistant which is Atomic Chat
+- [ ] The default Atomic Chat assistant has `stream = True` by default 
 - [ ] User can create / edit a new assistant with different parameters and instructions choice.
 - [ ] When user delete the default Assistant, the next Assistant in line will be come the default Assistant and apply their setting to new chat accordingly.
 - [ ] User can create / edit assistant from within a Chat windows (on the top left)
@@ -229,7 +229,7 @@ In `Settings -> General`:
 - [ ] Change the location of the `App Data` to some other path that is not the default path
 - [ ] Click on `Reset` button in `Other` to factory reset the app:
 	- [ ] All threads deleted
-	- [ ] All Assistant deleted except for default Jan Assistant
+	- [ ] All Assistant deleted except for default Atomic Chat Assistant
 	- [ ] `App Data` location is reset back to default path
 	- [ ] Interface reset
 	- [ ] Model Providers information all reset
@@ -243,7 +243,7 @@ In `Settings -> General`:
 - [ ] Locate to the data folder using the `App Data` path information => delete the folder => reopen the app to check that all the folder is re-created with all the necessary data.
 - [ ] Ensure that the uninstallation process removes the app successfully from the system.
 ## G. New App Installation
-- [ ] Clean up by deleting all the left over folder created by Jan
+- [ ] Clean up by deleting all the left over folder created by Atomic Chat
 	- [ ] On MacOS
 		- [ ] `~/Library/Application Support/Jan`
 		- [ ] `~/Library/Caches/jan.ai.app`
@@ -255,7 +255,7 @@ In `Settings -> General`:
 		- [ ] `~/.cache/jan.ai.app`
 		- [ ] `~/.local/share/Jan`
 		- [ ] `~/.local/share/jan.ai.app`
-- [ ] Ensure that the fresh install of Jan launch
+- [ ] Ensure that the fresh install of Atomic Chat launch
 - [ ] Do some basic check to see that all function still behaved as expected. To be extra careful, you can go through the whole list again. However, it is more advisable to just check to make sure that all the core functionality like `Thread` and `Model Providers` work as intended.
 
 # II. After release
