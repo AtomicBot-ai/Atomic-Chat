@@ -109,3 +109,6 @@ website/.astro/
 autoqa/trajectories
 autoqa/recordings
 autoqa/__pycache__
+
+# Benchmarks
+benchmarks/
