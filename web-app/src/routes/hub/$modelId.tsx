@@ -61,7 +61,6 @@ function HubModelDetailContent() {
     localDownloadingModels,
     resumableDownloads,
     addLocalDownloadingModel,
-    removeLocalDownloadingModel,
     markResumableDownload,
     clearResumableDownload,
   } = useDownloadStore()

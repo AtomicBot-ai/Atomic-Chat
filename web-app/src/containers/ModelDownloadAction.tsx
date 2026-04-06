@@ -28,7 +28,6 @@ export const ModelDownloadAction = ({
     localDownloadingModels,
     resumableDownloads,
     addLocalDownloadingModel,
-    removeLocalDownloadingModel,
     markResumableDownload,
     clearResumableDownload,
   } = useDownloadStore()

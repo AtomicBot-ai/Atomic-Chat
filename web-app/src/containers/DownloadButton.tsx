@@ -29,7 +29,6 @@ export function DownloadButtonPlaceholder({
     localDownloadingModels,
     resumableDownloads,
     addLocalDownloadingModel,
-    removeLocalDownloadingModel,
     markResumableDownload,
     clearResumableDownload,
   } = useDownloadStore(
@@ -38,7 +37,6 @@ export function DownloadButtonPlaceholder({
       localDownloadingModels: state.localDownloadingModels,
       resumableDownloads: state.resumableDownloads,
       addLocalDownloadingModel: state.addLocalDownloadingModel,
-      removeLocalDownloadingModel: state.removeLocalDownloadingModel,
       markResumableDownload: state.markResumableDownload,
       clearResumableDownload: state.clearResumableDownload,
     }))
