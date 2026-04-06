@@ -16,6 +16,10 @@ import { toast } from 'sonner'
 import { AppEvent, events } from '@janhq/core'
 import { SystemEvent } from '@/types/events'
 import { invoke } from '@tauri-apps/api/core'
+import {
+  parseAtomicChatDeepLink,
+  type AtomicChatDeepLinkTarget,
+} from '@/services/deeplink/parse'
 
 type ProviderCustomHeader = {
   header: string
@@ -405,25 +409,26 @@ export function DataProvider() {
   }, [serviceHub])
 
   const handleDeepLink = (urls: string[] | null) => {
-    if (!urls) return
+    if (!urls?.length) return
     console.log('Received deeplink:', urls)
-    const deeplink = urls[0]
-    if (deeplink) {
-      const url = new URL(deeplink)
-      const params = url.pathname.split('/').filter((str) => str.length > 0)
-
-      if (params.length < 3) return undefined
-      // const action = params[0]
-      // const provider = params[1]
-      const resource = params.slice(1).join('/')
-      // return { action, provider, resource }
-      navigate({
-        to: route.hub.model,
-        search: {
-          repo: resource,
-        },
-      })
+    const target = urls
+      .map(parseAtomicChatDeepLink)
+      .find(
+        (value): value is AtomicChatDeepLinkTarget => value !== null
+      )
+    if (!target) {
+      return
     }
+
+    navigate({
+      to: route.hub.model,
+      params: {
+        modelId: target.modelId,
+      },
+      search: {
+        repo: target.repo,
+      },
+    })
   }
 
   return null
