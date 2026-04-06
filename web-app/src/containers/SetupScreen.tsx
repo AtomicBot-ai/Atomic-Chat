@@ -12,7 +12,11 @@ import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { cn, sanitizeModelId } from '@/lib/utils'
-import { extractModelName } from '@/lib/models'
+import {
+  extractModelName,
+  getPreferredMmprojModel,
+  getTotalDownloadFileSize,
+} from '@/lib/models'
 import { useResolvedRecommendedModels } from '@/hooks/useResolvedRecommendedModels'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import HeaderPage from './HeaderPage'
@@ -125,11 +129,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         .pullModelWithMetadata(
           variant.model_id,
           variant.path,
-          (
-            catalog.mmproj_models?.find(
-              (e) => e.model_id.toLowerCase() === 'mmproj-f16'
-            ) || catalog.mmproj_models?.[0]
-          )?.path,
+          getPreferredMmprojModel(catalog)?.path,
           huggingfaceToken,
           true
         )
@@ -232,6 +232,10 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                   <div className="flex flex-col divide-y divide-border/60">
                     {recommendedItems.map(({ rec, model }) => {
                       const variant = model ? pickPreferredVariant(model) : null
+                      const downloadSize =
+                        model && variant
+                          ? getTotalDownloadFileSize(model, variant)
+                          : variant?.file_size
                       const rowDownloading = variant
                         ? isVariantDownloading(variant.model_id)
                         : false
@@ -288,10 +292,10 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                 {model
                                   ? extractModelName(model.model_name)
                                   : extractModelName(rec.modelName)}
-                                {variant?.file_size ? (
+                                {downloadSize ? (
                                   <span className="text-xs font-normal text-muted-foreground">
                                     {' '}
-                                    · {variant.file_size}
+                                    · {downloadSize}
                                   </span>
                                 ) : null}
                               </h2>

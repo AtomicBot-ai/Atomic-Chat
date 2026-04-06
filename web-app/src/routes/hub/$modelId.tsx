@@ -13,7 +13,12 @@ import {
 } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
-import { extractModelName, extractDescription } from '@/lib/models'
+import {
+  extractDescription,
+  extractModelName,
+  getPreferredMmprojModel,
+  getTotalDownloadFileSize,
+} from '@/lib/models'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { useEffect, useMemo, useCallback, useState } from 'react'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -231,14 +236,14 @@ function HubModelDetailContent() {
       <div className="flex flex-col h-svh w-full">
         <HeaderPage>
           <Button
-          onClick={() => navigate({ to: route.hub.index })}
-          aria-label="Go back"
-          variant="ghost"
-          size="sm"
-        >
-          <IconArrowLeft size={18} className="text-muted-foreground" />
-          <span className="text-foreground">{t('hub:backToModels')}</span>
-        </Button>
+            onClick={() => navigate({ to: route.hub.index })}
+            aria-label="Go back"
+            variant="ghost"
+            size="sm"
+          >
+            <IconArrowLeft size={18} className="text-muted-foreground" />
+            <span className="text-foreground">{t('hub:backToModels')}</span>
+          </Button>
         </HeaderPage>
         <div className="flex-1 flex items-center justify-center">
           <p className="text-muted-foreground">Model not found</p>
@@ -256,7 +261,7 @@ function HubModelDetailContent() {
             aria-label="Go back"
             variant="ghost"
             size="sm"
-            className='relative z-20'
+            className="relative z-20"
           >
             <IconArrowLeft size={18} className="text-muted-foreground" />
             <span className="text-foreground">{t('hub:backToModels')}</span>
@@ -272,12 +277,10 @@ function HubModelDetailContent() {
               <h1
                 className="text-2xl font-semibold mb-4 capitalize wrap-break-word line-clamp-2"
                 title={
-                  extractModelName(modelData.model_name) ||
-                  modelData.model_name
+                  extractModelName(modelData.model_name) || modelData.model_name
                 }
               >
-                {extractModelName(modelData.model_name) ||
-                  modelData.model_name}
+                {extractModelName(modelData.model_name) || modelData.model_name}
               </h1>
 
               {/* Stats */}
@@ -411,7 +414,7 @@ function HubModelDetailContent() {
                             </td>
                             <td className="py-3 px-2">
                               <span className="text-sm text-muted-foreground">
-                                {variant.file_size}
+                                {getTotalDownloadFileSize(modelData, variant)}
                               </span>
                             </td>
                             <td>
@@ -459,21 +462,14 @@ function HubModelDetailContent() {
                                   <Button
                                     size="sm"
                                     onClick={() => {
-                                      addLocalDownloadingModel(
-                                        variant.model_id
-                                      )
+                                      addLocalDownloadingModel(variant.model_id)
                                       serviceHub
                                         .models()
                                         .pullModelWithMetadata(
                                           variant.model_id,
                                           variant.path,
-                                          (
-                                            modelData.mmproj_models?.find(
-                                              (e) =>
-                                                e.model_id.toLowerCase() ===
-                                                'mmproj-f16'
-                                            ) || modelData.mmproj_models?.[0]
-                                          )?.path,
+                                          getPreferredMmprojModel(modelData)
+                                            ?.path,
                                           huggingfaceToken
                                         )
                                     }}
@@ -499,9 +495,7 @@ function HubModelDetailContent() {
               <div className="mb-8">
                 <div className="flex items-center gap-2 mb-4">
                   <IconFileCode size={20} className="text-muted-foreground" />
-                  <h2 className="text-lg font-semibold">
-                    README
-                  </h2>
+                  <h2 className="text-lg font-semibold">README</h2>
                 </div>
 
                 {isLoadingReadme ? (

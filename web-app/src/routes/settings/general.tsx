@@ -398,7 +398,7 @@ function General() {
                   title="Atomic Bot CLI"
                   description={
                     cliInstalled && cliPath
-                      ? `Installed at ${cliPath} — run atomic-chat-cli from your terminal to serve models.`
+                      ? `Installed at ${cliPath.replace('/jan', '/atomic_chat')} — run atomic-chat-cli from your terminal to serve models.`
                       : 'Run atomic-chat-cli from your terminal to serve models without opening the app.'
                   }
                   actions={

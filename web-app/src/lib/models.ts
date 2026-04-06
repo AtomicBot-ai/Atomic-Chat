@@ -1,5 +1,9 @@
 import { providerModels as models } from '@/constants/models'
-import type { CatalogModel } from '@/services/models/types'
+import type {
+  CatalogModel,
+  MMProjModel,
+  ModelQuant,
+} from '@/services/models/types'
 import { ModelCapabilities } from '@/types/models'
 
 export const defaultModel = (provider?: string) => {
@@ -81,6 +85,60 @@ export const removeYamlFrontMatter = (content: string): string => {
  */
 export const extractModelName = (model?: string) => {
   return model?.split('/')[1] ?? model
+}
+
+const FILE_SIZE_TO_BYTES: Record<'MB' | 'GB', number> = {
+  MB: 1024 ** 2,
+  GB: 1024 ** 3,
+}
+
+function parseCatalogFileSize(fileSize?: string): number | undefined {
+  if (!fileSize) return undefined
+
+  const match = fileSize.trim().match(/^([\d.]+)\s*(MB|GB)$/i)
+  if (!match) return undefined
+
+  const value = Number(match[1])
+  const unit = match[2].toUpperCase() as keyof typeof FILE_SIZE_TO_BYTES
+  if (!Number.isFinite(value)) return undefined
+
+  return value * FILE_SIZE_TO_BYTES[unit]
+}
+
+function formatCatalogFileSize(bytes?: number): string | undefined {
+  if (!bytes || !Number.isFinite(bytes)) return undefined
+
+  if (bytes < 1024 ** 3) {
+    return `${(bytes / 1024 ** 2).toFixed(1)} MB`
+  }
+
+  return `${(bytes / 1024 ** 3).toFixed(1)} GB`
+}
+
+export function getPreferredMmprojModel(
+  model: Pick<CatalogModel, 'mmproj_models'>
+): MMProjModel | undefined {
+  return (
+    model.mmproj_models?.find(
+      (mmproj) => mmproj.model_id.toLowerCase() === 'mmproj-f16'
+    ) ?? model.mmproj_models?.[0]
+  )
+}
+
+export function getTotalDownloadFileSize(
+  model: Pick<CatalogModel, 'mmproj_models'>,
+  variant?: Pick<ModelQuant, 'file_size'> | null
+): string | undefined {
+  const modelBytes = parseCatalogFileSize(variant?.file_size)
+  const mmprojBytes = parseCatalogFileSize(
+    getPreferredMmprojModel(model)?.file_size
+  )
+
+  if (modelBytes === undefined) {
+    return variant?.file_size
+  }
+
+  return formatCatalogFileSize(modelBytes + (mmprojBytes ?? 0))
 }
 
 //* Hub / setup: рекомендованный repo id ↔ запись каталога (регистр, полный путь)

@@ -342,97 +342,97 @@ __metadata:
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=04453d&locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=e3afeb&locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
   peerDependencies:
     react: 19.0.0
-  checksum: 10c0/53d8de5d342f7c5a7ae1ca3853b5fccb1d7a822b7dac039e668a19b4b6c58d2e113f95c8bd64a5456dd8d9158e6506887575691051333876fabfc704c5ff1c84
+  checksum: 10c0/c2870a569751cc60dc7317de1475fd0bbc3fbcc4f321776c73f2fa91d6e399bf03e266049a580d62b3db88f13f871224e358e77053994849342511d1096e92ab
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fconversational-extension%40workspace%3Aconversational-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=04453d&locator=%40janhq%2Fconversational-extension%40workspace%3Aconversational-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=e3afeb&locator=%40janhq%2Fconversational-extension%40workspace%3Aconversational-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
   peerDependencies:
     react: 19.0.0
-  checksum: 10c0/53d8de5d342f7c5a7ae1ca3853b5fccb1d7a822b7dac039e668a19b4b6c58d2e113f95c8bd64a5456dd8d9158e6506887575691051333876fabfc704c5ff1c84
+  checksum: 10c0/c2870a569751cc60dc7317de1475fd0bbc3fbcc4f321776c73f2fa91d6e399bf03e266049a580d62b3db88f13f871224e358e77053994849342511d1096e92ab
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fdownload-extension%40workspace%3Adownload-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=04453d&locator=%40janhq%2Fdownload-extension%40workspace%3Adownload-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=e3afeb&locator=%40janhq%2Fdownload-extension%40workspace%3Adownload-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
   peerDependencies:
     react: 19.0.0
-  checksum: 10c0/53d8de5d342f7c5a7ae1ca3853b5fccb1d7a822b7dac039e668a19b4b6c58d2e113f95c8bd64a5456dd8d9158e6506887575691051333876fabfc704c5ff1c84
+  checksum: 10c0/c2870a569751cc60dc7317de1475fd0bbc3fbcc4f321776c73f2fa91d6e399bf03e266049a580d62b3db88f13f871224e358e77053994849342511d1096e92ab
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Ffoundation-models-extension%40workspace%3Afoundation-models-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=04453d&locator=%40janhq%2Ffoundation-models-extension%40workspace%3Afoundation-models-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=e3afeb&locator=%40janhq%2Ffoundation-models-extension%40workspace%3Afoundation-models-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
   peerDependencies:
     react: 19.0.0
-  checksum: 10c0/53d8de5d342f7c5a7ae1ca3853b5fccb1d7a822b7dac039e668a19b4b6c58d2e113f95c8bd64a5456dd8d9158e6506887575691051333876fabfc704c5ff1c84
+  checksum: 10c0/c2870a569751cc60dc7317de1475fd0bbc3fbcc4f321776c73f2fa91d6e399bf03e266049a580d62b3db88f13f871224e358e77053994849342511d1096e92ab
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fllamacpp-extension%40workspace%3Allamacpp-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=04453d&locator=%40janhq%2Fllamacpp-extension%40workspace%3Allamacpp-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=e3afeb&locator=%40janhq%2Fllamacpp-extension%40workspace%3Allamacpp-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
   peerDependencies:
     react: 19.0.0
-  checksum: 10c0/53d8de5d342f7c5a7ae1ca3853b5fccb1d7a822b7dac039e668a19b4b6c58d2e113f95c8bd64a5456dd8d9158e6506887575691051333876fabfc704c5ff1c84
+  checksum: 10c0/c2870a569751cc60dc7317de1475fd0bbc3fbcc4f321776c73f2fa91d6e399bf03e266049a580d62b3db88f13f871224e358e77053994849342511d1096e92ab
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fmlx-extension%40workspace%3Amlx-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=04453d&locator=%40janhq%2Fmlx-extension%40workspace%3Amlx-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=e3afeb&locator=%40janhq%2Fmlx-extension%40workspace%3Amlx-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
   peerDependencies:
     react: 19.0.0
-  checksum: 10c0/53d8de5d342f7c5a7ae1ca3853b5fccb1d7a822b7dac039e668a19b4b6c58d2e113f95c8bd64a5456dd8d9158e6506887575691051333876fabfc704c5ff1c84
+  checksum: 10c0/c2870a569751cc60dc7317de1475fd0bbc3fbcc4f321776c73f2fa91d6e399bf03e266049a580d62b3db88f13f871224e358e77053994849342511d1096e92ab
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Frag-extension%40workspace%3Arag-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=04453d&locator=%40janhq%2Frag-extension%40workspace%3Arag-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=e3afeb&locator=%40janhq%2Frag-extension%40workspace%3Arag-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
   peerDependencies:
     react: 19.0.0
-  checksum: 10c0/53d8de5d342f7c5a7ae1ca3853b5fccb1d7a822b7dac039e668a19b4b6c58d2e113f95c8bd64a5456dd8d9158e6506887575691051333876fabfc704c5ff1c84
+  checksum: 10c0/c2870a569751cc60dc7317de1475fd0bbc3fbcc4f321776c73f2fa91d6e399bf03e266049a580d62b3db88f13f871224e358e77053994849342511d1096e92ab
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fvector-db-extension%40workspace%3Avector-db-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=04453d&locator=%40janhq%2Fvector-db-extension%40workspace%3Avector-db-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=e3afeb&locator=%40janhq%2Fvector-db-extension%40workspace%3Avector-db-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
   peerDependencies:
     react: 19.0.0
-  checksum: 10c0/53d8de5d342f7c5a7ae1ca3853b5fccb1d7a822b7dac039e668a19b4b6c58d2e113f95c8bd64a5456dd8d9158e6506887575691051333876fabfc704c5ff1c84
+  checksum: 10c0/c2870a569751cc60dc7317de1475fd0bbc3fbcc4f321776c73f2fa91d6e399bf03e266049a580d62b3db88f13f871224e358e77053994849342511d1096e92ab
   languageName: node
   linkType: hard
 

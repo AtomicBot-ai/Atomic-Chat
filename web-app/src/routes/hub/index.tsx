@@ -15,7 +15,11 @@ import {
 } from 'react'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { Card, CardItem } from '@/containers/Card'
-import { extractModelName, extractDescription } from '@/lib/models'
+import {
+  extractModelName,
+  extractDescription,
+  getTotalDownloadFileSize,
+} from '@/lib/models'
 import { useResolvedRecommendedModels } from '@/hooks/useResolvedRecommendedModels'
 import {
   IconChevronDown,
@@ -61,6 +65,16 @@ import { RenderMarkdown } from '@/containers/RenderMarkdown'
 
 type SearchParams = {
   repo: string
+}
+
+function pickDefaultQuant(model: CatalogModel) {
+  return (
+    model.quants?.find((m) =>
+      DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
+        m.model_id.toLowerCase().includes(e)
+      )
+    ) ?? model.quants?.[0]
+  )
 }
 
 export const Route = createFileRoute(route.hub.index as any)({
@@ -520,6 +534,14 @@ function HubContent() {
                         {t(rec.descriptionKey)}
                       </RecommendedModelChip>
                     )
+                    const defaultVariant = model
+                      ? pickDefaultQuant(model)
+                      : undefined
+                    const downloadSize = model
+                      ? model.is_mlx
+                        ? model.safetensors_files?.[0]?.file_size
+                        : getTotalDownloadFileSize(model, defaultVariant)
+                      : undefined
                     return model ? (
                       <div key={`${rec.modelName}-${rec.descriptionKey}`}>
                         <Card
@@ -546,31 +568,14 @@ function HubContent() {
                               </div>
                               <div className="flex flex-wrap items-center gap-2 justify-end shrink-0">
                                 <span className="text-muted-foreground font-medium text-xs whitespace-nowrap">
-                                  {model.is_mlx
-                                    ? model.safetensors_files?.[0]?.file_size
-                                    : (
-                                        model.quants?.find((m) =>
-                                          DEFAULT_MODEL_QUANTIZATIONS.some(
-                                            (e) =>
-                                              m.model_id
-                                                .toLowerCase()
-                                                .includes(e)
-                                          )
-                                        ) ?? model.quants?.[0]
-                                      )?.file_size}
+                                  {downloadSize}
                                 </span>
                                 <ModelInfoHoverCard
                                   model={model}
                                   defaultModelQuantizations={
                                     DEFAULT_MODEL_QUANTIZATIONS
                                   }
-                                  variant={
-                                    model.quants?.find((m) =>
-                                      DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
-                                        m.model_id.toLowerCase().includes(e)
-                                      )
-                                    ) ?? model.quants?.[0]
-                                  }
+                                  variant={defaultVariant}
                                   isDefaultVariant={true}
                                   modelSupportStatus={modelSupportStatus}
                                   onCheckModelSupport={checkModelSupport}
@@ -784,7 +789,10 @@ function HubContent() {
                                     actions={
                                       <div className="flex items-center gap-2">
                                         <p className="text-muted-foreground font-medium text-xs">
-                                          {variant.file_size}
+                                          {getTotalDownloadFileSize(
+                                            model,
+                                            variant
+                                          )}
                                         </p>
                                         <ModelInfoHoverCard
                                           model={model}
@@ -969,34 +977,21 @@ function HubContent() {
                                 {virtualListModels[virtualItem.index].is_mlx
                                   ? virtualListModels[virtualItem.index]
                                       .safetensors_files?.[0]?.file_size
-                                  : (
-                                      virtualListModels[
-                                        virtualItem.index
-                                      ].quants?.find((m) =>
-                                        DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
-                                          m.model_id.toLowerCase().includes(e)
-                                        )
-                                      ) ??
-                                      virtualListModels[virtualItem.index]
-                                        .quants?.[0]
-                                    )?.file_size}
+                                  : getTotalDownloadFileSize(
+                                      virtualListModels[virtualItem.index],
+                                      pickDefaultQuant(
+                                        virtualListModels[virtualItem.index]
+                                      )
+                                    )}
                               </span>
                               <ModelInfoHoverCard
                                 model={virtualListModels[virtualItem.index]}
                                 defaultModelQuantizations={
                                   DEFAULT_MODEL_QUANTIZATIONS
                                 }
-                                variant={
-                                  virtualListModels[
-                                    virtualItem.index
-                                  ].quants?.find((m) =>
-                                    DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
-                                      m.model_id.toLowerCase().includes(e)
-                                    )
-                                  ) ??
+                                variant={pickDefaultQuant(
                                   virtualListModels[virtualItem.index]
-                                    .quants?.[0]
-                                }
+                                )}
                                 isDefaultVariant={true}
                                 modelSupportStatus={modelSupportStatus}
                                 onCheckModelSupport={checkModelSupport}
@@ -1205,7 +1200,12 @@ function HubContent() {
                                     actions={
                                       <div className="flex items-center gap-2">
                                         <p className="text-muted-foreground font-medium text-xs">
-                                          {variant.file_size}
+                                          {getTotalDownloadFileSize(
+                                            virtualListModels[
+                                              virtualItem.index
+                                            ],
+                                            variant
+                                          )}
                                         </p>
                                         <ModelInfoHoverCard
                                           model={
