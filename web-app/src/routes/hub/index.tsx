@@ -56,10 +56,7 @@ import { DownloadButtonPlaceholder } from '@/containers/DownloadButton'
 import { useShallow } from 'zustand/shallow'
 import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
 import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
-import {
-  DEFAULT_MODEL_QUANTIZATIONS,
-  HUB_RECOMMENDED_MODELS,
-} from '@/constants/models'
+import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { Button } from '@/components/ui/button'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 
@@ -235,29 +232,19 @@ function HubContent() {
     searchOptions,
   ])
 
-  const recommendedDisplayNames = useMemo(
-    () =>
-      new Set(
-        HUB_RECOMMENDED_MODELS.map(
-          (r) => extractModelName(r.modelName) || ''
-        ).filter(Boolean)
-      ),
-    []
-  )
+  const shouldShowCatalogResults =
+    debouncedSearchValue.length > 0 || showOnlyDownloaded
 
   const showRecommendedBlock =
-    sortSelected === 'newest' && !debouncedSearchValue && !showOnlyDownloaded
+    debouncedSearchValue.length === 0 && !showOnlyDownloaded
 
-  //* На вкладке Newest рекомендации дублируются в блоке сверху — из списка ниже убираем те же модели
+  //* По умолчанию показываем только curated Recommended; остальной каталог открывается через поиск или фильтр скачанных
   const virtualListModels = useMemo(() => {
-    if (!showRecommendedBlock) {
-      return filteredModels
+    if (!shouldShowCatalogResults) {
+      return []
     }
-    return filteredModels.filter((m) => {
-      const name = extractModelName(m.model_name)
-      return !name || !recommendedDisplayNames.has(name)
-    })
-  }, [filteredModels, showRecommendedBlock, recommendedDisplayNames])
+    return filteredModels
+  }, [filteredModels, shouldShowCatalogResults])
 
   // Dynamic estimate size based on model state
   const estimateSize = useCallback(
@@ -900,7 +887,7 @@ function HubContent() {
                   {t('hub:noModels')}
                 </div>
               </div>
-            ) : (
+            ) : virtualListModels.length === 0 ? null : (
               <div
                 className={cn(
                   'flex flex-col pb-2 mb-2 transition-opacity duration-200',

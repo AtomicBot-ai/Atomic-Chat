@@ -5,9 +5,11 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
+import { markDownloadCancellationRequested } from '@/lib/downloadCancellation'
 import { extractModelName } from '@/lib/models'
 import { cn, sanitizeModelId } from '@/lib/utils'
 import { CatalogModel } from '@/services/models/types'
+import { IconX } from '@tabler/icons-react'
 import { DownloadEvent, DownloadState, events } from '@janhq/core'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useShallow } from 'zustand/shallow'
@@ -22,14 +24,19 @@ export function DownloadButtonPlaceholder({
   model,
   handleUseModel,
 }: ModelProps) {
-  const { downloads, localDownloadingModels, addLocalDownloadingModel } =
-    useDownloadStore(
-      useShallow((state) => ({
-        downloads: state.downloads,
-        localDownloadingModels: state.localDownloadingModels,
-        addLocalDownloadingModel: state.addLocalDownloadingModel,
-      }))
-    )
+  const {
+    downloads,
+    localDownloadingModels,
+    addLocalDownloadingModel,
+    removeLocalDownloadingModel,
+  } = useDownloadStore(
+    useShallow((state) => ({
+      downloads: state.downloads,
+      localDownloadingModels: state.localDownloadingModels,
+      addLocalDownloadingModel: state.addLocalDownloadingModel,
+      removeLocalDownloadingModel: state.removeLocalDownloadingModel,
+    }))
+  )
   const { t } = useTranslation()
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
   const llamaProvider = getProviderByName('llamacpp')
@@ -129,6 +136,12 @@ export function DownloadButtonPlaceholder({
       .pullModelWithMetadata(modelId, modelUrl, mmprojPath, huggingfaceToken)
   }
 
+  const handleCancelDownload = useCallback(() => {
+    markDownloadCancellationRequested(modelId)
+    removeLocalDownloadingModel(modelId)
+    void serviceHub.models().abortDownload(modelId)
+  }, [modelId, removeLocalDownloadingModel, serviceHub])
+
   return (
     <div
       className={cn(
@@ -137,11 +150,27 @@ export function DownloadButtonPlaceholder({
       )}
     >
       {isDownloading && !isDownloaded && (
-        <div className={cn('flex items-center gap-2 w-20')}>
-          <Progress className='border' value={downloadProgress * 100} />
-          <span className="text-xs text-center text-muted-foreground">
-            {Math.round(downloadProgress * 100)}%
-          </span>
+        <div className={cn('flex items-center gap-1 w-24')}>
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <Progress
+              className="border flex-1"
+              value={downloadProgress * 100}
+            />
+            <span className="text-xs text-center text-muted-foreground">
+              {Math.round(downloadProgress * 100)}%
+            </span>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            onClick={handleCancelDownload}
+            title={t('common:cancelDownload')}
+            aria-label={t('common:cancelDownload')}
+            className="shrink-0"
+          >
+            <IconX size={12} className="text-muted-foreground" />
+          </Button>
         </div>
       )}
       {isDownloaded ? (

@@ -6,8 +6,9 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
+import { markDownloadCancellationRequested } from '@/lib/downloadCancellation'
 import { CatalogModel } from '@/services/models/types'
-import { IconDownload } from '@tabler/icons-react'
+import { IconDownload, IconX } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { useCallback, useMemo } from 'react'
 
@@ -22,8 +23,12 @@ export const ModelDownloadAction = ({
 
   const { t } = useTranslation()
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
-  const { downloads, localDownloadingModels, addLocalDownloadingModel } =
-    useDownloadStore()
+  const {
+    downloads,
+    localDownloadingModels,
+    addLocalDownloadingModel,
+    removeLocalDownloadingModel,
+  } = useDownloadStore()
   const downloadProcesses = useMemo(
     () =>
       Object.values(downloads).map((download) => ({
@@ -77,6 +82,12 @@ export const ModelDownloadAction = ({
     addLocalDownloadingModel,
   ])
 
+  const handleCancelDownload = useCallback(() => {
+    markDownloadCancellationRequested(variant.model_id)
+    removeLocalDownloadingModel(variant.model_id)
+    void serviceHub.models().abortDownload(variant.model_id)
+  }, [removeLocalDownloadingModel, serviceHub, variant.model_id])
+
   const isDownloading =
     localDownloadingModels.has(variant.model_id) ||
     downloadProcesses.some((e) => e.id === variant.model_id)
@@ -89,14 +100,25 @@ export const ModelDownloadAction = ({
 
   if (isDownloading) {
     return (
-      <>
-        <div className="flex items-center gap-2 w-20">
-          <Progress className="border" value={downloadProgress * 100} />
+      <div className="flex items-center gap-1 w-24">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <Progress className="border flex-1" value={downloadProgress * 100} />
           <span className="text-xs text-center text-muted-foreground">
             {Math.round(downloadProgress * 100)}%
           </span>
         </div>
-      </>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          onClick={handleCancelDownload}
+          title={t('common:cancelDownload')}
+          aria-label={t('common:cancelDownload')}
+          className="shrink-0"
+        >
+          <IconX size={12} className="text-muted-foreground" />
+        </Button>
+      </div>
     )
   }
 

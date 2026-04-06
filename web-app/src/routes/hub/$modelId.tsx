@@ -10,6 +10,7 @@ import {
   IconDownload,
   IconClock,
   IconFileCode,
+  IconX,
 } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
@@ -19,6 +20,7 @@ import {
   getPreferredMmprojModel,
   getTotalDownloadFileSize,
 } from '@/lib/models'
+import { markDownloadCancellationRequested } from '@/lib/downloadCancellation'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { useEffect, useMemo, useCallback, useState } from 'react'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -54,8 +56,12 @@ function HubModelDetailContent() {
   const search = useSearch({ from: Route.id as any })
   const { getProviderByName } = useModelProvider()
   const llamaProvider = getProviderByName('llamacpp')
-  const { downloads, localDownloadingModels, addLocalDownloadingModel } =
-    useDownloadStore()
+  const {
+    downloads,
+    localDownloadingModels,
+    addLocalDownloadingModel,
+    removeLocalDownloadingModel,
+  } = useDownloadStore()
   const serviceHub = useServiceHub()
   const [repoData, setRepoData] = useState<CatalogModel | undefined>()
 
@@ -432,14 +438,38 @@ function HubModelDetailContent() {
                               {(() => {
                                 if (isDownloading && !isDownloaded) {
                                   return (
-                                    <div className="flex items-center justify-end gap-2">
+                                    <div className="ml-auto flex items-center justify-end gap-1">
                                       <Progress
                                         value={downloadProgress * 100}
-                                        className="w-12"
+                                        className="w-12 border"
                                       />
                                       <span className="text-xs text-muted-foreground text-right">
                                         {Math.round(downloadProgress * 100)}%
                                       </span>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon-xs"
+                                        onClick={() => {
+                                          markDownloadCancellationRequested(
+                                            variant.model_id
+                                          )
+                                          removeLocalDownloadingModel(
+                                            variant.model_id
+                                          )
+                                          void serviceHub
+                                            .models()
+                                            .abortDownload(variant.model_id)
+                                        }}
+                                        title={t('common:cancelDownload')}
+                                        aria-label={t('common:cancelDownload')}
+                                        className="shrink-0"
+                                      >
+                                        <IconX
+                                          size={12}
+                                          className="text-muted-foreground"
+                                        />
+                                      </Button>
                                     </div>
                                   )
                                 }

@@ -16,10 +16,21 @@ import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { DownloadIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  clearDownloadCancellationRequested,
+  markDownloadCancellationRequested,
+  wasDownloadCancellationRequested,
+} from '@/lib/downloadCancellation'
 
 //* Полупрозрачная зелень: текст % и ГБ остаётся читаемым в светлой и тёмной теме
-const DOWNLOAD_PROGRESS_INDICATOR =
-  'bg-emerald-400/50 dark:bg-emerald-400/45'
+const DOWNLOAD_PROGRESS_INDICATOR = 'bg-emerald-400/50 dark:bg-emerald-400/45'
+
+function isCancellationLikeError(error?: string): boolean {
+  if (!error) return false
+  return /abort|aborted|cancel|cancelled|canceled|stop|stopped|interrupt/i.test(
+    error
+  )
+}
 
 export function DownloadManagement() {
   const { t } = useTranslation()
@@ -169,6 +180,14 @@ export function DownloadManagement() {
       const anyState = state as unknown as { error?: string }
       const err = anyState?.error || ''
 
+      if (
+        wasDownloadCancellationRequested(state.modelId) ||
+        isCancellationLikeError(err)
+      ) {
+        toast.dismiss('download-failed')
+        return
+      }
+
       if (err.includes('HTTP status 401')) {
         toast.error('Hugging Face token required', {
           id: 'download-failed',
@@ -256,8 +275,17 @@ export function DownloadManagement() {
       console.debug('onFileDownloadStopped', state)
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
+      toast.dismiss('download-failed')
+
+      if (wasDownloadCancellationRequested(state.modelId)) {
+        toast.info(t('common:toast.downloadCancelled.title'), {
+          id: 'cancel-download',
+          description: t('common:toast.downloadCancelled.description'),
+        })
+        clearDownloadCancellationRequested(state.modelId)
+      }
     },
-    [removeDownload, removeLocalDownloadingModel]
+    [removeDownload, removeLocalDownloadingModel, t]
   )
 
   const onFileDownloadSuccess = useCallback(
@@ -267,6 +295,7 @@ export function DownloadManagement() {
       // Dismiss any validation started toast when download completes successfully
       toast.dismiss(`model-validation-started-${state.modelId}`)
 
+      clearDownloadCancellationRequested(state.modelId)
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
       toast.success(t('common:toast.downloadComplete.title'), {
@@ -286,6 +315,7 @@ export function DownloadManagement() {
       // Dismiss any validation started toast when download and verification complete successfully
       toast.dismiss(`model-validation-started-${state.modelId}`)
 
+      clearDownloadCancellationRequested(state.modelId)
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
       toast.success(t('common:toast.downloadAndVerificationComplete.title'), {
@@ -365,10 +395,17 @@ export function DownloadManagement() {
     <>
       <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
         <PopoverTrigger asChild>
-          <Button variant="ghost" size="icon" className="text-muted-foreground z-50 rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 size-7 relative">
-            <DownloadIcon className='text-muted-foreground size-4' />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-muted-foreground z-50 rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 size-7 relative"
+          >
+            <DownloadIcon className="text-muted-foreground size-4" />
             {downloadCount > 0 && (
-              <svg className="absolute inset-0 size-7 -rotate-90" viewBox="0 0 36 36">
+              <svg
+                className="absolute inset-0 size-7 -rotate-90"
+                viewBox="0 0 36 36"
+              >
                 <path
                   className="text-primary/30"
                   stroke="currentColor"
@@ -401,17 +438,13 @@ export function DownloadManagement() {
             {appUpdateState.isDownloading || downloadProcesses.length > 0 ? (
               <>
                 <div className="px-3 pt-2 flex items-center justify-between">
-                  <p>
-                    {t('downloading')}
-                  </p>
+                  <p>{t('downloading')}</p>
                 </div>
                 <div className="p-2 max-h-[300px] overflow-y-auto space-y-2">
                   {appUpdateState.isDownloading && (
                     <div className="rounded-lg p-2 bg-secondary">
                       <div className="flex items-center justify-between">
-                        <p className="truncate">
-                          App Update
-                        </p>
+                        <p className="truncate">App Update</p>
                       </div>
                       <div className="relative z-40 my-2 h-6">
                         <Progress
@@ -421,8 +454,7 @@ export function DownloadManagement() {
                         />
                         <div className="pointer-events-none absolute inset-0 z-1 flex items-center justify-between px-2">
                           <p className="text-xs font-medium tabular-nums text-foreground">
-                            {Math.round(appUpdateState.downloadProgress * 100)}
-                            %
+                            {Math.round(appUpdateState.downloadProgress * 100)}%
                           </p>
                           <p className="text-xs font-medium tabular-nums text-foreground">
                             {`${renderGB(appUpdateState.downloadedBytes)} / ${renderGB(appUpdateState.totalBytes)}`}{' '}
@@ -438,39 +470,34 @@ export function DownloadManagement() {
                       className="rounded-lg p-2 bg-secondary"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <p className="truncate">
-                          {download.name}
-                        </p>
+                        <p className="truncate">{download.name}</p>
                         <div className="shrink-0 flex items-center space-x-0.5">
-                          <Button variant="secondary" size="icon-xs" onClick={() => {
-                              // TODO: Consolidate cancellation logic
-                              if (download.id.startsWith('llamacpp') || download.id.startsWith('mlx')) {
+                          <Button
+                            variant="secondary"
+                            size="icon-xs"
+                            onClick={() => {
+                              markDownloadCancellationRequested(download.name)
+                              if (download.id !== download.name) {
+                                markDownloadCancellationRequested(download.id)
+                              }
+                              if (
+                                download.id.startsWith('llamacpp') ||
+                                download.id.startsWith('mlx')
+                              ) {
                                 const downloadManager =
                                   window.core.extensionManager.getByName(
                                     '@janhq/download-extension'
                                   )
                                 downloadManager.cancelDownload(download.id)
                               } else {
-                                serviceHub
-                                  .models()
-                                  .abortDownload(download.name)
-                                  .then(() => {
-                                    toast.info(
-                                      t('common:toast.downloadCancelled.title'),
-                                      {
-                                        id: 'cancel-download',
-                                        description: t(
-                                          'common:toast.downloadCancelled.description'
-                                        ),
-                                      }
-                                    )
-                                    if (downloadProcesses.length === 0) {
-                                      setIsPopoverOpen(false)
-                                    }
-                                  })
+                                serviceHub.models().abortDownload(download.name)
+                                if (downloadProcesses.length === 0) {
+                                  setIsPopoverOpen(false)
+                                }
                               }
                               setIsPopoverOpen(false)
-                            }} >
+                            }}
+                          >
                             <IconX
                               size={16}
                               className="text-muted-foreground cursor-pointer"
@@ -502,7 +529,7 @@ export function DownloadManagement() {
                   ))}
                 </div>
               </>
-              ) : (
+            ) : (
               <div className="px-3 py-8 flex flex-col items-center justify-center text-center space-y-2">
                 <DownloadIcon className="text-muted-foreground/50 size-6" />
                 <p className="text-muted-foreground leading-normal">
