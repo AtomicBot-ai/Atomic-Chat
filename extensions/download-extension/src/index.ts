@@ -53,7 +53,8 @@ export default class DownloadManager extends BaseExtension {
   async downloadFiles(
     items: DownloadItem[],
     taskId: string,
-    onProgress?: (transferred: number, total: number) => void
+    onProgress?: (transferred: number, total: number) => void,
+    resume: boolean = false
   ) {
     // relay tauri events to onProgress callback
     const unlisten = await listen<DownloadEvent>(
@@ -71,6 +72,7 @@ export default class DownloadManager extends BaseExtension {
         items,
         taskId,
         headers: this._getHeaders(),
+        resume,
       })
     } catch (error) {
       console.error('Error downloading task', taskId, error)

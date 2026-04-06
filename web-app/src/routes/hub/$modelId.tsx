@@ -59,8 +59,11 @@ function HubModelDetailContent() {
   const {
     downloads,
     localDownloadingModels,
+    resumableDownloads,
     addLocalDownloadingModel,
     removeLocalDownloadingModel,
+    markResumableDownload,
+    clearResumableDownload,
   } = useDownloadStore()
   const serviceHub = useServiceHub()
   const [repoData, setRepoData] = useState<CatalogModel | undefined>()
@@ -451,10 +454,10 @@ function HubModelDetailContent() {
                                         variant="ghost"
                                         size="icon-xs"
                                         onClick={() => {
-                                          markDownloadCancellationRequested(
+                                          markResumableDownload(
                                             variant.model_id
                                           )
-                                          removeLocalDownloadingModel(
+                                          markDownloadCancellationRequested(
                                             variant.model_id
                                           )
                                           void serviceHub
@@ -492,6 +495,7 @@ function HubModelDetailContent() {
                                   <Button
                                     size="sm"
                                     onClick={() => {
+                                      clearResumableDownload(variant.model_id)
                                       addLocalDownloadingModel(variant.model_id)
                                       serviceHub
                                         .models()
@@ -500,7 +504,11 @@ function HubModelDetailContent() {
                                           variant.path,
                                           getPreferredMmprojModel(modelData)
                                             ?.path,
-                                          huggingfaceToken
+                                          huggingfaceToken,
+                                          true,
+                                          resumableDownloads.has(
+                                            variant.model_id
+                                          )
                                         )
                                     }}
                                     className={cn(isDownloading && 'hidden')}

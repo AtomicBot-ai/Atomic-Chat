@@ -333,7 +333,11 @@ export default class llamacpp_extension extends AIEngine {
       // Install bundled backend from app resources if no local backends exist
       const bundledBackendString = await this.tryInstallBundledBackend()
 
-      let version_backends: { version: string; backend: string; order?: number }[] = []
+      let version_backends: {
+        version: string
+        backend: string
+        order?: number
+      }[] = []
 
       try {
         version_backends = await listSupportedBackends()
@@ -526,17 +530,25 @@ export default class llamacpp_extension extends AIEngine {
       // 1. Current backend is not turboquant (migration to new format), OR
       // 2. Current backend IS turboquant but a different version with the same
       //    backend type was bundled with this app release (app update scenario).
-      if (bundledBackendString && effectiveBackendString && effectiveBackendString.includes('/')) {
+      if (
+        bundledBackendString &&
+        effectiveBackendString &&
+        effectiveBackendString.includes('/')
+      ) {
         const bundledType = bundledBackendString.split('/')[1]
         const currentType = effectiveBackendString.split('/')[1]
-        const isNotTurboquant = !effectiveBackendString.startsWith('turboquant-')
+        const isNotTurboquant =
+          !effectiveBackendString.startsWith('turboquant-')
         const isBundledNewer =
-          effectiveBackendString !== bundledBackendString && bundledType === currentType
+          effectiveBackendString !== bundledBackendString &&
+          bundledType === currentType
 
         if (isNotTurboquant || isBundledNewer) {
           logger.info(
             `Switching backend from '${effectiveBackendString}' to bundled '${bundledBackendString}'` +
-              (isNotTurboquant ? ' (non-turboquant migration)' : ' (app update)')
+              (isNotTurboquant
+                ? ' (non-turboquant migration)'
+                : ' (app update)')
           )
           effectiveBackendString = bundledBackendString
           bestAvailableBackendString = bundledBackendString
@@ -1198,9 +1210,7 @@ export default class llamacpp_extension extends AIEngine {
         })
       }
 
-      logger.info(
-        `Backend ${newBackendString} installed and auto-selected`
-      )
+      logger.info(`Backend ${newBackendString} installed and auto-selected`)
     } catch (e) {
       logger.error('Backend installed but failed to refresh UI', e)
       throw new Error(
@@ -1312,6 +1322,7 @@ export default class llamacpp_extension extends AIEngine {
     let mmprojPath = opts.mmprojPath
       ? await maybeDownload(opts.mmprojPath, 'mmproj.gguf')
       : undefined
+    const resumeDownload = (opts as ImportOptions & { resume?: boolean }).resume
 
     if (downloadItems.length > 0) {
       try {
@@ -1330,7 +1341,8 @@ export default class llamacpp_extension extends AIEngine {
         await downloadManager.downloadFiles(
           downloadItems,
           this.createDownloadTaskId(modelId),
-          onProgress
+          onProgress,
+          resumeDownload ?? false
         )
 
         // If we reach here, download completed successfully (including validation)
@@ -1375,10 +1387,12 @@ export default class llamacpp_extension extends AIEngine {
 
           // Cancel any other download tasks for this model
           try {
-            this.abortImport(modelId)
+            await this.abortImport(modelId)
           } catch (cancelError) {
             logger.warn('Failed to cancel download task:', cancelError)
           }
+
+          await this.deleteModelFolder(modelId)
 
           // Emit validation failure event
           events.emit(DownloadEvent.onModelValidationFailed, {
@@ -1507,9 +1521,6 @@ export default class llamacpp_extension extends AIEngine {
     } catch (cancelError) {
       logger.warn('Failed to cancel download task:', cancelError)
     }
-
-    // Delete the entire model folder if it exists (for validation failures)
-    await this.deleteModelFolder(modelId)
   }
 
   /**
@@ -1609,7 +1620,10 @@ export default class llamacpp_extension extends AIEngine {
         const sessionInfos: (SessionInfo | null)[] = await Promise.all(
           allLoadedModels.map(async (modelId) => {
             try {
-              return this.sessionCache.get(modelId) ?? await this.findSessionByModel(modelId)
+              return (
+                this.sessionCache.get(modelId) ??
+                (await this.findSessionByModel(modelId))
+              )
             } catch (e) {
               logger.warn(`Unable to find session for model "${modelId}": ${e}`)
               return null
@@ -1717,7 +1731,8 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   override async unload(modelId: string): Promise<UnloadResult> {
-    const sInfo: SessionInfo = this.sessionCache.get(modelId) ?? await this.findSessionByModel(modelId)
+    const sInfo: SessionInfo =
+      this.sessionCache.get(modelId) ?? (await this.findSessionByModel(modelId))
     if (!sInfo) {
       throw new Error(`No active session found for model: ${modelId}`)
     }
@@ -1923,7 +1938,9 @@ export default class llamacpp_extension extends AIEngine {
     opts: chatCompletionRequest,
     abortController?: AbortController
   ): Promise<chatCompletion | AsyncIterable<chatCompletionChunk>> {
-    const sessionInfo = this.sessionCache.get(opts.model) ?? await this.findSessionByModel(opts.model)
+    const sessionInfo =
+      this.sessionCache.get(opts.model) ??
+      (await this.findSessionByModel(opts.model))
     if (!sessionInfo) {
       throw new Error(`No active session found for model: ${opts.model}`)
     }
@@ -2327,7 +2344,9 @@ export default class llamacpp_extension extends AIEngine {
       return 0
     }
 
-    const sessionInfo = this.sessionCache.get(opts.model) ?? await this.findSessionByModel(opts.model)
+    const sessionInfo =
+      this.sessionCache.get(opts.model) ??
+      (await this.findSessionByModel(opts.model))
     if (!sessionInfo) {
       throw new Error(`No active session found for model: ${opts.model}`)
     }
@@ -2377,7 +2396,10 @@ export default class llamacpp_extension extends AIEngine {
         timeoutSecs: 10,
       })
       const parsedPrompt = JSON.parse(applyResult)
-      console.debug('[TokenCounter:ext] /apply-template done, promptLen:', parsedPrompt.prompt?.length)
+      console.debug(
+        '[TokenCounter:ext] /apply-template done, promptLen:',
+        parsedPrompt.prompt?.length
+      )
 
       const tokenizeResult = await invoke<string>('post_local_http', {
         url: `${baseUrl}/tokenize`,
@@ -2387,7 +2409,12 @@ export default class llamacpp_extension extends AIEngine {
       })
       const dataTokens = JSON.parse(tokenizeResult)
       const textTokens = dataTokens.tokens?.length || 0
-      console.debug('[TokenCounter:ext] done, textTokens:', textTokens, 'imageTokens:', imageTokens)
+      console.debug(
+        '[TokenCounter:ext] done, textTokens:',
+        textTokens,
+        'imageTokens:',
+        imageTokens
+      )
 
       return textTokens + imageTokens
     } catch (e) {

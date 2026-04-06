@@ -12,6 +12,7 @@ export interface DownloadProgressProps {
 export type DownloadState = {
   downloads: { [id: string]: DownloadProgressProps }
   localDownloadingModels: Set<string>
+  resumableDownloads: Set<string>
   removeDownload: (id: string) => void
   updateProgress: (
     id: string,
@@ -22,6 +23,8 @@ export type DownloadState = {
   ) => void
   addLocalDownloadingModel: (modelId: string) => void
   removeLocalDownloadingModel: (modelId: string) => void
+  markResumableDownload: (modelId: string) => void
+  clearResumableDownload: (modelId: string) => void
 }
 
 /**
@@ -30,6 +33,7 @@ export type DownloadState = {
 export const useDownloadStore = create<DownloadState>((set) => ({
   downloads: {},
   localDownloadingModels: new Set(),
+  resumableDownloads: new Set(),
   removeDownload: (id: string) =>
     set((state) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -63,5 +67,17 @@ export const useDownloadStore = create<DownloadState>((set) => ({
       const newSet = new Set(state.localDownloadingModels)
       newSet.delete(modelId)
       return { localDownloadingModels: newSet }
+    }),
+
+  markResumableDownload: (modelId: string) =>
+    set((state) => ({
+      resumableDownloads: new Set(state.resumableDownloads).add(modelId),
+    })),
+
+  clearResumableDownload: (modelId: string) =>
+    set((state) => {
+      const newSet = new Set(state.resumableDownloads)
+      newSet.delete(modelId)
+      return { resumableDownloads: newSet }
     }),
 }))

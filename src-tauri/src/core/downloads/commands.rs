@@ -13,6 +13,7 @@ pub async fn download_files<R: Runtime>(
     items: Vec<DownloadItem>,
     task_id: &str,
     headers: HashMap<String, String>,
+    resume: bool,
 ) -> Result<(), String> {
     // insert cancel tokens
     let cancel_token = CancellationToken::new();
@@ -26,13 +27,12 @@ pub async fn download_files<R: Runtime>(
             .cancel_tokens
             .insert(task_id.to_string(), cancel_token.clone());
     }
-    // TODO: Support resuming downloads when FE is ready
     let result = _download_files_internal(
         app.clone(),
         &items,
         &headers,
         task_id,
-        false,
+        resume,
         cancel_token.clone(),
     )
     .await;

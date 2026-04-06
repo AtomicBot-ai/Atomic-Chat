@@ -30,8 +30,11 @@ export const MlxModelDownloadAction = memo(
     const {
       downloads,
       localDownloadingModels,
+      resumableDownloads,
       addLocalDownloadingModel,
       removeLocalDownloadingModel,
+      markResumableDownload,
+      clearResumableDownload,
     } = useDownloadStore()
 
     // Construct the model ID - use just the sanitized model name if developer is same as org
@@ -111,6 +114,7 @@ export const MlxModelDownloadAction = memo(
     }, [navigate, downloadedModelId])
 
     const handleDownloadMlxModel = useCallback(async () => {
+      clearResumableDownload(modelId)
       addLocalDownloadingModel(modelId)
 
       const modelPath = `${model.developer}/${modelName}`
@@ -161,9 +165,11 @@ export const MlxModelDownloadAction = memo(
         return engine.import(modelId, {
           modelPath: modelUrl,
           files: extraFiles,
+          resume: resumableDownloads.has(modelId),
         })
       } catch (error) {
         console.error('Error downloading MLX model:', error)
+        markResumableDownload(modelId)
         removeLocalDownloadingModel(modelId)
         toast.error('Failed to download MLX model', {
           description: error instanceof Error ? error.message : 'Unknown error',
@@ -175,15 +181,18 @@ export const MlxModelDownloadAction = memo(
       huggingfaceToken,
       addLocalDownloadingModel,
       removeLocalDownloadingModel,
+      clearResumableDownload,
+      markResumableDownload,
+      resumableDownloads,
       modelId,
       modelName,
     ])
 
     const handleCancelDownload = useCallback(() => {
+      markResumableDownload(modelId)
       markDownloadCancellationRequested(modelId)
-      removeLocalDownloadingModel(modelId)
       void serviceHub.models().abortDownload(modelId)
-    }, [modelId, removeLocalDownloadingModel, serviceHub])
+    }, [modelId, markResumableDownload, serviceHub])
 
     return (
       <div className="flex items-center">

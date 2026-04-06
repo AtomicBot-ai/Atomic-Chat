@@ -64,8 +64,13 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   const { getProviderByName, selectModelProvider, setProviders } =
     useModelProvider()
 
-  const { downloads, localDownloadingModels, addLocalDownloadingModel } =
-    useDownloadStore()
+  const {
+    downloads,
+    localDownloadingModels,
+    resumableDownloads,
+    addLocalDownloadingModel,
+    clearResumableDownload,
+  } = useDownloadStore()
   const serviceHub = useServiceHub()
   const llamaProvider = getProviderByName('llamacpp')
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
@@ -123,6 +128,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   const startDownload = useCallback(
     (catalog: CatalogModel, variant: ModelQuant) => {
       trackedImportIdsRef.current.add(variant.model_id)
+      clearResumableDownload(variant.model_id)
       addLocalDownloadingModel(variant.model_id)
       serviceHub
         .models()
@@ -131,10 +137,17 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
           variant.path,
           getPreferredMmprojModel(catalog)?.path,
           huggingfaceToken,
-          true
+          true,
+          resumableDownloads.has(variant.model_id)
         )
     },
-    [addLocalDownloadingModel, serviceHub, huggingfaceToken]
+    [
+      addLocalDownloadingModel,
+      clearResumableDownload,
+      serviceHub,
+      huggingfaceToken,
+      resumableDownloads,
+    ]
   )
 
   useEffect(() => {

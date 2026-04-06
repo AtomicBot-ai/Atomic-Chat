@@ -207,7 +207,8 @@ export class DefaultModelsService implements ModelsService {
     modelSize?: number,
     mmprojPath?: string,
     mmprojSha256?: string,
-    mmprojSize?: number
+    mmprojSize?: number,
+    resume: boolean = false
   ): Promise<void> {
     return this.getEngine()?.import(id, {
       modelPath,
@@ -216,6 +217,7 @@ export class DefaultModelsService implements ModelsService {
       modelSize,
       mmprojSha256,
       mmprojSize,
+      resume,
     })
   }
 
@@ -224,7 +226,8 @@ export class DefaultModelsService implements ModelsService {
     modelPath: string,
     mmprojPath?: string,
     hfToken?: string,
-    skipVerification: boolean = true
+    skipVerification: boolean = true,
+    resume: boolean = false
   ): Promise<void> {
     let modelSha256: string | undefined
     let modelSize: number | undefined
@@ -289,7 +292,8 @@ export class DefaultModelsService implements ModelsService {
         modelSize,
         mmprojPath,
         mmprojSha256,
-        mmprojSize
+        mmprojSize,
+        resume
       )
     } catch (error) {
       // Emit download error event so the UI can clean up the stale downloading state
@@ -306,10 +310,11 @@ export class DefaultModelsService implements ModelsService {
     const llamacppEngine = this.getEngine('llamacpp')
     const mlxEngine = this.getEngine('mlx')
     try {
-      await Promise.allSettled([
-        llamacppEngine?.abortImport(id),
-        mlxEngine?.abortImport(id),
-      ].filter(Boolean))
+      await Promise.allSettled(
+        [llamacppEngine?.abortImport(id), mlxEngine?.abortImport(id)].filter(
+          Boolean
+        )
+      )
     } finally {
       events.emit(DownloadEvent.onFileDownloadStopped, {
         modelId: id,
@@ -571,7 +576,12 @@ export class DefaultModelsService implements ModelsService {
   ): Promise<number> {
     try {
       const engine = this.getEngine('llamacpp')
-      console.debug('[TokenCounter:service] engine found:', !!engine, 'hasMethod:', typeof (engine as any)?.getTokensCount)
+      console.debug(
+        '[TokenCounter:service] engine found:',
+        !!engine,
+        'hasMethod:',
+        typeof (engine as any)?.getTokensCount
+      )
       const typedEngine = engine as AIEngine & {
         getTokensCount?: (opts: {
           model: string
@@ -664,7 +674,10 @@ export class DefaultModelsService implements ModelsService {
               : Array.isArray(msg.content) && msg.content.length > 0
           ) // Filter out empty messages
 
-        console.debug('[TokenCounter:service] calling engine.getTokensCount with', { modelId, msgCount: transformedMessages.length })
+        console.debug(
+          '[TokenCounter:service] calling engine.getTokensCount with',
+          { modelId, msgCount: transformedMessages.length }
+        )
         const timeoutMs = 30000
         const result = await Promise.race([
           typedEngine.getTokensCount({
@@ -675,14 +688,19 @@ export class DefaultModelsService implements ModelsService {
             },
           }),
           new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('getTokensCount timed out')), timeoutMs)
+            setTimeout(
+              () => reject(new Error('getTokensCount timed out')),
+              timeoutMs
+            )
           ),
         ])
         console.debug('[TokenCounter:service] engine returned', result)
         return result
       }
 
-      console.warn('[TokenCounter:service] getTokensCount method not available in llamacpp engine')
+      console.warn(
+        '[TokenCounter:service] getTokensCount method not available in llamacpp engine'
+      )
       return 0
     } catch (error) {
       console.error('[TokenCounter:service] error getting tokens count:', error)

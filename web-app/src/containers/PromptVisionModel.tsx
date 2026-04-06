@@ -23,8 +23,13 @@ export function PromptVisionModel({
   onDownloadComplete,
 }: PromptVisionModelProps) {
   const serviceHub = useServiceHub()
-  const { downloads, localDownloadingModels, addLocalDownloadingModel } =
-    useDownloadStore()
+  const {
+    downloads,
+    localDownloadingModels,
+    resumableDownloads,
+    addLocalDownloadingModel,
+    clearResumableDownload,
+  } = useDownloadStore()
   const { getProviderByName } = useModelProvider()
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
 
@@ -176,6 +181,7 @@ export function PromptVisionModel({
     if (!defaultVariant || !janV2VLModel) return
 
     downloadStartedModelId.current = defaultVariant.model_id
+    clearResumableDownload(defaultVariant.model_id)
     addLocalDownloadingModel(defaultVariant.model_id)
 
     serviceHub
@@ -185,7 +191,8 @@ export function PromptVisionModel({
         defaultVariant.path,
         janV2VLModel.mmproj_models?.[0]?.path,
         huggingfaceToken,
-        true
+        true,
+        resumableDownloads.has(defaultVariant.model_id)
       )
   }
 

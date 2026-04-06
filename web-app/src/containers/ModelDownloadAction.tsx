@@ -26,8 +26,11 @@ export const ModelDownloadAction = ({
   const {
     downloads,
     localDownloadingModels,
+    resumableDownloads,
     addLocalDownloadingModel,
     removeLocalDownloadingModel,
+    markResumableDownload,
+    clearResumableDownload,
   } = useDownloadStore()
   const downloadProcesses = useMemo(
     () =>
@@ -60,6 +63,7 @@ export const ModelDownloadAction = ({
   )
 
   const handleDownloadModel = useCallback(async () => {
+    clearResumableDownload(variant.model_id)
     addLocalDownloadingModel(variant.model_id)
     serviceHub
       .models()
@@ -71,7 +75,9 @@ export const ModelDownloadAction = ({
             (e) => e.model_id.toLowerCase() === 'mmproj-f16'
           ) || model.mmproj_models?.[0]
         )?.path,
-        huggingfaceToken
+        huggingfaceToken,
+        true,
+        resumableDownloads.has(variant.model_id)
       )
   }, [
     serviceHub,
@@ -80,13 +86,15 @@ export const ModelDownloadAction = ({
     huggingfaceToken,
     model.mmproj_models,
     addLocalDownloadingModel,
+    clearResumableDownload,
+    resumableDownloads,
   ])
 
   const handleCancelDownload = useCallback(() => {
+    markResumableDownload(variant.model_id)
     markDownloadCancellationRequested(variant.model_id)
-    removeLocalDownloadingModel(variant.model_id)
     void serviceHub.models().abortDownload(variant.model_id)
-  }, [removeLocalDownloadingModel, serviceHub, variant.model_id])
+  }, [markResumableDownload, serviceHub, variant.model_id])
 
   const isDownloading =
     localDownloadingModels.has(variant.model_id) ||

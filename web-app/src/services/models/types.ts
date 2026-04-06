@@ -2,7 +2,12 @@
  * Models Service Types
  */
 
-import { SessionInfo, modelInfo, ThreadMessage, UnloadResult } from '@janhq/core'
+import {
+  SessionInfo,
+  modelInfo,
+  ThreadMessage,
+  UnloadResult,
+} from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 
 // Types for model catalog
@@ -92,7 +97,6 @@ export interface ModelValidationResult {
   metadata?: GgufMetadata
 }
 
-
 export type PreflightReason =
   | 'AUTH_REQUIRED'
   | 'LICENSE_NOT_ACCEPTED'
@@ -118,14 +122,16 @@ export interface ModelsService {
     modelSize?: number,
     mmprojPath?: string,
     mmprojSha256?: string,
-    mmprojSize?: number
+    mmprojSize?: number,
+    resume?: boolean
   ): Promise<void>
   pullModelWithMetadata(
     id: string,
     modelPath: string,
     mmprojPath?: string,
     hfToken?: string,
-    skipVerification?: boolean
+    skipVerification?: boolean,
+    resume?: boolean
   ): Promise<void>
   abortDownload(id: string): Promise<void>
   deleteModel(id: string, provider?: string): Promise<void>

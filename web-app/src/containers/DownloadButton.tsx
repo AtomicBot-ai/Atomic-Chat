@@ -27,14 +27,20 @@ export function DownloadButtonPlaceholder({
   const {
     downloads,
     localDownloadingModels,
+    resumableDownloads,
     addLocalDownloadingModel,
     removeLocalDownloadingModel,
+    markResumableDownload,
+    clearResumableDownload,
   } = useDownloadStore(
     useShallow((state) => ({
       downloads: state.downloads,
       localDownloadingModels: state.localDownloadingModels,
+      resumableDownloads: state.resumableDownloads,
       addLocalDownloadingModel: state.addLocalDownloadingModel,
       removeLocalDownloadingModel: state.removeLocalDownloadingModel,
+      markResumableDownload: state.markResumableDownload,
+      clearResumableDownload: state.clearResumableDownload,
     }))
   )
   const { t } = useTranslation()
@@ -122,9 +128,11 @@ export function DownloadButtonPlaceholder({
     downloadProcesses.find((e) => e.id === modelId)?.progress || 0
 
   const isRecommended = isRecommendedModel(model.model_name)
+  const shouldResume = resumableDownloads.has(modelId)
 
   const handleDownload = async () => {
     // Immediately set local downloading state and start download
+    clearResumableDownload(modelId)
     addLocalDownloadingModel(modelId)
     const mmprojPath = (
       model.mmproj_models?.find(
@@ -133,14 +141,21 @@ export function DownloadButtonPlaceholder({
     )?.path
     serviceHub
       .models()
-      .pullModelWithMetadata(modelId, modelUrl, mmprojPath, huggingfaceToken)
+      .pullModelWithMetadata(
+        modelId,
+        modelUrl,
+        mmprojPath,
+        huggingfaceToken,
+        true,
+        shouldResume
+      )
   }
 
   const handleCancelDownload = useCallback(() => {
     markDownloadCancellationRequested(modelId)
-    removeLocalDownloadingModel(modelId)
+    markResumableDownload(modelId)
     void serviceHub.models().abortDownload(modelId)
-  }, [modelId, removeLocalDownloadingModel, serviceHub])
+  }, [modelId, markResumableDownload, serviceHub])
 
   return (
     <div

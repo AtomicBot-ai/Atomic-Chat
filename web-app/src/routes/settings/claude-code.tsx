@@ -160,7 +160,10 @@ function ClaudeCodeIntegration() {
       setServerStatus('running')
 
       // Persist whichever models are actually running so next startup can restore them
-      const activeModels = await serviceHub.models().getActiveModels().catch(() => [] as string[])
+      const activeModels = await serviceHub
+        .models()
+        .getActiveModels()
+        .catch(() => [] as string[])
       if (activeModels.length > 0) {
         const serverModels = activeModels.flatMap((id) => {
           const p = providers.find((p) => p?.models?.some((m) => m.id === id))
@@ -565,8 +568,13 @@ function JanCodeRecommendation({
   onSelect: (modelId: string) => void
 }) {
   const serviceHub = useServiceHub()
-  const { downloads, localDownloadingModels, addLocalDownloadingModel } =
-    useDownloadStore()
+  const {
+    downloads,
+    localDownloadingModels,
+    resumableDownloads,
+    addLocalDownloadingModel,
+    clearResumableDownload,
+  } = useDownloadStore()
   const { getProviderByName } = useModelProvider()
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
   const [janCodeCatalog, setJanCodeCatalog] = useState<CatalogModel | null>(
@@ -622,6 +630,7 @@ function JanCodeRecommendation({
 
   const handleDownload = () => {
     if (!defaultVariant) return
+    clearResumableDownload(defaultVariant.model_id)
     addLocalDownloadingModel(defaultVariant.model_id)
     serviceHub
       .models()
@@ -630,7 +639,8 @@ function JanCodeRecommendation({
         defaultVariant.path,
         undefined,
         huggingfaceToken,
-        true
+        true,
+        resumableDownloads.has(defaultVariant.model_id)
       )
   }
 

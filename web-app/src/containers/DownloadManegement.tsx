@@ -43,6 +43,8 @@ export function DownloadManagement() {
     localDownloadingModels,
     removeDownload,
     removeLocalDownloadingModel,
+    markResumableDownload,
+    clearResumableDownload,
   } = useDownloadStore()
   const { updateState } = useAppUpdater()
 
@@ -184,11 +186,13 @@ export function DownloadManagement() {
         wasDownloadCancellationRequested(state.modelId) ||
         isCancellationLikeError(err)
       ) {
+        markResumableDownload(state.modelId)
         toast.dismiss('download-failed')
         return
       }
 
       if (err.includes('HTTP status 401')) {
+        clearResumableDownload(state.modelId)
         toast.error('Hugging Face token required', {
           id: 'download-failed',
           description:
@@ -202,6 +206,7 @@ export function DownloadManagement() {
       }
 
       if (err.includes('HTTP status 403')) {
+        clearResumableDownload(state.modelId)
         toast.error('Accept model license on Hugging Face', {
           id: 'download-failed',
           description:
@@ -211,6 +216,7 @@ export function DownloadManagement() {
       }
 
       if (err.includes('HTTP status 429')) {
+        markResumableDownload(state.modelId)
         toast.error('Rate limited by Hugging Face', {
           id: 'download-failed',
           description:
@@ -223,6 +229,7 @@ export function DownloadManagement() {
         return
       }
 
+      markResumableDownload(state.modelId)
       toast.error(t('common:toast.downloadFailed.title'), {
         id: 'download-failed',
         description: t('common:toast.downloadFailed.description', {
@@ -230,7 +237,14 @@ export function DownloadManagement() {
         }),
       })
     },
-    [removeDownload, removeLocalDownloadingModel, t, navigate]
+    [
+      removeDownload,
+      removeLocalDownloadingModel,
+      markResumableDownload,
+      clearResumableDownload,
+      t,
+      navigate,
+    ]
   )
 
   const onModelValidationStarted = useCallback(
@@ -256,6 +270,7 @@ export function DownloadManagement() {
       // Dismiss the validation started toast
       toast.dismiss(`model-validation-started-${event.modelId}`)
 
+      clearResumableDownload(event.modelId)
       removeDownload(event.modelId)
       removeLocalDownloadingModel(event.modelId)
 
@@ -267,7 +282,7 @@ export function DownloadManagement() {
         duration: 30000,
       })
     },
-    [removeDownload, removeLocalDownloadingModel, t]
+    [removeDownload, removeLocalDownloadingModel, clearResumableDownload, t]
   )
 
   const onFileDownloadStopped = useCallback(
@@ -277,6 +292,7 @@ export function DownloadManagement() {
       removeLocalDownloadingModel(state.modelId)
       toast.dismiss('download-failed')
 
+      markResumableDownload(state.modelId)
       if (wasDownloadCancellationRequested(state.modelId)) {
         toast.info(t('common:toast.downloadCancelled.title'), {
           id: 'cancel-download',
@@ -285,7 +301,7 @@ export function DownloadManagement() {
         clearDownloadCancellationRequested(state.modelId)
       }
     },
-    [removeDownload, removeLocalDownloadingModel, t]
+    [removeDownload, removeLocalDownloadingModel, markResumableDownload, t]
   )
 
   const onFileDownloadSuccess = useCallback(
@@ -296,6 +312,7 @@ export function DownloadManagement() {
       toast.dismiss(`model-validation-started-${state.modelId}`)
 
       clearDownloadCancellationRequested(state.modelId)
+      clearResumableDownload(state.modelId)
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
       toast.success(t('common:toast.downloadComplete.title'), {
@@ -305,7 +322,7 @@ export function DownloadManagement() {
         }),
       })
     },
-    [removeDownload, removeLocalDownloadingModel, t]
+    [removeDownload, removeLocalDownloadingModel, clearResumableDownload, t]
   )
 
   const onFileDownloadAndVerificationSuccess = useCallback(
@@ -316,6 +333,7 @@ export function DownloadManagement() {
       toast.dismiss(`model-validation-started-${state.modelId}`)
 
       clearDownloadCancellationRequested(state.modelId)
+      clearResumableDownload(state.modelId)
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
       toast.success(t('common:toast.downloadAndVerificationComplete.title'), {
@@ -328,7 +346,7 @@ export function DownloadManagement() {
         ),
       })
     },
-    [removeDownload, removeLocalDownloadingModel, t]
+    [removeDownload, removeLocalDownloadingModel, clearResumableDownload, t]
   )
 
   useEffect(() => {
@@ -477,8 +495,10 @@ export function DownloadManagement() {
                             size="icon-xs"
                             onClick={() => {
                               markDownloadCancellationRequested(download.name)
+                              markResumableDownload(download.name)
                               if (download.id !== download.name) {
                                 markDownloadCancellationRequested(download.id)
+                                markResumableDownload(download.id)
                               }
                               if (
                                 download.id.startsWith('llamacpp') ||

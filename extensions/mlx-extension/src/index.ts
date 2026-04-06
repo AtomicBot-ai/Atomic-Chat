@@ -605,6 +605,7 @@ export default class mlx_extension extends AIEngine {
       throw new Error(`Model ${modelId} already exists`)
 
     const sourcePath = opts.modelPath
+    const resumeDownload = (opts as ImportOptions & { resume?: boolean }).resume
 
     if (sourcePath.startsWith('https://')) {
       // Download from URL to mlx models folder
@@ -651,7 +652,8 @@ export default class mlx_extension extends AIEngine {
             size: { transferred, total },
             downloadType: 'Model',
           })
-        }
+        },
+        resumeDownload ?? false
       )
 
       // Emit download success event so DownloadManagement clears the download state
@@ -772,9 +774,6 @@ export default class mlx_extension extends AIEngine {
     } catch (cancelError) {
       logger.warn('Failed to cancel download task:', cancelError)
     }
-
-    // Delete the entire model folder if it exists (for validation failures)
-    await this.deleteModelFolder(modelId)
   }
 
   /**

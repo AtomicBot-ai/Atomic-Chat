@@ -13,8 +13,13 @@ import {
 export function PromptJanModel() {
   const { setDismissed } = useJanModelPromptDismissed()
   const serviceHub = useServiceHub()
-  const { downloads, localDownloadingModels, addLocalDownloadingModel } =
-    useDownloadStore()
+  const {
+    downloads,
+    localDownloadingModels,
+    resumableDownloads,
+    addLocalDownloadingModel,
+    clearResumableDownload,
+  } = useDownloadStore()
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
 
   const [janNewModel, setJanNewModel] = useState<CatalogModel | null>(null)
@@ -75,6 +80,7 @@ export function PromptJanModel() {
   const handleDownload = () => {
     if (!defaultVariant || !janNewModel) return
 
+    clearResumableDownload(defaultVariant.model_id)
     addLocalDownloadingModel(defaultVariant.model_id)
     serviceHub
       .models()
@@ -87,7 +93,8 @@ export function PromptJanModel() {
           ) || janNewModel.mmproj_models?.[0]
         )?.path,
         huggingfaceToken,
-        true
+        true,
+        resumableDownloads.has(defaultVariant.model_id)
       )
     setDismissed(true)
   }

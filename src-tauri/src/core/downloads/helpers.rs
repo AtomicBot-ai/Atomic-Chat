@@ -18,7 +18,6 @@ pub fn err_to_string<E: std::fmt::Display>(e: E) -> String {
     format!("Error: {e}")
 }
 
-
 // ===== VALIDATION FUNCTIONS =====
 
 /// Validates a downloaded file against expected hash and size
@@ -480,6 +479,7 @@ async fn download_single_file(
         evt_name,
         progress_tracker,
     } = ctx;
+    let keep_partial_on_cancel = true;
     // Create parent directories if they don't exist
     if let Some(parent) = save_path.parent() {
         if !parent.exists() {
@@ -557,7 +557,7 @@ async fn download_single_file(
     } else {
         _get_maybe_resume_with_fallback(&client, &item.url, 0).await?
     };
-    
+
     let mut stream = resp.bytes_stream();
 
     let file = if should_resume {
@@ -578,7 +578,7 @@ async fn download_single_file(
     // write chunk to file
     while let Some(chunk) = stream.next().await {
         if cancel_token.is_cancelled() {
-            if !should_resume {
+            if !keep_partial_on_cancel && !should_resume {
                 tokio::fs::remove_dir_all(&save_path.parent().unwrap())
                     .await
                     .ok();
