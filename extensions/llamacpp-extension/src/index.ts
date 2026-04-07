@@ -1949,7 +1949,7 @@ export default class llamacpp_extension extends AIEngine {
     })
     if (result) {
       try {
-        await fetch(`http://localhost:${sessionInfo.port}/health`)
+        await globalThis.fetch(`http://localhost:${sessionInfo.port}/health`)
       } catch (e) {
         this.sessionCache.delete(opts.model)
         this.unload(sessionInfo.model_id)
@@ -1976,8 +1976,9 @@ export default class llamacpp_extension extends AIEngine {
     if (opts.stream) {
       return this.handleStreamingResponse(url, headers, body, abortController)
     }
-    // Handle non-streaming response
-    const response = await fetch(url, {
+    // Handle non-streaming response – use globalThis.fetch to bypass
+    // tauri_plugin_http whose ReadableStream bridge may hang on response body.
+    const response = await globalThis.fetch(url, {
       method: 'POST',
       headers,
       body,
@@ -2203,7 +2204,9 @@ export default class llamacpp_extension extends AIEngine {
         model: session.model_id,
         encoding_format: 'float',
       })
-      const response = await fetch(baseUrl, {
+      // Use globalThis.fetch to bypass tauri_plugin_http's intercepted fetch
+      // whose ReadableStream bridge does not properly relay the response body.
+      const response = await globalThis.fetch(baseUrl, {
         method: 'POST',
         headers,
         body,

@@ -86,6 +86,7 @@ import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionD
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
 
 type ChatInputProps = {
   className?: string
@@ -100,6 +101,8 @@ type ChatInputProps = {
   onStop?: () => void
   chatStatus?: ChatStatus
 }
+
+const EMBEDDING_MODEL_ID = 'sentence-transformer-mini'
 
 const ChatInput = memo(function ChatInput({
   className,
@@ -144,8 +147,8 @@ const ChatInput = memo(function ChatInput({
   // Agent mode
   // Use TEMPORARY_CHAT_ID as fallback key on the home screen (same pattern as attachments)
   const agentModeKey = currentThreadId ?? TEMPORARY_CHAT_ID
-  const isAgentMode = useAgentMode((state) =>
-    state.agentThreads[agentModeKey] === true
+  const isAgentMode = useAgentMode(
+    (state) => state.agentThreads[agentModeKey] === true
   )
   // When projectId is present, treat as normal chat (disable agent mode UI)
   const effectiveAgentMode = isAgentMode && !projectId
@@ -179,10 +182,12 @@ const ChatInput = memo(function ChatInput({
   const [showVisionModelPrompt, setShowVisionModelPrompt] = useState(false)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
 
-  const isModelActive = selectedModel?.id ? activeModels.includes(selectedModel.id) : false
-  const [selectedAssistant, setSelectedAssistant] = useState<Assistant | undefined>(
-    () => assistants.find((a) => a.id === defaultAssistantId) ?? assistants[0]
-  )
+  const isModelActive = selectedModel?.id
+    ? activeModels.includes(selectedModel.id)
+    : false
+  const [selectedAssistant, setSelectedAssistant] = useState<
+    Assistant | undefined
+  >(() => assistants.find((a) => a.id === defaultAssistantId) ?? assistants[0])
 
   // No auto-selection: let the user explicitly pick an assistant
 
@@ -234,6 +239,12 @@ const ChatInput = memo(function ChatInput({
     (state) => state.transferAttachments
   )
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
+  const { downloads, localDownloadingModels } = useDownloadStore(
+    useShallow((state) => ({
+      downloads: state.downloads,
+      localDownloadingModels: state.localDownloadingModels,
+    }))
+  )
 
   useEffect(() => {
     attachmentsKeyRef.current = attachmentsKey
@@ -243,6 +254,9 @@ const ChatInput = memo(function ChatInput({
     (a) => a.type === 'document' && a.processing
   )
   const ingestingAny = attachments.some((a) => a.processing)
+  const embeddingModelDownload = downloads[EMBEDDING_MODEL_ID]
+  const isEmbeddingModelDownloading =
+    localDownloadingModels.has(EMBEDDING_MODEL_ID) || !!embeddingModelDownload
 
   const lastTransferredThreadId = useRef<string | null>(null)
 
@@ -440,6 +454,21 @@ const ChatInput = memo(function ChatInput({
 
         // Clear selected assistant after creating thread
         setSelectedAssistant(undefined)
+
+        // Mark the new thread with hasDocuments if any documents were embedded
+        const hasEmbeddedDocs = attachments.some(
+          (a) =>
+            a.type === 'document' &&
+            a.processed &&
+            a.injectionMode === 'embeddings'
+        )
+        console.log('[ChatInput:home] newThread:', newThread.id, 'attachments:', attachments.length, 'hasEmbeddedDocs:', hasEmbeddedDocs, 'attachment states:', attachments.map(a => ({ name: a.name, type: a.type, processed: a.processed, injectionMode: a.injectionMode })))
+        if (hasEmbeddedDocs) {
+          useThreads.getState().updateThread(newThread.id, {
+            metadata: { hasDocuments: true },
+          })
+          console.log('[ChatInput:home] Set hasDocuments=true on thread', newThread.id)
+        }
 
         // Transfer agent mode from home screen to the new thread
         if (isAgentMode) {
@@ -978,6 +1007,32 @@ const ChatInput = memo(function ChatInput({
     return `${val.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
   }
 
+  const embeddingModelStatusText = useMemo(() => {
+    if (!ingestingDocs || !isEmbeddingModelDownloading) return undefined
+
+    const percent =
+      typeof embeddingModelDownload?.progress === 'number'
+        ? Math.round(embeddingModelDownload.progress * 100)
+        : undefined
+    const transferred = formatBytes(embeddingModelDownload?.current)
+    const total = formatBytes(embeddingModelDownload?.total)
+    const sizeLabel =
+      transferred && total
+        ? `${transferred} / ${total}`
+        : total || transferred || undefined
+
+    const details = [
+      percent !== undefined ? `${percent}%` : undefined,
+      sizeLabel,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+
+    return details
+      ? `Downloading embedding model ${EMBEDDING_MODEL_ID}... ${details}`
+      : `Downloading embedding model ${EMBEDDING_MODEL_ID}...`
+  }, [embeddingModelDownload, ingestingDocs, isEmbeddingModelDownloading])
+
   const hashBase64 = async (base64: string): Promise<string> => {
     const binary = atob(base64)
     const bytes = new Uint8Array(binary.length)
@@ -1053,9 +1108,9 @@ const ChatInput = memo(function ChatInput({
     const duplicates: string[] = []
     const newFiles: Attachment[] = []
 
-    const currentAttachments = useChatAttachments.getState().getAttachments(
-      attachmentsKey
-    )
+    const currentAttachments = useChatAttachments
+      .getState()
+      .getAttachments(attachmentsKey)
 
     const existingImageHashes = new Set<string>()
     const existingImageNames = new Set<string>()
@@ -1074,10 +1129,8 @@ const ChatInput = memo(function ChatInput({
     for (const att of preparedFiles) {
       const hash = att.contentHash
       const isDuplicateByContent =
-        hash &&
-        (existingImageHashes.has(hash) || seenHashesInBatch.has(hash))
-      const isDuplicateByName =
-        existingImageNames.has(att.name)
+        hash && (existingImageHashes.has(hash) || seenHashesInBatch.has(hash))
+      const isDuplicateByName = existingImageNames.has(att.name)
       if (isDuplicateByContent || isDuplicateByName) {
         duplicates.push(att.name)
         continue
@@ -1097,7 +1150,9 @@ const ChatInput = memo(function ChatInput({
         for (const img of newFiles) {
           const matchImg = (a: Attachment) =>
             a.type === 'image' &&
-            (img.contentHash ? a.contentHash === img.contentHash : a.name === img.name)
+            (img.contentHash
+              ? a.contentHash === img.contentHash
+              : a.name === img.name)
 
           try {
             // Mark as processing
@@ -1534,7 +1589,6 @@ const ChatInput = memo(function ChatInput({
                                     )}
                                   </div>
                                 )}
-
                               </div>
                             </TooltipTrigger>
                             <TooltipContent>
@@ -1565,16 +1619,19 @@ const ChatInput = memo(function ChatInput({
                               className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
                               onClick={() => handleRemoveAttachment(idx)}
                             >
-                              <IconX
-                                className="text-neutral-200"
-                                size={14}
-                              />
+                              <IconX className="text-neutral-200" size={14} />
                             </div>
                           )}
                         </div>
                       )
                     })}
                 </div>
+                {embeddingModelStatusText && (
+                  <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                    <IconLoader2 size={14} className="animate-spin shrink-0" />
+                    <span className="truncate">{embeddingModelStatusText}</span>
+                  </div>
+                )}
               </div>
             )}
             <TextareaAutosize
@@ -1634,115 +1691,147 @@ const ChatInput = memo(function ChatInput({
               >
                 {/* Dropdown for attachments — hidden in agent mode */}
                 {!effectiveAgentMode && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="secondary" size="icon-sm" className='rounded-full mr-2 mb-1'>
-                      <PlusIcon size={18} className="text-secondary-foreground" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    {/* Vision image attachment - always enabled, prompts to download vision model if needed */}
-                    <DropdownMenuItem onClick={handleImagePickerClick}>
-                      <IconPhoto size={18} className="text-muted-foreground" />
-                      <span>Add Images</span>
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        className="hidden"
-                        multiple
-                        onChange={handleFileChange}
-                      />
-                    </DropdownMenuItem>
-                    {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
-                    <DropdownMenuItem
-                      onClick={handleAttachDocsIngest}
-                      disabled={!selectedModel?.capabilities?.includes('tools')}
-                    >
-                      {ingestingDocs ? (
-                        <IconLoader2
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="secondary"
+                        size="icon-sm"
+                        className="rounded-full mr-2 mb-1"
+                      >
+                        <PlusIcon
                           size={18}
-                          className="text-muted-foreground animate-spin"
+                          className="text-secondary-foreground"
                         />
-                      ) : (
-                        <IconPaperclip
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      {/* Vision image attachment - always enabled, prompts to download vision model if needed */}
+                      <DropdownMenuItem onClick={handleImagePickerClick}>
+                        <IconPhoto
                           size={18}
                           className="text-muted-foreground"
                         />
-                      )}
-                      <span>
-                        {ingestingDocs
-                          ? 'Indexing documents…'
-                          : 'Add documents or files'}
-                      </span>
-                    </DropdownMenuItem>
-                    {/* Use Assistant - only show when no projectId */}
-                    {!projectId && (
-                      <DropdownMenuSub>
-                        <DropdownMenuSubTrigger>
-                          <IconUser size={18} className="text-muted-foreground" />
-                          <span>Use Assistant</span>
-                        </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
-                          <DropdownMenuItem
-                            className={!selectedAssistant && !currentThread?.assistants?.length ? 'bg-accent' : ''}
-                            onClick={() => {
-                              setSelectedAssistant(undefined)
-                              if (currentThreadId) {
-                                updateCurrentThreadAssistant(undefined as unknown as Assistant)
+                        <span>Add Images</span>
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          className="hidden"
+                          multiple
+                          onChange={handleFileChange}
+                        />
+                      </DropdownMenuItem>
+                      {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
+                      <DropdownMenuItem
+                        onClick={handleAttachDocsIngest}
+                        disabled={
+                          !selectedModel?.capabilities?.includes('tools')
+                        }
+                      >
+                        {ingestingDocs ? (
+                          <IconLoader2
+                            size={18}
+                            className="text-muted-foreground animate-spin"
+                          />
+                        ) : (
+                          <IconPaperclip
+                            size={18}
+                            className="text-muted-foreground"
+                          />
+                        )}
+                        <span>
+                          {ingestingDocs
+                            ? 'Indexing documents…'
+                            : 'Add documents or files'}
+                        </span>
+                      </DropdownMenuItem>
+                      {/* Use Assistant - only show when no projectId */}
+                      {!projectId && (
+                        <DropdownMenuSub>
+                          <DropdownMenuSubTrigger>
+                            <IconUser
+                              size={18}
+                              className="text-muted-foreground"
+                            />
+                            <span>Use Assistant</span>
+                          </DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+                            <DropdownMenuItem
+                              className={
+                                !selectedAssistant &&
+                                !currentThread?.assistants?.length
+                                  ? 'bg-accent'
+                                  : ''
                               }
-                            }}
-                          >
-                            <div className="flex items-center gap-2 w-full">
-                              <span className="text-muted-foreground">—</span>
-                              <span>None</span>
-                              {!selectedAssistant && !currentThread?.assistants?.length && (
-                                <span className="ml-auto text-xs text-muted-foreground">✓</span>
-                              )}
-                            </div>
-                          </DropdownMenuItem>
-                          {assistants.length > 0 ? (
-                            assistants.map((assistant) => {
-                              const isSelected = initialMessage && selectedAssistant?.id === assistant.id ||
-                                (assistant && currentThread?.assistants?.some((a) => a.id === assistant.id))
-                              return (
-                                <DropdownMenuItem
-                                  key={assistant.id}
-                                  className={isSelected ? 'bg-accent' : ''}
-                                  onClick={() => {
-                                    setSelectedAssistant(assistant)
-                                    if (currentThreadId) {
-                                      updateCurrentThreadAssistant(assistant)
-                                    }
-                                  }}
-                                >
-                                  <div className="flex items-center gap-2 w-full">
-                                    <AvatarEmoji
-                                      avatar={assistant.avatar}
-                                      imageClassName="w-4 h-4 object-contain"
-                                      textClassName="text-sm"
-                                    />
-                                    <span>{assistant.name || 'Unnamed Assistant'}</span>
-                                    {isSelected && (
-                                      <span className="ml-auto text-xs text-muted-foreground">
-                                        ✓
-                                      </span>
-                                    )}
-                                  </div>
-                                </DropdownMenuItem>
-                              )
-                            })
-                          ) : (
-                            <DropdownMenuItem disabled>
-                              <span className="text-muted-foreground">
-                                No assistants available
-                              </span>
+                              onClick={() => {
+                                setSelectedAssistant(undefined)
+                                if (currentThreadId) {
+                                  updateCurrentThreadAssistant(
+                                    undefined as unknown as Assistant
+                                  )
+                                }
+                              }}
+                            >
+                              <div className="flex items-center gap-2 w-full">
+                                <span className="text-muted-foreground">—</span>
+                                <span>None</span>
+                                {!selectedAssistant &&
+                                  !currentThread?.assistants?.length && (
+                                    <span className="ml-auto text-xs text-muted-foreground">
+                                      ✓
+                                    </span>
+                                  )}
+                              </div>
                             </DropdownMenuItem>
-                          )}
-                        </DropdownMenuSubContent>
-                      </DropdownMenuSub>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                            {assistants.length > 0 ? (
+                              assistants.map((assistant) => {
+                                const isSelected =
+                                  (initialMessage &&
+                                    selectedAssistant?.id === assistant.id) ||
+                                  (assistant &&
+                                    currentThread?.assistants?.some(
+                                      (a) => a.id === assistant.id
+                                    ))
+                                return (
+                                  <DropdownMenuItem
+                                    key={assistant.id}
+                                    className={isSelected ? 'bg-accent' : ''}
+                                    onClick={() => {
+                                      setSelectedAssistant(assistant)
+                                      if (currentThreadId) {
+                                        updateCurrentThreadAssistant(assistant)
+                                      }
+                                    }}
+                                  >
+                                    <div className="flex items-center gap-2 w-full">
+                                      <AvatarEmoji
+                                        avatar={assistant.avatar}
+                                        imageClassName="w-4 h-4 object-contain"
+                                        textClassName="text-sm"
+                                      />
+                                      <span>
+                                        {assistant.name || 'Unnamed Assistant'}
+                                      </span>
+                                      {isSelected && (
+                                        <span className="ml-auto text-xs text-muted-foreground">
+                                          ✓
+                                        </span>
+                                      )}
+                                    </div>
+                                  </DropdownMenuItem>
+                                )
+                              })
+                            ) : (
+                              <DropdownMenuItem disabled>
+                                <span className="text-muted-foreground">
+                                  No assistants available
+                                </span>
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
                 {/* {model?.provider === 'llamacpp' && loadingModel ? (
                   <ModelLoader />
@@ -1796,26 +1885,25 @@ const ChatInput = memo(function ChatInput({
                 )}
                 */}
 
-                {!effectiveAgentMode && selectedModel?.capabilities?.includes('embeddings') && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                          variant="ghost"
-                          size="icon-xs"
-                        >
-                        <IconCodeCircle2
-                          size={18}
-                          className="text-muted-foreground"
-                        />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{t('embeddings')}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
+                {!effectiveAgentMode &&
+                  selectedModel?.capabilities?.includes('embeddings') && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon-xs">
+                          <IconCodeCircle2
+                            size={18}
+                            className="text-muted-foreground"
+                          />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{t('embeddings')}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
 
-                {!effectiveAgentMode && selectedModel?.capabilities?.includes('tools') &&
+                {!effectiveAgentMode &&
+                  selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers &&
                   (MCPToolComponent ? (
                     // Use custom MCP component
@@ -1834,10 +1922,7 @@ const ChatInput = memo(function ChatInput({
                       open={tooltipToolsAvailable}
                       onOpenChange={setTooltipToolsAvailable}
                     >
-                      <TooltipTrigger
-                        asChild
-                        disabled={dropdownToolsAvailable}
-                      >
+                      <TooltipTrigger asChild disabled={dropdownToolsAvailable}>
                         <Button
                           variant="ghost"
                           size="icon-xs"
@@ -1859,14 +1944,12 @@ const ChatInput = memo(function ChatInput({
                               return (
                                 <div
                                   className={cn(
-                                    'p-1 flex items-center justify-center rounded-sm transition-all duration-200 ease-in-out gap-1 cursor-pointer',
+                                    'p-1 flex items-center justify-center rounded-sm transition-all duration-200 ease-in-out gap-1 cursor-pointer'
                                   )}
                                 >
                                   <IconTool
                                     size={18}
-                                    className={cn(
-                                      'text-muted-foreground',
-                                    )}
+                                    className={cn('text-muted-foreground')}
                                   />
                                 </div>
                               )
@@ -1885,12 +1968,16 @@ const ChatInput = memo(function ChatInput({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
-                        variant={isAgentMode ? "default" : "ghost"}
+                        variant={isAgentMode ? 'default' : 'ghost'}
                         size="icon-xs"
-                        onClick={currentThreadId ? handleAgentToggle : undefined}
+                        onClick={
+                          currentThreadId ? handleAgentToggle : undefined
+                        }
                         className={cn(
-                          isAgentMode && 'text-primary bg-primary/10 hover:bg-primary/10 items-center',
-                          !currentThreadId && 'cursor-default pointer-events-none'
+                          isAgentMode &&
+                            'text-primary bg-primary/10 hover:bg-primary/10 items-center',
+                          !currentThreadId &&
+                            'cursor-default pointer-events-none'
                         )}
                       >
                         <BotIcon
@@ -1911,37 +1998,39 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {!effectiveAgentMode && selectedModel?.capabilities?.includes('web_search') && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon-xs">
-                        <IconWorld
-                          size={18}
-                          className="text-muted-foreground"
-                        />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Web Search</p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
+                {!effectiveAgentMode &&
+                  selectedModel?.capabilities?.includes('web_search') && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon-xs">
+                          <IconWorld
+                            size={18}
+                            className="text-muted-foreground"
+                          />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Web Search</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
 
-                {!effectiveAgentMode && selectedModel?.capabilities?.includes('reasoning') && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon-xs">
-                        <IconAtom
-                          size={18}
-                          className="text-muted-foreground"
-                        />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{t('reasoning')}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
+                {!effectiveAgentMode &&
+                  selectedModel?.capabilities?.includes('reasoning') && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon-xs">
+                          <IconAtom
+                            size={18}
+                            className="text-muted-foreground"
+                          />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{t('reasoning')}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
               </div>
             </div>
 

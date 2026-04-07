@@ -32,7 +32,10 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
-import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
+import {
+  DEFAULT_MODEL_QUANTIZATIONS,
+  RECOMMENDED_MODEL_FALLBACKS,
+} from '@/constants/models'
 import { useTranslation } from '@/i18n'
 
 type SearchParams = {
@@ -81,9 +84,16 @@ function HubModelDetailContent() {
   }, [fetchSources])
 
   const fetchRepo = useCallback(async () => {
+    const repoKey = search.repo || modelId
+    const fallbackModel = RECOMMENDED_MODEL_FALLBACKS[repoKey]
+    if (fallbackModel) {
+      setRepoData(fallbackModel)
+      return
+    }
+
     const repoInfo = await serviceHub
       .models()
-      .fetchHuggingFaceRepo(search.repo || modelId, huggingfaceToken)
+      .fetchHuggingFaceRepo(repoKey, huggingfaceToken)
     if (repoInfo) {
       const repoDetail = serviceHub
         .models()

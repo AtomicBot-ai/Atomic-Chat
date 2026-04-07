@@ -67,6 +67,7 @@ function LocalAPIServerContent() {
   const { serverStatus, setServerStatus } = useAppState()
   const [showApiKeyError, setShowApiKeyError] = useState(false)
   const setActiveModels = useAppState((state) => state.setActiveModels)
+  const localServerUrl = `http://127.0.0.1:${serverPort}${apiPrefix}`
 
   useEffect(() => {
     const checkServerStatus = async () => {
@@ -425,8 +426,14 @@ function LocalAPIServerContent() {
                       <div className="space-y-1">
                         <div>The server is currently running.</div>
                         <div className="text-xs font-mono">
-                          http://{serverHost}:{serverPort}
-                          {apiPrefix}
+                          <a
+                            href={localServerUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="underline underline-offset-2 hover:text-foreground"
+                          >
+                            {localServerUrl}
+                          </a>
                         </div>
                       </div>
                     ) : (

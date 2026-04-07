@@ -231,9 +231,11 @@ export const processAttachmentsForSend = async (
       // Default: ingest as embeddings
       notifyUpdate(doc.name, 'processing')
 
+      console.log('[processAttachmentsForSend] Calling ingestFileAttachment for', doc.name, 'threadId:', threadId, 'projectId:', projectId, 'doc.path:', doc.path)
       const res = projectId
         ? await serviceHub.uploads().ingestFileAttachmentForProject(projectId, doc)
         : await serviceHub.uploads().ingestFileAttachment(threadId, doc)
+      console.log('[processAttachmentsForSend] ingestFileAttachment completed for', doc.name, 'result:', JSON.stringify(res))
 
       processedAttachments.push({
         ...doc,

@@ -493,6 +493,7 @@ function ThreadDetail() {
     ) => {
       // Get all attachments from the store (includes both images and documents)
       const allAttachments = getAttachments(attachmentsKey)
+      console.log('[processAndSendMessage] attachmentsKey:', attachmentsKey, 'allAttachments:', allAttachments.length, 'docs:', allAttachments.filter(a => a.type === 'document').length)
 
       // Convert image files to attachments for persistence
       const imageAttachments = files?.map((file) => {
@@ -572,11 +573,13 @@ function ThreadDetail() {
         })
       }
 
+      console.log('[processAndSendMessage] Calling sendMessage with parts:', parts.length, 'messageId:', messageId)
       sendMessage({
         parts,
         id: messageId,
         metadata: userMessage.metadata,
       })
+      console.log('[processAndSendMessage] sendMessage called successfully')
 
       // Clear attachments after sending
       clearAttachmentsForThread(attachmentsKey)
@@ -610,6 +613,8 @@ function ThreadDetail() {
       sessionStorage.removeItem(initialMessageKey)
       initialMessageSentRef.current = true
 
+      console.log('[ThreadPage] Found initial message in sessionStorage, sending...')
+
       // Process message asynchronously
       ;(async () => {
         try {
@@ -618,9 +623,14 @@ function ThreadDetail() {
             files?: Array<{ type: string; mediaType: string; url: string }>
           }
 
+          console.log('[ThreadPage] Calling processAndSendMessage with:', {
+            text: message.text?.slice(0, 50),
+            filesCount: message.files?.length ?? 0,
+          })
           await processAndSendMessage(message.text, message.files)
+          console.log('[ThreadPage] processAndSendMessage completed')
         } catch (error) {
-          console.error('Failed to parse initial message:', error)
+          console.error('[ThreadPage] Failed to process initial message:', error)
         }
       })()
     }
