@@ -184,7 +184,13 @@ export default class RagExtension extends RAGExtension {
     const threadId = String(args['thread_id'] || '')
     const projectId = String(args['project_id'] || '')
     const query = String(args['query'] || '')
-    const fileIds = args['file_ids'] as string[] | undefined
+    let fileIds = args['file_ids'] as string[] | string | undefined
+    if (typeof fileIds === 'string') {
+      try { fileIds = JSON.parse(fileIds) } catch { fileIds = undefined }
+    }
+    if (fileIds != null && !Array.isArray(fileIds)) {
+      fileIds = undefined
+    }
     const scope = String(args['scope'] || 'thread')
 
     // Use project_id as threadId when scope is project
