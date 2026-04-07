@@ -29,6 +29,7 @@ import {
 import { toast } from 'sonner'
 import { useCallback, useEffect, useState } from 'react'
 import { predefinedProviders } from '@/constants/providers'
+import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 import { useBackendUpdater } from '@/hooks/useBackendUpdater'
@@ -367,7 +368,9 @@ function ProviderDetail() {
               </h1>
               <Switch
                 checked={provider?.active ?? false}
-                onCheckedChange={(checked) => provider && updateProvider(providerName, { active: checked })}
+                onCheckedChange={(checked) =>
+                  provider && updateProvider(providerName, { active: checked })
+                }
               />
             </div>
 
@@ -435,7 +438,7 @@ function ProviderDetail() {
                                   )
 
                                 if (deviceSettingIndex !== -1) {
-                                  (
+                                  ;(
                                     newSettings[deviceSettingIndex]
                                       .controller_props as {
                                       value: string
@@ -564,150 +567,157 @@ function ProviderDetail() {
                       {t('providers:models')}
                     </h1>
                     <div className="flex items-center gap-2">
-                      {provider && provider.provider !== 'llamacpp' && provider.provider !== 'mlx' && (
-                        <>
-                          <Button
-                            variant="secondary"
-                            size="icon-xs"
-                            onClick={handleRefreshModels}
-                            disabled={refreshingModels}
-                          >
-                            {refreshingModels ? (
-                              <IconLoader
-                                size={18}
-                                className="text-muted-foreground animate-spin"
-                              />
-                            ) : (
-                              <IconRefresh
-                                size={18}
-                                className="text-muted-foreground"
-                              />
-                            )}
-                          </Button>
-                          <DialogAddModel provider={provider} />
-                        </>
-                      )}
+                      {provider &&
+                        provider.provider !== 'llamacpp' &&
+                        provider.provider !== 'mlx' && (
+                          <>
+                            <Button
+                              variant="secondary"
+                              size="icon-xs"
+                              onClick={handleRefreshModels}
+                              disabled={refreshingModels}
+                            >
+                              {refreshingModels ? (
+                                <IconLoader
+                                  size={18}
+                                  className="text-muted-foreground animate-spin"
+                                />
+                              ) : (
+                                <IconRefresh
+                                  size={18}
+                                  className="text-muted-foreground"
+                                />
+                              )}
+                            </Button>
+                            <DialogAddModel provider={provider} />
+                          </>
+                        )}
                       {provider && provider.provider === 'llamacpp' && (
                         <ImportVisionModelDialog
                           provider={provider}
                           onSuccess={handleModelImportSuccess}
                           trigger={
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                            >
+                            <Button variant="secondary" size="sm">
                               <IconFolderPlus
                                 size={18}
                                 className="text-muted-foreground"
                               />
-                              <span>
-                                {t('providers:import')}
-                              </span>
+                              <span>{t('providers:import')}</span>
                             </Button>
                           }
                         />
                       )}
                       {provider && provider.provider === 'mlx' && (
-                          <ImportMlxModelDialog
-                            provider={provider}
-                            onSuccess={handleModelImportSuccess}
-                            trigger={
-                              <Button variant="secondary" size="sm">
-                                <IconFolderPlus
-                                  size={18}
-                                  className="text-muted-foreground"
-                                />
-                                <span>{t('providers:import')}</span>
-                              </Button>
-                            }
-                          />
-                        )}
+                        <ImportMlxModelDialog
+                          provider={provider}
+                          onSuccess={handleModelImportSuccess}
+                          trigger={
+                            <Button variant="secondary" size="sm">
+                              <IconFolderPlus
+                                size={18}
+                                className="text-muted-foreground"
+                              />
+                              <span>{t('providers:import')}</span>
+                            </Button>
+                          }
+                        />
+                      )}
                     </div>
                   </div>
                 }
               >
-                {provider?.models.length ? (
-                  provider?.models.map((model, modelIndex) => {
-                    const capabilities = model.capabilities || []
-                    return (
-                      <CardItem
-                        key={modelIndex}
-                        title={
-                          <div className="flex items-center gap-2">
-                            <h1
-                              className="font-medium line-clamp-1"
-                              title={model.id}
-                            >
-                              {getModelDisplayName(model)}
-                            </h1>
-                            <Capabilities capabilities={capabilities} />
-                          </div>
-                        }
-                        actions={
-                          <div className="flex items-center gap-0.5">
-                            <DialogEditModel
-                              provider={provider}
-                              modelId={model.id}
-                            />
-                            {model.settings && (
-                              <ModelSetting provider={provider} model={model} />
-                            )}
-                            {((provider &&
-                              !predefinedProviders.some(
-                                (p) => p.provider === provider.provider
-                              )) ||
-                              (provider &&
-                                predefinedProviders.some(
-                                  (p) => p.provider === provider.provider
-                                ) &&
-                                Boolean(provider.api_key?.length))) && (
-                              <FavoriteModelAction model={model} />
-                            )}
-                            <DialogDeleteModel
-                              provider={provider}
-                              modelId={model.id}
-                            />
-                            {provider &&
-                              (provider.provider === 'llamacpp' ||
-                                provider.provider === 'mlx') && (
-                                <div className="ml-2">
-                                  {activeModels.some(
-                                    (activeModel) => activeModel === model.id
-                                  ) ? (
-                                    <Button
-                                      size="sm"
-                                      variant="destructive"
-                                      onClick={() => handleStopModel(model.id)}
-                                    >
-                                      {t('providers:stop')}
-                                    </Button>
-                                  ) : (
-                                    <Button
-                                      size="sm"
-                                      disabled={loadingModels.includes(
-                                        model.id
-                                      )}
-                                      onClick={() => handleStartModel(model.id)}
-                                    >
-                                      {loadingModels.includes(model.id) ? (
-                                        <div className="flex items-center gap-2">
-                                          <IconLoader
-                                            size={16}
-                                            className="animate-spin"
-                                          />
-                                        </div>
-                                      ) : (
-                                        t('providers:start')
-                                      )}
-                                    </Button>
-                                  )}
-                                </div>
+                {provider?.models.filter((m) => m.id !== EMBEDDING_MODEL_ID)
+                  .length ? (
+                  provider?.models
+                    .filter((m) => m.id !== EMBEDDING_MODEL_ID)
+                    .map((model, modelIndex) => {
+                      const capabilities = model.capabilities || []
+                      return (
+                        <CardItem
+                          key={modelIndex}
+                          title={
+                            <div className="flex items-center gap-2">
+                              <h1
+                                className="font-medium line-clamp-1"
+                                title={model.id}
+                              >
+                                {getModelDisplayName(model)}
+                              </h1>
+                              <Capabilities capabilities={capabilities} />
+                            </div>
+                          }
+                          actions={
+                            <div className="flex items-center gap-0.5">
+                              <DialogEditModel
+                                provider={provider}
+                                modelId={model.id}
+                              />
+                              {model.settings && (
+                                <ModelSetting
+                                  provider={provider}
+                                  model={model}
+                                />
                               )}
-                          </div>
-                        }
-                      />
-                    )
-                  })
+                              {((provider &&
+                                !predefinedProviders.some(
+                                  (p) => p.provider === provider.provider
+                                )) ||
+                                (provider &&
+                                  predefinedProviders.some(
+                                    (p) => p.provider === provider.provider
+                                  ) &&
+                                  Boolean(provider.api_key?.length))) && (
+                                <FavoriteModelAction model={model} />
+                              )}
+                              <DialogDeleteModel
+                                provider={provider}
+                                modelId={model.id}
+                              />
+                              {provider &&
+                                (provider.provider === 'llamacpp' ||
+                                  provider.provider === 'mlx') && (
+                                  <div className="ml-2">
+                                    {activeModels.some(
+                                      (activeModel) => activeModel === model.id
+                                    ) ? (
+                                      <Button
+                                        size="sm"
+                                        variant="destructive"
+                                        onClick={() =>
+                                          handleStopModel(model.id)
+                                        }
+                                      >
+                                        {t('providers:stop')}
+                                      </Button>
+                                    ) : (
+                                      <Button
+                                        size="sm"
+                                        disabled={loadingModels.includes(
+                                          model.id
+                                        )}
+                                        onClick={() =>
+                                          handleStartModel(model.id)
+                                        }
+                                      >
+                                        {loadingModels.includes(model.id) ? (
+                                          <div className="flex items-center gap-2">
+                                            <IconLoader
+                                              size={16}
+                                              className="animate-spin"
+                                            />
+                                          </div>
+                                        ) : (
+                                          t('providers:start')
+                                        )}
+                                      </Button>
+                                    )}
+                                  </div>
+                                )}
+                            </div>
+                          }
+                        />
+                      )
+                    })
                 ) : (
                   <div className="-mt-2">
                     <div className="flex items-center gap-2">
@@ -730,10 +740,7 @@ function ProviderDetail() {
                       <div className="flex items-center gap-2">
                         <div className="flex items-center gap-2 animate-pulse">
                           <div className="flex gap-2 px-2 py-1 rounded-full text-xs">
-                            <IconLoader
-                              size={16}
-                              className="animate-spin"
-                            />
+                            <IconLoader size={16} className="animate-spin" />
                             Importing...
                           </div>
                           <h1 className="font-medium line-clamp-1">

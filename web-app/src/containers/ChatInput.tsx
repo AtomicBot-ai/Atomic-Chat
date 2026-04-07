@@ -1,3 +1,4 @@
+import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import TextareaAutosize from 'react-textarea-autosize'
 import { cn } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
@@ -101,8 +102,6 @@ type ChatInputProps = {
   onStop?: () => void
   chatStatus?: ChatStatus
 }
-
-const EMBEDDING_MODEL_ID = 'sentence-transformer-mini'
 
 const ChatInput = memo(function ChatInput({
   className,
@@ -462,12 +461,29 @@ const ChatInput = memo(function ChatInput({
             a.processed &&
             a.injectionMode === 'embeddings'
         )
-        console.log('[ChatInput:home] newThread:', newThread.id, 'attachments:', attachments.length, 'hasEmbeddedDocs:', hasEmbeddedDocs, 'attachment states:', attachments.map(a => ({ name: a.name, type: a.type, processed: a.processed, injectionMode: a.injectionMode })))
+        console.log(
+          '[ChatInput:home] newThread:',
+          newThread.id,
+          'attachments:',
+          attachments.length,
+          'hasEmbeddedDocs:',
+          hasEmbeddedDocs,
+          'attachment states:',
+          attachments.map((a) => ({
+            name: a.name,
+            type: a.type,
+            processed: a.processed,
+            injectionMode: a.injectionMode,
+          }))
+        )
         if (hasEmbeddedDocs) {
           useThreads.getState().updateThread(newThread.id, {
             metadata: { hasDocuments: true },
           })
-          console.log('[ChatInput:home] Set hasDocuments=true on thread', newThread.id)
+          console.log(
+            '[ChatInput:home] Set hasDocuments=true on thread',
+            newThread.id
+          )
         }
 
         // Transfer agent mode from home screen to the new thread

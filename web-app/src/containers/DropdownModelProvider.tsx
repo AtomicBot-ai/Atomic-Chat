@@ -23,6 +23,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 import { predefinedProviders } from '@/constants/providers'
+import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 import { ChevronsUpDown } from 'lucide-react'
@@ -159,7 +160,13 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
           (p) => p.provider === 'llamacpp' && p.active && p.models.length > 0
         )
         if (llamacppProvider && llamacppProvider.models.length > 0) {
-          const firstModel = llamacppProvider.models[0]
+          const firstModel = llamacppProvider.models.find(
+            (m) => m.id !== EMBEDDING_MODEL_ID
+          )
+          if (!firstModel) {
+            selectModelProvider('', '')
+            return
+          }
           selectModelProvider('llamacpp', firstModel.id)
           setLastUsedModel('llamacpp', firstModel.id)
         } else {
@@ -235,7 +242,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
 
       provider.models.forEach((modelItem) => {
         // Skip embedding models - they can't be used for chat
-        if (modelItem.embedding) return
+        if (modelItem.embedding || modelItem.id === EMBEDDING_MODEL_ID) return
 
         // Skip models that require API key but don't have one (except llamacpp)
         // For custom providers, allow if they have at least one model loaded
@@ -386,7 +393,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
         searchableModel.model.id
       )
 
-
       // Check mmproj existence for llamacpp models (async, don't block UI)
       if (searchableModel.provider.provider === 'llamacpp') {
         serviceHub
@@ -419,7 +425,10 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
       // Restart Local API Server with the new model if it's running
       const currentServerStatus = useAppState.getState().serverStatus
       if (currentServerStatus === 'running') {
-        console.log('[LocalAPI] Restarting server with model:', searchableModel.model.id)
+        console.log(
+          '[LocalAPI] Restarting server with model:',
+          searchableModel.model.id
+        )
         ;(async () => {
           const { setServerStatus } = useAppState.getState()
           const serverState = useLocalApiServer.getState()
@@ -436,7 +445,11 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
                     await serviceHub.models().stopModel(modelId)
                     console.log('[LocalAPI] Stopped old model:', modelId)
                   } catch (err) {
-                    console.warn('[LocalAPI] Failed to stop model:', modelId, err)
+                    console.warn(
+                      '[LocalAPI] Failed to stop model:',
+                      modelId,
+                      err
+                    )
                   }
                 })
               )
@@ -451,12 +464,17 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
               searchableModel.provider.provider === 'llamacpp' ||
               searchableModel.provider.provider === 'mlx'
             ) {
-              await serviceHub.models().startModel(
-                searchableModel.provider,
-                searchableModel.model.id,
-                true
+              await serviceHub
+                .models()
+                .startModel(
+                  searchableModel.provider,
+                  searchableModel.model.id,
+                  true
+                )
+              console.log(
+                '[LocalAPI] New model started:',
+                searchableModel.model.id
               )
-              console.log('[LocalAPI] New model started:', searchableModel.model.id)
               await new Promise((resolve) => setTimeout(resolve, 500))
             }
 
@@ -513,30 +531,29 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
 
   const provider = getProviderByName(selectedProvider)
 
-
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-        <PopoverTrigger asChild>
-          <div className="border relative z-20 px-4 py-1.5 flex items-center gap-1.5 rounded-full">
-            <button
-              type="button"
-              className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20 max-w-50"
-            >
-              {provider && (
-                <div className="shrink-0">
-                  <ProvidersAvatar provider={provider} />
-                </div>
+      <PopoverTrigger asChild>
+        <div className="border relative z-20 px-4 py-1.5 flex items-center gap-1.5 rounded-full">
+          <button
+            type="button"
+            className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20 max-w-50"
+          >
+            {provider && (
+              <div className="shrink-0">
+                <ProvidersAvatar provider={provider} />
+              </div>
+            )}
+            <span
+              className={cn(
+                'text-foreground truncate leading-normal',
+                !selectedModel?.id && 'text-muted-foreground'
               )}
-              <span
-                className={cn(
-                  'text-foreground truncate leading-normal',
-                  !selectedModel?.id && 'text-muted-foreground'
-                )}
-              >
-                {displayModel}
-              </span>
-              <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
-            </button>
+            >
+              {displayModel}
+            </span>
+            <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+          </button>
           {currentModel?.settings &&
             provider &&
             provider.provider === 'llamacpp' && (
@@ -554,7 +571,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
             className="ml-0.5 shrink-0"
           />
         </div>
-        </PopoverTrigger>
+      </PopoverTrigger>
 
       <PopoverContent
         className={cn(
@@ -622,8 +639,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
                           className={cn(
                             'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
                             'hover:bg-secondary/40',
-                            isSelected &&
-                              'bg-secondary/50'
+                            isSelected && 'bg-secondary/50'
                           )}
                         >
                           <div className="flex items-center gap-1 flex-1 min-w-0">

@@ -4,6 +4,8 @@
 
 import type { CatalogModel } from '@/services/models/types'
 
+export const EMBEDDING_MODEL_ID = 'sentence-transformer-mini'
+
 export const NEW_JAN_MODEL_HF_REPO =
   'Jackrong/Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-GGUF'
 export const JAN_CODE_HF_REPO = 'janhq/Jan-Code-4b-Gguf'

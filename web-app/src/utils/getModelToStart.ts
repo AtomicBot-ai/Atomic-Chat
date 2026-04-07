@@ -1,4 +1,5 @@
 import { localStorageKey } from '@/constants/localStorage'
+import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import type { ModelInfo } from '@janhq/core'
 
 export const getLastUsedModel = (): {
@@ -29,17 +30,12 @@ export const getModelToStart = (params: {
     if (provider && provider.models.some((m) => m.id === lastUsedModel.model)) {
       return { model: lastUsedModel.model, provider }
     } else {
-      // Last used model not found under provider, fallback to first llamacpp model
       const llamacppProvider = getProviderByName('llamacpp')
-      if (
-        llamacppProvider &&
-        llamacppProvider.models &&
-        llamacppProvider.models.length > 0
-      ) {
-        return {
-          model: llamacppProvider.models[0].id,
-          provider: llamacppProvider,
-        }
+      const firstUsable = llamacppProvider?.models?.find(
+        (m) => m.id !== EMBEDDING_MODEL_ID
+      )
+      if (llamacppProvider && firstUsable) {
+        return { model: firstUsable.id, provider: llamacppProvider }
       }
     }
   }
@@ -52,17 +48,12 @@ export const getModelToStart = (params: {
     }
   }
 
-  // Use first model from llamacpp provider
   const llamacppProvider = getProviderByName('llamacpp')
-  if (
-    llamacppProvider &&
-    llamacppProvider.models &&
-    llamacppProvider.models.length > 0
-  ) {
-    return {
-      model: llamacppProvider.models[0].id,
-      provider: llamacppProvider,
-    }
+  const firstUsable = llamacppProvider?.models?.find(
+    (m) => m.id !== EMBEDDING_MODEL_ID
+  )
+  if (llamacppProvider && firstUsable) {
+    return { model: firstUsable.id, provider: llamacppProvider }
   }
 
   return null

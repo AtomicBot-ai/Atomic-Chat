@@ -1,5 +1,6 @@
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { localStorageKey } from '@/constants/localStorage'
+import { EMBEDDING_MODEL_ID } from '@/constants/models'
 
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect } from 'react'
@@ -40,7 +41,9 @@ async function registerRemoteProvider(provider: ModelProvider) {
 
   // Skip providers without API key (they can't make requests)
   if (!provider.api_key) {
-    console.log(`Provider ${provider.provider} has no API key, skipping registration`)
+    console.log(
+      `Provider ${provider.provider} has no API key, skipping registration`
+    )
     return
   }
 
@@ -52,7 +55,7 @@ async function registerRemoteProvider(provider: ModelProvider) {
       header: h.header,
       value: h.value,
     })),
-    models: provider.models.map(e => e.id)
+    models: provider.models.map((e) => e.id),
   }
 
   try {
@@ -72,7 +75,11 @@ const syncRemoteProviders = () => {
   const currentActive = new Set<string>()
 
   providers.forEach((provider) => {
-    if (provider.active && provider.provider !== 'llamacpp' && provider.api_key) {
+    if (
+      provider.active &&
+      provider.provider !== 'llamacpp' &&
+      provider.api_key
+    ) {
       registerRemoteProvider(provider)
       currentActive.add(provider.provider)
     }
@@ -103,22 +110,27 @@ export function DataProvider() {
   useEffect(() => {
     if (localStorage.getItem(localStorageKey.factoryResetPending) === 'true') {
       localStorage.clear()
-      console.log('Factory reset detected — localStorage force-cleared on startup')
+      console.log(
+        'Factory reset detected — localStorage force-cleared on startup'
+      )
     }
   }, [])
 
   useEffect(() => {
     console.log('Initializing DataProvider...')
-    serviceHub.providers().getProviders().then((providers) => {
-      setProviders(providers)
-      // Register active remote providers with the backend
-      providers.forEach((provider) => {
-        if (provider.active) {
-          registerRemoteProvider(provider)
-          registeredProviderNames.add(provider.provider)
-        }
+    serviceHub
+      .providers()
+      .getProviders()
+      .then((providers) => {
+        setProviders(providers)
+        // Register active remote providers with the backend
+        providers.forEach((provider) => {
+          if (provider.active) {
+            registerRemoteProvider(provider)
+            registeredProviderNames.add(provider.provider)
+          }
+        })
       })
-    })
     serviceHub
       .mcp()
       .getMCPConfig()
@@ -203,13 +215,25 @@ export function DataProvider() {
         setProviders(newProviders)
         syncRemoteProviders()
       } catch (err) {
-        console.error('[LocalAPI] Failed to refresh providers after model import:', err)
+        console.error(
+          '[LocalAPI] Failed to refresh providers after model import:',
+          err
+        )
         return
       }
 
       const modelId = eventData?.modelId as string | undefined
       if (!modelId) {
-        console.warn('[LocalAPI] onModelImported: no modelId in event data, skipping')
+        console.warn(
+          '[LocalAPI] onModelImported: no modelId in event data, skipping'
+        )
+        return
+      }
+
+      if (modelId === EMBEDDING_MODEL_ID) {
+        console.log(
+          '[LocalAPI] onModelImported: embedding model imported, skipping server switch'
+        )
         return
       }
 
@@ -225,8 +249,13 @@ export function DataProvider() {
       }
       if (!provider) {
         // Fallback: assume llamacpp provider
-        provider = newProviders.find((p) => p?.provider === 'llamacpp') ?? undefined
-        console.warn('[LocalAPI] Could not find provider for model', modelId, '— falling back to llamacpp')
+        provider =
+          newProviders.find((p) => p?.provider === 'llamacpp') ?? undefined
+        console.warn(
+          '[LocalAPI] Could not find provider for model',
+          modelId,
+          '— falling back to llamacpp'
+        )
       }
       const providerName = provider?.provider ?? 'llamacpp'
       console.log('[LocalAPI] Provider for model:', providerName)
@@ -237,21 +266,38 @@ export function DataProvider() {
       if (currentStatus === 'running') {
         try {
           if (provider) {
-            console.log('[LocalAPI] Loading model into running server:', modelId)
+            console.log(
+              '[LocalAPI] Loading model into running server:',
+              modelId
+            )
             await serviceHub.models().startModel(provider, modelId, true)
           }
           const serverState = useLocalApiServer.getState()
-          serverState.setDefaultModelLocalApiServer({ model: modelId, provider: providerName })
-          serverState.setLastServerModels([{ model: modelId, provider: providerName }])
-          console.log('[LocalAPI] Model loaded into running server, default updated')
+          serverState.setDefaultModelLocalApiServer({
+            model: modelId,
+            provider: providerName,
+          })
+          serverState.setLastServerModels([
+            { model: modelId, provider: providerName },
+          ])
+          console.log(
+            '[LocalAPI] Model loaded into running server, default updated'
+          )
         } catch (error) {
-          console.error('[LocalAPI] Failed to load model into running server:', error)
+          console.error(
+            '[LocalAPI] Failed to load model into running server:',
+            error
+          )
         }
         return
       }
 
       if (currentStatus !== 'stopped') {
-        console.log('[LocalAPI] Server status is', currentStatus, '— skipping auto-start')
+        console.log(
+          '[LocalAPI] Server status is',
+          currentStatus,
+          '— skipping auto-start'
+        )
         return
       }
 
@@ -268,7 +314,10 @@ export function DataProvider() {
 
         const serverState = useLocalApiServer.getState()
 
-        console.log('[LocalAPI] Calling startServer on port', serverState.serverPort)
+        console.log(
+          '[LocalAPI] Calling startServer on port',
+          serverState.serverPort
+        )
         const actualPort = await window.core?.api?.startServer({
           host: serverState.serverHost,
           port: serverState.serverPort,
@@ -286,15 +335,23 @@ export function DataProvider() {
         }
         setServerStatus('running')
 
-        serverState.setDefaultModelLocalApiServer({ model: modelId, provider: providerName })
-        serverState.setLastServerModels([{ model: modelId, provider: providerName }])
+        serverState.setDefaultModelLocalApiServer({
+          model: modelId,
+          provider: providerName,
+        })
+        serverState.setLastServerModels([
+          { model: modelId, provider: providerName },
+        ])
         serverState.setEnableOnStartup(true)
 
         toast.success('Local API Server started', {
           id: 'local-api-autostart',
           description: `http://${serverState.serverHost}:${actualPort ?? serverState.serverPort}${serverState.apiPrefix}`,
         })
-        console.log('[LocalAPI] Auto-started Local API Server with model:', modelId)
+        console.log(
+          '[LocalAPI] Auto-started Local API Server with model:',
+          modelId
+        )
       } catch (error) {
         console.error('[LocalAPI] Failed to auto-start API server:', error)
         setServerStatus('stopped')
@@ -329,14 +386,20 @@ export function DataProvider() {
         const localModels = allProviders
           .filter((p) => p.provider === 'llamacpp' || p.provider === 'mlx')
           .flatMap((p) => p.models)
+          .filter((m) => m.id !== EMBEDDING_MODEL_ID)
 
         if (localModels.length === 0) {
-          console.log('[LocalAPI:startup] No local models found, skipping auto-start')
+          console.log(
+            '[LocalAPI:startup] No local models found, skipping auto-start'
+          )
           return
         }
 
         setServerStatus('pending')
-        console.log('[LocalAPI:startup] Auto-starting server, local models found:', localModels.length)
+        console.log(
+          '[LocalAPI:startup] Auto-starting server, local models found:',
+          localModels.length
+        )
 
         const serverState = useLocalApiServer.getState()
 
@@ -349,9 +412,10 @@ export function DataProvider() {
             return serverState.lastServerModels
           }
           const firstLocal = localModels[0]
-          const providerName = allProviders.find((p) =>
-            p.models.some((m) => m.id === firstLocal.id)
-          )?.provider ?? 'llamacpp'
+          const providerName =
+            allProviders.find((p) =>
+              p.models.some((m) => m.id === firstLocal.id)
+            )?.provider ?? 'llamacpp'
           return [{ model: firstLocal.id, provider: providerName }]
         })()
 
@@ -359,16 +423,23 @@ export function DataProvider() {
 
         await Promise.allSettled(
           modelsToStart.map(async ({ model, provider: providerName }) => {
-            const provider = allProviders.find((p) => p.provider === providerName)
+            const provider = allProviders.find(
+              (p) => p.provider === providerName
+            )
             if (!provider) {
-              console.warn(`[LocalAPI:startup] Provider '${providerName}' not found for model '${model}'`)
+              console.warn(
+                `[LocalAPI:startup] Provider '${providerName}' not found for model '${model}'`
+              )
               return
             }
             try {
               await serviceHub.models().startModel(provider, model, true)
               console.log(`[LocalAPI:startup] Model started: ${model}`)
             } catch (err) {
-              console.warn(`[LocalAPI:startup] Failed to start model ${model}:`, err)
+              console.warn(
+                `[LocalAPI:startup] Failed to start model ${model}:`,
+                err
+              )
             }
           })
         )
@@ -413,9 +484,7 @@ export function DataProvider() {
     console.log('Received deeplink:', urls)
     const target = urls
       .map(parseAtomicChatDeepLink)
-      .find(
-        (value): value is AtomicChatDeepLinkTarget => value !== null
-      )
+      .find((value): value is AtomicChatDeepLinkTarget => value !== null)
     if (!target) {
       return
     }
