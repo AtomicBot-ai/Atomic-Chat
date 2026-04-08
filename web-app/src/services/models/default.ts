@@ -93,12 +93,12 @@ export class DefaultModelsService implements ModelsService {
     return EngineManager.instance().get(provider) as AIEngine | undefined
   }
 
-  private getHuggingFaceHeaders(hfToken?: string) {
+  private getHuggingFaceHeaders(hfToken?: string): HeadersInit | undefined {
     return hfToken
       ? {
           Authorization: `Bearer ${hfToken}`,
         }
-      : {}
+      : undefined
   }
 
   private async fetchExactHuggingFaceRepo(
