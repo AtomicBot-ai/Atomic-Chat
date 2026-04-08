@@ -213,6 +213,18 @@ function General() {
     }
   }, [t, checkForUpdate])
 
+  const handleOpenContactLink = useCallback(
+    async (target: string) => {
+      try {
+        await serviceHub.opener().open(target)
+      } catch (error) {
+        console.error('Failed to open contact link:', error)
+        window.open(target, '_blank')
+      }
+    },
+    [serviceHub]
+  )
+
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
@@ -258,6 +270,63 @@ function General() {
               <CardItem
                 title={t('common:language')}
                 actions={<LanguageSwitcher />}
+              />
+            </Card>
+
+            <Card title="Contact Us">
+              <CardItem
+                title="Email"
+                description="Reach Atomic Chat support by email."
+                actions={
+                  <a
+                    href="mailto:support@atomic.chat"
+                    onClick={(event) => {
+                      event.preventDefault()
+                      void handleOpenContactLink('mailto:support@atomic.chat')
+                    }}
+                    className="text-foreground font-medium hover:underline"
+                  >
+                    support@atomic.chat
+                  </a>
+                }
+              />
+              <CardItem
+                title="X"
+                description="Follow Atomic Chat on X."
+                actions={
+                  <a
+                    href="https://x.com/atomic_chat_hq"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(event) => {
+                      event.preventDefault()
+                      void handleOpenContactLink('https://x.com/atomic_chat_hq')
+                    }}
+                    className="text-foreground font-medium hover:underline"
+                  >
+                    @atomic_chat_hq
+                  </a>
+                }
+              />
+              <CardItem
+                title="GitHub"
+                description="View the Atomic Chat repository on GitHub."
+                actions={
+                  <a
+                    href="https://github.com/AtomicBot-ai/Atomic-Chat"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(event) => {
+                      event.preventDefault()
+                      void handleOpenContactLink(
+                        'https://github.com/AtomicBot-ai/Atomic-Chat'
+                      )
+                    }}
+                    className="text-foreground font-medium hover:underline"
+                  >
+                    AtomicBot-ai/Atomic-Chat
+                  </a>
+                }
               />
             </Card>
 
@@ -643,7 +712,9 @@ function General() {
                   description={
                     <div className="text-muted-foreground -mt-2">
                       <p>{t('settings:general.creditsDesc1')}</p>
-                      <p className="mt-2">{t('settings:general.creditsDesc2')}</p>
+                      <p className="mt-2">
+                        {t('settings:general.creditsDesc2')}
+                      </p>
                     </div>
                   }
                 />

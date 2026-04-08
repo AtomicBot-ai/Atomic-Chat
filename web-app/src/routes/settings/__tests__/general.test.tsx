@@ -68,6 +68,8 @@ vi.mock('@/hooks/useGeneralSetting', () => ({
 
 // Create a controllable mock
 const mockCheckForUpdate = vi.fn()
+const mockOpenerOpen = vi.fn()
+const mockRevealItemInDir = vi.fn()
 
 vi.mock('@/hooks/useAppUpdater', () => ({
   useAppUpdater: () => ({
@@ -201,7 +203,8 @@ vi.mock('@/hooks/useServiceHub', () => ({
       openLogsWindow: vi.fn(),
     }),
     opener: () => ({
-      revealItemInDir: vi.fn(),
+      open: mockOpenerOpen,
+      revealItemInDir: mockRevealItemInDir,
     }),
   }),
 }))
@@ -212,6 +215,7 @@ vi.mock('@/hooks/useServiceHub', () => ({
 // }))
 
 vi.mock('@tauri-apps/plugin-opener', () => ({
+  openUrl: vi.fn(),
   revealItemInDir: vi.fn(),
 }))
 
@@ -266,7 +270,6 @@ vi.mock('@/types/events', () => ({
   },
 }))
 
-
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: (path: string) => (config: any) => ({
     ...config,
@@ -301,6 +304,8 @@ describe('General Settings Route', () => {
     vi.clearAllMocks()
     // Reset the mock to return a promise that resolves immediately by default
     mockCheckForUpdate.mockResolvedValue(null)
+    mockOpenerOpen.mockResolvedValue(undefined)
+    mockRevealItemInDir.mockResolvedValue(undefined)
   })
 
   it('should render the general settings page', async () => {
@@ -437,6 +442,21 @@ describe('General Settings Route', () => {
     // Check for external links
     const links = screen.getAllByRole('link')
     expect(links.length).toBeGreaterThan(0)
+  })
+
+  it('should open support email through opener service', async () => {
+    const Component = GeneralRoute.component as React.ComponentType
+    await act(async () => {
+      render(<Component />)
+    })
+
+    const emailLink = screen.getByRole('link', { name: 'support@atomic.chat' })
+
+    await act(async () => {
+      fireEvent.click(emailLink)
+    })
+
+    expect(mockOpenerOpen).toHaveBeenCalledWith('mailto:support@atomic.chat')
   })
 
   it('should handle logs window opening', async () => {

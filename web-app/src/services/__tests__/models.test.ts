@@ -264,10 +264,15 @@ describe('DefaultModelsService', () => {
       const result = await modelsService.startModel(provider, model)
 
       expect(result).toEqual(mockSession)
-      expect(mockEngine.load).toHaveBeenCalledWith(model, {
-        ctx_size: 4096,
-        n_gpu_layers: 32,
-      }, false, false)
+      expect(mockEngine.load).toHaveBeenCalledWith(
+        model,
+        {
+          ctx_size: 4096,
+          n_gpu_layers: 32,
+        },
+        false,
+        false
+      )
     })
 
     it('should handle start model error', async () => {
@@ -409,11 +414,151 @@ describe('DefaultModelsService', () => {
       )
     })
 
+    it('should search HuggingFace by model name and return the best downloadable match', async () => {
+      const mockRepoData = {
+        id: 'unsloth/GLM-5.1-GGUF',
+        modelId: 'unsloth/GLM-5.1-GGUF',
+        sha: 'glm123',
+        downloads: 9000,
+        likes: 200,
+        tags: ['gguf'],
+        createdAt: '2026-01-01T00:00:00Z',
+        last_modified: '2026-01-02T00:00:00Z',
+        private: false,
+        disabled: false,
+        gated: false,
+        author: 'unsloth',
+        siblings: [
+          {
+            rfilename: 'GLM-5.1-Q4_K_M.gguf',
+            size: 2147483648,
+            blobId: 'blob-glm',
+          },
+        ],
+      }
+
+      ;(fetch as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: vi.fn().mockResolvedValue([
+            {
+              id: 'ubergarm/GLM-5.1-GGUF',
+              downloads: 1000,
+              likes: 10,
+              tags: ['gguf'],
+            },
+            {
+              id: 'unsloth/GLM-5.1-GGUF',
+              downloads: 9000,
+              likes: 200,
+              tags: ['gguf'],
+            },
+            {
+              id: 'zai-org/GLM-5.1',
+              downloads: 12000,
+              likes: 500,
+              tags: ['transformers'],
+            },
+          ]),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: vi.fn().mockResolvedValue(mockRepoData),
+        })
+
+      const result = await modelsService.fetchHuggingFaceRepo('GLM-5.1-GGUF')
+
+      expect(result).toEqual(mockRepoData)
+      expect(fetch).toHaveBeenNthCalledWith(
+        1,
+        'https://huggingface.co/api/models?search=GLM-5.1-GGUF&limit=10',
+        {
+          headers: {},
+        }
+      )
+      expect(fetch).toHaveBeenNthCalledWith(
+        2,
+        'https://huggingface.co/api/models/unsloth/GLM-5.1-GGUF?blobs=true&files_metadata=true',
+        {
+          headers: {},
+        }
+      )
+    })
+
+    it('should search specifically for GGUF repositories when query omits GGUF', async () => {
+      const mockRepoData = {
+        id: 'unsloth/GLM-5.1-GGUF',
+        modelId: 'unsloth/GLM-5.1-GGUF',
+        sha: 'glm456',
+        downloads: 9000,
+        likes: 200,
+        tags: ['gguf'],
+        createdAt: '2026-01-01T00:00:00Z',
+        last_modified: '2026-01-02T00:00:00Z',
+        private: false,
+        disabled: false,
+        gated: false,
+        author: 'unsloth',
+        siblings: [
+          {
+            rfilename: 'GLM-5.1-Q4_K_M.gguf',
+            size: 2147483648,
+            blobId: 'blob-glm-2',
+          },
+        ],
+      }
+
+      ;(fetch as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: vi.fn().mockResolvedValue([
+            {
+              id: 'zai-org/GLM-5.1',
+              downloads: 12000,
+              likes: 500,
+              tags: ['transformers'],
+            },
+            {
+              id: 'unsloth/GLM-5.1-GGUF',
+              downloads: 9000,
+              likes: 200,
+              tags: ['gguf'],
+            },
+          ]),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: vi.fn().mockResolvedValue(mockRepoData),
+        })
+
+      const result = await modelsService.fetchHuggingFaceRepo('GLM-5.1')
+
+      expect(result).toEqual(mockRepoData)
+      expect(fetch).toHaveBeenNthCalledWith(
+        1,
+        'https://huggingface.co/api/models?search=GLM-5.1%20GGUF&limit=10',
+        {
+          headers: {},
+        }
+      )
+      expect(fetch).toHaveBeenNthCalledWith(
+        2,
+        'https://huggingface.co/api/models/unsloth/GLM-5.1-GGUF?blobs=true&files_metadata=true',
+        {
+          headers: {},
+        }
+      )
+    })
+
     it('should return null for invalid repository IDs', async () => {
       // Test empty string
       expect(await modelsService.fetchHuggingFaceRepo('')).toBeNull()
 
       // Test string without slash
+      ;(fetch as any).mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue([]),
+      })
       expect(
         await modelsService.fetchHuggingFaceRepo('invalid-repo')
       ).toBeNull()
@@ -616,7 +761,7 @@ describe('DefaultModelsService', () => {
       last_modified: '2021-12-01T00:00:00Z',
       private: false,
       disabled: false,
-      library_name: "mlx",
+      library_name: 'mlx',
       gated: false,
       author: 'microsoft',
       siblings: [

@@ -26,10 +26,142 @@ import type {
 
 // TODO: Replace this with the actual provider later
 const defaultProvider = 'llamacpp'
+const HUGGING_FACE_SEARCH_LIMIT = 10
+
+type HuggingFaceRepoSearchResult = Pick<
+  HuggingFaceRepo,
+  'downloads' | 'likes' | 'tags'
+> & {
+  id?: string
+  modelId?: string
+}
+
+const normalizeHuggingFaceSearchValue = (value: string) =>
+  value.toLowerCase().replace(/[^a-z0-9]+/g, '')
+
+const hasGgufFiles = (
+  repo: Pick<HuggingFaceRepo, 'siblings'> | null | undefined
+) =>
+  repo?.siblings?.some((file) =>
+    file.rfilename.toLowerCase().endsWith('.gguf')
+  ) ?? false
+
+const isLikelyGgufRepo = (repo: HuggingFaceRepoSearchResult) => {
+  const repoId = getHuggingFaceRepoId(repo).toLowerCase()
+  return (
+    repoId.includes('gguf') ||
+    repo.tags?.some((tag) => tag.toLowerCase().includes('gguf')) === true
+  )
+}
+
+const getHuggingFaceRepoId = (
+  repo: Pick<HuggingFaceRepoSearchResult, 'id' | 'modelId'>
+) => repo.modelId ?? repo.id ?? ''
+
+const scoreHuggingFaceRepoMatch = (
+  query: string,
+  repo: HuggingFaceRepoSearchResult
+) => {
+  const repoId = getHuggingFaceRepoId(repo)
+  const repoTail = repoId.split('/').pop() ?? repoId
+  const normalizedQuery = normalizeHuggingFaceSearchValue(query)
+  const normalizedRepoId = normalizeHuggingFaceSearchValue(repoId)
+  const normalizedRepoTail = normalizeHuggingFaceSearchValue(repoTail)
+
+  let score = 0
+
+  if (!normalizedQuery || !normalizedRepoId) {
+    return score
+  }
+
+  if (normalizedRepoId === normalizedQuery) score += 300
+  if (normalizedRepoTail === normalizedQuery) score += 240
+  if (normalizedRepoTail.startsWith(normalizedQuery)) score += 120
+  if (normalizedRepoId.includes(normalizedQuery)) score += 80
+
+  if (repo.tags?.some((tag) => tag.toLowerCase() === 'gguf')) score += 30
+  if (normalizedRepoId.includes('gguf')) score += 20
+
+  score += Math.min(repo.downloads ?? 0, 100_000) / 1000
+  score += Math.min(repo.likes ?? 0, 10_000) / 1000
+
+  return score
+}
 
 export class DefaultModelsService implements ModelsService {
   private getEngine(provider: string = defaultProvider) {
     return EngineManager.instance().get(provider) as AIEngine | undefined
+  }
+
+  private getHuggingFaceHeaders(hfToken?: string) {
+    return hfToken
+      ? {
+          Authorization: `Bearer ${hfToken}`,
+        }
+      : {}
+  }
+
+  private async fetchExactHuggingFaceRepo(
+    cleanRepoId: string,
+    hfToken?: string
+  ): Promise<HuggingFaceRepo | null> {
+    const response = await fetch(
+      `https://huggingface.co/api/models/${cleanRepoId}?blobs=true&files_metadata=true`,
+      {
+        headers: this.getHuggingFaceHeaders(hfToken),
+      }
+    )
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        return null
+      }
+
+      throw new Error(
+        `Failed to fetch HuggingFace repository: ${response.status} ${response.statusText}`
+      )
+    }
+
+    return response.json()
+  }
+
+  private async searchHuggingFaceRepo(
+    query: string,
+    hfToken?: string
+  ): Promise<HuggingFaceRepo | null> {
+    const ggufQuery = /\bgguf\b/i.test(query) ? query : `${query} GGUF`
+    const response = await fetch(
+      `https://huggingface.co/api/models?search=${encodeURIComponent(ggufQuery)}&limit=${HUGGING_FACE_SEARCH_LIMIT}`,
+      {
+        headers: this.getHuggingFaceHeaders(hfToken),
+      }
+    )
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to search HuggingFace repositories: ${response.status} ${response.statusText}`
+      )
+    }
+
+    const results = ((await response.json()) as HuggingFaceRepoSearchResult[])
+      .filter((repo) => getHuggingFaceRepoId(repo))
+      .filter(isLikelyGgufRepo)
+      .sort(
+        (a, b) =>
+          scoreHuggingFaceRepoMatch(query, b) -
+          scoreHuggingFaceRepoMatch(query, a)
+      )
+
+    for (const repo of results) {
+      const repoId = getHuggingFaceRepoId(repo)
+      const repoDetails = await this.fetchExactHuggingFaceRepo(repoId, hfToken)
+
+      if (hasGgufFiles(repoDetails)) {
+        return repoDetails
+      }
+    }
+
+    return null
   }
 
   async getModel(modelId: string): Promise<modelInfo | undefined> {
@@ -72,32 +204,15 @@ export class DefaultModelsService implements ModelsService {
         .replace(/\/$/, '') // Remove trailing slash
         .trim()
 
-      if (!cleanRepoId || !cleanRepoId.includes('/')) {
+      if (!cleanRepoId) {
         return null
       }
 
-      const response = await fetch(
-        `https://huggingface.co/api/models/${cleanRepoId}?blobs=true&files_metadata=true`,
-        {
-          headers: hfToken
-            ? {
-                Authorization: `Bearer ${hfToken}`,
-              }
-            : {},
-        }
-      )
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          return null // Repository not found
-        }
-        throw new Error(
-          `Failed to fetch HuggingFace repository: ${response.status} ${response.statusText}`
-        )
+      if (cleanRepoId.includes('/')) {
+        return await this.fetchExactHuggingFaceRepo(cleanRepoId, hfToken)
       }
 
-      const repoData = await response.json()
-      return repoData
+      return await this.searchHuggingFaceRepo(cleanRepoId, hfToken)
     } catch (error) {
       console.error('Error fetching HuggingFace repository:', error)
       return null
@@ -576,12 +691,6 @@ export class DefaultModelsService implements ModelsService {
   ): Promise<number> {
     try {
       const engine = this.getEngine('llamacpp')
-      console.debug(
-        '[TokenCounter:service] engine found:',
-        !!engine,
-        'hasMethod:',
-        typeof (engine as any)?.getTokensCount
-      )
       const typedEngine = engine as AIEngine & {
         getTokensCount?: (opts: {
           model: string
@@ -603,6 +712,12 @@ export class DefaultModelsService implements ModelsService {
           }
         }) => Promise<number>
       }
+      console.debug(
+        '[TokenCounter:service] engine found:',
+        !!engine,
+        'hasMethod:',
+        typeof typedEngine?.getTokensCount
+      )
 
       if (typedEngine && typeof typedEngine.getTokensCount === 'function') {
         // Transform Jan's ThreadMessage format to OpenAI chat completion format

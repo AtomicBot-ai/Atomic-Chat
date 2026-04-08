@@ -293,10 +293,9 @@ function HubContent() {
   }, [isInitialLoad, filteredModels.length])
 
   const fetchHuggingFaceModel = async (searchValue: string) => {
-    if (
-      !searchValue.length ||
-      (!searchValue.includes('/') && !searchValue.startsWith('http'))
-    ) {
+    const normalizedSearchValue = searchValue.trim()
+
+    if (normalizedSearchValue.length < 3) {
       return
     }
 
@@ -309,7 +308,7 @@ function HubContent() {
       try {
         const repoInfo = await serviceHub
           .models()
-          .fetchHuggingFaceRepo(searchValue, huggingfaceToken)
+          .fetchHuggingFaceRepo(normalizedSearchValue, huggingfaceToken)
         if (repoInfo) {
           const catalogModel = serviceHub
             .models()

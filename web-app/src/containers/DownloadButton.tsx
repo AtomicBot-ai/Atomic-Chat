@@ -103,20 +103,6 @@ export function DownloadButtonPlaceholder({
       'jan-nano-gguf') as boolean
   }, [])
 
-  if ((model.quants?.length ?? 0) === 0) {
-    return (
-      <div className="flex items-center gap-2">
-        <a
-          href={`https://huggingface.co/${model.developer ? `${model.developer}/` : ''}${model.model_name}`}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Button size="sm">View on HuggingFace</Button>
-        </a>
-      </div>
-    )
-  }
-
   const modelUrl = quant?.path || modelId
   const isDownloading =
     localDownloadingModels.has(modelId) ||
@@ -129,6 +115,10 @@ export function DownloadButtonPlaceholder({
   const shouldResume = resumableDownloads.has(modelId)
 
   const handleDownload = async () => {
+    if (!quant) {
+      return
+    }
+
     // Immediately set local downloading state and start download
     clearResumableDownload(modelId)
     addLocalDownloadingModel(modelId)
@@ -154,6 +144,20 @@ export function DownloadButtonPlaceholder({
     markResumableDownload(modelId)
     void serviceHub.models().abortDownload(modelId)
   }, [modelId, markResumableDownload, serviceHub])
+
+  if ((model.quants?.length ?? 0) === 0) {
+    return (
+      <div className="flex items-center gap-2">
+        <a
+          href={`https://huggingface.co/${model.developer ? `${model.developer}/` : ''}${model.model_name}`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <Button size="sm">View on HuggingFace</Button>
+        </a>
+      </div>
+    )
+  }
 
   return (
     <div

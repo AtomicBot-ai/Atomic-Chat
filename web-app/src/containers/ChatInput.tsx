@@ -116,6 +116,7 @@ const ChatInput = memo(function ChatInput({
   const [rows, setRows] = useState(1)
   const serviceHub = useServiceHub()
   const abortControllers = useAppState((state) => state.abortControllers)
+  const loadingModel = useAppState((state) => state.loadingModel)
   const updateLoadingModel = useAppState((state) => state.updateLoadingModel)
   const tools = useAppState((state) => state.tools)
   const cancelToolCall = useAppState((state) => state.cancelToolCall)
@@ -179,6 +180,8 @@ const ChatInput = memo(function ChatInput({
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
   const [showVisionModelPrompt, setShowVisionModelPrompt] = useState(false)
+  const [isPreparingDocumentAttachments, setIsPreparingDocumentAttachments] =
+    useState(false)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
 
   const isModelActive = selectedModel?.id
@@ -253,9 +256,17 @@ const ChatInput = memo(function ChatInput({
     (a) => a.type === 'document' && a.processing
   )
   const ingestingAny = attachments.some((a) => a.processing)
+  const hasPendingDocumentAttachments = attachments.some(
+    (a) => a.type === 'document' && !a.processed
+  )
   const embeddingModelDownload = downloads[EMBEDDING_MODEL_ID]
   const isEmbeddingModelDownloading =
     localDownloadingModels.has(EMBEDDING_MODEL_ID) || !!embeddingModelDownload
+  const isAttachmentPipelineBusy =
+    ingestingAny ||
+    isPreparingDocumentAttachments ||
+    (hasPendingDocumentAttachments &&
+      (isEmbeddingModelDownloading || !!loadingModel))
 
   const lastTransferredThreadId = useRef<string | null>(null)
 
@@ -352,7 +363,7 @@ const ChatInput = memo(function ChatInput({
     if (!prompt.trim()) {
       return
     }
-    if (ingestingAny) {
+    if (isAttachmentPipelineBusy) {
       toast.info('Please wait for attachments to finish processing')
       return
     }
@@ -579,176 +590,181 @@ const ChatInput = memo(function ChatInput({
   const processNewDocumentAttachments = useCallback(
     async (docs: Attachment[]) => {
       if (!docs.length || !currentThreadId) return
-
-      const modelReady = await (async () => {
-        if (!selectedModel?.id) return false
-        if (activeModels.includes(selectedModel.id)) return true
-        const provider = getProviderByName(selectedProvider)
-        if (!provider) return false
-        try {
-          updateLoadingModel(true)
-          await serviceHub.models().startModel(provider, selectedModel.id)
-          const active = await serviceHub.models().getActiveModels()
-          setActiveModels(active || [])
-          return active?.includes(selectedModel.id) ?? false
-        } catch (err) {
-          console.warn(
-            'Failed to start model before attachment validation',
-            err
-          )
-          return false
-        } finally {
-          updateLoadingModel(false)
-        }
-      })()
-
-      const modelContextLength = (() => {
-        const ctx = selectedModel?.settings?.ctx_len?.controller_props?.value
-        if (typeof ctx === 'number') return ctx
-        if (typeof ctx === 'string') {
-          const parsed = parseInt(ctx, 10)
-          return Number.isFinite(parsed) ? parsed : undefined
-        }
-        return undefined
-      })()
-
-      const rawContextThreshold =
-        typeof modelContextLength === 'number' && modelContextLength > 0
-          ? Math.floor(
-              modelContextLength *
-                (typeof autoInlineContextRatio === 'number'
-                  ? autoInlineContextRatio
-                  : 0.75)
-            )
-          : undefined
-
-      const contextThreshold =
-        typeof rawContextThreshold === 'number' &&
-        Number.isFinite(rawContextThreshold) &&
-        rawContextThreshold > 0
-          ? rawContextThreshold
-          : undefined
-
-      const hasContextEstimate =
-        modelReady &&
-        typeof contextThreshold === 'number' &&
-        Number.isFinite(contextThreshold) &&
-        contextThreshold > 0
-      const docsNeedingPrompt = docs.filter((doc) => {
-        if (doc.processed || doc.injectionMode) return false
-        const preference = doc.parseMode ?? parsePreference
-        return (
-          preference === 'prompt' ||
-          (preference === 'auto' && !hasContextEstimate)
-        )
-      })
-
-      // Map to store individual choices for each document
-      const docChoices = new Map<string, 'inline' | 'embeddings'>()
-
-      if (docsNeedingPrompt.length > 0) {
-        // Ask for each file individually
-        for (let i = 0; i < docsNeedingPrompt.length; i++) {
-          const doc = docsNeedingPrompt[i]
-          const choice = await useAttachmentIngestionPrompt
-            .getState()
-            .showPrompt(
-              doc,
-              ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES,
-              i,
-              docsNeedingPrompt.length
-            )
-
-          if (!choice) {
-            // User cancelled - remove all pending docs
-            setAttachmentsForThread(attachmentsKey, (prev) =>
-              prev.filter(
-                (att) =>
-                  !docsNeedingPrompt.some(
-                    (doc) => doc.path && att.path && doc.path === att.path
-                  )
-              )
-            )
-            return
-          }
-
-          // Store the choice for this specific document
-          if (doc.path) {
-            docChoices.set(doc.path, choice)
-          }
-        }
-      }
-
-      const estimateTokens = async (
-        text: string
-      ): Promise<number | undefined> => {
-        try {
-          if (!selectedModel?.id || !modelReady) return undefined
-          const tokenCount = await serviceHub
-            .models()
-            .getTokensCount(selectedModel.id, [
-              {
-                id: 'inline-attachment',
-                object: 'thread.message',
-                thread_id: currentThreadId,
-                role: 'user',
-                content: [
-                  {
-                    type: ContentType.Text,
-                    text: { value: text, annotations: [] },
-                  },
-                ],
-                status: MessageStatus.Ready,
-                created_at: Date.now(),
-                completed_at: Date.now(),
-              } as ThreadMessage,
-            ])
-          if (
-            typeof tokenCount !== 'number' ||
-            !Number.isFinite(tokenCount) ||
-            tokenCount <= 0
-          ) {
-            return undefined
-          }
-          return tokenCount
-        } catch (e) {
-          console.debug('Failed to estimate tokens for attachment content', e)
-          return undefined
-        }
-      }
+      setIsPreparingDocumentAttachments(true)
 
       try {
-        const { processedAttachments, hasEmbeddedDocuments } =
-          await processAttachmentsForSend({
-            attachments: docs,
-            threadId: currentThreadId,
-            serviceHub,
-            selectedProvider,
-            contextThreshold,
-            estimateTokens,
-            parsePreference,
-            perFileChoices: docChoices.size > 0 ? docChoices : undefined,
-            updateAttachmentProcessing,
-          })
+        const modelReady = await (async () => {
+          if (!selectedModel?.id) return false
+          if (activeModels.includes(selectedModel.id)) return true
+          const provider = getProviderByName(selectedProvider)
+          if (!provider) return false
+          try {
+            updateLoadingModel(true)
+            await serviceHub.models().startModel(provider, selectedModel.id)
+            const active = await serviceHub.models().getActiveModels()
+            setActiveModels(active || [])
+            return active?.includes(selectedModel.id) ?? false
+          } catch (err) {
+            console.warn(
+              'Failed to start model before attachment validation',
+              err
+            )
+            return false
+          } finally {
+            updateLoadingModel(false)
+          }
+        })()
 
-        if (processedAttachments.length > 0) {
-          setAttachmentsForThread(attachmentsKey, (prev) =>
-            prev.map((att) => {
-              const match = processedAttachments.find(
-                (p) => p.path && att.path && p.path === att.path
+        const modelContextLength = (() => {
+          const ctx = selectedModel?.settings?.ctx_len?.controller_props?.value
+          if (typeof ctx === 'number') return ctx
+          if (typeof ctx === 'string') {
+            const parsed = parseInt(ctx, 10)
+            return Number.isFinite(parsed) ? parsed : undefined
+          }
+          return undefined
+        })()
+
+        const rawContextThreshold =
+          typeof modelContextLength === 'number' && modelContextLength > 0
+            ? Math.floor(
+                modelContextLength *
+                  (typeof autoInlineContextRatio === 'number'
+                    ? autoInlineContextRatio
+                    : 0.75)
               )
-              return match ? { ...att, ...match } : att
-            })
+            : undefined
+
+        const contextThreshold =
+          typeof rawContextThreshold === 'number' &&
+          Number.isFinite(rawContextThreshold) &&
+          rawContextThreshold > 0
+            ? rawContextThreshold
+            : undefined
+
+        const hasContextEstimate =
+          modelReady &&
+          typeof contextThreshold === 'number' &&
+          Number.isFinite(contextThreshold) &&
+          contextThreshold > 0
+        const docsNeedingPrompt = docs.filter((doc) => {
+          if (doc.processed || doc.injectionMode) return false
+          const preference = doc.parseMode ?? parsePreference
+          return (
+            preference === 'prompt' ||
+            (preference === 'auto' && !hasContextEstimate)
           )
+        })
+
+        // Map to store individual choices for each document
+        const docChoices = new Map<string, 'inline' | 'embeddings'>()
+
+        if (docsNeedingPrompt.length > 0) {
+          // Ask for each file individually
+          for (let i = 0; i < docsNeedingPrompt.length; i++) {
+            const doc = docsNeedingPrompt[i]
+            const choice = await useAttachmentIngestionPrompt
+              .getState()
+              .showPrompt(
+                doc,
+                ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES,
+                i,
+                docsNeedingPrompt.length
+              )
+
+            if (!choice) {
+              // User cancelled - remove all pending docs
+              setAttachmentsForThread(attachmentsKey, (prev) =>
+                prev.filter(
+                  (att) =>
+                    !docsNeedingPrompt.some(
+                      (doc) => doc.path && att.path && doc.path === att.path
+                    )
+                )
+              )
+              return
+            }
+
+            // Store the choice for this specific document
+            if (doc.path) {
+              docChoices.set(doc.path, choice)
+            }
+          }
         }
 
-        if (hasEmbeddedDocuments) {
-          useThreads.getState().updateThread(currentThreadId, {
-            metadata: { hasDocuments: true },
-          })
+        const estimateTokens = async (
+          text: string
+        ): Promise<number | undefined> => {
+          try {
+            if (!selectedModel?.id || !modelReady) return undefined
+            const tokenCount = await serviceHub
+              .models()
+              .getTokensCount(selectedModel.id, [
+                {
+                  id: 'inline-attachment',
+                  object: 'thread.message',
+                  thread_id: currentThreadId,
+                  role: 'user',
+                  content: [
+                    {
+                      type: ContentType.Text,
+                      text: { value: text, annotations: [] },
+                    },
+                  ],
+                  status: MessageStatus.Ready,
+                  created_at: Date.now(),
+                  completed_at: Date.now(),
+                } as ThreadMessage,
+              ])
+            if (
+              typeof tokenCount !== 'number' ||
+              !Number.isFinite(tokenCount) ||
+              tokenCount <= 0
+            ) {
+              return undefined
+            }
+            return tokenCount
+          } catch (e) {
+            console.debug('Failed to estimate tokens for attachment content', e)
+            return undefined
+          }
         }
-      } catch (e) {
-        console.error('Failed to process attachments:', e)
+
+        try {
+          const { processedAttachments, hasEmbeddedDocuments } =
+            await processAttachmentsForSend({
+              attachments: docs,
+              threadId: currentThreadId,
+              serviceHub,
+              selectedProvider,
+              contextThreshold,
+              estimateTokens,
+              parsePreference,
+              perFileChoices: docChoices.size > 0 ? docChoices : undefined,
+              updateAttachmentProcessing,
+            })
+
+          if (processedAttachments.length > 0) {
+            setAttachmentsForThread(attachmentsKey, (prev) =>
+              prev.map((att) => {
+                const match = processedAttachments.find(
+                  (p) => p.path && att.path && p.path === att.path
+                )
+                return match ? { ...att, ...match } : att
+              })
+            )
+          }
+
+          if (hasEmbeddedDocuments) {
+            useThreads.getState().updateThread(currentThreadId, {
+              metadata: { hasDocuments: true },
+            })
+          }
+        } catch (e) {
+          console.error('Failed to process attachments:', e)
+        }
+      } finally {
+        setIsPreparingDocumentAttachments(false)
       }
     },
     [
@@ -1024,7 +1040,9 @@ const ChatInput = memo(function ChatInput({
   }
 
   const embeddingModelStatusText = useMemo(() => {
-    if (!ingestingDocs || !isEmbeddingModelDownloading) return undefined
+    if (!hasPendingDocumentAttachments || !isEmbeddingModelDownloading) {
+      return undefined
+    }
 
     const percent =
       typeof embeddingModelDownload?.progress === 'number'
@@ -1047,7 +1065,11 @@ const ChatInput = memo(function ChatInput({
     return details
       ? `Downloading embedding model ${EMBEDDING_MODEL_ID}... ${details}`
       : `Downloading embedding model ${EMBEDDING_MODEL_ID}...`
-  }, [embeddingModelDownload, ingestingDocs, isEmbeddingModelDownloading])
+  }, [
+    embeddingModelDownload,
+    hasPendingDocumentAttachments,
+    isEmbeddingModelDownloading,
+  ])
 
   const hashBase64 = async (base64: string): Promise<string> => {
     const binary = atob(base64)
@@ -1575,6 +1597,12 @@ const ChatInput = memo(function ChatInput({
                     .map(({ att, idx }) => {
                       const isImage = att.type === 'image'
                       const ext = att.fileType || att.mimeType?.split('/')[1]
+                      const showAttachmentLoader =
+                        (att.processing ||
+                          (att.type === 'document' &&
+                            !att.processed &&
+                            isAttachmentPipelineBusy)) &&
+                        !att.error
                       return (
                         <div
                           key={`${att.type}-${idx}-${att.name}`}
@@ -1585,7 +1613,9 @@ const ChatInput = memo(function ChatInput({
                               <div
                                 className={cn(
                                   'relative border rounded-xl size-14 overflow-hidden',
-                                  'flex items-center justify-center'
+                                  'flex items-center justify-center',
+                                  showAttachmentLoader &&
+                                    'ring-1 ring-primary/30 bg-muted/40'
                                 )}
                               >
                                 {/* Inner content by state */}
@@ -1603,6 +1633,14 @@ const ChatInput = memo(function ChatInput({
                                         .{ext}
                                       </span>
                                     )}
+                                  </div>
+                                )}
+                                {showAttachmentLoader && (
+                                  <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-[1px]">
+                                    <IconLoader2
+                                      size={18}
+                                      className="animate-spin text-primary"
+                                    />
                                   </div>
                                 )}
                               </div>
@@ -1625,12 +1663,17 @@ const ChatInput = memo(function ChatInput({
                                     ? ` · ${formatBytes(att.size)}`
                                     : ''}
                                 </div>
+                                {showAttachmentLoader && (
+                                  <div className="opacity-70 mt-1">
+                                    Preparing attachment...
+                                  </div>
+                                )}
                               </div>
                             </TooltipContent>
                           </Tooltip>
 
                           {/* Remove button disabled while processing - outside overflow-hidden container */}
-                          {!att.processing && (
+                          {!showAttachmentLoader && (
                             <div
                               className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
                               onClick={() => handleRemoveAttachment(idx)}
@@ -1674,7 +1717,11 @@ const ChatInput = memo(function ChatInput({
                   // - Enter is pressed without Shift
                   // - The streaming content has finished
                   // - Prompt is not empty
-                  if (!isStreaming && prompt.trim() && !ingestingAny) {
+                  if (
+                    !isStreaming &&
+                    prompt.trim() &&
+                    !isAttachmentPipelineBusy
+                  ) {
                     handleSendMessage(prompt)
                   }
                   // When Shift+Enter is pressed, a new line is added (default behavior)
@@ -2088,7 +2135,7 @@ const ChatInput = memo(function ChatInput({
                 <Button
                   variant="default"
                   size="icon-sm"
-                  disabled={!prompt.trim() || ingestingAny}
+                  disabled={!prompt.trim() || isAttachmentPipelineBusy}
                   data-test-id="send-message-button"
                   onClick={() => handleSendMessage(prompt)}
                   className="rounded-full mr-1 mb-1"
