@@ -88,17 +88,18 @@ export const useModelProvider = create<ModelProviderState>()(
               ...models,
             ]
             const updatedModels = provider.models?.map((model) => {
-              const settings =
-                (legacyModels && legacyModels?.length > 0
-                  ? legacyModels
-                  : models
-                ).find(
+              const persistedModels =
+                legacyModels && legacyModels.length > 0 ? legacyModels : models
+              const persistedModel =
+                persistedModels.find((m) => m.id === model.id) ??
+                persistedModels.find(
                   (m) =>
                     m.id
                       .split(':')
                       .slice(0, 2)
                       .join(getServiceHub().path().sep()) === model.id
-                )?.settings || model.settings
+                )
+              const settings = persistedModel?.settings || model.settings
               const existingModel = models.find((m) => m.id === model.id)
               const mergedCapabilities = [
                 ...(model.capabilities || []),

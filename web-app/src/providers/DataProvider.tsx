@@ -381,8 +381,11 @@ export function DataProvider() {
           return
         }
 
-        // Fetch providers to check for local models
-        const allProviders = await serviceHub.providers().getProviders()
+        // Reuse the merged store state so persisted model settings like ctx_len
+        // are applied before the startup path launches local models.
+        const fetchedProviders = await serviceHub.providers().getProviders()
+        setProviders(fetchedProviders)
+        const allProviders = useModelProvider.getState().providers
         const localModels = allProviders
           .filter((p) => p.provider === 'llamacpp' || p.provider === 'mlx')
           .flatMap((p) => p.models)

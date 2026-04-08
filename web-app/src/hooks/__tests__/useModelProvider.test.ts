@@ -129,6 +129,69 @@ describe('useModelProvider - displayName functionality', () => {
     expect(provider?.models[0].displayName).toBe('My Custom Model')
   })
 
+  it('should preserve existing model settings by exact id in setProviders', () => {
+    const { result } = renderHook(() => useModelProvider())
+
+    act(() => {
+      useModelProvider.setState({
+        providers: [
+          {
+            provider: 'llamacpp',
+            active: true,
+            models: [
+              {
+                id: 'Qwen3_5-9B-IQ4_XS',
+                capabilities: ['completion'],
+                settings: {
+                  ctx_len: {
+                    controller_props: {
+                      value: 48000,
+                    },
+                  },
+                },
+              },
+            ],
+            settings: [],
+          },
+        ] as any,
+        selectedProvider: 'llamacpp',
+        selectedModel: null,
+        deletedModels: [],
+      })
+    })
+
+    const freshProviders = [
+      {
+        provider: 'llamacpp',
+        active: true,
+        persist: true,
+        models: [
+          {
+            id: 'Qwen3_5-9B-IQ4_XS',
+            capabilities: ['completion'],
+            settings: {
+              ctx_len: {
+                controller_props: {
+                  value: 16384,
+                },
+              },
+            },
+          },
+        ],
+        settings: [],
+      },
+    ] as any
+
+    act(() => {
+      result.current.setProviders(freshProviders)
+    })
+
+    const provider = result.current.getProviderByName('llamacpp')
+    expect(provider?.models[0].settings?.ctx_len?.controller_props?.value).toBe(
+      48000
+    )
+  })
+
   it('should provide basic functionality without breaking existing behavior', () => {
     const { result } = renderHook(() => useModelProvider())
 
