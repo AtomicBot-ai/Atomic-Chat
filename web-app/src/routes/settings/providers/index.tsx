@@ -12,7 +12,7 @@ import { cn, getProviderTitle } from '@/lib/utils'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { AddProviderDialog } from '@/containers/dialogs'
 import { Switch } from '@/components/ui/switch'
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { openAIProviderSettings } from '@/constants/providers'
 import cloneDeep from 'lodash/cloneDeep'
 import { toast } from 'sonner'
@@ -28,6 +28,33 @@ function ModelProviders() {
   const serviceHub = useServiceHub()
   const { providers, addProvider, updateProvider } = useModelProvider()
   const navigate = useNavigate()
+
+  const sortedProviders = useMemo(() => {
+    const providerPriority: Record<string, number> = {
+      'jan': 0,
+      'llamacpp': 1,
+      'mlx': 2,
+      'foundation-models': 3,
+    }
+
+    return providers
+      .filter((provider) => IS_MACOS || provider.provider !== 'mlx')
+      .slice()
+      .sort((a, b) => {
+        const aPriority =
+          providerPriority[a.provider] ?? Number.MAX_SAFE_INTEGER
+        const bPriority =
+          providerPriority[b.provider] ?? Number.MAX_SAFE_INTEGER
+
+        if (aPriority !== bPriority) {
+          return aPriority - bPriority
+        }
+
+        return getProviderTitle(a.provider).localeCompare(
+          getProviderTitle(b.provider)
+        )
+      })
+  }, [providers])
 
   const createProvider = useCallback(
     (name: string) => {
@@ -61,8 +88,15 @@ function ModelProviders() {
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
-        <div className={cn("flex items-center justify-between w-full mr-2 pr-3", !IS_MACOS && "pr-30")}>
-          <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
+        <div
+          className={cn(
+            'flex items-center justify-between w-full mr-2 pr-3',
+            !IS_MACOS && 'pr-30'
+          )}
+        >
+          <span className="font-medium text-base font-studio">
+            {t('common:settings')}
+          </span>
           <AddProviderDialog onCreateProvider={createProvider}>
             <Button
               variant="outline"
@@ -89,7 +123,7 @@ function ModelProviders() {
                 </div>
               }
             >
-              {providers.filter((provider) => IS_MACOS || provider.provider !== 'mlx').map((provider, index) => (
+              {sortedProviders.map((provider, index) => (
                 <CardItem
                   key={index}
                   title={

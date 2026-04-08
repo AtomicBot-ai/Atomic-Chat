@@ -184,6 +184,121 @@ describe('useModelProvider - displayName functionality', () => {
     expect(provider?.models[0].displayName).toBe('Custom Model Name')
     expect(provider?.models[0].id).toBe('test-model.gguf')
   })
+
+  it('keeps selectedModel in sync when updateProvider changes model settings', () => {
+    const { result } = renderHook(() => useModelProvider())
+
+    const provider = {
+      provider: 'llamacpp',
+      active: true,
+      models: [
+        {
+          id: 'test-model.gguf',
+          capabilities: ['completion'],
+          settings: {
+            ctx_len: {
+              controller_props: {
+                value: 16384,
+              },
+            },
+          },
+        },
+      ],
+      settings: [],
+    } as any
+
+    act(() => {
+      useModelProvider.setState({
+        providers: [provider],
+        selectedProvider: 'llamacpp',
+        selectedModel: provider.models[0],
+        deletedModels: [],
+      })
+    })
+
+    act(() => {
+      result.current.updateProvider('llamacpp', {
+        models: [
+          {
+            ...provider.models[0],
+            settings: {
+              ctx_len: {
+                controller_props: {
+                  value: 32768,
+                },
+              },
+            },
+          },
+        ],
+      } as any)
+    })
+
+    expect(
+      result.current.selectedModel?.settings?.ctx_len?.controller_props?.value
+    ).toBe(32768)
+  })
+
+  it('keeps selectedModel in sync when setProviders rebuilds providers', () => {
+    const { result } = renderHook(() => useModelProvider())
+
+    const provider = {
+      provider: 'llamacpp',
+      active: true,
+      persist: true,
+      models: [
+        {
+          id: 'test-model.gguf',
+          capabilities: ['completion'],
+          settings: {
+            ctx_len: {
+              controller_props: {
+                value: 32768,
+              },
+            },
+          },
+        },
+      ],
+      settings: [],
+    } as any
+
+    const staleSelectedModel = {
+      ...provider.models[0],
+      settings: {
+        ctx_len: {
+          controller_props: {
+            value: 16384,
+          },
+        },
+      },
+    }
+
+    act(() => {
+      useModelProvider.setState({
+        providers: [provider],
+        selectedProvider: 'llamacpp',
+        selectedModel: staleSelectedModel,
+        deletedModels: [],
+      })
+    })
+
+    act(() => {
+      result.current.setProviders([
+        {
+          ...provider,
+          models: [
+            {
+              ...provider.models[0],
+              settings: {},
+            },
+          ],
+        },
+      ] as any)
+    })
+
+    expect(
+      result.current.selectedModel?.settings?.ctx_len?.controller_props?.value
+    ).toBe(32768)
+  })
 })
 
 describe('useModelProvider migrations', () => {
@@ -267,8 +382,12 @@ describe('useModelProvider migrations', () => {
     )
 
     expect(mistralProvider.base_url).toBe('https://api.mistral.ai/v1')
-    expect(baseUrlSetting.controller_props.value).toBe('https://api.mistral.ai/v1')
-    expect(baseUrlSetting.controller_props.placeholder).toBe('https://api.mistral.ai/v1')
+    expect(baseUrlSetting.controller_props.value).toBe(
+      'https://api.mistral.ai/v1'
+    )
+    expect(baseUrlSetting.controller_props.placeholder).toBe(
+      'https://api.mistral.ai/v1'
+    )
   })
 
   it('does not migrate Mistral provider base URL if already has /v1', () => {
@@ -308,8 +427,12 @@ describe('useModelProvider migrations', () => {
     )
 
     expect(mistralProvider.base_url).toBe('https://api.mistral.ai/v1')
-    expect(baseUrlSetting.controller_props.value).toBe('https://api.mistral.ai/v1')
-    expect(baseUrlSetting.controller_props.placeholder).toBe('https://api.mistral.ai/v1')
+    expect(baseUrlSetting.controller_props.value).toBe(
+      'https://api.mistral.ai/v1'
+    )
+    expect(baseUrlSetting.controller_props.placeholder).toBe(
+      'https://api.mistral.ai/v1'
+    )
   })
 
   it('does not affect other providers during Mistral migration', () => {
@@ -342,7 +465,11 @@ describe('useModelProvider migrations', () => {
 
     const migratedState = migrate!(persistedState, 8)
 
-    expect(migratedState.providers[0].base_url).toBe('https://api.mistral.ai/v1')
-    expect(migratedState.providers[1].base_url).toBe('https://api.openai.com/v1')
+    expect(migratedState.providers[0].base_url).toBe(
+      'https://api.mistral.ai/v1'
+    )
+    expect(migratedState.providers[1].base_url).toBe(
+      'https://api.openai.com/v1'
+    )
   })
 })

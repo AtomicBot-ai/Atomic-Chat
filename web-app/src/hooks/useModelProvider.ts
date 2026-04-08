@@ -109,7 +109,10 @@ export const useModelProvider = create<ModelProviderState>()(
               return {
                 ...model,
                 settings: settings,
-                capabilities: mergedCapabilities.length > 0 ? mergedCapabilities : undefined,
+                capabilities:
+                  mergedCapabilities.length > 0
+                    ? mergedCapabilities
+                    : undefined,
                 displayName: existingModel?.displayName || model.displayName,
               }
             })
@@ -136,27 +139,59 @@ export const useModelProvider = create<ModelProviderState>()(
               active: existingProvider ? existingProvider?.active : true,
             }
           })
+          const nextProviders = [
+            ...updatedProviders,
+            ...existingProviders.filter(
+              (e) => !updatedProviders.some((p) => p.provider === e.provider)
+            ),
+          ]
+
+          const nextSelectedProvider = nextProviders.find(
+            (provider) => provider.provider === state.selectedProvider
+          )
+          const nextSelectedModel = state.selectedModel?.id
+            ? (nextSelectedProvider?.models.find(
+                (model) => model.id === state.selectedModel?.id
+              ) ?? null)
+            : null
+
           return {
-            providers: [
-              ...updatedProviders,
-              ...existingProviders.filter(
-                (e) => !updatedProviders.some((p) => p.provider === e.provider)
-              ),
-            ],
+            providers: nextProviders,
+            selectedModel: nextSelectedModel,
           }
         }),
       updateProvider: (providerName, data) => {
-        set((state) => ({
-          providers: state.providers.map((provider) => {
-            if (provider.provider === providerName) {
-              return {
-                ...provider,
-                ...data,
-              }
+        set((state) => {
+          let nextSelectedModel = state.selectedModel
+
+          const nextProviders = state.providers.map((provider) => {
+            if (provider.provider !== providerName) {
+              return provider
             }
-            return provider
-          }),
-        }))
+
+            const updatedProvider = {
+              ...provider,
+              ...data,
+            }
+
+            if (
+              state.selectedProvider === providerName &&
+              state.selectedModel?.id
+            ) {
+              nextSelectedModel =
+                updatedProvider.models.find(
+                  (model) => model.id === state.selectedModel?.id
+                ) ?? null
+            }
+
+            return updatedProvider
+          })
+
+          return {
+            providers: nextProviders,
+            selectedModel: nextSelectedModel,
+          }
+        })
       },
       getProviderByName: (providerName: string) => {
         const provider = get().providers.find(
@@ -522,15 +557,22 @@ export const useModelProvider = create<ModelProviderState>()(
         }
         if (version <= 11 && state?.providers) {
           state.providers.forEach((provider) => {
-            if (provider.models && (provider.provider === 'llamacpp' || provider.provider === 'mlx')) {
+            if (
+              provider.models &&
+              (provider.provider === 'llamacpp' || provider.provider === 'mlx')
+            ) {
               provider.models.forEach((model) => {
                 if (model.settings?.ctx_len?.controller_props) {
                   const current = model.settings.ctx_len.controller_props.value
                   if (current === 8192 || current === '8192') {
                     model.settings.ctx_len.controller_props.value = 16384
                   }
-                  if (model.settings.ctx_len.controller_props.placeholder === '8192') {
-                    model.settings.ctx_len.controller_props.placeholder = '16384'
+                  if (
+                    model.settings.ctx_len.controller_props.placeholder ===
+                    '8192'
+                  ) {
+                    model.settings.ctx_len.controller_props.placeholder =
+                      '16384'
                   }
                 }
               })
