@@ -273,8 +273,28 @@ ifeq ($(shell uname -s),Darwin)
 	else \
 		echo "Warning: No Developer ID Application identity found. Skipping code signing."; \
 	fi
+else ifeq ($(OS),Windows_NT)
+	@mkdir -p src-tauri/resources/llamacpp-backend
+	@echo "Fetching latest llamacpp release from janhq/llama.cpp..."; \
+	API_URL="https://api.github.com/repos/janhq/llama.cpp/releases/latest"; \
+	if [ -n "$$GH_TOKEN" ]; then \
+		TAG=$$(curl -sf -H "Authorization: Bearer $$GH_TOKEN" "$$API_URL" | jq -r '.tag_name'); \
+	else \
+		TAG=$$(curl -sf "$$API_URL" | jq -r '.tag_name'); \
+	fi; \
+	if [ -z "$$TAG" ] || [ "$$TAG" = "null" ]; then echo "Error: Failed to fetch latest release tag"; exit 1; fi; \
+	BACKEND="win-avx2-x64"; \
+	URL="https://github.com/janhq/llama.cpp/releases/download/$$TAG/llama-$$TAG-bin-$$BACKEND.tar.gz"; \
+	echo "$$TAG" > src-tauri/resources/llamacpp-backend/version.txt; \
+	echo "$$BACKEND" > src-tauri/resources/llamacpp-backend/backend.txt; \
+	echo "Release: $$TAG  Backend: $$BACKEND"; \
+	echo "Downloading: $$URL"; \
+	curl -fSL "$$URL" -o /tmp/llamacpp-backend.tar.gz; \
+	tar -xzf /tmp/llamacpp-backend.tar.gz -C src-tauri/resources/llamacpp-backend/; \
+	rm -f /tmp/llamacpp-backend.tar.gz; \
+	echo "Downloaded and extracted llamacpp backend for Windows successfully"
 else
-	@echo "Skipping llamacpp backend download (macOS only for now)"
+	@echo "Skipping llamacpp backend download (unsupported platform)"
 endif
 
 # Download llamacpp backend only if not already present (for dev)
@@ -285,8 +305,14 @@ ifeq ($(shell uname -s),Darwin)
 	else \
 		$(MAKE) download-llamacpp-backend; \
 	fi
+else ifeq ($(OS),Windows_NT)
+	@if [ -f "src-tauri/resources/llamacpp-backend/build/bin/llama-server.exe" ]; then \
+		echo "llamacpp backend already exists, skipping download..."; \
+	else \
+		$(MAKE) download-llamacpp-backend; \
+	fi
 else
-	@echo "Skipping llamacpp backend (macOS only)"
+	@echo "Skipping llamacpp backend (unsupported platform)"
 endif
 
 # Build jan CLI (release, platform-aware) → src-tauri/resources/bin/jan[.exe]

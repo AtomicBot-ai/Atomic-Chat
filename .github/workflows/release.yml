@@ -1,0 +1,580 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+jobs:
+  create-draft-release:
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - name: Extract version from tag
+        id: get_version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      - name: Create Draft Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "Atomic Chat v${{ steps.get_version.outputs.version }}"
+          draft: true
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ──────────────────────────────────────────────────────────────
+  # macOS  (universal binary — arm64 + x86_64)
+  # ──────────────────────────────────────────────────────────────
+  build-macos:
+    runs-on: macos-latest-xlarge
+    needs: create-draft-release
+    outputs:
+      mac_sig: ${{ steps.metadata.outputs.mac_sig }}
+      tar_name: ${{ steps.metadata.outputs.tar_name }}
+      dmg_name: ${{ steps.metadata.outputs.dmg_name }}
+      zip_name: ${{ steps.metadata.outputs.zip_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+
+      - name: Cache Yarn
+        uses: actions/cache@v4
+        with:
+          path: .yarn/cache
+          key: yarn-macos-${{ hashFiles('yarn.lock') }}
+          restore-keys: yarn-macos-
+
+      - name: Install jq
+        run: brew install jq
+
+      - name: Install Python dependencies
+        run: pip3 install --break-system-packages Pillow
+
+      - name: Set Xcode version
+        run: |
+          if [ -d "/Applications/Xcode_26.2.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+          elif [ -d "/Applications/Xcode_26.1.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_26.1.app/Contents/Developer
+          else
+            sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          fi
+          swift --version
+
+      - name: Update version in project files
+        env:
+          NEW_VERSION: ${{ needs.create-draft-release.outputs.version }}
+        run: |
+          jq --arg v "$NEW_VERSION" \
+            '.version = $v | .bundle.createUpdaterArtifacts = true' \
+            src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          mv /tmp/tauri.conf.json src-tauri/tauri.conf.json
+
+          jq --arg v "$NEW_VERSION" '.version = $v' web-app/package.json > /tmp/package.json
+          mv /tmp/package.json web-app/package.json
+
+          cargo install ctoml || true
+          ctoml src-tauri/Cargo.toml package.version "$NEW_VERSION"
+
+      - name: Import code signing certificate
+        uses: apple-actions/import-codesign-certs@v2
+        continue-on-error: true
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      - name: Configure Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn config set -H enableImmutableInstalls false
+
+      - name: Download llamacpp backend
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make download-llamacpp-backend
+
+      - name: Install dependencies and build core
+        run: |
+          make install-and-build
+          make install-rust-targets
+
+      - name: Build web app and generate icons
+        env:
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+        run: |
+          yarn build:web
+          yarn build:icon
+
+      - name: Restore DMG background after icon generation
+        run: |
+          mkdir -p src-tauri/icons/dmg
+          git checkout -- src-tauri/icons/dmg/background.png
+          echo "=== DMG background restored ==="
+          file src-tauri/icons/dmg/background.png
+          ls -la src-tauri/icons/dmg/background.png
+
+      - name: Build app (universal binary)
+        env:
+          TAURI_BUNDLER_DMG_IGNORE_CI: "true"
+          NODE_OPTIONS: "--max-old-space-size=4196"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+        run: |
+          yarn copy:assets:tauri
+
+          echo "=== Pre-build DMG verification ==="
+          file src-tauri/icons/dmg/background.png
+          grep -A2 '"background"' src-tauri/tauri.macos.conf.json
+          echo "=== Building ==="
+
+          yarn download:bin
+          yarn build:mlx-server
+          yarn build:foundation-models-server
+          yarn build:cli
+          yarn tauri build --target universal-apple-darwin --config src-tauri/tauri.macos.conf.json
+
+      - name: Collect artifact metadata
+        id: metadata
+        env:
+          VERSION: ${{ needs.create-draft-release.outputs.version }}
+        run: |
+          cd src-tauri/target/universal-apple-darwin/release/bundle/macos
+
+          zip -r "atomic-chat-mac-universal-${VERSION}.zip" "Atomic Chat.app"
+
+          MAC_SIG=$(cat "Atomic Chat.app.tar.gz.sig")
+          TAR_NAME="Atomic Chat.app.tar.gz"
+          ZIP_NAME="atomic-chat-mac-universal-${VERSION}.zip"
+
+          echo "mac_sig=${MAC_SIG}" >> "$GITHUB_OUTPUT"
+          echo "tar_name=${TAR_NAME}" >> "$GITHUB_OUTPUT"
+          echo "zip_name=${ZIP_NAME}" >> "$GITHUB_OUTPUT"
+
+          cd ../../bundle/dmg
+          DMG_NAME=$(ls *.dmg | head -1)
+          echo "dmg_name=${DMG_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload .zip to release
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./src-tauri/target/universal-apple-darwin/release/bundle/macos/${{ steps.metadata.outputs.zip_name }}
+          asset_name: ${{ steps.metadata.outputs.zip_name }}
+          asset_content_type: application/zip
+
+      - name: Upload .dmg to release
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./src-tauri/target/universal-apple-darwin/release/bundle/dmg/${{ steps.metadata.outputs.dmg_name }}
+          asset_name: ${{ steps.metadata.outputs.dmg_name }}
+          asset_content_type: application/octet-stream
+
+      - name: Upload .tar.gz (for updater) to release
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./src-tauri/target/universal-apple-darwin/release/bundle/macos/${{ steps.metadata.outputs.tar_name }}
+          asset_name: ${{ steps.metadata.outputs.tar_name }}
+          asset_content_type: application/gzip
+
+  # ──────────────────────────────────────────────────────────────
+  # Windows  (x86_64 — NSIS + MSI, DigiCert KeyLocker code signing)
+  # ──────────────────────────────────────────────────────────────
+  build-windows:
+    # Pinned to windows-2022 — DigiCert KSP is incompatible with Server 2025
+    runs-on: windows-2022
+    needs: create-draft-release
+    outputs:
+      win_sig: ${{ steps.metadata.outputs.win_sig }}
+      exe_name: ${{ steps.metadata.outputs.exe_name }}
+      msi_name: ${{ steps.metadata.outputs.msi_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: pip install Pillow
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Cache Yarn
+        uses: actions/cache@v4
+        with:
+          path: .yarn/cache
+          key: yarn-windows-${{ hashFiles('yarn.lock') }}
+          restore-keys: yarn-windows-
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Update version in project files
+        shell: bash
+        env:
+          NEW_VERSION: ${{ needs.create-draft-release.outputs.version }}
+        run: |
+          jq --arg v "$NEW_VERSION" \
+            '.version = $v | .bundle.createUpdaterArtifacts = true' \
+            src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          mv /tmp/tauri.conf.json src-tauri/tauri.conf.json
+
+          jq --arg v "$NEW_VERSION" '.version = $v' web-app/package.json > /tmp/package.json
+          mv /tmp/package.json web-app/package.json
+
+          cargo install ctoml || true
+          ctoml src-tauri/Cargo.toml package.version "$NEW_VERSION"
+
+      # ── DigiCert KeyLocker setup ──────────────────────────────
+      - name: Setup DigiCert KeyLocker
+        shell: pwsh
+        env:
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE_B64: ${{ secrets.SM_CLIENT_CERT_FILE_B64 }}
+        run: |
+          $headers = @{ "x-api-key" = $env:SM_API_KEY }
+          Invoke-WebRequest -Uri "https://one.digicert.com/signingmanager/api-ui/v1/releases/smtools-windows-x64.msi/download" `
+            -Headers $headers -OutFile "$env:TEMP\smtools.msi"
+          Start-Process msiexec.exe -ArgumentList "/i", "$env:TEMP\smtools.msi", "/quiet", "/norestart" -Wait
+          Remove-Item "$env:TEMP\smtools.msi"
+
+          $smctlDir = "C:\Program Files\DigiCert\DigiCert One Signing Manager Tools"
+          echo "$smctlDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+          $certBytes = [Convert]::FromBase64String($env:SM_CLIENT_CERT_FILE_B64)
+          $certPath = "$env:RUNNER_TEMP\digicert_client_cert.p12"
+          [IO.File]::WriteAllBytes($certPath, $certBytes)
+          echo "SM_CLIENT_CERT_FILE=$certPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Verify DigiCert KeyLocker
+        shell: pwsh
+        env:
+          SM_HOST: https://clientauth.one.digicert.com
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+        run: |
+          smctl healthcheck
+
+      - name: Sync certificates to Windows store
+        shell: pwsh
+        env:
+          SM_HOST: https://clientauth.one.digicert.com
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+        run: |
+          smctl windows certsync
+
+      - name: Setup Windows SDK signtool
+        shell: pwsh
+        run: |
+          $signtoolPath = Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin" `
+            -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -like "*\x64\*" } |
+            Sort-Object { [version]($_.FullName -replace '.*\\(\d+\.\d+\.\d+\.\d+)\\.*', '$1') } -Descending |
+            Select-Object -First 1
+          if ($signtoolPath) {
+            Write-Host "Found signtool at: $($signtoolPath.DirectoryName)"
+            echo "$($signtoolPath.DirectoryName)" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          } else {
+            Write-Error "signtool.exe not found in Windows SDK"
+            exit 1
+          }
+
+      # ── Build (without code signing — signing happens post-build) ──
+      - name: Configure Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn config set -H enableImmutableInstalls false
+
+      - name: Install dependencies and build core
+        run: |
+          yarn install
+          yarn build:tauri:plugin:api
+          yarn build:core
+          yarn build:extensions
+
+      - name: Download binaries (bun, uv)
+        run: yarn download:bin
+
+      - name: Download llamacpp backend (janhq/llama.cpp)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p src-tauri/resources/llamacpp-backend
+          TAG=$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/janhq/llama.cpp/releases/latest" | jq -r '.tag_name')
+          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+            echo "Error: Failed to fetch latest release tag"
+            exit 1
+          fi
+          BACKEND="win-avx2-x64"
+          URL="https://github.com/janhq/llama.cpp/releases/download/${TAG}/llama-${TAG}-bin-${BACKEND}.tar.gz"
+          echo "$TAG" > src-tauri/resources/llamacpp-backend/version.txt
+          echo "$BACKEND" > src-tauri/resources/llamacpp-backend/backend.txt
+          echo "Release: $TAG  Backend: $BACKEND"
+          echo "Downloading: $URL"
+          curl -fSL "$URL" -o /tmp/llamacpp-backend.tar.gz
+          tar -xzf /tmp/llamacpp-backend.tar.gz -C src-tauri/resources/llamacpp-backend/
+          rm -f /tmp/llamacpp-backend.tar.gz
+          if [ ! -f "src-tauri/resources/llamacpp-backend/build/bin/llama-server.exe" ]; then
+            if [ -f "src-tauri/resources/llamacpp-backend/llama-server.exe" ]; then
+              mkdir -p src-tauri/resources/llamacpp-backend/build/bin
+              mv src-tauri/resources/llamacpp-backend/*.exe src-tauri/resources/llamacpp-backend/build/bin/
+              mv src-tauri/resources/llamacpp-backend/*.dll src-tauri/resources/llamacpp-backend/build/bin/ 2>/dev/null || true
+            fi
+          fi
+          ls -la src-tauri/resources/llamacpp-backend/
+          ls -la src-tauri/resources/llamacpp-backend/build/bin/ 2>/dev/null || echo "build/bin not found"
+
+      - name: Build web app and generate icons
+        env:
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+        run: |
+          yarn build:web
+          yarn build:icon
+
+      - name: Copy assets to Tauri
+        run: yarn copy:assets:tauri
+
+      - name: Build CLI
+        shell: bash
+        run: |
+          mkdir -p src-tauri/resources/bin
+          cd src-tauri && cargo build --release --features cli --bin jan-cli
+          cp target/release/jan-cli.exe resources/bin/jan-cli.exe
+
+      - name: Build app (unsigned)
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4196"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+        run: yarn tauri build
+
+      # ── Post-build code signing with jsign (bypasses KSP issues) ──
+      - name: Download jsign
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/ebourg/jsign/releases/download/6.0/jsign-6.0.jar" `
+            -OutFile "$env:RUNNER_TEMP\jsign.jar"
+
+      - name: Sign Windows binaries with DigiCert
+        shell: pwsh
+        env:
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+          SM_HOST: https://clientauth.one.digicert.com
+          SM_CERT_ALIAS: ${{ secrets.SM_CERT_ALIAS }}
+        run: |
+          $storepass = "$env:SM_API_KEY|$env:SM_CLIENT_CERT_FILE|$env:SM_CLIENT_CERT_PASSWORD"
+          $bundleBase = "src-tauri\target\release\bundle"
+
+          # Sign NSIS installer(s)
+          $nsisPath = Join-Path $bundleBase "nsis"
+          if (Test-Path $nsisPath) {
+            foreach ($exe in (Get-ChildItem -Path $nsisPath -Filter "*.exe")) {
+              Write-Host "Signing NSIS: $($exe.FullName)"
+              java -jar "$env:RUNNER_TEMP\jsign.jar" `
+                --storetype DIGICERTONE `
+                --alias "$env:SM_CERT_ALIAS" `
+                --storepass "$storepass" `
+                --tsaurl "http://timestamp.digicert.com" `
+                --tsmode RFC3161 `
+                "$($exe.FullName)"
+              if ($LASTEXITCODE -ne 0) { throw "jsign failed for $($exe.Name)" }
+              signtool verify /pa "$($exe.FullName)"
+              if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $($exe.Name)" }
+              Write-Host "Signed and verified: $($exe.Name)"
+            }
+          }
+
+          # Sign MSI installer(s)
+          $msiPath = Join-Path $bundleBase "msi"
+          if (Test-Path $msiPath) {
+            foreach ($msi in (Get-ChildItem -Path $msiPath -Filter "*.msi")) {
+              Write-Host "Signing MSI: $($msi.FullName)"
+              java -jar "$env:RUNNER_TEMP\jsign.jar" `
+                --storetype DIGICERTONE `
+                --alias "$env:SM_CERT_ALIAS" `
+                --storepass "$storepass" `
+                --tsaurl "http://timestamp.digicert.com" `
+                --tsmode RFC3161 `
+                "$($msi.FullName)"
+              if ($LASTEXITCODE -ne 0) { throw "jsign failed for $($msi.Name)" }
+              Write-Host "Signed: $($msi.Name)"
+            }
+          }
+
+      - name: Recreate updater signature after code signing
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          $nsisPath = "src-tauri\target\release\bundle\nsis"
+          foreach ($exe in (Get-ChildItem -Path $nsisPath -Filter "*-setup.exe")) {
+            $sigFile = "$($exe.FullName).sig"
+            if (Test-Path $sigFile) {
+              Remove-Item $sigFile
+              Write-Host "Removed old .sig: $sigFile"
+            }
+            Write-Host "Recreating updater signature for: $($exe.Name)"
+            npx tauri signer sign `
+              --private-key "$env:TAURI_SIGNING_PRIVATE_KEY" `
+              --password "$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD" `
+              "$($exe.FullName)"
+            Write-Host "Created new .sig for: $($exe.Name)"
+          }
+
+      # ── Collect metadata & upload (after signing) ─────────────
+      - name: Collect artifact metadata
+        id: metadata
+        shell: bash
+        run: |
+          cd src-tauri/target/release/bundle
+
+          cd nsis
+          EXE_NAME=$(ls *.exe | head -1)
+          WIN_SIG=$(cat "${EXE_NAME}.sig" 2>/dev/null || echo "")
+          echo "exe_name=${EXE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "win_sig=${WIN_SIG}" >> "$GITHUB_OUTPUT"
+
+          cd ../msi
+          MSI_NAME=$(ls *.msi | head -1)
+          echo "msi_name=${MSI_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload NSIS installer to release
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./src-tauri/target/release/bundle/nsis/${{ steps.metadata.outputs.exe_name }}
+          asset_name: ${{ steps.metadata.outputs.exe_name }}
+          asset_content_type: application/octet-stream
+
+      - name: Upload MSI installer to release
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./src-tauri/target/release/bundle/msi/${{ steps.metadata.outputs.msi_name }}
+          asset_name: ${{ steps.metadata.outputs.msi_name }}
+          asset_content_type: application/octet-stream
+
+      - name: Upload NSIS updater signature to release
+        if: steps.metadata.outputs.win_sig != ''
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./src-tauri/target/release/bundle/nsis/${{ steps.metadata.outputs.exe_name }}.sig
+          asset_name: ${{ steps.metadata.outputs.exe_name }}.sig
+          asset_content_type: text/plain
+
+  # ──────────────────────────────────────────────────────────────
+  # Tauri updater manifest  (waits for both platforms)
+  # ──────────────────────────────────────────────────────────────
+  publish-latest-json:
+    runs-on: ubuntu-latest
+    needs: [create-draft-release, build-macos, build-windows]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate latest.json for Tauri updater
+        env:
+          VERSION: ${{ needs.create-draft-release.outputs.version }}
+          MAC_SIG: ${{ needs.build-macos.outputs.mac_sig }}
+          TAR_NAME: ${{ needs.build-macos.outputs.tar_name }}
+          WIN_SIG: ${{ needs.build-windows.outputs.win_sig }}
+          EXE_NAME: ${{ needs.build-windows.outputs.exe_name }}
+        run: |
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+          DARWIN_URL="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v${VERSION}/${TAR_NAME// /.}"
+          WIN_URL="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v${VERSION}/${EXE_NAME// /.}"
+
+          jq --arg version "$VERSION" \
+             --arg pub_date "$PUB_DATE" \
+             --arg darwin_sig "$MAC_SIG" \
+             --arg darwin_url "$DARWIN_URL" \
+             --arg win_sig "$WIN_SIG" \
+             --arg win_url "$WIN_URL" \
+             '.version = $version
+              | .pub_date = $pub_date
+              | .platforms["darwin-aarch64"].signature = $darwin_sig
+              | .platforms["darwin-aarch64"].url = $darwin_url
+              | .platforms["darwin-x86_64"].signature = $darwin_sig
+              | .platforms["darwin-x86_64"].url = $darwin_url
+              | .platforms["windows-x86_64"].signature = $win_sig
+              | .platforms["windows-x86_64"].url = $win_url' \
+             src-tauri/latest.json.template > latest.json
+
+          cat latest.json
+
+      - name: Upload latest.json to release
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./latest.json
+          asset_name: latest.json
+          asset_content_type: application/json
