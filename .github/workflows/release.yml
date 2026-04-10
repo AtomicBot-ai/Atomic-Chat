@@ -482,25 +482,22 @@ jobs:
           }
 
       - name: Recreate updater signature after code signing
-        shell: pwsh
+        shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          $nsisPath = "src-tauri\target\release\bundle\nsis"
-          foreach ($exe in (Get-ChildItem -Path $nsisPath -Filter "*-setup.exe")) {
-            $sigFile = "$($exe.FullName).sig"
-            if (Test-Path $sigFile) {
-              Remove-Item $sigFile
-              Write-Host "Removed old .sig: $sigFile"
-            }
-            Write-Host "Recreating updater signature for: $($exe.Name)"
-            npx tauri signer sign `
-              --private-key "$env:TAURI_SIGNING_PRIVATE_KEY" `
-              --password "$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD" `
-              "$($exe.FullName)"
-            Write-Host "Created new .sig for: $($exe.Name)"
-          }
+          for exe in src-tauri/target/release/bundle/nsis/*-setup.exe; do
+            [ -f "$exe" ] || continue
+            sigfile="${exe}.sig"
+            if [ -f "$sigfile" ]; then
+              rm "$sigfile"
+              echo "Removed old .sig: $sigfile"
+            fi
+            echo "Recreating updater signature for: $(basename "$exe")"
+            yarn tauri signer sign --private-key "$TAURI_SIGNING_PRIVATE_KEY" --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" "$exe"
+            echo "Created new .sig for: $(basename "$exe")"
+          done
 
       # ── Collect metadata & upload (after signing) ─────────────
       - name: Collect artifact metadata
