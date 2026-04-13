@@ -380,7 +380,7 @@ jobs:
             echo "Error: Failed to fetch latest release tag"
             exit 1
           fi
-          BACKEND="win-avx2-x64"
+          BACKEND="win-common_cpus-x64"
           URL="https://github.com/janhq/llama.cpp/releases/download/${TAG}/llama-${TAG}-bin-${BACKEND}.tar.gz"
           echo "$TAG" > src-tauri/resources/llamacpp-backend/version.txt
           echo "$BACKEND" > src-tauri/resources/llamacpp-backend/backend.txt

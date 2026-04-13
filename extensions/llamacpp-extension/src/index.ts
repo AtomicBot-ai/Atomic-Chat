@@ -31,6 +31,8 @@ import {
   isBackendInstalled,
   getBackendExePath,
   getBackendDir,
+  getLocalInstalledBackends,
+  getBackendDownloadUrl,
 } from './backend'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import {
@@ -59,6 +61,7 @@ import {
   shouldMigrateBackend,
   handleSettingUpdate,
   installBundledBackend,
+  checkBackendForUpdates as checkBackendForUpdatesFromRust,
 } from '@janhq/tauri-plugin-llamacpp-api'
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
@@ -364,6 +367,74 @@ export default class llamacpp_extension extends AIEngine {
       bestAvailableBackendString =
         await this.determineBestBackend(version_backends)
 
+      // Auto-download optimal GPU backend if it's not installed locally,
+      // or if a newer version is available remotely.
+      // The app continues immediately with the bundled/current backend while
+      // the better backend downloads in the background.
+      // Only for Windows/Linux — macOS uses turboquant from a different repo.
+      if (bestAvailableBackendString && !IS_MAC) {
+        const [bestVersion, bestType] = bestAvailableBackendString.split('/')
+        if (bestVersion && bestType) {
+          const localBackends = await getLocalInstalledBackends()
+          const bundledType = bundledBackendString?.split('/')[1]
+
+          // Find the best backend TYPE via priority (CUDA > Vulkan > CPU),
+          // then check if the latest remote version of that type needs downloading.
+          const bestCategory = bestType
+          const localOfSameType = localBackends.filter(
+            (b) => b.backend === bestCategory
+          )
+          const hasLocalOfSameType = localOfSameType.length > 0
+
+          // Determine which version to download: either the best is not local at all,
+          // or a newer remote version exists for the same backend type.
+          let targetDownload: string | null = null
+
+          if (!hasLocalOfSameType && bestCategory !== bundledType) {
+            // No local backend of this type — first-time GPU backend download
+            targetDownload = bestAvailableBackendString
+          } else if (hasLocalOfSameType) {
+            // Check if a newer version is available remotely for this type
+            const localVersion = localOfSameType[0].version
+            const localBuild = parseBuildNumber(localVersion)
+            const remoteBuild = parseBuildNumber(bestVersion)
+            if (
+              localBuild !== null &&
+              remoteBuild !== null &&
+              remoteBuild > localBuild
+            ) {
+              targetDownload = `${bestVersion}/${bestCategory}`
+              logger.info(
+                `Newer version available for ${bestCategory}: ${localVersion} → ${bestVersion}`
+              )
+            }
+          }
+
+          if (targetDownload) {
+            logger.info(
+              `Backend ${targetDownload} not installed locally, downloading in background...`
+            )
+            this.downloadAndInstallBackend(targetDownload)
+              .then(async () => {
+                logger.info(
+                  `Background download of ${targetDownload} complete, switching backend`
+                )
+                try {
+                  await this.updateBackend(targetDownload!)
+                } catch (err) {
+                  logger.warn('Failed to switch to downloaded backend:', err)
+                }
+              })
+              .catch((err) => {
+                logger.warn(
+                  `Background download of ${targetDownload} failed, continuing with current backend:`,
+                  err
+                )
+              })
+          }
+        }
+      }
+
       if (storedBackendType) {
         // Delegate migration check to Rust
         const migrationTarget = await shouldMigrateBackend(
@@ -526,10 +597,16 @@ export default class llamacpp_extension extends AIEngine {
         }
       }
 
-      // Force-switch to the bundled backend when:
-      // 1. Current backend is not turboquant (migration to new format), OR
-      // 2. Current backend IS turboquant but a different version with the same
-      //    backend type was bundled with this app release (app update scenario).
+      // Force-switch to the bundled backend in certain scenarios:
+      //
+      // macOS (turboquant pipeline):
+      //   1. Current backend is not turboquant → migrate to bundled turboquant
+      //   2. Bundled is a newer version of the same backend type → app update
+      //
+      // Windows/Linux (janhq/llama.cpp pipeline):
+      //   Only force-switch when the bundled backend is a newer version of the
+      //   SAME type (e.g. CPU→CPU on app update). Never override a user's
+      //   auto-downloaded GPU backend (e.g. CUDA) with the bundled CPU backend.
       if (
         bundledBackendString &&
         effectiveBackendString &&
@@ -537,18 +614,18 @@ export default class llamacpp_extension extends AIEngine {
       ) {
         const bundledType = bundledBackendString.split('/')[1]
         const currentType = effectiveBackendString.split('/')[1]
-        const isNotTurboquant =
-          !effectiveBackendString.startsWith('turboquant-')
         const isBundledNewer =
           effectiveBackendString !== bundledBackendString &&
           bundledType === currentType
 
-        if (isNotTurboquant || isBundledNewer) {
+        const shouldForceSwitch = IS_MAC
+          ? !effectiveBackendString.startsWith('turboquant-') || isBundledNewer
+          : isBundledNewer
+
+        if (shouldForceSwitch) {
           logger.info(
             `Switching backend from '${effectiveBackendString}' to bundled '${bundledBackendString}'` +
-              (isNotTurboquant
-                ? ' (non-turboquant migration)'
-                : ' (app update)')
+              (isBundledNewer ? ' (app update)' : ' (turboquant migration)')
           )
           effectiveBackendString = bundledBackendString
           bestAvailableBackendString = bundledBackendString
@@ -750,7 +827,30 @@ export default class llamacpp_extension extends AIEngine {
     newVersion: string
     targetBackend?: string
   }> {
-    return { updateNeeded: false, newVersion: '0' }
+    try {
+      const currentBackend = this.config.version_backend
+      if (!currentBackend || !currentBackend.includes('/')) {
+        return { updateNeeded: false, newVersion: '0' }
+      }
+
+      const version_backends = await listSupportedBackends()
+      if (version_backends.length === 0) {
+        return { updateNeeded: false, newVersion: '0' }
+      }
+
+      const result = await checkBackendForUpdatesFromRust(
+        currentBackend,
+        version_backends
+      )
+      return {
+        updateNeeded: result.update_needed,
+        newVersion: result.new_version,
+        targetBackend: result.target_backend ?? undefined,
+      }
+    } catch (err) {
+      logger.warn('checkBackendForUpdates failed:', err)
+      return { updateNeeded: false, newVersion: '0' }
+    }
   }
 
   private async ensureFinalBackendInstallation(
@@ -1770,13 +1870,126 @@ export default class llamacpp_extension extends AIEngine {
     version: string
   ): Promise<void> {
     const backendKey = `${version}/${backend}`
-    const isInstalled = await isBackendInstalled(backend, version)
-    if (isInstalled) {
+    if (await isBackendInstalled(backend, version)) {
       return
     }
+
+    // Only attempt auto-download for janhq/llama.cpp backends (Windows/Linux).
+    // macOS turboquant backends come from a different repo and must be bundled.
+    if (!IS_MAC) {
+      logger.info(
+        `Backend ${backendKey} not installed locally, attempting download...`
+      )
+      try {
+        await this.downloadAndInstallBackend(backendKey)
+      } catch (err) {
+        logger.error(`Failed to download backend ${backendKey}:`, err)
+      }
+
+      if (await isBackendInstalled(backend, version)) {
+        return
+      }
+    }
+
     throw new Error(
-      `Backend ${backendKey} is not installed. The backend should be bundled with the application. Try reinstalling the app.`
+      `Backend ${backendKey} is not installed and could not be downloaded. Check your internet connection or try reinstalling the app.`
     )
+  }
+
+  /**
+   * Downloads a backend archive from janhq/llama.cpp GitHub releases and
+   * extracts it into the local backends directory.
+   */
+  private async downloadAndInstallBackend(
+    backendString: string
+  ): Promise<void> {
+    const parts = backendString.split('/')
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      throw new Error(`Invalid backend string: ${backendString}`)
+    }
+    const [version, backend] = parts
+
+    if (await isBackendInstalled(backend, version)) {
+      logger.info(`Backend ${backendString} is already installed, skipping download`)
+      return
+    }
+
+    const url = getBackendDownloadUrl(version, backend)
+    const janDataFolderPath = await getJanDataFolderPath()
+    const tempDir = await joinPath([janDataFolderPath, 'llamacpp', 'tmp'])
+    if (!(await fs.existsSync(tempDir))) {
+      await fs.mkdir(tempDir)
+    }
+    const archiveName = `llama-${version}-bin-${backend}.tar.gz`
+    const archivePath = await joinPath([tempDir, archiveName])
+    const targetDir = await getBackendDir(backend, version)
+
+    logger.info(`Downloading backend ${backendString} from ${url}`)
+
+    if (events && typeof events.emit === 'function') {
+      events.emit(AppEvent.onAppUpdateDownloadStarted, {
+        type: 'backend',
+        backend: backendString,
+      })
+    }
+
+    try {
+      const taskId = `backend-download-${version}-${backend}`
+      await invoke<void>('download_files', {
+        items: [{ url, save_path: archivePath }],
+        taskId,
+        headers: {},
+        resume: false,
+      })
+
+      logger.info(`Download complete, extracting to ${targetDir}`)
+      await invoke('decompress', {
+        path: archivePath,
+        outputDir: targetDir,
+      })
+
+      const exeName = IS_WINDOWS ? 'llama-server.exe' : 'llama-server'
+      const expectedBin = await joinPath([targetDir, 'build', 'bin', exeName])
+
+      if (!(await fs.existsSync(expectedBin))) {
+        const flatBin = await joinPath([targetDir, exeName])
+        if (await fs.existsSync(flatBin)) {
+          logger.info('Relocating flat-extracted binaries into build/bin/')
+          const buildBinDir = await joinPath([targetDir, 'build', 'bin'])
+          await fs.mkdir(buildBinDir)
+          const entries = await fs.readdirSync(targetDir)
+          for (const entry of entries) {
+            if (entry === 'build') continue
+            const src = await joinPath([targetDir, entry])
+            const dst = await joinPath([buildBinDir, entry])
+            await fs.copyFile(src, dst)
+          }
+        }
+      }
+
+      if (!(await isBackendInstalled(backend, version))) {
+        throw new Error(
+          `Backend extracted but llama-server binary not found at expected path`
+        )
+      }
+
+      logger.info(`Backend ${backendString} installed successfully`)
+
+      if (events && typeof events.emit === 'function') {
+        events.emit(AppEvent.onAppUpdateDownloadFinished, {
+          type: 'backend',
+          backend: backendString,
+        })
+      }
+    } finally {
+      try {
+        if (await fs.existsSync(archivePath)) {
+          await fs.rm(archivePath)
+        }
+      } catch {
+        // best-effort cleanup
+      }
+    }
   }
 
   private async *handleStreamingResponse(

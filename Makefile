@@ -58,6 +58,26 @@ dev: install-and-build
 	make build-cli-dev
 	yarn dev
 
+# ──────────────────────────────────────────────────────────────
+# Windows Development
+# ──────────────────────────────────────────────────────────────
+
+# One-time setup: installs Rust, nvm-windows, Node.js 20, Python, jq, Yarn
+setup-windows:
+ifeq ($(OS),Windows_NT)
+	powershell -ExecutionPolicy Bypass -File scripts/setup-windows.ps1
+else
+	@echo "This target is for Windows only. Use 'make dev' instead."
+endif
+
+# Full dev workflow for Windows (mirrors CI pipeline)
+dev-windows:
+ifeq ($(OS),Windows_NT)
+	powershell -ExecutionPolicy Bypass -File scripts/dev-windows.ps1
+else
+	@echo "This target is for Windows only. Use 'make dev' instead."
+endif
+
 # Web application targets
 install-web-app:
 	yarn install
@@ -275,7 +295,37 @@ ifeq ($(shell uname -s),Darwin)
 	fi
 else ifeq ($(OS),Windows_NT)
 	@mkdir -p src-tauri/resources/llamacpp-backend
-	@echo "Fetching latest llamacpp release from janhq/llama.cpp..."; \
+	@echo "Detecting GPU and selecting best backend for Windows..."; \
+	BACKEND=""; \
+	if [ -n "$(LLAMACPP_BACKEND)" ]; then \
+		BACKEND="$(LLAMACPP_BACKEND)"; \
+		echo "Using manually specified backend: $$BACKEND"; \
+	else \
+		NV_DRIVER=$$(powershell -NoProfile -Command "try { $$g = Get-CimInstance Win32_VideoController -EA Stop | Where-Object { $$_.Name -match 'NVIDIA' } | Select-Object -First 1; if($$g -and $$g.DriverVersion){ $$r = $$g.DriverVersion -replace '\\.','' ; if($$r.Length -ge 5){ $$nv=$$r.Substring($$r.Length-5); $$maj=$$nv.Substring(0,3).TrimStart('0'); $$min=$$nv.Substring(3,2); if(-not $$maj){$$maj='0'}; Write-Output \"$$maj.$$min\" } } } catch {}" 2>/dev/null); \
+		HAS_VULKAN=$$(powershell -NoProfile -Command "if(Test-Path \"$$env:SystemRoot\\System32\\vulkan-1.dll\"){'true'}else{'false'}" 2>/dev/null); \
+		VRAM_MIB=$$(powershell -NoProfile -Command "try{ $$v=(Get-CimInstance Win32_VideoController -EA Stop | ForEach-Object { $$_.AdapterRAM } | Sort-Object -Descending | Select-Object -First 1); if($$v -gt 0){[math]::Floor($$v/1048576)}else{0} } catch { 0 }" 2>/dev/null); \
+		echo "NVIDIA driver: $${NV_DRIVER:-none}  Vulkan: $$HAS_VULKAN  VRAM: $${VRAM_MIB:-0} MiB"; \
+		if [ -n "$$NV_DRIVER" ]; then \
+			NV_MAJOR=$$(echo "$$NV_DRIVER" | cut -d. -f1); \
+			NV_MINOR=$$(echo "$$NV_DRIVER" | cut -d. -f2); \
+			NV_VAL=$$((NV_MAJOR * 100 + NV_MINOR)); \
+			if [ $$NV_VAL -ge 58000 ]; then \
+				BACKEND="win-cuda-13-common_cpus-x64"; \
+			elif [ $$NV_VAL -ge 52741 ]; then \
+				BACKEND="win-cuda-12-common_cpus-x64"; \
+			elif [ $$NV_VAL -ge 45239 ]; then \
+				BACKEND="win-cuda-11-common_cpus-x64"; \
+			fi; \
+		fi; \
+		if [ -z "$$BACKEND" ] && [ "$$HAS_VULKAN" = "true" ] && [ "$${VRAM_MIB:-0}" -ge 6144 ]; then \
+			BACKEND="win-vulkan-common_cpus-x64"; \
+		fi; \
+		if [ -z "$$BACKEND" ]; then \
+			BACKEND="win-common_cpus-x64"; \
+		fi; \
+		echo "Auto-selected backend: $$BACKEND"; \
+	fi; \
+	echo "Fetching latest llamacpp release from janhq/llama.cpp..."; \
 	API_URL="https://api.github.com/repos/janhq/llama.cpp/releases/latest"; \
 	if [ -n "$$GH_TOKEN" ]; then \
 		TAG=$$(curl -sf -H "Authorization: Bearer $$GH_TOKEN" "$$API_URL" | jq -r '.tag_name'); \
@@ -283,7 +333,6 @@ else ifeq ($(OS),Windows_NT)
 		TAG=$$(curl -sf "$$API_URL" | jq -r '.tag_name'); \
 	fi; \
 	if [ -z "$$TAG" ] || [ "$$TAG" = "null" ]; then echo "Error: Failed to fetch latest release tag"; exit 1; fi; \
-	BACKEND="win-avx2-x64"; \
 	URL="https://github.com/janhq/llama.cpp/releases/download/$$TAG/llama-$$TAG-bin-$$BACKEND.tar.gz"; \
 	echo "$$TAG" > src-tauri/resources/llamacpp-backend/version.txt; \
 	echo "$$BACKEND" > src-tauri/resources/llamacpp-backend/backend.txt; \
@@ -292,7 +341,15 @@ else ifeq ($(OS),Windows_NT)
 	curl -fSL "$$URL" -o /tmp/llamacpp-backend.tar.gz; \
 	tar -xzf /tmp/llamacpp-backend.tar.gz -C src-tauri/resources/llamacpp-backend/; \
 	rm -f /tmp/llamacpp-backend.tar.gz; \
-	echo "Downloaded and extracted llamacpp backend for Windows successfully"
+	if [ ! -f "src-tauri/resources/llamacpp-backend/build/bin/llama-server.exe" ]; then \
+		if [ -f "src-tauri/resources/llamacpp-backend/llama-server.exe" ]; then \
+			echo "Relocating flat-extracted binaries into build/bin/..."; \
+			mkdir -p src-tauri/resources/llamacpp-backend/build/bin; \
+			mv src-tauri/resources/llamacpp-backend/*.exe src-tauri/resources/llamacpp-backend/build/bin/; \
+			mv src-tauri/resources/llamacpp-backend/*.dll src-tauri/resources/llamacpp-backend/build/bin/ 2>/dev/null || true; \
+		fi; \
+	fi; \
+	echo "Downloaded and extracted llamacpp backend ($$BACKEND) for Windows successfully"
 else
 	@echo "Skipping llamacpp backend download (unsupported platform)"
 endif
@@ -350,7 +407,11 @@ endif
 build-cli-dev:
 	mkdir -p src-tauri/resources/bin
 	cd src-tauri && cargo build --features cli --bin jan-cli
+ifeq ($(OS),Windows_NT)
+	cp src-tauri/target/debug/jan-cli.exe src-tauri/resources/bin/jan-cli.exe
+else
 	install -m755 src-tauri/target/debug/jan-cli src-tauri/resources/bin/jan-cli
+endif
 
 # Build
 build: install-and-build install-rust-targets

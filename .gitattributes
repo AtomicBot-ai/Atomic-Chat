@@ -1,0 +1,30 @@
+# Enforce LF line endings for all text files to prevent CRLF phantom diffs on Windows
+* text=auto eol=lf
+
+# Explicitly binary files
+*.png binary
+*.ico binary
+*.icns binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.tar.gz binary
+*.zip binary
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+
+# Lock files — keep exact format from generator
+yarn.lock text eol=lf
+Cargo.lock text eol=lf
+
+# Windows scripts — keep CRLF so they work natively
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
