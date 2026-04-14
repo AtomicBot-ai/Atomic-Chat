@@ -421,6 +421,21 @@ pub fn get_destination_path(original_path: &str, prefix: &str) -> String {
     remove_prefix(original_path, prefix)
 }
 
+pub fn allowed_methods_for_path(path: &str) -> Option<&'static [&'static str]> {
+    match path {
+        "/" | "/openapi.json" | "/docs/swagger-ui.css" | "/docs/swagger-ui-bundle.js" => {
+            Some(&["GET"])
+        }
+        "/models" => Some(&["GET"]),
+        "/messages"
+        | "/chat/completions"
+        | "/completions"
+        | "/embeddings"
+        | "/messages/count_tokens" => Some(&["POST"]),
+        _ => None,
+    }
+}
+
 use tauri_plugin_mlx::state::{MlxBackendSession, SessionInfo};
 
 fn is_local_url(url: &str) -> bool {
@@ -1217,31 +1232,34 @@ async fn proxy_request(
         }
 
         _ => {
-            let is_explicitly_whitelisted_get = method == hyper::Method::GET
-                && whitelisted_paths.contains(&destination_path.as_str());
-            if is_explicitly_whitelisted_get {
-                log::debug!("Handled whitelisted GET path: {destination_path}");
-                let mut error_response = Response::builder().status(StatusCode::NOT_FOUND);
-                error_response = add_cors_headers_with_host_and_origin(
-                    error_response,
-                    &host_header,
-                    &origin_header,
-                    &config.trusted_hosts,
-                );
-                return Ok(error_response.body(Body::from("Not Found")).unwrap());
-            } else {
+            if let Some(allowed_methods) = allowed_methods_for_path(destination_path.as_str()) {
+                let allow_header = allowed_methods.join(", ");
                 log::warn!(
-                    "Unhandled method/path for dynamic routing: {method} {destination_path}"
+                    "Method not allowed for known route: {method} {destination_path}; allowed: {allow_header}"
                 );
-                let mut error_response = Response::builder().status(StatusCode::NOT_FOUND);
+                let mut error_response = Response::builder()
+                    .status(StatusCode::METHOD_NOT_ALLOWED)
+                    .header(hyper::header::ALLOW, allow_header);
                 error_response = add_cors_headers_with_host_and_origin(
                     error_response,
                     &host_header,
                     &origin_header,
                     &config.trusted_hosts,
                 );
-                return Ok(error_response.body(Body::from("Not Found")).unwrap());
+                return Ok(error_response
+                    .body(Body::from("Method Not Allowed"))
+                    .unwrap());
             }
+
+            log::warn!("Unhandled method/path for dynamic routing: {method} {destination_path}");
+            let mut error_response = Response::builder().status(StatusCode::NOT_FOUND);
+            error_response = add_cors_headers_with_host_and_origin(
+                error_response,
+                &host_header,
+                &origin_header,
+                &config.trusted_hosts,
+            );
+            return Ok(error_response.body(Body::from("Not Found")).unwrap());
         }
     }
 
