@@ -100,6 +100,30 @@ mod tests {
     }
 
     #[test]
+    fn test_known_post_only_route_reports_post_allowlist() {
+        let allowed = proxy::allowed_methods_for_path("/chat/completions");
+        assert_eq!(allowed, Some(&["POST"][..]));
+    }
+
+    #[test]
+    fn test_known_get_only_route_reports_get_allowlist() {
+        let allowed = proxy::allowed_methods_for_path("/models");
+        assert_eq!(allowed, Some(&["GET"][..]));
+    }
+
+    #[test]
+    fn test_unknown_route_has_no_allowlist() {
+        let allowed = proxy::allowed_methods_for_path("/totally-unknown");
+        assert_eq!(allowed, None);
+    }
+
+    #[test]
+    fn test_count_tokens_route_reports_post_allowlist() {
+        let allowed = proxy::allowed_methods_for_path("/messages/count_tokens");
+        assert_eq!(allowed, Some(&["POST"][..]));
+    }
+
+    #[test]
     fn test_allowed_headers() {
         let allowed_headers = [
             "accept",
