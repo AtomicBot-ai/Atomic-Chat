@@ -15,9 +15,9 @@ on:
         type: boolean
         default: false
       build_windows:
-        description: "Build Windows"
+        description: "Build Windows (temporarily disabled)"
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: write
@@ -237,7 +237,7 @@ jobs:
   # Windows  (x86_64 — NSIS + MSI, DigiCert KeyLocker code signing)
   # ──────────────────────────────────────────────────────────────
   build-windows:
-    if: github.event_name == 'push' || inputs.build_windows
+    if: false # Temporarily disabled in CI
     # Pinned to windows-2022 — DigiCert KSP is incompatible with Server 2025
     runs-on: windows-2022
     needs: create-draft-release
@@ -548,12 +548,12 @@ jobs:
           asset_content_type: text/plain
 
   # ──────────────────────────────────────────────────────────────
-  # Tauri updater manifest  (waits for both platforms)
+  # Tauri updater manifest  (currently macOS-only)
   # ──────────────────────────────────────────────────────────────
   publish-latest-json:
-    if: always() && needs.create-draft-release.result == 'success' && (needs.build-macos.result == 'success' || needs.build-windows.result == 'success')
+    if: always() && needs.create-draft-release.result == 'success' && needs.build-macos.result == 'success'
     runs-on: ubuntu-latest
-    needs: [create-draft-release, build-macos, build-windows]
+    needs: [create-draft-release, build-macos]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -563,27 +563,20 @@ jobs:
           VERSION: ${{ needs.create-draft-release.outputs.version }}
           MAC_SIG: ${{ needs.build-macos.outputs.mac_sig }}
           TAR_NAME: ${{ needs.build-macos.outputs.tar_name }}
-          WIN_SIG: ${{ needs.build-windows.outputs.win_sig }}
-          EXE_NAME: ${{ needs.build-windows.outputs.exe_name }}
         run: |
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
           DARWIN_URL="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v${VERSION}/${TAR_NAME// /.}"
-          WIN_URL="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v${VERSION}/${EXE_NAME// /.}"
 
           jq --arg version "$VERSION" \
              --arg pub_date "$PUB_DATE" \
              --arg darwin_sig "$MAC_SIG" \
              --arg darwin_url "$DARWIN_URL" \
-             --arg win_sig "$WIN_SIG" \
-             --arg win_url "$WIN_URL" \
              '.version = $version
               | .pub_date = $pub_date
               | .platforms["darwin-aarch64"].signature = $darwin_sig
               | .platforms["darwin-aarch64"].url = $darwin_url
               | .platforms["darwin-x86_64"].signature = $darwin_sig
-              | .platforms["darwin-x86_64"].url = $darwin_url
-              | .platforms["windows-x86_64"].signature = $win_sig
-              | .platforms["windows-x86_64"].url = $win_url' \
+              | .platforms["darwin-x86_64"].url = $darwin_url' \
              src-tauri/latest.json.template > latest.json
 
           cat latest.json
