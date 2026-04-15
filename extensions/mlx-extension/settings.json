@@ -1,5 +1,16 @@
 [
   {
+    "key": "version_backend",
+    "title": "Version & Backend",
+    "description": "Current DFlash MLX server version. Updated with each app release.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "detecting...",
+      "placeholder": "",
+      "readonly": true
+    }
+  },
+  {
     "key": "draft_model_path",
     "title": "DFlash Draft Model Path",
     "description": "Absolute path to a DFlash draft model directory. Leave empty to use standard MLX inference without speculative decoding.",

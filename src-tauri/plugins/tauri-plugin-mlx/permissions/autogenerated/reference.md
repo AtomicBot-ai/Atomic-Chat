@@ -12,6 +12,7 @@ Default permissions for the MLX plugin
 - `allow-find-mlx-session-by-model`
 - `allow-get-mlx-loaded-models`
 - `allow-get-mlx-all-sessions`
+- `allow-get-mlx-server-version`
 
 ## Permission Table
 
@@ -148,6 +149,32 @@ Enables the get_mlx_random_port command without any pre-configured scope.
 <td>
 
 Denies the get_mlx_random_port command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mlx:allow-get-mlx-server-version`
+
+</td>
+<td>
+
+Enables the get_mlx_server_version command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mlx:deny-get-mlx-server-version`
+
+</td>
+<td>
+
+Denies the get_mlx_server_version command without any pre-configured scope.
 
 </td>
 </tr>

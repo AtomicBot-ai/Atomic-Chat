@@ -408,13 +408,50 @@ export function DataProvider() {
 
         const serverState = useLocalApiServer.getState()
 
-        // Pick model to load: saved default > last server models > first available local model
+        // Pick model to load: saved default > last server models > persisted UI selection > first available local model
         const modelToStart = (() => {
           if (serverState.defaultModelLocalApiServer) {
-            return serverState.defaultModelLocalApiServer
+            const dp = allProviders.find(
+              (p) =>
+                p.provider ===
+                serverState.defaultModelLocalApiServer!.provider
+            )
+            if (
+              dp &&
+              dp.models.some(
+                (m) =>
+                  m.id === serverState.defaultModelLocalApiServer!.model
+              )
+            ) {
+              return serverState.defaultModelLocalApiServer
+            }
           }
           if (serverState.lastServerModels.length > 0) {
-            return serverState.lastServerModels[0]
+            const last = serverState.lastServerModels[0]
+            const lp = allProviders.find(
+              (p) => p.provider === last.provider
+            )
+            if (lp && lp.models.some((m) => m.id === last.model)) {
+              return last
+            }
+          }
+          const { selectedProvider, selectedModel } =
+            useModelProvider.getState()
+          if (
+            selectedModel &&
+            selectedProvider &&
+            (selectedProvider === 'llamacpp' ||
+              selectedProvider === 'mlx')
+          ) {
+            const sp = allProviders.find(
+              (p) => p.provider === selectedProvider
+            )
+            if (
+              sp &&
+              sp.models.some((m) => m.id === selectedModel.id)
+            ) {
+              return { model: selectedModel.id, provider: selectedProvider }
+            }
           }
           const firstLocal = localModels[0]
           const providerName =

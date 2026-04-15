@@ -156,19 +156,22 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
           await checkAndUpdateModelVisionCapability(lastUsed.model)
         }
       } else {
-        const llamacppProvider = providers.find(
-          (p) => p.provider === 'llamacpp' && p.active && p.models.length > 0
+        const localProvider = providers.find(
+          (p) =>
+            (p.provider === 'llamacpp' || p.provider === 'mlx') &&
+            p.active &&
+            p.models.length > 0
         )
-        if (llamacppProvider && llamacppProvider.models.length > 0) {
-          const firstModel = llamacppProvider.models.find(
+        if (localProvider && localProvider.models.length > 0) {
+          const firstModel = localProvider.models.find(
             (m) => m.id !== EMBEDDING_MODEL_ID
           )
           if (!firstModel) {
             selectModelProvider('', '')
             return
           }
-          selectModelProvider('llamacpp', firstModel.id)
-          setLastUsedModel('llamacpp', firstModel.id)
+          selectModelProvider(localProvider.provider, firstModel.id)
+          setLastUsedModel(localProvider.provider, firstModel.id)
         } else {
           selectModelProvider('', '')
         }
@@ -392,6 +395,17 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
         searchableModel.provider.provider,
         searchableModel.model.id
       )
+
+      // Persist local model selection so the next startup picks the right model
+      if (
+        searchableModel.provider.provider === 'llamacpp' ||
+        searchableModel.provider.provider === 'mlx'
+      ) {
+        useLocalApiServer.getState().setDefaultModelLocalApiServer({
+          model: searchableModel.model.id,
+          provider: searchableModel.provider.provider,
+        })
+      }
 
       // Check mmproj existence for llamacpp models (async, don't block UI)
       if (searchableModel.provider.provider === 'llamacpp') {

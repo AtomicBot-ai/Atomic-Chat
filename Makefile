@@ -53,7 +53,7 @@ install-ios-rust-targets:
 dev: install-and-build
 	yarn download:bin
 	make download-llamacpp-backend
-	make build-mlx-server-if-exists
+	make build-mlx-server
 	make build-foundation-models-server-if-exists
 	make build-cli-dev
 	yarn dev
@@ -182,7 +182,13 @@ ifeq ($(shell uname -s),Darwin)
 	tar -xzf /tmp/dflash-mlx-server.tar.gz -C src-tauri/resources/bin/; \
 	rm -f /tmp/dflash-mlx-server.tar.gz; \
 	chmod +x src-tauri/resources/bin/mlx-server; \
-	echo "DFlash MLX server downloaded and extracted successfully"
+	echo "$$TAG" > src-tauri/resources/bin/mlx-server-version.txt; \
+	echo "macos-arm64" > src-tauri/resources/bin/mlx-server-backend.txt; \
+	echo "DFlash MLX server downloaded and extracted successfully ($$TAG)"; \
+	mkdir -p src-tauri/target/debug/resources/bin; \
+	cp src-tauri/resources/bin/mlx-server src-tauri/target/debug/resources/bin/mlx-server; \
+	cp src-tauri/resources/bin/mlx-server-version.txt src-tauri/target/debug/resources/bin/mlx-server-version.txt; \
+	cp src-tauri/resources/bin/mlx-server-backend.txt src-tauri/target/debug/resources/bin/mlx-server-backend.txt
 	@SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
 	if [ -n "$$SIGNING_IDENTITY" ]; then \
 		echo "Signing mlx-server with identity: $$SIGNING_IDENTITY"; \
@@ -195,13 +201,29 @@ else
 	@echo "Skipping MLX server download (macOS only)"
 endif
 
-# Build MLX server only if not already present (for dev)
+# Download MLX server if missing, outdated, or a leftover Swift binary.
+# Compares local version tag with the latest GitHub release.
 build-mlx-server-if-exists:
 ifeq ($(shell uname -s),Darwin)
-	@if [ -f "src-tauri/resources/bin/mlx-server" ]; then \
-		echo "MLX server already exists at src-tauri/resources/bin/mlx-server, skipping build..."; \
-	else \
+	@if [ ! -f "src-tauri/resources/bin/mlx-server" ] || [ ! -f "src-tauri/resources/bin/mlx-server-version.txt" ]; then \
+		echo "MLX server binary or version file missing — downloading..."; \
 		make build-mlx-server; \
+	else \
+		LOCAL_TAG=$$(cat src-tauri/resources/bin/mlx-server-version.txt 2>/dev/null); \
+		API_URL="https://api.github.com/repos/AtomicBot-ai/dflash/releases"; \
+		if [ -n "$$GH_TOKEN" ]; then \
+			LATEST_TAG=$$(curl -sf -H "Authorization: Bearer $$GH_TOKEN" "$$API_URL" | python3 -c "import sys,json; rs=json.load(sys.stdin); ts=[r for r in rs if r['tag_name'].startswith('dflash-macos-arm64')]; print(ts[0]['tag_name'] if ts else '')" 2>/dev/null); \
+		else \
+			LATEST_TAG=$$(curl -sf "$$API_URL" | python3 -c "import sys,json; rs=json.load(sys.stdin); ts=[r for r in rs if r['tag_name'].startswith('dflash-macos-arm64')]; print(ts[0]['tag_name'] if ts else '')" 2>/dev/null); \
+		fi; \
+		if [ -z "$$LATEST_TAG" ]; then \
+			echo "Could not fetch latest release tag — keeping current ($$LOCAL_TAG)"; \
+		elif [ "$$LOCAL_TAG" = "$$LATEST_TAG" ]; then \
+			echo "MLX server is up-to-date ($$LOCAL_TAG)"; \
+		else \
+			echo "MLX server outdated: local=$$LOCAL_TAG remote=$$LATEST_TAG — updating..."; \
+			make build-mlx-server; \
+		fi; \
 	fi
 else
 	@echo "Skipping MLX server build (macOS only)"
