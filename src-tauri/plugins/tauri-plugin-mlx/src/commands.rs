@@ -30,6 +30,10 @@ pub struct UnloadResult {
 pub struct MlxConfig {
     #[serde(default)]
     pub ctx_size: i32,
+    #[serde(default)]
+    pub draft_model_path: String,
+    #[serde(default)]
+    pub block_size: i32,
 }
 
 /// Core model-loading logic, decoupled from Tauri AppHandle.
@@ -91,6 +95,16 @@ pub async fn load_mlx_model_impl(
     if config.ctx_size > 0 {
         args.push("--ctx-size".to_string());
         args.push(config.ctx_size.to_string());
+    }
+
+    if !config.draft_model_path.is_empty() {
+        args.push("--draft-model".to_string());
+        args.push(config.draft_model_path.clone());
+    }
+
+    if config.block_size > 0 {
+        args.push("--block-size".to_string());
+        args.push(config.block_size.to_string());
     }
 
     if !api_key.is_empty() {

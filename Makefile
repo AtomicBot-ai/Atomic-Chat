@@ -145,42 +145,54 @@ endif
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 	cargo test --manifest-path src-tauri/utils/Cargo.toml
 
-# Build MLX server (macOS Apple Silicon only) - always builds
+# Download DFlash MLX server binary from GitHub releases (macOS only)
+# Supports GH_TOKEN env var for authenticated GitHub API requests (avoids rate limits in CI)
+# Override DFLASH_TAG to pin a specific release, e.g.:
+#   make build-mlx-server DFLASH_TAG=dflash-macos-arm64-abc1234
+DFLASH_TAG ?=
 build-mlx-server:
 ifeq ($(shell uname -s),Darwin)
-	@echo "Building MLX server for Apple Silicon..."
-	cd mlx-server && swift build -c release
-	@echo "Copying build products..."
-	@BUILD_DIR=$$(cd mlx-server && swift build -c release --show-bin-path); \
-	if [ -z "$$BUILD_DIR" ]; then \
-		echo "Error: Could not find build products"; \
-		exit 1; \
-	fi; \
-	mkdir -p src-tauri/resources/bin; \
-	echo "Copying mlx-server from $$BUILD_DIR..."; \
-	cp "$$BUILD_DIR/mlx-server" src-tauri/resources/bin/mlx-server; \
-	if [ -d "$$BUILD_DIR/mlx-swift_Cmlx.bundle" ]; then \
-		cp -r "$$BUILD_DIR/mlx-swift_Cmlx.bundle" src-tauri/resources/bin/; \
+	@mkdir -p src-tauri/resources/bin
+	@echo "Downloading DFlash MLX server binary..."; \
+	if [ -n "$(DFLASH_TAG)" ]; then \
+		TAG="$(DFLASH_TAG)"; \
+		echo "Using pinned release: $$TAG"; \
 	else \
-		mkdir -p src-tauri/resources/bin/mlx-swift_Cmlx.bundle; \
+		echo "Fetching latest DFlash release..."; \
+		API_URL="https://api.github.com/repos/AtomicBot-ai/dflash/releases"; \
+		TMPREL=$$(mktemp /tmp/dflash-releases-XXXXXX.json); \
+		if [ -n "$$GH_TOKEN" ]; then \
+			curl -sf -H "Authorization: Bearer $$GH_TOKEN" "$$API_URL" -o "$$TMPREL"; \
+		else \
+			curl -sf "$$API_URL" -o "$$TMPREL"; \
+		fi; \
+		if [ ! -s "$$TMPREL" ]; then rm -f "$$TMPREL"; echo "Error: Failed to fetch releases from GitHub API"; exit 1; fi; \
+		if command -v jq >/dev/null 2>&1; then \
+			TAG=$$(jq -r '[.[] | select(.tag_name | startswith("dflash-macos-arm64"))][0].tag_name // empty' "$$TMPREL"); \
+		else \
+			TAG=$$(python3 -c "import sys,json; rs=json.load(open(sys.argv[1])); ts=[r for r in rs if r['tag_name'].startswith('dflash-macos-arm64')]; print(ts[0]['tag_name'] if ts else '')" "$$TMPREL" 2>/dev/null); \
+		fi; \
+		rm -f "$$TMPREL"; \
+		if [ -z "$$TAG" ]; then echo "Error: No DFlash release found"; exit 1; fi; \
 	fi; \
+	echo "Release: $$TAG"; \
+	URL="https://github.com/AtomicBot-ai/dflash/releases/download/$$TAG/dflash-mlx-server-macos-arm64.tar.gz"; \
+	echo "Downloading: $$URL"; \
+	curl -fSL "$$URL" -o /tmp/dflash-mlx-server.tar.gz; \
+	tar -xzf /tmp/dflash-mlx-server.tar.gz -C src-tauri/resources/bin/; \
+	rm -f /tmp/dflash-mlx-server.tar.gz; \
 	chmod +x src-tauri/resources/bin/mlx-server; \
-	echo "MLX server built and copied successfully"; \
-	echo "Checking for code signing identity..."; \
-	SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
+	echo "DFlash MLX server downloaded and extracted successfully"
+	@SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
 	if [ -n "$$SIGNING_IDENTITY" ]; then \
 		echo "Signing mlx-server with identity: $$SIGNING_IDENTITY"; \
-		codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" src-tauri/resources/bin/mlx-server; \
-		if [ -d "src-tauri/resources/bin/mlx-swift_Cmlx.bundle" ]; then \
-			echo "Signing mlx-swift_Cmlx.bundle..."; \
-			codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" --deep src-tauri/resources/bin/mlx-swift_Cmlx.bundle; \
-		fi; \
+		codesign --force --options runtime --timestamp --entitlements src-tauri/Entitlements.plist --sign "$$SIGNING_IDENTITY" src-tauri/resources/bin/mlx-server; \
 		echo "Code signing completed successfully"; \
 	else \
-		echo "Warning: No Developer ID Application identity found. Skipping code signing (notarization will fail)."; \
+		echo "Warning: No Developer ID Application identity found. Skipping code signing."; \
 	fi
 else
-	@echo "Skipping MLX server build (macOS only)"
+	@echo "Skipping MLX server download (macOS only)"
 endif
 
 # Build MLX server only if not already present (for dev)

@@ -133,6 +133,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make download-llamacpp-backend
 
+      - name: Download DFlash MLX server
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make build-mlx-server
+
       - name: Install dependencies and build core
         run: |
           make install-and-build
@@ -177,7 +182,6 @@ jobs:
           echo "=== Building ==="
 
           yarn download:bin
-          yarn build:mlx-server
           yarn build:foundation-models-server
           yarn build:cli
           yarn tauri build --target universal-apple-darwin --config src-tauri/tauri.macos.conf.json

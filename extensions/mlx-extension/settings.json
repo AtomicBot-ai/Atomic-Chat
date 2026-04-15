@@ -1,1 +1,25 @@
-[]
+[
+  {
+    "key": "draft_model_path",
+    "title": "DFlash Draft Model Path",
+    "description": "Absolute path to a DFlash draft model directory. Leave empty to use standard MLX inference without speculative decoding.",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "/path/to/dflash-draft-model",
+      "value": ""
+    }
+  },
+  {
+    "key": "block_size",
+    "title": "DFlash Block Size",
+    "description": "Block size for DFlash speculative decoding. Set to 0 to use the draft model's default.",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "0",
+      "value": "0",
+      "type": "number",
+      "min": 0,
+      "max": 64
+    }
+  }
+]

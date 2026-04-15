@@ -437,23 +437,8 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
 
           try {
             // 1. Stop all currently loaded local models
-            const activeModels = await serviceHub.models().getActiveModels()
-            if (activeModels && activeModels.length > 0) {
-              await Promise.all(
-                activeModels.map(async (modelId) => {
-                  try {
-                    await serviceHub.models().stopModel(modelId)
-                    console.log('[LocalAPI] Stopped old model:', modelId)
-                  } catch (err) {
-                    console.warn(
-                      '[LocalAPI] Failed to stop model:',
-                      modelId,
-                      err
-                    )
-                  }
-                })
-              )
-            }
+            await serviceHub.models().stopAllModels()
+            console.log('[LocalAPI] Stopped previously loaded local models')
 
             // 2. Stop the API server
             await window.core?.api?.stopServer()

@@ -266,8 +266,9 @@ export function DataProvider() {
       if (currentStatus === 'running') {
         try {
           if (provider) {
+            await serviceHub.models().stopAllModels()
             console.log(
-              '[LocalAPI] Loading model into running server:',
+              '[LocalAPI] Loading model into running server after unloading previous local models:',
               modelId
             )
             await serviceHub.models().startModel(provider, modelId, true)
@@ -307,6 +308,7 @@ export function DataProvider() {
 
       try {
         if (provider) {
+          await serviceHub.models().stopAllModels()
           await serviceHub.models().startModel(provider, modelId, true)
           console.log('[LocalAPI] Model started:', modelId)
           await new Promise((resolve) => setTimeout(resolve, 500))
@@ -407,45 +409,47 @@ export function DataProvider() {
         const serverState = useLocalApiServer.getState()
 
         // Pick model to load: saved default > last server models > first available local model
-        const modelsToStart = (() => {
+        const modelToStart = (() => {
           if (serverState.defaultModelLocalApiServer) {
-            return [serverState.defaultModelLocalApiServer]
+            return serverState.defaultModelLocalApiServer
           }
           if (serverState.lastServerModels.length > 0) {
-            return serverState.lastServerModels
+            return serverState.lastServerModels[0]
           }
           const firstLocal = localModels[0]
           const providerName =
             allProviders.find((p) =>
               p.models.some((m) => m.id === firstLocal.id)
             )?.provider ?? 'llamacpp'
-          return [{ model: firstLocal.id, provider: providerName }]
+          return { model: firstLocal.id, provider: providerName }
         })()
 
-        console.log('[LocalAPI:startup] Models to start:', modelsToStart)
+        console.log('[LocalAPI:startup] Model to start:', modelToStart)
 
-        await Promise.allSettled(
-          modelsToStart.map(async ({ model, provider: providerName }) => {
-            const provider = allProviders.find(
-              (p) => p.provider === providerName
-            )
-            if (!provider) {
-              console.warn(
-                `[LocalAPI:startup] Provider '${providerName}' not found for model '${model}'`
-              )
-              return
-            }
-            try {
-              await serviceHub.models().startModel(provider, model, true)
-              console.log(`[LocalAPI:startup] Model started: ${model}`)
-            } catch (err) {
-              console.warn(
-                `[LocalAPI:startup] Failed to start model ${model}:`,
-                err
-              )
-            }
-          })
+        await serviceHub.models().stopAllModels()
+
+        const provider = allProviders.find(
+          (p) => p.provider === modelToStart.provider
         )
+        if (!provider) {
+          console.warn(
+            `[LocalAPI:startup] Provider '${modelToStart.provider}' not found for model '${modelToStart.model}'`
+          )
+          setServerStatus('stopped')
+          return
+        }
+
+        try {
+          await serviceHub.models().startModel(provider, modelToStart.model, true)
+          console.log(`[LocalAPI:startup] Model started: ${modelToStart.model}`)
+        } catch (err) {
+          console.warn(
+            `[LocalAPI:startup] Failed to start model ${modelToStart.model}:`,
+            err
+          )
+          setServerStatus('stopped')
+          return
+        }
 
         const actualPort = await window.core?.api?.startServer({
           host: serverState.serverHost,
@@ -466,10 +470,10 @@ export function DataProvider() {
         serverState.setEnableOnStartup(true)
 
         // Persist running models for next startup
-        if (modelsToStart.length > 0) {
-          serverState.setLastServerModels(modelsToStart)
+        if (modelToStart) {
+          serverState.setLastServerModels([modelToStart])
           if (!serverState.defaultModelLocalApiServer) {
-            serverState.setDefaultModelLocalApiServer(modelsToStart[0])
+            serverState.setDefaultModelLocalApiServer(modelToStart)
           }
         }
       } catch (error) {

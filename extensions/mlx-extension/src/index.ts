@@ -298,6 +298,8 @@ export default class mlx_extension extends AIEngine {
 
     const mlxConfig: MlxConfig = {
       ctx_size: cfg.ctx_size ?? 4096,
+      draft_model_path: cfg.draft_model_path ?? '',
+      block_size: cfg.block_size ?? 0,
     }
 
     logger.info(

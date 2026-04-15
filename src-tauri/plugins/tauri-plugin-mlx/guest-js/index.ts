@@ -12,6 +12,8 @@ function asNumber(v: any, defaultValue = 0): number {
 export function normalizeMlxConfig(config: any): MlxConfig {
   return {
     ctx_size: asNumber(config.ctx_size),
+    draft_model_path: config.draft_model_path ?? '',
+    block_size: asNumber(config.block_size),
   }
 }
 
