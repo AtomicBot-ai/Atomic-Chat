@@ -326,8 +326,26 @@ export function DataProvider() {
 
         const serverState = useLocalApiServer.getState()
 
-        // Pick model to load: saved default > last server models > persisted UI selection > first available local model
+        // Pick model to load: current UI selection > saved default > last
+        // running local model > first available local model.
         const modelToStart = (() => {
+          const { selectedProvider, selectedModel } = useModelProvider.getState()
+          if (
+            selectedModel &&
+            selectedProvider &&
+            (selectedProvider === 'llamacpp' || selectedProvider === 'mlx')
+          ) {
+            const selectedLocalProvider = allProviders.find(
+              (p) => p.provider === selectedProvider
+            )
+            if (
+              selectedLocalProvider &&
+              selectedLocalProvider.models.some((m) => m.id === selectedModel.id)
+            ) {
+              return { model: selectedModel.id, provider: selectedProvider }
+            }
+          }
+
           if (serverState.defaultModelLocalApiServer) {
             const dp = allProviders.find(
               (p) =>
@@ -347,18 +365,6 @@ export function DataProvider() {
             const lp = allProviders.find((p) => p.provider === last.provider)
             if (lp && lp.models.some((m) => m.id === last.model)) {
               return last
-            }
-          }
-          const { selectedProvider, selectedModel } =
-            useModelProvider.getState()
-          if (
-            selectedModel &&
-            selectedProvider &&
-            (selectedProvider === 'llamacpp' || selectedProvider === 'mlx')
-          ) {
-            const sp = allProviders.find((p) => p.provider === selectedProvider)
-            if (sp && sp.models.some((m) => m.id === selectedModel.id)) {
-              return { model: selectedModel.id, provider: selectedProvider }
             }
           }
           const firstLocal = localModels[0]

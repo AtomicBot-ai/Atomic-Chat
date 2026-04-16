@@ -168,9 +168,9 @@ ifeq ($(shell uname -s),Darwin)
 		fi; \
 		if [ ! -s "$$TMPREL" ]; then rm -f "$$TMPREL"; echo "Error: Failed to fetch releases from GitHub API"; exit 1; fi; \
 		if command -v jq >/dev/null 2>&1; then \
-			TAG=$$(jq -r '[.[] | select(.tag_name | startswith("dflash-macos-arm64"))][0].tag_name // empty' "$$TMPREL"); \
+			TAG=$$(jq -r '[.[] | select(.tag_name | startswith("dflash-macos-arm64"))] | sort_by(.published_at // .created_at) | reverse | .[0].tag_name // empty' "$$TMPREL"); \
 		else \
-			TAG=$$(python3 -c "import sys,json; rs=json.load(open(sys.argv[1])); ts=[r for r in rs if r['tag_name'].startswith('dflash-macos-arm64')]; print(ts[0]['tag_name'] if ts else '')" "$$TMPREL" 2>/dev/null); \
+			TAG=$$(python3 -c "import sys,json; rs=json.load(open(sys.argv[1])); ts=sorted([r for r in rs if r['tag_name'].startswith('dflash-macos-arm64')], key=lambda r: r.get('published_at') or r.get('created_at') or '', reverse=True); print(ts[0]['tag_name'] if ts else '')" "$$TMPREL" 2>/dev/null); \
 		fi; \
 		rm -f "$$TMPREL"; \
 		if [ -z "$$TAG" ]; then echo "Error: No DFlash release found"; exit 1; fi; \
@@ -214,9 +214,9 @@ ifeq ($(shell uname -s),Darwin)
 		LOCAL_TAG=$$(cat src-tauri/resources/bin/mlx-server-version.txt 2>/dev/null); \
 		API_URL="https://api.github.com/repos/AtomicBot-ai/dflash/releases"; \
 		if [ -n "$$GH_TOKEN" ]; then \
-			LATEST_TAG=$$(curl -sf -H "Authorization: Bearer $$GH_TOKEN" "$$API_URL" | python3 -c "import sys,json; rs=json.load(sys.stdin); ts=[r for r in rs if r['tag_name'].startswith('dflash-macos-arm64')]; print(ts[0]['tag_name'] if ts else '')" 2>/dev/null); \
+			LATEST_TAG=$$(curl -sf -H "Authorization: Bearer $$GH_TOKEN" "$$API_URL" | python3 -c "import sys,json; rs=json.load(sys.stdin); ts=sorted([r for r in rs if r['tag_name'].startswith('dflash-macos-arm64')], key=lambda r: r.get('published_at') or r.get('created_at') or '', reverse=True); print(ts[0]['tag_name'] if ts else '')" 2>/dev/null); \
 		else \
-			LATEST_TAG=$$(curl -sf "$$API_URL" | python3 -c "import sys,json; rs=json.load(sys.stdin); ts=[r for r in rs if r['tag_name'].startswith('dflash-macos-arm64')]; print(ts[0]['tag_name'] if ts else '')" 2>/dev/null); \
+			LATEST_TAG=$$(curl -sf "$$API_URL" | python3 -c "import sys,json; rs=json.load(sys.stdin); ts=sorted([r for r in rs if r['tag_name'].startswith('dflash-macos-arm64')], key=lambda r: r.get('published_at') or r.get('created_at') or '', reverse=True); print(ts[0]['tag_name'] if ts else '')" 2>/dev/null); \
 		fi; \
 		if [ -z "$$LATEST_TAG" ]; then \
 			echo "Could not fetch latest release tag — keeping current ($$LOCAL_TAG)"; \

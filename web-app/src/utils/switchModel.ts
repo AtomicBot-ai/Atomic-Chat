@@ -1,11 +1,15 @@
+import { toast } from 'sonner'
 import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { useModelLoad } from '@/hooks/useModelLoad'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useThreads } from '@/hooks/useThreads'
 import { localStorageKey } from '@/constants/localStorage'
+import i18n from '@/i18n/setup'
 import type { ServiceHub } from '@/services'
 
 const LOCAL_PROVIDERS = ['llamacpp', 'mlx'] as const
+type LocalProviderName = (typeof LOCAL_PROVIDERS)[number]
 
 function setLastUsedModel(provider: string, model: string) {
   try {
@@ -19,6 +23,57 @@ function setLastUsedModel(provider: string, model: string) {
 }
 
 let activeSwitchPromise: Promise<void> | null = null
+
+function syncLocalModelSelection(providerName: string, modelId: string) {
+  const serverState = useLocalApiServer.getState()
+
+  useModelProvider.getState().selectModelProvider(providerName, modelId)
+
+  serverState.setDefaultModelLocalApiServer({
+    model: modelId,
+    provider: providerName,
+  })
+  serverState.setLastServerModels([{ model: modelId, provider: providerName }])
+
+  setLastUsedModel(providerName, modelId)
+
+  useThreads.getState().updateCurrentThreadModel({
+    id: modelId,
+    provider: providerName,
+  })
+}
+
+async function isTargetModelAlreadyServing(params: {
+  modelId: string
+  providerName: string
+  serviceHub: ServiceHub
+}): Promise<boolean> {
+  const { modelId, providerName, serviceHub } = params
+  if (
+    !LOCAL_PROVIDERS.includes(providerName as (typeof LOCAL_PROVIDERS)[number])
+  ) {
+    return false
+  }
+
+  const [serverRunning, providerActive, otherProviderActive] = await Promise.all([
+    serviceHub.app().getServerStatus().catch(() => false),
+    serviceHub.models().getActiveModels(providerName).catch(() => [] as string[]),
+    Promise.all(
+      LOCAL_PROVIDERS.filter(
+        (provider) => provider !== (providerName as LocalProviderName)
+      ).map((provider) =>
+        serviceHub.models().getActiveModels(provider).catch(() => [] as string[])
+      )
+    ),
+  ])
+
+  return (
+    serverRunning &&
+    providerActive.length === 1 &&
+    providerActive[0] === modelId &&
+    otherProviderActive.every((models) => models.length === 0)
+  )
+}
 
 /**
  * Unified model switching function.
@@ -42,6 +97,24 @@ export async function switchToModel(params: {
     } catch {
       // Previous switch failed — proceed with the new one.
     }
+  }
+
+  if (await isTargetModelAlreadyServing(params)) {
+    const activeModels = await params.serviceHub
+      .models()
+      .getActiveModels()
+      .catch(() => [] as string[])
+
+    useAppState.getState().setServerStatus('running')
+    useAppState.getState().setActiveModels(activeModels || [])
+    syncLocalModelSelection(params.providerName, params.modelId)
+    console.log(
+      '[switchToModel] Target already active, skipping restart:',
+      params.modelId,
+      'provider:',
+      params.providerName
+    )
+    return
   }
 
   const promise = doSwitchToModel(params)
@@ -134,29 +207,84 @@ async function doSwitchToModel(params: {
     setActiveModels(active || [])
 
     // 7. Synchronise all global state
-    useModelProvider.getState().selectModelProvider(providerName, modelId)
-
-    serverState.setDefaultModelLocalApiServer({
-      model: modelId,
-      provider: providerName,
-    })
-    serverState.setLastServerModels([
-      { model: modelId, provider: providerName },
-    ])
-
-    setLastUsedModel(providerName, modelId)
-
-    useThreads.getState().updateCurrentThreadModel({
-      id: modelId,
-      provider: providerName,
-    })
+    syncLocalModelSelection(providerName, modelId)
 
     console.log('[switchToModel] Global state synchronised')
   } catch (error) {
     console.error('[switchToModel] Failed to switch model:', error)
     useAppState.getState().setServerStatus('stopped')
+    reportModelLoadError(error)
     throw error
   } finally {
     useAppState.getState().updateLoadingModel(false)
   }
+}
+
+const OOM_CODES = new Set([
+  'OUT_OF_MEMORY',
+  'OutOfMemory',
+  'OOM',
+])
+
+const OOM_MESSAGE_PATTERNS = [
+  'out of memory',
+  'insufficient memory',
+  'failed to allocate',
+  'erroroutofdevicememory',
+  'kiogpucommandbuffercallbackerroroutofmemory',
+  'cuda_error_out_of_memory',
+  'requires more ram',
+]
+
+function toErrorObject(error: unknown): ErrorObject {
+  if (error && typeof error === 'object') {
+    const candidate = error as Partial<ErrorObject> & { toString?: () => string }
+    const message =
+      typeof candidate.message === 'string' && candidate.message.length > 0
+        ? candidate.message
+        : candidate.toString?.() ?? 'Unknown error'
+    return {
+      code: typeof candidate.code === 'string' ? candidate.code : undefined,
+      message,
+      details:
+        typeof candidate.details === 'string' ? candidate.details : undefined,
+    }
+  }
+  return { message: String(error ?? 'Unknown error') }
+}
+
+function isOutOfMemoryError(err: ErrorObject): boolean {
+  if (err.code && OOM_CODES.has(err.code)) return true
+  const haystack = `${err.message ?? ''} ${err.details ?? ''}`.toLowerCase()
+  return OOM_MESSAGE_PATTERNS.some((pattern) => haystack.includes(pattern))
+}
+
+/**
+ * Surface a user-visible banner when a model fails to load.
+ * OOM errors get a persistent toast so the user cannot miss them.
+ */
+function reportModelLoadError(rawError: unknown): void {
+  const err = toErrorObject(rawError)
+  useModelLoad.getState().setModelLoadError(err)
+
+  const t = i18n.t.bind(i18n)
+
+  if (isOutOfMemoryError(err)) {
+    toast.error(t('model-errors:outOfMemoryTitle'), {
+      id: 'model-load-error',
+      description: t('model-errors:outOfMemoryDescription'),
+      duration: Infinity,
+      closeButton: true,
+    })
+    return
+  }
+
+  toast.error(t('model-errors:modelLoadFailedTitle'), {
+    id: 'model-load-error',
+    description: t('model-errors:modelLoadFailedDescription', {
+      message: err.message,
+    }),
+    duration: 10000,
+    closeButton: true,
+  })
 }

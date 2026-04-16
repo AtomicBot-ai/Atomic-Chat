@@ -394,12 +394,7 @@ function ProviderDetail() {
                         <DynamicControllerSetting
                           controllerType={setting.controller_type}
                           controllerProps={setting.controller_props}
-                          className={cn(
-                            (setting.key === 'device' ||
-                              setting.key === 'draft_model_path' ||
-                              setting.key === 'block_size') &&
-                              'hidden'
-                          )}
+                          className={cn(setting.key === 'device' && 'hidden')}
                           onChange={(newValue) => {
                             if (provider) {
                               const newSettings = [...provider.settings]
@@ -484,12 +479,7 @@ function ProviderDetail() {
                     <CardItem
                       key={settingIndex}
                       title={setting.title}
-                      className={cn(
-                        (setting.key === 'device' ||
-                          setting.key === 'draft_model_path' ||
-                          setting.key === 'block_size') &&
-                          'hidden'
-                      )}
+                      className={cn(setting.key === 'device' && 'hidden')}
                       column={
                         setting.controller_type === 'input' &&
                         setting.controller_props.type !== 'number'

@@ -117,6 +117,7 @@ const ChatInput = memo(function ChatInput({
   const serviceHub = useServiceHub()
   const abortControllers = useAppState((state) => state.abortControllers)
   const loadingModel = useAppState((state) => state.loadingModel)
+  const serverStatus = useAppState((state) => state.serverStatus)
   const tools = useAppState((state) => state.tools)
   const cancelToolCall = useAppState((state) => state.cancelToolCall)
   const setActiveModels = useAppState((state) => state.setActiveModels)
@@ -194,20 +195,34 @@ const ChatInput = memo(function ChatInput({
   useEffect(() => {
     const isLocal =
       selectedProvider === 'mlx' || selectedProvider === 'llamacpp'
-    if (!isLocal || !selectedModel?.id || loadingModel) return
+    if (
+      !isLocal ||
+      !selectedModel?.id ||
+      loadingModel ||
+      serverStatus === 'pending'
+    )
+      return
 
     let cancelled = false
 
     const ensureLocalModelRunning = async () => {
       try {
-        const actualActive = await serviceHub
-          .models()
-          .getActiveModels(selectedProvider)
+        const [actualActive, activeAcrossProviders] = await Promise.all([
+          serviceHub.models().getActiveModels(selectedProvider),
+          serviceHub.models().getActiveModels(),
+        ])
         if (cancelled) return
 
-        setActiveModels(await serviceHub.models().getActiveModels())
+        setActiveModels(activeAcrossProviders || [])
 
-        if (actualActive.includes(selectedModel.id)) return
+        if (
+          actualActive.length === 1 &&
+          actualActive[0] === selectedModel.id &&
+          activeAcrossProviders.length === 1 &&
+          activeAcrossProviders[0] === selectedModel.id
+        ) {
+          return
+        }
 
         const { switchToModel } = await import('@/utils/switchModel')
         if (cancelled) return
@@ -225,8 +240,14 @@ const ChatInput = memo(function ChatInput({
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProvider, selectedModel?.id])
+  }, [
+    loadingModel,
+    selectedProvider,
+    selectedModel?.id,
+    serverStatus,
+    serviceHub,
+    setActiveModels,
+  ])
 
   const isLocalModelNotReady =
     (selectedProvider === 'mlx' || selectedProvider === 'llamacpp') &&
