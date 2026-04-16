@@ -26,7 +26,7 @@ import {
 } from '@janhq/core'
 
 import { info, warn, error as logError } from '@tauri-apps/plugin-log'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke, Channel } from '@tauri-apps/api/core'
 import {
   loadMlxModel,
   unloadMlxModel,
@@ -82,15 +82,45 @@ export default class mlx_extension extends AIEngine {
     this.timeout = this.config.timeout ?? 600
     this.autoUnload = this.config.auto_unload ?? true
 
+    void this.detectBackendVersion().catch((err) => {
+      logger.warn('Failed to detect MLX backend version:', err)
+    })
+
     this.getProviderPath()
   }
 
   async getProviderPath(): Promise<string> {
     if (!this.providerPath) {
-      // Use mlx folder for models
       this.providerPath = await joinPath([await getJanDataFolderPath(), 'mlx'])
     }
     return this.providerPath
+  }
+
+  private async detectBackendVersion(): Promise<void> {
+    try {
+      const info = await invoke<{ version: string; backend: string }>(
+        'plugin:mlx|get_mlx_server_version'
+      )
+
+      const version = info.version || 'unknown'
+      const backend = info.backend || 'macos-arm64'
+      const display = `${version} / ${backend}`
+
+      const currentSettings = await this.getSettings()
+      await this.updateSettings(
+        currentSettings.map((item: any) => {
+          if (item.key === 'version_backend') {
+            item.controllerProps.value = display
+            item.description = `${backend} is the recommended backend.`
+          }
+          return item
+        })
+      )
+
+      logger.info('MLX backend version:', display)
+    } catch (err) {
+      logger.warn('Could not detect MLX backend version:', err)
+    }
   }
 
   override async onUnload(): Promise<void> {
@@ -298,6 +328,8 @@ export default class mlx_extension extends AIEngine {
 
     const mlxConfig: MlxConfig = {
       ctx_size: cfg.ctx_size ?? 4096,
+      draft_model_path: cfg.draft_model_path ?? '',
+      block_size: cfg.block_size ?? 0,
     }
 
     logger.info(
@@ -425,59 +457,99 @@ export default class mlx_extension extends AIEngine {
     body: string,
     abortController?: AbortController
   ): AsyncIterable<chatCompletionChunk> {
-    // AbortSignal.any() is not available in all runtimes (e.g. WebKit/JavaScriptCore),
-    // so we manually combine the timeout and external abort signals.
-    const combinedController = new AbortController()
-    const timeoutId = setTimeout(
-      () => combinedController.abort(new Error('Request timed out')),
-      this.timeout * 1000
-    )
-    if (abortController?.signal) {
-      if (abortController.signal.aborted) {
-        combinedController.abort(abortController.signal.reason)
-      } else {
-        abortController.signal.addEventListener(
-          'abort',
-          () => combinedController.abort(abortController.signal.reason),
-          { once: true }
-        )
+    // Stream via Tauri IPC Channel instead of the intercepted global fetch.
+    // tauri_plugin_http overrides window.fetch and routes requests through
+    // reqwest, but its ReadableStream bridge does not properly relay SSE chunks
+    // back to the webview. Using a dedicated Tauri command + Channel bypasses
+    // the plugin entirely.
+
+    const rawChunks: string[] = []
+    let streamDone = false
+    let streamError: Error | null = null
+    let wakeUp: (() => void) | null = null
+
+    const channel = new Channel<{ data: string }>()
+    channel.onmessage = (event: { data: string }) => {
+      rawChunks.push(event.data)
+      if (wakeUp) {
+        wakeUp()
+        wakeUp = null
       }
     }
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
+
+    const headersRecord: Record<string, string> = {}
+    if (headers && typeof headers === 'object') {
+      for (const [k, v] of Object.entries(headers)) {
+        headersRecord[k] = String(v)
+      }
+    }
+
+    const timeoutNum = Number(this.timeout) || 600
+
+    const requestPromise = invoke<number>('stream_local_http', {
+      url,
+      headers: headersRecord,
       body,
-      signal: combinedController.signal,
-    }).finally(() => clearTimeout(timeoutId))
+      timeoutSecs: timeoutNum,
+      onChunk: channel,
+    })
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => null)
-      throw new Error(
-        `MLX API request failed with status ${response.status}: ${JSON.stringify(errorData)}`
-      )
+    requestPromise
+      .then((status) => {
+        logger.info('[mlx-stream] invoke resolved, status:', status)
+        streamDone = true
+        if (wakeUp) {
+          wakeUp()
+          wakeUp = null
+        }
+      })
+      .catch((e) => {
+        logger.error('[mlx-stream] invoke rejected:', String(e))
+        streamError = new Error(String(e))
+        streamDone = true
+        if (wakeUp) {
+          wakeUp()
+          wakeUp = null
+        }
+      })
+
+    if (abortController?.signal) {
+      const onAbort = () => {
+        streamError = streamError ?? new Error('Request aborted')
+        streamDone = true
+        if (wakeUp) {
+          wakeUp()
+          wakeUp = null
+        }
+      }
+      if (abortController.signal.aborted) {
+        onAbort()
+      } else {
+        abortController.signal.addEventListener('abort', onAbort, {
+          once: true,
+        })
+      }
     }
 
-    if (!response.body) {
-      throw new Error('Response body is null')
-    }
-
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder('utf-8')
     let buffer = ''
 
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
+    while (true) {
+      while (rawChunks.length === 0 && !streamDone) {
+        await new Promise<void>((resolve) => {
+          wakeUp = resolve
+        })
+      }
 
-        buffer += decoder.decode(value, { stream: true })
-
+      while (rawChunks.length > 0) {
+        buffer += rawChunks.shift()!
         const lines = buffer.split('\n')
         buffer = lines.pop() || ''
 
         for (const line of lines) {
           const trimmedLine = line.trim()
-          if (!trimmedLine || trimmedLine === 'data: [DONE]') continue
+          if (!trimmedLine || trimmedLine === 'data: [DONE]') {
+            continue
+          }
 
           if (trimmedLine.startsWith('data: ')) {
             const jsonStr = trimmedLine.slice(6)
@@ -500,8 +572,9 @@ export default class mlx_extension extends AIEngine {
           }
         }
       }
-    } finally {
-      reader.releaseLock()
+
+      if (streamError) throw streamError
+      if (streamDone) break
     }
   }
 

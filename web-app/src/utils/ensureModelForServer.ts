@@ -10,6 +10,7 @@ export interface EnsureModelDeps {
   /** Models service — typically `serviceHub.models()` */
   modelsService: {
     getActiveModels(provider?: string): Promise<string[]>
+    stopModel(model: string, provider?: string): Promise<unknown>
     startModel(
       provider: ModelProvider,
       model: string,
@@ -46,7 +47,33 @@ export async function ensureModelForServer(
 
   const loadedModels = await modelsService.getActiveModels()
 
-  if (loadedModels && loadedModels.length > 0) {
+  if (modelOverride) {
+    const requestedProvider =
+      useModelProvider.getState().getProviderByName(modelOverride.provider)
+    const requestedIsLoaded = loadedModels.includes(modelOverride.model)
+
+    if (requestedProvider && loadedModels.length > 0) {
+      const modelsToStop = requestedIsLoaded
+        ? loadedModels.filter((modelId) => modelId !== modelOverride.model)
+        : loadedModels
+
+      if (modelsToStop.length > 0) {
+        await Promise.all(
+          modelsToStop.map((modelId) => modelsService.stopModel(modelId))
+        )
+      }
+    }
+
+    if (requestedProvider && requestedIsLoaded) {
+      return {
+        status: 'already_loaded',
+        modelId: modelOverride.model,
+        providerName: requestedProvider.provider,
+      }
+    }
+  }
+
+  if (loadedModels && loadedModels.length > 0 && !modelOverride) {
     const modelId = loadedModels[0]
     const providerName = findProviderForModel(modelId)?.provider ?? 'llamacpp'
     return { status: 'already_loaded', modelId, providerName }

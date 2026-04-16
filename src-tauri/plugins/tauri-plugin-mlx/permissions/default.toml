@@ -9,4 +9,5 @@ permissions = [
     "allow-find-mlx-session-by-model",
     "allow-get-mlx-loaded-models",
     "allow-get-mlx-all-sessions",
+    "allow-get-mlx-server-version",
 ]

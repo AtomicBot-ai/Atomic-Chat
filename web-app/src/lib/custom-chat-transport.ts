@@ -376,6 +376,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Track stream timing and token count for token speed calculation
     let streamStartTime: number | undefined
 
+    const maxOutputTokens = useAssistant.getState().currentAssistant
+      ?.parameters?.max_output_tokens as number | undefined
+
     const result = streamText({
       model: this.model,
       messages: modelMessages,
@@ -383,6 +386,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       tools: shouldEnableTools ? this.tools : undefined,
       toolChoice: shouldEnableTools ? 'auto' : undefined,
       system: this.systemMessage,
+      maxOutputTokens,
     })
 
     let tokensPerSecond = 0

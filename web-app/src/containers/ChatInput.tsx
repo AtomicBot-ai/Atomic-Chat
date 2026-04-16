@@ -117,7 +117,6 @@ const ChatInput = memo(function ChatInput({
   const serviceHub = useServiceHub()
   const abortControllers = useAppState((state) => state.abortControllers)
   const loadingModel = useAppState((state) => state.loadingModel)
-  const updateLoadingModel = useAppState((state) => state.updateLoadingModel)
   const tools = useAppState((state) => state.tools)
   const cancelToolCall = useAppState((state) => state.cancelToolCall)
   const setActiveModels = useAppState((state) => state.setActiveModels)
@@ -187,6 +186,53 @@ const ChatInput = memo(function ChatInput({
   const isModelActive = selectedModel?.id
     ? activeModels.includes(selectedModel.id)
     : false
+
+  // Auto-start local model (llamacpp/mlx) when selected so the indicator and send
+  // button reflect its status. Uses the unified switchToModel to ensure only one
+  // model runs across all local providers. switchToModel manages loadingModel,
+  // activeModels and is serialised, so no manual state juggling is needed here.
+  useEffect(() => {
+    const isLocal =
+      selectedProvider === 'mlx' || selectedProvider === 'llamacpp'
+    if (!isLocal || !selectedModel?.id || loadingModel) return
+
+    let cancelled = false
+
+    const ensureLocalModelRunning = async () => {
+      try {
+        const actualActive = await serviceHub
+          .models()
+          .getActiveModels(selectedProvider)
+        if (cancelled) return
+
+        setActiveModels(await serviceHub.models().getActiveModels())
+
+        if (actualActive.includes(selectedModel.id)) return
+
+        const { switchToModel } = await import('@/utils/switchModel')
+        if (cancelled) return
+        await switchToModel({
+          modelId: selectedModel.id,
+          providerName: selectedProvider,
+          serviceHub,
+        })
+      } catch (err) {
+        console.warn('Failed to auto-start local model:', err)
+      }
+    }
+
+    ensureLocalModelRunning()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProvider, selectedModel?.id])
+
+  const isLocalModelNotReady =
+    (selectedProvider === 'mlx' || selectedProvider === 'llamacpp') &&
+    !!selectedModel?.id &&
+    !activeModels.includes(selectedModel.id)
+
   const [selectedAssistant, setSelectedAssistant] = useState<
     Assistant | undefined
   >(() => assistants.find((a) => a.id === defaultAssistantId) ?? assistants[0])
@@ -596,22 +642,26 @@ const ChatInput = memo(function ChatInput({
         const modelReady = await (async () => {
           if (!selectedModel?.id) return false
           if (activeModels.includes(selectedModel.id)) return true
-          const provider = getProviderByName(selectedProvider)
-          if (!provider) return false
+          const isLocal =
+            selectedProvider === 'llamacpp' || selectedProvider === 'mlx'
+          if (!isLocal) return false
           try {
-            updateLoadingModel(true)
-            await serviceHub.models().startModel(provider, selectedModel.id)
-            const active = await serviceHub.models().getActiveModels()
-            setActiveModels(active || [])
-            return active?.includes(selectedModel.id) ?? false
+            const { switchToModel } = await import('@/utils/switchModel')
+            await switchToModel({
+              modelId: selectedModel.id,
+              providerName: selectedProvider,
+              serviceHub,
+            })
+            return (
+              useAppState.getState().activeModels?.includes(selectedModel.id) ??
+              false
+            )
           } catch (err) {
             console.warn(
               'Failed to start model before attachment validation',
               err
             )
             return false
-          } finally {
-            updateLoadingModel(false)
           }
         })()
 
@@ -773,16 +823,13 @@ const ChatInput = memo(function ChatInput({
       autoInlineContextRatio,
       activeModels,
       currentThreadId,
-      getProviderByName,
       parsePreference,
       selectedModel?.id,
       selectedModel?.settings?.ctx_len?.controller_props?.value,
       selectedProvider,
       serviceHub,
-      setActiveModels,
       setAttachmentsForThread,
       updateAttachmentProcessing,
-      updateLoadingModel,
     ]
   )
 
@@ -1720,7 +1767,8 @@ const ChatInput = memo(function ChatInput({
                   if (
                     !isStreaming &&
                     prompt.trim() &&
-                    !isAttachmentPipelineBusy
+                    !isAttachmentPipelineBusy &&
+                    !isLocalModelNotReady
                   ) {
                     handleSendMessage(prompt)
                   }
@@ -2135,7 +2183,11 @@ const ChatInput = memo(function ChatInput({
                 <Button
                   variant="default"
                   size="icon-sm"
-                  disabled={!prompt.trim() || isAttachmentPipelineBusy}
+                  disabled={
+                    !prompt.trim() ||
+                    isAttachmentPipelineBusy ||
+                    isLocalModelNotReady
+                  }
                   data-test-id="send-message-button"
                   onClick={() => handleSendMessage(prompt)}
                   className="rounded-full mr-1 mb-1"

@@ -27,6 +27,8 @@ import type {
 // TODO: Replace this with the actual provider later
 const defaultProvider = 'llamacpp'
 const HUGGING_FACE_SEARCH_LIMIT = 10
+const localProviders = ['llamacpp', 'mlx'] as const
+type LocalProviderName = (typeof localProviders)[number]
 
 type HuggingFaceRepoSearchResult = Pick<
   HuggingFaceRepo,
@@ -91,6 +93,19 @@ const scoreHuggingFaceRepoMatch = (
 export class DefaultModelsService implements ModelsService {
   private getEngine(provider: string = defaultProvider) {
     return EngineManager.instance().get(provider) as AIEngine | undefined
+  }
+
+  private async getLocalActiveModelsByProvider(): Promise<
+    { provider: LocalProviderName; models: string[] }[]
+  > {
+    const results = await Promise.all(
+      localProviders.map(async (provider) => ({
+        provider,
+        models: (await this.getEngine(provider)?.getLoadedModels()) ?? [],
+      }))
+    )
+
+    return results.filter(({ models }) => Array.isArray(models) && models.length > 0)
   }
 
   private getHuggingFaceHeaders(hfToken?: string): HeadersInit | undefined {
@@ -443,25 +458,66 @@ export class DefaultModelsService implements ModelsService {
   }
 
   async getActiveModels(provider?: string): Promise<string[]> {
-    return this.getEngine(provider)?.getLoadedModels() ?? []
+    if (provider) {
+      return this.getEngine(provider)?.getLoadedModels() ?? []
+    }
+
+    const activeByProvider = await this.getLocalActiveModelsByProvider()
+    return [...new Set(activeByProvider.flatMap(({ models }) => models))]
   }
 
   async stopModel(
     model: string,
     provider?: string
   ): Promise<UnloadResult | undefined> {
-    return this.getEngine(provider)?.unload(model)
+    if (provider) {
+      return this.getEngine(provider)?.unload(model)
+    }
+
+    const activeByProvider = await this.getLocalActiveModelsByProvider()
+    const matchingProviders = activeByProvider.filter(({ models }) =>
+      models.includes(model)
+    )
+
+    if (matchingProviders.length === 0) {
+      return undefined
+    }
+
+    const results = await Promise.allSettled(
+      matchingProviders.map(({ provider: providerName }) =>
+        this.getEngine(providerName)?.unload(model)
+      )
+    )
+    const failures = results.filter(
+      (result): result is PromiseRejectedResult => result.status === 'rejected'
+    )
+
+    if (failures.length > 0) {
+      return {
+        success: false,
+        error: failures
+          .map((result) =>
+            result.reason instanceof Error
+              ? result.reason.message
+              : String(result.reason)
+          )
+          .join('\n'),
+      }
+    }
+
+    return results.find(
+      (result): result is PromiseFulfilledResult<UnloadResult | undefined> =>
+        result.status === 'fulfilled' && result.value !== undefined
+    )?.value
   }
 
   async stopAllModels(): Promise<void> {
-    const llamaCppModels = await this.getActiveModels('llamacpp')
-    if (llamaCppModels)
-      await Promise.all(
-        llamaCppModels.map((model) => this.stopModel(model, 'llamacpp'))
+    const activeByProvider = await this.getLocalActiveModelsByProvider()
+    await Promise.all(
+      activeByProvider.flatMap(({ provider, models }) =>
+        models.map((model) => this.stopModel(model, provider))
       )
-    const mlxModels = await this.getActiveModels('mlx')
-    if (mlxModels)
-      await Promise.all(mlxModels.map((model) => this.stopModel(model, 'mlx')))
+    )
   }
 
   async startModel(

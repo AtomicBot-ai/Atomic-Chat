@@ -31,6 +31,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { predefinedProviders } from '@/constants/providers'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { useModelLoad } from '@/hooks/useModelLoad'
+import { switchToModel } from '@/utils/switchModel'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 import { useBackendUpdater } from '@/hooks/useBackendUpdater'
 import { basenameNoExt } from '@/lib/utils'
@@ -262,42 +263,36 @@ function ProviderDetail() {
   }
 
   const handleStartModel = async (modelId: string) => {
-    // Add model to loading state
+    if (!provider) return
     setLoadingModels((prev) => [...prev, modelId])
-    if (provider) {
-      try {
-        // Start the model with plan result
-        await serviceHub.models().startModel(provider, modelId)
-
-        // Refresh active models after starting (pass provider to get correct engine's loaded models)
-        serviceHub
-          .models()
-          .getActiveModels(provider.provider)
-          .then((models) => setActiveModels(models || []))
-      } catch (error) {
-        setModelLoadError(error as ErrorObject)
-      } finally {
-        // Remove model from loading state
-        setLoadingModels((prev) => prev.filter((id) => id !== modelId))
-      }
+    try {
+      // switchToModel stops all other models, starts this one, restarts the
+      // server, and updates activeModels / loadingModel globally.
+      await switchToModel({
+        modelId,
+        providerName: provider.provider,
+        serviceHub,
+      })
+    } catch (error) {
+      setModelLoadError(error as ErrorObject)
+    } finally {
+      setLoadingModels((prev) => prev.filter((id) => id !== modelId))
     }
   }
 
-  const handleStopModel = (modelId: string) => {
-    // Original: stopModel(modelId).then(() => { setActiveModels((prevModels) => prevModels.filter((model) => model !== modelId)) })
-    serviceHub
-      .models()
-      .stopModel(modelId, provider?.provider)
-      .then(() => {
-        // Refresh active models after stopping (pass provider to get correct engine's loaded models)
-        serviceHub
-          .models()
-          .getActiveModels(provider?.provider)
-          .then((models) => setActiveModels(models || []))
-      })
-      .catch((error) => {
-        console.error('Error stopping model:', error)
-      })
+  const handleStopModel = async () => {
+    if (!provider) return
+    try {
+      await serviceHub.models().stopAllModels()
+      await window.core?.api?.stopServer()
+      useAppState.getState().setServerStatus('stopped')
+      const models = await serviceHub
+        .models()
+        .getActiveModels(provider.provider)
+      setActiveModels(models || [])
+    } catch (error) {
+      console.error('Error stopping model:', error)
+    }
   }
 
   const handleInstallBackendFromFile = useCallback(async () => {
@@ -399,7 +394,12 @@ function ProviderDetail() {
                         <DynamicControllerSetting
                           controllerType={setting.controller_type}
                           controllerProps={setting.controller_props}
-                          className={cn(setting.key === 'device' && 'hidden')}
+                          className={cn(
+                            (setting.key === 'device' ||
+                              setting.key === 'draft_model_path' ||
+                              setting.key === 'block_size') &&
+                              'hidden'
+                          )}
                           onChange={(newValue) => {
                             if (provider) {
                               const newSettings = [...provider.settings]
@@ -438,7 +438,7 @@ function ProviderDetail() {
                                   )
 
                                 if (deviceSettingIndex !== -1) {
-                                  ;(
+                                  (
                                     newSettings[deviceSettingIndex]
                                       .controller_props as {
                                       value: string
@@ -484,7 +484,12 @@ function ProviderDetail() {
                     <CardItem
                       key={settingIndex}
                       title={setting.title}
-                      className={cn(setting.key === 'device' && 'hidden')}
+                      className={cn(
+                        (setting.key === 'device' ||
+                          setting.key === 'draft_model_path' ||
+                          setting.key === 'block_size') &&
+                          'hidden'
+                      )}
                       column={
                         setting.controller_type === 'input' &&
                         setting.controller_props.type !== 'number'
@@ -683,9 +688,7 @@ function ProviderDetail() {
                                       <Button
                                         size="sm"
                                         variant="destructive"
-                                        onClick={() =>
-                                          handleStopModel(model.id)
-                                        }
+                                        onClick={() => handleStopModel()}
                                       >
                                         {t('providers:stop')}
                                       </Button>

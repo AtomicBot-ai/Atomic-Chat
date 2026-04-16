@@ -439,32 +439,25 @@ export class ModelFactory {
       Origin: 'tauri://localhost',
     }
 
-    // Custom fetch that merges parameters and calls /cancel on abort
+    // Use the same IPC-channel streaming fetch that llamacpp uses —
+    // tauri_plugin_http's ReadableStream bridge does not relay SSE chunks.
+    const baseFetch = createLocalStreamingFetch(httpFetch, parameters)
+
     const customFetch: typeof httpFetch = async (
       input: RequestInfo | URL,
       init?: RequestInit
     ): Promise<Response> => {
-      if (init?.method === 'POST' || !init?.method) {
-        const body = init?.body ? JSON.parse(init.body as string) : {}
-        const mergedBody = { ...body, ...parameters }
-        init = { ...init, body: JSON.stringify(mergedBody) }
-      }
-
-      // When the request is aborted, also call the server's /cancel endpoint
-      // to stop MLX inference immediately
       if (init?.signal) {
         init.signal.addEventListener('abort', () => {
           httpFetch(`${baseUrl}/v1/cancel`, {
             method: 'POST',
             headers: { ...authHeaders, 'Content-Type': 'application/json' },
             body: JSON.stringify({}),
-          }).catch(() => {
-            // Ignore cancel request errors
-          })
+          }).catch(() => {})
         })
       }
 
-      return httpFetch(input, init)
+      return baseFetch(input, init)
     }
 
     const model = new OpenAICompatibleChatLanguageModel(modelId, {

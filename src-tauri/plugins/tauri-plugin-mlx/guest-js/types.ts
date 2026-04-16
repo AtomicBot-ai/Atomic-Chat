@@ -14,4 +14,6 @@ export interface UnloadResult {
 
 export type MlxConfig = {
   ctx_size: number
+  draft_model_path: string
+  block_size: number
 }
