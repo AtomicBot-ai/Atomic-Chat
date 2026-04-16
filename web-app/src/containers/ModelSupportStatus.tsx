@@ -8,6 +8,8 @@ import {
 } from '@/components/ui/tooltip'
 import { getJanDataFolderPath, joinPath, fs } from '@janhq/core'
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { useAppState } from '@/hooks/useAppState'
+import { useShallow } from 'zustand/react/shallow'
 
 interface ModelSupportStatusProps {
   modelId: string | undefined
@@ -26,6 +28,12 @@ export const ModelSupportStatus = ({
     'RED' | 'YELLOW' | 'GREEN' | 'LOADING' | null | 'GREY'
   >(null)
   const serviceHub = useServiceHub()
+  const { activeModels, loadingModel } = useAppState(
+    useShallow((state) => ({
+      activeModels: state.activeModels,
+      loadingModel: state.loadingModel,
+    }))
+  )
 
   // Helper function to check model support with proper path resolution
   const checkModelSupportWithPath = useCallback(
@@ -107,8 +115,19 @@ export const ModelSupportStatus = ({
     }
   }
 
-  // Helper function to get tooltip text based on model support status
   const getStatusTooltip = (): string => {
+    if (provider === 'mlx') {
+      switch (modelSupportStatus) {
+        case 'GREEN':
+          return 'Model is running'
+        case 'LOADING':
+          return 'Starting model…'
+        case 'GREY':
+          return 'Model is not running'
+        default:
+          return 'Unknown'
+      }
+    }
     switch (modelSupportStatus) {
       case 'GREEN':
         return `Works Well on your device (ctx: ${contextSize})`
@@ -123,11 +142,10 @@ export const ModelSupportStatus = ({
     }
   }
 
-  // Check model support when model changes
+  // Check model support when model changes (llamacpp hardware compatibility)
   useEffect(() => {
     const checkModelSupport = async () => {
       if (modelId && provider === 'llamacpp') {
-        // Set loading state immediately
         setModelSupportStatus('LOADING')
         try {
           const supportStatus = await checkModelSupportWithPath(
@@ -139,8 +157,7 @@ export const ModelSupportStatus = ({
           console.error('Error checking model support:', error)
           setModelSupportStatus('RED')
         }
-      } else {
-        // Only show status for llamacpp models since isModelSupported is specific to llamacpp
+      } else if (provider !== 'mlx') {
         setModelSupportStatus(null)
       }
     }
@@ -148,8 +165,21 @@ export const ModelSupportStatus = ({
     checkModelSupport()
   }, [modelId, provider, contextSize, checkModelSupportWithPath])
 
-  // Don't render anything if no status or not llamacpp
-  if (!modelSupportStatus || provider !== 'llamacpp') {
+  // Track MLX model running status (activeModels takes priority over loadingModel
+  // to avoid showing "Starting…" when the model has already finished loading)
+  useEffect(() => {
+    if (provider !== 'mlx' || !modelId) return
+
+    if (activeModels.includes(modelId)) {
+      setModelSupportStatus('GREEN')
+    } else if (loadingModel) {
+      setModelSupportStatus('LOADING')
+    } else {
+      setModelSupportStatus('GREY')
+    }
+  }, [provider, modelId, loadingModel, activeModels])
+
+  if (!modelSupportStatus || (provider !== 'llamacpp' && provider !== 'mlx')) {
     return null
   }
 

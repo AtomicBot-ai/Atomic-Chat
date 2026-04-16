@@ -184,19 +184,21 @@ ifeq ($(shell uname -s),Darwin)
 	chmod +x src-tauri/resources/bin/mlx-server; \
 	echo "$$TAG" > src-tauri/resources/bin/mlx-server-version.txt; \
 	echo "macos-arm64" > src-tauri/resources/bin/mlx-server-backend.txt; \
-	echo "DFlash MLX server downloaded and extracted successfully ($$TAG)"; \
-	mkdir -p src-tauri/target/debug/resources/bin; \
-	cp src-tauri/resources/bin/mlx-server src-tauri/target/debug/resources/bin/mlx-server; \
-	cp src-tauri/resources/bin/mlx-server-version.txt src-tauri/target/debug/resources/bin/mlx-server-version.txt; \
-	cp src-tauri/resources/bin/mlx-server-backend.txt src-tauri/target/debug/resources/bin/mlx-server-backend.txt
+	echo "DFlash MLX server downloaded and extracted successfully ($$TAG)"
 	@SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
 	if [ -n "$$SIGNING_IDENTITY" ]; then \
 		echo "Signing mlx-server with identity: $$SIGNING_IDENTITY"; \
 		codesign --force --options runtime --timestamp --entitlements src-tauri/Entitlements.plist --sign "$$SIGNING_IDENTITY" src-tauri/resources/bin/mlx-server; \
 		echo "Code signing completed successfully"; \
 	else \
-		echo "Warning: No Developer ID Application identity found. Skipping code signing."; \
+		echo "Warning: No Developer ID Application identity found. Applying ad-hoc signature."; \
+		codesign --force --deep --sign - src-tauri/resources/bin/mlx-server; \
 	fi
+	@mkdir -p src-tauri/target/debug/resources/bin; \
+	cp src-tauri/resources/bin/mlx-server src-tauri/target/debug/resources/bin/mlx-server; \
+	cp src-tauri/resources/bin/mlx-server-version.txt src-tauri/target/debug/resources/bin/mlx-server-version.txt; \
+	cp src-tauri/resources/bin/mlx-server-backend.txt src-tauri/target/debug/resources/bin/mlx-server-backend.txt; \
+	echo "Debug copy updated with signed binary"
 else
 	@echo "Skipping MLX server download (macOS only)"
 endif

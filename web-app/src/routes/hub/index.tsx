@@ -103,7 +103,7 @@ function HubContent() {
     () => ({
       includeScore: true,
       // Search in `author` and in `tags` array
-      keys: ['model_name', 'quants.model_id'],
+      keys: ['model_name', 'quants.model_id', 'safetensors_files.model_id'],
     }),
     []
   )
@@ -133,6 +133,10 @@ function HubContent() {
   const addModelSourceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   )
+  const [enrichedOrphans, setEnrichedOrphans] = useState<
+    Record<string, CatalogModel>
+  >({})
+  const enrichedOrphansFetchedRef = useRef<Set<string>>(new Set())
 
   const toggleModelExpansion = useCallback((modelId: string) => {
     setExpandedModels((prev) => ({
@@ -189,35 +193,141 @@ function HubContent() {
     }
     // Apply downloaded filter
     if (showOnlyDownloaded) {
+      const providerState = useModelProvider.getState()
+      const llamacppModels =
+        providerState.getProviderByName('llamacpp')?.models ?? []
+      const mlxModels = providerState.getProviderByName('mlx')?.models ?? []
+
+      const matchedLlamacppIds = new Set<string>()
+      const matchedMlxIds = new Set<string>()
+
+      // MlxModelDownloadAction uses its own sanitize that preserves dots,
+      // unlike the utils version which replaces dots with underscores.
+      const sanitizeMlxId = (id: string) =>
+        id.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-_./]/g, '')
+
       filtered = filtered
-        ?.map((model) => ({
-          ...model,
-          quants: model.quants?.filter((variant) => {
-            // Check both direct match and with developer prefix (like DownloadButton does)
-            const isLlamaCppDownloaded = useModelProvider
-              .getState()
-              .getProviderByName('llamacpp')
-              ?.models.some(
+        .filter((model) => {
+          if (model.is_mlx) {
+            const modelName =
+              model.model_name.split('/').pop() ?? model.model_name
+            const mlxModelId = sanitizeMlxId(modelName)
+            const match = mlxModels.find(
+              (m: { id: string }) =>
+                m.id === mlxModelId ||
+                m.id === `${model.developer}/${mlxModelId}`
+            )
+            if (match) {
+              matchedMlxIds.add(match.id)
+              return true
+            }
+            return false
+          }
+
+          const hasDownloaded = model.quants?.some((variant) => {
+            const llamaMatch = llamacppModels.find(
+              (m: { id: string }) =>
+                m.id === variant.model_id ||
+                m.id ===
+                  `${model.developer}/${sanitizeModelId(variant.model_id)}`
+            )
+            if (llamaMatch) matchedLlamacppIds.add(llamaMatch.id)
+
+            const mlxMatch = mlxModels.find(
+              (m: { id: string }) =>
+                m.id === variant.model_id ||
+                m.id ===
+                  `${model.developer}/${sanitizeModelId(variant.model_id)}`
+            )
+            if (mlxMatch) matchedMlxIds.add(mlxMatch.id)
+
+            return !!llamaMatch || !!mlxMatch
+          })
+          return hasDownloaded
+        })
+        .map((model) => {
+          if (model.is_mlx) return model
+          return {
+            ...model,
+            quants: model.quants?.filter((variant) => {
+              const isLlamaCppDownloaded = llamacppModels.some(
                 (m: { id: string }) =>
                   m.id === variant.model_id ||
                   m.id ===
                     `${model.developer}/${sanitizeModelId(variant.model_id)}`
               )
-
-            const isMlxDownloaded = useModelProvider
-              .getState()
-              .getProviderByName('mlx')
-              ?.models.some(
+              const isMlxDownloaded = mlxModels.some(
                 (m: { id: string }) =>
                   m.id === variant.model_id ||
                   m.id ===
                     `${model.developer}/${sanitizeModelId(variant.model_id)}`
               )
+              return isLlamaCppDownloaded || isMlxDownloaded
+            }),
+          }
+        })
 
-            return isLlamaCppDownloaded || isMlxDownloaded
-          }),
-        }))
-        .filter((model) => (model.quants?.length ?? 0) > 0)
+      // Try to find a catalog entry matching an orphan model ID.
+      const findCatalogEntry = (modelId: string) =>
+        sources.find(
+          (s) =>
+            s.model_name === modelId ||
+            s.model_name.split('/').pop() === modelId
+        )
+
+      const buildOrphanEntry = (
+        modelId: string,
+        isMlx: boolean
+      ): CatalogModel => {
+        if (enrichedOrphans[modelId]) {
+          return {
+            ...enrichedOrphans[modelId],
+            ...(isMlx ? { is_mlx: true } : {}),
+          }
+        }
+        const parts = modelId.split('/')
+        const developer = parts.length > 1 ? parts[0] : undefined
+        return {
+          model_name: modelId,
+          description: '',
+          developer,
+          downloads: 0,
+          ...(isMlx
+            ? { is_mlx: true }
+            : {
+                quants: [
+                  { model_id: modelId, path: '', file_size: '' },
+                ],
+              }),
+        }
+      }
+
+      // Add locally-downloaded models not present in the catalog
+      if (sortSelected !== 'mlx') {
+        const orphanLlamacpp = llamacppModels.filter(
+          (m: { id: string }) => !matchedLlamacppIds.has(m.id)
+        )
+        for (const m of orphanLlamacpp) {
+          const catalogMatch = findCatalogEntry(m.id as string)
+          filtered.push(
+            catalogMatch ?? buildOrphanEntry(m.id as string, false)
+          )
+        }
+      }
+
+      if (sortSelected !== 'gguf') {
+        const orphanMlx = mlxModels.filter(
+          (m: { id: string }) => !matchedMlxIds.has(m.id)
+        )
+        for (const m of orphanMlx) {
+          const catalogMatch = findCatalogEntry(m.id as string)
+          filtered.push(
+            catalogMatch
+              ? { ...catalogMatch, is_mlx: true }
+              : buildOrphanEntry(m.id as string, true)
+          )
+        }
+      }
     }
     // Add HuggingFace repo at the beginning if available
     if (huggingFaceRepo) {
@@ -230,7 +340,40 @@ function HubContent() {
     showOnlyDownloaded,
     huggingFaceRepo,
     searchOptions,
+    sortSelected,
+    sources,
+    enrichedOrphans,
   ])
+
+  // Collect orphan model IDs that need HuggingFace enrichment
+  const orphanIdsToEnrich = useMemo(() => {
+    if (!showOnlyDownloaded) return []
+    return filteredModels
+      .filter((m) => !m.downloads && !m.description && !enrichedOrphans[m.model_name])
+      .map((m) => ({ id: m.model_name, isMlx: !!m.is_mlx }))
+  }, [filteredModels, showOnlyDownloaded, enrichedOrphans])
+
+  // Fetch HuggingFace data for orphan models
+  useEffect(() => {
+    if (!orphanIdsToEnrich.length) return
+
+    for (const { id, isMlx } of orphanIdsToEnrich) {
+      if (enrichedOrphansFetchedRef.current.has(id)) continue
+      enrichedOrphansFetchedRef.current.add(id)
+
+      const repoId = id.includes('/') ? id : (isMlx ? `mlx-community/${id}` : id)
+
+      serviceHub
+        .models()
+        .fetchHuggingFaceRepo(repoId, huggingfaceToken)
+        .then((repo) => {
+          if (!repo) return
+          const catalog = serviceHub.models().convertHfRepoToCatalogModel(repo)
+          setEnrichedOrphans((prev) => ({ ...prev, [id]: catalog }))
+        })
+        .catch(() => {})
+    }
+  }, [orphanIdsToEnrich, serviceHub, huggingfaceToken])
 
   const shouldShowCatalogResults =
     debouncedSearchValue.length > 0 || showOnlyDownloaded
@@ -1017,11 +1160,14 @@ function HubContent() {
                           />
                         </div>
                         <div className="flex items-center gap-2 mt-2">
-                          <span className="capitalize text-foreground">
-                            {t('hub:by')}{' '}
-                            {virtualListModels[virtualItem.index]?.developer}
-                          </span>
+                          {virtualListModels[virtualItem.index]?.developer && (
+                            <span className="capitalize text-foreground">
+                              {t('hub:by')}{' '}
+                              {virtualListModels[virtualItem.index].developer}
+                            </span>
+                          )}
                           <div className="flex items-center gap-4 ml-2">
+                            {(virtualListModels[virtualItem.index].downloads ?? 0) > 0 && (
                             <div className="flex items-center gap-1">
                               <IconDownload
                                 size={18}
@@ -1030,9 +1176,10 @@ function HubContent() {
                               />
                               <span className="text-foreground">
                                 {virtualListModels[virtualItem.index]
-                                  .downloads || 0}
+                                  .downloads}
                               </span>
                             </div>
+                            )}
                             {!virtualListModels[virtualItem.index].is_mlx && (
                               <div className="flex items-center gap-1">
                                 <IconFileCode

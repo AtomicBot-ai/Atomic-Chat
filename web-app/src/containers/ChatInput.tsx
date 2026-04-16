@@ -187,6 +187,56 @@ const ChatInput = memo(function ChatInput({
   const isModelActive = selectedModel?.id
     ? activeModels.includes(selectedModel.id)
     : false
+
+  // Auto-start MLX model when selected so the indicator and send button reflect its status.
+  // We query the engine directly to avoid restarting an already-running model whose state
+  // isn't yet reflected in the Zustand store.
+  useEffect(() => {
+    if (selectedProvider !== 'mlx' || !selectedModel?.id || loadingModel) return
+
+    const provider = getProviderByName(selectedProvider)
+    if (!provider) return
+
+    let cancelled = false
+
+    const ensureMlxRunning = async () => {
+      try {
+        const actualActive = await serviceHub.models().getActiveModels('mlx')
+        if (cancelled) return
+
+        setActiveModels(
+          await serviceHub.models().getActiveModels()
+        )
+
+        if (actualActive.includes(selectedModel.id)) return
+
+        updateLoadingModel(true)
+        await serviceHub.models().startModel(provider, selectedModel.id)
+        if (!cancelled) {
+          const active = await serviceHub.models().getActiveModels()
+          setActiveModels(active || [])
+        }
+      } catch (err) {
+        console.warn('Failed to auto-start MLX model:', err)
+      } finally {
+        if (!cancelled) {
+          updateLoadingModel(false)
+        }
+      }
+    }
+
+    ensureMlxRunning()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProvider, selectedModel?.id])
+
+  const isLocalModelNotReady =
+    selectedProvider === 'mlx' &&
+    !!selectedModel?.id &&
+    !activeModels.includes(selectedModel.id)
+
   const [selectedAssistant, setSelectedAssistant] = useState<
     Assistant | undefined
   >(() => assistants.find((a) => a.id === defaultAssistantId) ?? assistants[0])
@@ -1720,7 +1770,8 @@ const ChatInput = memo(function ChatInput({
                   if (
                     !isStreaming &&
                     prompt.trim() &&
-                    !isAttachmentPipelineBusy
+                    !isAttachmentPipelineBusy &&
+                    !isLocalModelNotReady
                   ) {
                     handleSendMessage(prompt)
                   }
@@ -2135,7 +2186,11 @@ const ChatInput = memo(function ChatInput({
                 <Button
                   variant="default"
                   size="icon-sm"
-                  disabled={!prompt.trim() || isAttachmentPipelineBusy}
+                  disabled={
+                    !prompt.trim() ||
+                    isAttachmentPipelineBusy ||
+                    isLocalModelNotReady
+                  }
                   data-test-id="send-message-button"
                   onClick={() => handleSendMessage(prompt)}
                   className="rounded-full mr-1 mb-1"
