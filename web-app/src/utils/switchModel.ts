@@ -18,14 +18,44 @@ function setLastUsedModel(provider: string, model: string) {
   }
 }
 
+let activeSwitchPromise: Promise<void> | null = null
+
 /**
  * Unified model switching function.
  *
  * Ensures only one local model is ever running across both llamacpp and mlx,
  * restarts the Local API Server for the new model, and synchronises all
  * global UI state (dropdown selection, thread model, localStorage, etc.).
+ *
+ * Serialised: concurrent calls wait for the previous switch to finish so that
+ * two callers cannot race against each other (e.g. dropdown + ChatInput effect).
  */
 export async function switchToModel(params: {
+  modelId: string
+  providerName: string
+  serviceHub: ServiceHub
+}): Promise<void> {
+  // Wait for any in-flight switch to complete before starting a new one.
+  while (activeSwitchPromise) {
+    try {
+      await activeSwitchPromise
+    } catch {
+      // Previous switch failed — proceed with the new one.
+    }
+  }
+
+  const promise = doSwitchToModel(params)
+  activeSwitchPromise = promise
+  try {
+    await promise
+  } finally {
+    if (activeSwitchPromise === promise) {
+      activeSwitchPromise = null
+    }
+  }
+}
+
+async function doSwitchToModel(params: {
   modelId: string
   providerName: string
   serviceHub: ServiceHub
@@ -41,10 +71,12 @@ export async function switchToModel(params: {
     return
   }
 
-  const { setServerStatus } = useAppState.getState()
+  const { setServerStatus, setActiveModels, updateLoadingModel } =
+    useAppState.getState()
   const serverState = useLocalApiServer.getState()
 
   setServerStatus('pending')
+  updateLoadingModel(true)
   console.log(
     '[switchToModel] Switching to model:',
     modelId,
@@ -55,6 +87,7 @@ export async function switchToModel(params: {
   try {
     // 1. Stop ALL local models (both llamacpp and mlx)
     await serviceHub.models().stopAllModels()
+    setActiveModels([])
     console.log('[switchToModel] All local models stopped')
 
     // 2. Stop the API server (safe to call even if it wasn't running)
@@ -96,7 +129,11 @@ export async function switchToModel(params: {
     setServerStatus('running')
     serverState.setEnableOnStartup(true)
 
-    // 6. Synchronise all global state
+    // 6. Refresh activeModels from the engine so the UI knows the model is ready
+    const active = await serviceHub.models().getActiveModels()
+    setActiveModels(active || [])
+
+    // 7. Synchronise all global state
     useModelProvider.getState().selectModelProvider(providerName, modelId)
 
     serverState.setDefaultModelLocalApiServer({
@@ -119,5 +156,7 @@ export async function switchToModel(params: {
     console.error('[switchToModel] Failed to switch model:', error)
     useAppState.getState().setServerStatus('stopped')
     throw error
+  } finally {
+    useAppState.getState().updateLoadingModel(false)
   }
 }

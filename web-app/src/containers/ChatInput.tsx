@@ -117,7 +117,6 @@ const ChatInput = memo(function ChatInput({
   const serviceHub = useServiceHub()
   const abortControllers = useAppState((state) => state.abortControllers)
   const loadingModel = useAppState((state) => state.loadingModel)
-  const updateLoadingModel = useAppState((state) => state.updateLoadingModel)
   const tools = useAppState((state) => state.tools)
   const cancelToolCall = useAppState((state) => state.cancelToolCall)
   const setActiveModels = useAppState((state) => state.setActiveModels)
@@ -190,7 +189,8 @@ const ChatInput = memo(function ChatInput({
 
   // Auto-start local model (llamacpp/mlx) when selected so the indicator and send
   // button reflect its status. Uses the unified switchToModel to ensure only one
-  // model runs across all local providers.
+  // model runs across all local providers. switchToModel manages loadingModel,
+  // activeModels and is serialised, so no manual state juggling is needed here.
   useEffect(() => {
     const isLocal =
       selectedProvider === 'mlx' || selectedProvider === 'llamacpp'
@@ -209,7 +209,6 @@ const ChatInput = memo(function ChatInput({
 
         if (actualActive.includes(selectedModel.id)) return
 
-        updateLoadingModel(true)
         const { switchToModel } = await import('@/utils/switchModel')
         if (cancelled) return
         await switchToModel({
@@ -217,16 +216,8 @@ const ChatInput = memo(function ChatInput({
           providerName: selectedProvider,
           serviceHub,
         })
-        if (!cancelled) {
-          const active = await serviceHub.models().getActiveModels()
-          setActiveModels(active || [])
-        }
       } catch (err) {
         console.warn('Failed to auto-start local model:', err)
-      } finally {
-        if (!cancelled) {
-          updateLoadingModel(false)
-        }
       }
     }
 
@@ -655,24 +646,22 @@ const ChatInput = memo(function ChatInput({
             selectedProvider === 'llamacpp' || selectedProvider === 'mlx'
           if (!isLocal) return false
           try {
-            updateLoadingModel(true)
             const { switchToModel } = await import('@/utils/switchModel')
             await switchToModel({
               modelId: selectedModel.id,
               providerName: selectedProvider,
               serviceHub,
             })
-            const active = await serviceHub.models().getActiveModels()
-            setActiveModels(active || [])
-            return active?.includes(selectedModel.id) ?? false
+            return (
+              useAppState.getState().activeModels?.includes(selectedModel.id) ??
+              false
+            )
           } catch (err) {
             console.warn(
               'Failed to start model before attachment validation',
               err
             )
             return false
-          } finally {
-            updateLoadingModel(false)
           }
         })()
 
@@ -834,16 +823,13 @@ const ChatInput = memo(function ChatInput({
       autoInlineContextRatio,
       activeModels,
       currentThreadId,
-      getProviderByName,
       parsePreference,
       selectedModel?.id,
       selectedModel?.settings?.ctx_len?.controller_props?.value,
       selectedProvider,
       serviceHub,
-      setActiveModels,
       setAttachmentsForThread,
       updateAttachmentProcessing,
-      updateLoadingModel,
     ]
   )
 

@@ -266,16 +266,13 @@ function ProviderDetail() {
     if (!provider) return
     setLoadingModels((prev) => [...prev, modelId])
     try {
+      // switchToModel stops all other models, starts this one, restarts the
+      // server, and updates activeModels / loadingModel globally.
       await switchToModel({
         modelId,
         providerName: provider.provider,
         serviceHub,
       })
-
-      const models = await serviceHub
-        .models()
-        .getActiveModels(provider.provider)
-      setActiveModels(models || [])
     } catch (error) {
       setModelLoadError(error as ErrorObject)
     } finally {
@@ -397,12 +394,7 @@ function ProviderDetail() {
                         <DynamicControllerSetting
                           controllerType={setting.controller_type}
                           controllerProps={setting.controller_props}
-                          className={cn(
-                            (setting.key === 'device' ||
-                              setting.key === 'draft_model_path' ||
-                              setting.key === 'block_size') &&
-                              'hidden'
-                          )}
+                          className={cn(setting.key === 'device' && 'hidden')}
                           onChange={(newValue) => {
                             if (provider) {
                               const newSettings = [...provider.settings]
@@ -487,12 +479,7 @@ function ProviderDetail() {
                     <CardItem
                       key={settingIndex}
                       title={setting.title}
-                      className={cn(
-                        (setting.key === 'device' ||
-                          setting.key === 'draft_model_path' ||
-                          setting.key === 'block_size') &&
-                          'hidden'
-                      )}
+                      className={cn(setting.key === 'device' && 'hidden')}
                       column={
                         setting.controller_type === 'input' &&
                         setting.controller_props.type !== 'number'
@@ -691,9 +678,7 @@ function ProviderDetail() {
                                       <Button
                                         size="sm"
                                         variant="destructive"
-                                        onClick={() =>
-                                          handleStopModel()
-                                        }
+                                        onClick={() => handleStopModel()}
                                       >
                                         {t('providers:stop')}
                                       </Button>
