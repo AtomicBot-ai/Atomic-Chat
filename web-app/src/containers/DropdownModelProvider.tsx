@@ -6,8 +6,6 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { useAppState } from '@/hooks/useAppState'
-import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
 import { highlightFzfMatch } from '@/utils/highlight'
 import Capabilities from './Capabilities'
@@ -26,6 +24,7 @@ import { predefinedProviders } from '@/constants/providers'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
+import { switchToModel } from '@/utils/switchModel'
 import { ChevronsUpDown } from 'lucide-react'
 
 interface SearchableModel {
@@ -381,135 +380,61 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
       setSearchValue('')
       setOpen(false)
 
-      selectModelProvider(
-        searchableModel.provider.provider,
-        searchableModel.model.id
-      )
-      updateCurrentThreadModel({
-        id: searchableModel.model.id,
-        provider: searchableModel.provider.provider,
-      })
-
-      // Store the selected model as last used
-      setLastUsedModel(
-        searchableModel.provider.provider,
-        searchableModel.model.id
-      )
-
-      // Persist local model selection so the next startup picks the right model
-      if (
+      const isLocal =
         searchableModel.provider.provider === 'llamacpp' ||
         searchableModel.provider.provider === 'mlx'
-      ) {
-        useLocalApiServer.getState().setDefaultModelLocalApiServer({
-          model: searchableModel.model.id,
-          provider: searchableModel.provider.provider,
-        })
-      }
 
-      // Check mmproj existence for llamacpp models (async, don't block UI)
-      if (searchableModel.provider.provider === 'llamacpp') {
-        serviceHub
-          .models()
-          .checkMmprojExistsAndUpdateOffloadMMprojSetting(
-            searchableModel.model.id,
-            updateProvider,
-            getProviderByName
+      if (isLocal) {
+        // Check mmproj existence for llamacpp models (async, don't block UI)
+        if (searchableModel.provider.provider === 'llamacpp') {
+          serviceHub
+            .models()
+            .checkMmprojExistsAndUpdateOffloadMMprojSetting(
+              searchableModel.model.id,
+              updateProvider,
+              getProviderByName
+            )
+            .catch((error) => {
+              console.debug(
+                'Error checking mmproj for model:',
+                searchableModel.model.id,
+                error
+              )
+            })
+
+          checkAndUpdateModelVisionCapability(searchableModel.model.id).catch(
+            (error) => {
+              console.debug(
+                'Error checking vision capability for model:',
+                searchableModel.model.id,
+                error
+              )
+            }
           )
-          .catch((error) => {
-            console.debug(
-              'Error checking mmproj for model:',
-              searchableModel.model.id,
-              error
-            )
-          })
+        }
 
-        // Also check vision capability (async, don't block UI)
-        checkAndUpdateModelVisionCapability(searchableModel.model.id).catch(
-          (error) => {
-            console.debug(
-              'Error checking vision capability for model:',
-              searchableModel.model.id,
-              error
-            )
-          }
-        )
-      }
-
-      // Restart Local API Server with the new model if it's running
-      const currentServerStatus = useAppState.getState().serverStatus
-      if (currentServerStatus === 'running') {
-        console.log(
-          '[LocalAPI] Restarting server with model:',
+        // Unified local model switch: stops all models, restarts server, syncs all state
+        switchToModel({
+          modelId: searchableModel.model.id,
+          providerName: searchableModel.provider.provider,
+          serviceHub,
+        }).catch((error) => {
+          console.error('[DropdownModelProvider] switchToModel failed:', error)
+        })
+      } else {
+        // Non-local provider: just update UI selection
+        selectModelProvider(
+          searchableModel.provider.provider,
           searchableModel.model.id
         )
-        ;(async () => {
-          const { setServerStatus } = useAppState.getState()
-          const serverState = useLocalApiServer.getState()
-
-          setServerStatus('pending')
-
-          try {
-            // 1. Stop all currently loaded local models
-            await serviceHub.models().stopAllModels()
-            console.log('[LocalAPI] Stopped previously loaded local models')
-
-            // 2. Stop the API server
-            await window.core?.api?.stopServer()
-            console.log('[LocalAPI] Server stopped for model switch')
-
-            // 3. Start the new model
-            if (
-              searchableModel.provider.provider === 'llamacpp' ||
-              searchableModel.provider.provider === 'mlx'
-            ) {
-              await serviceHub
-                .models()
-                .startModel(
-                  searchableModel.provider,
-                  searchableModel.model.id,
-                  true
-                )
-              console.log(
-                '[LocalAPI] New model started:',
-                searchableModel.model.id
-              )
-              await new Promise((resolve) => setTimeout(resolve, 500))
-            }
-
-            // 4. Start the API server
-            const actualPort = await window.core?.api?.startServer({
-              host: serverState.serverHost,
-              port: serverState.serverPort,
-              prefix: serverState.apiPrefix,
-              apiKey: serverState.apiKey,
-              trustedHosts: serverState.trustedHosts,
-              isCorsEnabled: serverState.corsEnabled,
-              isVerboseEnabled: serverState.verboseLogs,
-              proxyTimeout: serverState.proxyTimeout,
-            })
-            console.log('[LocalAPI] Server restarted on port:', actualPort)
-
-            if (actualPort && actualPort !== serverState.serverPort) {
-              serverState.setServerPort(actualPort)
-            }
-            setServerStatus('running')
-
-            serverState.setDefaultModelLocalApiServer({
-              model: searchableModel.model.id,
-              provider: searchableModel.provider.provider,
-            })
-            serverState.setLastServerModels([
-              {
-                model: searchableModel.model.id,
-                provider: searchableModel.provider.provider,
-              },
-            ])
-          } catch (error) {
-            console.error('[LocalAPI] Failed to restart server:', error)
-            useAppState.getState().setServerStatus('stopped')
-          }
-        })()
+        updateCurrentThreadModel({
+          id: searchableModel.model.id,
+          provider: searchableModel.provider.provider,
+        })
+        setLastUsedModel(
+          searchableModel.provider.provider,
+          searchableModel.model.id
+        )
       }
     },
     [

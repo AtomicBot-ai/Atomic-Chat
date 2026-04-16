@@ -188,36 +188,41 @@ const ChatInput = memo(function ChatInput({
     ? activeModels.includes(selectedModel.id)
     : false
 
-  // Auto-start MLX model when selected so the indicator and send button reflect its status.
-  // We query the engine directly to avoid restarting an already-running model whose state
-  // isn't yet reflected in the Zustand store.
+  // Auto-start local model (llamacpp/mlx) when selected so the indicator and send
+  // button reflect its status. Uses the unified switchToModel to ensure only one
+  // model runs across all local providers.
   useEffect(() => {
-    if (selectedProvider !== 'mlx' || !selectedModel?.id || loadingModel) return
-
-    const provider = getProviderByName(selectedProvider)
-    if (!provider) return
+    const isLocal =
+      selectedProvider === 'mlx' || selectedProvider === 'llamacpp'
+    if (!isLocal || !selectedModel?.id || loadingModel) return
 
     let cancelled = false
 
-    const ensureMlxRunning = async () => {
+    const ensureLocalModelRunning = async () => {
       try {
-        const actualActive = await serviceHub.models().getActiveModels('mlx')
+        const actualActive = await serviceHub
+          .models()
+          .getActiveModels(selectedProvider)
         if (cancelled) return
 
-        setActiveModels(
-          await serviceHub.models().getActiveModels()
-        )
+        setActiveModels(await serviceHub.models().getActiveModels())
 
         if (actualActive.includes(selectedModel.id)) return
 
         updateLoadingModel(true)
-        await serviceHub.models().startModel(provider, selectedModel.id)
+        const { switchToModel } = await import('@/utils/switchModel')
+        if (cancelled) return
+        await switchToModel({
+          modelId: selectedModel.id,
+          providerName: selectedProvider,
+          serviceHub,
+        })
         if (!cancelled) {
           const active = await serviceHub.models().getActiveModels()
           setActiveModels(active || [])
         }
       } catch (err) {
-        console.warn('Failed to auto-start MLX model:', err)
+        console.warn('Failed to auto-start local model:', err)
       } finally {
         if (!cancelled) {
           updateLoadingModel(false)
@@ -225,7 +230,7 @@ const ChatInput = memo(function ChatInput({
       }
     }
 
-    ensureMlxRunning()
+    ensureLocalModelRunning()
     return () => {
       cancelled = true
     }
@@ -233,7 +238,7 @@ const ChatInput = memo(function ChatInput({
   }, [selectedProvider, selectedModel?.id])
 
   const isLocalModelNotReady =
-    selectedProvider === 'mlx' &&
+    (selectedProvider === 'mlx' || selectedProvider === 'llamacpp') &&
     !!selectedModel?.id &&
     !activeModels.includes(selectedModel.id)
 
@@ -646,11 +651,17 @@ const ChatInput = memo(function ChatInput({
         const modelReady = await (async () => {
           if (!selectedModel?.id) return false
           if (activeModels.includes(selectedModel.id)) return true
-          const provider = getProviderByName(selectedProvider)
-          if (!provider) return false
+          const isLocal =
+            selectedProvider === 'llamacpp' || selectedProvider === 'mlx'
+          if (!isLocal) return false
           try {
             updateLoadingModel(true)
-            await serviceHub.models().startModel(provider, selectedModel.id)
+            const { switchToModel } = await import('@/utils/switchModel')
+            await switchToModel({
+              modelId: selectedModel.id,
+              providerName: selectedProvider,
+              serviceHub,
+            })
             const active = await serviceHub.models().getActiveModels()
             setActiveModels(active || [])
             return active?.includes(selectedModel.id) ?? false

@@ -303,9 +303,11 @@ function HubContent() {
       }
 
       // Add locally-downloaded models not present in the catalog
+      // Skip embedding models (e.g. Sentence-Transformers) as they are auxiliary
       if (sortSelected !== 'mlx') {
         const orphanLlamacpp = llamacppModels.filter(
-          (m: { id: string }) => !matchedLlamacppIds.has(m.id)
+          (m: { id: string; embedding?: boolean }) =>
+            !matchedLlamacppIds.has(m.id) && !m.embedding
         )
         for (const m of orphanLlamacpp) {
           const catalogMatch = findCatalogEntry(m.id as string)
@@ -317,7 +319,8 @@ function HubContent() {
 
       if (sortSelected !== 'gguf') {
         const orphanMlx = mlxModels.filter(
-          (m: { id: string }) => !matchedMlxIds.has(m.id)
+          (m: { id: string; embedding?: boolean }) =>
+            !matchedMlxIds.has(m.id) && !m.embedding
         )
         for (const m of orphanMlx) {
           const catalogMatch = findCatalogEntry(m.id as string)
