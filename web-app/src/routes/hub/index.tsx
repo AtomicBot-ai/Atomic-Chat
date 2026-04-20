@@ -19,6 +19,7 @@ import {
   extractModelName,
   extractDescription,
   getTotalDownloadFileSize,
+  getMlxTotalFileSize,
 } from '@/lib/models'
 import { useResolvedRecommendedModels } from '@/hooks/useResolvedRecommendedModels'
 import {
@@ -332,9 +333,18 @@ function HubContent() {
         }
       }
     }
-    // Add HuggingFace repo at the beginning if available
+    // Add HuggingFace repo at the beginning if available.
+    // Respect the active engine filter so that MLX/GGUF chips don't leak through.
     if (huggingFaceRepo) {
-      filtered = [huggingFaceRepo, ...filtered]
+      const matchesEngineFilter =
+        sortSelected === 'mlx'
+          ? huggingFaceRepo.is_mlx === true
+          : sortSelected === 'gguf'
+            ? huggingFaceRepo.is_mlx !== true
+            : true
+      if (matchesEngineFilter) {
+        filtered = [huggingFaceRepo, ...filtered]
+      }
     }
     return filtered
   }, [
@@ -671,7 +681,7 @@ function HubContent() {
                       : undefined
                     const downloadSize = model
                       ? model.is_mlx
-                        ? model.safetensors_files?.[0]?.file_size
+                        ? getMlxTotalFileSize(model)
                         : getTotalDownloadFileSize(model, defaultVariant)
                       : undefined
                     return model ? (
@@ -1107,8 +1117,9 @@ function HubContent() {
                             <div className="shrink-0 space-x-3 flex items-center">
                               <span className="text-muted-foreground font-medium text-xs">
                                 {virtualListModels[virtualItem.index].is_mlx
-                                  ? virtualListModels[virtualItem.index]
-                                      .safetensors_files?.[0]?.file_size
+                                  ? getMlxTotalFileSize(
+                                      virtualListModels[virtualItem.index]
+                                    )
                                   : getTotalDownloadFileSize(
                                       virtualListModels[virtualItem.index],
                                       pickDefaultQuant(

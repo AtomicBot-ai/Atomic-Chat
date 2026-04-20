@@ -4,6 +4,7 @@ export type RecommendedModelChipVariant =
   | 'blue'
   | 'purple'
   | 'yellow'
+  | 'orange'
 
 //* Вариант чипа по i18n-ключу подписи
 const VARIANT_BY_DESCRIPTION_KEY: Record<string, RecommendedModelChipVariant> = {
@@ -11,6 +12,7 @@ const VARIANT_BY_DESCRIPTION_KEY: Record<string, RecommendedModelChipVariant> = 
   'hub:recVisionKnowledge': 'purple',
   'hub:recFinetuningChat': 'blue',
   'hub:recMathReasoning': 'yellow',
+  'hub:recForMlx': 'orange',
 }
 
 export function chipVariantForRecommendedDescriptionKey(

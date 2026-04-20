@@ -35,15 +35,15 @@ export const HUB_RECOMMENDED_MODELS: ReadonlyArray<{
     descriptionKey: 'hub:recFinetuningChat',
   },
   {
-    modelName: 'unsloth/MiniMax-M2.5-GGUF',
-    descriptionKey: 'hub:recMathReasoning',
+    modelName: 'mlx-community/Qwen3.5-9B-MLX-4bit',
+    descriptionKey: 'hub:recForMlx',
   },
 ]
 
 const GEMMA4_HF =
   'https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main'
-const MINIMAX_HF =
-  'https://huggingface.co/unsloth/MiniMax-M2.5-GGUF/resolve/main'
+const QWEN_MLX_HF =
+  'https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-4bit/resolve/main'
 
 export const RECOMMENDED_MODEL_FALLBACKS: Readonly<
   Record<string, CatalogModel>
@@ -187,21 +187,23 @@ export const RECOMMENDED_MODEL_FALLBACKS: Readonly<
     ],
     readme: `${GEMMA4_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
   },
-  'unsloth/MiniMax-M2.5-GGUF': {
-    model_name: 'unsloth/MiniMax-M2.5-GGUF',
-    developer: 'unsloth',
+  'mlx-community/Qwen3.5-9B-MLX-4bit': {
+    model_name: 'mlx-community/Qwen3.5-9B-MLX-4bit',
+    developer: 'mlx-community',
+    library_name: 'mlx',
     description:
-      '**Tags**: Text Generation, GGUF, minimax_m2, imatrix, conversational',
-    downloads: 63106,
-    num_quants: 1,
-    quants: [
+      '**Tags**: Image-Text-to-Text, MLX, Safetensors, qwen3_5, vision-language-model, 4-bit, conversational',
+    downloads: 73490,
+    num_safetensors: 1,
+    safetensors_files: [
       {
-        model_id: 'unsloth/MiniMax-M2.5-UD-TQ1_0',
-        path: `${MINIMAX_HF}/MiniMax-M2.5-UD-TQ1_0.gguf`,
-        file_size: '55.8 GB',
+        model_id: 'mlx-community/Qwen3.5-9B-MLX-4bit',
+        path: `${QWEN_MLX_HF}/model.safetensors`,
+        file_size: '5.6 GB',
       },
     ],
-    readme: `${MINIMAX_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
+    is_mlx: true,
+    readme: `${QWEN_MLX_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
   },
 }
 

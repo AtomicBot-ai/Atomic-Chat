@@ -16,6 +16,7 @@ import { useJanModelPrompt } from '@/hooks/useJanModelPrompt'
 import { PromptJanModel } from '@/containers/PromptJanModel'
 import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
+import { useTrayStatusSync } from '@/hooks/useTrayStatusSync'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
 import { TranslationProvider } from '@/i18n/TranslationContext'
 import OutOfContextPromiseModal from '@/containers/dialogs/OutOfContextDialog'
@@ -41,6 +42,9 @@ const AppLayout = () => {
     width: sidebarWidth,
     setLeftPanelWidth,
   } = useLeftPanel()
+  // Feeds live server / model / RAM state into the macOS menu-bar tray.
+  // No-op outside macOS Tauri builds (see hook implementation).
+  useTrayStatusSync()
 
   return (
     <div className="bg-neutral-50 dark:bg-background size-full relative">

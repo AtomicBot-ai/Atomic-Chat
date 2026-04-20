@@ -58,6 +58,16 @@ dev: install-and-build
 	make build-cli-dev
 	yarn dev
 
+# Dev-режим с форсированным SetupScreen (онбординг) без удаления моделей.
+# Флаг FORCE_ONBOARDING прокидывается в vite как compile-time константа.
+dev-onboarding: install-and-build
+	yarn download:bin
+	make download-llamacpp-backend
+	make build-mlx-server
+	make build-foundation-models-server-if-exists
+	make build-cli-dev
+	FORCE_ONBOARDING=true yarn dev
+
 # ──────────────────────────────────────────────────────────────
 # Windows Development
 # ──────────────────────────────────────────────────────────────

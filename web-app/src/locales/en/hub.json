@@ -19,5 +19,6 @@
   "recVisionKnowledge": "Vision & knowledge",
   "recFinetuningChat": "Fine-tuning & chat",
   "recMathReasoning": "Math & reasoning",
+  "recForMlx": "For MLX",
   "backToModels": "Back to models"
 }

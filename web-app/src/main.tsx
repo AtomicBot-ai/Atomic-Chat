@@ -56,11 +56,73 @@ const preventDefaultFileDrop = () => {
   })
 }
 
+//* Запрет зума страницы: клавиатурные сочетания, Ctrl/Cmd+колесо, жесты трекпада/пальцев
+const disablePageZoom = () => {
+  const isZoomKey = (key: string) =>
+    key === '+' ||
+    key === '-' ||
+    key === '=' ||
+    key === '0' ||
+    key === 'Add' ||
+    key === 'Subtract'
+
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if ((e.ctrlKey || e.metaKey) && isZoomKey(e.key)) {
+        e.preventDefault()
+      }
+    },
+    { capture: true }
+  )
+
+  window.addEventListener(
+    'wheel',
+    (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault()
+      }
+    },
+    { passive: false, capture: true }
+  )
+
+  const preventGesture = (e: Event) => e.preventDefault()
+  window.addEventListener('gesturestart', preventGesture, { passive: false })
+  window.addEventListener('gesturechange', preventGesture, { passive: false })
+  window.addEventListener('gestureend', preventGesture, { passive: false })
+
+  document.addEventListener(
+    'touchmove',
+    (e) => {
+      if (e.touches.length > 1) {
+        e.preventDefault()
+      }
+    },
+    { passive: false }
+  )
+
+  let lastTouchEnd = 0
+  document.addEventListener(
+    'touchend',
+    (e) => {
+      const now = Date.now()
+      if (now - lastTouchEnd <= 300) {
+        e.preventDefault()
+      }
+      lastTouchEnd = now
+    },
+    { passive: false }
+  )
+}
+
 // Initialize mobile setup
 setupMobileViewport()
 
 // Prevent files from opening when dropped
 preventDefaultFileDrop()
+
+// Prevent user-initiated zoom across the app
+disablePageZoom()
 
 // Create a new router instance
 const router = createRouter({ routeTree })

@@ -49,6 +49,11 @@ pub struct AppState {
     pub mcp_server_pids: Arc<Mutex<HashMap<String, u32>>>,
     /// Remote provider configurations (e.g., Anthropic, OpenAI, etc.)
     pub provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    /// Handles to the dynamic rows in the system tray menu (desktop only).
+    /// Populated by `setup::setup_tray` when the tray is installed, consumed by
+    /// `tray_status::update_tray_status` to re-render server / model / RAM.
+    #[cfg(desktop)]
+    pub tray_handles: Arc<std::sync::Mutex<Option<crate::core::tray_status::TrayHandles>>>,
 }
 
 impl RunningServiceEnum {
