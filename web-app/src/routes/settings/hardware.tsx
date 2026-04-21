@@ -15,7 +15,7 @@ import type { HardwareData, SystemUsage } from '@/services/hardware/types'
 import { cn, formatMegaBytes } from '@/lib/utils'
 import { toNumber } from '@/utils/number'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { useAppState } from '@/hooks/useAppState'
+import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 import { Button } from '@/components/ui/button'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -34,7 +34,6 @@ function HardwareContent() {
     updateSystemUsage,
     pollingPaused,
   } = useHardware()
-  const setActiveModels = useAppState((state) => state.setActiveModels)
 
   const { providers } = useModelProvider()
   const llamacpp = providers.find((p) => p.provider === 'llamacpp')
@@ -341,12 +340,14 @@ function HardwareContent() {
                                   toggleDevice(device.id)
                                   serviceHub.models().stopAllModels()
 
-                                  // Refresh active models after stopping
+                                  // Refresh active models after stopping —
+                                  // preserve cloud entries tracked only in UI
+                                  // state via the shared helper.
                                   serviceHub
                                     .models()
                                     .getActiveModels()
                                     .then((models) =>
-                                      setActiveModels(models || [])
+                                      syncActiveModelsFromEngines(models || [])
                                     )
                                 }}
                               />

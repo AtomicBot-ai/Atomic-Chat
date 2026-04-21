@@ -388,19 +388,13 @@ function HubContent() {
     }
   }, [orphanIdsToEnrich, serviceHub, huggingfaceToken])
 
-  const shouldShowCatalogResults =
-    debouncedSearchValue.length > 0 || showOnlyDownloaded
-
   const showRecommendedBlock =
     debouncedSearchValue.length === 0 && !showOnlyDownloaded
 
-  //* По умолчанию показываем только curated Recommended; остальной каталог открывается через поиск или фильтр скачанных
+  //* Каталог рендерится всегда: при поиске/фильтре «скачанные» — сам по себе, иначе под блоком Recommended
   const virtualListModels = useMemo(() => {
-    if (!shouldShowCatalogResults) {
-      return []
-    }
     return filteredModels
-  }, [filteredModels, shouldShowCatalogResults])
+  }, [filteredModels])
 
   // Dynamic estimate size based on model state
   const estimateSize = useCallback(
@@ -650,7 +644,7 @@ function HubContent() {
           className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto!"
         >
           <div className="flex flex-col h-full justify-between gap-4 w-full md:w-4/5 xl:w-4/6 mx-auto">
-            {/* Рекомендации сверху списка Newest (без поиска и без фильтра «только скачанные») */}
+            {/* Recommended сверху со своим разделителем, затем блок «All Models» с таким же разделителем, затем каталог */}
             {showRecommendedBlock && (
               <section className="shrink-0 border-b border-border pb-4">
                 <h2 className="text-sm font-medium mb-3 text-muted-foreground">
@@ -1010,6 +1004,13 @@ function HubContent() {
                     )
                   })}
                 </div>
+              </section>
+            )}
+            {showRecommendedBlock && (
+              <section className="shrink-0 border-b border-border pb-4">
+                <h2 className="text-sm font-medium text-muted-foreground">
+                  {t('hub:allModelsTitle')}
+                </h2>
               </section>
             )}
             {isInitialLoad || (loading && !filteredModels.length) ? (

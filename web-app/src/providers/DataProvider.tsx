@@ -24,6 +24,7 @@ import {
   registerRemoteProvider,
   unregisterRemoteProvider,
 } from '@/utils/registerRemoteProvider'
+import { hydrateActiveModelsForRunningServer } from '@/utils/activeModelsSync'
 
 const safeRegisterRemoteProvider = async (provider: ModelProvider) => {
   try {
@@ -268,6 +269,11 @@ export function DataProvider() {
         if (isRunning) {
           console.log('[LocalAPI:startup] Server already running')
           setServerStatus('running')
+          // `activeModels` is in-memory only; without this the provider UI
+          // would render "Start" for the cloud model the proxy is already
+          // routing, until the user manually re-selects it. See issue where
+          // navigating between tabs appears to "forget" the running model.
+          await hydrateActiveModelsForRunningServer(serviceHub.models())
           return
         }
 

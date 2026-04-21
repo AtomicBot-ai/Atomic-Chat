@@ -125,7 +125,10 @@ function createCustomFetch(
   baseFetch: typeof httpFetch,
   parameters: Record<string, unknown>
 ): typeof httpFetch {
-  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  return async (
+    input: RequestInfo | URL,
+    init?: RequestInit
+  ): Promise<Response> => {
     // Only transform POST requests with JSON body
     if (init?.method === 'POST' || !init?.method) {
       const body = init?.body ? JSON.parse(init.body as string) : {}
@@ -186,11 +189,12 @@ function createLocalStreamingFetch(
     const hdrs: Record<string, string> = {}
     if (init?.headers) {
       const h = init.headers
-      if (h instanceof Headers) h.forEach((v, k) => { hdrs[k] = v })
-      else if (Array.isArray(h))
-        for (const [k, v] of h) hdrs[k] = String(v)
-      else
-        for (const [k, v] of Object.entries(h)) hdrs[k] = String(v)
+      if (h instanceof Headers)
+        h.forEach((v, k) => {
+          hdrs[k] = v
+        })
+      else if (Array.isArray(h)) for (const [k, v] of h) hdrs[k] = String(v)
+      else for (const [k, v] of Object.entries(h)) hdrs[k] = String(v)
     }
 
     const chunks: string[] = []
@@ -724,6 +728,18 @@ export class ModelFactory {
       fetch: createLocalStreamingFetch(httpFetch, parameters),
     })
 
-    return openAICompatible.languageModel(modelId)
+    // Some OpenAI-compatible providers (MiniMax, DeepSeek, Moonshot, NVIDIA
+    // NIM, etc.) stream chain-of-thought inline as <think>...</think> inside
+    // the assistant text instead of as a separate reasoning field. Without
+    // this middleware the tags leak into the rendered message verbatim; with
+    // it, the reasoning is split into a dedicated reasoning part. The
+    // middleware is a no-op for providers that never emit <think> tags.
+    return wrapLanguageModel({
+      model: openAICompatible.languageModel(modelId),
+      middleware: extractReasoningMiddleware({
+        tagName: 'think',
+        separator: '\n',
+      }),
+    })
   }
 }

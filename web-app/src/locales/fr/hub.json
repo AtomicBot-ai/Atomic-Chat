@@ -15,6 +15,7 @@
   "tools": "Outils",
   "searchPlaceholder": "Rechercher des modèles sur Hugging Face...",
   "recTitle": "Recommandés",
+  "allModelsTitle": "Tous les modèles",
   "recEverydayUse": "Usage quotidien",
   "recVisionKnowledge": "Vision et connaissances",
   "recFinetuningChat": "Affinage et chat",

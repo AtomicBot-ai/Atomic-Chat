@@ -57,6 +57,13 @@
     "resetFactory": "Auf Werkseinstellungen zurücksetzen",
     "resetFactoryDesc": "Setzt die Anwendung in den ursprünglichen Zustand zurück und löscht dabei alle Modelle und den Chatverlauf. Diese Aktion ist irreversibel und wird nur empfohlen, wenn die Anwendung beschädigt ist."
   },
+  "chatBehavior": {
+    "title": "Chat Behavior",
+    "disableReasoning": "Disable reasoning",
+    "disableReasoningDesc": "Skip the thinking phase on models that support reasoning.",
+    "autoApproveTools": "Auto-approve tool calls",
+    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation."
+  },
   "shortcuts": {
     "application": "Anwendung",
     "newChat": "Neuer Chat",

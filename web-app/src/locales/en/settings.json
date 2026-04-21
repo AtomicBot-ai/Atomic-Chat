@@ -57,6 +57,11 @@
     "resetFactory": "Reset To Factory Settings",
     "resetFactoryDesc": "Restore application to its initial state, erasing all models and chat history. This action is irreversible and recommended only if the application is corrupted."
   },
+  "chatBehavior": {
+    "title": "Chat Behavior",
+    "autoApproveTools": "Auto-approve tool calls",
+    "autoApproveToolsDesc": "Skip the approval popup and automatically allow every tool/MCP call. When disabled, you'll be asked to confirm each new tool."
+  },
   "shortcuts": {
     "application": "Application",
     "newChat": "New Chat",
@@ -203,6 +208,8 @@
     "proxyTimeoutDesc": "Time to wait for a response from the local model, seconds.",
     "defaultModel": "Default Model Local API Server",
     "defaultModelDesc": "Local model to load automatically when the server starts.",
+    "defaultModelDescHint": "To change it, update your default chat model in ",
+    "defaultModelDescProvidersLink": "Model Providers",
     "defaultModelPlaceholder": "Select a local model"
   },
   "privacy": {

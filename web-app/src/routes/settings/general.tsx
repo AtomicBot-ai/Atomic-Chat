@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardItem } from '@/containers/Card'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { useToolApproval } from '@/hooks/useToolApproval'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useEffect, useState, useCallback } from 'react'
 import ChangeDataFolderLocation from '@/containers/dialogs/ChangeDataFolderLocation'
@@ -44,6 +45,12 @@ function General() {
     huggingfaceToken,
     setHuggingfaceToken,
   } = useGeneralSetting()
+  const allowAllMCPPermissions = useToolApproval(
+    (state) => state.allowAllMCPPermissions
+  )
+  const setAllowAllMCPPermissions = useToolApproval(
+    (state) => state.setAllowAllMCPPermissions
+  )
   const serviceHub = useServiceHub()
 
   const openFileTitle = (): string => {
@@ -326,6 +333,20 @@ function General() {
                   >
                     AtomicBot-ai/Atomic-Chat
                   </a>
+                }
+              />
+            </Card>
+
+            {/* Chat behavior */}
+            <Card title={t('settings:chatBehavior.title')}>
+              <CardItem
+                title={t('settings:chatBehavior.autoApproveTools')}
+                description={t('settings:chatBehavior.autoApproveToolsDesc')}
+                actions={
+                  <Switch
+                    checked={allowAllMCPPermissions}
+                    onCheckedChange={setAllowAllMCPPermissions}
+                  />
                 }
               />
             </Card>

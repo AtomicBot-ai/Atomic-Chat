@@ -38,6 +38,7 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 
 import { useAppState } from '@/hooks/useAppState'
+import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 import type { ChatStatus } from 'ai'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
@@ -120,7 +121,6 @@ const ChatInput = memo(function ChatInput({
   const serverStatus = useAppState((state) => state.serverStatus)
   const tools = useAppState((state) => state.tools)
   const cancelToolCall = useAppState((state) => state.cancelToolCall)
-  const setActiveModels = useAppState((state) => state.setActiveModels)
   const prompt = usePrompt((state) => state.prompt)
   const setPrompt = usePrompt((state) => state.setPrompt)
   const currentThreadId = useThreads((state) => state.currentThreadId)
@@ -213,7 +213,10 @@ const ChatInput = memo(function ChatInput({
         ])
         if (cancelled) return
 
-        setActiveModels(activeAcrossProviders || [])
+        // getActiveModels() only inspects on-device engines; merge with any
+        // cloud model that was activated elsewhere so we don't wipe it on
+        // every navigation into a thread.
+        syncActiveModelsFromEngines(activeAcrossProviders || [])
 
         if (
           actualActive.length === 1 &&
@@ -246,7 +249,6 @@ const ChatInput = memo(function ChatInput({
     selectedModel?.id,
     serverStatus,
     serviceHub,
-    setActiveModels,
   ])
 
   const isLocalModelNotReady =

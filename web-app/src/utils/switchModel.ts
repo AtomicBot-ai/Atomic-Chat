@@ -8,6 +8,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import i18n from '@/i18n/setup'
 import type { ServiceHub } from '@/services'
 import { registerRemoteProvider } from '@/utils/registerRemoteProvider'
+import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 
 // Local providers whose models are served by on-device engines (llamacpp / mlx).
 // Foundation Models is deliberately excluded here because it has its own
@@ -133,7 +134,10 @@ export async function switchToModel(params: {
       .catch(() => [] as string[])
 
     useAppState.getState().setServerStatus('running')
-    useAppState.getState().setActiveModels(activeModels || [])
+    // getActiveModels() is local-engine only; preserve any cloud model that
+    // is already "active" in the UI so re-selecting the same cloud target
+    // does not wipe out the global active-model state.
+    syncActiveModelsFromEngines(activeModels || [])
     syncModelSelection(params.providerName, params.modelId)
     console.log(
       '[switchToModel] Target already active, skipping restart:',

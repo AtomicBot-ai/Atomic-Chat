@@ -57,6 +57,13 @@
     "resetFactory": "Przywróć Ustawienia Fabryczne",
     "resetFactoryDesc": "Przywróć aplikację do stanu początkowego, wymazując wszystkie modele i historię czatów. Tej operacji nie można cofnąć. Zalecane tylko przy uszkodzeniach danych aplikacji."
   },
+  "chatBehavior": {
+    "title": "Chat Behavior",
+    "disableReasoning": "Disable reasoning",
+    "disableReasoningDesc": "Skip the thinking phase on models that support reasoning.",
+    "autoApproveTools": "Auto-approve tool calls",
+    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation."
+  },
   "shortcuts": {
     "application": "Aplikacja",
     "newChat": "Nowy Czat",

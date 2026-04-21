@@ -6,10 +6,12 @@ type GeneralSettingState = {
   currentLanguage: Language
   spellCheckChatInput: boolean
   tokenCounterCompact: boolean
+  disableReasoning: boolean
   huggingfaceToken?: string
   setHuggingfaceToken: (token: string) => void
   setSpellCheckChatInput: (value: boolean) => void
   setTokenCounterCompact: (value: boolean) => void
+  setDisableReasoning: (value: boolean) => void
   setCurrentLanguage: (value: Language) => void
 }
 
@@ -19,9 +21,11 @@ export const useGeneralSetting = create<GeneralSettingState>()(
       currentLanguage: 'en',
       spellCheckChatInput: true,
       tokenCounterCompact: true,
+      disableReasoning: false,
       huggingfaceToken: undefined,
       setSpellCheckChatInput: (value) => set({ spellCheckChatInput: value }),
       setTokenCounterCompact: (value) => set({ tokenCounterCompact: value }),
+      setDisableReasoning: (value) => set({ disableReasoning: value }),
       setCurrentLanguage: (value) => set({ currentLanguage: value }),
       setHuggingfaceToken: (token) => {
         set({ huggingfaceToken: token })
@@ -49,5 +53,3 @@ export const useGeneralSetting = create<GeneralSettingState>()(
     }
   )
 )
-
-

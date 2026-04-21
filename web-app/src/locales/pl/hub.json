@@ -15,6 +15,7 @@
   "tools": "Narzędzia",
   "searchPlaceholder": "Szukaj modeli na Hugging Face…",
   "recTitle": "Polecane",
+  "allModelsTitle": "Wszystkie modele",
   "recEverydayUse": "Codzienne użycie",
   "recVisionKnowledge": "Wizja i wiedza",
   "recFinetuningChat": "Dostrajanie i czat",

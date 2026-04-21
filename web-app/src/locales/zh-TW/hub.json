@@ -15,6 +15,7 @@
   "tools": "工具",
   "searchPlaceholder": "在 Hugging Face 上搜尋模型...",
   "recTitle": "推薦",
+  "allModelsTitle": "所有模型",
   "recEverydayUse": "日常使用",
   "recVisionKnowledge": "視覺與知識",
   "recFinetuningChat": "微調與對話",
