@@ -121,8 +121,8 @@ export const predefinedProviders = [
           'The base endpoint to use. See the [Anthropic API documentation](https://docs.anthropic.com/en/api/messages) for more information.',
         controller_type: 'input',
         controller_props: {
-          placeholder: 'https://api.anthropic.com',
-          value: 'https://api.anthropic.com',
+          placeholder: 'https://api.anthropic.com/v1',
+          value: 'https://api.anthropic.com/v1',
         },
       },
     ],
