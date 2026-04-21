@@ -54,6 +54,7 @@ import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useAgentMode } from '@/hooks/useAgentMode'
+import posthog from 'posthog-js'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -581,6 +582,14 @@ function ThreadDetail() {
       })
       console.log('[processAndSendMessage] sendMessage called successfully')
 
+      posthog.capture('chat_request_sent', {
+        thread_id: threadId,
+        model_id: selectedModel?.id,
+        provider: selectedProvider,
+        has_attachments: processedAttachments.length > 0,
+        attachment_count: processedAttachments.length,
+      })
+
       // Clear attachments after sending
       clearAttachmentsForThread(attachmentsKey)
     },
@@ -594,6 +603,7 @@ function ThreadDetail() {
       clearAttachmentsForThread,
       serviceHub,
       selectedProvider,
+      selectedModel,
     ]
   )
 
