@@ -12,7 +12,6 @@ import Capabilities from './Capabilities'
 import { IconSettings, IconX } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
-import { useThreads } from '@/hooks/useThreads'
 import { ModelSetting } from '@/containers/ModelSetting'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { ModelSupportStatus } from '@/containers/ModelSupportStatus'
@@ -58,7 +57,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
     updateProvider,
   } = useModelProvider()
   const [displayModel, setDisplayModel] = useState<string>('')
-  const { updateCurrentThreadModel } = useThreads()
   const navigate = useNavigate()
   const { t } = useTranslation()
   const { favoriteModels } = useFavoriteModel()
@@ -380,69 +378,60 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
       setSearchValue('')
       setOpen(false)
 
-      const isLocal =
-        searchableModel.provider.provider === 'llamacpp' ||
-        searchableModel.provider.provider === 'mlx'
+      // Optimistically update the global model-provider selection so the
+      // provider avatar, capabilities and support-status icons re-render
+      // instantly — without waiting for stopAllModels / server restart /
+      // registerRemoteProvider to complete inside switchToModel. switchToModel
+      // will call this again at the end (idempotent) once the switch is done.
+      selectModelProvider(
+        searchableModel.provider.provider,
+        searchableModel.model.id
+      )
 
-      if (isLocal) {
-        // Check mmproj existence for llamacpp models (async, don't block UI)
-        if (searchableModel.provider.provider === 'llamacpp') {
-          serviceHub
-            .models()
-            .checkMmprojExistsAndUpdateOffloadMMprojSetting(
-              searchableModel.model.id,
-              updateProvider,
-              getProviderByName
-            )
-            .catch((error) => {
-              console.debug(
-                'Error checking mmproj for model:',
-                searchableModel.model.id,
-                error
-              )
-            })
-
-          checkAndUpdateModelVisionCapability(searchableModel.model.id).catch(
-            (error) => {
-              console.debug(
-                'Error checking vision capability for model:',
-                searchableModel.model.id,
-                error
-              )
-            }
+      // Fire-and-forget llamacpp mmproj / vision capability checks. These must
+      // not block the switch itself.
+      if (searchableModel.provider.provider === 'llamacpp') {
+        serviceHub
+          .models()
+          .checkMmprojExistsAndUpdateOffloadMMprojSetting(
+            searchableModel.model.id,
+            updateProvider,
+            getProviderByName
           )
-        }
+          .catch((error) => {
+            console.debug(
+              'Error checking mmproj for model:',
+              searchableModel.model.id,
+              error
+            )
+          })
 
-        // Unified local model switch: stops all models, restarts server, syncs all state
-        switchToModel({
-          modelId: searchableModel.model.id,
-          providerName: searchableModel.provider.provider,
-          serviceHub,
-        }).catch((error) => {
-          console.error('[DropdownModelProvider] switchToModel failed:', error)
-        })
-      } else {
-        // Non-local provider: just update UI selection
-        selectModelProvider(
-          searchableModel.provider.provider,
-          searchableModel.model.id
-        )
-        updateCurrentThreadModel({
-          id: searchableModel.model.id,
-          provider: searchableModel.provider.provider,
-        })
-        setLastUsedModel(
-          searchableModel.provider.provider,
-          searchableModel.model.id
+        checkAndUpdateModelVisionCapability(searchableModel.model.id).catch(
+          (error) => {
+            console.debug(
+              'Error checking vision capability for model:',
+              searchableModel.model.id,
+              error
+            )
+          }
         )
       }
+
+      // Unified switch: stops current engine, (re)starts the Local API Server,
+      // registers cloud providers, and synchronises global state.
+      switchToModel({
+        modelId: searchableModel.model.id,
+        providerName: searchableModel.provider.provider,
+        serviceHub,
+      }).catch((error) => {
+        console.error('[DropdownModelProvider] switchToModel failed:', error)
+      })
     },
     [
-      selectModelProvider,
-      updateCurrentThreadModel,
       updateProvider,
       getProviderByName,
       checkAndUpdateModelVisionCapability,
+      selectModelProvider,
       serviceHub,
     ]
   )

@@ -16,51 +16,18 @@ import { switchToModel } from '@/utils/switchModel'
 import { isDev } from '@/lib/utils'
 import { AppEvent, events } from '@janhq/core'
 import { SystemEvent } from '@/types/events'
-import { invoke } from '@tauri-apps/api/core'
 import {
   parseAtomicChatDeepLink,
   type AtomicChatDeepLinkTarget,
 } from '@/services/deeplink/parse'
+import {
+  registerRemoteProvider,
+  unregisterRemoteProvider,
+} from '@/utils/registerRemoteProvider'
 
-type ProviderCustomHeader = {
-  header: string
-  value: string
-}
-
-type RegisterProviderRequest = {
-  provider: string
-  api_key?: string
-  base_url?: string
-  custom_headers: ProviderCustomHeader[]
-  models: string[]
-}
-
-async function registerRemoteProvider(provider: ModelProvider) {
-  // Skip llamacpp - those are local models
-  if (provider.provider === 'llamacpp') return
-
-  // Skip providers without API key (they can't make requests)
-  if (!provider.api_key) {
-    console.log(
-      `Provider ${provider.provider} has no API key, skipping registration`
-    )
-    return
-  }
-
-  const request: RegisterProviderRequest = {
-    provider: provider.provider,
-    api_key: provider.api_key,
-    base_url: provider.base_url,
-    custom_headers: (provider.custom_header || []).map((h) => ({
-      header: h.header,
-      value: h.value,
-    })),
-    models: provider.models.map((e) => e.id),
-  }
-
+const safeRegisterRemoteProvider = async (provider: ModelProvider) => {
   try {
-    await invoke('register_provider_config', { request })
-    console.log(`Registered remote provider: ${provider.provider}`)
+    await registerRemoteProvider(provider)
   } catch (error) {
     console.error(`Failed to register provider ${provider.provider}:`, error)
   }
@@ -80,7 +47,7 @@ const syncRemoteProviders = () => {
       provider.provider !== 'llamacpp' &&
       provider.api_key
     ) {
-      registerRemoteProvider(provider)
+      safeRegisterRemoteProvider(provider)
       currentActive.add(provider.provider)
     }
   })
@@ -88,7 +55,7 @@ const syncRemoteProviders = () => {
   // Unregister providers that were previously registered but are now inactive/removed
   for (const name of registeredProviderNames) {
     if (!currentActive.has(name)) {
-      invoke('unregister_provider_config', { provider: name }).catch(() => {})
+      unregisterRemoteProvider(name)
     }
   }
 
@@ -126,7 +93,7 @@ export function DataProvider() {
         // Register active remote providers with the backend
         providers.forEach((provider) => {
           if (provider.active) {
-            registerRemoteProvider(provider)
+            safeRegisterRemoteProvider(provider)
             registeredProviderNames.add(provider.provider)
           }
         })
@@ -290,7 +257,10 @@ export function DataProvider() {
     }
   }, [serviceHub, setProviders, setServerStatus])
 
-  // Auto-start Local API Server on app startup when local models exist
+  // Auto-start Local API Server on app startup. Works for both local engines
+  // (llamacpp/mlx) and cloud providers: when the last-used model is cloud we
+  // just raise the proxy and register the provider config so it can route
+  // inference requests by model name.
   useEffect(() => {
     const autoStartServer = async () => {
       try {
@@ -311,74 +281,126 @@ export function DataProvider() {
           .flatMap((p) => p.models)
           .filter((m) => m.id !== EMBEDDING_MODEL_ID)
 
-        if (localModels.length === 0) {
-          console.log(
-            '[LocalAPI:startup] No local models found, skipping auto-start'
+        const serverState = useLocalApiServer.getState()
+
+        type CandidateModel = { model: string; provider: string }
+
+        const isLocalProviderName = (name: string) =>
+          name === 'llamacpp' || name === 'mlx'
+
+        const readLastUsedFromStorage = (): CandidateModel | null => {
+          try {
+            const stored = localStorage.getItem(localStorageKey.lastUsedModel)
+            if (!stored) return null
+            const parsed = JSON.parse(stored) as CandidateModel
+            if (!parsed?.model || !parsed?.provider) return null
+            return parsed
+          } catch {
+            return null
+          }
+        }
+
+        const validateCandidate = (
+          candidate: CandidateModel | null | undefined
+        ): CandidateModel | null => {
+          if (!candidate) return null
+          const p = allProviders.find((pr) => pr.provider === candidate.provider)
+          if (!p) return null
+          if (!p.models.some((m) => m.id === candidate.model)) return null
+          return candidate
+        }
+
+        // Priority: explicit UI selection > last-used-model (localStorage) >
+        // saved default > last running server model > first available local.
+        const modelToStart: CandidateModel | null = (() => {
+          const { selectedProvider, selectedModel } = useModelProvider.getState()
+          if (selectedModel && selectedProvider) {
+            const candidate = validateCandidate({
+              model: selectedModel.id,
+              provider: selectedProvider,
+            })
+            if (candidate) return candidate
+          }
+
+          const lastUsed = validateCandidate(readLastUsedFromStorage())
+          if (lastUsed) return lastUsed
+
+          const savedDefault = validateCandidate(
+            serverState.defaultModelLocalApiServer
           )
+          if (savedDefault) return savedDefault
+
+          if (serverState.lastServerModels.length > 0) {
+            const lastServer = validateCandidate(serverState.lastServerModels[0])
+            if (lastServer) return lastServer
+          }
+
+          if (localModels.length > 0) {
+            const firstLocal = localModels[0]
+            const providerName =
+              allProviders.find((p) =>
+                p.models.some((m) => m.id === firstLocal.id)
+              )?.provider ?? 'llamacpp'
+            return { model: firstLocal.id, provider: providerName }
+          }
+
+          return null
+        })()
+
+        if (!modelToStart) {
+          console.log(
+            '[LocalAPI:startup] No usable model found, skipping auto-start'
+          )
+          return
+        }
+
+        const candidateProvider = allProviders.find(
+          (p) => p.provider === modelToStart.provider
+        )
+        const isCloud =
+          candidateProvider !== undefined &&
+          !isLocalProviderName(candidateProvider.provider)
+
+        // Cloud provider without an API key cannot be registered with the
+        // proxy, so we just bring the server up bare and leave the UI to
+        // show "no active model". The user must add an API key in Settings.
+        if (isCloud && !candidateProvider?.api_key) {
+          console.log(
+            '[LocalAPI:startup] Cloud provider selected without API key, raising bare server:',
+            modelToStart.provider
+          )
+          setServerStatus('pending')
+          try {
+            const actualPort = await window.core?.api?.startServer({
+              host: serverState.serverHost,
+              port: serverState.serverPort,
+              prefix: serverState.apiPrefix,
+              apiKey: serverState.apiKey,
+              trustedHosts: serverState.trustedHosts,
+              isCorsEnabled: serverState.corsEnabled,
+              isVerboseEnabled: serverState.verboseLogs,
+              proxyTimeout: serverState.proxyTimeout,
+            })
+            if (actualPort && actualPort !== serverState.serverPort) {
+              serverState.setServerPort(actualPort)
+            }
+            setServerStatus('running')
+          } catch (err) {
+            console.error('[LocalAPI:startup] Bare server start failed:', err)
+            setServerStatus('stopped')
+          }
           return
         }
 
         setServerStatus('pending')
         console.log(
-          '[LocalAPI:startup] Auto-starting server, local models found:',
-          localModels.length
+          '[LocalAPI:startup] Auto-starting, target model:',
+          modelToStart
         )
 
-        const serverState = useLocalApiServer.getState()
-
-        // Pick model to load: current UI selection > saved default > last
-        // running local model > first available local model.
-        const modelToStart = (() => {
-          const { selectedProvider, selectedModel } = useModelProvider.getState()
-          if (
-            selectedModel &&
-            selectedProvider &&
-            (selectedProvider === 'llamacpp' || selectedProvider === 'mlx')
-          ) {
-            const selectedLocalProvider = allProviders.find(
-              (p) => p.provider === selectedProvider
-            )
-            if (
-              selectedLocalProvider &&
-              selectedLocalProvider.models.some((m) => m.id === selectedModel.id)
-            ) {
-              return { model: selectedModel.id, provider: selectedProvider }
-            }
-          }
-
-          if (serverState.defaultModelLocalApiServer) {
-            const dp = allProviders.find(
-              (p) =>
-                p.provider === serverState.defaultModelLocalApiServer!.provider
-            )
-            if (
-              dp &&
-              dp.models.some(
-                (m) => m.id === serverState.defaultModelLocalApiServer!.model
-              )
-            ) {
-              return serverState.defaultModelLocalApiServer
-            }
-          }
-          if (serverState.lastServerModels.length > 0) {
-            const last = serverState.lastServerModels[0]
-            const lp = allProviders.find((p) => p.provider === last.provider)
-            if (lp && lp.models.some((m) => m.id === last.model)) {
-              return last
-            }
-          }
-          const firstLocal = localModels[0]
-          const providerName =
-            allProviders.find((p) =>
-              p.models.some((m) => m.id === firstLocal.id)
-            )?.provider ?? 'llamacpp'
-          return { model: firstLocal.id, provider: providerName }
-        })()
-
-        console.log('[LocalAPI:startup] Model to start:', modelToStart)
-
-        // switchToModel handles stopAllModels, startModel, startServer, and
-        // syncs global state (selectModelProvider, last-used-model, thread model, etc.)
+        // switchToModel handles stopAllModels, startModel/registerProvider,
+        // startServer, and syncs global state (selectModelProvider,
+        // last-used-model, thread model, etc.) for both local and cloud.
         await switchToModel({
           modelId: modelToStart.model,
           providerName: modelToStart.provider,

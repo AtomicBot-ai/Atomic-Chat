@@ -21,6 +21,12 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { isLocalProvider } from '@/utils/registerRemoteProvider'
+import {
   IconFolderPlus,
   IconLoader,
   IconRefresh,
@@ -679,43 +685,75 @@ function ProviderDetail() {
                                 modelId={model.id}
                               />
                               {provider &&
-                                (provider.provider === 'llamacpp' ||
-                                  provider.provider === 'mlx') && (
-                                  <div className="ml-2">
-                                    {activeModels.some(
-                                      (activeModel) => activeModel === model.id
-                                    ) ? (
-                                      <Button
-                                        size="sm"
-                                        variant="destructive"
-                                        onClick={() => handleStopModel()}
-                                      >
-                                        {t('providers:stop')}
-                                      </Button>
-                                    ) : (
-                                      <Button
-                                        size="sm"
-                                        disabled={loadingModels.includes(
-                                          model.id
-                                        )}
-                                        onClick={() =>
-                                          handleStartModel(model.id)
-                                        }
-                                      >
-                                        {loadingModels.includes(model.id) ? (
-                                          <div className="flex items-center gap-2">
-                                            <IconLoader
-                                              size={16}
-                                              className="animate-spin"
-                                            />
-                                          </div>
-                                        ) : (
-                                          t('providers:start')
-                                        )}
-                                      </Button>
-                                    )}
-                                  </div>
-                                )}
+                                (() => {
+                                  const isLocalEngine =
+                                    provider.provider === 'llamacpp' ||
+                                    provider.provider === 'mlx'
+                                  // Cloud providers need an API key before
+                                  // they can be "started" (registered with the
+                                  // proxy). Local engines don't.
+                                  const needsApiKey =
+                                    !isLocalProvider(provider.provider) &&
+                                    !provider.api_key
+                                  const isActive = activeModels.some(
+                                    (activeModel) => activeModel === model.id
+                                  )
+                                  const isLoading = loadingModels.includes(
+                                    model.id
+                                  )
+
+                                  if (isActive) {
+                                    return (
+                                      <div className="ml-2">
+                                        <Button
+                                          size="sm"
+                                          variant="destructive"
+                                          onClick={() => handleStopModel()}
+                                        >
+                                          {t('providers:stop')}
+                                        </Button>
+                                      </div>
+                                    )
+                                  }
+
+                                  const startButton = (
+                                    <Button
+                                      size="sm"
+                                      disabled={isLoading || needsApiKey}
+                                      onClick={() =>
+                                        handleStartModel(model.id)
+                                      }
+                                    >
+                                      {isLoading ? (
+                                        <div className="flex items-center gap-2">
+                                          <IconLoader
+                                            size={16}
+                                            className="animate-spin"
+                                          />
+                                        </div>
+                                      ) : (
+                                        t('providers:start')
+                                      )}
+                                    </Button>
+                                  )
+
+                                  return (
+                                    <div className="ml-2">
+                                      {needsApiKey && !isLocalEngine ? (
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <span>{startButton}</span>
+                                          </TooltipTrigger>
+                                          <TooltipContent>
+                                            Add API key first
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      ) : (
+                                        startButton
+                                      )}
+                                    </div>
+                                  )
+                                })()}
                             </div>
                           }
                         />
