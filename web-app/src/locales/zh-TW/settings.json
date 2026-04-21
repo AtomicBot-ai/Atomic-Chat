@@ -57,6 +57,13 @@
     "resetFactory": "恢復原廠設定",
     "resetFactoryDesc": "將應用程式還原至其初始狀態，清除所有模型和聊天記錄。此操作不可逆，僅在應用程式損毀時建議使用。"
   },
+  "chatBehavior": {
+    "title": "Chat Behavior",
+    "disableReasoning": "Disable reasoning",
+    "disableReasoningDesc": "Skip the thinking phase on models that support reasoning.",
+    "autoApproveTools": "Auto-approve tool calls",
+    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation."
+  },
   "shortcuts": {
     "application": "應用程式",
     "newChat": "新聊天",

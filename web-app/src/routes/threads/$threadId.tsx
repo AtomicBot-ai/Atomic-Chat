@@ -45,7 +45,12 @@ import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
-import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
+import {
+  OUT_OF_CONTEXT_SIZE,
+  MODEL_ACCESS_DENIED_TITLE,
+  MODEL_ACCESS_DENIED_MESSAGE,
+  isModelAccessError,
+} from '@/utils/error'
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
@@ -934,41 +939,56 @@ function ThreadDetail() {
                   {status === CHAT_STATUS.SUBMITTED && <PromptProgress />}
                 </div>
               )}
-              {(error || contextLimitError) && !isAutoIncreasingContext && (
-                <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
-                  <div className="flex items-start gap-3">
-                    <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-destructive mb-1">
-                        Error generating response
-                      </p>
-                      <div className="table table-fixed w-full">
-                        <span
-                          className="text-sm text-muted-foreground table-cell align-middle"
-                          style={{ wordWrap: 'break-word' }}
-                        >
-                          {(error ?? contextLimitError)?.message}
-                        </span>
+              {(error || contextLimitError) && !isAutoIncreasingContext && (() => {
+                const activeError = error ?? contextLimitError
+                const rawMessage = activeError?.message
+                const lowerMessage = rawMessage?.toLowerCase() ?? ''
+                const isContextError =
+                  (lowerMessage.includes('context') &&
+                    (lowerMessage.includes('size') ||
+                      lowerMessage.includes('length') ||
+                      lowerMessage.includes('limit'))) ||
+                  rawMessage === OUT_OF_CONTEXT_SIZE
+                const isAccessError =
+                  !isContextError && isModelAccessError(activeError)
+                const title = isAccessError
+                  ? MODEL_ACCESS_DENIED_TITLE
+                  : 'Error generating response'
+                const body = isAccessError
+                  ? MODEL_ACCESS_DENIED_MESSAGE
+                  : rawMessage
+                return (
+                  <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
+                    <div className="flex items-start gap-3">
+                      <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-destructive mb-1">
+                          {title}
+                        </p>
+                        <div className="table table-fixed w-full">
+                          <span
+                            className="text-sm text-muted-foreground table-cell align-middle"
+                            style={{ wordWrap: 'break-word' }}
+                          >
+                            {body}
+                          </span>
+                        </div>
+                        {isContextError ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-3"
+                            onClick={handleContextSizeIncrease}
+                          >
+                            <IconAlertCircle className="size-4 mr-2" />
+                            Increase Context Size
+                          </Button>
+                        ) : null}
                       </div>
-                      {((error ?? contextLimitError)?.message?.toLowerCase().includes('context') &&
-                        ((error ?? contextLimitError)?.message?.toLowerCase().includes('size') ||
-                          (error ?? contextLimitError)?.message?.toLowerCase().includes('length') ||
-                          (error ?? contextLimitError)?.message?.toLowerCase().includes('limit'))) ||
-                      (error ?? contextLimitError)?.message === OUT_OF_CONTEXT_SIZE ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="mt-3"
-                          onClick={handleContextSizeIncrease}
-                        >
-                          <IconAlertCircle className="size-4 mr-2" />
-                          Increase Context Size
-                        </Button>
-                      ) : null}
                     </div>
                   </div>
-                </div>
-              )}
+                )
+              })()}
             </ConversationContent>
             <ConversationScrollButton />
           </Conversation>

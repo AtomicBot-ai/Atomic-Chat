@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
@@ -22,6 +22,10 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { LogViewer } from '@/components/LogViewer'
 import { ensureModelForServer } from '@/utils/ensureModelForServer'
+import {
+  hydrateActiveModelsForRunningServer,
+  syncActiveModelsFromEngines,
+} from '@/utils/activeModelsSync'
 
 import {
   Popover,
@@ -66,7 +70,6 @@ function LocalAPIServerContent() {
 
   const { serverStatus, setServerStatus } = useAppState()
   const [showApiKeyError, setShowApiKeyError] = useState(false)
-  const setActiveModels = useAppState((state) => state.setActiveModels)
   const localServerUrl = `http://127.0.0.1:${serverPort}${apiPrefix}`
 
   useEffect(() => {
@@ -76,6 +79,10 @@ function LocalAPIServerContent() {
         console.log('Server status check:', running)
         if (running) {
           setServerStatus('running')
+          // Re-sync the active-model set whenever we discover the server is
+          // running so the provider UI stays in lock-step (e.g. after
+          // window focus / tab revisit where activeModels may have drifted).
+          await hydrateActiveModelsForRunningServer(serviceHub.models())
         }
       } catch (error) {
         console.error('Failed to check server status:', error)
@@ -132,9 +139,10 @@ function LocalAPIServerContent() {
             if (serverModels.length > 0) setLastServerModels(serverModels)
           }
 
-          // Refresh active models in app state
+          // Refresh active models in app state while keeping any cloud
+          // entries that live only in the frontend state.
           const models = await serviceHub.models().getActiveModels()
-          setActiveModels(models || [])
+          syncActiveModelsFromEngines(models || [])
         })
         .then(() => {
           // Then start the server
@@ -408,7 +416,35 @@ function LocalAPIServerContent() {
               >
                 <CardItem
                   title={t('settings:localApiServer.defaultModel')}
-                  description={t('settings:localApiServer.defaultModelDesc')}
+                  description={
+                    <>
+                      {t('settings:localApiServer.defaultModelDesc')}{' '}
+                      {t('settings:localApiServer.defaultModelDescHint')}
+                      {defaultModelLocalApiServer?.provider ? (
+                        <Link
+                          to={route.settings.providers}
+                          params={{
+                            providerName: defaultModelLocalApiServer.provider,
+                          }}
+                          className="underline underline-offset-2 hover:text-foreground"
+                        >
+                          {t(
+                            'settings:localApiServer.defaultModelDescProvidersLink'
+                          )}
+                        </Link>
+                      ) : (
+                        <Link
+                          to={route.settings.model_providers}
+                          className="underline underline-offset-2 hover:text-foreground"
+                        >
+                          {t(
+                            'settings:localApiServer.defaultModelDescProvidersLink'
+                          )}
+                        </Link>
+                      )}
+                      .
+                    </>
+                  }
                   actions={
                     <span className="text-sm text-muted-foreground truncate max-w-60">
                       {defaultModelLocalApiServer?.model ??

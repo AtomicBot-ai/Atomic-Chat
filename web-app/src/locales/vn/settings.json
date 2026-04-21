@@ -57,6 +57,13 @@
     "resetFactory": "Đặt lại về cài đặt gốc",
     "resetFactoryDesc": "Khôi phục ứng dụng về trạng thái ban đầu, xóa tất cả các mô hình và lịch sử trò chuyện. Hành động này không thể đảo ngược và chỉ được khuyến nghị nếu ứng dụng bị hỏng."
   },
+  "chatBehavior": {
+    "title": "Chat Behavior",
+    "disableReasoning": "Disable reasoning",
+    "disableReasoningDesc": "Skip the thinking phase on models that support reasoning.",
+    "autoApproveTools": "Auto-approve tool calls",
+    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation."
+  },
   "shortcuts": {
     "application": "Ứng dụng",
     "newChat": "Trò chuyện mới",

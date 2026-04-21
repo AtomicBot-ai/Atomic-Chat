@@ -22,10 +22,11 @@ vi.mock('zustand/middleware', () => ({
 describe('useToolApproval', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    // Reset store state to defaults
+    // Reset store state to defaults (auto-approve is ON by default so the
+    // tool approval popup is hidden unless the user opts back in).
     useToolApproval.setState({
       approvedTools: {},
-      allowAllMCPPermissions: false,
+      allowAllMCPPermissions: true,
       isModalOpen: false,
       modalProps: null,
     })
@@ -35,7 +36,7 @@ describe('useToolApproval', () => {
     const { result } = renderHook(() => useToolApproval())
 
     expect(result.current.approvedTools).toEqual({})
-    expect(result.current.allowAllMCPPermissions).toBe(false)
+    expect(result.current.allowAllMCPPermissions).toBe(true)
     expect(result.current.isModalOpen).toBe(false)
     expect(result.current.modalProps).toBe(null)
     expect(typeof result.current.approveToolForThread).toBe('function')
@@ -44,6 +45,26 @@ describe('useToolApproval', () => {
     expect(typeof result.current.closeModal).toBe('function')
     expect(typeof result.current.setModalOpen).toBe('function')
     expect(typeof result.current.setAllowAllMCPPermissions).toBe('function')
+  })
+
+  it('should auto-approve every tool call while allowAllMCPPermissions is true', async () => {
+    const { result } = renderHook(() => useToolApproval())
+
+    let approvalResult: boolean
+    await act(async () => {
+      approvalResult = await result.current.showApprovalModal(
+        'new-tool',
+        'thread-fresh'
+      )
+    })
+
+    expect(approvalResult!).toBe(true)
+    expect(result.current.isModalOpen).toBe(false)
+    expect(result.current.modalProps).toBe(null)
+    // Tool should not be silently added to approvedTools via auto-approve
+    expect(result.current.isToolApproved('thread-fresh', 'new-tool')).toBe(
+      false
+    )
   })
 
   describe('setAllowAllMCPPermissions', () => {
@@ -216,6 +237,11 @@ describe('useToolApproval', () => {
   })
 
   describe('showApprovalModal', () => {
+    beforeEach(() => {
+      // Disable global auto-approve so the modal path is actually exercised
+      useToolApproval.setState({ allowAllMCPPermissions: false })
+    })
+
     it('should return true immediately if tool is already approved', async () => {
       const { result } = renderHook(() => useToolApproval())
 
@@ -347,6 +373,12 @@ describe('useToolApproval', () => {
   })
 
   describe('complex scenarios', () => {
+    beforeEach(() => {
+      // Disable global auto-approve so the modal-based flows under test
+      // actually open the approval modal.
+      useToolApproval.setState({ allowAllMCPPermissions: false })
+    })
+
     it('should handle multiple sequential approval requests', async () => {
       const { result } = renderHook(() => useToolApproval())
 

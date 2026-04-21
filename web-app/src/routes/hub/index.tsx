@@ -75,6 +75,20 @@ function pickDefaultQuant(model: CatalogModel) {
   )
 }
 
+function isJanCatalogModel(model: CatalogModel) {
+  const normalizedName = model.model_name.toLowerCase()
+  const normalizedDeveloper = model.developer?.toLowerCase() ?? ''
+  const normalizedRepoName =
+    extractModelName(model.model_name)?.toLowerCase() ?? ''
+
+  return (
+    normalizedDeveloper.includes('janhq') ||
+    normalizedName.includes('/jan') ||
+    normalizedName.includes('jan-') ||
+    normalizedRepoName.startsWith('jan')
+  )
+}
+
 export const Route = createFileRoute(route.hub.index as any)({
   component: HubContent,
   validateSearch: (search: Record<string, unknown>): SearchParams => ({
@@ -296,9 +310,7 @@ function HubContent() {
           ...(isMlx
             ? { is_mlx: true }
             : {
-                quants: [
-                  { model_id: modelId, path: '', file_size: '' },
-                ],
+                quants: [{ model_id: modelId, path: '', file_size: '' }],
               }),
         }
       }
@@ -312,9 +324,7 @@ function HubContent() {
         )
         for (const m of orphanLlamacpp) {
           const catalogMatch = findCatalogEntry(m.id as string)
-          filtered.push(
-            catalogMatch ?? buildOrphanEntry(m.id as string, false)
-          )
+          filtered.push(catalogMatch ?? buildOrphanEntry(m.id as string, false))
         }
       }
 
@@ -346,7 +356,7 @@ function HubContent() {
         filtered = [huggingFaceRepo, ...filtered]
       }
     }
-    return filtered
+    return filtered.filter((model) => !isJanCatalogModel(model))
   }, [
     sortedModels,
     debouncedSearchValue,
@@ -362,7 +372,9 @@ function HubContent() {
   const orphanIdsToEnrich = useMemo(() => {
     if (!showOnlyDownloaded) return []
     return filteredModels
-      .filter((m) => !m.downloads && !m.description && !enrichedOrphans[m.model_name])
+      .filter(
+        (m) => !m.downloads && !m.description && !enrichedOrphans[m.model_name]
+      )
       .map((m) => ({ id: m.model_name, isMlx: !!m.is_mlx }))
   }, [filteredModels, showOnlyDownloaded, enrichedOrphans])
 
@@ -374,7 +386,7 @@ function HubContent() {
       if (enrichedOrphansFetchedRef.current.has(id)) continue
       enrichedOrphansFetchedRef.current.add(id)
 
-      const repoId = id.includes('/') ? id : (isMlx ? `mlx-community/${id}` : id)
+      const repoId = id.includes('/') ? id : isMlx ? `mlx-community/${id}` : id
 
       serviceHub
         .models()
@@ -388,19 +400,13 @@ function HubContent() {
     }
   }, [orphanIdsToEnrich, serviceHub, huggingfaceToken])
 
-  const shouldShowCatalogResults =
-    debouncedSearchValue.length > 0 || showOnlyDownloaded
-
   const showRecommendedBlock =
     debouncedSearchValue.length === 0 && !showOnlyDownloaded
 
-  //* По умолчанию показываем только curated Recommended; остальной каталог открывается через поиск или фильтр скачанных
+  //* Каталог рендерится всегда: при поиске/фильтре «скачанные» — сам по себе, иначе под блоком Recommended
   const virtualListModels = useMemo(() => {
-    if (!shouldShowCatalogResults) {
-      return []
-    }
     return filteredModels
-  }, [filteredModels, shouldShowCatalogResults])
+  }, [filteredModels])
 
   // Dynamic estimate size based on model state
   const estimateSize = useCallback(
@@ -650,7 +656,7 @@ function HubContent() {
           className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto!"
         >
           <div className="flex flex-col h-full justify-between gap-4 w-full md:w-4/5 xl:w-4/6 mx-auto">
-            {/* Рекомендации сверху списка Newest (без поиска и без фильтра «только скачанные») */}
+            {/* Recommended сверху со своим разделителем, затем блок «All Models» с таким же разделителем, затем каталог */}
             {showRecommendedBlock && (
               <section className="shrink-0 border-b border-border pb-4">
                 <h2 className="text-sm font-medium mb-3 text-muted-foreground">
@@ -1012,6 +1018,13 @@ function HubContent() {
                 </div>
               </section>
             )}
+            {showRecommendedBlock && (
+              <section className="shrink-0">
+                <h2 className="text-sm font-medium text-muted-foreground">
+                  {t('hub:allModelsTitle')}
+                </h2>
+              </section>
+            )}
             {isInitialLoad || (loading && !filteredModels.length) ? (
               // Skeleton loading state for better perceived performance
               <div className="flex flex-col gap-3 animate-pulse">
@@ -1181,18 +1194,21 @@ function HubContent() {
                             </span>
                           )}
                           <div className="flex items-center gap-4 ml-2">
-                            {(virtualListModels[virtualItem.index].downloads ?? 0) > 0 && (
-                            <div className="flex items-center gap-1">
-                              <IconDownload
-                                size={18}
-                                className="text-muted-foreground"
-                                title={t('hub:downloads')}
-                              />
-                              <span className="text-foreground">
-                                {virtualListModels[virtualItem.index]
-                                  .downloads}
-                              </span>
-                            </div>
+                            {(virtualListModels[virtualItem.index].downloads ??
+                              0) > 0 && (
+                              <div className="flex items-center gap-1">
+                                <IconDownload
+                                  size={18}
+                                  className="text-muted-foreground"
+                                  title={t('hub:downloads')}
+                                />
+                                <span className="text-foreground">
+                                  {
+                                    virtualListModels[virtualItem.index]
+                                      .downloads
+                                  }
+                                </span>
+                              </div>
                             )}
                             {!virtualListModels[virtualItem.index].is_mlx && (
                               <div className="flex items-center gap-1">

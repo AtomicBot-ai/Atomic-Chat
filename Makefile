@@ -473,6 +473,42 @@ endif
 build: install-and-build install-rust-targets
 	yarn build
 
+# ──────────────────────────────────────────────────────────────
+# macOS release build: universal .app + .dmg с версией в VOLNAME
+# ──────────────────────────────────────────────────────────────
+# Шаги:
+#   1. yarn tauri build (universal-apple-darwin, macos-конфиг)
+#      — Tauri подписывает и нотаризует .app, создаёт и подписывает .dmg
+#   2. scripts/rename-dmg-volume.sh
+#      — переименовывает том DMG в "Atomic Chat v<version>"
+#      — ломает только подпись DMG-контейнера; .app внутри остаётся нотаризованным
+#   3. scripts/notarize-dmg-macos.sh
+#      — восстанавливает подпись DMG + нотаризует + стейплит (если заданы APPLE_ID/PASSWORD/TEAM_ID)
+#
+# Для локальной сборки достаточно `make build-mac`; нотаризация автоматически
+# пропустится при отсутствии Apple credentials в окружении.
+build-mac:
+ifeq ($(shell uname -s),Darwin)
+	yarn tauri build --target universal-apple-darwin --config src-tauri/tauri.macos.conf.json
+	@DMG=$$(ls -t src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg 2>/dev/null | head -1); \
+	if [ -z "$$DMG" ] || [ ! -f "$$DMG" ]; then \
+		echo "Error: DMG not found after tauri build"; \
+		exit 1; \
+	fi; \
+	echo "=== DMG located: $$DMG ==="; \
+	bash scripts/rename-dmg-volume.sh "$$DMG"; \
+	SIGNING_IDENTITY=$${APPLE_SIGNING_IDENTITY:-$$(security find-identity -v -p codesigning 2>/dev/null | grep "Developer ID Application" | head -1 | sed -n 's/.*"\(.*\)".*/\1/p')}; \
+	if [ -n "$$SIGNING_IDENTITY" ]; then \
+		bash scripts/notarize-dmg-macos.sh "$$DMG"; \
+	else \
+		echo "Warning: no Developer ID Application identity found — skipping DMG re-sign/notarize."; \
+		echo "Note: DMG volume was renamed but container signature is broken. Set APPLE_SIGNING_IDENTITY or install cert to fix."; \
+	fi
+else
+	@echo "build-mac is macOS-only"
+	@exit 1
+endif
+
 clean:
 ifeq ($(OS),Windows_NT)
 	-powershell -Command "Get-ChildItem -Path . -Include node_modules, .next, dist, build, out, .turbo, .yarn -Recurse -Directory | Remove-Item -Recurse -Force"

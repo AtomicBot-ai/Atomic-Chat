@@ -57,6 +57,13 @@
     "resetFactory": "Obnovit tovární nastavení",
     "resetFactoryDesc": "Obnoví aplikaci do původního stavu, vymaže všechny modely a historii chatů. Tato akce je nevratná a doporučuje se pouze v případě, že je aplikace poškozena."
   },
+  "chatBehavior": {
+    "title": "Chat Behavior",
+    "disableReasoning": "Disable reasoning",
+    "disableReasoningDesc": "Skip the thinking phase on models that support reasoning.",
+    "autoApproveTools": "Auto-approve tool calls",
+    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation."
+  },
   "shortcuts": {
     "application": "Aplikace",
     "newChat": "Nový chat",

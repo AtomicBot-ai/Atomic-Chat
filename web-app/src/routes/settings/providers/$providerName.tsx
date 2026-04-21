@@ -25,7 +25,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { isLocalProvider } from '@/utils/registerRemoteProvider'
+import {
+  isLocalProvider,
+  unregisterRemoteProvider,
+} from '@/utils/registerRemoteProvider'
+import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 import {
   IconFolderPlus,
   IconLoader,
@@ -148,14 +152,17 @@ function ProviderDetail() {
   }
 
   useEffect(() => {
-    // Initial data fetch - load active models for the current provider
+    // Refresh local-engine-backed active models when entering this provider's
+    // settings screen. Cloud models live only in frontend state (the Local API
+    // Server proxy tracks them via register_provider_config), so we must
+    // preserve any cloud entries instead of blindly overwriting.
     if (provider?.provider) {
       serviceHub
         .models()
         .getActiveModels(provider.provider)
-        .then((models) => setActiveModels(models || []))
+        .then((models) => syncActiveModelsFromEngines(models || []))
     }
-  }, [serviceHub, setActiveModels, provider?.provider])
+  }, [serviceHub, provider?.provider])
 
   // Clear importing state when model appears in the provider's model list
   useEffect(() => {
@@ -289,13 +296,31 @@ function ProviderDetail() {
   const handleStopModel = async () => {
     if (!provider) return
     try {
-      await serviceHub.models().stopAllModels()
+      const isLocalEngine = isLocalProvider(provider.provider)
+      if (isLocalEngine) {
+        await serviceHub.models().stopAllModels()
+      } else {
+        // Cloud "stop": drop the proxy registration so incoming chat requests
+        // for this provider's models stop being routed upstream. Local engines
+        // are untouched; they can't be active for a cloud provider anyway.
+        await unregisterRemoteProvider(provider.provider)
+      }
       await window.core?.api?.stopServer()
       useAppState.getState().setServerStatus('stopped')
-      const models = await serviceHub
-        .models()
-        .getActiveModels(provider.provider)
-      setActiveModels(models || [])
+      if (isLocalEngine) {
+        const models = await serviceHub
+          .models()
+          .getActiveModels(provider.provider)
+        syncActiveModelsFromEngines(models || [])
+      } else {
+        // Remove any of this cloud provider's models from the active list
+        // while leaving other providers' active entries intact.
+        const providerModelIds = new Set(provider.models.map((m) => m.id))
+        const remaining = useAppState
+          .getState()
+          .activeModels.filter((id) => !providerModelIds.has(id))
+        setActiveModels(remaining)
+      }
     } catch (error) {
       console.error('Error stopping model:', error)
     }
@@ -474,11 +499,15 @@ function ProviderDetail() {
 
                               serviceHub.models().stopAllModels()
 
-                              // Refresh active models after stopping
+                              // Refresh active models after stopping. Use
+                              // the shared helper so cloud models tracked
+                              // only in UI state aren't wiped.
                               serviceHub
                                 .models()
                                 .getActiveModels()
-                                .then((models) => setActiveModels(models || []))
+                                .then((models) =>
+                                  syncActiveModelsFromEngines(models || [])
+                                )
                             }
                           }}
                         />
@@ -508,13 +537,15 @@ function ProviderDetail() {
                             className="![>p]:text-muted-foreground select-none"
                             content={setting.description}
                             components={{
-                              // Make links open in a new tab
-                              a: ({ ...props }) => {
+                              // Make links open in a new tab, with the
+                              // product brand colour #1F7CFF.
+                              a: ({ style, ...props }) => {
                                 return (
                                   <a
                                     {...props}
                                     target="_blank"
                                     rel="noopener noreferrer"
+                                    style={{ color: '#1F7CFF', ...style }}
                                   />
                                 )
                               },
@@ -659,6 +690,37 @@ function ProviderDetail() {
                           }
                           actions={
                             <div className="flex items-center gap-0.5">
+                              {(() => {
+                                // Favorite star sits on the far left of the
+                                // action row, before the edit icon. The slot
+                                // is always reserved so that toggling
+                                // visibility (e.g. after entering an API key
+                                // for a predefined cloud provider) doesn't
+                                // shift the surrounding icons. For custom
+                                // providers the star is always visible; for
+                                // predefined providers it's only visible once
+                                // an API key has been set.
+                                if (!provider) return null
+                                const isPredefined =
+                                  predefinedProviders.some(
+                                    (p) => p.provider === provider.provider
+                                  )
+                                const showFavorite =
+                                  !isPredefined ||
+                                  Boolean(provider.api_key?.length)
+                                return (
+                                  <div
+                                    aria-hidden={!showFavorite}
+                                    className={
+                                      showFavorite
+                                        ? undefined
+                                        : 'invisible pointer-events-none'
+                                    }
+                                  >
+                                    <FavoriteModelAction model={model} />
+                                  </div>
+                                )
+                              })()}
                               <DialogEditModel
                                 provider={provider}
                                 modelId={model.id}
@@ -668,17 +730,6 @@ function ProviderDetail() {
                                   provider={provider}
                                   model={model}
                                 />
-                              )}
-                              {((provider &&
-                                !predefinedProviders.some(
-                                  (p) => p.provider === provider.provider
-                                )) ||
-                                (provider &&
-                                  predefinedProviders.some(
-                                    (p) => p.provider === provider.provider
-                                  ) &&
-                                  Boolean(provider.api_key?.length))) && (
-                                <FavoriteModelAction model={model} />
                               )}
                               <DialogDeleteModel
                                 provider={provider}

@@ -32,7 +32,7 @@ export const useToolApproval = create<ToolApprovalState>()(
   persist(
     (set, get) => ({
       approvedTools: {},
-      allowAllMCPPermissions: false,
+      allowAllMCPPermissions: true,
       isModalOpen: false,
       modalProps: null,
 
@@ -113,6 +113,17 @@ export const useToolApproval = create<ToolApprovalState>()(
     {
       name: localStorageKey.toolApproval,
       storage: createJSONStorage(() => localStorage),
+      version: 1,
+      // One-time migration: force auto-approve for every existing user so the
+      // tool approval popup is hidden by default. Users can opt back in via
+      // General → Chat Behavior or MCP Servers settings.
+      migrate: (persistedState) => {
+        const state = (persistedState ?? {}) as Partial<ToolApprovalState>
+        return {
+          ...state,
+          allowAllMCPPermissions: true,
+        } as ToolApprovalState
+      },
       // Only persist approved tools and global permission setting, not modal state
       partialize: (state) => ({
         approvedTools: state.approvedTools,

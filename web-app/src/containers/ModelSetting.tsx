@@ -15,7 +15,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { cn, getModelDisplayName } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useAppState } from '@/hooks/useAppState'
+import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 
 type ModelSettingProps = {
   provider: ProviderObject
@@ -29,7 +29,6 @@ export function ModelSetting({
   const { updateProvider } = useModelProvider()
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
-  const setActiveModels = useAppState((state) => state.setActiveModels)
 
   // Create a debounced version that stops and restarts the model with updated settings
   const debouncedRestartModel = debounce(async (modelId: string, providerName: string) => {
@@ -42,7 +41,9 @@ export function ModelSetting({
       }
 
       const models = await serviceHub.models().getActiveModels()
-      setActiveModels(models || [])
+      // Preserve any active cloud model from the UI state so the restart
+      // of a local model's settings doesn't clear it.
+      syncActiveModelsFromEngines(models || [])
     } catch (error) {
       console.error('Failed to restart model after settings change:', error)
     }

@@ -170,20 +170,80 @@ export const predefinedProviders = [
         },
       },
     ],
+    // Top models curated from https://openrouter.ai/rankings (Apr 2026).
+    // Slug IDs verified against https://openrouter.ai/api/v1/models.
     models: [
       {
-        id: 'deepseek/deepseek-r1:free',
-        name: 'DeepSeek-R1 (free)',
+        id: 'anthropic/claude-sonnet-4.6',
+        name: 'Claude Sonnet 4.6',
         version: '1.0',
-        description: '',
-        capabilities: ['completion'],
+        description:
+          'Best balance of speed and intelligence from Anthropic. 1M ctx, vision + tools.',
+        capabilities: ['completion', 'tools', 'vision'],
       },
       {
-        id: 'qwen/qwen3-30b-a3b:free',
-        name: 'Qwen3 30B A3B (free)',
+        id: 'anthropic/claude-opus-4.6',
+        name: 'Claude Opus 4.6',
         version: '1.0',
-        description: '',
-        capabilities: ['completion'],
+        description:
+          'Anthropic flagship for complex reasoning and agentic coding. 1M ctx, vision + tools.',
+        capabilities: ['completion', 'tools', 'vision'],
+      },
+      {
+        id: 'deepseek/deepseek-v3.2',
+        name: 'DeepSeek V3.2',
+        version: '1.0',
+        description:
+          'High-performance open-weight reasoning model with strong tool use.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'google/gemini-3-flash-preview',
+        name: 'Gemini 3 Flash Preview',
+        version: '1.0',
+        description:
+          "Google's frontier-class Flash model. Low-latency multimodal reasoning.",
+        capabilities: ['completion', 'tools', 'vision'],
+      },
+      {
+        id: 'google/gemini-2.5-flash-lite',
+        name: 'Gemini 2.5 Flash Lite',
+        version: '1.0',
+        description:
+          'Most budget-friendly stable Gemini model. Multimodal, tool-capable.',
+        capabilities: ['completion', 'tools', 'vision'],
+      },
+      {
+        id: 'openai/gpt-5.4',
+        name: 'GPT-5.4',
+        version: '1.0',
+        description:
+          "OpenAI's flagship for complex reasoning and coding. 1M ctx, vision + tools.",
+        capabilities: ['completion', 'tools', 'vision'],
+      },
+      {
+        id: 'minimax/minimax-m2.7',
+        name: 'MiniMax M2.7',
+        version: '1.0',
+        description:
+          'Latest MiniMax flagship with enhanced reasoning and coding abilities.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'minimax/minimax-m2.5',
+        name: 'MiniMax M2.5',
+        version: '1.0',
+        description:
+          'High-performance long-context model from MiniMax. 204K ctx.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'xiaomi/mimo-v2-pro',
+        name: 'Xiaomi MiMo V2 Pro',
+        version: '1.0',
+        description:
+          "Xiaomi's frontier open-weight model for reasoning and coding.",
+        capabilities: ['completion', 'tools'],
       },
     ],
   },

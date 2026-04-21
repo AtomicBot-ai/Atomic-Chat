@@ -15,6 +15,7 @@ import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAssistant } from '@/hooks/useAssistant'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { ExtensionManager } from '@/lib/extension'
@@ -69,10 +70,17 @@ function prependTextDeltaToUIStream(
           return
         }
         controller.enqueue(value)
-        if (!prefixEmitted && (value as { type: string }).type === 'text-start') {
+        if (
+          !prefixEmitted &&
+          (value as { type: string }).type === 'text-start'
+        ) {
           prefixEmitted = true
           const id = (value as { type: 'text-start'; id: string }).id
-          controller.enqueue({ type: 'text-delta', id, delta: prefixText } as UIMessageChunk)
+          controller.enqueue({
+            type: 'text-delta',
+            id,
+            delta: prefixText,
+          } as UIMessageChunk)
         }
       } catch (error) {
         controller.error(error)
@@ -157,7 +165,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     }
 
     const selectedModel = useModelProvider.getState().selectedModel
-    const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
+    const modelSupportsTools =
+      selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
 
     // Only load tools if model supports them
     if (modelSupportsTools) {
@@ -175,7 +184,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
               ExtensionTypeEnum.VectorDB
             )
             if (ext?.listAttachmentsForProject) {
-              const projectFiles = await ext.listAttachmentsForProject(projectId)
+              const projectFiles =
+                await ext.listAttachmentsForProject(projectId)
               hasDocuments = hasThreadDocuments || projectFiles.length > 0
             }
           } catch (error) {
@@ -288,12 +298,61 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         const currentAssistant = useAssistant.getState().currentAssistant
         const inferenceParams = currentAssistant?.parameters
 
+        // Global "Disable reasoning" setting — best-effort: dispatch the
+        // provider-specific flag that skips the thinking phase. Unknown keys
+        // are silently ignored by most providers, but we still branch per
+        // provider to stay safe with stricter APIs (e.g. Anthropic).
+        const disableReasoning = useGeneralSetting.getState().disableReasoning
+        const reasoningOverride: Record<string, unknown> = {}
+        if (disableReasoning) {
+          switch (effectiveProviderName) {
+            case 'llamacpp':
+            case 'mlx':
+              // Local runtimes with jinja chat templates (Qwen3, GLM-4.5, …)
+              reasoningOverride.chat_template_kwargs = {
+                enable_thinking: false,
+              }
+              break
+            case 'anthropic':
+              // Anthropic Messages API — top-level `thinking`
+              reasoningOverride.thinking = { type: 'disabled' }
+              break
+            case 'openai':
+              // o-series / gpt-5 accept `minimal` to skip reasoning
+              reasoningOverride.reasoning_effort = 'minimal'
+              break
+            case 'xai':
+              // Grok-3-mini accepts `low`; grok-4 ignores it
+              reasoningOverride.reasoning_effort = 'low'
+              break
+            case 'google':
+            case 'gemini':
+              // Gemini 2.5 via OpenAI-compat proxy
+              reasoningOverride.reasoning_effort = 'minimal'
+              reasoningOverride.extra_body = {
+                google: { thinking_config: { thinking_budget: 0 } },
+              }
+              break
+            default:
+              // OpenAI-compatible hedge (Groq, Together, Fireworks, DeepSeek,
+              // Mistral, Cohere, Perplexity, Moonshot, MiniMax, OpenRouter, …)
+              reasoningOverride.reasoning_effort = 'minimal'
+              reasoningOverride.chat_template_kwargs = {
+                enable_thinking: false,
+              }
+          }
+        }
+        const effectiveParams: Record<string, unknown> = {
+          ...(inferenceParams ?? {}),
+          ...reasoningOverride,
+        }
+
         // Create the model using the factory
         // For llamacpp provider, startModel is called internally in ModelFactory.createLlamaCppModel
         this.model = await ModelFactory.createModel(
           modelId,
           updatedProvider ?? provider,
-          inferenceParams ?? {}
+          effectiveParams
         )
       } catch (error) {
         console.error('Failed to create model:', error)
@@ -364,20 +423,24 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const continueContent = this.continueFromContent
     this.continueFromContent = null
     const modelMessages = continueContent
-      ? [...baseMessages, { role: 'assistant' as const, content: continueContent }]
+      ? [
+          ...baseMessages,
+          { role: 'assistant' as const, content: continueContent },
+        ]
       : baseMessages
 
     // Include tools only if we have tools loaded AND model supports them
     const hasTools = Object.keys(this.tools).length > 0
     const selectedModel = useModelProvider.getState().selectedModel
-    const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
+    const modelSupportsTools =
+      selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
     const shouldEnableTools = hasTools && modelSupportsTools
 
     // Track stream timing and token count for token speed calculation
     let streamStartTime: number | undefined
 
-    const maxOutputTokens = useAssistant.getState().currentAssistant
-      ?.parameters?.max_output_tokens as number | undefined
+    const maxOutputTokens = useAssistant.getState().currentAssistant?.parameters
+      ?.max_output_tokens as number | undefined
 
     const result = streamText({
       model: this.model,
@@ -447,13 +510,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         return undefined
       },
       onError: (error) => {
-        const errorMessage = error == null
-          ? 'Unknown error'
-          : typeof error === 'string'
-            ? error
-            : error instanceof Error
-              ? error.message
-              : JSON.stringify(error)
+        const errorMessage =
+          error == null
+            ? 'Unknown error'
+            : typeof error === 'string'
+              ? error
+              : error instanceof Error
+                ? error.message
+                : JSON.stringify(error)
 
         return errorMessage
       },

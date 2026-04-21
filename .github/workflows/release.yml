@@ -184,7 +184,8 @@ jobs:
           yarn download:bin
           yarn build:foundation-models-server
           yarn build:cli
-          yarn tauri build --target universal-apple-darwin --config src-tauri/tauri.macos.conf.json
+          # Универсальная macOS-сборка + переименование VOLNAME с версией + ресигн/нотаризация DMG
+          make build-mac
 
       - name: Collect artifact metadata
         id: metadata

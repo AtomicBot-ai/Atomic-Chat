@@ -110,7 +110,9 @@ export function LeftSidebar() {
               />
             </svg>
           </div>
-          <NavMain />
+          <div className="mt-[6px]">
+            <NavMain />
+          </div>
         </SidebarHeader>
         <SidebarContent className="mask-b-from-95% mask-t-from-98%">
           <NavProjects />

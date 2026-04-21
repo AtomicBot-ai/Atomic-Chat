@@ -57,6 +57,13 @@
     "resetFactory": "Setel Ulang ke Pengaturan Pabrik",
     "resetFactoryDesc": "Kembalikan aplikasi ke keadaan semula, menghapus semua model dan riwayat obrolan. Tindakan ini tidak dapat diurungkan dan hanya disarankan jika aplikasi rusak."
   },
+  "chatBehavior": {
+    "title": "Chat Behavior",
+    "disableReasoning": "Disable reasoning",
+    "disableReasoningDesc": "Skip the thinking phase on models that support reasoning.",
+    "autoApproveTools": "Auto-approve tool calls",
+    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation."
+  },
   "shortcuts": {
     "application": "Aplikasi",
     "newChat": "Obrolan Baru",

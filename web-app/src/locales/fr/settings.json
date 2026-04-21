@@ -57,6 +57,13 @@
     "resetFactory": "Réinitialiser aux paramètres d'usine",
     "resetFactoryDesc": "Restaurez l'application à son état initial, en effaçant tous les modèles et l'historique des discussions. Cette action est irréversible et recommandée uniquement si l'application est corrompue."
   },
+  "chatBehavior": {
+    "title": "Chat Behavior",
+    "disableReasoning": "Disable reasoning",
+    "disableReasoningDesc": "Skip the thinking phase on models that support reasoning.",
+    "autoApproveTools": "Auto-approve tool calls",
+    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation."
+  },
   "shortcuts": {
     "application": "Application",
     "newChat": "Nouvelle discussion",
