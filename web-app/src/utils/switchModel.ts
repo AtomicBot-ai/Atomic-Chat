@@ -7,9 +7,17 @@ import { useThreads } from '@/hooks/useThreads'
 import { localStorageKey } from '@/constants/localStorage'
 import i18n from '@/i18n/setup'
 import type { ServiceHub } from '@/services'
+import { registerRemoteProvider } from '@/utils/registerRemoteProvider'
 
+// Local providers whose models are served by on-device engines (llamacpp / mlx).
+// Foundation Models is deliberately excluded here because it has its own
+// lifecycle plumbing and does not participate in the generic start/stop flow.
 const LOCAL_PROVIDERS = ['llamacpp', 'mlx'] as const
 type LocalProviderName = (typeof LOCAL_PROVIDERS)[number]
+
+function isLocalEngineProvider(providerName: string): boolean {
+  return (LOCAL_PROVIDERS as readonly string[]).includes(providerName)
+}
 
 function setLastUsedModel(provider: string, model: string) {
   try {
@@ -24,7 +32,7 @@ function setLastUsedModel(provider: string, model: string) {
 
 let activeSwitchPromise: Promise<void> | null = null
 
-function syncLocalModelSelection(providerName: string, modelId: string) {
+function syncModelSelection(providerName: string, modelId: string) {
   const serverState = useLocalApiServer.getState()
 
   useModelProvider.getState().selectModelProvider(providerName, modelId)
@@ -49,29 +57,48 @@ async function isTargetModelAlreadyServing(params: {
   serviceHub: ServiceHub
 }): Promise<boolean> {
   const { modelId, providerName, serviceHub } = params
-  if (
-    !LOCAL_PROVIDERS.includes(providerName as (typeof LOCAL_PROVIDERS)[number])
-  ) {
-    return false
+
+  if (isLocalEngineProvider(providerName)) {
+    const [serverRunning, providerActive, otherProviderActive] =
+      await Promise.all([
+        serviceHub.app().getServerStatus().catch(() => false),
+        serviceHub.models().getActiveModels(providerName).catch(() => [] as string[]),
+        Promise.all(
+          LOCAL_PROVIDERS.filter(
+            (provider) => provider !== (providerName as LocalProviderName)
+          ).map((provider) =>
+            serviceHub.models().getActiveModels(provider).catch(() => [] as string[])
+          )
+        ),
+      ])
+
+    return (
+      serverRunning &&
+      providerActive.length === 1 &&
+      providerActive[0] === modelId &&
+      otherProviderActive.every((models) => models.length === 0)
+    )
   }
 
-  const [serverRunning, providerActive, otherProviderActive] = await Promise.all([
+  // Cloud provider: already "serving" when the proxy is up, the UI active-model
+  // pointer is on this cloud model, and no local engines are loaded.
+  const [serverRunning, localEngineModels] = await Promise.all([
     serviceHub.app().getServerStatus().catch(() => false),
-    serviceHub.models().getActiveModels(providerName).catch(() => [] as string[]),
     Promise.all(
-      LOCAL_PROVIDERS.filter(
-        (provider) => provider !== (providerName as LocalProviderName)
-      ).map((provider) =>
+      LOCAL_PROVIDERS.map((provider) =>
         serviceHub.models().getActiveModels(provider).catch(() => [] as string[])
       )
     ),
   ])
 
+  const activeUiModels = useAppState.getState().activeModels
+  const noLocalLoaded = localEngineModels.every((models) => models.length === 0)
+
   return (
     serverRunning &&
-    providerActive.length === 1 &&
-    providerActive[0] === modelId &&
-    otherProviderActive.every((models) => models.length === 0)
+    noLocalLoaded &&
+    activeUiModels.length === 1 &&
+    activeUiModels[0] === modelId
   )
 }
 
@@ -107,7 +134,7 @@ export async function switchToModel(params: {
 
     useAppState.getState().setServerStatus('running')
     useAppState.getState().setActiveModels(activeModels || [])
-    syncLocalModelSelection(params.providerName, params.modelId)
+    syncModelSelection(params.providerName, params.modelId)
     console.log(
       '[switchToModel] Target already active, skipping restart:',
       params.modelId,
@@ -135,18 +162,11 @@ async function doSwitchToModel(params: {
 }): Promise<void> {
   const { modelId, providerName, serviceHub } = params
 
-  if (
-    !LOCAL_PROVIDERS.includes(providerName as (typeof LOCAL_PROVIDERS)[number])
-  ) {
-    console.warn(
-      `[switchToModel] Provider '${providerName}' is not a local provider, skipping`
-    )
-    return
-  }
-
   const { setServerStatus, setActiveModels, updateLoadingModel } =
     useAppState.getState()
   const serverState = useLocalApiServer.getState()
+
+  const isLocal = isLocalEngineProvider(providerName)
 
   setServerStatus('pending')
   updateLoadingModel(true)
@@ -154,16 +174,18 @@ async function doSwitchToModel(params: {
     '[switchToModel] Switching to model:',
     modelId,
     'provider:',
-    providerName
+    providerName,
+    isLocal ? '(local)' : '(cloud)'
   )
 
   try {
-    // 1. Stop ALL local models (both llamacpp and mlx)
+    // 1. Stop ALL local engines (llamacpp + mlx). This is a no-op for cloud
+    //    but guarantees only one model is ever "active" globally.
     await serviceHub.models().stopAllModels()
     setActiveModels([])
     console.log('[switchToModel] All local models stopped')
 
-    // 2. Stop the API server (safe to call even if it wasn't running)
+    // 2. Stop the API server so we start it fresh with the new configuration.
     try {
       await window.core?.api?.stopServer()
       console.log('[switchToModel] Server stopped')
@@ -171,19 +193,31 @@ async function doSwitchToModel(params: {
       // Server may not have been running — that's fine
     }
 
-    // 3. Resolve provider object so we can start the model
+    // 3. Resolve the provider definition.
     const allProviders = useModelProvider.getState().providers
     const provider = allProviders.find((p) => p.provider === providerName)
     if (!provider) {
       throw new Error(`Provider '${providerName}' not found`)
     }
 
-    // 4. Start the new model
-    await serviceHub.models().startModel(provider, modelId, true)
-    console.log('[switchToModel] Model started:', modelId)
-    await new Promise((resolve) => setTimeout(resolve, 500))
+    if (isLocal) {
+      // 4a. Local branch — load the model into its engine.
+      await serviceHub.models().startModel(provider, modelId, true)
+      console.log('[switchToModel] Local model started:', modelId)
+      await new Promise((resolve) => setTimeout(resolve, 500))
+    } else {
+      // 4b. Cloud branch — register the provider so the proxy can route
+      //     requests for `modelId` to provider.base_url.
+      if (!provider.api_key) {
+        throw new Error(
+          `Provider '${providerName}' has no API key. Add one in Settings before selecting this model.`
+        )
+      }
+      await registerRemoteProvider(provider)
+      console.log('[switchToModel] Cloud provider registered:', providerName)
+    }
 
-    // 5. Start the Local API Server
+    // 5. Start the Local API Server.
     const actualPort = await window.core?.api?.startServer({
       host: serverState.serverHost,
       port: serverState.serverPort,
@@ -202,12 +236,18 @@ async function doSwitchToModel(params: {
     setServerStatus('running')
     serverState.setEnableOnStartup(true)
 
-    // 6. Refresh activeModels from the engine so the UI knows the model is ready
-    const active = await serviceHub.models().getActiveModels()
-    setActiveModels(active || [])
+    // 6. Publish active model(s). For local engines we query the engine; for
+    //    cloud we mark the target model as the single active one so the UI
+    //    reflects it (engine query would return empty).
+    if (isLocal) {
+      const active = await serviceHub.models().getActiveModels()
+      setActiveModels(active || [])
+    } else {
+      setActiveModels([modelId])
+    }
 
-    // 7. Synchronise all global state
-    syncLocalModelSelection(providerName, modelId)
+    // 7. Synchronise the rest of global state (dropdown, thread, localStorage).
+    syncModelSelection(providerName, modelId)
 
     console.log('[switchToModel] Global state synchronised')
   } catch (error) {

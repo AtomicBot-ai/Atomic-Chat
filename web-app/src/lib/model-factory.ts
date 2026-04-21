@@ -55,6 +55,7 @@ import { createXai } from '@ai-sdk/xai'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
+import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 
 /**
  * Llama.cpp timings structure from the response
@@ -281,6 +282,27 @@ function createLocalStreamingFetch(
       status: 200,
       headers: { 'Content-Type': 'text/event-stream' },
     })
+  }
+}
+
+/**
+ * Build the base URL of the running Local API Server proxy.
+ * Cloud providers route inference through this proxy so `proxy.rs` can
+ * dispatch by model name to the real provider endpoint.
+ */
+function getLocalApiServerBaseURL(): {
+  baseURL: string
+  apiKey: string
+} {
+  const { serverHost, serverPort, apiPrefix, apiKey } =
+    useLocalApiServer.getState()
+  // 0.0.0.0 is a listen-any address, not a dial address — clients must use
+  // the loopback equivalent.
+  const host = serverHost === '0.0.0.0' ? '127.0.0.1' : serverHost
+  const prefix = apiPrefix.startsWith('/') ? apiPrefix : `/${apiPrefix}`
+  return {
+    baseURL: `http://${host}:${serverPort}${prefix}`,
+    apiKey,
   }
 }
 
@@ -563,7 +585,11 @@ export class ModelFactory {
   }
 
   /**
-   * Create an Anthropic model using the official AI SDK
+   * Create an Anthropic model using the official AI SDK.
+   *
+   * Requests are routed through the Local API Server proxy which dispatches
+   * by model name to the configured Anthropic endpoint + key. The SDK still
+   * emits `/messages` and `proxy.rs` handles that route natively.
    */
   private static createAnthropicModel(
     modelId: string,
@@ -572,25 +598,33 @@ export class ModelFactory {
   ): LanguageModel {
     const headers: Record<string, string> = {}
 
-    // Add custom headers if specified (e.g., anthropic-version)
     if (provider.custom_header) {
       provider.custom_header.forEach((customHeader) => {
         headers[customHeader.header] = customHeader.value
       })
     }
 
+    const { baseURL, apiKey } = getLocalApiServerBaseURL()
+
     const anthropic = createAnthropic({
-      apiKey: provider.api_key,
-      baseURL: provider.base_url,
+      apiKey: apiKey || provider.api_key || 'local',
+      baseURL,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
-      fetch: createCustomFetch(httpFetch, parameters),
+      // Use the IPC-channel streaming fetch because the Local API Server is on
+      // localhost and tauri_plugin_http's ReadableStream bridge does not relay
+      // SSE chunks from loopback targets.
+      fetch: createLocalStreamingFetch(httpFetch, parameters),
     })
 
     return anthropic(modelId)
   }
 
   /**
-   * Create an OpenAI model using the official AI SDK
+   * Create an OpenAI model using the official AI SDK.
+   *
+   * Requests are routed through the Local API Server proxy; `proxy.rs`
+   * dispatches to the real OpenAI endpoint based on the `model` field and
+   * the provider config registered via `register_provider_config`.
    */
   private static createOpenAIModel(
     modelId: string,
@@ -599,25 +633,34 @@ export class ModelFactory {
   ): LanguageModel {
     const headers: Record<string, string> = {}
 
-    // Add custom headers if specified
     if (provider.custom_header) {
       provider.custom_header.forEach((customHeader) => {
         headers[customHeader.header] = customHeader.value
       })
     }
 
+    const { baseURL, apiKey } = getLocalApiServerBaseURL()
+
     const openai = createOpenAI({
-      apiKey: provider.api_key,
-      baseURL: provider.base_url,
+      apiKey: apiKey || provider.api_key || 'local',
+      baseURL,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
-      fetch: createCustomFetch(httpFetch, parameters),
+      // Use the IPC-channel streaming fetch because the Local API Server is on
+      // localhost and tauri_plugin_http's ReadableStream bridge does not relay
+      // SSE chunks from loopback targets.
+      fetch: createLocalStreamingFetch(httpFetch, parameters),
     })
 
-    return openai(modelId)
+    // AI SDK v5 routes `openai(id)` through the new Responses API
+    // (`POST /responses`), which the Local API Server proxy does not route.
+    // `openai.chat(id)` targets `POST /chat/completions`, which `proxy.rs`
+    // dispatches to the real provider via `register_provider_config`.
+    return openai.chat(modelId)
   }
 
   /**
-   * Create an XAI (Grok) model using the official AI SDK
+   * Create an XAI (Grok) model using the official AI SDK, routed through the
+   * Local API Server proxy.
    */
   private static createXaiModel(
     modelId: string,
@@ -626,25 +669,28 @@ export class ModelFactory {
   ): LanguageModel {
     const headers: Record<string, string> = {}
 
-    // Add custom headers if specified
     if (provider.custom_header) {
       provider.custom_header.forEach((customHeader) => {
         headers[customHeader.header] = customHeader.value
       })
     }
 
+    const { baseURL, apiKey } = getLocalApiServerBaseURL()
+
     const xai = createXai({
-      apiKey: provider.api_key,
-      baseURL: provider.base_url,
+      apiKey: apiKey || provider.api_key || 'local',
+      baseURL,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
-      fetch: createCustomFetch(httpFetch, parameters),
+      // Use the IPC-channel streaming fetch (see OpenAI factory rationale).
+      fetch: createLocalStreamingFetch(httpFetch, parameters),
     })
 
     return xai(modelId)
   }
 
   /**
-   * Create an OpenAI-compatible model for providers that support the OpenAI API format
+   * Create an OpenAI-compatible model for providers that support the OpenAI
+   * API format. Routed through the Local API Server proxy.
    */
   private static createOpenAICompatibleModel(
     modelId: string,
@@ -653,24 +699,29 @@ export class ModelFactory {
   ): LanguageModel {
     const headers: Record<string, string> = {}
 
-    // Add custom headers if specified
     if (provider.custom_header) {
       provider.custom_header.forEach((customHeader) => {
         headers[customHeader.header] = customHeader.value
       })
     }
 
-    // Add authorization header if api_key is present
-    if (provider.api_key) {
+    const { baseURL, apiKey } = getLocalApiServerBaseURL()
+
+    // Proxy replaces the outbound Authorization header with the registered
+    // provider api_key, so only the local-server apiKey matters here (if set).
+    if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`
+    } else if (provider.api_key) {
       headers['Authorization'] = `Bearer ${provider.api_key}`
     }
 
     const openAICompatible = createOpenAICompatible({
       name: provider.provider,
-      baseURL: provider.base_url || 'https://api.openai.com/v1',
+      baseURL,
       headers,
       includeUsage: true,
-      fetch: createCustomFetch(httpFetch, parameters),
+      // Use the IPC-channel streaming fetch (see OpenAI factory rationale).
+      fetch: createLocalStreamingFetch(httpFetch, parameters),
     })
 
     return openAICompatible.languageModel(modelId)

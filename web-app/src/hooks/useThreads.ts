@@ -6,6 +6,7 @@ import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
+import posthog from 'posthog-js'
 
 type ThreadState = {
   threads: Record<string, Thread>
@@ -334,6 +335,15 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       .threads()
       .createThread(newThread)
       .then((createdThread) => {
+        if (!isTemporary) {
+          posthog.capture('thread_created', {
+            thread_id: createdThread.id,
+            model_id: model.id,
+            provider: model.provider,
+            has_assistant: Boolean(assistant),
+            has_project: Boolean(projectMetadata),
+          })
+        }
         set((state) => {
           // Get all existing threads as an array
           const existingThreads = Object.values(state.threads)

@@ -58,6 +58,16 @@ dev: install-and-build
 	make build-cli-dev
 	yarn dev
 
+# Same as `dev`, but skips (re)installing backends if they are already present.
+# Uses the `-if-exists` targets for llamacpp / mlx-server / foundation-models-server.
+dev-fast: install-and-build
+	yarn download:bin
+	make download-llamacpp-backend-if-exists
+	make build-mlx-server-if-exists
+	make build-foundation-models-server-if-exists
+	make build-cli-dev
+	yarn dev
+
 # Dev-режим с форсированным SetupScreen (онбординг) без удаления моделей.
 # Флаг FORCE_ONBOARDING прокидывается в vite как compile-time константа.
 dev-onboarding: install-and-build
