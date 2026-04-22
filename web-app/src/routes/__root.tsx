@@ -21,6 +21,7 @@ import ToolApproval from '@/containers/dialogs/ToolApproval'
 import { TranslationProvider } from '@/i18n/TranslationContext'
 import OutOfContextPromiseModal from '@/containers/dialogs/OutOfContextDialog'
 import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionDialog'
+import WhatsNewDialog from '@/containers/dialogs/WhatsNewDialog'
 import { useEffect } from 'react'
 import GlobalError from '@/containers/GlobalError'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
@@ -58,8 +59,14 @@ const AppLayout = () => {
         <KeyboardShortcutsProvider />
         {/* Fake absolute panel top to enable window drag */}
         {IS_WINDOWS && <WindowControls />}
-        {!IS_LINUX && <div className="fixed w-full h-12 z-20 top-0" data-tauri-drag-region />}
+        {!IS_LINUX && (
+          <div
+            className="fixed w-full h-12 z-20 top-0"
+            data-tauri-drag-region
+          />
+        )}
         <DialogAppUpdater />
+        <WhatsNewDialog />
         <LeftSidebar />
         <SidebarInset>
           <div className="bg-neutral-50 dark:bg-background size-full">

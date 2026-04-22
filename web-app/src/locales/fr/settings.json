@@ -62,7 +62,14 @@
     "disableReasoning": "Disable reasoning",
     "disableReasoningDesc": "Skip the thinking phase on models that support reasoning.",
     "autoApproveTools": "Auto-approve tool calls",
-    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation."
+    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
+    "desktopNotifications": "Notifications de bureau",
+    "desktopNotificationsDesc": "Envoyer une notification système lorsqu'une réponse est prête et que la fenêtre n'est pas au premier plan. Interrupteur principal — la cloche à côté du fil décide quelles discussions peuvent notifier."
+  },
+  "threadNotifications": {
+    "tooltip": "Notifications",
+    "notificationTitle": "Réponse prête",
+    "notificationBody": "« {{title}} » a terminé la génération"
   },
   "shortcuts": {
     "application": "Application",
@@ -208,7 +215,7 @@
   "privacy": {
     "analytics": "Analytique",
     "helpUsImprove": "Aidez-nous à nous améliorer",
-    "helpUsImproveDesc": "Pour nous aider à améliorer Atomic Bot, vous pouvez partager des données anonymes comme l'utilisation des fonctionnalités et le nombre d'utilisateurs. Nous ne collectons jamais vos discussions ou informations personnelles.",
+    "helpUsImproveDesc": "Pour nous aider à nous améliorer, vous pouvez partager des données anonymes comme l'utilisation des fonctionnalités et le nombre d'utilisateurs. Nous ne collectons jamais vos discussions ou informations personnelles.",
     "privacyPolicy": "Vous avez un contrôle total sur vos données. En savoir plus dans notre politique de confidentialité.",
     "analyticsDesc": "Pour améliorer Atomic Bot, nous devons comprendre comment il est utilisé, mais uniquement avec votre aide. Vous pouvez modifier ce paramètre à tout moment.",
     "privacyPromises": "Votre choix ici ne changera pas nos promesses de confidentialité fondamentales :",

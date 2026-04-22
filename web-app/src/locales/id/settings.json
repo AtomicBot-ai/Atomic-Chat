@@ -62,7 +62,14 @@
     "disableReasoning": "Disable reasoning",
     "disableReasoningDesc": "Skip the thinking phase on models that support reasoning.",
     "autoApproveTools": "Auto-approve tool calls",
-    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation."
+    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
+    "desktopNotifications": "Notifikasi desktop",
+    "desktopNotificationsDesc": "Kirim notifikasi sistem saat balasan selesai dibuat dan jendela tidak aktif. Sakelar utama — lonceng di samping thread menentukan chat mana yang boleh memberi notifikasi."
+  },
+  "threadNotifications": {
+    "tooltip": "Notifikasi",
+    "notificationTitle": "Balasan siap",
+    "notificationBody": "\"{{title}}\" selesai dibuat"
   },
   "shortcuts": {
     "application": "Aplikasi",
@@ -202,7 +209,7 @@
   "privacy": {
     "analytics": "Analitik",
     "helpUsImprove": "Bantu kami meningkatkan",
-    "helpUsImproveDesc": "Untuk membantu kami meningkatkan Atomic Bot, Anda dapat membagikan data anonim seperti penggunaan fitur dan jumlah pengguna. Kami tidak pernah mengumpulkan obrolan atau informasi pribadi Anda.",
+    "helpUsImproveDesc": "Untuk membantu kami meningkatkan aplikasi, Anda dapat membagikan data anonim seperti penggunaan fitur dan jumlah pengguna. Kami tidak pernah mengumpulkan obrolan atau informasi pribadi Anda.",
     "privacyPolicy": "Anda memiliki kendali penuh atas data Anda. Pelajari lebih lanjut di Kebijakan Privasi kami.",
     "analyticsDesc": "Untuk meningkatkan Atomic Bot, kami perlu memahami bagaimana ia digunakan—tetapi hanya dengan bantuan Anda. Anda dapat mengubah pengaturan ini kapan saja.",
     "privacyPromises": "Pilihan Anda di sini tidak akan mengubah janji privasi inti kami:",

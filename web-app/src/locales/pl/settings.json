@@ -62,7 +62,14 @@
     "disableReasoning": "Disable reasoning",
     "disableReasoningDesc": "Skip the thinking phase on models that support reasoning.",
     "autoApproveTools": "Auto-approve tool calls",
-    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation."
+    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
+    "desktopNotifications": "Powiadomienia pulpitu",
+    "desktopNotificationsDesc": "Wysyłaj powiadomienia systemowe, gdy odpowiedź jest gotowa, a okno nie jest aktywne. Główny przełącznik — dzwonek przy wątku decyduje, które czaty mogą powiadamiać."
+  },
+  "threadNotifications": {
+    "tooltip": "Powiadomienia",
+    "notificationTitle": "Odpowiedź gotowa",
+    "notificationBody": "\"{{title}}\" zakończył generowanie"
   },
   "shortcuts": {
     "application": "Aplikacja",
@@ -202,7 +209,7 @@
   "privacy": {
     "analytics": "Dane Analityczne",
     "helpUsImprove": "Pomóż nam poprawiać aplikację",
-    "helpUsImproveDesc": "Aby pomóc w rozwijaniu Atomic Bot, możesz włączyć wysyłanie anonimowych danych analitycznych, takich jak użycie funkcji i liczba użytkowników. Nigdy nie zbieramy Twoich czatów lub danych osobowych.",
+    "helpUsImproveDesc": "Aby pomóc nam w ulepszaniu, możesz włączyć wysyłanie anonimowych danych analitycznych, takich jak użycie funkcji i liczba użytkowników. Nigdy nie zbieramy Twoich czatów lub danych osobowych.",
     "privacyPolicy": "Masz pełną kontrolę nad swoimi danymi. Dowiedz się więcej w naszej Polityce Prywatności.",
     "analyticsDesc": "Aby usprawnić Atomic Bot, musimy dowiedzieć się jak jest używany - ale to tylko z Twoją pomocą. Możesz zmienić to ustawienie w dowolnym momencie.",
     "privacyPromises": "Twój wybór tutaj nie będzie miał wpływu na nasze kluczowe obietnice prywatności:",

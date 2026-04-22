@@ -62,7 +62,14 @@
     "disableReasoning": "Disable reasoning",
     "disableReasoningDesc": "Skip the thinking phase on models that support reasoning.",
     "autoApproveTools": "Auto-approve tool calls",
-    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation."
+    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
+    "desktopNotifications": "デスクトップ通知",
+    "desktopNotificationsDesc": "返信が完了し、ウィンドウが非アクティブなときにシステム通知を送信します。マスタースイッチ — スレッド横のベルで通知を許可するチャットを選べます。"
+  },
+  "threadNotifications": {
+    "tooltip": "通知",
+    "notificationTitle": "返信の準備ができました",
+    "notificationBody": "「{{title}}」の生成が完了しました"
   },
   "shortcuts": {
     "application": "アプリケーション",
@@ -199,7 +206,7 @@
   "privacy": {
     "analytics": "分析",
     "helpUsImprove": "改善にご協力ください",
-    "helpUsImproveDesc": "Atomic Botの改善にご協力いただくため、機能の使用状況やユーザー数などの匿名データを共有していただけます。チャットや個人情報を収集することはありません。",
+    "helpUsImproveDesc": "改善にご協力いただくため、機能の使用状況やユーザー数などの匿名データを共有していただけます。チャットや個人情報を収集することはありません。",
     "privacyPolicy": "あなたは自分のデータを完全に管理できます。詳細はプライバシーポリシーをご覧ください。",
     "analyticsDesc": "Atomic Botを改善するためには、どのように使用されているかを理解する必要がありますが、それはあなたの協力があってこそです。この設定はいつでも変更できます。",
     "privacyPromises": "ここでの選択は、私たちの中心的なプライバシーの約束を変更するものではありません：",

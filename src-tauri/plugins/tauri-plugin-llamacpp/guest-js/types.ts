@@ -64,6 +64,9 @@ export type LlamacppConfig = {
   rope_freq_scale: number
   ctx_shift: boolean
   parallel: number
+  concurrent_mode: boolean
+  concurrent_slots: number
+  expose_metrics: boolean
 }
 
 export type ModelPlan = {

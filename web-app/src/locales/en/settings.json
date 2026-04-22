@@ -60,7 +60,14 @@
   "chatBehavior": {
     "title": "Chat Behavior",
     "autoApproveTools": "Auto-approve tool calls",
-    "autoApproveToolsDesc": "Skip the approval popup and automatically allow every tool/MCP call. When disabled, you'll be asked to confirm each new tool."
+    "autoApproveToolsDesc": "Skip the approval popup and automatically allow every tool/MCP call. When disabled, you'll be asked to confirm each new tool.",
+    "desktopNotifications": "Desktop notifications",
+    "desktopNotificationsDesc": "Send a system notification when a reply finishes generating and the window isn't focused. Master switch — per-thread bell controls which chats are allowed to notify."
+  },
+  "threadNotifications": {
+    "tooltip": "Notifications",
+    "notificationTitle": "Reply ready",
+    "notificationBody": "\"{{title}}\" finished generating"
   },
   "shortcuts": {
     "application": "Application",
@@ -215,7 +222,7 @@
   "privacy": {
     "analytics": "Analytics",
     "helpUsImprove": "Help us improve",
-    "helpUsImproveDesc": "To help us improve Atomic Bot, you can share anonymous data like feature usage and user counts. We never collect your chats or personal information.",
+    "helpUsImproveDesc": "To help us improve, you can share anonymous data like feature usage and user counts. We never collect your chats or personal information.",
     "privacyPolicy": "You have full control over your data. Learn more in our Privacy Policy.",
     "analyticsDesc": "To improve Atomic Bot, we need to understand how it's used—but only with your help. You can change this setting anytime.",
     "privacyPromises": "Your choice here won't change our core privacy promises:",

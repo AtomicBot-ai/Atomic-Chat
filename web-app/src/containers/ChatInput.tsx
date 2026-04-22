@@ -22,7 +22,6 @@ import {
 import { ArrowRight, PlusIcon } from 'lucide-react'
 import {
   IconPhoto,
-  IconAtom,
   IconTool,
   IconCodeCircle2,
   IconPlayerStopFilled,
@@ -89,6 +88,8 @@ import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useThreadNotifications } from '@/hooks/useThreadNotifications'
+import ReasoningToggle from '@/containers/ReasoningToggle'
 
 type ChatInputProps = {
   className?: string
@@ -533,6 +534,11 @@ const ChatInput = memo(function ChatInput({
 
         // Clear selected assistant after creating thread
         setSelectedAssistant(undefined)
+
+        // Apply the pre-armed notification default from the New Chat screen.
+        if (useThreadNotifications.getState().consumePendingDefault()) {
+          useThreadNotifications.getState().setEnabled(newThread.id, true)
+        }
 
         // Mark the new thread with hasDocuments if any documents were embedded
         const hasEmbeddedDocs = attachments.some(
@@ -2097,6 +2103,8 @@ const ChatInput = memo(function ChatInput({
                     </Tooltip>
                   ))}
 
+                <ReasoningToggle />
+
                 {/* Agent mode toggle hidden — kept as dead code for future use */}
                 {false && !projectId && isAgentMode && (
                   <Tooltip>
@@ -2145,23 +2153,6 @@ const ChatInput = memo(function ChatInput({
                       </TooltipTrigger>
                       <TooltipContent>
                         <p>Web Search</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  )}
-
-                {!effectiveAgentMode &&
-                  selectedModel?.capabilities?.includes('reasoning') && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon-xs">
-                          <IconAtom
-                            size={18}
-                            className="text-muted-foreground"
-                          />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('reasoning')}</p>
                       </TooltipContent>
                     </Tooltip>
                   )}

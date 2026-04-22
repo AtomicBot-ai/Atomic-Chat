@@ -62,7 +62,14 @@
     "disableReasoning": "Disable reasoning",
     "disableReasoningDesc": "Skip the thinking phase on models that support reasoning.",
     "autoApproveTools": "Auto-approve tool calls",
-    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation."
+    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
+    "desktopNotifications": "桌面通知",
+    "desktopNotificationsDesc": "当回复生成完毕且窗口未激活时发送系统通知。总开关 — 会话旁的铃铛决定哪些对话可以通知。"
+  },
+  "threadNotifications": {
+    "tooltip": "通知",
+    "notificationTitle": "回复已就绪",
+    "notificationBody": "\"{{title}}\" 已生成完毕"
   },
   "shortcuts": {
     "application": "应用程序",
@@ -202,7 +209,7 @@
   "privacy": {
     "analytics": "分析",
     "helpUsImprove": "帮助我们改进",
-    "helpUsImproveDesc": "为了帮助我们改进 Atomic Bot，您可以共享匿名数据，如功能使用情况和用户数量。我们绝不会收集您的聊天记录或个人信息。",
+    "helpUsImproveDesc": "为了帮助我们改进，您可以共享匿名数据，如功能使用情况和用户数量。我们绝不会收集您的聊天记录或个人信息。",
     "privacyPolicy": "您完全控制您的数据。在我们的隐私政策中了解更多信息。",
     "analyticsDesc": "为了改进 Atomic Bot，我们需要了解它的使用方式——但这需要您的帮助。您可以随时更改此设置。",
     "privacyPromises": "您在此处的选择不会改变我们的核心隐私承诺：",

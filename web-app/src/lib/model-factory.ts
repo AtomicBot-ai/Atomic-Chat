@@ -321,25 +321,40 @@ export class ModelFactory {
   static async createModel(
     modelId: string,
     provider: ProviderObject,
-    parameters: Record<string, unknown> = {}
+    parameters: Record<string, unknown> = {},
+    reasoningOverride?: Record<string, unknown>
   ): Promise<LanguageModel> {
     const providerName = provider.provider.toLowerCase()
+    const override = reasoningOverride ?? {}
+    // Local providers accept the full inference-parameter bag (top_k,
+    // repeat_penalty, stop_sequences, …) as body injection. Cloud providers
+    // must receive ONLY the reasoning-override fields — otherwise local-only
+    // keys like `top_k` leak into request bodies and strict APIs (OpenAI)
+    // respond with 400 "Unknown parameter".
+    const localInjected: Record<string, unknown> = {
+      ...parameters,
+      ...override,
+    }
 
     switch (providerName) {
       case 'llamacpp':
-        return this.createLlamaCppModel(modelId, provider, parameters)
+        return this.createLlamaCppModel(modelId, provider, localInjected)
 
       case 'mlx':
-        return this.createMlxModel(modelId, provider, parameters)
+        return this.createMlxModel(modelId, provider, localInjected)
 
       case 'foundation-models':
-        return this.createFoundationModelsModel(modelId, provider, parameters)
+        return this.createFoundationModelsModel(
+          modelId,
+          provider,
+          localInjected
+        )
 
       case 'anthropic':
-        return this.createAnthropicModel(modelId, provider)
+        return this.createAnthropicModel(modelId, provider, override)
 
       case 'openai':
-        return this.createOpenAIModel(modelId, provider)
+        return this.createOpenAIModel(modelId, provider, override)
       case 'google':
       case 'gemini':
       case 'azure':
@@ -352,13 +367,19 @@ export class ModelFactory {
       case 'perplexity':
       case 'moonshot':
       case 'minimax':
-        return this.createOpenAICompatibleModel(modelId, provider)
+        return this.createOpenAICompatibleModel(modelId, provider, override)
 
       case 'xai':
-        return this.createXaiModel(modelId, provider)
+        return this.createXaiModel(modelId, provider, override)
 
       default:
-        return this.createOpenAICompatibleModel(modelId, provider, parameters)
+        // User-registered custom OpenAI-compatible providers — keep the
+        // previous behaviour (full local-merged bag) for backwards compat.
+        return this.createOpenAICompatibleModel(
+          modelId,
+          provider,
+          localInjected
+        )
     }
   }
 
