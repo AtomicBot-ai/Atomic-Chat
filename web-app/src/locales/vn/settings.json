@@ -64,10 +64,9 @@
     "autoApproveTools": "Auto-approve tool calls",
     "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
     "desktopNotifications": "Thông báo trên máy tính",
-    "desktopNotificationsDesc": "Gửi thông báo hệ thống khi phản hồi hoàn tất và cửa sổ không được lấy nét. Công tắc chính — chuông cạnh thread quyết định chat nào được phép thông báo."
+    "desktopNotificationsDesc": "Gửi thông báo hệ thống khi phản hồi hoàn tất và cửa sổ không được lấy nét."
   },
   "threadNotifications": {
-    "tooltip": "Thông báo",
     "notificationTitle": "Phản hồi đã sẵn sàng",
     "notificationBody": "\"{{title}}\" đã tạo xong"
   },

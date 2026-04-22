@@ -144,29 +144,36 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
         return state;
       }
 
-      // Fire an OS notification when a thread finishes generating, but only if
-      // the user has opted in for this thread and is not actively looking at
-      // it (window hidden, or viewing a different conversation).
+      // Fire an OS notification when a thread finishes generating, controlled
+      // solely by the global Desktop notifications switch. Suppressed while
+      // the user is actively looking at this conversation in a focused window.
       const justFinished = wasStreaming && !isStreaming;
       if (justFinished) {
         const hasMessages = existing.chat.messages.length > 0;
         const hasPendingTools = existing.data.tools.length > 0;
-        const isVisible =
-          typeof document !== "undefined"
-            ? document.visibilityState === "visible"
-            : true;
+        const hasDocument = typeof document !== "undefined";
+        const isVisible = hasDocument
+          ? document.visibilityState === "visible"
+          : true;
+        // On macOS a background Tauri window stays "visible"; use hasFocus()
+        // to detect the user switching to another app.
+        const hasFocus = hasDocument
+          ? typeof document.hasFocus === "function"
+            ? document.hasFocus()
+            : true
+          : true;
         const notFocusedHere =
-          !isVisible || state.activeConversationId !== sessionId;
-        const notificationsState = useThreadNotifications.getState();
-        const globallyEnabled = notificationsState.globallyEnabled;
-        const optedIn = notificationsState.isEnabled(sessionId);
+          !isVisible || !hasFocus || state.activeConversationId !== sessionId;
+        // Treat undefined (pre-feature or lost during rehydration) as ON, so
+        // the master switch only suppresses notifications when explicitly OFF.
+        const globallyEnabled =
+          useThreadNotifications.getState().globallyEnabled !== false;
 
         if (
           globallyEnabled &&
           hasMessages &&
           !hasPendingTools &&
-          notFocusedHere &&
-          optedIn
+          notFocusedHere
         ) {
           const threadTitle = existing.title ?? "";
           const notificationTitle = i18n.t(

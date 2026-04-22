@@ -64,10 +64,9 @@
     "autoApproveTools": "Auto-approve tool calls",
     "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
     "desktopNotifications": "Notificações da área de trabalho",
-    "desktopNotificationsDesc": "Enviar uma notificação do sistema quando uma resposta terminar e a janela não estiver em foco. Interruptor mestre — o sino ao lado da conversa decide quais chats podem notificar."
+    "desktopNotificationsDesc": "Enviar uma notificação do sistema quando uma resposta terminar e a janela não estiver em foco."
   },
   "threadNotifications": {
-    "tooltip": "Notificações",
     "notificationTitle": "Resposta pronta",
     "notificationBody": "\"{{title}}\" terminou de gerar"
   },

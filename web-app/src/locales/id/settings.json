@@ -64,10 +64,9 @@
     "autoApproveTools": "Auto-approve tool calls",
     "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
     "desktopNotifications": "Notifikasi desktop",
-    "desktopNotificationsDesc": "Kirim notifikasi sistem saat balasan selesai dibuat dan jendela tidak aktif. Sakelar utama — lonceng di samping thread menentukan chat mana yang boleh memberi notifikasi."
+    "desktopNotificationsDesc": "Kirim notifikasi sistem saat balasan selesai dibuat dan jendela tidak aktif."
   },
   "threadNotifications": {
-    "tooltip": "Notifikasi",
     "notificationTitle": "Balasan siap",
     "notificationBody": "\"{{title}}\" selesai dibuat"
   },

@@ -64,10 +64,9 @@
     "autoApproveTools": "Auto-approve tool calls",
     "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
     "desktopNotifications": "Notificaciones de escritorio",
-    "desktopNotificationsDesc": "Enviar una notificación del sistema cuando una respuesta termine y la ventana no esté enfocada. Interruptor maestro — la campana junto al hilo decide qué chats pueden notificar."
+    "desktopNotificationsDesc": "Enviar una notificación del sistema cuando una respuesta termine y la ventana no esté enfocada."
   },
   "threadNotifications": {
-    "tooltip": "Notificaciones",
     "notificationTitle": "Respuesta lista",
     "notificationBody": "\"{{title}}\" ha terminado de generar"
   },

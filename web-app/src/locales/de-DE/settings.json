@@ -64,10 +64,9 @@
     "autoApproveTools": "Auto-approve tool calls",
     "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
     "desktopNotifications": "Desktop-Benachrichtigungen",
-    "desktopNotificationsDesc": "Sendet eine Systembenachrichtigung, wenn eine Antwort fertig ist und das Fenster nicht im Fokus ist. Hauptschalter — die Glocke neben einem Chat legt fest, welche Chats benachrichtigen dürfen."
+    "desktopNotificationsDesc": "Sendet eine Systembenachrichtigung, wenn eine Antwort fertig ist und das Fenster nicht im Fokus ist."
   },
   "threadNotifications": {
-    "tooltip": "Benachrichtigungen",
     "notificationTitle": "Antwort bereit",
     "notificationBody": "„{{title}}\" wurde fertiggestellt"
   },

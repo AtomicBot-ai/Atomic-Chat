@@ -64,10 +64,9 @@
     "autoApproveTools": "Auto-approve tool calls",
     "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
     "desktopNotifications": "Notifications de bureau",
-    "desktopNotificationsDesc": "Envoyer une notification système lorsqu'une réponse est prête et que la fenêtre n'est pas au premier plan. Interrupteur principal — la cloche à côté du fil décide quelles discussions peuvent notifier."
+    "desktopNotificationsDesc": "Envoyer une notification système lorsqu'une réponse est prête et que la fenêtre n'est pas au premier plan."
   },
   "threadNotifications": {
-    "tooltip": "Notifications",
     "notificationTitle": "Réponse prête",
     "notificationBody": "« {{title}} » a terminé la génération"
   },

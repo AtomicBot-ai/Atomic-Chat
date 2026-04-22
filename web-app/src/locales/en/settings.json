@@ -62,10 +62,9 @@
     "autoApproveTools": "Auto-approve tool calls",
     "autoApproveToolsDesc": "Skip the approval popup and automatically allow every tool/MCP call. When disabled, you'll be asked to confirm each new tool.",
     "desktopNotifications": "Desktop notifications",
-    "desktopNotificationsDesc": "Send a system notification when a reply finishes generating and the window isn't focused. Master switch — per-thread bell controls which chats are allowed to notify."
+    "desktopNotificationsDesc": "Send a system notification when a reply finishes generating and the window isn't focused."
   },
   "threadNotifications": {
-    "tooltip": "Notifications",
     "notificationTitle": "Reply ready",
     "notificationBody": "\"{{title}}\" finished generating"
   },

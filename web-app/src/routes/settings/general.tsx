@@ -55,7 +55,7 @@ function General() {
     (state) => state.setAllowAllMCPPermissions
   )
   const notificationsGloballyEnabled = useThreadNotifications(
-    (state) => state.globallyEnabled
+    (state) => state.globallyEnabled !== false
   )
   const setNotificationsGloballyEnabled = useThreadNotifications(
     (state) => state.setGloballyEnabled

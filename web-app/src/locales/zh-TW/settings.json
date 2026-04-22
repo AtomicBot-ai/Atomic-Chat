@@ -64,10 +64,9 @@
     "autoApproveTools": "Auto-approve tool calls",
     "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
     "desktopNotifications": "桌面通知",
-    "desktopNotificationsDesc": "當回覆生成完畢且視窗未啟用時傳送系統通知。主開關 — 對話旁的鈴鐺決定哪些對話可以通知。"
+    "desktopNotificationsDesc": "當回覆生成完畢且視窗未啟用時傳送系統通知。"
   },
   "threadNotifications": {
-    "tooltip": "通知",
     "notificationTitle": "回覆已就緒",
     "notificationBody": "\"{{title}}\" 已產生完畢"
   },

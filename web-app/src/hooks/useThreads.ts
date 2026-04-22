@@ -4,7 +4,6 @@ import { getServiceHub } from '@/hooks/useServiceHub'
 import { Fzf } from 'fzf'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { useAgentMode } from '@/hooks/useAgentMode'
-import { useThreadNotifications } from '@/hooks/useThreadNotifications'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import posthog from 'posthog-js'
@@ -159,8 +158,6 @@ export const useThreads = create<ThreadState>()((set, get) => ({
 
       // Clean up agent mode state
       useAgentMode.getState().removeThread(threadId)
-      // Clean up per-thread notification preference
-      useThreadNotifications.getState().clearThread(threadId)
       // Clean up vector DB collection
       cleanupVectorDB(threadId)
       getServiceHub().threads().deleteThread(threadId)
@@ -198,7 +195,6 @@ export const useThreads = create<ThreadState>()((set, get) => ({
 
       // Delete threads and clean up their vector DB collections
       threadsToDeleteIds.forEach((threadId) => {
-        useThreadNotifications.getState().clearThread(threadId)
         cleanupVectorDB(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })
@@ -232,7 +228,6 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       // Delete all threads and clean up their vector DB collections
       allThreadIds.forEach((threadId) => {
         useAgentMode.getState().removeThread(threadId)
-        useThreadNotifications.getState().clearThread(threadId)
         cleanupVectorDB(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })
@@ -258,7 +253,6 @@ export const useThreads = create<ThreadState>()((set, get) => ({
 
       // Delete threads and clean up their vector DB collections
       threadsToDeleteIds.forEach((threadId) => {
-        useThreadNotifications.getState().clearThread(threadId)
         cleanupVectorDB(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })

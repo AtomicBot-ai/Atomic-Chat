@@ -4,17 +4,22 @@ import {
   sendNotification,
 } from '@tauri-apps/plugin-notification'
 
+const LOG_PREFIX = '[notifications]'
+
 let permissionPromise: Promise<boolean> | null = null
 
 async function ensurePermission(): Promise<boolean> {
   if (permissionPromise) return permissionPromise
   permissionPromise = (async () => {
     try {
-      if (await isPermissionGranted()) return true
+      const alreadyGranted = await isPermissionGranted()
+      console.info(`${LOG_PREFIX} isPermissionGranted →`, alreadyGranted)
+      if (alreadyGranted) return true
       const result = await requestPermission()
+      console.info(`${LOG_PREFIX} requestPermission →`, result)
       return result === 'granted'
     } catch (error) {
-      console.error('Failed to resolve notification permission', error)
+      console.error(`${LOG_PREFIX} permission flow failed`, error)
       return false
     }
   })()
@@ -28,12 +33,24 @@ export async function notifyThreadCompleted(
   title: string,
   body: string
 ): Promise<void> {
-  if (!IS_TAURI) return
+  console.info(`${LOG_PREFIX} notifyThreadCompleted called`, {
+    IS_TAURI,
+    title,
+    body,
+  })
+  if (!IS_TAURI) {
+    console.warn(`${LOG_PREFIX} skipped: not a Tauri runtime`)
+    return
+  }
   try {
     const granted = await ensurePermission()
-    if (!granted) return
+    if (!granted) {
+      console.warn(`${LOG_PREFIX} skipped: OS permission not granted`)
+      return
+    }
+    console.info(`${LOG_PREFIX} sendNotification →`, { title, body })
     sendNotification({ title, body })
   } catch (error) {
-    console.error('Failed to send thread completion notification', error)
+    console.error(`${LOG_PREFIX} sendNotification failed`, error)
   }
 }

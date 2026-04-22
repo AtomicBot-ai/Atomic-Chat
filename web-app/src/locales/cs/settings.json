@@ -64,10 +64,9 @@
     "autoApproveTools": "Auto-approve tool calls",
     "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
     "desktopNotifications": "Oznámení na ploše",
-    "desktopNotificationsDesc": "Odeslat systémové oznámení, když je odpověď připravena a okno není aktivní. Hlavní přepínač — zvoneček u vlákna určuje, kterým chatům je povoleno upozorňovat."
+    "desktopNotificationsDesc": "Odeslat systémové oznámení, když je odpověď připravena a okno není aktivní."
   },
   "threadNotifications": {
-    "tooltip": "Oznámení",
     "notificationTitle": "Odpověď je připravena",
     "notificationBody": "\"{{title}}\" dokončil generování"
   },
