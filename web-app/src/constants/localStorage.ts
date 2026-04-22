@@ -29,6 +29,7 @@ export const localStorageKey = {
   agentMode: 'agent-mode',
   factoryResetPending: 'factory-reset-pending',
   lastSeenVersion: 'last-seen-version',
+  threadNotifications: 'thread-notifications',
 }
 
 export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24

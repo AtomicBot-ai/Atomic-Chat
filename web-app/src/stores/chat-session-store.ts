@@ -3,7 +3,9 @@ import { create } from "zustand";
 import type { Chat, UIMessage } from "@ai-sdk/react";
 import type { ChatStatus } from "ai";
 import { CustomChatTransport } from "@/lib/custom-chat-transport";
-// import { showChatCompletionToast } from "@/components/toasts/chat-completion-toast";
+import { notifyThreadCompleted } from "@/lib/notifications";
+import { useThreadNotifications } from "@/hooks/useThreadNotifications";
+import i18n from "@/i18n/setup";
 
 export type SessionData = {
   tools: any[];
@@ -142,24 +144,34 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
         return state;
       }
 
-      // Only notify if:
-      // 1. Was streaming and now stopped
-      // 2. Not the active conversation
-      // 3. Chat has messages (not a brand new session)
-      // 4. No pending tool calls (tools are still being executed)
-      // const hasMessages = existing.chat.messages.length > 0;
-      // const hasPendingTools = existing.data.tools.length > 0;
-      // const shouldNotify =
-      //   wasStreaming &&
-      //   !isStreaming &&
-      //   hasMessages &&
-      //   !hasPendingTools &&
-      //   state.activeConversationId !== sessionId;
+      // Fire an OS notification when a thread finishes generating, but only if
+      // the user has opted in for this thread and is not actively looking at
+      // it (window hidden, or viewing a different conversation).
+      const justFinished = wasStreaming && !isStreaming;
+      if (justFinished) {
+        const hasMessages = existing.chat.messages.length > 0;
+        const hasPendingTools = existing.data.tools.length > 0;
+        const isVisible =
+          typeof document !== "undefined"
+            ? document.visibilityState === "visible"
+            : true;
+        const notFocusedHere =
+          !isVisible || state.activeConversationId !== sessionId;
+        const optedIn =
+          useThreadNotifications.getState().isEnabled(sessionId);
 
-      // if (shouldNotify) {
-      //   const title = existing.title ?? "Conversation";
-      //   showChatCompletionToast(title, existing.chat.messages, sessionId);
-      // }
+        if (hasMessages && !hasPendingTools && notFocusedHere && optedIn) {
+          const threadTitle = existing.title ?? "";
+          const notificationTitle = i18n.t(
+            "settings:threadNotifications.notificationTitle"
+          );
+          const notificationBody = i18n.t(
+            "settings:threadNotifications.notificationBody",
+            { title: threadTitle }
+          );
+          void notifyThreadCompleted(notificationTitle, notificationBody);
+        }
+      }
 
       return {
         sessions: {

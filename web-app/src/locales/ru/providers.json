@@ -58,5 +58,10 @@
   },
   "addProvider": "Добавить поставщика",
   "addOpenAIProvider": "Добавить поставщика OpenAI",
-  "enterNameForProvider": "Введите имя поставщика"
+  "enterNameForProvider": "Введите имя поставщика",
+  "llamacpp": {
+    "concurrentMode": {
+      "perSlotContextWarning": "Контекст на слот равен ctx_size, делённому на число слотов. Меньше слотов — больше контекста на каждый запрос."
+    }
+  }
 }

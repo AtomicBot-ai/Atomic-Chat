@@ -64,6 +64,11 @@
     "autoApproveTools": "Auto-approve tool calls",
     "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation."
   },
+  "threadNotifications": {
+    "tooltip": "Notifikasi",
+    "notificationTitle": "Balasan siap",
+    "notificationBody": "\"{{title}}\" selesai dibuat"
+  },
   "shortcuts": {
     "application": "Aplikasi",
     "newChat": "Obrolan Baru",

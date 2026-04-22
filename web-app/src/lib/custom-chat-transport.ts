@@ -302,57 +302,52 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         // provider-specific flag that skips the thinking phase. Unknown keys
         // are silently ignored by most providers, but we still branch per
         // provider to stay safe with stricter APIs (e.g. Anthropic).
+        //
+        // The override is kept SEPARATE from `inferenceParams` so local-only
+        // fields (top_k, repeat_penalty, …) never leak into cloud-provider
+        // request bodies. See ModelFactory for the fetch wiring.
         const disableReasoning = useGeneralSetting.getState().disableReasoning
         const reasoningOverride: Record<string, unknown> = {}
         if (disableReasoning) {
           switch (effectiveProviderName) {
             case 'llamacpp':
             case 'mlx':
-              // Local runtimes with jinja chat templates (Qwen3, GLM-4.5, …)
               reasoningOverride.chat_template_kwargs = {
                 enable_thinking: false,
               }
               break
             case 'anthropic':
-              // Anthropic Messages API — top-level `thinking`
               reasoningOverride.thinking = { type: 'disabled' }
               break
             case 'openai':
-              // o-series / gpt-5 accept `minimal` to skip reasoning
               reasoningOverride.reasoning_effort = 'minimal'
               break
             case 'xai':
-              // Grok-3-mini accepts `low`; grok-4 ignores it
               reasoningOverride.reasoning_effort = 'low'
               break
             case 'google':
             case 'gemini':
-              // Gemini 2.5 via OpenAI-compat proxy
               reasoningOverride.reasoning_effort = 'minimal'
               reasoningOverride.extra_body = {
                 google: { thinking_config: { thinking_budget: 0 } },
               }
               break
             default:
-              // OpenAI-compatible hedge (Groq, Together, Fireworks, DeepSeek,
-              // Mistral, Cohere, Perplexity, Moonshot, MiniMax, OpenRouter, …)
               reasoningOverride.reasoning_effort = 'minimal'
               reasoningOverride.chat_template_kwargs = {
                 enable_thinking: false,
               }
           }
         }
-        const effectiveParams: Record<string, unknown> = {
-          ...(inferenceParams ?? {}),
-          ...reasoningOverride,
-        }
+        const hasOverride = Object.keys(reasoningOverride).length > 0
 
         // Create the model using the factory
         // For llamacpp provider, startModel is called internally in ModelFactory.createLlamaCppModel
         this.model = await ModelFactory.createModel(
           modelId,
           updatedProvider ?? provider,
-          effectiveParams
+          inferenceParams ?? {},
+          hasOverride ? reasoningOverride : undefined
         )
       } catch (error) {
         console.error('Failed to create model:', error)

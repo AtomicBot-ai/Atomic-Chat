@@ -18,6 +18,7 @@ import {
 } from '@/components/ai-elements/tool'
 import { CopyButton } from './CopyButton'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { IconRefresh, IconPaperclip } from '@tabler/icons-react'
 import { EditMessageDialog } from '@/containers/dialogs/EditMessageDialog'
 import { DeleteMessageDialog } from '@/containers/dialogs/DeleteMessageDialog'
@@ -65,11 +66,16 @@ export const MessageItem = memo(
     onDelete,
   }: MessageItemProps) => {
     const selectedModel = useModelProvider((state) => state.selectedModel)
+    // Global "Disable reasoning" toggle: some providers (e.g. MiniMax) ignore
+    // every known API flag and keep streaming chain-of-thought. Hide those
+    // parts in the UI so the experience matches the user's intent.
+    const disableReasoning = useGeneralSetting(
+      (state) => state.disableReasoning
+    )
     const [previewImage, setPreviewImage] = useState<{
       url: string
       filename?: string
     } | null>(null)
-
 
     const handleRegenerate = useCallback(() => {
       onRegenerate?.(message.id)
@@ -91,7 +97,11 @@ export const MessageItem = memo(
       return message.parts
         .filter((part) => {
           if (part.type !== 'file') return false
-          const filePart = part as { type: 'file'; url?: string; mediaType?: string }
+          const filePart = part as {
+            type: 'file'
+            url?: string
+            mediaType?: string
+          }
           return filePart.url && filePart.mediaType?.startsWith('image/')
         })
         .map((part) => (part as { url: string }).url)
@@ -320,7 +330,9 @@ export const MessageItem = memo(
             {part.state === 'output-error' && (
               <ToolOutput
                 output={undefined}
-                errorText={part.error || part.errorText || 'Tool execution failed'}
+                errorText={
+                  part.error || part.errorText || 'Tool execution failed'
+                }
                 resolver={(input) => Promise.resolve(input)}
               />
             )}
@@ -331,7 +343,6 @@ export const MessageItem = memo(
 
     return (
       <div className="w-full mb-4">
-
         {/* Render message parts */}
         {message.parts.map((part, i) => {
           switch (part.type) {
@@ -340,6 +351,7 @@ export const MessageItem = memo(
             case CONTENT_TYPE.FILE:
               return renderFilePart(part as any, i)
             case CONTENT_TYPE.REASONING:
+              if (disableReasoning) return null
               return renderReasoningPart(
                 part as { type: 'reasoning'; text: string },
                 i
@@ -370,27 +382,30 @@ export const MessageItem = memo(
 
         {/* Message actions for assistant messages (non-tool) */}
         {message.role === 'assistant' && (
-            <div className="flex items-center gap-2 text-muted-foreground text-xs mt-1">
-              <div
-                className={cn(
-                  'flex items-center gap-1',
-                  (isStreaming || hideActions) && 'hidden'
-                )}
-              >
-                <CopyButton text={getFullTextContent()} />
+          <div className="flex items-center gap-2 text-muted-foreground text-xs mt-1">
+            <div
+              className={cn(
+                'flex items-center gap-1',
+                (isStreaming || hideActions) && 'hidden'
+              )}
+            >
+              <CopyButton text={getFullTextContent()} />
 
-                {onEdit && !isStreaming && (
-                  <EditMessageDialog
-                    message={getFullTextContent()}
-                    onSave={handleEdit}
-                  />
-                )}
+              {onEdit && !isStreaming && (
+                <EditMessageDialog
+                  message={getFullTextContent()}
+                  onSave={handleEdit}
+                />
+              )}
 
-                {onDelete && !isStreaming && (
-                  <DeleteMessageDialog onDelete={handleDelete} />
-                )}
+              {onDelete && !isStreaming && (
+                <DeleteMessageDialog onDelete={handleDelete} />
+              )}
 
-                {selectedModel && onRegenerate && !isStreaming && isLastMessage && (
+              {selectedModel &&
+                onRegenerate &&
+                !isStreaming &&
+                isLastMessage && (
                   <Button
                     variant="ghost"
                     size="icon-xs"
@@ -400,16 +415,14 @@ export const MessageItem = memo(
                     <IconRefresh size={16} />
                   </Button>
                 )}
-              </div>
-
-              <TokenSpeedIndicator
-                streaming={isStreaming}
-                metadata={
-                  message.metadata as Record<string, unknown> | undefined
-                }
-              />
             </div>
-          )}
+
+            <TokenSpeedIndicator
+              streaming={isStreaming}
+              metadata={message.metadata as Record<string, unknown> | undefined}
+            />
+          </div>
+        )}
 
         {/* Image Preview Dialog */}
         {previewImage && (

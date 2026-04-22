@@ -64,6 +64,11 @@
     "autoApproveTools": "Auto-approve tool calls",
     "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation."
   },
+  "threadNotifications": {
+    "tooltip": "Notificaciones",
+    "notificationTitle": "Respuesta lista",
+    "notificationBody": "\"{{title}}\" ha terminado de generar"
+  },
   "shortcuts": {
     "application": "Aplicación",
     "newChat": "Nuevo chat",

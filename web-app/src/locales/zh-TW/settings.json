@@ -64,6 +64,11 @@
     "autoApproveTools": "Auto-approve tool calls",
     "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation."
   },
+  "threadNotifications": {
+    "tooltip": "通知",
+    "notificationTitle": "回覆已就緒",
+    "notificationBody": "\"{{title}}\" 已產生完畢"
+  },
   "shortcuts": {
     "application": "應用程式",
     "newChat": "新聊天",

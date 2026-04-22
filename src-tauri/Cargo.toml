@@ -100,6 +100,7 @@ tauri-plugin-vector-db = { path = "./plugins/tauri-plugin-vector-db" }
 tauri-plugin-rag = { path = "./plugins/tauri-plugin-rag" }
 tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
 tauri-plugin-log = "2.0.0-rc"
+tauri-plugin-notification = "2"
 tauri-plugin-opener = "2.2.7"
 tauri-plugin-os = "2.2.1"
 tauri-plugin-shell = "2.2.0"

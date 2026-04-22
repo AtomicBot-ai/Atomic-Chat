@@ -59,8 +59,15 @@
   },
   "chatBehavior": {
     "title": "Chat Behavior",
+    "disableReasoning": "Disable reasoning",
+    "disableReasoningDesc": "Skip the thinking phase on models that support reasoning.",
     "autoApproveTools": "Auto-approve tool calls",
     "autoApproveToolsDesc": "Skip the approval popup and automatically allow every tool/MCP call. When disabled, you'll be asked to confirm each new tool."
+  },
+  "threadNotifications": {
+    "tooltip": "Notifications",
+    "notificationTitle": "Reply ready",
+    "notificationBody": "\"{{title}}\" finished generating"
   },
   "shortcuts": {
     "application": "Application",

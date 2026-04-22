@@ -412,6 +412,24 @@ function ProviderDetail() {
               {/* Settings */}
               <Card>
                 {provider?.settings.map((setting, settingIndex) => {
+                  // Concurrent Mode acts as a master toggle over `parallel`,
+                  // `cont_batching` and `expose_metrics`. When it's on, those
+                  // rows are visually dimmed to signal they're managed.
+                  const concurrentModeOn = !!(
+                    provider?.settings.find(
+                      (s) => s.key === 'concurrent_mode'
+                    )?.controller_props as { value?: boolean } | undefined
+                  )?.value
+                  const isManagedByConcurrentMode =
+                    concurrentModeOn &&
+                    (setting.key === 'parallel' ||
+                      setting.key === 'cont_batching' ||
+                      setting.key === 'expose_metrics')
+                  // Concurrent Slots only makes sense when Concurrent Mode is
+                  // on; hide the row entirely otherwise to reduce clutter.
+                  const isHiddenByConcurrentMode =
+                    !concurrentModeOn && setting.key === 'concurrent_slots'
+
                   // Use the DynamicController component
                   const actionComponent = (
                     <div className="mt-2">
@@ -429,7 +447,8 @@ function ProviderDetail() {
                             (setting.key === 'device' ||
                               setting.key === 'draft_model_path' ||
                               setting.key === 'block_size') &&
-                              'hidden'
+                              'hidden',
+                            isHiddenByConcurrentMode && 'hidden'
                           )}
                           onChange={(newValue) => {
                             if (provider) {
@@ -442,6 +461,28 @@ function ProviderDetail() {
                                   value: string | boolean | number
                                 }
                               ).value = newValue
+
+                              // Concurrent Mode implies Prometheus /metrics:
+                              // when the user turns the master toggle on,
+                              // reflect the implicit expose_metrics=true in
+                              // the UI so the Prometheus checkbox matches the
+                              // server-side behaviour enforced in args.rs.
+                              if (
+                                setting.key === 'concurrent_mode' &&
+                                newValue === true
+                              ) {
+                                const metricsIdx = newSettings.findIndex(
+                                  (s) => s.key === 'expose_metrics'
+                                )
+                                if (metricsIdx !== -1) {
+                                  ;(
+                                    newSettings[metricsIdx]
+                                      .controller_props as {
+                                      value: boolean
+                                    }
+                                  ).value = true
+                                }
+                              }
 
                               // Create update object with updated settings
                               const updateObj: Partial<ModelProvider> = {
@@ -523,7 +564,10 @@ function ProviderDetail() {
                         (setting.key === 'device' ||
                           setting.key === 'draft_model_path' ||
                           setting.key === 'block_size') &&
-                          'hidden'
+                          'hidden',
+                        isHiddenByConcurrentMode && 'hidden',
+                        isManagedByConcurrentMode &&
+                          'opacity-60 pointer-events-none'
                       )}
                       column={
                         setting.controller_type === 'input' &&
@@ -554,6 +598,14 @@ function ProviderDetail() {
                               ),
                             }}
                           />
+                          {setting.key === 'concurrent_slots' &&
+                            concurrentModeOn && (
+                              <div className="mt-1 text-sm text-muted-foreground">
+                                {t(
+                                  'providers:llamacpp.concurrentMode.perSlotContextWarning'
+                                )}
+                              </div>
+                            )}
                           {setting.key === 'version_backend' &&
                             setting.controller_props?.recommended && (
                               <div className="mt-1 text-sm text-muted-foreground">

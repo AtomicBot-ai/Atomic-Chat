@@ -89,6 +89,8 @@ import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useThreadNotifications } from '@/hooks/useThreadNotifications'
+import ThreadNotificationToggle from '@/containers/ThreadNotificationToggle'
 
 type ChatInputProps = {
   className?: string
@@ -533,6 +535,13 @@ const ChatInput = memo(function ChatInput({
 
         // Clear selected assistant after creating thread
         setSelectedAssistant(undefined)
+
+        // Apply the pre-armed notification default from the New Chat screen.
+        if (useThreadNotifications.getState().consumePendingDefault()) {
+          useThreadNotifications
+            .getState()
+            .setEnabled(newThread.id, true)
+        }
 
         // Mark the new thread with hasDocuments if any documents were embedded
         const hasEmbeddedDocs = attachments.some(
@@ -2096,6 +2105,8 @@ const ChatInput = memo(function ChatInput({
                       </TooltipContent>
                     </Tooltip>
                   ))}
+
+                <ThreadNotificationToggle threadId={currentThreadId} />
 
                 {/* Agent mode toggle hidden — kept as dead code for future use */}
                 {false && !projectId && isAgentMode && (

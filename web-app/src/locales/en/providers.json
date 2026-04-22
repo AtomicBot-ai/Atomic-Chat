@@ -58,5 +58,10 @@
   },
   "addProvider": "Add Provider",
   "addOpenAIProvider": "Add OpenAI Provider",
-  "enterNameForProvider": "Enter name for provider"
+  "enterNameForProvider": "Enter name for provider",
+  "llamacpp": {
+    "concurrentMode": {
+      "perSlotContextWarning": "Per-slot context equals ctx_size divided by slot count. Lower slot counts give each request more context."
+    }
+  }
 }

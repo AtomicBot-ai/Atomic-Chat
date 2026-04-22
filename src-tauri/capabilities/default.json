@@ -21,6 +21,7 @@
     "os:default",
     "opener:default",
     "log:default",
+    "notification:default",
     "core:webview:allow-create-webview-window",
     "opener:allow-open-url",
     "store:default",

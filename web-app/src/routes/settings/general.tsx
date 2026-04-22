@@ -44,6 +44,8 @@ function General() {
   const {
     spellCheckChatInput,
     setSpellCheckChatInput,
+    disableReasoning,
+    setDisableReasoning,
     huggingfaceToken,
     setHuggingfaceToken,
   } = useGeneralSetting()
@@ -342,6 +344,16 @@ function General() {
 
             {/* Chat behavior */}
             <Card title={t('settings:chatBehavior.title')}>
+              <CardItem
+                title={t('settings:chatBehavior.disableReasoning')}
+                description={t('settings:chatBehavior.disableReasoningDesc')}
+                actions={
+                  <Switch
+                    checked={disableReasoning}
+                    onCheckedChange={(e) => setDisableReasoning(e)}
+                  />
+                }
+              />
               <CardItem
                 title={t('settings:chatBehavior.autoApproveTools')}
                 description={t('settings:chatBehavior.autoApproveToolsDesc')}

@@ -69,6 +69,7 @@ fn endpoint_from_path(path: &str) -> &'static str {
         "/embeddings" => "embeddings",
         "/messages/count_tokens" => "messages/count_tokens",
         "/models" => "models",
+        "/metrics" => "metrics",
         _ => "other",
     }
 }
@@ -485,7 +486,7 @@ pub fn allowed_methods_for_path(path: &str) -> Option<&'static [&'static str]> {
         "/" | "/openapi.json" | "/docs/swagger-ui.css" | "/docs/swagger-ui-bundle.js" => {
             Some(&["GET"])
         }
-        "/models" => Some(&["GET"]),
+        "/models" | "/metrics" => Some(&["GET"]),
         "/messages"
         | "/chat/completions"
         | "/completions"
@@ -1294,6 +1295,143 @@ async fn inner_proxy_request(
             );
 
             return Ok(response_builder.body(Body::from(body_str)).unwrap());
+        }
+
+        // Prometheus /metrics endpoint — proxies llama-server's built-in
+        // metrics exporter. Requires `?model=<id>` (or `X-Model` header) so
+        // a specific session can be targeted when multiple llama.cpp models
+        // are loaded. Analytics is suppressed because pollers typically hit
+        // this endpoint every ~500ms and the noise is not a product signal.
+        (hyper::Method::GET, "/metrics") => {
+            state.endpoint = Some("metrics");
+            state.skip_emit = true;
+
+            // Resolve target model_id: ?model=<id> takes precedence over X-Model.
+            let model_query = parts.uri.query().and_then(|q| {
+                q.split('&').find_map(|pair| {
+                    let mut kv = pair.splitn(2, '=');
+                    match (kv.next(), kv.next()) {
+                        (Some("model"), Some(v)) => Some(v.to_string()),
+                        _ => None,
+                    }
+                })
+            });
+            let model_header = parts
+                .headers
+                .get("X-Model")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string());
+            let metrics_model_id = match model_query.or(model_header) {
+                Some(id) if !id.is_empty() => id,
+                _ => {
+                    state.error_kind = Some("bad_request");
+                    let mut error_response =
+                        Response::builder().status(StatusCode::BAD_REQUEST);
+                    error_response = add_cors_headers_with_host_and_origin(
+                        error_response,
+                        &host_header,
+                        &origin_header,
+                        &config.trusted_hosts,
+                    );
+                    return Ok(error_response
+                        .body(Body::from(
+                            "Missing 'model' query parameter (use ?model=<model_id>)",
+                        ))
+                        .unwrap());
+                }
+            };
+
+            // llama.cpp is the only backend exposing a Prometheus /metrics
+            // endpoint. MLX has no slot-pool metrics so we deliberately do
+            // not fall back to mlx_sessions here.
+            let target_session = {
+                let sessions_guard = sessions.lock().await;
+                sessions_guard
+                    .values()
+                    .find(|s| s.info.model_id == metrics_model_id)
+                    .map(|s| (s.info.port, s.info.api_key.clone()))
+            };
+
+            let (port, upstream_api_key) = match target_session {
+                Some(v) => v,
+                None => {
+                    state.error_kind = Some("not_found");
+                    log::warn!(
+                        "Metrics requested for unknown or non-llamacpp model '{metrics_model_id}'"
+                    );
+                    let mut error_response =
+                        Response::builder().status(StatusCode::NOT_FOUND);
+                    error_response = add_cors_headers_with_host_and_origin(
+                        error_response,
+                        &host_header,
+                        &origin_header,
+                        &config.trusted_hosts,
+                    );
+                    return Ok(error_response
+                        .body(Body::from(format!(
+                            "No running llama.cpp session for model '{metrics_model_id}'"
+                        )))
+                        .unwrap());
+                }
+            };
+
+            // Note: llama-server exposes /metrics at the server root, NOT
+            // under /v1, so we must not reuse the standard `/v1{path}`
+            // upstream URL pattern here.
+            let upstream = format!("http://127.0.0.1:{port}/metrics");
+            state.backend = "llamacpp";
+
+            // Atomic-Chat boots llama-server with a per-session `--api-key`,
+            // so even the bundled `/metrics` endpoint expects a Bearer token.
+            // Forward the session key so this proxy route does not fail 401.
+            let mut upstream_req = local_client.get(&upstream);
+            if !upstream_api_key.is_empty() {
+                upstream_req = upstream_req
+                    .header(hyper::header::AUTHORIZATION, format!("Bearer {upstream_api_key}"));
+            }
+
+            match upstream_req.send().await {
+                Ok(resp) => {
+                    let status = resp.status();
+                    let content_type = resp
+                        .headers()
+                        .get(hyper::header::CONTENT_TYPE)
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("text/plain; version=0.0.4")
+                        .to_string();
+                    let bytes = resp.bytes().await.unwrap_or_default();
+
+                    let mut response_builder = Response::builder()
+                        .status(status)
+                        .header(hyper::header::CONTENT_TYPE, content_type);
+                    response_builder = add_cors_headers_with_host_and_origin(
+                        response_builder,
+                        &host_header,
+                        &origin_header,
+                        &config.trusted_hosts,
+                    );
+                    return Ok(response_builder.body(Body::from(bytes)).unwrap());
+                }
+                Err(e) => {
+                    state.error_kind = Some("upstream");
+                    log::warn!(
+                        "Failed to fetch metrics for model '{metrics_model_id}': {e}"
+                    );
+                    let mut error_response =
+                        Response::builder().status(StatusCode::BAD_GATEWAY);
+                    error_response = add_cors_headers_with_host_and_origin(
+                        error_response,
+                        &host_header,
+                        &origin_header,
+                        &config.trusted_hosts,
+                    );
+                    return Ok(error_response
+                        .body(Body::from(format!(
+                            "Failed to fetch metrics from llama-server: {e}"
+                        )))
+                        .unwrap());
+                }
+            }
         }
 
         (hyper::Method::GET, "/openapi.json") => {
