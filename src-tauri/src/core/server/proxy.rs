@@ -9,10 +9,69 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Instant;
+use tauri::{AppHandle, Emitter, Runtime};
 use tauri_plugin_llamacpp::LLamaBackendSession;
 use tokio::sync::Mutex;
 
 use crate::core::state::{ProviderConfig, ServerHandle};
+
+/// Tauri event channel used to forward Local API Server request metadata to
+/// the web-app analytics listener. The web-app captures it as a PostHog event
+/// (`api_server_request`) with `source: 'local_api_server'`, which is the
+/// counterpart to the `chat_request_sent` event emitted by the chat UI.
+const ANALYTICS_CHANNEL: &str = "analytics://api_server_request";
+
+/// Mutable state accumulated while handling a proxied request. A single
+/// `ApiRequestEvent` is emitted from the `proxy_request` wrapper after the
+/// inner handler finishes, so every field must be populated by the time the
+/// inner handler returns (defaults are used otherwise).
+#[derive(Default)]
+struct EmitState {
+    endpoint: Option<&'static str>,
+    model_id: Option<String>,
+    backend: &'static str,
+    provider: Option<String>,
+    stream: bool,
+    is_anthropic_fallback: bool,
+    error_kind: Option<&'static str>,
+    skip_emit: bool,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct ApiRequestEvent<'a> {
+    source: &'static str,
+    endpoint: &'static str,
+    method: &'a str,
+    model_id: Option<String>,
+    backend: &'static str,
+    provider: Option<String>,
+    stream: bool,
+    status: u16,
+    latency_ms: u64,
+    is_anthropic_fallback: bool,
+    error_kind: Option<&'static str>,
+}
+
+fn emit_api_request_event<R: Runtime>(app: &AppHandle<R>, event: ApiRequestEvent) {
+    if let Err(e) = app.emit(ANALYTICS_CHANNEL, event) {
+        log::debug!("Failed to emit api_server_request analytics event: {e}");
+    }
+}
+
+/// Normalises the already prefix-stripped destination path into a closed set
+/// of endpoint labels safe for analytics (never the raw path).
+fn endpoint_from_path(path: &str) -> &'static str {
+    match path {
+        "/chat/completions" => "chat/completions",
+        "/messages" => "messages",
+        "/completions" => "completions",
+        "/embeddings" => "embeddings",
+        "/messages/count_tokens" => "messages/count_tokens",
+        "/models" => "models",
+        _ => "other",
+    }
+}
 
 /// Transform Anthropic /messages API body to OpenAI /chat/completions body
 fn transform_anthropic_to_openai(body: &serde_json::Value) -> Option<serde_json::Value> {
@@ -442,8 +501,72 @@ fn is_local_url(url: &str) -> bool {
     url.contains("://localhost") || url.contains("://127.0.0.1") || url.contains("://0.0.0.0") || url.contains("://[::1]")
 }
 
-/// Handles the proxy request logic
-async fn proxy_request(
+/// Wraps `inner_proxy_request` to emit a single analytics event per proxied
+/// request via `ANALYTICS_CHANNEL`. The wrapper measures latency from the
+/// moment the request is received until the inner handler returns a response
+/// (for streaming responses this is TTFB — headers + status — which is
+/// sufficient for the "chat vs local API server" product metric). The inner
+/// handler never sees the `AppHandle`, which structurally guarantees that
+/// analytics events are not emitted per SSE chunk.
+#[allow(clippy::too_many_arguments)]
+async fn proxy_request<R: Runtime>(
+    req: Request<Body>,
+    client: Client,
+    local_client: Client,
+    config: ProxyConfig,
+    sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+    provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    app_handle: AppHandle<R>,
+) -> Result<Response<Body>, hyper::Error> {
+    let start = Instant::now();
+    let method_str = req.method().as_str().to_string();
+    let mut state = EmitState {
+        backend: "unknown",
+        ..EmitState::default()
+    };
+
+    let response = inner_proxy_request(
+        &mut state,
+        req,
+        client,
+        local_client,
+        config,
+        sessions,
+        mlx_sessions,
+        provider_configs,
+    )
+    .await?;
+
+    if !state.skip_emit {
+        emit_api_request_event(
+            &app_handle,
+            ApiRequestEvent {
+                source: "local_api_server",
+                endpoint: state.endpoint.unwrap_or("other"),
+                method: &method_str,
+                model_id: state.model_id.clone(),
+                backend: state.backend,
+                provider: state.provider.clone(),
+                stream: state.stream,
+                status: response.status().as_u16(),
+                latency_ms: start.elapsed().as_millis() as u64,
+                is_anthropic_fallback: state.is_anthropic_fallback,
+                error_kind: state.error_kind,
+            },
+        );
+    }
+
+    Ok(response)
+}
+
+/// Handles the proxy request logic. Populates `state` with request metadata so
+/// the outer `proxy_request` wrapper can emit a single analytics event per
+/// proxied request (see `ANALYTICS_CHANNEL`). Preflight, static docs and other
+/// non-product traffic set `state.skip_emit = true`.
+#[allow(clippy::too_many_arguments)]
+async fn inner_proxy_request(
+    state: &mut EmitState,
     req: Request<Body>,
     client: Client,
     local_client: Client,
@@ -453,6 +576,9 @@ async fn proxy_request(
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
 ) -> Result<Response<Body>, hyper::Error> {
     if req.method() == hyper::Method::OPTIONS {
+        // CORS preflight is not a product signal; suppress analytics for the
+        // entire preflight branch regardless of its outcome.
+        state.skip_emit = true;
         log::debug!(
             "Handling CORS preflight request from {:?} {:?}",
             req.headers().get(hyper::header::HOST),
@@ -635,6 +761,8 @@ async fn proxy_request(
     if !is_whitelisted_path {
         if !host_header.is_empty() {
             if !is_valid_host(&host_header, &config.trusted_hosts) {
+                state.endpoint = Some(endpoint_from_path(path.as_str()));
+                state.error_kind = Some("host");
                 let mut error_response = Response::builder().status(StatusCode::FORBIDDEN);
                 error_response = add_cors_headers_with_host_and_origin(
                     error_response,
@@ -647,6 +775,8 @@ async fn proxy_request(
                     .unwrap());
             }
         } else {
+            state.endpoint = Some(endpoint_from_path(path.as_str()));
+            state.error_kind = Some("bad_request");
             let mut error_response = Response::builder().status(StatusCode::BAD_REQUEST);
             error_response = add_cors_headers_with_host_and_origin(
                 error_response,
@@ -681,6 +811,8 @@ async fn proxy_request(
             .unwrap_or(false);
 
         if !auth_valid && !api_key_valid {
+            state.endpoint = Some(endpoint_from_path(path.as_str()));
+            state.error_kind = Some("auth");
             let mut error_response = Response::builder().status(StatusCode::UNAUTHORIZED);
             error_response = add_cors_headers_with_host_and_origin(
                 error_response,
@@ -697,6 +829,8 @@ async fn proxy_request(
     }
 
     if path.contains("/configs") {
+        // Hidden/sensitive route: suppress from analytics.
+        state.skip_emit = true;
         let mut error_response = Response::builder().status(StatusCode::NOT_FOUND);
         error_response = add_cors_headers_with_host_and_origin(
             error_response,
@@ -721,12 +855,14 @@ async fn proxy_request(
         // Anthropic /messages endpoint - tries /messages first, falls back to /chat/completions on error
         (hyper::Method::POST, "/messages") => {
             is_anthropic_messages = true;
+            state.endpoint = Some("messages");
             log::info!(
                 "Handling POST request to /messages with chat/completions fallback on error",
             );
             let body_bytes = match hyper::body::to_bytes(body).await {
                 Ok(bytes) => bytes,
                 Err(_) => {
+                    state.error_kind = Some("bad_request");
                     let mut error_response =
                         Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
                     error_response = add_cors_headers_with_host_and_origin(
@@ -745,7 +881,12 @@ async fn proxy_request(
             // Parse body to get model_id for routing (don't transform yet)
             match serde_json::from_slice::<serde_json::Value>(&body_bytes) {
                 Ok(json_body) => {
+                    state.stream = json_body
+                        .get("stream")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
                     if let Some(model_id) = json_body.get("model").and_then(|v| v.as_str()) {
+                        state.model_id = Some(model_id.to_string());
                         let pc = provider_configs.lock().await;
 
                         // Try to find a provider for this model
@@ -767,6 +908,8 @@ async fn proxy_request(
 
                         if let Some(ref p) = provider_name {
                             log::info!("Using remote provider '{p}' for model '{model_id}'");
+                            state.backend = "remote";
+                            state.provider = Some(p.clone());
                             let pc2 = provider_configs.lock().await;
                             let provider_config = pc2.get(p.as_str()).cloned();
                             drop(pc2);
@@ -793,16 +936,19 @@ async fn proxy_request(
                             };
 
                             if let Some(session) = llama_session {
+                                state.backend = "llamacpp";
                                 let target_port = session.info.port;
                                 session_api_key = Some(session.info.api_key.clone());
                                 target_base_url =
                                     Some(format!("http://127.0.0.1:{}/v1/messages", target_port));
                             } else if let Some(info) = mlx_session_info {
+                                state.backend = "mlx";
                                 let target_port = info.port;
                                 session_api_key = Some(info.api_key.clone());
                                 target_base_url =
                                     Some(format!("http://127.0.0.1:{}/v1/messages", target_port));
                             } else {
+                                state.error_kind = Some("not_found");
                                 log::warn!("No running session found for model_id: {model_id}");
                                 let mut error_response =
                                     Response::builder().status(StatusCode::NOT_FOUND);
@@ -820,6 +966,7 @@ async fn proxy_request(
                             }
                         }
                     } else {
+                        state.error_kind = Some("bad_request");
                         let error_msg = "Request body must contain a 'model' field";
                         log::warn!("POST body for /messages missing 'model' field");
                         let mut error_response =
@@ -834,6 +981,7 @@ async fn proxy_request(
                     }
                 }
                 Err(e) => {
+                    state.error_kind = Some("bad_request");
                     log::warn!("Failed to parse POST body for /messages as JSON: {e}");
                     let mut error_response = Response::builder().status(StatusCode::BAD_REQUEST);
                     error_response = add_cors_headers_with_host_and_origin(
@@ -851,12 +999,14 @@ async fn proxy_request(
         | (hyper::Method::POST, "/completions")
         | (hyper::Method::POST, "/embeddings")
         | (hyper::Method::POST, "/messages/count_tokens") => {
+            state.endpoint = Some(endpoint_from_path(destination_path.as_str()));
             log::info!(
                 "Handling POST request to {destination_path} requiring model lookup in body",
             );
             let body_bytes = match hyper::body::to_bytes(body).await {
                 Ok(bytes) => bytes,
                 Err(_) => {
+                    state.error_kind = Some("bad_request");
                     let mut error_response =
                         Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
                     error_response = add_cors_headers_with_host_and_origin(
@@ -874,7 +1024,12 @@ async fn proxy_request(
 
             match serde_json::from_slice::<serde_json::Value>(&body_bytes) {
                 Ok(json_body) => {
+                    state.stream = json_body
+                        .get("stream")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
                     if let Some(model_id) = json_body.get("model").and_then(|v| v.as_str()) {
+                        state.model_id = Some(model_id.to_string());
                         log::debug!("Extracted model_id: {model_id}");
 
                         // First, check if there's a registered remote provider for this model
@@ -905,6 +1060,8 @@ async fn proxy_request(
                         if let Some(ref provider) = provider_name {
                             // Found a remote provider, stream the response directly
                             log::info!("Found remote provider '{provider}' for model '{model_id}'");
+                            state.backend = "remote";
+                            state.provider = Some(provider.clone());
 
                             // Get the provider config
                             let pc2 = provider_configs.lock().await;
@@ -965,6 +1122,7 @@ async fn proxy_request(
                             let mlx_session = mlx_session_info.as_ref();
 
                             if total_sessions == 0 {
+                                state.error_kind = Some("not_found");
                                 log::warn!(
                                     "Request for model '{model_id}' but no models are running."
                                 );
@@ -982,6 +1140,7 @@ async fn proxy_request(
                             }
 
                             if let Some(session) = llama_session {
+                                state.backend = "llamacpp";
                                 let target_port = session.info.port;
                                 session_api_key = Some(session.info.api_key.clone());
                                 log::debug!("Found llama.cpp session for model_id {model_id}");
@@ -989,6 +1148,7 @@ async fn proxy_request(
                                     "http://127.0.0.1:{target_port}/v1{destination_path}"
                                 ));
                             } else if let Some(info) = mlx_session {
+                                state.backend = "mlx";
                                 let target_port = info.port;
                                 session_api_key = Some(info.api_key.clone());
                                 log::debug!("Found MLX session for model_id {model_id}");
@@ -996,6 +1156,7 @@ async fn proxy_request(
                                     "http://127.0.0.1:{target_port}/v1{destination_path}"
                                 ));
                             } else {
+                                state.error_kind = Some("not_found");
                                 log::warn!("No running session found for model_id: {model_id}");
                                 let mut error_response =
                                     Response::builder().status(StatusCode::NOT_FOUND);
@@ -1013,6 +1174,7 @@ async fn proxy_request(
                             }
                         }
                     } else {
+                        state.error_kind = Some("bad_request");
                         let error_msg = "Request body must contain a 'model' field";
                         log::warn!(
                             "POST body for {destination_path} is missing 'model' field or it's not a string"
@@ -1029,6 +1191,7 @@ async fn proxy_request(
                     }
                 }
                 Err(e) => {
+                    state.error_kind = Some("bad_request");
                     log::warn!("Failed to parse POST body for {destination_path} as JSON: {e}");
                     let mut error_response = Response::builder().status(StatusCode::BAD_REQUEST);
                     error_response = add_cors_headers_with_host_and_origin(
@@ -1043,6 +1206,7 @@ async fn proxy_request(
             }
         }
         (hyper::Method::GET, "/models") => {
+            state.endpoint = Some("models");
             log::debug!("Handling GET /v1/models request");
 
             // Get local llama.cpp sessions
@@ -1133,6 +1297,8 @@ async fn proxy_request(
         }
 
         (hyper::Method::GET, "/openapi.json") => {
+            // Static documentation — not a product signal.
+            state.skip_emit = true;
             let static_body = include_str!("../../../static/openapi.json"); // relative to src-tauri/src/
                                                                             // Parse the static OpenAPI JSON and update the server URL with actual host and port
             match serde_json::from_str::<serde_json::Value>(static_body) {
@@ -1175,6 +1341,8 @@ async fn proxy_request(
 
         // DOCS route
         (hyper::Method::GET, "/") => {
+            // Swagger landing page — not a product signal.
+            state.skip_emit = true;
             let html = r#"
 <!DOCTYPE html>
 <html lang="en">
@@ -1214,6 +1382,7 @@ async fn proxy_request(
         }
 
         (hyper::Method::GET, "/docs/swagger-ui.css") => {
+            state.skip_emit = true;
             let css = include_str!("../../../static/swagger-ui/swagger-ui.css");
             return Ok(Response::builder()
                 .status(StatusCode::OK)
@@ -1223,6 +1392,7 @@ async fn proxy_request(
         }
 
         (hyper::Method::GET, "/docs/swagger-ui-bundle.js") => {
+            state.skip_emit = true;
             let js = include_str!("../../../static/swagger-ui/swagger-ui-bundle.js");
             return Ok(Response::builder()
                 .status(StatusCode::OK)
@@ -1233,6 +1403,8 @@ async fn proxy_request(
 
         _ => {
             if let Some(allowed_methods) = allowed_methods_for_path(destination_path.as_str()) {
+                state.endpoint = Some(endpoint_from_path(destination_path.as_str()));
+                state.error_kind = Some("method_not_allowed");
                 let allow_header = allowed_methods.join(", ");
                 log::warn!(
                     "Method not allowed for known route: {method} {destination_path}; allowed: {allow_header}"
@@ -1251,6 +1423,8 @@ async fn proxy_request(
                     .unwrap());
             }
 
+            state.endpoint = Some("other");
+            state.error_kind = Some("not_found");
             log::warn!("Unhandled method/path for dynamic routing: {method} {destination_path}");
             let mut error_response = Response::builder().status(StatusCode::NOT_FOUND);
             error_response = add_cors_headers_with_host_and_origin(
@@ -1266,6 +1440,7 @@ async fn proxy_request(
     let upstream_url = match target_base_url.clone() {
         Some(p) => p,
         None => {
+            state.error_kind = Some("upstream");
             log::error!(
                 "Internal API server routing error: target is None after successful lookup"
             );
@@ -1306,6 +1481,7 @@ async fn proxy_request(
     let outbound_req_with_body = if let Some(bytes) = buffered_body_for_req {
         outbound_req.body(bytes)
     } else {
+        state.error_kind = Some("upstream");
         log::error!("Internal logic error: Request reached proxy stage without a buffered body.");
         let mut error_response = Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
         error_response = add_cors_headers_with_host_and_origin(
@@ -1330,6 +1506,7 @@ async fn proxy_request(
 
             // For Anthropic /messages requests with errors, try /chat/completions
             if is_error && is_anthropic_messages {
+                state.is_anthropic_fallback = true;
                 log::warn!("Request failed for /messages with status {status}, trying /chat/completions...");
 
                 // Read the error body to return to client if fallback fails
@@ -1395,6 +1572,7 @@ async fn proxy_request(
                         let fallback_status = res.status();
 
                         if !fallback_status.is_success() {
+                            state.error_kind = Some("upstream");
                             // Return fallback error to client
                             let fallback_error = res.text().await.unwrap_or_else(|e| format!("Failed to read error: {}", e));
 
@@ -1454,6 +1632,7 @@ async fn proxy_request(
                 }
 
                 // If fallback failed or wasn't attempted, return error to client
+                state.error_kind = Some("upstream");
                 let mut error_response = Response::builder().status(status);
                 error_response = add_cors_headers_with_host_and_origin(
                     error_response,
@@ -1463,6 +1642,7 @@ async fn proxy_request(
                 );
                 return Ok(error_response.body(Body::from(error_body)).unwrap());
             } else if is_error {
+                state.error_kind = Some("upstream");
                 // Non-/messages error - return error response with body
                 let error_body = response
                     .text()
@@ -1521,6 +1701,7 @@ async fn proxy_request(
             Ok(builder.body(body).unwrap())
         }
         Err(e) => {
+            state.error_kind = Some("upstream");
             let error_msg = format!("Proxy request to model failed: {e}");
             log::error!("{error_msg}");
             let mut error_response = Response::builder().status(StatusCode::BAD_GATEWAY);
@@ -1572,7 +1753,8 @@ pub async fn is_server_running(server_handle: Arc<Mutex<Option<ServerHandle>>>) 
 }
 
 #[allow(clippy::too_many_arguments)]
-pub async fn start_server(
+pub async fn start_server<R: Runtime>(
+    app_handle: AppHandle<R>,
     server_handle: Arc<Mutex<Option<ServerHandle>>>,
     sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
     mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
@@ -1585,6 +1767,7 @@ pub async fn start_server(
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
 ) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
     start_server_internal(
+        app_handle,
         server_handle,
         sessions,
         mlx_sessions,
@@ -1599,7 +1782,9 @@ pub async fn start_server(
     .await
 }
 
-async fn start_server_internal(
+#[allow(clippy::too_many_arguments)]
+async fn start_server_internal<R: Runtime>(
+    app_handle: AppHandle<R>,
     server_handle: Arc<Mutex<Option<ServerHandle>>>,
     sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
     mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
@@ -1648,6 +1833,7 @@ async fn start_server_internal(
         let sessions = sessions.clone();
         let mlx_sessions = mlx_sessions.clone();
         let provider_configs = provider_configs.clone();
+        let app_handle = app_handle.clone();
 
         async move {
             Ok::<_, Infallible>(service_fn(move |req| {
@@ -1659,6 +1845,7 @@ async fn start_server_internal(
                     sessions.clone(),
                     mlx_sessions.clone(),
                     provider_configs.clone(),
+                    app_handle.clone(),
                 )
             }))
         }

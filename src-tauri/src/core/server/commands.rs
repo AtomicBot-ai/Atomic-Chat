@@ -38,6 +38,7 @@ pub async fn start_server<R: Runtime>(
     let mlx_sessions = mlx_state.mlx_server_process.clone();
 
     let actual_port = proxy::start_server(
+        app_handle.clone(),
         server_handle,
         sessions,
         mlx_sessions,

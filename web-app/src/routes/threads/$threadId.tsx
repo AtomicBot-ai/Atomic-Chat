@@ -499,7 +499,14 @@ function ThreadDetail() {
     ) => {
       // Get all attachments from the store (includes both images and documents)
       const allAttachments = getAttachments(attachmentsKey)
-      console.log('[processAndSendMessage] attachmentsKey:', attachmentsKey, 'allAttachments:', allAttachments.length, 'docs:', allAttachments.filter(a => a.type === 'document').length)
+      console.log(
+        '[processAndSendMessage] attachmentsKey:',
+        attachmentsKey,
+        'allAttachments:',
+        allAttachments.length,
+        'docs:',
+        allAttachments.filter((a) => a.type === 'document').length
+      )
 
       // Convert image files to attachments for persistence
       const imageAttachments = files?.map((file) => {
@@ -579,7 +586,12 @@ function ThreadDetail() {
         })
       }
 
-      console.log('[processAndSendMessage] Calling sendMessage with parts:', parts.length, 'messageId:', messageId)
+      console.log(
+        '[processAndSendMessage] Calling sendMessage with parts:',
+        parts.length,
+        'messageId:',
+        messageId
+      )
       sendMessage({
         parts,
         id: messageId,
@@ -588,6 +600,7 @@ function ThreadDetail() {
       console.log('[processAndSendMessage] sendMessage called successfully')
 
       posthog.capture('chat_request_sent', {
+        source: 'chat',
         thread_id: threadId,
         model_id: selectedModel?.id,
         provider: selectedProvider,
@@ -614,7 +627,7 @@ function ThreadDetail() {
 
   // Check for and send initial message from sessionStorage
   const initialMessageSentRef = useRef(false)
-  
+
   useEffect(() => {
     // Prevent duplicate sends
     if (initialMessageSentRef.current) return
@@ -628,7 +641,9 @@ function ThreadDetail() {
       sessionStorage.removeItem(initialMessageKey)
       initialMessageSentRef.current = true
 
-      console.log('[ThreadPage] Found initial message in sessionStorage, sending...')
+      console.log(
+        '[ThreadPage] Found initial message in sessionStorage, sending...'
+      )
 
       // Process message asynchronously
       ;(async () => {
@@ -645,7 +660,10 @@ function ThreadDetail() {
           await processAndSendMessage(message.text, message.files)
           console.log('[ThreadPage] processAndSendMessage completed')
         } catch (error) {
-          console.error('[ThreadPage] Failed to process initial message:', error)
+          console.error(
+            '[ThreadPage] Failed to process initial message:',
+            error
+          )
         }
       })()
     }
@@ -845,9 +863,7 @@ function ThreadDetail() {
   setContinueFromContentRef.current = setContinueFromContent
 
   // Skip auto-context-increase in agent mode
-  const agentModeActive = useAgentMode(
-    (s) => s.agentThreads[threadId] === true
-  )
+  const agentModeActive = useAgentMode((s) => s.agentThreads[threadId] === true)
   useEffect(() => {
     if (!error || agentModeActive) return
     const autoIncrease =
@@ -870,7 +886,10 @@ function ThreadDetail() {
     if (status === 'streaming' || status === 'submitted') {
       setContextLimitError(null)
     }
-    if (isAutoIncreasingContext && (status === 'streaming' || status === 'error')) {
+    if (
+      isAutoIncreasingContext &&
+      (status === 'streaming' || status === 'error')
+    ) {
       setIsAutoIncreasingContext(false)
     }
     if (status === 'error' && pendingContinueMessage) {
@@ -878,7 +897,7 @@ function ThreadDetail() {
     }
   }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
 
-   const threadModel = useMemo(
+  const threadModel = useMemo(
     () => searchThreadModel ?? thread?.model,
     [searchThreadModel, thread]
   )
@@ -931,7 +950,8 @@ function ThreadDetail() {
                   isAnimating={false}
                 />
               )}
-              {(status === CHAT_STATUS.SUBMITTED || isAutoIncreasingContext) && (
+              {(status === CHAT_STATUS.SUBMITTED ||
+                isAutoIncreasingContext) && (
                 <div className="flex flex-row items-center gap-2">
                   {(pendingContinueMessage || isAutoIncreasingContext) && (
                     <Shimmer duration={1}>Growing the Mind...</Shimmer>
@@ -939,56 +959,58 @@ function ThreadDetail() {
                   {status === CHAT_STATUS.SUBMITTED && <PromptProgress />}
                 </div>
               )}
-              {(error || contextLimitError) && !isAutoIncreasingContext && (() => {
-                const activeError = error ?? contextLimitError
-                const rawMessage = activeError?.message
-                const lowerMessage = rawMessage?.toLowerCase() ?? ''
-                const isContextError =
-                  (lowerMessage.includes('context') &&
-                    (lowerMessage.includes('size') ||
-                      lowerMessage.includes('length') ||
-                      lowerMessage.includes('limit'))) ||
-                  rawMessage === OUT_OF_CONTEXT_SIZE
-                const isAccessError =
-                  !isContextError && isModelAccessError(activeError)
-                const title = isAccessError
-                  ? MODEL_ACCESS_DENIED_TITLE
-                  : 'Error generating response'
-                const body = isAccessError
-                  ? MODEL_ACCESS_DENIED_MESSAGE
-                  : rawMessage
-                return (
-                  <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
-                    <div className="flex items-start gap-3">
-                      <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-destructive mb-1">
-                          {title}
-                        </p>
-                        <div className="table table-fixed w-full">
-                          <span
-                            className="text-sm text-muted-foreground table-cell align-middle"
-                            style={{ wordWrap: 'break-word' }}
-                          >
-                            {body}
-                          </span>
+              {(error || contextLimitError) &&
+                !isAutoIncreasingContext &&
+                (() => {
+                  const activeError = error ?? contextLimitError
+                  const rawMessage = activeError?.message
+                  const lowerMessage = rawMessage?.toLowerCase() ?? ''
+                  const isContextError =
+                    (lowerMessage.includes('context') &&
+                      (lowerMessage.includes('size') ||
+                        lowerMessage.includes('length') ||
+                        lowerMessage.includes('limit'))) ||
+                    rawMessage === OUT_OF_CONTEXT_SIZE
+                  const isAccessError =
+                    !isContextError && isModelAccessError(activeError)
+                  const title = isAccessError
+                    ? MODEL_ACCESS_DENIED_TITLE
+                    : 'Error generating response'
+                  const body = isAccessError
+                    ? MODEL_ACCESS_DENIED_MESSAGE
+                    : rawMessage
+                  return (
+                    <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
+                      <div className="flex items-start gap-3">
+                        <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-destructive mb-1">
+                            {title}
+                          </p>
+                          <div className="table table-fixed w-full">
+                            <span
+                              className="text-sm text-muted-foreground table-cell align-middle"
+                              style={{ wordWrap: 'break-word' }}
+                            >
+                              {body}
+                            </span>
+                          </div>
+                          {isContextError ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="mt-3"
+                              onClick={handleContextSizeIncrease}
+                            >
+                              <IconAlertCircle className="size-4 mr-2" />
+                              Increase Context Size
+                            </Button>
+                          ) : null}
                         </div>
-                        {isContextError ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="mt-3"
-                            onClick={handleContextSizeIncrease}
-                          >
-                            <IconAlertCircle className="size-4 mr-2" />
-                            Increase Context Size
-                          </Button>
-                        ) : null}
                       </div>
                     </div>
-                  </div>
-                )
-              })()}
+                  )
+                })()}
             </ConversationContent>
             <ConversationScrollButton />
           </Conversation>

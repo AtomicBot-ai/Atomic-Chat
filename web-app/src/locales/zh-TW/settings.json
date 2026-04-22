@@ -202,7 +202,7 @@
   "privacy": {
     "analytics": "分析",
     "helpUsImprove": "幫助我們改進",
-    "helpUsImproveDesc": "為了幫助我們改進 Atomic Bot，您可以分享匿名資料，如功能使用情況和使用者數量。我們絕不會收集您的聊天記錄或個人資訊。",
+    "helpUsImproveDesc": "為了幫助我們改進，您可以分享匿名資料，如功能使用情況和使用者數量。我們絕不會收集您的聊天記錄或個人資訊。",
     "privacyPolicy": "您完全控制您的資料。在我們的隱私權政策中了解更多資訊。",
     "analyticsDesc": "為了改進 Atomic Bot，我們需要了解它的使用方式——但這需要您的幫助。您可以隨時變更此設定。",
     "privacyPromises": "您在此處的選擇不會改變我們的核心隱私承諾：",

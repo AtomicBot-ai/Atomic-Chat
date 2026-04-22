@@ -202,7 +202,7 @@
   "privacy": {
     "analytics": "Analytik",
     "helpUsImprove": "Hilf uns, uns zu verbessern",
-    "helpUsImproveDesc": "Um uns bei der Verbesserung von Atomic Bot zu unterstützen, kannst Du uns anonyme Daten wie Funktionsnutzung und Benutzerzahlen mitteilen. Wir erfassen niemals Deine Chats oder persönlichen Daten.",
+    "helpUsImproveDesc": "Um uns bei der Verbesserung zu unterstützen, kannst Du uns anonyme Daten wie Funktionsnutzung und Benutzerzahlen mitteilen. Wir erfassen niemals Deine Chats oder persönlichen Daten.",
     "privacyPolicy": "Du hast die volle Kontrolle über Deine Daten. Erfahre mehr in unserer Datenschutzerklärung.",
     "analyticsDesc": "Um Atomic Bot zu verbessern, müssen wir verstehen, wie es genutzt wird - aber nur mit deiner Hilfe. Du kannst diese Einstellung jederzeit ändern.",
     "privacyPromises": "Deine Auswahl hier ändert nichts an unseren grundlegenden Datenschutzversprechen:",
