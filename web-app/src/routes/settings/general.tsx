@@ -9,6 +9,7 @@ import { Card, CardItem } from '@/containers/Card'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useToolApproval } from '@/hooks/useToolApproval'
+import { useThreadNotifications } from '@/hooks/useThreadNotifications'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useEffect, useState, useCallback } from 'react'
 import ChangeDataFolderLocation from '@/containers/dialogs/ChangeDataFolderLocation'
@@ -44,8 +45,6 @@ function General() {
   const {
     spellCheckChatInput,
     setSpellCheckChatInput,
-    disableReasoning,
-    setDisableReasoning,
     huggingfaceToken,
     setHuggingfaceToken,
   } = useGeneralSetting()
@@ -54,6 +53,12 @@ function General() {
   )
   const setAllowAllMCPPermissions = useToolApproval(
     (state) => state.setAllowAllMCPPermissions
+  )
+  const notificationsGloballyEnabled = useThreadNotifications(
+    (state) => state.globallyEnabled
+  )
+  const setNotificationsGloballyEnabled = useThreadNotifications(
+    (state) => state.setGloballyEnabled
   )
   const serviceHub = useServiceHub()
   const { setProductAnalytic, productAnalytic } = useAnalytic()
@@ -345,22 +350,24 @@ function General() {
             {/* Chat behavior */}
             <Card title={t('settings:chatBehavior.title')}>
               <CardItem
-                title={t('settings:chatBehavior.disableReasoning')}
-                description={t('settings:chatBehavior.disableReasoningDesc')}
-                actions={
-                  <Switch
-                    checked={disableReasoning}
-                    onCheckedChange={(e) => setDisableReasoning(e)}
-                  />
-                }
-              />
-              <CardItem
                 title={t('settings:chatBehavior.autoApproveTools')}
                 description={t('settings:chatBehavior.autoApproveToolsDesc')}
                 actions={
                   <Switch
                     checked={allowAllMCPPermissions}
                     onCheckedChange={setAllowAllMCPPermissions}
+                  />
+                }
+              />
+              <CardItem
+                title={t('settings:chatBehavior.desktopNotifications')}
+                description={t(
+                  'settings:chatBehavior.desktopNotificationsDesc'
+                )}
+                actions={
+                  <Switch
+                    checked={notificationsGloballyEnabled}
+                    onCheckedChange={setNotificationsGloballyEnabled}
                   />
                 }
               />

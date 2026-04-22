@@ -7,6 +7,9 @@ type ThreadNotificationsState = {
   // Pre-armed flag for the next thread that gets created from the "New Chat"
   // screen. Consumed (reset to false) as soon as a thread is born.
   pendingDefault: boolean
+  // Global master switch. When false, no notifications fire regardless of
+  // per-thread opt-ins.
+  globallyEnabled: boolean
 
   toggle: (threadId: string) => void
   setEnabled: (threadId: string, enabled: boolean) => void
@@ -16,6 +19,8 @@ type ThreadNotificationsState = {
   togglePendingDefault: () => void
   setPendingDefault: (value: boolean) => void
   consumePendingDefault: () => boolean
+
+  setGloballyEnabled: (value: boolean) => void
 }
 
 export const useThreadNotifications = create<ThreadNotificationsState>()(
@@ -23,6 +28,7 @@ export const useThreadNotifications = create<ThreadNotificationsState>()(
     (set, get) => ({
       enabledThreads: {},
       pendingDefault: false,
+      globallyEnabled: true,
 
       toggle: (threadId: string) => {
         set((state) => {
@@ -75,6 +81,10 @@ export const useThreadNotifications = create<ThreadNotificationsState>()(
         if (value) set({ pendingDefault: false })
         return value
       },
+
+      setGloballyEnabled: (value: boolean) => {
+        set({ globallyEnabled: value })
+      },
     }),
     {
       name: localStorageKey.threadNotifications,
@@ -82,6 +92,7 @@ export const useThreadNotifications = create<ThreadNotificationsState>()(
       partialize: (state) => ({
         enabledThreads: state.enabledThreads,
         pendingDefault: state.pendingDefault,
+        globallyEnabled: state.globallyEnabled,
       }),
     }
   )

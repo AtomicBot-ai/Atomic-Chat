@@ -62,7 +62,9 @@
     "disableReasoning": "Disable reasoning",
     "disableReasoningDesc": "Skip the thinking phase on models that support reasoning.",
     "autoApproveTools": "Auto-approve tool calls",
-    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation."
+    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
+    "desktopNotifications": "Powiadomienia pulpitu",
+    "desktopNotificationsDesc": "Wysyłaj powiadomienia systemowe, gdy odpowiedź jest gotowa, a okno nie jest aktywne. Główny przełącznik — dzwonek przy wątku decyduje, które czaty mogą powiadamiać."
   },
   "threadNotifications": {
     "tooltip": "Powiadomienia",

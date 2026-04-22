@@ -62,7 +62,9 @@
     "disableReasoning": "Disable reasoning",
     "disableReasoningDesc": "Skip the thinking phase on models that support reasoning.",
     "autoApproveTools": "Auto-approve tool calls",
-    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation."
+    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
+    "desktopNotifications": "Thông báo trên máy tính",
+    "desktopNotificationsDesc": "Gửi thông báo hệ thống khi phản hồi hoàn tất và cửa sổ không được lấy nét. Công tắc chính — chuông cạnh thread quyết định chat nào được phép thông báo."
   },
   "threadNotifications": {
     "tooltip": "Thông báo",

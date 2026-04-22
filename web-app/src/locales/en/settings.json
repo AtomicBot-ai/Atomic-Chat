@@ -59,10 +59,10 @@
   },
   "chatBehavior": {
     "title": "Chat Behavior",
-    "disableReasoning": "Disable reasoning",
-    "disableReasoningDesc": "Skip the thinking phase on models that support reasoning.",
     "autoApproveTools": "Auto-approve tool calls",
-    "autoApproveToolsDesc": "Skip the approval popup and automatically allow every tool/MCP call. When disabled, you'll be asked to confirm each new tool."
+    "autoApproveToolsDesc": "Skip the approval popup and automatically allow every tool/MCP call. When disabled, you'll be asked to confirm each new tool.",
+    "desktopNotifications": "Desktop notifications",
+    "desktopNotificationsDesc": "Send a system notification when a reply finishes generating and the window isn't focused. Master switch — per-thread bell controls which chats are allowed to notify."
   },
   "threadNotifications": {
     "tooltip": "Notifications",

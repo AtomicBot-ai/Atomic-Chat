@@ -157,10 +157,17 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
             : true;
         const notFocusedHere =
           !isVisible || state.activeConversationId !== sessionId;
-        const optedIn =
-          useThreadNotifications.getState().isEnabled(sessionId);
+        const notificationsState = useThreadNotifications.getState();
+        const globallyEnabled = notificationsState.globallyEnabled;
+        const optedIn = notificationsState.isEnabled(sessionId);
 
-        if (hasMessages && !hasPendingTools && notFocusedHere && optedIn) {
+        if (
+          globallyEnabled &&
+          hasMessages &&
+          !hasPendingTools &&
+          notFocusedHere &&
+          optedIn
+        ) {
           const threadTitle = existing.title ?? "";
           const notificationTitle = i18n.t(
             "settings:threadNotifications.notificationTitle"

@@ -62,7 +62,9 @@
     "disableReasoning": "Disable reasoning",
     "disableReasoningDesc": "Skip the thinking phase on models that support reasoning.",
     "autoApproveTools": "Auto-approve tool calls",
-    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation."
+    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
+    "desktopNotifications": "桌面通知",
+    "desktopNotificationsDesc": "当回复生成完毕且窗口未激活时发送系统通知。总开关 — 会话旁的铃铛决定哪些对话可以通知。"
   },
   "threadNotifications": {
     "tooltip": "通知",
