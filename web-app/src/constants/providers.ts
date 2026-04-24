@@ -190,6 +190,22 @@ export const predefinedProviders = [
         capabilities: ['completion', 'tools', 'vision'],
       },
       {
+        id: 'deepseek/deepseek-v4-pro',
+        name: 'DeepSeek V4 Pro',
+        version: '1.0',
+        description:
+          'DeepSeek flagship MoE (1.6T total / 49B active) for advanced reasoning, coding, and long-horizon agents. 1M ctx.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'deepseek/deepseek-v4-flash',
+        name: 'DeepSeek V4 Flash',
+        version: '1.0',
+        description:
+          'Efficiency-optimized MoE (284B total / 13B active) for fast, cost-effective reasoning and coding. 1M ctx.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
         id: 'deepseek/deepseek-v3.2',
         name: 'DeepSeek V3.2',
         version: '1.0',

@@ -14,7 +14,7 @@ import { useAppState } from '@/hooks/useAppState'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { switchToModel } from '@/utils/switchModel'
 import { isDev } from '@/lib/utils'
-import { AppEvent, events } from '@janhq/core'
+import { AppEvent, events, ModelEvent } from '@janhq/core'
 import { SystemEvent } from '@/types/events'
 import {
   parseAtomicChatDeepLink,
@@ -257,6 +257,146 @@ export function DataProvider() {
       console.log('[LocalAPI] Unregistered onModelImported handler')
     }
   }, [serviceHub, setProviders, setServerStatus])
+
+  // Mirror any auto-increase of ctx_len performed by a backend extension
+  // (triggered by the Local API Server proxy detecting a context-limit error)
+  // into the persisted Zustand provider store so the UI stays in sync with
+  // the live backend session.
+  //
+  // We subscribe on TWO redundant channels to guarantee delivery:
+  //   1) `ModelEvent.OnAutoIncreasedCtxLen` on `@janhq/core::events`
+  //      (in-process EventEmitter singleton hanging off `window.core.events`).
+  //   2) `local_backend://auto_increase_ctx_notify` on the native Tauri
+  //      event bus (bypasses any @janhq/core bundling quirks).
+  //
+  // The handler is idempotent: applying the same `newCtxLen` twice simply
+  // writes the same value back, so double-delivery is harmless.
+  useEffect(() => {
+    const applyNewCtxLen = (
+      providerName: string,
+      modelId: string,
+      newCtxLen: number,
+      source: string
+    ) => {
+      const { providers, updateProvider } = useModelProvider.getState()
+      const provider = providers.find((p) => p.provider === providerName)
+      if (!provider) {
+        console.warn(
+          `[LocalAPI] OnAutoIncreasedCtxLen (${source}): provider "${providerName}" not found in store`
+        )
+        return
+      }
+
+      const modelIndex = provider.models.findIndex((m) => m.id === modelId)
+      if (modelIndex === -1) {
+        console.warn(
+          `[LocalAPI] OnAutoIncreasedCtxLen (${source}): model "${modelId}" not found in provider "${providerName}"`
+        )
+        return
+      }
+
+      const model = provider.models[modelIndex]
+      const currentValue =
+        (model.settings?.ctx_len?.controller_props?.value as number | undefined) ??
+        null
+      if (currentValue === newCtxLen) {
+        console.log(
+          `[LocalAPI] OnAutoIncreasedCtxLen (${source}): ctx_len for ${providerName}/${modelId} already = ${newCtxLen}, no-op`
+        )
+        return
+      }
+
+      const updatedModel = {
+        ...model,
+        settings: {
+          ...model.settings,
+          ctx_len: {
+            ...(model.settings?.ctx_len ?? {}),
+            controller_props: {
+              ...(model.settings?.ctx_len?.controller_props ?? {}),
+              value: newCtxLen,
+            },
+          },
+        },
+      }
+
+      const updatedModels = [...provider.models]
+      updatedModels[modelIndex] = updatedModel as Model
+
+      updateProvider(provider.provider, { models: updatedModels })
+      console.log(
+        `[LocalAPI] Mirrored auto-increased ctx_len for ${providerName}/${modelId} → ${newCtxLen} (via ${source})`
+      )
+    }
+
+    const handleFromEvents = (eventData?: Record<string, unknown>) => {
+      const providerName = eventData?.provider as string | undefined
+      const modelId = eventData?.modelId as string | undefined
+      const newCtxLen = eventData?.newCtxLen as number | undefined
+      console.log(
+        '[LocalAPI] OnAutoIncreasedCtxLen received (core/events)',
+        eventData
+      )
+      if (!providerName || !modelId || typeof newCtxLen !== 'number') {
+        console.warn(
+          '[LocalAPI] OnAutoIncreasedCtxLen (core/events): invalid payload',
+          eventData
+        )
+        return
+      }
+      applyNewCtxLen(providerName, modelId, newCtxLen, 'core/events')
+    }
+
+    events.on(ModelEvent.OnAutoIncreasedCtxLen, handleFromEvents)
+
+    // Parallel native Tauri bus listener (extensions emit both channels).
+    let unlistenTauri: (() => void) | undefined
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { listen } = await import('@tauri-apps/api/event')
+        if (cancelled) return
+        const unsub = await listen<{
+          provider?: string
+          modelId?: string
+          newCtxLen?: number
+        }>('local_backend://auto_increase_ctx_notify', (event) => {
+          const { provider, modelId, newCtxLen } = event.payload ?? {}
+          console.log(
+            '[LocalAPI] auto_increase_ctx_notify received (tauri)',
+            event.payload
+          )
+          if (!provider || !modelId || typeof newCtxLen !== 'number') {
+            console.warn(
+              '[LocalAPI] auto_increase_ctx_notify (tauri): invalid payload',
+              event.payload
+            )
+            return
+          }
+          applyNewCtxLen(provider, modelId, newCtxLen, 'tauri')
+        })
+        if (cancelled) {
+          unsub()
+          return
+        }
+        unlistenTauri = unsub
+        console.log(
+          '[LocalAPI] Subscribed to Tauri event: local_backend://auto_increase_ctx_notify'
+        )
+      } catch (e) {
+        console.warn(
+          '[LocalAPI] Failed to subscribe to Tauri auto_increase_ctx_notify:',
+          e
+        )
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      events.off(ModelEvent.OnAutoIncreasedCtxLen, handleFromEvents)
+      if (unlistenTauri) unlistenTauri()
+    }
+  }, [])
 
   // Auto-start Local API Server on app startup. Works for both local engines
   // (llamacpp/mlx) and cloud providers: when the last-used model is cloud we

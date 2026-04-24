@@ -23,10 +23,13 @@ import {
   events,
   AppEvent,
   DownloadEvent,
+  computeNextCtxLen,
+  ModelEvent,
 } from '@janhq/core'
 
 import { info, warn, error as logError } from '@tauri-apps/plugin-log'
 import { invoke, Channel } from '@tauri-apps/api/core'
+import { listen, emit as tauriEmit } from '@tauri-apps/api/event'
 import {
   loadMlxModel,
   unloadMlxModel,
@@ -36,6 +39,22 @@ import { readGgufMetadata, ModelConfig } from '@janhq/tauri-plugin-llamacpp-api'
 
 // Error message constant
 const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
+
+/// Generic Tauri channels through which the Rust Local API Server proxy
+/// (`src-tauri/src/core/server/proxy.rs`) talks to backend extensions about
+/// a mid-flight context-window overflow.
+const AUTO_INCREASE_CTX_EVENT = 'local_backend://auto_increase_ctx'
+const AUTO_INCREASE_CTX_DONE_PREFIX = 'local_backend://auto_increase_ctx_done/'
+/// Parallel Tauri-level broadcast so the web-app can subscribe without
+/// routing through the `@janhq/core` in-process EventEmitter.
+const AUTO_INCREASE_CTX_NOTIFY = 'local_backend://auto_increase_ctx_notify'
+
+interface AutoIncreaseCtxRequest {
+  request_id: string
+  backend: 'llamacpp' | 'mlx'
+  model_id: string
+  trigger: 'error' | 'finish_length'
+}
 
 const logger = {
   info: function (...args: any[]) {
@@ -63,6 +82,14 @@ export default class mlx_extension extends AIEngine {
   private apiSecret: string = 'JanMLX'
   private loadingModels = new Map<string, Promise<SessionInfo>>()
 
+  /// Tracks the `ctx_size` actually used for the currently loaded session
+  /// per model. The UI-level setting / extension config may differ from the
+  /// live session (e.g. after a prior auto-increase), so we cannot rely on
+  /// `this.config.ctx_size` when computing the next window.
+  private modelCtxSize = new Map<string, number>()
+
+  private unlistenAutoIncreaseCtx?: () => void
+
   override async onLoad(): Promise<void> {
     super.onLoad()
 
@@ -85,6 +112,17 @@ export default class mlx_extension extends AIEngine {
     void this.detectBackendVersion().catch((err) => {
       logger.warn('Failed to detect MLX backend version:', err)
     })
+
+    // Local API Server auto-increase-ctx bridge. Mirrors the listener in
+    // llamacpp-extension; only payloads with `backend === 'mlx'` are handled
+    // here so remote/other-local extensions don't step on each other.
+    this.unlistenAutoIncreaseCtx = await listen<AutoIncreaseCtxRequest>(
+      AUTO_INCREASE_CTX_EVENT,
+      (event) => {
+        if (event.payload?.backend !== 'mlx') return
+        void this.handleAutoIncreaseCtx(event.payload)
+      }
+    )
 
     this.getProviderPath()
   }
@@ -124,6 +162,10 @@ export default class mlx_extension extends AIEngine {
   }
 
   override async onUnload(): Promise<void> {
+    if (this.unlistenAutoIncreaseCtx) {
+      this.unlistenAutoIncreaseCtx()
+      this.unlistenAutoIncreaseCtx = undefined
+    }
     // Cleanup handled by Tauri plugin on app exit
   }
 
@@ -349,10 +391,96 @@ export default class mlx_extension extends AIEngine {
         isEmbedding,
         Number(this.timeout)
       )
+      this.modelCtxSize.set(modelId, mlxConfig.ctx_size)
       return sInfo
     } catch (error) {
       logger.error(`Error loading MLX model: ${JSON.stringify(error)}`)
       throw error
+    }
+  }
+
+  /// Bridge from the Local API Server proxy (Rust) back to the MLX extension
+  /// when a forwarded request exhausts the model's context window. Mirrors
+  /// the llamacpp-extension implementation: unload + reload with a larger
+  /// `ctx_size`, acknowledge the proxy on a request-scoped channel, and emit
+  /// a jan-core event so the web-app UI can mirror the new value.
+  private async handleAutoIncreaseCtx(
+    payload: AutoIncreaseCtxRequest
+  ): Promise<void> {
+    const { request_id, model_id, trigger } = payload
+    const doneChannel = `${AUTO_INCREASE_CTX_DONE_PREFIX}${request_id}`
+
+    const sendDone = async (body: {
+      ok: boolean
+      new_ctx_len?: number
+      reason?: string
+    }) => {
+      try {
+        await tauriEmit(doneChannel, body)
+      } catch (e) {
+        logger.warn(
+          `Failed to emit auto_increase_ctx_done (${doneChannel}): ${e}`
+        )
+      }
+    }
+
+    try {
+      const currentCtxLen =
+        this.modelCtxSize.get(model_id) ?? this.config?.ctx_size ?? 4096
+      const newCtxLen = computeNextCtxLen(currentCtxLen)
+
+      if (newCtxLen <= currentCtxLen) {
+        await sendDone({ ok: false, reason: 'at_max' })
+        return
+      }
+
+      logger.info(
+        `auto_increase_ctx (mlx) model=${model_id} trigger=${trigger} ${currentCtxLen} -> ${newCtxLen}`
+      )
+
+      try {
+        await this.unload(model_id)
+      } catch (e) {
+        logger.warn(
+          `auto_increase_ctx unload failed for ${model_id}, proceeding anyway: ${e}`
+        )
+      }
+
+      const sInfo = await this.load(
+        model_id,
+        { ctx_size: newCtxLen },
+        false,
+        true
+      )
+      this.modelCtxSize.set(model_id, newCtxLen)
+
+      const notifyPayload = {
+        provider: this.provider,
+        modelId: model_id,
+        newCtxLen,
+      }
+
+      if (events && typeof events.emit === 'function') {
+        events.emit(ModelEvent.OnAutoIncreasedCtxLen, notifyPayload)
+      }
+
+      try {
+        await tauriEmit(AUTO_INCREASE_CTX_NOTIFY, notifyPayload)
+      } catch (e) {
+        logger.warn(
+          `Failed to Tauri-emit ${AUTO_INCREASE_CTX_NOTIFY}: ${e}`
+        )
+      }
+
+      await sendDone({ ok: true, new_ctx_len: newCtxLen })
+      logger.info(
+        `auto_increase_ctx (mlx) reload complete model=${model_id} port=${sInfo?.port} newCtxLen=${newCtxLen}; notified UI via events + tauri`
+      )
+    } catch (e) {
+      logger.error(
+        `auto_increase_ctx handler failed for ${payload.model_id}: ${e}`
+      )
+      await sendDone({ ok: false, reason: `exception: ${e}` })
     }
   }
 

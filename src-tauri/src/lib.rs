@@ -254,6 +254,7 @@ pub fn run() {
             background_cleanup_handle: Arc::new(Mutex::new(None)),
             mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
             provider_configs: Arc::new(Mutex::new(HashMap::new())),
+            auto_increase_ctx: Arc::new(core::state::AutoIncreaseState::default()),
             #[cfg(desktop)]
             tray_handles: Arc::new(std::sync::Mutex::new(None)),
         })

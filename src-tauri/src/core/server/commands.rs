@@ -49,6 +49,7 @@ pub async fn start_server<R: Runtime>(
         vec![trusted_hosts],
         proxy_timeout,
         state.provider_configs.clone(),
+        state.auto_increase_ctx.clone(),
     )
     .await
     .map_err(|e| e.to_string())?;

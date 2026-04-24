@@ -22,10 +22,12 @@ import {
   AppEvent,
   DownloadEvent,
   chatCompletionRequestMessage,
+  computeNextCtxLen,
+  ModelEvent,
 } from '@janhq/core'
 
 import { error, info, warn } from '@tauri-apps/plugin-log'
-import { listen } from '@tauri-apps/api/event'
+import { listen, emit as tauriEmit } from '@tauri-apps/api/event'
 import {
   listSupportedBackends,
   isBackendInstalled,
@@ -67,6 +69,27 @@ import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 // Error message constant - matches web-app/src/utils/error.ts
 const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
+
+/// Payload emitted by the Rust proxy when it detects a context-limit error
+/// that we (the TS side) should recover from by reloading the backend with
+/// a larger ctx window.
+interface AutoIncreaseCtxRequest {
+  request_id: string
+  backend: 'llamacpp' | 'mlx'
+  model_id: string
+  trigger: 'error' | 'finish_length'
+}
+
+/// Tauri channel constants used by the Rust proxy (`proxy.rs`) to coordinate
+/// a context-window grow with the owning backend extension.
+const AUTO_INCREASE_CTX_EVENT = 'local_backend://auto_increase_ctx'
+const AUTO_INCREASE_CTX_DONE_PREFIX = 'local_backend://auto_increase_ctx_done/'
+/// Broadcast channel that mirrors `ModelEvent.OnAutoIncreasedCtxLen` but
+/// goes through the native Tauri event bus instead of the `@janhq/core`
+/// in-process EventEmitter. Having a parallel Tauri-level signal avoids
+/// losing UI-sync when the web-app happens to bundle a different `events`
+/// singleton than the extension does.
+const AUTO_INCREASE_CTX_NOTIFY = 'local_backend://auto_increase_ctx_notify'
 
 /**
  * Override the default app.log function to use Jan's logging system.
@@ -130,7 +153,13 @@ export default class llamacpp_extension extends AIEngine {
   private isUpdatingBackend: boolean = false
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
   private sessionCache = new Map<string, SessionInfo>()
+  /// Tracks the ctx_size a model was last loaded with so the Local API
+  /// Server auto-increase flow knows the "current" value — the extension's
+  /// `this.config.ctx_size` is only a default and doesn't reflect UI-level
+  /// per-model overrides.
+  private modelCtxSize = new Map<string, number>()
   private unlistenValidationStarted?: () => void
+  private unlistenAutoIncreaseCtx?: () => void
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -178,6 +207,18 @@ export default class llamacpp_extension extends AIEngine {
       )
       events.emit(DownloadEvent.onModelValidationStarted, event.payload)
     })
+
+    // Local API Server auto-increase-ctx bridge. The Rust proxy fires this
+    // event whenever a forwarded request hits a context-limit error; we
+    // reply on a request-scoped channel so the proxy can retry transparently
+    // (see `proxy.rs::maybe_auto_increase_and_retry`).
+    this.unlistenAutoIncreaseCtx = await listen<AutoIncreaseCtxRequest>(
+      AUTO_INCREASE_CTX_EVENT,
+      (event) => {
+        if (event.payload?.backend !== 'llamacpp') return
+        void this.handleAutoIncreaseCtx(event.payload)
+      }
+    )
 
     //* configureBackends может долго качать движок — не await, иначе весь UI ждёт завершения.
     void this.configureBackends().catch((err) => {
@@ -909,6 +950,9 @@ export default class llamacpp_extension extends AIEngine {
     // Clean up validation event listeners
     if (this.unlistenValidationStarted) {
       this.unlistenValidationStarted()
+    }
+    if (this.unlistenAutoIncreaseCtx) {
+      this.unlistenAutoIncreaseCtx()
     }
   }
 
@@ -1823,10 +1867,109 @@ export default class llamacpp_extension extends AIEngine {
         Number(this.timeout)
       )
       this.sessionCache.set(modelId, sInfo)
+      if (typeof cfg.ctx_size === 'number') {
+        this.modelCtxSize.set(modelId, cfg.ctx_size)
+      }
       return sInfo
     } catch (error) {
       logger.error('Error in load command:\n', error)
       throw error
+    }
+  }
+
+  /// Bridge from the Local API Server proxy (Rust) back to the extension
+  /// when a forwarded request exhausts the model's context window. We
+  /// unload + reload the model with a larger ctx_size, inform the proxy via
+  /// a request-scoped done event, and notify the web-app UI so the Zustand
+  /// provider store mirrors the new value (so the next UI interaction keeps
+  /// using the expanded window).
+  private async handleAutoIncreaseCtx(
+    payload: AutoIncreaseCtxRequest
+  ): Promise<void> {
+    const { request_id, model_id, trigger } = payload
+    const doneChannel = `${AUTO_INCREASE_CTX_DONE_PREFIX}${request_id}`
+
+    const sendDone = async (body: {
+      ok: boolean
+      new_ctx_len?: number
+      reason?: string
+    }) => {
+      try {
+        await tauriEmit(doneChannel, body)
+      } catch (e) {
+        logger.warn(
+          `Failed to emit auto_increase_ctx_done (${doneChannel}): ${e}`
+        )
+      }
+    }
+
+    try {
+      const currentCtxLen =
+        this.modelCtxSize.get(model_id) ?? this.config?.ctx_size ?? 8192
+      const newCtxLen = computeNextCtxLen(currentCtxLen)
+
+      if (newCtxLen <= currentCtxLen) {
+        await sendDone({ ok: false, reason: 'at_max' })
+        return
+      }
+
+      logger.info(
+        `auto_increase_ctx (llamacpp) model=${model_id} trigger=${trigger} ${currentCtxLen} -> ${newCtxLen}`
+      )
+
+      // Unload may throw if the session is gone; treat that as a reload
+      // candidate but still bail on the load step since we can't retry
+      // against a missing process.
+      try {
+        await this.unload(model_id)
+      } catch (e) {
+        logger.warn(
+          `auto_increase_ctx unload failed for ${model_id}, proceeding anyway: ${e}`
+        )
+      }
+
+      const sInfo = await this.load(
+        model_id,
+        { ctx_size: newCtxLen },
+        false,
+        true
+      )
+      this.modelCtxSize.set(model_id, newCtxLen)
+
+      const notifyPayload = {
+        provider: this.provider,
+        modelId: model_id,
+        newCtxLen,
+      }
+
+      if (events && typeof events.emit === 'function') {
+        events.emit(ModelEvent.OnAutoIncreasedCtxLen, notifyPayload)
+      }
+
+      // Redundant Tauri-level broadcast so the web-app can listen on the
+      // native event bus without depending on `@janhq/core`'s in-process
+      // EventEmitter singleton (which can be bypassed when extensions bundle
+      // their own copy of `@janhq/core`).
+      try {
+        await tauriEmit(AUTO_INCREASE_CTX_NOTIFY, notifyPayload)
+      } catch (e) {
+        logger.warn(
+          `Failed to Tauri-emit ${AUTO_INCREASE_CTX_NOTIFY}: ${e}`
+        )
+      }
+
+      await sendDone({
+        ok: true,
+        new_ctx_len: newCtxLen,
+      })
+      logger.info(
+        `auto_increase_ctx (llamacpp) reload complete model=${model_id} port=${sInfo?.port} newCtxLen=${newCtxLen}; notified UI via events + tauri`
+      )
+    } catch (e) {
+      logger.error(
+        `auto_increase_ctx handler failed for ${payload.model_id}: ${e}`
+      )
+      await sendDone({ ok: false, reason: `exception: ${e}` })
     }
   }
 

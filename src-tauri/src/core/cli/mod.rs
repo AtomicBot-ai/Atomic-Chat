@@ -124,6 +124,7 @@ pub async fn cli_start_server<R: tauri::Runtime>(
         vec![vec![]],
         proxy_timeout,
         app_state.provider_configs.clone(),
+        app_state.auto_increase_ctx.clone(),
     )
     .await
     .map_err(|e| e.to_string())

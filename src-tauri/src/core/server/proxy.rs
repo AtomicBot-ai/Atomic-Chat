@@ -10,11 +10,15 @@ use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
-use tauri::{AppHandle, Emitter, Runtime};
+use tauri::{AppHandle, Emitter, Listener, Runtime};
 use tauri_plugin_llamacpp::LLamaBackendSession;
 use tokio::sync::Mutex;
 
-use crate::core::state::{ProviderConfig, ServerHandle};
+use crate::core::state::{
+    AutoIncreaseOutcome, AutoIncreaseState, ProviderConfig, ServerHandle,
+};
+use tokio::sync::Notify;
+use uuid::Uuid;
 
 /// Tauri event channel used to forward Local API Server request metadata to
 /// the web-app analytics listener. The web-app captures it as a PostHog event
@@ -502,6 +506,508 @@ fn is_local_url(url: &str) -> bool {
     url.contains("://localhost") || url.contains("://127.0.0.1") || url.contains("://0.0.0.0") || url.contains("://[::1]")
 }
 
+// ── Auto-increase-ctx: shared detection, events & coordinator ────────────────
+//
+// The UI already increases `ctx_len` when chat replies hit the model's context
+// window (see `handleContextSizeIncrease` in
+// `web-app/src/routes/threads/$threadId.tsx`). External clients using the
+// Local API server used to bypass that logic entirely because this proxy is
+// a pure forwarder. The event channel below lets the proxy delegate the
+// reload to the corresponding TypeScript extension (owner of the model
+// settings in Zustand) and then retry the buffered request transparently.
+
+/// Event emitted from Rust to extensions when a context-limit error is
+/// detected. Both `llamacpp-extension` and `mlx-extension` subscribe and
+/// filter by `backend`.
+const AUTO_INCREASE_EVENT: &str = "local_backend://auto_increase_ctx";
+/// Reply channel. The `request_id` suffix scopes the notification to a
+/// single pending proxy request so parallel retries don't cross-talk.
+const AUTO_INCREASE_DONE_EVENT_PREFIX: &str = "local_backend://auto_increase_ctx_done";
+/// Total time we're willing to wait for extension-side unload + load.
+/// Matches the worst-case behaviour we've observed for GGUF reload with
+/// a 32k → 48k bump; beyond that the user is better served by a clean error.
+const AUTO_INCREASE_TIMEOUT_SECS: u64 = 60;
+
+#[derive(serde::Serialize, Clone)]
+struct AutoIncreaseRequest<'a> {
+    request_id: String,
+    backend: &'a str,
+    model_id: String,
+    /// Where the detection triggered: "error" for upstream error body,
+    /// "finish_length" for `finish_reason=length` in the upstream response.
+    trigger: &'a str,
+}
+
+#[derive(serde::Deserialize, Clone, Debug)]
+struct AutoIncreaseDoneEvent {
+    ok: bool,
+    #[serde(default)]
+    new_ctx_len: Option<i64>,
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+/// Returns `true` if the given upstream response almost certainly failed
+/// because the conversation exceeded the current context window.
+///
+/// Both llama-server and mlx-server are OpenAI-compatible; their error
+/// bodies vary but all reference the word "context" plus a length/size/limit
+/// keyword or use `exceed`/`overflow`. We also accept the UI-facing phrase
+/// from `web-app/src/utils/error.ts` verbatim to stay in lockstep with the
+/// existing in-process detection.
+fn is_context_limit_error(status: StatusCode, body: &str) -> bool {
+    if !matches!(status.as_u16(), 400 | 413 | 500 | 503) {
+        return false;
+    }
+    let b = body.to_lowercase();
+    if b.contains("the request exceeds the available context size") {
+        return true;
+    }
+    if !b.contains("context") {
+        return false;
+    }
+    b.contains("size")
+        || b.contains("length")
+        || b.contains("limit")
+        || b.contains("exceed")
+        || b.contains("overflow")
+        || b.contains("too long")
+        || b.contains("too large")
+}
+
+/// Parses the client's buffered request body and extracts `max_tokens` (or
+/// the newer `max_completion_tokens` alias that some OpenAI SDKs already
+/// emit). Returns `None` when the field is absent/invalid — meaning the
+/// client imposed no explicit completion cap.
+fn extract_client_max_tokens(request_body: Option<&[u8]>) -> Option<u64> {
+    let bytes = request_body?;
+    let json: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    let obj = json.as_object()?;
+    for key in ["max_tokens", "max_completion_tokens"] {
+        if let Some(v) = obj.get(key).and_then(|v| v.as_u64()) {
+            if v > 0 {
+                return Some(v);
+            }
+        }
+    }
+    None
+}
+
+/// Scans a non-streaming OpenAI JSON response for a terminal
+/// `finish_reason == "length"` that is caused by the *context window* being
+/// exhausted — **not** by the client's own `max_tokens` cap.
+///
+/// Discrimination rules (in order):
+///   1. Any choice must report `finish_reason == "length"`.
+///   2. If the client did **not** set `max_tokens`/`max_completion_tokens`,
+///      `length` can only come from the context window → trigger.
+///   3. If the client did set a cap, we only trigger when
+///      `usage.completion_tokens < max_tokens`. When completion_tokens
+///      equals/exceeds the cap the stop was client-driven and we must
+///      leave the model alone (otherwise we would auto-grow the ctx on
+///      every short `max_tokens=16` healthcheck).
+fn is_context_overflow_finish_length(
+    response_body: &[u8],
+    request_body: Option<&[u8]>,
+) -> bool {
+    let Ok(json) = serde_json::from_slice::<serde_json::Value>(response_body) else {
+        return false;
+    };
+
+    let has_length = json
+        .get("choices")
+        .and_then(|c| c.as_array())
+        .map(|choices| {
+            choices.iter().any(|choice| {
+                choice
+                    .get("finish_reason")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s == "length")
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false);
+
+    if !has_length {
+        return false;
+    }
+
+    let client_cap = extract_client_max_tokens(request_body);
+
+    match client_cap {
+        None => true, // No client-imposed cap → `length` must be context-limit.
+        Some(cap) => {
+            let completion_tokens = json
+                .get("usage")
+                .and_then(|u| u.get("completion_tokens"))
+                .and_then(|v| v.as_u64());
+            match completion_tokens {
+                Some(done) => done + 1 < cap,
+                // Unknown completion_tokens: treat as client-driven to avoid
+                // ratcheting ctx on every opaque `length` stop. Clients who
+                // really hit ctx get HTTP 500 anyway, which we still catch.
+                None => false,
+            }
+        }
+    }
+}
+
+/// Acquire or wait on the per-model reload slot. The first caller gets
+/// `is_leader=true` and must perform the event round-trip; every other
+/// caller waits on the returned `Arc<Notify>` and then reads the cached
+/// outcome with `take_auto_increase_outcome`.
+async fn acquire_auto_increase_slot(
+    state: &AutoIncreaseState,
+    model_id: &str,
+) -> (Arc<Notify>, bool) {
+    let mut pending = state.pending.lock().await;
+    if let Some(n) = pending.get(model_id) {
+        return (n.clone(), false);
+    }
+    let notify = Arc::new(Notify::new());
+    pending.insert(model_id.to_string(), notify.clone());
+    // Drop the last stale outcome so waiters don't accidentally read a
+    // success from a previous cycle.
+    drop(pending);
+    let mut outcomes = state.last_outcome.lock().await;
+    outcomes.remove(model_id);
+    (notify, true)
+}
+
+/// Release the per-model reload slot and wake every waiter. Safe to call
+/// multiple times — the `HashMap::remove` is a no-op on the second call.
+async fn release_auto_increase_slot(
+    state: &AutoIncreaseState,
+    model_id: &str,
+    notify: &Notify,
+) {
+    let mut pending = state.pending.lock().await;
+    pending.remove(model_id);
+    drop(pending);
+    notify.notify_waiters();
+}
+
+async fn store_auto_increase_outcome(
+    state: &AutoIncreaseState,
+    model_id: &str,
+    outcome: AutoIncreaseOutcome,
+) {
+    let mut outcomes = state.last_outcome.lock().await;
+    outcomes.insert(model_id.to_string(), outcome);
+}
+
+async fn read_auto_increase_outcome(
+    state: &AutoIncreaseState,
+    model_id: &str,
+) -> Option<AutoIncreaseOutcome> {
+    let outcomes = state.last_outcome.lock().await;
+    outcomes.get(model_id).cloned()
+}
+
+/// Trigger the TypeScript-side reload for `model_id` on the `llamacpp` or
+/// `mlx` backend and block until the matching `auto_increase_ctx_done` event
+/// arrives (or the timeout fires). Returns the outcome so the caller can
+/// decide whether to retry the upstream request.
+async fn trigger_auto_increase<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    backend: &str,
+    model_id: &str,
+    trigger: &str,
+) -> AutoIncreaseOutcome {
+    let request_id = Uuid::new_v4().to_string();
+    let done_channel = format!("{AUTO_INCREASE_DONE_EVENT_PREFIX}/{request_id}");
+
+    let (tx, rx) = tokio::sync::oneshot::channel::<AutoIncreaseDoneEvent>();
+    // Listener must be registered before we emit the trigger, otherwise a
+    // very fast extension handler could fire `auto_increase_ctx_done` before
+    // we're ready and we'd deadlock on the timeout branch.
+    //
+    // `listen_any` expects a synchronous `Fn`, so we store the oneshot sender
+    // in a `std::sync::Mutex<Option<_>>`. `Option::take` gives us the
+    // single-use semantics; the listener closure can fire more than once if a
+    // stray done-event shows up later, but only the first call will actually
+    // transmit.
+    let tx_slot: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<AutoIncreaseDoneEvent>>>> =
+        Arc::new(std::sync::Mutex::new(Some(tx)));
+    let tx_clone = tx_slot.clone();
+    let unlisten = app_handle.listen_any(done_channel.clone(), move |event| {
+        let payload = event.payload();
+        match serde_json::from_str::<AutoIncreaseDoneEvent>(payload) {
+            Ok(ev) => {
+                if let Ok(mut guard) = tx_clone.lock() {
+                    if let Some(sender) = guard.take() {
+                        let _ = sender.send(ev);
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    "auto_increase_ctx_done payload parse failed: {e}; raw={payload}"
+                );
+            }
+        }
+    });
+
+    let request = AutoIncreaseRequest {
+        request_id: request_id.clone(),
+        backend,
+        model_id: model_id.to_string(),
+        trigger,
+    };
+    if let Err(e) = app_handle.emit(AUTO_INCREASE_EVENT, request) {
+        log::error!("Failed to emit {AUTO_INCREASE_EVENT}: {e}");
+        app_handle.unlisten(unlisten);
+        return AutoIncreaseOutcome {
+            ok: false,
+            new_ctx_len: None,
+            reason: Some(format!("emit_failed: {e}")),
+        };
+    }
+    log::info!(
+        "auto_increase_ctx: emitted trigger backend={backend} model_id={model_id} request_id={request_id} source={trigger}"
+    );
+
+    let outcome = match tokio::time::timeout(
+        std::time::Duration::from_secs(AUTO_INCREASE_TIMEOUT_SECS),
+        rx,
+    )
+    .await
+    {
+        Ok(Ok(ev)) => AutoIncreaseOutcome {
+            ok: ev.ok,
+            new_ctx_len: ev.new_ctx_len,
+            reason: ev.reason,
+        },
+        Ok(Err(_)) => AutoIncreaseOutcome {
+            ok: false,
+            new_ctx_len: None,
+            reason: Some("channel_closed".to_string()),
+        },
+        Err(_) => AutoIncreaseOutcome {
+            ok: false,
+            new_ctx_len: None,
+            reason: Some(format!("timeout_after_{AUTO_INCREASE_TIMEOUT_SECS}s")),
+        },
+    };
+
+    app_handle.unlisten(unlisten);
+    outcome
+}
+
+/// Returns `true` iff the given model is currently served by an
+/// `is_embedding == true` session on either backend. Embedding sessions
+/// have no context-exhaustion flow (batched fixed-size inputs) so the
+/// proxy must not trigger a reload for them.
+async fn is_embedding_session(
+    backend: &str,
+    model_id: &str,
+    sessions: &Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    mlx_sessions: &Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+) -> bool {
+    match backend {
+        "llamacpp" => {
+            let guard = sessions.lock().await;
+            guard
+                .values()
+                .find(|s| s.info.model_id == model_id)
+                .map(|s| s.info.is_embedding)
+                .unwrap_or(false)
+        }
+        "mlx" => {
+            let guard = mlx_sessions.lock().await;
+            guard
+                .values()
+                .find(|s| s.info.model_id == model_id)
+                .map(|s| s.info.is_embedding)
+                .unwrap_or(false)
+        }
+        _ => false,
+    }
+}
+
+/// Look up the freshly-loaded local backend session after a successful
+/// auto-increase reload and return its `(port, api_key)`. Returns `None`
+/// when the session can't be found (e.g. TS reload actually failed despite
+/// `ok=true`).
+async fn resolve_local_session(
+    backend: &str,
+    model_id: &str,
+    sessions: &Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    mlx_sessions: &Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+) -> Option<(i32, String)> {
+    match backend {
+        "llamacpp" => {
+            let guard = sessions.lock().await;
+            guard
+                .values()
+                .find(|s| s.info.model_id == model_id)
+                .map(|s| (s.info.port, s.info.api_key.clone()))
+        }
+        "mlx" => {
+            let guard = mlx_sessions.lock().await;
+            guard
+                .values()
+                .find(|s| s.info.model_id == model_id)
+                .map(|s| (s.info.port, s.info.api_key.clone()))
+        }
+        _ => None,
+    }
+}
+
+/// Rebuild and re-send the proxied request after a successful
+/// auto-increase-ctx reload. `new_port` points at the freshly-spawned
+/// llama-server / mlx-server, `new_api_key` is the per-session bearer token.
+/// All other parameters mirror the original request so the retry is
+/// byte-identical on the wire.
+async fn retry_local_upstream(
+    local_client: &Client,
+    method: &hyper::Method,
+    destination_path: &str,
+    new_port: i32,
+    new_api_key: &str,
+    headers: &hyper::HeaderMap,
+    body: Option<Bytes>,
+) -> Result<reqwest::Response, reqwest::Error> {
+    let upstream_url = format!("http://127.0.0.1:{new_port}/v1{destination_path}");
+    let mut req = local_client.request(method.clone(), &upstream_url);
+    for (name, value) in headers.iter() {
+        if name != hyper::header::HOST && name != hyper::header::AUTHORIZATION {
+            req = req.header(name, value);
+        }
+    }
+    if !new_api_key.is_empty() {
+        req = req.header("Authorization", format!("Bearer {new_api_key}"));
+    }
+    let req_with_body = if let Some(bytes) = body {
+        req.body(bytes)
+    } else {
+        req
+    };
+    req_with_body.send().await
+}
+
+/// Wrap an upstream `reqwest::Response` into a `hyper::Response<Body>` that
+/// streams bytes as they arrive and attaches the proxy's CORS headers.
+/// Extracted so the auto-increase-ctx retry path and the primary success
+/// path share the same forwarding implementation.
+fn build_streaming_response(
+    response: reqwest::Response,
+    host_header: &str,
+    origin_header: &str,
+    trusted_hosts: &[Vec<String>],
+) -> Response<Body> {
+    let status = response.status();
+    let mut builder = Response::builder().status(status);
+    for (name, value) in response.headers() {
+        if !is_cors_header(name.as_str()) && name != hyper::header::CONTENT_LENGTH {
+            builder = builder.header(name, value);
+        }
+    }
+    builder = add_cors_headers_with_host_and_origin(
+        builder,
+        host_header,
+        origin_header,
+        trusted_hosts,
+    );
+
+    let mut stream = response.bytes_stream();
+    let (mut sender, body) = hyper::Body::channel();
+    tokio::spawn(async move {
+        while let Some(chunk_result) = stream.next().await {
+            match chunk_result {
+                Ok(chunk) => {
+                    if sender.send_data(chunk).await.is_err() {
+                        log::debug!("Client disconnected during retry streaming");
+                        break;
+                    }
+                }
+                Err(e) => {
+                    log::error!("Retry stream error: {e}");
+                    break;
+                }
+            }
+        }
+    });
+
+    builder.body(body).unwrap()
+}
+
+/// High-level wrapper around `acquire_auto_increase_slot` +
+/// `trigger_auto_increase`. Skips remote providers and embedding sessions
+/// up front; coordinates concurrent waiters through the shared `Notify`.
+#[allow(clippy::too_many_arguments)]
+async fn maybe_auto_increase_and_retry<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    auto_state: &AutoIncreaseState,
+    backend: &str,
+    model_id: &str,
+    sessions: &Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    mlx_sessions: &Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+    trigger: &str,
+) -> Option<(i32, String)> {
+    if backend != "llamacpp" && backend != "mlx" {
+        return None;
+    }
+    if is_embedding_session(backend, model_id, sessions, mlx_sessions).await {
+        log::debug!(
+            "auto_increase_ctx: skipping embedding session backend={backend} model_id={model_id}"
+        );
+        return None;
+    }
+
+    let (notify, is_leader) = acquire_auto_increase_slot(auto_state, model_id).await;
+
+    if !is_leader {
+        // Wait for the leader to finish. We only block on the notify; the
+        // outcome (including `ok=false`) lives in `last_outcome`.
+        let wait = tokio::time::timeout(
+            std::time::Duration::from_secs(AUTO_INCREASE_TIMEOUT_SECS),
+            notify.notified(),
+        )
+        .await;
+        if wait.is_err() {
+            log::warn!(
+                "auto_increase_ctx: follower timed out waiting for leader (model_id={model_id})"
+            );
+            return None;
+        }
+        match read_auto_increase_outcome(auto_state, model_id).await {
+            Some(o) if o.ok => {
+                return resolve_local_session(backend, model_id, sessions, mlx_sessions).await;
+            }
+            _ => return None,
+        }
+    }
+
+    // Leader path.
+    let outcome = trigger_auto_increase(app_handle, backend, model_id, trigger).await;
+    store_auto_increase_outcome(
+        auto_state,
+        model_id,
+        AutoIncreaseOutcome {
+            ok: outcome.ok,
+            new_ctx_len: outcome.new_ctx_len,
+            reason: outcome.reason.clone(),
+        },
+    )
+    .await;
+    release_auto_increase_slot(auto_state, model_id, &notify).await;
+
+    if !outcome.ok {
+        log::info!(
+            "auto_increase_ctx: leader outcome ok=false model_id={model_id} reason={:?}",
+            outcome.reason
+        );
+        return None;
+    }
+    log::info!(
+        "auto_increase_ctx: leader outcome ok=true model_id={model_id} new_ctx_len={:?}",
+        outcome.new_ctx_len
+    );
+
+    resolve_local_session(backend, model_id, sessions, mlx_sessions).await
+}
+
 /// Wraps `inner_proxy_request` to emit a single analytics event per proxied
 /// request via `ANALYTICS_CHANNEL`. The wrapper measures latency from the
 /// moment the request is received until the inner handler returns a response
@@ -518,6 +1024,7 @@ async fn proxy_request<R: Runtime>(
     sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
     mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    auto_increase_state: Arc<AutoIncreaseState>,
     app_handle: AppHandle<R>,
 ) -> Result<Response<Body>, hyper::Error> {
     let start = Instant::now();
@@ -536,6 +1043,8 @@ async fn proxy_request<R: Runtime>(
         sessions,
         mlx_sessions,
         provider_configs,
+        auto_increase_state,
+        app_handle.clone(),
     )
     .await?;
 
@@ -566,7 +1075,7 @@ async fn proxy_request<R: Runtime>(
 /// proxied request (see `ANALYTICS_CHANNEL`). Preflight, static docs and other
 /// non-product traffic set `state.skip_emit = true`.
 #[allow(clippy::too_many_arguments)]
-async fn inner_proxy_request(
+async fn inner_proxy_request<R: Runtime>(
     state: &mut EmitState,
     req: Request<Body>,
     client: Client,
@@ -575,6 +1084,8 @@ async fn inner_proxy_request(
     sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
     mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    auto_increase_state: Arc<AutoIncreaseState>,
+    app_handle: AppHandle<R>,
 ) -> Result<Response<Body>, hyper::Error> {
     if req.method() == hyper::Method::OPTIONS {
         // CORS preflight is not a product signal; suppress analytics for the
@@ -1780,13 +2291,77 @@ async fn inner_proxy_request(
                 );
                 return Ok(error_response.body(Body::from(error_body)).unwrap());
             } else if is_error {
-                state.error_kind = Some("upstream");
-                // Non-/messages error - return error response with body
+                // Non-/messages error - return error response with body.
                 let error_body = response
                     .text()
                     .await
                     .unwrap_or_else(|e| format!("Failed to read error body: {}", e));
 
+                // Auto-increase-ctx retry path. Only local backends go through
+                // this; remote providers and embedding sessions are filtered
+                // inside `maybe_auto_increase_and_retry`. We keep the original
+                // body/headers so the retry is byte-identical apart from the
+                // rewritten upstream URL + Authorization header.
+                let can_retry_local = (state.backend == "llamacpp" || state.backend == "mlx")
+                    && state.model_id.is_some()
+                    && buffered_body.is_some();
+
+                if can_retry_local && is_context_limit_error(status, &error_body) {
+                    let model_id = state.model_id.clone().unwrap();
+                    let backend = state.backend;
+                    log::info!(
+                        "Context-limit error detected (status={status} backend={backend} model_id={model_id}); triggering auto-increase"
+                    );
+                    if let Some((new_port, new_api_key)) = maybe_auto_increase_and_retry(
+                        &app_handle,
+                        &auto_increase_state,
+                        backend,
+                        &model_id,
+                        &sessions,
+                        &mlx_sessions,
+                        "error",
+                    )
+                    .await
+                    {
+                        match retry_local_upstream(
+                            &local_client,
+                            &method,
+                            &destination_path,
+                            new_port,
+                            &new_api_key,
+                            &headers,
+                            buffered_body.clone(),
+                        )
+                        .await
+                        {
+                            Ok(retry_response) => {
+                                let retry_status = retry_response.status();
+                                if retry_status.is_success() {
+                                    log::info!(
+                                        "auto_increase_ctx retry succeeded for model_id={model_id} (status={retry_status})"
+                                    );
+                                    return Ok(build_streaming_response(
+                                        retry_response,
+                                        &host_header,
+                                        &origin_header,
+                                        &config.trusted_hosts,
+                                    ));
+                                } else {
+                                    log::warn!(
+                                        "auto_increase_ctx retry returned non-success status={retry_status}, falling back to original error"
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!(
+                                    "auto_increase_ctx retry send failed: {e}; falling back to original error"
+                                );
+                            }
+                        }
+                    }
+                }
+
+                state.error_kind = Some("upstream");
                 let mut error_response = Response::builder().status(status);
                 error_response = add_cors_headers_with_host_and_origin(
                     error_response,
@@ -1797,7 +2372,100 @@ async fn inner_proxy_request(
                 return Ok(error_response.body(Body::from(error_body)).unwrap());
             }
 
-            // Success case - stream the response
+            // Success case.
+            //
+            // For non-streaming local-backend responses we get one final JSON
+            // doc we can inspect before forwarding. If `finish_reason=length`
+            // surfaces, it means the upstream generation was truncated by the
+            // current context window — mirror the UI-side auto-increase:
+            // trigger a reload and retry once. Streaming responses remain
+            // pass-through (can't retry after chunks have been emitted).
+            let can_inspect_finish = !state.stream
+                && (state.backend == "llamacpp" || state.backend == "mlx")
+                && state.model_id.is_some()
+                && buffered_body.is_some();
+
+            if can_inspect_finish {
+                let body_bytes = response
+                    .bytes()
+                    .await
+                    .unwrap_or_default();
+
+                let context_overflow = is_context_overflow_finish_length(
+                    &body_bytes,
+                    buffered_body.as_deref(),
+                );
+
+                if context_overflow {
+                    let model_id = state.model_id.clone().unwrap();
+                    let backend = state.backend;
+                    log::info!(
+                        "finish_reason=length detected on 200 OK with no client max_tokens cap (backend={backend} model_id={model_id}); triggering auto-increase"
+                    );
+                    if let Some((new_port, new_api_key)) = maybe_auto_increase_and_retry(
+                        &app_handle,
+                        &auto_increase_state,
+                        backend,
+                        &model_id,
+                        &sessions,
+                        &mlx_sessions,
+                        "finish_length",
+                    )
+                    .await
+                    {
+                        match retry_local_upstream(
+                            &local_client,
+                            &method,
+                            &destination_path,
+                            new_port,
+                            &new_api_key,
+                            &headers,
+                            buffered_body.clone(),
+                        )
+                        .await
+                        {
+                            Ok(retry_response) if retry_response.status().is_success() => {
+                                log::info!(
+                                    "auto_increase_ctx retry succeeded for finish_reason=length (model_id={model_id})"
+                                );
+                                return Ok(build_streaming_response(
+                                    retry_response,
+                                    &host_header,
+                                    &origin_header,
+                                    &config.trusted_hosts,
+                                ));
+                            }
+                            Ok(retry_response) => {
+                                log::warn!(
+                                    "finish_reason=length retry returned status={}; falling back to original body",
+                                    retry_response.status()
+                                );
+                            }
+                            Err(e) => {
+                                log::warn!(
+                                    "finish_reason=length retry send failed: {e}; falling back to original body"
+                                );
+                            }
+                        }
+                    }
+                }
+
+                // Fall-through: serve the originally-buffered body. We've
+                // already consumed `response`, so we can't copy its headers
+                // verbatim — reconstruct the minimum set the client needs
+                // for a non-streaming OpenAI JSON response.
+                let mut builder = Response::builder()
+                    .status(status)
+                    .header(hyper::header::CONTENT_TYPE, "application/json");
+                builder = add_cors_headers_with_host_and_origin(
+                    builder,
+                    &host_header,
+                    &origin_header,
+                    &config.trusted_hosts,
+                );
+                return Ok(builder.body(Body::from(body_bytes)).unwrap());
+            }
+
             let mut builder = Response::builder().status(status);
 
             for (name, value) in response.headers() {
@@ -1903,6 +2571,7 @@ pub async fn start_server<R: Runtime>(
     trusted_hosts: Vec<Vec<String>>,
     proxy_timeout: u64,
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    auto_increase_state: Arc<AutoIncreaseState>,
 ) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
     start_server_internal(
         app_handle,
@@ -1916,6 +2585,7 @@ pub async fn start_server<R: Runtime>(
         trusted_hosts,
         proxy_timeout,
         provider_configs,
+        auto_increase_state,
     )
     .await
 }
@@ -1933,6 +2603,7 @@ async fn start_server_internal<R: Runtime>(
     trusted_hosts: Vec<Vec<String>>,
     proxy_timeout: u64,
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    auto_increase_state: Arc<AutoIncreaseState>,
 ) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
     let mut handle_guard = server_handle.lock().await;
     if handle_guard.is_some() {
@@ -1971,6 +2642,7 @@ async fn start_server_internal<R: Runtime>(
         let sessions = sessions.clone();
         let mlx_sessions = mlx_sessions.clone();
         let provider_configs = provider_configs.clone();
+        let auto_increase_state = auto_increase_state.clone();
         let app_handle = app_handle.clone();
 
         async move {
@@ -1983,6 +2655,7 @@ async fn start_server_internal<R: Runtime>(
                     sessions.clone(),
                     mlx_sessions.clone(),
                     provider_configs.clone(),
+                    auto_increase_state.clone(),
                     app_handle.clone(),
                 )
             }))
@@ -2364,5 +3037,207 @@ async fn forward_non_streaming(
         if sender.send_data(bytes).await.is_err() {
             log::debug!("Client disconnected");
         }
+    }
+}
+
+#[cfg(test)]
+mod auto_increase_ctx_tests {
+    use super::*;
+
+    // --- is_context_limit_error -------------------------------------------------
+
+    #[test]
+    fn detects_llama_cpp_ctx_overflow_500() {
+        // Realistic body from llama-server when the prompt overshoots n_ctx.
+        let body = r#"{"error":{"code":500,"message":"the request exceeds the available context size. Try increasing context size or enable context shift","type":"server_error"}}"#;
+        assert!(is_context_limit_error(StatusCode::INTERNAL_SERVER_ERROR, body));
+    }
+
+    #[test]
+    fn detects_llama_cpp_ctx_overflow_400() {
+        let body = r#"{"error":{"message":"prompt is too long for the current context length","type":"invalid_request_error"}}"#;
+        assert!(is_context_limit_error(StatusCode::BAD_REQUEST, body));
+    }
+
+    #[test]
+    fn detects_mlx_ctx_overflow_500() {
+        // mlx-server surfaces a similar message; exact wording varies between
+        // the python/swift implementations so we just match the "context" +
+        // size/length/exceed pattern.
+        let body = r#"{"detail":"Context size exceeded: requested 9000 tokens but the model only supports 8192."}"#;
+        assert!(is_context_limit_error(StatusCode::INTERNAL_SERVER_ERROR, body));
+    }
+
+    #[test]
+    fn detects_ui_canonical_phrase() {
+        // web-app/src/utils/error.ts OUT_OF_CONTEXT_SIZE
+        let body = "the request exceeds the available context size.";
+        assert!(is_context_limit_error(StatusCode::INTERNAL_SERVER_ERROR, body));
+    }
+
+    #[test]
+    fn detects_503_context_overflow() {
+        let body = r#"{"error":"context window overflow"}"#;
+        assert!(is_context_limit_error(StatusCode::SERVICE_UNAVAILABLE, body));
+    }
+
+    #[test]
+    fn ignores_unrelated_5xx() {
+        // "context" alone is not enough — must also mention size/length/etc.
+        let body = r#"{"error":"server shutting down: context canceled"}"#;
+        assert!(!is_context_limit_error(StatusCode::INTERNAL_SERVER_ERROR, body));
+    }
+
+    #[test]
+    fn ignores_413_without_context_keyword() {
+        let body = r#"{"error":"payload too large"}"#;
+        assert!(!is_context_limit_error(StatusCode::PAYLOAD_TOO_LARGE, body));
+    }
+
+    #[test]
+    fn ignores_200_even_with_matching_body() {
+        // Successful responses must never be classified as ctx errors; the
+        // finish_reason=length path handles those.
+        let body = "context size exceeded";
+        assert!(!is_context_limit_error(StatusCode::OK, body));
+    }
+
+    #[test]
+    fn ignores_401_403_404() {
+        let body = "context size exceeded";
+        for code in [
+            StatusCode::UNAUTHORIZED,
+            StatusCode::FORBIDDEN,
+            StatusCode::NOT_FOUND,
+        ] {
+            assert!(!is_context_limit_error(code, body), "should ignore {code}");
+        }
+    }
+
+    // --- is_context_overflow_finish_length -------------------------------------
+
+    #[test]
+    fn triggers_when_no_client_max_tokens_and_length() {
+        let resp = br#"{
+            "choices":[{"index":0,"finish_reason":"length"}],
+            "usage":{"prompt_tokens":7000,"completion_tokens":1000,"total_tokens":8000}
+        }"#;
+        let req = br#"{"model":"m","messages":[]}"#;
+        assert!(is_context_overflow_finish_length(resp, Some(req)));
+    }
+
+    #[test]
+    fn triggers_when_request_body_missing() {
+        // No buffered request body at all → treat as "no client cap".
+        let resp = br#"{"choices":[{"finish_reason":"length"}]}"#;
+        assert!(is_context_overflow_finish_length(resp, None));
+    }
+
+    #[test]
+    fn skips_when_completion_hits_client_max_tokens() {
+        let resp = br#"{
+            "choices":[{"finish_reason":"length"}],
+            "usage":{"prompt_tokens":10,"completion_tokens":16,"total_tokens":26}
+        }"#;
+        let req = br#"{"max_tokens":16,"messages":[]}"#;
+        assert!(!is_context_overflow_finish_length(resp, Some(req)));
+    }
+
+    #[test]
+    fn skips_when_completion_hits_max_completion_tokens_alias() {
+        // Newer OpenAI SDKs use `max_completion_tokens` for reasoning models.
+        let resp = br#"{
+            "choices":[{"finish_reason":"length"}],
+            "usage":{"prompt_tokens":10,"completion_tokens":32,"total_tokens":42}
+        }"#;
+        let req = br#"{"max_completion_tokens":32,"messages":[]}"#;
+        assert!(!is_context_overflow_finish_length(resp, Some(req)));
+    }
+
+    #[test]
+    fn triggers_when_cap_set_but_completion_below_cap() {
+        // finish_reason=length with completion_tokens well under max_tokens
+        // ⇒ generation stopped because ctx filled up, not the client cap.
+        let resp = br#"{
+            "choices":[{"finish_reason":"length"}],
+            "usage":{"prompt_tokens":7900,"completion_tokens":200,"total_tokens":8100}
+        }"#;
+        let req = br#"{"max_tokens":4096,"messages":[]}"#;
+        assert!(is_context_overflow_finish_length(resp, Some(req)));
+    }
+
+    #[test]
+    fn ignores_finish_reason_stop() {
+        let resp = br#"{"choices":[{"finish_reason":"stop"}]}"#;
+        assert!(!is_context_overflow_finish_length(resp, None));
+    }
+
+    #[test]
+    fn ignores_malformed_json() {
+        assert!(!is_context_overflow_finish_length(b"not json", None));
+    }
+
+    #[test]
+    fn ignores_empty_choices() {
+        let resp = br#"{"choices":[]}"#;
+        assert!(!is_context_overflow_finish_length(resp, None));
+    }
+
+    #[test]
+    fn ignores_missing_finish_reason() {
+        let resp = br#"{"choices":[{"index":0}]}"#;
+        assert!(!is_context_overflow_finish_length(resp, None));
+    }
+
+    #[test]
+    fn skips_when_cap_set_and_completion_tokens_missing() {
+        // Without usage data we can't distinguish client-cap from ctx-limit,
+        // so we err on the side of NOT touching ctx.
+        let resp = br#"{"choices":[{"finish_reason":"length"}]}"#;
+        let req = br#"{"max_tokens":16,"messages":[]}"#;
+        assert!(!is_context_overflow_finish_length(resp, Some(req)));
+    }
+
+    // --- acquire/release slot --------------------------------------------------
+
+    #[tokio::test]
+    async fn acquire_slot_is_leader_once_per_model() {
+        let state = AutoIncreaseState::default();
+        let (_n1, leader1) = acquire_auto_increase_slot(&state, "llama-7b").await;
+        let (_n2, leader2) = acquire_auto_increase_slot(&state, "llama-7b").await;
+        assert!(leader1, "first caller must be leader");
+        assert!(!leader2, "second caller must wait");
+
+        // Different model should get its own leader slot.
+        let (_n3, leader3) = acquire_auto_increase_slot(&state, "mlx-other").await;
+        assert!(leader3);
+    }
+
+    #[tokio::test]
+    async fn release_slot_wakes_waiters_and_allows_new_leader() {
+        let state = AutoIncreaseState::default();
+        let (notify, _) = acquire_auto_increase_slot(&state, "qwen").await;
+        release_auto_increase_slot(&state, "qwen", &notify).await;
+        // After release the next caller becomes leader again.
+        let (_n2, leader2) = acquire_auto_increase_slot(&state, "qwen").await;
+        assert!(leader2);
+    }
+
+    #[tokio::test]
+    async fn store_and_read_outcome_roundtrip() {
+        let state = AutoIncreaseState::default();
+        store_auto_increase_outcome(
+            &state,
+            "m1",
+            AutoIncreaseOutcome {
+                ok: true,
+                new_ctx_len: Some(16384),
+                reason: None,
+            },
+        )
+        .await;
+        let got = read_auto_increase_outcome(&state, "m1").await.unwrap();
+        assert!(got.ok);
+        assert_eq!(got.new_ctx_len, Some(16384));
     }
 }

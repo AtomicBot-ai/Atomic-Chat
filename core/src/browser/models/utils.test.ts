@@ -5,6 +5,7 @@ import {
   validationRules,
   extractModelLoadParams,
   extractInferenceParams,
+  computeNextCtxLen,
 } from './utils'
 
 describe('validationRules', () => {
@@ -340,5 +341,40 @@ describe('extractModelLoadParams', () => {
     const modelParams = { ctx_len: -1, embedding: true }
     const result = extractModelLoadParams(modelParams as any)
     expect(result).toEqual({ embedding: true })
+  })
+})
+
+describe('computeNextCtxLen', () => {
+  it('should step a tiny window up to 8192', () => {
+    expect(computeNextCtxLen(0)).toBe(8192)
+    expect(computeNextCtxLen(512)).toBe(8192)
+    expect(computeNextCtxLen(4096)).toBe(8192)
+    expect(computeNextCtxLen(8191)).toBe(8192)
+  })
+
+  it('should step 8192..32767 up to 32768', () => {
+    expect(computeNextCtxLen(8192)).toBe(32768)
+    expect(computeNextCtxLen(16384)).toBe(32768)
+    expect(computeNextCtxLen(32767)).toBe(32768)
+  })
+
+  it('should multiply by 1.5 once >= 32768', () => {
+    expect(computeNextCtxLen(32768)).toBe(49152)
+    expect(computeNextCtxLen(65536)).toBe(98304)
+    expect(computeNextCtxLen(100000)).toBe(150000)
+  })
+
+  it('should respect maxCtxLen upper bound', () => {
+    // Stepping from 8192 → would be 32768, capped at model max 16384.
+    expect(computeNextCtxLen(8192, 16384)).toBe(16384)
+    // Already at max → result stays at max (caller treats this as "at_max").
+    expect(computeNextCtxLen(32768, 32768)).toBe(32768)
+    // 1.5x step capped.
+    expect(computeNextCtxLen(40000, 50000)).toBe(50000)
+  })
+
+  it('should ignore non-positive maxCtxLen', () => {
+    expect(computeNextCtxLen(1000, 0)).toBe(8192)
+    expect(computeNextCtxLen(1000, -1)).toBe(8192)
   })
 })

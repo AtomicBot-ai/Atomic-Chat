@@ -6,7 +6,7 @@ use rmcp::{
     service::RunningService,
     RoleClient, ServiceError,
 };
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{oneshot, Mutex, Notify};
 
 /// Server handle type for managing the proxy server lifecycle
 pub type ServerHandle =
@@ -26,6 +26,30 @@ pub struct ProviderConfig {
 pub struct ProviderCustomHeader {
     pub header: String,
     pub value: String,
+}
+
+/// Result of the most recent auto-increase attempt for a given model.
+/// Stored so concurrent waiters can pick up the outcome without re-triggering
+/// the reload. The TypeScript handler publishes it via
+/// `local_backend://auto_increase_ctx_done` and the Rust proxy mirrors it here.
+#[derive(Debug, Clone)]
+pub struct AutoIncreaseOutcome {
+    pub ok: bool,
+    pub new_ctx_len: Option<i64>,
+    pub reason: Option<String>,
+}
+
+/// Per-model coordinator for the Local API Server auto-increase-ctx flow.
+/// The first concurrent request triggers the TS-side reload and holds the
+/// `Notify`; any parallel request for the same `model_id` waits on the notify
+/// and re-reads the freshly-loaded session afterwards. Without this guard we
+/// would fan out N reload requests to the extension for N in-flight requests.
+#[derive(Default)]
+pub struct AutoIncreaseState {
+    /// model_id → shared Notify for waiters.
+    pub pending: Arc<Mutex<HashMap<String, Arc<Notify>>>>,
+    /// model_id → last outcome, valid until a new reload begins.
+    pub last_outcome: Arc<Mutex<HashMap<String, AutoIncreaseOutcome>>>,
 }
 
 pub enum RunningServiceEnum {
@@ -49,6 +73,9 @@ pub struct AppState {
     pub mcp_server_pids: Arc<Mutex<HashMap<String, u32>>>,
     /// Remote provider configurations (e.g., Anthropic, OpenAI, etc.)
     pub provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    /// Coordinator state for the Local API Server auto-increase-ctx flow.
+    /// See `AutoIncreaseState` docs for the concurrency guarantees.
+    pub auto_increase_ctx: Arc<AutoIncreaseState>,
     /// Handles to the dynamic rows in the system tray menu (desktop only).
     /// Populated by `setup::setup_tray` when the tray is installed, consumed by
     /// `tray_status::update_tray_status` to re-render server / model / RAM.
