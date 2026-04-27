@@ -35,7 +35,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from demo.client import ClientSettings, build_async_client, stream_chat
-from demo.dashboard import DashboardState, run_dashboard
+from demo.dashboard import DashboardState, render, run_dashboard
 from demo.metrics import ServerMetrics, poll_metrics_loop
 from demo.scenarios import get_scenario
 from demo.templates import build_page
@@ -94,12 +94,22 @@ def _get_main_display_size() -> tuple[int, int]:
     return 1440, 900
 
 
-def _grid_bounds(n: int, screen_w: int, screen_h: int) -> list[tuple[int, int, int, int]]:
-    """Compute N `(x1, y1, x2, y2)` rectangles arranged in a near-square grid."""
+def _grid_bounds(
+    n: int,
+    screen_w: int,
+    screen_h: int,
+    *,
+    top_offset: int = 30,
+) -> list[tuple[int, int, int, int]]:
+    """Compute N `(x1, y1, x2, y2)` rectangles arranged in a near-square grid.
+
+    `top_offset` reserves vertical space at the top of the screen — used in
+    `--multi-window` mode to leave room for the dashboard window above the
+    agent grid.
+    """
     cols = max(1, math.ceil(math.sqrt(n)))
     rows = max(1, math.ceil(n / cols))
     margin = 16
-    top_offset = 30  # leave space for the macOS menu bar
     cell_w = (screen_w - margin * (cols + 1)) // cols
     cell_h = (screen_h - top_offset - margin * (rows + 1)) // rows
     out: list[tuple[int, int, int, int]] = []
@@ -111,12 +121,52 @@ def _grid_bounds(n: int, screen_w: int, screen_h: int) -> list[tuple[int, int, i
     return out
 
 
-def _spawn_terminal_windows(session_dir: pathlib.Path, n: int) -> None:
+def _open_terminal_window(
+    cmd: str,
+    title: str,
+    bounds: tuple[int, int, int, int],
+) -> None:
+    """Open a single Terminal.app window running `cmd`, tiled to `bounds`."""
+    x1, y1, x2, y2 = bounds
+    ascript = (
+        'tell application "Terminal"\n'
+        "    activate\n"
+        f'    set newTab to do script "{_applescript_escape(cmd)}"\n'
+        "    delay 0.15\n"
+        "    set newWin to window 1\n"
+        f"    set bounds of newWin to {{{x1}, {y1}, {x2}, {y2}}}\n"
+        f'    set custom title of newTab to "{_applescript_escape(title)}"\n'
+        "end tell\n"
+    )
+    subprocess.run(["osascript", "-e", ascript], check=False)
+
+
+def _spawn_dashboard_window(
+    session_dir: pathlib.Path,
+    *,
+    bounds: tuple[int, int, int, int],
+) -> None:
+    """Open the dashboard window — full width, top of screen."""
+    cmd = (
+        f"cd {_shell_quote(str(SCRIPT_DIR))} && "
+        f"clear && "
+        f"uv run --no-sync python -m demo.main dashboard "
+        f"--session-dir {_shell_quote(str(session_dir))}"
+    )
+    _open_terminal_window(cmd, "Dashboard", bounds)
+
+
+def _spawn_terminal_windows(
+    session_dir: pathlib.Path,
+    n: int,
+    *,
+    top_offset: int,
+) -> None:
     """Open N Terminal.app windows tiled in a grid, each running one agent."""
     screen_w, screen_h = _get_main_display_size()
-    positions = _grid_bounds(n, screen_w, screen_h)
+    positions = _grid_bounds(n, screen_w, screen_h, top_offset=top_offset)
 
-    for idx, (x1, y1, x2, y2) in enumerate(positions):
+    for idx, bounds in enumerate(positions):
         cmd = (
             f"cd {_shell_quote(str(SCRIPT_DIR))} && "
             f"clear && "
@@ -124,18 +174,7 @@ def _spawn_terminal_windows(session_dir: pathlib.Path, n: int) -> None:
             f"--session-dir {_shell_quote(str(session_dir))} "
             f"--agent-idx {idx}"
         )
-        title = f"Agent {idx + 1}"
-        ascript = (
-            'tell application "Terminal"\n'
-            "    activate\n"
-            f'    set newTab to do script "{_applescript_escape(cmd)}"\n'
-            "    delay 0.15\n"
-            "    set newWin to window 1\n"
-            f"    set bounds of newWin to {{{x1}, {y1}, {x2}, {y2}}}\n"
-            f'    set custom title of newTab to "{_applescript_escape(title)}"\n'
-            "end tell\n"
-        )
-        subprocess.run(["osascript", "-e", ascript], check=False)
+        _open_terminal_window(cmd, f"Agent {idx + 1}", bounds)
 
 
 def _set_window_title(title: str) -> None:
@@ -143,6 +182,39 @@ def _set_window_title(title: str) -> None:
     try:
         sys.stdout.write(f"\x1b]0;{title}\x07")
         sys.stdout.flush()
+    except OSError:
+        pass
+
+
+# Min interval (seconds) between agent state-file writes; throttles disk I/O.
+_STATE_WRITE_INTERVAL = 0.25
+
+
+def _write_agent_state(
+    session_dir: pathlib.Path,
+    agent_idx: int,
+    *,
+    name: str,
+    status: str,
+    tokens: int,
+    tps: float,
+    elapsed: float,
+    preview: str,
+) -> None:
+    """Atomically write a snapshot of one agent's state for the dashboard."""
+    payload = {
+        "name": name,
+        "status": status,
+        "tokens": tokens,
+        "tps": tps,
+        "elapsed": elapsed,
+        "preview": preview[-PREVIEW_TAIL:] if preview else "",
+    }
+    target = session_dir / f"agent-{agent_idx}.state.json"
+    tmp = session_dir / f"agent-{agent_idx}.state.json.tmp"
+    try:
+        tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(target)
     except OSError:
         pass
 
@@ -446,6 +518,27 @@ async def _run_solo_agent(
             padding=(1, 2),
         )
 
+    last_state_write = 0.0
+
+    def _flush_state(force: bool = False) -> None:
+        nonlocal last_state_write
+        now = time.monotonic()
+        if not force and now - last_state_write < _STATE_WRITE_INTERVAL:
+            return
+        last_state_write = now
+        _write_agent_state(
+            session_dir,
+            agent_idx,
+            name=agent["name"],
+            status=state["status"],
+            tokens=state["tokens"],
+            tps=state["tps"],
+            elapsed=state["elapsed"],
+            preview=state["preview"],
+        )
+
+    _flush_state(force=True)
+
     ok = False
     client = build_async_client(settings)
     try:
@@ -485,6 +578,7 @@ async def _run_solo_agent(
                     state["elapsed"] = elapsed
                     state["preview"] = content
                     live.update(render())
+                    _flush_state()
                 state["status"] = "done"
                 ok = True
             except (httpx.HTTPError, OSError) as exc:
@@ -498,6 +592,7 @@ async def _run_solo_agent(
                     reported / state["elapsed"] if state["elapsed"] > 0 else 0.0
                 )
                 live.update(render())
+                _flush_state(force=True)
     finally:
         await client.aclose()
 
@@ -612,8 +707,25 @@ async def _run_multi_window(
     )
     console.print(f"[dim]→ session dir: {session_dir}[/dim]")
 
-    console.print(f"[dim]→ spawning {n} Terminal.app windows...[/dim]")
-    _spawn_terminal_windows(session_dir, n)
+    # Reserve the top strip of the screen for the aggregate dashboard window
+    # (full width, ~28% of the screen). The agent grid fills the rest below.
+    screen_w, screen_h = _get_main_display_size()
+    menu_bar = 30
+    side_margin = 16
+    dash_h = max(220, int(screen_h * 0.28))
+    dash_bounds = (
+        side_margin,
+        menu_bar,
+        screen_w - side_margin,
+        menu_bar + dash_h,
+    )
+    agents_top_offset = menu_bar + dash_h + side_margin
+
+    console.print("[dim]→ opening aggregate dashboard window...[/dim]")
+    _spawn_dashboard_window(session_dir, bounds=dash_bounds)
+
+    console.print(f"[dim]→ spawning {n} agent Terminal.app windows...[/dim]")
+    _spawn_terminal_windows(session_dir, n, top_offset=agents_top_offset)
 
     console.print(f"[bold]Waiting for {n} agents to finish...[/bold]\n")
     deadline = time.monotonic() + 30 * 60
@@ -651,6 +763,13 @@ async def _run_multi_window(
     except KeyboardInterrupt:
         console.print("[yellow]Interrupted — rendering partial results.[/yellow]")
 
+    # Signal the dashboard window that the show is over so it can exit its
+    # poll loop (it will still wait for a final keypress before closing).
+    try:
+        (session_dir / "dashboard.stop").write_text("done", encoding="utf-8")
+    except OSError:
+        pass
+
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
     html_path = BUILD_DIR / "index.html"
     html_path.write_text(
@@ -664,6 +783,114 @@ async def _run_multi_window(
         _open_in_browser(html_path)
 
     return 0 if len(results) == n else 1
+
+
+async def _run_session_dashboard(
+    session: dict[str, Any],
+    session_dir: pathlib.Path,
+) -> int:
+    """Render the aggregate dashboard window in --multi-window mode.
+
+    Polls each agent's `agent-N.state.json` and the upstream `/metrics`
+    endpoint, then drives the same Rich `DashboardState`/`render()` pipeline
+    used by the single-process mode. Exits when every agent has dropped a
+    result file (terminal state) and the parent has signalled completion via
+    `dashboard.stop` or after a long timeout.
+    """
+    settings = ClientSettings(
+        base_url=session["base_url"],
+        api_key=session["api_key"],
+        model=session["model"],
+    )
+    scenario_name = session.get("scenario_name", "demo")
+    topic = session.get("topic", "")
+    session_agents = session.get("agents", [])
+    n = len(session_agents)
+
+    _set_window_title(f"{scenario_name} · dashboard · {n} agents")
+
+    state = DashboardState.initial(
+        session_agents,
+        topic=topic,
+        scenario=scenario_name,
+        model_id=settings.model,
+        slot_total=n,
+        compact=True,
+    )
+    server_snapshot: list[ServerMetrics] = [ServerMetrics()]
+    stop_event = asyncio.Event()
+
+    client = build_async_client(settings)
+    metrics_task = asyncio.create_task(
+        poll_metrics_loop(client, settings.model, server_snapshot, stop_event)
+    )
+
+    console = Console()
+    deadline = time.monotonic() + 30 * 60
+    stop_flag = session_dir / "dashboard.stop"
+
+    try:
+        with Live(
+            render(state),
+            console=console,
+            refresh_per_second=4,
+            screen=False,
+            transient=False,
+        ) as live:
+            while True:
+                # Pull every agent's most recent state snapshot.
+                for idx, agent_spec in enumerate(session_agents):
+                    snap_path = session_dir / f"agent-{idx}.state.json"
+                    if not snap_path.exists():
+                        continue
+                    try:
+                        snap = json.loads(snap_path.read_text(encoding="utf-8"))
+                    except (OSError, json.JSONDecodeError):
+                        continue
+                    name = snap.get("name") or agent_spec["name"]
+                    target = state.agents.get(name)
+                    if target is None:
+                        continue
+                    target.apply(snap)
+
+                state.server = server_snapshot[0]
+                live.update(render(state))
+
+                # Exit condition: parent flag, or timeout, or all agents
+                # have dropped a result file (stable terminal state).
+                if stop_flag.exists():
+                    break
+                results_done = sum(
+                    1
+                    for idx in range(n)
+                    if (session_dir / f"agent-{idx}.result.json").exists()
+                )
+                if results_done >= n:
+                    # One last redraw to capture any final state writes.
+                    await asyncio.sleep(0.4)
+                    live.update(render(state))
+                    break
+                if time.monotonic() > deadline:
+                    break
+
+                await asyncio.sleep(0.25)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        stop_event.set()
+        try:
+            await metrics_task
+        except (asyncio.CancelledError, Exception):
+            pass
+        await client.aclose()
+
+    console.print()
+    console.print("[bold green]All agents finished.[/bold green]")
+    try:
+        console.input("[dim]Press Enter to close this window...[/dim] ")
+    except (EOFError, KeyboardInterrupt):
+        pass
+    return 0
 
 
 def _open_in_browser(path: pathlib.Path) -> None:
@@ -761,6 +988,29 @@ def agent_cmd(
     raise typer.Exit(exit_code)
 
 
+@app.command("dashboard")
+def dashboard_cmd(
+    session_dir: pathlib.Path = typer.Option(
+        ...,
+        "--session-dir",
+        help="Shared session directory populated by the `--multi-window` parent.",
+    ),
+) -> None:
+    """Run the aggregate dashboard window (used internally by --multi-window).
+
+    Polls per-agent state files and `/metrics` to render the same Rich
+    dashboard as single-process mode in a dedicated Terminal window above
+    the agent grid.
+    """
+    session_path = session_dir / "session.json"
+    if not session_path.exists():
+        print(f"session.json not found at {session_path}", file=sys.stderr)
+        raise typer.Exit(2)
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    exit_code = asyncio.run(_run_session_dashboard(session, session_dir))
+    raise typer.Exit(exit_code)
+
+
 def _main() -> None:
     """Entrypoint that preserves backward-compatible single-command invocation.
 
@@ -769,7 +1019,7 @@ def _main() -> None:
     that usage intact, inject an implicit `run` when the first argument is not
     one of the known subcommands.
     """
-    known = {"run", "agent"}
+    known = {"run", "agent", "dashboard"}
     argv = sys.argv
     if len(argv) == 1:
         argv.insert(1, "run")

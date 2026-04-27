@@ -24,6 +24,7 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
+import pyfiglet
 from rich.align import Align
 from rich.console import Console, Group
 from rich.live import Live
@@ -34,6 +35,11 @@ from rich.text import Text
 from demo.metrics import ServerMetrics
 
 REFRESH_PER_SECOND = 4
+_HERO_FONT = "ansi_shadow"
+# width=300 keeps long titles on a single 7-row figlet block instead of being
+# wrapped into multi-row chunks (pyfiglet's default smart layout).
+_HERO_FIGLET = pyfiglet.Figlet(font=_HERO_FONT, width=300)
+_BRAND_ASCII = _HERO_FIGLET.renderText("Atomic Agent").rstrip("\n")
 
 _ANSI_TO_RICH: dict[str, str] = {
     "1;31": "bold red", "1;32": "bold green", "1;33": "bold yellow",
@@ -85,6 +91,7 @@ class DashboardState:
     model_id: str = ""
     slot_total: int = 0
     server: ServerMetrics = field(default_factory=ServerMetrics)
+    compact: bool = False
 
     @classmethod
     def initial(
@@ -95,6 +102,7 @@ class DashboardState:
         scenario: str,
         model_id: str,
         slot_total: int,
+        compact: bool = False,
     ) -> DashboardState:
         return cls(
             agents={
@@ -109,6 +117,7 @@ class DashboardState:
             scenario=scenario,
             model_id=model_id,
             slot_total=slot_total,
+            compact=compact,
         )
 
 
@@ -122,7 +131,7 @@ def _grid_columns(n: int) -> int:
     return 4
 
 
-def _render_agent_panel(state: AgentState) -> Panel:
+def _render_agent_panel(state: AgentState, *, compact: bool = False) -> Panel:
     status_icon, status_style = _STATUS_STYLE.get(state.status, ("?", "dim"))
     rich_color = _ANSI_TO_RICH.get(state.color, "white")
 
@@ -137,6 +146,10 @@ def _render_agent_panel(state: AgentState) -> Panel:
         f"[dim]{state.elapsed:.1f}s[/]"
     )
 
+    border = "cyan" if state.status == "running" else "bright_black"
+    if compact:
+        return Panel(Group(header, stats), border_style=border, padding=(0, 1))
+
     preview = state.preview.strip()
     if len(preview) > 200:
         preview = preview[-200:]
@@ -144,7 +157,7 @@ def _render_agent_panel(state: AgentState) -> Panel:
 
     return Panel(
         Group(header, stats, preview_text),
-        border_style="cyan" if state.status == "running" else "bright_black",
+        border_style=border,
         padding=(0, 1),
     )
 
@@ -160,7 +173,7 @@ def render(state: DashboardState) -> Group:
 
     row: list[Panel] = []
     for agent in agent_list:
-        row.append(_render_agent_panel(agent))
+        row.append(_render_agent_panel(agent, compact=state.compact))
         if len(row) == cols:
             grid.add_row(*row)
             row = []
@@ -173,6 +186,7 @@ def render(state: DashboardState) -> Group:
     running = sum(1 for a in agent_list if a.status == "running")
     errored = sum(1 for a in agent_list if a.status == "error")
     combined_tps = sum(a.tps for a in agent_list if a.status == "running")
+    total_tokens = sum(a.tokens for a in agent_list)
 
     header_text = Text.from_markup(
         f"[bold cyan]\u26a1 Atomic-Chat \u2014 Concurrent Demo[/]    "
@@ -182,11 +196,30 @@ def render(state: DashboardState) -> Group:
         justify="left",
     )
 
+    hero_value = f"{combined_tps:.1f}"
+    hero_ascii = _HERO_FIGLET.renderText(hero_value).rstrip("\n")
+
+    brand_text = Text(_BRAND_ASCII, style="bold bright_magenta", no_wrap=True)
+    number_text = Text(hero_ascii, style="bold bright_red", no_wrap=True)
+
+    hero_row = Table.grid(padding=(0, 3), expand=True)
+    hero_row.add_column(justify="left")
+    hero_row.add_column(justify="right")
+    hero_row.add_row(brand_text, number_text)
+
+    hero_caption = Text.from_markup(
+        f"[bold]tokens / second[/]   "
+        f"[dim]\u00b7[/]   "
+        f"[white]\u03a3[/] [bold bright_white]{total_tokens}[/] "
+        f"[dim]total tokens[/]",
+        justify="center",
+    )
+    hero_block = Group(hero_row, Align.center(hero_caption))
+
     agg_text = Text.from_markup(
-        f"[bold bright_green]{done}/{len(agent_list)} done[/]  "
-        f"[bold green]{running} running[/]  "
-        f"[bold red]{errored} errored[/]  "
-        f"[bold bright_yellow]\u03a3 {combined_tps:.1f} t/s[/]"
+        f"[bold bright_green]{done}/{len(agent_list)} done[/]   "
+        f"[bold green]{running} running[/]   "
+        f"[bold red]{errored} errored[/]"
     )
 
     if state.server.available:
@@ -201,6 +234,7 @@ def render(state: DashboardState) -> Group:
 
     return Group(
         Panel(Align.left(header_text), border_style="cyan"),
+        Panel(hero_block, border_style="bright_magenta", padding=(1, 2)),
         grid,
         Panel(Group(agg_text, server_text), border_style="cyan"),
     )

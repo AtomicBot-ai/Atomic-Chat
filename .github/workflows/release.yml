@@ -379,12 +379,51 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p src-tauri/resources/llamacpp-backend
-          TAG=$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
-            "https://api.github.com/repos/janhq/llama.cpp/releases/latest" | jq -r '.tag_name')
+          TMPREL=$(mktemp /tmp/llamacpp-latest-XXXXXX.json)
+          API_URL="https://api.github.com/repos/janhq/llama.cpp/releases/latest"
+          _gh_get() {
+            if [ -n "$GH_TOKEN" ]; then
+              curl -sS -H "Authorization: Bearer $GH_TOKEN" \
+                       -H "Accept: application/vnd.github+json" \
+                       -H "User-Agent: atomic-chat-ci" \
+                       -o "$1" -w "%{http_code}" "$2" || echo "000"
+            else
+              curl -sS -H "Accept: application/vnd.github+json" \
+                       -H "User-Agent: atomic-chat-ci" \
+                       -o "$1" -w "%{http_code}" "$2" || echo "000"
+            fi
+          }
+          HTTP_CODE=""
+          for attempt in 1 2 3 4 5; do
+            HTTP_CODE=$(_gh_get "$TMPREL" "$API_URL")
+            case "$HTTP_CODE" in
+              2*) break ;;
+              403|429|5*|000)
+                echo "  GitHub API attempt $attempt/5: HTTP $HTTP_CODE, retrying in $((attempt * 2))s..."
+                sleep $((attempt * 2))
+                ;;
+              *)
+                echo "Error: GitHub API returned HTTP $HTTP_CODE"
+                echo "  body (first 500 bytes):"; head -c 500 "$TMPREL" 2>/dev/null || true; echo
+                rm -f "$TMPREL"; exit 1
+                ;;
+            esac
+          done
+          case "$HTTP_CODE" in
+            2*) ;;
+            *)
+              echo "Error: GitHub API failed after 5 attempts (last HTTP $HTTP_CODE)"
+              echo "  body (first 500 bytes):"; head -c 500 "$TMPREL" 2>/dev/null || true; echo
+              rm -f "$TMPREL"; exit 1
+              ;;
+          esac
+          TAG=$(jq -r '.tag_name // empty' "$TMPREL")
           if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
-            echo "Error: Failed to fetch latest release tag"
-            exit 1
+            echo "Error: Failed to extract tag_name from response (HTTP $HTTP_CODE):"
+            head -c 500 "$TMPREL" 2>/dev/null || true; echo
+            rm -f "$TMPREL"; exit 1
           fi
+          rm -f "$TMPREL"
           BACKEND="win-common_cpus-x64"
           URL="https://github.com/janhq/llama.cpp/releases/download/${TAG}/llama-${TAG}-bin-${BACKEND}.tar.gz"
           echo "$TAG" > src-tauri/resources/llamacpp-backend/version.txt

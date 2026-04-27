@@ -18,7 +18,7 @@ cd "$(dirname "$0")"
 : "${ATOMIC_BASE_URL:=http://127.0.0.1:1337/v1}"
 : "${ATOMIC_MODEL:=gemma-4-E4B-it-IQ4_XS}"
 : "${DEMO_SCENARIO:=ascii}"
-: "${DEMO_TOPIC:=cats}"
+: "${DEMO_TOPIC:=animals}"
 : "${DEMO_TASKS:=16}"
 
 BOLD=$'\033[1m'

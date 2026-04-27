@@ -302,28 +302,53 @@ ifeq ($(shell uname -s),Darwin)
 	else \
 		echo "Fetching latest llamacpp turboquant release..."; \
 		TMPREL=$$(mktemp /tmp/llamacpp-releases-XXXXXX.json); \
-		API_URL="https://api.github.com/repos/AtomicBot-ai/atomic-llama-cpp-turboquant/releases"; \
-		if [ -n "$$GH_TOKEN" ]; then \
-			curl -sf -H "Authorization: Bearer $$GH_TOKEN" "$$API_URL" -o "$$TMPREL"; \
-		else \
-			curl -sf "$$API_URL" -o "$$TMPREL"; \
+		API_URL="https://api.github.com/repos/AtomicBot-ai/atomic-llama-cpp-turboquant/releases?per_page=50"; \
+		_gh_get() { \
+			if [ -n "$$GH_TOKEN" ]; then \
+				curl -sS -H "Authorization: Bearer $$GH_TOKEN" -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$1" -w "%{http_code}" "$$2" || echo "000"; \
+			else \
+				curl -sS -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$1" -w "%{http_code}" "$$2" || echo "000"; \
+			fi; \
+		}; \
+		HTTP_CODE=""; \
+		for attempt in 1 2 3 4 5; do \
+			HTTP_CODE=$$(_gh_get "$$TMPREL" "$$API_URL"); \
+			case "$$HTTP_CODE" in \
+				2*) break ;; \
+				403|429|5*|000) \
+					echo "  GitHub API attempt $$attempt/5: HTTP $$HTTP_CODE, retrying in $$((attempt * 2))s..."; \
+					sleep $$((attempt * 2)) ;; \
+				*) \
+					echo "Error: GitHub API returned HTTP $$HTTP_CODE"; \
+					echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
+					rm -f "$$TMPREL"; exit 1 ;; \
+			esac; \
+		done; \
+		case "$$HTTP_CODE" in \
+			2*) ;; \
+			*) echo "Error: GitHub API failed after 5 attempts (last HTTP $$HTTP_CODE)"; \
+			   echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
+			   rm -f "$$TMPREL"; exit 1 ;; \
+		esac; \
+		if [ ! -s "$$TMPREL" ]; then rm -f "$$TMPREL"; echo "Error: Empty response body from GitHub API (HTTP $$HTTP_CODE)"; exit 1; fi; \
+		if ! jq -e 'type == "array"' "$$TMPREL" >/dev/null 2>&1; then \
+			echo "Error: GitHub API returned non-array response (HTTP $$HTTP_CODE):"; \
+			head -c 500 "$$TMPREL"; echo; \
+			rm -f "$$TMPREL"; exit 1; \
 		fi; \
-		if [ ! -s "$$TMPREL" ]; then rm -f "$$TMPREL"; echo "Error: Failed to fetch releases from GitHub API"; exit 1; fi; \
-		if command -v jq >/dev/null 2>&1; then \
-			TAG=$$(jq -r --arg b "$$BACKEND" '[.[] | select(.tag_name | startswith("turboquant-" + $$b))][0].tag_name // empty' "$$TMPREL"); \
-			if [ -z "$$TAG" ]; then \
-				echo "No turboquant release found for $$BACKEND, trying legacy release..."; \
-				TAG=$$(jq -r '[.[] | select(.tag_name | startswith("turboquant-") | not)][0].tag_name // empty' "$$TMPREL"); \
-			fi; \
-		else \
-			TAG=$$(python3 -c "import sys,json; rs=json.load(open(sys.argv[2])); ts=[r for r in rs if r['tag_name'].startswith('turboquant-'+sys.argv[1])]; print(ts[0]['tag_name'] if ts else '')" "$$BACKEND" "$$TMPREL" 2>/dev/null); \
-			if [ -z "$$TAG" ]; then \
-				echo "No turboquant release found for $$BACKEND, trying legacy release..."; \
-				TAG=$$(python3 -c "import sys,json; rs=json.load(open(sys.argv[1])); lg=[r for r in rs if not r['tag_name'].startswith('turboquant-')]; print(lg[0]['tag_name'] if lg else '')" "$$TMPREL" 2>/dev/null); \
-			fi; \
+		REL_COUNT=$$(jq 'length' "$$TMPREL"); \
+		echo "GitHub API returned $$REL_COUNT release(s)"; \
+		TAG=$$(jq -r --arg b "$$BACKEND" '[.[] | select(.tag_name | startswith("turboquant-" + $$b))][0].tag_name // empty' "$$TMPREL"); \
+		if [ -z "$$TAG" ]; then \
+			echo "No turboquant release found for $$BACKEND, trying legacy release..."; \
+			TAG=$$(jq -r '[.[] | select(.tag_name | startswith("turboquant-") | not)][0].tag_name // empty' "$$TMPREL"); \
+		fi; \
+		if [ -z "$$TAG" ]; then \
+			echo "Error: No matching release found for backend=$$BACKEND. First 10 tags in response:"; \
+			jq -r '.[0:10] | .[].tag_name' "$$TMPREL" || true; \
+			rm -f "$$TMPREL"; exit 1; \
 		fi; \
 		rm -f "$$TMPREL"; \
-		if [ -z "$$TAG" ]; then echo "Error: No release found"; exit 1; fi; \
 	fi; \
 	echo "Release: $$TAG"; \
 	case "$$TAG" in \
@@ -382,13 +407,42 @@ else ifeq ($(OS),Windows_NT)
 		echo "Auto-selected backend: $$BACKEND"; \
 	fi; \
 	echo "Fetching latest llamacpp release from janhq/llama.cpp..."; \
+	TMPREL=$$(mktemp /tmp/llamacpp-latest-XXXXXX.json); \
 	API_URL="https://api.github.com/repos/janhq/llama.cpp/releases/latest"; \
-	if [ -n "$$GH_TOKEN" ]; then \
-		TAG=$$(curl -sf -H "Authorization: Bearer $$GH_TOKEN" "$$API_URL" | jq -r '.tag_name'); \
-	else \
-		TAG=$$(curl -sf "$$API_URL" | jq -r '.tag_name'); \
+	_gh_get() { \
+		if [ -n "$$GH_TOKEN" ]; then \
+			curl -sS -H "Authorization: Bearer $$GH_TOKEN" -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$1" -w "%{http_code}" "$$2" || echo "000"; \
+		else \
+			curl -sS -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$1" -w "%{http_code}" "$$2" || echo "000"; \
+		fi; \
+	}; \
+	HTTP_CODE=""; \
+	for attempt in 1 2 3 4 5; do \
+		HTTP_CODE=$$(_gh_get "$$TMPREL" "$$API_URL"); \
+		case "$$HTTP_CODE" in \
+			2*) break ;; \
+			403|429|5*|000) \
+				echo "  GitHub API attempt $$attempt/5: HTTP $$HTTP_CODE, retrying in $$((attempt * 2))s..."; \
+				sleep $$((attempt * 2)) ;; \
+			*) \
+				echo "Error: GitHub API returned HTTP $$HTTP_CODE"; \
+				echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
+				rm -f "$$TMPREL"; exit 1 ;; \
+		esac; \
+	done; \
+	case "$$HTTP_CODE" in \
+		2*) ;; \
+		*) echo "Error: GitHub API failed after 5 attempts (last HTTP $$HTTP_CODE)"; \
+		   echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
+		   rm -f "$$TMPREL"; exit 1 ;; \
+	esac; \
+	TAG=$$(jq -r '.tag_name // empty' "$$TMPREL"); \
+	if [ -z "$$TAG" ] || [ "$$TAG" = "null" ]; then \
+		echo "Error: Failed to extract tag_name from response (HTTP $$HTTP_CODE):"; \
+		head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
+		rm -f "$$TMPREL"; exit 1; \
 	fi; \
-	if [ -z "$$TAG" ] || [ "$$TAG" = "null" ]; then echo "Error: Failed to fetch latest release tag"; exit 1; fi; \
+	rm -f "$$TMPREL"; \
 	URL="https://github.com/janhq/llama.cpp/releases/download/$$TAG/llama-$$TAG-bin-$$BACKEND.tar.gz"; \
 	echo "$$TAG" > src-tauri/resources/llamacpp-backend/version.txt; \
 	echo "$$BACKEND" > src-tauri/resources/llamacpp-backend/backend.txt; \

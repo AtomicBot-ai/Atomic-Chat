@@ -2,8 +2,9 @@ ATOMIC-CHAT · CONCURRENT DEMO
 ================================================================================
 
 Thanks for helping us record the video! Follow the three steps below
-and you will see sixteen AI agents generating ASCII art in parallel,
-each in its own Terminal window, tiled in a 4x4 grid.
+and you will see sixteen AI agents generating ASCII art of different
+animals in parallel, each in its own Terminal window, tiled in a 4x4
+grid.
 
 --------------------------------------------------------------------------------
 STEP 1 · Install & run Atomic-Chat
@@ -77,8 +78,12 @@ STEP 3 · Run the demo
 
   What happens:
     • The script verifies that Atomic-Chat is running and the model is loaded.
-    • Sixteen new Terminal windows open, tiled in a 4x4 grid across your screen.
-    • Each window streams one AI agent generating a piece of ASCII art.
+    • A wide DASHBOARD window opens at the top of the screen, showing
+      combined throughput (t/s), total tokens, and a compact status grid
+      for every agent.
+    • Sixteen new Terminal windows open below the dashboard, tiled in a
+      4x4 grid. Each window streams one AI agent generating a piece of
+      ASCII art.
     • When every agent finishes, a web page with the gallery opens
       automatically in your browser.
 
@@ -100,7 +105,10 @@ For example, to generate 6 agents about "space exploration":
 Available variables (with defaults):
 
   DEMO_SCENARIO   ascii       Scenario: ascii | svg | translate | code
-  DEMO_TOPIC      cats        Free-form topic passed to every agent
+  DEMO_TOPIC      animals     Free-form topic; orchestrator splits it into
+                              one specific subject per agent (e.g. cat, dog,
+                              owl, octopus…). Try "fruits", "vehicles",
+                              "space", "mythological creatures" etc.
   DEMO_TASKS      16          Number of concurrent agents (and windows)
   ATOMIC_MODEL    gemma-4-E4B-it-IQ4_XS
   ATOMIC_BASE_URL http://127.0.0.1:1337/v1
