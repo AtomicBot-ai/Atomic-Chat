@@ -28,26 +28,17 @@ export interface DraftResolution {
   optional: string[]
 }
 
-/// Default file lists for a single-shard MLX-friendly draft repo. Most
-/// `z-lab/*` drafts are <2B params and ship as a single `model.safetensors`,
-/// so we keep one shared template and only override per-repo when needed.
-const DEFAULT_REQUIRED = [
-  'config.json',
-  'tokenizer.json',
-  'tokenizer_config.json',
-  'special_tokens_map.json',
-  'model.safetensors',
-]
+/// `dflash.model_mlx.load_draft` (in the dflash package) only reads
+/// `config.json` and any `*.safetensors` from the draft directory; tokenizer
+/// files belong to the *target* model. Most `z-lab/*` drafts ship as a single
+/// `model.safetensors`, so we only require those two files. Sharded drafts
+/// (rare; e.g. >2B params) need a per-repo override.
+const DEFAULT_REQUIRED = ['config.json', 'model.safetensors']
 
-const DEFAULT_OPTIONAL = [
-  'generation_config.json',
-  'chat_template.jinja',
-  'added_tokens.json',
-  'merges.txt',
-  'vocab.json',
-  'tokenizer.model',
-  'preprocessor_config.json',
-]
+/// Currently unused — kept so per-repo overrides can opt in to additional
+/// downloads (e.g. `model.safetensors.index.json` + shards) without
+/// changing the type shape.
+const DEFAULT_OPTIONAL: string[] = []
 
 /// Snapshot of https://huggingface.co/collections/z-lab/dflash.
 ///

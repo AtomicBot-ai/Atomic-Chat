@@ -1263,14 +1263,16 @@ export default class mlx_extension extends AIEngine {
    *   2. `mlx/draft-models/<repo>/`            — auto-downloaded cache from a
    *      previous `enableDflash` run.
    *
-   * Returns the absolute path only when every `required` file is present.
-   * Optional files are not validated here — `ensureDflashDraftDownloaded`
-   * may still top them up on the next pass.
+   * A directory is considered usable when:
+   *   - `config.json` is present, AND
+   *   - any `*.safetensors` weight file (single-file `model.safetensors`
+   *     OR sharded `model-*.safetensors` plus `model.safetensors.index.json`)
+   *     is present.
+   *
+   * This mirrors what `dflash.model_mlx.load_draft` actually reads, and
+   * makes the lookup forgiving of repos that ship sharded weights.
    */
-  private async resolveLocalDraftDir(
-    repo: string,
-    required: string[]
-  ): Promise<string | null> {
+  private async resolveLocalDraftDir(repo: string): Promise<string | null> {
     const janDataFolderPath = await getJanDataFolderPath()
 
     const candidates = [
@@ -1286,18 +1288,16 @@ export default class mlx_extension extends AIEngine {
     for (const dir of candidates) {
       if (!(await fs.existsSync(dir))) continue
 
-      let allPresent = true
-      for (const f of required) {
-        const path = await joinPath([dir, f])
-        if (!(await fs.existsSync(path))) {
-          allPresent = false
-          break
-        }
-      }
-      if (allPresent) {
-        logger.info(`resolveLocalDraftDir: ${repo} found at ${dir}`)
-        return dir
-      }
+      const configPath = await joinPath([dir, 'config.json'])
+      if (!(await fs.existsSync(configPath))) continue
+
+      const entries = await fs.readdirSync(dir).catch(() => [] as string[])
+      /// `fs.readdirSync` from `@janhq/core` returns full absolute paths.
+      const hasWeights = entries.some((p) => /\.safetensors$/i.test(p))
+      if (!hasWeights) continue
+
+      logger.info(`resolveLocalDraftDir: ${repo} found at ${dir}`)
+      return dir
     }
 
     return null
@@ -1315,6 +1315,11 @@ export default class mlx_extension extends AIEngine {
     repo?: string
     required?: string[]
     optional?: string[]
+    /// True iff a usable draft directory is already present on disk —
+    /// the UI uses this to choose between a "Loading…" toast (instant
+    /// hand-off to the MLX server) and a "Downloading…" toast.
+    local?: boolean
+    localPath?: string
   }> {
     logger.info(`checkDflashSupport: resolving draft for ${modelId}`)
     try {
@@ -1323,12 +1328,18 @@ export default class mlx_extension extends AIEngine {
         logger.info(`checkDflashSupport: ${modelId} unsupported`)
         return { supported: false }
       }
-      logger.info(`checkDflashSupport: ${modelId} -> ${resolution.repo}`)
+      const localPath = await this.resolveLocalDraftDir(resolution.repo)
+      logger.info(
+        `checkDflashSupport: ${modelId} -> ${resolution.repo}` +
+          (localPath ? ` (local: ${localPath})` : ' (needs download)')
+      )
       return {
         supported: true,
         repo: resolution.repo,
         required: resolution.required,
         optional: resolution.optional,
+        local: localPath !== null,
+        localPath: localPath ?? undefined,
       }
     } catch (e) {
       logger.warn(`checkDflashSupport failed for ${modelId}: ${e}`)
@@ -1351,7 +1362,7 @@ export default class mlx_extension extends AIEngine {
     required: string[],
     optional: string[] = []
   ): Promise<string> {
-    const local = await this.resolveLocalDraftDir(repo, required)
+    const local = await this.resolveLocalDraftDir(repo)
     if (local) {
       logger.info(`ensureDflashDraftDownloaded: using local ${local}`)
       return local
@@ -1394,7 +1405,19 @@ export default class mlx_extension extends AIEngine {
       '@janhq/download-extension'
     )
 
-    const downloadModelId = `dflash:${repo}`
+    /// Tauri event names allow only alphanumeric, `-`, `/`, `:` and `_`.
+    /// Repo ids like `Qwen3.5-4B-DFlash` and filenames like
+    /// `chat_template.jinja` contain dots, which would otherwise crash the
+    /// `listen('download-${taskId}', ...)` call inside the download
+    /// manager. Sanitize once and reuse.
+    const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9\-_/:]/g, '_')
+    const safeRepoId = sanitize(repo)
+    /// Prefix with `mlx/dflash:` so that
+    ///   * the download popover's `download.id.startsWith('mlx')` cancel
+    ///     routing routes back through the download manager;
+    ///   * users can tell DFlash drafts apart from regular MLX downloads.
+    const downloadModelId = `mlx/dflash:${safeRepoId}`
+
     const buildItem = async (filename: string) => ({
       url: `https://huggingface.co/${repo}/resolve/main/${filename}`,
       save_path: await joinPath([draftDir, filename]),
@@ -1410,7 +1433,7 @@ export default class mlx_extension extends AIEngine {
 
       await downloadManager.downloadFiles(
         items,
-        `mlx/${downloadModelId}`,
+        downloadModelId,
         (transferred: number, total: number) => {
           events.emit(DownloadEvent.onFileDownloadUpdate, {
             modelId: downloadModelId,
@@ -1424,15 +1447,17 @@ export default class mlx_extension extends AIEngine {
     }
 
     /// Optional pass: try each file individually so a 404 on one does not
-    /// poison the whole batch. Failures are logged and swallowed.
+    /// poison the whole batch. Failures are logged and swallowed. The
+    /// per-file taskId must also be sanitized — `chat_template.jinja` and
+    /// friends carry a dot.
     for (const f of missingOptional) {
       try {
         const item = await buildItem(f)
         await downloadManager.downloadFiles(
           [item],
-          `mlx/${downloadModelId}/optional/${f}`,
+          `${downloadModelId}/opt/${sanitize(f)}`,
           () => {
-            /* progress for optional files is uninteresting */
+            /* optional file progress is not surfaced in the popover */
           },
           false
         )

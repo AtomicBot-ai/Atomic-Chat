@@ -38,7 +38,7 @@ import {
   IconUpload,
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { predefinedProviders } from '@/constants/providers'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { useModelLoad } from '@/hooks/useModelLoad'
@@ -192,6 +192,64 @@ function ProviderDetail() {
       return () => clearTimeout(timeoutId)
     }
   }, [importingModel])
+
+  /// Track the currently-running MLX model id (if this provider is `mlx`).
+  /// Whenever it changes we reset `dflash_enabled` to `false` because:
+  ///   1. The new session was just started fresh without `--draft-model`,
+  ///      so the UI flag would otherwise lie about the server state.
+  ///   2. The previous draft repo is almost certainly wrong for the new
+  ///      target — DFlash drafts are paired 1:1 with a base model and
+  ///      the new model may not even be on the supported list.
+  /// The user can opt back in explicitly after the new session is up.
+  const activeMlxModelId = useMemo(() => {
+    if (provider?.provider !== 'mlx') return undefined
+    const mlxIds = new Set(provider.models.map((m) => m.id))
+    return activeModels.find((id) => mlxIds.has(id))
+  }, [activeModels, provider])
+
+  const prevActiveMlxModelRef = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (provider?.provider !== 'mlx' || !provider) {
+      prevActiveMlxModelRef.current = undefined
+      return
+    }
+
+    const prev = prevActiveMlxModelRef.current
+    prevActiveMlxModelRef.current = activeMlxModelId
+
+    /// Skip the very first render (when `prev` is still `undefined`):
+    /// we don't want to nuke the user's choice just because we mounted.
+    if (prev === undefined) return
+    if (prev === activeMlxModelId) return
+
+    const dflashSetting = provider.settings.find(
+      (s) => s.key === 'dflash_enabled'
+    )
+    const isOn = !!(
+      dflashSetting?.controller_props as { value?: boolean } | undefined
+    )?.value
+    if (!isOn) return
+
+    const next = provider.settings.map((s) =>
+      s.key === 'dflash_enabled'
+        ? {
+            ...s,
+            controller_props: {
+              ...s.controller_props,
+              value: false as never,
+            },
+          }
+        : s
+    )
+    serviceHub.providers().updateSettings(providerName, next)
+    updateProvider(providerName, { ...provider, settings: next })
+  }, [
+    activeMlxModelId,
+    provider,
+    providerName,
+    serviceHub,
+    updateProvider,
+  ])
 
   // Auto-refresh provider settings to get updated backend configuration
   const refreshSettings = useCallback(async () => {
@@ -395,11 +453,20 @@ function ProviderDetail() {
             return
           }
 
+          /// When the draft is already cached on disk the MLX server can
+          /// pick it up instantly — surface that as "Loading…" instead
+          /// of misleading the user with "Downloading…".
           toast.info(
-            t('settings:dflashDownloadingDraft', {
-              defaultValue: 'Downloading DFlash draft for {{modelId}}...',
-              modelId: activeMlxModel,
-            })
+            support.local
+              ? t('settings:dflashLoadingDraft', {
+                  defaultValue: 'Loading DFlash draft for {{modelId}}...',
+                  modelId: activeMlxModel,
+                })
+              : t('settings:dflashDownloadingDraft', {
+                  defaultValue:
+                    'Downloading DFlash draft for {{modelId}}...',
+                  modelId: activeMlxModel,
+                })
           )
 
           /// Reuse the manifest from `checkDflashSupport` so the extension
