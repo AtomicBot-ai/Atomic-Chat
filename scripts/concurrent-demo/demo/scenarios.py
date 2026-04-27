@@ -111,7 +111,11 @@ def make_ascii_agents(n: int = 10) -> list[dict[str, Any]]:
             "emoji": "👾",
             "color": _COLORS[i % len(_COLORS)],
             "direct_instruction": (
-                f"Create ASCII art of {{topic}}. Output ASCII art only."
+                "Draw a small, recognisable ASCII portrait of a {topic}. "
+                "Maximum 12 rows tall and 40 columns wide. Centre it. "
+                "Emphasise the most iconic features (eyes, ears, tail, fins, etc.) "
+                "so the silhouette is instantly recognisable. "
+                "Use ONLY plain ASCII characters. Output the art only."
             ),
         }
         for i in range(n)
@@ -134,8 +138,20 @@ CODE_SYSTEM = (
 )
 
 ASCII_SYSTEM = (
-    "You are an ASCII artist. Output ONLY raw ASCII art. "
-    "No explanations, no markdown fences, no text before or after the art."
+    "You are a master ASCII artist specialising in small, charming animal portraits.\n"
+    "Strict rules:\n"
+    "- Maximum 12 rows tall and 40 columns wide. Smaller is fine.\n"
+    "- Use ONLY plain ASCII characters: letters, digits, spaces, and these symbols: "
+    "/ \\ | _ - . , : ; ' \" ` ( ) [ ] { } < > * ^ ~ + = o O 0 @ #\n"
+    "- NO Unicode box-drawing, NO emoji, NO ANSI colour codes, NO markdown fences, "
+    "NO captions, NO explanations.\n"
+    "- Centre the figure with a consistent left margin so the silhouette is clear.\n"
+    "- Use whitespace deliberately: dense strokes for body and outlines, "
+    "sparser characters for fur, fluff and highlights.\n"
+    "- The animal MUST be INSTANTLY recognisable. Emphasise iconic features "
+    "(cat ears + whiskers, owl big round eyes, fish fins + scales, snake S-curves, "
+    "dog snout + floppy ears, rabbit long ears, etc.).\n"
+    "- Output ONLY the raw ASCII art."
 )
 
 
@@ -178,14 +194,21 @@ CODE_PLAN: dict[str, str] = {
 ASCII_PLAN: dict[str, str] = {
     "system": (
         'Output a JSON array with {n_agents} objects. Each has "name", "instruction", and "label". '
-        'The "label" is a one word description of the ASCII art (e.g. "Cat"). '
+        'Pick {n_agents} DIFFERENT animals with iconic, easy-to-recognise silhouettes '
+        '(good choices: cat, owl, fish, snake, dog, frog, rabbit, mouse, bird, butterfly, '
+        'bee, turtle, whale, octopus, fox, bear, spider, crab, dolphin, penguin, elephant, '
+        'giraffe, kangaroo, panda, hedgehog, ant, ladybug, lizard, sheep, pig). '
+        'NEVER repeat an animal across agents. '
+        'The "label" is the lowercase animal name (e.g. "cat", "owl"). '
         "Output ONLY valid JSON."
     ),
     "user": (
-        'Theme: "{topic}". Agents (each is an ASCII artist): {agent_list}\n'
-        'Each instruction: "Create realistic and small ASCII (max 20x60 characters) art of '
-        "[specific aspect of the theme - one word description only]\". "
-        "One sentence. That is all. "
+        'Theme: "{topic}". Agents (each is a master ASCII artist): {agent_list}\n'
+        "Pick a DIFFERENT animal for every agent. Each instruction MUST follow this exact form, "
+        "in ONE sentence:\n"
+        '"Draw a small ASCII portrait of a [animal] emphasising [1-2 iconic features]. '
+        'Max 12 rows x 40 cols, plain ASCII only, centred."\n'
+        "That is all."
     ),
 }
 

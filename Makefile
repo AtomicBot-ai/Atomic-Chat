@@ -179,21 +179,59 @@ ifeq ($(shell uname -s),Darwin)
 		echo "Using pinned release: $$TAG"; \
 	else \
 		echo "Fetching latest DFlash release..."; \
-		API_URL="https://api.github.com/repos/AtomicBot-ai/dflash/releases"; \
+		API_URL="https://api.github.com/repos/AtomicBot-ai/dflash/releases?per_page=50"; \
 		TMPREL=$$(mktemp /tmp/dflash-releases-XXXXXX.json); \
-		if [ -n "$$GH_TOKEN" ]; then \
-			curl -sf -H "Authorization: Bearer $$GH_TOKEN" "$$API_URL" -o "$$TMPREL"; \
-		else \
-			curl -sf "$$API_URL" -o "$$TMPREL"; \
+		_gh_get() { \
+			if [ "$$1" = "1" ] && [ -n "$$GH_TOKEN" ]; then \
+				curl -sS -H "Authorization: Bearer $$GH_TOKEN" -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
+			else \
+				curl -sS -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
+			fi; \
+		}; \
+		_gh_fetch() { \
+			HTTP_CODE=""; \
+			for attempt in 1 2 3 4 5; do \
+				HTTP_CODE=$$(_gh_get "$$1" "$$2" "$$3"); \
+				case "$$HTTP_CODE" in \
+					2*) return 0 ;; \
+					403|429|5*|000) \
+						echo "  GitHub API attempt $$attempt/5 (auth=$$1): HTTP $$HTTP_CODE, retrying in $$((attempt * 2))s..."; \
+						sleep $$((attempt * 2)) ;; \
+					*) return 1 ;; \
+				esac; \
+			done; \
+			return 1; \
+		}; \
+		_response_ok() { \
+			[ -s "$$1" ] && jq -e 'type == "array" and length > 0' "$$1" >/dev/null 2>&1; \
+		}; \
+		USE_TOKEN=0; [ -n "$$GH_TOKEN" ] && USE_TOKEN=1; \
+		_gh_fetch "$$USE_TOKEN" "$$TMPREL" "$$API_URL" || true; \
+		FIRST_CODE="$$HTTP_CODE"; \
+		if ! _response_ok "$$TMPREL" && [ "$$USE_TOKEN" = "1" ]; then \
+			echo "Token-authenticated request did not yield usable releases (HTTP $$FIRST_CODE); retrying unauthenticated..."; \
+			_gh_fetch "0" "$$TMPREL" "$$API_URL" || true; \
 		fi; \
-		if [ ! -s "$$TMPREL" ]; then rm -f "$$TMPREL"; echo "Error: Failed to fetch releases from GitHub API"; exit 1; fi; \
-		if command -v jq >/dev/null 2>&1; then \
-			TAG=$$(jq -r '[.[] | select(.tag_name | startswith("dflash-macos-arm64"))] | sort_by(.published_at // .created_at) | reverse | .[0].tag_name // empty' "$$TMPREL"); \
-		else \
-			TAG=$$(python3 -c "import sys,json; rs=json.load(open(sys.argv[1])); ts=sorted([r for r in rs if r['tag_name'].startswith('dflash-macos-arm64')], key=lambda r: r.get('published_at') or r.get('created_at') or '', reverse=True); print(ts[0]['tag_name'] if ts else '')" "$$TMPREL" 2>/dev/null); \
+		case "$$HTTP_CODE" in \
+			2*) ;; \
+			*) echo "Error: GitHub API failed (last HTTP $$HTTP_CODE)"; \
+			   echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
+			   rm -f "$$TMPREL"; exit 1 ;; \
+		esac; \
+		if [ ! -s "$$TMPREL" ] || ! jq -e 'type == "array"' "$$TMPREL" >/dev/null 2>&1; then \
+			echo "Error: GitHub API returned non-array or empty response (HTTP $$HTTP_CODE):"; \
+			head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
+			rm -f "$$TMPREL"; exit 1; \
+		fi; \
+		REL_COUNT=$$(jq 'length' "$$TMPREL"); \
+		echo "GitHub API returned $$REL_COUNT release(s)"; \
+		TAG=$$(jq -r '[.[] | select(.tag_name | startswith("dflash-macos-arm64"))] | sort_by(.published_at // .created_at) | reverse | .[0].tag_name // empty' "$$TMPREL"); \
+		if [ -z "$$TAG" ]; then \
+			echo "Error: No DFlash release found matching 'dflash-macos-arm64*'. First 10 tags in response:"; \
+			jq -r '.[0:10] | .[].tag_name' "$$TMPREL" || true; \
+			rm -f "$$TMPREL"; exit 1; \
 		fi; \
 		rm -f "$$TMPREL"; \
-		if [ -z "$$TAG" ]; then echo "Error: No DFlash release found"; exit 1; fi; \
 	fi; \
 	echo "Release: $$TAG"; \
 	URL="https://github.com/AtomicBot-ai/dflash/releases/download/$$TAG/dflash-mlx-server-macos-arm64.tar.gz"; \
