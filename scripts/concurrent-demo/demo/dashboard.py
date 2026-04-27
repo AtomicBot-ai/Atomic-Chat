@@ -92,6 +92,7 @@ class DashboardState:
     slot_total: int = 0
     server: ServerMetrics = field(default_factory=ServerMetrics)
     compact: bool = False
+    peak_combined_tps: float = 0.0
 
     @classmethod
     def initial(
@@ -185,8 +186,13 @@ def render(state: DashboardState) -> Group:
     done = sum(1 for a in agent_list if a.status == "done")
     running = sum(1 for a in agent_list if a.status == "running")
     errored = sum(1 for a in agent_list if a.status == "error")
-    combined_tps = sum(a.tps for a in agent_list if a.status == "running")
-    total_tokens = sum(a.tokens for a in agent_list)
+    # Sum across all agents (not only `running`) so the hero number doesn't
+    # collapse to 0 once they finish; track the peak so the marketer's
+    # screen recording freezes on the highest aggregate throughput observed.
+    current_tps = sum(a.tps for a in agent_list)
+    if current_tps > state.peak_combined_tps:
+        state.peak_combined_tps = current_tps
+    display_tps = max(current_tps, state.peak_combined_tps)
 
     header_text = Text.from_markup(
         f"[bold cyan]\u26a1 Atomic-Chat \u2014 Concurrent Demo[/]    "
@@ -196,9 +202,7 @@ def render(state: DashboardState) -> Group:
         justify="left",
     )
 
-    hero_value = f"{combined_tps:.1f}"
-    hero_ascii = _HERO_FIGLET.renderText(hero_value).rstrip("\n")
-
+    hero_ascii = _HERO_FIGLET.renderText(f"{display_tps:.1f} TPS").rstrip("\n")
     brand_text = Text(_BRAND_ASCII, style="bold bright_magenta", no_wrap=True)
     number_text = Text(hero_ascii, style="bold bright_red", no_wrap=True)
 
@@ -207,14 +211,7 @@ def render(state: DashboardState) -> Group:
     hero_row.add_column(justify="right")
     hero_row.add_row(brand_text, number_text)
 
-    hero_caption = Text.from_markup(
-        f"[bold]tokens / second[/]   "
-        f"[dim]\u00b7[/]   "
-        f"[white]\u03a3[/] [bold bright_white]{total_tokens}[/] "
-        f"[dim]total tokens[/]",
-        justify="center",
-    )
-    hero_block = Group(hero_row, Align.center(hero_caption))
+    hero_block = hero_row
 
     agg_text = Text.from_markup(
         f"[bold bright_green]{done}/{len(agent_list)} done[/]   "

@@ -304,40 +304,61 @@ ifeq ($(shell uname -s),Darwin)
 		TMPREL=$$(mktemp /tmp/llamacpp-releases-XXXXXX.json); \
 		API_URL="https://api.github.com/repos/AtomicBot-ai/atomic-llama-cpp-turboquant/releases?per_page=50"; \
 		_gh_get() { \
-			if [ -n "$$GH_TOKEN" ]; then \
-				curl -sS -H "Authorization: Bearer $$GH_TOKEN" -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$1" -w "%{http_code}" "$$2" || echo "000"; \
+			if [ "$$1" = "1" ] && [ -n "$$GH_TOKEN" ]; then \
+				curl -sS -H "Authorization: Bearer $$GH_TOKEN" -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
 			else \
-				curl -sS -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$1" -w "%{http_code}" "$$2" || echo "000"; \
+				curl -sS -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
 			fi; \
 		}; \
-		HTTP_CODE=""; \
-		for attempt in 1 2 3 4 5; do \
-			HTTP_CODE=$$(_gh_get "$$TMPREL" "$$API_URL"); \
-			case "$$HTTP_CODE" in \
-				2*) break ;; \
-				403|429|5*|000) \
-					echo "  GitHub API attempt $$attempt/5: HTTP $$HTTP_CODE, retrying in $$((attempt * 2))s..."; \
-					sleep $$((attempt * 2)) ;; \
-				*) \
-					echo "Error: GitHub API returned HTTP $$HTTP_CODE"; \
-					echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
-					rm -f "$$TMPREL"; exit 1 ;; \
-			esac; \
-		done; \
+		_gh_fetch() { \
+			HTTP_CODE=""; \
+			for attempt in 1 2 3 4 5; do \
+				HTTP_CODE=$$(_gh_get "$$1" "$$2" "$$3"); \
+				case "$$HTTP_CODE" in \
+					2*) return 0 ;; \
+					403|429|5*|000) \
+						echo "  GitHub API attempt $$attempt/5 (auth=$$1): HTTP $$HTTP_CODE, retrying in $$((attempt * 2))s..."; \
+						sleep $$((attempt * 2)) ;; \
+					*) return 1 ;; \
+				esac; \
+			done; \
+			return 1; \
+		}; \
+		_response_ok() { \
+			[ -s "$$1" ] && jq -e 'type == "array" and length > 0' "$$1" >/dev/null 2>&1; \
+		}; \
+		USE_TOKEN=0; [ -n "$$GH_TOKEN" ] && USE_TOKEN=1; \
+		_gh_fetch "$$USE_TOKEN" "$$TMPREL" "$$API_URL" || true; \
+		FIRST_CODE="$$HTTP_CODE"; \
+		case "$$HTTP_CODE" in \
+			2*) \
+				if jq -e 'type == "array"' "$$TMPREL" >/dev/null 2>&1; then \
+					REL_COUNT=$$(jq 'length' "$$TMPREL"); \
+					echo "GitHub API returned $$REL_COUNT release(s) (auth=$$USE_TOKEN)"; \
+				else \
+					REL_COUNT=-1; \
+				fi ;; \
+			*) \
+				echo "  GitHub API request failed (auth=$$USE_TOKEN, HTTP $$HTTP_CODE)"; \
+				REL_COUNT=-1 ;; \
+		esac; \
+		if ! _response_ok "$$TMPREL" && [ "$$USE_TOKEN" = "1" ]; then \
+			echo "Token-authenticated request did not yield usable releases (HTTP $$FIRST_CODE); retrying unauthenticated..."; \
+			_gh_fetch "0" "$$TMPREL" "$$API_URL" || true; \
+		fi; \
 		case "$$HTTP_CODE" in \
 			2*) ;; \
-			*) echo "Error: GitHub API failed after 5 attempts (last HTTP $$HTTP_CODE)"; \
+			*) echo "Error: GitHub API failed (last HTTP $$HTTP_CODE)"; \
 			   echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
 			   rm -f "$$TMPREL"; exit 1 ;; \
 		esac; \
-		if [ ! -s "$$TMPREL" ]; then rm -f "$$TMPREL"; echo "Error: Empty response body from GitHub API (HTTP $$HTTP_CODE)"; exit 1; fi; \
-		if ! jq -e 'type == "array"' "$$TMPREL" >/dev/null 2>&1; then \
-			echo "Error: GitHub API returned non-array response (HTTP $$HTTP_CODE):"; \
-			head -c 500 "$$TMPREL"; echo; \
+		if [ ! -s "$$TMPREL" ] || ! jq -e 'type == "array"' "$$TMPREL" >/dev/null 2>&1; then \
+			echo "Error: GitHub API returned non-array or empty response (HTTP $$HTTP_CODE):"; \
+			head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
 			rm -f "$$TMPREL"; exit 1; \
 		fi; \
 		REL_COUNT=$$(jq 'length' "$$TMPREL"); \
-		echo "GitHub API returned $$REL_COUNT release(s)"; \
+		echo "Final response: $$REL_COUNT release(s)"; \
 		TAG=$$(jq -r --arg b "$$BACKEND" '[.[] | select(.tag_name | startswith("turboquant-" + $$b))][0].tag_name // empty' "$$TMPREL"); \
 		if [ -z "$$TAG" ]; then \
 			echo "No turboquant release found for $$BACKEND, trying legacy release..."; \
@@ -410,29 +431,39 @@ else ifeq ($(OS),Windows_NT)
 	TMPREL=$$(mktemp /tmp/llamacpp-latest-XXXXXX.json); \
 	API_URL="https://api.github.com/repos/janhq/llama.cpp/releases/latest"; \
 	_gh_get() { \
-		if [ -n "$$GH_TOKEN" ]; then \
-			curl -sS -H "Authorization: Bearer $$GH_TOKEN" -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$1" -w "%{http_code}" "$$2" || echo "000"; \
+		if [ "$$1" = "1" ] && [ -n "$$GH_TOKEN" ]; then \
+			curl -sS -H "Authorization: Bearer $$GH_TOKEN" -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
 		else \
-			curl -sS -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$1" -w "%{http_code}" "$$2" || echo "000"; \
+			curl -sS -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
 		fi; \
 	}; \
-	HTTP_CODE=""; \
-	for attempt in 1 2 3 4 5; do \
-		HTTP_CODE=$$(_gh_get "$$TMPREL" "$$API_URL"); \
-		case "$$HTTP_CODE" in \
-			2*) break ;; \
-			403|429|5*|000) \
-				echo "  GitHub API attempt $$attempt/5: HTTP $$HTTP_CODE, retrying in $$((attempt * 2))s..."; \
-				sleep $$((attempt * 2)) ;; \
-			*) \
-				echo "Error: GitHub API returned HTTP $$HTTP_CODE"; \
-				echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
-				rm -f "$$TMPREL"; exit 1 ;; \
-		esac; \
-	done; \
+	_gh_fetch() { \
+		HTTP_CODE=""; \
+		for attempt in 1 2 3 4 5; do \
+			HTTP_CODE=$$(_gh_get "$$1" "$$2" "$$3"); \
+			case "$$HTTP_CODE" in \
+				2*) return 0 ;; \
+				403|429|5*|000) \
+					echo "  GitHub API attempt $$attempt/5 (auth=$$1): HTTP $$HTTP_CODE, retrying in $$((attempt * 2))s..."; \
+					sleep $$((attempt * 2)) ;; \
+				*) return 1 ;; \
+			esac; \
+		done; \
+		return 1; \
+	}; \
+	_tag_ok() { \
+		[ -s "$$1" ] && [ -n "$$(jq -r '.tag_name // empty' "$$1" 2>/dev/null)" ]; \
+	}; \
+	USE_TOKEN=0; [ -n "$$GH_TOKEN" ] && USE_TOKEN=1; \
+	_gh_fetch "$$USE_TOKEN" "$$TMPREL" "$$API_URL" || true; \
+	FIRST_CODE="$$HTTP_CODE"; \
+	if ! _tag_ok "$$TMPREL" && [ "$$USE_TOKEN" = "1" ]; then \
+		echo "Token-authenticated request did not yield a tag_name (HTTP $$FIRST_CODE); retrying unauthenticated..."; \
+		_gh_fetch "0" "$$TMPREL" "$$API_URL" || true; \
+	fi; \
 	case "$$HTTP_CODE" in \
 		2*) ;; \
-		*) echo "Error: GitHub API failed after 5 attempts (last HTTP $$HTTP_CODE)"; \
+		*) echo "Error: GitHub API failed (last HTTP $$HTTP_CODE)"; \
 		   echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
 		   rm -f "$$TMPREL"; exit 1 ;; \
 	esac; \
