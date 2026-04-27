@@ -74,6 +74,12 @@ function ProviderDetail() {
   const [isInstallingBackend, setIsInstallingBackend] = useState(false)
   const [importingModel, setImportingModel] = useState<string | null>(null)
   const [isTogglingDflash, setIsTogglingDflash] = useState(false)
+  /// `isTogglingDflash` covers fast operations (lookup + MLX reload) and
+  /// drives the inline spinner next to the Switch. The HF download leg
+  /// is much longer and has its own progress UI in the left panel, so
+  /// we track it separately: the Switch stays disabled (avoids racy
+  /// re-entry) but the redundant spinner is hidden.
+  const [isDflashDownloading, setIsDflashDownloading] = useState(false)
   const [dflashUnsupportedModel, setDflashUnsupportedModel] = useState<
     string | null
   >(null)
@@ -399,7 +405,7 @@ function ProviderDetail() {
   const handleToggleDflash = useCallback(
     async (nextEnabled: boolean) => {
       if (provider?.provider !== 'mlx' || !provider) return
-      if (isTogglingDflash) return
+      if (isTogglingDflash || isDflashDownloading) return
 
       const writeSetting = (key: string, value: unknown) => {
         const next = provider.settings.map((s) =>
@@ -469,14 +475,30 @@ function ProviderDetail() {
                 })
           )
 
-          /// Reuse the manifest from `checkDflashSupport` so the extension
-          /// can skip the static lookup. The extension owns local-first
-          /// resolution and direct-download fallback from here on.
-          await mlxEngine.enableDflash(activeMlxModel, currentBlockSize, {
-            repo: support.repo,
-            required: support.required,
-            optional: support.optional,
-          })
+          /// Hand off the long HF download to the dedicated state so the
+          /// inline spinner disappears and the global DownloadManagement
+          /// panel becomes the single source of truth for progress. The
+          /// MLX reload that happens after the download still runs under
+          /// `isTogglingDflash` (re-set in `finally`) and re-shows the
+          /// spinner for the brief reload window.
+          if (!support.local) {
+            setIsDflashDownloading(true)
+            setIsTogglingDflash(false)
+          }
+
+          try {
+            /// Reuse the manifest from `checkDflashSupport` so the
+            /// extension can skip the static lookup. The extension owns
+            /// local-first resolution and direct-download fallback from
+            /// here on.
+            await mlxEngine.enableDflash(activeMlxModel, currentBlockSize, {
+              repo: support.repo,
+              required: support.required,
+              optional: support.optional,
+            })
+          } finally {
+            if (!support.local) setIsDflashDownloading(false)
+          }
           writeSetting('dflash_enabled', true)
 
           toast.success(
@@ -506,7 +528,15 @@ function ProviderDetail() {
         setIsTogglingDflash(false)
       }
     },
-    [provider, providerName, serviceHub, updateProvider, t, isTogglingDflash]
+    [
+      provider,
+      providerName,
+      serviceHub,
+      updateProvider,
+      t,
+      isTogglingDflash,
+      isDflashDownloading,
+    ]
   )
 
   const handleInstallBackendFromFile = useCallback(async () => {
@@ -647,11 +677,18 @@ function ProviderDetail() {
                                 value?: boolean
                               }
                             ).value}
-                            disabled={isTogglingDflash}
+                            disabled={
+                              isTogglingDflash || isDflashDownloading
+                            }
                             onCheckedChange={(checked) => {
                               handleToggleDflash(checked)
                             }}
                           />
+                          {/* Inline spinner is intentionally hidden while a
+                              HF download is in flight — the left-panel
+                              DownloadManagement widget owns that progress
+                              UX. The spinner only covers the short MLX
+                              reload window after the download. */}
                           {isTogglingDflash && (
                             <IconLoader
                               size={14}
