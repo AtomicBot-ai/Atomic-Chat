@@ -1,6 +1,6 @@
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import TextareaAutosize from 'react-textarea-autosize'
-import { cn } from '@/lib/utils'
+import { cn, formatBytes } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react'
@@ -41,12 +41,8 @@ import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 import type { ChatStatus } from 'ai'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
-import {
-  TEMPORARY_CHAT_ID,
-  TEMPORARY_CHAT_QUERY_ID,
-  SESSION_STORAGE_KEY,
-  SESSION_STORAGE_PREFIX,
-} from '@/constants/chat'
+import { TEMPORARY_CHAT_ID, TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
+import { useInitialMessage } from '@/hooks/useInitialMessage'
 import { localStorageKey } from '@/constants/localStorage'
 import { defaultModel } from '@/lib/models'
 import { useAssistant } from '@/hooks/useAssistant'
@@ -83,6 +79,14 @@ import {
   createImageAttachment,
   createDocumentAttachment,
 } from '@/types/attachment'
+import { AttachmentChip } from '@/containers/AttachmentChip'
+import { readImageAttachmentFromPath } from '@/containers/chatInput/imageFromPath'
+import { useTauriDragDrop } from '@/containers/chatInput/useTauriDragDrop'
+import {
+  DOCUMENT_EXTENSIONS,
+  IMAGE_EXTENSIONS,
+  classifyDroppedPaths,
+} from '@/containers/chatInput/classifyDroppedPaths'
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
@@ -475,13 +479,11 @@ const ChatInput = memo(function ChatInput({
       }
 
       if (isTemporaryChat) {
-        // For temporary chat, store message and navigate to temporary thread
-        sessionStorage.setItem(
-          SESSION_STORAGE_KEY.INITIAL_MESSAGE_TEMPORARY,
-          JSON.stringify(messagePayload)
-        )
-        sessionStorage.setItem('temp-chat-nav', 'true')
-        // Transfer agent mode from home screen to temporary thread
+        // Stash payload in-memory keyed by the temporary thread id; the thread
+        // page consumes it on mount. We avoid sessionStorage because base64
+        // image data URLs can exceed the per-origin quota and silently abort
+        // navigation with QuotaExceededError.
+        useInitialMessage.getState().set(TEMPORARY_CHAT_ID, messagePayload)
         if (isAgentMode && agentModeKey !== TEMPORARY_CHAT_ID) {
           useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, true)
           useAgentMode.getState().removeThread(agentModeKey)
@@ -572,11 +574,7 @@ const ChatInput = memo(function ChatInput({
           useAgentMode.getState().removeThread(agentModeKey)
         }
 
-        // Store the initial message for the new thread
-        sessionStorage.setItem(
-          `${SESSION_STORAGE_PREFIX.INITIAL_MESSAGE}${newThread.id}`,
-          JSON.stringify(messagePayload)
-        )
+        useInitialMessage.getState().set(newThread.id, messagePayload)
 
         router.navigate({
           to: route.threadsDetail,
@@ -856,109 +854,111 @@ const ChatInput = memo(function ChatInput({
     ]
   )
 
-  const handleAttachDocsIngest = async () => {
-    try {
-      if (!attachmentsEnabled) {
-        toast.info('Attachments are disabled in Settings')
-        return
+  const ingestDocumentPaths = useCallback(
+    async (paths: readonly string[]) => {
+      if (!paths.length) return
+      try {
+        const preparedAttachments: Attachment[] = []
+        for (const p of paths) {
+          const name = p.split(/[\\/]/).pop() || p
+          const fileType = name.split('.').pop()?.toLowerCase()
+          let size: number | undefined = undefined
+          try {
+            const stat = await fs.fileStat(p)
+            size = stat?.size ? Number(stat.size) : undefined
+          } catch (e) {
+            console.warn('Failed to read file size for', p, e)
+          }
+          preparedAttachments.push(
+            createDocumentAttachment({
+              name,
+              path: p,
+              fileType,
+              size,
+              parseMode: parsePreference,
+            })
+          )
+        }
+
+        const maxFileSizeBytes =
+          typeof maxFileSizeMB === 'number' && maxFileSizeMB > 0
+            ? maxFileSizeMB * 1024 * 1024
+            : undefined
+
+        if (maxFileSizeBytes !== undefined) {
+          const hasOversized = preparedAttachments.some(
+            (att) => typeof att.size === 'number' && att.size > maxFileSizeBytes
+          )
+          if (hasOversized) {
+            toast.error('File too large', {
+              description: `One or more files exceed the ${maxFileSizeMB}MB limit`,
+            })
+            return
+          }
+        }
+
+        let duplicates: string[] = []
+        let newDocAttachments: Attachment[] = []
+
+        setAttachmentsForThread(attachmentsKey, (currentAttachments) => {
+          const existingPaths = new Set(
+            currentAttachments
+              .filter((a) => a.type === 'document' && a.path)
+              .map((a) => a.path)
+          )
+
+          duplicates = []
+          newDocAttachments = []
+
+          for (const att of preparedAttachments) {
+            if (existingPaths.has(att.path)) {
+              duplicates.push(att.name)
+              continue
+            }
+            newDocAttachments.push(att)
+          }
+
+          return newDocAttachments.length > 0
+            ? [...currentAttachments, ...newDocAttachments]
+            : currentAttachments
+        })
+
+        if (duplicates.length > 0) {
+          toast.warning('Files already attached', {
+            description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
+          })
+        }
+
+        if (newDocAttachments.length > 0) {
+          await processNewDocumentAttachments(newDocAttachments)
+        }
+      } catch (e) {
+        console.error('Failed to attach documents:', e)
+        const desc = e instanceof Error ? e.message : JSON.stringify(e)
+        toast.error('Failed to attach documents', { description: desc })
       }
+    },
+    [
+      attachmentsKey,
+      maxFileSizeMB,
+      parsePreference,
+      processNewDocumentAttachments,
+      setAttachmentsForThread,
+    ]
+  )
+
+  const handleAttachDocsIngest = async () => {
+    if (!attachmentsEnabled) {
+      toast.info('Attachments are disabled in Settings')
+      return
+    }
+    try {
       const selection = await serviceHub.dialog().open({
         multiple: true,
         filters: [
           {
             name: 'Documents & Code',
-            extensions: [
-              // Documents
-              'pdf',
-              'docx',
-              'txt',
-              'md',
-              'csv',
-              'xlsx',
-              'xls',
-              'ods',
-              'pptx',
-              'html',
-              'htm',
-              // JavaScript / TypeScript
-              'js',
-              'mjs',
-              'cjs',
-              'ts',
-              'mts',
-              'cts',
-              'jsx',
-              'tsx',
-              // Python
-              'py',
-              'pyw',
-              'pyi',
-              // C / C++
-              'c',
-              'h',
-              'cpp',
-              'cc',
-              'cxx',
-              'hpp',
-              'hh',
-              // Systems languages
-              'rs',
-              'go',
-              'swift',
-              'zig',
-              // JVM languages
-              'java',
-              'kt',
-              'kts',
-              'scala',
-              'groovy',
-              // Scripting languages
-              'rb',
-              'php',
-              'lua',
-              'pl',
-              'r',
-              'jl',
-              // .NET
-              'cs',
-              'fs',
-              'vb',
-              // Shell
-              'sh',
-              'bash',
-              'zsh',
-              'fish',
-              'ps1',
-              // Web
-              'css',
-              'scss',
-              'sass',
-              'less',
-              'vue',
-              'svelte',
-              'astro',
-              // Data / config formats
-              'json',
-              'jsonc',
-              'yaml',
-              'yml',
-              'toml',
-              'xml',
-              'ini',
-              'cfg',
-              'conf',
-              'env',
-              // Query / markup
-              'sql',
-              'graphql',
-              'gql',
-              'tex',
-              'rst',
-              // Misc text
-              'log',
-              'diff',
-              'patch',
-            ],
+            extensions: [...DOCUMENT_EXTENSIONS],
           },
           {
             name: 'All Files',
@@ -968,85 +968,9 @@ const ChatInput = memo(function ChatInput({
       })
       if (!selection) return
       const paths = Array.isArray(selection) ? selection : [selection]
-      if (!paths.length) return
-
-      // Prepare attachments with file sizes
-      const preparedAttachments: Attachment[] = []
-      for (const p of paths) {
-        const name = p.split(/[\\/]/).pop() || p
-        const fileType = name.split('.').pop()?.toLowerCase()
-        let size: number | undefined = undefined
-        try {
-          const stat = await fs.fileStat(p)
-          size = stat?.size ? Number(stat.size) : undefined
-        } catch (e) {
-          console.warn('Failed to read file size for', p, e)
-        }
-        preparedAttachments.push(
-          createDocumentAttachment({
-            name,
-            path: p,
-            fileType,
-            size,
-            parseMode: parsePreference,
-          })
-        )
-      }
-
-      const maxFileSizeBytes =
-        typeof maxFileSizeMB === 'number' && maxFileSizeMB > 0
-          ? maxFileSizeMB * 1024 * 1024
-          : undefined
-
-      if (maxFileSizeBytes !== undefined) {
-        const hasOversized = preparedAttachments.some(
-          (att) => typeof att.size === 'number' && att.size > maxFileSizeBytes
-        )
-        if (hasOversized) {
-          toast.error('File too large', {
-            description: `One or more files exceed the ${maxFileSizeMB}MB limit`,
-          })
-          return
-        }
-      }
-
-      let duplicates: string[] = []
-      let newDocAttachments: Attachment[] = []
-
-      setAttachmentsForThread(attachmentsKey, (currentAttachments) => {
-        const existingPaths = new Set(
-          currentAttachments
-            .filter((a) => a.type === 'document' && a.path)
-            .map((a) => a.path)
-        )
-
-        duplicates = []
-        newDocAttachments = []
-
-        for (const att of preparedAttachments) {
-          if (existingPaths.has(att.path)) {
-            duplicates.push(att.name)
-            continue
-          }
-          newDocAttachments.push(att)
-        }
-
-        return newDocAttachments.length > 0
-          ? [...currentAttachments, ...newDocAttachments]
-          : currentAttachments
-      })
-
-      if (duplicates.length > 0) {
-        toast.warning('Files already attached', {
-          description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
-        })
-      }
-
-      if (newDocAttachments.length > 0) {
-        await processNewDocumentAttachments(newDocAttachments)
-      }
+      await ingestDocumentPaths(paths)
     } catch (e) {
-      console.error('Failed to attach documents:', e)
+      console.error('Failed to open documents dialog:', e)
       const desc = e instanceof Error ? e.message : JSON.stringify(e)
       toast.error('Failed to attach documents', { description: desc })
     }
@@ -1084,6 +1008,24 @@ const ChatInput = memo(function ChatInput({
     )
   }
 
+  const handleRetryAttachment = async (indexToRetry: number) => {
+    const att = attachments[indexToRetry]
+    if (!att || att.type !== 'document' || !att.error) return
+
+    const cleaned: Attachment = {
+      ...att,
+      error: undefined,
+      processing: true,
+      processed: false,
+    }
+
+    setAttachmentsForThread(attachmentsKey, (prev) =>
+      prev.map((a, i) => (i === indexToRetry ? cleaned : a))
+    )
+
+    await processNewDocumentAttachments([cleaned])
+  }
+
   const getFileTypeFromExtension = (fileName: string): string => {
     const extension = fileName.toLowerCase().split('.').pop()
     switch (extension) {
@@ -1095,18 +1037,6 @@ const ChatInput = memo(function ChatInput({
       default:
         return ''
     }
-  }
-
-  const formatBytes = (bytes?: number): string => {
-    if (!bytes || bytes <= 0) return ''
-    const units = ['B', 'KB', 'MB', 'GB']
-    let i = 0
-    let val = bytes
-    while (val >= 1024 && i < units.length - 1) {
-      val /= 1024
-      i++
-    }
-    return `${val.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
   }
 
   const embeddingModelStatusText = useMemo(() => {
@@ -1150,71 +1080,105 @@ const ChatInput = memo(function ChatInput({
     return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
   }
 
-  const processImageFiles = async (files: File[]) => {
-    const maxSize = 10 * 1024 * 1024 // 10MB in bytes
-    const oversizedFiles: string[] = []
-    const invalidTypeFiles: string[] = []
+  const IMAGE_MAX_SIZE_BYTES = 10 * 1024 * 1024
+  const IMAGE_ALLOWED_MIME_TYPES = ['image/jpg', 'image/jpeg', 'image/png']
 
-    const allowedTypes = ['image/jpg', 'image/jpeg', 'image/png']
+  type ImageValidationOutcome = {
+    candidates: Attachment[]
+    oversized: string[]
+    invalidType: string[]
+  }
+
+  const prepareImageAttachmentsFromFiles = async (
+    files: readonly File[]
+  ): Promise<ImageValidationOutcome> => {
+    const oversized: string[] = []
+    const invalidType: string[] = []
     const validFiles: File[] = []
 
-    // First pass: validate file size and type (no duplicate check yet)
-    Array.from(files).forEach((file) => {
-      // Check file size
-      if (file.size > maxSize) {
-        oversizedFiles.push(file.name)
-        return
+    for (const file of files) {
+      if (file.size > IMAGE_MAX_SIZE_BYTES) {
+        oversized.push(file.name)
+        continue
       }
-
-      // Get file type - use extension as fallback if MIME type is incorrect
       const detectedType = file.type || getFileTypeFromExtension(file.name)
       const actualType = getFileTypeFromExtension(file.name) || detectedType
-
-      // Check file type - images only
-      if (!allowedTypes.includes(actualType)) {
-        invalidTypeFiles.push(file.name)
-        return
+      if (!IMAGE_ALLOWED_MIME_TYPES.includes(actualType)) {
+        invalidType.push(file.name)
+        continue
       }
-
       validFiles.push(file)
-    })
+    }
 
-    // Process valid files into attachments
-    const preparedFiles: Attachment[] = []
+    const candidates: Attachment[] = []
     for (const file of validFiles) {
       const detectedType = file.type || getFileTypeFromExtension(file.name)
       const actualType = getFileTypeFromExtension(file.name) || detectedType
 
-      const reader = new FileReader()
-      await new Promise<void>((resolve) => {
+      const dataUrl = await new Promise<string | null>((resolve) => {
+        const reader = new FileReader()
         reader.onload = () => {
           const result = reader.result
-          if (typeof result === 'string') {
-            const base64String = result.split(',')[1]
-            const att = createImageAttachment({
-              name: file.name,
-              size: file.size,
-              mimeType: actualType,
-              base64: base64String,
-              dataUrl: result,
-            })
-            preparedFiles.push(att)
-          }
-          resolve()
+          resolve(typeof result === 'string' ? result : null)
         }
+        reader.onerror = () => resolve(null)
         reader.readAsDataURL(file)
       })
+      if (!dataUrl) continue
+
+      candidates.push(
+        createImageAttachment({
+          name: file.name,
+          size: file.size,
+          mimeType: actualType,
+          base64: dataUrl.split(',')[1] ?? '',
+          dataUrl,
+        })
+      )
     }
 
-    // Compute content hashes for deduplication (allows different images with same filename)
-    for (const att of preparedFiles) {
+    return { candidates, oversized, invalidType }
+  }
+
+  const prepareImageAttachmentsFromPaths = async (
+    paths: readonly string[]
+  ): Promise<ImageValidationOutcome> => {
+    const oversized: string[] = []
+    const invalidType: string[] = []
+    const candidates: Attachment[] = []
+
+    for (const p of paths) {
+      const ext = (p.split(/[\\/]/).pop()?.split('.').pop() || '').toLowerCase()
+      if (!IMAGE_EXTENSIONS.has(ext)) {
+        invalidType.push(p.split(/[\\/]/).pop() || p)
+        continue
+      }
+      try {
+        const att = await readImageAttachmentFromPath(p)
+        if (typeof att.size === 'number' && att.size > IMAGE_MAX_SIZE_BYTES) {
+          oversized.push(att.name)
+          continue
+        }
+        candidates.push(att)
+      } catch (e) {
+        console.error('Failed to read dropped image', p, e)
+        invalidType.push(p.split(/[\\/]/).pop() || p)
+      }
+    }
+
+    return { candidates, oversized, invalidType }
+  }
+
+  const commitImageAttachments = async (
+    outcome: ImageValidationOutcome
+  ): Promise<void> => {
+    const { candidates, oversized, invalidType } = outcome
+
+    for (const att of candidates) {
       if (att.base64) {
         att.contentHash = await hashBase64(att.base64)
       }
     }
-
-    const duplicates: string[] = []
-    const newFiles: Attachment[] = []
 
     const currentAttachments = useChatAttachments
       .getState()
@@ -1233,8 +1197,10 @@ const ChatInput = memo(function ChatInput({
       }
     }
 
+    const duplicates: string[] = []
+    const newFiles: Attachment[] = []
     const seenHashesInBatch = new Set<string>()
-    for (const att of preparedFiles) {
+    for (const att of candidates) {
       const hash = att.contentHash
       const isDuplicateByContent =
         hash && (existingImageHashes.has(hash) || seenHashesInBatch.has(hash))
@@ -1263,7 +1229,6 @@ const ChatInput = memo(function ChatInput({
               : a.name === img.name)
 
           try {
-            // Mark as processing
             setAttachmentsForThread(attachmentsKey, (prev) =>
               prev.map((a) => (matchImg(a) ? { ...a, processing: true } : a))
             )
@@ -1273,7 +1238,6 @@ const ChatInput = memo(function ChatInput({
               .ingestImage(currentThreadId, img)
 
             if (result?.id) {
-              // Mark as processed with ID
               setAttachmentsForThread(attachmentsKey, (prev) =>
                 prev.map((a) =>
                   matchImg(a)
@@ -1291,7 +1255,6 @@ const ChatInput = memo(function ChatInput({
             }
           } catch (error) {
             console.error('Failed to ingest image:', error)
-            // Remove failed image
             setAttachmentsForThread(attachmentsKey, (prev) =>
               prev.filter((a) => !matchImg(a))
             )
@@ -1304,7 +1267,6 @@ const ChatInput = memo(function ChatInput({
       })()
     }
 
-    // Display validation errors
     if (duplicates.length > 0) {
       toast.warning('Some images already attached', {
         description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
@@ -1312,27 +1274,36 @@ const ChatInput = memo(function ChatInput({
     }
 
     const errors: string[] = []
-    if (oversizedFiles.length > 0) {
+    if (oversized.length > 0) {
       errors.push(
-        `File${oversizedFiles.length > 1 ? 's' : ''} too large (max 10MB): ${oversizedFiles.join(', ')}`
+        `File${oversized.length > 1 ? 's' : ''} too large (max 10MB): ${oversized.join(', ')}`
       )
     }
 
-    if (invalidTypeFiles.length > 0) {
+    if (invalidType.length > 0) {
       errors.push(
-        `Invalid file type${invalidTypeFiles.length > 1 ? 's' : ''} (only JPEG, JPG, PNG allowed): ${invalidTypeFiles.join(', ')}`
+        `Invalid file type${invalidType.length > 1 ? 's' : ''} (only JPEG, JPG, PNG allowed): ${invalidType.join(', ')}`
       )
     }
 
     if (errors.length > 0) {
       setMessage(errors.join(' | '))
-      // Reset file input to allow re-uploading
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
     } else {
       setMessage('')
     }
+  }
+
+  const processImageFiles = async (files: File[]) => {
+    const outcome = await prepareImageAttachmentsFromFiles(files)
+    await commitImageAttachments(outcome)
+  }
+
+  const ingestImagePaths = async (paths: readonly string[]) => {
+    const outcome = await prepareImageAttachmentsFromPaths(paths)
+    await commitImageAttachments(outcome)
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1473,11 +1444,46 @@ const ChatInput = memo(function ChatInput({
     ]
   )
 
+  const handleTauriDrop = (paths: string[]) => {
+    if (!attachmentsEnabled) {
+      toast.info('Attachments are disabled in Settings')
+      return
+    }
+    const { images, docs, unsupported } = classifyDroppedPaths(paths)
+
+    if (unsupported.length > 0) {
+      const names = unsupported.map((p) => p.split(/[\\/]/).pop() || p)
+      toast.warning('Unsupported file type', {
+        description: `${names.join(', ')} ${names.length === 1 ? 'is' : 'are'} not supported`,
+      })
+    }
+
+    if (images.length > 0) {
+      if (!hasMmproj) {
+        toast.error('Vision model required', {
+          description: 'Select a model with vision support to attach images.',
+        })
+      } else {
+        void ingestImagePaths(images)
+      }
+    }
+
+    if (docs.length > 0) {
+      void ingestDocumentPaths(docs)
+    }
+  }
+
+  useTauriDragDrop({
+    enabled: attachmentsEnabled,
+    onDragOver: () => setIsDragOver(true),
+    onDragLeave: () => setIsDragOver(false),
+    onDrop: handleTauriDrop,
+  })
+
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    // Only allow drag if model supports mmproj
-    if (hasMmproj) {
+    if (attachmentsEnabled) {
       setIsDragOver(true)
     }
   }
@@ -1486,7 +1492,6 @@ const ChatInput = memo(function ChatInput({
     e.preventDefault()
     e.stopPropagation()
     // Only set dragOver to false if we're leaving the drop zone entirely
-    // In Tauri, relatedTarget can be null, so we need to handle that case
     const relatedTarget = e.relatedTarget as Node | null
     if (!relatedTarget || !e.currentTarget.contains(relatedTarget)) {
       setIsDragOver(false)
@@ -1496,8 +1501,7 @@ const ChatInput = memo(function ChatInput({
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    // Ensure drag state is maintained during drag over
-    if (hasMmproj) {
+    if (attachmentsEnabled) {
       setIsDragOver(true)
     }
   }
@@ -1507,28 +1511,44 @@ const ChatInput = memo(function ChatInput({
     e.stopPropagation()
     setIsDragOver(false)
 
-    // Only allow drop if model supports mmproj
-    if (!hasMmproj) {
-      return
-    }
+    if (!attachmentsEnabled) return
 
-    // Check if dataTransfer exists (it might not in some Tauri scenarios)
+    // NOTE: in Tauri with `dragDropEnabled: true` the WebView never delivers
+    // file drops as HTML5 events — they all flow through `useTauriDragDrop`.
+    // This handler still runs on the web build and on Tauri builds where the
+    // config change has not yet been picked up by the running binary.
     if (!e.dataTransfer) {
       console.warn('No dataTransfer available in drop event')
       return
     }
 
     const files = e.dataTransfer.files
-    if (files && files.length > 0) {
-      // Create a synthetic event to reuse existing file handling logic
-      const syntheticEvent = {
-        target: {
-          files: files,
-        },
-      } as React.ChangeEvent<HTMLInputElement>
+    if (!files || files.length === 0) return
 
-      handleFileChange(syntheticEvent)
+    const fileArr = Array.from(files)
+    const imageFiles = fileArr.filter((f) => {
+      const ext = f.name.split('.').pop()?.toLowerCase() ?? ''
+      return IMAGE_EXTENSIONS.has(ext) || f.type.startsWith('image/')
+    })
+    const nonImageFiles = fileArr.filter((f) => !imageFiles.includes(f))
+
+    if (nonImageFiles.length > 0) {
+      const names = nonImageFiles.map((f) => f.name)
+      toast.warning('Document drag-and-drop unavailable here', {
+        description: `${names.join(', ')} - drop documents in the desktop app or use the attach menu.`,
+      })
     }
+
+    if (imageFiles.length === 0) return
+
+    if (!hasMmproj) {
+      toast.error('Vision model required', {
+        description: 'Select a model with vision support to attach images.',
+      })
+      return
+    }
+
+    void processImageFiles(imageFiles)
   }
 
   const handlePaste = async (e: React.ClipboardEvent) => {
@@ -1653,15 +1673,15 @@ const ChatInput = memo(function ChatInput({
               isFocused && 'ring-1 ring-ring/50',
               isDragOver && 'ring-2 ring-ring/50 border-primary'
             )}
-            data-drop-zone={hasMmproj ? 'true' : undefined}
-            onDragEnter={hasMmproj ? handleDragEnter : undefined}
-            onDragLeave={hasMmproj ? handleDragLeave : undefined}
-            onDragOver={hasMmproj ? handleDragOver : undefined}
-            onDrop={hasMmproj ? handleDrop : undefined}
+            data-drop-zone={attachmentsEnabled ? 'true' : undefined}
+            onDragEnter={attachmentsEnabled ? handleDragEnter : undefined}
+            onDragLeave={attachmentsEnabled ? handleDragLeave : undefined}
+            onDragOver={attachmentsEnabled ? handleDragOver : undefined}
+            onDrop={attachmentsEnabled ? handleDrop : undefined}
           >
             {attachments.length > 0 && (
               <div className="flex flex-col gap-2 p-2 pb-0">
-                <div className="flex gap-3 items-center">
+                <div className="flex flex-wrap gap-2 items-center">
                   {attachments
                     .map((att, idx) => ({ att, idx }))
                     .map(({ att, idx }) => {
@@ -1673,6 +1693,23 @@ const ChatInput = memo(function ChatInput({
                             !att.processed &&
                             isAttachmentPipelineBusy)) &&
                         !att.error
+
+                      if (!isImage) {
+                        return (
+                          <AttachmentChip
+                            key={`${att.type}-${idx}-${att.name}`}
+                            name={att.name}
+                            fileType={att.fileType}
+                            mimeType={att.mimeType}
+                            size={att.size}
+                            error={att.error}
+                            isProcessing={showAttachmentLoader}
+                            onRemove={() => handleRemoveAttachment(idx)}
+                            onRetry={() => handleRetryAttachment(idx)}
+                          />
+                        )
+                      }
+
                       return (
                         <div
                           key={`${att.type}-${idx}-${att.name}`}
@@ -1688,8 +1725,7 @@ const ChatInput = memo(function ChatInput({
                                     'ring-1 ring-primary/30 bg-muted/40'
                                 )}
                               >
-                                {/* Inner content by state */}
-                                {isImage && att.dataUrl ? (
+                                {att.dataUrl ? (
                                   <img
                                     className="object-cover w-full h-full"
                                     src={att.dataUrl}
@@ -1724,11 +1760,7 @@ const ChatInput = memo(function ChatInput({
                                   {att.name}
                                 </div>
                                 <div className="opacity-70">
-                                  {isImage
-                                    ? att.mimeType || 'image'
-                                    : ext
-                                      ? `.${ext}`
-                                      : 'document'}
+                                  {att.mimeType || 'image'}
                                   {att.size
                                     ? ` · ${formatBytes(att.size)}`
                                     : ''}
@@ -1742,7 +1774,6 @@ const ChatInput = memo(function ChatInput({
                             </TooltipContent>
                           </Tooltip>
 
-                          {/* Remove button disabled while processing - outside overflow-hidden container */}
                           {!showAttachmentLoader && (
                             <div
                               className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"

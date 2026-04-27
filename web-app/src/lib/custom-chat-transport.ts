@@ -8,8 +8,37 @@ import {
   type UIMessageChunk,
   type Tool,
   type LanguageModelUsage,
+  type TextStreamPart,
   jsonSchema,
 } from 'ai'
+
+/// Hugging Face special-token convention (`<|im_end|>`, `<|eot_id|>`,
+/// `<|endoftext|>`, etc.). Some MLX backends — most visibly the DFlash
+/// custom `stream_generate` path — leak the EOS marker as plain text in
+/// the final delta instead of using it purely as a stop signal. These
+/// markers never appear in well-formed assistant output, so we strip
+/// them unconditionally before the chunk reaches the UI or the saved
+/// message body.
+const SPECIAL_TOKEN_REGEX = /<\|[a-zA-Z0-9_]+\|>/g
+
+/// `streamText` transform that scrubs the special-token markers from
+/// every `text-delta`. We pass `unknown` for `TOOLS` because the
+/// transform doesn't introspect tools.
+const stripSpecialTokensTransform = () =>
+  new TransformStream<TextStreamPart<never>, TextStreamPart<never>>({
+    transform(chunk, controller) {
+      if (chunk.type === 'text-delta') {
+        const cleaned = chunk.text.replace(SPECIAL_TOKEN_REGEX, '')
+        /// Drop deltas that consisted *only* of a special token —
+        /// emitting empty text-delta chunks would still flicker the
+        /// streaming cursor for a frame.
+        if (cleaned.length === 0) return
+        controller.enqueue({ ...chunk, text: cleaned })
+        return
+      }
+      controller.enqueue(chunk)
+    },
+  })
 import { useServiceStore } from '@/hooks/useServiceHub'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { ModelFactory } from './model-factory'
@@ -445,6 +474,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       toolChoice: shouldEnableTools ? 'auto' : undefined,
       system: this.systemMessage,
       maxOutputTokens,
+      experimental_transform: stripSpecialTokensTransform,
     })
 
     let tokensPerSecond = 0

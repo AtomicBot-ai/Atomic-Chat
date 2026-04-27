@@ -323,5 +323,15 @@
     "updateError": "Не удалось обновить Llamacpp"
   },
   "backendInstallSuccess": "Компонент успешно установлен",
-  "backendInstallError": "Не удалось установить компонент"
+  "backendInstallError": "Не удалось установить компонент",
+  "dflashUnsupportedTitle": "DFlash недоступен для этой модели",
+  "dflashUnsupportedDesc": "У модели {{modelId}} нет парного draft-веса. Выберите поддерживаемую модель из коллекции z-lab/dflash, чтобы ускорить генерацию.",
+  "dflashUnsupportedDescPrefix": "У модели {{modelId}} нет парного draft-веса. Выберите поддерживаемую модель из коллекции ",
+  "dflashUnsupportedDescSuffix": ", чтобы ускорить генерацию.",
+  "dflashNoActiveModel": "Сначала запустите MLX-модель.",
+  "dflashDownloadingDraft": "Скачивается DFlash draft для {{modelId}}…",
+  "dflashLoadingDraft": "Загружается DFlash draft для {{modelId}}…",
+  "dflashEnableSuccess": "DFlash включён",
+  "dflashDisableSuccess": "DFlash отключён",
+  "dflashEnableFailed": "Не удалось переключить DFlash"
 }

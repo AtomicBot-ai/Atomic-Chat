@@ -12,6 +12,7 @@ import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { DialogEditModel } from '@/containers/dialogs/EditModel'
 import { ImportVisionModelDialog } from '@/containers/dialogs/ImportVisionModelDialog'
 import { ImportMlxModelDialog } from '@/containers/dialogs/ImportMlxModelDialog'
+import { DflashUnsupportedDialog } from '@/containers/dialogs/DflashUnsupportedDialog'
 import { ModelSetting } from '@/containers/ModelSetting'
 import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
 import { FavoriteModelAction } from '@/containers/FavoriteModelAction'
@@ -37,7 +38,7 @@ import {
   IconUpload,
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { predefinedProviders } from '@/constants/providers'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { useModelLoad } from '@/hooks/useModelLoad'
@@ -48,6 +49,7 @@ import { basenameNoExt } from '@/lib/utils'
 import { useAppState } from '@/hooks/useAppState'
 import { useShallow } from 'zustand/shallow'
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
+import { EngineManager } from '@janhq/core'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -71,6 +73,16 @@ function ProviderDetail() {
   const [refreshingModels, setRefreshingModels] = useState(false)
   const [isInstallingBackend, setIsInstallingBackend] = useState(false)
   const [importingModel, setImportingModel] = useState<string | null>(null)
+  const [isTogglingDflash, setIsTogglingDflash] = useState(false)
+  /// `isTogglingDflash` covers fast operations (lookup + MLX reload) and
+  /// drives the inline spinner next to the Switch. The HF download leg
+  /// is much longer and has its own progress UI in the left panel, so
+  /// we track it separately: the Switch stays disabled (avoids racy
+  /// re-entry) but the redundant spinner is hidden.
+  const [isDflashDownloading, setIsDflashDownloading] = useState(false)
+  const [dflashUnsupportedModel, setDflashUnsupportedModel] = useState<
+    string | null
+  >(null)
   const { installBackend } = useBackendUpdater()
   const { providerName } = useParams({ from: Route.id })
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
@@ -186,6 +198,64 @@ function ProviderDetail() {
       return () => clearTimeout(timeoutId)
     }
   }, [importingModel])
+
+  /// Track the currently-running MLX model id (if this provider is `mlx`).
+  /// Whenever it changes we reset `dflash_enabled` to `false` because:
+  ///   1. The new session was just started fresh without `--draft-model`,
+  ///      so the UI flag would otherwise lie about the server state.
+  ///   2. The previous draft repo is almost certainly wrong for the new
+  ///      target — DFlash drafts are paired 1:1 with a base model and
+  ///      the new model may not even be on the supported list.
+  /// The user can opt back in explicitly after the new session is up.
+  const activeMlxModelId = useMemo(() => {
+    if (provider?.provider !== 'mlx') return undefined
+    const mlxIds = new Set(provider.models.map((m) => m.id))
+    return activeModels.find((id) => mlxIds.has(id))
+  }, [activeModels, provider])
+
+  const prevActiveMlxModelRef = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (provider?.provider !== 'mlx' || !provider) {
+      prevActiveMlxModelRef.current = undefined
+      return
+    }
+
+    const prev = prevActiveMlxModelRef.current
+    prevActiveMlxModelRef.current = activeMlxModelId
+
+    /// Skip the very first render (when `prev` is still `undefined`):
+    /// we don't want to nuke the user's choice just because we mounted.
+    if (prev === undefined) return
+    if (prev === activeMlxModelId) return
+
+    const dflashSetting = provider.settings.find(
+      (s) => s.key === 'dflash_enabled'
+    )
+    const isOn = !!(
+      dflashSetting?.controller_props as { value?: boolean } | undefined
+    )?.value
+    if (!isOn) return
+
+    const next = provider.settings.map((s) =>
+      s.key === 'dflash_enabled'
+        ? {
+            ...s,
+            controller_props: {
+              ...s.controller_props,
+              value: false as never,
+            },
+          }
+        : s
+    )
+    serviceHub.providers().updateSettings(providerName, next)
+    updateProvider(providerName, { ...provider, settings: next })
+  }, [
+    activeMlxModelId,
+    provider,
+    providerName,
+    serviceHub,
+    updateProvider,
+  ])
 
   // Auto-refresh provider settings to get updated backend configuration
   const refreshSettings = useCallback(async () => {
@@ -326,6 +396,149 @@ function ProviderDetail() {
     }
   }
 
+  /// Toggle the DFlash speculative-decoding flag on the MLX provider.
+  ///
+  /// The toggle is a no-op metadata flip unless an MLX model is currently
+  /// running: in that case we resolve the matching `z-lab/*-DFlash*` repo
+  /// (auto-downloading it if needed) and restart the live session with
+  /// the right CLI flags. Unsupported base models surface a modal popup.
+  const handleToggleDflash = useCallback(
+    async (nextEnabled: boolean) => {
+      if (provider?.provider !== 'mlx' || !provider) return
+      if (isTogglingDflash || isDflashDownloading) return
+
+      const writeSetting = (key: string, value: unknown) => {
+        const next = provider.settings.map((s) =>
+          s.key === key
+            ? {
+                ...s,
+                controller_props: {
+                  ...s.controller_props,
+                  value: value as never,
+                },
+              }
+            : s
+        )
+        serviceHub.providers().updateSettings(providerName, next)
+        updateProvider(providerName, { ...provider, settings: next })
+      }
+
+      const currentBlockSizeRaw = provider.settings.find(
+        (s) => s.key === 'block_size'
+      )?.controller_props?.value
+      const currentBlockSize = Number(currentBlockSizeRaw) || 16
+
+      const errTitle = t('settings:dflashEnableFailed', {
+        defaultValue: 'Failed to toggle DFlash',
+      })
+      const noActive = t('settings:dflashNoActiveModel', {
+        defaultValue: 'Start an MLX model first.',
+      })
+
+      const mlxEngine: any = EngineManager.instance().get('mlx')
+      if (!mlxEngine) {
+        toast.error(errTitle, { description: noActive })
+        return
+      }
+
+      const loadedModels: string[] =
+        (await mlxEngine.getLoadedModels?.()) ?? []
+      const activeMlxModel = loadedModels[0]
+
+      setIsTogglingDflash(true)
+      try {
+        if (nextEnabled) {
+          if (!activeMlxModel) {
+            toast.error(errTitle, { description: noActive })
+            return
+          }
+
+          const support = await mlxEngine.checkDflashSupport(activeMlxModel)
+          if (!support?.supported) {
+            setDflashUnsupportedModel(activeMlxModel)
+            return
+          }
+
+          /// When the draft is already cached on disk the MLX server can
+          /// pick it up instantly — surface that as "Loading…" instead
+          /// of misleading the user with "Downloading…".
+          toast.info(
+            support.local
+              ? t('settings:dflashLoadingDraft', {
+                  defaultValue: 'Loading DFlash draft for {{modelId}}...',
+                  modelId: activeMlxModel,
+                })
+              : t('settings:dflashDownloadingDraft', {
+                  defaultValue:
+                    'Downloading DFlash draft for {{modelId}}...',
+                  modelId: activeMlxModel,
+                })
+          )
+
+          /// Hand off the long HF download to the dedicated state so the
+          /// inline spinner disappears and the global DownloadManagement
+          /// panel becomes the single source of truth for progress. The
+          /// MLX reload that happens after the download still runs under
+          /// `isTogglingDflash` (re-set in `finally`) and re-shows the
+          /// spinner for the brief reload window.
+          if (!support.local) {
+            setIsDflashDownloading(true)
+            setIsTogglingDflash(false)
+          }
+
+          try {
+            /// Reuse the manifest from `checkDflashSupport` so the
+            /// extension can skip the static lookup. The extension owns
+            /// local-first resolution and direct-download fallback from
+            /// here on.
+            await mlxEngine.enableDflash(activeMlxModel, currentBlockSize, {
+              repo: support.repo,
+              required: support.required,
+              optional: support.optional,
+            })
+          } finally {
+            if (!support.local) setIsDflashDownloading(false)
+          }
+          writeSetting('dflash_enabled', true)
+
+          toast.success(
+            t('settings:dflashEnableSuccess', {
+              defaultValue: 'DFlash enabled',
+            })
+          )
+        } else {
+          if (activeMlxModel) {
+            await mlxEngine.disableDflash(activeMlxModel)
+          }
+          writeSetting('dflash_enabled', false)
+
+          toast.success(
+            t('settings:dflashDisableSuccess', {
+              defaultValue: 'DFlash disabled',
+            })
+          )
+        }
+      } catch (error) {
+        console.error('Failed to toggle DFlash:', error)
+        toast.error(errTitle, {
+          description:
+            error instanceof Error ? error.message : 'Unknown error',
+        })
+      } finally {
+        setIsTogglingDflash(false)
+      }
+    },
+    [
+      provider,
+      providerName,
+      serviceHub,
+      updateProvider,
+      t,
+      isTogglingDflash,
+      isDflashDownloading,
+    ]
+  )
+
   const handleInstallBackendFromFile = useCallback(async () => {
     if (provider?.provider !== 'llamacpp' && provider?.provider !== 'mlx')
       return
@@ -430,6 +643,23 @@ function ProviderDetail() {
                   const isHiddenByConcurrentMode =
                     !concurrentModeOn && setting.key === 'concurrent_slots'
 
+                  // The DFlash speculative-decoding toggle is the master
+                  // switch over `block_size`: hide that field when DFlash
+                  // is off so the panel stays uncluttered.
+                  const dflashEnabledOn = !!(
+                    provider?.settings.find(
+                      (s) => s.key === 'dflash_enabled'
+                    )?.controller_props as { value?: boolean } | undefined
+                  )?.value
+                  const isHiddenByDflash =
+                    !dflashEnabledOn && setting.key === 'block_size'
+
+                  // The dflash_enabled checkbox is rendered as a Switch with
+                  // a custom side-effecting handler that reloads the live
+                  // MLX session, so we short-circuit the generic
+                  // DynamicControllerSetting path for it.
+                  const isDflashToggle = setting.key === 'dflash_enabled'
+
                   // Use the DynamicController component
                   const actionComponent = (
                     <div className="mt-2">
@@ -439,16 +669,41 @@ function ProviderDetail() {
                           <IconLoader size={16} className="animate-spin" />
                           <span>loading</span>
                         </div>
+                      ) : isDflashToggle ? (
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={!!(
+                              setting.controller_props as {
+                                value?: boolean
+                              }
+                            ).value}
+                            disabled={
+                              isTogglingDflash || isDflashDownloading
+                            }
+                            onCheckedChange={(checked) => {
+                              handleToggleDflash(checked)
+                            }}
+                          />
+                          {/* Inline spinner is intentionally hidden while a
+                              HF download is in flight — the left-panel
+                              DownloadManagement widget owns that progress
+                              UX. The spinner only covers the short MLX
+                              reload window after the download. */}
+                          {isTogglingDflash && (
+                            <IconLoader
+                              size={14}
+                              className="animate-spin text-muted-foreground"
+                            />
+                          )}
+                        </div>
                       ) : (
                         <DynamicControllerSetting
                           controllerType={setting.controller_type}
                           controllerProps={setting.controller_props}
                           className={cn(
-                            (setting.key === 'device' ||
-                              setting.key === 'draft_model_path' ||
-                              setting.key === 'block_size') &&
-                              'hidden',
-                            isHiddenByConcurrentMode && 'hidden'
+                            setting.key === 'device' && 'hidden',
+                            isHiddenByConcurrentMode && 'hidden',
+                            isHiddenByDflash && 'hidden'
                           )}
                           onChange={(newValue) => {
                             if (provider) {
@@ -561,11 +816,9 @@ function ProviderDetail() {
                       key={settingIndex}
                       title={setting.title}
                       className={cn(
-                        (setting.key === 'device' ||
-                          setting.key === 'draft_model_path' ||
-                          setting.key === 'block_size') &&
-                          'hidden',
+                        setting.key === 'device' && 'hidden',
                         isHiddenByConcurrentMode && 'hidden',
+                        isHiddenByDflash && 'hidden',
                         isManagedByConcurrentMode &&
                           'opacity-60 pointer-events-none'
                       )}
@@ -900,6 +1153,13 @@ function ProviderDetail() {
           </div>
         </div>
       </div>
+      <DflashUnsupportedDialog
+        open={dflashUnsupportedModel !== null}
+        onOpenChange={(open) => {
+          if (!open) setDflashUnsupportedModel(null)
+        }}
+        modelId={dflashUnsupportedModel ?? ''}
+      />
     </div>
   )
 }

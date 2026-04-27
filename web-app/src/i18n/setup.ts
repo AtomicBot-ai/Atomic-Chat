@@ -93,10 +93,18 @@ const translate = (key: string, options: Record<string, unknown> = {}): string =
     translation = getNestedValue(res[fallbackLng]?.[namespace], translationKey)
   }
   
-  // If still not found, return the key itself
+  // If still not found, honor a caller-supplied `defaultValue`
+  // (matches react-i18next semantics). Only fall back to returning
+  // the raw key when no default was provided — keeps debugging easy
+  // for genuinely missing translations.
   if (translation === undefined) {
-    console.warn(`Translation missing for key: ${key}`)
-    return key
+    const fallback = options?.defaultValue
+    if (typeof fallback === 'string') {
+      translation = fallback
+    } else {
+      console.warn(`Translation missing for key: ${key}`)
+      return key
+    }
   }
   
   // Handle interpolation

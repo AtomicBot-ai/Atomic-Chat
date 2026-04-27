@@ -124,8 +124,8 @@ export const processAttachmentsForSend = async (
         })
       } catch (err) {
         console.error(`Failed to ingest image ${img.name}:`, err)
-        notifyUpdate(img.name, 'error')
         const desc = formatAttachmentError(err)
+        notifyUpdate(img.name, 'error', { error: desc })
         toast.error('Failed to ingest image attachment', { description: desc })
         throw err instanceof Error ? err : new Error(desc)
       }
@@ -154,7 +154,8 @@ export const processAttachmentsForSend = async (
         targetMode = 'embeddings'
       }
 
-      const canInline = !projectId && targetPreference !== 'embeddings' && !!doc.path
+      const canInline =
+        !projectId && targetPreference !== 'embeddings' && !!doc.path
 
       if (canInline) {
         try {
@@ -170,7 +171,9 @@ export const processAttachmentsForSend = async (
         // Check if user made a per-file choice for this document
         const userChoice = perFileChoices?.get(doc.path || '')
         // Project files always use embeddings
-        const effectiveMode = projectId ? 'embeddings' : (userChoice ?? autoFallbackMode ?? 'embeddings')
+        const effectiveMode = projectId
+          ? 'embeddings'
+          : (userChoice ?? autoFallbackMode ?? 'embeddings')
         targetMode = effectiveMode
 
         // Only do auto-detection if no user choice was made and not project file
@@ -207,7 +210,9 @@ export const processAttachmentsForSend = async (
         // Check if user made a per-file choice for this document
         const userChoice = perFileChoices?.get(doc.path || '')
         // Project files always use embeddings
-        targetMode = projectId ? 'embeddings' : (userChoice ?? autoFallbackMode ?? 'embeddings')
+        targetMode = projectId
+          ? 'embeddings'
+          : (userChoice ?? autoFallbackMode ?? 'embeddings')
       }
 
       if (targetMode === 'inline' && parsedContent) {
@@ -231,11 +236,27 @@ export const processAttachmentsForSend = async (
       // Default: ingest as embeddings
       notifyUpdate(doc.name, 'processing')
 
-      console.log('[processAttachmentsForSend] Calling ingestFileAttachment for', doc.name, 'threadId:', threadId, 'projectId:', projectId, 'doc.path:', doc.path)
+      console.log(
+        '[processAttachmentsForSend] Calling ingestFileAttachment for',
+        doc.name,
+        'threadId:',
+        threadId,
+        'projectId:',
+        projectId,
+        'doc.path:',
+        doc.path
+      )
       const res = projectId
-        ? await serviceHub.uploads().ingestFileAttachmentForProject(projectId, doc)
+        ? await serviceHub
+            .uploads()
+            .ingestFileAttachmentForProject(projectId, doc)
         : await serviceHub.uploads().ingestFileAttachment(threadId, doc)
-      console.log('[processAttachmentsForSend] ingestFileAttachment completed for', doc.name, 'result:', JSON.stringify(res))
+      console.log(
+        '[processAttachmentsForSend] ingestFileAttachment completed for',
+        doc.name,
+        'result:',
+        JSON.stringify(res)
+      )
 
       processedAttachments.push({
         ...doc,
@@ -258,8 +279,8 @@ export const processAttachmentsForSend = async (
       })
     } catch (err) {
       console.error(`Failed to ingest ${doc.name}:`, err)
-      notifyUpdate(doc.name, 'error')
       const desc = formatAttachmentError(err)
+      notifyUpdate(doc.name, 'error', { error: desc })
       toast.error('Failed to index attachments', { description: desc })
       throw err instanceof Error ? err : new Error(desc)
     }
