@@ -13,7 +13,7 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
-import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
+import { useInitialMessage } from '@/hooks/useInitialMessage'
 import { useChat } from '@/hooks/use-chat'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { renderInstructions } from '@/lib/instructionTemplate'
@@ -625,48 +625,25 @@ function ThreadDetail() {
     ]
   )
 
-  // Check for and send initial message from sessionStorage
+  // Consume the initial message handed off from the home screen via the
+  // in-memory useInitialMessage store (avoids sessionStorage size limits for
+  // attachments).
   const initialMessageSentRef = useRef(false)
 
   useEffect(() => {
-    // Prevent duplicate sends
     if (initialMessageSentRef.current) return
 
-    const initialMessageKey = `${SESSION_STORAGE_PREFIX.INITIAL_MESSAGE}${threadId}`
+    const message = useInitialMessage.getState().consume(threadId)
+    if (!message) return
 
-    const storedMessage = sessionStorage.getItem(initialMessageKey)
-
-    if (storedMessage) {
-      // Mark as sent immediately to prevent duplicate sends
-      sessionStorage.removeItem(initialMessageKey)
-      initialMessageSentRef.current = true
-
-      console.log(
-        '[ThreadPage] Found initial message in sessionStorage, sending...'
-      )
-
-      // Process message asynchronously
-      ;(async () => {
-        try {
-          const message = JSON.parse(storedMessage) as {
-            text: string
-            files?: Array<{ type: string; mediaType: string; url: string }>
-          }
-
-          console.log('[ThreadPage] Calling processAndSendMessage with:', {
-            text: message.text?.slice(0, 50),
-            filesCount: message.files?.length ?? 0,
-          })
-          await processAndSendMessage(message.text, message.files)
-          console.log('[ThreadPage] processAndSendMessage completed')
-        } catch (error) {
-          console.error(
-            '[ThreadPage] Failed to process initial message:',
-            error
-          )
-        }
-      })()
-    }
+    initialMessageSentRef.current = true
+    ;(async () => {
+      try {
+        await processAndSendMessage(message.text, message.files)
+      } catch (error) {
+        console.error('[ThreadPage] Failed to process initial message:', error)
+      }
+    })()
   }, [threadId, processAndSendMessage])
 
   // Handle submit from ChatInput

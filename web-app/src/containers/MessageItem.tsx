@@ -19,11 +19,12 @@ import {
 import { CopyButton } from './CopyButton'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
-import { IconRefresh, IconPaperclip } from '@tabler/icons-react'
+import { IconRefresh } from '@tabler/icons-react'
 import { EditMessageDialog } from '@/containers/dialogs/EditMessageDialog'
 import { DeleteMessageDialog } from '@/containers/dialogs/DeleteMessageDialog'
 import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
 import { extractFilesFromPrompt, FileMetadata } from '@/lib/fileMetadata'
+import { AttachmentChip } from '@/containers/AttachmentChip'
 import { useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 
@@ -168,21 +169,12 @@ export const MessageItem = memo(
                 {attachedFiles.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-3">
                     {attachedFiles.map((file: FileMetadata, idx: number) => (
-                      <div
+                      <AttachmentChip
                         key={`file-${idx}-${file.id}`}
-                        className="flex items-center gap-1.5 px-2 py-1 rounded-sm bg-secondary border text-xs"
-                      >
-                        <IconPaperclip
-                          size={14}
-                          className="text-muted-foreground"
-                        />
-                        <span className="font-medium">{file.name}</span>
-                        {file.injectionMode && (
-                          <span className="text-muted-foreground">
-                            ({file.injectionMode})
-                          </span>
-                        )}
-                      </div>
+                        name={file.name}
+                        fileType={file.type}
+                        size={file.size}
+                      />
                     ))}
                   </div>
                 )}

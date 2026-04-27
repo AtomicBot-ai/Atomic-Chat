@@ -12,6 +12,7 @@ import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { DialogEditModel } from '@/containers/dialogs/EditModel'
 import { ImportVisionModelDialog } from '@/containers/dialogs/ImportVisionModelDialog'
 import { ImportMlxModelDialog } from '@/containers/dialogs/ImportMlxModelDialog'
+import { DflashUnsupportedDialog } from '@/containers/dialogs/DflashUnsupportedDialog'
 import { ModelSetting } from '@/containers/ModelSetting'
 import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
 import { FavoriteModelAction } from '@/containers/FavoriteModelAction'
@@ -48,6 +49,7 @@ import { basenameNoExt } from '@/lib/utils'
 import { useAppState } from '@/hooks/useAppState'
 import { useShallow } from 'zustand/shallow'
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
+import { EngineManager } from '@janhq/core'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -71,6 +73,10 @@ function ProviderDetail() {
   const [refreshingModels, setRefreshingModels] = useState(false)
   const [isInstallingBackend, setIsInstallingBackend] = useState(false)
   const [importingModel, setImportingModel] = useState<string | null>(null)
+  const [isTogglingDflash, setIsTogglingDflash] = useState(false)
+  const [dflashUnsupportedModel, setDflashUnsupportedModel] = useState<
+    string | null
+  >(null)
   const { installBackend } = useBackendUpdater()
   const { providerName } = useParams({ from: Route.id })
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
@@ -326,6 +332,116 @@ function ProviderDetail() {
     }
   }
 
+  /// Toggle the DFlash speculative-decoding flag on the MLX provider.
+  ///
+  /// The toggle is a no-op metadata flip unless an MLX model is currently
+  /// running: in that case we resolve the matching `z-lab/*-DFlash*` repo
+  /// (auto-downloading it if needed) and restart the live session with
+  /// the right CLI flags. Unsupported base models surface a modal popup.
+  const handleToggleDflash = useCallback(
+    async (nextEnabled: boolean) => {
+      if (provider?.provider !== 'mlx' || !provider) return
+      if (isTogglingDflash) return
+
+      const writeSetting = (key: string, value: unknown) => {
+        const next = provider.settings.map((s) =>
+          s.key === key
+            ? {
+                ...s,
+                controller_props: {
+                  ...s.controller_props,
+                  value: value as never,
+                },
+              }
+            : s
+        )
+        serviceHub.providers().updateSettings(providerName, next)
+        updateProvider(providerName, { ...provider, settings: next })
+      }
+
+      const currentBlockSizeRaw = provider.settings.find(
+        (s) => s.key === 'block_size'
+      )?.controller_props?.value
+      const currentBlockSize = Number(currentBlockSizeRaw) || 16
+
+      const errTitle = t('settings:dflashEnableFailed', {
+        defaultValue: 'Failed to toggle DFlash',
+      })
+      const noActive = t('settings:dflashNoActiveModel', {
+        defaultValue: 'Start an MLX model first.',
+      })
+
+      const mlxEngine: any = EngineManager.instance().get('mlx')
+      if (!mlxEngine) {
+        toast.error(errTitle, { description: noActive })
+        return
+      }
+
+      const loadedModels: string[] =
+        (await mlxEngine.getLoadedModels?.()) ?? []
+      const activeMlxModel = loadedModels[0]
+
+      setIsTogglingDflash(true)
+      try {
+        if (nextEnabled) {
+          if (!activeMlxModel) {
+            toast.error(errTitle, { description: noActive })
+            return
+          }
+
+          const support = await mlxEngine.checkDflashSupport(activeMlxModel)
+          if (!support?.supported) {
+            setDflashUnsupportedModel(activeMlxModel)
+            return
+          }
+
+          toast.info(
+            t('settings:dflashDownloadingDraft', {
+              defaultValue: 'Downloading DFlash draft for {{modelId}}...',
+              modelId: activeMlxModel,
+            })
+          )
+
+          /// Reuse the manifest from `checkDflashSupport` so the extension
+          /// can skip the static lookup. The extension owns local-first
+          /// resolution and direct-download fallback from here on.
+          await mlxEngine.enableDflash(activeMlxModel, currentBlockSize, {
+            repo: support.repo,
+            required: support.required,
+            optional: support.optional,
+          })
+          writeSetting('dflash_enabled', true)
+
+          toast.success(
+            t('settings:dflashEnableSuccess', {
+              defaultValue: 'DFlash enabled',
+            })
+          )
+        } else {
+          if (activeMlxModel) {
+            await mlxEngine.disableDflash(activeMlxModel)
+          }
+          writeSetting('dflash_enabled', false)
+
+          toast.success(
+            t('settings:dflashDisableSuccess', {
+              defaultValue: 'DFlash disabled',
+            })
+          )
+        }
+      } catch (error) {
+        console.error('Failed to toggle DFlash:', error)
+        toast.error(errTitle, {
+          description:
+            error instanceof Error ? error.message : 'Unknown error',
+        })
+      } finally {
+        setIsTogglingDflash(false)
+      }
+    },
+    [provider, providerName, serviceHub, updateProvider, t, isTogglingDflash]
+  )
+
   const handleInstallBackendFromFile = useCallback(async () => {
     if (provider?.provider !== 'llamacpp' && provider?.provider !== 'mlx')
       return
@@ -430,6 +546,23 @@ function ProviderDetail() {
                   const isHiddenByConcurrentMode =
                     !concurrentModeOn && setting.key === 'concurrent_slots'
 
+                  // The DFlash speculative-decoding toggle is the master
+                  // switch over `block_size`: hide that field when DFlash
+                  // is off so the panel stays uncluttered.
+                  const dflashEnabledOn = !!(
+                    provider?.settings.find(
+                      (s) => s.key === 'dflash_enabled'
+                    )?.controller_props as { value?: boolean } | undefined
+                  )?.value
+                  const isHiddenByDflash =
+                    !dflashEnabledOn && setting.key === 'block_size'
+
+                  // The dflash_enabled checkbox is rendered as a Switch with
+                  // a custom side-effecting handler that reloads the live
+                  // MLX session, so we short-circuit the generic
+                  // DynamicControllerSetting path for it.
+                  const isDflashToggle = setting.key === 'dflash_enabled'
+
                   // Use the DynamicController component
                   const actionComponent = (
                     <div className="mt-2">
@@ -439,16 +572,34 @@ function ProviderDetail() {
                           <IconLoader size={16} className="animate-spin" />
                           <span>loading</span>
                         </div>
+                      ) : isDflashToggle ? (
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={!!(
+                              setting.controller_props as {
+                                value?: boolean
+                              }
+                            ).value}
+                            disabled={isTogglingDflash}
+                            onCheckedChange={(checked) => {
+                              handleToggleDflash(checked)
+                            }}
+                          />
+                          {isTogglingDflash && (
+                            <IconLoader
+                              size={14}
+                              className="animate-spin text-muted-foreground"
+                            />
+                          )}
+                        </div>
                       ) : (
                         <DynamicControllerSetting
                           controllerType={setting.controller_type}
                           controllerProps={setting.controller_props}
                           className={cn(
-                            (setting.key === 'device' ||
-                              setting.key === 'draft_model_path' ||
-                              setting.key === 'block_size') &&
-                              'hidden',
-                            isHiddenByConcurrentMode && 'hidden'
+                            setting.key === 'device' && 'hidden',
+                            isHiddenByConcurrentMode && 'hidden',
+                            isHiddenByDflash && 'hidden'
                           )}
                           onChange={(newValue) => {
                             if (provider) {
@@ -561,11 +712,9 @@ function ProviderDetail() {
                       key={settingIndex}
                       title={setting.title}
                       className={cn(
-                        (setting.key === 'device' ||
-                          setting.key === 'draft_model_path' ||
-                          setting.key === 'block_size') &&
-                          'hidden',
+                        setting.key === 'device' && 'hidden',
                         isHiddenByConcurrentMode && 'hidden',
+                        isHiddenByDflash && 'hidden',
                         isManagedByConcurrentMode &&
                           'opacity-60 pointer-events-none'
                       )}
@@ -900,6 +1049,13 @@ function ProviderDetail() {
           </div>
         </div>
       </div>
+      <DflashUnsupportedDialog
+        open={dflashUnsupportedModel !== null}
+        onOpenChange={(open) => {
+          if (!open) setDflashUnsupportedModel(null)
+        }}
+        modelId={dflashUnsupportedModel ?? ''}
+      />
     </div>
   )
 }

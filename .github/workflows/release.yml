@@ -55,7 +55,7 @@ jobs:
   # ──────────────────────────────────────────────────────────────
   build-macos:
     if: github.event_name == 'push' || inputs.build_macos
-    runs-on: macos-latest
+    runs-on: macos-latest-xlarge
     needs: create-draft-release
     outputs:
       mac_sig: ${{ steps.metadata.outputs.mac_sig }}

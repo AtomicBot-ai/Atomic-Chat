@@ -36,6 +36,7 @@ import {
   MlxConfig,
 } from '@janhq/tauri-plugin-mlx-api'
 import { readGgufMetadata, ModelConfig } from '@janhq/tauri-plugin-llamacpp-api'
+import { resolveDflashDraft, DraftResolution } from './dflashRegistry'
 
 // Error message constant
 const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
@@ -368,10 +369,16 @@ export default class mlx_extension extends AIEngine {
       modelPath = await joinPath([janDataFolderPath, modelConfig.model_path])
     }
 
+    /// `dflash_enabled` is the master switch: when off, draft path / block
+    /// size are forced empty even if a stale value lingers in `this.config`.
+    const dflashOn = !!cfg.dflash_enabled
+    const draftPath = dflashOn ? String(cfg.draft_model_path ?? '') : ''
+    const blockSize = dflashOn ? Number(cfg.block_size ?? 16) : 0
+
     const mlxConfig: MlxConfig = {
-      ctx_size: cfg.ctx_size ?? 4096,
-      draft_model_path: cfg.draft_model_path ?? '',
-      block_size: cfg.block_size ?? 0,
+      ctx_size: Number(cfg.ctx_size ?? 4096),
+      draft_model_path: draftPath,
+      block_size: blockSize,
     }
 
     logger.info(
@@ -1222,5 +1229,322 @@ export default class mlx_extension extends AIEngine {
         return false
       }
     }
+  }
+
+  /// ──────────────────────────────────────────────────────────────────
+  /// DFlash speculative decoding orchestration
+  /// ──────────────────────────────────────────────────────────────────
+  ///
+  /// The provider-level toggle in the UI calls into these methods. The
+  /// actual `--draft-model <path>` flag is plumbed through `performLoad`
+  /// via `MlxConfig.draft_model_path` (see commands.rs lines 100-108).
+
+  /**
+   * Local folder where auto-downloaded DFlash drafts are cached. Lives
+   * alongside `mlx/models/` under the Jan data dir so manually-imported
+   * z-lab models in `mlx/models/` and tool-managed copies in
+   * `mlx/draft-models/` share the same parent.
+   */
+  private async getDflashDraftRoot(): Promise<string> {
+    return await joinPath([
+      await getJanDataFolderPath(),
+      'mlx',
+      'draft-models',
+    ])
+  }
+
+  /**
+   * Resolve an already-present draft directory for `repo`, if any.
+   *
+   * Lookup order:
+   *   1. `mlx/models/<repo with '/' -> '_'>/`  — the canonical layout produced
+   *      by importing a HF repo through the regular MLX import flow (e.g. the
+   *      user manually adding `z-lab/Qwen3.5-4B-DFlash`).
+   *   2. `mlx/draft-models/<repo>/`            — auto-downloaded cache from a
+   *      previous `enableDflash` run.
+   *
+   * Returns the absolute path only when every `required` file is present.
+   * Optional files are not validated here — `ensureDflashDraftDownloaded`
+   * may still top them up on the next pass.
+   */
+  private async resolveLocalDraftDir(
+    repo: string,
+    required: string[]
+  ): Promise<string | null> {
+    const janDataFolderPath = await getJanDataFolderPath()
+
+    const candidates = [
+      await joinPath([
+        janDataFolderPath,
+        'mlx',
+        'models',
+        repo.split('/').join('_'),
+      ]),
+      await joinPath([janDataFolderPath, 'mlx', 'draft-models', repo]),
+    ]
+
+    for (const dir of candidates) {
+      if (!(await fs.existsSync(dir))) continue
+
+      let allPresent = true
+      for (const f of required) {
+        const path = await joinPath([dir, f])
+        if (!(await fs.existsSync(path))) {
+          allPresent = false
+          break
+        }
+      }
+      if (allPresent) {
+        logger.info(`resolveLocalDraftDir: ${repo} found at ${dir}`)
+        return dir
+      }
+    }
+
+    return null
+  }
+
+  /**
+   * Whether the given MLX model has a known DFlash draft sibling.
+   *
+   * Pure / synchronous registry lookup — never touches the network. The
+   * resolved manifest is returned alongside so the caller can hand it back
+   * to `enableDflash` without re-resolving.
+   */
+  async checkDflashSupport(modelId: string): Promise<{
+    supported: boolean
+    repo?: string
+    required?: string[]
+    optional?: string[]
+  }> {
+    logger.info(`checkDflashSupport: resolving draft for ${modelId}`)
+    try {
+      const resolution = resolveDflashDraft(modelId)
+      if (!resolution) {
+        logger.info(`checkDflashSupport: ${modelId} unsupported`)
+        return { supported: false }
+      }
+      logger.info(`checkDflashSupport: ${modelId} -> ${resolution.repo}`)
+      return {
+        supported: true,
+        repo: resolution.repo,
+        required: resolution.required,
+        optional: resolution.optional,
+      }
+    } catch (e) {
+      logger.warn(`checkDflashSupport failed for ${modelId}: ${e}`)
+      return { supported: false }
+    }
+  }
+
+  /**
+   * Ensure a usable draft directory exists on disk and return its absolute
+   * path (suitable for `--draft-model <dir>`).
+   *
+   * Local-first: if the user already imported the draft repo into
+   * `mlx/models/...` or a previous run cached it under `mlx/draft-models/...`,
+   * no network call is made. Otherwise required + optional files are pulled
+   * directly from `https://huggingface.co/<repo>/resolve/main/<file>` —
+   * `huggingface.co/api/...` is never touched.
+   */
+  async ensureDflashDraftDownloaded(
+    repo: string,
+    required: string[],
+    optional: string[] = []
+  ): Promise<string> {
+    const local = await this.resolveLocalDraftDir(repo, required)
+    if (local) {
+      logger.info(`ensureDflashDraftDownloaded: using local ${local}`)
+      return local
+    }
+
+    const draftRoot = await this.getDflashDraftRoot()
+    const draftDir = await joinPath([draftRoot, repo])
+
+    if (!(await fs.existsSync(draftRoot))) {
+      await fs.mkdir(draftRoot)
+    }
+    if (!(await fs.existsSync(draftDir))) {
+      await fs.mkdir(draftDir)
+    }
+
+    /// Required files are mandatory; optional ones are best-effort. We list
+    /// `required` first so a 404 on those bubbles up before optional misses
+    /// are even attempted.
+    const missingRequired: string[] = []
+    for (const f of required) {
+      const target = await joinPath([draftDir, f])
+      if (!(await fs.existsSync(target))) missingRequired.push(f)
+    }
+    const missingOptional: string[] = []
+    for (const f of optional) {
+      const target = await joinPath([draftDir, f])
+      if (!(await fs.existsSync(target))) missingOptional.push(f)
+    }
+
+    if (missingRequired.length === 0 && missingOptional.length === 0) {
+      logger.info(`DFlash draft already present: ${draftDir}`)
+      return draftDir
+    }
+
+    logger.info(
+      `ensureDflashDraftDownloaded: ${repo} missing required=${missingRequired.length} optional=${missingOptional.length}; downloading to ${draftDir}`
+    )
+
+    const downloadManager = window.core.extensionManager.getByName(
+      '@janhq/download-extension'
+    )
+
+    const downloadModelId = `dflash:${repo}`
+    const buildItem = async (filename: string) => ({
+      url: `https://huggingface.co/${repo}/resolve/main/${filename}`,
+      save_path: await joinPath([draftDir, filename]),
+      model_id: downloadModelId,
+    })
+
+    /// Required pass: download everything in one batch; if it fails, abort —
+    /// a missing required file means the repo is genuinely broken or the
+    /// manifest is wrong.
+    if (missingRequired.length > 0) {
+      const items: any[] = []
+      for (const f of missingRequired) items.push(await buildItem(f))
+
+      await downloadManager.downloadFiles(
+        items,
+        `mlx/${downloadModelId}`,
+        (transferred: number, total: number) => {
+          events.emit(DownloadEvent.onFileDownloadUpdate, {
+            modelId: downloadModelId,
+            percent: total > 0 ? transferred / total : 0,
+            size: { transferred, total },
+            downloadType: 'Model',
+          })
+        },
+        false
+      )
+    }
+
+    /// Optional pass: try each file individually so a 404 on one does not
+    /// poison the whole batch. Failures are logged and swallowed.
+    for (const f of missingOptional) {
+      try {
+        const item = await buildItem(f)
+        await downloadManager.downloadFiles(
+          [item],
+          `mlx/${downloadModelId}/optional/${f}`,
+          () => {
+            /* progress for optional files is uninteresting */
+          },
+          false
+        )
+      } catch (e) {
+        logger.info(
+          `ensureDflashDraftDownloaded: optional ${f} unavailable for ${repo}: ${e}`
+        )
+      }
+    }
+
+    events.emit('onFileDownloadSuccess', {
+      modelId: downloadModelId,
+      downloadType: 'Model',
+    })
+
+    logger.info(`DFlash draft '${repo}' ready at ${draftDir}`)
+    return draftDir
+  }
+
+  /**
+   * Enable DFlash for `modelId`: resolve the manifest, ensure the draft
+   * directory exists locally (download if needed), unload the active
+   * session, and reload it with the draft path wired in.
+   *
+   * `prefetched` lets callers reuse the result of `checkDflashSupport` so
+   * the static lookup is not repeated.
+   */
+  async enableDflash(
+    modelId: string,
+    blockSize: number = 16,
+    prefetched?: {
+      repo: string
+      required?: string[]
+      optional?: string[]
+    }
+  ): Promise<void> {
+    let resolution: DraftResolution
+    if (prefetched?.repo) {
+      resolution = {
+        repo: prefetched.repo,
+        required: prefetched.required ?? [],
+        optional: prefetched.optional ?? [],
+      }
+      /// Empty `required` would short-circuit local lookup; in that case
+      /// pull the canonical manifest so we still know what to verify.
+      if (resolution.required.length === 0) {
+        const fresh = resolveDflashDraft(prefetched.repo)
+        if (fresh) {
+          resolution = fresh
+        }
+      }
+    } else {
+      const fresh = resolveDflashDraft(modelId)
+      if (!fresh) {
+        throw new Error(`Model ${modelId} does not support DFlash`)
+      }
+      resolution = fresh
+    }
+
+    const draftDir = await this.ensureDflashDraftDownloaded(
+      resolution.repo,
+      resolution.required,
+      resolution.optional
+    )
+    logger.info(`enableDflash: draft ready at ${draftDir}`)
+
+    /// Unload + reload the live session so the DFlash server is restarted
+    /// with the new CLI flags. `findSessionByModel` returns undefined when
+    /// no session exists; in that case the next manual start will pick up
+    /// the toggle from `this.config`.
+    const sInfo = await this.findSessionByModel(modelId)
+    if (sInfo) {
+      logger.info(`enableDflash: reloading ${modelId} with DFlash`)
+      try {
+        await this.unload(modelId)
+      } catch (e) {
+        logger.warn(`enableDflash: unload failed for ${modelId}: ${e}`)
+      }
+      await this.load(modelId, {
+        dflash_enabled: true,
+        draft_model_path: draftDir,
+        block_size: blockSize,
+      })
+      logger.info(`enableDflash: ${modelId} reloaded with DFlash`)
+    }
+
+    /// Update in-memory config so subsequent `performLoad` calls (e.g. from
+    /// auto-increase-ctx, or a fresh start) keep DFlash enabled.
+    this.config.dflash_enabled = true
+    this.config.draft_model_path = draftDir
+    this.config.block_size = blockSize
+  }
+
+  /**
+   * Disable DFlash for `modelId`: unload + reload as plain MLX.
+   */
+  async disableDflash(modelId: string): Promise<void> {
+    const sInfo = await this.findSessionByModel(modelId)
+    if (sInfo) {
+      try {
+        await this.unload(modelId)
+      } catch (e) {
+        logger.warn(`disableDflash: unload failed for ${modelId}: ${e}`)
+      }
+      await this.load(modelId, {
+        dflash_enabled: false,
+        draft_model_path: '',
+        block_size: 0,
+      })
+    }
+
+    this.config.dflash_enabled = false
+    this.config.draft_model_path = ''
   }
 }

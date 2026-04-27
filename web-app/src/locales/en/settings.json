@@ -332,5 +332,12 @@
     "updateError": "Failed to update Llamacpp"
   },
   "backendInstallSuccess": "Backend installed successfully!",
-  "backendInstallError": "Failed to install backend"
+  "backendInstallError": "Failed to install backend",
+  "dflashUnsupportedTitle": "DFlash is not available",
+  "dflashUnsupportedDesc": "The currently running model \"{{modelId}}\" does not have a matching draft in the z-lab/dflash collection. Switch to a supported model and try again.",
+  "dflashNoActiveModel": "Start an MLX model first.",
+  "dflashDownloadingDraft": "Downloading DFlash draft for {{modelId}}...",
+  "dflashEnableSuccess": "DFlash enabled",
+  "dflashDisableSuccess": "DFlash disabled",
+  "dflashEnableFailed": "Failed to toggle DFlash"
 }
