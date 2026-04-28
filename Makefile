@@ -98,6 +98,17 @@ else
 	@echo "This target is for Windows only. Use 'make dev' instead."
 endif
 
+# Same as `dev-windows`, but reuses the llamacpp backend already downloaded
+# under src-tauri/resources/llamacpp-backend (analogue of `dev-fast` for macOS).
+# Skips the GitHub release fetch — fast iteration on the currently installed
+# backend without re-downloading.
+dev-windows-fast:
+ifeq ($(OS),Windows_NT)
+	powershell -ExecutionPolicy Bypass -File scripts/dev-windows.ps1 -SkipBackendDownload
+else
+	@echo "This target is for Windows only. Use 'make dev-fast' instead."
+endif
+
 # Dev workflow with CPU-only backend to test runtime GPU auto-download.
 # Clears downloaded backends from the Jan data folder, starts with
 # win-common_cpus-x64, then the app detects GPU and downloads the optimal
