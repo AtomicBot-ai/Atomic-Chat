@@ -17,6 +17,8 @@ use std::{collections::HashMap, sync::Arc};
 use tauri::{Emitter, Manager, RunEvent};
 #[cfg(not(feature = "cli"))]
 use tauri_plugin_store::StoreExt;
+#[cfg(all(not(feature = "cli"), target_os = "windows"))]
+use tauri_plugin_llamacpp::install_bundled_backend;
 #[cfg(not(feature = "cli"))]
 use tokio::sync::Mutex;
 
@@ -265,6 +267,35 @@ pub fn run() {
                     ])
                     .build(),
             )?;
+
+            #[cfg(target_os = "windows")]
+            {
+                let backends_dir = get_jan_data_folder_path(app.handle().clone())
+                    .join("llamacpp")
+                    .join("backends");
+                match tauri::async_runtime::block_on(install_bundled_backend(
+                    app.handle().clone(),
+                    backends_dir.to_string_lossy().to_string(),
+                )) {
+                    Ok(result) => {
+                        if let Some(backend_string) = result.backend_string {
+                            log::info!(
+                                "Bundled llama.cpp backend ready during startup: {}",
+                                backend_string
+                            );
+                        } else {
+                            log::info!("No bundled llama.cpp backend installed during startup");
+                        }
+                    }
+                    Err(err) => {
+                        log::warn!(
+                            "Failed to install bundled llama.cpp backend during startup: {}",
+                            err
+                        );
+                    }
+                }
+            }
+
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;

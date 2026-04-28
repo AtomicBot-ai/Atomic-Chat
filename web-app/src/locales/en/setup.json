@@ -11,7 +11,7 @@
   "orDivider": "or",
   "localModel": "Set up local model",
   "remoteProvider": "Set up remote provider",
-  "turboQuantTagline": "Local AI models on your device with Google's TurboQuant - blazing fast on average hardware.",
+  "turboQuantTagline": "Local AI models on your device — blazing fast on average hardware.",
   "skip": "Skip",
   "modelUnavailable": "Not in catalog yet — open Hub after connection."
 }

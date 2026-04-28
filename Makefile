@@ -78,6 +78,43 @@ else
 	@echo "This target is for Windows only. Use 'make dev' instead."
 endif
 
+# Dev workflow with CPU-only backend to test runtime GPU auto-download.
+# Clears downloaded backends from the Jan data folder, starts with
+# win-common_cpus-x64, then the app detects GPU and downloads the optimal
+# backend (CUDA/Vulkan) in the background — shows the UI popup.
+dev-windows-cpu:
+ifeq ($(OS),Windows_NT)
+	powershell -ExecutionPolicy Bypass -Command "\
+		Get-Process llama-server -ErrorAction SilentlyContinue | Stop-Process -Force; \
+		Start-Sleep -Seconds 1; \
+		$$settingsFile = Join-Path $$env:APPDATA 'chat.atomic.app\settings.json'; \
+		$$dataDir = $$null; \
+		if (Test-Path $$settingsFile) { \
+			$$s = Get-Content $$settingsFile -Raw | ConvertFrom-Json; \
+			$$dataDir = $$s.data_folder; \
+		}; \
+		if (-not $$dataDir) { $$dataDir = Join-Path $$env:APPDATA 'Atomic Chat\data' }; \
+		$$backendsDir = Join-Path $$dataDir 'llamacpp\backends'; \
+		if (Test-Path $$backendsDir) { \
+			Write-Host ('Clearing downloaded backends from ' + $$backendsDir) -ForegroundColor Yellow; \
+			Remove-Item $$backendsDir -Recurse -Force; \
+		} else { \
+			Write-Host 'No downloaded backends to clear.' -ForegroundColor Gray; \
+		}; \
+		$$webviewStorage = Join-Path $$env:APPDATA 'chat.atomic.app\EBWebView\Default\Local Storage'; \
+		if (Test-Path $$webviewStorage) { \
+			Write-Host ('Clearing WebView2 Local Storage from ' + $$webviewStorage) -ForegroundColor Yellow; \
+			Remove-Item $$webviewStorage -Recurse -Force; \
+		} else { \
+			Write-Host 'No WebView2 Local Storage to clear.' -ForegroundColor Gray; \
+		}; \
+		$$env:LLAMACPP_BACKEND = 'win-common_cpus-x64'; \
+		& '$(CURDIR)/scripts/dev-windows.ps1'; \
+	"
+else
+	@echo "This target is for Windows only."
+endif
+
 # Web application targets
 install-web-app:
 	yarn install
@@ -354,6 +391,50 @@ else
 	@echo "Skipping llamacpp backend download (unsupported platform)"
 endif
 
+# Download CPU fallback backend for Windows (pure PowerShell, no bash needed).
+# The app will auto-detect GPU and download optimal backend (CUDA/Vulkan) at runtime.
+download-llamacpp-backend-win-cpu:
+	powershell -NoProfile -Command " \
+		$$ErrorActionPreference = 'Stop'; \
+		$$dir = 'src-tauri/resources/llamacpp-backend'; \
+		if (Test-Path $$dir) { Remove-Item $$dir -Recurse -Force }; \
+		New-Item -ItemType Directory -Path $$dir -Force | Out-Null; \
+		Write-Host 'Fetching latest release tag from janhq/llama.cpp...'; \
+		$$headers = @{ 'User-Agent' = 'atomic-chat' }; \
+		if ($$env:GH_TOKEN) { $$headers['Authorization'] = \"Bearer $$env:GH_TOKEN\" }; \
+		$$release = Invoke-RestMethod -Uri 'https://api.github.com/repos/janhq/llama.cpp/releases/latest' -Headers $$headers; \
+		$$tag = $$release.tag_name; \
+		if (-not $$tag) { throw 'Failed to fetch release tag' }; \
+		$$backend = 'win-common_cpus-x64'; \
+		$$url = \"https://github.com/janhq/llama.cpp/releases/download/$$tag/llama-$${tag}-bin-$${backend}.tar.gz\"; \
+		[System.IO.File]::WriteAllText(\"$$dir/version.txt\", $$tag); \
+		[System.IO.File]::WriteAllText(\"$$dir/backend.txt\", $$backend); \
+		Write-Host \"Release: $$tag  Backend: $$backend\"; \
+		Write-Host \"Downloading: $$url\"; \
+		$$tmp = \"$$env:TEMP\\llamacpp-backend.tar.gz\"; \
+		Invoke-WebRequest -Uri $$url -OutFile $$tmp -UseBasicParsing; \
+		tar -xzf $$tmp -C $$dir; \
+		Remove-Item $$tmp -Force -ErrorAction SilentlyContinue; \
+		if (-not (Test-Path \"$$dir/build/bin/llama-server.exe\")) { \
+			if (Test-Path \"$$dir/llama-server.exe\") { \
+				Write-Host 'Relocating flat-extracted binaries into build/bin/...'; \
+				New-Item -ItemType Directory -Path \"$$dir/build/bin\" -Force | Out-Null; \
+				Get-ChildItem \"$$dir\" -File | Where-Object { $$_.Name -ne 'version.txt' -and $$_.Name -ne 'backend.txt' } | Move-Item -Destination \"$$dir/build/bin/\"; \
+			} \
+		}; \
+		Write-Host \"CPU backend ($$backend) downloaded successfully. App will auto-download GPU backend at runtime.\"; \
+	"
+
+# Full Windows release build (local, no code signing).
+# Mirrors CI pipeline from release.yml: CPU-only backend, NSIS + MSI installers.
+# Output: src-tauri/target/release/bundle/nsis/*.exe
+build-windows-release:
+ifeq ($(OS),Windows_NT)
+	powershell -ExecutionPolicy Bypass -File scripts/build-windows-release.ps1
+else
+	@echo "This target is for Windows only."
+endif
+
 # Download llamacpp backend only if not already present (for dev)
 download-llamacpp-backend-if-exists:
 ifeq ($(shell uname -s),Darwin)
@@ -397,7 +478,7 @@ ifeq ($(shell uname -s),Darwin)
 	cp src-tauri/resources/bin/jan-cli src-tauri/target/universal-apple-darwin/release/jan-cli
 else ifeq ($(OS),Windows_NT)
 	cd src-tauri && cargo build --release --features cli --bin jan-cli
-	cp src-tauri/target/release/jan-cli.exe src-tauri/resources/bin/jan-cli.exe
+	powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null; Copy-Item 'src-tauri/target/release/jan-cli.exe' 'src-tauri/resources/bin/jan-cli.exe' -Force"
 else
 	cd src-tauri && cargo build --release --features cli --bin jan-cli
 	cp src-tauri/target/release/jan-cli src-tauri/resources/bin/jan-cli
@@ -408,7 +489,7 @@ build-cli-dev:
 	mkdir -p src-tauri/resources/bin
 	cd src-tauri && cargo build --features cli --bin jan-cli
 ifeq ($(OS),Windows_NT)
-	cp src-tauri/target/debug/jan-cli.exe src-tauri/resources/bin/jan-cli.exe
+	powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null; Copy-Item 'src-tauri/target/debug/jan-cli.exe' 'src-tauri/resources/bin/jan-cli.exe' -Force"
 else
 	install -m755 src-tauri/target/debug/jan-cli src-tauri/resources/bin/jan-cli
 endif

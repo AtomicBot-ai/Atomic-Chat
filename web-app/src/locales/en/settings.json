@@ -310,13 +310,24 @@
     }
   },
   "backendUpdater": {
-    "newBackendVersion": "New Llamacpp Version {{version}}",
-    "backendUpdateAvailable": "Llamacpp Update Available",
+    "newBackendVersion": "New Backend Version {{version}}",
+    "backendUpdateAvailable": "Backend Update Available",
     "remindMeLater": "Remind Me Later",
     "updating": "Updating...",
     "updateNow": "Update Now",
-    "updateSuccess": "Llamacpp updated successfully",
-    "updateError": "Failed to update Llamacpp"
+    "updateSuccess": "Backend updated successfully",
+    "updateError": "Failed to update backend",
+    "downloadingBackend": "Downloading Backend…",
+    "downloadingBackendDesc": "The recommended backend is being downloaded. Please wait — this may take a few minutes.",
+    "downloadComplete": "Backend {{backend}} installed successfully!",
+    "downloadFailed": "Failed to download GPU backend",
+    "betterBackendTitle": "Better Configuration Available",
+    "betterBackendDesc": "A faster llama.cpp backend ({{backend}}) is available for your GPU. Download it for better performance.",
+    "downloadNow": "Download",
+    "notNow": "Not Now",
+    "restartRequired": "Restart Required",
+    "restartRequiredDesc": "The new backend has been downloaded. Please restart the application to activate it.",
+    "restartNow": "Restart Now"
   },
   "backendInstallSuccess": "Backend installed successfully!",
   "backendInstallError": "Failed to install backend"
