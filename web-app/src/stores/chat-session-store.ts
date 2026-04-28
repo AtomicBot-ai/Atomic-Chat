@@ -3,7 +3,9 @@ import { create } from "zustand";
 import type { Chat, UIMessage } from "@ai-sdk/react";
 import type { ChatStatus } from "ai";
 import { CustomChatTransport } from "@/lib/custom-chat-transport";
-// import { showChatCompletionToast } from "@/components/toasts/chat-completion-toast";
+import { notifyThreadCompleted } from "@/lib/notifications";
+import { useThreadNotifications } from "@/hooks/useThreadNotifications";
+import i18n from "@/i18n/setup";
 
 export type SessionData = {
   tools: any[];
@@ -142,24 +144,48 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
         return state;
       }
 
-      // Only notify if:
-      // 1. Was streaming and now stopped
-      // 2. Not the active conversation
-      // 3. Chat has messages (not a brand new session)
-      // 4. No pending tool calls (tools are still being executed)
-      // const hasMessages = existing.chat.messages.length > 0;
-      // const hasPendingTools = existing.data.tools.length > 0;
-      // const shouldNotify =
-      //   wasStreaming &&
-      //   !isStreaming &&
-      //   hasMessages &&
-      //   !hasPendingTools &&
-      //   state.activeConversationId !== sessionId;
+      // Fire an OS notification when a thread finishes generating, controlled
+      // solely by the global Desktop notifications switch. Suppressed while
+      // the user is actively looking at this conversation in a focused window.
+      const justFinished = wasStreaming && !isStreaming;
+      if (justFinished) {
+        const hasMessages = existing.chat.messages.length > 0;
+        const hasPendingTools = existing.data.tools.length > 0;
+        const hasDocument = typeof document !== "undefined";
+        const isVisible = hasDocument
+          ? document.visibilityState === "visible"
+          : true;
+        // On macOS a background Tauri window stays "visible"; use hasFocus()
+        // to detect the user switching to another app.
+        const hasFocus = hasDocument
+          ? typeof document.hasFocus === "function"
+            ? document.hasFocus()
+            : true
+          : true;
+        const notFocusedHere =
+          !isVisible || !hasFocus || state.activeConversationId !== sessionId;
+        // Treat undefined (pre-feature or lost during rehydration) as ON, so
+        // the master switch only suppresses notifications when explicitly OFF.
+        const globallyEnabled =
+          useThreadNotifications.getState().globallyEnabled !== false;
 
-      // if (shouldNotify) {
-      //   const title = existing.title ?? "Conversation";
-      //   showChatCompletionToast(title, existing.chat.messages, sessionId);
-      // }
+        if (
+          globallyEnabled &&
+          hasMessages &&
+          !hasPendingTools &&
+          notFocusedHere
+        ) {
+          const threadTitle = existing.title ?? "";
+          const notificationTitle = i18n.t(
+            "settings:threadNotifications.notificationTitle"
+          );
+          const notificationBody = i18n.t(
+            "settings:threadNotifications.notificationBody",
+            { title: threadTitle }
+          );
+          void notifyThreadCompleted(notificationTitle, notificationBody);
+        }
+      }
 
       return {
         sessions: {

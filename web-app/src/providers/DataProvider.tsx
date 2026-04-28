@@ -12,55 +12,23 @@ import { useThreads } from '@/hooks/useThreads'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
+import { switchToModel } from '@/utils/switchModel'
 import { isDev } from '@/lib/utils'
-import { toast } from 'sonner'
-import { AppEvent, events } from '@janhq/core'
+import { AppEvent, events, ModelEvent } from '@janhq/core'
 import { SystemEvent } from '@/types/events'
-import { invoke } from '@tauri-apps/api/core'
 import {
   parseAtomicChatDeepLink,
   type AtomicChatDeepLinkTarget,
 } from '@/services/deeplink/parse'
+import {
+  registerRemoteProvider,
+  unregisterRemoteProvider,
+} from '@/utils/registerRemoteProvider'
+import { hydrateActiveModelsForRunningServer } from '@/utils/activeModelsSync'
 
-type ProviderCustomHeader = {
-  header: string
-  value: string
-}
-
-type RegisterProviderRequest = {
-  provider: string
-  api_key?: string
-  base_url?: string
-  custom_headers: ProviderCustomHeader[]
-  models: string[]
-}
-
-async function registerRemoteProvider(provider: ModelProvider) {
-  // Skip llamacpp - those are local models
-  if (provider.provider === 'llamacpp') return
-
-  // Skip providers without API key (they can't make requests)
-  if (!provider.api_key) {
-    console.log(
-      `Provider ${provider.provider} has no API key, skipping registration`
-    )
-    return
-  }
-
-  const request: RegisterProviderRequest = {
-    provider: provider.provider,
-    api_key: provider.api_key,
-    base_url: provider.base_url,
-    custom_headers: (provider.custom_header || []).map((h) => ({
-      header: h.header,
-      value: h.value,
-    })),
-    models: provider.models.map((e) => e.id),
-  }
-
+const safeRegisterRemoteProvider = async (provider: ModelProvider) => {
   try {
-    await invoke('register_provider_config', { request })
-    console.log(`Registered remote provider: ${provider.provider}`)
+    await registerRemoteProvider(provider)
   } catch (error) {
     console.error(`Failed to register provider ${provider.provider}:`, error)
   }
@@ -80,7 +48,7 @@ const syncRemoteProviders = () => {
       provider.provider !== 'llamacpp' &&
       provider.api_key
     ) {
-      registerRemoteProvider(provider)
+      safeRegisterRemoteProvider(provider)
       currentActive.add(provider.provider)
     }
   })
@@ -88,7 +56,7 @@ const syncRemoteProviders = () => {
   // Unregister providers that were previously registered but are now inactive/removed
   for (const name of registeredProviderNames) {
     if (!currentActive.has(name)) {
-      invoke('unregister_provider_config', { provider: name }).catch(() => {})
+      unregisterRemoteProvider(name)
     }
   }
 
@@ -133,7 +101,7 @@ export function DataProvider() {
         // Register active remote providers with the backend
         providers.forEach((provider) => {
           if (provider.active) {
-            registerRemoteProvider(provider)
+            safeRegisterRemoteProvider(provider)
             registeredProviderNames.add(provider.provider)
           }
         })
@@ -270,102 +238,22 @@ export function DataProvider() {
       const currentStatus = useAppState.getState().serverStatus
       console.log('[LocalAPI] Current server status:', currentStatus)
 
-      if (currentStatus === 'running') {
-        try {
-          if (provider) {
-            console.log(
-              '[LocalAPI] Loading model into running server:',
-              modelId
-            )
-            await serviceHub.models().startModel(provider, modelId, true)
-          }
-          const serverState = useLocalApiServer.getState()
-          serverState.setDefaultModelLocalApiServer({
-            model: modelId,
-            provider: providerName,
-          })
-          serverState.setLastServerModels([
-            { model: modelId, provider: providerName },
-          ])
-          console.log(
-            '[LocalAPI] Model loaded into running server, default updated'
-          )
-        } catch (error) {
-          console.error(
-            '[LocalAPI] Failed to load model into running server:',
-            error
-          )
-        }
+      if (currentStatus === 'pending') {
+        console.log('[LocalAPI] Server status is pending — skipping auto-start')
         return
       }
 
-      if (currentStatus !== 'stopped') {
-        console.log(
-          '[LocalAPI] Server status is',
-          currentStatus,
-          '— skipping auto-start'
-        )
-        return
-      }
-
-      setServerStatus('pending')
-      console.log('[LocalAPI] Starting API server with model:', modelId)
-      toast.info('Starting Local API Server...', { id: 'local-api-autostart' })
-
+      // switchToModel handles stopAllModels, start the new model, start/restart
+      // the Local API Server, and syncs all global state.
       try {
-        if (provider) {
-          await serviceHub.models().startModel(provider, modelId, true)
-          console.log('[LocalAPI] Model started:', modelId)
-          await new Promise((resolve) => setTimeout(resolve, 500))
-        }
-
-        const serverState = useLocalApiServer.getState()
-
-        console.log(
-          '[LocalAPI] Calling startServer on port',
-          serverState.serverPort
-        )
-        const actualPort = await window.core?.api?.startServer({
-          host: serverState.serverHost,
-          port: serverState.serverPort,
-          prefix: serverState.apiPrefix,
-          apiKey: serverState.apiKey,
-          trustedHosts: serverState.trustedHosts,
-          isCorsEnabled: serverState.corsEnabled,
-          isVerboseEnabled: serverState.verboseLogs,
-          proxyTimeout: serverState.proxyTimeout,
+        await switchToModel({
+          modelId,
+          providerName,
+          serviceHub,
         })
-        console.log('[LocalAPI] startServer returned port:', actualPort)
-
-        if (actualPort && actualPort !== serverState.serverPort) {
-          serverState.setServerPort(actualPort)
-        }
-        setServerStatus('running')
-
-        serverState.setDefaultModelLocalApiServer({
-          model: modelId,
-          provider: providerName,
-        })
-        serverState.setLastServerModels([
-          { model: modelId, provider: providerName },
-        ])
-        serverState.setEnableOnStartup(true)
-
-        toast.success('Local API Server started', {
-          id: 'local-api-autostart',
-          description: `http://${serverState.serverHost}:${actualPort ?? serverState.serverPort}${serverState.apiPrefix}`,
-        })
-        console.log(
-          '[LocalAPI] Auto-started Local API Server with model:',
-          modelId
-        )
+        console.log('[LocalAPI] Model imported and switched to:', modelId)
       } catch (error) {
-        console.error('[LocalAPI] Failed to auto-start API server:', error)
-        setServerStatus('stopped')
-        toast.error('Failed to start Local API Server', {
-          id: 'local-api-autostart',
-          description: error instanceof Error ? error.message : String(error),
-        })
+        console.error('[LocalAPI] Failed to switch to imported model:', error)
       }
     }
 
@@ -377,7 +265,150 @@ export function DataProvider() {
     }
   }, [serviceHub, setProviders, setServerStatus])
 
-  // Auto-start Local API Server on app startup when local models exist
+  // Mirror any auto-increase of ctx_len performed by a backend extension
+  // (triggered by the Local API Server proxy detecting a context-limit error)
+  // into the persisted Zustand provider store so the UI stays in sync with
+  // the live backend session.
+  //
+  // We subscribe on TWO redundant channels to guarantee delivery:
+  //   1) `ModelEvent.OnAutoIncreasedCtxLen` on `@janhq/core::events`
+  //      (in-process EventEmitter singleton hanging off `window.core.events`).
+  //   2) `local_backend://auto_increase_ctx_notify` on the native Tauri
+  //      event bus (bypasses any @janhq/core bundling quirks).
+  //
+  // The handler is idempotent: applying the same `newCtxLen` twice simply
+  // writes the same value back, so double-delivery is harmless.
+  useEffect(() => {
+    const applyNewCtxLen = (
+      providerName: string,
+      modelId: string,
+      newCtxLen: number,
+      source: string
+    ) => {
+      const { providers, updateProvider } = useModelProvider.getState()
+      const provider = providers.find((p) => p.provider === providerName)
+      if (!provider) {
+        console.warn(
+          `[LocalAPI] OnAutoIncreasedCtxLen (${source}): provider "${providerName}" not found in store`
+        )
+        return
+      }
+
+      const modelIndex = provider.models.findIndex((m) => m.id === modelId)
+      if (modelIndex === -1) {
+        console.warn(
+          `[LocalAPI] OnAutoIncreasedCtxLen (${source}): model "${modelId}" not found in provider "${providerName}"`
+        )
+        return
+      }
+
+      const model = provider.models[modelIndex]
+      const currentValue =
+        (model.settings?.ctx_len?.controller_props?.value as number | undefined) ??
+        null
+      if (currentValue === newCtxLen) {
+        console.log(
+          `[LocalAPI] OnAutoIncreasedCtxLen (${source}): ctx_len for ${providerName}/${modelId} already = ${newCtxLen}, no-op`
+        )
+        return
+      }
+
+      const updatedModel = {
+        ...model,
+        settings: {
+          ...model.settings,
+          ctx_len: {
+            ...(model.settings?.ctx_len ?? {}),
+            controller_props: {
+              ...(model.settings?.ctx_len?.controller_props ?? {}),
+              value: newCtxLen,
+            },
+          },
+        },
+      }
+
+      const updatedModels = [...provider.models]
+      updatedModels[modelIndex] = updatedModel as Model
+
+      updateProvider(provider.provider, { models: updatedModels })
+      console.log(
+        `[LocalAPI] Mirrored auto-increased ctx_len for ${providerName}/${modelId} → ${newCtxLen} (via ${source})`
+      )
+    }
+
+    const handleFromEvents = (eventData?: Record<string, unknown>) => {
+      const providerName = eventData?.provider as string | undefined
+      const modelId = eventData?.modelId as string | undefined
+      const newCtxLen = eventData?.newCtxLen as number | undefined
+      console.log(
+        '[LocalAPI] OnAutoIncreasedCtxLen received (core/events)',
+        eventData
+      )
+      if (!providerName || !modelId || typeof newCtxLen !== 'number') {
+        console.warn(
+          '[LocalAPI] OnAutoIncreasedCtxLen (core/events): invalid payload',
+          eventData
+        )
+        return
+      }
+      applyNewCtxLen(providerName, modelId, newCtxLen, 'core/events')
+    }
+
+    events.on(ModelEvent.OnAutoIncreasedCtxLen, handleFromEvents)
+
+    // Parallel native Tauri bus listener (extensions emit both channels).
+    let unlistenTauri: (() => void) | undefined
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { listen } = await import('@tauri-apps/api/event')
+        if (cancelled) return
+        const unsub = await listen<{
+          provider?: string
+          modelId?: string
+          newCtxLen?: number
+        }>('local_backend://auto_increase_ctx_notify', (event) => {
+          const { provider, modelId, newCtxLen } = event.payload ?? {}
+          console.log(
+            '[LocalAPI] auto_increase_ctx_notify received (tauri)',
+            event.payload
+          )
+          if (!provider || !modelId || typeof newCtxLen !== 'number') {
+            console.warn(
+              '[LocalAPI] auto_increase_ctx_notify (tauri): invalid payload',
+              event.payload
+            )
+            return
+          }
+          applyNewCtxLen(provider, modelId, newCtxLen, 'tauri')
+        })
+        if (cancelled) {
+          unsub()
+          return
+        }
+        unlistenTauri = unsub
+        console.log(
+          '[LocalAPI] Subscribed to Tauri event: local_backend://auto_increase_ctx_notify'
+        )
+      } catch (e) {
+        console.warn(
+          '[LocalAPI] Failed to subscribe to Tauri auto_increase_ctx_notify:',
+          e
+        )
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      events.off(ModelEvent.OnAutoIncreasedCtxLen, handleFromEvents)
+      if (unlistenTauri) unlistenTauri()
+    }
+  }, [])
+
+  // Auto-start Local API Server on app startup. Works for both local engines
+  // (llamacpp/mlx) and cloud providers: when the last-used model is cloud we
+  // just raise the proxy and register the provider config so it can route
+  // inference requests by model name.
   useEffect(() => {
     const autoStartServer = async () => {
       try {
@@ -385,6 +416,11 @@ export function DataProvider() {
         if (isRunning) {
           console.log('[LocalAPI:startup] Server already running')
           setServerStatus('running')
+          // `activeModels` is in-memory only; without this the provider UI
+          // would render "Start" for the cloud model the proxy is already
+          // routing, until the user manually re-selects it. See issue where
+          // navigating between tabs appears to "forget" the running model.
+          await hydrateActiveModelsForRunningServer(serviceHub.models())
           return
         }
 
@@ -398,87 +434,131 @@ export function DataProvider() {
           .flatMap((p) => p.models)
           .filter((m) => m.id !== EMBEDDING_MODEL_ID)
 
-        if (localModels.length === 0) {
-          console.log(
-            '[LocalAPI:startup] No local models found, skipping auto-start'
+        const serverState = useLocalApiServer.getState()
+
+        type CandidateModel = { model: string; provider: string }
+
+        const isLocalProviderName = (name: string) =>
+          name === 'llamacpp' || name === 'mlx'
+
+        const readLastUsedFromStorage = (): CandidateModel | null => {
+          try {
+            const stored = localStorage.getItem(localStorageKey.lastUsedModel)
+            if (!stored) return null
+            const parsed = JSON.parse(stored) as CandidateModel
+            if (!parsed?.model || !parsed?.provider) return null
+            return parsed
+          } catch {
+            return null
+          }
+        }
+
+        const validateCandidate = (
+          candidate: CandidateModel | null | undefined
+        ): CandidateModel | null => {
+          if (!candidate) return null
+          const p = allProviders.find((pr) => pr.provider === candidate.provider)
+          if (!p) return null
+          if (!p.models.some((m) => m.id === candidate.model)) return null
+          return candidate
+        }
+
+        // Priority: explicit UI selection > last-used-model (localStorage) >
+        // saved default > last running server model > first available local.
+        const modelToStart: CandidateModel | null = (() => {
+          const { selectedProvider, selectedModel } = useModelProvider.getState()
+          if (selectedModel && selectedProvider) {
+            const candidate = validateCandidate({
+              model: selectedModel.id,
+              provider: selectedProvider,
+            })
+            if (candidate) return candidate
+          }
+
+          const lastUsed = validateCandidate(readLastUsedFromStorage())
+          if (lastUsed) return lastUsed
+
+          const savedDefault = validateCandidate(
+            serverState.defaultModelLocalApiServer
           )
+          if (savedDefault) return savedDefault
+
+          if (serverState.lastServerModels.length > 0) {
+            const lastServer = validateCandidate(serverState.lastServerModels[0])
+            if (lastServer) return lastServer
+          }
+
+          if (localModels.length > 0) {
+            const firstLocal = localModels[0]
+            const providerName =
+              allProviders.find((p) =>
+                p.models.some((m) => m.id === firstLocal.id)
+              )?.provider ?? 'llamacpp'
+            return { model: firstLocal.id, provider: providerName }
+          }
+
+          return null
+        })()
+
+        if (!modelToStart) {
+          console.log(
+            '[LocalAPI:startup] No usable model found, skipping auto-start'
+          )
+          return
+        }
+
+        const candidateProvider = allProviders.find(
+          (p) => p.provider === modelToStart.provider
+        )
+        const isCloud =
+          candidateProvider !== undefined &&
+          !isLocalProviderName(candidateProvider.provider)
+
+        // Cloud provider without an API key cannot be registered with the
+        // proxy, so we just bring the server up bare and leave the UI to
+        // show "no active model". The user must add an API key in Settings.
+        if (isCloud && !candidateProvider?.api_key) {
+          console.log(
+            '[LocalAPI:startup] Cloud provider selected without API key, raising bare server:',
+            modelToStart.provider
+          )
+          setServerStatus('pending')
+          try {
+            const actualPort = await window.core?.api?.startServer({
+              host: serverState.serverHost,
+              port: serverState.serverPort,
+              prefix: serverState.apiPrefix,
+              apiKey: serverState.apiKey,
+              trustedHosts: serverState.trustedHosts,
+              isCorsEnabled: serverState.corsEnabled,
+              isVerboseEnabled: serverState.verboseLogs,
+              proxyTimeout: serverState.proxyTimeout,
+            })
+            if (actualPort && actualPort !== serverState.serverPort) {
+              serverState.setServerPort(actualPort)
+            }
+            setServerStatus('running')
+          } catch (err) {
+            console.error('[LocalAPI:startup] Bare server start failed:', err)
+            setServerStatus('stopped')
+          }
           return
         }
 
         setServerStatus('pending')
         console.log(
-          '[LocalAPI:startup] Auto-starting server, local models found:',
-          localModels.length
+          '[LocalAPI:startup] Auto-starting, target model:',
+          modelToStart
         )
 
-        const serverState = useLocalApiServer.getState()
-
-        // Pick model to load: saved default > last server models > first available local model
-        const modelsToStart = (() => {
-          if (serverState.defaultModelLocalApiServer) {
-            return [serverState.defaultModelLocalApiServer]
-          }
-          if (serverState.lastServerModels.length > 0) {
-            return serverState.lastServerModels
-          }
-          const firstLocal = localModels[0]
-          const providerName =
-            allProviders.find((p) =>
-              p.models.some((m) => m.id === firstLocal.id)
-            )?.provider ?? 'llamacpp'
-          return [{ model: firstLocal.id, provider: providerName }]
-        })()
-
-        console.log('[LocalAPI:startup] Models to start:', modelsToStart)
-
-        await Promise.allSettled(
-          modelsToStart.map(async ({ model, provider: providerName }) => {
-            const provider = allProviders.find(
-              (p) => p.provider === providerName
-            )
-            if (!provider) {
-              console.warn(
-                `[LocalAPI:startup] Provider '${providerName}' not found for model '${model}'`
-              )
-              return
-            }
-            try {
-              await serviceHub.models().startModel(provider, model, true)
-              console.log(`[LocalAPI:startup] Model started: ${model}`)
-            } catch (err) {
-              console.warn(
-                `[LocalAPI:startup] Failed to start model ${model}:`,
-                err
-              )
-            }
-          })
-        )
-
-        const actualPort = await window.core?.api?.startServer({
-          host: serverState.serverHost,
-          port: serverState.serverPort,
-          prefix: serverState.apiPrefix,
-          apiKey: serverState.apiKey,
-          trustedHosts: serverState.trustedHosts,
-          isCorsEnabled: serverState.corsEnabled,
-          isVerboseEnabled: serverState.verboseLogs,
-          proxyTimeout: serverState.proxyTimeout,
+        // switchToModel handles stopAllModels, startModel/registerProvider,
+        // startServer, and syncs global state (selectModelProvider,
+        // last-used-model, thread model, etc.) for both local and cloud.
+        await switchToModel({
+          modelId: modelToStart.model,
+          providerName: modelToStart.provider,
+          serviceHub,
         })
-        console.log('[LocalAPI:startup] Server started on port:', actualPort)
-
-        if (actualPort && actualPort !== serverState.serverPort) {
-          serverState.setServerPort(actualPort)
-        }
-        setServerStatus('running')
-        serverState.setEnableOnStartup(true)
-
-        // Persist running models for next startup
-        if (modelsToStart.length > 0) {
-          serverState.setLastServerModels(modelsToStart)
-          if (!serverState.defaultModelLocalApiServer) {
-            serverState.setDefaultModelLocalApiServer(modelsToStart[0])
-          }
-        }
       } catch (error) {
         console.error('[LocalAPI:startup] Failed to auto-start server:', error)
         setServerStatus('stopped')

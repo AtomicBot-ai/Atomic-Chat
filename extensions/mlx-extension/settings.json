@@ -1,1 +1,35 @@
-[]
+[
+  {
+    "key": "version_backend",
+    "title": "Version & Backend",
+    "description": "Current DFlash MLX server version. Updated with each app release.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "detecting...",
+      "placeholder": "",
+      "readonly": true
+    }
+  },
+  {
+    "key": "dflash_enabled",
+    "title": "DFlash Draft",
+    "description": "Enable DFlash speculative decoding. The matching draft model from the [z-lab/dflash](https://huggingface.co/collections/z-lab/dflash) collection is auto-downloaded for the currently running MLX model.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": false
+    }
+  },
+  {
+    "key": "block_size",
+    "title": "DFlash Block Size",
+    "description": "Block size for DFlash speculative decoding. Default 16; raise for larger drafts at the cost of latency.",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "16",
+      "value": "16",
+      "type": "number",
+      "min": 0,
+      "max": 64
+    }
+  }
+]

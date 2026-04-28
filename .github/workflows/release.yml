@@ -15,9 +15,9 @@ on:
         type: boolean
         default: false
       build_windows:
-        description: "Build Windows"
+        description: "Build Windows (temporarily disabled)"
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: write
@@ -133,6 +133,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make download-llamacpp-backend
 
+      - name: Download DFlash MLX server
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make build-mlx-server
+
       - name: Install dependencies and build core
         run: |
           make install-and-build
@@ -177,10 +182,10 @@ jobs:
           echo "=== Building ==="
 
           yarn download:bin
-          yarn build:mlx-server
           yarn build:foundation-models-server
           yarn build:cli
-          yarn tauri build --target universal-apple-darwin --config src-tauri/tauri.macos.conf.json
+          # Универсальная macOS-сборка + переименование VOLNAME с версией + ресигн/нотаризация DMG
+          make build-mac
 
       - name: Collect artifact metadata
         id: metadata
@@ -237,7 +242,7 @@ jobs:
   # Windows  (x86_64 — NSIS + MSI, DigiCert KeyLocker code signing)
   # ──────────────────────────────────────────────────────────────
   build-windows:
-    if: github.event_name == 'push' || inputs.build_windows
+    if: false # Temporarily disabled in CI
     # Pinned to windows-2022 — DigiCert KSP is incompatible with Server 2025
     runs-on: windows-2022
     needs: create-draft-release
@@ -374,12 +379,63 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p src-tauri/resources/llamacpp-backend
-          TAG=$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
-            "https://api.github.com/repos/janhq/llama.cpp/releases/latest" | jq -r '.tag_name')
-          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
-            echo "Error: Failed to fetch latest release tag"
-            exit 1
+          TMPREL=$(mktemp /tmp/llamacpp-latest-XXXXXX.json)
+          API_URL="https://api.github.com/repos/janhq/llama.cpp/releases/latest"
+          _gh_get() {
+            # $1=use_token (1/0), $2=output, $3=url
+            if [ "$1" = "1" ] && [ -n "$GH_TOKEN" ]; then
+              curl -sS -H "Authorization: Bearer $GH_TOKEN" \
+                       -H "Accept: application/vnd.github+json" \
+                       -H "User-Agent: atomic-chat-ci" \
+                       -o "$2" -w "%{http_code}" "$3" || echo "000"
+            else
+              curl -sS -H "Accept: application/vnd.github+json" \
+                       -H "User-Agent: atomic-chat-ci" \
+                       -o "$2" -w "%{http_code}" "$3" || echo "000"
+            fi
+          }
+          _gh_fetch() {
+            # $1=use_token, $2=output, $3=url; sets HTTP_CODE
+            HTTP_CODE=""
+            for attempt in 1 2 3 4 5; do
+              HTTP_CODE=$(_gh_get "$1" "$2" "$3")
+              case "$HTTP_CODE" in
+                2*) return 0 ;;
+                403|429|5*|000)
+                  echo "  GitHub API attempt $attempt/5 (auth=$1): HTTP $HTTP_CODE, retrying in $((attempt * 2))s..."
+                  sleep $((attempt * 2))
+                  ;;
+                *) return 1 ;;
+              esac
+            done
+            return 1
+          }
+          _tag_ok() {
+            [ -s "$1" ] && [ -n "$(jq -r '.tag_name // empty' "$1" 2>/dev/null)" ]
+          }
+          USE_TOKEN=0
+          [ -n "$GH_TOKEN" ] && USE_TOKEN=1
+          _gh_fetch "$USE_TOKEN" "$TMPREL" "$API_URL" || true
+          FIRST_CODE="$HTTP_CODE"
+          if ! _tag_ok "$TMPREL" && [ "$USE_TOKEN" = "1" ]; then
+            echo "Token-authenticated request did not yield a tag_name (HTTP $FIRST_CODE); retrying unauthenticated..."
+            _gh_fetch "0" "$TMPREL" "$API_URL" || true
           fi
+          case "$HTTP_CODE" in
+            2*) ;;
+            *)
+              echo "Error: GitHub API failed (last HTTP $HTTP_CODE)"
+              echo "  body (first 500 bytes):"; head -c 500 "$TMPREL" 2>/dev/null || true; echo
+              rm -f "$TMPREL"; exit 1
+              ;;
+          esac
+          TAG=$(jq -r '.tag_name // empty' "$TMPREL")
+          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+            echo "Error: Failed to extract tag_name from response (HTTP $HTTP_CODE):"
+            head -c 500 "$TMPREL" 2>/dev/null || true; echo
+            rm -f "$TMPREL"; exit 1
+          fi
+          rm -f "$TMPREL"
           BACKEND="win-common_cpus-x64"
           URL="https://github.com/janhq/llama.cpp/releases/download/${TAG}/llama-${TAG}-bin-${BACKEND}.tar.gz"
           echo "$TAG" > src-tauri/resources/llamacpp-backend/version.txt
@@ -548,12 +604,12 @@ jobs:
           asset_content_type: text/plain
 
   # ──────────────────────────────────────────────────────────────
-  # Tauri updater manifest  (waits for both platforms)
+  # Tauri updater manifest  (currently macOS-only)
   # ──────────────────────────────────────────────────────────────
   publish-latest-json:
-    if: always() && needs.create-draft-release.result == 'success' && (needs.build-macos.result == 'success' || needs.build-windows.result == 'success')
+    if: always() && needs.create-draft-release.result == 'success' && needs.build-macos.result == 'success'
     runs-on: ubuntu-latest
-    needs: [create-draft-release, build-macos, build-windows]
+    needs: [create-draft-release, build-macos]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -563,27 +619,20 @@ jobs:
           VERSION: ${{ needs.create-draft-release.outputs.version }}
           MAC_SIG: ${{ needs.build-macos.outputs.mac_sig }}
           TAR_NAME: ${{ needs.build-macos.outputs.tar_name }}
-          WIN_SIG: ${{ needs.build-windows.outputs.win_sig }}
-          EXE_NAME: ${{ needs.build-windows.outputs.exe_name }}
         run: |
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
           DARWIN_URL="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v${VERSION}/${TAR_NAME// /.}"
-          WIN_URL="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v${VERSION}/${EXE_NAME// /.}"
 
           jq --arg version "$VERSION" \
              --arg pub_date "$PUB_DATE" \
              --arg darwin_sig "$MAC_SIG" \
              --arg darwin_url "$DARWIN_URL" \
-             --arg win_sig "$WIN_SIG" \
-             --arg win_url "$WIN_URL" \
              '.version = $version
               | .pub_date = $pub_date
               | .platforms["darwin-aarch64"].signature = $darwin_sig
               | .platforms["darwin-aarch64"].url = $darwin_url
               | .platforms["darwin-x86_64"].signature = $darwin_sig
-              | .platforms["darwin-x86_64"].url = $darwin_url
-              | .platforms["windows-x86_64"].signature = $win_sig
-              | .platforms["windows-x86_64"].url = $win_url' \
+              | .platforms["darwin-x86_64"].url = $darwin_url' \
              src-tauri/latest.json.template > latest.json
 
           cat latest.json

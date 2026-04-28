@@ -501,9 +501,11 @@ __metadata:
     "@tauri-apps/plugin-http": "npm:2.5.0"
     "@tauri-apps/plugin-log": "npm:^2.6.0"
     cpx: "npm:1.5.0"
+    jsdom: "npm:26.1.0"
     rimraf: "npm:3.0.2"
     rolldown: "npm:1.0.0-beta.1"
     typescript: "npm:5.9.2"
+    vitest: "npm:3.2.4"
   languageName: unknown
   linkType: soft
 

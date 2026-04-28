@@ -15,9 +15,11 @@
   "tools": "Инструменты",
   "searchPlaceholder": "Поиск моделей на Hugging Face…",
   "recTitle": "Рекомендуем",
+  "allModelsTitle": "Все модели",
   "recEverydayUse": "Повседневное использование",
   "recVisionKnowledge": "Зрение и знания",
   "recFinetuningChat": "Дообучение и чат",
   "recMathReasoning": "Математика и рассуждения",
+  "recForMlx": "Для MLX",
   "backToModels": "Назад к моделям"
 }

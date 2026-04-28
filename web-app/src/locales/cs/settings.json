@@ -57,6 +57,19 @@
     "resetFactory": "Obnovit tovární nastavení",
     "resetFactoryDesc": "Obnoví aplikaci do původního stavu, vymaže všechny modely a historii chatů. Tato akce je nevratná a doporučuje se pouze v případě, že je aplikace poškozena."
   },
+  "chatBehavior": {
+    "title": "Chat Behavior",
+    "disableReasoning": "Disable reasoning",
+    "disableReasoningDesc": "Skip the thinking phase on models that support reasoning.",
+    "autoApproveTools": "Auto-approve tool calls",
+    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
+    "desktopNotifications": "Oznámení na ploše",
+    "desktopNotificationsDesc": "Odeslat systémové oznámení, když je odpověď připravena a okno není aktivní."
+  },
+  "threadNotifications": {
+    "notificationTitle": "Odpověď je připravena",
+    "notificationBody": "\"{{title}}\" dokončil generování"
+  },
   "shortcuts": {
     "application": "Aplikace",
     "newChat": "Nový chat",
@@ -201,7 +214,7 @@
   "privacy": {
     "analytics": "Analytika",
     "helpUsImprove": "Pomozte nám zlepšit",
-    "helpUsImproveDesc": "Abychom mohli vylepšit Atomic Bot, můžete sdílet anonymní data jako použití funkcí a počty uživatelů. Nikdy neshromažďujeme vaše chaty nebo osobní údaje.",
+    "helpUsImproveDesc": "Abychom se mohli zlepšovat, můžete sdílet anonymní data jako použití funkcí a počty uživatelů. Nikdy neshromažďujeme vaše chaty nebo osobní údaje.",
     "privacyPolicy": "Máte plnou kontrolu nad svými daty. Více informací najdete v našich Zásadách ochrany osobních údajů.",
     "analyticsDesc": "Abychom mohli vylepšit Atomic Bot, potřebujeme pochopit, jak se používá—ale pouze s vaší pomocí. Toto nastavení můžete kdykoli změnit.",
     "privacyPromises": "Vaše volba zde nezmění naše základní sliby ochrany soukromí:",

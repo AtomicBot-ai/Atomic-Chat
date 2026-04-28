@@ -76,7 +76,8 @@ function Index() {
     setCurrentThreadId(undefined)
   }, [setCurrentThreadId])
 
-  if (!hasValidProviders && !setupCompletedOrSkipped) {
+  //* Dev-флаг FORCE_ONBOARDING — принудительный показ SetupScreen без удаления моделей
+  if (FORCE_ONBOARDING || (!hasValidProviders && !setupCompletedOrSkipped)) {
     return (
       <SetupScreen
         onSkipped={() => setSetupSkippedThisSession(true)}

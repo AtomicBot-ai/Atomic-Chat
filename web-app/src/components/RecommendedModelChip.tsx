@@ -13,6 +13,8 @@ const variantClassName: Record<RecommendedModelChipVariant, string> = {
     'border-purple-200 bg-purple-50 text-purple-800 dark:border-purple-800 dark:bg-purple-950/50 dark:text-purple-200',
   yellow:
     'border-yellow-200 bg-yellow-50 text-yellow-900 dark:border-yellow-700 dark:bg-yellow-950/45 dark:text-yellow-200',
+  orange:
+    'border-orange-200 bg-orange-50 text-orange-900 dark:border-orange-800 dark:bg-orange-950/45 dark:text-orange-200',
 }
 
 type RecommendedModelChipProps = {

@@ -6,15 +6,12 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { useAppState } from '@/hooks/useAppState'
-import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
 import { highlightFzfMatch } from '@/utils/highlight'
 import Capabilities from './Capabilities'
 import { IconSettings, IconX } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
-import { useThreads } from '@/hooks/useThreads'
 import { ModelSetting } from '@/containers/ModelSetting'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { ModelSupportStatus } from '@/containers/ModelSupportStatus'
@@ -26,6 +23,7 @@ import { predefinedProviders } from '@/constants/providers'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
+import { switchToModel } from '@/utils/switchModel'
 import { ChevronsUpDown } from 'lucide-react'
 
 interface SearchableModel {
@@ -59,7 +57,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
     updateProvider,
   } = useModelProvider()
   const [displayModel, setDisplayModel] = useState<string>('')
-  const { updateCurrentThreadModel } = useThreads()
   const navigate = useNavigate()
   const { t } = useTranslation()
   const { favoriteModels } = useFavoriteModel()
@@ -156,19 +153,22 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
           await checkAndUpdateModelVisionCapability(lastUsed.model)
         }
       } else {
-        const llamacppProvider = providers.find(
-          (p) => p.provider === 'llamacpp' && p.active && p.models.length > 0
+        const localProvider = providers.find(
+          (p) =>
+            (p.provider === 'llamacpp' || p.provider === 'mlx') &&
+            p.active &&
+            p.models.length > 0
         )
-        if (llamacppProvider && llamacppProvider.models.length > 0) {
-          const firstModel = llamacppProvider.models.find(
+        if (localProvider && localProvider.models.length > 0) {
+          const firstModel = localProvider.models.find(
             (m) => m.id !== EMBEDDING_MODEL_ID
           )
           if (!firstModel) {
             selectModelProvider('', '')
             return
           }
-          selectModelProvider('llamacpp', firstModel.id)
-          setLastUsedModel('llamacpp', firstModel.id)
+          selectModelProvider(localProvider.provider, firstModel.id)
+          setLastUsedModel(localProvider.provider, firstModel.id)
         } else {
           selectModelProvider('', '')
         }
@@ -378,22 +378,18 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
       setSearchValue('')
       setOpen(false)
 
+      // Optimistically update the global model-provider selection so the
+      // provider avatar, capabilities and support-status icons re-render
+      // instantly — without waiting for stopAllModels / server restart /
+      // registerRemoteProvider to complete inside switchToModel. switchToModel
+      // will call this again at the end (idempotent) once the switch is done.
       selectModelProvider(
         searchableModel.provider.provider,
         searchableModel.model.id
       )
-      updateCurrentThreadModel({
-        id: searchableModel.model.id,
-        provider: searchableModel.provider.provider,
-      })
 
-      // Store the selected model as last used
-      setLastUsedModel(
-        searchableModel.provider.provider,
-        searchableModel.model.id
-      )
-
-      // Check mmproj existence for llamacpp models (async, don't block UI)
+      // Fire-and-forget llamacpp mmproj / vision capability checks. These must
+      // not block the switch itself.
       if (searchableModel.provider.provider === 'llamacpp') {
         serviceHub
           .models()
@@ -410,7 +406,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
             )
           })
 
-        // Also check vision capability (async, don't block UI)
         checkAndUpdateModelVisionCapability(searchableModel.model.id).catch(
           (error) => {
             console.debug(
@@ -422,103 +417,21 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
         )
       }
 
-      // Restart Local API Server with the new model if it's running
-      const currentServerStatus = useAppState.getState().serverStatus
-      if (currentServerStatus === 'running') {
-        console.log(
-          '[LocalAPI] Restarting server with model:',
-          searchableModel.model.id
-        )
-        ;(async () => {
-          const { setServerStatus } = useAppState.getState()
-          const serverState = useLocalApiServer.getState()
-
-          setServerStatus('pending')
-
-          try {
-            // 1. Stop all currently loaded local models
-            const activeModels = await serviceHub.models().getActiveModels()
-            if (activeModels && activeModels.length > 0) {
-              await Promise.all(
-                activeModels.map(async (modelId) => {
-                  try {
-                    await serviceHub.models().stopModel(modelId)
-                    console.log('[LocalAPI] Stopped old model:', modelId)
-                  } catch (err) {
-                    console.warn(
-                      '[LocalAPI] Failed to stop model:',
-                      modelId,
-                      err
-                    )
-                  }
-                })
-              )
-            }
-
-            // 2. Stop the API server
-            await window.core?.api?.stopServer()
-            console.log('[LocalAPI] Server stopped for model switch')
-
-            // 3. Start the new model
-            if (
-              searchableModel.provider.provider === 'llamacpp' ||
-              searchableModel.provider.provider === 'mlx'
-            ) {
-              await serviceHub
-                .models()
-                .startModel(
-                  searchableModel.provider,
-                  searchableModel.model.id,
-                  true
-                )
-              console.log(
-                '[LocalAPI] New model started:',
-                searchableModel.model.id
-              )
-              await new Promise((resolve) => setTimeout(resolve, 500))
-            }
-
-            // 4. Start the API server
-            const actualPort = await window.core?.api?.startServer({
-              host: serverState.serverHost,
-              port: serverState.serverPort,
-              prefix: serverState.apiPrefix,
-              apiKey: serverState.apiKey,
-              trustedHosts: serverState.trustedHosts,
-              isCorsEnabled: serverState.corsEnabled,
-              isVerboseEnabled: serverState.verboseLogs,
-              proxyTimeout: serverState.proxyTimeout,
-            })
-            console.log('[LocalAPI] Server restarted on port:', actualPort)
-
-            if (actualPort && actualPort !== serverState.serverPort) {
-              serverState.setServerPort(actualPort)
-            }
-            setServerStatus('running')
-
-            serverState.setDefaultModelLocalApiServer({
-              model: searchableModel.model.id,
-              provider: searchableModel.provider.provider,
-            })
-            serverState.setLastServerModels([
-              {
-                model: searchableModel.model.id,
-                provider: searchableModel.provider.provider,
-              },
-            ])
-          } catch (error) {
-            console.error('[LocalAPI] Failed to restart server:', error)
-            useAppState.getState().setServerStatus('stopped')
-          }
-        })()
-      }
+      // Unified switch: stops current engine, (re)starts the Local API Server,
+      // registers cloud providers, and synchronises global state.
+      switchToModel({
+        modelId: searchableModel.model.id,
+        providerName: searchableModel.provider.provider,
+        serviceHub,
+      }).catch((error) => {
+        console.error('[DropdownModelProvider] switchToModel failed:', error)
+      })
     },
     [
-      selectModelProvider,
-      updateCurrentThreadModel,
       updateProvider,
       getProviderByName,
       checkAndUpdateModelVisionCapability,
+      selectModelProvider,
       serviceHub,
     ]
   )

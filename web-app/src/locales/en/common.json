@@ -99,6 +99,8 @@
   "tools": "Tools",
   "webSearch": "Web Search",
   "reasoning": "Reasoning",
+  "reasoningToggleEnabled": "Reasoning enabled",
+  "reasoningToggleDisabled": "Reasoning disabled",
   "proactive": "Proactive",
   "selectAModel": "Select a model",
   "noToolsAvailable": "No tools available",
@@ -139,6 +141,7 @@
     "chatInput": "Ask me anything..."
   },
   "confirm": "Confirm",
+  "ok": "OK",
   "continue": "Continue",
   "loading": "Loading...",
   "error": "Error",

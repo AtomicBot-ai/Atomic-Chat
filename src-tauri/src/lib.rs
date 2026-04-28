@@ -1,6 +1,5 @@
 pub mod core;
 
-
 #[cfg(not(feature = "cli"))]
 use core::{
     app::commands::get_jan_data_folder_path,
@@ -43,6 +42,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_llamacpp::init())
         .plugin(tauri_plugin_vector_db::init())
         .plugin(tauri_plugin_rag::init());
@@ -153,6 +153,8 @@ pub fn run() {
         // HTTP (bypasses tauri_plugin_http fetch interception)
         core::http::post_local_http,
         core::http::stream_local_http,
+        // Tray status (desktop only runtime behaviour; the symbol exists on mobile as a no-op)
+        core::tray_status::update_tray_status,
     ]);
 
     // Mobile: no updater commands
@@ -236,6 +238,8 @@ pub fn run() {
         // Download
         core::downloads::commands::download_files,
         core::downloads::commands::cancel_download_task,
+        // Tray status (no-op on mobile; kept registered so the frontend can invoke it uniformly)
+        core::tray_status::update_tray_status,
     ]);
 
     let app = app_builder
@@ -252,6 +256,9 @@ pub fn run() {
             background_cleanup_handle: Arc::new(Mutex::new(None)),
             mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
             provider_configs: Arc::new(Mutex::new(HashMap::new())),
+            auto_increase_ctx: Arc::new(core::state::AutoIncreaseState::default()),
+            #[cfg(desktop)]
+            tray_handles: Arc::new(std::sync::Mutex::new(None)),
         })
         .setup(|app| {
             app.handle().plugin(
@@ -329,10 +336,21 @@ pub fn run() {
             store.save().expect("Failed to save store");
             // Migration completed
 
-            #[cfg(desktop)]
+            // Tray icon: always on for macOS (matches menu-bar product conventions);
+            // env-gated on Windows/Linux where design polish is deferred.
+            #[cfg(target_os = "macos")]
+            {
+                log::info!("Enabling system tray icon (macOS)");
+                if let Err(e) = setup::setup_tray(app) {
+                    log::warn!("Failed to set up system tray: {e}");
+                }
+            }
+            #[cfg(all(desktop, not(target_os = "macos")))]
             if option_env!("ENABLE_SYSTEM_TRAY_ICON").unwrap_or("false") == "true" {
                 log::info!("Enabling system tray icon");
-                let _ = setup::setup_tray(app);
+                if let Err(e) = setup::setup_tray(app) {
+                    log::warn!("Failed to set up system tray: {e}");
+                }
             }
 
             #[cfg(all(feature = "deep-link", any(windows, target_os = "linux")))]
@@ -419,7 +437,6 @@ pub fn run() {
                             log::info!("MLX processes cleaned up successfully");
                         }
                     }
-
 
                     #[cfg(feature = "foundation-models")]
                     {

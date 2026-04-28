@@ -11,6 +11,7 @@ pub mod setup;
 pub mod state;
 pub mod system;
 pub mod threads;
+pub mod tray_status;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod updater;

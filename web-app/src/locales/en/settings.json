@@ -57,6 +57,17 @@
     "resetFactory": "Reset To Factory Settings",
     "resetFactoryDesc": "Restore application to its initial state, erasing all models and chat history. This action is irreversible and recommended only if the application is corrupted."
   },
+  "chatBehavior": {
+    "title": "Chat Behavior",
+    "autoApproveTools": "Auto-approve tool calls",
+    "autoApproveToolsDesc": "Skip the approval popup and automatically allow every tool/MCP call. When disabled, you'll be asked to confirm each new tool.",
+    "desktopNotifications": "Desktop notifications",
+    "desktopNotificationsDesc": "Send a system notification when a reply finishes generating and the window isn't focused."
+  },
+  "threadNotifications": {
+    "notificationTitle": "Reply ready",
+    "notificationBody": "\"{{title}}\" finished generating"
+  },
   "shortcuts": {
     "application": "Application",
     "newChat": "New Chat",
@@ -203,12 +214,14 @@
     "proxyTimeoutDesc": "Time to wait for a response from the local model, seconds.",
     "defaultModel": "Default Model Local API Server",
     "defaultModelDesc": "Local model to load automatically when the server starts.",
+    "defaultModelDescHint": "To change it, update your default chat model in ",
+    "defaultModelDescProvidersLink": "Model Providers",
     "defaultModelPlaceholder": "Select a local model"
   },
   "privacy": {
     "analytics": "Analytics",
     "helpUsImprove": "Help us improve",
-    "helpUsImproveDesc": "To help us improve Atomic Bot, you can share anonymous data like feature usage and user counts. We never collect your chats or personal information.",
+    "helpUsImproveDesc": "To help us improve, you can share anonymous data like feature usage and user counts. We never collect your chats or personal information.",
     "privacyPolicy": "You have full control over your data. Learn more in our Privacy Policy.",
     "analyticsDesc": "To improve Atomic Bot, we need to understand how it's used—but only with your help. You can change this setting anytime.",
     "privacyPromises": "Your choice here won't change our core privacy promises:",
@@ -330,5 +343,15 @@
     "restartNow": "Restart Now"
   },
   "backendInstallSuccess": "Backend installed successfully!",
-  "backendInstallError": "Failed to install backend"
+  "backendInstallError": "Failed to install backend",
+  "dflashUnsupportedTitle": "DFlash isn't available for this model",
+  "dflashUnsupportedDesc": "{{modelId}} doesn't have a paired draft model. Pick a supported one from the z-lab/dflash collection to enable faster generation.",
+  "dflashUnsupportedDescPrefix": "{{modelId}} doesn't have a paired draft model. Pick a supported one from the ",
+  "dflashUnsupportedDescSuffix": " collection to enable faster generation.",
+  "dflashNoActiveModel": "Start an MLX model first.",
+  "dflashDownloadingDraft": "Downloading DFlash draft for {{modelId}}...",
+  "dflashLoadingDraft": "Loading DFlash draft for {{modelId}}...",
+  "dflashEnableSuccess": "DFlash enabled",
+  "dflashDisableSuccess": "DFlash disabled",
+  "dflashEnableFailed": "Failed to toggle DFlash"
 }

@@ -207,6 +207,27 @@ describe('DefaultModelsService', () => {
       expect(result).toEqual(mockActiveModels)
       expect(mockEngine.getLoadedModels).toHaveBeenCalled()
     })
+
+    it('should aggregate active local models across engines', async () => {
+      const llamaEngine = {
+        ...mockEngine,
+        getLoadedModels: vi.fn().mockResolvedValue(['llama-model']),
+      }
+      const mlxEngine = {
+        ...mockEngine,
+        getLoadedModels: vi.fn().mockResolvedValue(['mlx-model']),
+      }
+
+      mockEngineManager.get.mockImplementation((provider?: string) =>
+        provider === 'mlx' ? mlxEngine : llamaEngine
+      )
+
+      const result = await modelsService.getActiveModels()
+
+      expect(result).toEqual(['llama-model', 'mlx-model'])
+      expect(llamaEngine.getLoadedModels).toHaveBeenCalled()
+      expect(mlxEngine.getLoadedModels).toHaveBeenCalled()
+    })
   })
 
   describe('stopModel', () => {
@@ -217,6 +238,29 @@ describe('DefaultModelsService', () => {
       await modelsService.stopModel(model, provider)
 
       expect(mockEngine.unload).toHaveBeenCalledWith(model)
+    })
+
+    it('should auto-detect the active local engine when provider is omitted', async () => {
+      const llamaEngine = {
+        ...mockEngine,
+        getLoadedModels: vi.fn().mockResolvedValue(['llama-model']),
+        unload: vi.fn(),
+      }
+      const mlxEngine = {
+        ...mockEngine,
+        getLoadedModels: vi.fn().mockResolvedValue(['mlx-model']),
+        unload: vi.fn().mockResolvedValue({ success: true, error: undefined }),
+      }
+
+      mockEngineManager.get.mockImplementation((provider?: string) =>
+        provider === 'mlx' ? mlxEngine : llamaEngine
+      )
+
+      const result = await modelsService.stopModel('mlx-model')
+
+      expect(result).toEqual({ success: true, error: undefined })
+      expect(llamaEngine.unload).not.toHaveBeenCalled()
+      expect(mlxEngine.unload).toHaveBeenCalledWith('mlx-model')
     })
   })
 

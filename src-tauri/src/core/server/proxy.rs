@@ -9,10 +9,74 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Instant;
+use tauri::{AppHandle, Emitter, Listener, Runtime};
 use tauri_plugin_llamacpp::LLamaBackendSession;
 use tokio::sync::Mutex;
 
-use crate::core::state::{ProviderConfig, ServerHandle};
+use crate::core::state::{
+    AutoIncreaseOutcome, AutoIncreaseState, ProviderConfig, ServerHandle,
+};
+use tokio::sync::Notify;
+use uuid::Uuid;
+
+/// Tauri event channel used to forward Local API Server request metadata to
+/// the web-app analytics listener. The web-app captures it as a PostHog event
+/// (`api_server_request`) with `source: 'local_api_server'`, which is the
+/// counterpart to the `chat_request_sent` event emitted by the chat UI.
+const ANALYTICS_CHANNEL: &str = "analytics://api_server_request";
+
+/// Mutable state accumulated while handling a proxied request. A single
+/// `ApiRequestEvent` is emitted from the `proxy_request` wrapper after the
+/// inner handler finishes, so every field must be populated by the time the
+/// inner handler returns (defaults are used otherwise).
+#[derive(Default)]
+struct EmitState {
+    endpoint: Option<&'static str>,
+    model_id: Option<String>,
+    backend: &'static str,
+    provider: Option<String>,
+    stream: bool,
+    is_anthropic_fallback: bool,
+    error_kind: Option<&'static str>,
+    skip_emit: bool,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct ApiRequestEvent<'a> {
+    source: &'static str,
+    endpoint: &'static str,
+    method: &'a str,
+    model_id: Option<String>,
+    backend: &'static str,
+    provider: Option<String>,
+    stream: bool,
+    status: u16,
+    latency_ms: u64,
+    is_anthropic_fallback: bool,
+    error_kind: Option<&'static str>,
+}
+
+fn emit_api_request_event<R: Runtime>(app: &AppHandle<R>, event: ApiRequestEvent) {
+    if let Err(e) = app.emit(ANALYTICS_CHANNEL, event) {
+        log::debug!("Failed to emit api_server_request analytics event: {e}");
+    }
+}
+
+/// Normalises the already prefix-stripped destination path into a closed set
+/// of endpoint labels safe for analytics (never the raw path).
+fn endpoint_from_path(path: &str) -> &'static str {
+    match path {
+        "/chat/completions" => "chat/completions",
+        "/messages" => "messages",
+        "/completions" => "completions",
+        "/embeddings" => "embeddings",
+        "/messages/count_tokens" => "messages/count_tokens",
+        "/models" => "models",
+        "/metrics" => "metrics",
+        _ => "other",
+    }
+}
 
 /// Transform Anthropic /messages API body to OpenAI /chat/completions body
 fn transform_anthropic_to_openai(body: &serde_json::Value) -> Option<serde_json::Value> {
@@ -421,14 +485,538 @@ pub fn get_destination_path(original_path: &str, prefix: &str) -> String {
     remove_prefix(original_path, prefix)
 }
 
+pub fn allowed_methods_for_path(path: &str) -> Option<&'static [&'static str]> {
+    match path {
+        "/" | "/openapi.json" | "/docs/swagger-ui.css" | "/docs/swagger-ui-bundle.js" => {
+            Some(&["GET"])
+        }
+        "/models" | "/metrics" => Some(&["GET"]),
+        "/messages"
+        | "/chat/completions"
+        | "/completions"
+        | "/embeddings"
+        | "/messages/count_tokens" => Some(&["POST"]),
+        _ => None,
+    }
+}
+
 use tauri_plugin_mlx::state::{MlxBackendSession, SessionInfo};
 
 fn is_local_url(url: &str) -> bool {
     url.contains("://localhost") || url.contains("://127.0.0.1") || url.contains("://0.0.0.0") || url.contains("://[::1]")
 }
 
-/// Handles the proxy request logic
-async fn proxy_request(
+// ── Auto-increase-ctx: shared detection, events & coordinator ────────────────
+//
+// The UI already increases `ctx_len` when chat replies hit the model's context
+// window (see `handleContextSizeIncrease` in
+// `web-app/src/routes/threads/$threadId.tsx`). External clients using the
+// Local API server used to bypass that logic entirely because this proxy is
+// a pure forwarder. The event channel below lets the proxy delegate the
+// reload to the corresponding TypeScript extension (owner of the model
+// settings in Zustand) and then retry the buffered request transparently.
+
+/// Event emitted from Rust to extensions when a context-limit error is
+/// detected. Both `llamacpp-extension` and `mlx-extension` subscribe and
+/// filter by `backend`.
+const AUTO_INCREASE_EVENT: &str = "local_backend://auto_increase_ctx";
+/// Reply channel. The `request_id` suffix scopes the notification to a
+/// single pending proxy request so parallel retries don't cross-talk.
+const AUTO_INCREASE_DONE_EVENT_PREFIX: &str = "local_backend://auto_increase_ctx_done";
+/// Total time we're willing to wait for extension-side unload + load.
+/// Matches the worst-case behaviour we've observed for GGUF reload with
+/// a 32k → 48k bump; beyond that the user is better served by a clean error.
+const AUTO_INCREASE_TIMEOUT_SECS: u64 = 60;
+
+#[derive(serde::Serialize, Clone)]
+struct AutoIncreaseRequest<'a> {
+    request_id: String,
+    backend: &'a str,
+    model_id: String,
+    /// Where the detection triggered: "error" for upstream error body,
+    /// "finish_length" for `finish_reason=length` in the upstream response.
+    trigger: &'a str,
+}
+
+#[derive(serde::Deserialize, Clone, Debug)]
+struct AutoIncreaseDoneEvent {
+    ok: bool,
+    #[serde(default)]
+    new_ctx_len: Option<i64>,
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+/// Returns `true` if the given upstream response almost certainly failed
+/// because the conversation exceeded the current context window.
+///
+/// Both llama-server and mlx-server are OpenAI-compatible; their error
+/// bodies vary but all reference the word "context" plus a length/size/limit
+/// keyword or use `exceed`/`overflow`. We also accept the UI-facing phrase
+/// from `web-app/src/utils/error.ts` verbatim to stay in lockstep with the
+/// existing in-process detection.
+fn is_context_limit_error(status: StatusCode, body: &str) -> bool {
+    if !matches!(status.as_u16(), 400 | 413 | 500 | 503) {
+        return false;
+    }
+    let b = body.to_lowercase();
+    if b.contains("the request exceeds the available context size") {
+        return true;
+    }
+    if !b.contains("context") {
+        return false;
+    }
+    b.contains("size")
+        || b.contains("length")
+        || b.contains("limit")
+        || b.contains("exceed")
+        || b.contains("overflow")
+        || b.contains("too long")
+        || b.contains("too large")
+}
+
+/// Parses the client's buffered request body and extracts `max_tokens` (or
+/// the newer `max_completion_tokens` alias that some OpenAI SDKs already
+/// emit). Returns `None` when the field is absent/invalid — meaning the
+/// client imposed no explicit completion cap.
+fn extract_client_max_tokens(request_body: Option<&[u8]>) -> Option<u64> {
+    let bytes = request_body?;
+    let json: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    let obj = json.as_object()?;
+    for key in ["max_tokens", "max_completion_tokens"] {
+        if let Some(v) = obj.get(key).and_then(|v| v.as_u64()) {
+            if v > 0 {
+                return Some(v);
+            }
+        }
+    }
+    None
+}
+
+/// Scans a non-streaming OpenAI JSON response for a terminal
+/// `finish_reason == "length"` that is caused by the *context window* being
+/// exhausted — **not** by the client's own `max_tokens` cap.
+///
+/// Discrimination rules (in order):
+///   1. Any choice must report `finish_reason == "length"`.
+///   2. If the client did **not** set `max_tokens`/`max_completion_tokens`,
+///      `length` can only come from the context window → trigger.
+///   3. If the client did set a cap, we only trigger when
+///      `usage.completion_tokens < max_tokens`. When completion_tokens
+///      equals/exceeds the cap the stop was client-driven and we must
+///      leave the model alone (otherwise we would auto-grow the ctx on
+///      every short `max_tokens=16` healthcheck).
+fn is_context_overflow_finish_length(
+    response_body: &[u8],
+    request_body: Option<&[u8]>,
+) -> bool {
+    let Ok(json) = serde_json::from_slice::<serde_json::Value>(response_body) else {
+        return false;
+    };
+
+    let has_length = json
+        .get("choices")
+        .and_then(|c| c.as_array())
+        .map(|choices| {
+            choices.iter().any(|choice| {
+                choice
+                    .get("finish_reason")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s == "length")
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false);
+
+    if !has_length {
+        return false;
+    }
+
+    let client_cap = extract_client_max_tokens(request_body);
+
+    match client_cap {
+        None => true, // No client-imposed cap → `length` must be context-limit.
+        Some(cap) => {
+            let completion_tokens = json
+                .get("usage")
+                .and_then(|u| u.get("completion_tokens"))
+                .and_then(|v| v.as_u64());
+            match completion_tokens {
+                Some(done) => done + 1 < cap,
+                // Unknown completion_tokens: treat as client-driven to avoid
+                // ratcheting ctx on every opaque `length` stop. Clients who
+                // really hit ctx get HTTP 500 anyway, which we still catch.
+                None => false,
+            }
+        }
+    }
+}
+
+/// Acquire or wait on the per-model reload slot. The first caller gets
+/// `is_leader=true` and must perform the event round-trip; every other
+/// caller waits on the returned `Arc<Notify>` and then reads the cached
+/// outcome with `take_auto_increase_outcome`.
+async fn acquire_auto_increase_slot(
+    state: &AutoIncreaseState,
+    model_id: &str,
+) -> (Arc<Notify>, bool) {
+    let mut pending = state.pending.lock().await;
+    if let Some(n) = pending.get(model_id) {
+        return (n.clone(), false);
+    }
+    let notify = Arc::new(Notify::new());
+    pending.insert(model_id.to_string(), notify.clone());
+    // Drop the last stale outcome so waiters don't accidentally read a
+    // success from a previous cycle.
+    drop(pending);
+    let mut outcomes = state.last_outcome.lock().await;
+    outcomes.remove(model_id);
+    (notify, true)
+}
+
+/// Release the per-model reload slot and wake every waiter. Safe to call
+/// multiple times — the `HashMap::remove` is a no-op on the second call.
+async fn release_auto_increase_slot(
+    state: &AutoIncreaseState,
+    model_id: &str,
+    notify: &Notify,
+) {
+    let mut pending = state.pending.lock().await;
+    pending.remove(model_id);
+    drop(pending);
+    notify.notify_waiters();
+}
+
+async fn store_auto_increase_outcome(
+    state: &AutoIncreaseState,
+    model_id: &str,
+    outcome: AutoIncreaseOutcome,
+) {
+    let mut outcomes = state.last_outcome.lock().await;
+    outcomes.insert(model_id.to_string(), outcome);
+}
+
+async fn read_auto_increase_outcome(
+    state: &AutoIncreaseState,
+    model_id: &str,
+) -> Option<AutoIncreaseOutcome> {
+    let outcomes = state.last_outcome.lock().await;
+    outcomes.get(model_id).cloned()
+}
+
+/// Trigger the TypeScript-side reload for `model_id` on the `llamacpp` or
+/// `mlx` backend and block until the matching `auto_increase_ctx_done` event
+/// arrives (or the timeout fires). Returns the outcome so the caller can
+/// decide whether to retry the upstream request.
+async fn trigger_auto_increase<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    backend: &str,
+    model_id: &str,
+    trigger: &str,
+) -> AutoIncreaseOutcome {
+    let request_id = Uuid::new_v4().to_string();
+    let done_channel = format!("{AUTO_INCREASE_DONE_EVENT_PREFIX}/{request_id}");
+
+    let (tx, rx) = tokio::sync::oneshot::channel::<AutoIncreaseDoneEvent>();
+    // Listener must be registered before we emit the trigger, otherwise a
+    // very fast extension handler could fire `auto_increase_ctx_done` before
+    // we're ready and we'd deadlock on the timeout branch.
+    //
+    // `listen_any` expects a synchronous `Fn`, so we store the oneshot sender
+    // in a `std::sync::Mutex<Option<_>>`. `Option::take` gives us the
+    // single-use semantics; the listener closure can fire more than once if a
+    // stray done-event shows up later, but only the first call will actually
+    // transmit.
+    let tx_slot: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<AutoIncreaseDoneEvent>>>> =
+        Arc::new(std::sync::Mutex::new(Some(tx)));
+    let tx_clone = tx_slot.clone();
+    let unlisten = app_handle.listen_any(done_channel.clone(), move |event| {
+        let payload = event.payload();
+        match serde_json::from_str::<AutoIncreaseDoneEvent>(payload) {
+            Ok(ev) => {
+                if let Ok(mut guard) = tx_clone.lock() {
+                    if let Some(sender) = guard.take() {
+                        let _ = sender.send(ev);
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    "auto_increase_ctx_done payload parse failed: {e}; raw={payload}"
+                );
+            }
+        }
+    });
+
+    let request = AutoIncreaseRequest {
+        request_id: request_id.clone(),
+        backend,
+        model_id: model_id.to_string(),
+        trigger,
+    };
+    if let Err(e) = app_handle.emit(AUTO_INCREASE_EVENT, request) {
+        log::error!("Failed to emit {AUTO_INCREASE_EVENT}: {e}");
+        app_handle.unlisten(unlisten);
+        return AutoIncreaseOutcome {
+            ok: false,
+            new_ctx_len: None,
+            reason: Some(format!("emit_failed: {e}")),
+        };
+    }
+    log::info!(
+        "auto_increase_ctx: emitted trigger backend={backend} model_id={model_id} request_id={request_id} source={trigger}"
+    );
+
+    let outcome = match tokio::time::timeout(
+        std::time::Duration::from_secs(AUTO_INCREASE_TIMEOUT_SECS),
+        rx,
+    )
+    .await
+    {
+        Ok(Ok(ev)) => AutoIncreaseOutcome {
+            ok: ev.ok,
+            new_ctx_len: ev.new_ctx_len,
+            reason: ev.reason,
+        },
+        Ok(Err(_)) => AutoIncreaseOutcome {
+            ok: false,
+            new_ctx_len: None,
+            reason: Some("channel_closed".to_string()),
+        },
+        Err(_) => AutoIncreaseOutcome {
+            ok: false,
+            new_ctx_len: None,
+            reason: Some(format!("timeout_after_{AUTO_INCREASE_TIMEOUT_SECS}s")),
+        },
+    };
+
+    app_handle.unlisten(unlisten);
+    outcome
+}
+
+/// Returns `true` iff the given model is currently served by an
+/// `is_embedding == true` session on either backend. Embedding sessions
+/// have no context-exhaustion flow (batched fixed-size inputs) so the
+/// proxy must not trigger a reload for them.
+async fn is_embedding_session(
+    backend: &str,
+    model_id: &str,
+    sessions: &Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    mlx_sessions: &Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+) -> bool {
+    match backend {
+        "llamacpp" => {
+            let guard = sessions.lock().await;
+            guard
+                .values()
+                .find(|s| s.info.model_id == model_id)
+                .map(|s| s.info.is_embedding)
+                .unwrap_or(false)
+        }
+        "mlx" => {
+            let guard = mlx_sessions.lock().await;
+            guard
+                .values()
+                .find(|s| s.info.model_id == model_id)
+                .map(|s| s.info.is_embedding)
+                .unwrap_or(false)
+        }
+        _ => false,
+    }
+}
+
+/// Look up the freshly-loaded local backend session after a successful
+/// auto-increase reload and return its `(port, api_key)`. Returns `None`
+/// when the session can't be found (e.g. TS reload actually failed despite
+/// `ok=true`).
+async fn resolve_local_session(
+    backend: &str,
+    model_id: &str,
+    sessions: &Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    mlx_sessions: &Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+) -> Option<(i32, String)> {
+    match backend {
+        "llamacpp" => {
+            let guard = sessions.lock().await;
+            guard
+                .values()
+                .find(|s| s.info.model_id == model_id)
+                .map(|s| (s.info.port, s.info.api_key.clone()))
+        }
+        "mlx" => {
+            let guard = mlx_sessions.lock().await;
+            guard
+                .values()
+                .find(|s| s.info.model_id == model_id)
+                .map(|s| (s.info.port, s.info.api_key.clone()))
+        }
+        _ => None,
+    }
+}
+
+/// Rebuild and re-send the proxied request after a successful
+/// auto-increase-ctx reload. `new_port` points at the freshly-spawned
+/// llama-server / mlx-server, `new_api_key` is the per-session bearer token.
+/// All other parameters mirror the original request so the retry is
+/// byte-identical on the wire.
+async fn retry_local_upstream(
+    local_client: &Client,
+    method: &hyper::Method,
+    destination_path: &str,
+    new_port: i32,
+    new_api_key: &str,
+    headers: &hyper::HeaderMap,
+    body: Option<Bytes>,
+) -> Result<reqwest::Response, reqwest::Error> {
+    let upstream_url = format!("http://127.0.0.1:{new_port}/v1{destination_path}");
+    let mut req = local_client.request(method.clone(), &upstream_url);
+    for (name, value) in headers.iter() {
+        if name != hyper::header::HOST && name != hyper::header::AUTHORIZATION {
+            req = req.header(name, value);
+        }
+    }
+    if !new_api_key.is_empty() {
+        req = req.header("Authorization", format!("Bearer {new_api_key}"));
+    }
+    let req_with_body = if let Some(bytes) = body {
+        req.body(bytes)
+    } else {
+        req
+    };
+    req_with_body.send().await
+}
+
+/// Wrap an upstream `reqwest::Response` into a `hyper::Response<Body>` that
+/// streams bytes as they arrive and attaches the proxy's CORS headers.
+/// Extracted so the auto-increase-ctx retry path and the primary success
+/// path share the same forwarding implementation.
+fn build_streaming_response(
+    response: reqwest::Response,
+    host_header: &str,
+    origin_header: &str,
+    trusted_hosts: &[Vec<String>],
+) -> Response<Body> {
+    let status = response.status();
+    let mut builder = Response::builder().status(status);
+    for (name, value) in response.headers() {
+        if !is_cors_header(name.as_str()) && name != hyper::header::CONTENT_LENGTH {
+            builder = builder.header(name, value);
+        }
+    }
+    builder = add_cors_headers_with_host_and_origin(
+        builder,
+        host_header,
+        origin_header,
+        trusted_hosts,
+    );
+
+    let mut stream = response.bytes_stream();
+    let (mut sender, body) = hyper::Body::channel();
+    tokio::spawn(async move {
+        while let Some(chunk_result) = stream.next().await {
+            match chunk_result {
+                Ok(chunk) => {
+                    if sender.send_data(chunk).await.is_err() {
+                        log::debug!("Client disconnected during retry streaming");
+                        break;
+                    }
+                }
+                Err(e) => {
+                    log::error!("Retry stream error: {e}");
+                    break;
+                }
+            }
+        }
+    });
+
+    builder.body(body).unwrap()
+}
+
+/// High-level wrapper around `acquire_auto_increase_slot` +
+/// `trigger_auto_increase`. Skips remote providers and embedding sessions
+/// up front; coordinates concurrent waiters through the shared `Notify`.
+#[allow(clippy::too_many_arguments)]
+async fn maybe_auto_increase_and_retry<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    auto_state: &AutoIncreaseState,
+    backend: &str,
+    model_id: &str,
+    sessions: &Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    mlx_sessions: &Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+    trigger: &str,
+) -> Option<(i32, String)> {
+    if backend != "llamacpp" && backend != "mlx" {
+        return None;
+    }
+    if is_embedding_session(backend, model_id, sessions, mlx_sessions).await {
+        log::debug!(
+            "auto_increase_ctx: skipping embedding session backend={backend} model_id={model_id}"
+        );
+        return None;
+    }
+
+    let (notify, is_leader) = acquire_auto_increase_slot(auto_state, model_id).await;
+
+    if !is_leader {
+        // Wait for the leader to finish. We only block on the notify; the
+        // outcome (including `ok=false`) lives in `last_outcome`.
+        let wait = tokio::time::timeout(
+            std::time::Duration::from_secs(AUTO_INCREASE_TIMEOUT_SECS),
+            notify.notified(),
+        )
+        .await;
+        if wait.is_err() {
+            log::warn!(
+                "auto_increase_ctx: follower timed out waiting for leader (model_id={model_id})"
+            );
+            return None;
+        }
+        match read_auto_increase_outcome(auto_state, model_id).await {
+            Some(o) if o.ok => {
+                return resolve_local_session(backend, model_id, sessions, mlx_sessions).await;
+            }
+            _ => return None,
+        }
+    }
+
+    // Leader path.
+    let outcome = trigger_auto_increase(app_handle, backend, model_id, trigger).await;
+    store_auto_increase_outcome(
+        auto_state,
+        model_id,
+        AutoIncreaseOutcome {
+            ok: outcome.ok,
+            new_ctx_len: outcome.new_ctx_len,
+            reason: outcome.reason.clone(),
+        },
+    )
+    .await;
+    release_auto_increase_slot(auto_state, model_id, &notify).await;
+
+    if !outcome.ok {
+        log::info!(
+            "auto_increase_ctx: leader outcome ok=false model_id={model_id} reason={:?}",
+            outcome.reason
+        );
+        return None;
+    }
+    log::info!(
+        "auto_increase_ctx: leader outcome ok=true model_id={model_id} new_ctx_len={:?}",
+        outcome.new_ctx_len
+    );
+
+    resolve_local_session(backend, model_id, sessions, mlx_sessions).await
+}
+
+/// Wraps `inner_proxy_request` to emit a single analytics event per proxied
+/// request via `ANALYTICS_CHANNEL`. The wrapper measures latency from the
+/// moment the request is received until the inner handler returns a response
+/// (for streaming responses this is TTFB — headers + status — which is
+/// sufficient for the "chat vs local API server" product metric). The inner
+/// handler never sees the `AppHandle`, which structurally guarantees that
+/// analytics events are not emitted per SSE chunk.
+#[allow(clippy::too_many_arguments)]
+async fn proxy_request<R: Runtime>(
     req: Request<Body>,
     client: Client,
     local_client: Client,
@@ -436,8 +1024,73 @@ async fn proxy_request(
     sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
     mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    auto_increase_state: Arc<AutoIncreaseState>,
+    app_handle: AppHandle<R>,
+) -> Result<Response<Body>, hyper::Error> {
+    let start = Instant::now();
+    let method_str = req.method().as_str().to_string();
+    let mut state = EmitState {
+        backend: "unknown",
+        ..EmitState::default()
+    };
+
+    let response = inner_proxy_request(
+        &mut state,
+        req,
+        client,
+        local_client,
+        config,
+        sessions,
+        mlx_sessions,
+        provider_configs,
+        auto_increase_state,
+        app_handle.clone(),
+    )
+    .await?;
+
+    if !state.skip_emit {
+        emit_api_request_event(
+            &app_handle,
+            ApiRequestEvent {
+                source: "local_api_server",
+                endpoint: state.endpoint.unwrap_or("other"),
+                method: &method_str,
+                model_id: state.model_id.clone(),
+                backend: state.backend,
+                provider: state.provider.clone(),
+                stream: state.stream,
+                status: response.status().as_u16(),
+                latency_ms: start.elapsed().as_millis() as u64,
+                is_anthropic_fallback: state.is_anthropic_fallback,
+                error_kind: state.error_kind,
+            },
+        );
+    }
+
+    Ok(response)
+}
+
+/// Handles the proxy request logic. Populates `state` with request metadata so
+/// the outer `proxy_request` wrapper can emit a single analytics event per
+/// proxied request (see `ANALYTICS_CHANNEL`). Preflight, static docs and other
+/// non-product traffic set `state.skip_emit = true`.
+#[allow(clippy::too_many_arguments)]
+async fn inner_proxy_request<R: Runtime>(
+    state: &mut EmitState,
+    req: Request<Body>,
+    client: Client,
+    local_client: Client,
+    config: ProxyConfig,
+    sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+    provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    auto_increase_state: Arc<AutoIncreaseState>,
+    app_handle: AppHandle<R>,
 ) -> Result<Response<Body>, hyper::Error> {
     if req.method() == hyper::Method::OPTIONS {
+        // CORS preflight is not a product signal; suppress analytics for the
+        // entire preflight branch regardless of its outcome.
+        state.skip_emit = true;
         log::debug!(
             "Handling CORS preflight request from {:?} {:?}",
             req.headers().get(hyper::header::HOST),
@@ -620,6 +1273,8 @@ async fn proxy_request(
     if !is_whitelisted_path {
         if !host_header.is_empty() {
             if !is_valid_host(&host_header, &config.trusted_hosts) {
+                state.endpoint = Some(endpoint_from_path(path.as_str()));
+                state.error_kind = Some("host");
                 let mut error_response = Response::builder().status(StatusCode::FORBIDDEN);
                 error_response = add_cors_headers_with_host_and_origin(
                     error_response,
@@ -632,6 +1287,8 @@ async fn proxy_request(
                     .unwrap());
             }
         } else {
+            state.endpoint = Some(endpoint_from_path(path.as_str()));
+            state.error_kind = Some("bad_request");
             let mut error_response = Response::builder().status(StatusCode::BAD_REQUEST);
             error_response = add_cors_headers_with_host_and_origin(
                 error_response,
@@ -666,6 +1323,8 @@ async fn proxy_request(
             .unwrap_or(false);
 
         if !auth_valid && !api_key_valid {
+            state.endpoint = Some(endpoint_from_path(path.as_str()));
+            state.error_kind = Some("auth");
             let mut error_response = Response::builder().status(StatusCode::UNAUTHORIZED);
             error_response = add_cors_headers_with_host_and_origin(
                 error_response,
@@ -682,6 +1341,8 @@ async fn proxy_request(
     }
 
     if path.contains("/configs") {
+        // Hidden/sensitive route: suppress from analytics.
+        state.skip_emit = true;
         let mut error_response = Response::builder().status(StatusCode::NOT_FOUND);
         error_response = add_cors_headers_with_host_and_origin(
             error_response,
@@ -706,12 +1367,14 @@ async fn proxy_request(
         // Anthropic /messages endpoint - tries /messages first, falls back to /chat/completions on error
         (hyper::Method::POST, "/messages") => {
             is_anthropic_messages = true;
+            state.endpoint = Some("messages");
             log::info!(
                 "Handling POST request to /messages with chat/completions fallback on error",
             );
             let body_bytes = match hyper::body::to_bytes(body).await {
                 Ok(bytes) => bytes,
                 Err(_) => {
+                    state.error_kind = Some("bad_request");
                     let mut error_response =
                         Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
                     error_response = add_cors_headers_with_host_and_origin(
@@ -730,7 +1393,12 @@ async fn proxy_request(
             // Parse body to get model_id for routing (don't transform yet)
             match serde_json::from_slice::<serde_json::Value>(&body_bytes) {
                 Ok(json_body) => {
+                    state.stream = json_body
+                        .get("stream")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
                     if let Some(model_id) = json_body.get("model").and_then(|v| v.as_str()) {
+                        state.model_id = Some(model_id.to_string());
                         let pc = provider_configs.lock().await;
 
                         // Try to find a provider for this model
@@ -752,6 +1420,8 @@ async fn proxy_request(
 
                         if let Some(ref p) = provider_name {
                             log::info!("Using remote provider '{p}' for model '{model_id}'");
+                            state.backend = "remote";
+                            state.provider = Some(p.clone());
                             let pc2 = provider_configs.lock().await;
                             let provider_config = pc2.get(p.as_str()).cloned();
                             drop(pc2);
@@ -778,16 +1448,19 @@ async fn proxy_request(
                             };
 
                             if let Some(session) = llama_session {
+                                state.backend = "llamacpp";
                                 let target_port = session.info.port;
                                 session_api_key = Some(session.info.api_key.clone());
                                 target_base_url =
                                     Some(format!("http://127.0.0.1:{}/v1/messages", target_port));
                             } else if let Some(info) = mlx_session_info {
+                                state.backend = "mlx";
                                 let target_port = info.port;
                                 session_api_key = Some(info.api_key.clone());
                                 target_base_url =
                                     Some(format!("http://127.0.0.1:{}/v1/messages", target_port));
                             } else {
+                                state.error_kind = Some("not_found");
                                 log::warn!("No running session found for model_id: {model_id}");
                                 let mut error_response =
                                     Response::builder().status(StatusCode::NOT_FOUND);
@@ -805,6 +1478,7 @@ async fn proxy_request(
                             }
                         }
                     } else {
+                        state.error_kind = Some("bad_request");
                         let error_msg = "Request body must contain a 'model' field";
                         log::warn!("POST body for /messages missing 'model' field");
                         let mut error_response =
@@ -819,6 +1493,7 @@ async fn proxy_request(
                     }
                 }
                 Err(e) => {
+                    state.error_kind = Some("bad_request");
                     log::warn!("Failed to parse POST body for /messages as JSON: {e}");
                     let mut error_response = Response::builder().status(StatusCode::BAD_REQUEST);
                     error_response = add_cors_headers_with_host_and_origin(
@@ -836,12 +1511,14 @@ async fn proxy_request(
         | (hyper::Method::POST, "/completions")
         | (hyper::Method::POST, "/embeddings")
         | (hyper::Method::POST, "/messages/count_tokens") => {
+            state.endpoint = Some(endpoint_from_path(destination_path.as_str()));
             log::info!(
                 "Handling POST request to {destination_path} requiring model lookup in body",
             );
             let body_bytes = match hyper::body::to_bytes(body).await {
                 Ok(bytes) => bytes,
                 Err(_) => {
+                    state.error_kind = Some("bad_request");
                     let mut error_response =
                         Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
                     error_response = add_cors_headers_with_host_and_origin(
@@ -859,7 +1536,12 @@ async fn proxy_request(
 
             match serde_json::from_slice::<serde_json::Value>(&body_bytes) {
                 Ok(json_body) => {
+                    state.stream = json_body
+                        .get("stream")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
                     if let Some(model_id) = json_body.get("model").and_then(|v| v.as_str()) {
+                        state.model_id = Some(model_id.to_string());
                         log::debug!("Extracted model_id: {model_id}");
 
                         // First, check if there's a registered remote provider for this model
@@ -890,6 +1572,8 @@ async fn proxy_request(
                         if let Some(ref provider) = provider_name {
                             // Found a remote provider, stream the response directly
                             log::info!("Found remote provider '{provider}' for model '{model_id}'");
+                            state.backend = "remote";
+                            state.provider = Some(provider.clone());
 
                             // Get the provider config
                             let pc2 = provider_configs.lock().await;
@@ -950,6 +1634,7 @@ async fn proxy_request(
                             let mlx_session = mlx_session_info.as_ref();
 
                             if total_sessions == 0 {
+                                state.error_kind = Some("not_found");
                                 log::warn!(
                                     "Request for model '{model_id}' but no models are running."
                                 );
@@ -967,6 +1652,7 @@ async fn proxy_request(
                             }
 
                             if let Some(session) = llama_session {
+                                state.backend = "llamacpp";
                                 let target_port = session.info.port;
                                 session_api_key = Some(session.info.api_key.clone());
                                 log::debug!("Found llama.cpp session for model_id {model_id}");
@@ -974,6 +1660,7 @@ async fn proxy_request(
                                     "http://127.0.0.1:{target_port}/v1{destination_path}"
                                 ));
                             } else if let Some(info) = mlx_session {
+                                state.backend = "mlx";
                                 let target_port = info.port;
                                 session_api_key = Some(info.api_key.clone());
                                 log::debug!("Found MLX session for model_id {model_id}");
@@ -981,6 +1668,7 @@ async fn proxy_request(
                                     "http://127.0.0.1:{target_port}/v1{destination_path}"
                                 ));
                             } else {
+                                state.error_kind = Some("not_found");
                                 log::warn!("No running session found for model_id: {model_id}");
                                 let mut error_response =
                                     Response::builder().status(StatusCode::NOT_FOUND);
@@ -998,6 +1686,7 @@ async fn proxy_request(
                             }
                         }
                     } else {
+                        state.error_kind = Some("bad_request");
                         let error_msg = "Request body must contain a 'model' field";
                         log::warn!(
                             "POST body for {destination_path} is missing 'model' field or it's not a string"
@@ -1014,6 +1703,7 @@ async fn proxy_request(
                     }
                 }
                 Err(e) => {
+                    state.error_kind = Some("bad_request");
                     log::warn!("Failed to parse POST body for {destination_path} as JSON: {e}");
                     let mut error_response = Response::builder().status(StatusCode::BAD_REQUEST);
                     error_response = add_cors_headers_with_host_and_origin(
@@ -1028,6 +1718,7 @@ async fn proxy_request(
             }
         }
         (hyper::Method::GET, "/models") => {
+            state.endpoint = Some("models");
             log::debug!("Handling GET /v1/models request");
 
             // Get local llama.cpp sessions
@@ -1117,7 +1808,146 @@ async fn proxy_request(
             return Ok(response_builder.body(Body::from(body_str)).unwrap());
         }
 
+        // Prometheus /metrics endpoint — proxies llama-server's built-in
+        // metrics exporter. Requires `?model=<id>` (or `X-Model` header) so
+        // a specific session can be targeted when multiple llama.cpp models
+        // are loaded. Analytics is suppressed because pollers typically hit
+        // this endpoint every ~500ms and the noise is not a product signal.
+        (hyper::Method::GET, "/metrics") => {
+            state.endpoint = Some("metrics");
+            state.skip_emit = true;
+
+            // Resolve target model_id: ?model=<id> takes precedence over X-Model.
+            let model_query = parts.uri.query().and_then(|q| {
+                q.split('&').find_map(|pair| {
+                    let mut kv = pair.splitn(2, '=');
+                    match (kv.next(), kv.next()) {
+                        (Some("model"), Some(v)) => Some(v.to_string()),
+                        _ => None,
+                    }
+                })
+            });
+            let model_header = parts
+                .headers
+                .get("X-Model")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string());
+            let metrics_model_id = match model_query.or(model_header) {
+                Some(id) if !id.is_empty() => id,
+                _ => {
+                    state.error_kind = Some("bad_request");
+                    let mut error_response =
+                        Response::builder().status(StatusCode::BAD_REQUEST);
+                    error_response = add_cors_headers_with_host_and_origin(
+                        error_response,
+                        &host_header,
+                        &origin_header,
+                        &config.trusted_hosts,
+                    );
+                    return Ok(error_response
+                        .body(Body::from(
+                            "Missing 'model' query parameter (use ?model=<model_id>)",
+                        ))
+                        .unwrap());
+                }
+            };
+
+            // llama.cpp is the only backend exposing a Prometheus /metrics
+            // endpoint. MLX has no slot-pool metrics so we deliberately do
+            // not fall back to mlx_sessions here.
+            let target_session = {
+                let sessions_guard = sessions.lock().await;
+                sessions_guard
+                    .values()
+                    .find(|s| s.info.model_id == metrics_model_id)
+                    .map(|s| (s.info.port, s.info.api_key.clone()))
+            };
+
+            let (port, upstream_api_key) = match target_session {
+                Some(v) => v,
+                None => {
+                    state.error_kind = Some("not_found");
+                    log::warn!(
+                        "Metrics requested for unknown or non-llamacpp model '{metrics_model_id}'"
+                    );
+                    let mut error_response =
+                        Response::builder().status(StatusCode::NOT_FOUND);
+                    error_response = add_cors_headers_with_host_and_origin(
+                        error_response,
+                        &host_header,
+                        &origin_header,
+                        &config.trusted_hosts,
+                    );
+                    return Ok(error_response
+                        .body(Body::from(format!(
+                            "No running llama.cpp session for model '{metrics_model_id}'"
+                        )))
+                        .unwrap());
+                }
+            };
+
+            // Note: llama-server exposes /metrics at the server root, NOT
+            // under /v1, so we must not reuse the standard `/v1{path}`
+            // upstream URL pattern here.
+            let upstream = format!("http://127.0.0.1:{port}/metrics");
+            state.backend = "llamacpp";
+
+            // Atomic-Chat boots llama-server with a per-session `--api-key`,
+            // so even the bundled `/metrics` endpoint expects a Bearer token.
+            // Forward the session key so this proxy route does not fail 401.
+            let mut upstream_req = local_client.get(&upstream);
+            if !upstream_api_key.is_empty() {
+                upstream_req = upstream_req
+                    .header(hyper::header::AUTHORIZATION, format!("Bearer {upstream_api_key}"));
+            }
+
+            match upstream_req.send().await {
+                Ok(resp) => {
+                    let status = resp.status();
+                    let content_type = resp
+                        .headers()
+                        .get(hyper::header::CONTENT_TYPE)
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("text/plain; version=0.0.4")
+                        .to_string();
+                    let bytes = resp.bytes().await.unwrap_or_default();
+
+                    let mut response_builder = Response::builder()
+                        .status(status)
+                        .header(hyper::header::CONTENT_TYPE, content_type);
+                    response_builder = add_cors_headers_with_host_and_origin(
+                        response_builder,
+                        &host_header,
+                        &origin_header,
+                        &config.trusted_hosts,
+                    );
+                    return Ok(response_builder.body(Body::from(bytes)).unwrap());
+                }
+                Err(e) => {
+                    state.error_kind = Some("upstream");
+                    log::warn!(
+                        "Failed to fetch metrics for model '{metrics_model_id}': {e}"
+                    );
+                    let mut error_response =
+                        Response::builder().status(StatusCode::BAD_GATEWAY);
+                    error_response = add_cors_headers_with_host_and_origin(
+                        error_response,
+                        &host_header,
+                        &origin_header,
+                        &config.trusted_hosts,
+                    );
+                    return Ok(error_response
+                        .body(Body::from(format!(
+                            "Failed to fetch metrics from llama-server: {e}"
+                        )))
+                        .unwrap());
+                }
+            }
+        }
+
         (hyper::Method::GET, "/openapi.json") => {
+            // Static documentation — not a product signal.
+            state.skip_emit = true;
             let static_body = include_str!("../../../static/openapi.json"); // relative to src-tauri/src/
                                                                             // Parse the static OpenAPI JSON and update the server URL with actual host and port
             match serde_json::from_str::<serde_json::Value>(static_body) {
@@ -1160,6 +1990,8 @@ async fn proxy_request(
 
         // DOCS route
         (hyper::Method::GET, "/") => {
+            // Swagger landing page — not a product signal.
+            state.skip_emit = true;
             let html = r#"
 <!DOCTYPE html>
 <html lang="en">
@@ -1199,6 +2031,7 @@ async fn proxy_request(
         }
 
         (hyper::Method::GET, "/docs/swagger-ui.css") => {
+            state.skip_emit = true;
             let css = include_str!("../../../static/swagger-ui/swagger-ui.css");
             return Ok(Response::builder()
                 .status(StatusCode::OK)
@@ -1208,6 +2041,7 @@ async fn proxy_request(
         }
 
         (hyper::Method::GET, "/docs/swagger-ui-bundle.js") => {
+            state.skip_emit = true;
             let js = include_str!("../../../static/swagger-ui/swagger-ui-bundle.js");
             return Ok(Response::builder()
                 .status(StatusCode::OK)
@@ -1217,37 +2051,45 @@ async fn proxy_request(
         }
 
         _ => {
-            let is_explicitly_whitelisted_get = method == hyper::Method::GET
-                && whitelisted_paths.contains(&destination_path.as_str());
-            if is_explicitly_whitelisted_get {
-                log::debug!("Handled whitelisted GET path: {destination_path}");
-                let mut error_response = Response::builder().status(StatusCode::NOT_FOUND);
-                error_response = add_cors_headers_with_host_and_origin(
-                    error_response,
-                    &host_header,
-                    &origin_header,
-                    &config.trusted_hosts,
-                );
-                return Ok(error_response.body(Body::from("Not Found")).unwrap());
-            } else {
+            if let Some(allowed_methods) = allowed_methods_for_path(destination_path.as_str()) {
+                state.endpoint = Some(endpoint_from_path(destination_path.as_str()));
+                state.error_kind = Some("method_not_allowed");
+                let allow_header = allowed_methods.join(", ");
                 log::warn!(
-                    "Unhandled method/path for dynamic routing: {method} {destination_path}"
+                    "Method not allowed for known route: {method} {destination_path}; allowed: {allow_header}"
                 );
-                let mut error_response = Response::builder().status(StatusCode::NOT_FOUND);
+                let mut error_response = Response::builder()
+                    .status(StatusCode::METHOD_NOT_ALLOWED)
+                    .header(hyper::header::ALLOW, allow_header);
                 error_response = add_cors_headers_with_host_and_origin(
                     error_response,
                     &host_header,
                     &origin_header,
                     &config.trusted_hosts,
                 );
-                return Ok(error_response.body(Body::from("Not Found")).unwrap());
+                return Ok(error_response
+                    .body(Body::from("Method Not Allowed"))
+                    .unwrap());
             }
+
+            state.endpoint = Some("other");
+            state.error_kind = Some("not_found");
+            log::warn!("Unhandled method/path for dynamic routing: {method} {destination_path}");
+            let mut error_response = Response::builder().status(StatusCode::NOT_FOUND);
+            error_response = add_cors_headers_with_host_and_origin(
+                error_response,
+                &host_header,
+                &origin_header,
+                &config.trusted_hosts,
+            );
+            return Ok(error_response.body(Body::from("Not Found")).unwrap());
         }
     }
 
     let upstream_url = match target_base_url.clone() {
         Some(p) => p,
         None => {
+            state.error_kind = Some("upstream");
             log::error!(
                 "Internal API server routing error: target is None after successful lookup"
             );
@@ -1288,6 +2130,7 @@ async fn proxy_request(
     let outbound_req_with_body = if let Some(bytes) = buffered_body_for_req {
         outbound_req.body(bytes)
     } else {
+        state.error_kind = Some("upstream");
         log::error!("Internal logic error: Request reached proxy stage without a buffered body.");
         let mut error_response = Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
         error_response = add_cors_headers_with_host_and_origin(
@@ -1312,6 +2155,7 @@ async fn proxy_request(
 
             // For Anthropic /messages requests with errors, try /chat/completions
             if is_error && is_anthropic_messages {
+                state.is_anthropic_fallback = true;
                 log::warn!("Request failed for /messages with status {status}, trying /chat/completions...");
 
                 // Read the error body to return to client if fallback fails
@@ -1377,6 +2221,7 @@ async fn proxy_request(
                         let fallback_status = res.status();
 
                         if !fallback_status.is_success() {
+                            state.error_kind = Some("upstream");
                             // Return fallback error to client
                             let fallback_error = res.text().await.unwrap_or_else(|e| format!("Failed to read error: {}", e));
 
@@ -1436,6 +2281,7 @@ async fn proxy_request(
                 }
 
                 // If fallback failed or wasn't attempted, return error to client
+                state.error_kind = Some("upstream");
                 let mut error_response = Response::builder().status(status);
                 error_response = add_cors_headers_with_host_and_origin(
                     error_response,
@@ -1445,12 +2291,77 @@ async fn proxy_request(
                 );
                 return Ok(error_response.body(Body::from(error_body)).unwrap());
             } else if is_error {
-                // Non-/messages error - return error response with body
+                // Non-/messages error - return error response with body.
                 let error_body = response
                     .text()
                     .await
                     .unwrap_or_else(|e| format!("Failed to read error body: {}", e));
 
+                // Auto-increase-ctx retry path. Only local backends go through
+                // this; remote providers and embedding sessions are filtered
+                // inside `maybe_auto_increase_and_retry`. We keep the original
+                // body/headers so the retry is byte-identical apart from the
+                // rewritten upstream URL + Authorization header.
+                let can_retry_local = (state.backend == "llamacpp" || state.backend == "mlx")
+                    && state.model_id.is_some()
+                    && buffered_body.is_some();
+
+                if can_retry_local && is_context_limit_error(status, &error_body) {
+                    let model_id = state.model_id.clone().unwrap();
+                    let backend = state.backend;
+                    log::info!(
+                        "Context-limit error detected (status={status} backend={backend} model_id={model_id}); triggering auto-increase"
+                    );
+                    if let Some((new_port, new_api_key)) = maybe_auto_increase_and_retry(
+                        &app_handle,
+                        &auto_increase_state,
+                        backend,
+                        &model_id,
+                        &sessions,
+                        &mlx_sessions,
+                        "error",
+                    )
+                    .await
+                    {
+                        match retry_local_upstream(
+                            &local_client,
+                            &method,
+                            &destination_path,
+                            new_port,
+                            &new_api_key,
+                            &headers,
+                            buffered_body.clone(),
+                        )
+                        .await
+                        {
+                            Ok(retry_response) => {
+                                let retry_status = retry_response.status();
+                                if retry_status.is_success() {
+                                    log::info!(
+                                        "auto_increase_ctx retry succeeded for model_id={model_id} (status={retry_status})"
+                                    );
+                                    return Ok(build_streaming_response(
+                                        retry_response,
+                                        &host_header,
+                                        &origin_header,
+                                        &config.trusted_hosts,
+                                    ));
+                                } else {
+                                    log::warn!(
+                                        "auto_increase_ctx retry returned non-success status={retry_status}, falling back to original error"
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!(
+                                    "auto_increase_ctx retry send failed: {e}; falling back to original error"
+                                );
+                            }
+                        }
+                    }
+                }
+
+                state.error_kind = Some("upstream");
                 let mut error_response = Response::builder().status(status);
                 error_response = add_cors_headers_with_host_and_origin(
                     error_response,
@@ -1461,7 +2372,100 @@ async fn proxy_request(
                 return Ok(error_response.body(Body::from(error_body)).unwrap());
             }
 
-            // Success case - stream the response
+            // Success case.
+            //
+            // For non-streaming local-backend responses we get one final JSON
+            // doc we can inspect before forwarding. If `finish_reason=length`
+            // surfaces, it means the upstream generation was truncated by the
+            // current context window — mirror the UI-side auto-increase:
+            // trigger a reload and retry once. Streaming responses remain
+            // pass-through (can't retry after chunks have been emitted).
+            let can_inspect_finish = !state.stream
+                && (state.backend == "llamacpp" || state.backend == "mlx")
+                && state.model_id.is_some()
+                && buffered_body.is_some();
+
+            if can_inspect_finish {
+                let body_bytes = response
+                    .bytes()
+                    .await
+                    .unwrap_or_default();
+
+                let context_overflow = is_context_overflow_finish_length(
+                    &body_bytes,
+                    buffered_body.as_deref(),
+                );
+
+                if context_overflow {
+                    let model_id = state.model_id.clone().unwrap();
+                    let backend = state.backend;
+                    log::info!(
+                        "finish_reason=length detected on 200 OK with no client max_tokens cap (backend={backend} model_id={model_id}); triggering auto-increase"
+                    );
+                    if let Some((new_port, new_api_key)) = maybe_auto_increase_and_retry(
+                        &app_handle,
+                        &auto_increase_state,
+                        backend,
+                        &model_id,
+                        &sessions,
+                        &mlx_sessions,
+                        "finish_length",
+                    )
+                    .await
+                    {
+                        match retry_local_upstream(
+                            &local_client,
+                            &method,
+                            &destination_path,
+                            new_port,
+                            &new_api_key,
+                            &headers,
+                            buffered_body.clone(),
+                        )
+                        .await
+                        {
+                            Ok(retry_response) if retry_response.status().is_success() => {
+                                log::info!(
+                                    "auto_increase_ctx retry succeeded for finish_reason=length (model_id={model_id})"
+                                );
+                                return Ok(build_streaming_response(
+                                    retry_response,
+                                    &host_header,
+                                    &origin_header,
+                                    &config.trusted_hosts,
+                                ));
+                            }
+                            Ok(retry_response) => {
+                                log::warn!(
+                                    "finish_reason=length retry returned status={}; falling back to original body",
+                                    retry_response.status()
+                                );
+                            }
+                            Err(e) => {
+                                log::warn!(
+                                    "finish_reason=length retry send failed: {e}; falling back to original body"
+                                );
+                            }
+                        }
+                    }
+                }
+
+                // Fall-through: serve the originally-buffered body. We've
+                // already consumed `response`, so we can't copy its headers
+                // verbatim — reconstruct the minimum set the client needs
+                // for a non-streaming OpenAI JSON response.
+                let mut builder = Response::builder()
+                    .status(status)
+                    .header(hyper::header::CONTENT_TYPE, "application/json");
+                builder = add_cors_headers_with_host_and_origin(
+                    builder,
+                    &host_header,
+                    &origin_header,
+                    &config.trusted_hosts,
+                );
+                return Ok(builder.body(Body::from(body_bytes)).unwrap());
+            }
+
             let mut builder = Response::builder().status(status);
 
             for (name, value) in response.headers() {
@@ -1503,6 +2507,7 @@ async fn proxy_request(
             Ok(builder.body(body).unwrap())
         }
         Err(e) => {
+            state.error_kind = Some("upstream");
             let error_msg = format!("Proxy request to model failed: {e}");
             log::error!("{error_msg}");
             let mut error_response = Response::builder().status(StatusCode::BAD_GATEWAY);
@@ -1554,7 +2559,8 @@ pub async fn is_server_running(server_handle: Arc<Mutex<Option<ServerHandle>>>) 
 }
 
 #[allow(clippy::too_many_arguments)]
-pub async fn start_server(
+pub async fn start_server<R: Runtime>(
+    app_handle: AppHandle<R>,
     server_handle: Arc<Mutex<Option<ServerHandle>>>,
     sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
     mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
@@ -1565,8 +2571,10 @@ pub async fn start_server(
     trusted_hosts: Vec<Vec<String>>,
     proxy_timeout: u64,
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    auto_increase_state: Arc<AutoIncreaseState>,
 ) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
     start_server_internal(
+        app_handle,
         server_handle,
         sessions,
         mlx_sessions,
@@ -1577,11 +2585,14 @@ pub async fn start_server(
         trusted_hosts,
         proxy_timeout,
         provider_configs,
+        auto_increase_state,
     )
     .await
 }
 
-async fn start_server_internal(
+#[allow(clippy::too_many_arguments)]
+async fn start_server_internal<R: Runtime>(
+    app_handle: AppHandle<R>,
     server_handle: Arc<Mutex<Option<ServerHandle>>>,
     sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
     mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
@@ -1592,6 +2603,7 @@ async fn start_server_internal(
     trusted_hosts: Vec<Vec<String>>,
     proxy_timeout: u64,
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    auto_increase_state: Arc<AutoIncreaseState>,
 ) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
     let mut handle_guard = server_handle.lock().await;
     if handle_guard.is_some() {
@@ -1630,6 +2642,8 @@ async fn start_server_internal(
         let sessions = sessions.clone();
         let mlx_sessions = mlx_sessions.clone();
         let provider_configs = provider_configs.clone();
+        let auto_increase_state = auto_increase_state.clone();
+        let app_handle = app_handle.clone();
 
         async move {
             Ok::<_, Infallible>(service_fn(move |req| {
@@ -1641,6 +2655,8 @@ async fn start_server_internal(
                     sessions.clone(),
                     mlx_sessions.clone(),
                     provider_configs.clone(),
+                    auto_increase_state.clone(),
+                    app_handle.clone(),
                 )
             }))
         }
@@ -2021,5 +3037,207 @@ async fn forward_non_streaming(
         if sender.send_data(bytes).await.is_err() {
             log::debug!("Client disconnected");
         }
+    }
+}
+
+#[cfg(test)]
+mod auto_increase_ctx_tests {
+    use super::*;
+
+    // --- is_context_limit_error -------------------------------------------------
+
+    #[test]
+    fn detects_llama_cpp_ctx_overflow_500() {
+        // Realistic body from llama-server when the prompt overshoots n_ctx.
+        let body = r#"{"error":{"code":500,"message":"the request exceeds the available context size. Try increasing context size or enable context shift","type":"server_error"}}"#;
+        assert!(is_context_limit_error(StatusCode::INTERNAL_SERVER_ERROR, body));
+    }
+
+    #[test]
+    fn detects_llama_cpp_ctx_overflow_400() {
+        let body = r#"{"error":{"message":"prompt is too long for the current context length","type":"invalid_request_error"}}"#;
+        assert!(is_context_limit_error(StatusCode::BAD_REQUEST, body));
+    }
+
+    #[test]
+    fn detects_mlx_ctx_overflow_500() {
+        // mlx-server surfaces a similar message; exact wording varies between
+        // the python/swift implementations so we just match the "context" +
+        // size/length/exceed pattern.
+        let body = r#"{"detail":"Context size exceeded: requested 9000 tokens but the model only supports 8192."}"#;
+        assert!(is_context_limit_error(StatusCode::INTERNAL_SERVER_ERROR, body));
+    }
+
+    #[test]
+    fn detects_ui_canonical_phrase() {
+        // web-app/src/utils/error.ts OUT_OF_CONTEXT_SIZE
+        let body = "the request exceeds the available context size.";
+        assert!(is_context_limit_error(StatusCode::INTERNAL_SERVER_ERROR, body));
+    }
+
+    #[test]
+    fn detects_503_context_overflow() {
+        let body = r#"{"error":"context window overflow"}"#;
+        assert!(is_context_limit_error(StatusCode::SERVICE_UNAVAILABLE, body));
+    }
+
+    #[test]
+    fn ignores_unrelated_5xx() {
+        // "context" alone is not enough — must also mention size/length/etc.
+        let body = r#"{"error":"server shutting down: context canceled"}"#;
+        assert!(!is_context_limit_error(StatusCode::INTERNAL_SERVER_ERROR, body));
+    }
+
+    #[test]
+    fn ignores_413_without_context_keyword() {
+        let body = r#"{"error":"payload too large"}"#;
+        assert!(!is_context_limit_error(StatusCode::PAYLOAD_TOO_LARGE, body));
+    }
+
+    #[test]
+    fn ignores_200_even_with_matching_body() {
+        // Successful responses must never be classified as ctx errors; the
+        // finish_reason=length path handles those.
+        let body = "context size exceeded";
+        assert!(!is_context_limit_error(StatusCode::OK, body));
+    }
+
+    #[test]
+    fn ignores_401_403_404() {
+        let body = "context size exceeded";
+        for code in [
+            StatusCode::UNAUTHORIZED,
+            StatusCode::FORBIDDEN,
+            StatusCode::NOT_FOUND,
+        ] {
+            assert!(!is_context_limit_error(code, body), "should ignore {code}");
+        }
+    }
+
+    // --- is_context_overflow_finish_length -------------------------------------
+
+    #[test]
+    fn triggers_when_no_client_max_tokens_and_length() {
+        let resp = br#"{
+            "choices":[{"index":0,"finish_reason":"length"}],
+            "usage":{"prompt_tokens":7000,"completion_tokens":1000,"total_tokens":8000}
+        }"#;
+        let req = br#"{"model":"m","messages":[]}"#;
+        assert!(is_context_overflow_finish_length(resp, Some(req)));
+    }
+
+    #[test]
+    fn triggers_when_request_body_missing() {
+        // No buffered request body at all → treat as "no client cap".
+        let resp = br#"{"choices":[{"finish_reason":"length"}]}"#;
+        assert!(is_context_overflow_finish_length(resp, None));
+    }
+
+    #[test]
+    fn skips_when_completion_hits_client_max_tokens() {
+        let resp = br#"{
+            "choices":[{"finish_reason":"length"}],
+            "usage":{"prompt_tokens":10,"completion_tokens":16,"total_tokens":26}
+        }"#;
+        let req = br#"{"max_tokens":16,"messages":[]}"#;
+        assert!(!is_context_overflow_finish_length(resp, Some(req)));
+    }
+
+    #[test]
+    fn skips_when_completion_hits_max_completion_tokens_alias() {
+        // Newer OpenAI SDKs use `max_completion_tokens` for reasoning models.
+        let resp = br#"{
+            "choices":[{"finish_reason":"length"}],
+            "usage":{"prompt_tokens":10,"completion_tokens":32,"total_tokens":42}
+        }"#;
+        let req = br#"{"max_completion_tokens":32,"messages":[]}"#;
+        assert!(!is_context_overflow_finish_length(resp, Some(req)));
+    }
+
+    #[test]
+    fn triggers_when_cap_set_but_completion_below_cap() {
+        // finish_reason=length with completion_tokens well under max_tokens
+        // ⇒ generation stopped because ctx filled up, not the client cap.
+        let resp = br#"{
+            "choices":[{"finish_reason":"length"}],
+            "usage":{"prompt_tokens":7900,"completion_tokens":200,"total_tokens":8100}
+        }"#;
+        let req = br#"{"max_tokens":4096,"messages":[]}"#;
+        assert!(is_context_overflow_finish_length(resp, Some(req)));
+    }
+
+    #[test]
+    fn ignores_finish_reason_stop() {
+        let resp = br#"{"choices":[{"finish_reason":"stop"}]}"#;
+        assert!(!is_context_overflow_finish_length(resp, None));
+    }
+
+    #[test]
+    fn ignores_malformed_json() {
+        assert!(!is_context_overflow_finish_length(b"not json", None));
+    }
+
+    #[test]
+    fn ignores_empty_choices() {
+        let resp = br#"{"choices":[]}"#;
+        assert!(!is_context_overflow_finish_length(resp, None));
+    }
+
+    #[test]
+    fn ignores_missing_finish_reason() {
+        let resp = br#"{"choices":[{"index":0}]}"#;
+        assert!(!is_context_overflow_finish_length(resp, None));
+    }
+
+    #[test]
+    fn skips_when_cap_set_and_completion_tokens_missing() {
+        // Without usage data we can't distinguish client-cap from ctx-limit,
+        // so we err on the side of NOT touching ctx.
+        let resp = br#"{"choices":[{"finish_reason":"length"}]}"#;
+        let req = br#"{"max_tokens":16,"messages":[]}"#;
+        assert!(!is_context_overflow_finish_length(resp, Some(req)));
+    }
+
+    // --- acquire/release slot --------------------------------------------------
+
+    #[tokio::test]
+    async fn acquire_slot_is_leader_once_per_model() {
+        let state = AutoIncreaseState::default();
+        let (_n1, leader1) = acquire_auto_increase_slot(&state, "llama-7b").await;
+        let (_n2, leader2) = acquire_auto_increase_slot(&state, "llama-7b").await;
+        assert!(leader1, "first caller must be leader");
+        assert!(!leader2, "second caller must wait");
+
+        // Different model should get its own leader slot.
+        let (_n3, leader3) = acquire_auto_increase_slot(&state, "mlx-other").await;
+        assert!(leader3);
+    }
+
+    #[tokio::test]
+    async fn release_slot_wakes_waiters_and_allows_new_leader() {
+        let state = AutoIncreaseState::default();
+        let (notify, _) = acquire_auto_increase_slot(&state, "qwen").await;
+        release_auto_increase_slot(&state, "qwen", &notify).await;
+        // After release the next caller becomes leader again.
+        let (_n2, leader2) = acquire_auto_increase_slot(&state, "qwen").await;
+        assert!(leader2);
+    }
+
+    #[tokio::test]
+    async fn store_and_read_outcome_roundtrip() {
+        let state = AutoIncreaseState::default();
+        store_auto_increase_outcome(
+            &state,
+            "m1",
+            AutoIncreaseOutcome {
+                ok: true,
+                new_ctx_len: Some(16384),
+                reason: None,
+            },
+        )
+        .await;
+        let got = read_auto_increase_outcome(&state, "m1").await.unwrap();
+        assert!(got.ok);
+        assert_eq!(got.new_ctx_len, Some(16384));
     }
 }

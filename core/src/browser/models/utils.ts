@@ -178,3 +178,32 @@ export const extractModelLoadParams = (
 
   return settingParams
 }
+
+/**
+ * Compute the next context-window size for the auto-increase flow. This is
+ * the single source of truth shared between the web-app UI
+ * (`handleContextSizeIncrease` in `$threadId.tsx`) and local backend
+ * extensions (`llamacpp-extension`, `mlx-extension`). Mirrors the existing
+ * UI steps: `<8192 → 8192 → 32768 → ×1.5` and optionally caps the result at
+ * the model's training-max context.
+ *
+ * @param currentCtxLen Current context window used by the running session.
+ * @param maxCtxLen Optional upper bound derived from the model metadata.
+ */
+export const computeNextCtxLen = (
+  currentCtxLen: number,
+  maxCtxLen?: number
+): number => {
+  let next: number
+  if (currentCtxLen < 8192) {
+    next = 8192
+  } else if (currentCtxLen < 32768) {
+    next = 32768
+  } else {
+    next = Math.round(currentCtxLen * 1.5)
+  }
+  if (typeof maxCtxLen === 'number' && maxCtxLen > 0) {
+    next = Math.min(next, maxCtxLen)
+  }
+  return next
+}

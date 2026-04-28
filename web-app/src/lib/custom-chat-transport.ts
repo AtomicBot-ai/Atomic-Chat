@@ -8,13 +8,43 @@ import {
   type UIMessageChunk,
   type Tool,
   type LanguageModelUsage,
+  type TextStreamPart,
   jsonSchema,
 } from 'ai'
+
+/// Hugging Face special-token convention (`<|im_end|>`, `<|eot_id|>`,
+/// `<|endoftext|>`, etc.). Some MLX backends — most visibly the DFlash
+/// custom `stream_generate` path — leak the EOS marker as plain text in
+/// the final delta instead of using it purely as a stop signal. These
+/// markers never appear in well-formed assistant output, so we strip
+/// them unconditionally before the chunk reaches the UI or the saved
+/// message body.
+const SPECIAL_TOKEN_REGEX = /<\|[a-zA-Z0-9_]+\|>/g
+
+/// `streamText` transform that scrubs the special-token markers from
+/// every `text-delta`. We pass `unknown` for `TOOLS` because the
+/// transform doesn't introspect tools.
+const stripSpecialTokensTransform = () =>
+  new TransformStream<TextStreamPart<never>, TextStreamPart<never>>({
+    transform(chunk, controller) {
+      if (chunk.type === 'text-delta') {
+        const cleaned = chunk.text.replace(SPECIAL_TOKEN_REGEX, '')
+        /// Drop deltas that consisted *only* of a special token —
+        /// emitting empty text-delta chunks would still flicker the
+        /// streaming cursor for a frame.
+        if (cleaned.length === 0) return
+        controller.enqueue({ ...chunk, text: cleaned })
+        return
+      }
+      controller.enqueue(chunk)
+    },
+  })
 import { useServiceStore } from '@/hooks/useServiceHub'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAssistant } from '@/hooks/useAssistant'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { ExtensionManager } from '@/lib/extension'
@@ -69,10 +99,17 @@ function prependTextDeltaToUIStream(
           return
         }
         controller.enqueue(value)
-        if (!prefixEmitted && (value as { type: string }).type === 'text-start') {
+        if (
+          !prefixEmitted &&
+          (value as { type: string }).type === 'text-start'
+        ) {
           prefixEmitted = true
           const id = (value as { type: 'text-start'; id: string }).id
-          controller.enqueue({ type: 'text-delta', id, delta: prefixText } as UIMessageChunk)
+          controller.enqueue({
+            type: 'text-delta',
+            id,
+            delta: prefixText,
+          } as UIMessageChunk)
         }
       } catch (error) {
         controller.error(error)
@@ -157,7 +194,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     }
 
     const selectedModel = useModelProvider.getState().selectedModel
-    const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
+    const modelSupportsTools =
+      selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
 
     // Only load tools if model supports them
     if (modelSupportsTools) {
@@ -175,7 +213,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
               ExtensionTypeEnum.VectorDB
             )
             if (ext?.listAttachmentsForProject) {
-              const projectFiles = await ext.listAttachmentsForProject(projectId)
+              const projectFiles =
+                await ext.listAttachmentsForProject(projectId)
               hasDocuments = hasThreadDocuments || projectFiles.length > 0
             }
           } catch (error) {
@@ -288,12 +327,56 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         const currentAssistant = useAssistant.getState().currentAssistant
         const inferenceParams = currentAssistant?.parameters
 
+        // Global "Disable reasoning" setting — best-effort: dispatch the
+        // provider-specific flag that skips the thinking phase. Unknown keys
+        // are silently ignored by most providers, but we still branch per
+        // provider to stay safe with stricter APIs (e.g. Anthropic).
+        //
+        // The override is kept SEPARATE from `inferenceParams` so local-only
+        // fields (top_k, repeat_penalty, …) never leak into cloud-provider
+        // request bodies. See ModelFactory for the fetch wiring.
+        const disableReasoning = useGeneralSetting.getState().disableReasoning
+        const reasoningOverride: Record<string, unknown> = {}
+        if (disableReasoning) {
+          switch (effectiveProviderName) {
+            case 'llamacpp':
+            case 'mlx':
+              reasoningOverride.chat_template_kwargs = {
+                enable_thinking: false,
+              }
+              break
+            case 'anthropic':
+              reasoningOverride.thinking = { type: 'disabled' }
+              break
+            case 'openai':
+              reasoningOverride.reasoning_effort = 'minimal'
+              break
+            case 'xai':
+              reasoningOverride.reasoning_effort = 'low'
+              break
+            case 'google':
+            case 'gemini':
+              reasoningOverride.reasoning_effort = 'minimal'
+              reasoningOverride.extra_body = {
+                google: { thinking_config: { thinking_budget: 0 } },
+              }
+              break
+            default:
+              reasoningOverride.reasoning_effort = 'minimal'
+              reasoningOverride.chat_template_kwargs = {
+                enable_thinking: false,
+              }
+          }
+        }
+        const hasOverride = Object.keys(reasoningOverride).length > 0
+
         // Create the model using the factory
         // For llamacpp provider, startModel is called internally in ModelFactory.createLlamaCppModel
         this.model = await ModelFactory.createModel(
           modelId,
           updatedProvider ?? provider,
-          inferenceParams ?? {}
+          inferenceParams ?? {},
+          hasOverride ? reasoningOverride : undefined
         )
       } catch (error) {
         console.error('Failed to create model:', error)
@@ -364,17 +447,24 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const continueContent = this.continueFromContent
     this.continueFromContent = null
     const modelMessages = continueContent
-      ? [...baseMessages, { role: 'assistant' as const, content: continueContent }]
+      ? [
+          ...baseMessages,
+          { role: 'assistant' as const, content: continueContent },
+        ]
       : baseMessages
 
     // Include tools only if we have tools loaded AND model supports them
     const hasTools = Object.keys(this.tools).length > 0
     const selectedModel = useModelProvider.getState().selectedModel
-    const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
+    const modelSupportsTools =
+      selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
     const shouldEnableTools = hasTools && modelSupportsTools
 
     // Track stream timing and token count for token speed calculation
     let streamStartTime: number | undefined
+
+    const maxOutputTokens = useAssistant.getState().currentAssistant?.parameters
+      ?.max_output_tokens as number | undefined
 
     const result = streamText({
       model: this.model,
@@ -383,6 +473,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       tools: shouldEnableTools ? this.tools : undefined,
       toolChoice: shouldEnableTools ? 'auto' : undefined,
       system: this.systemMessage,
+      maxOutputTokens,
+      experimental_transform: stripSpecialTokensTransform,
     })
 
     let tokensPerSecond = 0
@@ -443,13 +535,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         return undefined
       },
       onError: (error) => {
-        const errorMessage = error == null
-          ? 'Unknown error'
-          : typeof error === 'string'
-            ? error
-            : error instanceof Error
-              ? error.message
-              : JSON.stringify(error)
+        const errorMessage =
+          error == null
+            ? 'Unknown error'
+            : typeof error === 'string'
+              ? error
+              : error instanceof Error
+                ? error.message
+                : JSON.stringify(error)
 
         return errorMessage
       },

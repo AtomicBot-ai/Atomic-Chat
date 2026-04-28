@@ -24,6 +24,7 @@ import { IconChevronDown, IconX, IconCopy, IconCheck } from '@tabler/icons-react
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import Capabilities from '@/containers/Capabilities'
 import { getModelDisplayName, isLocalProvider } from '@/lib/utils'
+import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.hermes_agent as any)({
@@ -49,7 +50,6 @@ function HermesAgentIntegration() {
   const { serverStatus, setServerStatus } = useAppState()
   const { providers, selectedModel, selectedProvider, getProviderByName } =
     useModelProvider()
-  const setActiveModels = useAppState((state) => state.setActiveModels)
 
   const { config, setModel, clearModel } = useHermesAgentModel()
 
@@ -137,7 +137,7 @@ function HermesAgentIntegration() {
         await serviceHub
           .models()
           .getActiveModels()
-          .then((models) => setActiveModels(models || []))
+          .then((models) => syncActiveModelsFromEngines(models || []))
         await new Promise((resolve) => setTimeout(resolve, 500))
       } else if (loadedModels.length > 0 && !selectedHermesModel) {
         // No model explicitly selected — use whatever is already loaded
@@ -157,7 +157,7 @@ function HermesAgentIntegration() {
           await serviceHub
             .models()
             .getActiveModels()
-            .then((models) => setActiveModels(models || []))
+            .then((models) => syncActiveModelsFromEngines(models || []))
           await new Promise((resolve) => setTimeout(resolve, 500))
         }
       }

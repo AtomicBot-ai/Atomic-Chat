@@ -58,5 +58,10 @@
   },
   "addProvider": "Tambah Penyedia",
   "addOpenAIProvider": "Tambah Penyedia OpenAI",
-  "enterNameForProvider": "Masukkan nama untuk penyedia"
+  "enterNameForProvider": "Masukkan nama untuk penyedia",
+  "llamacpp": {
+    "concurrentMode": {
+      "perSlotContextWarning": "Konteks per slot sama dengan ctx_size dibagi jumlah slot. Semakin sedikit slot, semakin banyak konteks per permintaan."
+    }
+  }
 }

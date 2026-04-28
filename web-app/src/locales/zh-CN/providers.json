@@ -58,5 +58,10 @@
   },
   "addProvider": "添加提供商",
   "addOpenAIProvider": "添加 OpenAI 提供商",
-  "enterNameForProvider": "输入提供商名称"
+  "enterNameForProvider": "输入提供商名称",
+  "llamacpp": {
+    "concurrentMode": {
+      "perSlotContextWarning": "每个槽位的上下文等于 ctx_size 除以槽位数量。槽位越少，每个请求可用的上下文越大。"
+    }
+  }
 }

@@ -58,5 +58,10 @@
   },
   "addProvider": "Thêm nhà cung cấp",
   "addOpenAIProvider": "Thêm nhà cung cấp OpenAI",
-  "enterNameForProvider": "Nhập tên cho nhà cung cấp"
+  "enterNameForProvider": "Nhập tên cho nhà cung cấp",
+  "llamacpp": {
+    "concurrentMode": {
+      "perSlotContextWarning": "Ngữ cảnh mỗi slot bằng ctx_size chia cho số slot. Ít slot hơn đồng nghĩa mỗi yêu cầu có nhiều ngữ cảnh hơn."
+    }
+  }
 }

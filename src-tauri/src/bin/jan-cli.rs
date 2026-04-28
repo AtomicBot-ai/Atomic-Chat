@@ -413,7 +413,7 @@ async fn handle_models(cmd: ModelsCommands) {
                 model_id,
                 resolved_model_path,
                 port,
-                MlxConfig { ctx_size },
+                MlxConfig { ctx_size, draft_model_path: String::new(), block_size: 0 },
                 envs,
                 embedding,
                 timeout,
@@ -889,7 +889,7 @@ async fn handle_serve(args: ServeArgs) {
             model_id.clone(),
             resolved_model_path,
             port,
-            MlxConfig { ctx_size },
+            MlxConfig { ctx_size, draft_model_path: String::new(), block_size: 0 },
             envs,
             embedding,
             timeout,
@@ -1241,7 +1241,7 @@ async fn start_model_server(
             model_id.to_string(),
             model_path,
             port,
-            MlxConfig { ctx_size: effective_ctx_size },
+            MlxConfig { ctx_size: effective_ctx_size, draft_model_path: String::new(), block_size: 0 },
             envs,
             false,
             120,
@@ -1337,6 +1337,9 @@ fn build_llamacpp_config(n_gpu_layers: i32, ctx_size: i32, timeout: i32, fit: bo
         rope_freq_base: 0.0,
         rope_freq_scale: 0.0,
         ctx_shift: false,
-        parallel: 1
+        parallel: 1,
+        concurrent_mode: false,
+        concurrent_slots: 8,
+        expose_metrics: false,
     }
 }

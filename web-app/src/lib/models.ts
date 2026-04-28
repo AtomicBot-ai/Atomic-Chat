@@ -141,6 +141,30 @@ export function getTotalDownloadFileSize(
   return formatCatalogFileSize(modelBytes + (mmprojBytes ?? 0))
 }
 
+//* MLX: суммируем размер всех safetensors-шардов (HF часто режет на 00001-of-0000N)
+export function getMlxTotalFileSize(
+  model: Pick<CatalogModel, 'safetensors_files'>
+): string | undefined {
+  const files = model.safetensors_files
+  if (!files || files.length === 0) return undefined
+
+  let totalBytes = 0
+  let parsedAny = false
+  for (const file of files) {
+    const bytes = parseCatalogFileSize(file.file_size)
+    if (bytes !== undefined) {
+      totalBytes += bytes
+      parsedAny = true
+    }
+  }
+
+  if (!parsedAny) {
+    return files[0]?.file_size
+  }
+
+  return formatCatalogFileSize(totalBytes)
+}
+
 //* Hub / setup: рекомендованный repo id ↔ запись каталога (регистр, полный путь)
 export function findCatalogModelForRecommendedRepo(
   sources: readonly CatalogModel[],

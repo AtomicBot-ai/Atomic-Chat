@@ -57,6 +57,19 @@
     "resetFactory": "Auf Werkseinstellungen zurücksetzen",
     "resetFactoryDesc": "Setzt die Anwendung in den ursprünglichen Zustand zurück und löscht dabei alle Modelle und den Chatverlauf. Diese Aktion ist irreversibel und wird nur empfohlen, wenn die Anwendung beschädigt ist."
   },
+  "chatBehavior": {
+    "title": "Chat Behavior",
+    "disableReasoning": "Disable reasoning",
+    "disableReasoningDesc": "Skip the thinking phase on models that support reasoning.",
+    "autoApproveTools": "Auto-approve tool calls",
+    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
+    "desktopNotifications": "Desktop-Benachrichtigungen",
+    "desktopNotificationsDesc": "Sendet eine Systembenachrichtigung, wenn eine Antwort fertig ist und das Fenster nicht im Fokus ist."
+  },
+  "threadNotifications": {
+    "notificationTitle": "Antwort bereit",
+    "notificationBody": "„{{title}}\" wurde fertiggestellt"
+  },
   "shortcuts": {
     "application": "Anwendung",
     "newChat": "Neuer Chat",
@@ -195,7 +208,7 @@
   "privacy": {
     "analytics": "Analytik",
     "helpUsImprove": "Hilf uns, uns zu verbessern",
-    "helpUsImproveDesc": "Um uns bei der Verbesserung von Atomic Bot zu unterstützen, kannst Du uns anonyme Daten wie Funktionsnutzung und Benutzerzahlen mitteilen. Wir erfassen niemals Deine Chats oder persönlichen Daten.",
+    "helpUsImproveDesc": "Um uns bei der Verbesserung zu unterstützen, kannst Du uns anonyme Daten wie Funktionsnutzung und Benutzerzahlen mitteilen. Wir erfassen niemals Deine Chats oder persönlichen Daten.",
     "privacyPolicy": "Du hast die volle Kontrolle über Deine Daten. Erfahre mehr in unserer Datenschutzerklärung.",
     "analyticsDesc": "Um Atomic Bot zu verbessern, müssen wir verstehen, wie es genutzt wird - aber nur mit deiner Hilfe. Du kannst diese Einstellung jederzeit ändern.",
     "privacyPromises": "Deine Auswahl hier ändert nichts an unseren grundlegenden Datenschutzversprechen:",

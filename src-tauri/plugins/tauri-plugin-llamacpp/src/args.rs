@@ -3,6 +3,11 @@ use serde::{Deserialize, Serialize};
 fn default_parallel() -> i32 {
      1
  }
+
+fn default_concurrent_slots() -> i32 {
+    8
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlamacppConfig {
     pub version_backend: String,
@@ -42,6 +47,18 @@ pub struct LlamacppConfig {
     pub ctx_shift: bool,
     #[serde(default = "default_parallel")]
     pub parallel: i32,
+    /// Master toggle: run llama-server in concurrent multi-slot mode.
+    /// Overrides `parallel` and `cont_batching`, and exposes Prometheus
+    /// `/metrics` by forcing `expose_metrics` on.
+    #[serde(default)]
+    pub concurrent_mode: bool,
+    /// Number of parallel decoding slots when `concurrent_mode` is on.
+    #[serde(default = "default_concurrent_slots")]
+    pub concurrent_slots: i32,
+    /// Pass `--metrics` to llama-server so `/metrics` is exposed.
+    /// Independent switch; also implicitly enabled by `concurrent_mode`.
+    #[serde(default)]
+    pub expose_metrics: bool,
 }
 
 /// Minimum llama.cpp build number that changed --flash-attn from a boolean
@@ -116,6 +133,11 @@ impl ArgumentBuilder {
         port: u16,
         mmproj_path: Option<String>,
     ) -> Vec<String> {
+        // Apply Concurrent Mode overrides before emitting any flags so that
+        // `add_parallel_settings` / `add_boolean_flags` pick up the overridden
+        // values without duplicating flag emission logic.
+        self.apply_concurrent_mode_overrides();
+
         // Disable llama-server webui for non-ik backends
         if !self.backend.starts_with("ik") {
             self.args.push("--no-webui".to_string());
@@ -166,6 +188,9 @@ impl ArgumentBuilder {
 
         // Parallel sequences
         self.add_parallel_settings();
+
+        // Prometheus /metrics endpoint
+        self.add_metrics_flag();
 
         // Embedding vs text generation specific args
         if self.is_embedding {
@@ -330,6 +355,36 @@ impl ArgumentBuilder {
         }
     }
 
+    /// Emits `--metrics` when the user explicitly requested Prometheus
+    /// metrics (directly or via Concurrent Mode).
+    fn add_metrics_flag(&mut self) {
+        if self.config.expose_metrics {
+            self.args.push("--metrics".to_string());
+        }
+    }
+
+    /// Apply "Concurrent Mode" overrides to `self.config` so the rest of the
+    /// argument-emitting pipeline renders the expected multi-slot server
+    /// configuration.
+    ///
+    /// Concurrent Mode guarantees:
+    /// * `--parallel N`  with `N = max(concurrent_slots, 2)` (minimum 2 — a
+    ///   single-slot server defeats the purpose of the toggle).
+    /// * `--cont-batching` always on (required for meaningful multi-slot
+    ///   throughput).
+    /// * `--metrics` always exposed so the local API server can proxy
+    ///   `/v1/metrics` for dashboards.
+    fn apply_concurrent_mode_overrides(&mut self) {
+        if !self.config.concurrent_mode {
+            return;
+        }
+
+        let slots = self.config.concurrent_slots.max(2);
+        self.config.parallel = slots;
+        self.config.cont_batching = true;
+        self.config.expose_metrics = true;
+    }
+
     fn add_embedding_args(&mut self) {
         self.args.push("--embedding".to_string());
         self.args.push("--pooling".to_string());
@@ -462,6 +517,9 @@ mod tests {
             rope_freq_scale: 1.0,
             ctx_shift: false,
             parallel: 1,
+            concurrent_mode: false,
+            concurrent_slots: 8,
+            expose_metrics: false,
         }
     }
 
@@ -1178,5 +1236,62 @@ mod tests {
 
         assert_arg_pair(&args, "--parallel", "4");
         assert_no_flag(&args, "-kvu");
+    }
+
+    #[test]
+    fn test_concurrent_mode_off_is_noop() {
+        let config = default_config();
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--metrics");
+        assert_arg_pair(&args, "--parallel", "1");
+        assert_no_flag(&args, "--cont-batching");
+    }
+
+    #[test]
+    fn test_concurrent_mode_enforces_slots_cont_batching_and_metrics() {
+        let mut config = default_config();
+        config.concurrent_mode = true;
+        config.concurrent_slots = 8;
+        config.parallel = 1;
+        config.cont_batching = false;
+        config.expose_metrics = false;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--parallel", "8");
+        assert_no_flag(&args, "-kvu");
+        assert_has_flag(&args, "--cont-batching");
+        assert_has_flag(&args, "--metrics");
+    }
+
+    #[test]
+    fn test_concurrent_mode_enforces_minimum_two_slots() {
+        let mut config = default_config();
+        config.concurrent_mode = true;
+        config.concurrent_slots = 1;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--parallel", "2");
+        assert_no_flag(&args, "-kvu");
+        assert_has_flag(&args, "--cont-batching");
+        assert_has_flag(&args, "--metrics");
+    }
+
+    #[test]
+    fn test_expose_metrics_without_concurrent_mode() {
+        let mut config = default_config();
+        config.expose_metrics = true;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_has_flag(&args, "--metrics");
+        assert_arg_pair(&args, "--parallel", "1");
+        assert_no_flag(&args, "--cont-batching");
     }
 }

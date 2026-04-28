@@ -3,6 +3,10 @@ import { useEffect } from 'react'
 
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useAnalytic } from '@/hooks/useAnalytic'
+import {
+  API_SERVER_REQUEST_EVENT,
+  type ApiServerRequestEvent,
+} from '@/types/analytics'
 
 export function AnalyticProvider() {
   const { productAnalytic } = useAnalytic()
@@ -15,6 +19,10 @@ export function AnalyticProvider() {
       )
       return
     }
+
+    let unlistenApiServer: (() => void) | undefined
+    let cancelled = false
+
     if (productAnalytic) {
       posthog.init(POSTHOG_KEY, {
         api_host: POSTHOG_HOST,
@@ -58,9 +66,45 @@ export function AnalyticProvider() {
           serviceHub.analytic().updateDistinctId(posthog.get_distinct_id())
 
           posthog.capture('app_opened')
+
+          // Forward Local API Server proxy telemetry emitted by the Rust
+          // backend. Loaded dynamically so the web-app build stays usable in
+          // non-Tauri environments. PostHog consent is already enforced via
+          // `opt_in_capturing`; the extra `productAnalytic` guard is defensive
+          // in case the provider effect reruns after toggling the setting.
+          if (IS_TAURI) {
+            import('@tauri-apps/api/event')
+              .then(({ listen }) =>
+                listen<ApiServerRequestEvent>(
+                  API_SERVER_REQUEST_EVENT,
+                  (evt) => {
+                    if (!productAnalytic) return
+                    posthog.capture('api_server_request', evt.payload)
+                  }
+                )
+              )
+              .then((unlisten) => {
+                if (cancelled) {
+                  unlisten()
+                } else {
+                  unlistenApiServer = unlisten
+                }
+              })
+              .catch((err) => {
+                console.warn(
+                  'Failed to register api_server_request listener:',
+                  err
+                )
+              })
+          }
         })
     } else {
       posthog.opt_out_capturing()
+    }
+
+    return () => {
+      cancelled = true
+      unlistenApiServer?.()
     }
   }, [productAnalytic, serviceHub])
 

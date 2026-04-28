@@ -58,5 +58,10 @@
   },
   "addProvider": "Přidat poskytovatele",
   "addOpenAIProvider": "Přidat OpenAI poskytovatele",
-  "enterNameForProvider": "Zadejte název pro poskytovatele"
+  "enterNameForProvider": "Zadejte název pro poskytovatele",
+  "llamacpp": {
+    "concurrentMode": {
+      "perSlotContextWarning": "Kontext na slot se rovná ctx_size dělenému počtem slotů. Méně slotů znamená více kontextu pro každý požadavek."
+    }
+  }
 }

@@ -6,7 +6,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useMemo, useCallback, useRef } from 'react'
-import { AppEvent, events } from '@janhq/core'
+import { AppEvent, DownloadEvent, EngineManager, events } from '@janhq/core'
 import type { CatalogModel, ModelQuant } from '@/services/models/types'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { toast } from 'sonner'
@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import { cn, sanitizeModelId } from '@/lib/utils'
 import {
   extractModelName,
+  getMlxTotalFileSize,
   getPreferredMmprojModel,
   getTotalDownloadFileSize,
 } from '@/lib/models'
@@ -69,10 +70,13 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     localDownloadingModels,
     resumableDownloads,
     addLocalDownloadingModel,
+    removeLocalDownloadingModel,
+    markResumableDownload,
     clearResumableDownload,
   } = useDownloadStore()
   const serviceHub = useServiceHub()
   const llamaProvider = getProviderByName('llamacpp')
+  const mlxProvider = getProviderByName('mlx')
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
 
   const {
@@ -87,7 +91,8 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     }))
   )
 
-  const trackedImportIdsRef = useRef<Set<string>>(new Set())
+  //* id → провайдер, чтобы после import-события знать, куда навигировать (llamacpp vs mlx)
+  const trackedImportIdsRef = useRef<Map<string, 'llamacpp' | 'mlx'>>(new Map())
   const hasNavigatedRef = useRef(false)
 
   useEffect(() => {
@@ -125,9 +130,33 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     [llamaProvider]
   )
 
+  //* MLX: id в реестре провайдера. ВАЖНО: MLX-движок использует свой sanitizer
+  //* (сохраняет точки, пробелы → '-'), отличный от @/lib/utils.sanitizeModelId
+  //* (который бы схлопнул '.' → '_'). Дублируем логику MlxModelDownloadAction.
+  const getMlxModelId = useCallback(
+    (catalog: CatalogModel) => {
+      const raw = catalog.model_name.split('/').pop() ?? catalog.model_name
+      return raw.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-_./]/g, '')
+    },
+    []
+  )
+
+  const isMlxDownloaded = useCallback(
+    (catalog: CatalogModel) => {
+      const mlxId = getMlxModelId(catalog)
+      return (
+        mlxProvider?.models.some(
+          (m: { id: string }) =>
+            m.id === mlxId || m.id === `${catalog.developer}/${mlxId}`
+        ) ?? false
+      )
+    },
+    [mlxProvider, getMlxModelId]
+  )
+
   const startDownload = useCallback(
     (catalog: CatalogModel, variant: ModelQuant) => {
-      trackedImportIdsRef.current.add(variant.model_id)
+      trackedImportIdsRef.current.set(variant.model_id, 'llamacpp')
       clearResumableDownload(variant.model_id)
       addLocalDownloadingModel(variant.model_id)
       serviceHub
@@ -150,43 +179,130 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     ]
   )
 
-  useEffect(() => {
-    const onModelImported = async (payload: { modelId: string }) => {
-      if (hasNavigatedRef.current) return
-      if (!trackedImportIdsRef.current.has(payload.modelId)) return
+  //* MLX-скачивание (полная репликация логики MlxModelDownloadAction)
+  const startMlxDownload = useCallback(
+    async (catalog: CatalogModel) => {
+      const mlxId = getMlxModelId(catalog)
+      const modelPath = `${catalog.developer}/${catalog.model_name.split('/').pop()}`
 
+      trackedImportIdsRef.current.set(mlxId, 'mlx')
+      clearResumableDownload(mlxId)
+      addLocalDownloadingModel(mlxId)
+
+      try {
+        const repoInfo = await serviceHub
+          .models()
+          .fetchHuggingFaceRepo(modelPath, huggingfaceToken)
+
+        if (!repoInfo?.siblings?.length) {
+          throw new Error('Failed to fetch repository files')
+        }
+
+        const modelFiles = repoInfo.siblings
+        const mainSafetensorsFile = modelFiles.find((f) =>
+          f.rfilename.toLowerCase().endsWith('.safetensors')
+        )
+        if (!mainSafetensorsFile) {
+          throw new Error('No safetensors file found in repository')
+        }
+
+        const engine = EngineManager.instance().get('mlx')
+        if (!engine) throw new Error('MLX engine not found')
+
+        const modelUrl = `https://huggingface.co/${modelPath}/resolve/main/${mainSafetensorsFile.rfilename}`
+        const extraFiles = modelFiles
+          .filter((f) => f.rfilename !== mainSafetensorsFile.rfilename)
+          .map((file) => ({
+            url: `https://huggingface.co/${modelPath}/resolve/main/${file.rfilename}`,
+            filename: file.rfilename,
+          }))
+
+        return engine.import(mlxId, {
+          modelPath: modelUrl,
+          files: extraFiles,
+          resume: resumableDownloads.has(mlxId),
+        })
+      } catch (error) {
+        console.error('Error downloading MLX model:', error)
+        trackedImportIdsRef.current.delete(mlxId)
+        markResumableDownload(mlxId)
+        removeLocalDownloadingModel(mlxId)
+        toast.error('Failed to download MLX model', {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+      }
+    },
+    [
+      addLocalDownloadingModel,
+      removeLocalDownloadingModel,
+      markResumableDownload,
+      clearResumableDownload,
+      serviceHub,
+      huggingfaceToken,
+      resumableDownloads,
+      getMlxModelId,
+    ]
+  )
+
+  useEffect(() => {
+    const handleImportedId = async (
+      importedId: string,
+      providerName: 'llamacpp' | 'mlx'
+    ) => {
+      if (hasNavigatedRef.current) return
       hasNavigatedRef.current = true
-      trackedImportIdsRef.current.delete(payload.modelId)
+      trackedImportIdsRef.current.delete(importedId)
 
       const providers = await serviceHub.providers().getProviders()
       setProviders(providers)
 
-      const catalogId = payload.modelId
+      const catalogId = importedId
       const backslashId = catalogId.replace(/\//g, '\\')
       const found =
-        selectModelProvider('llamacpp', catalogId) ||
-        selectModelProvider('llamacpp', backslashId)
+        selectModelProvider(providerName, catalogId) ||
+        selectModelProvider(providerName, backslashId)
       const modelId = found ? found.id : catalogId
 
       toast.dismiss(`model-validation-started-${catalogId}`)
       localStorage.setItem(localStorageKey.setupCompleted, 'true')
       localStorage.setItem(
         localStorageKey.lastUsedModel,
-        JSON.stringify({ provider: 'llamacpp', model: modelId })
+        JSON.stringify({ provider: providerName, model: modelId })
       )
       navigate({
         to: route.home,
         replace: true,
         search: {
-          threadModel: { id: modelId, provider: 'llamacpp' },
+          threadModel: { id: modelId, provider: providerName },
         },
       })
     }
 
+    const onModelImported = (payload: { modelId: string }) => {
+      const provider = trackedImportIdsRef.current.get(payload.modelId)
+      if (!provider) return
+      void handleImportedId(payload.modelId, provider)
+    }
+
+    //* MLX не всегда шлёт AppEvent.onModelImported — слушаем прямое событие загрузки
+    const onMlxDownloadSuccess = (state: { modelId: string }) => {
+      const provider = trackedImportIdsRef.current.get(state.modelId)
+      if (provider !== 'mlx') return
+      void handleImportedId(state.modelId, 'mlx')
+    }
+
     events.on(AppEvent.onModelImported, onModelImported)
+    events.on(
+      DownloadEvent.onFileDownloadAndVerificationSuccess,
+      onMlxDownloadSuccess
+    )
 
     return () => {
       events.off(AppEvent.onModelImported, onModelImported)
+      events.off(
+        DownloadEvent.onFileDownloadAndVerificationSuccess,
+        onMlxDownloadSuccess
+      )
     }
   }, [navigate, selectModelProvider, serviceHub, setProviders])
 
@@ -244,16 +360,29 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                 >
                   <div className="flex flex-col divide-y divide-border/60">
                     {recommendedItems.map(({ rec, model }) => {
-                      const variant = model ? pickPreferredVariant(model) : null
-                      const downloadSize =
-                        model && variant
+                      const isMlx = !!model?.is_mlx
+                      const variant =
+                        model && !isMlx ? pickPreferredVariant(model) : null
+                      //* MLX: суммируем все safetensors-шарды; GGUF: quant + mmproj
+                      const downloadSize = isMlx
+                        ? getMlxTotalFileSize(model!)
+                        : model && variant
                           ? getTotalDownloadFileSize(model, variant)
                           : variant?.file_size
-                      const rowDownloading = variant
-                        ? isVariantDownloading(variant.model_id)
+                      //* id, по которому опрашиваем downloadStore (GGUF → quant.id, MLX → mlxId)
+                      const rowTrackId = isMlx
+                        ? model
+                          ? getMlxModelId(model)
+                          : null
+                        : variant?.model_id ?? null
+                      const rowDownloading = rowTrackId
+                        ? isVariantDownloading(rowTrackId)
                         : false
-                      const rowDownloaded =
-                        model && variant
+                      const rowDownloaded = isMlx
+                        ? model
+                          ? isMlxDownloaded(model)
+                          : false
+                        : model && variant
                           ? isVariantDownloaded(model, variant)
                           : false
                       const hfAuthor =
@@ -273,10 +402,8 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                       const brandIconSrc = recommendedSetupModelIconSrc(
                         rec.modelName
                       )
-                      const rowDownloadProgress = variant
-                        ? downloadProcesses.find(
-                            (p) => p.id === variant.model_id
-                          )
+                      const rowDownloadProgress = rowTrackId
+                        ? downloadProcesses.find((p) => p.id === rowTrackId)
                         : undefined
 
                       return (
@@ -335,15 +462,18 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                               size="sm"
                               disabled={
                                 !model ||
-                                !variant ||
+                                (!isMlx && !variant) ||
                                 rowDownloading ||
                                 rowDownloaded
                               }
-                              onClick={() =>
-                                model &&
-                                variant &&
-                                startDownload(model, variant)
-                              }
+                              onClick={() => {
+                                if (!model) return
+                                if (isMlx) {
+                                  void startMlxDownload(model)
+                                } else if (variant) {
+                                  startDownload(model, variant)
+                                }
+                              }}
                               className="w-full shrink-0 rounded-full px-5 font-semibold sm:w-auto"
                             >
                               {rowDownloaded
@@ -352,7 +482,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                   ? t('setup:downloading')
                                   : t('hub:download')}
                             </Button>
-                            {rowDownloading && variant ? (
+                            {rowDownloading && rowTrackId ? (
                               <p
                                 className="w-full text-center text-xs text-muted-foreground tabular-nums sm:w-auto sm:max-w-full"
                                 aria-live="polite"

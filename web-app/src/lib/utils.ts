@@ -114,7 +114,7 @@ export const getProviderTitle = (provider: string) => {
     case 'jan':
       return 'Atomic Chat'
     case 'llamacpp':
-      return IS_WINDOWS ? 'llama.cpp' : 'AtomicTurboQuant'
+      return IS_WINDOWS ? 'Llama.cpp' : 'Llama.cpp + TurboQuant'
     case 'mlx':
       return 'MLX'
     case 'openai':
@@ -202,6 +202,18 @@ export const toGigabytes = (
   } else {
     return input + (options?.hideUnit ? '' : 'B')
   }
+}
+
+export const formatBytes = (bytes?: number): string => {
+  if (!bytes || bytes <= 0) return ''
+  const units = ['B', 'KB', 'MB', 'GB']
+  let i = 0
+  let val = bytes
+  while (val >= 1024 && i < units.length - 1) {
+    val /= 1024
+    i++
+  }
+  return `${val.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
 }
 
 export function formatMegaBytes(mb: number) {

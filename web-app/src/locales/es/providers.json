@@ -58,5 +58,10 @@
   },
   "addProvider": "Agregar proveedor",
   "addOpenAIProvider": "Agregar proveedor OpenAI",
-  "enterNameForProvider": "Ingresa un nombre para el proveedor"
+  "enterNameForProvider": "Ingresa un nombre para el proveedor",
+  "llamacpp": {
+    "concurrentMode": {
+      "perSlotContextWarning": "El contexto por ranura equivale a ctx_size dividido por el número de ranuras. Menos ranuras dan más contexto por solicitud."
+    }
+  }
 }

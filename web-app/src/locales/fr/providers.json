@@ -58,5 +58,10 @@
   },
   "addProvider": "Ajouter un fournisseur",
   "addOpenAIProvider": "Ajouter un fournisseur OpenAI",
-  "enterNameForProvider": "Entrez le nom du fournisseur"
+  "enterNameForProvider": "Entrez le nom du fournisseur",
+  "llamacpp": {
+    "concurrentMode": {
+      "perSlotContextWarning": "Le contexte par slot est égal à ctx_size divisé par le nombre de slots. Moins de slots signifient plus de contexte par requête."
+    }
+  }
 }

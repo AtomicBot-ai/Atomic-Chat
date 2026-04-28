@@ -24,6 +24,7 @@ declare global {
   declare const UPDATE_CHECK_INTERVAL_MS: number
   declare const GA_MEASUREMENT_ID: string
   declare const IS_DEV: boolean
+  declare const FORCE_ONBOARDING: boolean
   interface Window {
     core: AppCore | undefined
     gtag?: (...args: unknown[]) => void

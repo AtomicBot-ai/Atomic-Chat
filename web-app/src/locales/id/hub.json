@@ -15,6 +15,7 @@
   "tools": "Alat",
   "searchPlaceholder": "Cari model di Hugging Face...",
   "recTitle": "Rekomendasi",
+  "allModelsTitle": "Semua Model",
   "recEverydayUse": "Pemakaian sehari-hari",
   "recVisionKnowledge": "Visi & pengetahuan",
   "recFinetuningChat": "Fine-tuning & obrolan",

@@ -10,8 +10,8 @@ use tauri::{App, Emitter, Manager, Runtime, WindowEvent, Wry};
 
 #[cfg(desktop)]
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
+    menu::{IconMenuItem, Menu, MenuItem, PredefinedMenuItem},
+    tray::{TrayIcon, TrayIconBuilder},
 };
 use tauri_plugin_store::Store;
 
@@ -292,11 +292,7 @@ pub fn setup_jan_cli<R: Runtime>(app_handle: tauri::AppHandle<R>, version_change
                 use std::os::windows::process::CommandExt;
                 cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
             }
-            if cmd
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-            {
+            if cmd.output().map(|o| o.status.success()).unwrap_or(false) {
                 log::debug!("jan CLI already on PATH — skipping reinstall");
                 return;
             }
@@ -306,7 +302,11 @@ pub fn setup_jan_cli<R: Runtime>(app_handle: tauri::AppHandle<R>, version_change
             Ok(status) => {
                 log::info!(
                     "jan CLI {} to {}",
-                    if version_changed { "updated" } else { "installed" },
+                    if version_changed {
+                        "updated"
+                    } else {
+                        "installed"
+                    },
                     status.path.as_deref().unwrap_or("<unknown>")
                 );
             }
@@ -348,15 +348,96 @@ pub fn setup_mcp<R: Runtime>(app: &App<R>) {
 
 #[cfg(desktop)]
 pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
+    use crate::core::state::AppState;
+    use crate::core::tray_status::{render_bar, render_dot, write_clipboard, TrayHandles};
+
+    //* Dynamic status rows: populated immediately with placeholders, then refreshed
+    //  every ~5 s by the frontend hook `useTrayStatusSync` invoking `update_tray_status`.
+    let status_server = IconMenuItem::with_id(
+        app.handle(),
+        "status_server",
+        "Server  — stopped —",
+        true,
+        Some(render_dot(false)),
+        None::<&str>,
+    )?;
+    let status_model = MenuItem::with_id(
+        app.handle(),
+        "status_model",
+        "Model  — no model loaded —",
+        true,
+        None::<&str>,
+    )?;
+    //* RAM split across two rows — text caption + stand-alone progress bar —
+    //  so only BAR_WIDTH drives the overall menu width (Pico-style narrow panel).
+    let status_ram_text = MenuItem::with_id(
+        app.handle(),
+        "status_ram_text",
+        "RAM  —",
+        true,
+        None::<&str>,
+    )?;
+    let status_ram_bar = IconMenuItem::with_id(
+        app.handle(),
+        "status_ram_bar",
+        "",
+        true,
+        Some(render_bar(0)),
+        None::<&str>,
+    )?;
+
+    let copy_url_i = MenuItem::with_id(
+        app.handle(),
+        "copy_api_url",
+        "Copy API URL",
+        true,
+        None::<&str>,
+    )?;
     let show_i = MenuItem::with_id(app.handle(), "open", "Open Atomic Chat", true, None::<&str>)?;
     let quit_i = MenuItem::with_id(app.handle(), "quit", "Quit", true, None::<&str>)?;
-    let separator_i = PredefinedMenuItem::separator(app.handle())?;
-    let menu = Menu::with_items(app.handle(), &[&show_i, &separator_i, &quit_i])?;
+
+    let sep1 = PredefinedMenuItem::separator(app.handle())?;
+    let sep2 = PredefinedMenuItem::separator(app.handle())?;
+
+    let menu = Menu::with_items(
+        app.handle(),
+        &[
+            &status_server,
+            &status_model,
+            &status_ram_text,
+            &status_ram_bar,
+            &sep1,
+            &copy_url_i,
+            &sep2,
+            &show_i,
+            &quit_i,
+        ],
+    )?;
+
+    //* Stash mutable handles in AppState so `update_tray_status` can flip their text/icons.
+    {
+        let handles_arc = {
+            let state = app.state::<AppState>();
+            state.tray_handles.clone()
+        };
+        let new_handles = TrayHandles {
+            server: status_server.clone(),
+            model: status_model.clone(),
+            ram_text: status_ram_text.clone(),
+            ram_bar: status_ram_bar.clone(),
+            server_url: std::sync::Mutex::new(String::new()),
+        };
+        match handles_arc.lock() {
+            Ok(mut guard) => *guard = Some(new_handles),
+            Err(e) => log::warn!("tray_handles mutex poisoned: {e}"),
+        };
+    }
 
     //* Иконка в строке меню macOS: отдельный asset; icon_as_template(false) — показывать PNG как есть
+    //  Single-click opens the status menu (Pico-style). The right-click menu is the same.
     let mut tray_builder = TrayIconBuilder::with_id("tray")
         .menu(&menu)
-        .show_menu_on_left_click(false);
+        .show_menu_on_left_click(true);
 
     #[cfg(target_os = "macos")]
     {
@@ -373,35 +454,38 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
     }
 
     tray_builder
-        .on_tray_icon_event(|tray, event| match event {
-            TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } => {
-                // let's show and focus the main window when the tray is clicked
-                let app = tray.app_handle();
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "open" => {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.unminimize();
                     let _ = window.show();
                     let _ = window.set_focus();
                 }
             }
-            _ => {
-                log::debug!("unhandled event {event:?}");
-            }
-        })
-        .on_menu_event(|app, event| match event.id.as_ref() {
-            "open" => {
-                let window = app.get_webview_window("main").unwrap();
-                window.show().unwrap();
-                window.set_focus().unwrap();
-            }
             "quit" => {
                 app.exit(0);
             }
+            "copy_api_url" => {
+                let state = app.state::<AppState>();
+                let url = state
+                    .tray_handles
+                    .lock()
+                    .ok()
+                    .and_then(|g| {
+                        g.as_ref()
+                            .and_then(|h| h.server_url.lock().ok().map(|u| u.clone()))
+                    })
+                    .unwrap_or_default();
+                if url.is_empty() {
+                    log::debug!("Copy API URL: no URL recorded yet");
+                } else if let Err(e) = write_clipboard(&url) {
+                    log::warn!("Copy API URL failed: {e}");
+                }
+            }
+            // Live status rows are non-interactive — clicking them is a no-op.
+            "status_server" | "status_model" | "status_ram_text" | "status_ram_bar" => {}
             other => {
-                println!("menu item {other} not handled");
+                log::debug!("tray menu item {other} not handled");
             }
         })
         .build(app)

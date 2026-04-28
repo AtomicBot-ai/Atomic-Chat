@@ -23,19 +23,39 @@ import {
   events,
   AppEvent,
   DownloadEvent,
+  computeNextCtxLen,
+  ModelEvent,
 } from '@janhq/core'
 
 import { info, warn, error as logError } from '@tauri-apps/plugin-log'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke, Channel } from '@tauri-apps/api/core'
+import { listen, emit as tauriEmit } from '@tauri-apps/api/event'
 import {
   loadMlxModel,
   unloadMlxModel,
   MlxConfig,
 } from '@janhq/tauri-plugin-mlx-api'
 import { readGgufMetadata, ModelConfig } from '@janhq/tauri-plugin-llamacpp-api'
+import { resolveDflashDraft, DraftResolution } from './dflashRegistry'
 
 // Error message constant
 const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
+
+/// Generic Tauri channels through which the Rust Local API Server proxy
+/// (`src-tauri/src/core/server/proxy.rs`) talks to backend extensions about
+/// a mid-flight context-window overflow.
+const AUTO_INCREASE_CTX_EVENT = 'local_backend://auto_increase_ctx'
+const AUTO_INCREASE_CTX_DONE_PREFIX = 'local_backend://auto_increase_ctx_done/'
+/// Parallel Tauri-level broadcast so the web-app can subscribe without
+/// routing through the `@janhq/core` in-process EventEmitter.
+const AUTO_INCREASE_CTX_NOTIFY = 'local_backend://auto_increase_ctx_notify'
+
+interface AutoIncreaseCtxRequest {
+  request_id: string
+  backend: 'llamacpp' | 'mlx'
+  model_id: string
+  trigger: 'error' | 'finish_length'
+}
 
 const logger = {
   info: function (...args: any[]) {
@@ -63,6 +83,14 @@ export default class mlx_extension extends AIEngine {
   private apiSecret: string = 'JanMLX'
   private loadingModels = new Map<string, Promise<SessionInfo>>()
 
+  /// Tracks the `ctx_size` actually used for the currently loaded session
+  /// per model. The UI-level setting / extension config may differ from the
+  /// live session (e.g. after a prior auto-increase), so we cannot rely on
+  /// `this.config.ctx_size` when computing the next window.
+  private modelCtxSize = new Map<string, number>()
+
+  private unlistenAutoIncreaseCtx?: () => void
+
   override async onLoad(): Promise<void> {
     super.onLoad()
 
@@ -82,18 +110,63 @@ export default class mlx_extension extends AIEngine {
     this.timeout = this.config.timeout ?? 600
     this.autoUnload = this.config.auto_unload ?? true
 
+    void this.detectBackendVersion().catch((err) => {
+      logger.warn('Failed to detect MLX backend version:', err)
+    })
+
+    // Local API Server auto-increase-ctx bridge. Mirrors the listener in
+    // llamacpp-extension; only payloads with `backend === 'mlx'` are handled
+    // here so remote/other-local extensions don't step on each other.
+    this.unlistenAutoIncreaseCtx = await listen<AutoIncreaseCtxRequest>(
+      AUTO_INCREASE_CTX_EVENT,
+      (event) => {
+        if (event.payload?.backend !== 'mlx') return
+        void this.handleAutoIncreaseCtx(event.payload)
+      }
+    )
+
     this.getProviderPath()
   }
 
   async getProviderPath(): Promise<string> {
     if (!this.providerPath) {
-      // Use mlx folder for models
       this.providerPath = await joinPath([await getJanDataFolderPath(), 'mlx'])
     }
     return this.providerPath
   }
 
+  private async detectBackendVersion(): Promise<void> {
+    try {
+      const info = await invoke<{ version: string; backend: string }>(
+        'plugin:mlx|get_mlx_server_version'
+      )
+
+      const version = info.version || 'unknown'
+      const backend = info.backend || 'macos-arm64'
+      const display = `${version} / ${backend}`
+
+      const currentSettings = await this.getSettings()
+      await this.updateSettings(
+        currentSettings.map((item: any) => {
+          if (item.key === 'version_backend') {
+            item.controllerProps.value = display
+            item.description = `${backend} is the recommended backend.`
+          }
+          return item
+        })
+      )
+
+      logger.info('MLX backend version:', display)
+    } catch (err) {
+      logger.warn('Could not detect MLX backend version:', err)
+    }
+  }
+
   override async onUnload(): Promise<void> {
+    if (this.unlistenAutoIncreaseCtx) {
+      this.unlistenAutoIncreaseCtx()
+      this.unlistenAutoIncreaseCtx = undefined
+    }
     // Cleanup handled by Tauri plugin on app exit
   }
 
@@ -296,8 +369,16 @@ export default class mlx_extension extends AIEngine {
       modelPath = await joinPath([janDataFolderPath, modelConfig.model_path])
     }
 
+    /// `dflash_enabled` is the master switch: when off, draft path / block
+    /// size are forced empty even if a stale value lingers in `this.config`.
+    const dflashOn = !!cfg.dflash_enabled
+    const draftPath = dflashOn ? String(cfg.draft_model_path ?? '') : ''
+    const blockSize = dflashOn ? Number(cfg.block_size ?? 16) : 0
+
     const mlxConfig: MlxConfig = {
-      ctx_size: cfg.ctx_size ?? 4096,
+      ctx_size: Number(cfg.ctx_size ?? 4096),
+      draft_model_path: draftPath,
+      block_size: blockSize,
     }
 
     logger.info(
@@ -317,10 +398,96 @@ export default class mlx_extension extends AIEngine {
         isEmbedding,
         Number(this.timeout)
       )
+      this.modelCtxSize.set(modelId, mlxConfig.ctx_size)
       return sInfo
     } catch (error) {
       logger.error(`Error loading MLX model: ${JSON.stringify(error)}`)
       throw error
+    }
+  }
+
+  /// Bridge from the Local API Server proxy (Rust) back to the MLX extension
+  /// when a forwarded request exhausts the model's context window. Mirrors
+  /// the llamacpp-extension implementation: unload + reload with a larger
+  /// `ctx_size`, acknowledge the proxy on a request-scoped channel, and emit
+  /// a jan-core event so the web-app UI can mirror the new value.
+  private async handleAutoIncreaseCtx(
+    payload: AutoIncreaseCtxRequest
+  ): Promise<void> {
+    const { request_id, model_id, trigger } = payload
+    const doneChannel = `${AUTO_INCREASE_CTX_DONE_PREFIX}${request_id}`
+
+    const sendDone = async (body: {
+      ok: boolean
+      new_ctx_len?: number
+      reason?: string
+    }) => {
+      try {
+        await tauriEmit(doneChannel, body)
+      } catch (e) {
+        logger.warn(
+          `Failed to emit auto_increase_ctx_done (${doneChannel}): ${e}`
+        )
+      }
+    }
+
+    try {
+      const currentCtxLen =
+        this.modelCtxSize.get(model_id) ?? this.config?.ctx_size ?? 4096
+      const newCtxLen = computeNextCtxLen(currentCtxLen)
+
+      if (newCtxLen <= currentCtxLen) {
+        await sendDone({ ok: false, reason: 'at_max' })
+        return
+      }
+
+      logger.info(
+        `auto_increase_ctx (mlx) model=${model_id} trigger=${trigger} ${currentCtxLen} -> ${newCtxLen}`
+      )
+
+      try {
+        await this.unload(model_id)
+      } catch (e) {
+        logger.warn(
+          `auto_increase_ctx unload failed for ${model_id}, proceeding anyway: ${e}`
+        )
+      }
+
+      const sInfo = await this.load(
+        model_id,
+        { ctx_size: newCtxLen },
+        false,
+        true
+      )
+      this.modelCtxSize.set(model_id, newCtxLen)
+
+      const notifyPayload = {
+        provider: this.provider,
+        modelId: model_id,
+        newCtxLen,
+      }
+
+      if (events && typeof events.emit === 'function') {
+        events.emit(ModelEvent.OnAutoIncreasedCtxLen, notifyPayload)
+      }
+
+      try {
+        await tauriEmit(AUTO_INCREASE_CTX_NOTIFY, notifyPayload)
+      } catch (e) {
+        logger.warn(
+          `Failed to Tauri-emit ${AUTO_INCREASE_CTX_NOTIFY}: ${e}`
+        )
+      }
+
+      await sendDone({ ok: true, new_ctx_len: newCtxLen })
+      logger.info(
+        `auto_increase_ctx (mlx) reload complete model=${model_id} port=${sInfo?.port} newCtxLen=${newCtxLen}; notified UI via events + tauri`
+      )
+    } catch (e) {
+      logger.error(
+        `auto_increase_ctx handler failed for ${payload.model_id}: ${e}`
+      )
+      await sendDone({ ok: false, reason: `exception: ${e}` })
     }
   }
 
@@ -425,59 +592,99 @@ export default class mlx_extension extends AIEngine {
     body: string,
     abortController?: AbortController
   ): AsyncIterable<chatCompletionChunk> {
-    // AbortSignal.any() is not available in all runtimes (e.g. WebKit/JavaScriptCore),
-    // so we manually combine the timeout and external abort signals.
-    const combinedController = new AbortController()
-    const timeoutId = setTimeout(
-      () => combinedController.abort(new Error('Request timed out')),
-      this.timeout * 1000
-    )
-    if (abortController?.signal) {
-      if (abortController.signal.aborted) {
-        combinedController.abort(abortController.signal.reason)
-      } else {
-        abortController.signal.addEventListener(
-          'abort',
-          () => combinedController.abort(abortController.signal.reason),
-          { once: true }
-        )
+    // Stream via Tauri IPC Channel instead of the intercepted global fetch.
+    // tauri_plugin_http overrides window.fetch and routes requests through
+    // reqwest, but its ReadableStream bridge does not properly relay SSE chunks
+    // back to the webview. Using a dedicated Tauri command + Channel bypasses
+    // the plugin entirely.
+
+    const rawChunks: string[] = []
+    let streamDone = false
+    let streamError: Error | null = null
+    let wakeUp: (() => void) | null = null
+
+    const channel = new Channel<{ data: string }>()
+    channel.onmessage = (event: { data: string }) => {
+      rawChunks.push(event.data)
+      if (wakeUp) {
+        wakeUp()
+        wakeUp = null
       }
     }
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
+
+    const headersRecord: Record<string, string> = {}
+    if (headers && typeof headers === 'object') {
+      for (const [k, v] of Object.entries(headers)) {
+        headersRecord[k] = String(v)
+      }
+    }
+
+    const timeoutNum = Number(this.timeout) || 600
+
+    const requestPromise = invoke<number>('stream_local_http', {
+      url,
+      headers: headersRecord,
       body,
-      signal: combinedController.signal,
-    }).finally(() => clearTimeout(timeoutId))
+      timeoutSecs: timeoutNum,
+      onChunk: channel,
+    })
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => null)
-      throw new Error(
-        `MLX API request failed with status ${response.status}: ${JSON.stringify(errorData)}`
-      )
+    requestPromise
+      .then((status) => {
+        logger.info('[mlx-stream] invoke resolved, status:', status)
+        streamDone = true
+        if (wakeUp) {
+          wakeUp()
+          wakeUp = null
+        }
+      })
+      .catch((e) => {
+        logger.error('[mlx-stream] invoke rejected:', String(e))
+        streamError = new Error(String(e))
+        streamDone = true
+        if (wakeUp) {
+          wakeUp()
+          wakeUp = null
+        }
+      })
+
+    if (abortController?.signal) {
+      const onAbort = () => {
+        streamError = streamError ?? new Error('Request aborted')
+        streamDone = true
+        if (wakeUp) {
+          wakeUp()
+          wakeUp = null
+        }
+      }
+      if (abortController.signal.aborted) {
+        onAbort()
+      } else {
+        abortController.signal.addEventListener('abort', onAbort, {
+          once: true,
+        })
+      }
     }
 
-    if (!response.body) {
-      throw new Error('Response body is null')
-    }
-
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder('utf-8')
     let buffer = ''
 
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
+    while (true) {
+      while (rawChunks.length === 0 && !streamDone) {
+        await new Promise<void>((resolve) => {
+          wakeUp = resolve
+        })
+      }
 
-        buffer += decoder.decode(value, { stream: true })
-
+      while (rawChunks.length > 0) {
+        buffer += rawChunks.shift()!
         const lines = buffer.split('\n')
         buffer = lines.pop() || ''
 
         for (const line of lines) {
           const trimmedLine = line.trim()
-          if (!trimmedLine || trimmedLine === 'data: [DONE]') continue
+          if (!trimmedLine || trimmedLine === 'data: [DONE]') {
+            continue
+          }
 
           if (trimmedLine.startsWith('data: ')) {
             const jsonStr = trimmedLine.slice(6)
@@ -500,8 +707,9 @@ export default class mlx_extension extends AIEngine {
           }
         }
       }
-    } finally {
-      reader.releaseLock()
+
+      if (streamError) throw streamError
+      if (streamDone) break
     }
   }
 
@@ -1021,5 +1229,347 @@ export default class mlx_extension extends AIEngine {
         return false
       }
     }
+  }
+
+  /// ──────────────────────────────────────────────────────────────────
+  /// DFlash speculative decoding orchestration
+  /// ──────────────────────────────────────────────────────────────────
+  ///
+  /// The provider-level toggle in the UI calls into these methods. The
+  /// actual `--draft-model <path>` flag is plumbed through `performLoad`
+  /// via `MlxConfig.draft_model_path` (see commands.rs lines 100-108).
+
+  /**
+   * Local folder where auto-downloaded DFlash drafts are cached. Lives
+   * alongside `mlx/models/` under the Jan data dir so manually-imported
+   * z-lab models in `mlx/models/` and tool-managed copies in
+   * `mlx/draft-models/` share the same parent.
+   */
+  private async getDflashDraftRoot(): Promise<string> {
+    return await joinPath([
+      await getJanDataFolderPath(),
+      'mlx',
+      'draft-models',
+    ])
+  }
+
+  /**
+   * Resolve an already-present draft directory for `repo`, if any.
+   *
+   * Lookup order:
+   *   1. `mlx/models/<repo with '/' -> '_'>/`  — the canonical layout produced
+   *      by importing a HF repo through the regular MLX import flow (e.g. the
+   *      user manually adding `z-lab/Qwen3.5-4B-DFlash`).
+   *   2. `mlx/draft-models/<repo>/`            — auto-downloaded cache from a
+   *      previous `enableDflash` run.
+   *
+   * A directory is considered usable when:
+   *   - `config.json` is present, AND
+   *   - any `*.safetensors` weight file (single-file `model.safetensors`
+   *     OR sharded `model-*.safetensors` plus `model.safetensors.index.json`)
+   *     is present.
+   *
+   * This mirrors what `dflash.model_mlx.load_draft` actually reads, and
+   * makes the lookup forgiving of repos that ship sharded weights.
+   */
+  private async resolveLocalDraftDir(repo: string): Promise<string | null> {
+    const janDataFolderPath = await getJanDataFolderPath()
+
+    const candidates = [
+      await joinPath([
+        janDataFolderPath,
+        'mlx',
+        'models',
+        repo.split('/').join('_'),
+      ]),
+      await joinPath([janDataFolderPath, 'mlx', 'draft-models', repo]),
+    ]
+
+    for (const dir of candidates) {
+      if (!(await fs.existsSync(dir))) continue
+
+      const configPath = await joinPath([dir, 'config.json'])
+      if (!(await fs.existsSync(configPath))) continue
+
+      const entries = await fs.readdirSync(dir).catch(() => [] as string[])
+      /// `fs.readdirSync` from `@janhq/core` returns full absolute paths.
+      const hasWeights = entries.some((p) => /\.safetensors$/i.test(p))
+      if (!hasWeights) continue
+
+      logger.info(`resolveLocalDraftDir: ${repo} found at ${dir}`)
+      return dir
+    }
+
+    return null
+  }
+
+  /**
+   * Whether the given MLX model has a known DFlash draft sibling.
+   *
+   * Pure / synchronous registry lookup — never touches the network. The
+   * resolved manifest is returned alongside so the caller can hand it back
+   * to `enableDflash` without re-resolving.
+   */
+  async checkDflashSupport(modelId: string): Promise<{
+    supported: boolean
+    repo?: string
+    required?: string[]
+    optional?: string[]
+    /// True iff a usable draft directory is already present on disk —
+    /// the UI uses this to choose between a "Loading…" toast (instant
+    /// hand-off to the MLX server) and a "Downloading…" toast.
+    local?: boolean
+    localPath?: string
+  }> {
+    logger.info(`checkDflashSupport: resolving draft for ${modelId}`)
+    try {
+      const resolution = resolveDflashDraft(modelId)
+      if (!resolution) {
+        logger.info(`checkDflashSupport: ${modelId} unsupported`)
+        return { supported: false }
+      }
+      const localPath = await this.resolveLocalDraftDir(resolution.repo)
+      logger.info(
+        `checkDflashSupport: ${modelId} -> ${resolution.repo}` +
+          (localPath ? ` (local: ${localPath})` : ' (needs download)')
+      )
+      return {
+        supported: true,
+        repo: resolution.repo,
+        required: resolution.required,
+        optional: resolution.optional,
+        local: localPath !== null,
+        localPath: localPath ?? undefined,
+      }
+    } catch (e) {
+      logger.warn(`checkDflashSupport failed for ${modelId}: ${e}`)
+      return { supported: false }
+    }
+  }
+
+  /**
+   * Ensure a usable draft directory exists on disk and return its absolute
+   * path (suitable for `--draft-model <dir>`).
+   *
+   * Local-first: if the user already imported the draft repo into
+   * `mlx/models/...` or a previous run cached it under `mlx/draft-models/...`,
+   * no network call is made. Otherwise required + optional files are pulled
+   * directly from `https://huggingface.co/<repo>/resolve/main/<file>` —
+   * `huggingface.co/api/...` is never touched.
+   */
+  async ensureDflashDraftDownloaded(
+    repo: string,
+    required: string[],
+    optional: string[] = []
+  ): Promise<string> {
+    const local = await this.resolveLocalDraftDir(repo)
+    if (local) {
+      logger.info(`ensureDflashDraftDownloaded: using local ${local}`)
+      return local
+    }
+
+    const draftRoot = await this.getDflashDraftRoot()
+    const draftDir = await joinPath([draftRoot, repo])
+
+    if (!(await fs.existsSync(draftRoot))) {
+      await fs.mkdir(draftRoot)
+    }
+    if (!(await fs.existsSync(draftDir))) {
+      await fs.mkdir(draftDir)
+    }
+
+    /// Required files are mandatory; optional ones are best-effort. We list
+    /// `required` first so a 404 on those bubbles up before optional misses
+    /// are even attempted.
+    const missingRequired: string[] = []
+    for (const f of required) {
+      const target = await joinPath([draftDir, f])
+      if (!(await fs.existsSync(target))) missingRequired.push(f)
+    }
+    const missingOptional: string[] = []
+    for (const f of optional) {
+      const target = await joinPath([draftDir, f])
+      if (!(await fs.existsSync(target))) missingOptional.push(f)
+    }
+
+    if (missingRequired.length === 0 && missingOptional.length === 0) {
+      logger.info(`DFlash draft already present: ${draftDir}`)
+      return draftDir
+    }
+
+    logger.info(
+      `ensureDflashDraftDownloaded: ${repo} missing required=${missingRequired.length} optional=${missingOptional.length}; downloading to ${draftDir}`
+    )
+
+    const downloadManager = window.core.extensionManager.getByName(
+      '@janhq/download-extension'
+    )
+
+    /// Tauri event names allow only alphanumeric, `-`, `/`, `:` and `_`.
+    /// Repo ids like `Qwen3.5-4B-DFlash` and filenames like
+    /// `chat_template.jinja` contain dots, which would otherwise crash the
+    /// `listen('download-${taskId}', ...)` call inside the download
+    /// manager. Sanitize once and reuse.
+    const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9\-_/:]/g, '_')
+    const safeRepoId = sanitize(repo)
+    /// Prefix with `mlx/dflash:` so that
+    ///   * the download popover's `download.id.startsWith('mlx')` cancel
+    ///     routing routes back through the download manager;
+    ///   * users can tell DFlash drafts apart from regular MLX downloads.
+    const downloadModelId = `mlx/dflash:${safeRepoId}`
+
+    const buildItem = async (filename: string) => ({
+      url: `https://huggingface.co/${repo}/resolve/main/${filename}`,
+      save_path: await joinPath([draftDir, filename]),
+      model_id: downloadModelId,
+    })
+
+    /// Required pass: download everything in one batch; if it fails, abort —
+    /// a missing required file means the repo is genuinely broken or the
+    /// manifest is wrong.
+    if (missingRequired.length > 0) {
+      const items: any[] = []
+      for (const f of missingRequired) items.push(await buildItem(f))
+
+      await downloadManager.downloadFiles(
+        items,
+        downloadModelId,
+        (transferred: number, total: number) => {
+          events.emit(DownloadEvent.onFileDownloadUpdate, {
+            modelId: downloadModelId,
+            percent: total > 0 ? transferred / total : 0,
+            size: { transferred, total },
+            downloadType: 'Model',
+          })
+        },
+        false
+      )
+    }
+
+    /// Optional pass: try each file individually so a 404 on one does not
+    /// poison the whole batch. Failures are logged and swallowed. The
+    /// per-file taskId must also be sanitized — `chat_template.jinja` and
+    /// friends carry a dot.
+    for (const f of missingOptional) {
+      try {
+        const item = await buildItem(f)
+        await downloadManager.downloadFiles(
+          [item],
+          `${downloadModelId}/opt/${sanitize(f)}`,
+          () => {
+            /* optional file progress is not surfaced in the popover */
+          },
+          false
+        )
+      } catch (e) {
+        logger.info(
+          `ensureDflashDraftDownloaded: optional ${f} unavailable for ${repo}: ${e}`
+        )
+      }
+    }
+
+    events.emit('onFileDownloadSuccess', {
+      modelId: downloadModelId,
+      downloadType: 'Model',
+    })
+
+    logger.info(`DFlash draft '${repo}' ready at ${draftDir}`)
+    return draftDir
+  }
+
+  /**
+   * Enable DFlash for `modelId`: resolve the manifest, ensure the draft
+   * directory exists locally (download if needed), unload the active
+   * session, and reload it with the draft path wired in.
+   *
+   * `prefetched` lets callers reuse the result of `checkDflashSupport` so
+   * the static lookup is not repeated.
+   */
+  async enableDflash(
+    modelId: string,
+    blockSize: number = 16,
+    prefetched?: {
+      repo: string
+      required?: string[]
+      optional?: string[]
+    }
+  ): Promise<void> {
+    let resolution: DraftResolution
+    if (prefetched?.repo) {
+      resolution = {
+        repo: prefetched.repo,
+        required: prefetched.required ?? [],
+        optional: prefetched.optional ?? [],
+      }
+      /// Empty `required` would short-circuit local lookup; in that case
+      /// pull the canonical manifest so we still know what to verify.
+      if (resolution.required.length === 0) {
+        const fresh = resolveDflashDraft(prefetched.repo)
+        if (fresh) {
+          resolution = fresh
+        }
+      }
+    } else {
+      const fresh = resolveDflashDraft(modelId)
+      if (!fresh) {
+        throw new Error(`Model ${modelId} does not support DFlash`)
+      }
+      resolution = fresh
+    }
+
+    const draftDir = await this.ensureDflashDraftDownloaded(
+      resolution.repo,
+      resolution.required,
+      resolution.optional
+    )
+    logger.info(`enableDflash: draft ready at ${draftDir}`)
+
+    /// Unload + reload the live session so the DFlash server is restarted
+    /// with the new CLI flags. `findSessionByModel` returns undefined when
+    /// no session exists; in that case the next manual start will pick up
+    /// the toggle from `this.config`.
+    const sInfo = await this.findSessionByModel(modelId)
+    if (sInfo) {
+      logger.info(`enableDflash: reloading ${modelId} with DFlash`)
+      try {
+        await this.unload(modelId)
+      } catch (e) {
+        logger.warn(`enableDflash: unload failed for ${modelId}: ${e}`)
+      }
+      await this.load(modelId, {
+        dflash_enabled: true,
+        draft_model_path: draftDir,
+        block_size: blockSize,
+      })
+      logger.info(`enableDflash: ${modelId} reloaded with DFlash`)
+    }
+
+    /// Update in-memory config so subsequent `performLoad` calls (e.g. from
+    /// auto-increase-ctx, or a fresh start) keep DFlash enabled.
+    this.config.dflash_enabled = true
+    this.config.draft_model_path = draftDir
+    this.config.block_size = blockSize
+  }
+
+  /**
+   * Disable DFlash for `modelId`: unload + reload as plain MLX.
+   */
+  async disableDflash(modelId: string): Promise<void> {
+    const sInfo = await this.findSessionByModel(modelId)
+    if (sInfo) {
+      try {
+        await this.unload(modelId)
+      } catch (e) {
+        logger.warn(`disableDflash: unload failed for ${modelId}: ${e}`)
+      }
+      await this.load(modelId, {
+        dflash_enabled: false,
+        draft_model_path: '',
+        block_size: 0,
+      })
+    }
+
+    this.config.dflash_enabled = false
+    this.config.draft_model_path = ''
   }
 }

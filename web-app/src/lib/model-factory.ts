@@ -55,6 +55,7 @@ import { createXai } from '@ai-sdk/xai'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
+import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 
 /**
  * Llama.cpp timings structure from the response
@@ -124,7 +125,10 @@ function createCustomFetch(
   baseFetch: typeof httpFetch,
   parameters: Record<string, unknown>
 ): typeof httpFetch {
-  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  return async (
+    input: RequestInfo | URL,
+    init?: RequestInit
+  ): Promise<Response> => {
     // Only transform POST requests with JSON body
     if (init?.method === 'POST' || !init?.method) {
       const body = init?.body ? JSON.parse(init.body as string) : {}
@@ -185,11 +189,12 @@ function createLocalStreamingFetch(
     const hdrs: Record<string, string> = {}
     if (init?.headers) {
       const h = init.headers
-      if (h instanceof Headers) h.forEach((v, k) => { hdrs[k] = v })
-      else if (Array.isArray(h))
-        for (const [k, v] of h) hdrs[k] = String(v)
-      else
-        for (const [k, v] of Object.entries(h)) hdrs[k] = String(v)
+      if (h instanceof Headers)
+        h.forEach((v, k) => {
+          hdrs[k] = v
+        })
+      else if (Array.isArray(h)) for (const [k, v] of h) hdrs[k] = String(v)
+      else for (const [k, v] of Object.entries(h)) hdrs[k] = String(v)
     }
 
     const chunks: string[] = []
@@ -285,6 +290,27 @@ function createLocalStreamingFetch(
 }
 
 /**
+ * Build the base URL of the running Local API Server proxy.
+ * Cloud providers route inference through this proxy so `proxy.rs` can
+ * dispatch by model name to the real provider endpoint.
+ */
+function getLocalApiServerBaseURL(): {
+  baseURL: string
+  apiKey: string
+} {
+  const { serverHost, serverPort, apiPrefix, apiKey } =
+    useLocalApiServer.getState()
+  // 0.0.0.0 is a listen-any address, not a dial address — clients must use
+  // the loopback equivalent.
+  const host = serverHost === '0.0.0.0' ? '127.0.0.1' : serverHost
+  const prefix = apiPrefix.startsWith('/') ? apiPrefix : `/${apiPrefix}`
+  return {
+    baseURL: `http://${host}:${serverPort}${prefix}`,
+    apiKey,
+  }
+}
+
+/**
  * Factory for creating language models based on provider type.
  * Supports native AI SDK providers (Anthropic, Google) and OpenAI-compatible providers.
  */
@@ -295,25 +321,40 @@ export class ModelFactory {
   static async createModel(
     modelId: string,
     provider: ProviderObject,
-    parameters: Record<string, unknown> = {}
+    parameters: Record<string, unknown> = {},
+    reasoningOverride?: Record<string, unknown>
   ): Promise<LanguageModel> {
     const providerName = provider.provider.toLowerCase()
+    const override = reasoningOverride ?? {}
+    // Local providers accept the full inference-parameter bag (top_k,
+    // repeat_penalty, stop_sequences, …) as body injection. Cloud providers
+    // must receive ONLY the reasoning-override fields — otherwise local-only
+    // keys like `top_k` leak into request bodies and strict APIs (OpenAI)
+    // respond with 400 "Unknown parameter".
+    const localInjected: Record<string, unknown> = {
+      ...parameters,
+      ...override,
+    }
 
     switch (providerName) {
       case 'llamacpp':
-        return this.createLlamaCppModel(modelId, provider, parameters)
+        return this.createLlamaCppModel(modelId, provider, localInjected)
 
       case 'mlx':
-        return this.createMlxModel(modelId, provider, parameters)
+        return this.createMlxModel(modelId, provider, localInjected)
 
       case 'foundation-models':
-        return this.createFoundationModelsModel(modelId, provider, parameters)
+        return this.createFoundationModelsModel(
+          modelId,
+          provider,
+          localInjected
+        )
 
       case 'anthropic':
-        return this.createAnthropicModel(modelId, provider)
+        return this.createAnthropicModel(modelId, provider, override)
 
       case 'openai':
-        return this.createOpenAIModel(modelId, provider)
+        return this.createOpenAIModel(modelId, provider, override)
       case 'google':
       case 'gemini':
       case 'azure':
@@ -326,13 +367,19 @@ export class ModelFactory {
       case 'perplexity':
       case 'moonshot':
       case 'minimax':
-        return this.createOpenAICompatibleModel(modelId, provider)
+        return this.createOpenAICompatibleModel(modelId, provider, override)
 
       case 'xai':
-        return this.createXaiModel(modelId, provider)
+        return this.createXaiModel(modelId, provider, override)
 
       default:
-        return this.createOpenAICompatibleModel(modelId, provider, parameters)
+        // User-registered custom OpenAI-compatible providers — keep the
+        // previous behaviour (full local-merged bag) for backwards compat.
+        return this.createOpenAICompatibleModel(
+          modelId,
+          provider,
+          localInjected
+        )
     }
   }
 
@@ -439,32 +486,25 @@ export class ModelFactory {
       Origin: 'tauri://localhost',
     }
 
-    // Custom fetch that merges parameters and calls /cancel on abort
+    // Use the same IPC-channel streaming fetch that llamacpp uses —
+    // tauri_plugin_http's ReadableStream bridge does not relay SSE chunks.
+    const baseFetch = createLocalStreamingFetch(httpFetch, parameters)
+
     const customFetch: typeof httpFetch = async (
       input: RequestInfo | URL,
       init?: RequestInit
     ): Promise<Response> => {
-      if (init?.method === 'POST' || !init?.method) {
-        const body = init?.body ? JSON.parse(init.body as string) : {}
-        const mergedBody = { ...body, ...parameters }
-        init = { ...init, body: JSON.stringify(mergedBody) }
-      }
-
-      // When the request is aborted, also call the server's /cancel endpoint
-      // to stop MLX inference immediately
       if (init?.signal) {
         init.signal.addEventListener('abort', () => {
           httpFetch(`${baseUrl}/v1/cancel`, {
             method: 'POST',
             headers: { ...authHeaders, 'Content-Type': 'application/json' },
             body: JSON.stringify({}),
-          }).catch(() => {
-            // Ignore cancel request errors
-          })
+          }).catch(() => {})
         })
       }
 
-      return httpFetch(input, init)
+      return baseFetch(input, init)
     }
 
     const model = new OpenAICompatibleChatLanguageModel(modelId, {
@@ -570,7 +610,11 @@ export class ModelFactory {
   }
 
   /**
-   * Create an Anthropic model using the official AI SDK
+   * Create an Anthropic model using the official AI SDK.
+   *
+   * Requests are routed through the Local API Server proxy which dispatches
+   * by model name to the configured Anthropic endpoint + key. The SDK still
+   * emits `/messages` and `proxy.rs` handles that route natively.
    */
   private static createAnthropicModel(
     modelId: string,
@@ -579,25 +623,33 @@ export class ModelFactory {
   ): LanguageModel {
     const headers: Record<string, string> = {}
 
-    // Add custom headers if specified (e.g., anthropic-version)
     if (provider.custom_header) {
       provider.custom_header.forEach((customHeader) => {
         headers[customHeader.header] = customHeader.value
       })
     }
 
+    const { baseURL, apiKey } = getLocalApiServerBaseURL()
+
     const anthropic = createAnthropic({
-      apiKey: provider.api_key,
-      baseURL: provider.base_url,
+      apiKey: apiKey || provider.api_key || 'local',
+      baseURL,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
-      fetch: createCustomFetch(httpFetch, parameters),
+      // Use the IPC-channel streaming fetch because the Local API Server is on
+      // localhost and tauri_plugin_http's ReadableStream bridge does not relay
+      // SSE chunks from loopback targets.
+      fetch: createLocalStreamingFetch(httpFetch, parameters),
     })
 
     return anthropic(modelId)
   }
 
   /**
-   * Create an OpenAI model using the official AI SDK
+   * Create an OpenAI model using the official AI SDK.
+   *
+   * Requests are routed through the Local API Server proxy; `proxy.rs`
+   * dispatches to the real OpenAI endpoint based on the `model` field and
+   * the provider config registered via `register_provider_config`.
    */
   private static createOpenAIModel(
     modelId: string,
@@ -606,25 +658,34 @@ export class ModelFactory {
   ): LanguageModel {
     const headers: Record<string, string> = {}
 
-    // Add custom headers if specified
     if (provider.custom_header) {
       provider.custom_header.forEach((customHeader) => {
         headers[customHeader.header] = customHeader.value
       })
     }
 
+    const { baseURL, apiKey } = getLocalApiServerBaseURL()
+
     const openai = createOpenAI({
-      apiKey: provider.api_key,
-      baseURL: provider.base_url,
+      apiKey: apiKey || provider.api_key || 'local',
+      baseURL,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
-      fetch: createCustomFetch(httpFetch, parameters),
+      // Use the IPC-channel streaming fetch because the Local API Server is on
+      // localhost and tauri_plugin_http's ReadableStream bridge does not relay
+      // SSE chunks from loopback targets.
+      fetch: createLocalStreamingFetch(httpFetch, parameters),
     })
 
-    return openai(modelId)
+    // AI SDK v5 routes `openai(id)` through the new Responses API
+    // (`POST /responses`), which the Local API Server proxy does not route.
+    // `openai.chat(id)` targets `POST /chat/completions`, which `proxy.rs`
+    // dispatches to the real provider via `register_provider_config`.
+    return openai.chat(modelId)
   }
 
   /**
-   * Create an XAI (Grok) model using the official AI SDK
+   * Create an XAI (Grok) model using the official AI SDK, routed through the
+   * Local API Server proxy.
    */
   private static createXaiModel(
     modelId: string,
@@ -633,25 +694,28 @@ export class ModelFactory {
   ): LanguageModel {
     const headers: Record<string, string> = {}
 
-    // Add custom headers if specified
     if (provider.custom_header) {
       provider.custom_header.forEach((customHeader) => {
         headers[customHeader.header] = customHeader.value
       })
     }
 
+    const { baseURL, apiKey } = getLocalApiServerBaseURL()
+
     const xai = createXai({
-      apiKey: provider.api_key,
-      baseURL: provider.base_url,
+      apiKey: apiKey || provider.api_key || 'local',
+      baseURL,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
-      fetch: createCustomFetch(httpFetch, parameters),
+      // Use the IPC-channel streaming fetch (see OpenAI factory rationale).
+      fetch: createLocalStreamingFetch(httpFetch, parameters),
     })
 
     return xai(modelId)
   }
 
   /**
-   * Create an OpenAI-compatible model for providers that support the OpenAI API format
+   * Create an OpenAI-compatible model for providers that support the OpenAI
+   * API format. Routed through the Local API Server proxy.
    */
   private static createOpenAICompatibleModel(
     modelId: string,
@@ -660,26 +724,43 @@ export class ModelFactory {
   ): LanguageModel {
     const headers: Record<string, string> = {}
 
-    // Add custom headers if specified
     if (provider.custom_header) {
       provider.custom_header.forEach((customHeader) => {
         headers[customHeader.header] = customHeader.value
       })
     }
 
-    // Add authorization header if api_key is present
-    if (provider.api_key) {
+    const { baseURL, apiKey } = getLocalApiServerBaseURL()
+
+    // Proxy replaces the outbound Authorization header with the registered
+    // provider api_key, so only the local-server apiKey matters here (if set).
+    if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`
+    } else if (provider.api_key) {
       headers['Authorization'] = `Bearer ${provider.api_key}`
     }
 
     const openAICompatible = createOpenAICompatible({
       name: provider.provider,
-      baseURL: provider.base_url || 'https://api.openai.com/v1',
+      baseURL,
       headers,
       includeUsage: true,
-      fetch: createCustomFetch(httpFetch, parameters),
+      // Use the IPC-channel streaming fetch (see OpenAI factory rationale).
+      fetch: createLocalStreamingFetch(httpFetch, parameters),
     })
 
-    return openAICompatible.languageModel(modelId)
+    // Some OpenAI-compatible providers (MiniMax, DeepSeek, Moonshot, NVIDIA
+    // NIM, etc.) stream chain-of-thought inline as <think>...</think> inside
+    // the assistant text instead of as a separate reasoning field. Without
+    // this middleware the tags leak into the rendered message verbatim; with
+    // it, the reasoning is split into a dedicated reasoning part. The
+    // middleware is a no-op for providers that never emit <think> tags.
+    return wrapLanguageModel({
+      model: openAICompatible.languageModel(modelId),
+      middleware: extractReasoningMiddleware({
+        tagName: 'think',
+        separator: '\n',
+      }),
+    })
   }
 }

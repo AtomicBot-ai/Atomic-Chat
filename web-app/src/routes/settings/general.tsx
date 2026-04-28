@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardItem } from '@/containers/Card'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { useToolApproval } from '@/hooks/useToolApproval'
+import { useThreadNotifications } from '@/hooks/useThreadNotifications'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useEffect, useState, useCallback } from 'react'
 import ChangeDataFolderLocation from '@/containers/dialogs/ChangeDataFolderLocation'
@@ -29,6 +31,8 @@ import { Input } from '@/components/ui/input'
 import { useHardware } from '@/hooks/useHardware'
 import LanguageSwitcher from '@/containers/LanguageSwitcher'
 import { isRootDir } from '@/utils/path'
+import { useAnalytic } from '@/hooks/useAnalytic'
+import posthog from 'posthog-js'
 const TOKEN_VALIDATION_TIMEOUT_MS = 10_000
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -44,7 +48,20 @@ function General() {
     huggingfaceToken,
     setHuggingfaceToken,
   } = useGeneralSetting()
+  const allowAllMCPPermissions = useToolApproval(
+    (state) => state.allowAllMCPPermissions
+  )
+  const setAllowAllMCPPermissions = useToolApproval(
+    (state) => state.setAllowAllMCPPermissions
+  )
+  const notificationsGloballyEnabled = useThreadNotifications(
+    (state) => state.globallyEnabled !== false
+  )
+  const setNotificationsGloballyEnabled = useThreadNotifications(
+    (state) => state.setGloballyEnabled
+  )
   const serviceHub = useServiceHub()
+  const { setProductAnalytic, productAnalytic } = useAnalytic()
 
   const openFileTitle = (): string => {
     if (IS_MACOS) {
@@ -327,6 +344,62 @@ function General() {
                     AtomicBot-ai/Atomic-Chat
                   </a>
                 }
+              />
+            </Card>
+
+            {/* Chat behavior */}
+            <Card title={t('settings:chatBehavior.title')}>
+              <CardItem
+                title={t('settings:chatBehavior.autoApproveTools')}
+                description={t('settings:chatBehavior.autoApproveToolsDesc')}
+                actions={
+                  <Switch
+                    checked={allowAllMCPPermissions}
+                    onCheckedChange={setAllowAllMCPPermissions}
+                  />
+                }
+              />
+              <CardItem
+                title={t('settings:chatBehavior.desktopNotifications')}
+                description={t(
+                  'settings:chatBehavior.desktopNotificationsDesc'
+                )}
+                actions={
+                  <Switch
+                    checked={notificationsGloballyEnabled}
+                    onCheckedChange={setNotificationsGloballyEnabled}
+                  />
+                }
+              />
+            </Card>
+
+            {/* Privacy / Analytics */}
+            <Card
+              header={
+                <div className="flex items-center justify-between mb-4">
+                  <h1 className="font-medium text-foreground text-base">
+                    {t('settings:privacy.analytics')}
+                  </h1>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={productAnalytic}
+                      onCheckedChange={(state) => {
+                        if (state) {
+                          posthog.opt_in_capturing()
+                        } else {
+                          posthog.opt_out_capturing()
+                        }
+                        setProductAnalytic(state)
+                      }}
+                    />
+                  </div>
+                </div>
+              }
+            >
+              <CardItem
+                title={t('settings:privacy.helpUsImprove')}
+                description={<p>{t('settings:privacy.helpUsImproveDesc')}</p>}
+                align="start"
               />
             </Card>
 

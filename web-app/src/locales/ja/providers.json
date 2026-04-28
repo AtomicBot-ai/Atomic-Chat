@@ -57,5 +57,10 @@
   },
   "addProvider": "プロバイダーを追加",
   "addOpenAIProvider": "OpenAIプロバイダーを追加",
-  "enterNameForProvider": "プロバイダーの名前を入力してください"
+  "enterNameForProvider": "プロバイダーの名前を入力してください",
+  "llamacpp": {
+    "concurrentMode": {
+      "perSlotContextWarning": "スロットごとのコンテキストは ctx_size をスロット数で割った値です。スロット数が少ないほど、リクエストごとのコンテキストが大きくなります。"
+    }
+  }
 }

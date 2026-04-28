@@ -105,6 +105,10 @@ export default defineConfig(({ mode }) => {
       AUTO_UPDATER_DISABLED: JSON.stringify(
         env.AUTO_UPDATER_DISABLED === 'true'
       ),
+      FORCE_ONBOARDING: JSON.stringify(
+        process.env.FORCE_ONBOARDING === 'true' ||
+          env.FORCE_ONBOARDING === 'true'
+      ),
       UPDATE_CHECK_INTERVAL_MS: JSON.stringify(
         Number(env.UPDATE_CHECK_INTERVAL_MS) || 60 * 60 * 1000
       ),

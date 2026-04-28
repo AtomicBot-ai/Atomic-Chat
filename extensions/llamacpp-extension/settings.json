@@ -11,6 +11,60 @@
     }
   },
   {
+    "key": "concurrent_mode",
+    "title": "Concurrent Mode",
+    "description": "Run the model as a multi-slot server: serves multiple chat requests in parallel on one loaded model. Overrides Parallel Sequences and Continuous Batching and exposes Prometheus /metrics.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": false
+    }
+  },
+  {
+    "key": "concurrent_slots",
+    "title": "Concurrent Slots",
+    "description": "Number of parallel slots when Concurrent Mode is enabled. Per-slot context = ctx_size / slots. Higher values serve more concurrent requests but give each less context.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 8,
+      "placeholder": "8",
+      "type": "number",
+      "textAlign": "right",
+      "min": 2,
+      "max": 16
+    }
+  },
+  {
+    "key": "expose_metrics",
+    "title": "Expose Prometheus /metrics",
+    "description": "Start llama-server with --metrics so the local API server can proxy /v1/metrics?model=<id>. Automatically enabled by Concurrent Mode.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": false
+    }
+  },
+  {
+    "key": "parallel",
+    "title": "Parallel Sequences",
+    "description": "Number of parallel sequences to decode (0 = llama.cpp default of 1). Set to 1 to also enable -kvu for optimized single-request serving. Ignored when Concurrent Mode is on.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 1,
+      "placeholder": "1",
+      "type": "number",
+      "textAlign": "right",
+      "min": 0
+    }
+  },
+  {
+    "key": "cont_batching",
+    "title": "Continuous Batching",
+    "description": "Enable continuous batching (a.k.a dynamic batching) for concurrent requests.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": false
+    }
+  },
+  {
     "key": "llamacpp_env",
     "title": "Environmental variables",
     "description": "Environmental variables for llama.cpp(KEY=VALUE), separated by ';'",
@@ -173,28 +227,6 @@
         { "value": "on", "name": "On" },
         { "value": "off", "name": "Off" }
       ]
-    }
-  },
-  {
-    "key": "parallel",
-    "title": "Parallel Sequences",
-    "description": "Number of parallel sequences to decode (0 = llama.cpp default of 1). Set to 1 to also enable -kvu for optimized single-request serving.",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": 1,
-      "placeholder": "1",
-      "type": "number",
-      "textAlign": "right",
-      "min": 0
-    }
-  },
-  {
-    "key": "cont_batching",
-    "title": "Continuous Batching",
-    "description": "Enable continuous batching (a.k.a dynamic batching) for concurrent requests.",
-    "controllerType": "checkbox",
-    "controllerProps": {
-      "value": false
     }
   },
   {

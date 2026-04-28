@@ -13,7 +13,7 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
-import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
+import { useInitialMessage } from '@/hooks/useInitialMessage'
 import { useChat } from '@/hooks/use-chat'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { renderInstructions } from '@/lib/instructionTemplate'
@@ -45,7 +45,12 @@ import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
-import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
+import {
+  OUT_OF_CONTEXT_SIZE,
+  MODEL_ACCESS_DENIED_TITLE,
+  MODEL_ACCESS_DENIED_MESSAGE,
+  isModelAccessError,
+} from '@/utils/error'
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
@@ -54,6 +59,7 @@ import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useAgentMode } from '@/hooks/useAgentMode'
+import posthog from 'posthog-js'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -493,7 +499,14 @@ function ThreadDetail() {
     ) => {
       // Get all attachments from the store (includes both images and documents)
       const allAttachments = getAttachments(attachmentsKey)
-      console.log('[processAndSendMessage] attachmentsKey:', attachmentsKey, 'allAttachments:', allAttachments.length, 'docs:', allAttachments.filter(a => a.type === 'document').length)
+      console.log(
+        '[processAndSendMessage] attachmentsKey:',
+        attachmentsKey,
+        'allAttachments:',
+        allAttachments.length,
+        'docs:',
+        allAttachments.filter((a) => a.type === 'document').length
+      )
 
       // Convert image files to attachments for persistence
       const imageAttachments = files?.map((file) => {
@@ -573,13 +586,27 @@ function ThreadDetail() {
         })
       }
 
-      console.log('[processAndSendMessage] Calling sendMessage with parts:', parts.length, 'messageId:', messageId)
+      console.log(
+        '[processAndSendMessage] Calling sendMessage with parts:',
+        parts.length,
+        'messageId:',
+        messageId
+      )
       sendMessage({
         parts,
         id: messageId,
         metadata: userMessage.metadata,
       })
       console.log('[processAndSendMessage] sendMessage called successfully')
+
+      posthog.capture('chat_request_sent', {
+        source: 'chat',
+        thread_id: threadId,
+        model_id: selectedModel?.id,
+        provider: selectedProvider,
+        has_attachments: processedAttachments.length > 0,
+        attachment_count: processedAttachments.length,
+      })
 
       // Clear attachments after sending
       clearAttachmentsForThread(attachmentsKey)
@@ -594,46 +621,29 @@ function ThreadDetail() {
       clearAttachmentsForThread,
       serviceHub,
       selectedProvider,
+      selectedModel,
     ]
   )
 
-  // Check for and send initial message from sessionStorage
+  // Consume the initial message handed off from the home screen via the
+  // in-memory useInitialMessage store (avoids sessionStorage size limits for
+  // attachments).
   const initialMessageSentRef = useRef(false)
-  
+
   useEffect(() => {
-    // Prevent duplicate sends
     if (initialMessageSentRef.current) return
 
-    const initialMessageKey = `${SESSION_STORAGE_PREFIX.INITIAL_MESSAGE}${threadId}`
+    const message = useInitialMessage.getState().consume(threadId)
+    if (!message) return
 
-    const storedMessage = sessionStorage.getItem(initialMessageKey)
-
-    if (storedMessage) {
-      // Mark as sent immediately to prevent duplicate sends
-      sessionStorage.removeItem(initialMessageKey)
-      initialMessageSentRef.current = true
-
-      console.log('[ThreadPage] Found initial message in sessionStorage, sending...')
-
-      // Process message asynchronously
-      ;(async () => {
-        try {
-          const message = JSON.parse(storedMessage) as {
-            text: string
-            files?: Array<{ type: string; mediaType: string; url: string }>
-          }
-
-          console.log('[ThreadPage] Calling processAndSendMessage with:', {
-            text: message.text?.slice(0, 50),
-            filesCount: message.files?.length ?? 0,
-          })
-          await processAndSendMessage(message.text, message.files)
-          console.log('[ThreadPage] processAndSendMessage completed')
-        } catch (error) {
-          console.error('[ThreadPage] Failed to process initial message:', error)
-        }
-      })()
-    }
+    initialMessageSentRef.current = true
+    ;(async () => {
+      try {
+        await processAndSendMessage(message.text, message.files)
+      } catch (error) {
+        console.error('[ThreadPage] Failed to process initial message:', error)
+      }
+    })()
   }, [threadId, processAndSendMessage])
 
   // Handle submit from ChatInput
@@ -830,9 +840,7 @@ function ThreadDetail() {
   setContinueFromContentRef.current = setContinueFromContent
 
   // Skip auto-context-increase in agent mode
-  const agentModeActive = useAgentMode(
-    (s) => s.agentThreads[threadId] === true
-  )
+  const agentModeActive = useAgentMode((s) => s.agentThreads[threadId] === true)
   useEffect(() => {
     if (!error || agentModeActive) return
     const autoIncrease =
@@ -855,7 +863,10 @@ function ThreadDetail() {
     if (status === 'streaming' || status === 'submitted') {
       setContextLimitError(null)
     }
-    if (isAutoIncreasingContext && (status === 'streaming' || status === 'error')) {
+    if (
+      isAutoIncreasingContext &&
+      (status === 'streaming' || status === 'error')
+    ) {
       setIsAutoIncreasingContext(false)
     }
     if (status === 'error' && pendingContinueMessage) {
@@ -863,7 +874,7 @@ function ThreadDetail() {
     }
   }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
 
-   const threadModel = useMemo(
+  const threadModel = useMemo(
     () => searchThreadModel ?? thread?.model,
     [searchThreadModel, thread]
   )
@@ -916,7 +927,8 @@ function ThreadDetail() {
                   isAnimating={false}
                 />
               )}
-              {(status === CHAT_STATUS.SUBMITTED || isAutoIncreasingContext) && (
+              {(status === CHAT_STATUS.SUBMITTED ||
+                isAutoIncreasingContext) && (
                 <div className="flex flex-row items-center gap-2">
                   {(pendingContinueMessage || isAutoIncreasingContext) && (
                     <Shimmer duration={1}>Growing the Mind...</Shimmer>
@@ -924,41 +936,58 @@ function ThreadDetail() {
                   {status === CHAT_STATUS.SUBMITTED && <PromptProgress />}
                 </div>
               )}
-              {(error || contextLimitError) && !isAutoIncreasingContext && (
-                <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
-                  <div className="flex items-start gap-3">
-                    <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-destructive mb-1">
-                        Error generating response
-                      </p>
-                      <div className="table table-fixed w-full">
-                        <span
-                          className="text-sm text-muted-foreground table-cell align-middle"
-                          style={{ wordWrap: 'break-word' }}
-                        >
-                          {(error ?? contextLimitError)?.message}
-                        </span>
+              {(error || contextLimitError) &&
+                !isAutoIncreasingContext &&
+                (() => {
+                  const activeError = error ?? contextLimitError
+                  const rawMessage = activeError?.message
+                  const lowerMessage = rawMessage?.toLowerCase() ?? ''
+                  const isContextError =
+                    (lowerMessage.includes('context') &&
+                      (lowerMessage.includes('size') ||
+                        lowerMessage.includes('length') ||
+                        lowerMessage.includes('limit'))) ||
+                    rawMessage === OUT_OF_CONTEXT_SIZE
+                  const isAccessError =
+                    !isContextError && isModelAccessError(activeError)
+                  const title = isAccessError
+                    ? MODEL_ACCESS_DENIED_TITLE
+                    : 'Error generating response'
+                  const body = isAccessError
+                    ? MODEL_ACCESS_DENIED_MESSAGE
+                    : rawMessage
+                  return (
+                    <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
+                      <div className="flex items-start gap-3">
+                        <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-destructive mb-1">
+                            {title}
+                          </p>
+                          <div className="table table-fixed w-full">
+                            <span
+                              className="text-sm text-muted-foreground table-cell align-middle"
+                              style={{ wordWrap: 'break-word' }}
+                            >
+                              {body}
+                            </span>
+                          </div>
+                          {isContextError ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="mt-3"
+                              onClick={handleContextSizeIncrease}
+                            >
+                              <IconAlertCircle className="size-4 mr-2" />
+                              Increase Context Size
+                            </Button>
+                          ) : null}
+                        </div>
                       </div>
-                      {((error ?? contextLimitError)?.message?.toLowerCase().includes('context') &&
-                        ((error ?? contextLimitError)?.message?.toLowerCase().includes('size') ||
-                          (error ?? contextLimitError)?.message?.toLowerCase().includes('length') ||
-                          (error ?? contextLimitError)?.message?.toLowerCase().includes('limit'))) ||
-                      (error ?? contextLimitError)?.message === OUT_OF_CONTEXT_SIZE ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="mt-3"
-                          onClick={handleContextSizeIncrease}
-                        >
-                          <IconAlertCircle className="size-4 mr-2" />
-                          Increase Context Size
-                        </Button>
-                      ) : null}
                     </div>
-                  </div>
-                </div>
-              )}
+                  )
+                })()}
             </ConversationContent>
             <ConversationScrollButton />
           </Conversation>

@@ -88,6 +88,8 @@
   "tools": "Инструменты",
   "webSearch": "Веб-поиск",
   "reasoning": "Рассуждение",
+  "reasoningToggleEnabled": "Ризонинг включён",
+  "reasoningToggleDisabled": "Ризонинг выключен",
   "proactive": "Проактивность",
   "selectAModel": "Выберите модель",
   "noToolsAvailable": "Нет доступных инструментов",
@@ -128,6 +130,7 @@
     "chatInput": "Спрашивайте что угодно…"
   },
   "confirm": "Подтвердить",
+  "ok": "ОК",
   "continue": "Продолжить",
   "loading": "Загрузка…",
   "error": "Ошибка",

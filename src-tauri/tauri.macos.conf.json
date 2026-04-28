@@ -28,29 +28,29 @@
           "effects": ["fullScreenUI", "mica", "tabbed", "blur", "acrylic"],
           "state": "active"
         },
-        "dragDropEnabled": false
+        "dragDropEnabled": true
       }
     ]
   },
   "bundle": {
     "targets": ["app", "dmg"],
-    "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/bin/mlx-server", "resources/bin/mlx-swift_Cmlx.bundle", "resources/bin/foundation-models-server", "resources/bin/jan-cli", "resources/llamacpp-backend/"],
+    "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/bin/mlx-server", "resources/bin/mlx-server-version.txt", "resources/bin/mlx-server-backend.txt", "resources/bin/foundation-models-server", "resources/bin/jan-cli", "resources/llamacpp-backend/"],
     "externalBin": ["resources/bin/bun", "resources/bin/uv"],
     "macOS": {
       "entitlements": "./Entitlements.plist",
       "dmg": {
         "background": "./icons/dmg/background.png",
         "appPosition": {
-          "x": 144,
-          "y": 245
+          "x": 223,
+          "y": 416
         },
         "applicationFolderPosition": {
-          "x": 511,
-          "y": 245
+          "x": 801,
+          "y": 416
         },
         "windowSize": {
-          "width": 660,
-          "height": 400
+          "width": 1024,
+          "height": 640
         },
         "windowPosition": {
           "x": 400,

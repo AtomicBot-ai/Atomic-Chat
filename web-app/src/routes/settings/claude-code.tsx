@@ -29,6 +29,7 @@ import { IconChevronDown, IconPlus, IconX } from '@tabler/icons-react'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import Capabilities from '@/containers/Capabilities'
 import { getModelDisplayName, isLocalProvider } from '@/lib/utils'
+import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.claude_code as any)({
@@ -54,7 +55,6 @@ function ClaudeCodeIntegration() {
   const { serverStatus, setServerStatus } = useAppState()
   const { providers, selectedModel, selectedProvider, getProviderByName } =
     useModelProvider()
-  const setActiveModels = useAppState((state) => state.setActiveModels)
 
   const {
     models: helperModels,
@@ -108,7 +108,7 @@ function ClaudeCodeIntegration() {
         await serviceHub
           .models()
           .getActiveModels()
-          .then((models) => setActiveModels(models || []))
+          .then((models) => syncActiveModelsFromEngines(models || []))
         await new Promise((resolve) => setTimeout(resolve, 500))
       } else if (loadedModels.length > 0) {
         console.log(`Using already loaded models: ${loadedModels.join(', ')}`)
@@ -130,7 +130,7 @@ function ClaudeCodeIntegration() {
               serviceHub
                 .models()
                 .getActiveModels()
-                .then((models) => setActiveModels(models || []))
+                .then((models) => syncActiveModelsFromEngines(models || []))
               return new Promise((resolve) => setTimeout(resolve, 500))
             })
         }

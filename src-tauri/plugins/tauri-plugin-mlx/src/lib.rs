@@ -25,6 +25,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::find_mlx_session_by_model,
             commands::get_mlx_loaded_models,
             commands::get_mlx_all_sessions,
+            commands::get_mlx_server_version,
         ])
         .setup(|app, _api| {
             app.manage(state::MlxState::new());

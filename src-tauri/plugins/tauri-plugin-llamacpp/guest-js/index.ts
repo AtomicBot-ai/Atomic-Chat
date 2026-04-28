@@ -81,6 +81,9 @@ export function normalizeLlamacppConfig(config: any): LlamacppConfig {
 
     ctx_shift: asBool(config.ctx_shift),
     parallel: asNumber(config.parallel, 1),
+    concurrent_mode: asBool(config.concurrent_mode),
+    concurrent_slots: asNumber(config.concurrent_slots, 8),
+    expose_metrics: asBool(config.expose_metrics),
   }
 }
 

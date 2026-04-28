@@ -57,6 +57,19 @@
     "resetFactory": "Đặt lại về cài đặt gốc",
     "resetFactoryDesc": "Khôi phục ứng dụng về trạng thái ban đầu, xóa tất cả các mô hình và lịch sử trò chuyện. Hành động này không thể đảo ngược và chỉ được khuyến nghị nếu ứng dụng bị hỏng."
   },
+  "chatBehavior": {
+    "title": "Chat Behavior",
+    "disableReasoning": "Disable reasoning",
+    "disableReasoningDesc": "Skip the thinking phase on models that support reasoning.",
+    "autoApproveTools": "Auto-approve tool calls",
+    "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
+    "desktopNotifications": "Thông báo trên máy tính",
+    "desktopNotificationsDesc": "Gửi thông báo hệ thống khi phản hồi hoàn tất và cửa sổ không được lấy nét."
+  },
+  "threadNotifications": {
+    "notificationTitle": "Phản hồi đã sẵn sàng",
+    "notificationBody": "\"{{title}}\" đã tạo xong"
+  },
   "shortcuts": {
     "application": "Ứng dụng",
     "newChat": "Trò chuyện mới",
@@ -195,7 +208,7 @@
   "privacy": {
     "analytics": "Phân tích",
     "helpUsImprove": "Giúp chúng tôi cải thiện",
-    "helpUsImproveDesc": "Để giúp chúng tôi cải thiện Atomic Bot, bạn có thể chia sẻ dữ liệu ẩn danh như việc sử dụng tính năng và số lượng người dùng. Chúng tôi không bao giờ thu thập các cuộc trò chuyện hoặc thông tin cá nhân của bạn.",
+    "helpUsImproveDesc": "Để giúp chúng tôi cải thiện, bạn có thể chia sẻ dữ liệu ẩn danh như việc sử dụng tính năng và số lượng người dùng. Chúng tôi không bao giờ thu thập các cuộc trò chuyện hoặc thông tin cá nhân của bạn.",
     "privacyPolicy": "Bạn có toàn quyền kiểm soát dữ liệu của mình. Tìm hiểu thêm trong Chính sách Quyền riêng tư của chúng tôi.",
     "analyticsDesc": "Để cải thiện Atomic Bot, chúng tôi cần hiểu cách sử dụng—nhưng chỉ với sự giúp đỡ của bạn. Bạn có thể thay đổi cài đặt này bất cứ lúc nào.",
     "privacyPromises": "Lựa chọn của bạn ở đây sẽ không thay đổi các cam kết quyền riêng tư cốt lõi của chúng tôi:",

@@ -53,10 +53,30 @@ install-ios-rust-targets:
 dev: install-and-build
 	yarn download:bin
 	make download-llamacpp-backend
+	make build-mlx-server
+	make build-foundation-models-server-if-exists
+	make build-cli-dev
+	yarn dev
+
+# Same as `dev`, but skips (re)installing backends if they are already present.
+# Uses the `-if-exists` targets for llamacpp / mlx-server / foundation-models-server.
+dev-fast: install-and-build
+	yarn download:bin
+	make download-llamacpp-backend-if-exists
 	make build-mlx-server-if-exists
 	make build-foundation-models-server-if-exists
 	make build-cli-dev
 	yarn dev
+
+# Dev-режим с форсированным SetupScreen (онбординг) без удаления моделей.
+# Флаг FORCE_ONBOARDING прокидывается в vite как compile-time константа.
+dev-onboarding: install-and-build
+	yarn download:bin
+	make download-llamacpp-backend
+	make build-mlx-server
+	make build-foundation-models-server-if-exists
+	make build-cli-dev
+	FORCE_ONBOARDING=true yarn dev
 
 # ──────────────────────────────────────────────────────────────
 # Windows Development
@@ -182,51 +202,125 @@ endif
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 	cargo test --manifest-path src-tauri/utils/Cargo.toml
 
-# Build MLX server (macOS Apple Silicon only) - always builds
+# Download DFlash MLX server binary from GitHub releases (macOS only)
+# Supports GH_TOKEN env var for authenticated GitHub API requests (avoids rate limits in CI)
+# Override DFLASH_TAG to pin a specific release, e.g.:
+#   make build-mlx-server DFLASH_TAG=dflash-macos-arm64-abc1234
+DFLASH_TAG ?=
 build-mlx-server:
 ifeq ($(shell uname -s),Darwin)
-	@echo "Building MLX server for Apple Silicon..."
-	cd mlx-server && swift build -c release
-	@echo "Copying build products..."
-	@BUILD_DIR=$$(cd mlx-server && swift build -c release --show-bin-path); \
-	if [ -z "$$BUILD_DIR" ]; then \
-		echo "Error: Could not find build products"; \
-		exit 1; \
-	fi; \
-	mkdir -p src-tauri/resources/bin; \
-	echo "Copying mlx-server from $$BUILD_DIR..."; \
-	cp "$$BUILD_DIR/mlx-server" src-tauri/resources/bin/mlx-server; \
-	if [ -d "$$BUILD_DIR/mlx-swift_Cmlx.bundle" ]; then \
-		cp -r "$$BUILD_DIR/mlx-swift_Cmlx.bundle" src-tauri/resources/bin/; \
+	@mkdir -p src-tauri/resources/bin
+	@echo "Downloading DFlash MLX server binary..."; \
+	if [ -n "$(DFLASH_TAG)" ]; then \
+		TAG="$(DFLASH_TAG)"; \
+		echo "Using pinned release: $$TAG"; \
 	else \
-		mkdir -p src-tauri/resources/bin/mlx-swift_Cmlx.bundle; \
+		echo "Fetching latest DFlash release..."; \
+		API_URL="https://api.github.com/repos/AtomicBot-ai/dflash/releases?per_page=50"; \
+		TMPREL=$$(mktemp /tmp/dflash-releases-XXXXXX.json); \
+		_gh_get() { \
+			if [ "$$1" = "1" ] && [ -n "$$GH_TOKEN" ]; then \
+				curl -sS -H "Authorization: Bearer $$GH_TOKEN" -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
+			else \
+				curl -sS -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
+			fi; \
+		}; \
+		_gh_fetch() { \
+			HTTP_CODE=""; \
+			for attempt in 1 2 3 4 5; do \
+				HTTP_CODE=$$(_gh_get "$$1" "$$2" "$$3"); \
+				case "$$HTTP_CODE" in \
+					2*) return 0 ;; \
+					403|429|5*|000) \
+						echo "  GitHub API attempt $$attempt/5 (auth=$$1): HTTP $$HTTP_CODE, retrying in $$((attempt * 2))s..."; \
+						sleep $$((attempt * 2)) ;; \
+					*) return 1 ;; \
+				esac; \
+			done; \
+			return 1; \
+		}; \
+		_response_ok() { \
+			[ -s "$$1" ] && jq -e 'type == "array" and length > 0' "$$1" >/dev/null 2>&1; \
+		}; \
+		USE_TOKEN=0; [ -n "$$GH_TOKEN" ] && USE_TOKEN=1; \
+		_gh_fetch "$$USE_TOKEN" "$$TMPREL" "$$API_URL" || true; \
+		FIRST_CODE="$$HTTP_CODE"; \
+		if ! _response_ok "$$TMPREL" && [ "$$USE_TOKEN" = "1" ]; then \
+			echo "Token-authenticated request did not yield usable releases (HTTP $$FIRST_CODE); retrying unauthenticated..."; \
+			_gh_fetch "0" "$$TMPREL" "$$API_URL" || true; \
+		fi; \
+		case "$$HTTP_CODE" in \
+			2*) ;; \
+			*) echo "Error: GitHub API failed (last HTTP $$HTTP_CODE)"; \
+			   echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
+			   rm -f "$$TMPREL"; exit 1 ;; \
+		esac; \
+		if [ ! -s "$$TMPREL" ] || ! jq -e 'type == "array"' "$$TMPREL" >/dev/null 2>&1; then \
+			echo "Error: GitHub API returned non-array or empty response (HTTP $$HTTP_CODE):"; \
+			head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
+			rm -f "$$TMPREL"; exit 1; \
+		fi; \
+		REL_COUNT=$$(jq 'length' "$$TMPREL"); \
+		echo "GitHub API returned $$REL_COUNT release(s)"; \
+		TAG=$$(jq -r '[.[] | select(.tag_name | startswith("dflash-macos-arm64"))] | sort_by(.published_at // .created_at) | reverse | .[0].tag_name // empty' "$$TMPREL"); \
+		if [ -z "$$TAG" ]; then \
+			echo "Error: No DFlash release found matching 'dflash-macos-arm64*'. First 10 tags in response:"; \
+			jq -r '.[0:10] | .[].tag_name' "$$TMPREL" || true; \
+			rm -f "$$TMPREL"; exit 1; \
+		fi; \
+		rm -f "$$TMPREL"; \
 	fi; \
+	echo "Release: $$TAG"; \
+	URL="https://github.com/AtomicBot-ai/dflash/releases/download/$$TAG/dflash-mlx-server-macos-arm64.tar.gz"; \
+	echo "Downloading: $$URL"; \
+	curl -fSL "$$URL" -o /tmp/dflash-mlx-server.tar.gz; \
+	tar -xzf /tmp/dflash-mlx-server.tar.gz -C src-tauri/resources/bin/; \
+	rm -f /tmp/dflash-mlx-server.tar.gz; \
 	chmod +x src-tauri/resources/bin/mlx-server; \
-	echo "MLX server built and copied successfully"; \
-	echo "Checking for code signing identity..."; \
-	SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
+	echo "$$TAG" > src-tauri/resources/bin/mlx-server-version.txt; \
+	echo "macos-arm64" > src-tauri/resources/bin/mlx-server-backend.txt; \
+	echo "DFlash MLX server downloaded and extracted successfully ($$TAG)"
+	@SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
 	if [ -n "$$SIGNING_IDENTITY" ]; then \
 		echo "Signing mlx-server with identity: $$SIGNING_IDENTITY"; \
-		codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" src-tauri/resources/bin/mlx-server; \
-		if [ -d "src-tauri/resources/bin/mlx-swift_Cmlx.bundle" ]; then \
-			echo "Signing mlx-swift_Cmlx.bundle..."; \
-			codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" --deep src-tauri/resources/bin/mlx-swift_Cmlx.bundle; \
-		fi; \
+		codesign --force --options runtime --timestamp --entitlements src-tauri/Entitlements.plist --sign "$$SIGNING_IDENTITY" src-tauri/resources/bin/mlx-server; \
 		echo "Code signing completed successfully"; \
 	else \
-		echo "Warning: No Developer ID Application identity found. Skipping code signing (notarization will fail)."; \
+		echo "Warning: No Developer ID Application identity found. Applying ad-hoc signature."; \
+		codesign --force --deep --sign - src-tauri/resources/bin/mlx-server; \
 	fi
+	@mkdir -p src-tauri/target/debug/resources/bin; \
+	cp src-tauri/resources/bin/mlx-server src-tauri/target/debug/resources/bin/mlx-server; \
+	cp src-tauri/resources/bin/mlx-server-version.txt src-tauri/target/debug/resources/bin/mlx-server-version.txt; \
+	cp src-tauri/resources/bin/mlx-server-backend.txt src-tauri/target/debug/resources/bin/mlx-server-backend.txt; \
+	echo "Debug copy updated with signed binary"
 else
-	@echo "Skipping MLX server build (macOS only)"
+	@echo "Skipping MLX server download (macOS only)"
 endif
 
-# Build MLX server only if not already present (for dev)
+# Download MLX server if missing, outdated, or a leftover Swift binary.
+# Compares local version tag with the latest GitHub release.
 build-mlx-server-if-exists:
 ifeq ($(shell uname -s),Darwin)
-	@if [ -f "src-tauri/resources/bin/mlx-server" ]; then \
-		echo "MLX server already exists at src-tauri/resources/bin/mlx-server, skipping build..."; \
-	else \
+	@if [ ! -f "src-tauri/resources/bin/mlx-server" ] || [ ! -f "src-tauri/resources/bin/mlx-server-version.txt" ]; then \
+		echo "MLX server binary or version file missing — downloading..."; \
 		make build-mlx-server; \
+	else \
+		LOCAL_TAG=$$(cat src-tauri/resources/bin/mlx-server-version.txt 2>/dev/null); \
+		API_URL="https://api.github.com/repos/AtomicBot-ai/dflash/releases"; \
+		if [ -n "$$GH_TOKEN" ]; then \
+			LATEST_TAG=$$(curl -sf -H "Authorization: Bearer $$GH_TOKEN" "$$API_URL" | python3 -c "import sys,json; rs=json.load(sys.stdin); ts=sorted([r for r in rs if r['tag_name'].startswith('dflash-macos-arm64')], key=lambda r: r.get('published_at') or r.get('created_at') or '', reverse=True); print(ts[0]['tag_name'] if ts else '')" 2>/dev/null); \
+		else \
+			LATEST_TAG=$$(curl -sf "$$API_URL" | python3 -c "import sys,json; rs=json.load(sys.stdin); ts=sorted([r for r in rs if r['tag_name'].startswith('dflash-macos-arm64')], key=lambda r: r.get('published_at') or r.get('created_at') or '', reverse=True); print(ts[0]['tag_name'] if ts else '')" 2>/dev/null); \
+		fi; \
+		if [ -z "$$LATEST_TAG" ]; then \
+			echo "Could not fetch latest release tag — keeping current ($$LOCAL_TAG)"; \
+		elif [ "$$LOCAL_TAG" = "$$LATEST_TAG" ]; then \
+			echo "MLX server is up-to-date ($$LOCAL_TAG)"; \
+		else \
+			echo "MLX server outdated: local=$$LOCAL_TAG remote=$$LATEST_TAG — updating..."; \
+			make build-mlx-server; \
+		fi; \
 	fi
 else
 	@echo "Skipping MLX server build (macOS only)"
@@ -283,28 +377,74 @@ ifeq ($(shell uname -s),Darwin)
 	else \
 		echo "Fetching latest llamacpp turboquant release..."; \
 		TMPREL=$$(mktemp /tmp/llamacpp-releases-XXXXXX.json); \
-		API_URL="https://api.github.com/repos/AtomicBot-ai/atomic-llama-cpp-turboquant/releases"; \
-		if [ -n "$$GH_TOKEN" ]; then \
-			curl -sf -H "Authorization: Bearer $$GH_TOKEN" "$$API_URL" -o "$$TMPREL"; \
-		else \
-			curl -sf "$$API_URL" -o "$$TMPREL"; \
+		API_URL="https://api.github.com/repos/AtomicBot-ai/atomic-llama-cpp-turboquant/releases?per_page=50"; \
+		_gh_get() { \
+			if [ "$$1" = "1" ] && [ -n "$$GH_TOKEN" ]; then \
+				curl -sS -H "Authorization: Bearer $$GH_TOKEN" -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
+			else \
+				curl -sS -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
+			fi; \
+		}; \
+		_gh_fetch() { \
+			HTTP_CODE=""; \
+			for attempt in 1 2 3 4 5; do \
+				HTTP_CODE=$$(_gh_get "$$1" "$$2" "$$3"); \
+				case "$$HTTP_CODE" in \
+					2*) return 0 ;; \
+					403|429|5*|000) \
+						echo "  GitHub API attempt $$attempt/5 (auth=$$1): HTTP $$HTTP_CODE, retrying in $$((attempt * 2))s..."; \
+						sleep $$((attempt * 2)) ;; \
+					*) return 1 ;; \
+				esac; \
+			done; \
+			return 1; \
+		}; \
+		_response_ok() { \
+			[ -s "$$1" ] && jq -e 'type == "array" and length > 0' "$$1" >/dev/null 2>&1; \
+		}; \
+		USE_TOKEN=0; [ -n "$$GH_TOKEN" ] && USE_TOKEN=1; \
+		_gh_fetch "$$USE_TOKEN" "$$TMPREL" "$$API_URL" || true; \
+		FIRST_CODE="$$HTTP_CODE"; \
+		case "$$HTTP_CODE" in \
+			2*) \
+				if jq -e 'type == "array"' "$$TMPREL" >/dev/null 2>&1; then \
+					REL_COUNT=$$(jq 'length' "$$TMPREL"); \
+					echo "GitHub API returned $$REL_COUNT release(s) (auth=$$USE_TOKEN)"; \
+				else \
+					REL_COUNT=-1; \
+				fi ;; \
+			*) \
+				echo "  GitHub API request failed (auth=$$USE_TOKEN, HTTP $$HTTP_CODE)"; \
+				REL_COUNT=-1 ;; \
+		esac; \
+		if ! _response_ok "$$TMPREL" && [ "$$USE_TOKEN" = "1" ]; then \
+			echo "Token-authenticated request did not yield usable releases (HTTP $$FIRST_CODE); retrying unauthenticated..."; \
+			_gh_fetch "0" "$$TMPREL" "$$API_URL" || true; \
 		fi; \
-		if [ ! -s "$$TMPREL" ]; then rm -f "$$TMPREL"; echo "Error: Failed to fetch releases from GitHub API"; exit 1; fi; \
-		if command -v jq >/dev/null 2>&1; then \
-			TAG=$$(jq -r --arg b "$$BACKEND" '[.[] | select(.tag_name | startswith("turboquant-" + $$b))][0].tag_name // empty' "$$TMPREL"); \
-			if [ -z "$$TAG" ]; then \
-				echo "No turboquant release found for $$BACKEND, trying legacy release..."; \
-				TAG=$$(jq -r '[.[] | select(.tag_name | startswith("turboquant-") | not)][0].tag_name // empty' "$$TMPREL"); \
-			fi; \
-		else \
-			TAG=$$(python3 -c "import sys,json; rs=json.load(open(sys.argv[2])); ts=[r for r in rs if r['tag_name'].startswith('turboquant-'+sys.argv[1])]; print(ts[0]['tag_name'] if ts else '')" "$$BACKEND" "$$TMPREL" 2>/dev/null); \
-			if [ -z "$$TAG" ]; then \
-				echo "No turboquant release found for $$BACKEND, trying legacy release..."; \
-				TAG=$$(python3 -c "import sys,json; rs=json.load(open(sys.argv[1])); lg=[r for r in rs if not r['tag_name'].startswith('turboquant-')]; print(lg[0]['tag_name'] if lg else '')" "$$TMPREL" 2>/dev/null); \
-			fi; \
+		case "$$HTTP_CODE" in \
+			2*) ;; \
+			*) echo "Error: GitHub API failed (last HTTP $$HTTP_CODE)"; \
+			   echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
+			   rm -f "$$TMPREL"; exit 1 ;; \
+		esac; \
+		if [ ! -s "$$TMPREL" ] || ! jq -e 'type == "array"' "$$TMPREL" >/dev/null 2>&1; then \
+			echo "Error: GitHub API returned non-array or empty response (HTTP $$HTTP_CODE):"; \
+			head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
+			rm -f "$$TMPREL"; exit 1; \
+		fi; \
+		REL_COUNT=$$(jq 'length' "$$TMPREL"); \
+		echo "Final response: $$REL_COUNT release(s)"; \
+		TAG=$$(jq -r --arg b "$$BACKEND" '[.[] | select(.tag_name | startswith("turboquant-" + $$b))][0].tag_name // empty' "$$TMPREL"); \
+		if [ -z "$$TAG" ]; then \
+			echo "No turboquant release found for $$BACKEND, trying legacy release..."; \
+			TAG=$$(jq -r '[.[] | select(.tag_name | startswith("turboquant-") | not)][0].tag_name // empty' "$$TMPREL"); \
+		fi; \
+		if [ -z "$$TAG" ]; then \
+			echo "Error: No matching release found for backend=$$BACKEND. First 10 tags in response:"; \
+			jq -r '.[0:10] | .[].tag_name' "$$TMPREL" || true; \
+			rm -f "$$TMPREL"; exit 1; \
 		fi; \
 		rm -f "$$TMPREL"; \
-		if [ -z "$$TAG" ]; then echo "Error: No release found"; exit 1; fi; \
 	fi; \
 	echo "Release: $$TAG"; \
 	case "$$TAG" in \
@@ -363,13 +503,52 @@ else ifeq ($(OS),Windows_NT)
 		echo "Auto-selected backend: $$BACKEND"; \
 	fi; \
 	echo "Fetching latest llamacpp release from janhq/llama.cpp..."; \
+	TMPREL=$$(mktemp /tmp/llamacpp-latest-XXXXXX.json); \
 	API_URL="https://api.github.com/repos/janhq/llama.cpp/releases/latest"; \
-	if [ -n "$$GH_TOKEN" ]; then \
-		TAG=$$(curl -sf -H "Authorization: Bearer $$GH_TOKEN" "$$API_URL" | jq -r '.tag_name'); \
-	else \
-		TAG=$$(curl -sf "$$API_URL" | jq -r '.tag_name'); \
+	_gh_get() { \
+		if [ "$$1" = "1" ] && [ -n "$$GH_TOKEN" ]; then \
+			curl -sS -H "Authorization: Bearer $$GH_TOKEN" -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
+		else \
+			curl -sS -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
+		fi; \
+	}; \
+	_gh_fetch() { \
+		HTTP_CODE=""; \
+		for attempt in 1 2 3 4 5; do \
+			HTTP_CODE=$$(_gh_get "$$1" "$$2" "$$3"); \
+			case "$$HTTP_CODE" in \
+				2*) return 0 ;; \
+				403|429|5*|000) \
+					echo "  GitHub API attempt $$attempt/5 (auth=$$1): HTTP $$HTTP_CODE, retrying in $$((attempt * 2))s..."; \
+					sleep $$((attempt * 2)) ;; \
+				*) return 1 ;; \
+			esac; \
+		done; \
+		return 1; \
+	}; \
+	_tag_ok() { \
+		[ -s "$$1" ] && [ -n "$$(jq -r '.tag_name // empty' "$$1" 2>/dev/null)" ]; \
+	}; \
+	USE_TOKEN=0; [ -n "$$GH_TOKEN" ] && USE_TOKEN=1; \
+	_gh_fetch "$$USE_TOKEN" "$$TMPREL" "$$API_URL" || true; \
+	FIRST_CODE="$$HTTP_CODE"; \
+	if ! _tag_ok "$$TMPREL" && [ "$$USE_TOKEN" = "1" ]; then \
+		echo "Token-authenticated request did not yield a tag_name (HTTP $$FIRST_CODE); retrying unauthenticated..."; \
+		_gh_fetch "0" "$$TMPREL" "$$API_URL" || true; \
 	fi; \
-	if [ -z "$$TAG" ] || [ "$$TAG" = "null" ]; then echo "Error: Failed to fetch latest release tag"; exit 1; fi; \
+	case "$$HTTP_CODE" in \
+		2*) ;; \
+		*) echo "Error: GitHub API failed (last HTTP $$HTTP_CODE)"; \
+		   echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
+		   rm -f "$$TMPREL"; exit 1 ;; \
+	esac; \
+	TAG=$$(jq -r '.tag_name // empty' "$$TMPREL"); \
+	if [ -z "$$TAG" ] || [ "$$TAG" = "null" ]; then \
+		echo "Error: Failed to extract tag_name from response (HTTP $$HTTP_CODE):"; \
+		head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
+		rm -f "$$TMPREL"; exit 1; \
+	fi; \
+	rm -f "$$TMPREL"; \
 	URL="https://github.com/janhq/llama.cpp/releases/download/$$TAG/llama-$$TAG-bin-$$BACKEND.tar.gz"; \
 	echo "$$TAG" > src-tauri/resources/llamacpp-backend/version.txt; \
 	echo "$$BACKEND" > src-tauri/resources/llamacpp-backend/backend.txt; \
@@ -497,6 +676,42 @@ endif
 # Build
 build: install-and-build install-rust-targets
 	yarn build
+
+# ──────────────────────────────────────────────────────────────
+# macOS release build: universal .app + .dmg с версией в VOLNAME
+# ──────────────────────────────────────────────────────────────
+# Шаги:
+#   1. yarn tauri build (universal-apple-darwin, macos-конфиг)
+#      — Tauri подписывает и нотаризует .app, создаёт и подписывает .dmg
+#   2. scripts/rename-dmg-volume.sh
+#      — переименовывает том DMG в "Atomic Chat v<version>"
+#      — ломает только подпись DMG-контейнера; .app внутри остаётся нотаризованным
+#   3. scripts/notarize-dmg-macos.sh
+#      — восстанавливает подпись DMG + нотаризует + стейплит (если заданы APPLE_ID/PASSWORD/TEAM_ID)
+#
+# Для локальной сборки достаточно `make build-mac`; нотаризация автоматически
+# пропустится при отсутствии Apple credentials в окружении.
+build-mac:
+ifeq ($(shell uname -s),Darwin)
+	yarn tauri build --target universal-apple-darwin --config src-tauri/tauri.macos.conf.json
+	@DMG=$$(ls -t src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg 2>/dev/null | head -1); \
+	if [ -z "$$DMG" ] || [ ! -f "$$DMG" ]; then \
+		echo "Error: DMG not found after tauri build"; \
+		exit 1; \
+	fi; \
+	echo "=== DMG located: $$DMG ==="; \
+	bash scripts/rename-dmg-volume.sh "$$DMG"; \
+	SIGNING_IDENTITY=$${APPLE_SIGNING_IDENTITY:-$$(security find-identity -v -p codesigning 2>/dev/null | grep "Developer ID Application" | head -1 | sed -n 's/.*"\(.*\)".*/\1/p')}; \
+	if [ -n "$$SIGNING_IDENTITY" ]; then \
+		bash scripts/notarize-dmg-macos.sh "$$DMG"; \
+	else \
+		echo "Warning: no Developer ID Application identity found — skipping DMG re-sign/notarize."; \
+		echo "Note: DMG volume was renamed but container signature is broken. Set APPLE_SIGNING_IDENTITY or install cert to fix."; \
+	fi
+else
+	@echo "build-mac is macOS-only"
+	@exit 1
+endif
 
 clean:
 ifeq ($(OS),Windows_NT)

@@ -95,7 +95,14 @@ pub fn cli_get_thread(thread_id: &str) -> Result<serde_json::Value, String> {
 // ── Server operations ──────────────────────────────────────────────────────
 
 /// Start the OpenAI-compatible proxy server. Returns the port it's listening on.
-pub async fn cli_start_server(
+///
+/// The `app_handle` is used by `proxy::start_server` to emit Tauri events for
+/// the PostHog `api_server_request` analytics pipeline. CLI callers running
+/// inside a Tauri runtime should pass their `AppHandle`; headless CLI paths
+/// that have no runtime cannot call this function directly.
+#[allow(clippy::too_many_arguments)]
+pub async fn cli_start_server<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
     app_state: Arc<AppState>,
     llama_state: Arc<LlamacppState>,
     mlx_state: Arc<MlxState>,
@@ -106,6 +113,7 @@ pub async fn cli_start_server(
     proxy_timeout: u64,
 ) -> Result<u16, String> {
     proxy::start_server(
+        app_handle,
         app_state.server_handle.clone(),
         llama_state.llama_server_process.clone(),
         mlx_state.mlx_server_process.clone(),
@@ -116,6 +124,7 @@ pub async fn cli_start_server(
         vec![vec![]],
         proxy_timeout,
         app_state.provider_configs.clone(),
+        app_state.auto_increase_ctx.clone(),
     )
     .await
     .map_err(|e| e.to_string())
