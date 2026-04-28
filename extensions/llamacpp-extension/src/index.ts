@@ -621,15 +621,40 @@ export default class llamacpp_extension extends AIEngine {
           logger.info(
             `Using stored backend preference: ${bestAvailableBackendString}`
           )
-        } else {
+        } else if (IS_MAC) {
+          // macOS turboquant flow expects stale storedType to be cleared so
+          // the bundled backend can take over via the force-switch block.
           logger.warn(
             `Stored backend type '${effectiveStoredBackendType}' not available, falling back to best backend`
           )
-          // Clear the invalid stored preference
           this.clearStoredBackendType()
-          // bestAvailableBackendString remains as the priority one calculated earlier
+        } else {
+          // Windows/Linux: GitHub may be temporarily unreachable / rate-
+          // limited, so the user's preference may simply not be visible in
+          // version_backends right now. Keep the stored preference; the
+          // installed-on-disk guards below ensure we don't downgrade to
+          // bundled CPU when the saved backend is still on the filesystem.
+          logger.warn(
+            `Stored backend type '${effectiveStoredBackendType}' not in remote/local list right now; keeping preference (network may be unstable)`
+          )
         }
       }
+
+      // Compute once whether the currently-saved version_backend is actually
+      // present on disk. Used below to:
+      //   - keep the saved option visible in the dropdown even when the
+      //     remote backend list (`version_backends`) doesn't include it,
+      //   - skip the auto-upgrade swap if the "newer" target isn't
+      //     downloaded yet,
+      //   - skip the fresh-installation fallback when the saved backend is
+      //     still installed locally (e.g. GitHub temporarily unavailable).
+      const savedVB = stripBom(this.config.version_backend || '')
+      const [savedVbVer, savedVbBack] = savedVB.split('/')
+      const savedVbIsInstalled =
+        !!savedVbVer?.trim() &&
+        !!savedVbBack?.trim() &&
+        savedVB.includes('/') &&
+        (await isBackendInstalled(savedVbBack.trim(), savedVbVer.trim()))
 
       let settings = structuredClone(SETTINGS)
       const backendSettingIndex = settings.findIndex(
@@ -646,6 +671,31 @@ export default class llamacpp_extension extends AIEngine {
           const key = `${b.version}/${b.backend}`
           return { value: key, name: key }
         })
+
+        // Always surface the installed-on-disk saved backend in the dropdown,
+        // even when the remote list (e.g. GitHub) didn't return it. Without
+        // this the user sees an empty/incomplete options list after a
+        // restart with no network.
+        if (
+          savedVbIsInstalled &&
+          !(
+            backendSetting.controllerProps.options as Array<{
+              value: string
+              name: string
+            }>
+          ).some((o) => o.value === savedVB)
+        ) {
+          backendSetting.controllerProps.options = [
+            { value: savedVB, name: savedVB },
+            ...(backendSetting.controllerProps.options as Array<{
+              value: string
+              name: string
+            }>),
+          ]
+          logger.info(
+            `Saved backend ${savedVB} not present in version_backends list — pinning it into options (installed locally)`
+          )
+        }
 
         // Set the recommended backend based on bestAvailableBackendString
         if (bestAvailableBackendString) {
@@ -728,28 +778,45 @@ export default class llamacpp_extension extends AIEngine {
         const currentType = effectiveBackendString.split('/')[1]?.trim()
         const bestType = bestAvailableBackendString.split('/')[1]?.trim()
         if (currentType && bestType && currentType === bestType) {
-          logger.info(
-            `Auto-upgrading backend to latest version: ${effectiveBackendString} → ${bestAvailableBackendString}`
-          )
-          effectiveBackendString = bestAvailableBackendString
+          // Only swap when the "newer" target is actually downloaded.
+          // Otherwise we'd end up with config pointing at a backend that
+          // isn't on disk yet — e.g. after an app update where the bundled
+          // CPU got bumped, but the user's CUDA backend hasn't been
+          // re-downloaded for the new release tag.
+          const [bestVer, bestBack] = bestAvailableBackendString.split('/')
+          const bestIsInstalled =
+            !!bestVer?.trim() &&
+            !!bestBack?.trim() &&
+            (await isBackendInstalled(bestBack.trim(), bestVer.trim()))
 
-          this.config.version_backend = effectiveBackendString
+          if (!bestIsInstalled) {
+            logger.info(
+              `Skipping auto-upgrade ${effectiveBackendString} → ${bestAvailableBackendString}: target not installed locally`
+            )
+          } else {
+            logger.info(
+              `Auto-upgrading backend to latest version: ${effectiveBackendString} → ${bestAvailableBackendString}`
+            )
+            effectiveBackendString = bestAvailableBackendString
 
-          const updatedSettings = await this.getSettings()
-          await this.updateSettings(
-            updatedSettings.map((item) => {
-              if (item.key === 'version_backend') {
-                item.controllerProps.value = effectiveBackendString
-              }
-              return item
-            })
-          )
+            this.config.version_backend = effectiveBackendString
 
-          if (events && typeof events.emit === 'function') {
-            events.emit('settingsChanged', {
-              key: 'version_backend',
-              value: effectiveBackendString,
-            })
+            const updatedSettings = await this.getSettings()
+            await this.updateSettings(
+              updatedSettings.map((item) => {
+                if (item.key === 'version_backend') {
+                  item.controllerProps.value = effectiveBackendString
+                }
+                return item
+              })
+            )
+
+            if (events && typeof events.emit === 'function') {
+              events.emit('settingsChanged', {
+                key: 'version_backend',
+                value: effectiveBackendString,
+              })
+            }
           }
         }
       }
@@ -789,16 +856,27 @@ export default class llamacpp_extension extends AIEngine {
         }
       }
 
-      // Handle fresh installation case where version_backend might be 'none' or invalid
-      if (
-        (!effectiveBackendString ||
-          effectiveBackendString === 'none' ||
-          !effectiveBackendString.includes('/') ||
-          !version_backends.some(
-            (e) => `${e.version}/${e.backend}` === effectiveBackendString
-          )) &&
-        bestAvailableBackendString
-      ) {
+      // Handle fresh installation case where version_backend might be 'none' or invalid.
+      //
+      // The previous condition also reset to bundled whenever the saved
+      // backend was missing from `version_backends` — but that list comes
+      // partly from a remote GitHub fetch which can fail or return a
+      // truncated set, leading to a CUDA→CPU regression on every restart.
+      // Guard the fallback with `savedVbIsInstalled`: only force-fallback
+      // when the saved backend is genuinely gone from disk.
+      const savedNotInList =
+        !!effectiveBackendString &&
+        effectiveBackendString.includes('/') &&
+        !version_backends.some(
+          (e) => `${e.version}/${e.backend}` === effectiveBackendString
+        )
+      const savedBackendVanished =
+        !effectiveBackendString ||
+        effectiveBackendString === 'none' ||
+        !effectiveBackendString.includes('/') ||
+        (savedNotInList && !savedVbIsInstalled)
+
+      if (savedBackendVanished && bestAvailableBackendString) {
         effectiveBackendString = bestAvailableBackendString
         logger.info(
           `Fresh installation or invalid backend detected, using: ${effectiveBackendString}`
@@ -823,6 +901,10 @@ export default class llamacpp_extension extends AIEngine {
             value: effectiveBackendString,
           })
         }
+      } else if (savedNotInList && savedVbIsInstalled) {
+        logger.warn(
+          `Saved backend ${effectiveBackendString} not in remote list but installed locally — keeping it active`
+        )
       }
 
       // Late-phase GPU-backend detection has also been removed —

@@ -35,6 +35,7 @@ type StepUiPhase =
   | 'detecting'
   | 'recommend'
   | 'downloading'
+  | 'switching'
   | 'restart-required'
   | 'no-recommendation'
   | 'detection-failed'
@@ -138,11 +139,19 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
 
   // Translate `useBackendUpdater` state changes into our local UI phase.
   // Once we've started a download we follow the hook's machine through
-  // 'downloading' → 'restart-required' (or back to 'recommend' on failure).
+  // 'downloading' → 'hotswapping' → 'completed' (hot-swap path) or
+  // 'downloading' → 'restart-required' (fallback path), or back to
+  // 'recommend' on failure.
   useEffect(() => {
     if (!downloadAttemptedRef.current) return
     if (recommendationPhase === 'downloading') {
       setUiPhase('downloading')
+    } else if (recommendationPhase === 'hotswapping') {
+      setUiPhase('switching')
+    } else if (recommendationPhase === 'completed') {
+      // Hot-swap succeeded — leave onboarding without a restart.
+      // `finish` is idempotent via `finishedRef`.
+      finish('downloaded')
     } else if (recommendationPhase === 'restart-required') {
       setUiPhase('restart-required')
     } else if (recommendationPhase === 'recommend') {
@@ -150,7 +159,7 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
       // Surface the recommendation again so the user can retry / skip.
       setUiPhase('recommend')
     }
-  }, [recommendationPhase])
+  }, [recommendationPhase, finish])
 
   // Auto-advance when the device has nothing to gain — keeps onboarding
   // short for users on CPU-only machines.
@@ -259,12 +268,19 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
                       </p>
                     </div>
                   </div>
-                  <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                    <Button variant="outline" onClick={handleSkip}>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <Button
+                      variant="outline"
+                      onClick={handleSkip}
+                      className="order-2 w-full sm:order-1"
+                    >
                       <IconCpu size={16} className="mr-1" />
                       {t('setup:backendStep.stayOnCpu')}
                     </Button>
-                    <Button onClick={handleDownload}>
+                    <Button
+                      onClick={handleDownload}
+                      className="order-1 w-full sm:order-2"
+                    >
                       <IconDownload size={16} className="mr-1" />
                       {t('setup:backendStep.downloadAction')}
                     </Button>
@@ -292,6 +308,26 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
                 </div>
               )}
 
+              {uiPhase === 'switching' && (
+                <div className="flex flex-col items-center gap-3 py-2 text-center">
+                  <IconLoader2
+                    size={28}
+                    className="animate-spin text-foreground"
+                  />
+                  <h2 className="text-base font-semibold leading-tight">
+                    {t('setup:backendStep.switchingTitle')}
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    {t('setup:backendStep.switchingDesc', {
+                      backend:
+                        recommendation?.recommendedCategory ??
+                        downloadState.backendName ??
+                        '',
+                    })}
+                  </p>
+                </div>
+              )}
+
               {uiPhase === 'restart-required' && (
                 <div className="flex flex-col gap-4">
                   <div className="flex items-start gap-3">
@@ -308,11 +344,18 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
                       </p>
                     </div>
                   </div>
-                  <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                    <Button variant="outline" onClick={handleRestartLater}>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <Button
+                      variant="outline"
+                      onClick={handleRestartLater}
+                      className="order-2 w-full sm:order-1"
+                    >
                       {t('setup:backendStep.restartLater')}
                     </Button>
-                    <Button onClick={handleRestartNow}>
+                    <Button
+                      onClick={handleRestartNow}
+                      className="order-1 w-full sm:order-2"
+                    >
                       <IconRefresh size={16} className="mr-1" />
                       {t('setup:backendStep.restartNow')}
                     </Button>

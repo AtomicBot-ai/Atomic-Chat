@@ -18,6 +18,7 @@ export const DEFAULT_MODEL_QUANTIZATIONS = ['iq4_xs', 'q4_k_m']
 export const SETUP_SCREEN_QUANTIZATIONS = ['q4_k_m']
 
 //* Рекомендуемые модели: Hub и экран первичной настройки (совпадение с каталогом по extractModelName)
+//! MLX-репозитории отдаём только на macOS — синхронно с фильтром в useModelSources.ts
 export const HUB_RECOMMENDED_MODELS: ReadonlyArray<{
   modelName: string
   descriptionKey: string
@@ -34,16 +35,41 @@ export const HUB_RECOMMENDED_MODELS: ReadonlyArray<{
     modelName: 'meta-llama/Meta-Llama-3.1-8B-Instruct-GGUF',
     descriptionKey: 'hub:recFinetuningChat',
   },
-  {
-    modelName: 'mlx-community/Qwen3.5-9B-MLX-4bit',
-    descriptionKey: 'hub:recForMlx',
-  },
+  ...(IS_MACOS
+    ? [
+        {
+          modelName: 'mlx-community/Qwen3.5-9B-MLX-4bit',
+          descriptionKey: 'hub:recForMlx',
+        },
+      ]
+    : []),
 ]
 
 const GEMMA4_HF =
   'https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main'
 const QWEN_MLX_HF =
   'https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-4bit/resolve/main'
+
+//! MLX-fallback инжектится только на macOS — иначе утекает через useState-инициализацию
+//! useResolvedRecommendedModels и через прямое чтение в routes/hub/$modelId.tsx
+const MLX_QWEN_FALLBACK: CatalogModel = {
+  model_name: 'mlx-community/Qwen3.5-9B-MLX-4bit',
+  developer: 'mlx-community',
+  library_name: 'mlx',
+  description:
+    '**Tags**: Image-Text-to-Text, MLX, Safetensors, qwen3_5, vision-language-model, 4-bit, conversational',
+  downloads: 73490,
+  num_safetensors: 1,
+  safetensors_files: [
+    {
+      model_id: 'mlx-community/Qwen3.5-9B-MLX-4bit',
+      path: `${QWEN_MLX_HF}/model.safetensors`,
+      file_size: '5.6 GB',
+    },
+  ],
+  is_mlx: true,
+  readme: `${QWEN_MLX_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
+}
 
 export const RECOMMENDED_MODEL_FALLBACKS: Readonly<
   Record<string, CatalogModel>
@@ -187,24 +213,9 @@ export const RECOMMENDED_MODEL_FALLBACKS: Readonly<
     ],
     readme: `${GEMMA4_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
   },
-  'mlx-community/Qwen3.5-9B-MLX-4bit': {
-    model_name: 'mlx-community/Qwen3.5-9B-MLX-4bit',
-    developer: 'mlx-community',
-    library_name: 'mlx',
-    description:
-      '**Tags**: Image-Text-to-Text, MLX, Safetensors, qwen3_5, vision-language-model, 4-bit, conversational',
-    downloads: 73490,
-    num_safetensors: 1,
-    safetensors_files: [
-      {
-        model_id: 'mlx-community/Qwen3.5-9B-MLX-4bit',
-        path: `${QWEN_MLX_HF}/model.safetensors`,
-        file_size: '5.6 GB',
-      },
-    ],
-    is_mlx: true,
-    readme: `${QWEN_MLX_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
-  },
+  ...(IS_MACOS
+    ? { 'mlx-community/Qwen3.5-9B-MLX-4bit': MLX_QWEN_FALLBACK }
+    : {}),
 }
 
 export const JAN_V2_VL_MODEL_HF_REPO = 'janhq/Jan-v2-VL-high-gguf'

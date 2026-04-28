@@ -24,6 +24,8 @@
     "stayOnCpu": "Stay on CPU",
     "downloadingTitle": "Downloading backend…",
     "downloadingDesc": "Fetching the {{backend}} build. This may take a few minutes depending on your connection.",
+    "switchingTitle": "Switching backend",
+    "switchingDesc": "Activating {{backend}} without a restart…",
     "restartTitle": "Backend ready",
     "restartDesc": "The optimal backend has been downloaded. It will activate the next time you start Atomic Chat.",
     "restartLater": "Continue setup",

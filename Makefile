@@ -148,8 +148,68 @@ ifeq ($(OS),Windows_NT)
 		}; \
 		if (-not $$wiped) { Write-Host 'No WebView2 Local Storage was cleared (paths missing or locked).' -ForegroundColor Gray }; \
 		$$env:LLAMACPP_BACKEND = 'win-common_cpus-x64'; \
+		Write-Host ''; \
+		Write-Host 'Tip: for a full wipe (all data, models, settings, WebView2 cache) run:' -ForegroundColor Cyan; \
+		Write-Host '  make clean-windows-all CONFIRM=1' -ForegroundColor Cyan; \
+		Write-Host ''; \
 		& '$(CURDIR)/scripts/dev-windows.ps1'; \
 	"
+else
+	@echo "This target is for Windows only."
+endif
+
+# Full wipe of all Atomic Chat data on Windows — used to simulate a true
+# first-launch as if the app had never been installed. Removes the four
+# default APPDATA / LOCALAPPDATA directories (see DEVELOP.md → "Where Atomic
+# Chat stores data on Windows"). Does NOT touch a custom data_folder if the
+# user relocated it via the in-app setting — that is the user's responsibility.
+#
+# Guarded by CONFIRM=1 so an accidental `make clean-windows-all` only prints
+# what would be removed.
+clean-windows-all:
+ifeq ($(OS),Windows_NT)
+ifeq ($(CONFIRM),1)
+	powershell -ExecutionPolicy Bypass -Command "\
+		Get-Process llama-server -ErrorAction SilentlyContinue | Stop-Process -Force; \
+		Get-Process -Name 'Atomic Chat','atomic-chat' -ErrorAction SilentlyContinue | Stop-Process -Force; \
+		Get-Process -Name 'msedgewebview2' -ErrorAction SilentlyContinue | Where-Object { try { $$_.MainModule.FileName -like '*chat.atomic.app*' -or $$_.MainModule.FileName -like '*Atomic Chat*' } catch { $$false } } | Stop-Process -Force; \
+		Start-Sleep -Seconds 2; \
+		$$paths = @( \
+			(Join-Path $$env:APPDATA 'Atomic Chat'), \
+			(Join-Path $$env:APPDATA 'Atomic-Chat'), \
+			(Join-Path $$env:APPDATA 'chat.atomic.app'), \
+			(Join-Path $$env:LOCALAPPDATA 'chat.atomic.app') \
+		); \
+		foreach ($$p in $$paths) { \
+			if (Test-Path $$p) { \
+				Write-Host ('Removing ' + $$p) -ForegroundColor Yellow; \
+				Remove-Item $$p -Recurse -Force -ErrorAction SilentlyContinue; \
+				if (Test-Path $$p) { Write-Host ('  WARN: failed to fully remove ' + $$p) -ForegroundColor Red } \
+			} else { \
+				Write-Host ('Not present: ' + $$p) -ForegroundColor Gray; \
+			} \
+		}; \
+		Write-Host 'Atomic Chat: full data wipe done.' -ForegroundColor Green; \
+	"
+else
+	@powershell -NoProfile -ExecutionPolicy Bypass -Command "\
+		Write-Host 'DRY RUN. Nothing was deleted.' -ForegroundColor Yellow; \
+		Write-Host 'These paths WOULD be removed when re-run with CONFIRM=1:' -ForegroundColor Yellow; \
+		$$paths = @( \
+			(Join-Path $$env:APPDATA 'Atomic Chat'), \
+			(Join-Path $$env:APPDATA 'Atomic-Chat'), \
+			(Join-Path $$env:APPDATA 'chat.atomic.app'), \
+			(Join-Path $$env:LOCALAPPDATA 'chat.atomic.app') \
+		); \
+		foreach ($$p in $$paths) { \
+			$$exists = if (Test-Path $$p) { '[exists]' } else { '[not present]' }; \
+			Write-Host ('  ' + $$p + '  ' + $$exists) -ForegroundColor Gray; \
+		}; \
+		Write-Host ''; \
+		Write-Host 'Run again with CONFIRM=1 to actually delete:' -ForegroundColor Yellow; \
+		Write-Host '  make clean-windows-all CONFIRM=1' -ForegroundColor Cyan; \
+	"
+endif
 else
 	@echo "This target is for Windows only."
 endif
