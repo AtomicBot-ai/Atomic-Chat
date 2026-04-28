@@ -277,6 +277,16 @@ pub fn run() {
 
             #[cfg(target_os = "windows")]
             {
+                if let Err(e) = crate::core::notifications::ensure_aumid_registered(
+                    "chat.atomic.app",
+                    "Atomic Chat",
+                ) {
+                    log::warn!("Failed to register AUMID for toast notifications: {e}");
+                }
+            }
+
+            #[cfg(target_os = "windows")]
+            {
                 let backends_dir = get_jan_data_folder_path(app.handle().clone())
                     .join("llamacpp")
                     .join("backends");

@@ -16,5 +16,7 @@
     SetShellVarContext current
     RmDir /r "$APPDATA\Atomic Chat"
     RmDir /r "$APPDATA\Atomic-Chat"
+    ; Drop the per-user AUMID registration used by Toast notifications in dev builds.
+    DeleteRegKey HKCU "Software\Classes\AppUserModelId\chat.atomic.app"
   ${EndIf}
 !macroend
