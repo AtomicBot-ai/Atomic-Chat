@@ -204,6 +204,54 @@ export default class llamacpp_extension extends AIEngine {
 
     let settings = structuredClone(SETTINGS) // Clone to modify settings definition before registration
 
+    // Preserve persisted `version_backend` across sessions on Windows/Linux.
+    //
+    // `registerSettings()` (in core extension.ts) keeps the persisted value
+    // ONLY if the new `options` list contains it; otherwise it silently
+    // resets value to `options[0]`. On every cold start the persisted
+    // `options` may be a stale subset (e.g. `[bundled]`) that no longer
+    // contains the previously selected GPU backend (e.g. CUDA), in which
+    // case the persisted value is wiped to bundled — silently undoing the
+    // user's last hot-swap.
+    //
+    // Solution: before calling `registerSettings(SETTINGS)` (which arrives
+    // with empty options), inject the persisted value into the new options
+    // list so the deduplication check passes and the value survives.
+    //
+    // Limited to non-macOS to keep turboquant/MLX flow on macOS untouched
+    // (per design decision).
+    if (!IS_MAC) {
+      try {
+        const persistedSettings = await this.getSettings()
+        const persistedVbRaw = persistedSettings.find(
+          (s) => s.key === 'version_backend'
+        )?.controllerProps?.value
+        const persistedVb =
+          typeof persistedVbRaw === 'string' ? stripBom(persistedVbRaw) : ''
+        if (
+          persistedVb &&
+          persistedVb !== 'none' &&
+          persistedVb.includes('/')
+        ) {
+          const vbSetting = settings.find((s) => s.key === 'version_backend')
+          if (vbSetting && 'options' in vbSetting.controllerProps) {
+            vbSetting.controllerProps.options = [
+              { value: persistedVb, name: persistedVb },
+            ]
+            vbSetting.controllerProps.value = persistedVb
+            logger.info(
+              `[onLoad] Preserving persisted version_backend across registerSettings: ${persistedVb}`
+            )
+          }
+        }
+      } catch (err) {
+        logger.warn(
+          '[onLoad] Failed to read persisted settings for version_backend preservation:',
+          err
+        )
+      }
+    }
+
     // This makes the settings (including the backend options and initial value) available to the Jan UI.
     this.registerSettings(settings)
 
@@ -487,11 +535,55 @@ export default class llamacpp_extension extends AIEngine {
       // Install bundled backend from app resources if no local backends exist
       const bundledBackendString = await this.tryInstallBundledBackend()
 
-      // Immediately apply bundled backend so the model can load without
+      // Immediately apply a backend so the model can load without
       // waiting for the remote backend list (GitHub API can be slow/down).
+      //
+      // If the persisted UI settings (localStorage `@janhq/llamacpp-extension`)
+      // were lost between launches — e.g. the user wiped WebView2 storage via
+      // `make dev-windows-cpu`, ran a factoryReset, or the WebView2 cache got
+      // corrupted — `this.config.version_backend` arrives empty even though a
+      // GPU backend may still be physically installed in the data folder.
+      // Without recovery the next branch would silently re-pin bundled CPU and
+      // the user would lose their previously selected backend on every restart.
+      //
+      // Recovery: scan installed backends on disk and pick the best one. This
+      // is intentionally limited to non-macOS to keep the existing
+      // turboquant/MLX flow on macOS untouched (per design decision).
+      const currentVB = this.config.version_backend || ''
+      const persistedMissing =
+        !currentVB || currentVB === 'none' || !currentVB.includes('/')
+
+      if (persistedMissing && !IS_MAC) {
+        try {
+          const localInstalled = await getLocalInstalledBackends()
+          if (localInstalled.length > 0) {
+            const recovered = await this.determineBestBackend(localInstalled)
+            if (recovered && recovered.includes('/')) {
+              this.config.version_backend = recovered
+              const recoveredType = recovered.split('/')[1]
+              if (recoveredType) {
+                this.setStoredBackendType(recoveredType)
+              }
+              logger.info(
+                `[configureBackends] Recovered version_backend from disk: ${recovered} (localStorage was empty)`
+              )
+            }
+          }
+        } catch (err) {
+          logger.warn(
+            'Failed to recover backends from disk; will fall back to bundled:',
+            err
+          )
+        }
+      }
+
       if (bundledBackendString) {
-        const currentVB = this.config.version_backend || ''
-        if (!currentVB || currentVB === 'none' || !currentVB.includes('/')) {
+        const vbAfterRecovery = this.config.version_backend || ''
+        if (
+          !vbAfterRecovery ||
+          vbAfterRecovery === 'none' ||
+          !vbAfterRecovery.includes('/')
+        ) {
           this.config.version_backend = bundledBackendString
           logger.info(
             `Applied bundled backend immediately: ${bundledBackendString}`
