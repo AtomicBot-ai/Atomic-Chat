@@ -1,6 +1,12 @@
 import { useBackendUpdater } from '@/hooks/useBackendUpdater'
 
-import { IconDownload, IconLoader2, IconRefresh, IconX } from '@tabler/icons-react'
+import {
+  IconCheck,
+  IconDownload,
+  IconLoader2,
+  IconRefresh,
+  IconX,
+} from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -61,12 +67,17 @@ const BackendUpdater = () => {
     }
   }
 
-  // Show toast on non-recommendation download completion
+  // Show toast on non-recommendation download completion. We deliberately
+  // skip the toast when the recommendation flow is in progress because the
+  // dialog itself surfaces the next step (hotswapping → completed →
+  // restart-required) and a stacked toast would be redundant noise.
   useEffect(() => {
     if (
       downloadState.status === 'completed' &&
       downloadState.backendName &&
-      recommendationPhase !== 'restart-required'
+      recommendationPhase !== 'restart-required' &&
+      recommendationPhase !== 'hotswapping' &&
+      recommendationPhase !== 'completed'
     ) {
       const backendType =
         downloadState.backendName.split('/').pop() || downloadState.backendName
@@ -82,9 +93,21 @@ const BackendUpdater = () => {
     }
   }, [downloadState.status, downloadState.backendName, recommendationPhase, t])
 
+  /// Surface a single success toast when the live hot-swap completes.
+  /// Guarded against repeated firing because `recommendationPhase ===
+  /// 'completed'` is a transient state that the hook auto-dismisses
+  /// after ~1.5s, so the effect runs exactly once per swap.
+  useEffect(() => {
+    if (recommendationPhase === 'completed') {
+      toast.success(t('settings:backendUpdater.hotSwapSuccess'))
+    }
+  }, [recommendationPhase, t])
+
   const showRecommendationDialog =
     recommendationPhase === 'recommend' ||
     recommendationPhase === 'downloading' ||
+    recommendationPhase === 'hotswapping' ||
+    recommendationPhase === 'completed' ||
     recommendationPhase === 'restart-required'
 
   const showVersionUpdateToast =
@@ -148,6 +171,48 @@ const BackendUpdater = () => {
               </DialogHeader>
               <div className="flex items-center justify-center py-4">
                 <IconLoader2 size={32} className="text-blue-500 animate-spin" />
+              </div>
+            </>
+          )}
+
+          {recommendationPhase === 'hotswapping' && (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  {t('settings:backendUpdater.hotSwapping')}
+                </DialogTitle>
+                <DialogDescription>
+                  {t('settings:backendUpdater.hotSwappingDesc', {
+                    backend:
+                      recommendation?.recommendedCategory ??
+                      recommendation?.recommendedBackend ??
+                      '',
+                  })}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex items-center justify-center py-4">
+                <IconLoader2 size={32} className="text-blue-500 animate-spin" />
+              </div>
+            </>
+          )}
+
+          {recommendationPhase === 'completed' && (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  {t('settings:backendUpdater.hotSwapSuccess')}
+                </DialogTitle>
+                <DialogDescription>
+                  {t('settings:backendUpdater.hotSwapSuccessDesc', {
+                    backend:
+                      recommendation?.recommendedCategory ??
+                      recommendation?.recommendedBackend ??
+                      '',
+                  })}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex items-center justify-center py-4">
+                <IconCheck size={32} className="text-emerald-500" />
               </div>
             </>
           )}

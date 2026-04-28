@@ -1,6 +1,21 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { events, AppEvent } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
+import { localStorageKey } from '@/constants/localStorage'
+
+/// Maximum time we wait for a `app:backend-hotswapped` window event after the
+/// backend archive download finishes. If the extension's `applyBackendLive()`
+/// path throws, no event is ever dispatched — fall back to the legacy
+/// "restart required" prompt so the user is not stranded in an indefinite
+/// "switching" spinner.
+const HOTSWAP_TIMEOUT_MS = 8000
+
+/// How long the "completed" success state stays on screen before the dialog
+/// auto-dismisses. Long enough for the user to read the toast / banner,
+/// short enough to feel snappy.
+const HOTSWAP_COMPLETED_DISMISS_MS = 1500
+
+const BACKEND_HOTSWAPPED_EVENT = 'app:backend-hotswapped'
 
 export interface BackendUpdateInfo {
   updateNeeded: boolean
@@ -60,6 +75,7 @@ interface LlamacppExtension {
   installBackend?(filePath: string): Promise<void>
   configureBackends?(): Promise<void>
   downloadRecommendedBackend?(backendString: string): Promise<void>
+  recheckOptimalBackend?(): Promise<BetterBackendRecommendation | null>
 }
 
 export interface BackendDownloadState {
@@ -83,7 +99,13 @@ export interface BetterBackendRecommendation {
   recommendedCategory: string
 }
 
-export type RecommendationPhase = 'idle' | 'recommend' | 'downloading' | 'restart-required'
+export type RecommendationPhase =
+  | 'idle'
+  | 'recommend'
+  | 'downloading'
+  | 'hotswapping'
+  | 'completed'
+  | 'restart-required'
 
 export const useBackendUpdater = () => {
   const [updateState, setUpdateState] = useState<BackendUpdateState>({
@@ -103,10 +125,52 @@ export const useBackendUpdater = () => {
   const [recommendation, setRecommendation] = useState<BetterBackendRecommendation | null>(null)
   const [recommendationPhase, setRecommendationPhase] = useState<RecommendationPhase>('idle')
 
+  /// Tracks pending hot-swap fallback timer so it can be cancelled when the
+  /// `app:backend-hotswapped` window event arrives in time.
+  const hotswapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /// Tracks the auto-dismiss timer for the 'completed' success state.
+  const completedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearHotswapTimeout = useCallback(() => {
+    if (hotswapTimeoutRef.current) {
+      clearTimeout(hotswapTimeoutRef.current)
+      hotswapTimeoutRef.current = null
+    }
+  }, [])
+
+  const clearCompletedTimeout = useCallback(() => {
+    if (completedTimeoutRef.current) {
+      clearTimeout(completedTimeoutRef.current)
+      completedTimeoutRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      clearHotswapTimeout()
+      clearCompletedTimeout()
+    }
+  }, [clearHotswapTimeout, clearCompletedTimeout])
+
   // On mount, check localStorage for a recommendation that was persisted
-  // by the extension before React mounted (avoids event race condition).
+  // by the extension before React mounted (avoids event race condition
+  // during the in-flight onboarding step).
+  //
+  // Suppress this auto-restore once any of these terminal flags is set:
+  //   - `llama_cpp_onboarding_done` — user finished the dedicated step.
+  //   - `setup-completed` — legacy users who never went through the new
+  //     onboarding (pre-existing installs upgrading to this version).
+  // After that point any surfacing must come from a fresh Tauri event,
+  // either via the gated `configureBackends()` path or the manual
+  // "Find optimal backend" button (`recheckOptimalBackend()`).
   useEffect(() => {
     try {
+      if (
+        localStorage.getItem(localStorageKey.llamacppOnboardingDone) ||
+        localStorage.getItem(localStorageKey.setupCompleted) === 'true'
+      ) {
+        return
+      }
       const stored = localStorage.getItem('llama_cpp_better_backend_recommendation')
       if (stored) {
         const payload: BetterBackendRecommendation = JSON.parse(stored)
@@ -139,7 +203,15 @@ export const useBackendUpdater = () => {
     }
   }, [])
 
-  // Listen for backend download events from the extension
+  // Listen for backend download events from the extension.
+  //
+  // Cross-instance phase sync: each `useBackendUpdater()` call is a
+  // separate React state owner, so when one component (e.g. the
+  // settings page) starts a download the global `<BackendUpdater />`
+  // mounted in `__root.tsx` would otherwise stay frozen in 'recommend'.
+  // Use the `payload.backend === recommendation.recommendedBackend`
+  // match to drive the phase transitions from events alone, regardless
+  // of which component initiated the download.
   useEffect(() => {
     const handleDownloadStarted = (payload: { backend: string; status: string }) => {
       setDownloadState({
@@ -147,6 +219,13 @@ export const useBackendUpdater = () => {
         backendName: payload.backend,
         status: 'downloading',
       })
+      if (
+        recommendation &&
+        payload.backend === recommendation.recommendedBackend &&
+        recommendationPhase !== 'restart-required'
+      ) {
+        setRecommendationPhase('downloading')
+      }
     }
 
     const handleDownloadFinished = (payload: {
@@ -161,10 +240,29 @@ export const useBackendUpdater = () => {
         error: payload.error,
       })
 
-      if (payload.status === 'completed' && recommendationPhase === 'downloading') {
-        setRecommendationPhase('restart-required')
-      } else if (payload.status === 'failed' && recommendationPhase === 'downloading') {
-        setRecommendationPhase('recommend')
+      const targetsRecommendation =
+        !!recommendation && payload.backend === recommendation.recommendedBackend
+
+      if (payload.status === 'completed') {
+        if (recommendationPhase === 'downloading' || targetsRecommendation) {
+          // Move to 'hotswapping' and arm a fallback timer in case the
+          // extension's `applyBackendLive()` path silently fails (no
+          // `app:backend-hotswapped` event will be dispatched in that
+          // case). On timeout we revert to the legacy restart-required
+          // UX so the user is never stuck in an indefinite spinner.
+          setRecommendationPhase('hotswapping')
+          clearHotswapTimeout()
+          hotswapTimeoutRef.current = setTimeout(() => {
+            hotswapTimeoutRef.current = null
+            setRecommendationPhase((prev) =>
+              prev === 'hotswapping' ? 'restart-required' : prev
+            )
+          }, HOTSWAP_TIMEOUT_MS)
+        }
+      } else if (payload.status === 'failed') {
+        if (recommendationPhase === 'downloading' || targetsRecommendation) {
+          setRecommendationPhase('recommend')
+        }
       }
     }
 
@@ -175,7 +273,29 @@ export const useBackendUpdater = () => {
       events.off(AppEvent.onBackendDownloadStarted, handleDownloadStarted)
       events.off(AppEvent.onBackendDownloadFinished, handleDownloadFinished)
     }
-  }, [recommendationPhase])
+  }, [recommendationPhase, recommendation, clearHotswapTimeout])
+
+  // Listen for the live hot-swap completion event dispatched by
+  // `applyBackendLive()` in the llamacpp extension. The event arrives on
+  // the DOM `window` because the extension does not depend on the
+  // `@janhq/core` event bus for this purely UI-facing transition.
+  useEffect(() => {
+    const handleHotswapped = () => {
+      clearHotswapTimeout()
+      setRecommendationPhase('completed')
+      clearCompletedTimeout()
+      completedTimeoutRef.current = setTimeout(() => {
+        completedTimeoutRef.current = null
+        setRecommendation(null)
+        setRecommendationPhase('idle')
+      }, HOTSWAP_COMPLETED_DISMISS_MS)
+    }
+
+    window.addEventListener(BACKEND_HOTSWAPPED_EVENT, handleHotswapped)
+    return () => {
+      window.removeEventListener(BACKEND_HOTSWAPPED_EVENT, handleHotswapped)
+    }
+  }, [clearHotswapTimeout, clearCompletedTimeout])
 
   // Listen for backend update state sync events
   useEffect(() => {
@@ -205,42 +325,99 @@ export const useBackendUpdater = () => {
     // Don't remove from localStorage — popup should reappear on next launch
   }, [])
 
-  const downloadRecommendedBackend = useCallback(async () => {
-    if (!recommendation) return
+  /// `overrideBackend` lets callers bypass the closure-captured
+  /// `recommendation` state. Necessary when the trigger fires
+  /// immediately after `recheckOptimalBackend()` resolves — at that
+  /// point the `setRecommendation()` from inside the hook has not yet
+  /// committed, so the closure here would still see the previous value
+  /// (frequently `null`) and bail via the early return.
+  const downloadRecommendedBackend = useCallback(
+    async (overrideBackend?: string) => {
+      const targetBackend = overrideBackend ?? recommendation?.recommendedBackend
+      if (!targetBackend) return
 
-    setRecommendationPhase('downloading')
+      setRecommendationPhase('downloading')
 
-    try {
-      const llamacppExtension =
-        ExtensionManager.getInstance().getByName('llamacpp-extension')
-      let extensionToUse = llamacppExtension
+      try {
+        const llamacppExtension =
+          ExtensionManager.getInstance().getByName('llamacpp-extension')
+        let extensionToUse = llamacppExtension
 
-      if (!llamacppExtension) {
-        const allExtensions = ExtensionManager.getInstance().listExtensions()
-        const possibleExtension = allExtensions.find(
-          (ext) =>
-            ext.constructor.name.toLowerCase().includes('llamacpp') ||
-            (ext.type &&
-              ext.type()?.toString().toLowerCase().includes('inference'))
-        )
-        if (!possibleExtension) {
-          throw new Error('LlamaCpp extension not found')
+        if (!llamacppExtension) {
+          const allExtensions = ExtensionManager.getInstance().listExtensions()
+          const possibleExtension = allExtensions.find(
+            (ext) =>
+              ext.constructor.name.toLowerCase().includes('llamacpp') ||
+              (ext.type &&
+                ext.type()?.toString().toLowerCase().includes('inference'))
+          )
+          if (!possibleExtension) {
+            throw new Error('LlamaCpp extension not found')
+          }
+          extensionToUse = possibleExtension
         }
-        extensionToUse = possibleExtension
-      }
 
-      if (!extensionToUse || !('downloadRecommendedBackend' in extensionToUse)) {
-        throw new Error('Extension does not support downloadRecommendedBackend')
-      }
+        if (
+          !extensionToUse ||
+          !('downloadRecommendedBackend' in extensionToUse)
+        ) {
+          throw new Error(
+            'Extension does not support downloadRecommendedBackend'
+          )
+        }
 
-      const extension = extensionToUse as LlamacppExtension
-      await extension.downloadRecommendedBackend?.(recommendation.recommendedBackend)
-    } catch (error) {
-      console.error('Error downloading recommended backend:', error)
-      setRecommendationPhase('recommend')
-      throw error
+        const extension = extensionToUse as LlamacppExtension
+        await extension.downloadRecommendedBackend?.(targetBackend)
+      } catch (error) {
+        console.error('Error downloading recommended backend:', error)
+        setRecommendationPhase('recommend')
+        throw error
+      }
+    },
+    [recommendation]
+  )
+
+  /// Manual trigger that re-runs hardware detection on the extension side
+  /// and surfaces the recommendation dialog when a better backend exists.
+  /// Returns the recommendation payload, or `null` when the device is
+  /// already on the optimal backend (callers typically toast in that case).
+  const recheckOptimalBackend = useCallback(async () => {
+    const allExtensions = ExtensionManager.getInstance().listExtensions()
+    const llamacppExtension =
+      ExtensionManager.getInstance().getByName('llamacpp-extension')
+
+    let extensionToUse = llamacppExtension
+
+    if (!llamacppExtension) {
+      const possibleExtension = allExtensions.find(
+        (ext) =>
+          ext.constructor.name.toLowerCase().includes('llamacpp') ||
+          (ext.type &&
+            ext.type()?.toString().toLowerCase().includes('inference'))
+      )
+      if (!possibleExtension) {
+        throw new Error('LlamaCpp extension not found')
+      }
+      extensionToUse = possibleExtension
     }
-  }, [recommendation])
+
+    if (!extensionToUse || !('recheckOptimalBackend' in extensionToUse)) {
+      throw new Error('Extension does not support recheckOptimalBackend')
+    }
+
+    const extension = extensionToUse as LlamacppExtension
+    const result = await extension.recheckOptimalBackend?.()
+    if (result) {
+      // Mirror the event payload into local state so the dialog opens
+      // immediately even when the Tauri event arrives after the await
+      // completes (avoids a perceptible UI lag on the Settings button).
+      setRecommendation(result)
+      setRecommendationPhase((prev) =>
+        prev === 'downloading' || prev === 'restart-required' ? prev : 'recommend'
+      )
+    }
+    return result ?? null
+  }, [])
 
   const checkForUpdate = useCallback(
     async (resetRemindMeLater = false) => {
@@ -503,5 +680,6 @@ export const useBackendUpdater = () => {
     installBackend,
     dismissRecommendation,
     downloadRecommendedBackend,
+    recheckOptimalBackend,
   }
 }

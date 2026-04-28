@@ -117,7 +117,9 @@ dev-windows-cpu:
 ifeq ($(OS),Windows_NT)
 	powershell -ExecutionPolicy Bypass -Command "\
 		Get-Process llama-server -ErrorAction SilentlyContinue | Stop-Process -Force; \
-		Start-Sleep -Seconds 1; \
+		Get-Process -Name 'Atomic Chat','atomic-chat' -ErrorAction SilentlyContinue | Stop-Process -Force; \
+		Get-Process -Name 'msedgewebview2' -ErrorAction SilentlyContinue | Where-Object { try { $$_.MainModule.FileName -like '*Atomic Chat*' } catch { $$false } } | Stop-Process -Force; \
+		Start-Sleep -Seconds 2; \
 		$$settingsFile = Join-Path $$env:APPDATA 'chat.atomic.app\settings.json'; \
 		$$dataDir = $$null; \
 		if (Test-Path $$settingsFile) { \
@@ -132,13 +134,19 @@ ifeq ($(OS),Windows_NT)
 		} else { \
 			Write-Host 'No downloaded backends to clear.' -ForegroundColor Gray; \
 		}; \
-		$$webviewStorage = Join-Path $$env:APPDATA 'chat.atomic.app\EBWebView\Default\Local Storage'; \
-		if (Test-Path $$webviewStorage) { \
-			Write-Host ('Clearing WebView2 Local Storage from ' + $$webviewStorage) -ForegroundColor Yellow; \
-			Remove-Item $$webviewStorage -Recurse -Force; \
-		} else { \
-			Write-Host 'No WebView2 Local Storage to clear.' -ForegroundColor Gray; \
+		$$webviewCandidates = @( \
+			(Join-Path $$env:LOCALAPPDATA 'chat.atomic.app\EBWebView\Default\Local Storage'), \
+			(Join-Path $$env:APPDATA 'chat.atomic.app\EBWebView\Default\Local Storage') \
+		); \
+		$$wiped = $$false; \
+		foreach ($$path in $$webviewCandidates) { \
+			if (Test-Path $$path) { \
+				Write-Host ('Clearing WebView2 Local Storage from ' + $$path) -ForegroundColor Yellow; \
+				Remove-Item $$path -Recurse -Force -ErrorAction SilentlyContinue; \
+				if (-not (Test-Path $$path)) { $$wiped = $$true } else { Write-Host ('  WARN: failed to remove ' + $$path + ' (process still locked?)') -ForegroundColor Red } \
+			} \
 		}; \
+		if (-not $$wiped) { Write-Host 'No WebView2 Local Storage was cleared (paths missing or locked).' -ForegroundColor Gray }; \
 		$$env:LLAMACPP_BACKEND = 'win-common_cpus-x64'; \
 		& '$(CURDIR)/scripts/dev-windows.ps1'; \
 	"
