@@ -4,7 +4,12 @@ import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
-import { createFileRoute, Link, useParams } from '@tanstack/react-router'
+import {
+  createFileRoute,
+  Link,
+  useNavigate,
+  useParams,
+} from '@tanstack/react-router'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import Capabilities from '@/containers/Capabilities'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
@@ -36,11 +41,15 @@ import {
   IconLoader,
   IconRefresh,
   IconRocket,
+  IconSearch,
   IconUpload,
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { predefinedProviders } from '@/constants/providers'
+import {
+  isKnownProvider,
+  useProviderRegistryStore,
+} from '@/stores/provider-registry-store'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { switchToModel } from '@/utils/switchModel'
@@ -151,8 +160,12 @@ function ProviderDetail() {
     recommendationPhase,
   } = useBackendUpdater()
   const { providerName } = useParams({ from: Route.id })
+  const navigate = useNavigate()
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
   const provider = getProviderByName(providerName)
+  const hasDownloadedModels =
+    (provider?.models.filter((m) => m.id !== EMBEDDING_MODEL_ID).length ?? 0) >
+    0
 
   // Check if llamacpp/mlx provider needs backend configuration
   const needsBackendConfig =
@@ -349,45 +362,52 @@ function ProviderDetail() {
   // This ensures all screens receive the event intermediately
 
   const handleRefreshModels = async () => {
-    if (!provider || !provider.base_url) {
-      toast.error(t('providers:models'), {
-        description: t('providers:refreshModelsError'),
-      })
-      return
-    }
+    if (!provider) return
 
     setRefreshingModels(true)
     try {
-      const modelIds = await serviceHub
-        .providers()
-        .fetchModelsFromProvider(provider)
+      // Pull the latest manifest from our remote registry on GitHub. We
+      // intentionally do NOT hit the provider's own `/models` endpoint here
+      // — that path is unreliable across providers and runtimes (some hang,
+      // some require an API key the user hasn't entered yet, etc.). The
+      // registry is the canonical, curated source.
+      try {
+        await useProviderRegistryStore.getState().refresh({ force: true })
+      } catch (err) {
+        console.warn(
+          `[providers:${provider.provider}] registry refresh failed:`,
+          err
+        )
+      }
 
-      // Create new models from the fetched IDs
-      const newModels: Model[] = modelIds.map((id) => ({
-        id,
-        model: id,
-        name: id,
-        capabilities: ['completion'], // Default capability
-        version: '1.0',
-      }))
-
-      // Filter out models that already exist
-      const existingModelIds = provider.models.map((m) => m.id)
-      const modelsToAdd = newModels.filter(
-        (model) => !existingModelIds.includes(model.id)
-      )
-
-      if (modelsToAdd.length > 0) {
-        // Update the provider with new models
-        const updatedModels = [...provider.models, ...modelsToAdd]
-        updateProvider(providerName, {
-          ...provider,
-          models: updatedModels,
+      const state = useProviderRegistryStore.getState()
+      if (state.error) {
+        toast.error(t('providers:models'), {
+          description: state.error,
         })
+        return
+      }
 
+      // Count models that will newly appear on this provider after the
+      // registry merge — for the success toast.
+      const fresh = await serviceHub.providers().getProviders()
+      const registryProvider = fresh.find(
+        (p) => p.provider === provider.provider
+      )
+      const existingIds = new Set(provider.models.map((m) => m.id))
+      const newCount = registryProvider
+        ? registryProvider.models.filter((m) => !existingIds.has(m.id)).length
+        : 0
+
+      // `setProviders` merges new models from registry into useModelProvider
+      // while preserving API keys, base URLs, and user-tweaked settings on
+      // a per-provider basis. Existing models are NEVER removed.
+      setProviders(fresh)
+
+      if (newCount > 0) {
         toast.success(t('providers:models'), {
           description: t('providers:refreshModelsSuccess', {
-            count: modelsToAdd.length,
+            count: newCount,
             provider: provider.provider,
           }),
         })
@@ -396,15 +416,17 @@ function ProviderDetail() {
           description: t('providers:noNewModels'),
         })
       }
-    } catch (error) {
+    } catch (err) {
       console.error(
-        t('providers:refreshModelsFailed', { provider: provider.provider }),
-        error
+        `[providers:${provider.provider}] refresh failed:`,
+        err
       )
+      const detail =
+        err instanceof Error && err.message
+          ? err.message
+          : t('providers:refreshModelsFailed', { provider: provider.provider })
       toast.error(t('providers:models'), {
-        description: t('providers:refreshModelsFailed', {
-          provider: provider.provider,
-        }),
+        description: detail,
       })
     } finally {
       setRefreshingModels(false)
@@ -1149,12 +1171,40 @@ function ProviderDetail() {
                             <DialogAddModel provider={provider} />
                           </>
                         )}
+                      {provider &&
+                        (provider.provider === 'llamacpp' ||
+                          provider.provider === 'mlx') &&
+                        !hasDownloadedModels && (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            className="min-w-[8rem] justify-center"
+                            onClick={() =>
+                              navigate({
+                                to: route.hub.index,
+                                search: {
+                                  engine:
+                                    provider.provider === 'mlx'
+                                      ? 'mlx'
+                                      : 'gguf',
+                                },
+                              })
+                            }
+                          >
+                            <IconSearch size={18} />
+                            <span>{t('providers:findModel')}</span>
+                          </Button>
+                        )}
                       {provider && provider.provider === 'llamacpp' && (
                         <ImportVisionModelDialog
                           provider={provider}
                           onSuccess={handleModelImportSuccess}
                           trigger={
-                            <Button variant="secondary" size="sm">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              className="min-w-[8rem] justify-center"
+                            >
                               <IconFolderPlus
                                 size={18}
                                 className="text-muted-foreground"
@@ -1169,7 +1219,11 @@ function ProviderDetail() {
                           provider={provider}
                           onSuccess={handleModelImportSuccess}
                           trigger={
-                            <Button variant="secondary" size="sm">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              className="min-w-[8rem] justify-center"
+                            >
                               <IconFolderPlus
                                 size={18}
                                 className="text-muted-foreground"
@@ -1216,10 +1270,9 @@ function ProviderDetail() {
                                 // predefined providers it's only visible once
                                 // an API key has been set.
                                 if (!provider) return null
-                                const isPredefined =
-                                  predefinedProviders.some(
-                                    (p) => p.provider === provider.provider
-                                  )
+                                const isPredefined = isKnownProvider(
+                                  provider.provider
+                                )
                                 const showFavorite =
                                   !isPredefined ||
                                   Boolean(provider.api_key?.length)

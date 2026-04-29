@@ -31,18 +31,23 @@ export const HUB_RECOMMENDED_MODELS: ReadonlyArray<{
     modelName: 'unsloth/Qwen3.5-9B-GGUF',
     descriptionKey: 'hub:recVisionKnowledge',
   },
-  {
-    modelName: 'meta-llama/Meta-Llama-3.1-8B-Instruct-GGUF',
-    descriptionKey: 'hub:recFinetuningChat',
-  },
   ...(IS_MACOS
     ? [
+        {
+          modelName: 'mlx-community/gemma-4-e4b-it-4bit',
+          descriptionKey: 'hub:recForMlx',
+        },
         {
           modelName: 'mlx-community/Qwen3.5-9B-MLX-4bit',
           descriptionKey: 'hub:recForMlx',
         },
       ]
-    : []),
+    : [
+        {
+          modelName: 'meta-llama/Meta-Llama-3.1-8B-Instruct-GGUF',
+          descriptionKey: 'hub:recFinetuningChat',
+        },
+      ]),
 ]
 
 const GEMMA4_HF =
