@@ -309,6 +309,90 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-06-16 — Fall back to a working installed llama.cpp backend instead of hard-failing with BINARY_NOT_FOUND, and prune empty stub backend folders at startup (ATO-179)
+- **Context:** Fail-mode 3 of [ATO-176](https://linear.app/atomicchat/issue/ATO-176),
+  reproduced on macOS. A model pinned to `version_backend: b9642/macos-arm64`
+  failed to load with `The llama.cpp server binary could not be found … [BINARY_NOT_FOUND]`
+  while `<jan>/llamacpp-upstream/backends/b9642/` was an empty stub folder (one
+  of 18 such stubs left by interrupted / 404'd downloads), and the *fully
+  installed* `b9652/macos-arm64` (the same family, a working binary `app.log`
+  had loaded successfully) sat right next to it. The
+  [`ensureBackendReady`](extensions/llamacpp-upstream-extension/src/index.ts)
+  chokepoint already re-downloaded a missing backend, but when the requested
+  release tag is pruned / 404'd / offline it threw a terminal error
+  (surfaced to the user as the Rust `validate_binary_path`
+  ([`path.rs`](src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/path.rs))
+  `BINARY_NOT_FOUND` once a stale stub passed the existence check) instead of
+  using the working backend on disk — there was **no fallback**, and stub
+  folders were never cleaned up.
+- **Decision (web-app extension only; no Rust, IPC, on-disk-layout, or
+  settings-schema change):** Implement the issue's three AC at the shared load
+  chokepoint of the `llamacpp-upstream` provider.
+  1. **Fallback (AC2).** `ensureBackendReady(backend, version)` now **returns
+     the actually-ready `{ backend, version }`**. When the requested backend
+     can't be made ready (download failed / tag gone / offline), it calls the
+     new `pickFallbackBackend(requestedBackend)` — newest installed copy of the
+     **same family** first (same backend id, different release tag — guaranteed
+     compatible: the macOS repro picks `b9652/macos-arm64`), then the newest
+     installed backend of **any** family (any llama.cpp build serves a GGUF) —
+     persists it via the new `persistResolvedBackend` (`version_backend` +
+     stored type + settings array + `settingsChanged` emit, mirroring the
+     existing `updateBackend` success path) so the UI reflects it and
+     subsequent loads short-circuit, and returns the fallback pair. Both load
+     entry points ([`performLoad`](extensions/llamacpp-upstream-extension/src/index.ts)
+     and `getDevices`) now consume the returned pair (the `[version, backend]`
+     destructuring became `let`) so `getBackendExePath` resolves the **real**
+     binary. Only `pickFallbackBackend` results that re-pass `isBackendInstalled`
+     are used, so a fallback is never itself a stub (`getLocalInstalledBackends`
+     already filters by the Rust `is_backend_installed` exe check). When nothing
+     usable is installed, the original terminal error is still thrown.
+  2. **Stub cleanup (AC3).** New `cleanupBrokenBackends()` runs once early in
+     `configureBackends` (startup, before any session download — so it can't
+     race a live install): it scans `<jan>/llamacpp-upstream/backends`, removes
+     every `<version>/<backend>` folder lacking a real `llama-server` binary
+     (`isBackendInstalled` false), and prunes now-empty version folders. Fully
+     best-effort (every error logged + ignored; folders with a valid binary are
+     never touched).
+  3. **AC1** ("empty/broken folder not considered installed → auto re-download")
+     is already satisfied by the existing `isBackendInstalled` existence check
+     (a stub fails it → `ensureBackendReady` attempts the re-download) and is
+     reinforced by the startup cleanup.
+- **Consequences:** A model pinned to an unavailable backend tag now loads
+  against a working installed one instead of dead-ending on BINARY_NOT_FOUND;
+  stub folders no longer accumulate or block loads. **Trade-off (accepted):**
+  the fallback **persists** `version_backend` to the working backend (so the
+  user's pin to the dead tag is replaced once) — appropriate per AC2 and it
+  stops repeated failed attempts on the pruned tag. The cross-family fallback
+  (e.g. CUDA→CPU when no same-family copy exists) is a deliberate
+  "any-installed-build can serve a GGUF" choice over a hard fail. **Deliberately
+  NOT done:** strengthening `isBackendInstalled` (TS `backend.ts` / Rust
+  `is_backend_installed`) beyond the existence check (would broaden scope into
+  the shared turboquant path); the broader ATO-176 `latest`-sentinel-resolution
+  / 404-on-concrete-tag work (separate sub-issues — the `latest` defense-in-depth
+  already exists in `performLoad`). macOS turboquant `llamacpp` and MLX are
+  untouched (this is the upstream provider). **Verified:** rolldown build clean
+  (`dist/index.js` 225.05 kB, exit 0 — the authoritative compile); standalone
+  `tsc --noEmit` shows only pre-existing module-resolution / base-class /
+  `window.core` typing noise (none in the edited ranges), per prior ADRs;
+  `vitest` 47 passed / 4 failed — **identical to a stash-baseline on clean
+  `main`**, so zero regressions (the 4 `backend.test.ts` failures and the
+  `index.test.ts` / `autoIncreaseCtx.test.ts` collection failure —
+  `Failed to resolve entry for @janhq/tauri-plugin-llamacpp-upstream-api` — are
+  pre-existing sandbox/env issues unrelated to this change).
+- **Owner:** team.
+- **Links:** [ATO-179](https://linear.app/atomicchat/issue/ATO-179),
+  [ATO-176](https://linear.app/atomicchat/issue/ATO-176), the 2026-06-15 ADR
+  *Stop the `llamacpp-upstream` auto-upgrade from wiping turboquant backends …*
+  (ATO-153), the 2026-06-10 ADR *Fix the two real model-load bugs … resolve the
+  `latest/<backend>` sentinel …* (ATO-124), files:
+  [`extensions/llamacpp-upstream-extension/src/index.ts`](extensions/llamacpp-upstream-extension/src/index.ts)
+  (`ensureBackendReady`, `pickFallbackBackend`, `persistResolvedBackend`,
+  `cleanupBrokenBackends`, `performLoad` / `getDevices` callers, `configureBackends`),
+  [`src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs`](src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs)
+  (`get_local_installed_backends` / `is_backend_installed`),
+  [`src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/path.rs`](src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/path.rs)
+  (`validate_binary_path`).
+
 ### 2026-06-15 — Stop the `llamacpp-upstream` auto-upgrade from wiping turboquant backends (point cleanup at the provider's own tree) + recover the bundled macOS turboquant backend if missing (ATO-153)
 - **Context:** On macOS both llama.cpp providers ship side-by-side and **share
   the on-disk GGUF tree** (`MODELS_PROVIDER_ROOT='llamacpp'`), but their
