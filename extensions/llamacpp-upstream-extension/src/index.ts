@@ -715,6 +715,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
         this.config.version_backend = stripBom(this.config.version_backend)
       }
 
+      // ATO-179: prune empty / broken backend stub folders (interrupted or
+      // 404'd downloads) before doing anything else, so they neither block a
+      // load with BINARY_NOT_FOUND nor masquerade as installed backends.
+      await this.cleanupBrokenBackends()
+
       // Install bundled backend from app resources if no local backends exist
       const bundledBackendString = await this.tryInstallBundledBackend()
 
@@ -3308,7 +3313,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       }
     }
 
-    const [version, backend] = cfg.version_backend.split('/')
+    let [version, backend] = cfg.version_backend.split('/')
 
     if (!version || !backend) {
       throw new Error(
@@ -3327,8 +3332,14 @@ export default class llamacpp_upstream_extension extends AIEngine {
       }
     }
 
-    // Ensure backend is downloaded and ready before proceeding
-    await this.ensureBackendReady(backend, version)
+    // Ensure backend is downloaded and ready before proceeding. ATO-179: this
+    // may resolve to a different (working, already-installed) backend than the
+    // requested one when the requested tag is unavailable, so use the returned
+    // pair for the binary path below instead of the originally-requested one.
+    const ready = await this.ensureBackendReady(backend, version)
+    version = ready.version
+    backend = ready.backend
+    cfg.version_backend = `${version}/${backend}`
 
     const janDataFolderPath = await getJanDataFolderPath()
     const modelConfigPath = await joinPath([
@@ -3762,32 +3773,113 @@ export default class llamacpp_upstream_extension extends AIEngine {
     return value.replace(/[^A-Za-z0-9_-]/g, '_')
   }
 
+  /**
+   * ATO-179: remove empty / broken backend stub folders left behind by
+   * interrupted or 404'd downloads. A `<version>/<backend>` folder that does
+   * not contain a real `llama-server` binary otherwise blocks loads with
+   * BINARY_NOT_FOUND and pollutes the installed-backends list. Runs once at
+   * startup (from configureBackends), before any download for the session, so
+   * it can never race a live install. Fully best-effort — every error is
+   * logged and ignored, and any folder that still holds a valid binary is
+   * left untouched.
+   */
+  private async cleanupBrokenBackends(): Promise<void> {
+    try {
+      const janDataFolderPath = await getJanDataFolderPath()
+      const backendsRoot = await joinPath([
+        janDataFolderPath,
+        'llamacpp-upstream',
+        'backends',
+      ])
+      if (!(await fs.existsSync(backendsRoot))) return
+
+      // `readdirSync` returns FULL absolute paths (Rust side), so strip to the
+      // basename before using a name as a backend/version identifier.
+      const baseName = (p: string): string | undefined =>
+        p.split(/[/\\]/).filter(Boolean).pop()
+
+      const versionPaths = (await fs.readdirSync(backendsRoot)) as string[]
+      for (const versionPath of versionPaths) {
+        const versionName = baseName(versionPath)
+        if (!versionName) continue
+        try {
+          const versionStat = await fs.fileStat(versionPath)
+          if (!versionStat?.isDirectory) continue
+        } catch {
+          continue
+        }
+
+        const backendPaths = (await fs.readdirSync(versionPath)) as string[]
+        for (const backendPath of backendPaths) {
+          const backendName = baseName(backendPath)
+          if (!backendName) continue
+          try {
+            const backendStat = await fs.fileStat(backendPath)
+            if (!backendStat?.isDirectory) continue
+          } catch {
+            continue
+          }
+          if (await isBackendInstalled(backendName, versionName)) continue
+          // No llama-server binary present — an empty / broken stub folder.
+          try {
+            await fs.rm(backendPath)
+            logger.warn(
+              `[cleanupBrokenBackends] Removed broken backend folder ${versionName}/${backendName}`
+            )
+          } catch (rmErr) {
+            logger.warn(
+              `[cleanupBrokenBackends] Failed to remove ${versionName}/${backendName}:`,
+              rmErr
+            )
+          }
+        }
+
+        // Prune the version folder if it is now empty.
+        try {
+          const remaining = (await fs.readdirSync(versionPath)) as string[]
+          if (remaining.length === 0) {
+            await fs.rm(versionPath)
+          }
+        } catch {
+          // best-effort
+        }
+      }
+    } catch (err) {
+      logger.warn('[cleanupBrokenBackends] scan failed:', err)
+    }
+  }
+
   private async ensureBackendReady(
     backend: string,
     version: string
-  ): Promise<void> {
+  ): Promise<{ backend: string; version: string }> {
     backend = stripBom(backend)
     version = stripBom(version)
     const backendKey = `${version}/${backend}`
-    if (await isBackendInstalled(backend, version)) {
-      // Backend exe is present, but on Windows CUDA variants the cudart
-      // runtime DLLs may still be missing (e.g. for users that installed
-      // a backend through an older build, or for the bundled CPU build
-      // which carries no cudart). Patch them in place idempotently
-      // without re-downloading the full backend archive.
-      if (IS_WINDOWS) {
-        const targetDir = await getBackendDir(backend, version)
-        try {
-          await this.ensureCudartReady(version, backend, targetDir, backendKey)
-        } catch (cudartErr) {
-          logger.warn(
-            `cudart pre-flight for ${backendKey} failed: ${
-              cudartErr instanceof Error ? cudartErr.message : String(cudartErr)
-            }`
-          )
-        }
+
+    // Backend exe is present, but on Windows CUDA variants the cudart
+    // runtime DLLs may still be missing (e.g. for users that installed
+    // a backend through an older build, or for the bundled CPU build
+    // which carries no cudart). Patch them in place idempotently
+    // without re-downloading the full backend archive.
+    const runCudartPreflight = async (b: string, v: string): Promise<void> => {
+      if (!IS_WINDOWS) return
+      const key = `${v}/${b}`
+      const targetDir = await getBackendDir(b, v)
+      try {
+        await this.ensureCudartReady(v, b, targetDir, key)
+      } catch (cudartErr) {
+        logger.warn(
+          `cudart pre-flight for ${key} failed: ${
+            cudartErr instanceof Error ? cudartErr.message : String(cudartErr)
+          }`
+        )
       }
-      return
+    }
+
+    if (await isBackendInstalled(backend, version)) {
+      await runCudartPreflight(backend, version)
+      return { backend, version }
     }
 
     // Both bundled (re-codesigned macOS / GPU-detected Windows) and
@@ -3804,12 +3896,113 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
 
     if (await isBackendInstalled(backend, version)) {
-      return
+      await runCudartPreflight(backend, version)
+      return { backend, version }
+    }
+
+    // ATO-179: the requested backend could not be made ready — the release
+    // tag was pruned / 404'd on the ggml-org stream, the download was
+    // interrupted leaving an empty stub folder, or the host is offline. Rather
+    // than hard-failing with BINARY_NOT_FOUND while a perfectly good backend
+    // sits on disk, fall back to a working installed backend: the newest
+    // installed copy of the SAME family first (same backend id, different
+    // release tag — guaranteed compatible), then the newest installed backend
+    // of any family (any llama.cpp build can serve a GGUF). Persist the
+    // fallback as the active version_backend so the model loads against a real
+    // binary and subsequent loads short-circuit.
+    const fallback = await this.pickFallbackBackend(backend)
+    if (
+      fallback &&
+      (await isBackendInstalled(fallback.backend, fallback.version))
+    ) {
+      const fallbackKey = `${fallback.version}/${fallback.backend}`
+      logger.warn(
+        `Requested backend ${backendKey} is unavailable; falling back to installed backend ${fallbackKey}.`
+      )
+      await this.persistResolvedBackend(fallbackKey)
+      await runCudartPreflight(fallback.backend, fallback.version)
+      return { backend: fallback.backend, version: fallback.version }
     }
 
     throw new Error(
       `Backend ${backendKey} is not installed and could not be downloaded. Check your internet connection or try reinstalling the app.`
     )
+  }
+
+  /**
+   * ATO-179: choose a working, already-installed backend to fall back to when
+   * the requested `version_backend` cannot be made ready. Prefers the newest
+   * installed copy of the same family (same backend id, different release tag),
+   * then the newest installed backend of any family. Only ever returns backends
+   * that pass the on-disk install check (a real `llama-server` binary), because
+   * `getLocalInstalledBackends()` filters out empty / broken stub folders — so
+   * a fallback is never itself a stub. Returns null when nothing usable is
+   * installed.
+   */
+  private async pickFallbackBackend(
+    requestedBackend: string
+  ): Promise<{ version: string; backend: string } | null> {
+    const buildNumber = (v: string): number => {
+      const m = /(\d+)/.exec(stripBom(v))
+      return m ? parseInt(m[1], 10) : 0
+    }
+    try {
+      // 1. Newest installed copy of the same backend family (different tag).
+      const sameFamily = await this.newestInstalledOfFamily(requestedBackend)
+      if (sameFamily) {
+        const [v, b] = sameFamily.split('/')
+        if (v && b && (await isBackendInstalled(stripBom(b), stripBom(v)))) {
+          return { version: stripBom(v), backend: stripBom(b) }
+        }
+      }
+      // 2. Newest installed backend of any family (any build can serve a GGUF).
+      const installed = await getLocalInstalledBackends()
+      if (installed.length === 0) return null
+      installed.sort((a, b) => buildNumber(b.version) - buildNumber(a.version))
+      const top = installed[0]
+      return { version: stripBom(top.version), backend: stripBom(top.backend) }
+    } catch (err) {
+      logger.warn(`pickFallbackBackend('${requestedBackend}') failed:`, err)
+      return null
+    }
+  }
+
+  /**
+   * Persist a resolved `version_backend` as the active backend: update the
+   * in-memory config, the stored backend type, the settings array, and emit
+   * `settingsChanged` so the provider UI reflects the change. Used by the
+   * ATO-179 fallback so a failed pinned backend is replaced by a working one
+   * instead of repeatedly failing on the unavailable tag.
+   */
+  private async persistResolvedBackend(versionBackend: string): Promise<void> {
+    versionBackend = stripBom(versionBackend)
+    this.config.version_backend = versionBackend
+    const backendType = versionBackend.split('/')[1]
+    if (backendType) {
+      this.setStoredBackendType(backendType)
+    }
+    try {
+      const settings = await this.getSettings()
+      await this.updateSettings(
+        settings.map((item) => {
+          if (item.key === 'version_backend') {
+            item.controllerProps.value = versionBackend
+          }
+          return item
+        })
+      )
+    } catch (err) {
+      logger.warn(
+        `Failed to persist resolved version_backend '${versionBackend}':`,
+        err
+      )
+    }
+    if (events && typeof events.emit === 'function') {
+      events.emit('settingsChanged', {
+        key: 'version_backend',
+        value: versionBackend,
+      })
+    }
   }
 
   /**
@@ -4603,7 +4796,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
 
     const cfg = this.config
-    const [version, backend] = cfg.version_backend.split('/')
+    let [version, backend] = cfg.version_backend.split('/')
     if (!version || !backend) {
       throw new Error(
         'Llama.cpp backend is not configured (version_backend is missing or invalid). Check Settings → Llama.cpp — Version & Backend, or reinstall the application.'
@@ -4613,8 +4806,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
     const envs: Record<string, string> = {}
     if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
 
-    // Ensure backend is downloaded and ready before proceeding
-    await this.ensureBackendReady(backend, version)
+    // Ensure backend is downloaded and ready before proceeding. ATO-179: may
+    // resolve to a working installed fallback if the requested tag is gone.
+    const ready = await this.ensureBackendReady(backend, version)
+    version = ready.version
+    backend = ready.backend
     logger.info('Calling Tauri command getDevices with arg --list-devices')
     const backendPath = await getBackendExePath(backend, version)
 
