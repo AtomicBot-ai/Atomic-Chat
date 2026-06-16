@@ -316,6 +316,10 @@ const RECOVERABLE_MODEL_LOAD_CODES = new Set<string>([
   'MODEL_FILE_NOT_FOUND',
   'BINARY_NOT_FOUND',
   'MULTIMODAL_PROJECTOR_LOAD_FAILED',
+  // ATO-185: the host CPU lacks the AVX baseline the bundled engine requires.
+  // This is an expected hardware-incompatibility condition, not a backend
+  // crash, so it must not be reported to Sentry as a crash event.
+  'CPU_NO_AVX',
 ])
 
 export function isRecoverableModelLoadCode(

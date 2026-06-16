@@ -18,5 +18,7 @@
   "modelFileMissingTitle": "Model file not found",
   "modelFileMissingDescription": "The model file couldn't be found — it may have been moved or deleted. Try re-downloading the model.",
   "modelFileCorruptTitle": "Model file is corrupted",
-  "modelFileCorruptDescription": "The model file appears to be incomplete or corrupted, likely from an interrupted download. Delete the model and download it again."
+  "modelFileCorruptDescription": "The model file appears to be incomplete or corrupted, likely from an interrupted download. Delete the model and download it again.",
+  "cpuNoAvxTitle": "Your CPU is not supported",
+  "cpuNoAvxDescription": "This processor doesn't support the AVX instruction set that the bundled engine requires, so local models can't run on it. A newer CPU (with AVX or AVX2) is needed."
 }
