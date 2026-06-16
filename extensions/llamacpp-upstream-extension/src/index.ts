@@ -42,6 +42,7 @@ import {
   getCudaToolkitVersion,
   isConcreteOfCudaFamily,
   resolveCudaFamilyConcrete,
+  cudaFamilyMajor,
 } from './backend'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import {
@@ -2164,6 +2165,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       const remote = await fetchRemoteBackends()
       const match = remote.find((b) => b.backend === backend)
       if (match?.version) {
+        this.cacheGoodReleaseTag(match.version)
         return `${match.version}/${backend}`
       }
       // ATO-174 (finishes ATO-105): a minor-less CUDA family id
@@ -2173,6 +2175,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // `latest/win-cuda-13-x64` sentinel keeps resolving across minor bumps.
       const familyConcrete = resolveCudaFamilyConcrete(backend, remote)
       if (familyConcrete) {
+        this.cacheGoodReleaseTag(familyConcrete.split('/')[0])
         logger.info(
           `[resolveLatestBackendString] resolved CUDA family '${backend}' -> ${familyConcrete}`
         )
@@ -2246,6 +2249,93 @@ export default class llamacpp_upstream_extension extends AIEngine {
       logger.warn(`newestInstalledOfFamily('${backendId}') failed:`, err)
       return null
     }
+  }
+
+  /**
+   * Last-known-good ggml-org release tag (e.g. `b9616`), cached in
+   * localStorage so the `latest/<backend>` sentinel can still be resolved to
+   * a concrete tag when the release stream is unreachable (offline /
+   * rate-limited) and no copy of the family is installed. The build tag is
+   * shared across every asset of a release, so a single cached tag works for
+   * any concrete backend id. (ATO-177)
+   */
+  private readonly LAST_GOOD_RELEASE_TAG_KEY =
+    'llamacpp_upstream_last_good_release_tag'
+
+  private getCachedGoodReleaseTag(): string | null {
+    try {
+      const t = stripBom(
+        localStorage.getItem(this.LAST_GOOD_RELEASE_TAG_KEY) || ''
+      ).trim()
+      return /^b\d+$/.test(t) ? t : null
+    } catch {
+      return null
+    }
+  }
+
+  private cacheGoodReleaseTag(version: string): void {
+    try {
+      const t = stripBom(version).trim()
+      if (/^b\d+$/.test(t)) {
+        localStorage.setItem(this.LAST_GOOD_RELEASE_TAG_KEY, t)
+      }
+    } catch {
+      // localStorage may be unavailable; the cache is best-effort.
+    }
+  }
+
+  /**
+   * Resolves a `latest/<backend>` sentinel (`version === 'latest'`) to a
+   * concrete `<tag>/<backend>` pair so it can never reach the
+   * `downloadAndInstallBackend` 'latest' guard — the single failure mode that
+   * surfaced to ~30k users as a hard "Failed to download backend latest/..."
+   * (ATO-177). Resolution order:
+   *   1. live ggml-org release lookup (`resolveLatestBackendString`);
+   *   2. newest locally-installed copy of the family (offline, no download);
+   *   3. last-known-good release tag cached in localStorage (offline) — paired
+   *      only with a concrete backend id (never a minor-less CUDA family id,
+   *      which would build a 404 URL).
+   * On a concrete resolution the result is persisted to
+   * `this.config.version_backend` so subsequent loads short-circuit. Returns
+   * the resolved pair, or the original `{ version, backend }` when nothing
+   * could be resolved.
+   */
+  private async resolveSentinelBackend(
+    version: string,
+    backend: string
+  ): Promise<{ version: string; backend: string }> {
+    if (version !== 'latest') return { version, backend }
+
+    let resolved =
+      (await this.resolveLatestBackendString(backend)) ??
+      (await this.newestInstalledOfFamily(backend))
+
+    // Offline fallback: a previously-cached good release tag. Only safe for a
+    // concrete backend id — a minor-less CUDA family id (`win-cuda-13-x64`)
+    // paired with any tag would 404, so skip it there.
+    if (!resolved && !cudaFamilyMajor(backend)) {
+      const cachedTag = this.getCachedGoodReleaseTag()
+      if (cachedTag) {
+        resolved = `${cachedTag}/${backend}`
+        logger.warn(
+          `[resolveSentinelBackend] release stream unreachable and no installed copy of '${backend}'; falling back to cached good tag ${cachedTag}`
+        )
+      }
+    }
+
+    if (resolved && isConcreteVersionBackend(resolved)) {
+      const parts = resolved.split('/')
+      this.config.version_backend = resolved
+      logger.info(
+        `[resolveSentinelBackend] resolved latest/${backend} -> ${resolved}`
+      )
+      return { version: stripBom(parts[0]), backend: stripBom(parts[1]) }
+    }
+
+    logger.warn(
+      `[resolveSentinelBackend] could not resolve latest/${backend} to a concrete release tag (offline, nothing installed, no cached tag)`
+    )
+    return { version, backend }
   }
 
   /**
@@ -3327,8 +3417,15 @@ export default class llamacpp_upstream_extension extends AIEngine {
       }
     }
 
-    // Ensure backend is downloaded and ready before proceeding
-    await this.ensureBackendReady(backend, version)
+    // Ensure backend is downloaded and ready before proceeding. The returned
+    // pair is the concrete `<tag>/<backend>` after any `latest/<backend>`
+    // sentinel resolution (ATO-177) — use it for the exe-path lookup so a
+    // sentinel that slipped through can't yield a `latest`-tagged path.
+    const readyBackend = await this.ensureBackendReady(backend, version)
+    // Keep the config the load is built from in sync with the concrete tag, in
+    // case the inline resolution above failed but ensureBackendReady recovered
+    // it (e.g. offline via the cached good tag / newest installed copy).
+    cfg.version_backend = `${readyBackend.version}/${readyBackend.backend}`
 
     const janDataFolderPath = await getJanDataFolderPath()
     const modelConfigPath = await joinPath([
@@ -3430,7 +3527,10 @@ export default class llamacpp_upstream_extension extends AIEngine {
       'Calling Tauri command load_llama_model with config:',
       JSON.stringify(cfg)
     )
-    const backendPath = await getBackendExePath(backend, version)
+    const backendPath = await getBackendExePath(
+      readyBackend.backend,
+      readyBackend.version
+    )
 
     try {
       const sInfo = await loadLlamaModel(
@@ -3765,9 +3865,27 @@ export default class llamacpp_upstream_extension extends AIEngine {
   private async ensureBackendReady(
     backend: string,
     version: string
-  ): Promise<void> {
+  ): Promise<{ version: string; backend: string }> {
     backend = stripBom(backend)
     version = stripBom(version)
+
+    // ATO-177: never let the `latest/<backend>` sentinel reach the
+    // `downloadAndInstallBackend` 'latest' guard below — that guard surfaced
+    // to ~30k users (`latest/win-cpu-x64`, `latest/linux-cpu-x64`) as a hard
+    // "Failed to download backend latest/..." fail. This method is the single
+    // choke point every load / device probe funnels through, so resolving the
+    // sentinel here covers all callers regardless of entry point.
+    if (version === 'latest') {
+      const r = await this.resolveSentinelBackend(version, backend)
+      version = r.version
+      backend = r.backend
+      if (version === 'latest') {
+        throw new Error(
+          `Could not resolve a concrete release for '${backend}': the ggml-org release stream is unreachable and no compatible backend is installed locally. Check your internet connection (Settings → Proxy) or reinstall the application.`
+        )
+      }
+    }
+
     const backendKey = `${version}/${backend}`
     if (await isBackendInstalled(backend, version)) {
       // Backend exe is present, but on Windows CUDA variants the cudart
@@ -3787,7 +3905,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
           )
         }
       }
-      return
+      return { version, backend }
     }
 
     // Both bundled (re-codesigned macOS / GPU-detected Windows) and
@@ -3804,7 +3922,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
 
     if (await isBackendInstalled(backend, version)) {
-      return
+      return { version, backend }
     }
 
     throw new Error(
@@ -4613,10 +4731,16 @@ export default class llamacpp_upstream_extension extends AIEngine {
     const envs: Record<string, string> = {}
     if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
 
-    // Ensure backend is downloaded and ready before proceeding
-    await this.ensureBackendReady(backend, version)
+    // Ensure backend is downloaded and ready before proceeding. Use the
+    // concrete `<tag>/<backend>` returned after sentinel resolution (ATO-177)
+    // so a `latest/<backend>` version_backend can't drive a `latest`-tagged
+    // device-probe path.
+    const readyBackend = await this.ensureBackendReady(backend, version)
     logger.info('Calling Tauri command getDevices with arg --list-devices')
-    const backendPath = await getBackendExePath(backend, version)
+    const backendPath = await getBackendExePath(
+      readyBackend.backend,
+      readyBackend.version
+    )
 
     try {
       const dList = await invoke<DeviceList[]>('plugin:llamacpp-upstream|get_devices', {
