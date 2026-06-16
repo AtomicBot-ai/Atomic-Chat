@@ -3308,7 +3308,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       }
     }
 
-    const [version, backend] = cfg.version_backend.split('/')
+    let [version, backend] = cfg.version_backend.split('/')
 
     if (!version || !backend) {
       throw new Error(
@@ -3327,8 +3327,23 @@ export default class llamacpp_upstream_extension extends AIEngine {
       }
     }
 
-    // Ensure backend is downloaded and ready before proceeding
-    await this.ensureBackendReady(backend, version)
+    // Ensure backend is downloaded and ready before proceeding. On the load
+    // path we allow a graceful fallback (ATO-178): if the model's pinned
+    // concrete tag 404s for this platform or the release stream is
+    // unreachable, `ensureBackendReady` returns a compatible backend that is
+    // actually available instead of hard-failing. Adopt it so the binary
+    // path lookup below matches, and persist it in-memory (mirroring the
+    // ATO-124 sentinel resolution) so subsequent loads short-circuit.
+    const requestedKey = `${stripBom(version)}/${stripBom(backend)}`
+    const readyBackend = await this.ensureBackendReady(backend, version, true)
+    if (readyBackend && readyBackend !== requestedKey) {
+      logger.warn(
+        `[performLoad] Requested backend ${requestedKey} unavailable; using ${readyBackend} for this load.`
+      )
+      cfg.version_backend = readyBackend
+      this.config.version_backend = readyBackend
+      ;[version, backend] = readyBackend.split('/')
+    }
 
     const janDataFolderPath = await getJanDataFolderPath()
     const modelConfigPath = await joinPath([
@@ -3764,8 +3779,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
   private async ensureBackendReady(
     backend: string,
-    version: string
-  ): Promise<void> {
+    version: string,
+    allowFallback: boolean = false
+  ): Promise<string> {
     backend = stripBom(backend)
     version = stripBom(version)
     const backendKey = `${version}/${backend}`
@@ -3787,7 +3803,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
           )
         }
       }
-      return
+      return backendKey
     }
 
     // Both bundled (re-codesigned macOS / GPU-detected Windows) and
@@ -3797,19 +3813,127 @@ export default class llamacpp_upstream_extension extends AIEngine {
     logger.info(
       `Backend ${backendKey} not installed locally, attempting download from upstream releases...`
     )
+    let downloadErr: unknown
     try {
       await this.downloadAndInstallBackend(backendKey)
     } catch (err) {
+      downloadErr = err
       logger.error(`Failed to download backend ${backendKey}:`, err)
     }
 
     if (await isBackendInstalled(backend, version)) {
-      return
+      return backendKey
+    }
+
+    // ATO-178: the requested concrete tag could not be made ready — either
+    // the asset 404s for this platform on the requested ggml-org tag (e.g.
+    // `b9616/ubuntu-vulkan-x64`), or the release stream is unreachable. On
+    // the load path, fall back to a compatible backend that is available so
+    // the model can still run, instead of a hard fail. Explicit
+    // install/update flows (allowFallback=false) keep the strict behaviour
+    // so a deliberate selection is never silently swapped.
+    if (allowFallback) {
+      const fallback = await this.resolveBackendFallback(backend, version)
+      if (fallback) {
+        logger.warn(
+          `Backend ${backendKey} unavailable (${
+            downloadErr instanceof Error
+              ? downloadErr.message
+              : 'download failed / release stream unreachable'
+          }); falling back to compatible backend ${fallback}.`
+        )
+        return fallback
+      }
     }
 
     throw new Error(
-      `Backend ${backendKey} is not installed and could not be downloaded. Check your internet connection or try reinstalling the app.`
+      `Backend ${backendKey} could not be downloaded — the ggml-org release stream may be unreachable or that release has no build for your platform, and no compatible backend is installed locally. Check your internet connection (Settings → Proxy) and try again later.`
     )
+  }
+
+  /**
+   * Picks a backend that is actually usable when the requested concrete
+   * `<version>/<backend>` can be neither downloaded (404 / unreachable) nor
+   * found on disk (ATO-178). Resolution order, most-preferred first:
+   *
+   *   1. Newest locally-installed version of the SAME family — instant,
+   *      offline-safe, preserves the exact backend variant (e.g. another
+   *      `*-vulkan-x64` build the user already has). This is the common
+   *      case: the model is pinned to a tag whose folder is empty/missing
+   *      while a sibling tag of the same family is installed and working.
+   *   2. Newest PUBLISHED tag of the same family on ggml-org — covers the
+   *      404-on-this-tag case where the requested release simply lacks this
+   *      platform's asset but a newer release ships it. Only used when it
+   *      actually installs.
+   *   3. Newest locally-installed backend of ANY family — last-resort safety
+   *      net so the app stays usable (e.g. degrade a GPU variant to the
+   *      bundled CPU build) rather than dead-ending. Backends only land on
+   *      disk for this host, so any installed one is host-compatible.
+   *
+   * Returns the resolved `<version>/<backend>` string, or `null` when no
+   * usable backend can be produced (caller then surfaces a clear error).
+   */
+  private async resolveBackendFallback(
+    backend: string,
+    failedVersion: string
+  ): Promise<string | null> {
+    const failedKey = `${failedVersion}/${backend}`
+
+    // 1. Same-family copy already on disk.
+    const sameFamily = await this.newestInstalledOfFamily(backend)
+    if (sameFamily && sameFamily !== failedKey) {
+      const [iv, ib] = sameFamily.split('/')
+      if (await isBackendInstalled(ib, iv)) {
+        return sameFamily
+      }
+    }
+
+    // 2. Newest published tag of the same family (the requested tag may
+    //    lack this platform's asset; a newer release usually ships it).
+    const latest = await this.resolveLatestBackendString(backend)
+    if (latest && latest !== failedKey) {
+      const [lv, lb] = latest.split('/')
+      if (!(await isBackendInstalled(lb, lv))) {
+        try {
+          await this.downloadAndInstallBackend(latest)
+        } catch (err) {
+          logger.warn(`Fallback download of ${latest} failed:`, err)
+        }
+      }
+      if (await isBackendInstalled(lb, lv)) {
+        return latest
+      }
+    }
+
+    // 3. Any installed backend keeps the app usable (typically the bundled
+    //    CPU build). Pick the newest by build number.
+    try {
+      const installed = await getLocalInstalledBackends()
+      const candidates = installed
+        .map((b) => ({
+          version: stripBom(b.version),
+          backend: stripBom(b.backend),
+        }))
+        .filter((b) => `${b.version}/${b.backend}` !== failedKey)
+      if (candidates.length > 0) {
+        const buildNumber = (v: string): number => {
+          const m = /(\d+)/.exec(v)
+          return m ? parseInt(m[1], 10) : 0
+        }
+        candidates.sort(
+          (a, b) => buildNumber(b.version) - buildNumber(a.version)
+        )
+        for (const c of candidates) {
+          if (await isBackendInstalled(c.backend, c.version)) {
+            return `${c.version}/${c.backend}`
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn('resolveBackendFallback: enumerating installed backends failed:', err)
+    }
+
+    return null
   }
 
   /**

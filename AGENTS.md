@@ -309,6 +309,70 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-06-16 — Graceful fallback when a model's pinned concrete backend tag 404s / the release stream is unreachable (ATO-178)
+- **Context:** Failure mode 2 of [ATO-176](https://linear.app/atomicchat/issue/ATO-176).
+  A model is pinned to a concrete ggml-org tag whose per-platform asset 404s
+  (`Failed to download backend b9616/ubuntu-vulkan-x64: HTTP status 404` — 263 events;
+  `b9637/ubuntu-vulkan-x64: 404` — 44) or the release stream is unreachable
+  (`Could not resolve a release for 'win-cuda-13.3-x64' / … : the ggml-org
+  release stream is unreachable and no version of this backend is installed
+  locally.` — 149/97/70/63). At load time
+  [`ensureBackendReady`](extensions/llamacpp-upstream-extension/src/index.ts)
+  attempted the requested concrete `<version>/<backend>`, logged
+  `Failed to download backend …`, then hard-threw — even when a sibling tag of
+  the same family (or the bundled CPU build) was installed and working on disk.
+  The user saw "Failed to load the model" and the app was unusable, despite a
+  perfectly good backend sitting on disk. (Sibling sub-issue ATO-95 already
+  handles the unrelated unresolved-`latest`-sentinel case; this is purely the
+  404/unreachable-on-a-concrete-tag path.)
+- **Decision:** Add a load-path-only graceful fallback. `ensureBackendReady`
+  now takes `allowFallback` (default `false`) and returns the
+  `<version>/<backend>` it actually made ready. When the requested concrete tag
+  can be neither downloaded nor found on disk and `allowFallback` is set, a new
+  `resolveBackendFallback(backend, failedVersion)` resolves, in order:
+  (1) the newest locally-installed version of the **same family** (instant,
+  offline-safe, preserves the variant — the common "pinned tag empty/missing
+  but a sibling tag works" repro from ATO-176); (2) the newest **published**
+  tag of the same family on ggml-org (covers a 404 where the requested release
+  simply lacks this platform's asset), downloaded only if it actually installs;
+  (3) the newest installed backend of **any** family (last-resort safety net so
+  the app stays usable — e.g. degrade a GPU variant to the bundled CPU build;
+  installed backends are by definition host-compatible). `performLoad` passes
+  `allowFallback=true`, adopts the returned string into
+  `cfg.version_backend`/`this.config.version_backend` (in-memory, mirroring the
+  ATO-124 sentinel resolution so subsequent loads short-circuit), and recomputes
+  `version`/`backend` for the `getBackendExePath` lookup. When nothing can be
+  produced, the throw is now an **actionable** message ("…release stream may be
+  unreachable or that release has no build for your platform, and no compatible
+  backend is installed locally. Check your internet connection (Settings →
+  Proxy) and try again later.") instead of the generic "reinstall the app".
+- **Consequences:** A 404/unreachable on a pinned tag no longer hard-fails when
+  any compatible backend is on disk; the model runs (preferring the same
+  variant, degrading to CPU only as a last resort). Explicit install/update
+  flows (`updateBackend`, `onSettingUpdate`, `getDevices`) keep `allowFallback`
+  off, so a deliberate user selection is never silently swapped. **Trade-off
+  (accepted):** the last-resort step can silently downgrade a GPU user to an
+  installed CPU build for that load — logged at `warn`, judged strictly better
+  than "app unusable"; the in-memory `version_backend` swap is not persisted to
+  settings (matches ATO-124), so a later "Find optimal backend" / manual pick
+  still re-targets the GPU tier once the release stream recovers. Scope: one
+  extension TS file (`ensureBackendReady` + new `resolveBackendFallback` +
+  `performLoad` adoption); no Rust, IPC, on-disk layout, or settings-schema
+  change. **Verified:** rolldown build clean (`dist/index.js` 223.09 kB,
+  exit 0 — the authoritative compile); vitest unchanged from baseline
+  (47 passed / 4 failed, the 4 `backend.test.ts` failures confirmed pre-existing
+  by a stash-baseline on HEAD); standalone `tsc --noEmit` reports zero errors in
+  the edited line ranges (the remaining errors are the pre-existing base-class /
+  module-resolution / `window.core` noise documented in prior ADRs).
+- **Owner:** team.
+- **Links:** [ATO-178](https://linear.app/atomicchat/issue/ATO-178),
+  [ATO-176](https://linear.app/atomicchat/issue/ATO-176), the 2026-06-10 ADR
+  *Fix the two real model-load bugs … resolve the `latest/<backend>` sentinel
+  before load (ATO-124)* and the 2026-06-05 ADR *Resolve the `latest/<backend>`
+  sentinel … (ATO-95)*, files:
+  [`extensions/llamacpp-upstream-extension/src/index.ts`](extensions/llamacpp-upstream-extension/src/index.ts)
+  (`ensureBackendReady`, `resolveBackendFallback`, `performLoad`).
+
 ### 2026-06-15 — Stop the `llamacpp-upstream` auto-upgrade from wiping turboquant backends (point cleanup at the provider's own tree) + recover the bundled macOS turboquant backend if missing (ATO-153)
 - **Context:** On macOS both llama.cpp providers ship side-by-side and **share
   the on-disk GGUF tree** (`MODELS_PROVIDER_ROOT='llamacpp'`), but their
