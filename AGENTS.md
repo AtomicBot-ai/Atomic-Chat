@@ -309,6 +309,76 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-06-16 — Graceful `llamacpp-upstream` backend resolution/fallback on model load so a broken download can't hard-fail loading (ATO-176)
+- **Context:** The backend download/resolution pipeline hard-failed model
+  loading for a large number of users across all platforms (the top
+  `atomic-chat-desktop` Sentry group, ~30k Win+Linux events for
+  `refusing to download unresolved 'latest' tag`, plus 404 / `BINARY_NOT_FOUND`
+  groups). In the `llamacpp-upstream` provider,
+  [`performLoad`](extensions/llamacpp-upstream-extension/src/index.ts) derived
+  `[version, backend]` from `version_backend` and called `ensureBackendReady`,
+  which threw on three failure modes of one class with **no fallback**:
+  (1) an unresolved `latest/<backend>` sentinel reaching
+  `downloadAndInstallBackend`'s guard (the prior performLoad sentinel-resolve at
+  ~3293 logs a warning and *continues* with `latest` when offline / nothing
+  installed, so the guard still fired for end users); (2) a concrete tag 404'ing
+  on the ggml-org release stream (asset missing for the platform, or stream
+  unreachable); (3) an empty/stub backend folder (`BINARY_NOT_FOUND`) while a
+  fully-installed working backend (e.g. `b9652`) sat on disk — the app never
+  rolled back to it (locally reproduced on macOS with `b9642` empty / `b9652`
+  intact).
+- **Decision:** Add `ensureUsableBackend(backend, version)` wrapping the load
+  path's backend resolution and returning the `version/backend` that actually
+  exists on disk (so `getBackendExePath` resolves to a working binary), with a
+  graceful chain: (1) resolve a leftover `latest` sentinel to a concrete tag
+  (`resolveLatestBackendString` → `newestInstalledOfFamily`) *before any
+  download* so the sentinel guard can't fire; (2) for a concrete tag, ensure
+  installed (download if missing); (3) on any unavailability fall back to an
+  installed compatible backend via new `findFallbackInstalledBackend` (newest
+  installed copy of the *same variant* first — covers the repro — then the best
+  installed backend for the hardware via `determineBestBackend`, which always
+  includes the universally-compatible bundled CPU build); only when nothing is
+  installed throw a clear, actionable error. The selection is persisted
+  in-memory (`persistVersionBackend`, mirroring the existing sentinel-resolution
+  persistence) so subsequent loads short-circuit on the working backend and stop
+  re-spamming the release stream / Sentry. The duplicate
+  `logger.error("Failed to download backend …")` in `ensureBackendReady` is
+  downgraded to `logger.warn` (recoverable at the load layer). `performLoad`'s
+  flash_attn version check now keys on the *resolved* backend/version.
+- **Consequences:** The three failure modes degrade to "load on a working
+  backend" instead of "Failed to load the model" whenever any compatible backend
+  is installed (which, with the bundled CPU build, is the normal case on
+  Win/Linux). **Deliberately scoped to the model-load path only:**
+  `ensureBackendReady` and the explicit install flows (`updateBackend` /
+  `downloadRecommendedBackend` / `downloadManualBackend`) are unchanged — a user
+  who explicitly chose to install backend *X* must not be silently given *Y*.
+  **Trade-offs (accepted):** the fallback is persisted in-memory only, so the
+  user's on-disk selection is preserved and retried next session (self-heals
+  when the asset/stream returns); a cross-variant fallback (e.g. a 404'd GPU
+  build → bundled CPU) is a capability downgrade but keeps the app usable.
+  macOS turboquant `llamacpp` and MLX are untouched. Scope: 1 extension TS file
+  (+1 test); no Rust, IPC, on-disk layout, or settings-schema change.
+  **Verified:** rolldown build clean (`dist/index.js` 223.83 kB, exit 0 — the
+  authoritative compile); `tsc --noEmit` shows no errors in the new code (only
+  the documented pre-existing standalone module-resolution / base-class noise);
+  new `ensureUsableBackend.test.ts` (3 cases — same-variant fallback,
+  sentinel-resolve-before-download, clear error when nothing installed) passes;
+  full suite 91 passed / 14 failed, the 14 confirmed pre-existing by a
+  stash-baseline on HEAD (88 passed / 14 failed before; +3 = exactly the new
+  tests). Extensions have no eslint config, consistent with prior ADRs.
+- **Owner:** team.
+- **Links:** [ATO-176](https://linear.app/atomicchat/issue/ATO-176),
+  [ATO-135](https://linear.app/atomicchat/issue/ATO-135),
+  [ATO-136](https://linear.app/atomicchat/issue/ATO-136), the 2026-06-15 ADR
+  *Stop "Find optimal backend" from silently degrading to CPU …* (ATO-161/174),
+  the 2026-06-10 ADR *Fix the two real model-load bugs … resolve the
+  `latest/<backend>` sentinel before load* (ATO-124), the 2026-06-05 ADR
+  *Resolve the `latest/<backend>` sentinel before download …* (ATO-95), files:
+  [`extensions/llamacpp-upstream-extension/src/index.ts`](extensions/llamacpp-upstream-extension/src/index.ts)
+  (`performLoad`, `ensureUsableBackend`, `findFallbackInstalledBackend`,
+  `persistVersionBackend`, `ensureBackendReady`),
+  [`extensions/llamacpp-upstream-extension/src/test/ensureUsableBackend.test.ts`](extensions/llamacpp-upstream-extension/src/test/ensureUsableBackend.test.ts).
+
 ### 2026-06-15 — Stop the `llamacpp-upstream` auto-upgrade from wiping turboquant backends (point cleanup at the provider's own tree) + recover the bundled macOS turboquant backend if missing (ATO-153)
 - **Context:** On macOS both llama.cpp providers ship side-by-side and **share
   the on-disk GGUF tree** (`MODELS_PROVIDER_ROOT='llamacpp'`), but their
