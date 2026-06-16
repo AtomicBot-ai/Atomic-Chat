@@ -309,6 +309,67 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-06-16 — Resolve the `latest/<backend>` sentinel inside `ensureBackendReady` so the download guard never reaches the user (ATO-177)
+- **Context:** The single most massive backend-download failure in Sentry
+  (`atomic-chat-desktop`, 30d): `latest/win-cpu-x64` — 21290, `latest/linux-cpu-x64`
+  — 8568 ([ATO-177](https://linear.app/atomicchat/issue/ATO-177), child of
+  [ATO-176](https://linear.app/atomicchat/issue/ATO-176)). The
+  `downloadAndInstallBackend` defense-in-depth guard `refusing to download
+  unresolved 'latest' tag` (ATO-95) was reaching end users as a hard fail. Prior
+  ADRs (ATO-95, ATO-124) resolved the sentinel **only at specific entry points**
+  (`downloadRecommendedBackend`, `onSettingUpdate`, `performLoad`'s inline block),
+  but two paths still reached the choke point
+  [`ensureBackendReady`](extensions/llamacpp-upstream-extension/src/index.ts) with
+  an unresolved `latest`: (1) [`getDevices`](extensions/llamacpp-upstream-extension/src/index.ts)
+  splits `version_backend` and, since `latest/win-cpu-x64` contains `/`, skips the
+  `configureBackends` wait and calls `ensureBackendReady('win-cpu-x64','latest')`;
+  (2) `performLoad`'s inline resolve only **warns** on failure (offline /
+  rate-limited) then proceeds with `latest`. Both funneled into
+  `ensureBackendReady` → `downloadAndInstallBackend('latest/...')` → guard throw,
+  logged via `logger.error("Failed to download backend latest/...")` (the
+  `SentryLogger` bridge turns that into a crash event).
+- **Decision:** Resolve the sentinel **at the single choke point**
+  `ensureBackendReady` itself — covering every caller regardless of entry point —
+  and return the concrete `{ version, backend }` pair so callers that re-use the
+  split values (`performLoad`, `getDevices`) drive the exe/device path off the
+  resolved tag. New `resolveSentinelBackend(version, backend)` resolution order:
+  (1) live ggml-org release lookup (`resolveLatestBackendString`), (2) newest
+  locally-installed copy of the family (`newestInstalledOfFamily`, offline, no
+  download), (3) a **last-known-good release tag** cached in localStorage
+  (`llamacpp_upstream_last_good_release_tag`, written on every successful
+  `resolveLatestBackendString`) — paired only with a concrete backend id, never a
+  minor-less CUDA family id (which would 404). On success it persists
+  `this.config.version_backend` so subsequent loads short-circuit. Only when all
+  three fail does `ensureBackendReady` throw — now an **actionable** message
+  ("…release stream is unreachable and no compatible backend is installed
+  locally. Check your internet connection (Settings → Proxy) or reinstall…")
+  instead of the internal "refusing unresolved latest" guard. `performLoad` also
+  syncs `cfg.version_backend` from the resolved pair.
+- **Consequences:** The `latest/<backend>` sentinel can no longer reach the
+  download guard from any path; offline / rate-limited hosts degrade to the
+  newest installed family copy or the cached good tag rather than a hard fail
+  (AC met). The original `downloadAndInstallBackend` guard stays as
+  defense-in-depth (now genuinely unreachable in normal flow). **Deliberately NOT
+  done (out of this slice, tracked under ATO-176):** the 404-on-concrete-tag case
+  (`bXXXX/ubuntu-vulkan-x64`) and the `BINARY_NOT_FOUND` empty-folder fallback to
+  another installed backend — those are sibling failure modes, not the `latest`
+  sentinel. Scope: 1 extension TS file; no Rust, IPC, on-disk layout, or
+  settings-schema change. **Verified:** rolldown build clean (`dist/index.js`
+  222.98 kB, exit 0 — the authoritative compile); extension vitest 47 passed / 4
+  failed, the 4 failures confirmed pre-existing by a stash-baseline on HEAD
+  (identical 47/4 — `backend.test.ts` path-fn / env-bound); standalone
+  `tsc --noEmit` shows only pre-existing module-resolution / base-class noise, no
+  new error in the edited ranges.
+- **Owner:** team.
+- **Links:** [ATO-177](https://linear.app/atomicchat/issue/ATO-177),
+  [ATO-176](https://linear.app/atomicchat/issue/ATO-176),
+  [ATO-95](https://linear.app/atomicchat/issue/ATO-95),
+  [ATO-124](https://linear.app/atomicchat/issue/ATO-124), files:
+  [`extensions/llamacpp-upstream-extension/src/index.ts`](extensions/llamacpp-upstream-extension/src/index.ts)
+  (`resolveSentinelBackend`, `getCachedGoodReleaseTag`/`cacheGoodReleaseTag`,
+  `ensureBackendReady` return + sentinel resolve, `performLoad` / `getDevices`
+  consume the resolved pair, `resolveLatestBackendString` cache writes).
+
 ### 2026-06-15 — Stop the `llamacpp-upstream` auto-upgrade from wiping turboquant backends (point cleanup at the provider's own tree) + recover the bundled macOS turboquant backend if missing (ATO-153)
 - **Context:** On macOS both llama.cpp providers ship side-by-side and **share
   the on-disk GGUF tree** (`MODELS_PROVIDER_ROOT='llamacpp'`), but their
