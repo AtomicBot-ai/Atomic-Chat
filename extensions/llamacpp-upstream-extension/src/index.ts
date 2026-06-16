@@ -3308,27 +3308,37 @@ export default class llamacpp_upstream_extension extends AIEngine {
       }
     }
 
-    const [version, backend] = cfg.version_backend.split('/')
+    const [requestedVersion, requestedBackend] = cfg.version_backend.split('/')
 
-    if (!version || !backend) {
+    if (!requestedVersion || !requestedBackend) {
       throw new Error(
         'Llama.cpp backend is not configured (version_backend is missing or invalid). Check Settings → Llama.cpp — Version & Backend, or reinstall the application.'
       )
     }
 
+    // ATO-176: ensure a *usable* backend before loading. Resolves a leftover
+    // `latest/<backend>` sentinel, downloads the requested tag if missing, and
+    // — when the requested tag is unavailable (release stream unreachable /
+    // asset 404 / empty-stub folder = BINARY_NOT_FOUND) — gracefully falls
+    // back to any installed compatible backend instead of a hard fail. The
+    // returned `version`/`backend` is what actually exists on disk, so the
+    // backend exe path below resolves to a working binary.
+    const { version, backend } = await this.ensureUsableBackend(
+      requestedBackend,
+      requestedVersion
+    )
+
     // Version-aware flash_attn handling:
     // llama.cpp b6325+ changed --flash-attn from a boolean flag to a string
     // For older versions, "auto" is not a valid value so we fall back to "off"
-    // (i.e. don't send the flag at all).
+    // (i.e. don't send the flag at all). Keyed on the *resolved* backend/version
+    // so a fallback to a different build is reflected.
     if (cfg.flash_attn === 'auto' && !backend.startsWith('ik')) {
       const buildNum = parseBuildNumber(version)
       if (buildNum !== null && buildNum < 6325) {
         cfg.flash_attn = 'off'
       }
     }
-
-    // Ensure backend is downloaded and ready before proceeding
-    await this.ensureBackendReady(backend, version)
 
     const janDataFolderPath = await getJanDataFolderPath()
     const modelConfigPath = await joinPath([
@@ -3800,7 +3810,12 @@ export default class llamacpp_upstream_extension extends AIEngine {
     try {
       await this.downloadAndInstallBackend(backendKey)
     } catch (err) {
-      logger.error(`Failed to download backend ${backendKey}:`, err)
+      // ATO-176: recoverable at the load layer — `ensureUsableBackend` falls
+      // back to an installed compatible backend. Logged at `warn` (not
+      // `error`) so a single failed download no longer becomes a crash-level
+      // Sentry event per attempt; the user-facing failure, if any, is the
+      // thrown error below / the clear fallback message in `ensureUsableBackend`.
+      logger.warn(`Failed to download backend ${backendKey}:`, err)
     }
 
     if (await isBackendInstalled(backend, version)) {
@@ -3810,6 +3825,128 @@ export default class llamacpp_upstream_extension extends AIEngine {
     throw new Error(
       `Backend ${backendKey} is not installed and could not be downloaded. Check your internet connection or try reinstalling the app.`
     )
+  }
+
+  /**
+   * ATO-176: resolve the backend a model load should actually use, with a
+   * graceful fallback chain so a broken download/resolution can't hard-fail
+   * the load when a working backend is already installed.
+   *
+   *   1. Resolve a leftover `latest/<backend>` sentinel to a concrete release
+   *      tag (release lookup → newest-installed-of-family). The unresolved
+   *      sentinel must never reach the download path — it always 404s and the
+   *      `downloadAndInstallBackend` guard hard-fails on it.
+   *   2. For a concrete tag, ensure it is installed (download if missing).
+   *   3. If the requested backend is still unusable (release stream
+   *      unreachable / asset 404 / empty-stub folder = BINARY_NOT_FOUND),
+   *      fall back to any installed compatible backend instead of throwing.
+   *
+   * The resolved/fallback selection is persisted in-memory into
+   * `this.config.version_backend` so subsequent loads short-circuit on the
+   * working backend (mirrors the in-memory persistence already done for the
+   * sentinel resolution earlier in `performLoad`). The user's on-disk
+   * selection is left intact.
+   */
+  private async ensureUsableBackend(
+    backend: string,
+    version: string
+  ): Promise<{ version: string; backend: string }> {
+    backend = stripBom(backend)
+    version = stripBom(version)
+
+    // (1) Resolve an unresolved `latest` sentinel to a concrete tag so it can
+    //     never reach the download path.
+    if (version === 'latest') {
+      const resolved =
+        (await this.resolveLatestBackendString(backend)) ??
+        (await this.newestInstalledOfFamily(backend))
+      if (resolved && isConcreteVersionBackend(resolved)) {
+        const [rVer, rBack] = resolved.split('/')
+        version = stripBom(rVer)
+        backend = stripBom(rBack)
+      }
+    }
+
+    // (2) Concrete tag: ensure it is installed (download if missing).
+    if (version !== 'latest') {
+      try {
+        await this.ensureBackendReady(backend, version)
+        this.persistVersionBackend(`${version}/${backend}`)
+        return { version, backend }
+      } catch (err) {
+        logger.warn(
+          `[ensureUsableBackend] Requested backend ${version}/${backend} is unavailable: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        )
+      }
+    } else {
+      logger.warn(
+        `[ensureUsableBackend] Could not resolve 'latest/${backend}' to a concrete release (release stream unreachable and no installed copy of this family).`
+      )
+    }
+
+    // (3) Graceful fallback to any installed compatible backend.
+    const fallback = await this.findFallbackInstalledBackend(backend)
+    if (fallback) {
+      const [fbVer, fbBack] = fallback.split('/')
+      logger.warn(
+        `[ensureUsableBackend] Falling back to installed backend ${fallback} (requested '${version}/${backend}').`
+      )
+      this.persistVersionBackend(fallback)
+      return { version: stripBom(fbVer), backend: stripBom(fbBack) }
+    }
+
+    throw new Error(
+      `The requested llama.cpp backend '${version}/${backend}' is unavailable (release stream unreachable or asset missing) and no other compatible backend is installed. Check your internet connection or reinstall the application.`
+    )
+  }
+
+  /**
+   * ATO-176: pick an installed backend to fall back to when the requested one
+   * can't be made ready. Prefers the newest installed copy of the SAME variant
+   * (e.g. a stale/empty tag for `macos-arm64` → newest installed `macos-arm64`),
+   * then the best installed backend for this hardware (which always includes
+   * the bundled CPU build — universally compatible). Returns `null` when
+   * nothing is installed.
+   */
+  private async findFallbackInstalledBackend(
+    requestedBackend: string
+  ): Promise<string | null> {
+    const sameFamily = await this.newestInstalledOfFamily(requestedBackend)
+    if (sameFamily && isConcreteVersionBackend(sameFamily)) {
+      return sameFamily
+    }
+    try {
+      const installed = await getLocalInstalledBackends()
+      if (installed.length > 0) {
+        const best = await this.determineBestBackend(installed)
+        if (best && isConcreteVersionBackend(best)) {
+          return best
+        }
+      }
+    } catch (err) {
+      logger.warn(
+        '[findFallbackInstalledBackend] Failed to scan installed backends:',
+        err
+      )
+    }
+    return null
+  }
+
+  /**
+   * ATO-176: persist a resolved/fallback backend selection in-memory so
+   * subsequent loads short-circuit on a working backend instead of retrying
+   * the failed download (which re-spams the release stream and Sentry).
+   * Mirrors the existing in-memory persistence used for the `latest` sentinel
+   * resolution; does not rewrite the localStorage settings, so the user's
+   * explicit selection is preserved on disk and retried next session.
+   */
+  private persistVersionBackend(versionBackend: string): void {
+    const cleaned = stripBom(versionBackend)
+    if (cleaned && this.config.version_backend !== cleaned) {
+      this.config.version_backend = cleaned
+    }
   }
 
   /**
