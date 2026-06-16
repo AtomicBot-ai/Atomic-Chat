@@ -309,6 +309,66 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-06-16 — Split the generic `LLAMA_CPP_PROCESS_ERROR` bucket into environment sub-codes (`BACKEND_OS_TOO_OLD`, `CPU_FEATURE_UNSUPPORTED`) (ATO-183)
+- **Context:** `LLAMA_CPP_PROCESS_ERROR` was the single largest `model_load`
+  failure bucket in PostHog (1680 events / 97 users, 79% in 1.1.106), but it
+  buried **three distinct** failure modes under one opaque code: old-macOS
+  Metal-symbol failures (Catalina, `stderr_tail` grep `Metal`/`symbol`/
+  `MTLResidencySetDescriptor`), no-AVX2 CPU crashes (SIGILL), and genuinely
+  generic process errors ([ATO-183](https://linear.app/atomicchat/issue/ATO-183),
+  sub-bug of the [ATO-181](https://linear.app/atomicchat/issue/ATO-181)
+  reliability epic). The Rust process wrappers'
+  [`LlamacppError::from_stderr`](src-tauri/plugins/tauri-plugin-llamacpp/src/error.rs)
+  / `from_exit_status` classified everything that wasn't OOM / arch / projector /
+  corrupt as the single generic bucket, so the three problems could not be
+  triaged apart from telemetry.
+- **Decision (per the issue's "разнести по `stderr_tail`" direction):** Add two
+  new `ErrorCode` variants to **both** the turboquant
+  [`tauri-plugin-llamacpp`](src-tauri/plugins/tauri-plugin-llamacpp/src/error.rs)
+  and the upstream
+  [`tauri-plugin-llamacpp-upstream`](src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/error.rs)
+  plugins, refining only the opaque generic bucket (specific OOM / arch /
+  projector / corrupt causes still win):
+  1. **`BACKEND_OS_TOO_OLD`** — `from_stderr` matches `mtlresidencysetdescriptor`
+     or (`symbol not found` + `metal`). Old macOS missing a Metal symbol the
+     bundled backend links against; dyld aborts at start.
+  2. **`CPU_FEATURE_UNSUPPORTED`** — matched both in `from_stderr`
+     (`illegal instruction`) and in `from_exit_status` via a new
+     `is_illegal_instruction_exit` helper (Unix `SIGILL`=4, Windows
+     `STATUS_ILLEGAL_INSTRUCTION` `0xC000001D` / privileged-instr `0xC0000096`),
+     because a no-AVX2 binary usually dies with empty stderr.
+  The variants serialize as SCREAMING_SNAKE_CASE and ride the existing
+  `err.code` → `model_load.error_code` path with no telemetry wiring change, so
+  the PostHog bucket splits automatically. The frontend
+  [`switchModel.ts`](web-app/src/utils/switchModel.ts) maps the two codes to
+  actionable load-error toasts (mirroring the ATO-121 pattern), with new EN + RU
+  keys in [`model-errors.json`](web-app/src/locales/en/model-errors.json).
+- **Consequences:** The three previously-merged problems are now distinguishable
+  in telemetry, and macOS-too-old / no-AVX2 users get a clear "update macOS" /
+  "CPU unsupported" message instead of the opaque "unexpected error".
+  **Deliberately NOT done:** the issue's secondary direction — pulling the
+  ATO-116/136 macOS default-engine fix into the *shipped* build — is a
+  release/build concern (the source migration already landed in the
+  2026-06-15 ATO-136 ADR), not a code change; Sentry's
+  `RECOVERABLE_MODEL_LOAD_CODES` allow-list was left untouched (the new codes
+  stay captured but are throttled). Scope: 2 Rust files + 1 web-app util + 2
+  locale files; no IPC, on-disk layout, or settings-schema change. **Verified:**
+  `cargo test --lib error::` 4/4 in both plugins (metal-symbol, illegal-instr,
+  OOM/arch still win, generic fallback); web-app `tsc -b` clean, `eslint` clean
+  on `switchModel.ts`, both locale JSONs parse.
+- **Owner:** team.
+- **Links:** [ATO-183](https://linear.app/atomicchat/issue/ATO-183),
+  [ATO-181](https://linear.app/atomicchat/issue/ATO-181),
+  [ATO-136](https://linear.app/atomicchat/issue/ATO-136), the 2026-06-11 ADR
+  *Quiet the top-10 Sentry desktop anomalies …* (`from_exit_status`,
+  `is_crash_exit`) and the 2026-06-11 ADR *ATO-135 (web-app slice) …*
+  (`reportModelLoadError` code mapping), files:
+  [`src-tauri/plugins/tauri-plugin-llamacpp/src/error.rs`](src-tauri/plugins/tauri-plugin-llamacpp/src/error.rs),
+  [`src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/error.rs`](src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/error.rs),
+  [`web-app/src/utils/switchModel.ts`](web-app/src/utils/switchModel.ts),
+  [`web-app/src/locales/en/model-errors.json`](web-app/src/locales/en/model-errors.json),
+  [`web-app/src/locales/ru/model-errors.json`](web-app/src/locales/ru/model-errors.json).
+
 ### 2026-06-15 — Stop the `llamacpp-upstream` auto-upgrade from wiping turboquant backends (point cleanup at the provider's own tree) + recover the bundled macOS turboquant backend if missing (ATO-153)
 - **Context:** On macOS both llama.cpp providers ship side-by-side and **share
   the on-disk GGUF tree** (`MODELS_PROVIDER_ROOT='llamacpp'`), but their
