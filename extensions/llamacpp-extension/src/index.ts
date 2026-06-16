@@ -93,6 +93,23 @@ const ERR_MODEL_FILE_NOT_FOUND = 'MODEL_FILE_NOT_FOUND'
 /// re-download" message.
 const ERR_MODEL_FILE_CORRUPT = 'MODEL_FILE_CORRUPT'
 
+/// MODEL_LOAD_TIMED_OUT (ATO-188): large models on slow / cold storage can take
+/// longer than the configured connection timeout (default 600s) to finish
+/// loading and report "ready", so the load was cut off at 600s with a raw
+/// MODEL_LOAD_TIMED_OUT error. The model-load readiness wait now uses at least
+/// this floor (30 min) while still honoring a larger user-configured timeout.
+/// The streaming / connection timeout itself is unchanged.
+const MODEL_LOAD_READY_TIMEOUT_FLOOR_SECS = 1800
+
+/// Effective timeout (seconds) for the "server is ready" wait during model
+/// load. Never below MODEL_LOAD_READY_TIMEOUT_FLOOR_SECS; honors a larger
+/// configured value.
+function modelLoadReadyTimeoutSecs(configuredTimeoutSecs: number): number {
+  const configured = Number(configuredTimeoutSecs)
+  const base = Number.isFinite(configured) && configured > 0 ? configured : 600
+  return Math.max(base, MODEL_LOAD_READY_TIMEOUT_FLOOR_SECS)
+}
+
 /// Payload emitted by the Rust proxy when it detects a context-limit error
 /// that we (the TS side) should recover from by reloading the backend with
 /// a larger ctx window.
@@ -2528,7 +2545,7 @@ export default class llamacpp_extension extends AIEngine {
         envs,
         mmprojPath,
         isEmbedding,
-        Number(this.timeout)
+        modelLoadReadyTimeoutSecs(this.timeout)
       )
       this.sessionCache.set(modelId, sInfo)
       if (typeof cfg.ctx_size === 'number') {
@@ -2557,7 +2574,7 @@ export default class llamacpp_extension extends AIEngine {
             envs,
             undefined, // text-only: drop the unsupported mmproj
             isEmbedding,
-            Number(this.timeout)
+            modelLoadReadyTimeoutSecs(this.timeout)
           )
           this.sessionCache.set(modelId, sInfo)
           if (typeof cfg.ctx_size === 'number') {

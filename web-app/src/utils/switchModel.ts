@@ -139,6 +139,9 @@ const TERMINAL_LOAD_CODES = new Set([
   // only a manual re-download resolves it, so don't loop the auto-start.
   'MODEL_FILE_CORRUPT',
   'BINARY_NOT_FOUND',
+  // ATO-190: the bundled macOS engine requires a newer macOS than the host
+  // (missing Metal symbol). This never resolves on retry, so never auto-retry.
+  'OS_VERSION_UNSUPPORTED',
 ])
 
 function autoStartKey(providerName: string, modelId: string): string {
@@ -617,6 +620,18 @@ function reportModelLoadError(rawError: unknown, providerName?: string): void {
       id: 'model-load-error',
       description: t('model-errors:modelFileCorruptDescription'),
       duration: 10000,
+      closeButton: true,
+    })
+    return
+  }
+  // ATO-190: the bundled macOS engine links a Metal symbol absent on older
+  // macOS (e.g. Catalina), so the binary fails to load. Tell the user their
+  // OS is too old instead of showing a generic crash.
+  if (err.code === 'OS_VERSION_UNSUPPORTED') {
+    toast.error(t('model-errors:osVersionUnsupportedTitle'), {
+      id: 'model-load-error',
+      description: t('model-errors:osVersionUnsupportedDescription'),
+      duration: Infinity,
       closeButton: true,
     })
     return

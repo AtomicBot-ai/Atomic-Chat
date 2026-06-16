@@ -35,10 +35,14 @@ pub fn run() {
           // when defining deep link schemes at runtime, you must also check `argv` here
         }));
         // Launch-at-startup (ATO-96). Registered after single-instance, as the
-        // autostart plugin requires. LaunchAgent mode on macOS avoids an
-        // Apple Events prompt. No launch args: hidden/tray start is out of scope.
+        // autostart plugin requires. AppleScript mode on macOS registers a real
+        // Login Item (visible in System Settings, started by loginwindow on
+        // reboot) instead of a launchd LaunchAgent plist that doesn't show under
+        // "Open at Login" and can point at a stale binary path. Trade-off: a
+        // one-time automation-permission prompt. No launch args: hidden/tray
+        // start is out of scope.
         builder = builder.plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            tauri_plugin_autostart::MacosLauncher::AppleScript,
             None,
         ));
     }
@@ -119,6 +123,7 @@ pub fn run() {
         core::system::commands::check_jan_cli_installed,
         core::system::commands::install_jan_cli,
         core::system::commands::uninstall_jan_cli,
+        core::system::commands::migrate_macos_autostart_launchagent,
         core::system::commands::clear_claude_code_env,
         core::system::commands::configure_hermes_agent,
         core::system::commands::clear_hermes_agent_config,
@@ -126,6 +131,8 @@ pub fn run() {
         core::system::commands::install_agent,
         core::system::commands::configure_codex,
         core::system::commands::configure_opencode,
+        core::system::commands::configure_cline,
+        core::system::commands::configure_mimo,
         core::system::commands::configure_openclaw,
         core::system::commands::configure_claude_code,
         core::system::commands::configure_copilot,
@@ -229,6 +236,7 @@ pub fn run() {
         core::system::commands::check_jan_cli_installed,
         core::system::commands::install_jan_cli,
         core::system::commands::uninstall_jan_cli,
+        core::system::commands::migrate_macos_autostart_launchagent,
         core::system::commands::clear_claude_code_env,
         core::system::commands::configure_hermes_agent,
         core::system::commands::clear_hermes_agent_config,
@@ -236,6 +244,8 @@ pub fn run() {
         core::system::commands::install_agent,
         core::system::commands::configure_codex,
         core::system::commands::configure_opencode,
+        core::system::commands::configure_cline,
+        core::system::commands::configure_mimo,
         core::system::commands::configure_openclaw,
         core::system::commands::configure_claude_code,
         core::system::commands::configure_copilot,

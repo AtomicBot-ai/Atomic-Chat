@@ -319,6 +319,9 @@ const RECOVERABLE_MODEL_LOAD_CODES = new Set<string>([
   'MODEL_FILE_CORRUPT',
   'BINARY_NOT_FOUND',
   'MULTIMODAL_PROJECTOR_LOAD_FAILED',
+  // ATO-190: deterministic environment incompatibility (macOS too old for the
+  // bundled Metal engine), not a code crash — don't flood the crash channel.
+  'OS_VERSION_UNSUPPORTED',
 ])
 
 export function isRecoverableModelLoadCode(
