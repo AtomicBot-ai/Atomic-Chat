@@ -133,7 +133,13 @@ let activeSwitchPromise: Promise<void> | null = null
 type AutoStartFailure = { ts: number; terminal: boolean }
 const autoStartFailures = new Map<string, AutoStartFailure>()
 const AUTO_START_BACKOFF_MS = 30_000
-const TERMINAL_LOAD_CODES = new Set(['MODEL_FILE_NOT_FOUND', 'BINARY_NOT_FOUND'])
+const TERMINAL_LOAD_CODES = new Set([
+  'MODEL_FILE_NOT_FOUND',
+  // A partial / corrupt download (ATO-187) won't fix itself on auto-retry —
+  // only a manual re-download resolves it, so don't loop the auto-start.
+  'MODEL_FILE_CORRUPT',
+  'BINARY_NOT_FOUND',
+])
 
 function autoStartKey(providerName: string, modelId: string): string {
   return `${providerName}::${modelId}`
