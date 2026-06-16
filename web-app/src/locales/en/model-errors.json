@@ -18,5 +18,9 @@
   "modelFileMissingTitle": "Model file not found",
   "modelFileMissingDescription": "The model file couldn't be found — it may have been moved or deleted. Try re-downloading the model.",
   "modelFileCorruptTitle": "Model file is corrupted",
-  "modelFileCorruptDescription": "The model file appears to be incomplete or corrupted, likely from an interrupted download. Delete the model and download it again."
+  "modelFileCorruptDescription": "The model file appears to be incomplete or corrupted, likely from an interrupted download. Delete the model and download it again.",
+  "backendOsTooOldTitle": "macOS version too old",
+  "backendOsTooOldDescription": "This backend build requires a newer version of macOS (a required Metal symbol is missing). Update macOS to run local models, or use a different backend.",
+  "cpuUnsupportedTitle": "CPU not supported",
+  "cpuUnsupportedDescription": "This backend build needs CPU instructions (such as AVX2) that this processor doesn't support. Try a different backend, or run on a newer machine."
 }

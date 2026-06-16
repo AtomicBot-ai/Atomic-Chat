@@ -17,6 +17,18 @@ pub enum ErrorCode {
     ModelLoadTimedOut,
     LlamaCppProcessError,
 
+    // --- Environment / backend-build incompatibility ---
+    // The bundled backend build is incompatible with this machine's OS or CPU.
+    // Split out of the generic LlamaCppProcessError bucket (ATO-183) so the
+    // distinct failure modes are diagnosable in telemetry instead of being
+    // buried under one opaque code.
+    /// Old macOS missing a Metal symbol the backend links against (e.g.
+    /// `MTLResidencySetDescriptor` on Catalina).
+    BackendOsTooOld,
+    /// CPU lacks SIMD instructions (e.g. AVX2) the backend binary requires
+    /// (illegal-instruction / SIGILL on launch).
+    CpuFeatureUnsupported,
+
     // --- Memory Errors ---
     OutOfMemory,
 
@@ -106,6 +118,33 @@ impl LlamacppError {
             );
         }
 
+        // Old macOS (e.g. Catalina 10.15) is missing newer Metal symbols the
+        // bundled backend links against (e.g. `MTLResidencySetDescriptor`), so
+        // dyld aborts at process start with "symbol not found" before
+        // `llama-server` reports ready. Split out of the generic process-error
+        // bucket (ATO-183) so it is diagnosable and the user gets an actionable
+        // "update macOS" message.
+        if lower_stderr.contains("mtlresidencysetdescriptor")
+            || (lower_stderr.contains("symbol not found") && lower_stderr.contains("metal"))
+        {
+            return Self::new(
+                ErrorCode::BackendOsTooOld,
+                "This backend build requires a newer version of macOS (a required Metal symbol is missing). Update macOS to run local models on this backend.".into(),
+                Some(stderr.into()),
+            );
+        }
+
+        // The CPU lacks SIMD instructions (typically AVX2) the bundled binary was
+        // compiled with, so it dies with an illegal-instruction fault. The SIGILL
+        // exit (often with empty stderr) is also classified in `from_exit_status`.
+        if lower_stderr.contains("illegal instruction") {
+            return Self::new(
+                ErrorCode::CpuFeatureUnsupported,
+                "This backend build needs CPU instructions (e.g. AVX2) that this processor doesn't support.".into(),
+                Some(stderr.into()),
+            );
+        }
+
         Self::new(
             ErrorCode::LlamaCppProcessError,
             "The model process encountered an unexpected error.".into(),
@@ -121,7 +160,22 @@ impl LlamacppError {
     /// recognised crash we surface an actionable hint.
     pub fn from_exit_status(status: &std::process::ExitStatus, stderr: &str) -> Self {
         let base = Self::from_stderr(stderr);
-        if !matches!(base.code, ErrorCode::LlamaCppProcessError) || !is_crash_exit(status) {
+        // A specific stderr cause (OOM, arch, projector, corrupt, metal-symbol,
+        // illegal-instruction) always wins; only refine the opaque generic bucket.
+        if !matches!(base.code, ErrorCode::LlamaCppProcessError) {
+            return base;
+        }
+        // A SIGILL / illegal-instruction exit (often with empty stderr) means the
+        // CPU is missing instructions the binary requires — typically AVX2 on
+        // older x86 hardware (ATO-183).
+        if is_illegal_instruction_exit(status) {
+            return Self::new(
+                ErrorCode::CpuFeatureUnsupported,
+                "This backend build needs CPU instructions (e.g. AVX2) that this processor doesn't support.".into(),
+                Some(stderr.into()),
+            );
+        }
+        if !is_crash_exit(status) {
             return base;
         }
         Self::new(
@@ -132,6 +186,30 @@ speculative-decoding (MTP) configuration is unsupported here."
                 .into(),
             Some(stderr.into()),
         )
+    }
+}
+
+/// Whether a process exit status is an illegal-instruction fault — typically a
+/// binary compiled with SIMD instructions (e.g. AVX2) the host CPU lacks.
+fn is_illegal_instruction_exit(status: &std::process::ExitStatus) -> bool {
+    #[cfg(windows)]
+    {
+        matches!(status.code(), Some(code) if {
+            let c = code as u32;
+            // STATUS_ILLEGAL_INSTRUCTION / STATUS_PRIVILEGED_INSTRUCTION
+            c == 0xC000_001D || c == 0xC000_0096
+        })
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        // SIGILL = 4
+        matches!(status.signal(), Some(4))
+    }
+    #[cfg(not(any(windows, unix)))]
+    {
+        let _ = status;
+        false
     }
 }
 
@@ -205,3 +283,54 @@ impl serde::Serialize for ServerError {
 }
 
 pub type ServerResult<T> = Result<T, ServerError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ATO-183: the generic LLAMA_CPP_PROCESS_ERROR bucket is split into specific
+    // sub-codes by stderr signature so distinct failure modes are diagnosable.
+    #[test]
+    fn classifies_old_macos_metal_symbol() {
+        let stderr =
+            "dyld: Symbol not found: _OBJC_CLASS_$_MTLResidencySetDescriptor\nReferenced from: ...Metal.framework";
+        assert!(matches!(
+            LlamacppError::from_stderr(stderr).code,
+            ErrorCode::BackendOsTooOld
+        ));
+        // Generic "symbol not found" without Metal context stays generic.
+        let stderr2 = "dyld: Symbol not found: _some_other_symbol";
+        assert!(matches!(
+            LlamacppError::from_stderr(stderr2).code,
+            ErrorCode::LlamaCppProcessError
+        ));
+    }
+
+    #[test]
+    fn classifies_illegal_instruction() {
+        assert!(matches!(
+            LlamacppError::from_stderr("Illegal instruction (core dumped)").code,
+            ErrorCode::CpuFeatureUnsupported
+        ));
+    }
+
+    #[test]
+    fn specific_causes_still_win_over_new_codes() {
+        assert!(matches!(
+            LlamacppError::from_stderr("ggml_backend: out of memory").code,
+            ErrorCode::OutOfMemory
+        ));
+        assert!(matches!(
+            LlamacppError::from_stderr("error loading model architecture: 'lfm2moe'").code,
+            ErrorCode::ModelArchNotSupported
+        ));
+    }
+
+    #[test]
+    fn unknown_stderr_stays_generic() {
+        assert!(matches!(
+            LlamacppError::from_stderr("something unexpected happened").code,
+            ErrorCode::LlamaCppProcessError
+        ));
+    }
+}

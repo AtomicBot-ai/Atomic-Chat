@@ -615,6 +615,26 @@ function reportModelLoadError(rawError: unknown, providerName?: string): void {
     })
     return
   }
+  // ATO-183: environment/backend-build incompatibilities, previously buried in
+  // the generic LLAMA_CPP_PROCESS_ERROR bucket.
+  if (err.code === 'BACKEND_OS_TOO_OLD') {
+    toast.error(t('model-errors:backendOsTooOldTitle'), {
+      id: 'model-load-error',
+      description: t('model-errors:backendOsTooOldDescription'),
+      duration: 10000,
+      closeButton: true,
+    })
+    return
+  }
+  if (err.code === 'CPU_FEATURE_UNSUPPORTED') {
+    toast.error(t('model-errors:cpuUnsupportedTitle'), {
+      id: 'model-load-error',
+      description: t('model-errors:cpuUnsupportedDescription'),
+      duration: 10000,
+      closeButton: true,
+    })
+    return
+  }
 
   toast.error(t('model-errors:modelLoadFailedTitle'), {
     id: 'model-load-error',
