@@ -309,6 +309,85 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-06-17 — Offline floor + honest failure classification for `llamacpp-upstream` backend resolution so a rate-limited `api.github.com` never dead-ends first-run activation (ATO-199 / GitHub #56)
+- **Context:** The `llamacpp-upstream` backend downloader resolves available
+  builds through the **unauthenticated** `api.github.com/repos/ggml-org/llama.cpp/releases/latest`
+  REST API (60 req/hr/IP). On shared / corporate / CGNAT networks the quota is
+  exhausted quickly → `403`, and
+  [`fetchRemoteBackends`](extensions/llamacpp-upstream-extension/src/backend.ts)
+  collapsed **every** failure mode (rate-limit / offline / timeout / proxy /
+  asset-missing) to `[]`. On a fresh install with no locally-installed backend
+  to fall back to, `resolveLatestBackendString` → `downloadManualBackend` /
+  `downloadRecommendedBackend` hard dead-ended (*"Could not resolve a release
+  for 'win-cuda-13.3-x64' … no version of this backend is installed locally"*),
+  blocking the #1 activation metric for Windows/Linux GPU users (reporters:
+  caominh74, alexandre433, DrBattletoad — RX 7900 XTX / Vulkan). The whole
+  `backend.ts` path is new (~2026-06-16); the prior ATO-174 work only reworded
+  the dead-end message, never addressing auth/quota/fallback. PostHog had zero
+  captured events for the failure — invisible blast radius.
+- **Decision (scope = the ticket's must-have offline floor + error honesty +
+  instrumentation; the full Atom-feed hot-path rewrite deferred):**
+  1. **Offline floor.** Pin a known-good ggml-org release (`OFFLINE_FALLBACK_TAG
+     = b9673`, assets verified live) + a per-platform asset map
+     (`win-{cpu,cuda-12.4,cuda-13.3,vulkan}-x64`, `linux-{cpu,vulkan}-x64`,
+     x64-only — mirrors the Windows whitelist + Phase 1 Linux matrix). On **any**
+     live-resolution failure, `fetchRemoteBackends` now returns the floor
+     instead of `[]`. Downloads already target the **un-throttled**
+     `github.com/.../releases/download/<tag>/<asset>` host, so a rate-limited
+     `api.github.com` never blocks first-run activation. Online users still get
+     the freshest tag when the API is reachable — the floor is purely the
+     fallback; every consumer (`resolveLatestBackendString`,
+     `downloadManualBackend`, `downloadRecommendedBackend`,
+     `detectIdealBackendType`) benefits transitively.
+  2. **Error honesty.** Distinct classification — `rate_limited` (403 +
+     `x-ratelimit-remaining: 0`, or 429) / `http_error` / `timeout` / `offline`
+     / `parse_error` / `asset_missing` — logged with the HTTP status. **No
+     retry** on rate-limit (a retry just burns remaining quota; none existed,
+     none added). The asset-missing floor is gated to x64 so arm64's legitimate
+     empty match isn't mis-reported.
+  3. **Instrumentation.** Best-effort zero-PII `analytics://backend_resolve_failed`
+     Tauri event (reason, status, os, arch, `fallback_used`) emitted from the
+     extension; the web-app
+     [`AnalyticProvider`](web-app/src/providers/AnalyticProvider.tsx) forwards it
+     to PostHog as `backend_resolve_failed` (consent-gated, mirroring the
+     `api_server_request` listener). New
+     [`BackendResolveFailedEvent`](web-app/src/types/analytics.ts) type/constant.
+- **Consequences:** Fresh x64 Windows/Linux installs behind a rate-limited /
+  unreachable GitHub now resolve to the pinned floor and download from the
+  un-throttled host instead of dead-ending; the failure is finally visible in
+  analytics. macOS stays bundled-only (returns `[]`, emits nothing); Linux arm64
+  keeps its "Phase 1 not supported" early-return. **Deliberately deferred (per
+  the ticket):** swapping the hot path entirely off the REST API to
+  `releases.atom` (reliably enumerating the dynamic CUDA-13 minor for an
+  arbitrary tag needs the REST `assets` array or HTML scraping — the floor
+  already makes API failure non-fatal), and the Atomic-owned manifest/CDN
+  follow-up. Bumping the pinned tag is a one-line change. Scope: 1 extension TS
+  file + its test + 2 web-app files; no Rust, IPC, on-disk layout, or
+  settings-schema change. **Verified:** 6 new `backend.test.ts` cases pass
+  (rate-limit → Windows floor + `rate_limited`; success → live assets, no floor;
+  offline → Linux floor + `offline`; zero-whitelisted-assets → floor +
+  `asset_missing`; macOS → `[]`/no fetch; floor → un-throttled download URL) —
+  the 4 other failures in that suite are pre-existing in the sandbox (clean
+  baseline: 4/4 fail); extension rolldown build clean (`dist/index.js`, exit 0,
+  the authoritative compile); web-app `tsc -b` clean, `eslint` clean on the two
+  touched files; `b9673` assets confirmed present on the live release stream.
+  The end-to-end Tauri round-trip (floor → download → install) and the telemetry
+  reaching PostHog under consent were **not** integration-tested (no Tauri
+  runtime / live GitHub in the sandbox) — PR opened `[needs-review]`.
+- **Owner:** team.
+- **Links:** [ATO-199](https://linear.app/atomicchat/issue/ATO-199),
+  [ATO-174](https://linear.app/atomicchat/issue/ATO-174),
+  [GitHub #56](https://github.com/AtomicBot-ai/Atomic-Chat/issues/56),
+  [PR #81](https://github.com/AtomicBot-ai/Atomic-Chat/pull/81), the 2026-06-16
+  ADR *Tiered graceful backend fallback …* (ATO-178) and *Stop "Find optimal
+  backend" from silently degrading to CPU …* (ATO-161/174), files:
+  [`extensions/llamacpp-upstream-extension/src/backend.ts`](extensions/llamacpp-upstream-extension/src/backend.ts)
+  (`OFFLINE_FALLBACK_TAG`, `offlineFallbackBackends`, `emitBackendResolveFailed`,
+  `fetchRemoteBackends` `failWith`),
+  [`extensions/llamacpp-upstream-extension/src/test/backend.test.ts`](extensions/llamacpp-upstream-extension/src/test/backend.test.ts),
+  [`web-app/src/providers/AnalyticProvider.tsx`](web-app/src/providers/AnalyticProvider.tsx),
+  [`web-app/src/types/analytics.ts`](web-app/src/types/analytics.ts).
+
 ### 2026-06-17 — Recover the poisoned Metal backend + surface a clear OOM message after a GPU compute error, instead of retrying 3× into a dead backend (ATO-197)
 - **Context:** On macOS, a llama.cpp Metal GPU out-of-memory during prompt
  processing (e.g. `janhq/Jan-v2-VL-high-Q4_K_M` + an image, ~4865-token prompt)
