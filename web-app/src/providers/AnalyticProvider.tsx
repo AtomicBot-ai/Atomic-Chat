@@ -6,6 +6,8 @@ import { useAnalytic } from '@/hooks/useAnalytic'
 import {
   API_SERVER_REQUEST_EVENT,
   type ApiServerRequestEvent,
+  BACKEND_RESOLVE_FAILED_EVENT,
+  type BackendResolveFailedEvent,
 } from '@/types/analytics'
 import type { ServiceHub } from '@/services'
 import { cpuAvxLevel, mapGpuVendor } from '@/lib/telemetry'
@@ -202,6 +204,7 @@ export function AnalyticProvider() {
     }
 
     let unlistenApiServer: (() => void) | undefined
+    let unlistenBackendResolve: (() => void) | undefined
     let cancelled = false
 
     if (productAnalytic) {
@@ -316,6 +319,33 @@ export function AnalyticProvider() {
                   err
                 )
               })
+
+            // ATO-199: forward the llama.cpp backend-resolution failure event
+            // (GitHub release stream rate-limited / unreachable) so the
+            // first-run-activation blast radius is visible in PostHog.
+            import('@tauri-apps/api/event')
+              .then(({ listen }) =>
+                listen<BackendResolveFailedEvent>(
+                  BACKEND_RESOLVE_FAILED_EVENT,
+                  (evt) => {
+                    if (!productAnalytic) return
+                    posthog.capture('backend_resolve_failed', evt.payload)
+                  }
+                )
+              )
+              .then((unlisten) => {
+                if (cancelled) {
+                  unlisten()
+                } else {
+                  unlistenBackendResolve = unlisten
+                }
+              })
+              .catch((err) => {
+                console.warn(
+                  'Failed to register backend_resolve_failed listener:',
+                  err
+                )
+              })
           }
         })
     } else {
@@ -325,6 +355,7 @@ export function AnalyticProvider() {
     return () => {
       cancelled = true
       unlistenApiServer?.()
+      unlistenBackendResolve?.()
     }
   }, [productAnalytic, serviceHub])
 
