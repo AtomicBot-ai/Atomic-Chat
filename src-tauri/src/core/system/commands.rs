@@ -1821,6 +1821,15 @@ pub async fn install_agent<R: Runtime>(
     }
 }
 
+/// Escape a value for use inside a TOML basic string (delimited by `"`).
+///
+/// TOML basic strings treat `\` as the escape character, so any literal
+/// backslash must be written as `\\`, and any embedded `"` as `\"`. This
+/// avoids invalid TOML when model ids or URLs contain Windows path separators.
+fn toml_basic_string_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
 /// Configure Codex CLI by upserting a managed block in `~/.codex/config.toml`.
 #[tauri::command]
 pub fn configure_codex(
@@ -1848,7 +1857,10 @@ pub fn configure_codex(
     let mut head = String::new();
     head.push_str(ATOMIC_MANAGED_BEGIN);
     head.push('\n');
-    head.push_str(&format!("model = \"{}\"\n", model));
+    head.push_str(&format!(
+        "model = \"{}\"\n",
+        toml_basic_string_escape(&model)
+    ));
     head.push_str("model_provider = \"atomic\"\n");
     head.push_str(ATOMIC_MANAGED_END);
     head.push('\n');
@@ -1858,7 +1870,10 @@ pub fn configure_codex(
     block.push('\n');
     block.push_str("[model_providers.atomic]\n");
     block.push_str("name = \"Atomic Chat\"\n");
-    block.push_str(&format!("base_url = \"{}\"\n", api_url));
+    block.push_str(&format!(
+        "base_url = \"{}\"\n",
+        toml_basic_string_escape(&api_url)
+    ));
     if api_key.as_deref().filter(|k| !k.is_empty()).is_some() {
         // Codex reads the secret from the env var named here, not inline.
         block.push_str("env_key = \"ATOMIC_CHAT_API_KEY\"\n");

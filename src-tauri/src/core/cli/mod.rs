@@ -189,12 +189,15 @@ pub fn list_models(engine: &str) -> Vec<ModelEntry> {
         if yml_path.exists() {
             if let Ok(content) = fs::read_to_string(&yml_path) {
                 if let Ok(yml) = serde_yaml::from_str::<ModelYml>(&content) {
-                    // model_id = path relative to models_root
+                    // model_id = path relative to models_root, always using
+                    // forward slashes so Windows `\` separators never leak
+                    // into config files (e.g. TOML) or API responses.
                     let model_id = dir
                         .strip_prefix(&models_root)
                         .unwrap_or(&dir)
                         .to_string_lossy()
-                        .into_owned();
+                        .into_owned()
+                        .replace('\\', "/");
                     results.push((model_id, yml));
                     continue; // don't recurse into a model directory
                 }
