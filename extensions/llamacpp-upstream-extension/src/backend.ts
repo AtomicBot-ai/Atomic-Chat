@@ -1,5 +1,6 @@
 import { getJanDataFolderPath, fs, joinPath } from '@janhq/core'
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
+import { emit as tauriEmit } from '@tauri-apps/api/event'
 import { getSystemInfo } from './hardware'
 import { getProxyConfig } from './util'
 import {
@@ -19,6 +20,105 @@ const LLAMACPP_RELEASES_API =
   'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest'
 const LLAMACPP_DOWNLOAD_BASE =
   'https://github.com/ggml-org/llama.cpp/releases/download'
+
+/**
+ * Offline floor (ATO-199 / GitHub #56).
+ *
+ * `fetchRemoteBackends` resolves available builds through the unauthenticated
+ * `api.github.com` REST API, which is capped at 60 requests/hour per IP. On
+ * shared / corporate / CGNAT networks that quota is exhausted quickly and the
+ * API returns `403`; the resolver then has nothing to offer and — on a fresh
+ * install with no locally-installed backend — first-run activation dead-ends.
+ *
+ * The floor pins a known-good ggml-org release + its per-platform assets so
+ * that whenever the live lookup fails (rate-limited / offline / timeout /
+ * proxy / asset-missing) we still hand back a concrete `<tag>/<backend>`. The
+ * actual download then goes to the *un-throttled*
+ * `github.com/.../releases/download/<tag>/<asset>` host, so a rate-limited
+ * `api.github.com` never blocks first-run activation.
+ *
+ * The pinned assets below were verified present on this tag. Bumping the tag
+ * (and, if ggml-org renamed the CUDA minor, the CUDA entry) is a one-line
+ * change. The floor is x64-only — it mirrors the Windows whitelist in
+ * `fetchRemoteBackends` and the Phase 1 Linux matrix (x64 Ubuntu CPU/Vulkan).
+ */
+const OFFLINE_FALLBACK_TAG = 'b9673'
+const OFFLINE_FALLBACK_WINDOWS_X64_BACKENDS = [
+  'win-cpu-x64',
+  'win-cuda-12.4-x64',
+  'win-cuda-13.3-x64',
+  'win-vulkan-x64',
+]
+const OFFLINE_FALLBACK_LINUX_X64_BACKENDS = ['linux-cpu-x64', 'linux-vulkan-x64']
+
+/**
+ * Tauri event forwarded to PostHog as `backend_resolve_failed` by the web-app
+ * `AnalyticProvider` (ATO-199). Zero-PII: only the failure reason, HTTP status,
+ * OS/arch, and whether the pinned offline floor was used. Keep the literal in
+ * sync with `web-app/src/types/analytics.ts`.
+ */
+const BACKEND_RESOLVE_FAILED_EVENT = 'analytics://backend_resolve_failed'
+
+/**
+ * Distinct, honest classification of why the live ggml-org release lookup
+ * failed (ATO-199) — replaces the old "everything collapses to `[]`" behaviour
+ * so telemetry and logs can tell a GitHub quota apart from offline/proxy.
+ */
+type BackendResolveFailure =
+  | 'rate_limited' // 403/429 from the unauthenticated api.github.com quota
+  | 'http_error' // any other non-2xx response
+  | 'timeout' // connect timeout / AbortController fired
+  | 'offline' // network error reaching api.github.com
+  | 'parse_error' // 2xx but malformed JSON / missing tag_name
+  | 'asset_missing' // release fetched but no matching asset for this platform
+
+/**
+ * Builds the pinned offline-floor backend list for the current platform/arch.
+ * Returns `[]` for unsupported platforms/arches (e.g. arm64), so callers can
+ * distinguish "have a floor" from "no floor available".
+ */
+function offlineFallbackBackends(
+  osType: string,
+  archSuffix: string
+): BackendVersion[] {
+  if (archSuffix !== 'x64') return []
+  const ids =
+    osType === 'windows'
+      ? OFFLINE_FALLBACK_WINDOWS_X64_BACKENDS
+      : osType === 'linux'
+        ? OFFLINE_FALLBACK_LINUX_X64_BACKENDS
+        : []
+  return ids.map((backend) => ({
+    version: OFFLINE_FALLBACK_TAG,
+    backend,
+    order: 0,
+  }))
+}
+
+/**
+ * Best-effort telemetry: emit `backend_resolve_failed` so the blast radius of
+ * the GitHub rate-limit dead-end is visible in PostHog (it currently has zero
+ * captured events for this failure). Never throws.
+ */
+function emitBackendResolveFailed(
+  reason: BackendResolveFailure,
+  status: number | null,
+  osType: string,
+  arch: string,
+  fallbackUsed: boolean
+): void {
+  try {
+    void tauriEmit(BACKEND_RESOLVE_FAILED_EVENT, {
+      reason,
+      status,
+      os: osType,
+      arch,
+      fallback_used: fallbackUsed,
+    })
+  } catch {
+    // telemetry must never affect backend resolution
+  }
+}
 
 export async function getLocalInstalledBackends(): Promise<BackendVersion[]> {
   const janDataFolderPath = await getJanDataFolderPath()
@@ -138,6 +238,25 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
   const archSuffix =
     arch.includes('aarch64') || arch.includes('arm64') ? 'arm64' : 'x64'
 
+  // ATO-199: on any live-resolution failure, fall back to the pinned offline
+  // floor instead of returning `[]`. The download path uses the un-throttled
+  // `releases/download/<tag>/<asset>` host, so a rate-limited / unreachable
+  // `api.github.com` never dead-ends first-run activation. We also emit a
+  // distinct, zero-PII telemetry event so the blast radius is visible.
+  const failWith = (
+    reason: BackendResolveFailure,
+    status: number | null
+  ): BackendVersion[] => {
+    const floor = offlineFallbackBackends(osType, archSuffix)
+    emitBackendResolveFailed(reason, status, osType, arch, floor.length > 0)
+    console.warn(
+      `[fetchRemoteBackends] live resolution failed (${reason}, status=${
+        status ?? 'n/a'
+      }); falling back to ${floor.length} pinned backend(s) at ${OFFLINE_FALLBACK_TAG}`
+    )
+    return floor
+  }
+
   try {
     console.info(`[fetchRemoteBackends] Fetching ${LLAMACPP_RELEASES_API}...`)
     const controller = new AbortController()
@@ -159,16 +278,27 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
       clearTimeout(timeout)
     }
     if (!resp.ok) {
+      // ATO-199: classify the unauthenticated-quota case distinctly. GitHub
+      // signals an exhausted REST quota with 403 + `x-ratelimit-remaining: 0`
+      // (or 429). NEVER retry here — a retry just burns the remaining quota.
       const rateLimitRemaining = resp.headers.get('x-ratelimit-remaining')
+      const isRateLimited =
+        resp.status === 429 ||
+        (resp.status === 403 && rateLimitRemaining === '0')
       console.warn(
-        `[fetchRemoteBackends] GitHub API returned ${resp.status} (rate-limit-remaining: ${rateLimitRemaining}), using local backends only`
+        `[fetchRemoteBackends] GitHub API returned ${resp.status} (rate-limit-remaining: ${rateLimitRemaining})`
       )
-      return []
+      return failWith(isRateLimited ? 'rate_limited' : 'http_error', resp.status)
     }
 
-    const release = await resp.json()
-    const tag: string = release.tag_name
-    if (!tag) return []
+    let release: { tag_name?: string; assets?: { name: string }[] }
+    try {
+      release = await resp.json()
+    } catch {
+      return failWith('parse_error', resp.status)
+    }
+    const tag: string | undefined = release.tag_name
+    if (!tag) return failWith('parse_error', resp.status)
 
     const assets: { name: string }[] = release.assets ?? []
     const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -208,6 +338,14 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
         `[fetchRemoteBackends] Found ${backends.length} remote backends for win-${archSuffix}:`,
         backends.map((b) => b.backend)
       )
+      // ATO-199: a successfully-fetched x64 release that matched zero whitelisted
+      // assets means upstream renamed/dropped them — fall back to the pinned
+      // floor rather than surfacing an empty list. arm64 has no floor and
+      // legitimately surfaces nothing, so don't treat its empty match as a
+      // failure.
+      if (backends.length === 0 && archSuffix === 'x64') {
+        return failWith('asset_missing', resp.status)
+      }
       return backends
     }
 
@@ -239,10 +377,21 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
       `[fetchRemoteBackends] Found ${backends.length} remote backends for linux-${archSuffix}:`,
       backends.map((b) => b.backend)
     )
+    // ATO-199: same asset-missing floor as Windows (x64-only by guard above).
+    if (backends.length === 0) {
+      return failWith('asset_missing', resp.status)
+    }
     return backends
   } catch (err) {
+    // ATO-199: distinguish a connect/read timeout (AbortController fired) from
+    // a generic network failure, then fall back to the pinned floor.
+    const aborted =
+      (err as { name?: string } | undefined)?.name === 'AbortError' ||
+      /abort|timed? ?out|timeout/i.test(
+        err instanceof Error ? err.message : String(err)
+      )
     console.warn('[fetchRemoteBackends] Failed to fetch remote backends:', err)
-    return []
+    return failWith(aborted ? 'timeout' : 'offline', null)
   }
 }
 
