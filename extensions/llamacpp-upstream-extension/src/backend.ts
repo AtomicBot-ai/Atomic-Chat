@@ -15,8 +15,17 @@ import {
 // Upstream provider points at the official ggml-org/llama.cpp release stream.
 // Note: this is intentionally NOT janhq/llama.cpp (legacy fork mirror) and
 // NOT AtomicBot-ai/atomic-llama-cpp-turboquant (our TurboQuant fork).
-const LLAMACPP_RELEASES_API =
-  'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest'
+//
+// The backend *index* (what builds exist) is resolved from a static manifest
+// in our atomic-chat-conf repo, served via raw.githubusercontent.com (no
+// per-IP rate limit). This dodges GitHub's unauthenticated API limit
+// (60 req/hr/IP) that dead-ended fresh installs on shared/NAT/VPN networks
+// (ATO-199). The manifest mirrors the GitHub release shape
+// ({ tag_name, assets: [{ name }] }) so the parser below is unchanged. The
+// backend *archives* themselves are still downloaded from the ggml-org CDN
+// via LLAMACPP_DOWNLOAD_BASE.
+const LLAMACPP_BACKEND_MANIFEST_URL =
+  'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/manifest.json'
 const LLAMACPP_DOWNLOAD_BASE =
   'https://github.com/ggml-org/llama.cpp/releases/download'
 
@@ -127,7 +136,6 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
   // tarball is hand-picked + re-codesigned at build time; we deliberately
   // don't pull from ggml-org at runtime.
   if (osType === 'macos') {
-    void LLAMACPP_RELEASES_API
     return []
   }
 
@@ -139,7 +147,9 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
     arch.includes('aarch64') || arch.includes('arm64') ? 'arm64' : 'x64'
 
   try {
-    console.info(`[fetchRemoteBackends] Fetching ${LLAMACPP_RELEASES_API}...`)
+    console.info(
+      `[fetchRemoteBackends] Fetching ${LLAMACPP_BACKEND_MANIFEST_URL}...`
+    )
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 15_000)
     let resp: Response
@@ -149,7 +159,7 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
       // hard `connectTimeout`. The plain WebView `fetch` ignores the app's
       // proxy config, which made this lookup fail on GitHub-restricted
       // networks even when the user had a working proxy set up.
-      resp = await tauriFetch(LLAMACPP_RELEASES_API, {
+      resp = await tauriFetch(LLAMACPP_BACKEND_MANIFEST_URL, {
         headers: { 'User-Agent': 'atomic-chat' },
         signal: controller.signal,
         connectTimeout: 15_000,
