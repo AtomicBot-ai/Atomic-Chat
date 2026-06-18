@@ -6,7 +6,12 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
+import {
+  cn,
+  getProviderTitle,
+  getModelDisplayName,
+  isLocalProvider,
+} from '@/lib/utils'
 import { highlightFzfMatch } from '@/utils/highlight'
 import Capabilities from './Capabilities'
 import { IconSettings, IconX, IconDownload } from '@tabler/icons-react'
@@ -481,7 +486,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
           </button>
           {currentModel?.settings &&
             provider &&
-            provider.provider === 'llamacpp' && (
+            isLocalProvider(provider.provider) && (
               <div onClick={(e) => e.stopPropagation()}>
                 <ModelSetting
                   model={currentModel as Model}
