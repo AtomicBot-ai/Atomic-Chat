@@ -43,15 +43,12 @@ function InterfaceSettings() {
                 description={t('settings:interface.fontSizeDesc')}
                 actions={<FontSizeSwitcher />}
               />
-              {/* Accent color — скрыто */}
-              {false && (
-                <CardItem
-                  title="Accent color"
-                  description="Customize the accent color of the application."
-                  className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
-                  actions={<AccentColorPicker />}
-                />
-              )}
+              <CardItem
+                title="Accent color"
+                description="Customize the accent color of the application."
+                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
+                actions={<AccentColorPicker />}
+              />
               <CardItem
                 title={t('settings:interface.resetToDefault')}
                 description={t('settings:interface.resetToDefaultDesc')}

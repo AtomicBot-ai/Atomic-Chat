@@ -51,6 +51,7 @@ vi.mock('@/hooks/useHardware', () => ({
       os_name: 'Windows 11',
       cpu: { name: 'Intel i7', arch: 'x64', core_count: 8, extensions: ['SSE'] },
       total_memory: 16384,
+      gpus: [{ id: 'gpu0', name: 'RTX 3080', totalMemoryMiB: 10240 }],
     },
     systemUsage: { cpu: 50, used_memory: 8192 },
     setHardwareData: vi.fn(),
@@ -73,7 +74,7 @@ vi.mock('@/hooks/useLlamacppDevices', () => ({
 
 vi.mock('@/hooks/useModelProvider', () => ({
   useModelProvider: () => ({
-    providers: [{ provider: 'llamacpp' }],
+    providers: [{ provider: 'llamacpp-upstream' }],
     getProviderByName: vi.fn(() => ({ settings: [{ key: 'device', controller_props: { value: 'gpu0' } }] })),
   }),
 }))
@@ -87,6 +88,7 @@ vi.mock('@/services/models', () => ({ stopAllModels: vi.fn() }))
 vi.mock('@/lib/utils', () => ({
   formatMegaBytes: (mb: number) => `${mb} MB`,
   cn: (...classes: any[]) => classes.filter(Boolean).join(' '),
+  LOCAL_LLAMACPP_PROVIDER: 'llamacpp-upstream',
 }))
 vi.mock('@/utils/number', () => ({ toNumber: (n: number) => n }))
 vi.mock('@tauri-apps/api/webviewWindow', () => ({ WebviewWindow: vi.fn() }))

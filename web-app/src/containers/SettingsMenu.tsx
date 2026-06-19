@@ -110,13 +110,12 @@ const SettingsMenu = () => {
       hasSubMenu: false,
       isEnabled: true,
     },
-    // Privacy — вкладка скрыта
-    // {
-    //   title: 'common:privacy',
-    //   route: route.settings.privacy,
-    //   hasSubMenu: false,
-    //   isEnabled: true,
-    // },
+    {
+      title: 'common:privacy',
+      route: route.settings.privacy,
+      hasSubMenu: false,
+      isEnabled: true,
+    },
     {
       title: 'common:assistants',
       route: route.settings.assistant,

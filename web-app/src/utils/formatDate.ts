@@ -22,6 +22,7 @@ export const formatDate = (
       hour: 'numeric',
       minute: 'numeric',
       hour12: true,
+      timeZone: 'UTC',
     })
   }
 
@@ -29,5 +30,6 @@ export const formatDate = (
   return new Date(date).toLocaleDateString('en-US', {
     ...base,
     month: 'long',
+    timeZone: 'UTC',
   })
 }

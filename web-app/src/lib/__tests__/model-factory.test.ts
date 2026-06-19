@@ -52,9 +52,10 @@ vi.mock('@/hooks/useServiceHub', () => ({
 const mockedInvoke = vi.mocked(invoke)
 
 describe('ModelFactory', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks()
     mockStartModel.mockResolvedValue(undefined)
+    ModelFactory.invalidateFoundationModelsAvailabilityCache()
   })
 
   describe('createModel', () => {
