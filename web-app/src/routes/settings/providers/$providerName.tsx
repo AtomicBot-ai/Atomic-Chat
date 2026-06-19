@@ -506,11 +506,7 @@ function ProviderDetail() {
 
     setRefreshingModels(true)
     try {
-      // Pull the latest manifest from our remote registry on GitHub. We
-      // intentionally do NOT hit the provider's own `/models` endpoint here
-      // — that path is unreliable across providers and runtimes (some hang,
-      // some require an API key the user hasn't entered yet, etc.). The
-      // registry is the canonical, curated source.
+      // 1. Pull the latest manifest from our remote registry on GitHub.
       try {
         await useProviderRegistryStore.getState().refresh({ force: true })
       } catch (err) {
@@ -528,27 +524,73 @@ function ProviderDetail() {
         return
       }
 
-      // Count models that will newly appear on this provider after the
-      // registry merge — for the success toast.
+      // 2. Get fresh providers from registry/engines.
       const fresh = await serviceHub.providers().getProviders()
-      const registryProvider = fresh.find(
+
+      // 3. Try live /v1/models fetch so providers not in the registry
+      //    (e.g. custom vLLM/llama.cpp endpoints) surface their models.
+      //    Wrapped in try/catch — clouds and providers without a base_url
+      //    fall back gracefully to the registry result alone.
+      let liveModelIds: string[] = []
+      let liveFetchError: Error | null = null
+      try {
+        liveModelIds = await serviceHub
+          .providers()
+          .fetchModelsFromProvider(provider)
+      } catch (err) {
+        liveFetchError = err instanceof Error ? err : new Error(String(err))
+        console.warn(
+          `[providers:${provider.provider}] live /v1/models failed (falling back to registry):`,
+          err
+        )
+      }
+
+      // 4. Merge: registry models ∪ live IDs, dedup by id.
+      //    Registry metadata (name, capabilities, etc.) takes priority for
+      //    IDs that appear in both sources; IDs only seen on the live server
+      //    are appended as bare Model objects.
+      const mergedFresh = fresh.map((p) => {
+        if (p.provider !== provider.provider || liveModelIds.length === 0)
+          return p
+        const registryModelIds = new Set(p.models.map((m) => m.id))
+        const newFromLive: Model[] = liveModelIds
+          .filter((id) => !registryModelIds.has(id))
+          .map((id) => ({ id }) as Model)
+        return { ...p, models: [...p.models, ...newFromLive] }
+      })
+
+      // 5. Count models newly appearing for this provider.
+      const mergedProvider = mergedFresh.find(
         (p) => p.provider === provider.provider
       )
       const existingIds = new Set(provider.models.map((m) => m.id))
-      const newCount = registryProvider
-        ? registryProvider.models.filter((m) => !existingIds.has(m.id)).length
+      const newCount = mergedProvider
+        ? mergedProvider.models.filter((m) => !existingIds.has(m.id)).length
         : 0
 
-      // `setProviders` merges new models from registry into useModelProvider
-      // while preserving API keys, base URLs, and user-tweaked settings on
-      // a per-provider basis. Existing models are NEVER removed.
-      setProviders(fresh)
+      // `setProviders` merges new models into useModelProvider while
+      // preserving API keys, base URLs, and user-tweaked settings on a
+      // per-provider basis. Existing models are NEVER removed.
+      setProviders(mergedFresh)
 
+      // 6. Three distinct toast outcomes:
+      //    (a) new models found, (b) live fetch failed, (c) genuinely empty.
       if (newCount > 0) {
         toast.success(t('providers:models'), {
           description: t('providers:refreshModelsSuccess', {
             count: newCount,
             provider: provider.provider,
+          }),
+        })
+      } else if (liveFetchError) {
+        // Live fetch failed; the "no new models" result may be incomplete.
+        const errMsg =
+          liveFetchError.message ||
+          t('providers:refreshModelsFailed', { provider: provider.provider })
+        toast.warning(t('providers:models'), {
+          description: t('providers:refreshModelsLiveFailed', {
+            provider: provider.provider,
+            error: errMsg,
           }),
         })
       } else {
