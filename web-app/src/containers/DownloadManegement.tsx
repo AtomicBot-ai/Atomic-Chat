@@ -242,10 +242,16 @@ export function DownloadManagement() {
 
   const onFileDownloadUpdate = useCallback(
     async (state: DownloadState) => {
+      // ATO-218: prefer state.fileName (set by backend downloads to a human-
+      // readable label like "b9691/win-cuda-13.3-x64") over the raw modelId
+      // which is the Tauri-event-safe taskId (dots collapsed to underscores,
+      // prefixed with "llamacpp-backend-"). Falls back to modelId for model
+      // downloads and other callers that don't set fileName.
+      const displayName = state.fileName || state.modelId
       updateProgress(
         state.modelId,
         state.percent,
-        state.modelId,
+        displayName,
         state.size?.transferred,
         state.size?.total
       )

@@ -1673,6 +1673,26 @@ export default class llamacpp_upstream_extension extends AIEngine {
         settings.map((item) => {
           if (item.key === 'version_backend') {
             item.controllerProps.value = targetBackendString
+            // ATO-218: Ensure the newly-activated backend appears in the
+            // dropdown options list. When updateBackend() is called after a
+            // download in the current session (e.g. "Find optimal backend"
+            // or manual backend selection), configureBackends() has not
+            // re-run yet, so installedEntries in the options may not
+            // include this backend. Without this guard the backend is
+            // selected (value set) but absent from options → the dropdown
+            // shows it as blank / missing.
+            const currentOptions = (
+              item.controllerProps.options as Array<{
+                value: string
+                name: string
+              }>
+            ) ?? []
+            if (!currentOptions.some((o) => o.value === targetBackendString)) {
+              item.controllerProps.options = [
+                ...currentOptions,
+                { value: targetBackendString, name: targetBackendString },
+              ]
+            }
           }
           return item
         })
@@ -4389,6 +4409,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
         if (events && typeof events.emit === 'function') {
           events.emit(DownloadEvent.onFileDownloadUpdate, {
             modelId: taskId,
+            // ATO-218: include the original (unsanitized) backend string as
+            // `fileName` so the download manager can display a readable name
+            // (e.g. "b9691/win-cuda-13.3-x64") instead of the Tauri-event-
+            // safe `taskId` which collapses dots to underscores.
+            fileName: backendString,
             percent: total > 0 ? transferred / total : 0,
             size: { transferred, total },
             downloadType: 'Backend',
@@ -4636,6 +4661,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
       if (events && typeof events.emit === 'function') {
         events.emit(DownloadEvent.onFileDownloadUpdate, {
           modelId: taskId,
+          // ATO-218: show a readable label for the cudart companion download
+          fileName: `${backendString} (CUDA runtime)`,
           percent: total > 0 ? transferred / total : 0,
           size: { transferred, total },
           downloadType: 'Backend',
