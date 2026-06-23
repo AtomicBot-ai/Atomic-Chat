@@ -163,9 +163,12 @@ const SettingsMenu = () => {
             }
             return (
               <div key={menu.title}>
+                {/* Selected uses a background-relative `foreground` overlay
+                    (heavier than the hover) so it stays legible on the panel,
+                    matching the sidebar's selected treatment. */}
                 <Link
                   to={menu.route}
-                  className="block px-2 gap-1.5 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary py-1 w-full rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
+                  className="block px-2 gap-1.5 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary py-1 w-full rounded-sm [&.active]:bg-foreground/20"
                 >
                   <div className="flex items-center justify-between">
                     <span>{t(menu.title)}</span>
@@ -204,8 +207,8 @@ const SettingsMenu = () => {
                         <div key={provider.provider}>
                           <div
                             className={cn(
-                              'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm [&.active]:bg-secondary/80 text-foreground',
-                              isActive && 'bg-secondary',
+                              'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm text-foreground',
+                              isActive && 'bg-foreground/20',
                               // hidden for llama.cpp provider for setup remote provider
                               provider.provider === 'llama.cpp' &&
                                 stepSetupRemoteProvider &&
@@ -264,7 +267,7 @@ const SettingsMenu = () => {
                     key={provider.provider}
                     className={cn(
                       'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm text-foreground',
-                      isRouteActive && 'bg-secondary',
+                      isRouteActive && 'bg-foreground/20',
                       provider.provider === 'llama.cpp' &&
                         stepSetupRemoteProvider &&
                         'hidden'
@@ -318,7 +321,7 @@ const SettingsMenu = () => {
                           key={provider.provider}
                           className={cn(
                             'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm text-muted-foreground',
-                            isRouteActive && 'bg-secondary'
+                            isRouteActive && 'bg-foreground/20'
                           )}
                           onClick={() =>
                             navigate({

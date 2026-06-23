@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/sidebar'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { memo, useMemo, useState } from 'react'
-import { Link } from '@tanstack/react-router'
+import { Link, useParams } from '@tanstack/react-router'
 import { RenameThreadDialog, DeleteThreadDialog } from '@/containers/dialogs'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -40,11 +40,13 @@ const WELCOME_THREAD_TITLES = new Set([
 const ThreadItem = memo(
   ({
     thread,
+    isActive,
     isMobile,
     currentProjectId,
     subItem,
   }: {
     thread: Thread
+    isActive: boolean
     isMobile: boolean
     currentProjectId?: string
     subItem?: boolean
@@ -161,7 +163,10 @@ const ThreadItem = memo(
           <Link
             to="/threads/$threadId"
             params={{ threadId: thread.id }}
-            className="bg-card dark:bg-secondary/20 mb-2 px-4 py-4 border hover:dark:bg-secondary/30 rounded-lg block"
+            className={cn(
+              'bg-card dark:bg-secondary/20 mb-2 px-4 py-4 border hover:dark:bg-secondary/30 rounded-lg block',
+              isActive && 'bg-secondary dark:bg-secondary/80'
+            )}
           >
             <span>{thread.title || t('common:newThread')}</span>
             {currentProjectId && lastUserMessageText && (
@@ -171,7 +176,11 @@ const ThreadItem = memo(
             )}
           </Link>
         ) : (
-          <MenuButtonWrapper asChild>
+          <MenuButtonWrapper
+            asChild
+            isActive={isActive}
+            className="data-[active=true]:bg-sidebar-foreground/15"
+          >
             <Link to="/threads/$threadId" params={{ threadId: thread.id }}>
               <span>{thread.title || t('common:newThread')}</span>
             </Link>
@@ -305,6 +314,10 @@ type ThreadListProps = {
 
 function ThreadList({ threads, currentProjectId, subItem }: ThreadListProps) {
   const { isMobile } = useSidebar()
+  // The open thread is the source of truth for "selected", read straight from
+  // the route params. Computed once here (not per row) so only the previously
+  // and newly active rows re-render when navigating between threads.
+  const { threadId: activeThreadId } = useParams({ strict: false })
 
   const sortedThreads = useMemo(() => {
     return [...threads].sort((a, b) => {
@@ -318,6 +331,7 @@ function ThreadList({ threads, currentProjectId, subItem }: ThreadListProps) {
         <ThreadItem
           key={thread.id}
           thread={thread}
+          isActive={thread.id === activeThreadId}
           isMobile={isMobile}
           currentProjectId={currentProjectId}
           subItem={subItem}
