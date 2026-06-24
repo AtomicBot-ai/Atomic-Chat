@@ -8,7 +8,7 @@
   "assistants": "Assistants",
   "assistantsDesc": "AI assistants that help with everyday tasks.",
   "editors": "IDEs & Editors",
-  "editorsDesc": "Use your local Atomic Chat models inside your editor through its OpenAI-compatible provider.",
+  "editorsDesc": "Use your local Atomic Chat models directly inside VS Code, JetBrains, and Xcode.",
   "copySettings": "Copy settings",
   "detected": "Detected",
   "notDetected": "Not found",
