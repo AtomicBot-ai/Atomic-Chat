@@ -212,7 +212,7 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
       'Use your local models in GitHub Copilot Chat.',
     kind: 'editor',
     detectBin: 'code',
-    docsUrl: 'https://code.visualstudio.com/docs/copilot/overview',
+    docsUrl: 'https://code.visualstudio.com/docs/copilot/customization/language-models',
     installable: false,
     configurable: false,
     requiresModel: false,
