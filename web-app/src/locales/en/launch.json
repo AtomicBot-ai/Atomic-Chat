@@ -10,8 +10,6 @@
   "editors": "Editors",
   "editorsDesc": "Code editors that let you chat and code with your local models.",
   "copySettings": "Copy settings",
-  "detected": "Detected",
-  "notDetected": "Not found",
   "manualSetup": "Manual setup",
   "serverNotRunningHint": "Start the local server above first so {{name}} can reach your models.",
   "installed": "Installed",

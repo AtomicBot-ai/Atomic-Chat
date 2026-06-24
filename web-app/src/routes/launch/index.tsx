@@ -775,7 +775,7 @@ function LaunchPage() {
                   : 'bg-muted text-muted-foreground'
               )}
             >
-              {isInstalled ? t('launch:detected') : t('launch:notDetected')}
+              {isInstalled ? t('launch:installed') : t('launch:notInstalled')}
             </span>
           )}
 
