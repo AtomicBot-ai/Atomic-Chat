@@ -7,9 +7,11 @@ import posthog from 'posthog-js'
 import { toast } from 'sonner'
 import {
   IconChevronDown,
+  IconCopy,
   IconExternalLink,
   IconFolder,
   IconLoader2,
+  IconPlayerPlay,
   IconTerminal2,
 } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
@@ -223,6 +225,42 @@ function AgentIcon({ agent }: { agent: IntegrationAgent }) {
           />
         </IconBox>
       )
+    case 'vscode':
+      return (
+        <IconBox bg="#0065a9">
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="#ffffff"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path d="M17.583 2.21 21.79 4.23a1.2 1.2 0 0 1 .686 1.084v13.372a1.2 1.2 0 0 1-.686 1.084l-4.207 2.022a1.2 1.2 0 0 1-1.357-.232l-7.677-7.01-3.61 2.74a.8.8 0 0 1-1.022-.046l-1.125-1.024a.8.8 0 0 1 0-1.18L5.93 12 2.265 8.96a.8.8 0 0 1 0-1.18l1.125-1.024a.8.8 0 0 1 1.022-.046l3.61 2.74 7.677-7.01a1.2 1.2 0 0 1 1.357-.232ZM16.5 7.18 10.94 12l5.56 4.82V7.18Z" />
+          </svg>
+        </IconBox>
+      )
+    case 'jetbrains':
+      return (
+        <IconBox bg="#000000">
+          <span className="text-[10px] font-bold leading-none text-white">
+            JB
+          </span>
+        </IconBox>
+      )
+    case 'xcode':
+      return (
+        <IconBox bg="#147efb">
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="#ffffff"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path d="M12 2a10 10 0 0 0-8.83 14.69l5.2-9.01a.6.6 0 0 1 .9-.2l2.02 1.5-3.9 6.76a10 10 0 0 0 4.04.26l4.2-7.28a.6.6 0 0 1 1.04 0l1.9 3.29A10 10 0 0 0 12 2Z" />
+          </svg>
+        </IconBox>
+      )
     default:
       return (
         <IconBox bg="#52525b">
@@ -348,6 +386,8 @@ function LaunchPage() {
   const setOpenLog = useLaunchStore((s) => s.setOpenLog)
   const [runningModels, setRunningModels] = useState<string[]>([])
   const [openPath, setOpenPath] = useState<Record<string, boolean>>({})
+  const [openSteps, setOpenSteps] = useState<Record<string, boolean>>({})
+  const [editorBusy, setEditorBusy] = useState<Record<string, boolean>>({})
 
   const detect = useCallback(
     async (agent: IntegrationAgent): Promise<boolean> => {
@@ -637,8 +677,185 @@ function LaunchPage() {
     ]
   )
 
+  // Connection details an editor's BYOK / "OpenAI-compatible provider" UI
+  // needs. Editors append their own `/chat/completions` path, so the Base URL
+  // carries the `/v1` prefix; the key is whatever the server requires (a
+  // non-empty placeholder when auth is off, since most editors demand one).
+  const editorConnection = useCallback(() => {
+    const connectHost =
+      serverHost === '0.0.0.0' || (serverHost as string) === '::'
+        ? '127.0.0.1'
+        : serverHost
+    return {
+      baseUrl: `http://${connectHost}:${serverPort}${apiPrefix}`,
+      apiKey: apiKey || 'atomic',
+      model: activeModel,
+    }
+  }, [serverHost, serverPort, apiPrefix, apiKey, activeModel])
+
+  // Copy the Base URL / API key / model block to the clipboard so the user can
+  // paste it into the editor's provider settings (these editors keep the
+  // provider in secret/IDE storage with no writable config file).
+  const handleCopySettings = useCallback(
+    async (agent: IntegrationAgent) => {
+      const { baseUrl, apiKey: key, model } = editorConnection()
+      const lines = [
+        `Base URL: ${baseUrl}`,
+        `API key: ${key}`,
+        `Model: ${model ?? '(load a model in a chat first)'}`,
+      ]
+      try {
+        await navigator.clipboard.writeText(lines.join('\n'))
+        toast.success(t('launch:toast.settingsCopied'), {
+          description: t('launch:toast.settingsCopiedDesc', {
+            name: agent.name,
+          }),
+        })
+      } catch {
+        toast.error(t('launch:toast.copyFailed'))
+      }
+    },
+    [editorConnection, t]
+  )
+
+  // Make sure the local server is up, copy the connection settings, then open
+  // the editor. The user finishes setup inside the editor's own UI.
+  const handleLaunchEditor = useCallback(
+    async (agent: IntegrationAgent) => {
+      const launchId = agent.editor?.launchId
+      if (!launchId) return
+
+      posthog.capture('editor_launch', {
+        editor_id: agent.id,
+        editor_name: agent.name,
+      })
+
+      setEditorBusy((prev) => ({ ...prev, [agent.id]: true }))
+      try {
+        await ensureServerRunning()
+        await handleCopySettings(agent)
+        await invoke('launch_editor', { editorId: launchId })
+        toast.success(t('launch:toast.editorLaunched', { name: agent.name }), {
+          description: t('launch:toast.editorLaunchedDesc', {
+            name: agent.name,
+          }),
+          duration: 8000,
+        })
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        toast.error(t('launch:toast.editorLaunchFailed', { name: agent.name }), {
+          description: msg,
+        })
+      } finally {
+        setEditorBusy((prev) => ({ ...prev, [agent.id]: false }))
+      }
+    },
+    [ensureServerRunning, handleCopySettings, t]
+  )
+
   const coding = INTEGRATION_AGENTS.filter((a) => a.kind === 'coding')
   const assistants = INTEGRATION_AGENTS.filter((a) => a.kind === 'assistant')
+  const editors = INTEGRATION_AGENTS.filter((a) => a.kind === 'editor')
+
+  const renderEditor = (agent: IntegrationAgent) => {
+    const isInstalled = installed[agent.id]
+    const isBusy = editorBusy[agent.id]
+    const steps = agent.editor?.steps ?? []
+
+    return (
+      <Card key={agent.id} className="bg-card rounded-lg">
+        <div className="flex items-center gap-3">
+          <AgentIcon agent={agent} />
+          <h2 className="font-studio truncate text-base font-medium text-foreground">
+            {agent.name}
+          </h2>
+          {isInstalled !== undefined && (
+            <span
+              className={cn(
+                'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+                isInstalled
+                  ? 'bg-emerald-500/10 text-emerald-600'
+                  : 'bg-muted text-muted-foreground'
+              )}
+            >
+              {isInstalled ? t('launch:detected') : t('launch:notDetected')}
+            </span>
+          )}
+
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => openUrl(agent.docsUrl)}
+            >
+              <IconExternalLink size={14} className="text-muted-foreground" />
+              {t('launch:docs')}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => handleCopySettings(agent)}
+            >
+              <IconCopy size={14} />
+              {t('launch:copySettings')}
+            </Button>
+            <Button
+              size="sm"
+              className="w-[112px] justify-center gap-1.5 select-none"
+              onClick={() => handleLaunchEditor(agent)}
+              disabled={isBusy}
+            >
+              {isBusy ? (
+                <IconLoader2 size={14} className="animate-spin" />
+              ) : (
+                <IconPlayerPlay size={14} />
+              )}
+              {t('launch:launch')}
+            </Button>
+          </div>
+        </div>
+        <p className="mt-2 text-sm leading-normal text-muted-foreground">
+          {agent.description}
+        </p>
+
+        {serverStatus !== 'running' && (
+          <p className="mt-2 text-[11px] leading-relaxed text-amber-600">
+            {t('launch:serverNotRunningHint', { name: agent.name })}
+          </p>
+        )}
+
+        <div className="mt-3">
+          <button
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+            onClick={() =>
+              setOpenSteps((prev) => ({
+                ...prev,
+                [agent.id]: !prev[agent.id],
+              }))
+            }
+          >
+            <IconTerminal2 size={14} />
+            {t('launch:manualSetup')}
+            <IconChevronDown
+              size={14}
+              className={cn(
+                'transition-transform',
+                openSteps[agent.id] && 'rotate-180'
+              )}
+            />
+          </button>
+          {openSteps[agent.id] && (
+            <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs leading-relaxed text-muted-foreground">
+              {steps.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+          )}
+        </div>
+      </Card>
+    )
+  }
 
   const renderAgent = (agent: IntegrationAgent) => {
     const isInstalled = installed[agent.id]
@@ -816,6 +1033,20 @@ function LaunchPage() {
             </div>
             {coding.map(renderAgent)}
           </section>
+
+          {editors.length > 0 && (
+            <section className="flex flex-col gap-3">
+              <div>
+                <h1 className="font-studio text-lg font-medium text-foreground">
+                  {t('launch:editors')}
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                  {t('launch:editorsDesc')}
+                </p>
+              </div>
+              {editors.map(renderEditor)}
+            </section>
+          )}
         </div>
       </div>
     </div>

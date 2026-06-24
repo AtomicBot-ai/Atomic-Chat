@@ -7,6 +7,14 @@
   "codingAgentsDesc": "Coding assistants that can read, modify, and execute code in your projects.",
   "assistants": "Assistants",
   "assistantsDesc": "AI assistants that help with everyday tasks.",
+  "editors": "IDEs & Editors",
+  "editorsDesc": "Use your local Atomic Chat models inside your editor through its OpenAI-compatible provider.",
+  "launch": "Launch",
+  "copySettings": "Copy settings",
+  "detected": "Detected",
+  "notDetected": "Not found",
+  "manualSetup": "Manual setup",
+  "serverNotRunningHint": "Start the local server above first so {{name}} can reach your models.",
   "installed": "Installed",
   "installedViaWsl": "Installed (WSL)",
   "notInstalled": "Not installed",
@@ -41,6 +49,12 @@
     "configured": "{{name}} configured",
     "configuredDesc": "{{name}} now points at your local server — opening a terminal.",
     "configureFailed": "Failed to configure {{name}}",
-    "terminalFailed": "Couldn't open a terminal for {{name}}"
+    "terminalFailed": "Couldn't open a terminal for {{name}}",
+    "settingsCopied": "Connection settings copied",
+    "settingsCopiedDesc": "Paste them into {{name}}'s provider settings.",
+    "copyFailed": "Couldn't copy settings to the clipboard",
+    "editorLaunched": "Launched {{name}}",
+    "editorLaunchedDesc": "Finish setup inside {{name}} using the copied connection settings.",
+    "editorLaunchFailed": "Couldn't launch {{name}}"
   }
 }

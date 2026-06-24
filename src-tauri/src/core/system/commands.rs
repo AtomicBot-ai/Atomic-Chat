@@ -2914,6 +2914,83 @@ pub fn open_agent_terminal(command: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Launch a GUI editor for the "IDEs & Editors" integrations (VS Code,
+/// JetBrains, Xcode).
+///
+/// Unlike the CLI coding agents, these editors have no writable provider config
+/// — VS Code stores Copilot BYOK in secret storage, and JetBrains/Xcode keep
+/// the provider in IDE settings — so this command only *opens* the editor. The
+/// connection details still have to be pasted into the editor's own UI (the
+/// card shows those manual steps and a "Copy settings" button).
+///
+/// Resolution order: try the editor's command-line launcher(s) on the user's
+/// login-shell PATH first (so custom installs are respected), then fall back to
+/// the macOS app launcher (`open -a`). Returns an error if nothing was found.
+#[tauri::command]
+pub fn launch_editor(editor_id: String) -> Result<(), String> {
+    use std::process::{Command, Stdio};
+
+    // Spawn a detached GUI process, returning whether it started. A missing
+    // binary makes `spawn` fail, which is how we fall through to the next
+    // candidate / the platform launcher.
+    fn try_spawn(program: &str, args: &[&str]) -> bool {
+        let mut cmd = Command::new(program);
+        cmd.args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        // Find user-installed launchers (`code`, `idea`, …) even when Atomic
+        // Chat was started from Finder/Dock with a minimal PATH. No-op on Windows.
+        apply_login_path(&mut cmd);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+        cmd.spawn().is_ok()
+    }
+
+    // (CLI launchers to try in order, macOS .app name to fall back to).
+    let (clis, mac_app): (&[&str], Option<&str>) = match editor_id.as_str() {
+        "vscode" => (&["code"], Some("Visual Studio Code")),
+        // JetBrains Toolbox installs a different launcher per IDE; try the
+        // common ones so any installed JetBrains IDE opens.
+        "jetbrains" => (
+            &[
+                "idea", "pycharm", "webstorm", "phpstorm", "rubymine", "clion",
+                "goland", "rider", "datagrip", "rustrover",
+            ],
+            Some("IntelliJ IDEA"),
+        ),
+        // Xcode is macOS-only and ships no general-purpose launcher binary
+        // (`xed` needs a file argument), so we open the app directly.
+        "xcode" => (&[], Some("Xcode")),
+        other => return Err(format!("Unknown editor: {}", other)),
+    };
+
+    for cli in clis {
+        if try_spawn(cli, &[]) {
+            log::info!("Launched editor '{}' via '{}'", editor_id, cli);
+            return Ok(());
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    if let Some(app) = mac_app {
+        if try_spawn("open", &["-a", app]) {
+            log::info!("Launched editor '{}' via 'open -a {}'", editor_id, app);
+            return Ok(());
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = mac_app;
+
+    Err(format!(
+        "Couldn't find {} on this system. Install it (or enable its command-line launcher) and try again.",
+        editor_id
+    ))
+}
+
 /// One-time macOS migration for the autostart launcher switch from
 /// `MacosLauncher::LaunchAgent` to `MacosLauncher::AppleScript` (real Login
 /// Item). The legacy launcher wrote `~/Library/LaunchAgents/{app_name}.plist`

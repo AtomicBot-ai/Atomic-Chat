@@ -1,4 +1,21 @@
-export type IntegrationKind = 'coding' | 'assistant'
+export type IntegrationKind = 'coding' | 'assistant' | 'editor'
+
+/**
+ * Ordered manual-setup instructions shown inside an editor card. These mirror
+ * the per-editor pages other local-model tools ship (e.g. Ollama's
+ * "IDEs & Editors" docs): VS Code (Copilot BYOK), JetBrains AI Assistant, and
+ * Xcode all store the provider in secret/IDE storage with no writable config
+ * file, so the connection details have to be pasted into the editor's own UI.
+ * The strings are intentionally not localized — they describe product UI whose
+ * labels are English in every locale (matching the non-localized product names
+ * already used on this page).
+ */
+export type EditorSetup = {
+  /** Stable id passed to the Rust `launch_editor` command. */
+  launchId: string
+  /** Ordered manual steps to finish setup inside the editor. */
+  steps: string[]
+}
 
 export type IntegrationAgent = {
   /** Stable id used by the Rust install/configure commands. */
@@ -23,6 +40,12 @@ export type IntegrationAgent = {
    * Claude Code expects the bare host:port and appends its own path.
    */
   endpointWithPrefix: boolean
+  /**
+   * Present only for `kind: 'editor'`. GUI editors can't have their provider
+   * written to a file (it lives in secret/IDE storage), so instead of the
+   * write-config "Run" flow they expose Launch + Copy settings + manual steps.
+   */
+  editor?: EditorSetup
 }
 
 export const INTEGRATION_AGENTS: IntegrationAgent[] = [
@@ -181,5 +204,71 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     configurable: true,
     requiresModel: true,
     endpointWithPrefix: true,
+  },
+  {
+    id: 'vscode',
+    name: 'VS Code',
+    description:
+      'Use your local models in GitHub Copilot Chat via an OpenAI-compatible provider.',
+    kind: 'editor',
+    detectBin: 'code',
+    docsUrl: 'https://code.visualstudio.com/docs/copilot/overview',
+    installable: false,
+    configurable: false,
+    requiresModel: false,
+    endpointWithPrefix: true,
+    editor: {
+      launchId: 'vscode',
+      steps: [
+        'Sign in to GitHub Copilot (the free plan is enough).',
+        'Open the Copilot Chat view, then click the model picker and choose "Manage Models…".',
+        'Pick "OpenAI Compatible" (BYOK), paste the copied Base URL and API key, and save.',
+        'Select the Atomic Chat model from the model picker to start chatting.',
+      ],
+    },
+  },
+  {
+    id: 'jetbrains',
+    name: 'JetBrains',
+    description:
+      'Connect AI Assistant in IntelliJ, PyCharm, WebStorm and other JetBrains IDEs.',
+    kind: 'editor',
+    detectBin: 'idea',
+    docsUrl: 'https://www.jetbrains.com/help/ai-assistant/',
+    installable: false,
+    configurable: false,
+    requiresModel: false,
+    endpointWithPrefix: true,
+    editor: {
+      launchId: 'jetbrains',
+      steps: [
+        'Open Settings → Tools → AI Assistant → Models.',
+        'Enable third-party / local providers, then add an "OpenAI-compatible endpoint".',
+        'Paste the copied Base URL (and API key if prompted) and apply.',
+        'Select the Atomic Chat model as the provider for AI Assistant.',
+      ],
+    },
+  },
+  {
+    id: 'xcode',
+    name: 'Xcode',
+    description:
+      "Use your local models with Xcode's Coding Intelligence via a locally hosted model.",
+    kind: 'editor',
+    detectBin: 'xed',
+    docsUrl: 'https://developer.apple.com/xcode/',
+    installable: false,
+    configurable: false,
+    requiresModel: false,
+    endpointWithPrefix: true,
+    editor: {
+      launchId: 'xcode',
+      steps: [
+        'Open Xcode → Settings → Intelligence (requires Xcode 26 or newer, macOS only).',
+        'Click "Add a Model Provider" and choose "Locally Hosted".',
+        'Enter the port from the copied Base URL (default 1337); Xcode adds the /v1 path itself.',
+        'Restart Xcode if the models do not appear, then pick the Atomic Chat model.',
+      ],
+    },
   },
 ]
