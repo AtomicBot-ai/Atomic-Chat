@@ -209,7 +209,7 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     id: 'vscode',
     name: 'VS Code',
     description:
-      'Use your local models in GitHub Copilot Chat via an OpenAI-compatible provider.',
+      'Use your local models in GitHub Copilot Chat.',
     kind: 'editor',
     detectBin: 'code',
     docsUrl: 'https://code.visualstudio.com/docs/copilot/overview',
@@ -253,7 +253,7 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     id: 'xcode',
     name: 'Xcode',
     description:
-      "Use your local models with Xcode's Coding Intelligence via a locally hosted model.",
+      "Use your local models with Xcode's Coding Intelligence.",
     kind: 'editor',
     detectBin: 'xed',
     docsUrl: 'https://developer.apple.com/xcode/',
