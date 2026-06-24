@@ -9,7 +9,6 @@
   "assistantsDesc": "AI assistants that help with everyday tasks.",
   "editors": "IDEs & Editors",
   "editorsDesc": "Use your local Atomic Chat models inside your editor through its OpenAI-compatible provider.",
-  "launch": "Launch",
   "copySettings": "Copy settings",
   "detected": "Detected",
   "notDetected": "Not found",

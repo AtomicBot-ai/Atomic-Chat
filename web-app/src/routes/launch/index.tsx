@@ -11,7 +11,6 @@ import {
   IconExternalLink,
   IconFolder,
   IconLoader2,
-  IconPlayerPlay,
   IconTerminal2,
 } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
@@ -802,16 +801,14 @@ function LaunchPage() {
             </Button>
             <Button
               size="sm"
-              className="w-[112px] justify-center gap-1.5 select-none"
+              className="w-[112px] transform-gpu justify-center gap-1.5 select-none"
               onClick={() => handleLaunchEditor(agent)}
               disabled={isBusy}
             >
-              {isBusy ? (
+              {isBusy && (
                 <IconLoader2 size={14} className="animate-spin" />
-              ) : (
-                <IconPlayerPlay size={14} />
               )}
-              {t('launch:launch')}
+              {t('launch:enable')}
             </Button>
           </div>
         </div>
