@@ -250,16 +250,12 @@ function AgentIcon({ agent }: { agent: IntegrationAgent }) {
       )
     case 'xcode':
       return (
-        <IconBox bg="#147efb">
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="#ffffff"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path d="M12 2a10 10 0 0 0-8.83 14.69l5.2-9.01a.6.6 0 0 1 .9-.2l2.02 1.5-3.9 6.76a10 10 0 0 0 4.04.26l4.2-7.28a.6.6 0 0 1 1.04 0l1.9 3.29A10 10 0 0 0 12 2Z" />
-          </svg>
+        <IconBox>
+          <img
+            src="/images/integrations/xcode.png"
+            alt={agent.name}
+            className="size-full object-cover"
+          />
         </IconBox>
       )
     default:
