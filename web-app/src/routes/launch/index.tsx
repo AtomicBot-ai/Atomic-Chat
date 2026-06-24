@@ -240,10 +240,12 @@ function AgentIcon({ agent }: { agent: IntegrationAgent }) {
       )
     case 'jetbrains':
       return (
-        <IconBox bg="#000000">
-          <span className="text-[10px] font-bold leading-none text-white">
-            JB
-          </span>
+        <IconBox>
+          <img
+            src="/images/integrations/jetbrains.png"
+            alt={agent.name}
+            className="size-full object-cover"
+          />
         </IconBox>
       )
     case 'xcode':
