@@ -791,12 +791,34 @@ fn jan_cli_bin_dir_windows() -> Result<PathBuf, String> {
         .join("bin"))
 }
 
+/// Strip the Windows extended-length / verbatim prefix (`\\?\` or `\\?\UNC\`)
+/// from a path string.
+///
+/// Tauri's `resource_dir()` returns verbatim-prefixed paths on Windows
+/// (e.g. `\\?\C:\Users\...\resources\bin`). That prefix is valid Win32 but does
+/// not belong in the user PATH: some tools fail to resolve executables from a
+/// `\\?\`-prefixed PATH entry because the prefix disables normal path parsing.
+/// We always write the plain, normalized form instead.
+#[cfg(windows)]
+fn strip_verbatim_prefix(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+        // \\?\UNC\server\share -> \\server\share
+        format!(r"\\{}", rest)
+    } else if let Some(rest) = path.strip_prefix(r"\\?\") {
+        // \\?\C:\... -> C:\...
+        rest.to_string()
+    } else {
+        path.to_string()
+    }
+}
+
 /// Add a directory to the Windows user PATH.
 #[cfg(windows)]
 fn add_to_path_windows(install_dir: &PathBuf) -> Result<(), String> {
     use std::process::Command;
 
-    let install_dir_str = install_dir.to_string_lossy().to_string();
+    // Always write the normalized (non-verbatim) form to PATH.
+    let install_dir_str = strip_verbatim_prefix(&install_dir.to_string_lossy());
 
     let mut cmd = Command::new("powershell");
     cmd.args([
@@ -824,25 +846,36 @@ fn add_to_path_windows(install_dir: &PathBuf) -> Result<(), String> {
         .and_then(|p| p.parent())
         .map(|p| p.to_string_lossy().to_string());
 
+    let old_jan_dir_norm = old_jan_dir.as_deref().map(strip_verbatim_prefix);
+
     let parts: Vec<&str> = existing_user_path
         .split(';')
         .filter(|p| !p.is_empty())
         .filter(|p| {
-            if let Some(ref old) = old_jan_dir {
-                !p.eq_ignore_ascii_case(old)
-            } else {
-                true
+            let norm = strip_verbatim_prefix(p);
+            // Drop the stale old-style GUI-dir entry...
+            if let Some(ref old) = old_jan_dir_norm {
+                if norm.eq_ignore_ascii_case(old) {
+                    return false;
+                }
             }
+            // ...and drop any existing copy of our bin dir (including the
+            // legacy `\\?\`-prefixed form) so we can re-add the clean entry.
+            // This lets older installs self-heal on the next launch.
+            !norm.eq_ignore_ascii_case(&install_dir_str)
         })
         .collect();
-
-    if parts.iter().any(|p| p.eq_ignore_ascii_case(&install_dir_str)) {
-        return Ok(());
-    }
 
     let mut new_parts = vec![install_dir_str.as_str()];
     new_parts.extend(parts);
     let new_path = new_parts.join(";");
+
+    // Nothing to change: our clean entry is already present and no stale
+    // entries needed removing. Skip the write to avoid touching the registry
+    // on every launch.
+    if new_path == existing_user_path {
+        return Ok(());
+    }
 
     let mut cmd_write = Command::new("powershell");
     cmd_write.args([
@@ -901,9 +934,11 @@ fn remove_from_path_windows(dir: &PathBuf) -> Result<(), String> {
         .trim()
         .to_string();
 
+    let dir_str = strip_verbatim_prefix(&dir_str);
     let new_path: String = existing_user_path
         .split(';')
-        .filter(|p| !p.is_empty() && !p.eq_ignore_ascii_case(&dir_str))
+        // Match both the plain entry and any legacy `\\?\`-prefixed copy.
+        .filter(|p| !p.is_empty() && !strip_verbatim_prefix(p).eq_ignore_ascii_case(&dir_str))
         .collect::<Vec<_>>()
         .join(";");
 
