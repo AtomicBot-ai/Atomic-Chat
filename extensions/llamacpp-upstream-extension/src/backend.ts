@@ -646,9 +646,24 @@ export async function isBackendInstalled(
   backend: string,
   version: string
 ): Promise<boolean> {
-  const exePath = await getBackendExePath(backend, version)
-  const result = await fs.existsSync(exePath)
-  return result
+  const backendDir = await getBackendDir(backend, version)
+  const requiredFiles = IS_WINDOWS
+    ? ['llama-server.exe', 'llama-server-impl.dll']
+    : ['llama-server']
+
+  const hasRequiredFiles = async (baseDir: string): Promise<boolean> => {
+    for (const fileName of requiredFiles) {
+      if (!(await fs.existsSync(await joinPath([baseDir, fileName])))) {
+        return false
+      }
+    }
+    return true
+  }
+
+  const buildBinDir = await joinPath([backendDir, 'build', 'bin'])
+  if (await hasRequiredFiles(buildBinDir)) return true
+
+  return await hasRequiredFiles(backendDir)
 }
 
 /**

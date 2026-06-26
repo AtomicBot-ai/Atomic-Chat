@@ -144,7 +144,17 @@ impl LlamacppError {
     /// recognised crash we surface an actionable hint.
     pub fn from_exit_status(status: &std::process::ExitStatus, stderr: &str) -> Self {
         let base = Self::from_stderr(stderr);
-        if !matches!(base.code, ErrorCode::LlamaCppProcessError) || !is_crash_exit(status) {
+        if !matches!(base.code, ErrorCode::LlamaCppProcessError) {
+            return base;
+        }
+        if is_windows_missing_dependency_exit(status) {
+            return Self::new(
+                ErrorCode::LibraryPathInvalid,
+                "The model engine couldn't start because a required llama.cpp runtime DLL is missing. Update Atomic Chat or re-download the backend from Settings → Model Providers.".into(),
+                Some(stderr.into()),
+            );
+        }
+        if !is_crash_exit(status) {
             return base;
         }
         Self::new(
@@ -155,6 +165,18 @@ speculative-decoding (MTP) configuration is unsupported here."
                 .into(),
             Some(stderr.into()),
         )
+    }
+}
+
+fn is_windows_missing_dependency_exit(status: &std::process::ExitStatus) -> bool {
+    #[cfg(windows)]
+    {
+        matches!(status.code(), Some(code) if code as u32 == 0xC000_0135)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = status;
+        false
     }
 }
 

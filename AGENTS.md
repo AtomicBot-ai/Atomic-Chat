@@ -309,6 +309,46 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-06-26 — Bundle the Windows upstream llama.cpp DLLs and treat missing `llama-server-impl.dll` as an incomplete backend (issue #121)
+- **Context:** Issue #121 reported Windows v1.1.119 failing to start
+ `llamacpp-upstream` on the bundled `b9691/win-cpu-x64` backend, with the
+ screenshot naming missing `llama-server-impl.dll` and logs showing
+ `ExitStatus(3221225781)` (`STATUS_DLL_NOT_FOUND`). The upstream
+ `llama-b9691-bin-win-cpu-x64.zip` is a flat archive containing
+ `llama-server.exe` plus required sibling DLLs (`llama-server-impl.dll`,
+ `llama.dll`, `ggml*.dll`, etc.). The Windows release workflow's inline
+ upstream-bundle step relocated only `*.exe` into
+ `resources/llamacpp-backend-upstream/build/bin/`, leaving the DLLs at the
+ resource root. `install_bundled_backend` / `isBackendInstalled` considered an
+ exe-only folder installed, so the broken backend was neither repaired from the
+ app bundle nor re-downloaded.
+- **Decision:** Keep the fix scoped to the upstream Windows provider. The
+ Windows release workflow now moves `*.dll` alongside `*.exe` into
+ `build/bin` when normalising the flat ggml-org zip layout. Both the Rust
+ plugin's `is_backend_installed` and the TS extension's `isBackendInstalled`
+ now require `llama-server.exe` **and** `llama-server-impl.dll` on Windows, so
+ exe-only installs are treated as incomplete and are cleaned/reinstalled by the
+ existing bundled-backend and stale-backend recovery paths. The Rust
+ `from_exit_status` classifier maps Windows `0xC0000135`
+ (`STATUS_DLL_NOT_FOUND`) to `LIBRARY_PATH_INVALID`, and the web-app marks that
+ code as terminal/recoverable for auto-start and Sentry hygiene.
+- **Consequences:** New Windows installers include the DLLs needed by
+ ggml-org's split `llama-server`; users who already have the exe-only
+ `b9691/win-cpu-x64` folder self-heal on the next fixed build because the
+ folder no longer satisfies the installed predicate. Future missing-DLL exits
+ get an actionable backend-runtime error instead of opaque
+ `LLAMA_CPP_PROCESS_ERROR`. Scope deliberately excludes unrelated backend
+ matrix changes and any legacy `jan*` rename.
+- **Owner:** team.
+- **Links:** [issue #121](https://github.com/AtomicBot-ai/Atomic-Chat/issues/121),
+ [`release.yml`](.github/workflows/release.yml) (Windows upstream bundle
+ relocation), [`backend.ts`](extensions/llamacpp-upstream-extension/src/backend.ts)
+ (`isBackendInstalled`), [`backend.rs`](src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs)
+ (`is_backend_installed`), [`error.rs`](src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/error.rs)
+ (`STATUS_DLL_NOT_FOUND` classification),
+ [`switchModel.ts`](web-app/src/utils/switchModel.ts),
+ [`telemetry.ts`](web-app/src/lib/telemetry.ts).
+
 ### 2026-06-25 — Propagate the app proxy into Launch-page agent installers, refresh the Windows PATH at install/detect time, and stop "Find optimal backend" picking Vulkan on integrated-only iGPUs
 - **Context:** Three Windows-confirmed defects from a user log + screenshots.
  (Class I) External coding-agent install on the Launch page failed with

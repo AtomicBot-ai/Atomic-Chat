@@ -141,6 +141,7 @@ const TERMINAL_LOAD_CODES = new Set([
   // only a manual re-download resolves it, so don't loop the auto-start.
   'MODEL_FILE_CORRUPT',
   'BINARY_NOT_FOUND',
+  'LIBRARY_PATH_INVALID',
   // ATO-190: the bundled macOS engine requires a newer macOS than the host
   // (missing Metal symbol). This never resolves on retry, so never auto-retry.
   'OS_VERSION_UNSUPPORTED',

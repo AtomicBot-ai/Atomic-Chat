@@ -552,6 +552,7 @@ jobs:
             echo "Relocating flat-extracted binaries into build/bin/..."
             mkdir -p "$DIR/build/bin"
             mv "$DIR"/*.exe "$DIR/build/bin/" 2>/dev/null || true
+            mv "$DIR"/*.dll "$DIR/build/bin/" 2>/dev/null || true
           fi
           echo "CPU backend ($BACKEND) downloaded successfully. App will auto-download GPU backend at runtime."
 

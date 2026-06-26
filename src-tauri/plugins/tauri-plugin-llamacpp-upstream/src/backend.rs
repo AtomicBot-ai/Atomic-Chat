@@ -193,28 +193,33 @@ pub async fn get_local_installed_backends(
 }
 
 /// Helper function to check if a backend is properly installed
-/// Checks for the existence of llama-server executable in the expected locations
+/// Checks for the existence of llama-server and its required runtime files
+/// in the expected locations.
 fn is_backend_installed(backend_dir: &PathBuf) -> bool {
     if !backend_dir.exists() || !backend_dir.is_dir() {
         return false;
     }
 
-    // Determine executable name based on platform
-    let exe_name = if cfg!(target_os = "windows") {
-        "llama-server.exe"
+    let required_files: &[&str] = if cfg!(target_os = "windows") {
+        &["llama-server.exe", "llama-server-impl.dll"]
     } else {
-        "llama-server"
+        &["llama-server"]
+    };
+
+    let has_required_files = |base_dir: PathBuf| -> bool {
+        required_files
+            .iter()
+            .all(|file_name| base_dir.join(file_name).exists())
     };
 
     // First check if build directory exists (build/bin/llama-server)
-    let build_path = backend_dir.join("build").join("bin").join(exe_name);
-    if build_path.exists() {
+    let build_path = backend_dir.join("build").join("bin");
+    if has_required_files(build_path) {
         return true;
     }
 
     // Otherwise check root directory (llama-server)
-    let root_path = backend_dir.join(exe_name);
-    root_path.exists()
+    has_required_files(backend_dir.clone())
 }
 
 #[derive(Serialize, Deserialize, Clone)]
