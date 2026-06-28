@@ -433,6 +433,32 @@ function ThreadDetail() {
     state.getDisabledToolsForThread(threadId)
   )
 
+  const disableReasoning = useGeneralSetting((state) => state.disableReasoning)
+
+  // True when the model is streaming but the last assistant message has no
+  // visible content yet (e.g. during a long reasoning-only phase where the
+  // provider emits `delta.reasoning_content` tokens but no `delta.content`
+  // tokens). In this window the PromptProgress spinner should stay visible so
+  // the UI doesn't appear frozen.
+  const isLastAssistantMessageEmpty = useMemo(() => {
+    if (status !== CHAT_STATUS.STREAMING) return false
+    const lastMessage = chatMessages[chatMessages.length - 1]
+    if (!lastMessage || lastMessage.role !== 'assistant') return false
+    for (const part of lastMessage.parts) {
+      if (part.type === 'text' && (part as { text?: string }).text?.trim()) {
+        return false
+      }
+      if (
+        part.type === 'reasoning' &&
+        !disableReasoning &&
+        (part as { text?: string }).text?.trim()
+      ) {
+        return false
+      }
+    }
+    return true
+  }, [status, chatMessages, disableReasoning])
+
   // Update RAG tools availability when documents, model, or tool availability changes
   useEffect(() => {
     const checkDocumentsAvailability = async () => {
@@ -1120,12 +1146,14 @@ function ThreadDetail() {
                 />
               )}
               {(status === CHAT_STATUS.SUBMITTED ||
-                isAutoIncreasingContext) && (
+                isAutoIncreasingContext ||
+                isLastAssistantMessageEmpty) && (
                 <div className="flex flex-row items-center gap-2">
                   {(pendingContinueMessage || isAutoIncreasingContext) && (
                     <Shimmer duration={1}>Growing the Mind...</Shimmer>
                   )}
-                  {status === CHAT_STATUS.SUBMITTED && <PromptProgress />}
+                  {(status === CHAT_STATUS.SUBMITTED ||
+                    isLastAssistantMessageEmpty) && <PromptProgress />}
                 </div>
               )}
               {(error || contextLimitError) &&
