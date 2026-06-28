@@ -176,6 +176,15 @@ export class TauriProvidersService extends DefaultProvidersService {
     // Build request headers once; shared across primary and fallback attempts.
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      // Force the server to close the connection after the response. Without
+      // this, servers that use HTTP keep-alive (e.g. LM Studio, which sends
+      // "Connection: keep-alive" / "Keep-Alive: timeout=5") keep the socket
+      // open after delivering the body. The Tauri HTTP plugin (reqwest) then
+      // waits for the connection to close before resolving response.text(),
+      // causing the 15 s body-read timeout to fire even though the data was
+      // received instantly. Sending "Connection: close" signals the server to
+      // close after this response so reqwest sees EOF immediately (ATO-238).
+      'Connection': 'close',
     }
 
     // Add Origin header for local providers to avoid CORS issues
