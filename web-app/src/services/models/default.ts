@@ -885,7 +885,19 @@ export class DefaultModelsService implements ModelsService {
     messages: ThreadMessage[]
   ): Promise<number> {
     try {
-      const engine = this.getEngine(LOCAL_LLAMACPP_PROVIDER)
+      // Resolve the engine that currently holds the active session for this
+      // model. The session lives in whichever llama.cpp extension started it
+      // — 'llamacpp' (turboquant) or 'llamacpp-upstream' — depending on
+      // which provider the user selected. Using LOCAL_LLAMACPP_PROVIDER
+      // unconditionally always picked the upstream engine even when the
+      // turboquant provider was active, causing the /tokenize call to fail
+      // with "No active session found for model" → silent return 0.
+      const activeByProvider = await this.getLocalActiveModelsByProvider()
+      const ownerProvider = activeByProvider.find((p) =>
+        p.models.includes(modelId)
+      )
+      const engineId = ownerProvider?.provider ?? LOCAL_LLAMACPP_PROVIDER
+      const engine = this.getEngine(engineId)
       const typedEngine = engine as AIEngine & {
         getTokensCount?: (opts: {
           model: string

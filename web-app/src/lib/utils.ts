@@ -149,6 +149,14 @@ export const LOCAL_LLAMACPP_PROVIDER = 'llamacpp-upstream'
  */
 export const LOCAL_LLAMACPP_EXTENSION_NAME = '@janhq/llamacpp-upstream-extension'
 
+/**
+ * Returns true for either llamacpp provider id ('llamacpp' = turboquant,
+ * 'llamacpp-upstream' = upstream ggml-org build). Both providers support
+ * client-side token counting via their respective getTokensCount() methods.
+ */
+export const isLlamacppProvider = (provider: string) =>
+  provider === 'llamacpp' || provider === 'llamacpp-upstream'
+
 export const getProviderTitle = (provider: string) => {
   switch (provider) {
     case 'jan':

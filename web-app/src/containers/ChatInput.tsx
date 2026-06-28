@@ -1,6 +1,6 @@
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import TextareaAutosize from 'react-textarea-autosize'
-import { cn, formatBytes, LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
+import { cn, formatBytes, LOCAL_LLAMACPP_PROVIDER, isLlamacppProvider } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react'
@@ -2531,7 +2531,7 @@ const ChatInput = memo(function ChatInput({
             </div>
 
             <div className="flex items-center gap-2">
-              {selectedProvider === 'llamacpp' &&
+              {isLlamacppProvider(selectedProvider) &&
                 tokenCounterCompact &&
                 !effectiveAgentMode &&
                 !initialMessage &&
@@ -2603,7 +2603,7 @@ const ChatInput = memo(function ChatInput({
         </div>
       )}
 
-      {selectedProvider === 'llamacpp' &&
+      {isLlamacppProvider(selectedProvider) &&
         isModelActive &&
         !effectiveAgentMode &&
         !tokenCounterCompact &&
