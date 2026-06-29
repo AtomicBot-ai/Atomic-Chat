@@ -32,6 +32,8 @@ const COMMANDS: &[&str] = &[
     "validate_backend_string",
     "should_migrate_backend",
     "handle_setting_update",
+    "install_bundled_backend",
+    "fetch_manifest_http1",
 ];
 
 fn main() {

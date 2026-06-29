@@ -363,4 +363,18 @@ export async function installBundledBackend(
   return invoke('plugin:llamacpp-upstream|install_bundled_backend', { backendsDir })
 }
 
+/**
+ * Fetch the backend-index manifest JSON over an HTTP/1.1-only reqwest
+ * connection. Used as a fallback transport on Linux where reqwest's HTTP/2
+ * negotiation against the Fastly CDN (raw.githubusercontent.com) stalls
+ * indefinitely (h2-stall). Returns the raw JSON string. Throws on network
+ * error or non-2xx response.
+ */
+export async function fetchManifestHttp1(
+  url: string,
+  timeoutMs: number
+): Promise<string> {
+  return invoke('plugin:llamacpp-upstream|fetch_manifest_http1', { url, timeoutMs })
+}
+
 export * from './types'

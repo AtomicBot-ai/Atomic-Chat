@@ -1186,6 +1186,65 @@ pub async fn install_bundled_backend<R: Runtime>(
     })
 }
 
+// ----------------------- Manifest HTTP/1.1 fetch -----------------------------
+
+/// Fetch the backend-index manifest from `url` using a reqwest client that is
+/// **forced to HTTP/1.1** (`http1_only`).
+///
+/// # Why this exists
+/// The manifest is hosted on raw.githubusercontent.com, which sits behind the
+/// Fastly CDN.  When reqwest negotiates HTTP/2 over TLS against Fastly on
+/// Linux (native-TLS + OpenSSL) the h2 SETTINGS frame can stall indefinitely
+/// (the socket is open but the response stream never arrives). This is a
+/// known reqwest / Fastly incompatibility on some Linux hosts.
+///
+/// Forcing HTTP/1.1 (`http1_only = true`) entirely avoids the h2 negotiation
+/// and lets the connection proceed over a plain keep-alive TCP stream, which
+/// reliably succeeds on the affected Linux hosts.
+///
+/// The function is gated to desktop targets because reqwest is only listed
+/// as a non-mobile dependency in Cargo.toml.
+#[tauri::command]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub async fn fetch_manifest_http1(url: String, timeout_ms: u64) -> Result<String, String> {
+    use std::time::Duration;
+
+    let client = reqwest::Client::builder()
+        .http1_only()
+        .connect_timeout(Duration::from_millis(timeout_ms))
+        .timeout(Duration::from_millis(timeout_ms))
+        .user_agent("atomic-chat")
+        .build()
+        .map_err(|e| format!("build reqwest client: {e}"))?;
+
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("fetch {url}: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!(
+            "fetch {url}: HTTP {}",
+            resp.status().as_u16()
+        ));
+    }
+
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("read response body from {url}: {e}"))?;
+
+    Ok(body)
+}
+
+/// Stub for mobile targets where reqwest is not available.
+#[tauri::command]
+#[cfg(any(target_os = "android", target_os = "ios"))]
+pub async fn fetch_manifest_http1(url: String, _timeout_ms: u64) -> Result<String, String> {
+    Err(format!("fetch_manifest_http1 not available on mobile (url: {url})"))
+}
+
 // ---------------------------- Tests ------------------------------------------
 
 #[cfg(test)]

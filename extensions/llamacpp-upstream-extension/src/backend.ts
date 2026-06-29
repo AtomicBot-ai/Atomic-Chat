@@ -10,6 +10,7 @@ import {
   BackendVersion,
   getSupportedFeaturesFromRust,
   mapOldBackendToNew,
+  fetchManifestHttp1,
 } from '../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index'
 
 // Upstream provider points at the official ggml-org/llama.cpp release stream.
@@ -29,6 +30,32 @@ const LLAMACPP_BACKEND_MANIFEST_URL =
 const LLAMACPP_DOWNLOAD_BASE =
   'https://github.com/ggml-org/llama.cpp/releases/download'
 const MANIFEST_FETCH_TIMEOUT_MS = 8_000
+
+// Bundled baseline manifest — a known-good snapshot that ships with the
+// extension. Parsed by `fetchRemoteBackends` as a last resort when ALL
+// network transports fail (e.g. ATO-243: Linux h2-stall + WebKitGTK
+// unreachability). The baseline intentionally keeps serving real backend
+// ids and tags so the download path still works; it will simply be older
+// than the live manifest until the network recovers. Update this whenever
+// the atomic-chat-conf manifest is updated.
+const BUNDLED_MANIFEST_BASELINE = {
+  tag_name: 'b9691',
+  assets: [
+    { name: 'llama-b9691-bin-win-cpu-x64.zip' },
+    { name: 'llama-b9691-bin-win-cuda-12.4-x64.zip' },
+    { name: 'llama-b9691-bin-win-cuda-13.3-x64.zip' },
+    { name: 'llama-b9691-bin-win-vulkan-x64.zip' },
+    { name: 'llama-b9691-bin-ubuntu-x64.tar.gz' },
+    { name: 'llama-b9691-bin-ubuntu-vulkan-x64.tar.gz' },
+    { name: 'cudart-llama-bin-win-cuda-12.4-x64.zip' },
+    { name: 'cudart-llama-bin-win-cuda-13.3-x64.zip' },
+  ],
+}
+
+// In-memory manifest cache: populated on first successful fetch; serves as
+// an instant fallback on subsequent failures so a transient network stall
+// never dead-ends the user.
+let _cachedManifest: typeof BUNDLED_MANIFEST_BASELINE | null = null
 
 export async function getLocalInstalledBackends(): Promise<BackendVersion[]> {
   const janDataFolderPath = await getJanDataFolderPath()
@@ -170,17 +197,64 @@ async function fetchManifestWithWebFetch(): Promise<Response> {
   }
 }
 
+/**
+ * Fetch the manifest via the Rust reqwest client forced to HTTP/1.1.
+ *
+ * This is the primary workaround for ATO-243: on Linux hosts Fastly's CDN
+ * (which backs raw.githubusercontent.com) negotiates HTTP/2 with reqwest
+ * but the h2 SETTINGS frame stalls indefinitely (the socket is open but
+ * no data arrives). Forcing HTTP/1.1 (`http1_only` in reqwest) completely
+ * bypasses the h2 negotiation and reliably succeeds on affected hosts.
+ * The Rust command returns the raw JSON body as a string, which we wrap
+ * into a minimal `Response`-like object for the rest of the pipeline.
+ */
+async function fetchManifestWithRustHttp1(): Promise<Response> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null
+  const rustFetch = fetchManifestHttp1(
+    LLAMACPP_BACKEND_MANIFEST_URL,
+    MANIFEST_FETCH_TIMEOUT_MS
+  ).then((body) => {
+    // Synthesise a Response-like object so callers can call `.json()` on it.
+    return new Response(body, {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  })
+  const timeout = new Promise<Response>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      reject(
+        new Error(
+          `Rust HTTP/1.1 manifest fetch timed out after ${MANIFEST_FETCH_TIMEOUT_MS}ms`
+        )
+      )
+    }, MANIFEST_FETCH_TIMEOUT_MS + 1_000) // slight extra buffer for IPC overhead
+  })
+  try {
+    return await Promise.race([rustFetch, timeout])
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle)
+  }
+}
+
 async function fetchManifestWithFallbacks(): Promise<Response> {
-  // WebView fetch is the proven-reliable primary path for this host (mirrors
-  // the registry loaders in web-app/src/services/*-registry.ts). The two
-  // plugin-http variants are kept as fallbacks for air-gapped/corporate-proxy
-  // setups where the WebView fetch is intercepted but the Rust HTTP client
-  // (plugin-http) is allowed through. All run in parallel; `Promise.any`
-  // takes whichever resolves first, so a fast WebView fetch wins normally.
+  // Transport priority (ATO-243):
+  //   1. Rust HTTP/1.1 (fetchManifestHttp1) — bypasses the reqwest h2-stall
+  //      on Linux where Fastly's CDN hangs HTTP/2 indefinitely. This is the
+  //      most reliable transport on the affected hosts.
+  //   2. WebView fetch (globalThis.fetch / WebKitGTK) — may also be slow on
+  //      Linux (WebKitGTK doesn't share network state with the user's browser)
+  //      but is a useful cross-check for proxy setups.
+  //   3-4. plugin-http tauri fetch (proxy-aware + direct) — reqwest with HTTP/2
+  //      enabled; kept for air-gapped/corporate environments where the WebView
+  //      is intercepted but the Rust HTTP client is allowed through. May stall
+  //      on Linux (see above), so relies on the JS timeout guard.
+  //
+  // All run in parallel; `Promise.any` takes whichever resolves first.
   const attempts: Array<{
     label: string
     runner: () => Promise<Response>
   }> = [
+    { label: 'rust-http1 fetch', runner: () => fetchManifestWithRustHttp1() },
     { label: 'webview fetch', runner: () => fetchManifestWithWebFetch() },
     { label: 'proxy-aware tauri fetch', runner: () => fetchManifestWithTimeout(true) },
     { label: 'direct tauri fetch', runner: () => fetchManifestWithTimeout(false) },
@@ -212,6 +286,58 @@ async function fetchManifestWithFallbacks(): Promise<Response> {
           : String(aggregateErr)
     throw new Error(`All manifest fetch attempts failed: ${reasons}`)
   }
+}
+
+/**
+ * Parse a manifest object (as fetched from atomic-chat-conf or as the bundled
+ * baseline) into `BackendVersion[]` for the given OS and architecture. Shared
+ * by the live-fetch path, the in-memory cache path, and the bundled-baseline
+ * path so there is a single authoritative parser.
+ */
+function parseManifestForPlatform(
+  release: { tag_name: string; assets: { name: string }[] },
+  osType: string,
+  archSuffix: string
+): BackendVersion[] {
+  const tag = release.tag_name
+  if (!tag) return []
+  const assets = release.assets ?? []
+  const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+  if (osType === 'windows') {
+    const re = new RegExp(`^llama-${escapedTag}-bin-(win-.+)\\.zip$`)
+    const isAllowedWindowsBackend = (name: string): boolean =>
+      name === 'win-cpu-x64' ||
+      /^win-cuda-12\.\d+-x64$/.test(name) ||
+      /^win-cuda-13\.\d+-x64$/.test(name) ||
+      name === 'win-vulkan-x64'
+    const backends: BackendVersion[] = []
+    for (const asset of assets) {
+      const match = re.exec(asset.name)
+      if (!match) continue
+      const backendName = match[1]
+      if (!isAllowedWindowsBackend(backendName)) continue
+      if (!backendName.endsWith(`-${archSuffix}`)) continue
+      backends.push({ version: tag, backend: backendName, order: 0 })
+    }
+    return backends
+  }
+
+  if (osType === 'linux') {
+    if (archSuffix !== 'x64') return []
+    const re = new RegExp(`^llama-${escapedTag}-bin-(ubuntu-.+)\\.tar\\.gz$`)
+    const backends: BackendVersion[] = []
+    for (const asset of assets) {
+      const match = re.exec(asset.name)
+      if (!match) continue
+      const backendName = LINUX_BACKEND_BY_UPSTREAM_ASSET[match[1]]
+      if (!backendName) continue
+      backends.push({ version: tag, backend: backendName, order: 0 })
+    }
+    return backends
+  }
+
+  return []
 }
 
 /**
@@ -253,6 +379,16 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
   const archSuffix =
     arch.includes('aarch64') || arch.includes('arm64') ? 'arm64' : 'x64'
 
+  // --- In-memory cache check -------------------------------------------------
+  // If we've already fetched the manifest this session, return from cache
+  // immediately. This avoids repeated network round-trips and ensures that a
+  // transient failure (e.g. ATO-243 Linux h2-stall) on one call doesn't break
+  // subsequent calls within the same session.
+  if (_cachedManifest) {
+    console.info('[fetchRemoteBackends] Using in-memory manifest cache')
+    return parseManifestForPlatform(_cachedManifest, osType, archSuffix)
+  }
+
   try {
     console.info(
       `[fetchRemoteBackends] Fetching ${LLAMACPP_BACKEND_MANIFEST_URL}...`
@@ -260,88 +396,43 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
     const resp = await fetchManifestWithFallbacks()
     if (!resp.ok) {
       console.warn(
-        `[fetchRemoteBackends] Backend manifest returned ${resp.status}, using local backends only`
+        `[fetchRemoteBackends] Backend manifest returned ${resp.status}; using bundled baseline`
       )
-      return []
+      _cachedManifest = BUNDLED_MANIFEST_BASELINE
+      return parseManifestForPlatform(_cachedManifest, osType, archSuffix)
     }
 
     const release = await resp.json()
     const tag: string = release.tag_name
-    if (!tag) return []
-
-    const assets: { name: string }[] = release.assets ?? []
-    const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-
-    if (osType === 'windows') {
-      // ggml-org Windows assets are zip archives named
-      // `llama-{tag}-bin-{backend}.zip` (e.g.
-      // `llama-b9284-bin-win-cuda-12.4-x64.zip`). Capture the backend infix.
-      const re = new RegExp(`^llama-${escapedTag}-bin-(win-.+)\\.zip$`)
-
-      // Whitelist of ggml-org Windows backend ids we surface to the user.
-      // Keeps less-relevant variants (hip-radeon / sycl / opencl-adreno /
-      // arm64) hidden until we explicitly support them in the Rust matrix.
-      //
-      // CUDA-13 minor is intentionally dynamic (`13.x`), because ggml-org
-      // periodically bumps the toolkit minor in release assets.
-      const isAllowedWindowsBackend = (backendName: string): boolean =>
-        backendName === 'win-cpu-x64' ||
-        /^win-cuda-12\.\d+-x64$/.test(backendName) ||
-        /^win-cuda-13\.\d+-x64$/.test(backendName) ||
-        backendName === 'win-vulkan-x64'
-
-      const backends: BackendVersion[] = []
-
-      for (const asset of assets) {
-        const match = re.exec(asset.name)
-        if (!match) continue
-
-        const backendName = match[1]
-        if (!isAllowedWindowsBackend(backendName)) continue
-        if (!backendName.endsWith(`-${archSuffix}`)) continue
-
-        backends.push({ version: tag, backend: backendName, order: 0 })
-      }
-
-      console.info(
-        `[fetchRemoteBackends] Found ${backends.length} remote backends for win-${archSuffix}:`,
-        backends.map((b) => b.backend)
-      )
-      return backends
+    if (!tag) {
+      console.warn('[fetchRemoteBackends] Manifest missing tag_name; using bundled baseline')
+      _cachedManifest = BUNDLED_MANIFEST_BASELINE
+      return parseManifestForPlatform(_cachedManifest, osType, archSuffix)
     }
 
-    // Linux: assets are gzipped tarballs named
-    // `llama-{tag}-bin-ubuntu-{variant}.tar.gz` (e.g.
-    // `llama-b9371-bin-ubuntu-vulkan-x64.tar.gz`). x86_64 only in Phase 1.
-    if (archSuffix !== 'x64') {
-      console.info(
-        `[fetchRemoteBackends] Linux ${archSuffix} not supported in Phase 1; returning no remote backends`
-      )
-      return []
-    }
+    // Cache the successfully-fetched manifest for this session.
+    _cachedManifest = release
 
-    const re = new RegExp(`^llama-${escapedTag}-bin-(ubuntu-.+)\\.tar\\.gz$`)
-    const backends: BackendVersion[] = []
-
-    for (const asset of assets) {
-      const match = re.exec(asset.name)
-      if (!match) continue
-
-      const upstreamInfix = match[1]
-      const backendName = LINUX_BACKEND_BY_UPSTREAM_ASSET[upstreamInfix]
-      if (!backendName) continue
-
-      backends.push({ version: tag, backend: backendName, order: 0 })
-    }
-
+    const backends = parseManifestForPlatform(release, osType, archSuffix)
     console.info(
-      `[fetchRemoteBackends] Found ${backends.length} remote backends for linux-${archSuffix}:`,
+      `[fetchRemoteBackends] Found ${backends.length} remote backends for ${osType}-${archSuffix}:`,
       backends.map((b) => b.backend)
     )
     return backends
   } catch (err) {
-    console.warn('[fetchRemoteBackends] Failed to fetch remote backends:', err)
-    return []
+    // All transports failed. Log the real cause (each per-transport reason is
+    // embedded in the AggregateError message from fetchManifestWithFallbacks),
+    // then fall back to the bundled baseline so the user can still download
+    // GPU backends. The baseline may be one release behind, but it is always
+    // better than a dead-end.
+    console.warn(
+      '[fetchRemoteBackends] All manifest fetch transports failed; falling back to bundled baseline.',
+      err instanceof Error ? err.message : String(err)
+    )
+    if (!_cachedManifest) {
+      _cachedManifest = BUNDLED_MANIFEST_BASELINE
+    }
+    return parseManifestForPlatform(_cachedManifest, osType, archSuffix)
   }
 }
 
