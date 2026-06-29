@@ -1760,16 +1760,33 @@ fn refresh_windows_path() -> Option<String> {
 
     let user = read_scope("User");
     let machine = read_scope("Machine");
-    if user.is_none() && machine.is_none() {
+
+    // The npm global prefix on Windows defaults to %APPDATA%\npm, where global
+    // shims (claude.cmd, codex.cmd, opencode.cmd, ...) installed via `npm i -g`
+    // live. A fresh Node/npm install adds this to the *user* PATH, but a running
+    // GUI may have snapshotted PATH before that entry was broadcast (and `install_agent`
+    // installs into exactly this dir). Include it explicitly so npm-based agents
+    // resolve from any spawned process even when the registry PATH lacks it.
+    let npm_global = std::env::var("APPDATA")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(|appdata| format!("{}\\npm", appdata.trim_end_matches('\\')));
+
+    if user.is_none() && machine.is_none() && npm_global.is_none() {
         return None;
     }
 
     let live = std::env::var("PATH").unwrap_or_default();
     let mut merged: Vec<String> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for chunk in [machine.as_deref(), user.as_deref(), Some(live.as_str())]
-        .into_iter()
-        .flatten()
+    for chunk in [
+        machine.as_deref(),
+        user.as_deref(),
+        npm_global.as_deref(),
+        Some(live.as_str()),
+    ]
+    .into_iter()
+    .flatten()
     {
         for part in chunk.split(';').map(str::trim).filter(|p| !p.is_empty()) {
             let key = part.to_lowercase();
@@ -1846,7 +1863,7 @@ fn decode_console_bytes(bytes: &[u8]) -> String {
 /// Proxy details forwarded from the app's in-app proxy config so that spawned
 /// agent installers/terminals can reach the network when the user is behind a
 /// region block. Mirrors the frontend `useProxyConfig` store fields we need.
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Clone)]
 pub struct ProxyEnv {
     pub url: String,
     pub username: Option<String>,
@@ -2044,6 +2061,111 @@ pub async fn detect_agent_installed(
     }
 }
 
+/// Attempt to install Node.js (which bundles npm) for the user via the Windows
+/// Package Manager (`winget`), so npm-based Launch-page agents install on a
+/// fresh machine without the user leaving the app. Streams winget output to the
+/// same `agent_install_log:<id>` event the agent installer uses.
+///
+/// Returns `true` only when, after the attempt, `npm` resolves on the
+/// freshly-refreshed PATH. Gracefully returns `false` (the caller then surfaces
+/// the actionable "install Node.js from nodejs.org" error) when winget is
+/// absent (e.g. Windows LTSC / older builds), the install fails, or npm still
+/// isn't found. Windows-only; a no-op returning `false` on other platforms.
+#[cfg(windows)]
+async fn try_bootstrap_npm_via_winget<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    event: &str,
+    proxy: Option<ProxyEnv>,
+) -> bool {
+    // winget itself (App Installer) must be present; it ships on Win10 1809+
+    // mainline but not on LTSC / Server / stripped images.
+    if !detect_agent_installed("winget".to_string(), None)
+        .await
+        .installed
+    {
+        let _ = app_handle.emit(
+            event,
+            "npm not found and winget is unavailable - cannot auto-install Node.js.".to_string(),
+        );
+        return false;
+    }
+
+    let _ = app_handle.emit(
+        event,
+        "npm not found. Installing Node.js LTS via winget...".to_string(),
+    );
+
+    let app = app_handle.clone();
+    let ev = event.to_string();
+    let ran = tokio::task::spawn_blocking(move || -> bool {
+        use std::io::{BufRead, BufReader};
+        use std::os::windows::process::CommandExt;
+        use std::process::{Command, Stdio};
+
+        let mut cmd = Command::new("winget");
+        cmd.args([
+            "install",
+            "--id",
+            "OpenJS.NodeJS.LTS",
+            "-e",
+            "--silent",
+            "--accept-package-agreements",
+            "--accept-source-agreements",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+        apply_runtime_path(&mut cmd);
+        if let Some(ref proxy) = proxy {
+            apply_proxy_env(&mut cmd, proxy);
+        }
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = app.emit(&ev, format!("Failed to spawn winget: {}", e));
+                return false;
+            }
+        };
+        if let Some(stdout) = child.stdout.take() {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                let _ = app.emit(&ev, line);
+            }
+        }
+        if let Some(stderr) = child.stderr.take() {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                let _ = app.emit(&ev, line);
+            }
+        }
+        matches!(child.wait(), Ok(s) if s.success())
+    })
+    .await
+    .unwrap_or(false);
+
+    if !ran {
+        let _ = app_handle.emit(
+            event,
+            "Node.js installation via winget did not complete successfully.".to_string(),
+        );
+        return false;
+    }
+
+    // winget adds the Node install dir to PATH; `detect_agent_installed`
+    // re-reads the registry PATH at runtime, so npm is found without a restart.
+    detect_agent_installed("npm".to_string(), None)
+        .await
+        .installed
+}
+
+#[cfg(not(windows))]
+async fn try_bootstrap_npm_via_winget<R: Runtime>(
+    _app_handle: &AppHandle<R>,
+    _event: &str,
+    _proxy: Option<ProxyEnv>,
+) -> bool {
+    false
+}
+
 /// Install an external agent by spawning its official installer, streaming
 /// stdout/stderr to the UI via the `agent_install_log:<agent_id>` event.
 #[tauri::command]
@@ -2054,6 +2176,8 @@ pub async fn install_agent<R: Runtime>(
 ) -> Result<(), String> {
     let (program, args, prereq, docs) = agent_install_spec(&agent_id)?;
 
+    let event = format!("agent_install_log:{}", agent_id);
+
     // `detect_on_native_path` re-reads the registry PATH at runtime on Windows
     // so a Node/npm installed after the app launched (or present in the registry
     // but not the GUI's snapshotted PATH) is found without an app restart.
@@ -2061,15 +2185,22 @@ pub async fn install_agent<R: Runtime>(
         .await
         .installed
     {
-        return Err(format!(
-            "'{}' is required to install this agent but was not found on PATH. \
-             Install it (Node.js from https://nodejs.org for npm-based agents), \
-             then restart Atomic Chat and try again: {}",
-            prereq, docs
-        ));
+        // For npm-based agents on Windows, try to auto-install Node.js (which
+        // bundles npm) via winget before giving up, so the Launch flow works on
+        // a fresh machine. Falls back to the actionable error when winget is
+        // unavailable or the install fails.
+        let bootstrapped = prereq == "npm"
+            && try_bootstrap_npm_via_winget(&app_handle, &event, proxy.clone()).await;
+        if !bootstrapped {
+            return Err(format!(
+                "'{}' is required to install this agent but was not found on PATH. \
+                 Install it (Node.js from https://nodejs.org for npm-based agents), \
+                 then restart Atomic Chat and try again: {}",
+                prereq, docs
+            ));
+        }
     }
 
-    let event = format!("agent_install_log:{}", agent_id);
     let agent_id_log = agent_id.clone();
 
     let (success, captured) =
@@ -3411,6 +3542,11 @@ pub fn open_agent_terminal(
         // applied below reaches the interactive agent.
         let mut cmd = std::process::Command::new("cmd");
         cmd.args(["/C", "start", "", "cmd", "/K", &command]);
+        // The launched console inherits this `cmd`'s environment, so refresh the
+        // PATH from the registry (+ npm global prefix) here — otherwise a console
+        // started from a GUI launched before Node/npm was installed inherits a
+        // stale snapshot and can't find npm-installed agent shims (claude.cmd, ...).
+        apply_runtime_path(&mut cmd);
         if let Some(ref proxy) = proxy {
             apply_proxy_env(&mut cmd, proxy);
         }
@@ -3435,7 +3571,10 @@ pub fn open_agent_terminal(
             let mut cmd = std::process::Command::new(term);
             cmd.args(*pre);
             cmd.args(["bash", "-lc", &inner]);
-            // The emulator inherits this env; `bash -lc` then sees the proxy.
+            // The emulator inherits this env; resolve the login-shell PATH so the
+            // agent binary is found, then `bash -lc` sees PATH + proxy.
+            apply_login_path(&mut cmd);
+            apply_runtime_path(&mut cmd);
             if let Some(ref proxy) = proxy {
                 apply_proxy_env(&mut cmd, proxy);
             }
