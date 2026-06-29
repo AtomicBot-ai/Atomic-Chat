@@ -3494,26 +3494,23 @@ async fn start_server_internal<R: Runtime>(
     // requested port is unavailable, and (b) learn the actual bound port
     // *before* building the proxy config / spawning the server.
     //
-    // Two Windows error codes both mean "can't use this port":
-    //   10048 (WSAEADDRINUSE)  → AddrInUse   – another process holds it
-    //   10013 (WSAEACCES)      → PermissionDenied – access denied (port in
-    //                            a Hyper-V/WSL dynamic-port exclusion range,
-    //                            or held by arRPC/Frame wallet/similar)
-    //
-    // Both should fall back to an OS-assigned free port rather than hard-fail.
+    // A bind to a *specific* port can fail for several reasons that all mean
+    // "can't use this port" and should degrade to an OS-assigned free port
+    // rather than hard-fail. On Windows these surface as distinct codes, e.g.
+    //   10048 (WSAEADDRINUSE)  → AddrInUse        – another process holds it
+    //   10013 (WSAEACCES)      → PermissionDenied – access denied (port in a
+    //                            Hyper-V/WSL dynamic-port exclusion range, or
+    //                            held by arRPC/Frame wallet/similar)
+    // but other kinds occur too (privileged low ports, transient stack
+    // errors, ...). Rather than enumerate them, fall back on *any* bind error
+    // whenever a specific (non-zero) port was requested; we only hard-fail
+    // when even an OS-assigned port (host:0) cannot be bound.
     let listener = match std::net::TcpListener::bind(requested_addr) {
         Ok(listener) => listener,
-        Err(e)
-            if port != 0
-                && matches!(
-                    e.kind(),
-                    std::io::ErrorKind::AddrInUse | std::io::ErrorKind::PermissionDenied
-                ) =>
-        {
+        Err(e) if port != 0 => {
             log::warn!(
                 "Local API Server cannot bind to port {port} on {host} \
-                 ({e} — port may be in use or access denied); \
-                 falling back to an OS-assigned free port"
+                 ({e}); falling back to an OS-assigned free port"
             );
             let fallback_addr: SocketAddr = format!("{host}:0")
                 .parse()
