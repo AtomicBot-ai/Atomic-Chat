@@ -52,9 +52,12 @@ const BUNDLED_MANIFEST_BASELINE = {
   ],
 }
 
-// In-memory manifest cache: populated on first successful fetch; serves as
-// an instant fallback on subsequent failures so a transient network stall
-// never dead-ends the user.
+// In-memory manifest cache: populated ONLY on a genuinely successful live
+// fetch, so a later transient network stall (e.g. the ATO-243 Linux h2-stall)
+// can reuse the last good manifest within the same session. The bundled
+// baseline is deliberately NEVER stored here — caching it would pin the
+// session to a stale snapshot and keep returning it even after the network
+// recovers (the ATO-243 cache-poisoning regression).
 let _cachedManifest: typeof BUNDLED_MANIFEST_BASELINE | null = null
 
 export async function getLocalInstalledBackends(): Promise<BackendVersion[]> {
@@ -380,10 +383,11 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
     arch.includes('aarch64') || arch.includes('arm64') ? 'arm64' : 'x64'
 
   // --- In-memory cache check -------------------------------------------------
-  // If we've already fetched the manifest this session, return from cache
-  // immediately. This avoids repeated network round-trips and ensures that a
-  // transient failure (e.g. ATO-243 Linux h2-stall) on one call doesn't break
-  // subsequent calls within the same session.
+  // If we've already fetched a LIVE manifest this session, return it
+  // immediately. This avoids repeated network round-trips. Only successful
+  // live fetches land here (see assignment below); the bundled baseline is
+  // never cached, so a transient failure does not pin subsequent calls to a
+  // stale snapshot once the network recovers.
   if (_cachedManifest) {
     console.info('[fetchRemoteBackends] Using in-memory manifest cache')
     return parseManifestForPlatform(_cachedManifest, osType, archSuffix)
@@ -396,21 +400,22 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
     const resp = await fetchManifestWithFallbacks()
     if (!resp.ok) {
       console.warn(
-        `[fetchRemoteBackends] Backend manifest returned ${resp.status}; using bundled baseline`
+        `[fetchRemoteBackends] Backend manifest returned ${resp.status}; using bundled baseline (not cached, will retry next call)`
       )
-      _cachedManifest = BUNDLED_MANIFEST_BASELINE
-      return parseManifestForPlatform(_cachedManifest, osType, archSuffix)
+      return parseManifestForPlatform(BUNDLED_MANIFEST_BASELINE, osType, archSuffix)
     }
 
     const release = await resp.json()
     const tag: string = release.tag_name
     if (!tag) {
-      console.warn('[fetchRemoteBackends] Manifest missing tag_name; using bundled baseline')
-      _cachedManifest = BUNDLED_MANIFEST_BASELINE
-      return parseManifestForPlatform(_cachedManifest, osType, archSuffix)
+      console.warn(
+        '[fetchRemoteBackends] Manifest missing tag_name; using bundled baseline (not cached, will retry next call)'
+      )
+      return parseManifestForPlatform(BUNDLED_MANIFEST_BASELINE, osType, archSuffix)
     }
 
-    // Cache the successfully-fetched manifest for this session.
+    // Cache ONLY a genuinely successful live manifest for this session. The
+    // bundled baseline is never stored here (see _cachedManifest comment).
     _cachedManifest = release
 
     const backends = parseManifestForPlatform(release, osType, archSuffix)
@@ -424,15 +429,13 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
     // embedded in the AggregateError message from fetchManifestWithFallbacks),
     // then fall back to the bundled baseline so the user can still download
     // GPU backends. The baseline may be one release behind, but it is always
-    // better than a dead-end.
+    // better than a dead-end. It is deliberately NOT cached, so the next call
+    // retries the network and self-heals once the stall clears.
     console.warn(
-      '[fetchRemoteBackends] All manifest fetch transports failed; falling back to bundled baseline.',
+      '[fetchRemoteBackends] All manifest fetch transports failed; falling back to bundled baseline (not cached, will retry next call).',
       err instanceof Error ? err.message : String(err)
     )
-    if (!_cachedManifest) {
-      _cachedManifest = BUNDLED_MANIFEST_BASELINE
-    }
-    return parseManifestForPlatform(_cachedManifest, osType, archSuffix)
+    return parseManifestForPlatform(BUNDLED_MANIFEST_BASELINE, osType, archSuffix)
   }
 }
 
