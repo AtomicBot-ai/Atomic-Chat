@@ -168,7 +168,7 @@ const SettingsMenu = () => {
                     matching the sidebar's selected treatment. */}
                 <Link
                   to={menu.route}
-                  className="block px-2 gap-1.5 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary py-1 w-full rounded-sm [&.active]:bg-foreground/20"
+                  className="block px-2 gap-1.5 cursor-pointer hover:bg-foreground/10 py-1 w-full rounded-sm [&.active]:bg-foreground/20"
                 >
                   <div className="flex items-center justify-between">
                     <span>{t(menu.title)}</span>
@@ -207,7 +207,7 @@ const SettingsMenu = () => {
                         <div key={provider.provider}>
                           <div
                             className={cn(
-                              'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm text-foreground',
+                              'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-foreground/10 py-1 w-full rounded-sm text-foreground',
                               isActive && 'bg-foreground/20',
                               // hidden for llama.cpp provider for setup remote provider
                               provider.provider === 'llama.cpp' &&
@@ -266,7 +266,7 @@ const SettingsMenu = () => {
                   <div
                     key={provider.provider}
                     className={cn(
-                      'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm text-foreground',
+                      'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-foreground/10 py-1 w-full rounded-sm text-foreground',
                       isRouteActive && 'bg-foreground/20',
                       provider.provider === 'llama.cpp' &&
                         stepSetupRemoteProvider &&
@@ -293,7 +293,7 @@ const SettingsMenu = () => {
               {hiddenProviders.length > 0 && (
                 <>
                   <button
-                    className="flex items-center justify-between px-2 py-1 w-full rounded-sm text-muted-foreground hover:bg-secondary/60"
+                    className="flex items-center justify-between px-2 py-1 w-full rounded-sm text-muted-foreground hover:bg-foreground/10"
                     onClick={() => setExpandedProviders(!expandedProviders)}
                   >
                     <span className="text-sm">
@@ -320,7 +320,7 @@ const SettingsMenu = () => {
                         <div
                           key={provider.provider}
                           className={cn(
-                            'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm text-muted-foreground',
+                            'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-foreground/10 py-1 w-full rounded-sm text-muted-foreground',
                             isRouteActive && 'bg-foreground/20'
                           )}
                           onClick={() =>
