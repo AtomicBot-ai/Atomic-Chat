@@ -155,7 +155,7 @@ export function SamplerPopover({ disabled }: SamplerPopoverProps) {
                 className="w-(--radix-dropdown-menu-trigger-width) max-h-64 overflow-y-auto"
               >
                 <DropdownMenuItem
-                  className={!activeAssistant ? 'bg-accent' : ''}
+                  className={!activeAssistant ? 'bg-foreground/20' : ''}
                   onClick={() => handleSelectAssistant(undefined)}
                 >
                   <span className="text-muted-foreground">—</span>
@@ -166,7 +166,7 @@ export function SamplerPopover({ disabled }: SamplerPopoverProps) {
                     <DropdownMenuItem
                       key={assistant.id}
                       className={
-                        activeAssistant?.id === assistant.id ? 'bg-accent' : ''
+                        activeAssistant?.id === assistant.id ? 'bg-foreground/20' : ''
                       }
                       onClick={() => handleSelectAssistant(assistant)}
                     >

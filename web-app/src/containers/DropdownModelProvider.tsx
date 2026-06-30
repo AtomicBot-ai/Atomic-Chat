@@ -667,7 +667,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                           className={cn(
                             'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
                             'hover:bg-secondary/40',
-                            isSelected && 'bg-secondary/50'
+                            isSelected && 'bg-foreground/20 hover:bg-foreground/20'
                           )}
                         >
                           <div className="flex items-center gap-1 flex-1 min-w-0">
@@ -774,7 +774,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                                 'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
                                 'hover:bg-secondary/40',
                                 isSelected &&
-                                  'bg-secondary/60 hover:bg-secondary/60'
+                                  'bg-foreground/20 hover:bg-foreground/20'
                               )}
                             >
                               <div className="flex items-center gap-2 flex-1 min-w-0">
