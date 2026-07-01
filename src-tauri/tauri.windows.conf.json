@@ -29,6 +29,7 @@
     "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/bin/jan-cli.exe", "resources/llamacpp-backend-upstream/**/*", "resources/llamacpp-backend/**/*"],
     "externalBin": ["resources/bin/bun", "resources/bin/uv"],
     "windows": {
+      "signCommand": "cmd /c windows\\sign-binary.bat %1",
       "wix": {
         "upgradeCode": "b75dd42f-800c-57cb-8c5c-ed7fcbef13a0"
       },

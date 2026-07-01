@@ -309,6 +309,60 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-07-01 — Sign the inner `Atomic-Chat.exe` at bundle time via `signCommand` to prevent AV heuristic false positives (ATO-248)
+- **Context:** Kaspersky flagged Windows builds with two detections:
+ `Trojan-Downloader.Win32.Agent.xydtva` (heuristic on the inner binary) and
+ `UDS:DangerousObject.Multi.Generic` (KSN cloud reputation — new hash, low
+ prevalence). Root cause: DigiCert KeyLocker signing in
+ [`.github/workflows/release.yml`](.github/workflows/release.yml) ran only the
+ post-build `jsign` step, which signed **only the NSIS installer** and the MSI.
+ The inner `Atomic-Chat.exe` embedded in the installer remained unsigned.
+ Kaspersky unpacks the installer before scanning and finds the unsigned exe,
+ triggering the heuristic; the AV engine does not inherit the installer's
+ signature to its payload. The Downloader heuristic is further reinforced by
+ the app downloading and executing native binaries at runtime (llama.cpp
+ backends, bun, uv).
+- **Decision:** Add Tauri's `bundle.windows.signCommand` to
+ [`src-tauri/tauri.windows.conf.json`](src-tauri/tauri.windows.conf.json).
+ The bundler calls this command for every binary (main exe + sidecar EXEs)
+ *before* packaging them into the NSIS / MSI installer, so the embedded
+ `Atomic-Chat.exe` acquires a valid Authenticode signature. The command
+ delegates to a new wrapper script
+ [`src-tauri/windows/sign-binary.bat`](src-tauri/windows/sign-binary.bat),
+ which calls `signtool.exe` with the DigiCert KSP (`/csp "DigiCert Signing
+ Manager KSP" /kc "%SM_CERT_ALIAS%"`). The wrapper exits 0 when
+ `SM_CERT_ALIAS` is absent, so local dev builds are unaffected. The CI build
+ step (formerly "Build app (unsigned)") receives the four DigiCert KSP secrets
+ (`SM_API_KEY`, `SM_CLIENT_CERT_PASSWORD`, `SM_HOST`, `SM_CERT_ALIAS`) so the
+ KSP DLL can authenticate to DigiCert One when `signtool.exe` is invoked
+ during `yarn tauri build`. `SM_CLIENT_CERT_FILE` is already propagated to all
+ subsequent steps via `GITHUB_ENV` by the "Setup DigiCert KeyLocker" step.
+ The post-build `jsign` step that signs the NSIS installer and MSI is
+ **unchanged** — the installer wrapper still gets its own signature.
+- **Consequences:** `Atomic-Chat.exe` inside the installer is now signed with
+ the same DigiCert certificate as the installer itself. AV tools that unpack
+ the installer before scanning will see a signed binary with a valid
+ Authenticode chain, removing the heuristic trigger. The runtime-download
+ behavior (llama.cpp backends etc.) is unchanged; those binaries are
+ downloaded from GitHub releases and verified by the app (sha256). **Not
+ done:** signing `jan-cli.exe` (a resource, not an externalBin, so Tauri
+ doesn't call `signCommand` for it), signing the bundled llama-server DLLs
+ (same reason) — both are lower-risk than the main exe and can be addressed
+ in a follow-up. Step 3 from the issue (submitting the released build to
+ Kaspersky's false-positive portal) is a manual operations task outside the
+ code change. **Verified:** `src-tauri/tauri.windows.conf.json` parses as
+ valid JSON; `sign-binary.bat` exits 0 when `SM_CERT_ALIAS` is unset (local
+ dev safety net). A live Windows CI smoke-test (build → `signtool verify /pa
+ Atomic-Chat.exe` inside the extracted NSIS installer) is the residual step.
+- **Owner:** team.
+- **Links:** [ATO-248](https://linear.app/atomicchat/issue/ATO-248), files:
+ [`src-tauri/windows/sign-binary.bat`](src-tauri/windows/sign-binary.bat),
+ [`src-tauri/tauri.windows.conf.json`](src-tauri/tauri.windows.conf.json),
+ [`.github/workflows/release.yml`](.github/workflows/release.yml) ("Build app
+ (with inner-binary code signing)" step + `SM_*` env vars).
+
+---
+
 ### 2026-06-29 — Auto-install Node.js/npm via `winget` when an npm-based Launch-page agent is installed on a Windows host without npm (graceful fallback to the nodejs.org error)
 - **Context:** `install_agent`
  ([`commands.rs`](src-tauri/src/core/system/commands.rs)) gates every

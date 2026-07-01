@@ -630,7 +630,15 @@ jobs:
           cd src-tauri && cargo build --release --features cli --bin jan-cli
           cp target/release/jan-cli.exe resources/bin/jan-cli.exe
 
-      - name: Build app (unsigned)
+      - name: Build app (with inner-binary code signing)
+        # ATO-248: The Tauri bundler invokes windows/sign-binary.bat (via
+        # bundle.windows.signCommand in tauri.windows.conf.json) for every
+        # binary before packaging it into the NSIS / MSI installer. This
+        # ensures Atomic-Chat.exe carries a valid Authenticode signature
+        # inside the installer, preventing AV heuristic false positives
+        # (Kaspersky Trojan-Downloader / UDS:DangerousObject.Multi.Generic).
+        # The DigiCert KSP secrets must be available here so signtool.exe
+        # can authenticate to DigiCert One when called by sign-binary.bat.
         env:
           NODE_OPTIONS: "--max-old-space-size=4196"
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -642,6 +650,13 @@ jobs:
           SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
           SENTRY_ENVIRONMENT: production
           SENTRY_RELEASE: ${{ github.sha }}
+          # ATO-248: DigiCert KSP credentials for inner-binary signing via
+          # signCommand. sign-binary.bat skips gracefully when SM_CERT_ALIAS
+          # is absent (local dev / fork-PR builds without these secrets).
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+          SM_HOST: https://clientauth.one.digicert.com
+          SM_CERT_ALIAS: ${{ secrets.SM_CERT_ALIAS }}
         run: yarn tauri build
 
       - name: Upload Rust debug files to Sentry (Windows)
