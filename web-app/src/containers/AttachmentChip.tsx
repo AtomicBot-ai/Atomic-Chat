@@ -84,7 +84,7 @@ export const AttachmentChip = ({
           className={cn(
             'group/chip relative flex items-center gap-3 pl-2 py-1.5 rounded-2xl w-[220px] transition-colors',
             showRemove ? 'pr-7' : 'pr-3',
-            !hasError && 'bg-muted/50 hover:bg-muted',
+            !hasError && 'bg-muted/50 hover:bg-foreground/10',
             hasError && 'bg-destructive/10 hover:bg-destructive/15',
             className
           )}

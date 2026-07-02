@@ -371,7 +371,7 @@ function CopyableField({
         </code>
         <button
           onClick={copy}
-          className="shrink-0 p-0.5 rounded hover:bg-secondary/60 text-muted-foreground"
+          className="shrink-0 p-0.5 rounded hover:bg-foreground/10 text-muted-foreground"
         >
           {copied ? (
             <IconCheck size={13} className="text-emerald-500" />

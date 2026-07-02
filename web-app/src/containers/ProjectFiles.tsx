@@ -479,7 +479,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
             'flex flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed cursor-pointer transition-colors',
             isDragging
               ? 'bg-primary/10 border-primary'
-              : 'bg-secondary/30 border-border hover:bg-secondary/50'
+              : 'bg-secondary/30 border-border hover:bg-foreground/10'
           )}
           onClick={handleUpload}
           onDragOver={handleDragOver}
@@ -507,7 +507,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
               className={cn(
                 'flex items-center gap-2 p-2 rounded-lg',
                 'bg-secondary/30 border border-border/50',
-                'group hover:bg-secondary/50 transition-colors'
+                'group hover:bg-foreground/10 transition-colors'
               )}
             >
               <div className="shrink-0">
@@ -544,7 +544,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
             'flex mt-2 flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed cursor-pointer transition-colors',
             isDragging
               ? 'bg-primary/10 border-primary'
-              : 'bg-secondary/30 border-border hover:bg-secondary/50'
+              : 'bg-secondary/30 border-border hover:bg-foreground/10'
           )}
           onClick={handleUpload}
           onDragOver={handleDragOver}

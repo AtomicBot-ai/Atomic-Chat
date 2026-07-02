@@ -113,7 +113,7 @@ export default function AddEditCustomCliDialog({
             <div className="flex items-center justify-between">
               <label className="text-sm">Environment Variables</label>
               <div
-                className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-secondary transition-all duration-200 ease-in-out"
+                className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-foreground/10 transition-all duration-200 ease-in-out"
                 onClick={handleAddEnv}
               >
                 <IconPlus size={16} className="text-muted-foreground" />
@@ -136,7 +136,7 @@ export default function AddEditCustomCliDialog({
                 />
                 {envVars.length > 1 && (
                   <div
-                    className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-secondary transition-all duration-200 ease-in-out"
+                    className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-foreground/10 transition-all duration-200 ease-in-out"
                     onClick={() => handleRemoveEnv(index)}
                   >
                     <IconTrash size={16} className="text-destructive" />
