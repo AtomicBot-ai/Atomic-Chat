@@ -1713,7 +1713,14 @@ fn agent_install_spec(
                     "sh".to_string(),
                     vec![
                         "-c".to_string(),
-                        "POOL_INSTALL_ACCEPT_EULA=1 curl -fsSL https://downloads.poolside.ai/pool/install.sh | sh".to_string(),
+                        // The EULA env var must sit on the right side of the pipe: in
+                        // `A | B`, a leading `VAR=1` only scopes to the command it
+                        // prefixes (curl here), not to `sh` on the other end of the
+                        // pipe. Prefixing `sh` instead makes it see
+                        // POOL_INSTALL_ACCEPT_EULA=1 and skip the interactive EULA
+                        // prompt (which otherwise reads /dev/tty and fails when
+                        // spawned from the app with no TTY attached).
+                        "curl -fsSL https://downloads.poolside.ai/pool/install.sh | POOL_INSTALL_ACCEPT_EULA=1 sh".to_string(),
                     ],
                 )
             };
