@@ -666,7 +666,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                           onClick={() => handleSelect(searchableModel)}
                           className={cn(
                             'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
-                            'hover:bg-secondary/40',
+                            'hover:bg-foreground/10',
                             isSelected && 'bg-foreground/20 hover:bg-foreground/20'
                           )}
                         >
@@ -772,7 +772,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                               onClick={() => handleSelect(searchableModel)}
                               className={cn(
                                 'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
-                                'hover:bg-secondary/40',
+                                'hover:bg-foreground/10',
                                 isSelected &&
                                   'bg-foreground/20 hover:bg-foreground/20'
                               )}
@@ -820,7 +820,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
             <button
               type="button"
               onClick={onDownloadModel}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm cursor-pointer text-sm text-muted-foreground transition-colors duration-200 hover:bg-secondary/40 hover:text-foreground"
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm cursor-pointer text-sm text-muted-foreground transition-colors duration-200 hover:bg-foreground/10 hover:text-foreground"
             >
               <IconDownload size={16} className="shrink-0" />
               <span>{t('common:downloadModel')}</span>

@@ -272,7 +272,7 @@ export function SearchDialog({ open, onOpenChange, mode }: SearchDialogProps) {
                 data-index={0}
                 onClick={handleStartNewChat}
                 className={cn(
-                  'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-secondary/60 transition-colors cursor-pointer',
+                  'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-foreground/10 transition-colors cursor-pointer',
                   selectedIndex === 0 && 'bg-foreground/20 hover:bg-foreground/20'
                 )}
               >
@@ -304,7 +304,7 @@ export function SearchDialog({ open, onOpenChange, mode }: SearchDialogProps) {
                     data-index={itemIndex}
                     onClick={() => handleSelectThread(thread.id)}
                     className={cn(
-                      'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-secondary/60 transition-colors cursor-pointer',
+                      'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-foreground/10 transition-colors cursor-pointer',
                       selectedIndex === itemIndex && 'bg-foreground/20 hover:bg-foreground/20'
                     )}
                   >
@@ -328,7 +328,7 @@ export function SearchDialog({ open, onOpenChange, mode }: SearchDialogProps) {
                       data-index={itemIndex}
                       onClick={() => handleSelectThread(thread.id)}
                       className={cn(
-                        'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-secondary/60 transition-colors cursor-pointer',
+                        'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-foreground/10 transition-colors cursor-pointer',
                         selectedIndex === itemIndex && 'bg-foreground/20 hover:bg-foreground/20'
                       )}
                     >
@@ -343,8 +343,7 @@ export function SearchDialog({ open, onOpenChange, mode }: SearchDialogProps) {
                     </button>
                   )
                 }
-              )}            </div>
-          )}
+              )}            </div>          )}
 
           {/* Search results without project name */}
           {searchQuery && searchResults.withoutProject.length > 0 && (
@@ -357,7 +356,7 @@ export function SearchDialog({ open, onOpenChange, mode }: SearchDialogProps) {
                     data-index={itemIndex}
                     onClick={() => handleSelectThread(thread.id)}
                     className={cn(
-                      'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-secondary/60 transition-colors cursor-pointer',
+                      'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-foreground/10 transition-colors cursor-pointer',
                       selectedIndex === itemIndex && 'bg-foreground/20 hover:bg-foreground/20'
                     )}
                   >
