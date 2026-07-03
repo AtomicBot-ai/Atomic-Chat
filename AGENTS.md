@@ -309,6 +309,58 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-07-02 — Stop the reasoning/"thinking" container auto-scroll from fighting a manual scroll-up during streaming (GH #153, partial)
+- **Context:** [Issue #153](https://github.com/AtomicBot-ai/Atomic-Chat/issues/153)
+  bundled several complaints (crashes/freezes after generation, a "shaky" UI
+  during token gen, "code rendering is a mess", and a scroll bug), none with
+  logs or a stack trace. Only one was concrete and traceable without
+  speculation: "users can't scroll up generated thoughts while the model is
+  still thinking … immediately you scroll up, it automatically scrolls down …
+  One has to wait till the model is done generating tokens." Root-caused to
+  [`web-app/src/routes/threads/$threadId.tsx`](web-app/src/routes/threads/$threadId.tsx):
+  the reasoning-container auto-scroll effect ran on every `chatMessages`
+  update while `status === 'streaming'` and unconditionally forced
+  `container.scrollTop = container.scrollHeight` with no check of the user's
+  current scroll position — so a manual scroll-up (to re-read earlier
+  chain-of-thought) was reverted on the very next streamed token, effectively
+  every render. The reasoning box
+  ([`components/ai-elements/reasoning.tsx`](web-app/src/components/ai-elements/reasoning.tsx)
+  + the `overflow-auto` wrapper in
+  [`containers/MessageItem.tsx`](web-app/src/containers/MessageItem.tsx))
+  only attaches `reasoningContainerRef` while `isStreaming`, so the effect is
+  exactly the code path the report describes. The other three complaints
+  (crash/freeze, shaky UI, code-rendering quality) have no logs, no repro
+  steps, and no specific example to trace — they are **not** addressed here
+  and need the reporter to supply `Settings → General → Data Folder → App
+  Logs` plus explicit repro steps before a root cause can be pinned safely.
+- **Decision:** Guard the auto-scroll effect with a "near bottom" check
+  (matching the stick-to-bottom UX the main `Conversation` view already gets
+  for free from `use-stick-to-bottom`): compute
+  `distanceFromBottom = scrollHeight - scrollTop - clientHeight` and only
+  force `scrollTop = scrollHeight` when that distance is under a small
+  threshold (`REASONING_AUTO_SCROLL_THRESHOLD_PX = 24`). No new state, no new
+  event listeners — reading the current scroll position on each effect run is
+  sufficient, since a user's manual scroll-up immediately increases
+  `distanceFromBottom` past the threshold and the effect naturally stops
+  yanking the view down until they scroll back near the bottom themselves.
+- **Consequences:** Users can scroll up within a streaming reasoning block to
+  read earlier chain-of-thought without it snapping back to the bottom on the
+  next token; the box still auto-follows new content when the user hasn't
+  scrolled away. Scope is deliberately limited to this one reproducible
+  symptom from #153 — the crash/freeze, shaky-UI, and code-rendering
+  complaints in the same issue remain open and require more information from
+  the reporter. **Verified:** `yarn workspace @janhq/web-app lint` shows no
+  new errors/warnings on the edited file (all 6 pre-existing errors are in
+  unrelated files — `codeBlockDownload.ts`, `ttft-timing.ts`,
+  `thread-read-store.ts` — consistent with prior ADRs); `tsc -b --noEmit`
+  clean.
+- **Owner:** team.
+- **Links:** [GH #153](https://github.com/AtomicBot-ai/Atomic-Chat/issues/153),
+  files: [`web-app/src/routes/threads/$threadId.tsx`](web-app/src/routes/threads/$threadId.tsx)
+  (`REASONING_AUTO_SCROLL_THRESHOLD_PX`, the reasoning auto-scroll effect).
+
+---
+
 ### 2026-07-01 — Fix Hermes Agent config on Windows writing to the wrong file (`%USERPROFILE%\.hermes` vs the installer's real `HERMES_HOME`), plus a stale-registry-env guard
 - **Context:** A Windows user reported that changing the model in Settings →
   Hermes Agent had no effect — the `hermes` CLI kept using its old model.
