@@ -90,6 +90,11 @@ const CHAT_STATUS = {
   SUBMITTED: 'submitted',
 } as const
 
+// Distance (px) from the bottom of the reasoning container within which we
+// still consider the user "at the bottom" and keep auto-scrolling it during
+// streaming. Above this distance we assume the user scrolled up on purpose.
+const REASONING_AUTO_SCROLL_THRESHOLD_PX = 24
+
 type ThreadModel = {
   id: string
   provider: string
@@ -479,11 +484,19 @@ function ThreadDetail() {
   // Ref for reasoning container auto-scroll
   const reasoningContainerRef = useRef<HTMLDivElement>(null)
 
-  // Auto-scroll reasoning container to bottom during streaming
+  // Auto-scroll reasoning container to bottom during streaming, but only
+  // while the user hasn't manually scrolled away from the bottom. Without
+  // this guard the effect re-runs on every streamed token and unconditionally
+  // resets scrollTop, so scrolling up to re-read earlier chain-of-thought
+  // gets yanked back down before the user can read anything.
   useEffect(() => {
-    if (status === 'streaming' && reasoningContainerRef.current) {
-      reasoningContainerRef.current.scrollTop =
-        reasoningContainerRef.current.scrollHeight
+    const container = reasoningContainerRef.current
+    if (status !== 'streaming' || !container) return
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight
+    const isNearBottom = distanceFromBottom < REASONING_AUTO_SCROLL_THRESHOLD_PX
+    if (isNearBottom) {
+      container.scrollTop = container.scrollHeight
     }
   }, [status, chatMessages])
 
