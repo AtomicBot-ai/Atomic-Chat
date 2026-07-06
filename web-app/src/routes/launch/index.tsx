@@ -145,7 +145,7 @@ function AgentIcon({ agent }: { agent: IntegrationAgent }) {
       return (
         <IconBox bg="#000000">
           <img
-            src="/images/integrations/openclaude.svg"
+            src="/images/integrations/openclaude.png"
             alt={agent.name}
             className="size-full object-contain"
           />
