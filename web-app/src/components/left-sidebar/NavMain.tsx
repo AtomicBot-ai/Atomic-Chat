@@ -1,4 +1,4 @@
-import { LucideIcon, Plug } from 'lucide-react'
+import { LucideIcon } from 'lucide-react'
 import { route } from '@/constants/routes'
 
 import {
@@ -30,6 +30,7 @@ import {
 } from '@/components/animated-icon/settings'
 import { BlocksIcon, type BlocksIconHandle } from '../animated-icon/blocks'
 import { BotIcon, type BotIconHandle } from '@/components/animated-icon/bot'
+import { PlugIcon, type PlugIconHandle } from '@/components/animated-icon/plug'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { SearchDialog } from '@/containers/dialogs/SearchDialog'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
@@ -47,6 +48,7 @@ type AnimatedIconHandle =
   | SettingsIconHandle
   | BlocksIconHandle
   | BotIconHandle
+  | PlugIconHandle
 
 type NavMainItem = {
   title: string
@@ -143,7 +145,7 @@ const getNavMainItems = (
   {
     title: 'common:launch',
     url: route.launch.index,
-    icon: Plug,
+    animatedIcon: PlugIcon,
     badge: <NewBadge />,
   },
   {
