@@ -273,6 +273,41 @@ defaults where they conflict.
    non-trivial choice (architecture, backend selection, perf trade-off,
    security default, schema/migration), append an entry — same session,
    before you finish.
+10. **New or changed frontend logic needs a Vitest test in the same
+    change.** See *Frontend testing policy* below.
+
+### Frontend testing policy
+
+Scope: `web-app/src/**` (hooks, services, `lib/`, `utils/`, `stores/`,
+containers, routes). Test runner is **Vitest** (+ React Testing Library for
+components), configured in `web-app/vitest.config.ts` /
+`web-app/src/test/setup.ts` (Tauri IPC / `window.matchMedia` / filesystem
+mocks live there — reuse them, don't re-invent per-file mocks).
+
+- **When adding a new hook, service, store, or a non-trivial function in
+  `lib/`/`utils/`**, add a co-located `*.test.ts` (or `*.test.tsx` for
+  components) covering its public behavior — happy path + the failure /
+  edge cases that matter (empty state, error thrown by a mocked IPC call,
+  platform branching like `IS_MACOS`/`IS_WINDOWS`, engine/provider
+  branching like `llamacpp` vs `llamacpp-upstream` vs `mlx`).
+- **When changing existing tested logic**, update its test(s) in the same
+  change — a PR that changes behavior without touching the matching test
+  is incomplete.
+- **When adding a new container/route with real logic** (state machines,
+  data transforms, conditional rendering driven by props/store state),
+  add a component test with React Testing Library. Trivial
+  presentational wrappers with no logic don't need one.
+- Mock Tauri/IPC boundaries (`useServiceHub`, `globalThis.core.api`,
+  `@tauri-apps/*`) rather than hitting real native code — follow the
+  patterns already used in existing `*.test.ts(x)` files in the same
+  directory before inventing a new mocking style.
+- Prefer testing pure logic (`lib/`, `utils/`, `services/*/default.ts`)
+  over deep component trees — cheaper to write, cheaper to maintain, and
+  usually where the actual bug risk lives (engine routing, model
+  switching, download/session state).
+- Run `yarn workspace @janhq/web-app test` (or `yarn test` from repo
+  root) before considering frontend work done; fix or update whatever
+  you touched, don't mass-fix unrelated pre-existing failures.
 
 ### Known naming debt (do not "fix" silently)
 
