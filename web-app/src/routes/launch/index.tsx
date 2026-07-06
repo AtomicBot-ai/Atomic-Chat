@@ -141,6 +141,16 @@ function AgentIcon({ agent }: { agent: IntegrationAgent }) {
           </svg>
         </IconBox>
       )
+    case 'openclaude':
+      return (
+        <IconBox bg="#000000">
+          <img
+            src="/images/integrations/openclaude.svg"
+            alt={agent.name}
+            className="size-full object-contain"
+          />
+        </IconBox>
+      )
     case 'zed':
       // Official Zed brand mark (assets/images/zed_logo.svg from zed-industries/zed),
       // rendered light-on-dark to match Zed's app icon.
@@ -612,6 +622,9 @@ function LaunchPage() {
           break
         case 'opencode':
           await invoke('configure_opencode', { apiUrl, model, apiKey: key })
+          break
+        case 'openclaude':
+          await invoke('configure_openclaude', { apiUrl, model, apiKey: key })
           break
         case 'cline':
           await invoke('configure_cline', { apiUrl, model, apiKey: key })

@@ -110,6 +110,19 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     endpointWithPrefix: true,
   },
   {
+    id: 'openclaude',
+    name: 'OpenClaude',
+    description:
+      'Open-source coding-agent CLI for cloud and local model providers.',
+    kind: 'coding',
+    detectBin: 'openclaude',
+    docsUrl: 'https://github.com/Gitlawb/openclaude',
+    installable: true,
+    configurable: true,
+    requiresModel: true,
+    endpointWithPrefix: true,
+  },
+  {
     id: 'cline',
     name: 'Cline CLI',
     description: 'Autonomous open-source coding agent for your terminal.',

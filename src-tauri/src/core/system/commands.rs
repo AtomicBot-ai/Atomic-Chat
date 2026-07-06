@@ -1693,6 +1693,15 @@ fn agent_install_spec(
             let prereq = if cfg!(windows) { "powershell" } else { "curl" };
             Ok((program, args, prereq, "https://github.com/NousResearch/hermes-agent"))
         }
+        "openclaude" => {
+            let (p, a) = npm("@gitlawb/openclaude");
+            Ok((
+                p,
+                a,
+                "npm",
+                "https://github.com/Gitlawb/openclaude",
+            ))
+        }
         "poolside" => {
             // Poolside ships via an official shell / PowerShell bootstrap script.
             // `POOL_INSTALL_ACCEPT_EULA=1` skips the interactive EULA prompt so
@@ -2517,6 +2526,114 @@ pub fn configure_opencode(
     log::info!("OpenCode configured: baseURL={}, model={}", api_url, model);
     Ok(())
 }
+
+const OPENCLAUDE_ATOMIC_PROFILE_ID: &str = "provider_atomic_chat";
+
+fn openclaude_global_config_path(home: &str) -> PathBuf {
+    let open_path = PathBuf::from(home).join(".openclaude.json");
+    let legacy_path = PathBuf::from(home).join(".claude.json");
+    if legacy_path.exists() && !open_path.exists() {
+        legacy_path
+    } else {
+        open_path
+    }
+}
+
+/// Configure OpenClaude by upserting an `atomic-chat` provider profile in the
+/// global config (`~/.openclaude.json`, or legacy `~/.claude.json`) and
+/// syncing the startup profile file (`~/.openclaude/.openclaude-profile.json`).
+/// OpenClaude routes atomic-chat through its OpenAI-compatible shim; local
+/// Atomic Chat needs no API key.
+#[tauri::command]
+pub fn configure_openclaude(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let _ = api_key;
+
+    let home = agent_home_dir()?;
+    let config_path = openclaude_global_config_path(&home);
+    let config_home = PathBuf::from(&home).join(".openclaude");
+    std::fs::create_dir_all(&config_home)
+        .map_err(|e| format!("Failed to create {}: {}", config_home.display(), e))?;
+
+    let mut root: serde_json::Value = if config_path.exists() {
+        let text = std::fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
+        if text.trim().is_empty() {
+            serde_json::json!({})
+        } else {
+            serde_json::from_str(&text).map_err(|e| {
+                format!(
+                    "Could not parse {}: {}. Fix or remove the file and try again.",
+                    config_path.display(),
+                    e
+                )
+            })?
+        }
+    } else {
+        serde_json::json!({})
+    };
+
+    let obj = root
+        .as_object_mut()
+        .ok_or_else(|| format!("{} is not a JSON object", config_path.display()))?;
+
+    let profile_entry = serde_json::json!({
+        "id": OPENCLAUDE_ATOMIC_PROFILE_ID,
+        "name": "Atomic Chat",
+        "provider": "atomic-chat",
+        "baseUrl": api_url,
+        "model": model,
+    });
+
+    let profiles = obj
+        .entry("providerProfiles")
+        .or_insert_with(|| serde_json::json!([]));
+    if !profiles.is_array() {
+        *profiles = serde_json::json!([]);
+    }
+    let arr = profiles.as_array_mut().unwrap();
+    if let Some(index) = arr.iter().position(|entry| {
+        entry.get("id").and_then(|v| v.as_str()) == Some(OPENCLAUDE_ATOMIC_PROFILE_ID)
+            || entry.get("provider").and_then(|v| v.as_str()) == Some("atomic-chat")
+    }) {
+        arr[index] = profile_entry;
+    } else {
+        arr.push(profile_entry);
+    }
+
+    obj.insert(
+        "activeProviderProfileId".to_string(),
+        serde_json::json!(OPENCLAUDE_ATOMIC_PROFILE_ID),
+    );
+
+    let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+    std::fs::write(&config_path, pretty + "\n")
+        .map_err(|e| format!("Failed to write {}: {}", config_path.display(), e))?;
+
+    let profile_path = config_home.join(".openclaude-profile.json");
+    let profile_file = serde_json::json!({
+        "profile": "atomic-chat",
+        "env": {
+            "OPENAI_BASE_URL": api_url,
+            "OPENAI_MODEL": model,
+        },
+        "createdAt": chrono::Utc::now().to_rfc3339(),
+    });
+    let profile_pretty = serde_json::to_string_pretty(&profile_file).map_err(|e| e.to_string())?;
+    std::fs::write(&profile_path, profile_pretty + "\n")
+        .map_err(|e| format!("Failed to write {}: {}", profile_path.display(), e))?;
+
+    log::info!(
+        "OpenClaude configured: baseURL={}, model={}, config={}",
+        api_url,
+        model,
+        config_path.display()
+    );
+    Ok(())
+}
+
 
 /// Configure MiMo Code by upserting `provider.atomic` in
 /// `~/.config/mimocode/mimocode.json` (strict JSON, other providers preserved).
