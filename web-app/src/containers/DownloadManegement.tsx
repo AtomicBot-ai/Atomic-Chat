@@ -753,7 +753,7 @@ export function DownloadManagement() {
                           {isPausableDownload(download.id) &&
                             (pausedDownloads.has(download.id) ? (
                               <Button
-                                variant="secondary"
+                                variant="ghost"
                                 size="icon-xs"
                                 onClick={() => handleResumeDownload(download)}
                               >
@@ -765,7 +765,7 @@ export function DownloadManagement() {
                               </Button>
                             ) : (
                               <Button
-                                variant="secondary"
+                                variant="ghost"
                                 size="icon-xs"
                                 onClick={() => handlePauseDownload(download)}
                               >
@@ -777,7 +777,7 @@ export function DownloadManagement() {
                               </Button>
                             ))}
                           <Button
-                            variant="secondary"
+                            variant="ghost"
                             size="icon-xs"
                             onClick={() => {
                               markDownloadCancellationRequested(download.name)
