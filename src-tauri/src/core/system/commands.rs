@@ -2530,20 +2530,16 @@ pub fn configure_opencode(
 const OPENCLAUDE_ATOMIC_PROFILE_ID: &str = "provider_atomic_chat";
 
 fn openclaude_global_config_path(home: &str) -> PathBuf {
-    let open_path = PathBuf::from(home).join(".openclaude.json");
-    let legacy_path = PathBuf::from(home).join(".claude.json");
-    if legacy_path.exists() && !open_path.exists() {
-        legacy_path
-    } else {
-        open_path
-    }
+    PathBuf::from(home).join(".openclaude.json")
 }
 
 /// Configure OpenClaude by upserting an `atomic-chat` provider profile in the
-/// global config (`~/.openclaude.json`, or legacy `~/.claude.json`) and
-/// syncing the startup profile file (`~/.openclaude/.openclaude-profile.json`).
-/// OpenClaude routes atomic-chat through its OpenAI-compatible shim; local
-/// Atomic Chat needs no API key.
+/// global config (`~/.openclaude.json`) and syncing the startup profile file
+/// (`~/.openclaude/.openclaude-profile.json`). OpenClaude explicitly does not
+/// read `~/.claude` / `~/.claude.json` (see its README's "OpenClaude config
+/// cutover" section), so there is no legacy path to fall back to. OpenClaude
+/// routes atomic-chat through its OpenAI-compatible shim; local Atomic Chat
+/// needs no API key.
 #[tauri::command]
 pub fn configure_openclaude(
     api_url: String,
