@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { createFileRoute, useParams, useSearch } from '@tanstack/react-router'
 import { cn, isLlamacppProvider } from '@/lib/utils'
 
@@ -7,6 +14,8 @@ import { useThreads } from '@/hooks/useThreads'
 import ChatInput from '@/containers/ChatInput'
 import { useShallow } from 'zustand/react/shallow'
 import { MessageItem } from '@/containers/MessageItem'
+import { ModelProvenanceDivider } from '@/containers/ModelProvenanceDivider'
+import { computeProvenanceMarkers } from '@/lib/modelProvenance'
 
 import { useMessages } from '@/hooks/useMessages'
 import { useServiceHub } from '@/hooks/useServiceHub'
@@ -652,6 +661,13 @@ function ThreadDetail() {
     updateRagToolsAvailability,
     disabledTools, // Re-run when tools are enabled/disabled
   ])
+
+  // Where to render model provenance dividers ("served by" / "switched to"),
+  // derived from the modelProvenance metadata stamped on assistant messages.
+  const provenanceMarkers = useMemo(
+    () => computeProvenanceMarkers(chatMessages),
+    [chatMessages]
+  )
 
   // Ref for reasoning container auto-scroll
   const reasoningContainerRef = useRef<HTMLDivElement>(null)
@@ -1749,26 +1765,33 @@ function ThreadDetail() {
                   {chatMessages.map((message, index) => {
                     const isLastMessage = index === chatMessages.length - 1
                     const isFirstMessage = index === 0
+                    const provenanceMarker = provenanceMarkers.get(message.id)
                     return (
-                      <MessageItem
-                        key={message.id}
-                        message={message}
-                        isFirstMessage={isFirstMessage}
-                        isLastMessage={isLastMessage}
-                        status={inputStatus}
-                        requestActive={requestActive}
-                        reasoningContainerRef={reasoningContainerRef}
-                        onRegenerate={handleRegenerate}
-                        onEdit={agentModeActive ? undefined : handleEditMessage}
-                        onDelete={
-                          agentModeActive ? undefined : handleDeleteMessage
-                        }
-                        isAnimating={!pendingContinueMessage}
-                        hideActions={!!pendingContinueMessage}
-                        agentAttachmentReferences={agentAttachmentReferencesByMessageId.get(
-                          message.id
+                      <Fragment key={message.id}>
+                        {provenanceMarker && (
+                          <ModelProvenanceDivider marker={provenanceMarker} />
                         )}
-                      />
+                        <MessageItem
+                          message={message}
+                          isFirstMessage={isFirstMessage}
+                          isLastMessage={isLastMessage}
+                          status={inputStatus}
+                          requestActive={requestActive}
+                          reasoningContainerRef={reasoningContainerRef}
+                          onRegenerate={handleRegenerate}
+                          onEdit={
+                            agentModeActive ? undefined : handleEditMessage
+                          }
+                          onDelete={
+                            agentModeActive ? undefined : handleDeleteMessage
+                          }
+                          isAnimating={!pendingContinueMessage}
+                          hideActions={!!pendingContinueMessage}
+                          agentAttachmentReferences={agentAttachmentReferencesByMessageId.get(
+                            message.id
+                          )}
+                        />
+                      </Fragment>
                     )
                   })}
                   {pendingInitialUserMessage && (

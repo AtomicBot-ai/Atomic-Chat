@@ -18,6 +18,7 @@ import {
   splitAnthropicSerialToolUse,
 } from './custom-chat-transport-helpers'
 import type { MCPTool } from '@/types/completion'
+import type { ModelProvenance } from './modelProvenance'
 
 /// Hugging Face special-token convention (`<|im_end|>`, `<|eot_id|>`,
 /// `<|endoftext|>`, etc.). Some MLX backends — most visibly the DFlash
@@ -530,6 +531,25 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const providerId = useModelProvider.getState().selectedProvider
     const effectiveProviderName = providerId
     const provider = useModelProvider.getState().getProviderByName(providerId)
+
+    // Model provenance stamp: records which model/backend serves THIS
+    // response, persisted with the message metadata so threads can show where
+    // the model changed (see lib/modelProvenance.ts). The backend build is
+    // read at send time on purpose — later backend upgrades must not rewrite
+    // the history of already-generated messages.
+    const backendVersion = provider?.settings?.find(
+      (setting) => setting.key === 'version_backend'
+    )?.controller_props?.value
+    const modelProvenance: ModelProvenance | undefined =
+      modelId && providerId
+        ? {
+            modelId,
+            providerId,
+            ...(typeof backendVersion === 'string' && backendVersion !== ''
+              ? { backend: backendVersion }
+              : {}),
+          }
+        : undefined
     if (this.serviceHub && modelId && provider) {
       try {
         const updatedProvider = useModelProvider
@@ -780,6 +800,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const uiStream = result.toUIMessageStream({
       messageMetadata: ({ part }) => {
+        // Stamp provenance as soon as the message starts so it is present
+        // while streaming and keeps an aborted response attributed for the
+        // rest of the session (aborted messages are never persisted, so the
+        // stamp only outlives a reload for completed responses).
+        if (part.type === 'start' && modelProvenance) {
+          return { modelProvenance }
+        }
+
         // Start the wall-clock timer on the first generated delta (text or
         // reasoning), NOT on `start` — the latter fires before prefill, so
         // including it would tank the fallback TPS on long prompts.
@@ -864,6 +892,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
                   }
                 : {}),
             },
+            // Repeated on finish so the stamp survives regardless of whether
+            // the runtime merges or replaces metadata across callbacks.
+            ...(modelProvenance ? { modelProvenance } : {}),
           }
         }
 
