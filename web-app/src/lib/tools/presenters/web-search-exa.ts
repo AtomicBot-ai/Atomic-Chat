@@ -9,6 +9,17 @@ type SearchResultCard = {
   highlights: string[]
 }
 
+// Exa concatenates multiple results into a single text block, separated by a
+// horizontal rule (`---`). Split them so each result becomes its own card.
+// Falls back to the whole string when there is no separator (a single result,
+// or one result per output item), so both output shapes are handled.
+function splitExaResults(text: string): string[] {
+  return text
+    .split(/\n\s*-{3,}\s*\n/)
+    .map((chunk) => chunk.trim())
+    .filter((chunk) => chunk.includes('Title:'))
+}
+
 function parseExaTextEntry(text: string): SearchResultCard | undefined {
   const lines = text.split('\n').map((l) => l.trim())
 
@@ -70,7 +81,8 @@ export function presentWebSearchExa(args: {
       (item): item is { text?: string } =>
         !!item && typeof item === 'object' && 'text' in item
     )
-    .map((item) => parseExaTextEntry(item.text ?? ''))
+    .flatMap((item) => splitExaResults(item.text ?? ''))
+    .map((entry) => parseExaTextEntry(entry))
     .filter(isSearchResultCard)
 
   return {
