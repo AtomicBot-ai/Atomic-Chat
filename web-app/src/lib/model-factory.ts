@@ -78,6 +78,10 @@ interface LlamaCppTimings {
   predicted_n?: number
   predicted_per_second?: number
   prompt_per_second?: number
+  // Speculative decoding (draft model / MTP): total drafted and accepted
+  // tokens, emitted by llama.cpp when a draft mechanism is active.
+  draft_n?: number
+  draft_n_accepted?: number
 }
 
 /**
@@ -104,6 +108,8 @@ interface NormalizedMetrics {
   completionTokens: number | null
   tokensPerSecond: number | null
   promptPerSecond: number | null
+  draftTokensTotal: number | null
+  draftTokensAccepted: number | null
 }
 
 const buildFromUsage = (usage: MlxVlmUsage): NormalizedMetrics => ({
@@ -111,6 +117,8 @@ const buildFromUsage = (usage: MlxVlmUsage): NormalizedMetrics => ({
   completionTokens: usage.completion_tokens ?? null,
   tokensPerSecond: usage.generation_tps ?? null,
   promptPerSecond: usage.prompt_tps ?? null,
+  draftTokensTotal: null,
+  draftTokensAccepted: null,
 })
 
 const buildFromTimings = (timings: LlamaCppTimings): NormalizedMetrics => ({
@@ -118,6 +126,8 @@ const buildFromTimings = (timings: LlamaCppTimings): NormalizedMetrics => ({
   completionTokens: timings.predicted_n ?? null,
   tokensPerSecond: timings.predicted_per_second ?? null,
   promptPerSecond: timings.prompt_per_second ?? null,
+  draftTokensTotal: timings.draft_n ?? null,
+  draftTokensAccepted: timings.draft_n_accepted ?? null,
 })
 
 const hasAnyMetric = (m: NormalizedMetrics): boolean =>
@@ -162,6 +172,11 @@ const mergeMetrics = (
     completionTokens: pickCount(u?.completionTokens, t?.completionTokens),
     tokensPerSecond: pickRate(u?.tokensPerSecond, t?.tokensPerSecond),
     promptPerSecond: pickRate(u?.promptPerSecond, t?.promptPerSecond),
+    draftTokensTotal: pickCount(u?.draftTokensTotal, t?.draftTokensTotal),
+    draftTokensAccepted: pickCount(
+      u?.draftTokensAccepted,
+      t?.draftTokensAccepted
+    ),
   }
   return hasAnyMetric(merged) ? merged : null
 }

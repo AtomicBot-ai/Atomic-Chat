@@ -852,6 +852,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     })
 
     let tokensPerSecond = 0
+    let draftTokensTotal: number | null = null
+    let draftTokensAccepted: number | null = null
 
     const uiStream = result.toUIMessageStream({
       messageMetadata: ({ part }) => {
@@ -866,9 +868,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         }
 
         if (part.type === 'finish-step') {
-          tokensPerSecond =
-            (part.providerMetadata?.providerMetadata
-              ?.tokensPerSecond as number) || 0
+          const pm = part.providerMetadata?.providerMetadata as
+            | Record<string, unknown>
+            | undefined
+          tokensPerSecond = (pm?.tokensPerSecond as number) || 0
+          draftTokensTotal = (pm?.draftTokensTotal as number) ?? null
+          draftTokensAccepted = (pm?.draftTokensAccepted as number) ?? null
         }
 
         // Add usage and token speed to metadata on finish
@@ -917,6 +922,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
               tokenSpeed: Math.round(tokenSpeed * 10) / 10, // Round to 1 decimal
               tokenCount: outputTokens,
               durationMs,
+              ...(draftTokensTotal != null && draftTokensTotal > 0
+                ? {
+                    draftTokensTotal,
+                    draftTokensAccepted: draftTokensAccepted ?? 0,
+                  }
+                : {}),
             },
           }
         }
