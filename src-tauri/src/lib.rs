@@ -130,6 +130,7 @@ pub fn run() {
         core::system::commands::open_file_explorer,
         core::system::commands::factory_reset,
         core::system::commands::read_logs,
+        core::system::commands::show_desktop_notification,
         core::system::commands::get_installer_type,
         core::system::commands::is_library_available,
         core::system::commands::launch_claude_code_with_config,
@@ -252,6 +253,7 @@ pub fn run() {
         core::system::commands::open_file_explorer,
         core::system::commands::factory_reset,
         core::system::commands::read_logs,
+        core::system::commands::show_desktop_notification,
         core::system::commands::get_installer_type,
         core::system::commands::is_library_available,
         core::system::commands::launch_claude_code_with_config,
@@ -399,6 +401,8 @@ pub fn run() {
                 let backends_dir = get_jan_data_folder_path(app.handle().clone())
                     .join("llamacpp-upstream")
                     .join("backends");
+                // block_on is safe here: the setup closure runs on the main
+                // thread, which is never a tokio runtime worker.
                 match tauri::async_runtime::block_on(install_bundled_backend(
                     app.handle().clone(),
                     backends_dir.to_string_lossy().to_string(),
@@ -523,7 +527,10 @@ pub fn run() {
 
             let state = app_handle.state::<AppState>();
 
-            // Check if cleanup already ran
+            // Check if cleanup already ran.
+            // block_on is safe here: RunEvent callbacks run on the main
+            // thread, which is never a tokio runtime worker (block_in_place
+            // is a pass-through outside a runtime).
             let cleanup_already_running = tokio::task::block_in_place(|| {
                 tauri::async_runtime::block_on(async {
                     let handle = state.background_cleanup_handle.lock().await;

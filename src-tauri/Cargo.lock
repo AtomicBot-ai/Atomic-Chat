@@ -32,6 +32,7 @@ dependencies = [
  "libloading 0.8.9",
  "log",
  "nix",
+ "notify-rust",
  "once_cell",
  "png 0.18.1",
  "rand 0.8.5",

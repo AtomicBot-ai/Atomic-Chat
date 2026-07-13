@@ -111,7 +111,10 @@ fn write_env_to_shell(env_file_path: &str, env_vars: &[(String, String)]) -> Res
 }
 
 #[tauri::command]
-pub fn factory_reset<R: Runtime>(app_handle: tauri::AppHandle<R>, state: State<'_, AppState>) {
+pub async fn factory_reset<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     // close window (not available on mobile platforms)
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
@@ -125,77 +128,74 @@ pub fn factory_reset<R: Runtime>(app_handle: tauri::AppHandle<R>, state: State<'
     let data_folder = get_jan_data_folder_path(app_handle.clone());
     log::info!("Factory reset, removing data folder: {data_folder:?}");
 
-    tauri::async_runtime::block_on(async {
-        let _ =
-            stop_mcp_servers_with_context(&app_handle, &state, ShutdownContext::FactoryReset).await;
+    let _ = stop_mcp_servers_with_context(&app_handle, &state, ShutdownContext::FactoryReset).await;
 
-        {
-            let mut active_servers = state.mcp_active_servers.lock().await;
-            active_servers.clear();
+    {
+        let mut active_servers = state.mcp_active_servers.lock().await;
+        active_servers.clear();
+    }
+
+    use crate::core::mcp::lockfile::cleanup_own_locks;
+    if let Err(e) = cleanup_own_locks(&app_handle) {
+        log::warn!("Failed to cleanup lock files: {}", e);
+    }
+    // Clean up both llama.cpp providers' process maps.
+    let _ = cleanup_llama_processes(app_handle.clone()).await;
+    let _ = tauri_plugin_llamacpp_upstream::cleanup_llama_processes(app_handle.clone()).await;
+
+    // Windows needs time to release file handles after TerminateProcess
+    #[cfg(windows)]
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    if data_folder.exists() {
+        if !is_safe_to_delete(&data_folder) {
+            log::error!(
+                "Refusing factory reset: path is too close to filesystem root: {}",
+                data_folder.display()
+            );
+            return Ok(());
         }
 
-        use crate::core::mcp::lockfile::cleanup_own_locks;
-        if let Err(e) = cleanup_own_locks(&app_handle) {
-            log::warn!("Failed to cleanup lock files: {}", e);
-        }
-        // Clean up both llama.cpp providers' process maps.
-        let _ = cleanup_llama_processes(app_handle.clone()).await;
-        let _ = tauri_plugin_llamacpp_upstream::cleanup_llama_processes(app_handle.clone()).await;
-
-        // Windows needs time to release file handles after TerminateProcess
-        #[cfg(windows)]
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
-        if data_folder.exists() {
-            if !is_safe_to_delete(&data_folder) {
-                log::error!(
-                    "Refusing factory reset: path is too close to filesystem root: {}",
-                    data_folder.display()
-                );
-                return;
+        // Preserve downloaded llamacpp backends across factory reset so the user
+        // doesn't have to re-download CUDA/Vulkan binaries (can be hundreds of MB).
+        let backends_dir = data_folder.join("llamacpp").join("backends");
+        let temp_backends = std::env::temp_dir().join("atomic-chat-backends-preserve");
+        let backends_preserved = if backends_dir.is_dir() {
+            if temp_backends.exists() {
+                let _ = fs::remove_dir_all(&temp_backends);
             }
-
-            // Preserve downloaded llamacpp backends across factory reset so the user
-            // doesn't have to re-download CUDA/Vulkan binaries (can be hundreds of MB).
-            let backends_dir = data_folder.join("llamacpp").join("backends");
-            let temp_backends = std::env::temp_dir().join("atomic-chat-backends-preserve");
-            let backends_preserved = if backends_dir.is_dir() {
-                if temp_backends.exists() {
-                    let _ = fs::remove_dir_all(&temp_backends);
+            match fs::rename(&backends_dir, &temp_backends) {
+                Ok(()) => {
+                    log::info!("Preserved llamacpp backends to temp dir");
+                    true
                 }
-                match fs::rename(&backends_dir, &temp_backends) {
-                    Ok(()) => {
-                        log::info!("Preserved llamacpp backends to temp dir");
-                        true
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to preserve llamacpp backends: {e}");
-                        false
-                    }
-                }
-            } else {
-                false
-            };
-
-            remove_jan_data_contents(&data_folder);
-
-            if backends_preserved {
-                let llamacpp_dir = data_folder.join("llamacpp");
-                let _ = fs::create_dir_all(&llamacpp_dir);
-                match fs::rename(&temp_backends, &backends_dir) {
-                    Ok(()) => log::info!("Restored llamacpp backends after factory reset"),
-                    Err(e) => log::warn!("Failed to restore llamacpp backends: {e}"),
+                Err(e) => {
+                    log::warn!("Failed to preserve llamacpp backends: {e}");
+                    false
                 }
             }
+        } else {
+            false
+        };
+
+        remove_jan_data_contents(&data_folder);
+
+        if backends_preserved {
+            let llamacpp_dir = data_folder.join("llamacpp");
+            let _ = fs::create_dir_all(&llamacpp_dir);
+            match fs::rename(&temp_backends, &backends_dir) {
+                Ok(()) => log::info!("Restored llamacpp backends after factory reset"),
+                Err(e) => log::warn!("Failed to restore llamacpp backends: {e}"),
+            }
         }
+    }
 
-        // Reset the configuration
-        let mut default_config = AppConfiguration::default();
-        default_config.data_folder = default_data_folder_path(app_handle.clone());
-        let _ = update_app_configuration(app_handle.clone(), default_config);
+    // Reset the configuration
+    let mut default_config = AppConfiguration::default();
+    default_config.data_folder = default_data_folder_path(app_handle.clone());
+    let _ = update_app_configuration(app_handle.clone(), default_config);
 
-        app_handle.restart();
-    });
+    app_handle.restart()
 }
 
 #[tauri::command]
@@ -242,6 +242,50 @@ pub fn open_file_explorer(path: String) {
             .arg(path)
             .status()
             .expect("Failed to open file explorer");
+    }
+}
+
+/// Deliver a desktop notification from the blocking pool.
+///
+/// On Linux, do not use the notification plugin: its builder `show()` is
+/// fire-and-forget — it re-spawns the blocking `notify_rust` delivery onto a
+/// tokio runtime worker (`tauri::async_runtime::spawn`). There, delivery goes
+/// over D-Bus via `zbus`, whose `tokio`-feature blocking wrapper calls
+/// `Runtime::block_on` — that panics on a runtime worker ("Cannot start a
+/// runtime from within a runtime"), the detached task dies, and the
+/// notification is silently dropped while the command still returns Ok.
+/// Calling `notify_rust` directly from `spawn_blocking` keeps the zbus
+/// `block_on` on a blocking-pool thread, where it is allowed.
+#[tauri::command]
+pub async fn show_desktop_notification<R: Runtime>(
+    app: AppHandle<R>,
+    title: String,
+    body: String,
+) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        let _ = app;
+        tauri::async_runtime::spawn_blocking(move || {
+            notify_rust::Notification::new()
+                .summary(&title)
+                .body(&body)
+                .auto_icon()
+                .show()
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| format!("Notification task failed: {e}"))?
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        use tauri_plugin_notification::NotificationExt;
+        app.notification()
+            .builder()
+            .title(title)
+            .body(body)
+            .show()
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -3989,5 +4033,42 @@ pub fn migrate_macos_autostart_launchagent<R: Runtime>(
     {
         let _ = &app;
         Ok(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression test for the SIGABRT after MCP tool-call replies: delivering
+    /// a desktop notification must be safe from a tokio runtime worker thread.
+    /// The plugin's own `notify` command called blocking `show()` (zbus
+    /// `Runtime::block_on` on Linux) directly on a worker and aborted with
+    /// "Cannot start a runtime from within a runtime".
+    #[test]
+    fn show_desktop_notification_is_safe_on_runtime_worker() {
+        let app = tauri::test::mock_builder()
+            .plugin(tauri_plugin_notification::init())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("failed to build mock app");
+        let handle = app.handle().clone();
+
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("failed to build runtime");
+
+        rt.block_on(async move {
+            // Run on a worker thread (not the test thread driving block_on) to
+            // mirror how Tauri executes async commands.
+            tokio::spawn(async move {
+                // Delivery may fail (no notification daemon in CI); the test
+                // only asserts the call does not panic inside the runtime.
+                let _ = show_desktop_notification(handle, "test".into(), "test".into()).await;
+            })
+            .await
+            .expect("notification task panicked");
+        });
     }
 }

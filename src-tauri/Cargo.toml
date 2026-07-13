@@ -152,6 +152,7 @@ libc = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = { version = "5", default-features = false, features = ["tokio"] }
+notify-rust = "4"
 
 [target.'cfg(windows)'.dependencies]
 libc = "0.2.172"
