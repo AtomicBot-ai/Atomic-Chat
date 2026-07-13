@@ -28,8 +28,9 @@ export function WebSearchToolRenderer({
         </div>
       )}
 
-      {results.length > 0 &&
-        results.slice(0, 4).map((result, index) => (
+      {results.length > 0 && (
+        <div className="max-h-80 space-y-3 overflow-y-auto pr-1">
+          {results.map((result, index) => (
           <div
             key={`${result.url ?? result.title}-${index}`}
             className="rounded-lg border border-border/60 bg-background/30 p-3"
@@ -54,7 +55,9 @@ export function WebSearchToolRenderer({
               </div>
             </div>
           </div>
-        ))}
+          ))}
+        </div>
+      )}
     </div>
   )
 }
