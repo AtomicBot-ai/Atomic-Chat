@@ -11,13 +11,16 @@ set -euo pipefail
 # Product name is "Atomic Chat" (with a space) — preserve quoting
 # everywhere or the spaces will silently break the build.
 
-APPIMAGETOOL="./.cache/build-tools/appimagetool"
+APPIMAGETOOL="./.cache/build-tools/appimagetool-13"
 RELEASE_CHANNEL=${RELEASE_CHANNEL:-"stable"}
 PRODUCT_NAME="Atomic Chat"
 
 mkdir -p ./.cache/build-tools
+# Pinned to AppImageKit release 13: the "continuous" appimagetool builds
+# bundle a zstd-only mksquashfs, and zstd squashfs cannot be mounted by
+# AppImageLauncher's squashfuse (GH #164). Release 13 supports gzip/xz.
 if [ ! -x "${APPIMAGETOOL}" ]; then
-  wget https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -O "${APPIMAGETOOL}" \
+  wget https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage -O "${APPIMAGETOOL}" \
     || { echo "Failed to download appimagetool."; exit 1; }
   chmod +x "${APPIMAGETOOL}"
 fi
@@ -61,4 +64,6 @@ fi
 # breaks integration and launch for AppImageLauncher users (GH #164).
 # ARCH: the AppDir mixes helper binaries appimagetool's arch autodetect
 # chokes on ("More than one architectures were found").
-ARCH=x86_64 "${APPIMAGETOOL}" --comp gzip "${APP_DIR}" "${APP_IMAGE}"
+# --appimage-extract-and-run: appimagetool 13 is itself a FUSE2 AppImage;
+# extract-and-run works on hosts without libfuse2.
+ARCH=x86_64 "${APPIMAGETOOL}" --appimage-extract-and-run --comp gzip "${APP_DIR}" "${APP_IMAGE}"
