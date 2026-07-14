@@ -155,6 +155,18 @@ const logger = {
   },
 }
 
+const TURBOQUANT_BACKEND_TYPE_KEY =
+  'atomic_llamacpp_turboquant_backend_type'
+const LEGACY_SHARED_BACKEND_TYPE_KEY = 'llama_cpp_backend_type'
+
+function isTurboquantBackendType(value: string): boolean {
+  return (
+    value.startsWith('windows-x64-') ||
+    value.startsWith('linux-x64-') ||
+    value.startsWith('macos-')
+  )
+}
+
 /**
  * Coerce an unknown model-load error into a human-readable string.
  *
@@ -487,8 +499,26 @@ export default class llamacpp_extension extends AIEngine {
 
   private getStoredBackendType(): string | null {
     try {
-      const val = localStorage.getItem('llama_cpp_backend_type')
-      return val ? stripBom(val) : null
+      const value = localStorage.getItem(TURBOQUANT_BACKEND_TYPE_KEY)
+      if (value) return stripBom(value)
+
+      const legacyValue = localStorage.getItem(LEGACY_SHARED_BACKEND_TYPE_KEY)
+      const normalizedLegacyValue = legacyValue ? stripBom(legacyValue) : null
+      if (
+        normalizedLegacyValue &&
+        isTurboquantBackendType(normalizedLegacyValue)
+      ) {
+        localStorage.setItem(
+          TURBOQUANT_BACKEND_TYPE_KEY,
+          normalizedLegacyValue
+        )
+        logger.info(
+          `Migrated TurboQuant backend preference from legacy shared key: ${normalizedLegacyValue}`
+        )
+        return normalizedLegacyValue
+      }
+
+      return null
     } catch (error) {
       logger.warn('Failed to read backend type from localStorage:', error)
       return null
@@ -497,7 +527,7 @@ export default class llamacpp_extension extends AIEngine {
 
   private setStoredBackendType(backendType: string): void {
     try {
-      localStorage.setItem('llama_cpp_backend_type', backendType)
+      localStorage.setItem(TURBOQUANT_BACKEND_TYPE_KEY, backendType)
       logger.info(`Stored backend type preference: ${backendType}`)
     } catch (error) {
       logger.warn('Failed to store backend type in localStorage:', error)
@@ -506,7 +536,7 @@ export default class llamacpp_extension extends AIEngine {
 
   private clearStoredBackendType(): void {
     try {
-      localStorage.removeItem('llama_cpp_backend_type')
+      localStorage.removeItem(TURBOQUANT_BACKEND_TYPE_KEY)
       logger.info('Cleared stored backend type preference')
     } catch (error) {
       logger.warn('Failed to clear backend type from localStorage:', error)

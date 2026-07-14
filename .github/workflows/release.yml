@@ -551,7 +551,11 @@ jobs:
           if [ ! -f "$DIR/build/bin/llama-server.exe" ] && [ -f "$DIR/llama-server.exe" ]; then
             echo "Relocating flat-extracted binaries into build/bin/..."
             mkdir -p "$DIR/build/bin"
-            mv "$DIR"/*.exe "$DIR/build/bin/" 2>/dev/null || true
+            find "$DIR" -maxdepth 1 -type f ! -name version.txt ! -name backend.txt -exec mv {} "$DIR/build/bin/" \;
+          fi
+          if [ ! -f "$DIR/build/bin/llama-server-impl.dll" ]; then
+            echo "Error: upstream backend is missing build/bin/llama-server-impl.dll"
+            exit 1
           fi
           echo "CPU backend ($BACKEND) downloaded successfully. App will auto-download GPU backend at runtime."
 

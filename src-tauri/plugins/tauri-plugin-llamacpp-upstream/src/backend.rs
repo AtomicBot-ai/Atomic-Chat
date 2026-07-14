@@ -1130,6 +1130,44 @@ fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> Result<(), String> {
     Ok(())
 }
 
+fn bundled_backend_is_complete(resource_build: &PathBuf, target_build: &PathBuf) -> bool {
+    let entries = match fs::read_dir(resource_build) {
+        Ok(entries) => entries,
+        Err(_) => return false,
+    };
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(_) => return false,
+        };
+        let source = entry.path();
+        let target = target_build.join(entry.file_name());
+
+        if source.is_dir() {
+            if !bundled_backend_is_complete(&source, &target) {
+                return false;
+            }
+        } else if !target.exists() {
+            return false;
+        }
+    }
+
+    true
+}
+
+fn backfill_bundled_backend_if_needed(
+    resource_build: &PathBuf,
+    target_build: &PathBuf,
+) -> Result<bool, String> {
+    if bundled_backend_is_complete(resource_build, target_build) {
+        return Ok(false);
+    }
+
+    copy_dir_recursive(resource_build, target_build)?;
+    Ok(true)
+}
+
 #[tauri::command]
 pub async fn install_bundled_backend<R: Runtime>(
     app: tauri::AppHandle<R>,
@@ -1212,8 +1250,17 @@ pub async fn install_bundled_backend<R: Runtime>(
     }
 
     let target_dir = PathBuf::from(&backends_dir).join(&version).join(&backend);
+    let target_build_dir = target_dir.join("build");
 
     if is_backend_installed(&target_dir) {
+        if backfill_bundled_backend_if_needed(&build_dir, &target_build_dir)? {
+            log::warn!(
+                "[install_bundled_backend] Bundled backend {}/{} is incomplete; backfilled missing files",
+                version,
+                backend
+            );
+        }
+
         if backend_binary_matches_version(&target_dir, &version) {
             log::info!(
                 "[install_bundled_backend] Bundled backend already installed: {}/{}",
@@ -1242,7 +1289,6 @@ pub async fn install_bundled_backend<R: Runtime>(
         version, backend, resource_dir.display()
     );
 
-    let target_build_dir = target_dir.join("build");
     copy_dir_recursive(&build_dir, &target_build_dir)?;
 
     #[cfg(unix)]
@@ -1851,6 +1897,53 @@ mod tests {
             Some(9222)
         );
         assert_eq!(parse_binary_version("unknown version"), None);
+    }
+
+    #[test]
+    fn test_bundled_backend_is_complete() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let resource_build = temp_dir.path().join("resource").join("build");
+        let target_build = temp_dir.path().join("target").join("build");
+
+        fs::create_dir_all(resource_build.join("bin")).unwrap();
+        fs::create_dir_all(target_build.join("bin")).unwrap();
+        File::create(resource_build.join("bin").join("llama-server.exe")).unwrap();
+        File::create(resource_build.join("bin").join("llama-server-impl.dll")).unwrap();
+        File::create(target_build.join("bin").join("llama-server.exe")).unwrap();
+        File::create(target_build.join("bin").join("llama-server-impl.dll")).unwrap();
+
+        assert!(bundled_backend_is_complete(&resource_build, &target_build));
+    }
+
+    #[test]
+    fn test_backfill_restores_missing_bundled_dll() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let resource_build = temp_dir.path().join("resource").join("build");
+        let target_build = temp_dir.path().join("target").join("build");
+
+        fs::create_dir_all(resource_build.join("bin")).unwrap();
+        fs::create_dir_all(target_build.join("bin")).unwrap();
+        File::create(resource_build.join("bin").join("llama-server.exe")).unwrap();
+        File::create(resource_build.join("bin").join("llama-server-impl.dll")).unwrap();
+        File::create(target_build.join("bin").join("llama-server.exe")).unwrap();
+
+        assert!(!bundled_backend_is_complete(&resource_build, &target_build));
+        assert!(backfill_bundled_backend_if_needed(&resource_build, &target_build).unwrap());
+        assert!(target_build.join("bin").join("llama-server-impl.dll").exists());
+        assert!(bundled_backend_is_complete(&resource_build, &target_build));
+        assert!(!backfill_bundled_backend_if_needed(&resource_build, &target_build).unwrap());
+    }
+
+    #[test]
+    fn test_bundled_backend_is_incomplete_when_target_is_missing() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let resource_build = temp_dir.path().join("resource").join("build");
+        let target_build = temp_dir.path().join("target").join("build");
+
+        fs::create_dir_all(resource_build.join("bin")).unwrap();
+        File::create(resource_build.join("bin").join("llama-server.exe")).unwrap();
+
+        assert!(!bundled_backend_is_complete(&resource_build, &target_build));
     }
 
     // --- Filesystem Integration Tests ---

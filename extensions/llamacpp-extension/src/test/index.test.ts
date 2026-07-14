@@ -6,6 +6,12 @@ import { normalizeLlamacppConfig } from '@janhq/tauri-plugin-llamacpp-api'
 // Mock fetch globally
 global.fetch = vi.fn()
 
+vi.mock('@tauri-apps/plugin-log', () => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}))
+
 // Mock backend functions
 vi.mock('../backend', () => ({
   isBackendInstalled: vi.fn(),
@@ -43,6 +49,53 @@ describe('llamacpp_extension', () => {
       expect(extension.provider).toBe('llamacpp')
       expect(extension.providerId).toBe('llamacpp')
       expect(extension.autoUnload).toBe(true)
+    })
+  })
+
+  describe('backend preference storage', () => {
+    it('uses the TurboQuant-specific key', () => {
+      vi.mocked(localStorage.getItem).mockReturnValueOnce(
+        'windows-x64-vulkan'
+      )
+
+      expect(extension['getStoredBackendType']()).toBe('windows-x64-vulkan')
+      expect(localStorage.getItem).toHaveBeenCalledWith(
+        'atomic_llamacpp_turboquant_backend_type'
+      )
+    })
+
+    it('migrates a matching legacy TurboQuant preference', () => {
+      vi.mocked(localStorage.getItem)
+        .mockReturnValueOnce(null)
+        .mockReturnValueOnce('windows-x64-vulkan')
+
+      expect(extension['getStoredBackendType']()).toBe('windows-x64-vulkan')
+      expect(localStorage.setItem).toHaveBeenCalledWith(
+        'atomic_llamacpp_turboquant_backend_type',
+        'windows-x64-vulkan'
+      )
+    })
+
+    it('does not import an upstream preference from the shared key', () => {
+      vi.mocked(localStorage.getItem)
+        .mockReturnValueOnce(null)
+        .mockReturnValueOnce('win-vulkan-x64')
+
+      expect(extension['getStoredBackendType']()).toBeNull()
+      expect(localStorage.setItem).not.toHaveBeenCalled()
+    })
+
+    it('writes and clears only the TurboQuant-specific key', () => {
+      extension['setStoredBackendType']('windows-x64-vulkan')
+      extension['clearStoredBackendType']()
+
+      expect(localStorage.setItem).toHaveBeenCalledWith(
+        'atomic_llamacpp_turboquant_backend_type',
+        'windows-x64-vulkan'
+      )
+      expect(localStorage.removeItem).toHaveBeenCalledWith(
+        'atomic_llamacpp_turboquant_backend_type'
+      )
     })
   })
 
