@@ -22,12 +22,14 @@ pub struct MlxBackendSession {
 /// MLX plugin state
 pub struct MlxState {
     pub mlx_server_process: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+    pub load_operation: Arc<Mutex<()>>,
 }
 
 impl Default for MlxState {
     fn default() -> Self {
         Self {
             mlx_server_process: Arc::new(Mutex::new(HashMap::new())),
+            load_operation: Arc::new(Mutex::new(())),
         }
     }
 }

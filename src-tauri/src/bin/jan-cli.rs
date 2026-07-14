@@ -405,6 +405,7 @@ async fn handle_models(cmd: ModelsCommands) {
 
             match load_mlx_model_impl(
                 mlx_state.mlx_server_process.clone(),
+                mlx_state.load_operation.clone(),
                 Path::new(&bin_path),
                 model_id,
                 resolved_model_path,
@@ -888,6 +889,7 @@ async fn handle_serve(args: ServeArgs) {
 
         match load_mlx_model_impl(
             mlx_state.mlx_server_process.clone(),
+            mlx_state.load_operation.clone(),
             Path::new(&bin_path),
             model_id.clone(),
             resolved_model_path,
@@ -1249,6 +1251,7 @@ async fn start_model_server(
         let effective_ctx_size = if fit { 0 } else { ctx_size };
         let info = match load_mlx_model_impl(
             mlx_state.mlx_server_process.clone(),
+            mlx_state.load_operation.clone(),
             Path::new(&bin_path),
             model_id.to_string(),
             model_path,

@@ -84,9 +84,10 @@ export class TauriAppService extends DefaultAppService {
     const [, date, time, target, levelRaw, message] = match
 
     const level = levelRaw.toLowerCase() as 'info' | 'warn' | 'error' | 'debug'
+    const utcTime = time.endsWith('Z') ? time : `${time}Z`
 
     return {
-      timestamp: `${date} ${time}`,
+      timestamp: `${date}T${utcTime}`,
       level,
       target,
       message,

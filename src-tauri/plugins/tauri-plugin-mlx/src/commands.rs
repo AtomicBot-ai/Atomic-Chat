@@ -99,6 +99,7 @@ pub struct MlxConfig {
 /// `process_map_arc` is the shared session map from MlxState.
 pub async fn load_mlx_model_impl(
     process_map_arc: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+    load_operation: Arc<Mutex<()>>,
     binary_path: &Path,
     model_id: String,
     model_path: String,
@@ -108,7 +109,7 @@ pub async fn load_mlx_model_impl(
     is_embedding: bool,
     timeout: u64,
 ) -> ServerResult<SessionInfo> {
-    let mut process_map = process_map_arc.lock().await;
+    let _load_guard = load_operation.lock().await;
 
     log::info!("Attempting to launch MLX server at path: {:?}", binary_path);
     log::info!("Using MLX configuration: {:?}", config);
@@ -298,10 +299,7 @@ pub async fn load_mlx_model_impl(
                         || line_lower.contains("ready to accept")
                         || line_lower.contains("server started and listening on")
                     {
-                        log::info!(
-                            "MLX server appears to be ready based on stdout: '{}'",
-                            line
-                        );
+                        log::info!("MLX server appears to be ready based on stdout: '{}'", line);
                         let _ = stdout_ready_tx.send(true).await;
                     }
                 }
@@ -341,10 +339,7 @@ pub async fn load_mlx_model_impl(
                             || line_lower.contains("server listening on")
                             || line_lower.contains("server started and listening on")
                         {
-                            log::info!(
-                                "MLX model appears to be ready based on logs: '{}'",
-                                line
-                            );
+                            log::info!("MLX model appears to be ready based on logs: '{}'", line);
                             let _ = ready_tx.send(true).await;
                         }
                     }
@@ -431,7 +426,7 @@ pub async fn load_mlx_model_impl(
         api_key: String::new(),
     };
 
-    process_map.insert(
+    process_map_arc.lock().await.insert(
         pid,
         MlxBackendSession {
             child,
@@ -468,6 +463,7 @@ pub async fn load_mlx_model<R: Runtime>(
         .join("resources/bin/mlx-server");
     load_mlx_model_impl(
         state.mlx_server_process.clone(),
+        state.load_operation.clone(),
         &binary_path,
         model_id,
         model_path,
@@ -487,9 +483,9 @@ pub async fn unload_mlx_model<R: Runtime>(
     pid: i32,
 ) -> ServerResult<UnloadResult> {
     let state: State<MlxState> = app_handle.state();
-    let mut map = state.mlx_server_process.lock().await;
+    let session = state.mlx_server_process.lock().await.remove(&pid);
 
-    if let Some(session) = map.remove(&pid) {
+    if let Some(session) = session {
         let mut child = session.child;
 
         #[cfg(unix)]
@@ -580,4 +576,46 @@ pub fn get_mlx_server_version<R: Runtime>(
         .to_string();
 
     Ok(MlxServerVersion { version, backend })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn early_load_error_does_not_wait_for_session_map_lock() {
+        let sessions = Arc::new(Mutex::new(HashMap::new()));
+        let load_operation = Arc::new(Mutex::new(()));
+        let _sessions_guard = sessions.lock().await;
+
+        let result = tokio::time::timeout(
+            Duration::from_millis(100),
+            load_mlx_model_impl(
+                sessions.clone(),
+                load_operation,
+                Path::new("/nonexistent/atomic-chat-mlx-server"),
+                "test-model".to_string(),
+                "/nonexistent/atomic-chat-mlx-model".to_string(),
+                1337,
+                MlxConfig {
+                    ctx_size: 0,
+                    draft_model_path: String::new(),
+                    block_size: 0,
+                    draft_kind: String::new(),
+                    kv_bits: 0.0,
+                    kv_quant_scheme: String::new(),
+                },
+                HashMap::new(),
+                false,
+                1,
+            ),
+        )
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "early validation waited for the session map"
+        );
+        assert!(result.unwrap().is_err());
+    }
 }

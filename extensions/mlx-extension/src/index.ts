@@ -39,6 +39,7 @@ import { readGgufMetadata, ModelConfig } from '@janhq/tauri-plugin-llamacpp-api'
 import { resolveDflashDraft, DraftResolution } from './dflashRegistry'
 import { resolveMtpDraft } from './mtpRegistry'
 import { resolveEagle3Draft } from './eagle3Registry'
+import { classifyMlxVisionCapability } from './visionCapability'
 
 /// The three mutually-exclusive speculative-decoding families surfaced by
 /// the MLX extension. Maps 1:1 onto mlx-vlm's `--draft-kind` choices
@@ -385,7 +386,8 @@ export default class mlx_extension extends AIEngine {
       const modelConfig = await invoke<ModelConfig>('read_yaml', { path })
 
       const capabilities: string[] = []
-      if (modelConfig.mmproj_path) {
+      const resolvedPath = await this.resolveModelPath(modelConfig.model_path)
+      if (resolvedPath && (await this.isVisionSupported(resolvedPath))) {
         capabilities.push('vision')
       }
 
@@ -427,7 +429,6 @@ export default class mlx_extension extends AIEngine {
       }
 
       // Broken-link detection: flag a missing weights file/dir so the UI marks it and auto-start skips it.
-      const resolvedPath = await this.resolveModelPath(modelConfig.model_path)
       const missing = resolvedPath
         ? !(await fs.existsSync(resolvedPath).catch(() => true))
         : false
@@ -1432,13 +1433,15 @@ export default class mlx_extension extends AIEngine {
   }
 
   async isVisionSupported(modelPath: string): Promise<boolean> {
-    // Check if model is a Vision Language Model by examining config.json
-    // modelPath can be a folder path or a file path; resolve to directory
     const stat = await fs.fileStat(modelPath).catch(() => null)
+    const separatorIndex = Math.max(
+      modelPath.lastIndexOf('/'),
+      modelPath.lastIndexOf('\\')
+    )
     const modelDir =
       stat && stat.isDirectory
         ? modelPath
-        : modelPath.substring(0, modelPath.lastIndexOf('/'))
+        : modelPath.substring(0, separatorIndex)
     const configPath = await joinPath([modelDir, 'config.json'])
 
     if (!(await fs.existsSync(configPath))) {
@@ -1450,72 +1453,19 @@ export default class mlx_extension extends AIEngine {
         args: [configPath],
       })
       const config = JSON.parse(configContent)
-
-      // Check architecture for vision models
-      const architectures = config.architectures
-      if (architectures && Array.isArray(architectures)) {
-        const archString = architectures[0]?.toString().toLowerCase() ?? ''
-        // Common VLM architecture suffixes
-        const vlmPatterns = [
-          'vl',
-          'vlm',
-          'vision',
-          'llava',
-          'qwen2vl',
-          'qwen3vl',
-          'idefics',
-          'fuyu',
-          'paligemma',
-          'clip',
-          'siglip',
-        ]
-        if (vlmPatterns.some((pattern) => archString.includes(pattern))) {
-          logger.info(
-            `Vision support detected from config.json: ${architectures[0]}`
-          )
-          return true
-        }
-      }
-
-      // Check for vision-related configuration fields
-      if (config.visual_architectures || config.vision_config) {
-        logger.info(
-          'Vision support detected from visual_architectures/vision_config'
-        )
-        return true
-      }
-
-      // Check for image processor config
-      const imageProcessorPath = await joinPath([
+      const indexPath = await joinPath([
         modelDir,
-        'image_processor_config.json',
+        'model.safetensors.index.json',
       ])
-      if (await fs.existsSync(imageProcessorPath)) {
-        logger.info('Vision support detected from image_processor_config.json')
-        return true
+      let safetensorsIndex: unknown
+      if (await fs.existsSync(indexPath)) {
+        const indexContent = await invoke<string>('read_file_sync', {
+          args: [indexPath],
+        })
+        safetensorsIndex = JSON.parse(indexContent)
       }
 
-      // Check preprocessor config for vision
-      const preprocessorConfigPath = await joinPath([
-        modelDir,
-        'preprocessor_config.json',
-      ])
-      if (await fs.existsSync(preprocessorConfigPath)) {
-        try {
-          const preprocessorConfig = await invoke<string>('read_file_sync', {
-            args: [preprocessorConfigPath],
-          })
-          const pc = JSON.parse(preprocessorConfig)
-          if (pc.do_resize || pc.size || pc.patch_size) {
-            logger.info('Vision support detected from preprocessor_config.json')
-            return true
-          }
-        } catch (e) {
-          // Ignore
-        }
-      }
-
-      return false
+      return classifyMlxVisionCapability(config, safetensorsIndex)
     } catch (e) {
       logger.warn(`Failed to check vision support for ${modelPath}: ${e}`)
       return false

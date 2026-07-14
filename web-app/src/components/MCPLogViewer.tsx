@@ -91,7 +91,6 @@ export function MCPLogViewer({ serverName }: Props) {
     const date = new Date(timestamp)
     return date.toLocaleTimeString('en-US', {
       hour12: false,
-      timeZone: 'UTC',
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
