@@ -59,4 +59,6 @@ fi
 # --comp gzip: appimagetool's default (zstd) cannot be mounted by
 # AppImageLauncher's bundled squashfuse (supports only xz/zlib), which
 # breaks integration and launch for AppImageLauncher users (GH #164).
-"${APPIMAGETOOL}" --comp gzip "${APP_DIR}" "${APP_IMAGE}"
+# ARCH: the AppDir mixes helper binaries appimagetool's arch autodetect
+# chokes on ("More than one architectures were found").
+ARCH=x86_64 "${APPIMAGETOOL}" --comp gzip "${APP_DIR}" "${APP_IMAGE}"
