@@ -266,10 +266,15 @@ fn backend_binary_matches_version(backend_dir: &PathBuf, expected_version: &str)
         return true;
     }
 
-    let output = match Command::new(backend_executable_path(backend_dir))
-        .arg("--version")
-        .output()
+    let mut command = Command::new(backend_executable_path(backend_dir));
+    command.arg("--version");
+    #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let output = match command.output() {
         Ok(output) => output,
         Err(error) => {
             log::warn!(
