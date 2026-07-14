@@ -11,18 +11,22 @@ set -euo pipefail
 # Product name is "Atomic Chat" (with a space) — preserve quoting
 # everywhere or the spaces will silently break the build.
 
-APPIMAGETOOL="./.cache/build-tools/appimagetool-13"
+RUNTIME="./.cache/build-tools/type2-runtime-x86_64"
 RELEASE_CHANNEL=${RELEASE_CHANNEL:-"stable"}
 PRODUCT_NAME="Atomic Chat"
 
+# We assemble the AppImage ourselves (runtime + squashfs concatenation)
+# instead of using appimagetool: the "continuous" appimagetool bundles a
+# zstd-only mksquashfs, and zstd squashfs cannot be mounted by
+# AppImageLauncher's squashfuse — integration and launch break for
+# AppImageLauncher users (GH #164). System mksquashfs supports gzip.
+command -v mksquashfs >/dev/null \
+  || { echo "mksquashfs not found; install squashfs-tools."; exit 1; }
+
 mkdir -p ./.cache/build-tools
-# Pinned to AppImageKit release 13: the "continuous" appimagetool builds
-# bundle a zstd-only mksquashfs, and zstd squashfs cannot be mounted by
-# AppImageLauncher's squashfuse (GH #164). Release 13 supports gzip/xz.
-if [ ! -x "${APPIMAGETOOL}" ]; then
-  wget https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage -O "${APPIMAGETOOL}" \
-    || { echo "Failed to download appimagetool."; exit 1; }
-  chmod +x "${APPIMAGETOOL}"
+if [ ! -f "${RUNTIME}" ]; then
+  wget https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64 -O "${RUNTIME}" \
+    || { echo "Failed to download AppImage type2 runtime."; exit 1; }
 fi
 
 if [ "${RELEASE_CHANNEL}" != "stable" ]; then
@@ -58,12 +62,14 @@ else
   APP_IMAGE="./src-tauri/target/release/bundle/appimage/${PRODUCT_NAME}.AppImage"
 fi
 
-# Repackage AppImage with our additional resources baked in.
-# --comp gzip: appimagetool's default (zstd) cannot be mounted by
-# AppImageLauncher's bundled squashfuse (supports only xz/zlib), which
-# breaks integration and launch for AppImageLauncher users (GH #164).
-# ARCH: the AppDir mixes helper binaries appimagetool's arch autodetect
-# chokes on ("More than one architectures were found").
-# --appimage-extract-and-run: appimagetool 13 is itself a FUSE2 AppImage;
-# extract-and-run works on hosts without libfuse2.
-ARCH=x86_64 "${APPIMAGETOOL}" --appimage-extract-and-run --comp gzip "${APP_DIR}" "${APP_IMAGE}"
+# Repackage AppImage with our additional resources baked in: an AppImage
+# is the type2 runtime binary with a squashfs of the AppDir appended.
+# gzip compression is required for AppImageLauncher compatibility (see
+# header comment).
+SQUASHFS="${APP_IMAGE}.squashfs"
+rm -f "${SQUASHFS}"
+mksquashfs "${APP_DIR}" "${SQUASHFS}" -comp gzip -root-owned -noappend -quiet
+cat "${RUNTIME}" "${SQUASHFS}" > "${APP_IMAGE}"
+rm -f "${SQUASHFS}"
+chmod +x "${APP_IMAGE}"
+echo "AppImage created: ${APP_IMAGE}"
