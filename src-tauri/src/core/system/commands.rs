@@ -195,12 +195,76 @@ pub async fn factory_reset<R: Runtime>(
     default_config.data_folder = default_data_folder_path(app_handle.clone());
     let _ = update_app_configuration(app_handle.clone(), default_config);
 
-    app_handle.restart()
+    restart_app(&app_handle)
+}
+
+/// Environment variables set by the AppImage runtime and the generated AppRun.
+/// They point into the *current* instance's mounted or extracted bundle and
+/// must not leak into a re-exec. In particular, AppImageLauncher's binfmt hook
+/// runs `/usr/bin/AppImageLauncher` (a host binary) inside our environment:
+/// with `LD_LIBRARY_PATH` still aimed at the bundled libs it resolves our
+/// `libssl.so.3` instead of the system one and aborts with
+/// "version `OPENSSL_3.2.0' not found (required by libcurl.so.4)", leaving the
+/// app unable to start after an in-app update (GH #164).
+#[cfg(target_os = "linux")]
+const APPIMAGE_RUNTIME_ENV_VARS: &[&str] = &[
+    "APPDIR",
+    "APPIMAGE",
+    "ARGV0",
+    "OWD",
+    "LD_LIBRARY_PATH",
+    "LD_PRELOAD",
+    "GDK_PIXBUF_MODULE_FILE",
+    "GDK_PIXBUF_MODULEDIR",
+    "GIO_EXTRA_MODULES",
+    "GIO_MODULE_DIR",
+    "GSETTINGS_SCHEMA_DIR",
+    "GST_PLUGIN_SCANNER",
+    "GST_PLUGIN_SYSTEM_PATH",
+    "GST_PLUGIN_SYSTEM_PATH_1_0",
+    "GTK_DATA_PREFIX",
+    "GTK_EXE_PREFIX",
+    "GTK_IM_MODULE_FILE",
+    "GTK_PATH",
+    "PERLLIB",
+    "PYTHONHOME",
+    "PYTHONPATH",
+    "QT_PLUGIN_PATH",
+];
+
+#[cfg(target_os = "linux")]
+fn sanitized_appimage_restart_command(appimage: &std::ffi::OsStr) -> std::process::Command {
+    let mut cmd = std::process::Command::new(appimage);
+    cmd.args(std::env::args_os().skip(1));
+    for var in APPIMAGE_RUNTIME_ENV_VARS {
+        cmd.env_remove(var);
+    }
+    cmd
+}
+
+/// Restart the application.
+///
+/// On AppImage installs `AppHandle::restart` re-execs `$APPIMAGE` with the
+/// current AppRun-modified environment, which poisons host tools intercepting
+/// the launch (see [`APPIMAGE_RUNTIME_ENV_VARS`]). Mirror tauri's restart
+/// sequence (cleanup, spawn, exit) but strip those variables from the child.
+pub fn restart_app<R: Runtime>(app: &AppHandle<R>) -> ! {
+    #[cfg(target_os = "linux")]
+    if let Some(appimage) = std::env::var_os("APPIMAGE") {
+        app.cleanup_before_exit();
+        match sanitized_appimage_restart_command(&appimage).spawn() {
+            Ok(_) => std::process::exit(0),
+            Err(e) => log::error!(
+                "failed to spawn {appimage:?} for sanitized restart: {e}; falling back to default restart"
+            ),
+        }
+    }
+    app.restart()
 }
 
 #[tauri::command]
 pub fn relaunch<R: Runtime>(app: AppHandle<R>) {
-    app.restart()
+    restart_app(&app)
 }
 
 #[tauri::command]
@@ -4070,5 +4134,32 @@ mod tests {
             .await
             .expect("notification task panicked");
         });
+    }
+
+    /// Regression test for GH #164: the post-update restart must not leak the
+    /// AppImage runtime's environment (LD_LIBRARY_PATH & co.) into the spawned
+    /// AppImage, or AppImageLauncher's binfmt hook loads our bundled libssl
+    /// and the relaunch dies with "OPENSSL_3.2.0 not found".
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn appimage_restart_strips_runtime_env() {
+        let cmd = sanitized_appimage_restart_command(std::ffi::OsStr::new("/tmp/app.AppImage"));
+        let removed: Vec<_> = cmd
+            .get_envs()
+            .filter_map(|(k, v)| v.is_none().then(|| k.to_os_string()))
+            .collect();
+        for var in APPIMAGE_RUNTIME_ENV_VARS {
+            assert!(
+                removed.iter().any(|k| k == var),
+                "{var} must be removed from the restart environment"
+            );
+        }
+        // PATH and XDG_DATA_DIRS must survive: users need their session values.
+        for var in ["PATH", "XDG_DATA_DIRS", "HOME"] {
+            assert!(
+                !removed.iter().any(|k| k == var),
+                "{var} must not be removed from the restart environment"
+            );
+        }
     }
 }
