@@ -1,0 +1,162 @@
+//! Shared types for the agent backend core.
+//!
+//! `AgentEvent` is a serde-tagged enum streamed to the frontend over a
+//! `tauri::ipc::Channel`. It is a pragmatic subset of the TS
+//! `AgentLoopEvent` / `StepEvent` union — enough for a future UI to render a
+//! full run, but iteration 1 only emits.
+
+use serde::{Deserialize, Serialize};
+
+/// A single tool call the model asked for: `{ "tool": ..., "args": ... }`.
+///
+/// Ported from `ToolCallPayload` in `tool-call-grammar.ts`. Under the
+/// production grammar the model always emits a JSON **array** of these
+/// (`[{tool, args}, ...]`), so a solo step is a length-1 batch.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ToolCallPayload {
+    pub tool: String,
+    /// Raw arguments object exactly as the model emitted it.
+    #[serde(default)]
+    pub args: serde_json::Value,
+}
+
+/// Terminal status of a single tool execution.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolStatus {
+    Ok,
+    Error,
+    /// Blocked by the loop guard (`deniedReason: "tool-loop"`) or approval.
+    Denied,
+    /// The turn was cancelled mid-flight.
+    Cancelled,
+}
+
+/// Compressed outcome of one tool call. Ported from
+/// `CompressedToolResult` (result-compressor.ts) — a short human summary
+/// plus optional structured details, never the raw payload.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolOutcome {
+    pub status: ToolStatus,
+    /// One-line human-readable summary of what happened.
+    pub summary: String,
+    /// Optional structured details (error kind, denied reason, ...).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
+}
+
+impl ToolOutcome {
+    pub fn ok(summary: impl Into<String>) -> Self {
+        Self {
+            status: ToolStatus::Ok,
+            summary: summary.into(),
+            details: None,
+        }
+    }
+
+    pub fn error(summary: impl Into<String>) -> Self {
+        Self {
+            status: ToolStatus::Error,
+            summary: summary.into(),
+            details: None,
+        }
+    }
+
+    pub fn denied(summary: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self {
+            status: ToolStatus::Denied,
+            summary: summary.into(),
+            details: Some(serde_json::json!({ "deniedReason": reason.into() })),
+        }
+    }
+}
+
+/// A parsed call paired with the outcome of executing it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolExecution {
+    pub call: ToolCallPayload,
+    pub outcome: ToolOutcome,
+    /// Position of this call inside the parsed batch (0-based).
+    pub batch_index: usize,
+    pub batch_size: usize,
+}
+
+/// Request payload for a single agent turn (from the Tauri command).
+#[derive(Debug, Clone, Deserialize)]
+pub struct AgentTurnRequest {
+    /// Opaque id chosen by the caller; used for cancellation.
+    pub run_id: String,
+    /// The `model_id` whose `llama-server` session the agent should target.
+    pub model_id: String,
+    /// The user's message for this turn.
+    pub user_message: String,
+    /// Optional working directory for OS tools (defaults to the app cwd).
+    #[serde(default)]
+    pub working_dir: Option<String>,
+    /// Optional cap on inference steps (defaults to `MAX_STEPS`).
+    #[serde(default)]
+    pub max_steps: Option<u32>,
+}
+
+/// Loop-guard severity surfaced to observers.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LoopLevel {
+    Warn,
+    Critical,
+    Breaker,
+}
+
+/// Which loop-guard detector fired.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LoopDetector {
+    GenericRepeat,
+    NoProgress,
+    Wandering,
+}
+
+/// Observability events emitted by the agent loop, streamed over the
+/// `ipc::Channel`. Serde tag `type` + `snake_case` to mirror the TS union.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AgentEvent {
+    TurnStarted {
+        run_id: String,
+    },
+    StepStarted {
+        step_index: u32,
+    },
+    ReasoningDelta {
+        step_index: u32,
+        text: String,
+    },
+    AssistantDelta {
+        text: String,
+    },
+    ToolCallParsed {
+        call: ToolCallPayload,
+        batch_index: usize,
+        batch_size: usize,
+    },
+    ToolCallExecuted {
+        result: ToolExecution,
+    },
+    LoopDetected {
+        level: LoopLevel,
+        detector: LoopDetector,
+        message: String,
+    },
+    AssistantReply {
+        text: String,
+    },
+    StepError {
+        message: String,
+        category: String,
+    },
+    TurnFinished {
+        /// `"reply"` | `"finish"` | `"max_steps"` | `"cancelled"` | `"failed"`.
+        reason: String,
+        step_count: u32,
+    },
+}
