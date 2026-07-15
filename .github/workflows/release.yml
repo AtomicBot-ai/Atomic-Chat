@@ -847,25 +847,11 @@ jobs:
             --org "$SENTRY_ORG" --project "$SENTRY_PROJECT_DESKTOP" \
             src-tauri/target/release
 
-      # ── Post-build code signing with jsign (bypasses KSP issues) ──
-      - name: Download jsign
-        shell: pwsh
-        run: |
-          $jsign = "$env:RUNNER_TEMP\jsign.jar"
-          $maxAttempts = 5
-          for ($i = 1; $i -le $maxAttempts; $i++) {
-            try {
-              Invoke-WebRequest -Uri "https://github.com/ebourg/jsign/releases/download/7.4/jsign-7.4.jar" `
-                -OutFile $jsign
-              if ((Get-Item $jsign).Length -gt 0) { break }
-              throw "Downloaded file is empty"
-            } catch {
-              Write-Host "jsign download attempt $i/$maxAttempts failed: $($_.Exception.Message)"
-              if ($i -eq $maxAttempts) { throw }
-              Start-Sleep -Seconds ($i * 10)
-            }
-          }
-
+      # ── Post-build code signing with smctl (DigiCert KeyLocker) ──
+      # jsign 7.4 forms a double-slash URL (.../api/v1//keypairs/...) so
+      # DigiCert returns HTML instead of JSON and the JSON parser dies. We
+      # sign with `smctl sign --keypair-alias` instead, which is the same
+      # path the DigiCert smoke test already proved works with SM_CERT_ALIAS.
       - name: Sign Windows binaries with DigiCert
         shell: pwsh
         env:
@@ -874,25 +860,22 @@ jobs:
           SM_HOST: https://clientauth.one.digicert.com
           SM_CERT_ALIAS: ${{ secrets.SM_CERT_ALIAS }}
         run: |
-          $storepass = "$env:SM_API_KEY|$env:SM_CLIENT_CERT_FILE|$env:SM_CLIENT_CERT_PASSWORD"
           $bundleBase = "src-tauri\target\release\bundle"
+
+          function Sign-File($path) {
+            Write-Host "Signing: $path"
+            smctl sign --keypair-alias "$env:SM_CERT_ALIAS" --input "$path" --verbose
+            if ($LASTEXITCODE -ne 0) { throw "smctl sign failed for $path" }
+            signtool verify /pa "$path"
+            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $path" }
+            Write-Host "Signed and verified: $path"
+          }
 
           # Sign NSIS installer(s)
           $nsisPath = Join-Path $bundleBase "nsis"
           if (Test-Path $nsisPath) {
             foreach ($exe in (Get-ChildItem -Path $nsisPath -Filter "*.exe")) {
-              Write-Host "Signing NSIS: $($exe.FullName)"
-              java -jar "$env:RUNNER_TEMP\jsign.jar" `
-                --storetype DIGICERTONE `
-                --alias "$env:SM_CERT_ALIAS" `
-                --storepass "$storepass" `
-                --tsaurl "http://timestamp.digicert.com" `
-                --tsmode RFC3161 `
-                "$($exe.FullName)"
-              if ($LASTEXITCODE -ne 0) { throw "jsign failed for $($exe.Name)" }
-              signtool verify /pa "$($exe.FullName)"
-              if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $($exe.Name)" }
-              Write-Host "Signed and verified: $($exe.Name)"
+              Sign-File $exe.FullName
             }
           }
 
@@ -900,16 +883,7 @@ jobs:
           $msiPath = Join-Path $bundleBase "msi"
           if (Test-Path $msiPath) {
             foreach ($msi in (Get-ChildItem -Path $msiPath -Filter "*.msi")) {
-              Write-Host "Signing MSI: $($msi.FullName)"
-              java -jar "$env:RUNNER_TEMP\jsign.jar" `
-                --storetype DIGICERTONE `
-                --alias "$env:SM_CERT_ALIAS" `
-                --storepass "$storepass" `
-                --tsaurl "http://timestamp.digicert.com" `
-                --tsmode RFC3161 `
-                "$($msi.FullName)"
-              if ($LASTEXITCODE -ne 0) { throw "jsign failed for $($msi.Name)" }
-              Write-Host "Signed: $($msi.Name)"
+              Sign-File $msi.FullName
             }
           }
 
