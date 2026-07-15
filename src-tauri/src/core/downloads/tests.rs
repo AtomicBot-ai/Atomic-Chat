@@ -10,6 +10,7 @@ use std::convert::Infallible;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tauri::test::mock_app;
+use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Copy)]
 enum TestRangeBehavior {
@@ -84,6 +85,119 @@ async fn spawn_interrupted_download_server(
         request_count,
         handle,
     )
+}
+
+async fn spawn_preflight_head_server(
+    failures_before_success: usize,
+    fail_status: StatusCode,
+) -> (
+    String,
+    Arc<AtomicUsize>,
+    tokio::task::JoinHandle<Result<(), hyper::Error>>,
+) {
+    let request_count = Arc::new(AtomicUsize::new(0));
+    let service_count = request_count.clone();
+    let make_service = make_service_fn(move |_| {
+        let service_count = service_count.clone();
+        async move {
+            Ok::<_, Infallible>(service_fn(move |_request: Request<Body>| {
+                let service_count = service_count.clone();
+                async move {
+                    let request_index = service_count.fetch_add(1, Ordering::SeqCst);
+                    let response = if request_index < failures_before_success {
+                        Response::builder()
+                            .status(fail_status)
+                            .body(Body::empty())
+                            .unwrap()
+                    } else {
+                        Response::builder()
+                            .status(StatusCode::OK)
+                            .header(CONTENT_LENGTH, "42")
+                            .body(Body::empty())
+                            .unwrap()
+                    };
+                    Ok::<_, Infallible>(response)
+                }
+            }))
+        }
+    });
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = Server::from_tcp(listener).unwrap().serve(make_service);
+    let handle = tokio::spawn(server);
+    (
+        format!("http://{address}/model.gguf"),
+        request_count,
+        handle,
+    )
+}
+
+fn preflight_test_item(url: String, size: Option<u64>) -> DownloadItem {
+    DownloadItem {
+        url,
+        save_path: "models/test/model.gguf".to_string(),
+        proxy: None,
+        sha256: None,
+        size,
+        model_id: None,
+    }
+}
+
+#[tokio::test]
+async fn preflight_uses_catalog_size_without_a_head_request() {
+    let (url, request_count, server) = spawn_preflight_head_server(0, StatusCode::OK).await;
+    let item = preflight_test_item(url, Some(6));
+    let client = reqwest::Client::new();
+    let size = preflight_file_size(&client, &item, &CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(size, 6);
+    assert_eq!(request_count.load(Ordering::SeqCst), 0);
+    server.abort();
+}
+
+#[tokio::test]
+async fn preflight_head_retries_transient_failures() {
+    let (url, request_count, server) =
+        spawn_preflight_head_server(2, StatusCode::INTERNAL_SERVER_ERROR).await;
+    let item = preflight_test_item(url, None);
+    let client = reqwest::Client::new();
+    let size = preflight_file_size(&client, &item, &CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(size, 42);
+    assert_eq!(request_count.load(Ordering::SeqCst), 3);
+    server.abort();
+}
+
+#[tokio::test]
+async fn preflight_head_failure_is_not_fatal() {
+    let (url, request_count, server) =
+        spawn_preflight_head_server(usize::MAX, StatusCode::INTERNAL_SERVER_ERROR).await;
+    let item = preflight_test_item(url, None);
+    let client = reqwest::Client::new();
+    let size = preflight_file_size(&client, &item, &CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(size, 0);
+    // Initial attempt plus MAX_STREAM_RETRIES retries.
+    assert_eq!(request_count.load(Ordering::SeqCst), 6);
+    server.abort();
+}
+
+#[tokio::test]
+async fn preflight_head_does_not_retry_fatal_status() {
+    let (url, request_count, server) =
+        spawn_preflight_head_server(usize::MAX, StatusCode::NOT_FOUND).await;
+    let item = preflight_test_item(url, None);
+    let client = reqwest::Client::new();
+    let size = preflight_file_size(&client, &item, &CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(size, 0);
+    assert_eq!(request_count.load(Ordering::SeqCst), 1);
+    server.abort();
 }
 
 fn test_download_path(name: &str) -> std::path::PathBuf {
