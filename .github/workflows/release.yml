@@ -35,24 +35,12 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.signing_smoke
     runs-on: windows-2022
     steps:
-      - name: Download jsign
-        shell: pwsh
-        run: |
-          $jsign = "$env:RUNNER_TEMP\jsign.jar"
-          Invoke-WebRequest `
-            -Uri "https://github.com/ebourg/jsign/releases/download/7.4/jsign-7.4.jar" `
-            -OutFile $jsign
-          if ((Get-Item $jsign).Length -eq 0) {
-            throw "Downloaded jsign file is empty"
-          }
-
-      - name: Sign smoke-test executable with DigiCert
+      - name: Prepare DigiCert smoke-test files
         shell: pwsh
         env:
           SM_API_KEY: ${{ secrets.SM_API_KEY }}
           SM_CLIENT_CERT_FILE_B64: ${{ secrets.SM_CLIENT_CERT_FILE_B64 }}
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
-          SM_HOST: https://clientauth.one.digicert.com
           SM_CERT_ALIAS: ${{ secrets.SM_CERT_ALIAS }}
         run: |
           $required = @(
@@ -68,30 +56,156 @@ jobs:
           }
 
           $certPath = "$env:RUNNER_TEMP\digicert_client_cert.p12"
-          $target = "$env:RUNNER_TEMP\jsign-smoke.exe"
+          $certBytes = [Convert]::FromBase64String($env:SM_CLIENT_CERT_FILE_B64)
+          [IO.File]::WriteAllBytes($certPath, $certBytes)
+          Copy-Item "$env:WINDIR\System32\where.exe" "$env:GITHUB_WORKSPACE\smctl-smoke.exe"
+          Copy-Item "$env:WINDIR\System32\where.exe" "$env:GITHUB_WORKSPACE\jsign-smoke.exe"
+          "SM_CLIENT_CERT_FILE=$certPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Download jsign
+        shell: pwsh
+        run: |
+          $jsign = "$env:RUNNER_TEMP\jsign.jar"
+          Invoke-WebRequest `
+            -Uri "https://github.com/ebourg/jsign/releases/download/7.4/jsign-7.4.jar" `
+            -OutFile $jsign
+          if ((Get-Item $jsign).Length -eq 0) {
+            throw "Downloaded jsign file is empty"
+          }
+
+      - name: Sign with official DigiCert action
+        id: smctl_sign
+        continue-on-error: true
+        uses: digicert/code-signing-software-trust-action@v1.2.1
+        with:
+          simple-signing-mode: true
+          input: ${{ github.workspace }}\smctl-smoke.exe
+          keypair-alias: ${{ secrets.SM_CERT_ALIAS }}
+        env:
+          SM_HOST: https://clientauth.one.digicert.com
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+
+      - name: Run DigiCert client healthcheck
+        id: smctl_healthcheck
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        env:
+          SM_HOST: https://clientauth.one.digicert.com
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+        run: |
+          smctl healthcheck
+          if ($LASTEXITCODE -ne 0) {
+            throw "smctl healthcheck failed"
+          }
+
+      - name: Verify official DigiCert signature
+        id: smctl_verify
+        if: always() && steps.smctl_sign.outcome == 'success'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $signature = Get-AuthenticodeSignature "$env:GITHUB_WORKSPACE\smctl-smoke.exe"
+          Write-Host "Official action signature status: $($signature.Status)"
+          if ($signature.Status -ne "Valid") {
+            throw "Official DigiCert signature verification failed: $($signature.Status)"
+          }
+
+      - name: Sign with jsign and capture safe HTTP diagnostics
+        id: jsign_sign
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        env:
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+          SM_HOST: https://clientauth.one.digicert.com
+          SM_CERT_ALIAS: ${{ secrets.SM_CERT_ALIAS }}
+        run: |
+          $loggingProperties = "$env:RUNNER_TEMP\jsign-logging.properties"
+          @"
+          handlers=java.util.logging.ConsoleHandler
+          .level=WARNING
+          java.util.logging.ConsoleHandler.level=FINEST
+          net.jsign.jca.RESTClient.level=FINEST
+          "@ | Set-Content -Path $loggingProperties -Encoding ascii
+
+          $storepass = "$env:SM_API_KEY|$env:SM_CLIENT_CERT_FILE|$env:SM_CLIENT_CERT_PASSWORD"
+          $target = "$env:GITHUB_WORKSPACE\jsign-smoke.exe"
+          $output = & java "-Djava.util.logging.config.file=$loggingProperties" `
+            -jar "$env:RUNNER_TEMP\jsign.jar" `
+            --storetype DIGICERTONE `
+            --alias "$env:SM_CERT_ALIAS" `
+            --storepass "$storepass" `
+            --tsaurl "http://timestamp.digicert.com" `
+            --tsmode RFC3161 `
+            $target 2>&1
+          $exitCode = $LASTEXITCODE
+
+          Write-Host "Safe jsign HTTP diagnostics:"
+          foreach ($line in $output) {
+            $text = "$line"
+            if ($text -match "GET https://|Response Code:|Content-Type:|Content-Length:|Failed to retrieve|JsonIoException|^\s*at net\.jsign") {
+              $safe = $text `
+                -replace "([?&](?:alias|keypair_alias)=)[^&\s]+", '$1[redacted]' `
+                -replace "(/(?:certificates|keypairs)/)[^/?\s]+", '$1[redacted]'
+              Write-Host $safe
+            }
+          }
+
+          if ($exitCode -ne 0) {
+            throw "jsign smoke test failed with exit code $exitCode"
+          }
+
+          $signature = Get-AuthenticodeSignature $target
+          Write-Host "jsign signature status: $($signature.Status)"
+          if ($signature.Status -ne "Valid") {
+            throw "jsign smoke-test signature verification failed: $($signature.Status)"
+          }
+
+      - name: Report signing diagnosis
+        if: always()
+        shell: pwsh
+        env:
+          SMCTL_SIGN_OUTCOME: ${{ steps.smctl_sign.outcome }}
+          SMCTL_HEALTHCHECK_OUTCOME: ${{ steps.smctl_healthcheck.outcome }}
+          SMCTL_VERIFY_OUTCOME: ${{ steps.smctl_verify.outcome }}
+          JSIGN_OUTCOME: ${{ steps.jsign_sign.outcome }}
+        run: |
+          $summary = @"
+          ## DigiCert signing smoke diagnosis
+
+          - Official DigiCert action: **$env:SMCTL_SIGN_OUTCOME**
+          - smctl healthcheck: **$env:SMCTL_HEALTHCHECK_OUTCOME**
+          - Official signature verification: **$env:SMCTL_VERIFY_OUTCOME**
+          - jsign 7.4: **$env:JSIGN_OUTCOME**
+          "@
+          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+          if ($env:SMCTL_SIGN_OUTCOME -eq "success" -and $env:SMCTL_VERIFY_OUTCOME -eq "success" -and $env:JSIGN_OUTCOME -ne "success") {
+            throw "DigiCert signing works through the official action; jsign is incompatible with the current DigiCert API response"
+          }
+          if ($env:SMCTL_HEALTHCHECK_OUTCOME -ne "success" -and $env:SMCTL_SIGN_OUTCOME -ne "success") {
+            throw "DigiCert authentication, account access, or service connectivity failed"
+          }
+          if ($env:SMCTL_SIGN_OUTCOME -ne "success" -or $env:SMCTL_VERIFY_OUTCOME -ne "success" -or $env:JSIGN_OUTCOME -ne "success") {
+            throw "Signing diagnostics were inconclusive; inspect the individual step logs"
+          }
+
+      - name: Remove DigiCert smoke-test files
+        if: always()
+        shell: pwsh
+        run: |
           try {
-            $certBytes = [Convert]::FromBase64String($env:SM_CLIENT_CERT_FILE_B64)
-            [IO.File]::WriteAllBytes($certPath, $certBytes)
-            Copy-Item "$env:WINDIR\System32\where.exe" $target
-
-            $storepass = "$env:SM_API_KEY|$certPath|$env:SM_CLIENT_CERT_PASSWORD"
-            java -jar "$env:RUNNER_TEMP\jsign.jar" `
-              --storetype DIGICERTONE `
-              --alias "$env:SM_CERT_ALIAS" `
-              --storepass "$storepass" `
-              --tsaurl "http://timestamp.digicert.com" `
-              --tsmode RFC3161 `
-              $target
-            if ($LASTEXITCODE -ne 0) {
-              throw "jsign smoke test failed"
-            }
-
-            $signature = Get-AuthenticodeSignature $target
-            if ($signature.Status -ne "Valid") {
-              throw "jsign smoke-test signature verification failed: $($signature.Status)"
-            }
+            Remove-Item "$env:SM_CLIENT_CERT_FILE" -Force -ErrorAction SilentlyContinue
           } finally {
-            Remove-Item $certPath, $target -Force -ErrorAction SilentlyContinue
+            Remove-Item `
+              "$env:GITHUB_WORKSPACE\smctl-smoke.exe", `
+              "$env:GITHUB_WORKSPACE\jsign-smoke.exe", `
+              "$env:RUNNER_TEMP\jsign-logging.properties" `
+              -Force -ErrorAction SilentlyContinue
           }
 
   create-draft-release:
