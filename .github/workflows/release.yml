@@ -474,7 +474,18 @@ jobs:
           SM_API_KEY: ${{ secrets.SM_API_KEY }}
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
         run: |
-          smctl windows certsync
+          $output = smctl windows certsync 2>&1
+          $output | ForEach-Object { Write-Host $_ }
+          if ($LASTEXITCODE -ne 0) { throw "smctl windows certsync failed" }
+
+          # smctl does not pass a cert selector to signtool, so capture the
+          # synced code-signing certificate's SHA1 fingerprint and hand it to
+          # signtool explicitly in the signing step (via /sha1).
+          $m = [regex]::Match(($output -join "`n"), '(?i)fingerprint[^0-9A-Fa-f]*([0-9A-Fa-f]{40})')
+          if (-not $m.Success) { throw "Could not extract SHA1 fingerprint from certsync output" }
+          $fingerprint = $m.Groups[1].Value
+          echo "SM_CODE_SIGNING_CERT_SHA1_HASH=$fingerprint" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Captured code-signing certificate SHA1: $fingerprint"
 
       - name: Setup Windows SDK signtool
         shell: pwsh
@@ -665,24 +676,30 @@ jobs:
             --org "$SENTRY_ORG" --project "$SENTRY_PROJECT_DESKTOP" \
             src-tauri/target/release
 
-      # ── Post-build code signing with smctl (DigiCert KeyLocker) ──
-      # jsign 7.4 forms a double-slash URL (.../api/v1//keypairs/...) so
-      # DigiCert returns HTML instead of JSON and the JSON parser dies. We
-      # sign with `smctl sign --keypair-alias` (SM_CERT_ALIAS) instead.
+      # ── Post-build code signing (DigiCert KeyLocker via signtool KSP) ──
+      # certsync installs the DigiCert KeyLocker KSP and the code-signing cert
+      # into the Windows store; we sign with signtool directly, selecting the
+      # cert by the SHA1 fingerprint captured from certsync
+      # (SM_CODE_SIGNING_CERT_SHA1_HASH). The KSP authenticates to DigiCert at
+      # sign time via SM_API_KEY / SM_CLIENT_CERT_FILE / SM_CLIENT_CERT_PASSWORD.
       - name: Sign Windows binaries with DigiCert
         shell: pwsh
         env:
           SM_API_KEY: ${{ secrets.SM_API_KEY }}
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
           SM_HOST: https://clientauth.one.digicert.com
-          SM_CERT_ALIAS: ${{ secrets.SM_CERT_ALIAS }}
         run: |
           $bundleBase = "src-tauri\target\release\bundle"
 
+          if (-not $env:SM_CODE_SIGNING_CERT_SHA1_HASH) {
+            throw "SM_CODE_SIGNING_CERT_SHA1_HASH is not set (certsync did not capture a fingerprint)"
+          }
+
           function Sign-File($path) {
             Write-Host "Signing: $path"
-            smctl sign --keypair-alias "$env:SM_CERT_ALIAS" --input "$path" --verbose
-            if ($LASTEXITCODE -ne 0) { throw "smctl sign failed for $path" }
+            signtool sign /sha1 "$env:SM_CODE_SIGNING_CERT_SHA1_HASH" `
+              /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "$path"
+            if ($LASTEXITCODE -ne 0) { throw "signtool sign failed for $path" }
             signtool verify /pa "$path"
             if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $path" }
             Write-Host "Signed and verified: $path"
