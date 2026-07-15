@@ -22,12 +22,80 @@ on:
         description: "Build Linux x86_64 (AppImage)"
         type: boolean
         default: false
+      signing_smoke:
+        description: "Test DigiCert signing without building the app"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 jobs:
+  keylocker-signing-smoke:
+    if: github.event_name == 'workflow_dispatch' && inputs.signing_smoke
+    runs-on: windows-2022
+    steps:
+      - name: Download jsign
+        shell: pwsh
+        run: |
+          $jsign = "$env:RUNNER_TEMP\jsign.jar"
+          Invoke-WebRequest `
+            -Uri "https://github.com/ebourg/jsign/releases/download/7.4/jsign-7.4.jar" `
+            -OutFile $jsign
+          if ((Get-Item $jsign).Length -eq 0) {
+            throw "Downloaded jsign file is empty"
+          }
+
+      - name: Sign smoke-test executable with DigiCert
+        shell: pwsh
+        env:
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE_B64: ${{ secrets.SM_CLIENT_CERT_FILE_B64 }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+          SM_HOST: https://clientauth.one.digicert.com
+          SM_CERT_ALIAS: ${{ secrets.SM_CERT_ALIAS }}
+        run: |
+          $required = @(
+            "SM_API_KEY",
+            "SM_CLIENT_CERT_FILE_B64",
+            "SM_CLIENT_CERT_PASSWORD",
+            "SM_CERT_ALIAS"
+          )
+          foreach ($name in $required) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "Required DigiCert secret is missing: $name"
+            }
+          }
+
+          $certPath = "$env:RUNNER_TEMP\digicert_client_cert.p12"
+          $target = "$env:RUNNER_TEMP\jsign-smoke.exe"
+          try {
+            $certBytes = [Convert]::FromBase64String($env:SM_CLIENT_CERT_FILE_B64)
+            [IO.File]::WriteAllBytes($certPath, $certBytes)
+            Copy-Item "$env:WINDIR\System32\where.exe" $target
+
+            $storepass = "$env:SM_API_KEY|$certPath|$env:SM_CLIENT_CERT_PASSWORD"
+            java -jar "$env:RUNNER_TEMP\jsign.jar" `
+              --storetype DIGICERTONE `
+              --alias "$env:SM_CERT_ALIAS" `
+              --storepass "$storepass" `
+              --tsaurl "http://timestamp.digicert.com" `
+              --tsmode RFC3161 `
+              $target
+            if ($LASTEXITCODE -ne 0) {
+              throw "jsign smoke test failed"
+            }
+
+            $signature = Get-AuthenticodeSignature $target
+            if ($signature.Status -ne "Valid") {
+              throw "jsign smoke-test signature verification failed: $($signature.Status)"
+            }
+          } finally {
+            Remove-Item $certPath, $target -Force -ErrorAction SilentlyContinue
+          }
+
   create-draft-release:
+    if: github.event_name == 'push' || !inputs.signing_smoke
     runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
