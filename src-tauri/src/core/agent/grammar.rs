@@ -22,8 +22,8 @@
 pub const TOOL_CALL_GBNF: &str = r##"root ::= tool-call-array
 tool-call ::= "{" ws "\"tool\"" ws ":" ws tool-name ws "," ws "\"args\"" ws ":" ws object ws "}"
 tool-call-array ::= "[" ws tool-call ( ws "," ws tool-call ){0,15} ws "]"
-tool-name ::= os-tool | "\"reply\"" | "\"finish\""
-os-tool ::= "\"os." ( "shell.run" | "fs.archive.read_entry" | "fs.archive.extract" | "fs.archive.list" | "fs.read_document" | "fs.read" | "fs.write" | "fs.trash" | "fs.list" | "fs.grep" | "fs.glob" | "fs.edit" | "fs.hash" | "fs.diff" | "fs.patch" | "http.request" | "web.search" | "web.fetch" | "git.status" | "git.log" | "git.diff" | "git.show" | "git.blame" | "git.branch" | "proc.list" | "proc.kill" | "clipboard.read" ) "\""
+tool-name ::= "\"tool.view\"" | os-tool | "\"reply\"" | "\"finish\""
+os-tool ::= "\"os." ( "shell.run" | "fs.archive.read_entry" | "fs.archive.extract" | "fs.archive.list" | "fs.read_document" | "fs.read" | "fs.write" | "fs.trash" | "fs.list" | "fs.grep" | "fs.glob" | "fs.edit" | "fs.hash" | "fs.diff" | "fs.patch" | "http.request" | "web.search" | "web.fetch" | "git.status" | "git.log" | "git.diff" | "git.show" | "git.blame" | "git.branch" | "proc.list" | "proc.kill" | "clipboard.read" | "clipboard.write" | "notify" ) "\""
 
 value ::= object | array | string | number | boolean | null-lit
 
@@ -58,6 +58,7 @@ ws ::= [ \t\n\r]*
 /// This list must stay in sync with `ITERATION_ONE_TOOLS` in `prompt.rs`; the
 /// `grammar_covers_every_iteration_one_tool` test enforces the invariant.
 pub const GRAMMAR_TOOL_NAMES: &[&str] = &[
+    "tool.view",
     "os.shell.run",
     "os.fs.archive.read_entry",
     "os.fs.archive.extract",
@@ -85,6 +86,8 @@ pub const GRAMMAR_TOOL_NAMES: &[&str] = &[
     "os.proc.list",
     "os.proc.kill",
     "os.clipboard.read",
+    "os.clipboard.write",
+    "os.notify",
     "reply",
     "finish",
 ];

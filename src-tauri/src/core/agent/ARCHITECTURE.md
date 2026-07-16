@@ -11,7 +11,7 @@ The agent backend is isolated from regular Atomic Chat conversations and from
 the Vercel AI SDK path. It talks directly to the active local llama.cpp session
 over native `/completion`.
 
-Iteration 1 is implemented. Iteration 1b is planned. Memory, tasks, browser
+Iterations 1 and 1b are implemented. Memory, tasks, browser
 automation, vision, skills, dynamic MCP tools, window control, and filesystem
 watchers are deferred.
 
@@ -22,6 +22,8 @@ watchers are deferred.
 - `agent_run_turn` starts a bounded agent turn and streams `AgentEvent` values
   over a Tauri IPC channel.
 - `agent_cancel_turn` cancels a run by its caller-provided `run_id`.
+- `agent_resolve_approval` resolves a pending approval by its generated
+  approval id.
 - `LlamaServerClient` resolves the active TurboQuant or upstream llama.cpp
   session and calls its `/completion` endpoint directly.
 - Every completion uses the static tool grammar, `cache_prompt`, and a stable
@@ -32,9 +34,10 @@ watchers are deferred.
 - The stable prompt prefix contains the persona, rules, tool catalog,
   capabilities, and instructions.
 - Frequent tools expose their complete argument schema in the stable prefix.
-- Rare tools currently expose only a one-line catalog entry.
-- The variable tail contains the conversation, an optional loop notice, and
-  the response marker.
+- Rare tools expose a one-line catalog entry until `tool.view` loads their
+  complete descriptor.
+- The variable tail contains loaded rare descriptors, the conversation, an
+  optional loop notice, and the response marker.
 - Tool output is constrained by an array-only GBNF root. One tool call is a
   one-element array; a step may contain up to eight calls at runtime.
 - The prompt catalog and grammar tool-name set must remain identical.
@@ -66,10 +69,15 @@ valid only as the final call and executes after all preceding calls finish.
 - HTTP SSRF validation and DNS/IP checks.
 - Archive traversal guards.
 - Process and command timeouts.
-- Approval hook boundary before approval-gated dispatch.
-
-The current approval hook is `DenyApprovalHook`; therefore every
-approval-gated action is denied.
+- A unified authorization preflight for resource class, resolved paths, and
+  shell-guard verdicts.
+- A run-scoped `ApprovalGate`: `auto_approve=true` allows approval-required
+  actions; otherwise it emits a pending request and waits for decision,
+  timeout, or cancellation.
+- Canonical working-directory confinement with symlink-safe, call-scoped
+  approval-mediated escape.
+- Shell interpretation routing plus hard-block and approval-required command
+  guards.
 
 ### Current tools
 
@@ -79,21 +87,23 @@ approval-gated action is denied.
 - Git: status, log, diff, show, blame, branch.
 - Processes: list and kill.
 - Network: HTTP request, web search, web fetch.
-- Clipboard: read.
+- Clipboard: read and write.
+- Desktop notifications: `os.notify`.
+- Tool discovery: `tool.view`.
 - Terminals: `reply` and `finish`.
 
-## Known Iteration 1 defects
+## Iteration 1b contract corrections
 
-1. `os.fs.archive.extract` is documented with `dest`, while the implementation
-   reads `destination`.
-2. `os.shell.run` promises shell syntax but currently performs direct argv
-   execution only and has no command guard.
-3. Rare tools do not expose a discovery mechanism. The model sees no complete
-   schema unless the tool is frequent.
-4. Path resolution treats `working_dir` as a default base, not as a security
-   boundary. Absolute paths can escape it.
-5. Approval-gated tools have no pending-request/resolve protocol; they are
-   always denied.
+1. `os.fs.archive.extract` documents canonical `destination`; the runtime
+   temporarily accepts legacy `dest` and normalizes it before dispatch.
+2. `os.shell.run` selects direct argv or a platform shell and always passes
+   through the command guard.
+3. Rare tools expose complete schemas through bounded run-scoped `tool.view`
+   state.
+4. Path-taking tools use the shared canonical resolver and approval-mediated
+   escape policy.
+5. Approval-required actions use the pending request/resolve protocol and fail
+   closed on timeout or cancellation.
 
 ## Iteration 1b decisions
 

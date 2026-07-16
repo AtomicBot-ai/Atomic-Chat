@@ -65,6 +65,7 @@ const DEFAULT_SYSTEM_PERSONA_LINES: &[&str] = &[
     "- When the task is complete, call `reply` with the final answer. Only call `finish` if the user explicitly asked to end the session.",
     "- Keep `reply` short and to the point. If the user asked for an exact value or marker, `reply.text` must be ONLY that bare value — no preamble, no restating the question, no extra commentary or markdown before or after.",
     "- Respect the loop guard. If you are told a call was denied as a loop, change your approach — do not repeat the same call.",
+    "- Rare tools are listed without argument schemas. Call `tool.view { name }` before using a rare tool whose exact arguments are not already loaded.",
 ];
 
 /// Windows-specific shell hint, appended to `### capabilities` when the
@@ -78,6 +79,13 @@ const WINDOWS_PLATFORM_HINT_LINES: &[&str] = &[
 /// to the iteration-1 set (pure_read + approval_gated + terminal). Keeping the
 /// order stable keeps the rendered `### tools` block byte-stable across runs.
 pub const ITERATION_ONE_TOOLS: &[ToolDescriptor] = &[
+    ToolDescriptor {
+        name: "tool.view",
+        summary: "Load the full descriptor and args schema for a rare tool into the variable prompt tail.",
+        args_schema: r#"{ name: string }"#,
+        tier: ToolTier::Frequent,
+        examples: &[],
+    },
     ToolDescriptor {
         name: "os.shell.run",
         summary: "Run a shell command. Direct-exec by default; routes through a subshell when the command needs shell interpretation. Approval-gated. Prefer a dedicated fs/git tool when one exists.",
@@ -158,7 +166,7 @@ pub const ITERATION_ONE_TOOLS: &[ToolDescriptor] = &[
     ToolDescriptor {
         name: "os.fs.archive.extract",
         summary: "Extract an archive to a directory (zip-slip + bomb guarded). Approval-gated.",
-        args_schema: r#"{ path: string, dest: string }"#,
+        args_schema: r#"{ path: string, destination: string }"#,
         tier: ToolTier::Rare,
         examples: &[],
     },
@@ -269,6 +277,20 @@ pub const ITERATION_ONE_TOOLS: &[ToolDescriptor] = &[
         name: "os.clipboard.read",
         summary: "Read the system clipboard as text.",
         args_schema: r#"{}"#,
+        tier: ToolTier::Rare,
+        examples: &[],
+    },
+    ToolDescriptor {
+        name: "os.clipboard.write",
+        summary: "Replace the system clipboard text.",
+        args_schema: r#"{ text: string }"#,
+        tier: ToolTier::Rare,
+        examples: &[],
+    },
+    ToolDescriptor {
+        name: "os.notify",
+        summary: "Deliver a desktop notification.",
+        args_schema: r#"{ title: string, body?: string }"#,
         tier: ToolTier::Rare,
         examples: &[],
     },
@@ -428,8 +450,19 @@ pub fn build_stable_prefix(
 /// Assemble the full prompt: stable prefix + variable tail
 /// (`### conversation`, optional `### notice`, `### respond` emit anchor).
 /// Ported from `buildPrompt` (`build-prompt.ts`), narrowed to iteration 1.
-pub fn build_prompt(stable_prefix: &str, conversation: &str, notice: Option<&str>) -> String {
+pub fn build_prompt(
+    stable_prefix: &str,
+    loaded_tool_names: &[String],
+    conversation: &str,
+    notice: Option<&str>,
+) -> String {
     let mut tail: Vec<String> = Vec::new();
+
+    if let Some(loaded_tools) = render_loaded_tools(loaded_tool_names) {
+        tail.push("### loaded-tools".to_string());
+        tail.push(loaded_tools);
+        tail.push(String::new());
+    }
 
     tail.push("### conversation".to_string());
     tail.push(conversation.to_string());
@@ -447,6 +480,33 @@ pub fn build_prompt(stable_prefix: &str, conversation: &str, notice: Option<&str
     tail.push("Respond now.".to_string());
 
     format!("{stable_prefix}\n{}", tail.join("\n"))
+}
+
+const LOADED_TOOLS_MAX_CHARS: usize = 8_000;
+
+fn render_loaded_tools(names: &[String]) -> Option<String> {
+    let mut rendered = String::new();
+    for name in names {
+        let Some(descriptor) = ITERATION_ONE_TOOLS
+            .iter()
+            .find(|descriptor| descriptor.name == name && descriptor.tier == ToolTier::Rare)
+        else {
+            continue;
+        };
+        let entry = format_tool_frequent(descriptor);
+        let separator = usize::from(!rendered.is_empty());
+        if rendered.len() + separator + entry.len() > LOADED_TOOLS_MAX_CHARS {
+            if !rendered.is_empty() {
+                rendered.push_str("\n[truncated]");
+            }
+            break;
+        }
+        if !rendered.is_empty() {
+            rendered.push('\n');
+        }
+        rendered.push_str(&entry);
+    }
+    (!rendered.is_empty()).then_some(rendered)
 }
 
 #[cfg(test)]
@@ -520,10 +580,10 @@ mod tests {
     #[test]
     fn windows_hint_gated_on_platform() {
         let mac = build_stable_prefix(ITERATION_ONE_TOOLS, &test_caps("darwin"), 8, None);
-        assert!(!mac.contains("cmd.exe subshell"));
+        assert!(!mac.contains("`cmd.exe` subshell"));
 
         let win = build_stable_prefix(ITERATION_ONE_TOOLS, &test_caps("win32"), 8, None);
-        assert!(win.contains("cmd.exe subshell"));
+        assert!(win.contains("`cmd.exe` subshell"));
         assert!(win.contains("C:\\Users\\me\\file.txt"));
     }
 
@@ -538,7 +598,7 @@ mod tests {
     fn build_prompt_appends_tail_with_conversation_and_anchor() {
         let caps = test_caps("linux");
         let prefix = build_stable_prefix(ITERATION_ONE_TOOLS, &caps, 8, None);
-        let full = build_prompt(&prefix, "USER: hello", None);
+        let full = build_prompt(&prefix, &[], "USER: hello", None);
 
         assert!(full.starts_with(&prefix));
         assert!(full.contains("### conversation\nUSER: hello"));
@@ -552,12 +612,23 @@ mod tests {
         let prefix = build_stable_prefix(ITERATION_ONE_TOOLS, &caps, 8, None);
         let full = build_prompt(
             &prefix,
+            &[],
             "USER: hi",
             Some("You repeated os.fs.read 3 times."),
         );
         assert!(full.contains("### notice\nYou repeated os.fs.read 3 times."));
 
-        let empty = build_prompt(&prefix, "USER: hi", Some(""));
+        let empty = build_prompt(&prefix, &[], "USER: hi", Some(""));
         assert!(!empty.contains("### notice"));
+    }
+
+    #[test]
+    fn loaded_rare_tools_render_only_in_variable_tail() {
+        let caps = test_caps("linux");
+        let prefix = build_stable_prefix(ITERATION_ONE_TOOLS, &caps, 8, None);
+        let loaded = vec!["os.fs.hash".to_string()];
+        let full = build_prompt(&prefix, &loaded, "USER: hi", None);
+        assert!(full.contains("### loaded-tools\n- os.fs.hash { path: string, algorithm?:"));
+        assert!(!prefix.contains("### loaded-tools"));
     }
 }

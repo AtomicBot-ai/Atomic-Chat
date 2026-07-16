@@ -13,17 +13,21 @@
 //! / `slot_id`), bypassing the `:1337` proxy. Port and api key are read from
 //! the `tauri-plugin-llamacpp` session map.
 
+pub mod approval;
 pub mod commands;
 pub mod grammar;
 pub mod llm_client;
 pub mod loop_guard;
+pub mod path_policy;
 pub mod prompt;
 pub mod resource_class;
 // `loop` is a reserved keyword; the run loop lives in `runner`.
 pub mod runner;
+pub mod shell_guard;
 pub mod tools;
 pub mod types;
 
 pub use types::{
-    AgentEvent, AgentTurnRequest, ToolCallPayload, ToolExecution, ToolOutcome, ToolStatus,
+    AgentApprovalDecision, AgentEvent, AgentTurnRequest, ApprovalRequest, ApprovalResource,
+    ToolCallPayload, ToolExecution, ToolOutcome, ToolStatus,
 };

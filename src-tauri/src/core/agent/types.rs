@@ -96,6 +96,31 @@ pub struct AgentTurnRequest {
     /// Optional cap on inference steps (defaults to `MAX_STEPS`).
     #[serde(default)]
     pub max_steps: Option<u32>,
+    /// Run-scoped escape hatch for trusted callers. When false, dangerous
+    /// actions wait for an explicit approval decision.
+    #[serde(default)]
+    pub auto_approve: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ApprovalResource {
+    pub kind: String,
+    pub value: String,
+    pub operation: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApprovalRequest {
+    pub tool: String,
+    pub reason: String,
+    pub preview: serde_json::Value,
+    pub affected_resources: Vec<ApprovalResource>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AgentApprovalDecision {
+    pub approval_id: String,
+    pub approved: bool,
 }
 
 /// Loop-guard severity surfaced to observers.
@@ -141,6 +166,14 @@ pub enum AgentEvent {
     },
     ToolCallExecuted {
         result: ToolExecution,
+    },
+    ApprovalRequested {
+        run_id: String,
+        approval_id: String,
+        tool: String,
+        reason: String,
+        preview: serde_json::Value,
+        affected_resources: Vec<ApprovalResource>,
     },
     LoopDetected {
         level: LoopLevel,

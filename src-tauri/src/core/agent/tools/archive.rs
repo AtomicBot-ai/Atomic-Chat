@@ -26,7 +26,7 @@ pub async fn execute(
         "os.fs.archive.extract" => {
             let destination = resolve_path(
                 context.working_dir,
-                &required_string(args, "destination").map_err(ToolOutcome::error)?,
+                &extract_destination(args).map_err(ToolOutcome::error)?,
             );
             run_blocking(move || extract_archive(&archive, &destination)).await
         }
@@ -34,6 +34,10 @@ pub async fn execute(
             "Unsupported archive tool: {tool}"
         ))),
     }
+}
+
+fn extract_destination(args: &Value) -> Result<String, String> {
+    required_string(args, "destination").or_else(|_| required_string(args, "dest"))
 }
 
 async fn run_blocking(
@@ -174,4 +178,29 @@ fn is_gzip(path: &Path) -> bool {
 
 fn io_error(error: impl std::fmt::Display) -> ToolOutcome {
     ToolOutcome::error(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_destination_prefers_canonical_field() {
+        let args = serde_json::json!({
+            "destination": "canonical",
+            "dest": "legacy"
+        });
+        assert_eq!(extract_destination(&args).unwrap(), "canonical");
+    }
+
+    #[test]
+    fn extract_destination_accepts_legacy_alias() {
+        let args = serde_json::json!({"dest": "legacy"});
+        assert_eq!(extract_destination(&args).unwrap(), "legacy");
+    }
+
+    #[test]
+    fn extract_destination_rejects_missing_value() {
+        assert!(extract_destination(&serde_json::json!({})).is_err());
+    }
 }

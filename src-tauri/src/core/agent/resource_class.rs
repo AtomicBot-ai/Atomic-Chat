@@ -18,7 +18,8 @@ pub enum ResourceClass {
 
 pub fn resource_class_for(tool_name: &str) -> ResourceClass {
     match tool_name {
-        "os.fs.read"
+        "tool.view"
+        | "os.fs.read"
         | "os.fs.read_document"
         | "os.fs.list"
         | "os.fs.glob"
@@ -37,6 +38,7 @@ pub fn resource_class_for(tool_name: &str) -> ResourceClass {
         | "os.web.search"
         | "os.web.fetch"
         | "os.clipboard.read" => ResourceClass::PureRead,
+        "os.clipboard.write" | "os.notify" => ResourceClass::MemoryWrite,
         "os.fs.write"
         | "os.fs.edit"
         | "os.fs.trash"

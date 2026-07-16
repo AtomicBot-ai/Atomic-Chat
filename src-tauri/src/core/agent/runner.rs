@@ -15,7 +15,7 @@ use super::loop_guard::{
 };
 use super::prompt::build_prompt;
 use super::resource_class::{is_batchable, resource_class_for, ResourceClass};
-use super::tools::{self, ApprovalHook, ToolContext};
+use super::tools::{self, ApprovalHook, DesktopServices, ToolContext};
 use super::types::{
     AgentEvent, LoopLevel, ToolCallPayload, ToolExecution, ToolOutcome, ToolStatus,
 };
@@ -32,6 +32,7 @@ pub struct RunTurnInput<'a> {
     pub max_steps: u32,
     pub client: &'a LlamaServerClient,
     pub approval: &'a dyn ApprovalHook,
+    pub desktop: &'a dyn DesktopServices,
     pub cancellation: &'a CancellationToken,
 }
 
@@ -46,13 +47,20 @@ pub async fn run_turn(
     let mut conversation = format!("USER: {}", input.user_message);
     let mut notice: Option<String> = None;
     let mut tracker = ToolLoopTracker::default();
+    let loaded_tools = tools::tool_view::LoadedTools::default();
 
     for step_index in 0..max_steps {
         if input.cancellation.is_cancelled() {
             return finish_cancelled(step_index, &mut emit);
         }
         emit(AgentEvent::StepStarted { step_index })?;
-        let prompt = build_prompt(input.stable_prefix, &conversation, notice.as_deref());
+        let loaded_tool_names = loaded_tools.snapshot().await;
+        let prompt = build_prompt(
+            input.stable_prefix,
+            &loaded_tool_names,
+            &conversation,
+            notice.as_deref(),
+        );
         notice = None;
         let request = CompletionRequest::tool_call(prompt, tool_call_grammar(), AGENT_SLOT_ID);
         let completion = match input.client.complete(&request, input.cancellation).await {
@@ -176,6 +184,8 @@ pub async fn run_turn(
             working_dir: input.working_dir,
             approval: input.approval,
             cancellation: input.cancellation,
+            loaded_tools: &loaded_tools,
+            desktop: input.desktop,
         };
         let has_terminal_tail = parsed
             .calls
