@@ -54,9 +54,15 @@ pub async fn post_local_http(
     }
     req = req.body(body);
 
-    let response = req.send().await.map_err(|e| format!("Request failed: {e}"))?;
+    let response = req
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
     let status = response.status().as_u16();
-    let text = response.text().await.map_err(|e| format!("Body read failed: {e}"))?;
+    let text = response
+        .text()
+        .await
+        .map_err(|e| format!("Body read failed: {e}"))?;
 
     if status >= 400 {
         return Err(format!("HTTP {status}: {text}"));
@@ -82,7 +88,10 @@ pub async fn get_local_http(
         req = req.header(k.as_str(), v.as_str());
     }
 
-    let response = req.send().await.map_err(|e| format!("Request failed: {e}"))?;
+    let response = req
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
     let status = response.status().as_u16();
     let text = response
         .text()

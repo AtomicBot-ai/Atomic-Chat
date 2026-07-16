@@ -92,6 +92,62 @@ valid only as the final call and executes after all preceding calls finish.
 - Tool discovery: `tool.view`.
 - Terminals: `reply` and `finish`.
 
+## Test pyramid
+
+The default Rust suite is deterministic and requires neither a model nor
+network access:
+
+- Unit tests pin grammar, prompt, parser, resource-class, path-policy,
+  shell-guard, approval, and loop-guard behavior.
+- `runner_tests.rs` drives the real `run_turn` loop against a scripted local
+  `/completion` server. It verifies request fields (`grammar`, `cache_prompt`,
+  `slot_id`), prompt-tail transitions, event ordering, batching, approvals,
+  cancellation, failures, and terminal reasons.
+- `tools/contract_tests.rs` runs real filesystem, archive, Git, and safe shell
+  operations inside an isolated workspace. It also pins traversal, path
+  escape, hard-block, denial, cancellation, and output-boundary behavior.
+
+`model_e2e.rs` is a local, ignored acceptance ritual. It starts and stops one
+externally supplied TurboQuant `llama-server`, loads one externally supplied
+GGUF once, and runs all model scenarios sequentially against slot `0`.
+Automatic artifact downloads and mandatory CI execution are intentionally out
+of scope.
+
+### Managed model E2E contract
+
+The ignored test requires:
+
+- `ATOMIC_AGENT_E2E_LLAMA_SERVER`: local executable from
+  `AtomicBot-ai/atomic-llama-cpp-turboquant`, not vanilla upstream llama.cpp.
+- `ATOMIC_AGENT_E2E_MODEL`: the already-downloaded IQ4_XS GGUF for
+  `unsloth/Qwen3_5-9B-GGUF-Qwen3_5-9B-IQ4_XS`. A different model is not an
+  equivalent acceptance run.
+- `ATOMIC_AGENT_E2E_N_GPU_LAYERS`: optional `-ngl` value; defaults to `-1`.
+- `ATOMIC_AGENT_E2E_TIMEOUT_SECS`: optional startup and per-scenario timeout;
+  defaults to 900 seconds.
+
+The harness chooses a free loopback port and launches the server with one
+parallel slot, an 8192-token context, Jinja templates, no Web UI, flash
+attention, and TurboQuant `turbo3` K/V cache. It prints `llama-server
+--version`, the nearest `version.txt`, and the exact paths before waiting for
+`/health`.
+
+Run it from the repository root:
+
+```bash
+ATOMIC_AGENT_E2E_LLAMA_SERVER=<turboquant-llama-server> \
+ATOMIC_AGENT_E2E_MODEL=<unsloth-Qwen3_5-9B-IQ4_XS.gguf> \
+cargo test --manifest-path src-tauri/Cargo.toml -p Atomic-Chat \
+  managed_model_agent_scenarios -- --ignored --nocapture --test-threads=1
+```
+
+The model must reliably follow array-only GBNF tool calls and the
+`tool.view`-before-rare-tool contract. Assertions target parsed tools, events,
+side effects, and terminal reasons rather than free-form reply text. On
+startup failure, timeout, or agent invariant failure, the harness includes
+bounded stdout/stderr tails in the panic and its RAII guard terminates the
+child process.
+
 ## Iteration 1b contract corrections
 
 1. `os.fs.archive.extract` documents canonical `destination`; the runtime

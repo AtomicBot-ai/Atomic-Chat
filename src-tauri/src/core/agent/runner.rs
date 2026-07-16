@@ -106,7 +106,17 @@ pub async fn run_turn(
                 text: reasoning,
             })?;
         }
-        validate_batch(&parsed.calls)?;
+        if let Err(error) = validate_batch(&parsed.calls) {
+            emit(AgentEvent::StepError {
+                message: error.clone(),
+                category: "grammar".into(),
+            })?;
+            emit(AgentEvent::TurnFinished {
+                reason: "failed".into(),
+                step_count: step_index + 1,
+            })?;
+            return Err(error);
+        }
         let batch_size = parsed.calls.len();
         for (batch_index, call) in parsed.calls.iter().enumerate() {
             emit(AgentEvent::ToolCallParsed {

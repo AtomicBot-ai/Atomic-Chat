@@ -110,6 +110,7 @@ import {
   canSelectChatAgentMode,
   ChatAgentModeSwitch,
 } from '@/containers/ChatAgentModeSwitch'
+import { AgentApprovalModeSelect } from '@/containers/AgentApprovalModeSelect'
 
 type ChatInputProps = {
   className?: string
@@ -171,12 +172,23 @@ const ChatInput = memo(function ChatInput({
   )
   const effectiveAgentMode = isAgentMode && !projectId
   const setAgentMode = useAgentMode((state) => state.setAgentMode)
+  const approvalMode = useAgentMode(
+    (state) => state.approvalModes[agentModeKey] ?? 'manual'
+  )
+  const setApprovalMode = useAgentMode((state) => state.setApprovalMode)
 
   const handleAgentModeChange = useCallback(
     (enabled: boolean) => {
       setAgentMode(agentModeKey, enabled)
     },
     [agentModeKey, setAgentMode]
+  )
+
+  const handleApprovalModeChange = useCallback(
+    (mode: 'manual' | 'skip') => {
+      setApprovalMode(agentModeKey, mode)
+    },
+    [agentModeKey, setApprovalMode]
   )
 
   // Get current thread messages for token counting
@@ -2585,6 +2597,25 @@ const ChatInput = memo(function ChatInput({
           </div>
         </div>
       </div>
+
+      {(canSelectAgentMode || effectiveAgentMode) && (
+        <div
+          className={cn(
+            '-mt-3 flex h-9 items-end rounded-b-3xl border border-t-0 border-input bg-white px-3 pb-1 pt-3 dark:bg-input/20',
+            !effectiveAgentMode && 'invisible'
+          )}
+          aria-hidden={!effectiveAgentMode}
+        >
+          <AgentApprovalModeSelect
+            mode={approvalMode}
+            onChange={handleApprovalModeChange}
+            manualLabel={t('chat:agentApprovals.manual')}
+            manualDescription={t('chat:agentApprovals.manualDescription')}
+            skipLabel={t('chat:agentApprovals.skip')}
+            skipDescription={t('chat:agentApprovals.skipDescription')}
+          />
+        </div>
+      )}
 
       {message && (
         <div className="-mt-0.5 mx-2 pb-2 px-3 pt-1.5 rounded-b-lg text-xs text-destructive transition-all duration-200 ease-in-out">

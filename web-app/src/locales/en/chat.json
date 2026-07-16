@@ -14,6 +14,12 @@
     "agent": "Agent",
     "placeholder": "Describe a task for the agent..."
   },
+  "agentApprovals": {
+    "manual": "Manually approve",
+    "manualDescription": "Pause before sensitive actions.",
+    "skip": "Skip all approvals",
+    "skipDescription": "Run without asking."
+  },
   "agentTasks": {
     "title": "Ideas for you",
     "organizeDesktop": {

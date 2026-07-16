@@ -12,8 +12,7 @@ pub fn rm<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> Res
         return Err("rm error: Invalid argument".to_string());
     }
 
-    let jan_data_folder =
-        crate::core::app::commands::get_jan_data_folder_path(app_handle.clone());
+    let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app_handle.clone());
     let path = resolve_path(app_handle, &args[0]);
     let canonical_data = jan_data_folder.canonicalize().unwrap_or(jan_data_folder);
     let canonical_path = path.canonicalize().unwrap_or_else(|_| path.clone());

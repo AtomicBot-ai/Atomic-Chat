@@ -309,6 +309,51 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-07-16 — Test the Rust agent deterministically and keep model acceptance local
+- **Context:** The autonomous Rust agent needed coverage of its complete
+  prompt-decide-execute-observe loop and real OS tool contracts, while a model
+  acceptance test must use a large local GGUF and a specific TurboQuant
+  backend that are unsuitable for mandatory CI or automatic download.
+- **Decision:** Make the default `core::agent` suite deterministic: use a
+  scripted loopback `/completion` server for runner tests and isolated local
+  workspaces for filesystem, archive, Git, and shell contracts. Add one
+  sequential ignored acceptance ritual that starts an
+  env-supplied `AtomicBot-ai/atomic-llama-cpp-turboquant` `llama-server`,
+  requires the exact
+  `unsloth/Qwen3_5-9B-GGUF-Qwen3_5-9B-IQ4_XS` IQ4_XS GGUF, records backend
+  provenance, runs all scenarios against one slot, and owns process cleanup.
+- **Consequences:** Normal Rust tests need no model, network, or artifact
+  download and can run routinely. Model/tool regressions can be checked
+  locally against the production-class stack, but that ignored suite depends
+  on explicit local paths, GPU/CPU capacity, and operator invocation. CI
+  provisioning and automated model/backend downloads remain deferred.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/runner_tests.rs`](src-tauri/src/core/agent/runner_tests.rs),
+  [`src-tauri/src/core/agent/tools/contract_tests.rs`](src-tauri/src/core/agent/tools/contract_tests.rs),
+  [`src-tauri/src/core/agent/model_e2e.rs`](src-tauri/src/core/agent/model_e2e.rs),
+  [`src-tauri/src/core/agent/ARCHITECTURE.md`](src-tauri/src/core/agent/ARCHITECTURE.md).
+
+---
+
+### 2026-07-16 — Bind the agent approval policy to its thread
+- **Context:** Agent mode needs a visible safety policy below the composer, but
+  the iteration-1 Rust gate currently exposes only `auto_approve=false`
+  (pause for sensitive actions) and `auto_approve=true` (skip every approval).
+- **Decision:** Offer exactly those two policies in the frontend: "Manually
+  approve" as the fail-closed default and "Skip all approvals" as an explicit
+  unsafe choice. Persist the policy with the temporary Home selection and
+  transfer it to the created Agent thread alongside the mode.
+- **Consequences:** The UI does not imply a selective safe-action policy that
+  the backend cannot enforce. Agent IPC callers can map `manual` to
+  `auto_approve=false` and `skip` to `auto_approve=true`; interactive rendering
+  of emitted approval requests remains separate work.
+- **Owner:** team.
+- **Links:** [`web-app/src/hooks/useAgentMode.ts`](web-app/src/hooks/useAgentMode.ts),
+  [`web-app/src/containers/AgentApprovalModeSelect.tsx`](web-app/src/containers/AgentApprovalModeSelect.tsx),
+  [`src-tauri/src/core/agent/approval.rs`](src-tauri/src/core/agent/approval.rs).
+
+---
+
 ### 2026-07-16 — Secure iteration 1b agent tools with run-scoped approvals
 - **Context:** The first autonomous Rust agent loop had mismatched archive and
   shell contracts, no interactive approval protocol, no trusted-root path

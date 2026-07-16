@@ -271,6 +271,20 @@ lint: install-and-build
 	yarn lint
 
 # Testing
+test-agent:
+	cargo test --manifest-path src-tauri/Cargo.toml -p Atomic-Chat core::agent
+
+ATOMIC_AGENT_E2E_LLAMA_SERVER ?= $(CURDIR)/src-tauri/resources/llamacpp-backend/build/bin/llama-server
+ATOMIC_AGENT_E2E_MODEL ?= $(HOME)/Library/Application Support/Atomic Chat/data/llamacpp/models/unsloth/Qwen3_5-9B-GGUF-Qwen3_5-9B-IQ4_XS/model.gguf
+
+test-agent-model:
+	@test -x "$(ATOMIC_AGENT_E2E_LLAMA_SERVER)" || (echo "llama-server not found: $(ATOMIC_AGENT_E2E_LLAMA_SERVER)" && exit 1)
+	@test -f "$(ATOMIC_AGENT_E2E_MODEL)" || (echo "model not found: $(ATOMIC_AGENT_E2E_MODEL)" && exit 1)
+	ATOMIC_AGENT_E2E_LLAMA_SERVER="$(ATOMIC_AGENT_E2E_LLAMA_SERVER)" \
+	ATOMIC_AGENT_E2E_MODEL="$(ATOMIC_AGENT_E2E_MODEL)" \
+	cargo test --manifest-path src-tauri/Cargo.toml -p Atomic-Chat \
+		managed_model_agent_scenarios -- --ignored --nocapture --test-threads=1
+
 test: lint install-rust-targets
 	yarn download:bin
 ifeq ($(OS),Windows_NT)

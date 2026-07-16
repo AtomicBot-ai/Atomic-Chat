@@ -27,6 +27,13 @@ pub mod shell_guard;
 pub mod tools;
 pub mod types;
 
+#[cfg(test)]
+mod model_e2e;
+#[cfg(test)]
+mod runner_tests;
+#[cfg(test)]
+pub(crate) mod test_support;
+
 pub use types::{
     AgentApprovalDecision, AgentEvent, AgentTurnRequest, ApprovalRequest, ApprovalResource,
     ToolCallPayload, ToolExecution, ToolOutcome, ToolStatus,

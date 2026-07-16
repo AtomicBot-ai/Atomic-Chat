@@ -40,9 +40,7 @@ fn load_dotenv() {
         if std::env::var(key).is_ok() {
             continue;
         }
-        let val = raw_val
-            .trim()
-            .trim_matches(|c| c == '"' || c == '\'');
+        let val = raw_val.trim().trim_matches(|c| c == '"' || c == '\'');
         println!("cargo:rustc-env={key}={val}");
     }
 }

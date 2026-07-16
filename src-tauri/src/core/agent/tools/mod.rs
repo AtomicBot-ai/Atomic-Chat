@@ -11,6 +11,9 @@ mod shell;
 pub(super) mod tool_view;
 mod web;
 
+#[cfg(test)]
+mod contract_tests;
+
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;

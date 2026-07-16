@@ -14,6 +14,12 @@
     "agent": "Агент",
     "placeholder": "Опишите задачу для агента..."
   },
+  "agentApprovals": {
+    "manual": "Подтверждать вручную",
+    "manualDescription": "Спрашивать перед важными действиями.",
+    "skip": "Пропускать подтверждения",
+    "skipDescription": "Выполнять без вопросов."
+  },
   "agentTasks": {
     "title": "Идеи для вас",
     "organizeDesktop": {

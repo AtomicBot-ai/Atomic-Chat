@@ -6,6 +6,7 @@ import {
   ChatAgentModeSwitch,
 } from '@/containers/ChatAgentModeSwitch'
 import { AgentTaskSuggestions } from '@/containers/AgentTaskSuggestions'
+import { AgentApprovalModeSelect } from '@/containers/AgentApprovalModeSelect'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
@@ -78,5 +79,26 @@ describe('Chat and Agent workspace controls', () => {
     expect(onSelect).toHaveBeenCalledWith('Organize prompt')
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(screen.getAllByRole('button')).toHaveLength(3)
+  })
+
+  it('switches between manual and skipped approvals', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+
+    render(
+      <AgentApprovalModeSelect
+        mode="manual"
+        onChange={onChange}
+        manualLabel="Manually approve"
+        manualDescription="Pause for sensitive actions."
+        skipLabel="Skip all approvals"
+        skipDescription="Never pause."
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Manually approve' }))
+    await user.click(screen.getByText('Skip all approvals'))
+
+    expect(onChange).toHaveBeenCalledWith('skip')
   })
 })
