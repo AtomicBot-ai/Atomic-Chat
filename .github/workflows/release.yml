@@ -474,7 +474,18 @@ jobs:
           SM_API_KEY: ${{ secrets.SM_API_KEY }}
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
         run: |
-          smctl windows certsync
+          $output = smctl windows certsync 2>&1
+          $output | ForEach-Object { Write-Host $_ }
+          if ($LASTEXITCODE -ne 0) { throw "smctl windows certsync failed" }
+
+          # smctl does not pass a cert selector to signtool, so capture the
+          # synced code-signing certificate's SHA1 fingerprint and hand it to
+          # signtool explicitly in the signing step (via /sha1).
+          $m = [regex]::Match(($output -join "`n"), '(?i)fingerprint[^0-9A-Fa-f]*([0-9A-Fa-f]{40})')
+          if (-not $m.Success) { throw "Could not extract SHA1 fingerprint from certsync output" }
+          $fingerprint = $m.Groups[1].Value
+          echo "SM_CODE_SIGNING_CERT_SHA1_HASH=$fingerprint" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Captured code-signing certificate SHA1: $fingerprint"
 
       - name: Setup Windows SDK signtool
         shell: pwsh
@@ -665,52 +676,40 @@ jobs:
             --org "$SENTRY_ORG" --project "$SENTRY_PROJECT_DESKTOP" \
             src-tauri/target/release
 
-      # ── Post-build code signing with jsign (bypasses KSP issues) ──
-      - name: Download jsign
-        shell: pwsh
-        run: |
-          $jsign = "$env:RUNNER_TEMP\jsign.jar"
-          $maxAttempts = 5
-          for ($i = 1; $i -le $maxAttempts; $i++) {
-            try {
-              Invoke-WebRequest -Uri "https://github.com/ebourg/jsign/releases/download/7.4/jsign-7.4.jar" `
-                -OutFile $jsign
-              if ((Get-Item $jsign).Length -gt 0) { break }
-              throw "Downloaded file is empty"
-            } catch {
-              Write-Host "jsign download attempt $i/$maxAttempts failed: $($_.Exception.Message)"
-              if ($i -eq $maxAttempts) { throw }
-              Start-Sleep -Seconds ($i * 10)
-            }
-          }
-
+      # ── Post-build code signing (DigiCert KeyLocker via signtool KSP) ──
+      # certsync installs the DigiCert KeyLocker KSP and the code-signing cert
+      # into the Windows store; we sign with signtool directly, selecting the
+      # cert by the SHA1 fingerprint captured from certsync
+      # (SM_CODE_SIGNING_CERT_SHA1_HASH). The KSP authenticates to DigiCert at
+      # sign time via SM_API_KEY / SM_CLIENT_CERT_FILE / SM_CLIENT_CERT_PASSWORD.
       - name: Sign Windows binaries with DigiCert
         shell: pwsh
         env:
           SM_API_KEY: ${{ secrets.SM_API_KEY }}
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
           SM_HOST: https://clientauth.one.digicert.com
-          SM_CERT_ALIAS: ${{ secrets.SM_CERT_ALIAS }}
         run: |
-          $storepass = "$env:SM_API_KEY|$env:SM_CLIENT_CERT_FILE|$env:SM_CLIENT_CERT_PASSWORD"
           $bundleBase = "src-tauri\target\release\bundle"
+
+          if (-not $env:SM_CODE_SIGNING_CERT_SHA1_HASH) {
+            throw "SM_CODE_SIGNING_CERT_SHA1_HASH is not set (certsync did not capture a fingerprint)"
+          }
+
+          function Sign-File($path) {
+            Write-Host "Signing: $path"
+            signtool sign /sha1 "$env:SM_CODE_SIGNING_CERT_SHA1_HASH" `
+              /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "$path"
+            if ($LASTEXITCODE -ne 0) { throw "signtool sign failed for $path" }
+            signtool verify /pa "$path"
+            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $path" }
+            Write-Host "Signed and verified: $path"
+          }
 
           # Sign NSIS installer(s)
           $nsisPath = Join-Path $bundleBase "nsis"
           if (Test-Path $nsisPath) {
             foreach ($exe in (Get-ChildItem -Path $nsisPath -Filter "*.exe")) {
-              Write-Host "Signing NSIS: $($exe.FullName)"
-              java -jar "$env:RUNNER_TEMP\jsign.jar" `
-                --storetype DIGICERTONE `
-                --alias "$env:SM_CERT_ALIAS" `
-                --storepass "$storepass" `
-                --tsaurl "http://timestamp.digicert.com" `
-                --tsmode RFC3161 `
-                "$($exe.FullName)"
-              if ($LASTEXITCODE -ne 0) { throw "jsign failed for $($exe.Name)" }
-              signtool verify /pa "$($exe.FullName)"
-              if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $($exe.Name)" }
-              Write-Host "Signed and verified: $($exe.Name)"
+              Sign-File $exe.FullName
             }
           }
 
@@ -718,16 +717,7 @@ jobs:
           $msiPath = Join-Path $bundleBase "msi"
           if (Test-Path $msiPath) {
             foreach ($msi in (Get-ChildItem -Path $msiPath -Filter "*.msi")) {
-              Write-Host "Signing MSI: $($msi.FullName)"
-              java -jar "$env:RUNNER_TEMP\jsign.jar" `
-                --storetype DIGICERTONE `
-                --alias "$env:SM_CERT_ALIAS" `
-                --storepass "$storepass" `
-                --tsaurl "http://timestamp.digicert.com" `
-                --tsmode RFC3161 `
-                "$($msi.FullName)"
-              if ($LASTEXITCODE -ne 0) { throw "jsign failed for $($msi.Name)" }
-              Write-Host "Signed: $($msi.Name)"
+              Sign-File $msi.FullName
             }
           }
 
