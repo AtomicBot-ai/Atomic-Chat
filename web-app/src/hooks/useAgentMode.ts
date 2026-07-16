@@ -9,6 +9,7 @@ type AgentModeState = {
   isAgentMode: (threadId: string) => boolean
   toggleAgentMode: (threadId: string) => void
   setAgentMode: (threadId: string, enabled: boolean) => void
+  transferAgentMode: (fromThreadId: string, toThreadId: string) => void
   removeThread: (threadId: string) => void
   /** Clear agent mode for all threads. */
   clearAll: () => void
@@ -39,6 +40,21 @@ export const useAgentMode = create<AgentModeState>()(
             [threadId]: enabled,
           },
         }))
+      },
+
+      transferAgentMode: (fromThreadId, toThreadId) => {
+        set((state) => {
+          const isAgentMode = state.agentThreads[fromThreadId] === true
+          const remainingThreads = { ...state.agentThreads }
+          delete remainingThreads[fromThreadId]
+          delete remainingThreads[toThreadId]
+
+          return {
+            agentThreads: isAgentMode
+              ? { ...remainingThreads, [toThreadId]: true }
+              : remainingThreads,
+          }
+        })
       },
 
       removeThread: (threadId) => {

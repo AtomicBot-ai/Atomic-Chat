@@ -1,6 +1,11 @@
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import TextareaAutosize from 'react-textarea-autosize'
-import { cn, formatBytes, LOCAL_LLAMACPP_PROVIDER, isLlamacppProvider } from '@/lib/utils'
+import {
+  cn,
+  formatBytes,
+  LOCAL_LLAMACPP_PROVIDER,
+  isLlamacppProvider,
+} from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react'
@@ -28,7 +33,6 @@ import {
   IconWorld,
   IconMusic,
 } from '@tabler/icons-react'
-import { BotIcon } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -102,6 +106,10 @@ import { useDownloadStore } from '@/hooks/useDownloadStore'
 import ReasoningToggle from '@/containers/ReasoningToggle'
 import { ttftPreBegin } from '@/lib/ttft-timing'
 import { ModelFactory } from '@/lib/model-factory'
+import {
+  canSelectChatAgentMode,
+  ChatAgentModeSwitch,
+} from '@/containers/ChatAgentModeSwitch'
 
 type ChatInputProps = {
   className?: string
@@ -154,19 +162,22 @@ const ChatInput = memo(function ChatInput({
   const assistants = useAssistant((state) => state.assistants)
   const defaultAssistantId = useAssistant((state) => state.defaultAssistantId)
 
-  // Agent mode
-  // Use TEMPORARY_CHAT_ID as fallback key on the home screen (same pattern as attachments)
-  const agentModeKey = currentThreadId ?? TEMPORARY_CHAT_ID
+  const canSelectAgentMode = canSelectChatAgentMode(initialMessage, projectId)
+  const agentModeKey = canSelectAgentMode
+    ? TEMPORARY_CHAT_ID
+    : (currentThreadId ?? TEMPORARY_CHAT_ID)
   const isAgentMode = useAgentMode(
     (state) => state.agentThreads[agentModeKey] === true
   )
-  // When projectId is present, treat as normal chat (disable agent mode UI)
   const effectiveAgentMode = isAgentMode && !projectId
-  const toggleAgentMode = useAgentMode((state) => state.toggleAgentMode)
+  const setAgentMode = useAgentMode((state) => state.setAgentMode)
 
-  const handleAgentToggle = useCallback(() => {
-    toggleAgentMode(agentModeKey)
-  }, [agentModeKey, toggleAgentMode])
+  const handleAgentModeChange = useCallback(
+    (enabled: boolean) => {
+      setAgentMode(agentModeKey, enabled)
+    },
+    [agentModeKey, setAgentMode]
+  )
 
   // Get current thread messages for token counting
   const threadMessages = useMessages(
@@ -502,8 +513,7 @@ const ChatInput = memo(function ChatInput({
       // Build file parts for AI SDK
       const files = attachments
         .filter(
-          (att) =>
-            (att.type === 'image' || att.type === 'audio') && att.dataUrl
+          (att) => (att.type === 'image' || att.type === 'audio') && att.dataUrl
         )
         .map((att) => ({
           type: 'file',
@@ -526,8 +536,7 @@ const ChatInput = memo(function ChatInput({
       // Build message payload with attachments
       const files = attachments
         .filter(
-          (att) =>
-            (att.type === 'image' || att.type === 'audio') && att.dataUrl
+          (att) => (att.type === 'image' || att.type === 'audio') && att.dataUrl
         )
         .map((att) => ({
           type: 'file',
@@ -696,11 +705,7 @@ const ChatInput = memo(function ChatInput({
           )
         }
 
-        // Transfer agent mode from home screen to the new thread
-        if (isAgentMode) {
-          useAgentMode.getState().setAgentMode(newThread.id, true)
-          useAgentMode.getState().removeThread(agentModeKey)
-        }
+        useAgentMode.getState().transferAgentMode(agentModeKey, newThread.id)
 
         useInitialMessage.getState().set(newThread.id, messagePayload)
 
@@ -2269,7 +2274,11 @@ const ChatInput = memo(function ChatInput({
                 }
               }}
               onPaste={handlePaste}
-              placeholder={t('common:placeholder.chatInput')}
+              placeholder={
+                effectiveAgentMode
+                  ? t('chat:agentMode.placeholder')
+                  : t('common:placeholder.chatInput')
+              }
               autoFocus
               spellCheck={spellCheckChatInput}
               data-gramm={spellCheckChatInput}
@@ -2293,82 +2302,83 @@ const ChatInput = memo(function ChatInput({
                   isStreaming && 'opacity-50 pointer-events-none'
                 )}
               >
-                {/* Dropdown for attachments — hidden in agent mode */}
-                {!effectiveAgentMode && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="secondary"
-                        size="icon-sm"
-                        className="rounded-full mr-2 mb-1"
-                      >
-                        <PlusIcon
-                          size={18}
-                          className="text-secondary-foreground"
-                        />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start">
-                      {/* Vision image attachment - always enabled, prompts to download vision model if needed */}
-                      <DropdownMenuItem onClick={handleImagePickerClick}>
-                        <IconPhoto
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="secondary"
+                      size="icon-sm"
+                      className="rounded-full mr-2 mb-1"
+                    >
+                      <PlusIcon
+                        size={18}
+                        className="text-secondary-foreground"
+                      />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {/* Vision image attachment - always enabled, prompts to download vision model if needed */}
+                    <DropdownMenuItem onClick={handleImagePickerClick}>
+                      <IconPhoto size={18} className="text-muted-foreground" />
+                      <span>Add Images</span>
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        className="hidden"
+                        multiple
+                        onChange={handleFileChange}
+                      />
+                    </DropdownMenuItem>
+                    {/* Audio attachment — only shown for omni/audio-capable
+                          models (gated on the `audio` capability). */}
+                    {hasAudio && (
+                      <DropdownMenuItem onClick={openAudioPicker}>
+                        <IconMusic
                           size={18}
                           className="text-muted-foreground"
                         />
-                        <span>Add Images</span>
+                        <span>Add audio</span>
                         <input
                           type="file"
-                          ref={fileInputRef}
+                          ref={audioInputRef}
                           className="hidden"
+                          accept="audio/mpeg,audio/wav,.mp3,.wav"
                           multiple
-                          onChange={handleFileChange}
+                          onChange={handleAudioFileChange}
                         />
                       </DropdownMenuItem>
-                      {/* Audio attachment — only shown for omni/audio-capable
-                          models (gated on the `audio` capability). */}
-                      {hasAudio && (
-                        <DropdownMenuItem onClick={openAudioPicker}>
-                          <IconMusic
-                            size={18}
-                            className="text-muted-foreground"
-                          />
-                          <span>Add audio</span>
-                          <input
-                            type="file"
-                            ref={audioInputRef}
-                            className="hidden"
-                            accept="audio/mpeg,audio/wav,.mp3,.wav"
-                            multiple
-                            onChange={handleAudioFileChange}
-                          />
-                        </DropdownMenuItem>
+                    )}
+                    {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
+                    <DropdownMenuItem
+                      onClick={handleAttachDocsIngest}
+                      disabled={!selectedModel?.capabilities?.includes('tools')}
+                    >
+                      {ingestingDocs ? (
+                        <IconLoader2
+                          size={18}
+                          className="text-muted-foreground animate-spin"
+                        />
+                      ) : (
+                        <IconPaperclip
+                          size={18}
+                          className="text-muted-foreground"
+                        />
                       )}
-                      {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
-                      <DropdownMenuItem
-                        onClick={handleAttachDocsIngest}
-                        disabled={
-                          !selectedModel?.capabilities?.includes('tools')
-                        }
-                      >
-                        {ingestingDocs ? (
-                          <IconLoader2
-                            size={18}
-                            className="text-muted-foreground animate-spin"
-                          />
-                        ) : (
-                          <IconPaperclip
-                            size={18}
-                            className="text-muted-foreground"
-                          />
-                        )}
-                        <span>
-                          {ingestingDocs
-                            ? 'Indexing documents…'
-                            : 'Add documents or files'}
-                        </span>
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                      <span>
+                        {ingestingDocs
+                          ? 'Indexing documents…'
+                          : 'Add documents or files'}
+                      </span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {canSelectAgentMode && (
+                  <ChatAgentModeSwitch
+                    isAgentMode={isAgentMode}
+                    onChange={handleAgentModeChange}
+                    chatLabel={t('chat:agentMode.chat')}
+                    agentLabel={t('chat:agentMode.agent')}
+                  />
                 )}
                 {/* {model?.provider === 'llamacpp' && loadingModel ? (
                   <ModelLoader />
@@ -2500,42 +2510,7 @@ const ChatInput = memo(function ChatInput({
                     </Tooltip>
                   ))}
 
-                <ReasoningToggle />
-
-                {/* Agent mode toggle hidden — kept as dead code for future use */}
-                {false && !projectId && isAgentMode && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant={isAgentMode ? 'default' : 'ghost'}
-                        size="icon-xs"
-                        onClick={
-                          currentThreadId ? handleAgentToggle : undefined
-                        }
-                        className={cn(
-                          isAgentMode &&
-                            'text-primary bg-primary/10 hover:bg-primary/10 items-center',
-                          !currentThreadId &&
-                            'cursor-default pointer-events-none'
-                        )}
-                      >
-                        <BotIcon
-                          className={cn(
-                            'text-muted-foreground -mt-0.5',
-                            isAgentMode && 'text-primary'
-                          )}
-                        />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>
-                        {isAgentMode
-                          ? 'Agent mode active'
-                          : 'Enable agent mode'}
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
+                {!effectiveAgentMode && <ReasoningToggle />}
 
                 {!effectiveAgentMode &&
                   selectedModel?.capabilities?.includes('web_search') && (

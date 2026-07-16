@@ -1,4 +1,12 @@
-import { Folder, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react'
+import {
+  Bot,
+  Folder,
+  MessageCircle,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { useThreads } from '@/hooks/useThreads'
 import { useMessages } from '@/hooks/useMessages'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
@@ -33,6 +41,7 @@ import { ThreadMessage } from '@janhq/core'
 import { useChatSessions, isSessionBusy } from '@/stores/chat-session-store'
 import { useThreadReadStatus } from '@/stores/thread-read-store'
 import { ThreadStatusDot } from '@/components/left-sidebar/ThreadStatusDot'
+import { useAgentMode } from '@/hooks/useAgentMode'
 
 //* Заголовок приветственного треда: новый бренд и старая строка из прошлых версий
 const WELCOME_THREAD_TITLES = new Set([
@@ -159,6 +168,13 @@ const ThreadItem = memo(
     )
     const showStatusDot = isBusy || isUnread
     const threadTitle = thread.title || t('common:newThread')
+    const isAgentThread = useAgentMode(
+      (state) => state.agentThreads[thread.id] === true
+    )
+    const threadTypeLabel = t(
+      isAgentThread ? 'chat:threadType.agent' : 'chat:threadType.chat'
+    )
+    const ThreadTypeIcon = isAgentThread ? Bot : MessageCircle
 
     const MenuItemWrapper = subItem ? SidebarMenuSubItem : SidebarMenuItem
     const MenuButtonWrapper = subItem ? SidebarMenuSubButton : SidebarMenuButton
@@ -181,6 +197,10 @@ const ThreadItem = memo(
             )}
           >
             <span className="flex items-center gap-2 pr-8 min-w-0">
+              <ThreadTypeIcon
+                className="size-3.5 shrink-0 text-muted-foreground"
+                aria-label={threadTypeLabel}
+              />
               {showStatusDot && <ThreadStatusDot pulsing={isBusy} />}
               <span className="truncate flex-1 min-w-0">{threadTitle}</span>
             </span>
@@ -198,6 +218,10 @@ const ThreadItem = memo(
           >
             <Link to="/threads/$threadId" params={{ threadId: thread.id }}>
               <span className="flex w-full items-center gap-2 min-w-0">
+                <ThreadTypeIcon
+                  className="size-3.5 shrink-0 text-muted-foreground"
+                  aria-label={threadTypeLabel}
+                />
                 {showStatusDot && <ThreadStatusDot pulsing={isBusy} />}
                 <span className="truncate flex-1 min-w-0">{threadTitle}</span>
               </span>

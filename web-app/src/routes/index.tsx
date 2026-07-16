@@ -11,6 +11,13 @@ import SetupScreen from '@/containers/SetupScreen'
 import { route } from '@/constants/routes'
 import { hasValidProviders } from '@/lib/onboarding'
 import { localStorageKey } from '@/constants/localStorage'
+import { useCallback, useEffect, useState } from 'react'
+import { useThreads } from '@/hooks/useThreads'
+import DropdownModelProvider from '@/containers/DropdownModelProvider'
+import { useAgentMode } from '@/hooks/useAgentMode'
+import { TEMPORARY_CHAT_ID } from '@/constants/chat'
+import { usePrompt } from '@/hooks/usePrompt'
+import { AgentTaskSuggestions } from '@/containers/AgentTaskSuggestions'
 
 type ThreadModel = {
   id: string
@@ -20,9 +27,6 @@ type ThreadModel = {
 type SearchParams = {
   threadModel?: ThreadModel
 }
-import { useEffect, useState } from 'react'
-import { useThreads } from '@/hooks/useThreads'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
 
 export const Route = createFileRoute(route.home as any)({
   component: Index,
@@ -41,11 +45,24 @@ function Index() {
   const search = useSearch({ from: route.home as any })
   const threadModel = search.threadModel
   const { setCurrentThreadId } = useThreads()
+  const isAgentMode = useAgentMode(
+    (state) => state.agentThreads[TEMPORARY_CHAT_ID] === true
+  )
+  const setPrompt = usePrompt((state) => state.setPrompt)
   useTools()
 
+  const handleSelectAgentTask = useCallback(
+    (prompt: string) => {
+      setPrompt(prompt)
+      document
+        .querySelector<HTMLTextAreaElement>('[data-testid="chat-input"]')
+        ?.focus()
+    },
+    [setPrompt]
+  )
+
   //* После Skip без перемонтирования роутера — поднимаем флаг, иначе ре-рендер не гарантирован
-  const [setupSkippedThisSession, setSetupSkippedThisSession] =
-    useState(false)
+  const [setupSkippedThisSession, setSetupSkippedThisSession] = useState(false)
   const setupCompletedOrSkipped =
     setupSkippedThisSession ||
     (typeof window !== 'undefined' &&
@@ -62,11 +79,7 @@ function Index() {
 
   //* Dev-флаг FORCE_ONBOARDING — принудительный показ SetupScreen без удаления моделей
   if (FORCE_ONBOARDING || (!validProviders && !setupCompletedOrSkipped)) {
-    return (
-      <SetupScreen
-        onSkipped={() => setSetupSkippedThisSession(true)}
-      />
-    )
+    return <SetupScreen onSkipped={() => setSetupSkippedThisSession(true)} />
   }
 
   return (
@@ -81,17 +94,9 @@ function Index() {
           'h-full overflow-y-auto inline-flex flex-col gap-2 justify-center px-3'
         )}
       >
-        <div
-          className={cn(
-            'mx-auto w-full md:w-4/5 xl:w-4/6 -mt-20',
-          )}
-        >
+        <div className={cn('relative mx-auto w-full md:w-4/5 xl:w-4/6 -mt-20')}>
           <div className={cn('text-center mb-4')}>
-            <h1
-              className={cn(
-                'text-2xl mt-2 font-studio font-medium',
-              )}
-            >
+            <h1 className={cn('text-2xl mt-2 font-studio font-medium')}>
               {t('chat:description')}
             </h1>
           </div>
@@ -100,6 +105,12 @@ function Index() {
               showSpeedToken={false}
               model={threadModel}
               initialMessage={true}
+            />
+          </div>
+          <div className="absolute inset-x-0 top-full">
+            <AgentTaskSuggestions
+              visible={isAgentMode}
+              onSelect={handleSelectAgentTask}
             />
           </div>
         </div>

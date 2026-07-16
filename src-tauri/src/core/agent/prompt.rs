@@ -550,7 +550,11 @@ mod tests {
     fn build_prompt_includes_notice_when_present() {
         let caps = test_caps("linux");
         let prefix = build_stable_prefix(ITERATION_ONE_TOOLS, &caps, 8, None);
-        let full = build_prompt(&prefix, "USER: hi", Some("You repeated os.fs.read 3 times."));
+        let full = build_prompt(
+            &prefix,
+            "USER: hi",
+            Some("You repeated os.fs.read 3 times."),
+        );
         assert!(full.contains("### notice\nYou repeated os.fs.read 3 times."));
 
         let empty = build_prompt(&prefix, "USER: hi", Some(""));
