@@ -56,6 +56,11 @@ pub async fn execute(call: &ToolCallPayload, context: &ToolContext<'_>) -> ToolO
             details: None,
         };
     }
+    if call.tool == "os.proc.kill" {
+        if let Err(error) = proc::validate_kill_args(&call.args) {
+            return ToolOutcome::error(error);
+        }
+    }
     let call = match authorize_call(call, context).await {
         Ok(call) => call,
         Err(outcome) => return outcome,
@@ -251,6 +256,7 @@ pub(super) fn optional_usize(args: &Value, key: &str, default: usize, max: usize
     args.get(key)
         .and_then(Value::as_u64)
         .and_then(|value| usize::try_from(value).ok())
+        .filter(|value| *value > 0)
         .unwrap_or(default)
         .min(max)
 }
@@ -303,6 +309,18 @@ mod tests {
 
     use super::*;
     use crate::core::agent::types::ToolStatus;
+
+    #[test]
+    fn optional_usize_uses_default_for_zero_and_caps_large_values() {
+        assert_eq!(
+            optional_usize(&serde_json::json!({"limit": 0}), "limit", 10, 100),
+            10
+        );
+        assert_eq!(
+            optional_usize(&serde_json::json!({"limit": 200}), "limit", 10, 100),
+            100
+        );
+    }
 
     struct TestApproval {
         approved: bool,

@@ -17,7 +17,8 @@ pub async fn execute(
     context: &ToolContext<'_>,
 ) -> Result<ToolOutcome, ToolOutcome> {
     match tool {
-        "os.fs.read" | "os.fs.read_document" => read(args, context).await,
+        "os.fs.read" => read(args, context).await,
+        "os.fs.read_document" => read_document(args, context).await,
         "os.fs.list" => list(args, context).await,
         "os.fs.glob" => glob_paths(args, context).await,
         "os.fs.grep" => grep(args, context).await,
@@ -54,6 +55,42 @@ async fn read(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, To
     let text = String::from_utf8(buffer)
         .map_err(|_| ToolOutcome::error("File is not valid UTF-8 text"))?;
     Ok(ToolOutcome::ok(text))
+}
+
+async fn read_document(
+    args: &Value,
+    context: &ToolContext<'_>,
+) -> Result<ToolOutcome, ToolOutcome> {
+    let path = resolve_path(
+        context.working_dir,
+        &required_string(args, "path").map_err(ToolOutcome::error)?,
+    );
+    let max_chars = optional_usize(args, "maxChars", MAX_TOOL_OUTPUT_CHARS, 50_000);
+    let file_type = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let path_string = path
+        .to_str()
+        .ok_or_else(|| ToolOutcome::error("Document path is not valid UTF-8"))?
+        .to_owned();
+    let text = tokio::task::spawn_blocking(move || {
+        tauri_plugin_rag::parse_document(&path_string, &file_type)
+    })
+    .await
+    .map_err(|error| ToolOutcome::error(format!("Document parser task failed: {error}")))?
+    .map_err(|error| ToolOutcome::error(format!("{}: {error}", path.display())))?;
+    let original_chars = text.chars().count();
+    Ok(ToolOutcome {
+        status: crate::core::agent::types::ToolStatus::Ok,
+        summary: truncate(text, max_chars),
+        details: Some(serde_json::json!({
+            "path": path,
+            "originalChars": original_chars,
+            "truncated": original_chars > max_chars,
+        })),
+    })
 }
 
 async fn list(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, ToolOutcome> {
@@ -265,6 +302,9 @@ async fn write(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, T
         file.write_all(content.as_bytes())
             .await
             .map_err(|error| ToolOutcome::error(error.to_string()))?;
+        file.flush()
+            .await
+            .map_err(|error| ToolOutcome::error(error.to_string()))?;
     } else {
         tokio::fs::write(&path, content)
             .await
@@ -311,19 +351,36 @@ async fn edit(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, To
     let content = tokio::fs::read_to_string(&path)
         .await
         .map_err(|error| ToolOutcome::error(error.to_string()))?;
-    if content.matches(&old).count() != 1 {
-        return Err(ToolOutcome::error(
-            "oldString must match exactly once; file was not changed",
-        ));
+    let match_count = content.matches(&old).count();
+    let replace_all = args
+        .get("replaceAll")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if match_count == 0 || (!replace_all && match_count != 1) {
+        return Err(ToolOutcome::error(if replace_all {
+            "oldString was not found; file was not changed"
+        } else {
+            "oldString must match exactly once; file was not changed"
+        }));
     }
-    let updated = content.replacen(&old, new, 1);
-    let mut file = tokio::fs::File::create(&path)
+    let updated = if replace_all {
+        content.replace(&old, new)
+    } else {
+        content.replacen(&old, new, 1)
+    };
+    tokio::fs::write(&path, updated)
         .await
         .map_err(|error| ToolOutcome::error(error.to_string()))?;
-    file.write_all(updated.as_bytes())
-        .await
-        .map_err(|error| ToolOutcome::error(error.to_string()))?;
-    Ok(ToolOutcome::ok(format!("Edited {}", path.display())))
+    Ok(ToolOutcome::ok(format!(
+        "Edited {} ({} replacement{})",
+        path.display(),
+        if replace_all { match_count } else { 1 },
+        if replace_all && match_count != 1 {
+            "s"
+        } else {
+            ""
+        }
+    )))
 }
 
 async fn trash(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, ToolOutcome> {

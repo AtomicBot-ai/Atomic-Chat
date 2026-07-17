@@ -197,6 +197,74 @@ async fn filesystem_write_accepts_empty_content_and_append_mode() {
 }
 
 #[tokio::test]
+async fn filesystem_edit_supports_explicit_replace_all() {
+    let fixture = ToolFixture::allowed();
+    fixture.workspace.write("repeated.txt", "old old old");
+
+    let ambiguous = fixture
+        .call(
+            "os.fs.edit",
+            serde_json::json!({
+                "path": "repeated.txt",
+                "oldString": "old",
+                "newString": "new"
+            }),
+        )
+        .await;
+    assert_eq!(ambiguous.status, ToolStatus::Error);
+    assert_eq!(fixture.workspace.read("repeated.txt"), b"old old old");
+
+    let replaced = fixture
+        .call(
+            "os.fs.edit",
+            serde_json::json!({
+                "path": "repeated.txt",
+                "oldString": "old",
+                "newString": "new",
+                "replaceAll": true
+            }),
+        )
+        .await;
+    assert_eq!(replaced.status, ToolStatus::Ok);
+    assert_eq!(fixture.workspace.read("repeated.txt"), b"new new new");
+}
+
+#[tokio::test]
+async fn filesystem_read_document_extracts_docx_and_honors_character_cap() {
+    let fixture = ToolFixture::allowed();
+    let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    archive
+        .start_file("word/document.xml", zip::write::FileOptions::default())
+        .unwrap();
+    archive
+        .write_all(
+            br#"<?xml version="1.0"?><w:document xmlns:w="w"><w:body><w:p><w:r><w:t>Alpha document text</w:t></w:r></w:p></w:body></w:document>"#,
+        )
+        .unwrap();
+    let bytes = archive.finish().unwrap().into_inner();
+    fixture.workspace.write("sample.docx", bytes);
+
+    let extracted = fixture
+        .call(
+            "os.fs.read_document",
+            serde_json::json!({"path": "sample.docx", "maxChars": 5}),
+        )
+        .await;
+
+    assert_eq!(extracted.status, ToolStatus::Ok);
+    assert!(extracted.summary.starts_with("Alpha"));
+    assert!(extracted.summary.ends_with("[truncated]"));
+    assert_eq!(
+        extracted
+            .details
+            .as_ref()
+            .and_then(|details| details.get("truncated"))
+            .and_then(serde_json::Value::as_bool),
+        Some(true)
+    );
+}
+
+#[tokio::test]
 async fn filesystem_mkdir_creates_empty_directories_and_honors_approval() {
     let fixture = ToolFixture::allowed();
     let created = fixture
@@ -223,6 +291,31 @@ async fn filesystem_mkdir_creates_empty_directories_and_honors_approval() {
         .await;
     assert_eq!(denied_outcome.status, ToolStatus::Denied);
     assert!(!denied.workspace.path().join("must-not-exist").exists());
+}
+
+#[tokio::test]
+async fn process_tools_reject_invalid_kill_before_approval_and_list_deterministically() {
+    let fixture = ToolFixture::allowed();
+    for args in [
+        serde_json::json!({"pid": 0}),
+        serde_json::json!({"pid": -1}),
+        serde_json::json!({"pid": 42, "signal": "STOP"}),
+    ] {
+        let outcome = fixture.call("os.proc.kill", args).await;
+        assert_eq!(outcome.status, ToolStatus::Error);
+    }
+    assert!(fixture.approval.requests().is_empty());
+
+    let listed = fixture
+        .call("os.proc.list", serde_json::json!({"maxEntries": 20}))
+        .await;
+    assert_eq!(listed.status, ToolStatus::Ok);
+    let pids = listed
+        .summary
+        .lines()
+        .filter_map(|line| line.split('\t').next()?.parse::<u32>().ok())
+        .collect::<Vec<_>>();
+    assert!(pids.windows(2).all(|pair| pair[0] <= pair[1]));
 }
 
 #[tokio::test]
