@@ -132,6 +132,9 @@ export function reduceAgentRunState(
           ],
         },
       }
+    case 'parse_retry':
+    case 'batch_trimmed':
+      return state
     case 'assistant_reply':
       return {
         ...state,

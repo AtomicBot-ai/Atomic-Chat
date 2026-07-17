@@ -17,9 +17,11 @@ use super::prompt::{
     build_stable_prefix, CapabilitiesSummary, DEFAULT_MAX_PARALLEL_TOOL_CALLS, ITERATION_ONE_TOOLS,
 };
 use super::runner::{run_turn, RunTurnInput, MAX_STEPS};
+use super::session::{load_session, save_session, validate_session_id};
 use super::tools::DesktopServices;
 use super::types::{AgentApprovalDecision, AgentEvent, AgentTurnRequest};
-use crate::core::state::AppState;
+use crate::core::app::commands::get_jan_data_folder_path;
+use crate::core::state::{AgentSessionLocks, AppState};
 
 struct AgentDesktopServices<R: Runtime> {
     app_handle: AppHandle<R>,
@@ -122,21 +124,37 @@ pub async fn agent_run_turn<R: Runtime>(
     let desktop = AgentDesktopServices {
         app_handle: app_handle.clone(),
     };
-    let result = run_turn(
-        RunTurnInput {
-            run_id: &request.run_id,
-            user_message: &request.user_message,
-            stable_prefix: &stable_prefix,
-            working_dir: &working_dir,
-            max_steps: request.max_steps.unwrap_or(MAX_STEPS),
-            client: &client,
-            approval: &approval,
-            desktop: &desktop,
-            cancellation: &cancellation,
-        },
-        |event| on_event.send(event).map_err(|error| error.to_string()),
-    )
-    .await;
+    let session_lock = get_session_lock(&state.agent_session_locks, &request.session_id).await;
+    let result = {
+        let _session_guard = session_lock.lock().await;
+        let data_folder = get_jan_data_folder_path(app_handle.clone());
+        match load_session(&data_folder, &request.session_id).await {
+            Ok(mut session) => {
+                let run_result = run_turn(
+                    RunTurnInput {
+                        run_id: &request.run_id,
+                        session_id: &request.session_id,
+                        user_message: &request.user_message,
+                        stable_prefix: &stable_prefix,
+                        working_dir: &working_dir,
+                        max_steps: request.max_steps.unwrap_or(MAX_STEPS),
+                        client: &client,
+                        approval: &approval,
+                        desktop: &desktop,
+                        cancellation: &cancellation,
+                        session: &mut session,
+                    },
+                    |event| on_event.send(event).map_err(|error| error.to_string()),
+                )
+                .await;
+                match save_session(&data_folder, &session).await {
+                    Ok(()) => run_result,
+                    Err(error) => Err(error),
+                }
+            }
+            Err(error) => Err(error),
+        }
+    };
     state
         .tool_call_cancellations
         .lock()
@@ -194,6 +212,7 @@ fn validate_request(request: &AgentTurnRequest) -> Result<(), String> {
     if request.run_id.trim().is_empty() {
         return Err("run_id must not be empty".into());
     }
+    validate_session_id(&request.session_id)?;
     if request.model_id.trim().is_empty() {
         return Err("model_id must not be empty".into());
     }
@@ -201,6 +220,17 @@ fn validate_request(request: &AgentTurnRequest) -> Result<(), String> {
         return Err("user_message must not be empty".into());
     }
     Ok(())
+}
+
+async fn get_session_lock(
+    locks: &AgentSessionLocks,
+    session_id: &str,
+) -> Arc<tokio::sync::Mutex<()>> {
+    let mut locks = locks.lock().await;
+    locks
+        .entry(session_id.to_owned())
+        .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+        .clone()
 }
 
 async fn resolve_working_dir(value: Option<&str>) -> Result<PathBuf, String> {
@@ -238,5 +268,39 @@ fn platform_name() -> &'static str {
         "darwin"
     } else {
         "linux"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn same_session_serializes_while_different_sessions_remain_independent() {
+        let locks: AgentSessionLocks = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+        let first = get_session_lock(&locks, "thread-a").await;
+        let same = get_session_lock(&locks, "thread-a").await;
+        let different = get_session_lock(&locks, "thread-b").await;
+        assert!(Arc::ptr_eq(&first, &same));
+        assert!(!Arc::ptr_eq(&first, &different));
+
+        let first_guard = first.lock_owned().await;
+        let (acquired_tx, acquired_rx) = tokio::sync::oneshot::channel();
+        let waiter = tokio::spawn(async move {
+            let _guard = same.lock_owned().await;
+            let _ = acquired_tx.send(());
+        });
+
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(20), acquired_rx)
+                .await
+                .is_err()
+        );
+        assert!(different.try_lock().is_ok());
+
+        drop(first_guard);
+        waiter.await.expect("same-session waiter");
     }
 }

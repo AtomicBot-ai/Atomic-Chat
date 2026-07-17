@@ -11,6 +11,7 @@ use super::prompt::{
     build_stable_prefix, CapabilitiesSummary, DEFAULT_MAX_PARALLEL_TOOL_CALLS, ITERATION_ONE_TOOLS,
 };
 use super::runner::{run_turn, RunTurnInput};
+use super::session::AgentSessionState;
 use super::test_support::{collect_event, RecordingApproval, RecordingDesktop, TestWorkspace};
 use super::types::{AgentEvent, ToolStatus};
 
@@ -139,12 +140,14 @@ impl LiveHarness {
     ) -> Vec<AgentEvent> {
         let desktop = RecordingDesktop::default();
         let cancellation = CancellationToken::new();
+        let mut session = AgentSessionState::new(run_id);
         let mut events = Vec::new();
         let result = tokio::time::timeout(
             self.timeout,
             run_turn(
                 RunTurnInput {
                     run_id,
+                    session_id: run_id,
                     user_message,
                     stable_prefix: &self.stable_prefix,
                     working_dir: self.workspace.path(),
@@ -153,6 +156,7 @@ impl LiveHarness {
                     approval,
                     desktop: &desktop,
                     cancellation: &cancellation,
+                    session: &mut session,
                 },
                 |event| collect_event(&mut events, event),
             ),
@@ -161,7 +165,7 @@ impl LiveHarness {
         match result {
             Ok(Ok(())) => events,
             Ok(Err(error)) => panic!(
-                "agent scenario {run_id} failed: {error}\n{}",
+                "agent scenario {run_id} failed: {error}\nevents: {events:#?}\n{}",
                 self.process.diagnostics()
             ),
             Err(_) => panic!(
@@ -234,7 +238,11 @@ async fn managed_model_agent_scenarios() {
         harness.workspace.read("approved.txt"),
         b"WRITE_SENTINEL_314159"
     );
-    assert_eq!(write_approval.requests().len(), 1);
+    assert_eq!(
+        write_approval.requests().len(),
+        1,
+        "expected one write approval; events: {write:#?}"
+    );
     assert_tool_status(&write, "os.fs.write", ToolStatus::Ok);
 
     let deny_approval = RecordingApproval::deny();
@@ -248,7 +256,11 @@ async fn managed_model_agent_scenarios() {
         .await;
     assert_finished(&denied, "reply");
     assert!(!harness.workspace.path().join("denied.txt").exists());
-    assert_eq!(deny_approval.requests().len(), 1);
+    assert_eq!(
+        deny_approval.requests().len(),
+        1,
+        "expected one denied write approval; events: {denied:#?}"
+    );
     assert_tool_status(&denied, "os.fs.write", ToolStatus::Denied);
 
     harness.workspace.write("rare.txt", "RARE_SCHEMA_SENTINEL");
@@ -265,11 +277,11 @@ async fn managed_model_agent_scenarios() {
     let view_index = rare_tools
         .iter()
         .position(|tool| tool == "tool.view")
-        .expect("model must call tool.view");
+        .unwrap_or_else(|| panic!("model must call tool.view; events: {rare:#?}"));
     let hash_index = rare_tools
         .iter()
         .position(|tool| tool == "os.fs.hash")
-        .expect("model must call os.fs.hash");
+        .unwrap_or_else(|| panic!("model must call os.fs.hash; events: {rare:#?}"));
     assert!(view_index < hash_index);
     assert_tool_status(&rare, "os.fs.hash", ToolStatus::Ok);
 }
@@ -397,10 +409,13 @@ fn assert_tool_status(events: &[AgentEvent], tool: &str, status: ToolStatus) {
 }
 
 fn assert_finished(events: &[AgentEvent], expected_reason: &str) {
-    assert!(events.iter().any(|event| matches!(
-        event,
-        AgentEvent::TurnFinished { reason, .. } if reason == expected_reason
-    )));
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            AgentEvent::TurnFinished { reason, .. } if reason == expected_reason
+        )),
+        "expected TurnFinished({expected_reason:?}), got {events:#?}"
+    );
 }
 
 fn read_log_tail(path: &Path) -> String {

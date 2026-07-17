@@ -16,6 +16,20 @@ pub struct LoadedTools {
 }
 
 impl LoadedTools {
+    pub fn restore(names: &[String]) -> Self {
+        let names = names
+            .iter()
+            .filter(|name| {
+                descriptor_for(name).is_some_and(|descriptor| descriptor.tier == ToolTier::Rare)
+            })
+            .take(LOADED_TOOLS_CAP)
+            .cloned()
+            .collect();
+        Self {
+            names: Mutex::new(names),
+        }
+    }
+
     pub async fn view(&self, name: &str) -> ToolOutcome {
         let Some(descriptor) = descriptor_for(name) else {
             return ToolOutcome::error(format!("Unknown tool: {name}"));
@@ -93,6 +107,26 @@ mod tests {
             .summary
             .contains("already loaded"));
         assert_eq!(loaded.snapshot().await, ["os.fs.hash"]);
+    }
+
+    #[tokio::test]
+    async fn restores_only_rare_tools_in_lru_order() {
+        let loaded = LoadedTools::restore(&[
+            "os.fs.archive.list".into(),
+            "os.fs.read".into(),
+            "missing.tool".into(),
+            "os.fs.hash".into(),
+        ]);
+
+        assert_eq!(
+            loaded.snapshot().await,
+            ["os.fs.archive.list", "os.fs.hash"]
+        );
+        loaded.view("os.fs.archive.list").await;
+        assert_eq!(
+            loaded.snapshot().await,
+            ["os.fs.hash", "os.fs.archive.list"]
+        );
     }
 
     #[tokio::test]

@@ -60,7 +60,7 @@ const DEFAULT_SYSTEM_PERSONA_LINES: &[&str] = &[
     "Operating principles:",
     "- Think, then act. Emit a small batch of tool calls, observe the results, then decide the next step. One inference = one JSON array of tool calls.",
     "- Prefer the cheapest tool that answers the question. Read before you write. Never guess a file's contents — read it.",
-    "- Batch independent read-only calls together (they run in parallel). Anything that mutates state, or a terminal verb, must be the last element of a batch.",
+    "- Batch only independent calls. Approval-gated tools and calls that depend on another call's result must use a length-1 array. A terminal verb may appear only once and only last.",
     "- Be decisive. Do not narrate what you are about to do in prose — call the tool. Do not ask for confirmation unless a tool is approval-gated.",
     "- When the task is complete, call `reply` with the final answer. Only call `finish` if the user explicitly asked to end the session.",
     "- Keep `reply` short and to the point. If the user asked for an exact value or marker, `reply.text` must be ONLY that bare value — no preamble, no restating the question, no extra commentary or markdown before or after.",
@@ -395,7 +395,7 @@ pub fn build_stable_prefix(
             "### rules",
             "- Every response is a JSON array of tool calls: [{\"tool\": ..., \"args\": {...}}, ...].",
             "- A solo step is a length-1 array. Emit multiple calls only when they are independent.",
-            "- Read-only calls may be batched and run in parallel. A mutating call, or a terminal verb (reply/finish), must be the LAST element of the array.",
+            "- Batch only independent calls. Approval-gated tools and dependent calls must use a length-1 array. A terminal verb (reply/finish) may appear only once and only as the LAST element.",
             "- Never emit prose outside the JSON array. Never invent tool names or arguments.",
             "- Call `reply` to answer the user; call `finish` only to end the whole session.",
         ]

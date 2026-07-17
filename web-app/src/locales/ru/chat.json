@@ -12,7 +12,8 @@
   "agentMode": {
     "chat": "Чат",
     "agent": "Агент",
-    "placeholder": "Опишите задачу для агента..."
+    "placeholder": "Опишите задачу для агента...",
+    "mlxUnavailable": "Переключитесь на модель llama.cpp, чтобы использовать режим агента."
   },
   "agentApprovals": {
     "manual": "Подтверждать вручную",
@@ -39,6 +40,8 @@
   "agentErrors": {
     "attachmentsUnsupported": "Agent-режим пока не поддерживает вложения.",
     "localLlamacppRequired": "Agent-режиму нужна активная локальная llama.cpp-модель.",
+    "mlxUnavailableTitle": "Режим агента недоступен с MLX",
+    "mlxUnavailableDescription": "Переключитесь на модель llama.cpp и попробуйте снова.",
     "unsupportedTools": "Agent-режим пока не поддерживает MCP, RAG и browser tools.",
     "runFailed": "Не удалось запустить агента.",
     "cancelFailed": "Не удалось отменить запуск агента.",

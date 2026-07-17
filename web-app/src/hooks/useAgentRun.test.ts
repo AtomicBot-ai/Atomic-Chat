@@ -1,10 +1,19 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { invoke } from '@tauri-apps/api/core'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createAgentRunState,
   reduceAgentRunState,
   useAgentRun,
 } from '@/hooks/useAgentRun'
 import type { AgentEvent } from '@/types/agent'
+import { runAgentTurn } from '@/services/agent/tauri'
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn(),
+  Channel: class {
+    onmessage: ((event: AgentEvent) => void) | undefined
+  },
+}))
 
 const parsed: AgentEvent = {
   type: 'tool_call_parsed',
@@ -15,6 +24,7 @@ const parsed: AgentEvent = {
 
 describe('useAgentRun', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     useAgentRun.getState().clearAll()
   })
 
@@ -92,5 +102,49 @@ describe('useAgentRun', () => {
     })
     expect(finished.pendingApproval).toBeUndefined()
     expect(finished.status).toBe('cancelled')
+  })
+
+  it('forwards the thread-bound session id to the agent command', async () => {
+    vi.mocked(invoke).mockResolvedValue(undefined)
+    const request = {
+      run_id: 'run-a',
+      session_id: 'thread-a',
+      model_id: 'model-a',
+      user_message: 'continue',
+      working_dir: '/tmp',
+      auto_approve: false,
+    }
+
+    await runAgentTurn(request, () => undefined)
+
+    expect(invoke).toHaveBeenCalledWith('agent_run_turn', {
+      request,
+      onEvent: expect.anything(),
+    })
+  })
+
+  it('accepts recovery diagnostics without changing run lifecycle state', () => {
+    const running = reduceAgentRunState(createAgentRunState(), {
+      type: 'turn_started',
+      run_id: 'run-a',
+      session_id: 'thread-a',
+    })
+    const afterRetry = reduceAgentRunState(running, {
+      type: 'parse_retry',
+      step_index: 1,
+      reason: 'invalid terminal position',
+    })
+    const afterTrim = reduceAgentRunState(afterRetry, {
+      type: 'batch_trimmed',
+      step_index: 1,
+      reason: 'approval-gated tools must run solo',
+      kept_tool: 'os.fs.write',
+      dropped_tools: ['os.fs.edit'],
+    })
+
+    expect(afterRetry).toBe(running)
+    expect(afterTrim).toBe(running)
+    expect(afterTrim.status).toBe('running')
+    expect(afterTrim.trace.tools).toEqual([])
   })
 })

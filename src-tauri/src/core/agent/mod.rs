@@ -23,6 +23,7 @@ pub mod prompt;
 pub mod resource_class;
 // `loop` is a reserved keyword; the run loop lives in `runner`.
 pub mod runner;
+pub mod session;
 pub mod shell_guard;
 pub mod tools;
 pub mod types;

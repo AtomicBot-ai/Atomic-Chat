@@ -163,15 +163,23 @@ const ChatInput = memo(function ChatInput({
   const createThread = useThreads((state) => state.createThread)
   const assistants = useAssistant((state) => state.assistants)
   const defaultAssistantId = useAssistant((state) => state.defaultAssistantId)
+  const selectedModel = useModelProvider((state) => state.selectedModel)
+  const selectedProvider = useModelProvider((state) => state.selectedProvider)
+  const selectModelProvider = useModelProvider(
+    (state) => state.selectModelProvider
+  )
+  const updateProvider = useModelProvider((state) => state.updateProvider)
 
   const canSelectAgentMode = canSelectChatAgentMode(initialMessage, projectId)
+  const isMlxSelected = selectedProvider === 'mlx'
   const agentModeKey = canSelectAgentMode
     ? TEMPORARY_CHAT_ID
     : (currentThreadId ?? TEMPORARY_CHAT_ID)
   const isAgentMode = useAgentMode(
     (state) => state.agentThreads[agentModeKey] === true
   )
-  const effectiveAgentMode = isAgentMode && !projectId
+  const effectiveAgentMode =
+    isAgentMode && !projectId && !(canSelectAgentMode && isMlxSelected)
   const setAgentMode = useAgentMode((state) => state.setAgentMode)
   const approvalMode = useAgentMode(
     (state) => state.approvalModes[agentModeKey] ?? 'manual'
@@ -182,10 +190,23 @@ const ChatInput = memo(function ChatInput({
 
   const handleAgentModeChange = useCallback(
     (enabled: boolean) => {
+      if (enabled && isMlxSelected) return
       setAgentMode(agentModeKey, enabled)
     },
-    [agentModeKey, setAgentMode]
+    [agentModeKey, isMlxSelected, setAgentMode]
   )
+
+  useEffect(() => {
+    if (canSelectAgentMode && isMlxSelected && isAgentMode) {
+      setAgentMode(agentModeKey, false)
+    }
+  }, [
+    agentModeKey,
+    canSelectAgentMode,
+    isAgentMode,
+    isMlxSelected,
+    setAgentMode,
+  ])
 
   const handleApprovalModeChange = useCallback(
     (mode: 'manual' | 'skip') => {
@@ -211,12 +232,6 @@ const ChatInput = memo(function ChatInput({
   const maxRows = 10
   const ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES = 512 * 1024
 
-  const selectedModel = useModelProvider((state) => state.selectedModel)
-  const selectedProvider = useModelProvider((state) => state.selectedProvider)
-  const selectModelProvider = useModelProvider(
-    (state) => state.selectModelProvider
-  )
-  const updateProvider = useModelProvider((state) => state.updateProvider)
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
@@ -2409,6 +2424,10 @@ const ChatInput = memo(function ChatInput({
                     onChange={handleAgentModeChange}
                     chatLabel={t('chat:agentMode.chat')}
                     agentLabel={t('chat:agentMode.agent')}
+                    agentDisabled={isMlxSelected}
+                    agentDisabledTooltip={t(
+                      'chat:agentMode.mlxUnavailable'
+                    )}
                   />
                 )}
                 {effectiveAgentMode && (

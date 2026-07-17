@@ -644,8 +644,15 @@ function ThreadDetail() {
     async (
       text: string,
       files?: Array<{ type: string; mediaType: string; url: string }>,
-      documentsFromPayload?: Attachment[]
+      documentsFromPayload?: Attachment[],
+      persistUserMessage = true
     ) => {
+      if (selectedProvider === 'mlx') {
+        toast.error(t('chat:agentErrors.mlxUnavailableTitle'), {
+          description: t('chat:agentErrors.mlxUnavailableDescription'),
+        })
+        return
+      }
       const documentAttachments =
         documentsFromPayload ??
         getAttachments(attachmentsKey).filter(
@@ -685,23 +692,25 @@ function ThreadDetail() {
         return
       }
 
-      const messageId =
-        useOptimisticUserMessage.getState().byThread[threadId]?.id ??
-        generateId()
       await useThreads.getState().awaitThreadPersistence(threadId)
-      const userMessage = newUserThreadContent(threadId, text, [], messageId)
-      addMessage(userMessage)
-      const userUiMessage: UIMessage = {
-        id: messageId,
-        role: 'user',
-        parts: [{ type: 'text', text }],
-        metadata: userMessage.metadata,
+      if (persistUserMessage) {
+        const messageId =
+          useOptimisticUserMessage.getState().byThread[threadId]?.id ??
+          generateId()
+        const userMessage = newUserThreadContent(threadId, text, [], messageId)
+        addMessage(userMessage)
+        const userUiMessage: UIMessage = {
+          id: messageId,
+          role: 'user',
+          parts: [{ type: 'text', text }],
+          metadata: userMessage.metadata,
+        }
+        const messages = [...chatMessagesRef.current, userUiMessage]
+        chatMessagesRef.current = messages
+        setChatMessages(messages)
+        useOptimisticUserMessage.getState().clear(threadId)
+        clearAttachmentsForThread(attachmentsKey)
       }
-      const messages = [...chatMessagesRef.current, userUiMessage]
-      chatMessagesRef.current = messages
-      setChatMessages(messages)
-      useOptimisticUserMessage.getState().clear(threadId)
-      clearAttachmentsForThread(attachmentsKey)
 
       const runId = generateId()
       useAgentRun.getState().startRun(threadId, runId)
@@ -718,6 +727,7 @@ function ThreadDetail() {
         await runAgentTurn(
           {
             run_id: runId,
+            session_id: threadId,
             model_id: selectedModel.id,
             user_message: text,
             working_dir: workingDir,
@@ -1011,51 +1021,106 @@ function ThreadDetail() {
   // Handle regenerate from any message (user or assistant)
   // - For user messages: keeps the user message, deletes all after, regenerates assistant response
   // - For assistant messages: finds the closest preceding user message, deletes from there
-  const handleRegenerate = (messageId?: string) => {
-    const currentLocalMessages = useMessages.getState().getMessages(threadId)
+  const handleRegenerate = useCallback(
+    async (messageId?: string) => {
+      const currentLocalMessages = useMessages.getState().getMessages(threadId)
+      const isAgentThread =
+        resolveMessageExecutionRoute(
+          useAgentMode.getState().isAgentMode(threadId)
+        ) === 'agent-ipc'
 
-    // If regenerating from a specific message, delete all messages after it
-    if (messageId) {
-      // Find the message in the current chat messages
-      const messageIndex = currentLocalMessages.findIndex(
-        (m) => m.id === messageId
-      )
+      if (isAgentThread) {
+        let userMessageIndex = messageId
+          ? currentLocalMessages.findIndex(
+              (message) => message.id === messageId
+            )
+          : currentLocalMessages.findLastIndex(
+              (message) => message.role === 'user'
+            )
 
-      if (messageIndex !== -1) {
-        const selectedMessage = currentLocalMessages[messageIndex]
+        if (
+          userMessageIndex >= 0 &&
+          currentLocalMessages[userMessageIndex].role === 'assistant'
+        ) {
+          userMessageIndex = currentLocalMessages
+            .slice(0, userMessageIndex)
+            .findLastIndex((message) => message.role === 'user')
+        }
+        if (
+          userMessageIndex < 0 ||
+          currentLocalMessages[userMessageIndex].role !== 'user'
+        ) {
+          return
+        }
 
-        // If it's an assistant message, find the closest preceding user message
-        let deleteFromIndex = messageIndex
-        if (selectedMessage.role === 'assistant') {
-          // Look backwards to find the closest user message
-          for (let i = messageIndex - 1; i >= 0; i--) {
-            if (currentLocalMessages[i].role === 'user') {
-              deleteFromIndex = i
-              break
+        const userMessage = currentLocalMessages[userMessageIndex]
+        const text = userMessage.content
+          .filter((content) => content.type === ContentType.Text)
+          .map((content) => content.text?.value ?? '')
+          .join('')
+        const retainedMessages = currentLocalMessages.slice(
+          0,
+          userMessageIndex + 1
+        )
+
+        currentLocalMessages
+          .slice(userMessageIndex + 1)
+          .forEach((message) => deleteMessage(threadId, message.id))
+
+        const retainedUiMessages =
+          convertThreadMessagesToUIMessages(retainedMessages)
+        chatMessagesRef.current = retainedUiMessages
+        setChatMessages(retainedUiMessages)
+        await processAndRunAgent(text, undefined, [], false)
+        return
+      }
+
+      // If regenerating from a specific message, delete all messages after it
+      if (messageId) {
+        // Find the message in the current chat messages
+        const messageIndex = currentLocalMessages.findIndex(
+          (m) => m.id === messageId
+        )
+
+        if (messageIndex !== -1) {
+          const selectedMessage = currentLocalMessages[messageIndex]
+
+          // If it's an assistant message, find the closest preceding user message
+          let deleteFromIndex = messageIndex
+          if (selectedMessage.role === 'assistant') {
+            // Look backwards to find the closest user message
+            for (let i = messageIndex - 1; i >= 0; i--) {
+              if (currentLocalMessages[i].role === 'user') {
+                deleteFromIndex = i
+                break
+              }
             }
           }
-        }
 
-        // Get all messages after the delete point
-        const messagesToDelete = currentLocalMessages.slice(deleteFromIndex + 1)
+          // Get all messages after the delete point
+          const messagesToDelete = currentLocalMessages.slice(
+            deleteFromIndex + 1
+          )
 
-        // Delete from backend storage
-        if (messagesToDelete.length > 0) {
-          messagesToDelete.forEach((msg) => {
-            deleteMessage(threadId, msg.id)
-          })
+          // Delete from backend storage
+          if (messagesToDelete.length > 0) {
+            messagesToDelete.forEach((msg) => {
+              deleteMessage(threadId, msg.id)
+            })
+          }
         }
       }
-    }
 
-    // Call the AI SDK regenerate function - it will handle truncating the UI messages
-    // and generating a new response from the selected message
-    regenerate(messageId ? { messageId } : undefined)
-  }
+      // Call the AI SDK regenerate function - it will handle truncating the UI messages
+      // and generating a new response from the selected message
+      regenerate(messageId ? { messageId } : undefined)
+    },
+    [deleteMessage, processAndRunAgent, regenerate, setChatMessages, threadId]
+  )
 
   // Handle edit message - updates the message and regenerates from it
   const handleEditMessage = useCallback(
-    (messageId: string, newText: string) => {
+    async (messageId: string, newText: string) => {
       const currentLocalMessages = useMessages.getState().getMessages(threadId)
       const messageIndex = currentLocalMessages.findIndex(
         (m) => m.id === messageId
@@ -1092,6 +1157,15 @@ function ThreadDetail() {
       // Only regenerate if the edited message is from the user
       if (updatedMessage.role === 'assistant') return
 
+      if (
+        resolveMessageExecutionRoute(
+          useAgentMode.getState().isAgentMode(threadId)
+        ) === 'agent-ipc'
+      ) {
+        await handleRegenerate(messageId)
+        return
+      }
+
       // Delete all messages after this one and regenerate
       const messagesToDelete = currentLocalMessages.slice(messageIndex + 1)
       messagesToDelete.forEach((msg) => {
@@ -1106,6 +1180,7 @@ function ThreadDetail() {
       updateMessage,
       deleteMessage,
       chatMessages,
+      handleRegenerate,
       setChatMessages,
       regenerate,
     ]

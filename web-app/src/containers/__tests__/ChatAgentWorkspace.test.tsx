@@ -60,6 +60,29 @@ describe('Chat and Agent workspace controls', () => {
     expect(onChange).toHaveBeenCalledWith(true)
   })
 
+  it('disables Agent mode and exposes the MLX restriction tooltip', () => {
+    const onChange = vi.fn()
+
+    render(
+      <ChatAgentModeSwitch
+        isAgentMode={false}
+        onChange={onChange}
+        chatLabel="Chat"
+        agentLabel="Agent"
+        agentDisabled
+        agentDisabledTooltip="Switch to a llama.cpp model."
+      />
+    )
+
+    const agentButton = screen.getByRole('button', { name: 'Agent' })
+    expect(agentButton).toBeDisabled()
+    expect(agentButton.parentElement).toHaveAttribute(
+      'title',
+      'Switch to a llama.cpp model.'
+    )
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
   it('shows suggestions only in Agent mode and fills without submitting', async () => {
     const user = userEvent.setup()
     const onSelect = vi.fn()

@@ -86,6 +86,8 @@ pub struct ToolExecution {
 pub struct AgentTurnRequest {
     /// Opaque id chosen by the caller; used for cancellation.
     pub run_id: String,
+    /// Durable session id. The frontend binds this to the owning thread id.
+    pub session_id: String,
     /// The `model_id` whose `llama-server` session the agent should target.
     pub model_id: String,
     /// The user's message for this turn.
@@ -148,6 +150,7 @@ pub enum LoopDetector {
 pub enum AgentEvent {
     TurnStarted {
         run_id: String,
+        session_id: String,
     },
     StepStarted {
         step_index: u32,
@@ -179,6 +182,16 @@ pub enum AgentEvent {
         level: LoopLevel,
         detector: LoopDetector,
         message: String,
+    },
+    ParseRetry {
+        step_index: u32,
+        reason: String,
+    },
+    BatchTrimmed {
+        step_index: u32,
+        reason: String,
+        kept_tool: String,
+        dropped_tools: Vec<String>,
     },
     AssistantReply {
         text: String,

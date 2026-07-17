@@ -12,7 +12,8 @@
   "agentMode": {
     "chat": "Chat",
     "agent": "Agent",
-    "placeholder": "Describe a task for the agent..."
+    "placeholder": "Describe a task for the agent...",
+    "mlxUnavailable": "Switch to a llama.cpp model to use Agent mode."
   },
   "agentApprovals": {
     "manual": "Manually approve",
@@ -39,6 +40,8 @@
   "agentErrors": {
     "attachmentsUnsupported": "Agent mode does not support attachments yet.",
     "localLlamacppRequired": "Agent mode requires an active local llama.cpp model.",
+    "mlxUnavailableTitle": "Agent mode is unavailable with MLX",
+    "mlxUnavailableDescription": "Switch to a llama.cpp model and try again.",
     "unsupportedTools": "Agent mode does not support MCP, RAG, or browser tools yet.",
     "runFailed": "The agent run failed to start.",
     "cancelFailed": "The agent run could not be cancelled.",

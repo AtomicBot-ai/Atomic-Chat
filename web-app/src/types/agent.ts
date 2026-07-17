@@ -13,6 +13,7 @@ export type AgentTurnFinishReason =
 
 export type AgentTurnRequest = {
   run_id: string
+  session_id: string
   model_id: string
   user_message: string
   working_dir?: string
@@ -50,7 +51,7 @@ export type AgentToolExecution = {
 }
 
 export type AgentEvent =
-  | { type: 'turn_started'; run_id: string }
+  | { type: 'turn_started'; run_id: string; session_id: string }
   | { type: 'step_started'; step_index: number }
   | { type: 'reasoning_delta'; step_index: number; text: string }
   | { type: 'assistant_delta'; text: string }
@@ -75,6 +76,14 @@ export type AgentEvent =
       level: AgentLoopLevel
       detector: AgentLoopDetector
       message: string
+    }
+  | { type: 'parse_retry'; step_index: number; reason: string }
+  | {
+      type: 'batch_trimmed'
+      step_index: number
+      reason: string
+      kept_tool: string
+      dropped_tools: string[]
     }
   | { type: 'assistant_reply'; text: string }
   | { type: 'step_error'; message: string; category: string }

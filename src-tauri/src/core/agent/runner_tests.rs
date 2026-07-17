@@ -4,6 +4,7 @@ use hyper::StatusCode;
 use tokio_util::sync::CancellationToken;
 
 use super::runner::{run_turn, RunTurnInput};
+use super::session::AgentSessionState;
 use super::test_support::{
     collect_event, RecordingApproval, RecordingDesktop, ScriptedCompletionServer, ScriptedResponse,
     TestWorkspace,
@@ -27,9 +28,11 @@ async fn run_script(
     let client = server.client();
     let desktop = RecordingDesktop::default();
     let mut events = Vec::new();
+    let mut session = AgentSessionState::new("test-session");
     let result = run_turn(
         RunTurnInput {
             run_id: "test-run",
+            session_id: "test-session",
             user_message: "perform the fixture task",
             stable_prefix: "TEST_STABLE_PREFIX",
             working_dir: workspace.path(),
@@ -38,6 +41,7 @@ async fn run_script(
             approval,
             desktop: &desktop,
             cancellation,
+            session: &mut session,
         },
         |event| collect_event(&mut events, event),
     )
@@ -59,6 +63,8 @@ fn event_kind(event: &AgentEvent) -> &'static str {
         AgentEvent::ToolCallExecuted { .. } => "tool_call_executed",
         AgentEvent::ApprovalRequested { .. } => "approval_requested",
         AgentEvent::LoopDetected { .. } => "loop_detected",
+        AgentEvent::ParseRetry { .. } => "parse_retry",
+        AgentEvent::BatchTrimmed { .. } => "batch_trimmed",
         AgentEvent::AssistantReply { .. } => "assistant_reply",
         AgentEvent::StepError { .. } => "step_error",
         AgentEvent::TurnFinished { .. } => "turn_finished",
@@ -156,6 +162,53 @@ async fn read_observation_is_visible_to_the_next_completion() {
 }
 
 #[tokio::test]
+async fn sequential_runs_share_the_session_transcript() {
+    let workspace = TestWorkspace::new();
+    workspace.write("fixture.txt", "DURABLE_OBSERVATION");
+    let server = ScriptedCompletionServer::start(vec![
+        ScriptedResponse::completion(r#"[{"tool":"os.fs.read","args":{"path":"fixture.txt"}}]"#),
+        ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"first reply"}}]"#),
+        ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"second reply"}}]"#),
+    ])
+    .await;
+    let client = server.client();
+    let approval = RecordingApproval::deny();
+    let desktop = RecordingDesktop::default();
+    let cancellation = CancellationToken::new();
+    let mut session = AgentSessionState::new("shared-session");
+
+    for (run_id, user_message) in [("run-1", "first user"), ("run-2", "second user")] {
+        run_turn(
+            RunTurnInput {
+                run_id,
+                session_id: "shared-session",
+                user_message,
+                stable_prefix: "TEST_STABLE_PREFIX",
+                working_dir: workspace.path(),
+                max_steps: 3,
+                client: &client,
+                approval: &approval,
+                desktop: &desktop,
+                cancellation: &cancellation,
+                session: &mut session,
+            },
+            |_| Ok(()),
+        )
+        .await
+        .expect("run shared session turn");
+    }
+
+    assert_eq!(session.turn_count, 2);
+    let requests = server.requests();
+    assert!(requests[2]["prompt"].as_str().is_some_and(|prompt| {
+        prompt.contains("USER: first user")
+            && prompt.contains("DURABLE_OBSERVATION")
+            && prompt.contains("ASSISTANT: first reply")
+            && prompt.contains("USER: second user")
+    }));
+}
+
+#[tokio::test]
 async fn pure_reads_complete_before_the_tail_terminal() {
     let workspace = TestWorkspace::new();
     workspace.write("a.txt", "ALPHA");
@@ -244,11 +297,45 @@ async fn denied_write_has_no_side_effect() {
 }
 
 #[tokio::test]
-async fn malformed_completion_finishes_as_grammar_failure() {
+async fn malformed_completion_is_repaired_once() {
     let workspace = TestWorkspace::new();
     let run = run_script(
         &workspace,
-        vec![ScriptedResponse::completion("not-json")],
+        vec![
+            ScriptedResponse::completion("not-json"),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"repaired"}}]"#),
+        ],
+        &RecordingApproval::deny(),
+        &CancellationToken::new(),
+        2,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(finished_reason(&run.events), Some(("reply", 1)));
+    assert_eq!(
+        run.events
+            .iter()
+            .filter(|event| matches!(event, AgentEvent::ParseRetry { .. }))
+            .count(),
+        1
+    );
+    assert_eq!(run.requests.len(), 2);
+    assert_eq!(run.requests[1]["n_predict"], 1024);
+    assert!(run.requests[1]["prompt"]
+        .as_str()
+        .is_some_and(|prompt| prompt.contains("### tool-call-repair")));
+}
+
+#[tokio::test]
+async fn repeated_repair_failure_finishes_as_grammar_failure() {
+    let workspace = TestWorkspace::new();
+    let run = run_script(
+        &workspace,
+        vec![
+            ScriptedResponse::completion("not-json"),
+            ScriptedResponse::completion("still-not-json"),
+        ],
         &RecordingApproval::deny(),
         &CancellationToken::new(),
         2,
@@ -261,29 +348,117 @@ async fn malformed_completion_finishes_as_grammar_failure() {
         AgentEvent::StepError { category, .. } if category == "grammar"
     )));
     assert_eq!(finished_reason(&run.events), Some(("failed", 1)));
+    assert_eq!(run.requests.len(), 2);
 }
 
 #[tokio::test]
-async fn unknown_and_non_batchable_tools_fail_before_execution() {
-    for completion in [
-        r#"[{"tool":"missing.tool","args":{}}]"#,
+async fn approval_gated_batch_is_trimmed_without_repair_and_noticed_next_step() {
+    let workspace = TestWorkspace::new();
+    let run = run_script(
+        &workspace,
+        vec![
+            ScriptedResponse::completion(
+                r#"[
+                    {"tool":"os.fs.write","args":{"path":"kept.txt","content":"KEPT"}},
+                    {"tool":"os.fs.edit","args":{"path":"kept.txt","oldString":"KEPT","newString":"DROPPED"}}
+                ]"#,
+            ),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"done"}}]"#),
+        ],
+        &RecordingApproval::allow(),
+        &CancellationToken::new(),
+        3,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(workspace.read("kept.txt"), b"KEPT");
+    assert_eq!(
+        executed(&run.events),
+        [("os.fs.write", ToolStatus::Ok), ("reply", ToolStatus::Ok)]
+    );
+    assert!(!run
+        .events
+        .iter()
+        .any(|event| matches!(event, AgentEvent::ParseRetry { .. })));
+    assert!(run.events.iter().any(|event| matches!(
+        event,
+        AgentEvent::BatchTrimmed { kept_tool, dropped_tools, .. }
+            if kept_tool == "os.fs.write" && dropped_tools == &["os.fs.edit"]
+    )));
+    assert_eq!(run.requests.len(), 2);
+    assert!(run.requests[1]["prompt"]
+        .as_str()
+        .is_some_and(|prompt| prompt.contains("### notice")
+            && prompt.contains("os.fs.edit")
+            && prompt.contains("length-1")));
+}
+
+#[tokio::test]
+async fn mixed_read_and_approval_batch_keeps_the_approval_call() {
+    let workspace = TestWorkspace::new();
+    workspace.write("edit.txt", "OLD");
+    let run = run_script(
+        &workspace,
+        vec![
+            ScriptedResponse::completion(
+                r#"[
+                    {"tool":"os.fs.read","args":{"path":"edit.txt"}},
+                    {"tool":"os.fs.edit","args":{"path":"edit.txt","oldString":"OLD","newString":"NEW"}}
+                ]"#,
+            ),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"done"}}]"#),
+        ],
+        &RecordingApproval::allow(),
+        &CancellationToken::new(),
+        3,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(workspace.read("edit.txt"), b"NEW");
+    assert_eq!(
+        executed(&run.events),
+        [("os.fs.edit", ToolStatus::Ok), ("reply", ToolStatus::Ok)]
+    );
+    assert!(!run
+        .events
+        .iter()
+        .any(|event| matches!(event, AgentEvent::ParseRetry { .. })));
+}
+
+#[tokio::test]
+async fn misplaced_terminal_and_empty_reply_are_repaired() {
+    for invalid in [
         r#"[
-            {"tool":"os.fs.write","args":{"path":"x","content":"x"}},
-            {"tool":"reply","args":{"text":"invalid"}}
+            {"tool":"reply","args":{"text":"too early"}},
+            {"tool":"os.fs.read","args":{"path":"missing.txt"}}
         ]"#,
+        r#"[{"tool":"reply","args":{"text":"   "}}]"#,
     ] {
         let workspace = TestWorkspace::new();
         let run = run_script(
             &workspace,
-            vec![ScriptedResponse::completion(completion)],
-            &RecordingApproval::allow(),
+            vec![
+                ScriptedResponse::completion(invalid),
+                ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"fixed"}}]"#),
+            ],
+            &RecordingApproval::deny(),
             &CancellationToken::new(),
             2,
         )
         .await;
-        assert!(run.result.is_err());
-        assert!(executed(&run.events).is_empty());
-        assert_eq!(finished_reason(&run.events), Some(("failed", 1)));
+
+        assert!(run.result.is_ok());
+        assert_eq!(finished_reason(&run.events), Some(("reply", 1)));
+        assert_eq!(
+            run.events
+                .iter()
+                .filter(|event| matches!(event, AgentEvent::ParseRetry { .. }))
+                .count(),
+            1
+        );
+        assert_eq!(run.requests.len(), 2);
     }
 }
 
@@ -324,10 +499,12 @@ async fn cancellation_interrupts_an_in_flight_completion() {
     let desktop = RecordingDesktop::default();
     let cancellation = CancellationToken::new();
     let mut events = Vec::new();
+    let mut session = AgentSessionState::new("cancel-session");
     let cancel = cancellation.clone();
     let run = run_turn(
         RunTurnInput {
             run_id: "cancel-run",
+            session_id: "cancel-session",
             user_message: "wait",
             stable_prefix: "TEST_STABLE_PREFIX",
             working_dir: workspace.path(),
@@ -336,6 +513,7 @@ async fn cancellation_interrupts_an_in_flight_completion() {
             approval: &approval,
             desktop: &desktop,
             cancellation: &cancellation,
+            session: &mut session,
         },
         |event| collect_event(&mut events, event),
     );
