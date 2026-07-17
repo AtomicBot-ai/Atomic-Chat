@@ -20,6 +20,30 @@
     "skip": "Skip all approvals",
     "skipDescription": "Run without asking."
   },
+  "agentApproval": {
+    "title": "Agent approval required",
+    "description": "{{tool}} is waiting for your decision.",
+    "reason": "Reason",
+    "preview": "Action preview",
+    "resources": "Affected resources",
+    "timeoutNotice": "If you do not respond, this request will be denied automatically after the backend timeout.",
+    "deny": "Deny",
+    "approveOnce": "Approve once",
+    "resolveFailed": "Failed to send the approval decision."
+  },
+  "agentWorkspace": {
+    "choose": "Choose workspace",
+    "change": "Change agent workspace",
+    "required": "Choose a workspace before running the agent."
+  },
+  "agentErrors": {
+    "attachmentsUnsupported": "Agent mode does not support attachments yet.",
+    "localLlamacppRequired": "Agent mode requires an active local llama.cpp model.",
+    "unsupportedTools": "Agent mode does not support MCP, RAG, or browser tools yet.",
+    "runFailed": "The agent run failed to start.",
+    "cancelFailed": "The agent run could not be cancelled.",
+    "saveFailed": "The agent reply could not be saved."
+  },
   "agentTasks": {
     "title": "Ideas for you",
     "organizeDesktop": {

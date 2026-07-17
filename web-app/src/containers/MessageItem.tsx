@@ -43,6 +43,7 @@ type ReasoningTraceBlock = Extract<TraceBlock, { kind: 'reasoning' }>
 type ToolTraceBlock = Extract<TraceBlock, { kind: 'tool' }>
 type FileTraceBlock = Extract<TraceBlock, { kind: 'file' }>
 type AudioTraceBlock = Extract<TraceBlock, { kind: 'audio' }>
+type AgentTraceBlock = Extract<TraceBlock, { kind: 'agent' }>
 
 export type MessageItemProps = {
   message: UIMessage
@@ -309,6 +310,36 @@ export const MessageItem = memo(
       )
     }
 
+    const renderAgentBlock = (block: AgentTraceBlock) => {
+      const completedTools = block.summary.tools.filter((tool) => tool.status)
+      return (
+        <div
+          key={block.key}
+          className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground"
+        >
+          <span className="font-medium text-foreground">Agent</span>
+          <span>{block.summary.status.replace('_', ' ')}</span>
+          {completedTools.length > 0 && (
+            <span>
+              {completedTools.length} tool
+              {completedTools.length === 1 ? '' : 's'}
+            </span>
+          )}
+          {block.summary.step_count !== undefined && (
+            <span>
+              {block.summary.step_count} step
+              {block.summary.step_count === 1 ? '' : 's'}
+            </span>
+          )}
+          {block.summary.error && (
+            <span className="text-destructive">
+              {block.summary.error.category}: {block.summary.error.message}
+            </span>
+          )}
+        </div>
+      )
+    }
+
     const traceBlocks = useMemo(
       () => buildTraceBlocks(message, disableReasoning),
       [message, disableReasoning]
@@ -329,6 +360,8 @@ export const MessageItem = memo(
               return renderAudioBlock(block)
             case 'tool':
               return renderToolBlock(block)
+            case 'agent':
+              return renderAgentBlock(block)
             default:
               return null
           }

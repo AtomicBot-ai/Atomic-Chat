@@ -3,8 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { useParams } from '@tanstack/react-router'
 import ThreadList from '../ThreadList'
 
-let agentThreads: Record<string, boolean> = {}
-
 // Render Link as a plain anchor, forwarding any extra props (e.g. the
 // data-active / className the sidebar button merges onto it).
 vi.mock('@tanstack/react-router', () => ({
@@ -82,10 +80,6 @@ vi.mock('@/hooks/useThreads', () => ({
     }),
 }))
 
-vi.mock('@/hooks/useAgentMode', () => ({
-  useAgentMode: (selector: any) => selector({ agentThreads }),
-}))
-
 vi.mock('@/hooks/useMessages', () => ({
   useMessages: (selector: any) =>
     selector({
@@ -118,7 +112,6 @@ const threads: Thread[] = [
 describe('ThreadList active highlight', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    agentThreads = {}
   })
 
   it('marks the open thread active and the others inactive', async () => {
@@ -170,15 +163,18 @@ describe('ThreadList active highlight', () => {
     expect(inactiveCard?.className.split(' ')).not.toContain('bg-secondary')
   })
 
-  it('marks Chat and Agent threads with different icons', async () => {
-    agentThreads = { 'thread-2': true }
+  it('does not render chat type icons', async () => {
     vi.mocked(useParams).mockReturnValue({} as never)
 
     await act(async () => {
       render(<ThreadList threads={threads} />)
     })
 
-    expect(screen.getByLabelText('chat:threadType.chat')).toBeInTheDocument()
-    expect(screen.getByLabelText('chat:threadType.agent')).toBeInTheDocument()
+    expect(
+      screen.queryByLabelText('chat:threadType.chat')
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByLabelText('chat:threadType.agent')
+    ).not.toBeInTheDocument()
   })
 })

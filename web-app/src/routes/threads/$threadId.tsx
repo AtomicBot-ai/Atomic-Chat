@@ -84,6 +84,15 @@ import { useAgentMode } from '@/hooks/useAgentMode'
 import { ArtifactPanel } from '@/containers/ArtifactPanel'
 import { useArtifactStore } from '@/stores/artifact-store'
 import posthog from 'posthog-js'
+import { useAgentRun } from '@/hooks/useAgentRun'
+import {
+  buildAgentUIMessage,
+  claimAgentRunPersistence,
+} from '@/lib/agent-run-message'
+import { resolveMessageExecutionRoute } from '@/lib/agent-route'
+import { cancelAgentTurn, runAgentTurn } from '@/services/agent/tauri'
+import type { AgentEvent, AgentRunState } from '@/types/agent'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -110,6 +119,7 @@ export const Route = createFileRoute('/threads/$threadId')({
 })
 
 function ThreadDetail() {
+  const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const { threadId } = useParams({ from: Route.id })
   const search = useSearch({ from: Route.id })
@@ -160,6 +170,9 @@ function ThreadDetail() {
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
+  const agentRun = useAgentRun((state) => state.runs[threadId])
+  const persistedAgentRunsRef = useRef(new Set<string>())
+  const chatMessagesRef = useRef<UIMessage[]>([])
 
   // Get system message from the thread's assigned assistant instructions.
   // The thread stores an assistant *snapshot* taken at creation time, so
@@ -427,6 +440,7 @@ function ThreadDetail() {
     },
     sendAutomaticallyWhen: followUpMessage,
   })
+  chatMessagesRef.current = chatMessages
 
   // Get disabled tools for this thread to trigger re-render when they change
   const disabledTools = useToolAvailable((state) =>
@@ -568,6 +582,180 @@ function ThreadDetail() {
     return () => close()
   }, [threadId])
 
+  const persistAgentRun = useCallback(
+    (run: AgentRunState) => {
+      if (!claimAgentRunPersistence(persistedAgentRunsRef.current, run.runId)) {
+        return
+      }
+      const uiMessage = buildAgentUIMessage(run)
+      const assistantMessage: ThreadMessage = {
+        type: 'text',
+        role: ChatCompletionRole.Assistant,
+        content: extractContentPartsFromUIMessage(uiMessage),
+        id: uiMessage.id,
+        object: 'thread.message',
+        thread_id: threadId,
+        status:
+          run.status === 'cancelled'
+            ? MessageStatus.Stopped
+            : run.status === 'failed'
+              ? MessageStatus.Error
+              : MessageStatus.Ready,
+        created_at: Date.now(),
+        completed_at: Date.now(),
+        metadata: uiMessage.metadata as Record<string, unknown>,
+      }
+      addMessage(assistantMessage)
+      const messages = [
+        ...chatMessagesRef.current.filter(
+          (message) => message.id !== uiMessage.id
+        ),
+        uiMessage,
+      ]
+      chatMessagesRef.current = messages
+      setChatMessages(messages)
+    },
+    [addMessage, setChatMessages, threadId]
+  )
+
+  const applyAgentEvent = useCallback(
+    (event: AgentEvent) => {
+      useAgentRun.getState().applyEvent(threadId, event)
+      const run = useAgentRun.getState().getRun(threadId)
+      if (event.type === 'turn_finished') {
+        persistAgentRun(run)
+        return
+      }
+      if (!run.runId) return
+      const uiMessage = buildAgentUIMessage(run)
+      const messages = [
+        ...chatMessagesRef.current.filter(
+          (message) => message.id !== uiMessage.id
+        ),
+        uiMessage,
+      ]
+      chatMessagesRef.current = messages
+      setChatMessages(messages)
+    },
+    [persistAgentRun, setChatMessages, threadId]
+  )
+
+  const processAndRunAgent = useCallback(
+    async (
+      text: string,
+      files?: Array<{ type: string; mediaType: string; url: string }>,
+      documentsFromPayload?: Attachment[]
+    ) => {
+      const documentAttachments =
+        documentsFromPayload ??
+        getAttachments(attachmentsKey).filter(
+          (attachment) => attachment.type === 'document'
+        )
+      if ((files?.length ?? 0) > 0 || documentAttachments.length > 0) {
+        toast.error(t('chat:agentErrors.attachmentsUnsupported'))
+        return
+      }
+      const workingDir = useAgentMode.getState().getWorkingDir(threadId)
+      if (!workingDir) {
+        toast.error(t('chat:agentWorkspace.required'))
+        return
+      }
+      const providerSupportsAgent = ['llamacpp', 'llamacpp-upstream'].includes(
+        selectedProvider
+      )
+      const providerActiveModels = providerSupportsAgent
+        ? await serviceHub
+            .models()
+            .getActiveModels(selectedProvider)
+            .catch(() => [])
+        : []
+      if (
+        !selectedModel ||
+        !providerSupportsAgent ||
+        !providerActiveModels.includes(selectedModel.id)
+      ) {
+        toast.error(t('chat:agentErrors.localLlamacppRequired'))
+        return
+      }
+      const currentRun = useAgentRun.getState().getRun(threadId)
+      if (
+        currentRun.status === 'running' ||
+        currentRun.status === 'awaiting_approval'
+      ) {
+        return
+      }
+
+      const messageId =
+        useOptimisticUserMessage.getState().byThread[threadId]?.id ??
+        generateId()
+      await useThreads.getState().awaitThreadPersistence(threadId)
+      const userMessage = newUserThreadContent(threadId, text, [], messageId)
+      addMessage(userMessage)
+      const userUiMessage: UIMessage = {
+        id: messageId,
+        role: 'user',
+        parts: [{ type: 'text', text }],
+        metadata: userMessage.metadata,
+      }
+      const messages = [...chatMessagesRef.current, userUiMessage]
+      chatMessagesRef.current = messages
+      setChatMessages(messages)
+      useOptimisticUserMessage.getState().clear(threadId)
+      clearAttachmentsForThread(attachmentsKey)
+
+      const runId = generateId()
+      useAgentRun.getState().startRun(threadId, runId)
+      posthog.capture('chat_request_sent', {
+        source: 'agent',
+        thread_id: threadId,
+        model_id: selectedModel.id,
+        provider: selectedProvider,
+        has_attachments: false,
+        attachment_count: 0,
+      })
+
+      try {
+        await runAgentTurn(
+          {
+            run_id: runId,
+            model_id: selectedModel.id,
+            user_message: text,
+            working_dir: workingDir,
+            auto_approve:
+              useAgentMode.getState().getApprovalMode(threadId) === 'skip',
+          },
+          applyAgentEvent
+        )
+      } catch (error) {
+        if (persistedAgentRunsRef.current.has(runId)) return
+        applyAgentEvent({
+          type: 'step_error',
+          category: 'ipc',
+          message: String(error),
+        })
+        applyAgentEvent({
+          type: 'turn_finished',
+          reason: 'failed',
+          step_count: 0,
+        })
+        toast.error(t('chat:agentErrors.runFailed'))
+      }
+    },
+    [
+      addMessage,
+      applyAgentEvent,
+      attachmentsKey,
+      clearAttachmentsForThread,
+      getAttachments,
+      selectedModel,
+      selectedProvider,
+      serviceHub,
+      setChatMessages,
+      t,
+      threadId,
+    ]
+  )
+
   // Consolidated function to process and send a message
   const processAndSendMessage = useCallback(
     async (
@@ -575,9 +763,18 @@ function ThreadDetail() {
       files?: Array<{ type: string; mediaType: string; url: string }>,
       documentsFromPayload?: Attachment[]
     ) => {
+      if (
+        resolveMessageExecutionRoute(
+          useAgentMode.getState().isAgentMode(threadId)
+        ) === 'agent-ipc'
+      ) {
+        await processAndRunAgent(text, files, documentsFromPayload)
+        return
+      }
       ttftBegin()
-      const persistReady =
-        useThreads.getState().awaitThreadPersistence(threadId)
+      const persistReady = useThreads
+        .getState()
+        .awaitThreadPersistence(threadId)
       // Documents may be passed explicitly via the initial-message payload
       // (home → new thread flow). In that case the store has already been
       // cleared synchronously on send to avoid the chip lingering in the
@@ -750,6 +947,7 @@ function ThreadDetail() {
     },
     [
       sendMessage,
+      processAndRunAgent,
       threadId,
       thread,
       addMessage,
@@ -954,7 +1152,9 @@ function ThreadDetail() {
     let maxCtxLen: number | undefined
     try {
       const engine = EngineManager.instance().get(selectedProvider) as
-        | (AIEngine & { getMaxCtxTrain?: (id: string) => Promise<number | undefined> })
+        | (AIEngine & {
+            getMaxCtxTrain?: (id: string) => Promise<number | undefined>
+          })
         | undefined
       if (engine && typeof engine.getMaxCtxTrain === 'function') {
         maxCtxLen = await engine.getMaxCtxTrain(selectedModel.id)
@@ -1048,180 +1248,195 @@ function ThreadDetail() {
     () => searchThreadModel ?? thread?.model,
     [searchThreadModel, thread]
   )
+  const isAgentRunning =
+    agentRun?.status === 'running' || agentRun?.status === 'awaiting_approval'
+  const handleStop = useCallback(() => {
+    if (!agentModeActive || !isAgentRunning || !agentRun?.runId) {
+      stop()
+      return
+    }
+    useAgentRun.getState().clearPendingApproval(threadId)
+    void cancelAgentTurn(agentRun.runId).catch(() => {
+      toast.error(t('chat:agentErrors.cancelFailed'))
+    })
+  }, [agentModeActive, agentRun?.runId, isAgentRunning, stop, t, threadId])
+  const inputStatus = isAgentRunning ? CHAT_STATUS.SUBMITTED : status
 
   return (
     <div className="flex h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))] overflow-hidden">
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-      <HeaderPage>
-        <div className="flex items-center justify-between w-full pr-2">
-          <DropdownModelProvider />
-        </div>
-      </HeaderPage>
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex flex-1 flex-col h-full overflow-hidden min-w-0">
-        {/* Messages Area */}
-        <div className="flex-1 relative">
-          <Conversation className="absolute inset-0 text-start">
-            <ConversationContent
-              className={cn('mx-auto w-full md:w-4/5 xl:w-4/6')}
-            >
-              {chatMessages.map((message, index) => {
-                const isLastMessage = index === chatMessages.length - 1
-                const isFirstMessage = index === 0
-                return (
-                  <MessageItem
-                    key={message.id}
-                    message={message}
-                    isFirstMessage={isFirstMessage}
-                    isLastMessage={isLastMessage}
-                    status={status}
-                    reasoningContainerRef={reasoningContainerRef}
-                    onRegenerate={handleRegenerate}
-                    onEdit={handleEditMessage}
-                    onDelete={handleDeleteMessage}
-                    isAnimating={!pendingContinueMessage}
-                    hideActions={!!pendingContinueMessage}
-                  />
-                )
-              })}
-              {pendingInitialUserMessage && (
-                <>
-                  <MessageItem
-                    key={`pending-user-${pendingInitialUserMessage.id}`}
-                    message={pendingInitialUserMessage}
-                    isFirstMessage={chatMessages.length === 0}
-                    isLastMessage={true}
-                    status={status}
-                    reasoningContainerRef={reasoningContainerRef}
-                    onRegenerate={handleRegenerate}
-                    onEdit={handleEditMessage}
-                    onDelete={handleDeleteMessage}
-                    hideActions
-                    isAnimating={false}
-                  />
-                  <div className="flex flex-row items-center gap-2 mt-2">
-                    <Shimmer duration={1}>Indexing attachments...</Shimmer>
-                  </div>
-                </>
-              )}
-              {pendingContinueMessage && status === 'submitted' && (
-                <MessageItem
-                  key={`continue-placeholder-${pendingContinueMessage.id}`}
-                  message={pendingContinueMessage}
-                  isFirstMessage={false}
-                  isLastMessage={true}
-                  status={status}
-                  reasoningContainerRef={reasoningContainerRef}
-                  onRegenerate={handleRegenerate}
-                  onEdit={handleEditMessage}
-                  onDelete={handleDeleteMessage}
-                  hideActions
-                  isAnimating={false}
-                />
-              )}
-              {(status === CHAT_STATUS.SUBMITTED ||
-                isAutoIncreasingContext) && (
-                <div className="flex flex-row items-center gap-2">
-                  {(pendingContinueMessage || isAutoIncreasingContext) && (
-                    <Shimmer duration={1}>Growing the Mind...</Shimmer>
+        <HeaderPage>
+          <div className="flex items-center justify-between w-full pr-2">
+            <DropdownModelProvider />
+          </div>
+        </HeaderPage>
+        <div className="flex flex-1 overflow-hidden">
+          <div className="flex flex-1 flex-col h-full overflow-hidden min-w-0">
+            {/* Messages Area */}
+            <div className="flex-1 relative">
+              <Conversation className="absolute inset-0 text-start">
+                <ConversationContent
+                  className={cn('mx-auto w-full md:w-4/5 xl:w-4/6')}
+                >
+                  {chatMessages.map((message, index) => {
+                    const isLastMessage = index === chatMessages.length - 1
+                    const isFirstMessage = index === 0
+                    return (
+                      <MessageItem
+                        key={message.id}
+                        message={message}
+                        isFirstMessage={isFirstMessage}
+                        isLastMessage={isLastMessage}
+                        status={inputStatus}
+                        reasoningContainerRef={reasoningContainerRef}
+                        onRegenerate={handleRegenerate}
+                        onEdit={handleEditMessage}
+                        onDelete={handleDeleteMessage}
+                        isAnimating={!pendingContinueMessage}
+                        hideActions={!!pendingContinueMessage}
+                      />
+                    )
+                  })}
+                  {pendingInitialUserMessage && (
+                    <>
+                      <MessageItem
+                        key={`pending-user-${pendingInitialUserMessage.id}`}
+                        message={pendingInitialUserMessage}
+                        isFirstMessage={chatMessages.length === 0}
+                        isLastMessage={true}
+                        status={status}
+                        reasoningContainerRef={reasoningContainerRef}
+                        onRegenerate={handleRegenerate}
+                        onEdit={handleEditMessage}
+                        onDelete={handleDeleteMessage}
+                        hideActions
+                        isAnimating={false}
+                      />
+                      <div className="flex flex-row items-center gap-2 mt-2">
+                        <Shimmer duration={1}>Indexing attachments...</Shimmer>
+                      </div>
+                    </>
                   )}
-                  {status === CHAT_STATUS.SUBMITTED && <PromptProgress />}
-                </div>
-              )}
-              {(error || contextLimitError) &&
-                !isAutoIncreasingContext &&
-                (() => {
-                  const activeError = error ?? contextLimitError
-                  const rawMessage = activeError?.message
-                  const isContextError = isContextLimitError(activeError)
-                  const isAccessError =
-                    !isContextError && isModelAccessError(activeError)
-                  // ATO-197: a fatal Metal/compute failure (GPU OOM) surfaces
-                  // as the opaque "Compute error" / the proxy's
-                  // `insufficient_memory` envelope — show clear OOM guidance.
-                  const isOomError =
-                    !isContextError &&
-                    !isAccessError &&
-                    isOutOfMemoryError(activeError)
-                  // ATO-170: replace the raw engine 400 body (e.g. mlx-vlm's
-                  // "... but MAX_KV_SIZE is N") with a clear, actionable message
-                  // instead of the generic "Error generating response".
-                  const title = isContextError
-                    ? CONTEXT_OVERFLOW_TITLE
-                    : isAccessError
-                      ? MODEL_ACCESS_DENIED_TITLE
-                      : isOomError
-                        ? OUT_OF_MEMORY_TITLE
-                        : 'Error generating response'
-                  const body = isContextError
-                    ? CONTEXT_OVERFLOW_MESSAGE
-                    : isAccessError
-                      ? MODEL_ACCESS_DENIED_MESSAGE
-                      : isOomError
-                        ? OUT_OF_MEMORY_MESSAGE
-                        : rawMessage
-                  return (
-                    <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
-                      <div className="flex items-start gap-3">
-                        <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-destructive mb-1">
-                            {title}
-                          </p>
-                          <div className="table table-fixed w-full">
-                            <span
-                              className="text-sm text-muted-foreground table-cell align-middle"
-                              style={{ wordWrap: 'break-word' }}
-                            >
-                              {/* The raw provider message can embed links
+                  {pendingContinueMessage && status === 'submitted' && (
+                    <MessageItem
+                      key={`continue-placeholder-${pendingContinueMessage.id}`}
+                      message={pendingContinueMessage}
+                      isFirstMessage={false}
+                      isLastMessage={true}
+                      status={status}
+                      reasoningContainerRef={reasoningContainerRef}
+                      onRegenerate={handleRegenerate}
+                      onEdit={handleEditMessage}
+                      onDelete={handleDeleteMessage}
+                      hideActions
+                      isAnimating={false}
+                    />
+                  )}
+                  {(inputStatus === CHAT_STATUS.SUBMITTED ||
+                    isAutoIncreasingContext) && (
+                    <div className="flex flex-row items-center gap-2">
+                      {(pendingContinueMessage || isAutoIncreasingContext) && (
+                        <Shimmer duration={1}>Growing the Mind...</Shimmer>
+                      )}
+                      {inputStatus === CHAT_STATUS.SUBMITTED && (
+                        <PromptProgress />
+                      )}
+                    </div>
+                  )}
+                  {(error || contextLimitError) &&
+                    !isAutoIncreasingContext &&
+                    (() => {
+                      const activeError = error ?? contextLimitError
+                      const rawMessage = activeError?.message
+                      const isContextError = isContextLimitError(activeError)
+                      const isAccessError =
+                        !isContextError && isModelAccessError(activeError)
+                      // ATO-197: a fatal Metal/compute failure (GPU OOM) surfaces
+                      // as the opaque "Compute error" / the proxy's
+                      // `insufficient_memory` envelope — show clear OOM guidance.
+                      const isOomError =
+                        !isContextError &&
+                        !isAccessError &&
+                        isOutOfMemoryError(activeError)
+                      // ATO-170: replace the raw engine 400 body (e.g. mlx-vlm's
+                      // "... but MAX_KV_SIZE is N") with a clear, actionable message
+                      // instead of the generic "Error generating response".
+                      const title = isContextError
+                        ? CONTEXT_OVERFLOW_TITLE
+                        : isAccessError
+                          ? MODEL_ACCESS_DENIED_TITLE
+                          : isOomError
+                            ? OUT_OF_MEMORY_TITLE
+                            : 'Error generating response'
+                      const body = isContextError
+                        ? CONTEXT_OVERFLOW_MESSAGE
+                        : isAccessError
+                          ? MODEL_ACCESS_DENIED_MESSAGE
+                          : isOomError
+                            ? OUT_OF_MEMORY_MESSAGE
+                            : rawMessage
+                      return (
+                        <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
+                          <div className="flex items-start gap-3">
+                            <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-destructive mb-1">
+                                {title}
+                              </p>
+                              <div className="table table-fixed w-full">
+                                <span
+                                  className="text-sm text-muted-foreground table-cell align-middle"
+                                  style={{ wordWrap: 'break-word' }}
+                                >
+                                  {/* The raw provider message can embed links
                                   (e.g. the model-policy banner's "Open
                                   dashboard" / "View agreement"); render them
                                   clickable instead of as dead text. */}
-                              <LinkifiedText text={body ?? ''} />
-                            </span>
+                                  <LinkifiedText text={body ?? ''} />
+                                </span>
+                              </div>
+                              {isContextError ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="mt-3"
+                                  onClick={handleContextSizeIncrease}
+                                >
+                                  <IconAlertCircle className="size-4 mr-2" />
+                                  Increase Context Size
+                                </Button>
+                              ) : (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="mt-3"
+                                  onClick={() => handleRegenerate()}
+                                >
+                                  <IconRefresh className="size-4 mr-2" />
+                                  Retry
+                                </Button>
+                              )}
+                            </div>
                           </div>
-                          {isContextError ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="mt-3"
-                              onClick={handleContextSizeIncrease}
-                            >
-                              <IconAlertCircle className="size-4 mr-2" />
-                              Increase Context Size
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="mt-3"
-                              onClick={() => handleRegenerate()}
-                            >
-                              <IconRefresh className="size-4 mr-2" />
-                              Retry
-                            </Button>
-                          )}
                         </div>
-                      </div>
-                    </div>
-                  )
-                })()}
-            </ConversationContent>
-            <ConversationScrollButton />
-          </Conversation>
-        </div>
+                      )
+                    })()}
+                </ConversationContent>
+                <ConversationScrollButton />
+              </Conversation>
+            </div>
 
-        {/* Chat Input - Fixed at bottom */}
-        <div className="py-4 mx-auto w-full md:w-4/5 xl:w-4/6">
-          <ChatInput
-            model={threadModel}
-            onSubmit={handleSubmit}
-            onStop={stop}
-            chatStatus={status}
-          />
+            {/* Chat Input - Fixed at bottom */}
+            <div className="py-4 mx-auto w-full md:w-4/5 xl:w-4/6">
+              <ChatInput
+                model={threadModel}
+                onSubmit={handleSubmit}
+                onStop={handleStop}
+                chatStatus={inputStatus}
+              />
+            </div>
+          </div>
         </div>
-        </div>
-      </div>
       </div>
       <ArtifactPanel />
     </div>

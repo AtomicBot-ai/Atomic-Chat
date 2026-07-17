@@ -8,12 +8,15 @@ type AgentModeState = {
   /** Map of threadId → agent mode enabled */
   agentThreads: Record<string, boolean>
   approvalModes: Record<string, AgentApprovalMode>
+  workingDirs: Record<string, string>
 
   isAgentMode: (threadId: string) => boolean
   getApprovalMode: (threadId: string) => AgentApprovalMode
+  getWorkingDir: (threadId: string) => string | undefined
   toggleAgentMode: (threadId: string) => void
   setAgentMode: (threadId: string, enabled: boolean) => void
   setApprovalMode: (threadId: string, mode: AgentApprovalMode) => void
+  setWorkingDir: (threadId: string, workingDir: string) => void
   transferAgentMode: (fromThreadId: string, toThreadId: string) => void
   removeThread: (threadId: string) => void
   /** Clear agent mode for all threads. */
@@ -25,6 +28,7 @@ export const useAgentMode = create<AgentModeState>()(
     (set, get) => ({
       agentThreads: {},
       approvalModes: {},
+      workingDirs: {},
 
       isAgentMode: (threadId) => {
         return get().agentThreads[threadId] === true
@@ -32,6 +36,10 @@ export const useAgentMode = create<AgentModeState>()(
 
       getApprovalMode: (threadId) => {
         return get().approvalModes[threadId] ?? 'manual'
+      },
+
+      getWorkingDir: (threadId) => {
+        return get().workingDirs[threadId]
       },
 
       toggleAgentMode: (threadId) => {
@@ -61,16 +69,29 @@ export const useAgentMode = create<AgentModeState>()(
         }))
       },
 
+      setWorkingDir: (threadId, workingDir) => {
+        set((state) => ({
+          workingDirs: {
+            ...state.workingDirs,
+            [threadId]: workingDir,
+          },
+        }))
+      },
+
       transferAgentMode: (fromThreadId, toThreadId) => {
         set((state) => {
           const isAgentMode = state.agentThreads[fromThreadId] === true
           const approvalMode = state.approvalModes[fromThreadId] ?? 'manual'
+          const workingDir = state.workingDirs[fromThreadId]
           const remainingThreads = { ...state.agentThreads }
           const remainingApprovalModes = { ...state.approvalModes }
+          const remainingWorkingDirs = { ...state.workingDirs }
           delete remainingThreads[fromThreadId]
           delete remainingThreads[toThreadId]
           delete remainingApprovalModes[fromThreadId]
           delete remainingApprovalModes[toThreadId]
+          delete remainingWorkingDirs[fromThreadId]
+          delete remainingWorkingDirs[toThreadId]
 
           return {
             agentThreads: isAgentMode
@@ -79,6 +100,10 @@ export const useAgentMode = create<AgentModeState>()(
             approvalModes: isAgentMode
               ? { ...remainingApprovalModes, [toThreadId]: approvalMode }
               : remainingApprovalModes,
+            workingDirs:
+              isAgentMode && workingDir
+                ? { ...remainingWorkingDirs, [toThreadId]: workingDir }
+                : remainingWorkingDirs,
           }
         })
       },
@@ -87,14 +112,16 @@ export const useAgentMode = create<AgentModeState>()(
         set((state) => {
           const agentThreads = { ...state.agentThreads }
           const approvalModes = { ...state.approvalModes }
+          const workingDirs = { ...state.workingDirs }
           delete agentThreads[threadId]
           delete approvalModes[threadId]
-          return { agentThreads, approvalModes }
+          delete workingDirs[threadId]
+          return { agentThreads, approvalModes, workingDirs }
         })
       },
 
       clearAll: () => {
-        set({ agentThreads: {}, approvalModes: {} })
+        set({ agentThreads: {}, approvalModes: {}, workingDirs: {} })
       },
     }),
     {

@@ -111,6 +111,7 @@ import {
   ChatAgentModeSwitch,
 } from '@/containers/ChatAgentModeSwitch'
 import { AgentApprovalModeSelect } from '@/containers/AgentApprovalModeSelect'
+import { AgentWorkspaceSelect } from '@/containers/AgentWorkspaceSelect'
 
 type ChatInputProps = {
   className?: string
@@ -176,6 +177,8 @@ const ChatInput = memo(function ChatInput({
     (state) => state.approvalModes[agentModeKey] ?? 'manual'
   )
   const setApprovalMode = useAgentMode((state) => state.setApprovalMode)
+  const workingDir = useAgentMode((state) => state.workingDirs[agentModeKey])
+  const setWorkingDir = useAgentMode((state) => state.setWorkingDir)
 
   const handleAgentModeChange = useCallback(
     (enabled: boolean) => {
@@ -189,6 +192,13 @@ const ChatInput = memo(function ChatInput({
       setApprovalMode(agentModeKey, mode)
     },
     [agentModeKey, setApprovalMode]
+  )
+
+  const handleWorkingDirChange = useCallback(
+    (nextWorkingDir: string) => {
+      setWorkingDir(agentModeKey, nextWorkingDir)
+    },
+    [agentModeKey, setWorkingDir]
   )
 
   // Get current thread messages for token counting
@@ -517,6 +527,14 @@ const ChatInput = memo(function ChatInput({
       toast.info('Please wait for attachments to finish processing')
       return
     }
+    if (effectiveAgentMode && !workingDir) {
+      toast.error(t('chat:agentWorkspace.required'))
+      return
+    }
+    if (effectiveAgentMode && attachments.length > 0) {
+      toast.error(t('chat:agentErrors.attachmentsUnsupported'))
+      return
+    }
 
     setMessage('')
 
@@ -626,8 +644,9 @@ const ChatInput = memo(function ChatInput({
         // navigation with QuotaExceededError.
         useInitialMessage.getState().set(TEMPORARY_CHAT_ID, messagePayload)
         if (isAgentMode && agentModeKey !== TEMPORARY_CHAT_ID) {
-          useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, true)
-          useAgentMode.getState().removeThread(agentModeKey)
+          useAgentMode
+            .getState()
+            .transferAgentMode(agentModeKey, TEMPORARY_CHAT_ID)
         }
         router.navigate({
           to: route.threadsDetail,
@@ -2392,6 +2411,24 @@ const ChatInput = memo(function ChatInput({
                     agentLabel={t('chat:agentMode.agent')}
                   />
                 )}
+                {effectiveAgentMode && (
+                  <>
+                    <AgentApprovalModeSelect
+                      mode={approvalMode}
+                      onChange={handleApprovalModeChange}
+                      manualLabel={t('chat:agentApprovals.manual')}
+                      manualDescription={t(
+                        'chat:agentApprovals.manualDescription'
+                      )}
+                      skipLabel={t('chat:agentApprovals.skip')}
+                      skipDescription={t('chat:agentApprovals.skipDescription')}
+                    />
+                    <AgentWorkspaceSelect
+                      workingDir={workingDir}
+                      onChange={handleWorkingDirChange}
+                    />
+                  </>
+                )}
                 {/* {model?.provider === 'llamacpp' && loadingModel ? (
                   <ModelLoader />
                 ) : (
@@ -2597,25 +2634,6 @@ const ChatInput = memo(function ChatInput({
           </div>
         </div>
       </div>
-
-      {(canSelectAgentMode || effectiveAgentMode) && (
-        <div
-          className={cn(
-            '-mt-3 flex h-9 items-end rounded-b-3xl border border-t-0 border-input bg-white px-3 pb-1 pt-3 dark:bg-input/20',
-            !effectiveAgentMode && 'invisible'
-          )}
-          aria-hidden={!effectiveAgentMode}
-        >
-          <AgentApprovalModeSelect
-            mode={approvalMode}
-            onChange={handleApprovalModeChange}
-            manualLabel={t('chat:agentApprovals.manual')}
-            manualDescription={t('chat:agentApprovals.manualDescription')}
-            skipLabel={t('chat:agentApprovals.skip')}
-            skipDescription={t('chat:agentApprovals.skipDescription')}
-          />
-        </div>
-      )}
 
       {message && (
         <div className="-mt-0.5 mx-2 pb-2 px-3 pt-1.5 rounded-b-lg text-xs text-destructive transition-all duration-200 ease-in-out">

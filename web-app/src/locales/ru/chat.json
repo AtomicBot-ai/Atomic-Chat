@@ -20,6 +20,30 @@
     "skip": "Пропускать подтверждения",
     "skipDescription": "Выполнять без вопросов."
   },
+  "agentApproval": {
+    "title": "Требуется подтверждение агента",
+    "description": "{{tool}} ожидает вашего решения.",
+    "reason": "Причина",
+    "preview": "Предпросмотр действия",
+    "resources": "Затронутые ресурсы",
+    "timeoutNotice": "Если вы не ответите, запрос будет автоматически отклонён после таймаута backend.",
+    "deny": "Отклонить",
+    "approveOnce": "Разрешить один раз",
+    "resolveFailed": "Не удалось отправить решение."
+  },
+  "agentWorkspace": {
+    "choose": "Выбрать workspace",
+    "change": "Изменить workspace агента",
+    "required": "Выберите workspace перед запуском агента."
+  },
+  "agentErrors": {
+    "attachmentsUnsupported": "Agent-режим пока не поддерживает вложения.",
+    "localLlamacppRequired": "Agent-режиму нужна активная локальная llama.cpp-модель.",
+    "unsupportedTools": "Agent-режим пока не поддерживает MCP, RAG и browser tools.",
+    "runFailed": "Не удалось запустить агента.",
+    "cancelFailed": "Не удалось отменить запуск агента.",
+    "saveFailed": "Не удалось сохранить ответ агента."
+  },
   "agentTasks": {
     "title": "Идеи для вас",
     "organizeDesktop": {

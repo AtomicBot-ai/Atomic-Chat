@@ -1,4 +1,5 @@
 import type { UIMessage } from 'ai'
+import type { AgentRunSummary } from '@/types/agent'
 import { TraceBlock } from './types'
 import { presentTool } from './registry'
 
@@ -7,6 +8,17 @@ export function buildTraceBlocks(
   disableReasoning: boolean
 ): TraceBlock[] {
   const blocks: TraceBlock[] = []
+  const agentRun = (
+    message.metadata as { agent_run?: AgentRunSummary } | undefined
+  )?.agent_run
+
+  if (agentRun) {
+    blocks.push({
+      kind: 'agent',
+      key: `${message.id}-agent-run`,
+      summary: agentRun,
+    })
+  }
 
   for (let i = 0; i < message.parts.length; i++) {
     const part = message.parts[i]

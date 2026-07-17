@@ -1,4 +1,5 @@
 import { ToolUIPart } from 'ai'
+import type { AgentRunSummary } from '@/types/agent'
 
 export type ToolPresentation =
   | {
@@ -67,6 +68,11 @@ export type TraceBlock =
       toolName: string
       state: ToolUIPart['state']
       presentation: ToolPresentation
+    }
+  | {
+      kind: 'agent'
+      key: string
+      summary: AgentRunSummary
     }
 
 export type ParsedSearchItem = {
