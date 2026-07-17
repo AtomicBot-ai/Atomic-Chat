@@ -1384,7 +1384,10 @@ export default class mlx_extension extends AIEngine {
     // in the name (e.g. "Qwen3.5-9B-...", "Llama-3.1-8B-..."), and truncating
     // there collapsed distinct models onto the same taskId, causing one
     // download's cancellation to silently clobber another's cancel token.
-    return `${this.provider}/${modelId}`
+    // The taskId is embedded in a Tauri event name (`download-${taskId}`),
+    // and Tauri rejects any character outside [A-Za-z0-9_/:-] — so map the
+    // dot (and anything else forbidden) to '_' while keeping the full id.
+    return `${this.provider}/${modelId.replace(/[^A-Za-z0-9_/:-]/g, '_')}`
   }
 
   override async abortImport(modelId: string): Promise<void> {
