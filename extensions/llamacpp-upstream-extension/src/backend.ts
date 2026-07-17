@@ -443,14 +443,14 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
  * Builds the download URL for a specific backend version from ggml-org/llama.cpp.
  *
  * Asset naming differs by platform:
- *   - macOS: `llama-{tag}-bin-macos-{arm64,x64}.zip`
+ *   - macOS: `llama-{tag}-bin-macos-{arm64,x64}.tar.gz`
  *   - Windows: `llama-{tag}-bin-win-{variant}.zip`
  *   - Linux: `llama-{tag}-bin-ubuntu-{variant}.tar.gz` (note: internal
  *     backend ids are `linux-*` but upstream filenames carry `ubuntu-*`;
  *     `LINUX_UPSTREAM_ASSET_BY_BACKEND` provides the mapping).
  *
- * macOS / Windows use `.zip`, Linux uses `.tar.gz`. The Tauri `decompress`
- * command handles both formats transparently.
+ * Only Windows uses `.zip`; macOS and Linux use `.tar.gz`. The Tauri
+ * `decompress` command handles both formats transparently.
  */
 export function getBackendDownloadUrl(
   version: string,
@@ -472,6 +472,12 @@ export function getBackendDownloadUrl(
   if (linuxInfix) {
     return `${LLAMACPP_DOWNLOAD_BASE}/${version}/llama-${version}-bin-${linuxInfix}.tar.gz`
   }
+  // ggml-org publishes macOS backends only as `.tar.gz` (there is no macOS
+  // `.zip` asset), so a `.zip` URL here is a guaranteed 404 and the runtime
+  // backend download silently fails on macOS. Only Windows ships `.zip`.
+  if (backend.startsWith('macos-')) {
+    return `${LLAMACPP_DOWNLOAD_BASE}/${version}/llama-${version}-bin-${backend}.tar.gz`
+  }
   return `${LLAMACPP_DOWNLOAD_BASE}/${version}/llama-${version}-bin-${backend}.zip`
 }
 
@@ -481,6 +487,10 @@ export function getBackendArchiveName(version: string, backend: string): string 
   const linuxInfix = LINUX_UPSTREAM_ASSET_BY_BACKEND[backend]
   if (linuxInfix) {
     return `llama-${version}-bin-${linuxInfix}.tar.gz`
+  }
+  // Mirrors getBackendDownloadUrl: macOS assets are `.tar.gz`, not `.zip`.
+  if (backend.startsWith('macos-')) {
+    return `llama-${version}-bin-${backend}.tar.gz`
   }
   return `llama-${version}-bin-${backend}.zip`
 }

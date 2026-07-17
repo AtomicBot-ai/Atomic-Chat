@@ -74,9 +74,19 @@ describe('Backend functions', () => {
       )
     })
 
-    it('keeps zip archive names for non-Linux backend archives', () => {
+    it('keeps zip archive names for Windows backend archives', () => {
       expect(getBackendArchiveName('b9691', 'win-cpu-x64')).toBe(
         'llama-b9691-bin-win-cpu-x64.zip'
+      )
+    })
+
+    it('uses tarball names for macOS backend archives', () => {
+      // ggml-org publishes macOS assets only as .tar.gz; a .zip name 404s.
+      expect(getBackendArchiveName('b9691', 'macos-arm64')).toBe(
+        'llama-b9691-bin-macos-arm64.tar.gz'
+      )
+      expect(getBackendArchiveName('b9691', 'macos-x64')).toBe(
+        'llama-b9691-bin-macos-x64.tar.gz'
       )
     })
   })

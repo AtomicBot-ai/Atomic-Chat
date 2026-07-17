@@ -4967,9 +4967,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
    * Downloads a backend archive from ggml-org/llama.cpp GitHub releases
    * and extracts it into the local backends directory.
    *
-   * ggml-org publishes Windows and macOS backends as `.zip` archives
-   * (not `.tar.gz`). The Tauri `decompress` command handles both formats,
-   * so the extension change here is transparent to the extraction path.
+   * ggml-org publishes Windows backends as `.zip` archives and macOS /
+   * Linux backends as `.tar.gz`. The Tauri `decompress` command handles
+   * both formats, so the difference is transparent to the extraction path.
    */
   private async downloadAndInstallBackend(
     backendString: string
