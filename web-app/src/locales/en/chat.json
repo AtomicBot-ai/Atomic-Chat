@@ -9,6 +9,14 @@
   "sendMessage": "Send Message",
   "newConversation": "New Conversation",
   "clearHistory": "Clear History",
+  "activity": {
+    "working": "Working",
+    "reading": "Reading: {{count}}%",
+    "workedFor": "Worked for {{count}}s",
+    "calledTool": "Called {{count}} tool",
+    "calledTools": "Called {{count}} tools",
+    "reasoned": "Reasoned"
+  },
   "agentMode": {
     "chat": "Chat",
     "agent": "Agent",
@@ -16,8 +24,10 @@
     "mlxUnavailable": "Switch to a llama.cpp model to use Agent mode."
   },
   "agentApprovals": {
+    "manualSelected": "Manually",
     "manual": "Manually approve",
     "manualDescription": "Pause before sensitive actions.",
+    "skipSelected": "Skip All",
     "skip": "Skip all approvals",
     "skipDescription": "Run without asking."
   },

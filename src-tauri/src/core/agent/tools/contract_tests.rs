@@ -156,6 +156,76 @@ async fn filesystem_tools_apply_real_operations_in_an_isolated_workspace() {
 }
 
 #[tokio::test]
+async fn filesystem_write_accepts_empty_content_and_append_mode() {
+    let fixture = ToolFixture::allowed();
+
+    let empty = fixture
+        .call(
+            "os.fs.write",
+            serde_json::json!({"path": "empty.txt", "content": ""}),
+        )
+        .await;
+    assert_eq!(empty.status, ToolStatus::Ok);
+    assert_eq!(fixture.workspace.read("empty.txt"), b"");
+
+    let initial = fixture
+        .call(
+            "os.fs.write",
+            serde_json::json!({"path": "append.txt", "content": "alpha"}),
+        )
+        .await;
+    assert_eq!(initial.status, ToolStatus::Ok);
+
+    let appended = fixture
+        .call(
+            "os.fs.write",
+            serde_json::json!({
+                "path": "append.txt",
+                "content": " beta",
+                "mode": "append"
+            }),
+        )
+        .await;
+    assert_eq!(appended.status, ToolStatus::Ok);
+    assert_eq!(fixture.workspace.read("append.txt"), b"alpha beta");
+
+    let missing = fixture
+        .call("os.fs.write", serde_json::json!({"path": "missing.txt"}))
+        .await;
+    assert_eq!(missing.status, ToolStatus::Error);
+    assert_eq!(missing.summary, "Missing string argument `content`");
+}
+
+#[tokio::test]
+async fn filesystem_mkdir_creates_empty_directories_and_honors_approval() {
+    let fixture = ToolFixture::allowed();
+    let created = fixture
+        .call("os.fs.mkdir", serde_json::json!({"path": "parent/empty"}))
+        .await;
+    assert_eq!(created.status, ToolStatus::Ok);
+    let path = fixture.workspace.path().join("parent/empty");
+    assert!(path.is_dir());
+    assert_eq!(std::fs::read_dir(&path).unwrap().count(), 0);
+    assert_eq!(fixture.approval.requests().len(), 1);
+
+    let non_recursive = fixture
+        .call(
+            "os.fs.mkdir",
+            serde_json::json!({"path": "missing-parent/child", "recursive": false}),
+        )
+        .await;
+    assert_eq!(non_recursive.status, ToolStatus::Error);
+    assert!(!fixture.workspace.path().join("missing-parent").exists());
+
+    let denied = ToolFixture::denied();
+    let denied_outcome = denied
+        .call("os.fs.mkdir", serde_json::json!({"path": "must-not-exist"}))
+        .await;
+    assert_eq!(denied_outcome.status, ToolStatus::Denied);
+    assert!(!denied.workspace.path().join("must-not-exist").exists());
+}
+
+#[tokio::test]
 async fn archive_tools_list_read_extract_and_reject_traversal() {
     let fixture = ToolFixture::allowed();
     create_zip(

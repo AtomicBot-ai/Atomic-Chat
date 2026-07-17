@@ -1,5 +1,4 @@
 import { useMemo, useRef } from 'react'
-import { AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -88,15 +87,10 @@ export default function AgentApprovalDialog() {
     >
       <DialogContent showCloseButton={false}>
         <DialogHeader>
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" />
-            <div>
-              <DialogTitle>{t('agentApproval.title')}</DialogTitle>
-              <DialogDescription className="mt-1">
-                {t('agentApproval.description', { tool: approval.tool })}
-              </DialogDescription>
-            </div>
-          </div>
+          <DialogTitle>{t('agentApproval.title')}</DialogTitle>
+          <DialogDescription>
+            {t('agentApproval.description', { tool: approval.tool })}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">

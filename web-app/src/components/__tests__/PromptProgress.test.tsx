@@ -8,6 +8,13 @@ vi.mock('@/hooks/useAppState', () => ({
   useAppState: vi.fn(),
 }))
 
+vi.mock('@/i18n/react-i18next-compat', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { count?: number }) =>
+      key === 'activity.reading' ? `Reading: ${options?.count}%` : key,
+  }),
+}))
+
 const mockUseAppState = useAppState as ReturnType<typeof vi.fn>
 
 describe('PromptProgress', () => {

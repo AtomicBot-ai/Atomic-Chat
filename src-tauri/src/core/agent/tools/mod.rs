@@ -10,6 +10,8 @@ mod proc;
 mod shell;
 pub(super) mod tool_view;
 mod web;
+mod web_extract;
+mod web_search;
 
 #[cfg(test)]
 mod contract_tests;
@@ -67,6 +69,7 @@ pub async fn execute(call: &ToolCallPayload, context: &ToolContext<'_>) -> ToolO
         | "os.fs.hash"
         | "os.fs.diff"
         | "os.fs.write"
+        | "os.fs.mkdir"
         | "os.fs.edit"
         | "os.fs.trash"
         | "os.fs.patch" => fs::execute(&call.tool, &call.args, context).await,

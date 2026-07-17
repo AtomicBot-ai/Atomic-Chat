@@ -47,7 +47,6 @@ export type ToolPresentation =
 
 export type TraceBlock =
   | { kind: 'text'; key: string; text: string }
-  | { kind: 'reasoning'; key: string; text: string }
   | {
       kind: 'file'
       key: string
@@ -63,16 +62,17 @@ export type TraceBlock =
       filename?: string
     }
   | {
-      kind: 'tool'
+      kind: 'activity'
       key: string
-      toolName: string
-      state: ToolUIPart['state']
-      presentation: ToolPresentation
-    }
-  | {
-      kind: 'agent'
-      key: string
-      summary: AgentRunSummary
+      durationMs?: number
+      reasoning: Array<{ key: string; text: string }>
+      tools: Array<{
+        key: string
+        toolName: string
+        state: ToolUIPart['state']
+        presentation: ToolPresentation
+      }>
+      agentSummary?: AgentRunSummary
     }
 
 export type ParsedSearchItem = {

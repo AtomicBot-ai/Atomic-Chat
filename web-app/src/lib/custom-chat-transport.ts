@@ -557,6 +557,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       messageId: string | undefined
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
+    const requestStartedAt = Date.now()
     ttftMark('gammaStart')
     await this.refreshTools()
     ttftMark('gammaEnd')
@@ -912,6 +913,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
           return {
             finishReason: finishPart.finishReason,
+            activityDurationMs: Math.max(0, Date.now() - requestStartedAt),
             usage: {
               inputTokens: inputTokens,
               outputTokens: outputTokens,

@@ -9,6 +9,8 @@ import type { AgentRunState } from '@/types/agent'
 function finishedRun(): AgentRunState {
   return {
     runId: 'run-1',
+    startedAtMs: 1_000,
+    finishedAtMs: 3_500,
     status: 'finished',
     approvalResolving: false,
     trace: {
@@ -47,6 +49,7 @@ describe('agent run message projection', () => {
     expect(message.metadata).toEqual({
       agent_run: buildAgentRunSummary(state),
     })
+    expect(buildAgentRunSummary(state).duration_ms).toBe(2_500)
     expect(JSON.stringify(message.metadata)).not.toContain('must-not-persist')
     expect(message.parts).toEqual(
       expect.arrayContaining([
@@ -71,6 +74,23 @@ describe('agent run message projection', () => {
 
     expect(summary.loops[0].message.length).toBeLessThanOrEqual(501)
     expect(summary.error?.message.length).toBeLessThanOrEqual(1_001)
+  })
+
+  it('keeps terminal tools in metadata but hides them from activity rows', () => {
+    const state = finishedRun()
+    state.trace.tools.push({
+      call: { tool: 'reply', args: { text: 'Done' } },
+      outcome: { status: 'ok', summary: 'Replied' },
+      batchIndex: 0,
+      batchSize: 1,
+    })
+
+    const message = buildAgentUIMessage(state)
+
+    expect(buildAgentRunSummary(state).tools).toHaveLength(2)
+    expect(message.parts).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: 'tool-reply' })])
+    )
   })
 
   it('claims terminal persistence exactly once per run', () => {

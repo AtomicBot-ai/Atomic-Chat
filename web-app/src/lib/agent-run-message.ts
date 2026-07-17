@@ -29,11 +29,17 @@ export function claimAgentRunPersistence(
 }
 
 export function buildAgentRunSummary(state: AgentRunState): AgentRunSummary {
+  const durationMs =
+    state.startedAtMs !== undefined && state.finishedAtMs !== undefined
+      ? Math.max(0, state.finishedAtMs - state.startedAtMs)
+      : undefined
+
   return {
     run_id: state.runId ?? '',
     status: state.status,
     finish_reason: state.trace.finishReason,
     step_count: state.trace.stepCount,
+    duration_ms: durationMs,
     tools: state.trace.tools.map((tool) => ({
       tool: tool.call.tool,
       status: tool.outcome?.status,
@@ -65,6 +71,7 @@ export function buildAgentUIMessage(state: AgentRunState): UIMessage {
     parts.push({ type: 'reasoning', text: reasoning })
   }
   for (const [index, tool] of state.trace.tools.entries()) {
+    if (tool.call.tool === 'reply' || tool.call.tool === 'finish') continue
     parts.push({
       type: `tool-${tool.call.tool}`,
       toolCallId: `agent-${runId}-${index}`,

@@ -102,8 +102,15 @@ pub const ITERATION_ONE_TOOLS: &[ToolDescriptor] = &[
     },
     ToolDescriptor {
         name: "os.fs.write",
-        summary: "Write (create or overwrite) a text file. Approval-gated.",
-        args_schema: r#"{ path: string, content: string }"#,
+        summary: "Write or append text to a file, creating parent directories. Empty content is valid and creates or truncates a file. Approval-gated.",
+        args_schema: r#"{ path: string, content: string, mode?: "replace" | "append" }"#,
+        tier: ToolTier::Frequent,
+        examples: &[],
+    },
+    ToolDescriptor {
+        name: "os.fs.mkdir",
+        summary: "Create an empty directory without adding placeholder files. Parent directories are created by default. Approval-gated.",
+        args_schema: r#"{ path: string, recursive?: boolean }"#,
         tier: ToolTier::Frequent,
         examples: &[],
     },
@@ -256,7 +263,7 @@ pub const ITERATION_ONE_TOOLS: &[ToolDescriptor] = &[
     },
     ToolDescriptor {
         name: "os.web.search",
-        summary: "Search the web via the configured provider (keyless DuckDuckGo by default). Returns titles + URLs + snippets. Read-only.",
+        summary: "Search the web via keyless DuckDuckGo. Returns structured titles, resolved destination URLs, and snippets; reports bot challenges explicitly. Read-only.",
         args_schema: r#"{ query: string, maxResults?: number }"#,
         tier: ToolTier::Frequent,
         examples: &[
@@ -265,7 +272,7 @@ pub const ITERATION_ONE_TOOLS: &[ToolDescriptor] = &[
     },
     ToolDescriptor {
         name: "os.web.fetch",
-        summary: "Read a web page as readable markdown/text (cf-markdown -> Readability -> basic). GET only, no JS, no auth; SSRF-guarded; read-only. For raw API/JSON or POST, use os.http.request.",
+        summary: "Read a web page as bounded markdown/text. Prefers server-provided Markdown, otherwise extracts article/main/body content and removes page chrome. GET only, no JS or auth; SSRF-guarded; read-only. For raw API/JSON or POST, use os.http.request.",
         args_schema: r#"{ url: string, extractMode?: "markdown" | "text", maxChars?: number }"#,
         tier: ToolTier::Frequent,
         examples: &[

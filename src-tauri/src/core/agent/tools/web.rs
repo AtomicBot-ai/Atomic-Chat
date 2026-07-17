@@ -1,12 +1,21 @@
 use std::time::Duration;
 
-use reqwest::header::HeaderMap;
+use futures_util::StreamExt;
+use reqwest::header::{
+    HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE, CONTENT_LENGTH, CONTENT_TYPE, USER_AGENT,
+};
 use reqwest::Method;
 use serde_json::Value;
 
 use super::http::request_guarded;
+use super::web_extract::{extract_web_content, ExtractMode};
+use super::web_search::{parse_duckduckgo_page, DuckDuckGoPage};
 use super::{optional_usize, required_string, truncate, ToolContext, MAX_TOOL_OUTPUT_CHARS};
-use crate::core::agent::types::ToolOutcome;
+use crate::core::agent::types::{ToolOutcome, ToolStatus};
+
+const MAX_RESPONSE_BYTES: usize = 2_000_000;
+const WEB_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 \
+     (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 pub async fn execute(
     tool: &str,
@@ -27,95 +36,189 @@ async fn search(args: &Value, _context: &ToolContext<'_>) -> Result<ToolOutcome,
         "https://html.duckduckgo.com/html/?q={}",
         url::form_urlencoded::byte_serialize(query.as_bytes()).collect::<String>()
     );
-    let response = request_guarded(
-        Method::GET,
-        &url,
-        HeaderMap::new(),
-        None,
-        Duration::from_secs(30),
-    )
-    .await?;
-    let html = response
-        .text()
-        .await
-        .map_err(|error| ToolOutcome::error(error.to_string()))?;
-    let text = html_to_text(&html);
-    let lines = text
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .take(max_results.saturating_mul(4))
-        .collect::<Vec<_>>()
-        .join("\n");
-    Ok(ToolOutcome::ok(truncate(lines, MAX_TOOL_OUTPUT_CHARS)))
+    let mut headers = browser_headers();
+    headers.insert(
+        ACCEPT,
+        HeaderValue::from_static("text/html,application/xhtml+xml"),
+    );
+    let response =
+        request_guarded(Method::GET, &url, headers, None, Duration::from_secs(30)).await?;
+    let status = response.status();
+    let (html, response_truncated) = read_body_limited(response, MAX_RESPONSE_BYTES).await?;
+    if !status.is_success() {
+        return Err(ToolOutcome {
+            status: ToolStatus::Error,
+            summary: format!("DuckDuckGo search failed with HTTP {status}"),
+            details: Some(serde_json::json!({
+                "provider": "duckduckgo",
+                "query": query,
+                "httpStatus": status.as_u16(),
+                "responsePreview": truncate(html, 2_000),
+            })),
+        });
+    }
+
+    match parse_duckduckgo_page(&html, max_results) {
+        DuckDuckGoPage::Blocked => Err(ToolOutcome {
+            status: ToolStatus::Error,
+            summary: "DuckDuckGo blocked the automated search with a bot challenge".to_owned(),
+            details: Some(serde_json::json!({
+                "provider": "duckduckgo",
+                "query": query,
+                "blocked": true,
+            })),
+        }),
+        DuckDuckGoPage::Empty => Ok(ToolOutcome {
+            status: ToolStatus::Ok,
+            summary: "No search results found.".to_owned(),
+            details: Some(serde_json::json!({
+                "provider": "duckduckgo",
+                "query": query,
+                "results": [],
+                "responseTruncated": response_truncated,
+            })),
+        }),
+        DuckDuckGoPage::Results(results) => {
+            let rendered = results
+                .iter()
+                .enumerate()
+                .map(|(index, result)| {
+                    let snippet = if result.snippet.is_empty() {
+                        String::new()
+                    } else {
+                        format!("\n{}", result.snippet)
+                    };
+                    format!("{}. {}\n{}{}", index + 1, result.title, result.url, snippet)
+                })
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            Ok(ToolOutcome {
+                status: ToolStatus::Ok,
+                summary: truncate(rendered, MAX_TOOL_OUTPUT_CHARS),
+                details: Some(serde_json::json!({
+                    "provider": "duckduckgo",
+                    "query": query,
+                    "results": results,
+                    "responseTruncated": response_truncated,
+                })),
+            })
+        }
+    }
 }
 
 async fn fetch(args: &Value, _context: &ToolContext<'_>) -> Result<ToolOutcome, ToolOutcome> {
     let url = required_string(args, "url").map_err(ToolOutcome::error)?;
-    let max_chars = optional_usize(args, "maxChars", 20_000, 100_000);
-    let response = request_guarded(
-        Method::GET,
-        &url,
-        HeaderMap::new(),
-        None,
-        Duration::from_secs(30),
-    )
-    .await?;
+    let max_chars = optional_usize(args, "maxChars", 50_000, 50_000);
+    let extract_mode = match args
+        .get("extractMode")
+        .and_then(Value::as_str)
+        .unwrap_or("markdown")
+    {
+        "markdown" => ExtractMode::Markdown,
+        "text" => ExtractMode::Text,
+        value => {
+            return Err(ToolOutcome::error(format!(
+                "Invalid extractMode `{value}`; expected `markdown` or `text`"
+            )))
+        }
+    };
+    let mut headers = browser_headers();
+    headers.insert(
+        ACCEPT,
+        HeaderValue::from_static("text/markdown,text/html;q=0.9,text/plain;q=0.8,*/*;q=0.5"),
+    );
+    let response =
+        request_guarded(Method::GET, &url, headers, None, Duration::from_secs(30)).await?;
     let status = response.status();
+    let final_url = response.url().to_string();
     let content_type = response
         .headers()
-        .get(reqwest::header::CONTENT_TYPE)
+        .get(CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .unwrap_or("")
         .to_owned();
-    let body = response
-        .text()
-        .await
-        .map_err(|error| ToolOutcome::error(error.to_string()))?;
-    if !status.is_success() {
-        return Err(ToolOutcome::error(format!(
-            "HTTP {}: {}",
-            status,
-            truncate(body, 2_000)
-        )));
-    }
-    let output = if content_type.contains("html") {
-        html_to_text(&body)
+    let (body, response_truncated) = read_body_limited(response, MAX_RESPONSE_BYTES).await?;
+    let extracted = extract_web_content(&body, &content_type, extract_mode);
+    let output_truncated = extracted.text.chars().count() > max_chars;
+    let output = if output_truncated {
+        format!(
+            "{}\n… [truncated]",
+            extracted.text.chars().take(max_chars).collect::<String>()
+        )
     } else {
-        body
+        extracted.text
     };
-    Ok(ToolOutcome::ok(truncate(output, max_chars)))
+    if !status.is_success() {
+        return Err(ToolOutcome {
+            status: ToolStatus::Error,
+            summary: format!("HTTP {status} for {final_url}"),
+            details: Some(serde_json::json!({
+                "url": url,
+                "finalUrl": final_url,
+                "httpStatus": status.as_u16(),
+                "contentType": content_type,
+                "extractor": extracted.extractor,
+                "title": extracted.title,
+                "extractedText": output,
+                "truncated": response_truncated || output_truncated,
+            })),
+        });
+    }
+    Ok(ToolOutcome {
+        status: ToolStatus::Ok,
+        summary: output,
+        details: Some(serde_json::json!({
+            "url": url,
+            "finalUrl": final_url,
+            "httpStatus": status.as_u16(),
+            "contentType": content_type,
+            "extractor": extracted.extractor,
+            "title": extracted.title,
+            "extractMode": match extract_mode {
+                ExtractMode::Markdown => "markdown",
+                ExtractMode::Text => "text",
+            },
+            "truncated": response_truncated || output_truncated,
+        })),
+    })
 }
 
-fn html_to_text(html: &str) -> String {
-    let mut output = String::with_capacity(html.len());
-    let mut in_tag = false;
-    let mut previous_space = false;
-    for character in html.chars() {
-        match character {
-            '<' => in_tag = true,
-            '>' => {
-                in_tag = false;
-                if !previous_space {
-                    output.push('\n');
-                    previous_space = true;
-                }
-            }
-            _ if in_tag => {}
-            '&' => {
-                output.push(' ');
-                previous_space = true;
-            }
-            value if value.is_whitespace() => {
-                if !previous_space {
-                    output.push(' ');
-                    previous_space = true;
-                }
-            }
-            value => {
-                output.push(value);
-                previous_space = false;
-            }
-        }
+fn browser_headers() -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert(USER_AGENT, HeaderValue::from_static(WEB_USER_AGENT));
+    headers.insert(ACCEPT_LANGUAGE, HeaderValue::from_static("en-US,en;q=0.8"));
+    headers
+}
+
+async fn read_body_limited(
+    response: reqwest::Response,
+    max_bytes: usize,
+) -> Result<(String, bool), ToolOutcome> {
+    if response
+        .headers()
+        .get(CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<usize>().ok())
+        .is_some_and(|length| length > max_bytes)
+    {
+        return Err(ToolOutcome::error(format!(
+            "Web response exceeds the {max_bytes}-byte limit"
+        )));
     }
-    output
+
+    let mut bytes = Vec::new();
+    let mut stream = response.bytes_stream();
+    let mut truncated = false;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk
+            .map_err(|error| ToolOutcome::error(format!("Could not read response: {error}")))?;
+        let remaining = max_bytes.saturating_sub(bytes.len());
+        if chunk.len() > remaining {
+            bytes.extend_from_slice(&chunk[..remaining]);
+            truncated = true;
+            break;
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok((String::from_utf8_lossy(&bytes).into_owned(), truncated))
 }

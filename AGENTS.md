@@ -309,6 +309,76 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-07-17 — Return structured web search results and bounded page extracts
+- **Context:** Rust Agent web search stripped tags from DuckDuckGo HTML, losing
+  result URLs and structure, while web fetch applied the same crude conversion
+  despite advertising readable page extraction. The model therefore received
+  low-signal observations and repeated identical searches until the loop guard
+  intervened.
+- **Decision:** Parse DuckDuckGo HTML into bounded title, resolved destination
+  URL, and snippet records; detect bot-challenge and empty-result pages
+  explicitly. Extract fetched pages from `article`, `main`, or `body`, remove
+  page chrome, decode entities, support bounded Markdown or text output, and
+  cap response bodies before extraction. Keep both tools behind the existing
+  SSRF and HTTP-status guards.
+- **Consequences:** Agent observations now preserve the links needed for a
+  search-then-fetch workflow and report blocked search pages diagnostically
+  instead of inviting retries. Extraction remains intentionally lightweight:
+  it does not execute JavaScript, authenticate, or claim full browser
+  Readability parity.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/tools/web.rs`](src-tauri/src/core/agent/tools/web.rs),
+  [`src-tauri/src/core/agent/tools/web_search.rs`](src-tauri/src/core/agent/tools/web_search.rs),
+  [`src-tauri/src/core/agent/tools/web_extract.rs`](src-tauri/src/core/agent/tools/web_extract.rs).
+
+---
+
+### 2026-07-17 — Give Agent an explicit empty-directory tool
+- **Context:** Agent could only approximate empty-directory creation by writing
+  an empty placeholder file. The Rust `os.fs.write` contract also rejected
+  empty content, so this strategy could fail or oscillate between writing a
+  marker and deleting the now-nonempty directory.
+- **Decision:** Align `os.fs.write` with the Atomic Agent file contract by
+  accepting empty content and append mode. Add approval-gated
+  `os.fs.mkdir { path, recursive? }` to the Rust Agent grammar, prompt catalog,
+  path policy, resource taxonomy, and executor. Default `recursive` to true.
+- **Consequences:** Agent can create a genuinely empty directory without a
+  `.gitkeep` artifact, while directory creation remains path-normalized,
+  run-scoped approval-gated, and restricted to a length-1 tool-call batch.
+  `recursive=false` preserves strict single-level creation semantics.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/tools/fs.rs`](src-tauri/src/core/agent/tools/fs.rs),
+  [`src-tauri/src/core/agent/path_policy.rs`](src-tauri/src/core/agent/path_policy.rs),
+  [`src-tauri/src/core/agent/prompt.rs`](src-tauri/src/core/agent/prompt.rs).
+
+---
+
+### 2026-07-17 — Collapse Agent, tool, and MCP traces into one compact activity block
+- **Context:** Chat tool/MCP calls and direct Agent runs rendered reasoning,
+  tool cards, and Agent status as separate heavy surfaces. Active work also
+  lacked one consistent label, and completed history did not retain the full
+  wall-clock duration of the response.
+- **Decision:** Project reasoning plus all tool/MCP calls into one expandable
+  activity block. Render `Working` while the response is active, then
+  `Worked for N s`, with nested `Called N tool(s)` and `Reasoned` details.
+  Persist the Chat request duration in message metadata and the Agent duration
+  in `metadata.agent_run.duration_ms`. Remove the standalone Agent status card.
+  Keep existing specialized tool renderers inside the compact expansion.
+  Remove only the amber warning icon and styling from the approval dialog.
+- **Consequences:** Agent and ordinary Chat traces now share one minimal,
+  durable presentation while retaining tool parameters, results, errors,
+  reasoning, and approval behavior. Duration is client wall-clock time and is
+  rounded up to seconds for display; existing histories without duration
+  metadata display the one-second floor.
+- **Owner:** team.
+- **Links:** [`web-app/src/components/ai-elements/agent-activity.tsx`](web-app/src/components/ai-elements/agent-activity.tsx),
+  [`web-app/src/lib/tools/message-trace-parts.ts`](web-app/src/lib/tools/message-trace-parts.ts),
+  [`web-app/src/lib/agent-run-message.ts`](web-app/src/lib/agent-run-message.ts),
+  [`web-app/src/containers/MessageItem.tsx`](web-app/src/containers/MessageItem.tsx),
+  [`web-app/src/containers/dialogs/AgentApprovalDialog.tsx`](web-app/src/containers/dialogs/AgentApprovalDialog.tsx).
+
+---
+
 ### 2026-07-17 — Make each Agent thread a durable session and recover invalid tool batches
 - **Context:** Every Agent IPC run previously started with only its current
   user message, so sequential turns in one thread lost tool observations and

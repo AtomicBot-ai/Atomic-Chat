@@ -63,6 +63,30 @@ describe('useAgentRun', () => {
     ])
   })
 
+  it('tracks the full agent run duration from start to terminal event', () => {
+    const running = reduceAgentRunState(
+      createAgentRunState(),
+      {
+        type: 'turn_started',
+        run_id: 'run-a',
+        session_id: 'thread-a',
+      },
+      1_000
+    )
+    const finished = reduceAgentRunState(
+      running,
+      {
+        type: 'turn_finished',
+        reason: 'reply',
+        step_count: 2,
+      },
+      4_250
+    )
+
+    expect(finished.startedAtMs).toBe(1_000)
+    expect(finished.finishedAtMs).toBe(4_250)
+  })
+
   it('clears a pending approval on execution, error, and terminal events', () => {
     const approval: AgentEvent = {
       type: 'approval_requested',

@@ -24,6 +24,7 @@ pub async fn execute(
         "os.fs.hash" => hash(args, context).await,
         "os.fs.diff" => diff(args, context).await,
         "os.fs.write" => write(args, context).await,
+        "os.fs.mkdir" => mkdir(args, context).await,
         "os.fs.edit" => edit(args, context).await,
         "os.fs.trash" => trash(args, context).await,
         "os.fs.patch" => patch(args, context).await,
@@ -240,16 +241,61 @@ async fn write(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, T
         context.working_dir,
         &required_string(args, "path").map_err(ToolOutcome::error)?,
     );
-    let content = required_string(args, "content").map_err(ToolOutcome::error)?;
+    let content = args
+        .get("content")
+        .and_then(Value::as_str)
+        .ok_or_else(|| ToolOutcome::error("Missing string argument `content`"))?;
+    let mode = if args.get("mode").and_then(Value::as_str) == Some("append") {
+        "append"
+    } else {
+        "replace"
+    };
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent)
             .await
             .map_err(|error| ToolOutcome::error(error.to_string()))?;
     }
-    tokio::fs::write(&path, content)
-        .await
-        .map_err(|error| ToolOutcome::error(error.to_string()))?;
-    Ok(ToolOutcome::ok(format!("Wrote {}", path.display())))
+    if mode == "append" {
+        let mut file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .await
+            .map_err(|error| ToolOutcome::error(error.to_string()))?;
+        file.write_all(content.as_bytes())
+            .await
+            .map_err(|error| ToolOutcome::error(error.to_string()))?;
+    } else {
+        tokio::fs::write(&path, content)
+            .await
+            .map_err(|error| ToolOutcome::error(error.to_string()))?;
+    }
+    Ok(ToolOutcome::ok(format!(
+        "Wrote {} bytes to {} ({mode})",
+        content.len(),
+        path.display()
+    )))
+}
+
+async fn mkdir(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, ToolOutcome> {
+    let path = resolve_path(
+        context.working_dir,
+        &required_string(args, "path").map_err(ToolOutcome::error)?,
+    );
+    let recursive = args
+        .get("recursive")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = if recursive {
+        tokio::fs::create_dir_all(&path).await
+    } else {
+        tokio::fs::create_dir(&path).await
+    };
+    result.map_err(|error| ToolOutcome::error(format!("{}: {error}", path.display())))?;
+    Ok(ToolOutcome::ok(format!(
+        "Created directory {} (recursive={recursive})",
+        path.display()
+    )))
 }
 
 async fn edit(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, ToolOutcome> {

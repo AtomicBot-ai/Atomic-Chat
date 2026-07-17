@@ -9,6 +9,14 @@
   "sendMessage": "Отправить сообщение",
   "newConversation": "Новый диалог",
   "clearHistory": "Очистить историю",
+  "activity": {
+    "working": "Выполняется",
+    "reading": "Чтение: {{count}}%",
+    "workedFor": "Выполнено за {{count}} с",
+    "calledTool": "Вызван {{count}} инструмент",
+    "calledTools": "Вызвано инструментов: {{count}}",
+    "reasoned": "Обдумано"
+  },
   "agentMode": {
     "chat": "Чат",
     "agent": "Агент",
@@ -16,8 +24,10 @@
     "mlxUnavailable": "Переключитесь на модель llama.cpp, чтобы использовать режим агента."
   },
   "agentApprovals": {
+    "manualSelected": "Вручную",
     "manual": "Подтверждать вручную",
     "manualDescription": "Спрашивать перед важными действиями.",
+    "skipSelected": "Без подтверждений",
     "skip": "Пропускать подтверждения",
     "skipDescription": "Выполнять без вопросов."
   },

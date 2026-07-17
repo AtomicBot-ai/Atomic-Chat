@@ -136,6 +136,8 @@ export type AgentRunTrace = {
 
 export type AgentRunState = {
   runId?: string
+  startedAtMs?: number
+  finishedAtMs?: number
   status: AgentRunStatus
   pendingApproval?: AgentApprovalRequestEvent
   approvalResolving: boolean
@@ -147,6 +149,7 @@ export type AgentRunSummary = {
   status: AgentRunStatus
   finish_reason?: AgentTurnFinishReason
   step_count?: number
+  duration_ms?: number
   tools: Array<{
     tool: string
     status?: AgentToolStatus

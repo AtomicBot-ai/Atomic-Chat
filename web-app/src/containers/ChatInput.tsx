@@ -2425,9 +2425,7 @@ const ChatInput = memo(function ChatInput({
                     chatLabel={t('chat:agentMode.chat')}
                     agentLabel={t('chat:agentMode.agent')}
                     agentDisabled={isMlxSelected}
-                    agentDisabledTooltip={t(
-                      'chat:agentMode.mlxUnavailable'
-                    )}
+                    agentDisabledTooltip={t('chat:agentMode.mlxUnavailable')}
                   />
                 )}
                 {effectiveAgentMode && (
@@ -2435,10 +2433,14 @@ const ChatInput = memo(function ChatInput({
                     <AgentApprovalModeSelect
                       mode={approvalMode}
                       onChange={handleApprovalModeChange}
+                      manualSelectedLabel={t(
+                        'chat:agentApprovals.manualSelected'
+                      )}
                       manualLabel={t('chat:agentApprovals.manual')}
                       manualDescription={t(
                         'chat:agentApprovals.manualDescription'
                       )}
+                      skipSelectedLabel={t('chat:agentApprovals.skipSelected')}
                       skipLabel={t('chat:agentApprovals.skip')}
                       skipDescription={t('chat:agentApprovals.skipDescription')}
                     />

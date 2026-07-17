@@ -23,7 +23,7 @@ pub const TOOL_CALL_GBNF: &str = r##"root ::= tool-call-array
 tool-call ::= "{" ws "\"tool\"" ws ":" ws tool-name ws "," ws "\"args\"" ws ":" ws object ws "}"
 tool-call-array ::= "[" ws tool-call ( ws "," ws tool-call ){0,15} ws "]"
 tool-name ::= "\"tool.view\"" | os-tool | "\"reply\"" | "\"finish\""
-os-tool ::= "\"os." ( "shell.run" | "fs.archive.read_entry" | "fs.archive.extract" | "fs.archive.list" | "fs.read_document" | "fs.read" | "fs.write" | "fs.trash" | "fs.list" | "fs.grep" | "fs.glob" | "fs.edit" | "fs.hash" | "fs.diff" | "fs.patch" | "http.request" | "web.search" | "web.fetch" | "git.status" | "git.log" | "git.diff" | "git.show" | "git.blame" | "git.branch" | "proc.list" | "proc.kill" | "clipboard.read" | "clipboard.write" | "notify" ) "\""
+os-tool ::= "\"os." ( "shell.run" | "fs.archive.read_entry" | "fs.archive.extract" | "fs.archive.list" | "fs.read_document" | "fs.read" | "fs.write" | "fs.mkdir" | "fs.trash" | "fs.list" | "fs.grep" | "fs.glob" | "fs.edit" | "fs.hash" | "fs.diff" | "fs.patch" | "http.request" | "web.search" | "web.fetch" | "git.status" | "git.log" | "git.diff" | "git.show" | "git.blame" | "git.branch" | "proc.list" | "proc.kill" | "clipboard.read" | "clipboard.write" | "notify" ) "\""
 
 value ::= object | array | string | number | boolean | null-lit
 
@@ -66,6 +66,7 @@ pub const GRAMMAR_TOOL_NAMES: &[&str] = &[
     "os.fs.read_document",
     "os.fs.read",
     "os.fs.write",
+    "os.fs.mkdir",
     "os.fs.trash",
     "os.fs.list",
     "os.fs.grep",

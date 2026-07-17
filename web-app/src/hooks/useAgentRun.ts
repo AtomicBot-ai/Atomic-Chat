@@ -50,13 +50,15 @@ function replaceParsedTool(
 
 export function reduceAgentRunState(
   state: AgentRunState,
-  event: AgentEvent
+  event: AgentEvent,
+  nowMs: number = Date.now()
 ): AgentRunState {
   switch (event.type) {
     case 'turn_started':
       return {
         ...createAgentRunState(),
         runId: event.run_id,
+        startedAtMs: state.startedAtMs ?? nowMs,
         status: 'running',
       }
     case 'step_started':
@@ -166,6 +168,7 @@ export function reduceAgentRunState(
             : 'finished'
       return {
         ...state,
+        finishedAtMs: nowMs,
         status,
         pendingApproval: undefined,
         approvalResolving: false,
@@ -200,6 +203,7 @@ export const useAgentRun = create<AgentRunStore>()((set, get) => ({
         [threadId]: {
           ...createAgentRunState(),
           runId,
+          startedAtMs: Date.now(),
           status: 'running',
         },
       },

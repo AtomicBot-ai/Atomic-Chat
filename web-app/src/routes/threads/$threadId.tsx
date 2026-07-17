@@ -1413,9 +1413,10 @@ function ThreadDetail() {
                       {(pendingContinueMessage || isAutoIncreasingContext) && (
                         <Shimmer duration={1}>Growing the Mind...</Shimmer>
                       )}
-                      {inputStatus === CHAT_STATUS.SUBMITTED && (
+                      {inputStatus === CHAT_STATUS.SUBMITTED &&
+                        !agentModeActive && (
                         <PromptProgress />
-                      )}
+                        )}
                     </div>
                   )}
                   {(error || contextLimitError) &&

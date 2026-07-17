@@ -1,7 +1,9 @@
 import { useAppState } from '@/hooks/useAppState'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Loader } from 'lucide-react'
 
 export function PromptProgress() {
+  const { t } = useTranslation('chat')
   const promptProgress = useAppState((state) => state.promptProgress)
 
   const percentage =
@@ -16,13 +18,13 @@ export function PromptProgress() {
     promptProgress.total <= 0 ||
     percentage >= 100
   ) {
-    return <Loader className="animate-spin w-4 h-4" />
+    return <Loader className="h-4 w-4 animate-spin" />
   }
 
   return (
-    <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-      <span>Reading: {percentage}%</span>
+    <div className="mb-2 flex items-center gap-2 text-sm text-muted-foreground">
+      <Loader className="h-4 w-4 animate-spin" />
+      <span>{t('activity.reading', { count: percentage })}</span>
     </div>
   )
 }

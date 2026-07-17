@@ -112,14 +112,16 @@ describe('Chat and Agent workspace controls', () => {
       <AgentApprovalModeSelect
         mode="manual"
         onChange={onChange}
+        manualSelectedLabel="Manually"
         manualLabel="Manually approve"
         manualDescription="Pause for sensitive actions."
+        skipSelectedLabel="Skip All"
         skipLabel="Skip all approvals"
         skipDescription="Never pause."
       />
     )
 
-    await user.click(screen.getByRole('button', { name: 'Manually approve' }))
+    await user.click(screen.getByRole('button', { name: 'Manually' }))
     await user.click(screen.getByText('Skip all approvals'))
 
     expect(onChange).toHaveBeenCalledWith('skip')

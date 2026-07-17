@@ -37,6 +37,16 @@ describe('AgentApprovalDialog', () => {
     openApproval()
   })
 
+  it('renders approval controls without warning icon styling', () => {
+    const { container } = render(<AgentApprovalDialog />)
+
+    expect(container.querySelector('.text-amber-500')).toBeNull()
+    expect(
+      screen.getByRole('button', { name: /approveOnce/i })
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /deny/i })).toBeInTheDocument()
+  })
+
   it('approves once and guards against a double click', async () => {
     let finish: (() => void) | undefined
     resolveAgentApproval.mockReturnValue(

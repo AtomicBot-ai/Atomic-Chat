@@ -8,17 +8,13 @@ export function buildTraceBlocks(
   disableReasoning: boolean
 ): TraceBlock[] {
   const blocks: TraceBlock[] = []
-  const agentRun = (
-    message.metadata as { agent_run?: AgentRunSummary } | undefined
-  )?.agent_run
-
-  if (agentRun) {
-    blocks.push({
-      kind: 'agent',
-      key: `${message.id}-agent-run`,
-      summary: agentRun,
-    })
-  }
+  const metadata = message.metadata as
+    | { agent_run?: AgentRunSummary; activityDurationMs?: number }
+    | undefined
+  const agentRun = metadata?.agent_run
+  const reasoning: Array<{ key: string; text: string }> = []
+  const tools: Extract<TraceBlock, { kind: 'activity' }>['tools'] = []
+  let activityIndex = agentRun ? 0 : -1
 
   for (let i = 0; i < message.parts.length; i++) {
     const part = message.parts[i]
@@ -36,8 +32,8 @@ export function buildTraceBlocks(
 
     if (part.type === 'reasoning') {
       if (!disableReasoning && part.text?.trim()) {
-        blocks.push({
-          kind: 'reasoning',
+        if (activityIndex < 0) activityIndex = blocks.length
+        reasoning.push({
           key: `${message.id}-${i}`,
           text: part.text,
         })
@@ -73,6 +69,7 @@ export function buildTraceBlocks(
     }
 
     if (typeof part.type === 'string' && part.type.startsWith('tool-')) {
+      if (activityIndex < 0) activityIndex = blocks.length
       const toolName = part.type.slice('tool-'.length)
       const state = 'state' in part ? part.state : 'output-available'
       const input = 'input' in part ? part.input : undefined
@@ -84,8 +81,7 @@ export function buildTraceBlocks(
             ? String(part.error)
             : undefined
 
-      blocks.push({
-        kind: 'tool',
+      tools.push({
         key: `${message.id}-${i}`,
         toolName,
         state,
@@ -98,6 +94,17 @@ export function buildTraceBlocks(
         }),
       })
     }
+  }
+
+  if (activityIndex >= 0) {
+    blocks.splice(activityIndex, 0, {
+      kind: 'activity',
+      key: `${message.id}-activity`,
+      durationMs: agentRun?.duration_ms ?? metadata?.activityDurationMs,
+      reasoning,
+      tools,
+      agentSummary: agentRun,
+    })
   }
 
   return blocks

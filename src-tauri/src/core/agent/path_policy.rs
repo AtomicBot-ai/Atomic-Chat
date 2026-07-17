@@ -54,6 +54,18 @@ pub async fn prepare_call_paths(
         "os.fs.write" => {
             resolve_field(args, "path", &[], None, "write", &root, &mut resources).await?;
         }
+        "os.fs.mkdir" => {
+            resolve_field(
+                args,
+                "path",
+                &[],
+                None,
+                "create-directory",
+                &root,
+                &mut resources,
+            )
+            .await?;
+        }
         "os.fs.edit" => {
             resolve_field(args, "path", &[], None, "edit", &root, &mut resources).await?;
         }
