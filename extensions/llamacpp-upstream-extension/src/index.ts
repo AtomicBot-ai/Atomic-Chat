@@ -194,7 +194,7 @@ function modelLoadReadyTimeoutSecs(configuredTimeoutSecs: number): number {
 /// (`LLAMACPP_UPSTREAM_TAG`) and `atomic-chat-conf/backends/manifest.json`
 /// (`tag_name`). Remove (or move to a real settings-driven pin) once the
 /// team is done validating this tag broadly. See `enforcePinnedBackendVersion`.
-const PINNED_BACKEND_TAG = 'b9937'
+const PINNED_BACKEND_TAG = 'b10063'
 
 /**
  * Override the default app.log function to use Jan's logging system.

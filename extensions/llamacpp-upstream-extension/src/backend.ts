@@ -39,14 +39,14 @@ const MANIFEST_FETCH_TIMEOUT_MS = 8_000
 // than the live manifest until the network recovers. Update this whenever
 // the atomic-chat-conf manifest is updated.
 const BUNDLED_MANIFEST_BASELINE = {
-  tag_name: 'b9937',
+  tag_name: 'b10063',
   assets: [
-    { name: 'llama-b9937-bin-win-cpu-x64.zip' },
-    { name: 'llama-b9937-bin-win-cuda-12.4-x64.zip' },
-    { name: 'llama-b9937-bin-win-cuda-13.3-x64.zip' },
-    { name: 'llama-b9937-bin-win-vulkan-x64.zip' },
-    { name: 'llama-b9937-bin-ubuntu-x64.tar.gz' },
-    { name: 'llama-b9937-bin-ubuntu-vulkan-x64.tar.gz' },
+    { name: 'llama-b10063-bin-win-cpu-x64.zip' },
+    { name: 'llama-b10063-bin-win-cuda-12.4-x64.zip' },
+    { name: 'llama-b10063-bin-win-cuda-13.3-x64.zip' },
+    { name: 'llama-b10063-bin-win-vulkan-x64.zip' },
+    { name: 'llama-b10063-bin-ubuntu-x64.tar.gz' },
+    { name: 'llama-b10063-bin-ubuntu-vulkan-x64.tar.gz' },
     { name: 'cudart-llama-bin-win-cuda-12.4-x64.zip' },
     { name: 'cudart-llama-bin-win-cuda-13.3-x64.zip' },
   ],
