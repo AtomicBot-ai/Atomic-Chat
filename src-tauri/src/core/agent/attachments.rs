@@ -226,7 +226,23 @@ async fn stage_all(
         if attachment.kind == AgentAttachmentKind::Image {
             enforce_size(attachment, size_bytes, &mut total_bytes)?;
         }
-        let destination = turn_dir.join(staged_name(index, &attachment.name));
+        let detected_image_media_type = match attachment.kind {
+            AgentAttachmentKind::Image => Some(
+                detect_image_media_type(&bytes)
+                    .ok_or_else(|| {
+                        format!(
+                            "Image attachment '{}' is not a supported image",
+                            attachment.name
+                        )
+                    })?
+                    .to_owned(),
+            ),
+            AgentAttachmentKind::File => None,
+        };
+        let destination = match detected_image_media_type.as_deref() {
+            Some(media_type) => turn_dir.join(staged_image_name(index, media_type)),
+            None => turn_dir.join(staged_name(index, &attachment.name)),
+        };
         tokio::fs::write(&destination, bytes)
             .await
             .map_err(|error| {
@@ -235,7 +251,7 @@ async fn stage_all(
         staged.push(StagedAttachment {
             kind: attachment.kind.clone(),
             name: attachment.name.clone(),
-            media_type: attachment.media_type.clone(),
+            media_type: detected_image_media_type.or_else(|| attachment.media_type.clone()),
             path: destination,
             size_bytes,
         });
@@ -273,19 +289,9 @@ fn decode_image_data_url(attachment: &AgentAttachment) -> Result<Vec<u8>, String
             attachment.name
         )
     })?;
-    let media_type = attachment
-        .media_type
-        .as_deref()
-        .filter(|value| value.starts_with("image/"))
-        .ok_or_else(|| {
-            format!(
-                "Image attachment '{}' requires image MIME type",
-                attachment.name
-            )
-        })?;
-    if header != format!("data:{media_type};base64") {
+    if !header.starts_with("data:image/") || !header.ends_with(";base64") {
         return Err(format!(
-            "Image attachment '{}' data URL MIME does not match media_type",
+            "Image attachment '{}' requires a base64 image data URL",
             attachment.name
         ));
     }
@@ -312,6 +318,31 @@ fn staged_name(index: usize, original: &str) -> String {
     match extension {
         Some(extension) => format!("{:02}.{}", index + 1, extension.to_ascii_lowercase()),
         None => format!("{:02}.bin", index + 1),
+    }
+}
+
+fn staged_image_name(index: usize, media_type: &str) -> String {
+    let extension = match media_type {
+        "image/png" => "png",
+        "image/jpeg" => "jpg",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        _ => "bin",
+    };
+    format!("{:02}.{extension}", index + 1)
+}
+
+pub fn detect_image_media_type(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if bytes.starts_with(b"\xff\xd8\xff") {
+        Some("image/jpeg")
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        Some("image/gif")
+    } else if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else {
+        None
     }
 }
 
@@ -389,7 +420,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_traversal_names_and_mismatched_image_mime() {
+    async fn rejects_traversal_names_and_non_image_data_urls() {
         let data_folder = temp_data_folder();
         let session_id = "thread-invalid";
         ensure_thread_dir_exists(&data_folder, session_id).unwrap();
@@ -407,12 +438,55 @@ mod tests {
             name: "image.png".into(),
             media_type: Some("image/png".into()),
             path: None,
-            data_url: Some("data:image/jpeg;base64,aGVsbG8=".into()),
+            data_url: Some("data:text/plain;base64,aGVsbG8=".into()),
         }];
         assert!(stage_attachments(&data_folder, session_id, &mismatched)
             .await
             .unwrap_err()
-            .contains("does not match"));
+            .contains("requires a base64 image data URL"));
+
+        std::fs::remove_dir_all(data_folder).unwrap();
+    }
+
+    #[tokio::test]
+    async fn stages_images_with_extensions_derived_from_their_bytes() {
+        let data_folder = temp_data_folder();
+        let session_id = "thread-image-signatures";
+        ensure_thread_dir_exists(&data_folder, session_id).unwrap();
+        let attachments = vec![
+            AgentAttachment {
+                kind: AgentAttachmentKind::Image,
+                name: "mislabelled.png".into(),
+                media_type: Some("image/png".into()),
+                path: None,
+                data_url: Some("data:image/jpeg;base64,/9j/cmVzdA==".into()),
+            },
+            AgentAttachment {
+                kind: AgentAttachmentKind::Image,
+                name: "also-mislabelled.png".into(),
+                media_type: Some("image/png".into()),
+                path: None,
+                data_url: Some("data:image/webp;base64,UklGRgAAAABXRUJQ".into()),
+            },
+        ];
+
+        let staged = stage_attachments(&data_folder, session_id, &attachments)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            staged.items[0].path.file_name().unwrap().to_str(),
+            Some("01.jpg")
+        );
+        assert_eq!(staged.items[0].media_type.as_deref(), Some("image/jpeg"));
+        assert_eq!(
+            staged.items[1].path.file_name().unwrap().to_str(),
+            Some("02.webp")
+        );
+        assert_eq!(staged.items[1].media_type.as_deref(), Some("image/webp"));
+        let manifest = staged.append_manifest("Inspect.");
+        assert!(manifest.contains("mime=image/jpeg; size=7; path=attachment://01.jpg"));
+        assert!(manifest.contains("mime=image/webp; size=12; path=attachment://02.webp"));
 
         std::fs::remove_dir_all(data_folder).unwrap();
     }

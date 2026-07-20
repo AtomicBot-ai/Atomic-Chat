@@ -30,6 +30,34 @@ export type AgentTurnRequest = {
   auto_approve: boolean
 }
 
+export type AgentWorkspaceRequest = {
+  workingDir?: string
+  path?: string
+  maxBytes?: number
+}
+
+export type AgentWorkspaceEntry = {
+  name: string
+  path: string
+  kind: 'directory' | 'file' | 'unknown'
+  size?: number
+  modifiedMs?: number
+}
+
+export type AgentWorkspaceFile = {
+  path: string
+  absolutePath: string
+  size: number
+  modifiedMs?: number
+  extension: string
+}
+
+export type AgentWorkspaceText = {
+  path: string
+  content: string
+  truncated: boolean
+}
+
 export type AgentApprovalDecision = {
   approval_id: string
   approved: boolean

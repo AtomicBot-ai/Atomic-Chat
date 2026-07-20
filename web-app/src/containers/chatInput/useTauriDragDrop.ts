@@ -10,6 +10,14 @@ type Options = {
   onDrop: (paths: string[]) => void
 }
 
+async function detachListener(unlisten: () => void): Promise<void> {
+  try {
+    await unlisten()
+  } catch (error) {
+    console.warn('Failed to detach Tauri drag-drop listener', error)
+  }
+}
+
 /**
  * Subscribe to Tauri's native drag-and-drop events for the current webview.
  *
@@ -66,7 +74,7 @@ export const useTauriDragDrop = ({
           }
         })
         if (cancelled) {
-          unlisten?.()
+          if (unlisten) await detachListener(unlisten)
           unlisten = null
         }
       } catch (e) {
@@ -79,11 +87,7 @@ export const useTauriDragDrop = ({
     return () => {
       cancelled = true
       if (unlisten) {
-        try {
-          unlisten()
-        } catch (e) {
-          console.warn('Failed to detach Tauri drag-drop listener', e)
-        }
+        void detachListener(unlisten)
       }
     }
   }, [enabled])

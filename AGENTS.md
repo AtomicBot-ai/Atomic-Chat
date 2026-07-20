@@ -309,6 +309,48 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-07-20 — Keep the Agent preview panel structurally stable
+- **Context:** Opening the first workspace file dynamically inserted a new
+  resizable panel and changed the Files panel's default width, causing the
+  entire Agent thread layout to visibly jump.
+- **Decision:** Keep the Preview panel mounted and collapse it to zero when
+  empty, then expand it imperatively when a file or artifact opens. Keep the
+  Files width stable and present the single file preview as a compact,
+  icon-labelled tab instead of an unbounded rectangular tab.
+- **Consequences:** Replacing the active file no longer reconstructs or
+  renormalizes the three-column panel group. Opening or closing Preview still
+  resizes Chat as intended, while Files retains its current width.
+- **Owner:** team.
+- **Links:** [`web-app/src/containers/AgentWorkspaceLayout.tsx`](web-app/src/containers/AgentWorkspaceLayout.tsx),
+  [`web-app/src/containers/AgentWorkspacePreview.tsx`](web-app/src/containers/AgentWorkspacePreview.tsx).
+
+---
+
+### 2026-07-20 — Add a scoped three-column workspace to Agent threads
+- **Context:** Agent threads could operate on a selected workspace and link
+  generated files, but users had no persistent workspace tree or shared place
+  to inspect files and HTML artifacts alongside the conversation.
+- **Decision:** On desktop Agent threads, render resizable
+  `Chat → Preview → Files` columns. Keep Files permanently visible and open
+  deduplicated file tabs plus the existing HTML artifact in one conditional
+  preview host. Expose separate read-only Agent workspace IPC commands for
+  lazy directory listing, file metadata, and bounded UTF-8 text reads; resolve
+  every target against the selected or default workspace and reject traversal
+  and symlink escapes after canonicalization.
+- **Consequences:** Agent users can browse directories and preview text,
+  images, PDFs, unsupported files, and HTML artifacts without leaving the
+  thread. Ordinary Chat and narrow-screen layouts retain the existing artifact
+  panel, file changes are not permitted through this surface, and text preview
+  remains bounded and UTF-8-only.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/commands.rs`](src-tauri/src/core/agent/commands.rs),
+  [`web-app/src/containers/AgentWorkspaceLayout.tsx`](web-app/src/containers/AgentWorkspaceLayout.tsx),
+  [`web-app/src/containers/AgentWorkspaceFiles.tsx`](web-app/src/containers/AgentWorkspaceFiles.tsx),
+  [`web-app/src/containers/AgentWorkspacePreview.tsx`](web-app/src/containers/AgentWorkspacePreview.tsx),
+  [`web-app/src/stores/workspace-preview-store.ts`](web-app/src/stores/workspace-preview-store.ts).
+
+---
+
 ### 2026-07-20 — Open Agent-referenced files from assistant summaries
 - **Context:** Agent replies commonly report created output as an absolute path
   and refer to staged input attachments by their original filename, but both
@@ -362,6 +404,9 @@ Append-only. Newest at top. Each entry follows this shape:
   outside the selected workspace, and no vision tool. Local llama.cpp sessions
   may also be text-only, so an image cannot be accepted optimistically and
   interpreted later without checking the active session.
+  Image files can also carry misleading names (for example JPEG or WebP bytes
+  under a `.png` suffix), so requiring the suffix to match the encoded payload
+  rejects images that browsers can decode correctly.
 - **Decision:** Accept at most eight file/image attachments per Agent turn,
   validate and copy them into
   `<thread>/agent-attachments/<turn>/`, and append a compact manifest containing
@@ -371,6 +416,10 @@ Append-only. Newest at top. Each entry follows this shape:
   outside the workspace. Keep documents on `os.fs.read_document`; add bounded
   `vision.describe` requests through `/v1/chat/completions` on the active
   llama.cpp session, separate from the grammar-constrained `/completion` slot.
+  For image attachments, treat the PNG/JPEG/GIF/WebP byte signature as
+  authoritative, assign the staged file its canonical extension and MIME type,
+  and let `vision.describe` detect the payload from those bytes rather than
+  rejecting a valid image because of its original suffix.
   Reject image turns before staging when the selected session has no `mmproj`,
   and repeat the capability check inside the vision tool. Audio remains
   unsupported.
@@ -381,7 +430,8 @@ Append-only. Newest at top. Each entry follows this shape:
   tools. Text-only models fail before creating a user turn and prompt the user
   to choose a vision-capable model. Staged files consume thread storage until
   that thread is deleted; image analysis is limited to PNG, JPEG, GIF, and
-  WebP.
+  WebP. Mislabelled supported images remain usable while unknown image
+  encodings still fail before inference.
 - **Owner:** team.
 - **Links:** [`src-tauri/src/core/agent/attachments.rs`](src-tauri/src/core/agent/attachments.rs),
   [`src-tauri/src/core/agent/tools/vision.rs`](src-tauri/src/core/agent/tools/vision.rs),

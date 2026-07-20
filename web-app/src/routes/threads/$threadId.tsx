@@ -84,7 +84,7 @@ import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useAgentMode } from '@/hooks/useAgentMode'
-import { ArtifactPanel } from '@/containers/ArtifactPanel'
+import { AgentWorkspaceLayout } from '@/containers/AgentWorkspaceLayout'
 import { useArtifactStore } from '@/stores/artifact-store'
 import posthog from 'posthog-js'
 import { useAgentRun } from '@/hooks/useAgentRun'
@@ -1444,6 +1444,7 @@ function ThreadDetail() {
 
   // Skip auto-context-increase in agent mode
   const agentModeActive = useAgentMode((s) => s.agentThreads[threadId] === true)
+  const agentWorkingDir = useAgentMode((s) => s.workingDirs[threadId])
   useEffect(() => {
     if (!error || agentModeActive) return
     const autoIncrease =
@@ -1538,7 +1539,12 @@ function ThreadDetail() {
   }, [chatMessages])
 
   return (
-    <div className="flex h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))] overflow-hidden">
+    <AgentWorkspaceLayout
+      threadId={threadId}
+      agentModeActive={agentModeActive}
+      workingDir={agentWorkingDir}
+      refreshKey={agentRun?.finishedAtMs ?? 0}
+    >
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
         <HeaderPage>
           <div className="flex items-center justify-between w-full pr-2">
@@ -1717,7 +1723,6 @@ function ThreadDetail() {
           </div>
         </div>
       </div>
-      <ArtifactPanel />
-    </div>
+    </AgentWorkspaceLayout>
   )
 }

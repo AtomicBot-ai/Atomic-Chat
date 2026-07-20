@@ -3,6 +3,10 @@ import type {
   AgentApprovalDecision,
   AgentEvent,
   AgentTurnRequest,
+  AgentWorkspaceEntry,
+  AgentWorkspaceFile,
+  AgentWorkspaceRequest,
+  AgentWorkspaceText,
 } from '@/types/agent'
 
 export type AgentEventHandler = (event: AgentEvent) => void
@@ -24,6 +28,24 @@ export function resolveAgentApproval(
   decision: AgentApprovalDecision
 ): Promise<void> {
   return invoke<void>('agent_resolve_approval', { decision })
+}
+
+export function listAgentWorkspace(
+  request: AgentWorkspaceRequest
+): Promise<AgentWorkspaceEntry[]> {
+  return invoke<AgentWorkspaceEntry[]>('agent_workspace_list', { request })
+}
+
+export function statAgentWorkspaceFile(
+  request: AgentWorkspaceRequest
+): Promise<AgentWorkspaceFile> {
+  return invoke<AgentWorkspaceFile>('agent_workspace_stat', { request })
+}
+
+export function readAgentWorkspaceText(
+  request: AgentWorkspaceRequest
+): Promise<AgentWorkspaceText> {
+  return invoke<AgentWorkspaceText>('agent_workspace_read_text', { request })
 }
 
 export function isStaleAgentApprovalError(error: unknown): boolean {
