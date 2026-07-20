@@ -2674,7 +2674,15 @@ const ChatInput = memo(function ChatInput({
       </div>
 
       {effectiveAgentMode && canSelectAgentMode && (
-        <div className="absolute inset-x-0.5 top-full z-10 -mt-3 rounded-b-2xl border border-t-0 border-input bg-background/80 px-3 pb-2 pt-4 dark:bg-input/15">
+        <div className="absolute inset-x-0.5 top-full z-10 -mt-0.5 rounded-b-3xl border border-t-0 border-input bg-background/80 px-3 pb-2 pt-2 dark:bg-input/15">
+          <span
+            aria-hidden
+            className="absolute -left-px -top-3 h-3 w-6 border-l border-input bg-background/80 dark:bg-input/15"
+          />
+          <span
+            aria-hidden
+            className="absolute -right-px -top-3 h-3 w-6 border-r border-input bg-background/80 dark:bg-input/15"
+          />
           <div className="flex min-w-0 items-center gap-2">
             <AgentWorkspaceSelect
               workingDir={workingDir}
