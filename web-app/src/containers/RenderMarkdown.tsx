@@ -1,4 +1,3 @@
-
 import { Components } from 'react-markdown'
 import {
   isValidElement,
@@ -91,7 +90,7 @@ function extractCodeText(children: ReactNode): string {
           : isValidElement(child) &&
               typeof (child.props as { children?: unknown })?.children ===
                 'string'
-            ? ((child.props as { children: string }).children)
+            ? (child.props as { children: string }).children
             : ''
       )
       .join('')
@@ -120,19 +119,19 @@ const normalizeLatex = (input: string): string => {
 
   const segments = input.split(/(```[\s\S]*?```|`[^`]*`|<[a-zA-Z/_!][^>]*>)/g)
 
-  let result = '';
+  let result = ''
 
   for (let i = 0; i < segments.length; i++) {
-    const segment = segments[i];
-    if (!segment) continue;
+    const segment = segments[i]
+    if (!segment) continue
 
     // Captured code blocks, inline code, html tags
     if (i % 2 === 1) {
-      result += segment;
-      continue;
+      result += segment
+      continue
     }
 
-    let s = segment;
+    let s = segment
 
     // --- Escape suspicious $<number> to prevent Markdown from treating it as LaTeX
     // Example: "$1" → "\$1"
@@ -152,7 +151,7 @@ const normalizeLatex = (input: string): string => {
         (_, pre, inner) => `${pre}$${inner.trim()}$`
       )
 
-    result += s;
+    result += s
   }
 
   // Cache the result (with size limit to prevent memory leaks)
@@ -176,7 +175,6 @@ function RenderMarkdownComponent({
   enableHtmlPreview,
   allowRawHtml,
 }: MarkdownProps) {
-
   const rehypePlugins = allowRawHtml
     ? REHYPE_PLUGINS_WITH_RAW_HTML
     : REHYPE_PLUGINS
@@ -276,7 +274,7 @@ function RenderMarkdownComponent({
     return { code: CodeRenderer, ...(components ?? {}) }
   }, [enableHtmlPreview, components, delegateProps, isStreaming])
 
-  if (content.length > 0 && content.length < 32) {
+  if (content.length > 0 && content.length < 32 && !components) {
     return (
       <div
         dir="auto"
@@ -327,6 +325,7 @@ export const RenderMarkdown = memo(
   RenderMarkdownComponent,
   (prevProps, nextProps) =>
     prevProps.content === nextProps.content &&
+    prevProps.components === nextProps.components &&
     prevProps.enableHtmlPreview === nextProps.enableHtmlPreview &&
     prevProps.allowRawHtml === nextProps.allowRawHtml &&
     // With HTML preview on, re-render on streaming→done to drop the loader.

@@ -14,7 +14,9 @@
 //! the `tauri-plugin-llamacpp` session map.
 
 pub mod approval;
+pub mod attachments;
 pub mod commands;
+pub mod compressor;
 pub mod grammar;
 pub mod llm_client;
 pub mod loop_guard;

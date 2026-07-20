@@ -11,6 +11,7 @@ use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
 use super::approval::ApprovalGate;
+use super::attachments::stage_attachments;
 use super::llm_client::{find_session_by_model_id, LlamaServerClient};
 use super::path_policy::{expand_home, lexical_normalize};
 use super::prompt::{
@@ -79,6 +80,18 @@ pub async fn agent_run_turn<R: Runtime>(
     let target = find_session_by_model_id(&request.model_id, &llama_state, &upstream_state)
         .await
         .map_err(|error| error.to_string())?;
+    let has_images = request
+        .attachments
+        .iter()
+        .any(|attachment| attachment.kind == super::types::AgentAttachmentKind::Image);
+    ensure_vision_requirement(has_images, target.has_vision)?;
+    let staged = stage_attachments(&data_folder, &request.session_id, &request.attachments).await?;
+    let user_message = staged.append_manifest(&request.user_message);
+    let trusted_read_roots = staged
+        .trusted_root
+        .as_ref()
+        .map(std::slice::from_ref)
+        .unwrap_or(&[]);
     let client = LlamaServerClient::new(&target).map_err(|error| error.to_string())?;
     let cancellation = CancellationToken::new();
     let (cancel_tx, cancel_rx) = oneshot::channel();
@@ -135,9 +148,10 @@ pub async fn agent_run_turn<R: Runtime>(
                     RunTurnInput {
                         run_id: &request.run_id,
                         session_id: &request.session_id,
-                        user_message: &request.user_message,
+                        user_message: &user_message,
                         stable_prefix: &stable_prefix,
                         working_dir: &working_dir,
+                        trusted_read_roots,
                         max_steps: request.max_steps.unwrap_or(MAX_STEPS),
                         client: &client,
                         approval: &approval,
@@ -163,6 +177,31 @@ pub async fn agent_run_turn<R: Runtime>(
         .remove(&request.run_id);
     clear_pending_approvals_for_run(&state, &request.run_id).await;
     result
+}
+
+fn ensure_vision_requirement(has_images: bool, has_vision: bool) -> Result<(), String> {
+    if has_images && !has_vision {
+        Err(
+            "AGENT_VISION_MODEL_REQUIRED: Select a vision-capable model before sending images"
+                .into(),
+        )
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod attachment_tests {
+    use super::ensure_vision_requirement;
+
+    #[test]
+    fn rejects_image_turns_for_text_only_sessions() {
+        assert!(ensure_vision_requirement(true, false)
+            .unwrap_err()
+            .starts_with("AGENT_VISION_MODEL_REQUIRED"));
+        assert!(ensure_vision_requirement(true, true).is_ok());
+        assert!(ensure_vision_requirement(false, false).is_ok());
+    }
 }
 
 #[tauri::command]

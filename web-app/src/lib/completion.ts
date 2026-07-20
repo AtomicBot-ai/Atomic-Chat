@@ -33,18 +33,19 @@ export const newUserThreadContent = (
   )
 
   // Inject document metadata into the text content (id, name, fileType only - no path)
-  const docMetadata = documents
-    .map((doc) => ({
-      id: doc.id ?? doc.name,
-      name: doc.name,
-      type: doc.fileType,
-      size: typeof doc.size === 'number' ? doc.size : undefined,
-      chunkCount: typeof doc.chunkCount === 'number' ? doc.chunkCount : undefined,
-      injectionMode: doc.injectionMode,
-    }))
+  const docMetadata = documents.map((doc) => ({
+    id: doc.id ?? doc.name,
+    name: doc.name,
+    type: doc.fileType,
+    size: typeof doc.size === 'number' ? doc.size : undefined,
+    chunkCount: typeof doc.chunkCount === 'number' ? doc.chunkCount : undefined,
+    injectionMode: doc.injectionMode,
+  }))
 
   const textWithFiles =
-    docMetadata.length > 0 ? injectFilesIntoPrompt(content, docMetadata) : content
+    docMetadata.length > 0
+      ? injectFilesIntoPrompt(content, docMetadata)
+      : content
 
   const contentParts = [
     {
@@ -89,6 +90,15 @@ export const newUserThreadContent = (
       content: doc.inlineContent,
     }))
   }
+  if (documents.length > 0) {
+    metadata.file_attachments = documents.map((doc) => ({
+      name: doc.name,
+      path: doc.path,
+      mediaType: doc.mimeType,
+      size: doc.size,
+      fileType: doc.fileType,
+    }))
+  }
   if (audioMeta.length > 0) {
     metadata.input_audio = audioMeta
   }
@@ -119,7 +129,7 @@ export const newAssistantThreadContent = (
   threadId: string,
   content: string,
   metadata: Record<string, unknown> = {},
-  id?: string,
+  id?: string
 ): ThreadMessage => ({
   type: 'text',
   role: ChatCompletionRole.Assistant,

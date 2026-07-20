@@ -49,7 +49,9 @@
     "defaultDescription": "Uses the agent-workspace folder inside the Atomic Chat data folder."
   },
   "agentErrors": {
-    "attachmentsUnsupported": "Agent mode does not support attachments yet.",
+    "audioUnsupported": "Agent mode does not support audio attachments.",
+    "invalidAttachment": "One or more files could not be attached. Choose local files and try again.",
+    "visionModelRequired": "Select a vision-capable model before sending images.",
     "localLlamacppRequired": "Agent mode requires an active local llama.cpp model.",
     "mlxUnavailableTitle": "Agent mode is unavailable with MLX",
     "mlxUnavailableDescription": "Switch to a llama.cpp model and try again.",

@@ -1,4 +1,9 @@
-import { memo, useState, useCallback } from 'react'
+import {
+  memo,
+  useState,
+  useCallback,
+  type ComponentPropsWithoutRef,
+} from 'react'
 import type { UIMessage, ChatStatus } from 'ai'
 import { RenderMarkdown } from './RenderMarkdown'
 import { cn } from '@/lib/utils'
@@ -25,6 +30,13 @@ import {
   ActivityDetail,
   AgentActivity,
 } from '@/components/ai-elements/agent-activity'
+import {
+  agentFilePathFromHref,
+  type AgentFileReference,
+  extractAgentToolPaths,
+  linkAgentFileReferences,
+} from '@/lib/agent-file-links'
+import { useServiceHub } from '@/hooks/useServiceHub'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -55,6 +67,7 @@ export type MessageItemProps = {
   showAssistant?: boolean
   isAnimating?: boolean
   hideActions?: boolean
+  agentAttachmentReferences?: readonly AgentFileReference[]
 }
 
 export const MessageItem = memo(
@@ -69,8 +82,10 @@ export const MessageItem = memo(
     onRegenerate,
     onEdit,
     onDelete,
+    agentAttachmentReferences = [],
   }: MessageItemProps) => {
     const { t } = useTranslation('chat')
+    const serviceHub = useServiceHub()
     const selectedModel = useModelProvider((state) => state.selectedModel)
     // Global "Disable reasoning" toggle: some providers (e.g. MiniMax) ignore
     // every known API flag and keep streaming chain-of-thought. Hide those
@@ -119,6 +134,59 @@ export const MessageItem = memo(
       message.role === 'assistant' &&
       (requestActive ??
         (status === CHAT_STATUS.STREAMING || status === CHAT_STATUS.SUBMITTED))
+    const isAgentMessage = Boolean(
+      (message.metadata as { agent_run?: unknown } | undefined)?.agent_run
+    )
+    const agentFileReferences = useMemo(
+      () =>
+        isAgentMessage
+          ? [
+              ...agentAttachmentReferences,
+              ...extractAgentToolPaths(message.parts),
+            ]
+          : [],
+      [agentAttachmentReferences, isAgentMessage, message.parts]
+    )
+    const agentMarkdownComponents = useMemo(
+      () =>
+        isAgentMessage
+          ? {
+              a: ({
+                href,
+                children,
+                ...props
+              }: ComponentPropsWithoutRef<'a'>) => {
+                const filePath = href ? agentFilePathFromHref(href) : null
+                if (!filePath) {
+                  return (
+                    <a href={href} {...props}>
+                      {children}
+                    </a>
+                  )
+                }
+
+                return (
+                  <a
+                    href={href}
+                    {...props}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      void serviceHub
+                        .opener()
+                        .openPath(filePath)
+                        .catch((error) => {
+                          console.error('Failed to open Agent file:', error)
+                        })
+                    }}
+                  >
+                    {children}
+                  </a>
+                )
+              },
+            }
+          : undefined,
+      [isAgentMessage, serviceHub]
+    )
 
     // Extract file metadata from message text (for user messages with attachments)
     const attachedFiles = useMemo(() => {
@@ -187,7 +255,12 @@ export const MessageItem = memo(
             </div>
           ) : (
             <RenderMarkdown
-              content={block.text}
+              content={
+                isAgentMessage
+                  ? linkAgentFileReferences(block.text, agentFileReferences)
+                  : block.text
+              }
+              components={agentMarkdownComponents}
               isStreaming={isStreaming && isLastBlock}
               messageId={message.id}
               isAnimating={isAnimating}
@@ -451,7 +524,9 @@ export const MessageItem = memo(
       prevProps.status === nextProps.status &&
       prevProps.requestActive === nextProps.requestActive &&
       prevProps.showAssistant === nextProps.showAssistant &&
-      prevProps.hideActions === nextProps.hideActions
+      prevProps.hideActions === nextProps.hideActions &&
+      prevProps.agentAttachmentReferences ===
+        nextProps.agentAttachmentReferences
     )
   }
 )

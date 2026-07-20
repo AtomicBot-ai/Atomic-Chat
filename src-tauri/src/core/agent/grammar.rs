@@ -2,7 +2,7 @@
 //!
 //! Ported from `grammars/tool-call.gbnf` in the TypeScript `atomic-agent`,
 //! trimmed to the fixed iteration-1 tool set (see [`crate::core::agent::prompt::ITERATION_ONE_TOOLS`]).
-//! No `browser` / `memory` / `tasks` / `skill` / `vision` / `mcp` branches — the
+//! No `browser` / `memory` / `tasks` / `skill` / `mcp` branches — the
 //! grammar is built statically under a known catalog, so the dynamic
 //! rule-stitching / `removeBrowserToolRule` filtering from `build-grammar.ts`
 //! is unnecessary.
@@ -22,7 +22,7 @@
 pub const TOOL_CALL_GBNF: &str = r##"root ::= tool-call-array
 tool-call ::= "{" ws "\"tool\"" ws ":" ws tool-name ws "," ws "\"args\"" ws ":" ws object ws "}"
 tool-call-array ::= "[" ws tool-call ( ws "," ws tool-call ){0,15} ws "]"
-tool-name ::= "\"tool.view\"" | os-tool | "\"reply\"" | "\"finish\""
+tool-name ::= "\"tool.view\"" | os-tool | "\"vision.describe\"" | "\"reply\"" | "\"finish\""
 os-tool ::= "\"os." ( "shell.run" | "fs.archive.read_entry" | "fs.archive.extract" | "fs.archive.list" | "fs.read_document" | "fs.read" | "fs.write" | "fs.mkdir" | "fs.trash" | "fs.list" | "fs.grep" | "fs.glob" | "fs.edit" | "fs.hash" | "fs.diff" | "fs.patch" | "http.request" | "web.search" | "web.fetch" | "git.status" | "git.log" | "git.diff" | "git.show" | "git.blame" | "git.branch" | "proc.list" | "proc.kill" | "clipboard.read" | "clipboard.write" | "notify" ) "\""
 
 value ::= object | array | string | number | boolean | null-lit
@@ -78,6 +78,7 @@ pub const GRAMMAR_TOOL_NAMES: &[&str] = &[
     "os.http.request",
     "os.web.search",
     "os.web.fetch",
+    "vision.describe",
     "os.git.status",
     "os.git.log",
     "os.git.diff",
@@ -126,7 +127,6 @@ mod tests {
             "browser-tool",
             "memory-tool",
             "tasks-tool",
-            "vision-tool",
             "discovery-tool",
             "mcp-native-tool",
             "mcp-server-tool",
@@ -134,7 +134,6 @@ mod tests {
             "browser.",
             "memory.",
             "tasks.",
-            "vision.describe",
             "mcp.",
         ] {
             assert!(

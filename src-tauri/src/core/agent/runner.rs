@@ -2,7 +2,7 @@
 //!
 //! (`loop` is a reserved keyword, so the loop lives here.)
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use futures_util::future::join_all;
 use tokio_util::sync::CancellationToken;
@@ -34,6 +34,7 @@ pub struct RunTurnInput<'a> {
     pub user_message: &'a str,
     pub stable_prefix: &'a str,
     pub working_dir: &'a Path,
+    pub trusted_read_roots: &'a [PathBuf],
     pub max_steps: u32,
     pub client: &'a LlamaServerClient,
     pub approval: &'a dyn ApprovalHook,
@@ -266,6 +267,8 @@ pub async fn run_turn(
 
         let tool_context = ToolContext {
             working_dir: input.working_dir,
+            trusted_read_roots: input.trusted_read_roots,
+            client: Some(input.client),
             approval: input.approval,
             cancellation: input.cancellation,
             loaded_tools: &loaded_tools,

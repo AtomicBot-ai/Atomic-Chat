@@ -36,6 +36,7 @@ async fn run_script(
             user_message: "perform the fixture task",
             stable_prefix: "TEST_STABLE_PREFIX",
             working_dir: workspace.path(),
+            trusted_read_roots: &[],
             max_steps,
             client: &client,
             approval,
@@ -162,6 +163,46 @@ async fn read_observation_is_visible_to_the_next_completion() {
 }
 
 #[tokio::test]
+async fn verbose_observation_is_compact_for_the_model_but_detailed_in_the_event() {
+    let workspace = TestWorkspace::new();
+    let detailed = (0..30)
+        .map(|index| format!("EVENT_DETAIL_LINE_{index:02}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    workspace.write("verbose.txt", &detailed);
+    let run = run_script(
+        &workspace,
+        vec![
+            ScriptedResponse::completion(
+                r#"[{"tool":"os.fs.read","args":{"path":"verbose.txt"}}]"#,
+            ),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"observed"}}]"#),
+        ],
+        &RecordingApproval::deny(),
+        &CancellationToken::new(),
+        3,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    let event_summary = run
+        .events
+        .iter()
+        .find_map(|event| match event {
+            AgentEvent::ToolCallExecuted { result } if result.call.tool == "os.fs.read" => {
+                Some(result.outcome.summary.as_str())
+            }
+            _ => None,
+        })
+        .expect("read execution event");
+    assert_eq!(event_summary, detailed);
+    let next_prompt = run.requests[1]["prompt"].as_str().expect("next prompt");
+    assert!(next_prompt.contains("… [omitted 18 lines]"));
+    assert!(next_prompt.contains("EVENT_DETAIL_LINE_29"));
+    assert!(!next_prompt.contains("EVENT_DETAIL_LINE_00"));
+}
+
+#[tokio::test]
 async fn sequential_runs_share_the_session_transcript() {
     let workspace = TestWorkspace::new();
     workspace.write("fixture.txt", "DURABLE_OBSERVATION");
@@ -185,6 +226,7 @@ async fn sequential_runs_share_the_session_transcript() {
                 user_message,
                 stable_prefix: "TEST_STABLE_PREFIX",
                 working_dir: workspace.path(),
+                trusted_read_roots: &[],
                 max_steps: 3,
                 client: &client,
                 approval: &approval,
@@ -508,6 +550,7 @@ async fn cancellation_interrupts_an_in_flight_completion() {
             user_message: "wait",
             stable_prefix: "TEST_STABLE_PREFIX",
             working_dir: workspace.path(),
+            trusted_read_roots: &[],
             max_steps: 2,
             client: &client,
             approval: &approval,

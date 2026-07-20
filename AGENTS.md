@@ -309,6 +309,87 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-07-20 — Open Agent-referenced files from assistant summaries
+- **Context:** Agent replies commonly report created output as an absolute path
+  and refer to staged input attachments by their original filename, but both
+  rendered as inert text.
+- **Decision:** In Agent assistant messages only, link absolute paths observed
+  in tool-call arguments and original filenames from preceding attachment
+  parts. Resolve duplicate filenames conservatively, intercept only an
+  internal Atomic Chat file-link URL, and open the resolved local path through
+  the existing desktop system command. Render absolute references using only
+  the filename as the visible link label while retaining the full path as the
+  hidden open target.
+- **Consequences:** Users can open generated files or referenced attachments
+  directly from an Agent summary. Ordinary Chat rendering, code spans, fenced
+  code, existing Markdown links, and ambiguous attachment names remain
+  unchanged.
+- **Owner:** team.
+- **Links:** [`web-app/src/lib/agent-file-links.ts`](web-app/src/lib/agent-file-links.ts),
+  [`web-app/src/containers/MessageItem.tsx`](web-app/src/containers/MessageItem.tsx),
+  [`web-app/src/routes/threads/$threadId.tsx`](web-app/src/routes/threads/$threadId.tsx).
+
+---
+
+### 2026-07-20 — Compress verbose Agent observations only at the session boundary
+- **Context:** Rust Agent retained bounded tool output for frontend activity
+  events but copied up to 1,200 characters of every observation into the
+  active prompt and durable session. Verbose reads, searches, logs, HTTP
+  responses, and document extracts therefore consumed context with low-signal
+  leading output.
+- **Decision:** Port the deterministic Atomic Agent tail compressor and log
+  summarizer. For potentially verbose read/inspection tools, retain the last
+  12 nonblank lines, preserve the first recognized error signature, and cap
+  the model-visible summary at 400 Unicode characters with explicit
+  omission/truncation markers. Apply compression only when observations enter
+  `AgentSessionState`; keep `ToolOutcome` and `ToolCallExecuted` unchanged.
+- **Consequences:** The next model step and persisted `agent-session.json`
+  receive compact observations while the activity UI retains the original
+  bounded result. Concise mutation acknowledgements and control tools remain
+  unchanged, and the existing 1,200-character session limit remains as
+  defense in depth.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/compressor.rs`](src-tauri/src/core/agent/compressor.rs),
+  [`src-tauri/src/core/agent/session.rs`](src-tauri/src/core/agent/session.rs),
+  [`src-tauri/src/core/agent/runner_tests.rs`](src-tauri/src/core/agent/runner_tests.rs).
+
+---
+
+### 2026-07-20 — Stage Agent attachments and isolate image analysis from the agent slot
+- **Context:** Agent threads rejected attachments even though ordinary Chat
+  already captured local documents and image data. The Rust loop had document
+  parsing tools but no bounded attachment IPC contract, no safe read boundary
+  outside the selected workspace, and no vision tool. Local llama.cpp sessions
+  may also be text-only, so an image cannot be accepted optimistically and
+  interpreted later without checking the active session.
+- **Decision:** Accept at most eight file/image attachments per Agent turn,
+  validate and copy them into
+  `<thread>/agent-attachments/<turn>/`, and append a compact manifest containing
+  deterministic `attachment://<staged-name>` references instead of absolute
+  UUID-heavy paths. Resolve those references only against the turn-scoped
+  read-only trusted root while retaining approval gates for writes and deletes
+  outside the workspace. Keep documents on `os.fs.read_document`; add bounded
+  `vision.describe` requests through `/v1/chat/completions` on the active
+  llama.cpp session, separate from the grammar-constrained `/completion` slot.
+  Reject image turns before staging when the selected session has no `mmproj`,
+  and repeat the capability check inside the vision tool. Audio remains
+  unsupported.
+- **Consequences:** Agent submit, history, edit-regeneration, and retry retain
+  documents, arbitrary local files, and images without persisting base64 or
+  original external paths in the Agent session transcript. Models no longer
+  need to reproduce long application-data and UUID paths when invoking file
+  tools. Text-only models fail before creating a user turn and prompt the user
+  to choose a vision-capable model. Staged files consume thread storage until
+  that thread is deleted; image analysis is limited to PNG, JPEG, GIF, and
+  WebP.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/attachments.rs`](src-tauri/src/core/agent/attachments.rs),
+  [`src-tauri/src/core/agent/tools/vision.rs`](src-tauri/src/core/agent/tools/vision.rs),
+  [`src-tauri/src/core/agent/path_policy.rs`](src-tauri/src/core/agent/path_policy.rs),
+  [`web-app/src/routes/threads/$threadId.tsx`](web-app/src/routes/threads/$threadId.tsx).
+
+---
+
 ### 2026-07-20 — Give Agent runs a shared default workspace
 - **Context:** Agent mode required every new thread to select a working
   directory before its first turn. The Rust request contract already made

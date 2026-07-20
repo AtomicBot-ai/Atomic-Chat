@@ -106,6 +106,7 @@ impl LiveHarness {
             port: i32::from(port),
             api_key: String::new(),
             model_id: REQUIRED_MODEL_ID.into(),
+            has_vision: false,
         })
         .expect("create live llama-server client");
         let stable_prefix = build_stable_prefix(
@@ -151,6 +152,7 @@ impl LiveHarness {
                     user_message,
                     stable_prefix: &self.stable_prefix,
                     working_dir: self.workspace.path(),
+                    trusted_read_roots: &[],
                     max_steps,
                     client: &self.client,
                     approval,

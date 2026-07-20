@@ -7,6 +7,7 @@ import { Attachment, createImageAttachment } from '@/types/attachment'
 
 export type OptimisticImageFile = {
   type: string
+  name: string
   mediaType: string
   url: string
 }
@@ -41,7 +42,7 @@ export const buildOptimisticUserMessage = ({
   const imageAttachments: Attachment[] = images.map((file) => {
     const base64 = file.url.split(',')[1] || ''
     return createImageAttachment({
-      name: `image-${Date.now()}`,
+      name: file.name,
       mimeType: file.mediaType,
       dataUrl: file.url,
       base64,

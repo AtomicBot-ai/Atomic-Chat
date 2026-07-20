@@ -21,6 +21,7 @@ pub struct LlamaSessionTarget {
     pub port: i32,
     pub api_key: String,
     pub model_id: String,
+    pub has_vision: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -156,6 +157,8 @@ pub struct LlamaServerClient {
     client: reqwest::Client,
     base_url: String,
     api_key: String,
+    model_id: String,
+    has_vision: bool,
 }
 
 impl LlamaServerClient {
@@ -168,7 +171,63 @@ impl LlamaServerClient {
             client,
             base_url: format!("http://127.0.0.1:{}", target.port),
             api_key: target.api_key.clone(),
+            model_id: target.model_id.clone(),
+            has_vision: target.has_vision,
         })
+    }
+
+    pub async fn describe_images(
+        &self,
+        prompt: &str,
+        images: &[(String, String)],
+        cancellation: &CancellationToken,
+    ) -> Result<String, LlamaClientError> {
+        if !self.has_vision {
+            return Err(LlamaClientError::InvalidResponse(
+                "active llama.cpp session is not vision-capable".into(),
+            ));
+        }
+        let payload = vision_request_payload(&self.model_id, prompt, images);
+        let mut request = self
+            .client
+            .post(format!("{}/v1/chat/completions", self.base_url))
+            .header(ACCEPT, "application/json")
+            .header(CONTENT_TYPE, "application/json")
+            .json(&payload);
+        if !self.api_key.is_empty() {
+            request = request.header(AUTHORIZATION, format!("Bearer {}", self.api_key));
+        }
+        let response = tokio::select! {
+            _ = cancellation.cancelled() => return Err(LlamaClientError::Cancelled),
+            result = request.send() => {
+                result.map_err(|error| LlamaClientError::Transport(error.to_string()))?
+            }
+        };
+        let status = response.status();
+        let bytes = tokio::select! {
+            _ = cancellation.cancelled() => return Err(LlamaClientError::Cancelled),
+            result = response.bytes() => {
+                result.map_err(|error| LlamaClientError::Transport(error.to_string()))?
+            }
+        };
+        if !status.is_success() {
+            return Err(LlamaClientError::Http {
+                status: status.as_u16(),
+                detail: extract_error_detail(&String::from_utf8_lossy(&bytes)),
+            });
+        }
+        let value: Value = serde_json::from_slice(&bytes)
+            .map_err(|error| LlamaClientError::InvalidResponse(error.to_string()))?;
+        value
+            .pointer("/choices/0/message/content")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                LlamaClientError::InvalidResponse(
+                    "vision response did not contain message content".into(),
+                )
+            })
     }
 
     pub async fn complete(
@@ -340,6 +399,30 @@ impl LlamaServerClient {
     }
 }
 
+fn vision_request_payload(model_id: &str, prompt: &str, images: &[(String, String)]) -> Value {
+    let mut content = images
+        .iter()
+        .map(|(media_type, base64)| {
+            serde_json::json!({
+                "type": "image_url",
+                "image_url": {
+                    "url": format!("data:{media_type};base64,{base64}")
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    content.push(serde_json::json!({"type": "text", "text": prompt}));
+    serde_json::json!({
+        "model": model_id,
+        "messages": [{"role": "user", "content": content}],
+        "stream": false,
+        "max_tokens": 1024,
+        "temperature": 0.2,
+        "chat_template_kwargs": {"enable_thinking": false},
+        "reasoning_format": "none"
+    })
+}
+
 pub async fn find_session_by_model_id(
     model_id: &str,
     llamacpp: &LlamacppState,
@@ -355,6 +438,7 @@ pub async fn find_session_by_model_id(
                 port: session.info.port,
                 api_key: session.info.api_key.clone(),
                 model_id: session.info.model_id.clone(),
+                has_vision: session.info.mmproj_path.is_some(),
             });
         }
     }
@@ -366,6 +450,7 @@ pub async fn find_session_by_model_id(
             port: session.info.port,
             api_key: session.info.api_key.clone(),
             model_id: session.info.model_id.clone(),
+            has_vision: session.info.mmproj_path.is_some(),
         })
         .ok_or_else(|| LlamaClientError::SessionNotFound(model_id.to_owned()))
 }
@@ -732,5 +817,46 @@ mod tests {
             extract_error_detail(&"x".repeat(400)).chars().count(),
             ERROR_DETAIL_MAX_LEN
         );
+    }
+
+    #[test]
+    fn builds_openai_vision_payload_without_agent_slot_fields() {
+        let payload = vision_request_payload(
+            "vision-model",
+            "Read this image",
+            &[("image/png".into(), "aGVsbG8=".into())],
+        );
+        assert_eq!(payload["model"], "vision-model");
+        assert_eq!(
+            payload["messages"][0]["content"][0]["image_url"]["url"],
+            "data:image/png;base64,aGVsbG8="
+        );
+        assert_eq!(
+            payload["messages"][0]["content"][1]["text"],
+            "Read this image"
+        );
+        assert_eq!(payload["chat_template_kwargs"]["enable_thinking"], false);
+        assert!(payload.get("slot_id").is_none());
+        assert!(payload.get("grammar").is_none());
+    }
+
+    #[tokio::test]
+    async fn rejects_runtime_vision_call_for_text_only_session() {
+        let client = LlamaServerClient::new(&LlamaSessionTarget {
+            port: 1,
+            api_key: String::new(),
+            model_id: "text-model".into(),
+            has_vision: false,
+        })
+        .unwrap();
+        let error = client
+            .describe_images(
+                "Describe",
+                &[("image/png".into(), "aGVsbG8=".into())],
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("session is not vision-capable"));
     }
 }

@@ -49,7 +49,9 @@
     "defaultDescription": "Используется папка agent-workspace внутри папки данных Atomic Chat."
   },
   "agentErrors": {
-    "attachmentsUnsupported": "Agent-режим пока не поддерживает вложения.",
+    "audioUnsupported": "Agent-режим не поддерживает аудиовложения.",
+    "invalidAttachment": "Не удалось прикрепить один или несколько файлов. Выберите локальные файлы и повторите попытку.",
+    "visionModelRequired": "Перед отправкой изображений выберите модель с поддержкой vision.",
     "localLlamacppRequired": "Agent-режиму нужна активная локальная llama.cpp-модель.",
     "mlxUnavailableTitle": "Режим агента недоступен с MLX",
     "mlxUnavailableDescription": "Переключитесь на модель llama.cpp и попробуйте снова.",

@@ -81,6 +81,25 @@ pub struct ToolExecution {
     pub batch_size: usize,
 }
 
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentAttachmentKind {
+    File,
+    Image,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AgentAttachment {
+    pub kind: AgentAttachmentKind,
+    pub name: String,
+    #[serde(default)]
+    pub media_type: Option<String>,
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub data_url: Option<String>,
+}
+
 /// Request payload for a single agent turn (from the Tauri command).
 #[derive(Debug, Clone, Deserialize)]
 pub struct AgentTurnRequest {
@@ -92,6 +111,9 @@ pub struct AgentTurnRequest {
     pub model_id: String,
     /// The user's message for this turn.
     pub user_message: String,
+    /// Files staged into the owning thread before the agent loop begins.
+    #[serde(default)]
+    pub attachments: Vec<AgentAttachment>,
     /// Optional working directory for OS tools (defaults to the app cwd).
     #[serde(default)]
     pub working_dir: Option<String>,

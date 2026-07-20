@@ -13,7 +13,10 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
-import { useInitialMessage } from '@/hooks/useInitialMessage'
+import {
+  InitialMessageFile,
+  useInitialMessage,
+} from '@/hooks/useInitialMessage'
 import { useOptimisticUserMessage } from '@/hooks/useOptimisticUserMessage'
 import { buildOptimisticUserMessage } from '@/lib/optimisticUserMessage'
 import { useChat } from '@/hooks/use-chat'
@@ -90,8 +93,16 @@ import {
   claimAgentRunPersistence,
 } from '@/lib/agent-run-message'
 import { resolveMessageExecutionRoute } from '@/lib/agent-route'
+import {
+  extractAgentAttachmentReferences,
+  type AgentFileReference,
+} from '@/lib/agent-file-links'
 import { cancelAgentTurn, runAgentTurn } from '@/services/agent/tauri'
-import type { AgentEvent, AgentRunState } from '@/types/agent'
+import type {
+  AgentAttachment as AgentIpcAttachment,
+  AgentEvent,
+  AgentRunState,
+} from '@/types/agent'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
 const CHAT_STATUS = {
@@ -102,6 +113,74 @@ const CHAT_STATUS = {
 type ThreadModel = {
   id: string
   provider: string
+}
+
+const agentAttachmentsFromMessage = (
+  message: ThreadMessage
+): {
+  text: string
+  files: InitialMessageFile[]
+  documents: Attachment[]
+} => {
+  const metadata = (message.metadata ?? {}) as Record<string, unknown>
+  const storedText = metadata.agent_input_text
+  const text =
+    typeof storedText === 'string'
+      ? storedText
+      : message.content
+          .filter((content) => content.type === ContentType.Text)
+          .map((content) => content.text?.value ?? '')
+          .join('')
+
+  const imageNames = Array.isArray(metadata.image_attachment_names)
+    ? metadata.image_attachment_names
+    : []
+  let imageIndex = 0
+  const files = message.content.flatMap((content) => {
+    if (content.type !== ContentType.Image || !content.image_url?.url) return []
+    const url = content.image_url.url
+    const mediaType = /^data:([^;,]+)[;,]/.exec(url)?.[1] ?? 'image/jpeg'
+    const storedName = imageNames[imageIndex]
+    const name =
+      typeof storedName === 'string' && storedName
+        ? storedName
+        : `image-${imageIndex + 1}`
+    imageIndex += 1
+    return [{ type: 'file', name, mediaType, url }]
+  })
+
+  const storedFiles = Array.isArray(metadata.file_attachments)
+    ? metadata.file_attachments
+    : []
+  const documents = storedFiles.flatMap((value) => {
+    if (
+      typeof value !== 'object' ||
+      value === null ||
+      typeof (value as { name?: unknown }).name !== 'string' ||
+      typeof (value as { path?: unknown }).path !== 'string'
+    ) {
+      return []
+    }
+    const file = value as {
+      name: string
+      path: string
+      mediaType?: string
+      size?: number
+      fileType?: string
+    }
+    return [
+      {
+        type: 'document' as const,
+        name: file.name,
+        path: file.path,
+        mimeType: file.mediaType,
+        size: file.size,
+        fileType: file.fileType,
+      },
+    ]
+  })
+
+  return { text, files, documents }
 }
 
 type SearchParams = {
@@ -657,7 +736,7 @@ function ThreadDetail() {
   const processAndRunAgent = useCallback(
     async (
       text: string,
-      files?: Array<{ type: string; mediaType: string; url: string }>,
+      files?: InitialMessageFile[],
       documentsFromPayload?: Attachment[],
       persistUserMessage = true
     ) => {
@@ -672,10 +751,44 @@ function ThreadDetail() {
         getAttachments(attachmentsKey).filter(
           (attachment) => attachment.type === 'document'
         )
-      if ((files?.length ?? 0) > 0 || documentAttachments.length > 0) {
-        toast.error(t('chat:agentErrors.attachmentsUnsupported'))
+      if (files?.some((file) => file.mediaType.startsWith('audio/'))) {
+        toast.error(t('chat:agentErrors.audioUnsupported'))
         return
       }
+      if (
+        documentAttachments.some(
+          (attachment) => !attachment.path || !attachment.name
+        )
+      ) {
+        toast.error(t('chat:agentErrors.invalidAttachment'))
+        return
+      }
+      const mediaAttachments =
+        files?.map((file) => {
+          const base64 = file.url.split(',')[1] || ''
+          return createImageAttachment({
+            name: file.name,
+            mimeType: file.mediaType,
+            dataUrl: file.url,
+            base64,
+            size: Math.ceil((base64.length * 3) / 4),
+          })
+        }) ?? []
+      const combinedAttachments = [...mediaAttachments, ...documentAttachments]
+      const ipcAttachments: AgentIpcAttachment[] = [
+        ...mediaAttachments.map((attachment) => ({
+          kind: 'image' as const,
+          name: attachment.name,
+          media_type: attachment.mimeType,
+          data_url: attachment.dataUrl,
+        })),
+        ...documentAttachments.map((attachment) => ({
+          kind: 'file' as const,
+          name: attachment.name,
+          media_type: attachment.mimeType,
+          path: attachment.path,
+        })),
+      ]
       const workingDir = useAgentMode.getState().getWorkingDir(threadId)
       const providerSupportsAgent = ['llamacpp', 'llamacpp-upstream'].includes(
         selectedProvider
@@ -707,14 +820,23 @@ function ThreadDetail() {
         const messageId =
           useOptimisticUserMessage.getState().byThread[threadId]?.id ??
           generateId()
-        const userMessage = newUserThreadContent(threadId, text, [], messageId)
-        addMessage(userMessage)
-        const userUiMessage: UIMessage = {
-          id: messageId,
-          role: 'user',
-          parts: [{ type: 'text', text }],
-          metadata: userMessage.metadata,
+        const userMessage = newUserThreadContent(
+          threadId,
+          text,
+          combinedAttachments,
+          messageId
+        )
+        userMessage.metadata = {
+          ...(userMessage.metadata ?? {}),
+          agent_input_text: text,
+          image_attachment_names: mediaAttachments.map(
+            (attachment) => attachment.name
+          ),
         }
+        addMessage(userMessage)
+        const userUiMessage = convertThreadMessagesToUIMessages([
+          userMessage,
+        ])[0]
         const messages = [...chatMessagesRef.current, userUiMessage]
         chatMessagesRef.current = messages
         setChatMessages(messages)
@@ -729,8 +851,8 @@ function ThreadDetail() {
         thread_id: threadId,
         model_id: selectedModel.id,
         provider: selectedProvider,
-        has_attachments: false,
-        attachment_count: 0,
+        has_attachments: ipcAttachments.length > 0,
+        attachment_count: ipcAttachments.length,
       })
 
       try {
@@ -740,6 +862,7 @@ function ThreadDetail() {
             session_id: threadId,
             model_id: selectedModel.id,
             user_message: text,
+            attachments: ipcAttachments,
             working_dir: workingDir,
             auto_approve:
               useAgentMode.getState().getApprovalMode(threadId) === 'skip',
@@ -758,7 +881,12 @@ function ThreadDetail() {
           reason: 'failed',
           step_count: 0,
         })
-        toast.error(t('chat:agentErrors.runFailed'))
+        const message = String(error)
+        if (message.includes('AGENT_VISION_MODEL_REQUIRED')) {
+          toast.error(t('chat:agentErrors.visionModelRequired'))
+        } else {
+          toast.error(t('chat:agentErrors.runFailed'))
+        }
       }
     },
     [
@@ -780,7 +908,7 @@ function ThreadDetail() {
   const processAndSendMessage = useCallback(
     async (
       text: string,
-      files?: Array<{ type: string; mediaType: string; url: string }>,
+      files?: InitialMessageFile[],
       documentsFromPayload?: Attachment[]
     ) => {
       if (
@@ -821,7 +949,7 @@ function ThreadDetail() {
         const size = Math.ceil((base64.length * 3) / 4) // Estimate from base64
         if (file.mediaType?.startsWith('audio/')) {
           return createAudioAttachment({
-            name: `audio-${Date.now()}`,
+            name: file.name,
             mimeType: file.mediaType,
             dataUrl: file.url,
             base64,
@@ -829,7 +957,7 @@ function ThreadDetail() {
           })
         }
         return createImageAttachment({
-          name: `image-${Date.now()}`,
+          name: file.name,
           mimeType: file.mediaType,
           dataUrl: file.url,
           base64,
@@ -1020,10 +1148,7 @@ function ThreadDetail() {
 
   // Handle submit from ChatInput
   const handleSubmit = useCallback(
-    async (
-      text: string,
-      files?: Array<{ type: string; mediaType: string; url: string }>
-    ) => {
+    async (text: string, files?: InitialMessageFile[]) => {
       await processAndSendMessage(text, files)
     },
     [processAndSendMessage]
@@ -1065,10 +1190,11 @@ function ThreadDetail() {
         }
 
         const userMessage = currentLocalMessages[userMessageIndex]
-        const text = userMessage.content
-          .filter((content) => content.type === ContentType.Text)
-          .map((content) => content.text?.value ?? '')
-          .join('')
+        const {
+          text,
+          files: agentFiles,
+          documents: agentDocuments,
+        } = agentAttachmentsFromMessage(userMessage)
         const retainedMessages = currentLocalMessages.slice(
           0,
           userMessageIndex + 1
@@ -1082,7 +1208,7 @@ function ThreadDetail() {
           convertThreadMessagesToUIMessages(retainedMessages)
         chatMessagesRef.current = retainedUiMessages
         setChatMessages(retainedUiMessages)
-        await processAndRunAgent(text, undefined, [], false)
+        await processAndRunAgent(text, agentFiles, agentDocuments, false)
         return
       }
 
@@ -1141,6 +1267,10 @@ function ThreadDetail() {
       if (messageIndex === -1) return
 
       const originalMessage = currentLocalMessages[messageIndex]
+      const isAgentThread =
+        resolveMessageExecutionRoute(
+          useAgentMode.getState().isAgentMode(threadId)
+        ) === 'agent-ipc'
 
       // Update the message content
       const updatedMessage = {
@@ -1150,7 +1280,18 @@ function ThreadDetail() {
             type: ContentType.Text,
             text: { value: newText, annotations: [] },
           },
+          ...(isAgentThread
+            ? originalMessage.content.filter(
+                (content) => content.type !== ContentType.Text
+              )
+            : []),
         ],
+        metadata: isAgentThread
+          ? {
+              ...(originalMessage.metadata ?? {}),
+              agent_input_text: newText,
+            }
+          : originalMessage.metadata,
       }
       updateMessage(updatedMessage)
 
@@ -1159,7 +1300,12 @@ function ThreadDetail() {
         if (msg.id === messageId) {
           return {
             ...msg,
-            parts: [{ type: 'text' as const, text: newText }],
+            parts: [
+              { type: 'text' as const, text: newText },
+              ...(isAgentThread
+                ? msg.parts.filter((part) => part.type === 'file')
+                : []),
+            ],
           }
         }
         return msg
@@ -1169,11 +1315,7 @@ function ThreadDetail() {
       // Only regenerate if the edited message is from the user
       if (updatedMessage.role === 'assistant') return
 
-      if (
-        resolveMessageExecutionRoute(
-          useAgentMode.getState().isAgentMode(threadId)
-        ) === 'agent-ipc'
-      ) {
+      if (isAgentThread) {
         await handleRegenerate(messageId)
         return
       }
@@ -1377,6 +1519,23 @@ function ThreadDetail() {
   const inputStatus = requestActive ? CHAT_STATUS.SUBMITTED : status
   const lastChatMessage = chatMessages[chatMessages.length - 1]
   const hasActiveAssistantMessage = lastChatMessage?.role === 'assistant'
+  const agentAttachmentReferencesByMessageId = useMemo(() => {
+    const referencesByMessageId = new Map<string, AgentFileReference[]>()
+    const references: AgentFileReference[] = []
+
+    for (const message of chatMessages) {
+      if (message.role === 'user') {
+        references.push(...extractAgentAttachmentReferences(message.parts))
+      }
+      if (
+        (message.metadata as { agent_run?: unknown } | undefined)?.agent_run
+      ) {
+        referencesByMessageId.set(message.id, [...references])
+      }
+    }
+
+    return referencesByMessageId
+  }, [chatMessages])
 
   return (
     <div className="flex h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))] overflow-hidden">
@@ -1411,6 +1570,9 @@ function ThreadDetail() {
                         onDelete={handleDeleteMessage}
                         isAnimating={!pendingContinueMessage}
                         hideActions={!!pendingContinueMessage}
+                        agentAttachmentReferences={agentAttachmentReferencesByMessageId.get(
+                          message.id
+                        )}
                       />
                     )
                   })}

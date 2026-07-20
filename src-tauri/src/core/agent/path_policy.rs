@@ -4,6 +4,8 @@ use serde_json::{Map, Value};
 
 use super::types::{ApprovalResource, ToolCallPayload};
 
+const ATTACHMENT_URI_PREFIX: &str = "attachment://";
+
 #[derive(Debug)]
 pub struct PreparedPaths {
     pub call: ToolCallPayload,
@@ -14,6 +16,7 @@ pub struct PreparedPaths {
 pub async fn prepare_call_paths(
     call: &ToolCallPayload,
     working_dir: &Path,
+    trusted_read_roots: &[PathBuf],
 ) -> Result<PreparedPaths, String> {
     let root = tokio::fs::canonicalize(working_dir)
         .await
@@ -24,6 +27,8 @@ pub async fn prepare_call_paths(
         .as_object_mut()
         .ok_or_else(|| "Tool arguments must be a JSON object".to_string())?;
     let mut resources = Vec::new();
+
+    expand_attachment_aliases(&call.tool, args, trusted_read_roots).await?;
 
     match call.tool.as_str() {
         "os.fs.read" | "os.fs.read_document" | "os.fs.hash" => {
@@ -95,6 +100,9 @@ pub async fn prepare_call_paths(
             )
             .await?;
         }
+        "vision.describe" => {
+            resolve_array_field(args, "paths", "read", &root, &mut resources).await?;
+        }
         tool if tool.starts_with("os.git.") => {
             resolve_field(
                 args,
@@ -133,12 +141,152 @@ pub async fn prepare_call_paths(
     let escaped_root = resources
         .iter()
         .filter(|resource| resource.kind == "path")
-        .any(|resource| !Path::new(&resource.value).starts_with(&root));
+        .any(|resource| {
+            let path = Path::new(&resource.value);
+            if path.starts_with(&root) {
+                return false;
+            }
+            !is_read_operation(&resource.operation)
+                || !trusted_read_roots
+                    .iter()
+                    .any(|trusted_root| path.starts_with(trusted_root))
+        });
     Ok(PreparedPaths {
         call: prepared,
         resources,
         escaped_root,
     })
+}
+
+async fn expand_attachment_aliases(
+    tool: &str,
+    args: &mut Map<String, Value>,
+    trusted_read_roots: &[PathBuf],
+) -> Result<(), String> {
+    match tool {
+        "os.fs.read"
+        | "os.fs.read_document"
+        | "os.fs.hash"
+        | "os.fs.archive.list"
+        | "os.fs.archive.read_entry"
+        | "os.fs.archive.extract" => {
+            expand_attachment_alias_field(args, "path", trusted_read_roots).await
+        }
+        "vision.describe" => {
+            let Some(paths) = args.get_mut("paths").and_then(Value::as_array_mut) else {
+                return Ok(());
+            };
+            for path in paths {
+                let Some(raw) = path.as_str() else {
+                    continue;
+                };
+                if raw.starts_with(ATTACHMENT_URI_PREFIX) {
+                    let resolved = resolve_attachment_alias(raw, trusted_read_roots).await?;
+                    *path = Value::String(resolved.to_string_lossy().into_owned());
+                }
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+async fn expand_attachment_alias_field(
+    args: &mut Map<String, Value>,
+    key: &str,
+    trusted_read_roots: &[PathBuf],
+) -> Result<(), String> {
+    let Some(raw) = args.get(key).and_then(Value::as_str) else {
+        return Ok(());
+    };
+    if !raw.starts_with(ATTACHMENT_URI_PREFIX) {
+        return Ok(());
+    }
+    let resolved = resolve_attachment_alias(raw, trusted_read_roots).await?;
+    args.insert(
+        key.to_string(),
+        Value::String(resolved.to_string_lossy().into_owned()),
+    );
+    Ok(())
+}
+
+async fn resolve_attachment_alias(
+    raw: &str,
+    trusted_read_roots: &[PathBuf],
+) -> Result<PathBuf, String> {
+    let name = raw
+        .strip_prefix(ATTACHMENT_URI_PREFIX)
+        .ok_or_else(|| "Invalid attachment reference".to_string())?;
+    let path = Path::new(name);
+    let mut components = path.components();
+    if name.is_empty()
+        || name.contains('\\')
+        || !matches!(components.next(), Some(Component::Normal(_)))
+        || components.next().is_some()
+    {
+        return Err(format!(
+            "Attachment reference must contain one safe file name: {raw}"
+        ));
+    }
+
+    let mut resolved_match = None;
+    for trusted_root in trusted_read_roots {
+        let canonical_root = tokio::fs::canonicalize(trusted_root)
+            .await
+            .map_err(|error| format!("Could not resolve attachment root: {error}"))?;
+        let candidate = canonical_root.join(name);
+        let resolved = match tokio::fs::canonicalize(&candidate).await {
+            Ok(resolved) => resolved,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err(format!(
+                    "Could not resolve attachment reference {raw}: {error}"
+                ));
+            }
+        };
+        if resolved.parent() != Some(canonical_root.as_path()) {
+            return Err(format!(
+                "Attachment reference escapes its trusted root: {raw}"
+            ));
+        }
+        if resolved_match.replace(resolved).is_some() {
+            return Err(format!("Attachment reference is ambiguous: {raw}"));
+        }
+    }
+
+    resolved_match.ok_or_else(|| format!("Attachment reference was not found: {raw}"))
+}
+
+async fn resolve_array_field(
+    args: &mut Map<String, Value>,
+    key: &str,
+    operation: &str,
+    root: &Path,
+    resources: &mut Vec<ApprovalResource>,
+) -> Result<(), String> {
+    let values = args
+        .get(key)
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("Missing array argument `{key}`"))?;
+    if values.is_empty() {
+        return Err(format!("Array argument `{key}` must not be empty"));
+    }
+    let mut resolved_values = Vec::with_capacity(values.len());
+    for value in values {
+        let raw = value
+            .as_str()
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| format!("Array argument `{key}` must contain non-empty strings"))?;
+        let resolved = resolve_candidate(root, raw).await?;
+        resources.push(path_resource(&resolved, operation));
+        resolved_values.push(Value::String(resolved.to_string_lossy().into_owned()));
+    }
+    args.insert(key.to_string(), Value::Array(resolved_values));
+    Ok(())
+}
+
+fn is_read_operation(operation: &str) -> bool {
+    matches!(operation, "read" | "list" | "glob" | "grep" | "git_read")
 }
 
 async fn resolve_field(
@@ -311,7 +459,7 @@ mod tests {
             tool: "os.fs.write".into(),
             args: serde_json::json!({"path": "nested/new.txt", "content": "x"}),
         };
-        let prepared = prepare_call_paths(&call, &root).await.unwrap();
+        let prepared = prepare_call_paths(&call, &root, &[]).await.unwrap();
         let canonical_root = tokio::fs::canonicalize(&root).await.unwrap();
         assert!(!prepared.escaped_root);
         assert_eq!(
@@ -333,8 +481,104 @@ mod tests {
             tool: "os.fs.read".into(),
             args: serde_json::json!({"path": "../outside.txt"}),
         };
-        let prepared = prepare_call_paths(&call, &root).await.unwrap();
+        let prepared = prepare_call_paths(&call, &root, &[]).await.unwrap();
         assert!(prepared.escaped_root);
+        std::fs::remove_dir_all(parent).unwrap();
+    }
+
+    #[tokio::test]
+    async fn trusts_only_read_operations_under_attachment_roots() {
+        let parent = test_dir();
+        let root = parent.join("workspace");
+        let attachments = parent.join("attachments");
+        tokio::fs::create_dir(&root).await.unwrap();
+        tokio::fs::create_dir(&attachments).await.unwrap();
+        let attachment = attachments.join("document.txt");
+        tokio::fs::write(&attachment, "fixture").await.unwrap();
+        let trusted_root = tokio::fs::canonicalize(&attachments).await.unwrap();
+
+        let read = ToolCallPayload {
+            tool: "os.fs.read_document".into(),
+            args: serde_json::json!({"path": attachment}),
+        };
+        let prepared = prepare_call_paths(&read, &root, std::slice::from_ref(&trusted_root))
+            .await
+            .unwrap();
+        assert!(!prepared.escaped_root);
+
+        let write = ToolCallPayload {
+            tool: "os.fs.write".into(),
+            args: serde_json::json!({
+                "path": trusted_root.join("new.txt"),
+                "content": "blocked without approval"
+            }),
+        };
+        let prepared = prepare_call_paths(&write, &root, std::slice::from_ref(&trusted_root))
+            .await
+            .unwrap();
+        assert!(prepared.escaped_root);
+
+        std::fs::remove_dir_all(parent).unwrap();
+    }
+
+    #[tokio::test]
+    async fn resolves_attachment_uri_inside_the_current_trusted_root() {
+        let parent = test_dir();
+        let root = parent.join("workspace");
+        let attachments = parent.join("attachments");
+        tokio::fs::create_dir(&root).await.unwrap();
+        tokio::fs::create_dir(&attachments).await.unwrap();
+        let attachment = attachments.join("01.pdf");
+        tokio::fs::write(&attachment, "fixture").await.unwrap();
+        let trusted_root = tokio::fs::canonicalize(&attachments).await.unwrap();
+        let canonical_attachment = tokio::fs::canonicalize(&attachment).await.unwrap();
+        let call = ToolCallPayload {
+            tool: "os.fs.read_document".into(),
+            args: serde_json::json!({"path": "attachment://01.pdf"}),
+        };
+
+        let prepared = prepare_call_paths(&call, &root, std::slice::from_ref(&trusted_root))
+            .await
+            .unwrap();
+
+        assert!(!prepared.escaped_root);
+        assert_eq!(
+            prepared.call.args["path"],
+            canonical_attachment.to_string_lossy().as_ref()
+        );
+        std::fs::remove_dir_all(parent).unwrap();
+    }
+
+    #[tokio::test]
+    async fn rejects_missing_and_traversing_attachment_uris() {
+        let parent = test_dir();
+        let root = parent.join("workspace");
+        let attachments = parent.join("attachments");
+        tokio::fs::create_dir(&root).await.unwrap();
+        tokio::fs::create_dir(&attachments).await.unwrap();
+        let trusted_root = tokio::fs::canonicalize(&attachments).await.unwrap();
+
+        for path in [
+            "attachment://../secret.txt",
+            "attachment://nested/secret.txt",
+        ] {
+            let call = ToolCallPayload {
+                tool: "os.fs.read".into(),
+                args: serde_json::json!({"path": path}),
+            };
+            let error = prepare_call_paths(&call, &root, std::slice::from_ref(&trusted_root))
+                .await
+                .unwrap_err();
+            assert!(error.contains("one safe file name"));
+        }
+
+        let missing = ToolCallPayload {
+            tool: "os.fs.read".into(),
+            args: serde_json::json!({"path": "attachment://01.txt"}),
+        };
+        let error = prepare_call_paths(&missing, &root, &[]).await.unwrap_err();
+        assert!(error.contains("was not found"));
+
         std::fs::remove_dir_all(parent).unwrap();
     }
 
@@ -353,7 +597,7 @@ mod tests {
             tool: "os.fs.write".into(),
             args: serde_json::json!({"path": "link/new.txt", "content": "x"}),
         };
-        let prepared = prepare_call_paths(&call, &root).await.unwrap();
+        let prepared = prepare_call_paths(&call, &root, &[]).await.unwrap();
         let canonical_outside = tokio::fs::canonicalize(&outside).await.unwrap();
         assert!(prepared.escaped_root);
         assert_eq!(
@@ -372,7 +616,7 @@ mod tests {
             tool: "os.fs.archive.extract".into(),
             args: serde_json::json!({"path": "archive.zip", "dest": "out"}),
         };
-        let prepared = prepare_call_paths(&call, &root).await.unwrap();
+        let prepared = prepare_call_paths(&call, &root, &[]).await.unwrap();
         let canonical_root = tokio::fs::canonicalize(&root).await.unwrap();
         assert!(prepared.call.args.get("dest").is_none());
         assert_eq!(

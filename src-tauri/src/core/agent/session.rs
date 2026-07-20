@@ -2,6 +2,7 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use super::compressor::{compress_tool_result, should_compress_tool};
 use super::prompt::ToolTier;
 use super::tools::tool_view::{descriptor_for, LOADED_TOOLS_CAP};
 use super::types::{ToolCallPayload, ToolOutcome, ToolStatus};
@@ -65,6 +66,11 @@ impl AgentSessionState {
 
     pub fn push_tool_observations(&mut self, calls: &[ToolCallPayload], outcomes: &[ToolOutcome]) {
         for (call, outcome) in calls.iter().zip(outcomes) {
+            let prompt_summary = if should_compress_tool(&call.tool) {
+                compress_tool_result(&call.tool, outcome.status, &outcome.summary).summary
+            } else {
+                outcome.summary.clone()
+            };
             self.push_turn(AgentSessionTurn::AssistantToolCall {
                 tool: call.tool.clone(),
                 args: Some(call.args.clone()),
@@ -72,7 +78,7 @@ impl AgentSessionState {
             self.push_turn(AgentSessionTurn::ToolResult {
                 tool: call.tool.clone(),
                 status: outcome.status,
-                summary: truncate_chars(&outcome.summary, MAX_TOOL_SUMMARY_CHARS),
+                summary: truncate_chars(&prompt_summary, MAX_TOOL_SUMMARY_CHARS),
             });
         }
     }
@@ -369,6 +375,69 @@ mod tests {
 
         state.finish_turn();
         assert!(!state.render_conversation().contains("secret.txt"));
+    }
+
+    #[test]
+    fn verbose_tool_results_are_compressed_without_mutating_the_source_outcome() {
+        let mut state = AgentSessionState::new("thread-a");
+        let detailed = (0..30)
+            .map(|index| format!("detailed line {index}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let outcome = ToolOutcome::ok(detailed.clone());
+        state.push_tool_observations(
+            &[ToolCallPayload {
+                tool: "os.fs.read".into(),
+                args: serde_json::json!({"path": "large.txt"}),
+            }],
+            std::slice::from_ref(&outcome),
+        );
+
+        let rendered = state.render_conversation();
+        assert!(rendered.contains("… [omitted 18 lines]"));
+        assert!(rendered.contains("detailed line 29"));
+        assert!(!rendered.contains("detailed line 0\n"));
+        assert_eq!(outcome.summary, detailed);
+        let persisted = serde_json::to_string(&state).expect("serialize compressed session");
+        assert!(persisted.contains("omitted 18 lines"));
+        assert!(!persisted.contains("detailed line 0"));
+    }
+
+    #[test]
+    fn failed_verbose_results_keep_the_key_error_signature() {
+        let mut state = AgentSessionState::new("thread-a");
+        let output = [
+            "initial setup",
+            "Error: database connection failed",
+            "unrelated context",
+        ]
+        .join("\n");
+        state.push_tool_observations(
+            &[ToolCallPayload {
+                tool: "os.shell.run".into(),
+                args: serde_json::json!({"cmd": "test"}),
+            }],
+            &[ToolOutcome::error(output)],
+        );
+
+        assert!(state
+            .render_conversation()
+            .contains("key: Error: database connection failed"));
+    }
+
+    #[test]
+    fn concise_mutation_results_are_left_unchanged() {
+        let mut state = AgentSessionState::new("thread-a");
+        let summary = "Wrote 0 bytes to empty.txt (replace)";
+        state.push_tool_observations(
+            &[ToolCallPayload {
+                tool: "os.fs.write".into(),
+                args: serde_json::json!({"path": "empty.txt", "content": ""}),
+            }],
+            &[ToolOutcome::ok(summary)],
+        );
+
+        assert!(state.render_conversation().contains(summary));
     }
 
     #[tokio::test]

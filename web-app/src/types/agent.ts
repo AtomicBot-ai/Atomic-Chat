@@ -11,11 +11,20 @@ export type AgentTurnFinishReason =
   | 'cancelled'
   | 'failed'
 
+export type AgentAttachment = {
+  kind: 'file' | 'image'
+  name: string
+  media_type?: string
+  path?: string
+  data_url?: string
+}
+
 export type AgentTurnRequest = {
   run_id: string
   session_id: string
   model_id: string
   user_message: string
+  attachments?: AgentAttachment[]
   working_dir?: string
   max_steps?: number
   auto_approve: boolean

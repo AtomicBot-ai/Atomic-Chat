@@ -44,7 +44,10 @@ import type { ChatStatus } from 'ai'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { TEMPORARY_CHAT_ID, TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
-import { useInitialMessage } from '@/hooks/useInitialMessage'
+import {
+  InitialMessageFile,
+  useInitialMessage,
+} from '@/hooks/useInitialMessage'
 import { useOptimisticUserMessage } from '@/hooks/useOptimisticUserMessage'
 import { buildOptimisticUserMessage } from '@/lib/optimisticUserMessage'
 import { localStorageKey } from '@/constants/localStorage'
@@ -119,10 +122,7 @@ type ChatInputProps = {
   model?: ThreadModel
   initialMessage?: boolean
   projectId?: string
-  onSubmit?: (
-    text: string,
-    files?: Array<{ type: string; mediaType: string; url: string }>
-  ) => void
+  onSubmit?: (text: string, files?: InitialMessageFile[]) => void
   onStop?: () => void
   chatStatus?: ChatStatus
 }
@@ -542,8 +542,20 @@ const ChatInput = memo(function ChatInput({
       toast.info('Please wait for attachments to finish processing')
       return
     }
-    if (effectiveAgentMode && attachments.length > 0) {
-      toast.error(t('chat:agentErrors.attachmentsUnsupported'))
+    if (
+      effectiveAgentMode &&
+      attachments.some((attachment) => attachment.type === 'audio')
+    ) {
+      toast.error(t('chat:agentErrors.audioUnsupported'))
+      return
+    }
+    if (
+      effectiveAgentMode &&
+      !hasMmproj &&
+      attachments.some((attachment) => attachment.type === 'image')
+    ) {
+      toast.error(t('chat:agentErrors.visionModelRequired'))
+      setShowVisionModelPrompt(true)
       return
     }
 
@@ -558,6 +570,7 @@ const ChatInput = memo(function ChatInput({
         )
         .map((att) => ({
           type: 'file',
+          name: att.name,
           mediaType:
             att.mimeType ??
             (att.type === 'audio' ? 'audio/mpeg' : 'image/jpeg'),
@@ -581,6 +594,7 @@ const ChatInput = memo(function ChatInput({
         )
         .map((att) => ({
           type: 'file',
+          name: att.name,
           mediaType:
             att.mimeType ??
             (att.type === 'audio' ? 'audio/mpeg' : 'image/jpeg'),

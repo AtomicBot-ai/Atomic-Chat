@@ -281,6 +281,13 @@ pub const ITERATION_ONE_TOOLS: &[ToolDescriptor] = &[
         ],
     },
     ToolDescriptor {
+        name: "vision.describe",
+        summary: "Describe up to four local images with the active vision-capable model. Read-only; supports PNG, JPEG, GIF, and WebP.",
+        args_schema: r#"{ paths: string[], prompt: string }"#,
+        tier: ToolTier::Frequent,
+        examples: &[r#"{"paths":["/path/to/image.png"],"prompt":"Describe the visible UI and any text."}"#],
+    },
+    ToolDescriptor {
         name: "os.clipboard.read",
         summary: "Read the system clipboard as text.",
         args_schema: r#"{}"#,

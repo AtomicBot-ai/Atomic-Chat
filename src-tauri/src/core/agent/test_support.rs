@@ -220,6 +220,7 @@ impl ScriptedCompletionServer {
             port: i32::from(self.address.port()),
             api_key: String::new(),
             model_id: "scripted-test-model".into(),
+            has_vision: false,
         })
         .expect("create scripted llama client")
     }

@@ -290,6 +290,20 @@ export function convertThreadMessageToUIMessage(
     }
   }
 
+  const fileAttachments = (threadMessage.metadata as any)?.file_attachments
+  if (Array.isArray(fileAttachments)) {
+    for (const file of fileAttachments) {
+      if (file?.path && file?.mediaType) {
+        parts.push({
+          type: 'file',
+          filename: file.name,
+          mediaType: file.mediaType,
+          url: file.path,
+        })
+      }
+    }
+  }
+
   // BACKWARD COMPATIBILITY: Handle tool calls from metadata (old format)
   // New messages will have tool calls as separate messages with tool_call_id
   const toolCalls = (threadMessage.metadata as any)?.tool_calls
@@ -299,7 +313,10 @@ export function convertThreadMessageToUIMessage(
       let result
       if (tc.response?.content) {
         // Extract content from the response
-        if (tc.response.content.length === 1 && tc.response.content[0].type === 'text') {
+        if (
+          tc.response.content.length === 1 &&
+          tc.response.content[0].type === 'text'
+        ) {
           // Single text content - return as string
           result = tc.response.content[0].text
         } else {
@@ -316,7 +333,12 @@ export function convertThreadMessageToUIMessage(
       const toolCallId = tc.tool?.id || tc.id
 
       // Use AI SDK v5 UIToolInvocation format
-      if (result != null || tc.state === 'ready' || tc.state === 'completed' || tc.state === 'result') {
+      if (
+        result != null ||
+        tc.state === 'ready' ||
+        tc.state === 'completed' ||
+        tc.state === 'result'
+      ) {
         parts.push({
           type: `tool-${toolName}`,
           toolCallId,
@@ -348,7 +370,7 @@ export function convertThreadMessageToUIMessage(
     role: threadMessage.role as 'user' | 'assistant' | 'system',
     parts,
     createdAt: new Date(threadMessage.created_at || Date.now()),
-    metadata: threadMessage.metadata || {}
+    metadata: threadMessage.metadata || {},
   } as UIMessage
 }
 
@@ -371,7 +393,9 @@ export function convertThreadMessagesToUIMessages(
  * @param message - The UIMessage to extract content from
  * @returns Array of ThreadContent items (including tool calls)
  */
-export function extractContentPartsFromUIMessage(message: UIMessage): ThreadContent[] {
+export function extractContentPartsFromUIMessage(
+  message: UIMessage
+): ThreadContent[] {
   const content: ThreadContent[] = []
   const parts = (message.parts ?? []) as any[]
 

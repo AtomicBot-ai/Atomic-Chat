@@ -45,6 +45,8 @@ impl ToolFixture {
             },
             &ToolContext {
                 working_dir: self.workspace.path(),
+                trusted_read_roots: &[],
+                client: None,
                 approval: &self.approval,
                 cancellation: &self.cancellation,
                 loaded_tools: &self.loaded_tools,
@@ -507,6 +509,8 @@ async fn symlink_escape_requires_approval_and_denial_prevents_read() {
         },
         &ToolContext {
             working_dir: &parent.path().join("root"),
+            trusted_read_roots: &[],
+            client: None,
             approval: &approval,
             cancellation: &cancellation,
             loaded_tools: &loaded_tools,

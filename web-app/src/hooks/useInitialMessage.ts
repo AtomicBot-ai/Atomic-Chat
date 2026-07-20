@@ -6,6 +6,7 @@ export type InitialMessageFile = {
   type: string
   mediaType: string
   url: string
+  name: string
 }
 
 export type InitialMessagePayload = {

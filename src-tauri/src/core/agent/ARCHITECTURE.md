@@ -11,9 +11,9 @@ The agent backend is isolated from regular Atomic Chat conversations and from
 the Vercel AI SDK path. It talks directly to the active local llama.cpp session
 over native `/completion`.
 
-Iterations 1 and 1b are implemented. Memory, tasks, browser
-automation, vision, skills, dynamic MCP tools, window control, and filesystem
-watchers are deferred.
+Iterations 1 and 1b are implemented. Agent turns also accept bounded local
+file and image attachments. Memory, tasks, browser automation, skills, dynamic
+MCP tools, window control, and filesystem watchers are deferred.
 
 ## Current architecture
 
@@ -26,6 +26,8 @@ watchers are deferred.
   approval id.
 - `LlamaServerClient` resolves the active TurboQuant or upstream llama.cpp
   session and calls its `/completion` endpoint directly.
+- Image analysis uses a separate, non-streaming `/v1/chat/completions` request
+  to the same active session. It never uses the grammar-constrained agent slot.
 - Every completion uses the static tool grammar, `cache_prompt`, and a stable
   slot id. The local API server on port 1337 is not part of this path.
 
@@ -76,6 +78,8 @@ valid only as the final call and executes after all preceding calls finish.
   timeout, or cancellation.
 - Canonical working-directory confinement with symlink-safe, call-scoped
   approval-mediated escape.
+- Turn-scoped staged-attachment roots are trusted for reads only; writes and
+  deletion outside the workspace remain approval-gated.
 - Shell interpretation routing plus hard-block and approval-required command
   guards.
 
@@ -89,8 +93,27 @@ valid only as the final call and executes after all preceding calls finish.
 - Network: HTTP request, web search, web fetch.
 - Clipboard: read and write.
 - Desktop notifications: `os.notify`.
+- Vision: `vision.describe` for up to four staged PNG, JPEG, GIF, or WebP
+  images when the active llama.cpp session has an `mmproj`.
 - Tool discovery: `tool.view`.
 - Terminals: `reply` and `finish`.
+
+### Attachment contract
+
+- IPC accepts at most eight attachments. Files provide a local path; images
+  provide a matching base64 data URL and image MIME type.
+- Before the loop starts, inputs are validated and copied into
+  `<thread>/agent-attachments/<turn>/` with generated filenames. Individual
+  files are capped at 50 MiB and the turn total at 100 MiB.
+- The durable user turn contains only a compact attachment manifest with
+  absolute staged paths. Original paths, data URLs, and base64 bytes are not
+  persisted in the Agent session transcript.
+- Documents remain on the existing `os.fs.read_document` parser path. Text and
+  source files use `os.fs.read`; archives use the archive tools.
+- Image turns are rejected before staging when the active session is not
+  vision-capable. `vision.describe` repeats the capability check at execution
+  time so a restarted or replaced text-only session produces a structured tool
+  error instead of guessed output.
 
 ## Test pyramid
 

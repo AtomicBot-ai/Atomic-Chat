@@ -9,6 +9,7 @@ mod notify;
 mod proc;
 mod shell;
 pub(super) mod tool_view;
+mod vision;
 mod web;
 mod web_extract;
 mod web_search;
@@ -22,6 +23,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
+use super::llm_client::LlamaServerClient;
 use super::path_policy::prepare_call_paths;
 use super::resource_class::{resource_class_for, ResourceClass};
 use super::shell_guard::{evaluate_shell_command, join_command_stream, ShellGuardVerdict};
@@ -42,6 +44,8 @@ pub trait DesktopServices: Send + Sync {
 
 pub struct ToolContext<'a> {
     pub working_dir: &'a Path,
+    pub trusted_read_roots: &'a [PathBuf],
+    pub client: Option<&'a LlamaServerClient>,
     pub approval: &'a dyn ApprovalHook,
     pub cancellation: &'a CancellationToken,
     pub loaded_tools: &'a tool_view::LoadedTools,
@@ -89,6 +93,7 @@ pub async fn execute(call: &ToolCallPayload, context: &ToolContext<'_>) -> ToolO
         "os.clipboard.read" => clipboard::read(context).await,
         "os.clipboard.write" => clipboard::write(&call.args, context).await,
         "os.notify" => notify::execute(&call.args, context).await,
+        "vision.describe" => vision::describe(&call.args, context).await,
         "tool.view" => tool_view::execute(&call.args, context.loaded_tools).await,
         "reply" => required_string(&call.args, "text")
             .map(ToolOutcome::ok)
@@ -105,7 +110,7 @@ async fn authorize_call(
     call: &ToolCallPayload,
     context: &ToolContext<'_>,
 ) -> Result<ToolCallPayload, ToolOutcome> {
-    let prepared = prepare_call_paths(call, context.working_dir)
+    let prepared = prepare_call_paths(call, context.working_dir, context.trusted_read_roots)
         .await
         .map_err(ToolOutcome::error)?;
     let mut reasons = Vec::new();
@@ -378,6 +383,8 @@ mod tests {
             };
             let context = ToolContext {
                 working_dir: &root,
+                trusted_read_roots: &[],
+                client: None,
                 approval: &approval,
                 cancellation: &cancellation,
                 loaded_tools: &loaded_tools,
@@ -412,6 +419,8 @@ mod tests {
         let cancellation = CancellationToken::new();
         let context = ToolContext {
             working_dir: &root,
+            trusted_read_roots: &[],
+            client: None,
             approval: &approval,
             cancellation: &cancellation,
             loaded_tools: &loaded_tools,
@@ -442,6 +451,8 @@ mod tests {
         let cancellation = CancellationToken::new();
         let context = ToolContext {
             working_dir: &root,
+            trusted_read_roots: &[],
+            client: None,
             approval: &approval,
             cancellation: &cancellation,
             loaded_tools: &loaded_tools,
@@ -485,6 +496,8 @@ mod tests {
         let cancellation = CancellationToken::new();
         let context = ToolContext {
             working_dir: &root,
+            trusted_read_roots: &[],
+            client: None,
             approval: &approval,
             cancellation: &cancellation,
             loaded_tools: &loaded_tools,
