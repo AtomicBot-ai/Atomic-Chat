@@ -1,18 +1,26 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { ReactNode } from 'react'
+import { forwardRef, useImperativeHandle, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AgentWorkspaceLayout } from './AgentWorkspaceLayout'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useWorkspacePreviewStore } from '@/stores/workspace-preview-store'
 
 const media = vi.hoisted(() => ({ desktop: true }))
+const panelLayouts = vi.hoisted(() => ({ values: [] as number[][] }))
 
 vi.mock('@/hooks/useMediaQuery', () => ({
   useDesktopScreen: () => media.desktop,
 }))
 
 vi.mock('react-resizable-panels', () => ({
-  PanelGroup: ({ children }: { children: ReactNode }) => <>{children}</>,
+  PanelGroup: forwardRef(({ children }: { children: ReactNode }, ref) => {
+    useImperativeHandle(ref, () => ({
+      getId: () => 'agent-workspace',
+      getLayout: () => panelLayouts.values.at(-1) ?? [],
+      setLayout: (layout: number[]) => panelLayouts.values.push(layout),
+    }))
+    return <>{children}</>
+  }),
   Panel: ({ children, id }: { children: ReactNode; id: string }) => (
     <div data-testid={`panel-${id}`}>{children}</div>
   ),
@@ -37,6 +45,7 @@ vi.mock('./ArtifactPanel', () => ({
 describe('AgentWorkspaceLayout', () => {
   beforeEach(() => {
     media.desktop = true
+    panelLayouts.values = []
     useArtifactStore.getState().close()
     useWorkspacePreviewStore.getState().reset()
   })
@@ -109,5 +118,21 @@ describe('AgentWorkspaceLayout', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Open files sidebar' }))
     expect(screen.getByText('Files')).toBeInTheDocument()
+  })
+
+  it('opens preview space without changing the files panel width', async () => {
+    render(
+      <AgentWorkspaceLayout threadId="thread" agentModeActive refreshKey={0}>
+        <div>Chat</div>
+      </AgentWorkspaceLayout>
+    )
+
+    act(() => {
+      useWorkspacePreviewStore.getState().openFile('poem.txt')
+    })
+
+    await waitFor(() => {
+      expect(panelLayouts.values.at(-1)).toEqual([52, 24, 24])
+    })
   })
 })

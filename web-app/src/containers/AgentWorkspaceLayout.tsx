@@ -10,7 +10,7 @@ import {
   Panel,
   PanelGroup,
   PanelResizeHandle,
-  type ImperativePanelHandle,
+  type ImperativePanelGroupHandle,
 } from 'react-resizable-panels'
 import { AgentWorkspaceFiles } from './AgentWorkspaceFiles'
 import { AgentWorkspacePreview } from './AgentWorkspacePreview'
@@ -56,7 +56,7 @@ export function AgentWorkspaceLayout({
   const artifactOpen = useArtifactStore((state) => state.isOpen)
   const artifactTitle = useArtifactStore((state) => state.title)
   const [filesOpen, setFilesOpen] = useState(true)
-  const previewPanelRef = useRef<ImperativePanelHandle>(null)
+  const panelGroupRef = useRef<ImperativePanelGroupHandle>(null)
 
   useEffect(() => {
     if (!agentModeActive || !isDesktop) {
@@ -86,12 +86,16 @@ export function AgentWorkspaceLayout({
   const hasPreview = tabs.length > 0
 
   useLayoutEffect(() => {
-    if (hasPreview) {
-      previewPanelRef.current?.expand(32)
-    } else {
-      previewPanelRef.current?.collapse()
-    }
-  }, [hasPreview])
+    if (!agentModeActive || !isDesktop) return
+
+    const previewSize = hasPreview ? 24 : 0
+    const filesSize = filesOpen ? 24 : 0
+    panelGroupRef.current?.setLayout([
+      100 - previewSize - filesSize,
+      previewSize,
+      filesSize,
+    ])
+  }, [agentModeActive, filesOpen, hasPreview, isDesktop])
 
   if (!agentModeActive) {
     return (
@@ -124,13 +128,16 @@ export function AgentWorkspaceLayout({
           <PanelRight className="size-4" />
         </button>
       )}
-      <PanelGroup direction="horizontal" className="h-full w-full">
+      <PanelGroup
+        ref={panelGroupRef}
+        direction="horizontal"
+        className="h-full w-full"
+      >
         <Panel id="agent-chat" order={1} defaultSize={76} minSize={32}>
           <div className="flex h-full min-w-0">{children}</div>
         </Panel>
         <ResizeHandle hidden={!hasPreview} />
         <Panel
-          ref={previewPanelRef}
           id="agent-preview"
           order={2}
           defaultSize={0}
@@ -140,24 +147,24 @@ export function AgentWorkspaceLayout({
         >
           {hasPreview && <AgentWorkspacePreview workingDir={workingDir} />}
         </Panel>
-        {filesOpen && (
-          <>
-            <ResizeHandle />
-            <Panel
-              id="agent-files"
-              order={3}
-              defaultSize={24}
-              minSize={16}
-              maxSize={36}
-            >
-              <AgentWorkspaceFiles
-                workingDir={workingDir}
-                refreshKey={refreshKey}
-                onClose={() => setFilesOpen(false)}
-              />
-            </Panel>
-          </>
-        )}
+        <ResizeHandle hidden={!filesOpen} />
+        <Panel
+          id="agent-files"
+          order={3}
+          defaultSize={24}
+          minSize={16}
+          maxSize={36}
+          collapsedSize={0}
+          collapsible
+        >
+          {filesOpen && (
+            <AgentWorkspaceFiles
+              workingDir={workingDir}
+              refreshKey={refreshKey}
+              onClose={() => setFilesOpen(false)}
+            />
+          )}
+        </Panel>
       </PanelGroup>
     </main>
   )
