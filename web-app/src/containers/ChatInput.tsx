@@ -542,10 +542,6 @@ const ChatInput = memo(function ChatInput({
       toast.info('Please wait for attachments to finish processing')
       return
     }
-    if (effectiveAgentMode && !workingDir) {
-      toast.error(t('chat:agentWorkspace.required'))
-      return
-    }
     if (effectiveAgentMode && attachments.length > 0) {
       toast.error(t('chat:agentErrors.attachmentsUnsupported'))
       return
@@ -2157,300 +2153,315 @@ const ChatInput = memo(function ChatInput({
             isStreaming && 'opacity-70'
           )}
         >
-          <div
-            className={cn(
-              'relative z-20 px-0 pb-10 border rounded-3xl border-input bg-white dark:bg-input/30',
-              isFocused && 'ring-1 ring-ring/50',
-              isDragOver && 'ring-2 ring-ring/50 border-primary'
-            )}
-            data-drop-zone={attachmentsEnabled ? 'true' : undefined}
-            onDragEnter={attachmentsEnabled ? handleDragEnter : undefined}
-            onDragLeave={attachmentsEnabled ? handleDragLeave : undefined}
-            onDragOver={attachmentsEnabled ? handleDragOver : undefined}
-            onDrop={attachmentsEnabled ? handleDrop : undefined}
-          >
-            {attachments.length > 0 && (
-              <div className="flex flex-col gap-2 p-2 pb-0">
-                <div className="flex flex-wrap gap-2 items-center">
-                  {attachments
-                    .map((att, idx) => ({ att, idx }))
-                    .map(({ att, idx }) => {
-                      const isImage = att.type === 'image'
-                      const ext = att.fileType || att.mimeType?.split('/')[1]
-                      const showAttachmentLoader =
-                        (att.processing ||
-                          (att.type === 'document' &&
-                            !att.processed &&
-                            isAttachmentPipelineBusy)) &&
-                        !att.error
-
-                      if (!isImage) {
-                        return (
-                          <AttachmentChip
-                            key={`${att.type}-${idx}-${att.name}`}
-                            name={att.name}
-                            fileType={att.fileType}
-                            mimeType={att.mimeType}
-                            size={att.size}
-                            error={att.error}
-                            isProcessing={showAttachmentLoader}
-                            onRemove={() => handleRemoveAttachment(idx)}
-                            onRetry={() => handleRetryAttachment(idx)}
-                          />
-                        )
-                      }
-
-                      return (
-                        <div
-                          key={`${att.type}-${idx}-${att.name}`}
-                          className="relative"
-                        >
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div
-                                className={cn(
-                                  'relative border rounded-xl size-14 overflow-hidden',
-                                  'flex items-center justify-center',
-                                  showAttachmentLoader &&
-                                    'ring-1 ring-primary/30 bg-muted/40'
-                                )}
-                              >
-                                {att.dataUrl ? (
-                                  <img
-                                    className="object-cover w-full h-full"
-                                    src={att.dataUrl}
-                                    alt={`${att.name}`}
-                                  />
-                                ) : (
-                                  <div className="flex flex-col items-center justify-center text-muted-foreground">
-                                    <IconPaperclip size={18} />
-                                    {ext && (
-                                      <span className="text-[10px] leading-none mt-0.5 uppercase opacity-70">
-                                        .{ext}
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-                                {showAttachmentLoader && (
-                                  <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-[1px]">
-                                    <IconLoader2
-                                      size={18}
-                                      className="animate-spin text-primary"
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <div className="text-xs">
-                                <div
-                                  className="font-medium truncate max-w-52"
-                                  title={att.name}
-                                >
-                                  {att.name}
-                                </div>
-                                <div className="opacity-70">
-                                  {att.mimeType || 'image'}
-                                  {att.size
-                                    ? ` · ${formatBytes(att.size)}`
-                                    : ''}
-                                </div>
-                                {showAttachmentLoader && (
-                                  <div className="opacity-70 mt-1">
-                                    Preparing attachment...
-                                  </div>
-                                )}
-                              </div>
-                            </TooltipContent>
-                          </Tooltip>
-
-                          {!showAttachmentLoader && (
-                            <div
-                              className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
-                              onClick={() => handleRemoveAttachment(idx)}
-                            >
-                              <IconX className="text-neutral-200" size={14} />
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                </div>
-                {embeddingModelStatusText && (
-                  <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                    <IconLoader2 size={14} className="animate-spin shrink-0" />
-                    <span className="truncate">{embeddingModelStatusText}</span>
-                  </div>
-                )}
-              </div>
-            )}
-            <TextareaAutosize
-              dir="auto"
-              ref={textareaRef}
-              minRows={2}
-              rows={1}
-              maxRows={10}
-              value={prompt}
-              data-testid={'chat-input'}
-              onChange={(e) => {
-                setPrompt(e.target.value)
-                // Count the number of newlines to estimate rows
-                const newRows = (e.target.value.match(/\n/g) || []).length + 1
-                setRows(Math.min(newRows, maxRows))
-              }}
-              onKeyDown={(e) => {
-                // e.keyCode 229 is for IME input with Safari
-                const isComposing =
-                  e.nativeEvent.isComposing || e.keyCode === 229
-                if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
-                  e.preventDefault()
-                  // Submit prompt when the following conditions are met:
-                  // - Enter is pressed without Shift
-                  // - The streaming content has finished
-                  // - Prompt is not empty
-                  if (
-                    !isStreaming &&
-                    prompt.trim() &&
-                    !isAttachmentPipelineBusy &&
-                    !blockSendUntilModelReady
-                  ) {
-                    handleSendMessage(prompt)
-                  }
-                  // When Shift+Enter is pressed, a new line is added (default behavior)
-                }
-              }}
-              onPaste={handlePaste}
-              placeholder={
-                effectiveAgentMode
-                  ? t('chat:agentMode.placeholder')
-                  : t('common:placeholder.chatInput')
-              }
-              autoFocus
-              spellCheck={spellCheckChatInput}
-              data-gramm={spellCheckChatInput}
-              data-gramm_editor={spellCheckChatInput}
-              data-gramm_grammarly={spellCheckChatInput}
+          <div className="relative z-20">
+            <div
               className={cn(
-                'bg-transparent pt-4 w-full shrink-0 border-none resize-none outline-0 px-4',
-                rows < maxRows && 'scrollbar-hide',
-                className
+                'relative z-20 px-0 pb-10 border rounded-3xl border-input bg-white dark:bg-input/30',
+                isFocused && 'ring-1 ring-ring/50',
+                isDragOver && 'ring-2 ring-ring/50 border-primary'
               )}
-            />
-          </div>
-        </div>
+              data-drop-zone={attachmentsEnabled ? 'true' : undefined}
+              onDragEnter={attachmentsEnabled ? handleDragEnter : undefined}
+              onDragLeave={attachmentsEnabled ? handleDragLeave : undefined}
+              onDragOver={attachmentsEnabled ? handleDragOver : undefined}
+              onDrop={attachmentsEnabled ? handleDrop : undefined}
+            >
+              {attachments.length > 0 && (
+                <div className="flex flex-col gap-2 p-2 pb-0">
+                  <div className="flex flex-wrap gap-2 items-center">
+                    {attachments
+                      .map((att, idx) => ({ att, idx }))
+                      .map(({ att, idx }) => {
+                        const isImage = att.type === 'image'
+                        const ext = att.fileType || att.mimeType?.split('/')[1]
+                        const showAttachmentLoader =
+                          (att.processing ||
+                            (att.type === 'document' &&
+                              !att.processed &&
+                              isAttachmentPipelineBusy)) &&
+                          !att.error
 
-        <div className="absolute z-20 bg-transparent bottom-0 w-full p-2 ">
-          <div className="flex justify-between items-center w-full">
-            <div className="px-1 flex items-center gap-1 flex-1 min-w-0">
-              <div
+                        if (!isImage) {
+                          return (
+                            <AttachmentChip
+                              key={`${att.type}-${idx}-${att.name}`}
+                              name={att.name}
+                              fileType={att.fileType}
+                              mimeType={att.mimeType}
+                              size={att.size}
+                              error={att.error}
+                              isProcessing={showAttachmentLoader}
+                              onRemove={() => handleRemoveAttachment(idx)}
+                              onRetry={() => handleRetryAttachment(idx)}
+                            />
+                          )
+                        }
+
+                        return (
+                          <div
+                            key={`${att.type}-${idx}-${att.name}`}
+                            className="relative"
+                          >
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div
+                                  className={cn(
+                                    'relative border rounded-xl size-14 overflow-hidden',
+                                    'flex items-center justify-center',
+                                    showAttachmentLoader &&
+                                      'ring-1 ring-primary/30 bg-muted/40'
+                                  )}
+                                >
+                                  {att.dataUrl ? (
+                                    <img
+                                      className="object-cover w-full h-full"
+                                      src={att.dataUrl}
+                                      alt={`${att.name}`}
+                                    />
+                                  ) : (
+                                    <div className="flex flex-col items-center justify-center text-muted-foreground">
+                                      <IconPaperclip size={18} />
+                                      {ext && (
+                                        <span className="text-[10px] leading-none mt-0.5 uppercase opacity-70">
+                                          .{ext}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                  {showAttachmentLoader && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-[1px]">
+                                      <IconLoader2
+                                        size={18}
+                                        className="animate-spin text-primary"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <div className="text-xs">
+                                  <div
+                                    className="font-medium truncate max-w-52"
+                                    title={att.name}
+                                  >
+                                    {att.name}
+                                  </div>
+                                  <div className="opacity-70">
+                                    {att.mimeType || 'image'}
+                                    {att.size
+                                      ? ` · ${formatBytes(att.size)}`
+                                      : ''}
+                                  </div>
+                                  {showAttachmentLoader && (
+                                    <div className="opacity-70 mt-1">
+                                      Preparing attachment...
+                                    </div>
+                                  )}
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+
+                            {!showAttachmentLoader && (
+                              <div
+                                className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
+                                onClick={() => handleRemoveAttachment(idx)}
+                              >
+                                <IconX className="text-neutral-200" size={14} />
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                  </div>
+                  {embeddingModelStatusText && (
+                    <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                      <IconLoader2
+                        size={14}
+                        className="animate-spin shrink-0"
+                      />
+                      <span className="truncate">
+                        {embeddingModelStatusText}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+              <TextareaAutosize
+                dir="auto"
+                ref={textareaRef}
+                minRows={2}
+                rows={1}
+                maxRows={10}
+                value={prompt}
+                data-testid={'chat-input'}
+                onChange={(e) => {
+                  setPrompt(e.target.value)
+                  // Count the number of newlines to estimate rows
+                  const newRows = (e.target.value.match(/\n/g) || []).length + 1
+                  setRows(Math.min(newRows, maxRows))
+                }}
+                onKeyDown={(e) => {
+                  // e.keyCode 229 is for IME input with Safari
+                  const isComposing =
+                    e.nativeEvent.isComposing || e.keyCode === 229
+                  if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
+                    e.preventDefault()
+                    // Submit prompt when the following conditions are met:
+                    // - Enter is pressed without Shift
+                    // - The streaming content has finished
+                    // - Prompt is not empty
+                    if (
+                      !isStreaming &&
+                      prompt.trim() &&
+                      !isAttachmentPipelineBusy &&
+                      !blockSendUntilModelReady
+                    ) {
+                      handleSendMessage(prompt)
+                    }
+                    // When Shift+Enter is pressed, a new line is added (default behavior)
+                  }
+                }}
+                onPaste={handlePaste}
+                placeholder={
+                  effectiveAgentMode
+                    ? t('chat:agentMode.placeholder')
+                    : t('common:placeholder.chatInput')
+                }
+                autoFocus
+                spellCheck={spellCheckChatInput}
+                data-gramm={spellCheckChatInput}
+                data-gramm_editor={spellCheckChatInput}
+                data-gramm_grammarly={spellCheckChatInput}
                 className={cn(
-                  'px-1 flex items-center w-full gap-1',
-                  isStreaming && 'opacity-50 pointer-events-none'
+                  'bg-transparent pt-4 w-full shrink-0 border-none resize-none outline-0 px-4',
+                  rows < maxRows && 'scrollbar-hide',
+                  className
                 )}
-              >
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="secondary"
-                      size="icon-sm"
-                      className="rounded-full mr-2 mb-1"
-                    >
-                      <PlusIcon
-                        size={18}
-                        className="text-secondary-foreground"
-                      />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    {/* Vision image attachment - always enabled, prompts to download vision model if needed */}
-                    <DropdownMenuItem onClick={handleImagePickerClick}>
-                      <IconPhoto size={18} className="text-muted-foreground" />
-                      <span>Add Images</span>
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        className="hidden"
-                        multiple
-                        onChange={handleFileChange}
-                      />
-                    </DropdownMenuItem>
-                    {/* Audio attachment — only shown for omni/audio-capable
-                          models (gated on the `audio` capability). */}
-                    {hasAudio && (
-                      <DropdownMenuItem onClick={openAudioPicker}>
-                        <IconMusic
+              />
+            </div>
+          </div>
+
+          <div className="absolute z-20 bg-transparent bottom-0 w-full p-2 ">
+            <div className="flex justify-between items-center w-full">
+              <div className="px-1 flex items-center gap-1 flex-1 min-w-0">
+                <div
+                  className={cn(
+                    'px-1 flex items-center w-full gap-1',
+                    isStreaming && 'opacity-50 pointer-events-none'
+                  )}
+                >
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="secondary"
+                        size="icon-sm"
+                        className="rounded-full mr-2 mb-1"
+                      >
+                        <PlusIcon
+                          size={18}
+                          className="text-secondary-foreground"
+                        />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      {/* Vision image attachment - always enabled, prompts to download vision model if needed */}
+                      <DropdownMenuItem onClick={handleImagePickerClick}>
+                        <IconPhoto
                           size={18}
                           className="text-muted-foreground"
                         />
-                        <span>Add audio</span>
+                        <span>Add Images</span>
                         <input
                           type="file"
-                          ref={audioInputRef}
+                          ref={fileInputRef}
                           className="hidden"
-                          accept="audio/mpeg,audio/wav,.mp3,.wav"
                           multiple
-                          onChange={handleAudioFileChange}
+                          onChange={handleFileChange}
                         />
                       </DropdownMenuItem>
-                    )}
-                    {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
-                    <DropdownMenuItem
-                      onClick={handleAttachDocsIngest}
-                      disabled={!selectedModel?.capabilities?.includes('tools')}
-                    >
-                      {ingestingDocs ? (
-                        <IconLoader2
-                          size={18}
-                          className="text-muted-foreground animate-spin"
-                        />
-                      ) : (
-                        <IconPaperclip
-                          size={18}
-                          className="text-muted-foreground"
-                        />
+                      {/* Audio attachment — only shown for omni/audio-capable
+                          models (gated on the `audio` capability). */}
+                      {hasAudio && (
+                        <DropdownMenuItem onClick={openAudioPicker}>
+                          <IconMusic
+                            size={18}
+                            className="text-muted-foreground"
+                          />
+                          <span>Add audio</span>
+                          <input
+                            type="file"
+                            ref={audioInputRef}
+                            className="hidden"
+                            accept="audio/mpeg,audio/wav,.mp3,.wav"
+                            multiple
+                            onChange={handleAudioFileChange}
+                          />
+                        </DropdownMenuItem>
                       )}
-                      <span>
-                        {ingestingDocs
-                          ? 'Indexing documents…'
-                          : 'Add documents or files'}
-                      </span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                      {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
+                      <DropdownMenuItem
+                        onClick={handleAttachDocsIngest}
+                        disabled={
+                          !selectedModel?.capabilities?.includes('tools')
+                        }
+                      >
+                        {ingestingDocs ? (
+                          <IconLoader2
+                            size={18}
+                            className="text-muted-foreground animate-spin"
+                          />
+                        ) : (
+                          <IconPaperclip
+                            size={18}
+                            className="text-muted-foreground"
+                          />
+                        )}
+                        <span>
+                          {ingestingDocs
+                            ? 'Indexing documents…'
+                            : 'Add documents or files'}
+                        </span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
 
-                {canSelectAgentMode && (
-                  <ChatAgentModeSwitch
-                    isAgentMode={isAgentMode}
-                    onChange={handleAgentModeChange}
-                    chatLabel={t('chat:agentMode.chat')}
-                    agentLabel={t('chat:agentMode.agent')}
-                    agentDisabled={isMlxSelected}
-                    agentDisabledTooltip={t('chat:agentMode.mlxUnavailable')}
-                  />
-                )}
-                {effectiveAgentMode && (
-                  <>
-                    <AgentApprovalModeSelect
-                      mode={approvalMode}
-                      onChange={handleApprovalModeChange}
-                      manualSelectedLabel={t(
-                        'chat:agentApprovals.manualSelected'
-                      )}
-                      manualLabel={t('chat:agentApprovals.manual')}
-                      manualDescription={t(
-                        'chat:agentApprovals.manualDescription'
-                      )}
-                      skipSelectedLabel={t('chat:agentApprovals.skipSelected')}
-                      skipLabel={t('chat:agentApprovals.skip')}
-                      skipDescription={t('chat:agentApprovals.skipDescription')}
+                  {canSelectAgentMode && (
+                    <ChatAgentModeSwitch
+                      isAgentMode={isAgentMode}
+                      onChange={handleAgentModeChange}
+                      chatLabel={t('chat:agentMode.chat')}
+                      agentLabel={t('chat:agentMode.agent')}
+                      agentDisabled={isMlxSelected}
+                      agentDisabledTooltip={t('chat:agentMode.mlxUnavailable')}
                     />
-                    <AgentWorkspaceSelect
-                      workingDir={workingDir}
-                      onChange={handleWorkingDirChange}
-                    />
-                  </>
-                )}
-                {/* {model?.provider === 'llamacpp' && loadingModel ? (
+                  )}
+                  {effectiveAgentMode && !canSelectAgentMode && (
+                    <>
+                      <AgentApprovalModeSelect
+                        mode={approvalMode}
+                        onChange={handleApprovalModeChange}
+                        manualSelectedLabel={t(
+                          'chat:agentApprovals.manualSelected'
+                        )}
+                        manualLabel={t('chat:agentApprovals.manual')}
+                        manualDescription={t(
+                          'chat:agentApprovals.manualDescription'
+                        )}
+                        skipSelectedLabel={t(
+                          'chat:agentApprovals.skipSelected'
+                        )}
+                        skipLabel={t('chat:agentApprovals.skip')}
+                        skipDescription={t(
+                          'chat:agentApprovals.skipDescription'
+                        )}
+                      />
+                      <AgentWorkspaceSelect
+                        workingDir={workingDir}
+                        onChange={handleWorkingDirChange}
+                      />
+                    </>
+                  )}
+                  {/* {model?.provider === 'llamacpp' && loadingModel ? (
                   <ModelLoader />
                 ) : (
                   <DropdownModelProvider
@@ -2458,7 +2469,7 @@ const ChatInput = memo(function ChatInput({
                     useLastUsedModel={initialMessage}
                   />
                 )} */}
-                {/* //! Кнопка Browse (Chrome) — временно скрыта
+                  {/* //! Кнопка Browse (Chrome) — временно скрыта
                 {!effectiveAgentMode && hasJanBrowserMCPConfig && modelSupportsBrowser && (
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -2502,159 +2513,186 @@ const ChatInput = memo(function ChatInput({
                 )}
                 */}
 
-                {!effectiveAgentMode &&
-                  selectedModel?.capabilities?.includes('embeddings') && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon-xs">
-                          <IconCodeCircle2
-                            size={18}
-                            className="text-muted-foreground"
-                          />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('embeddings')}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  )}
+                  {!effectiveAgentMode &&
+                    selectedModel?.capabilities?.includes('embeddings') && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button variant="ghost" size="icon-xs">
+                            <IconCodeCircle2
+                              size={18}
+                              className="text-muted-foreground"
+                            />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>{t('embeddings')}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
 
-                {!effectiveAgentMode &&
-                  selectedModel?.capabilities?.includes('tools') &&
-                  hasActiveMCPServers &&
-                  (MCPToolComponent ? (
-                    // Use custom MCP component
-                    <McpExtensionToolLoader
-                      tools={tools}
-                      hasActiveMCPServers={hasActiveMCPServers}
-                      selectedModelHasTools={
-                        selectedModel?.capabilities?.includes('tools') ?? false
-                      }
-                      initialMessage={initialMessage}
-                      MCPToolComponent={MCPToolComponent}
-                    />
-                  ) : (
-                    // Use default tools dropdown
-                    <Tooltip
-                      open={tooltipToolsAvailable}
-                      onOpenChange={setTooltipToolsAvailable}
-                    >
-                      <TooltipTrigger asChild disabled={dropdownToolsAvailable}>
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          onClick={(e) => {
-                            setDropdownToolsAvailable(false)
-                            e.stopPropagation()
-                          }}
+                  {!effectiveAgentMode &&
+                    selectedModel?.capabilities?.includes('tools') &&
+                    hasActiveMCPServers &&
+                    (MCPToolComponent ? (
+                      // Use custom MCP component
+                      <McpExtensionToolLoader
+                        tools={tools}
+                        hasActiveMCPServers={hasActiveMCPServers}
+                        selectedModelHasTools={
+                          selectedModel?.capabilities?.includes('tools') ??
+                          false
+                        }
+                        initialMessage={initialMessage}
+                        MCPToolComponent={MCPToolComponent}
+                      />
+                    ) : (
+                      // Use default tools dropdown
+                      <Tooltip
+                        open={tooltipToolsAvailable}
+                        onOpenChange={setTooltipToolsAvailable}
+                      >
+                        <TooltipTrigger
+                          asChild
+                          disabled={dropdownToolsAvailable}
                         >
-                          <DropdownToolsAvailable
-                            initialMessage={initialMessage}
-                            onOpenChange={(isOpen) => {
-                              setDropdownToolsAvailable(isOpen)
-                              if (isOpen) {
-                                setTooltipToolsAvailable(false)
-                              }
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={(e) => {
+                              setDropdownToolsAvailable(false)
+                              e.stopPropagation()
                             }}
                           >
-                            {() => {
-                              return (
-                                <div
-                                  className={cn(
-                                    'p-1 flex items-center justify-center rounded-sm transition-all duration-200 ease-in-out gap-1 cursor-pointer'
-                                  )}
-                                >
-                                  <IconTool
-                                    size={18}
-                                    className={cn('text-muted-foreground')}
-                                  />
-                                </div>
-                              )
-                            }}
-                          </DropdownToolsAvailable>
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('tools')}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  ))}
+                            <DropdownToolsAvailable
+                              initialMessage={initialMessage}
+                              onOpenChange={(isOpen) => {
+                                setDropdownToolsAvailable(isOpen)
+                                if (isOpen) {
+                                  setTooltipToolsAvailable(false)
+                                }
+                              }}
+                            >
+                              {() => {
+                                return (
+                                  <div
+                                    className={cn(
+                                      'p-1 flex items-center justify-center rounded-sm transition-all duration-200 ease-in-out gap-1 cursor-pointer'
+                                    )}
+                                  >
+                                    <IconTool
+                                      size={18}
+                                      className={cn('text-muted-foreground')}
+                                    />
+                                  </div>
+                                )
+                              }}
+                            </DropdownToolsAvailable>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>{t('tools')}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    ))}
 
-                {!effectiveAgentMode && <ReasoningToggle />}
+                  {!effectiveAgentMode && <ReasoningToggle />}
 
-                {!effectiveAgentMode &&
-                  selectedModel?.capabilities?.includes('web_search') && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon-xs">
-                          <IconWorld
-                            size={18}
-                            className="text-muted-foreground"
-                          />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Web Search</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  )}
+                  {!effectiveAgentMode &&
+                    selectedModel?.capabilities?.includes('web_search') && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button variant="ghost" size="icon-xs">
+                            <IconWorld
+                              size={18}
+                              className="text-muted-foreground"
+                            />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Web Search</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                </div>
               </div>
-            </div>
 
-            <div className="flex items-center gap-2">
-              {isLlamacppProvider(selectedProvider) &&
-                tokenCounterCompact &&
-                !effectiveAgentMode &&
-                !initialMessage &&
-                (threadMessages?.length > 0 || prompt.trim().length > 0) && (
-                  <div className="flex-1 flex justify-center">
-                    <TokenCounter
-                      messages={threadMessages || []}
-                      compact={true}
-                      uploadedFiles={attachments
-                        .filter((a) => a.type === 'image' && a.dataUrl)
-                        .map((a) => ({
-                          name: a.name,
-                          type: a.mimeType || getFileTypeFromExtension(a.name),
-                          size: a.size || 0,
-                          base64: a.base64 || '',
-                          dataUrl: a.dataUrl!,
-                        }))}
-                    />
-                  </div>
+              <div className="flex items-center gap-2">
+                {isLlamacppProvider(selectedProvider) &&
+                  tokenCounterCompact &&
+                  !effectiveAgentMode &&
+                  !initialMessage &&
+                  (threadMessages?.length > 0 || prompt.trim().length > 0) && (
+                    <div className="flex-1 flex justify-center">
+                      <TokenCounter
+                        messages={threadMessages || []}
+                        compact={true}
+                        uploadedFiles={attachments
+                          .filter((a) => a.type === 'image' && a.dataUrl)
+                          .map((a) => ({
+                            name: a.name,
+                            type:
+                              a.mimeType || getFileTypeFromExtension(a.name),
+                            size: a.size || 0,
+                            base64: a.base64 || '',
+                            dataUrl: a.dataUrl!,
+                          }))}
+                      />
+                    </div>
+                  )}
+
+                {isStreaming ? (
+                  <Button
+                    variant="destructive"
+                    size="icon-sm"
+                    className="rounded-full mr-1 mb-1"
+                    onClick={() => {
+                      if (currentThreadId) stopStreaming(currentThreadId)
+                    }}
+                  >
+                    <IconPlayerStopFilled />
+                  </Button>
+                ) : (
+                  <Button
+                    variant="default"
+                    size="icon-sm"
+                    disabled={
+                      !prompt.trim() ||
+                      isAttachmentPipelineBusy ||
+                      blockSendUntilModelReady
+                    }
+                    data-test-id="send-message-button"
+                    onClick={() => handleSendMessage(prompt)}
+                    className="rounded-full mr-1 mb-1"
+                  >
+                    <ArrowRight className="text-primary-fg" />
+                  </Button>
                 )}
-
-              {isStreaming ? (
-                <Button
-                  variant="destructive"
-                  size="icon-sm"
-                  className="rounded-full mr-1 mb-1"
-                  onClick={() => {
-                    if (currentThreadId) stopStreaming(currentThreadId)
-                  }}
-                >
-                  <IconPlayerStopFilled />
-                </Button>
-              ) : (
-                <Button
-                  variant="default"
-                  size="icon-sm"
-                  disabled={
-                    !prompt.trim() ||
-                    isAttachmentPipelineBusy ||
-                    blockSendUntilModelReady
-                  }
-                  data-test-id="send-message-button"
-                  onClick={() => handleSendMessage(prompt)}
-                  className="rounded-full mr-1 mb-1"
-                >
-                  <ArrowRight className="text-primary-fg" />
-                </Button>
-              )}
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      {effectiveAgentMode && canSelectAgentMode && (
+        <div className="absolute inset-x-0.5 top-full z-10 -mt-3 rounded-b-2xl border border-t-0 border-input bg-background/80 px-3 pb-2 pt-4 dark:bg-input/15">
+          <div className="flex min-w-0 items-center gap-2">
+            <AgentWorkspaceSelect
+              workingDir={workingDir}
+              onChange={handleWorkingDirChange}
+            />
+            <AgentApprovalModeSelect
+              mode={approvalMode}
+              onChange={handleApprovalModeChange}
+              manualSelectedLabel={t('chat:agentApprovals.manualSelected')}
+              manualLabel={t('chat:agentApprovals.manual')}
+              manualDescription={t('chat:agentApprovals.manualDescription')}
+              skipSelectedLabel={t('chat:agentApprovals.skipSelected')}
+              skipLabel={t('chat:agentApprovals.skip')}
+              skipDescription={t('chat:agentApprovals.skipDescription')}
+            />
+          </div>
+        </div>
+      )}
 
       {message && (
         <div className="-mt-0.5 mx-2 pb-2 px-3 pt-1.5 rounded-b-lg text-xs text-destructive transition-all duration-200 ease-in-out">

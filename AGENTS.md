@@ -309,6 +309,26 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-07-20 — Give Agent runs a shared default workspace
+- **Context:** Agent mode required every new thread to select a working
+  directory before its first turn. The Rust request contract already made
+  `working_dir` optional, but its fallback was the desktop process current
+  directory, while the frontend rejected missing values before IPC.
+- **Decision:** Create `<data-folder>/agent-workspace` idempotently during app
+  startup and recreate it on demand when an Agent turn omits `working_dir`.
+  Keep explicit per-thread workspace selections unchanged and pass an omitted
+  value through to Rust when no custom directory is selected.
+- **Consequences:** Fresh installs and upgraded profiles share one reliable
+  Agent workspace without an initial picker step. Existing custom thread
+  workspaces remain authoritative, and changing the configured Atomic Chat
+  data folder naturally moves the default workspace root.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/workspace.rs`](src-tauri/src/core/agent/workspace.rs),
+  [`src-tauri/src/core/agent/commands.rs`](src-tauri/src/core/agent/commands.rs),
+  [`web-app/src/containers/AgentWorkspaceSelect.tsx`](web-app/src/containers/AgentWorkspaceSelect.tsx).
+
+---
+
 ### 2026-07-17 — Make Agent tool contracts bounded and truthful
 - **Context:** The Rust Agent exposed several contracts that diverged from
   execution: process termination accepted unsafe PIDs and arbitrary signals;
@@ -396,19 +416,30 @@ Append-only. Newest at top. Each entry follows this shape:
   `Worked for N s`, with nested `Called N tool(s)` and `Reasoned` details.
   Persist the Chat request duration in message metadata and the Agent duration
   in `metadata.agent_run.duration_ms`. Remove the standalone Agent status card.
+  Keep Chat activity live across intermediate AI SDK finishes while tool calls
+  remain pending, and hide completion actions and token metrics until the
+  whole request chain ends.
   Keep existing specialized tool renderers inside the compact expansion.
+  Preserve all packed Exa search results in a bounded scroll area and render
+  multiline or long tool parameters as tail-following syntax-highlighted
+  blocks, retaining the authored commits from PRs #172 and #189.
   Remove only the amber warning icon and styling from the approval dialog.
 - **Consequences:** Agent and ordinary Chat traces now share one minimal,
   durable presentation while retaining tool parameters, results, errors,
   reasoning, and approval behavior. Duration is client wall-clock time and is
   rounded up to seconds for display; existing histories without duration
-  metadata display the one-second floor.
+  metadata display the one-second floor. Tool-step boundaries no longer make
+  an active request appear completed.
 - **Owner:** team.
 - **Links:** [`web-app/src/components/ai-elements/agent-activity.tsx`](web-app/src/components/ai-elements/agent-activity.tsx),
   [`web-app/src/lib/tools/message-trace-parts.ts`](web-app/src/lib/tools/message-trace-parts.ts),
+  [`web-app/src/lib/tools/presenters/web-search-exa.ts`](web-app/src/lib/tools/presenters/web-search-exa.ts),
+  [`web-app/src/lib/toolParamPreview.ts`](web-app/src/lib/toolParamPreview.ts),
   [`web-app/src/lib/agent-run-message.ts`](web-app/src/lib/agent-run-message.ts),
   [`web-app/src/containers/MessageItem.tsx`](web-app/src/containers/MessageItem.tsx),
-  [`web-app/src/containers/dialogs/AgentApprovalDialog.tsx`](web-app/src/containers/dialogs/AgentApprovalDialog.tsx).
+  [`web-app/src/containers/dialogs/AgentApprovalDialog.tsx`](web-app/src/containers/dialogs/AgentApprovalDialog.tsx),
+  [PR #172](https://github.com/AtomicBot-ai/Atomic-Chat/pull/172),
+  [PR #189](https://github.com/AtomicBot-ai/Atomic-Chat/pull/189).
 
 ---
 

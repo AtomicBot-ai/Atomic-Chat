@@ -20,10 +20,7 @@ import {
 } from 'react'
 import { StickToBottom } from 'use-stick-to-bottom'
 import { CodeBlock, highlightCode } from '../code-block'
-import {
-  guessBlockLanguage,
-  splitToolInput,
-} from '@/lib/toolParamPreview'
+import { guessBlockLanguage, splitToolInput } from '@/lib/toolParamPreview'
 
 type ToolContextValue = {
   isOpen: boolean
@@ -268,7 +265,7 @@ const ToolInputBlock = memo(
       void (async () => {
         let rendered: string | null = null
         while (aliveRef.current && latestRef.current !== rendered) {
-          const target = latestRef.current
+          const target: string = latestRef.current
           try {
             const [light, dark] = await highlightCode(target, language as never)
             if (!aliveRef.current) break
@@ -298,10 +295,7 @@ const ToolInputBlock = memo(
             `overflow: auto` to its own scroller, and setting it on this
             wrapper would scroll the wrong element. */}
         <StickToBottom
-          className={cn(
-            'relative rounded-md border',
-            isScrollable && 'h-80'
-          )}
+          className={cn('relative rounded-md border', isScrollable && 'h-80')}
           initial="smooth"
           resize="smooth"
         >

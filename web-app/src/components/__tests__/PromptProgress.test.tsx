@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { PromptProgress } from '../PromptProgress'
 import { useAppState } from '@/hooks/useAppState'
 
@@ -11,7 +12,11 @@ vi.mock('@/hooks/useAppState', () => ({
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
     t: (key: string, options?: { count?: number }) =>
-      key === 'activity.reading' ? `Reading: ${options?.count}%` : key,
+      key === 'activity.reading'
+        ? `Reading: ${options?.count}%`
+        : key === 'activity.working'
+          ? 'Working'
+          : key,
   }),
 }))
 
@@ -22,7 +27,8 @@ describe('PromptProgress', () => {
     vi.clearAllMocks()
   })
 
-  it('should calculate percentage correctly', () => {
+  it('should calculate percentage correctly', async () => {
+    const user = userEvent.setup()
     const mockProgress = {
       cache: 0,
       processed: 75,
@@ -34,6 +40,7 @@ describe('PromptProgress', () => {
 
     render(<PromptProgress />)
 
+    await user.click(screen.getByRole('button', { name: /working/i }))
     expect(screen.getByText('Reading: 50%')).toBeInTheDocument()
   })
 

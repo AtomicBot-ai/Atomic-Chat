@@ -5,7 +5,8 @@ import { presentTool } from './registry'
 
 export function buildTraceBlocks(
   message: UIMessage,
-  disableReasoning: boolean
+  disableReasoning: boolean,
+  options: { ensureActivity?: boolean } = {}
 ): TraceBlock[] {
   const blocks: TraceBlock[] = []
   const metadata = message.metadata as
@@ -14,7 +15,12 @@ export function buildTraceBlocks(
   const agentRun = metadata?.agent_run
   const reasoning: Array<{ key: string; text: string }> = []
   const tools: Extract<TraceBlock, { kind: 'activity' }>['tools'] = []
-  let activityIndex = agentRun ? 0 : -1
+  let activityIndex =
+    agentRun ||
+    metadata?.activityDurationMs !== undefined ||
+    options.ensureActivity
+      ? 0
+      : -1
 
   for (let i = 0; i < message.parts.length; i++) {
     const part = message.parts[i]
@@ -69,8 +75,9 @@ export function buildTraceBlocks(
     }
 
     if (typeof part.type === 'string' && part.type.startsWith('tool-')) {
-      if (activityIndex < 0) activityIndex = blocks.length
       const toolName = part.type.slice('tool-'.length)
+      if (toolName === 'reply' || toolName === 'finish') continue
+      if (activityIndex < 0) activityIndex = blocks.length
       const state = 'state' in part ? part.state : 'output-available'
       const input = 'input' in part ? part.input : undefined
       const output = 'output' in part ? part.output : undefined

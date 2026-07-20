@@ -45,7 +45,8 @@
   "agentWorkspace": {
     "choose": "Choose workspace",
     "change": "Change agent workspace",
-    "required": "Choose a workspace before running the agent."
+    "default": "Default workspace",
+    "defaultDescription": "Uses the agent-workspace folder inside the Atomic Chat data folder."
   },
   "agentErrors": {
     "attachmentsUnsupported": "Agent mode does not support attachments yet.",

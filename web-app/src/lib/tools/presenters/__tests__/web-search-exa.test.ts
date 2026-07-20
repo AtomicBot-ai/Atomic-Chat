@@ -64,7 +64,10 @@ describe('presentWebSearchExa', () => {
   })
 
   it('returns no results for empty output', () => {
-    const presentation = presentWebSearchExa({ input: { query: 'q' }, output: [] })
+    const presentation = presentWebSearchExa({
+      input: { query: 'q' },
+      output: [],
+    })
     expect(presentation.results).toHaveLength(0)
     expect(presentation.subtitle).toBeUndefined()
   })

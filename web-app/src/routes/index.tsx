@@ -107,7 +107,7 @@ function Index() {
               initialMessage={true}
             />
           </div>
-          <div className="absolute inset-x-0 top-full">
+          <div className="absolute inset-x-0 top-full pt-9">
             <AgentTaskSuggestions
               visible={isAgentMode}
               onSelect={handleSelectAgentTask}

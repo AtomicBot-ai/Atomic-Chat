@@ -1,6 +1,6 @@
 //! Tauri commands for starting and cancelling an isolated agent turn.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -20,6 +20,7 @@ use super::runner::{run_turn, RunTurnInput, MAX_STEPS};
 use super::session::{load_session, save_session, validate_session_id};
 use super::tools::DesktopServices;
 use super::types::{AgentApprovalDecision, AgentEvent, AgentTurnRequest};
+use super::workspace::default_agent_workspace;
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::{AgentSessionLocks, AppState};
 
@@ -71,7 +72,8 @@ pub async fn agent_run_turn<R: Runtime>(
     on_event: Channel<AgentEvent>,
 ) -> Result<(), String> {
     validate_request(&request)?;
-    let working_dir = resolve_working_dir(request.working_dir.as_deref()).await?;
+    let data_folder = get_jan_data_folder_path(app_handle.clone());
+    let working_dir = resolve_working_dir(request.working_dir.as_deref(), &data_folder).await?;
     let llama_state: State<LlamacppState> = app_handle.state();
     let upstream_state: State<LlamacppUpstreamState> = app_handle.state();
     let target = find_session_by_model_id(&request.model_id, &llama_state, &upstream_state)
@@ -127,7 +129,6 @@ pub async fn agent_run_turn<R: Runtime>(
     let session_lock = get_session_lock(&state.agent_session_locks, &request.session_id).await;
     let result = {
         let _session_guard = session_lock.lock().await;
-        let data_folder = get_jan_data_folder_path(app_handle.clone());
         match load_session(&data_folder, &request.session_id).await {
             Ok(mut session) => {
                 let run_result = run_turn(
@@ -233,10 +234,21 @@ async fn get_session_lock(
         .clone()
 }
 
-async fn resolve_working_dir(value: Option<&str>) -> Result<PathBuf, String> {
+async fn resolve_working_dir(value: Option<&str>, data_folder: &Path) -> Result<PathBuf, String> {
     let path = match value {
         Some(value) if !value.trim().is_empty() => expand_home(value)?,
-        _ => std::env::current_dir().map_err(|error| error.to_string())?,
+        _ => {
+            let workspace = default_agent_workspace(data_folder);
+            tokio::fs::create_dir_all(&workspace)
+                .await
+                .map_err(|error| {
+                    format!(
+                        "Failed to create default Agent workspace '{}': {error}",
+                        workspace.display()
+                    )
+                })?;
+            workspace
+        }
     };
     let path = if path.is_absolute() {
         lexical_normalize(&path)
@@ -276,6 +288,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
+    use crate::core::agent::test_support::TestWorkspace;
 
     #[tokio::test]
     async fn same_session_serializes_while_different_sessions_remain_independent() {
@@ -302,5 +315,24 @@ mod tests {
 
         drop(first_guard);
         waiter.await.expect("same-session waiter");
+    }
+
+    #[tokio::test]
+    async fn missing_working_dir_uses_default_agent_workspace() {
+        let data_folder = TestWorkspace::new();
+
+        let resolved = resolve_working_dir(None, data_folder.path())
+            .await
+            .expect("resolve default Agent workspace");
+        let expected = tokio::fs::canonicalize(
+            data_folder
+                .path()
+                .join(super::super::workspace::DEFAULT_AGENT_WORKSPACE_DIR),
+        )
+        .await
+        .expect("canonicalize default Agent workspace");
+
+        assert_eq!(resolved, expected);
+        assert!(resolved.is_dir());
     }
 }

@@ -198,6 +198,7 @@ function ThreadDetail() {
     useState<UIMessage | null>(null)
   const [isAutoIncreasingContext, setIsAutoIncreasingContext] = useState(false)
   const [contextLimitError, setContextLimitError] = useState<Error | null>(null)
+  const [isChatRequestActive, setIsChatRequestActive] = useState(false)
 
   // Optimistic user message shown while the home → new thread initial-message
   // path indexes attachments. Lives in a shared Zustand store published by
@@ -237,10 +238,15 @@ function ThreadDetail() {
       const msgMeta = message.metadata as Record<string, unknown> | undefined
       const finishReason = msgMeta?.finishReason as string | undefined
 
+      if (isAbort) {
+        setIsChatRequestActive(false)
+      }
+
       // Context limit hit: send partial content as prefill so the model continues
       // from where it stopped. The stream wrapper injects it as the first text-delta
       // of the new message, so the user sees the partial text immediately.
       if (!isAbort && finishReason === 'length') {
+        let willContinue = false
         const selectedModelState = useModelProvider.getState().selectedModel
         const usage = msgMeta?.usage as
           | { inputTokens?: number; outputTokens?: number }
@@ -265,6 +271,7 @@ function ThreadDetail() {
               setContinueFromContentRef.current?.(partialText)
               // Keep the partial message visible while the model reloads
               setPendingContinueMessage(message)
+              willContinue = true
             }
             handleContextSizeIncreaseRef.current?.()
           } else {
@@ -279,10 +286,17 @@ function ThreadDetail() {
             })
           }
         }
+        if (!willContinue) {
+          setIsChatRequestActive(false)
+        }
         return
       }
 
       if (!isAbort && message.parts.length) setPendingContinueMessage(null)
+
+      if (!isAbort && sessionData.tools.length === 0) {
+        setIsChatRequestActive(false)
+      }
 
       // Persist assistant message to backend (skip if aborted).
       // For continuations, message.parts already contains partial + new content
@@ -663,10 +677,6 @@ function ThreadDetail() {
         return
       }
       const workingDir = useAgentMode.getState().getWorkingDir(threadId)
-      if (!workingDir) {
-        toast.error(t('chat:agentWorkspace.required'))
-        return
-      }
       const providerSupportsAgent = ['llamacpp', 'llamacpp-upstream'].includes(
         selectedProvider
       )
@@ -936,6 +946,7 @@ function ThreadDetail() {
       // sendMessage so React 18 batches both updates and the user sees the
       // real bubble appear in the same position without a flicker.
       useOptimisticUserMessage.getState().clear(threadId)
+      setIsChatRequestActive(true)
       sendMessage({
         parts,
         id: messageId,
@@ -1113,6 +1124,7 @@ function ThreadDetail() {
 
       // Call the AI SDK regenerate function - it will handle truncating the UI messages
       // and generating a new response from the selected message
+      setIsChatRequestActive(true)
       regenerate(messageId ? { messageId } : undefined)
     },
     [deleteMessage, processAndRunAgent, regenerate, setChatMessages, threadId]
@@ -1173,6 +1185,7 @@ function ThreadDetail() {
       })
 
       // Regenerate from the edited message
+      setIsChatRequestActive(true)
       regenerate({ messageId })
     },
     [
@@ -1317,6 +1330,18 @@ function ThreadDetail() {
     if (status === 'error' && pendingContinueMessage) {
       setPendingContinueMessage(null)
     }
+    if (
+      status === 'error' &&
+      !(
+        error &&
+        isContextLimitError(error) &&
+        (selectedModel?.settings?.auto_increase_ctx_len?.controller_props
+          ?.value ??
+          true)
+      )
+    ) {
+      setIsChatRequestActive(false)
+    }
   }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const threadModel = useMemo(
@@ -1327,6 +1352,10 @@ function ThreadDetail() {
     agentRun?.status === 'running' || agentRun?.status === 'awaiting_approval'
   const handleStop = useCallback(() => {
     if (!agentModeActive || !isAgentRunning || !agentRun?.runId) {
+      toolCallAbortController.current?.abort()
+      toolCallAbortController.current = null
+      sessionData.tools = []
+      setIsChatRequestActive(false)
       stop()
       return
     }
@@ -1334,8 +1363,20 @@ function ThreadDetail() {
     void cancelAgentTurn(agentRun.runId).catch(() => {
       toast.error(t('chat:agentErrors.cancelFailed'))
     })
-  }, [agentModeActive, agentRun?.runId, isAgentRunning, stop, t, threadId])
-  const inputStatus = isAgentRunning ? CHAT_STATUS.SUBMITTED : status
+  }, [
+    agentModeActive,
+    agentRun?.runId,
+    isAgentRunning,
+    sessionData,
+    stop,
+    t,
+    threadId,
+  ])
+  const requestActive =
+    isAgentRunning || (!agentModeActive && isChatRequestActive)
+  const inputStatus = requestActive ? CHAT_STATUS.SUBMITTED : status
+  const lastChatMessage = chatMessages[chatMessages.length - 1]
+  const hasActiveAssistantMessage = lastChatMessage?.role === 'assistant'
 
   return (
     <div className="flex h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))] overflow-hidden">
@@ -1363,6 +1404,7 @@ function ThreadDetail() {
                         isFirstMessage={isFirstMessage}
                         isLastMessage={isLastMessage}
                         status={inputStatus}
+                        requestActive={requestActive}
                         reasoningContainerRef={reasoningContainerRef}
                         onRegenerate={handleRegenerate}
                         onEdit={handleEditMessage}
@@ -1414,9 +1456,8 @@ function ThreadDetail() {
                         <Shimmer duration={1}>Growing the Mind...</Shimmer>
                       )}
                       {inputStatus === CHAT_STATUS.SUBMITTED &&
-                        !agentModeActive && (
-                        <PromptProgress />
-                        )}
+                        !agentModeActive &&
+                        !hasActiveAssistantMessage && <PromptProgress />}
                     </div>
                   )}
                   {(error || contextLimitError) &&

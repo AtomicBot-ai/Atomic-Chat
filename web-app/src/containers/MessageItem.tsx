@@ -46,6 +46,7 @@ export type MessageItemProps = {
   isFirstMessage: boolean
   isLastMessage: boolean
   status: ChatStatus
+  requestActive?: boolean
   reasoningContainerRef?: React.RefObject<HTMLDivElement | null>
   onRegenerate?: (messageId: string) => void
   onEdit?: (messageId: string, newText: string) => void
@@ -61,6 +62,7 @@ export const MessageItem = memo(
     message,
     isLastMessage,
     status,
+    requestActive,
     isAnimating,
     hideActions,
     reasoningContainerRef,
@@ -112,6 +114,11 @@ export const MessageItem = memo(
     }, [message.parts])
 
     const isStreaming = isLastMessage && status === CHAT_STATUS.STREAMING
+    const isRequestActive =
+      isLastMessage &&
+      message.role === 'assistant' &&
+      (requestActive ??
+        (status === CHAT_STATUS.STREAMING || status === CHAT_STATUS.SUBMITTED))
 
     // Extract file metadata from message text (for user messages with attachments)
     const attachedFiles = useMemo(() => {
@@ -239,10 +246,7 @@ export const MessageItem = memo(
     const renderActivityBlock = (block: ActivityTraceBlock) => {
       const agentStatus = block.agentSummary?.status
       const active =
-        isLastMessage &&
-        message.role === 'assistant' &&
-        (status === CHAT_STATUS.STREAMING ||
-          status === CHAT_STATUS.SUBMITTED) &&
+        isRequestActive &&
         (!agentStatus ||
           agentStatus === 'running' ||
           agentStatus === 'awaiting_approval')
@@ -321,8 +325,11 @@ export const MessageItem = memo(
     }
 
     const traceBlocks = useMemo(
-      () => buildTraceBlocks(message, disableReasoning),
-      [message, disableReasoning]
+      () =>
+        buildTraceBlocks(message, disableReasoning, {
+          ensureActivity: isRequestActive,
+        }),
+      [message, disableReasoning, isRequestActive]
     )
 
     return (
@@ -368,7 +375,7 @@ export const MessageItem = memo(
             <div
               className={cn(
                 'flex items-center gap-1',
-                (isStreaming || hideActions) && 'hidden'
+                (isRequestActive || hideActions) && 'hidden'
               )}
             >
               <CopyButton text={getFullTextContent()} />
@@ -399,10 +406,14 @@ export const MessageItem = memo(
                 )}
             </div>
 
-            <TokenSpeedIndicator
-              streaming={isStreaming}
-              metadata={message.metadata as Record<string, unknown> | undefined}
-            />
+            {!isRequestActive && (
+              <TokenSpeedIndicator
+                streaming={false}
+                metadata={
+                  message.metadata as Record<string, unknown> | undefined
+                }
+              />
+            )}
           </div>
         )}
 
@@ -425,7 +436,11 @@ export const MessageItem = memo(
   },
   (prevProps, nextProps) => {
     // Always re-render if streaming and this is the last message
-    if (nextProps.isLastMessage && nextProps.status === CHAT_STATUS.STREAMING) {
+    if (
+      nextProps.isLastMessage &&
+      (nextProps.status === CHAT_STATUS.STREAMING ||
+        nextProps.status === CHAT_STATUS.SUBMITTED)
+    ) {
       return false
     }
 
@@ -434,6 +449,7 @@ export const MessageItem = memo(
       prevProps.isFirstMessage === nextProps.isFirstMessage &&
       prevProps.isLastMessage === nextProps.isLastMessage &&
       prevProps.status === nextProps.status &&
+      prevProps.requestActive === nextProps.requestActive &&
       prevProps.showAssistant === nextProps.showAssistant &&
       prevProps.hideActions === nextProps.hideActions
     )

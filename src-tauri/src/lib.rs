@@ -462,6 +462,11 @@ pub fn run() {
                 log::error!("Failed to migrate MCP servers: {e}");
             }
 
+            let data_folder = get_jan_data_folder_path(app.handle().clone());
+            if let Err(e) = core::agent::workspace::ensure_default_agent_workspace(&data_folder) {
+                log::error!("{e}");
+            }
+
             // Store the new app version
             store.set("version", serde_json::json!(app_version));
             store.save().expect("Failed to save store");

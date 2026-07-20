@@ -106,7 +106,8 @@ export function sniffLanguageFromContent(text: string): string | null {
   const head = text.slice(0, 500).trimStart()
   if (!head) return null
 
-  if (/^<!doctype\s+html/i.test(head) || /^<html[\s>]/i.test(head)) return 'html'
+  if (/^<!doctype\s+html/i.test(head) || /^<html[\s>]/i.test(head))
+    return 'html'
   if (/^<\?php/i.test(head)) return 'php'
   if (/^<\?xml[\s?]/i.test(head) || /^<svg[\s>]/i.test(head)) return 'xml'
   if (/^#!.*\b(bash|sh|zsh)\b/.test(head)) return 'bash'

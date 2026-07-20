@@ -73,9 +73,9 @@ describe('guessBlockLanguage', () => {
   })
 
   it('prefers an explicit path extension over content sniffing', () => {
-    expect(
-      guessBlockLanguage({ path: 'notes.md' }, '<!DOCTYPE html>')
-    ).toBe('markdown')
+    expect(guessBlockLanguage({ path: 'notes.md' }, '<!DOCTYPE html>')).toBe(
+      'markdown'
+    )
   })
 })
 
@@ -99,9 +99,9 @@ describe('sniffLanguageFromContent', () => {
 
   it('detects css and js/ts', () => {
     expect(sniffLanguageFromContent('.hero { color: red; }')).toBe('css')
-    expect(
-      sniffLanguageFromContent("import { x } from './y'\n")
-    ).toBe('typescript')
+    expect(sniffLanguageFromContent("import { x } from './y'\n")).toBe(
+      'typescript'
+    )
     expect(sniffLanguageFromContent('const a = 1\n')).toBe('javascript')
   })
 

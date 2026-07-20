@@ -55,4 +55,64 @@ describe('buildTraceBlocks activity projection', () => {
       }),
     ])
   })
+
+  it('creates one live activity block before Chat emits any parts', () => {
+    const message = {
+      id: 'assistant-live',
+      role: 'assistant',
+      parts: [],
+    } as UIMessage
+
+    expect(buildTraceBlocks(message, false, { ensureActivity: true })).toEqual([
+      expect.objectContaining({
+        kind: 'activity',
+        reasoning: [],
+        tools: [],
+      }),
+    ])
+  })
+
+  it('keeps a completed text-only Chat activity from duration metadata', () => {
+    const message = {
+      id: 'assistant-complete',
+      role: 'assistant',
+      metadata: { activityDurationMs: 1_500 },
+      parts: [{ type: 'text', text: 'Complete.' }],
+    } as UIMessage
+
+    expect(buildTraceBlocks(message, false)).toEqual([
+      expect.objectContaining({
+        kind: 'activity',
+        durationMs: 1_500,
+      }),
+      expect.objectContaining({
+        kind: 'text',
+        text: 'Complete.',
+      }),
+    ])
+  })
+
+  it('excludes terminal tools from visible activity rows', () => {
+    const message = {
+      id: 'assistant-terminal',
+      role: 'assistant',
+      metadata: { activityDurationMs: 800 },
+      parts: [
+        {
+          type: 'tool-reply',
+          toolCallId: 'tool-reply',
+          state: 'output-available',
+          input: { text: 'Done.' },
+          output: { ok: true },
+        },
+      ],
+    } as UIMessage
+
+    expect(buildTraceBlocks(message, false)).toEqual([
+      expect.objectContaining({
+        kind: 'activity',
+        tools: [],
+      }),
+    ])
+  })
 })

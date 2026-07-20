@@ -27,6 +27,7 @@ pub mod session;
 pub mod shell_guard;
 pub mod tools;
 pub mod types;
+pub mod workspace;
 
 #[cfg(test)]
 mod model_e2e;

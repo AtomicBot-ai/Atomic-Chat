@@ -45,7 +45,8 @@
   "agentWorkspace": {
     "choose": "Выбрать workspace",
     "change": "Изменить workspace агента",
-    "required": "Выберите workspace перед запуском агента."
+    "default": "Workspace по умолчанию",
+    "defaultDescription": "Используется папка agent-workspace внутри папки данных Atomic Chat."
   },
   "agentErrors": {
     "attachmentsUnsupported": "Agent-режим пока не поддерживает вложения.",
