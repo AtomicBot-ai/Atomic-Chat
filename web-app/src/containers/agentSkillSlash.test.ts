@@ -28,7 +28,7 @@ const skill = (
 })
 
 describe('agent skill slash picker', () => {
-  it('finds and removes the slash token at the cursor', () => {
+  it('finds and removes the slash query after selection', () => {
     const query = findAgentSkillSlashQuery('summarize /pdf later', 14)
 
     expect(query).toEqual({ start: 10, end: 14, query: 'pdf' })

@@ -32,6 +32,7 @@ import {
   IconLoader2,
   IconWorld,
   IconMusic,
+  IconSparkles,
 } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -2357,108 +2358,138 @@ const ChatInput = memo(function ChatInput({
               {effectiveAgentMode && (
                 <AgentSkillSlashMenu
                   skills={eligibleAgentSkills}
-                  selectedSkill={selectedAgentSkill}
                   activeIndex={agentSkillActiveIndex}
                   loading={agentSkillsLoading}
                   open={agentSkillMenuOpen}
                   onSelect={handleAgentSkillSelect}
-                  onRemove={() => setSelectedAgentSkill(null)}
                   onActiveIndexChange={setAgentSkillActiveIndex}
                 />
               )}
-              <TextareaAutosize
-                dir="auto"
-                ref={textareaRef}
-                minRows={2}
-                rows={1}
-                maxRows={10}
-                value={prompt}
-                data-testid={'chat-input'}
-                onChange={(e) => {
-                  setPrompt(e.target.value)
-                  updateAgentSkillSlashQuery(
-                    e.target.value,
-                    e.target.selectionStart
-                  )
-                  // Count the number of newlines to estimate rows
-                  const newRows = (e.target.value.match(/\n/g) || []).length + 1
-                  setRows(Math.min(newRows, maxRows))
-                }}
-                onKeyDown={(e) => {
-                  // e.keyCode 229 is for IME input with Safari
-                  const isComposing =
-                    e.nativeEvent.isComposing || e.keyCode === 229
-                  if (
-                    agentSkillMenuOpen &&
-                    eligibleAgentSkills.length > 0 &&
-                    !isComposing
-                  ) {
-                    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                      e.preventDefault()
-                      const direction = e.key === 'ArrowDown' ? 1 : -1
-                      setAgentSkillActiveIndex((current) =>
-                        moveAgentSkillActiveIndex(
-                          current,
-                          direction,
-                          eligibleAgentSkills.length
-                        )
-                      )
-                      return
-                    }
-                    if (e.key === 'Enter' || e.key === 'Tab') {
-                      e.preventDefault()
-                      handleAgentSkillSelect(
-                        eligibleAgentSkills[agentSkillActiveIndex] ??
-                          eligibleAgentSkills[0]
-                      )
-                      return
-                    }
-                  }
-                  if (agentSkillMenuOpen && e.key === 'Escape') {
-                    e.preventDefault()
-                    setAgentSkillMenuOpen(false)
-                    return
-                  }
-                  if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
-                    e.preventDefault()
-                    // Submit prompt when the following conditions are met:
-                    // - Enter is pressed without Shift
-                    // - The streaming content has finished
-                    // - Prompt is not empty
-                    if (
-                      !isStreaming &&
-                      prompt.trim() &&
-                      !isAttachmentPipelineBusy &&
-                      !blockSendUntilModelReady
-                    ) {
-                      handleSendMessage(prompt)
-                    }
-                    // When Shift+Enter is pressed, a new line is added (default behavior)
-                  }
-                }}
-                onClick={(e) =>
-                  updateAgentSkillSlashQuery(
-                    e.currentTarget.value,
-                    e.currentTarget.selectionStart
-                  )
-                }
-                onPaste={handlePaste}
-                placeholder={
-                  effectiveAgentMode
-                    ? t('chat:agentMode.placeholder')
-                    : t('common:placeholder.chatInput')
-                }
-                autoFocus
-                spellCheck={spellCheckChatInput}
-                data-gramm={spellCheckChatInput}
-                data-gramm_editor={spellCheckChatInput}
-                data-gramm_grammarly={spellCheckChatInput}
-                className={cn(
-                  'bg-transparent pt-4 w-full shrink-0 border-none resize-none outline-0 px-4',
-                  rows < maxRows && 'scrollbar-hide',
-                  className
+              <div className="flex w-full items-start gap-2 px-4 pt-3">
+                {selectedAgentSkill && (
+                  <div
+                    className="mt-0.5 inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-primary/40 bg-primary/15 px-2 text-sm font-medium text-primary shadow-sm"
+                    data-testid="agent-skill-inline-token"
+                  >
+                    <IconSparkles size={14} aria-hidden="true" />
+                    <span>/{selectedAgentSkill.name}</span>
+                    <button
+                      type="button"
+                      className="ml-0.5 rounded-sm text-primary/70 transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                      aria-label={t('common:agentSkill.remove')}
+                      onClick={() => {
+                        setSelectedAgentSkill(null)
+                        textareaRef.current?.focus()
+                      }}
+                    >
+                      <IconX size={13} />
+                    </button>
+                  </div>
                 )}
-              />
+                <TextareaAutosize
+                  dir="auto"
+                  ref={textareaRef}
+                  minRows={2}
+                  rows={1}
+                  maxRows={10}
+                  value={prompt}
+                  data-testid={'chat-input'}
+                  onChange={(e) => {
+                    setPrompt(e.target.value)
+                    updateAgentSkillSlashQuery(
+                      e.target.value,
+                      e.target.selectionStart
+                    )
+                    // Count the number of newlines to estimate rows
+                    const newRows =
+                      (e.target.value.match(/\n/g) || []).length + 1
+                    setRows(Math.min(newRows, maxRows))
+                  }}
+                  onKeyDown={(e) => {
+                    // e.keyCode 229 is for IME input with Safari
+                    const isComposing =
+                      e.nativeEvent.isComposing || e.keyCode === 229
+                    if (
+                      e.key === 'Backspace' &&
+                      selectedAgentSkill &&
+                      prompt.length === 0
+                    ) {
+                      e.preventDefault()
+                      setSelectedAgentSkill(null)
+                      return
+                    }
+                    if (
+                      agentSkillMenuOpen &&
+                      eligibleAgentSkills.length > 0 &&
+                      !isComposing
+                    ) {
+                      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                        e.preventDefault()
+                        const direction = e.key === 'ArrowDown' ? 1 : -1
+                        setAgentSkillActiveIndex((current) =>
+                          moveAgentSkillActiveIndex(
+                            current,
+                            direction,
+                            eligibleAgentSkills.length
+                          )
+                        )
+                        return
+                      }
+                      if (e.key === 'Enter' || e.key === 'Tab') {
+                        e.preventDefault()
+                        handleAgentSkillSelect(
+                          eligibleAgentSkills[agentSkillActiveIndex] ??
+                            eligibleAgentSkills[0]
+                        )
+                        return
+                      }
+                    }
+                    if (agentSkillMenuOpen && e.key === 'Escape') {
+                      e.preventDefault()
+                      setAgentSkillMenuOpen(false)
+                      return
+                    }
+                    if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
+                      e.preventDefault()
+                      // Submit prompt when the following conditions are met:
+                      // - Enter is pressed without Shift
+                      // - The streaming content has finished
+                      // - Prompt is not empty
+                      if (
+                        !isStreaming &&
+                        prompt.trim() &&
+                        !isAttachmentPipelineBusy &&
+                        !blockSendUntilModelReady
+                      ) {
+                        handleSendMessage(prompt)
+                      }
+                      // When Shift+Enter is pressed, a new line is added (default behavior)
+                    }
+                  }}
+                  onClick={(e) =>
+                    updateAgentSkillSlashQuery(
+                      e.currentTarget.value,
+                      e.currentTarget.selectionStart
+                    )
+                  }
+                  onPaste={handlePaste}
+                  placeholder={
+                    effectiveAgentMode
+                      ? t('chat:agentMode.placeholder')
+                      : t('common:placeholder.chatInput')
+                  }
+                  autoFocus
+                  spellCheck={spellCheckChatInput}
+                  data-gramm={spellCheckChatInput}
+                  data-gramm_editor={spellCheckChatInput}
+                  data-gramm_grammarly={spellCheckChatInput}
+                  className={cn(
+                    'min-w-0 flex-1 resize-none border-none bg-transparent p-0 pt-1 outline-0',
+                    rows < maxRows && 'scrollbar-hide',
+                    className
+                  )}
+                />
+              </div>
             </div>
           </div>
 

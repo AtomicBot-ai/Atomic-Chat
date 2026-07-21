@@ -23,11 +23,9 @@ describe('AgentSkillSlashMenu', () => {
   it('renders the menu only when open', () => {
     const props = {
       skills: [pdfSkill],
-      selectedSkill: null,
       activeIndex: 0,
       loading: false,
       onSelect: vi.fn(),
-      onRemove: vi.fn(),
       onActiveIndexChange: vi.fn(),
     }
     const { rerender } = render(<AgentSkillSlashMenu {...props} open={false} />)
@@ -44,12 +42,10 @@ describe('AgentSkillSlashMenu', () => {
     render(
       <AgentSkillSlashMenu
         skills={[pdfSkill]}
-        selectedSkill={null}
         activeIndex={0}
         loading={false}
         open
         onSelect={onSelect}
-        onRemove={vi.fn()}
         onActiveIndexChange={vi.fn()}
       />
     )
@@ -57,27 +53,5 @@ describe('AgentSkillSlashMenu', () => {
     await user.click(screen.getByRole('option', { name: /pdf/i }))
 
     expect(onSelect).toHaveBeenCalledWith(pdfSkill)
-  })
-
-  it('removes the selected skill chip', async () => {
-    const onRemove = vi.fn()
-    const user = userEvent.setup()
-    render(
-      <AgentSkillSlashMenu
-        skills={[]}
-        selectedSkill={pdfSkill}
-        activeIndex={0}
-        loading={false}
-        open={false}
-        onSelect={vi.fn()}
-        onRemove={onRemove}
-        onActiveIndexChange={vi.fn()}
-      />
-    )
-
-    expect(screen.getByTestId('agent-skill-chip')).toBeInTheDocument()
-    await user.click(screen.getByRole('button'))
-
-    expect(onRemove).toHaveBeenCalledTimes(1)
   })
 })
