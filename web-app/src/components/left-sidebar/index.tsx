@@ -4,17 +4,44 @@ import { NavMain } from './NavMain'
 import { NavProjects } from './NavProjects'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useAgentMode, type SidebarMode } from '@/hooks/useAgentMode'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { ChatAgentModeSwitch } from '@/containers/ChatAgentModeSwitch'
+import { TEMPORARY_CHAT_ID } from '@/constants/chat'
+import { route } from '@/constants/routes'
+import { Link, useLocation, useNavigate } from '@tanstack/react-router'
+import { IconSettings } from '@tabler/icons-react'
 
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarTrigger,
   SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
   SidebarRail,
 } from '@/components/ui/sidebar'
 
 export function LeftSidebar() {
+  const { t } = useTranslation()
   const { open: isLeftPanelOpen } = useLeftPanel()
+  const navigate = useNavigate()
+  const { pathname } = useLocation()
+  const sidebarMode = useAgentMode((state) => state.sidebarMode)
+  const setSidebarMode = useAgentMode((state) => state.setSidebarMode)
+  const selectedProvider = useModelProvider((state) => state.selectedProvider)
+  const isMlxSelected = selectedProvider === 'mlx'
+
+  const selectMode = (mode: SidebarMode) => {
+    if (mode === 'agent' && isMlxSelected) return
+    setSidebarMode(mode)
+    useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, mode === 'agent')
+    navigate({ to: route.home })
+  }
+
   return (
     <div className="relative z-50">
       <Sidebar variant="floating" collapsible="offcanvas">
@@ -29,7 +56,7 @@ export function LeftSidebar() {
           and instead push only the left-aligned Atomic Chat logo row
           below the traffic-light band, so it doesn't collide.
         */}
-        <SidebarHeader className="flex flex-col gap-1 px-1">
+        <SidebarHeader className="flex flex-col gap-1 px-1 pb-0">
           {/* On macOS this row sits inside the z-50 stacking context of the
               LeftSidebar wrapper, so it is always above the z-20 fixed
               overlay and can receive mousedown events for window dragging.
@@ -135,14 +162,38 @@ export function LeftSidebar() {
               />
             </svg>
           </div>
-          <div className="mt-[6px]">
-            <NavMain />
+          <div className="mt-[6px] px-1">
+            <ChatAgentModeSwitch
+              isAgentMode={sidebarMode === 'agent'}
+              onChange={(isAgent) => selectMode(isAgent ? 'agent' : 'chat')}
+              chatLabel={t('chat:agentMode.chat')}
+              agentLabel={t('chat:agentMode.agent')}
+              agentDisabled={isMlxSelected}
+              agentDisabledTooltip={t('chat:agentMode.mlxUnavailable')}
+            />
           </div>
         </SidebarHeader>
         <SidebarContent className="mask-b-from-95% mask-t-from-98%">
-          <NavProjects />
-          <NavChats />
+          <NavMain mode={sidebarMode} />
+          {sidebarMode === 'chat' && <NavProjects />}
+          <NavChats mode={sidebarMode} />
         </SidebarContent>
+        <SidebarFooter>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={pathname.startsWith('/settings')}
+                className="data-[active=true]:bg-sidebar-foreground/15"
+              >
+                <Link to={route.settings.general}>
+                  <IconSettings />
+                  <span>{t('common:settings')}</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
         <SidebarRail />
       </Sidebar>
     </div>

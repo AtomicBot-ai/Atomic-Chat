@@ -109,10 +109,7 @@ import { useDownloadStore } from '@/hooks/useDownloadStore'
 import ReasoningToggle from '@/containers/ReasoningToggle'
 import { ttftPreBegin } from '@/lib/ttft-timing'
 import { ModelFactory } from '@/lib/model-factory'
-import {
-  canSelectChatAgentMode,
-  ChatAgentModeSwitch,
-} from '@/containers/ChatAgentModeSwitch'
+import { canSelectChatAgentMode } from '@/containers/ChatAgentModeSwitch'
 import { AgentApprovalModeSelect } from '@/containers/AgentApprovalModeSelect'
 import { AgentWorkspaceSelect } from '@/containers/AgentWorkspaceSelect'
 
@@ -187,14 +184,6 @@ const ChatInput = memo(function ChatInput({
   const setApprovalMode = useAgentMode((state) => state.setApprovalMode)
   const workingDir = useAgentMode((state) => state.workingDirs[agentModeKey])
   const setWorkingDir = useAgentMode((state) => state.setWorkingDir)
-
-  const handleAgentModeChange = useCallback(
-    (enabled: boolean) => {
-      if (enabled && isMlxSelected) return
-      setAgentMode(agentModeKey, enabled)
-    },
-    [agentModeKey, isMlxSelected, setAgentMode]
-  )
 
   useEffect(() => {
     if (canSelectAgentMode && isMlxSelected && isAgentMode) {
@@ -2439,18 +2428,12 @@ const ChatInput = memo(function ChatInput({
                     </DropdownMenuContent>
                   </DropdownMenu>
 
-                  {canSelectAgentMode && (
-                    <ChatAgentModeSwitch
-                      isAgentMode={isAgentMode}
-                      onChange={handleAgentModeChange}
-                      chatLabel={t('chat:agentMode.chat')}
-                      agentLabel={t('chat:agentMode.agent')}
-                      agentDisabled={isMlxSelected}
-                      agentDisabledTooltip={t('chat:agentMode.mlxUnavailable')}
-                    />
-                  )}
-                  {effectiveAgentMode && !canSelectAgentMode && (
+                  {effectiveAgentMode && (
                     <>
+                      <AgentWorkspaceSelect
+                        workingDir={workingDir}
+                        onChange={handleWorkingDirChange}
+                      />
                       <AgentApprovalModeSelect
                         mode={approvalMode}
                         onChange={handleApprovalModeChange}
@@ -2468,10 +2451,6 @@ const ChatInput = memo(function ChatInput({
                         skipDescription={t(
                           'chat:agentApprovals.skipDescription'
                         )}
-                      />
-                      <AgentWorkspaceSelect
-                        workingDir={workingDir}
-                        onChange={handleWorkingDirChange}
                       />
                     </>
                   )}
@@ -2686,35 +2665,6 @@ const ChatInput = memo(function ChatInput({
           </div>
         </div>
       </div>
-
-      {effectiveAgentMode && canSelectAgentMode && (
-        <div className="absolute inset-x-0.5 top-full z-10 -mt-0.5 rounded-b-3xl border border-t-0 border-input bg-background/80 px-3 pb-2 pt-2 dark:bg-input/15">
-          <span
-            aria-hidden
-            className="absolute -left-px -top-3 h-3 w-6 border-l border-input bg-background/80 dark:bg-input/15"
-          />
-          <span
-            aria-hidden
-            className="absolute -right-px -top-3 h-3 w-6 border-r border-input bg-background/80 dark:bg-input/15"
-          />
-          <div className="flex min-w-0 items-center gap-2">
-            <AgentWorkspaceSelect
-              workingDir={workingDir}
-              onChange={handleWorkingDirChange}
-            />
-            <AgentApprovalModeSelect
-              mode={approvalMode}
-              onChange={handleApprovalModeChange}
-              manualSelectedLabel={t('chat:agentApprovals.manualSelected')}
-              manualLabel={t('chat:agentApprovals.manual')}
-              manualDescription={t('chat:agentApprovals.manualDescription')}
-              skipSelectedLabel={t('chat:agentApprovals.skipSelected')}
-              skipLabel={t('chat:agentApprovals.skip')}
-              skipDescription={t('chat:agentApprovals.skipDescription')}
-            />
-          </div>
-        </div>
-      )}
 
       {message && (
         <div className="-mt-0.5 mx-2 pb-2 px-3 pt-1.5 rounded-b-lg text-xs text-destructive transition-all duration-200 ease-in-out">

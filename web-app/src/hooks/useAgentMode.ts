@@ -3,16 +3,19 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 
 export type AgentApprovalMode = 'manual' | 'skip'
+export type SidebarMode = 'chat' | 'agent'
 
 type AgentModeState = {
   /** Map of threadId → agent mode enabled */
   agentThreads: Record<string, boolean>
   approvalModes: Record<string, AgentApprovalMode>
   workingDirs: Record<string, string>
+  sidebarMode: SidebarMode
 
   isAgentMode: (threadId: string) => boolean
   getApprovalMode: (threadId: string) => AgentApprovalMode
   getWorkingDir: (threadId: string) => string | undefined
+  setSidebarMode: (mode: SidebarMode) => void
   toggleAgentMode: (threadId: string) => void
   setAgentMode: (threadId: string, enabled: boolean) => void
   setApprovalMode: (threadId: string, mode: AgentApprovalMode) => void
@@ -29,6 +32,7 @@ export const useAgentMode = create<AgentModeState>()(
       agentThreads: {},
       approvalModes: {},
       workingDirs: {},
+      sidebarMode: 'chat',
 
       isAgentMode: (threadId) => {
         return get().agentThreads[threadId] === true
@@ -40,6 +44,10 @@ export const useAgentMode = create<AgentModeState>()(
 
       getWorkingDir: (threadId) => {
         return get().workingDirs[threadId]
+      },
+
+      setSidebarMode: (mode) => {
+        set({ sidebarMode: mode })
       },
 
       toggleAgentMode: (threadId) => {
@@ -121,7 +129,12 @@ export const useAgentMode = create<AgentModeState>()(
       },
 
       clearAll: () => {
-        set({ agentThreads: {}, approvalModes: {}, workingDirs: {} })
+        set({
+          agentThreads: {},
+          approvalModes: {},
+          workingDirs: {},
+          sidebarMode: 'chat',
+        })
       },
     }),
     {

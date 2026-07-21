@@ -41,13 +41,16 @@ export const Route = createFileRoute(route.home as any)({
 
 function Index() {
   const { t } = useTranslation()
-  const { providers } = useModelProvider()
+  const { providers, selectedProvider } = useModelProvider()
   const search = useSearch({ from: route.home as any })
   const threadModel = search.threadModel
   const { setCurrentThreadId } = useThreads()
   const isAgentMode = useAgentMode(
     (state) => state.agentThreads[TEMPORARY_CHAT_ID] === true
   )
+  const sidebarMode = useAgentMode((state) => state.sidebarMode)
+  const setAgentMode = useAgentMode((state) => state.setAgentMode)
+  const setSidebarMode = useAgentMode((state) => state.setSidebarMode)
   const setPrompt = usePrompt((state) => state.setPrompt)
   useTools()
 
@@ -76,6 +79,15 @@ function Index() {
   useEffect(() => {
     setCurrentThreadId(undefined)
   }, [setCurrentThreadId])
+
+  useEffect(() => {
+    const nextMode =
+      sidebarMode === 'agent' && selectedProvider === 'mlx'
+        ? 'chat'
+        : sidebarMode
+    if (nextMode !== sidebarMode) setSidebarMode(nextMode)
+    setAgentMode(TEMPORARY_CHAT_ID, nextMode === 'agent')
+  }, [selectedProvider, setAgentMode, setSidebarMode, sidebarMode])
 
   //* Dev-флаг FORCE_ONBOARDING — принудительный показ SetupScreen без удаления моделей
   if (FORCE_ONBOARDING || (!validProviders && !setupCompletedOrSkipped)) {

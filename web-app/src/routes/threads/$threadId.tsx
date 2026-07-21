@@ -204,6 +204,7 @@ function ThreadDetail() {
   const search = useSearch({ from: Route.id })
   const searchThreadModel = search.threadModel
   const setCurrentThreadId = useThreads((state) => state.setCurrentThreadId)
+  const setSidebarMode = useAgentMode((state) => state.setSidebarMode)
   const setCurrentAssistant = useAssistant((state) => state.setCurrentAssistant)
   const assistants = useAssistant((state) => state.assistants)
   const setMessages = useMessages((state) => state.setMessages)
@@ -602,13 +603,16 @@ function ThreadDetail() {
 
   useEffect(() => {
     setCurrentThreadId(threadId)
+    setSidebarMode(
+      useAgentMode.getState().isAgentMode(threadId) ? 'agent' : 'chat'
+    )
     useThreadReadStatus.getState().markRead(threadId)
     const assistant = assistants.find(
       (assistant) => assistant.id === thread?.assistants?.[0]?.id
     )
     if (assistant) setCurrentAssistant(assistant)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId, assistants])
+  }, [threadId, assistants, setSidebarMode])
 
   // Load messages on first mount
   useEffect(() => {

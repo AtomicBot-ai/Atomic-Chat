@@ -9,33 +9,58 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreHorizontal } from 'lucide-react'
+import { MoreHorizontal, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useThreads } from '@/hooks/useThreads'
 import ThreadList from '@/containers/ThreadList'
 import { DeleteAllThreadsDialog } from '@/containers/dialogs/DeleteAllThreadsDialog'
+import { useAgentMode, type SidebarMode } from '@/hooks/useAgentMode'
+import { useSearchDialog } from '@/hooks/useSearchDialog'
+import {
+  filterDeletableSidebarHistoryThreads,
+  filterSidebarHistoryThreads,
+} from '@/lib/sidebar-thread-mode'
 
-export function NavChats() {
+export function NavChats({ mode }: { mode: SidebarMode }) {
   const { t } = useTranslation()
   const getFilteredThreads = useThreads((state) => state.getFilteredThreads)
   const threads = useThreads((state) => state.threads)
-  const deleteAllThreads = useThreads((state) => state.deleteAllThreads)
+  const deleteThread = useThreads((state) => state.deleteThread)
+  const agentThreads = useAgentMode((state) => state.agentThreads)
+  const setSearchOpen = useSearchDialog((state) => state.setOpen)
   const [dropdownOpen, setDropdownOpen] = useState(false)
 
   const threadsWithoutProject = useMemo(() => {
-    return getFilteredThreads('').filter((thread) => !thread.metadata?.project)
+    return filterSidebarHistoryThreads(
+      getFilteredThreads(''),
+      mode,
+      agentThreads
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [getFilteredThreads, threads])
+  }, [agentThreads, getFilteredThreads, mode, threads])
 
-  if (threadsWithoutProject.length === 0) {
-    return null
+  const deleteModeThreads = () => {
+    filterDeletableSidebarHistoryThreads(
+      threadsWithoutProject,
+      mode,
+      agentThreads
+    ).forEach((thread) => deleteThread(thread.id))
   }
 
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-      <SidebarGroupLabel>{t('common:chats')}</SidebarGroupLabel>
-      {threadsWithoutProject.length > 1 && (
+      <SidebarGroupLabel>
+        {t('common:chats')}
+      </SidebarGroupLabel>
+      <SidebarGroupAction
+        className="right-10 hover:bg-sidebar-foreground/8"
+        onClick={() => setSearchOpen(true)}
+        aria-label={t('common:search')}
+      >
+        <Search className="size-3 text-muted-foreground" />
+      </SidebarGroupAction>
+      {threadsWithoutProject.length > 0 && (
         <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
           <DropdownMenuTrigger asChild>
             <SidebarGroupAction className="hover:bg-sidebar-foreground/8">
@@ -45,8 +70,9 @@ export function NavChats() {
           </DropdownMenuTrigger>
           <DropdownMenuContent side="right" align="start">
             <DeleteAllThreadsDialog
-              onDeleteAll={deleteAllThreads}
+              onDeleteAll={deleteModeThreads}
               onDropdownClose={() => setDropdownOpen(false)}
+              mode={mode}
             />
           </DropdownMenuContent>
         </DropdownMenu>

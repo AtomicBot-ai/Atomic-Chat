@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
+import { localStorageKey } from '@/constants/localStorage'
 import { useAgentMode } from '@/hooks/useAgentMode'
 
 describe('useAgentMode', () => {
@@ -31,5 +32,23 @@ describe('useAgentMode', () => {
 
     expect(useAgentMode.getState().isAgentMode('thread-1')).toBe(false)
     expect(useAgentMode.getState().getApprovalMode('thread-1')).toBe('manual')
+  })
+
+  it('persists the selected sidebar mode', () => {
+    useAgentMode.getState().setSidebarMode('agent')
+
+    expect(useAgentMode.getState().sidebarMode).toBe('agent')
+    expect(
+      JSON.parse(localStorage.getItem(localStorageKey.agentMode) ?? '{}').state
+        .sidebarMode
+    ).toBe('agent')
+  })
+
+  it('resets the sidebar mode with the Agent state', () => {
+    useAgentMode.getState().setSidebarMode('agent')
+
+    useAgentMode.getState().clearAll()
+
+    expect(useAgentMode.getState().sidebarMode).toBe('chat')
   })
 })

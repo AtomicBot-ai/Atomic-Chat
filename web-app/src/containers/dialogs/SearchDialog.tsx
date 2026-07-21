@@ -1,11 +1,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import {
   IconSearch,
   IconMessage,
@@ -18,15 +14,22 @@ import { localStorageKey } from '@/constants/localStorage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
+import { useAgentMode, type SidebarMode } from '@/hooks/useAgentMode'
+import { TEMPORARY_CHAT_ID } from '@/constants/chat'
+import {
+  filterThreadsBySidebarMode,
+  isThreadInSidebarMode,
+} from '@/lib/sidebar-thread-mode'
 
 const MAX_RECENT_SEARCHES = 5
 
 interface SearchDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  mode: SidebarMode
 }
 
-export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
+export function SearchDialog({ open, onOpenChange, mode }: SearchDialogProps) {
   const navigate = useNavigate()
   const { t } = useTranslation()
   const [searchQuery, setSearchQuery] = useState('')
@@ -37,6 +40,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
 
   const threads = useThreads((state) => state.threads)
   const getFilteredThreads = useThreads((state) => state.getFilteredThreads)
+  const agentThreads = useAgentMode((state) => state.agentThreads)
 
   // Focus input when dialog opens
   useEffect(() => {
@@ -60,13 +64,17 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
       const threadIds = JSON.parse(stored) as string[]
       return threadIds
         .map((id) => threads[id])
-        .filter((thread): thread is Thread => thread !== undefined)
+        .filter(
+          (thread): thread is Thread =>
+            thread !== undefined &&
+            isThreadInSidebarMode(thread.id, mode, agentThreads)
+        )
         .slice(0, MAX_RECENT_SEARCHES)
     } catch {
       return []
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, threads, recentVersion])
+  }, [agentThreads, mode, open, threads, recentVersion])
 
   const handleClearRecent = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -113,7 +121,11 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   const searchResults = useMemo(() => {
     if (!searchQuery) return { withProject: [], withoutProject: [] }
 
-    const filteredThreads = getFilteredThreads(searchQuery)
+    const filteredThreads = filterThreadsBySidebarMode(
+      getFilteredThreads(searchQuery),
+      mode,
+      agentThreads
+    )
     const withProject: Array<{
       thread: Thread
       projectName: string
@@ -130,7 +142,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
     })
 
     return { withProject, withoutProject }
-  }, [searchQuery, getFilteredThreads])
+  }, [agentThreads, getFilteredThreads, mode, searchQuery])
 
   // Calculate all selectable items for keyboard navigation
   const allItems = useMemo(() => {
@@ -193,6 +205,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   }
 
   const handleStartNewChat = () => {
+    useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, mode === 'agent')
     handleClose()
     navigate({ to: '/' })
   }
@@ -210,7 +223,13 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
         aria-describedby={undefined}
       >
         <VisuallyHidden>
-          <DialogTitle>{t('common:search')}</DialogTitle>
+          <DialogTitle>
+            {t(
+              mode === 'agent'
+                ? 'common:searchAgentChats'
+                : 'common:searchChats'
+            )}
+          </DialogTitle>
         </VisuallyHidden>
 
         {/* Search Input */}
@@ -219,7 +238,11 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
           <input
             ref={inputRef}
             type="text"
-            placeholder={t('common:searchThreads')}
+            placeholder={t(
+              mode === 'agent'
+                ? 'common:searchAgentChats'
+                : 'common:searchChats'
+            )}
             className="flex-1 h-12 px-3 bg-transparent placeholder:text-muted-foreground focus:outline-none"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -296,29 +319,31 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
           {/* Search results with project name */}
           {searchQuery && searchResults.withProject.length > 0 && (
             <div className="p-1">
-              {searchResults.withProject.map(({ thread, projectName }, index) => {
-                const itemIndex = index
-                return (
-                  <button
-                    key={thread.id}
-                    data-index={itemIndex}
-                    onClick={() => handleSelectThread(thread.id)}
-                    className={cn(
-                      'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-secondary/60 transition-colors cursor-pointer',
-                      selectedIndex === itemIndex && 'bg-secondary/50'
-                    )}
-                  >
-                    <IconMessage className="size-4 text-muted-foreground shrink-0" />
-                    <div className="flex items-center min-w-0">
-                      <span className="text-xs text-muted-foreground flex items-center gap-1">
-                        <IconFolder className="size-3" />
-                        {projectName} -&nbsp;
-                      </span>
-                      <span className="text-sm truncate">{thread.title}</span>
-                    </div>
-                  </button>
-                )
-              })}
+              {searchResults.withProject.map(
+                ({ thread, projectName }, index) => {
+                  const itemIndex = index
+                  return (
+                    <button
+                      key={thread.id}
+                      data-index={itemIndex}
+                      onClick={() => handleSelectThread(thread.id)}
+                      className={cn(
+                        'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-secondary/60 transition-colors cursor-pointer',
+                        selectedIndex === itemIndex && 'bg-secondary/50'
+                      )}
+                    >
+                      <IconMessage className="size-4 text-muted-foreground shrink-0" />
+                      <div className="flex items-center min-w-0">
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          <IconFolder className="size-3" />
+                          {projectName} -&nbsp;
+                        </span>
+                        <span className="text-sm truncate">{thread.title}</span>
+                      </div>
+                    </button>
+                  )
+                }
+              )}
             </div>
           )}
 
@@ -326,8 +351,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
           {searchQuery && searchResults.withoutProject.length > 0 && (
             <div className="p-1">
               {searchResults.withoutProject.map((thread, index) => {
-                const itemIndex =
-                  searchResults.withProject.length + index
+                const itemIndex = searchResults.withProject.length + index
                 return (
                   <button
                     key={thread.id}

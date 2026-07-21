@@ -31,7 +31,7 @@ export function ChatAgentModeSwitch({
 }: ChatAgentModeSwitchProps) {
   return (
     <div
-      className="flex items-center rounded-lg bg-muted/70 p-0.5"
+      className="flex w-full items-center rounded-lg border border-border/60 bg-muted/80 p-1"
       role="group"
       aria-label={`${chatLabel} / ${agentLabel}`}
     >
@@ -50,9 +50,9 @@ export function ChatAgentModeSwitch({
             disabled={isDisabled}
             onClick={() => onChange(mode.value)}
             className={cn(
-              'rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'flex-1 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               isActive &&
-                'bg-background text-foreground shadow-sm dark:bg-secondary',
+                'bg-background text-foreground shadow-sm ring-1 ring-border/70 dark:bg-secondary',
               isDisabled && 'cursor-not-allowed opacity-50'
             )}
           >
@@ -66,7 +66,7 @@ export function ChatAgentModeSwitch({
           <Tooltip key={mode.label}>
             <TooltipTrigger asChild>
               <span
-                className="inline-flex cursor-not-allowed"
+                className="inline-flex flex-1 cursor-not-allowed"
                 title={agentDisabledTooltip}
               >
                 {button}

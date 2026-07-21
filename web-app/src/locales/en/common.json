@@ -25,6 +25,9 @@
   "newBadge": "New",
   "newAgentChat": "New Agent Chat",
   "chats": "Chats",
+  "agentChats": "Agent chats",
+  "searchChats": "Search chats",
+  "searchAgentChats": "Search agent chats",
   "favorites": "Favorites",
   "recents": "Recents",
   "hub": "Hub",
@@ -258,6 +261,10 @@
       "title": "Delete All Threads",
       "description": "All threads will be deleted. This action cannot be undone."
     },
+    "deleteAllAgentThreads": {
+      "title": "Delete All Agent Chats",
+      "description": "All Agent chats will be deleted. This action cannot be undone."
+    },
     "deleteAllThreadsInProject": {
       "title": "Delete All Conversations",
       "description": "{{count}} conversations in \"{{projectName}}\" will be deleted. This action cannot be undone."
@@ -357,6 +364,10 @@
     "deleteAllThreads": {
       "title": "Delete All Threads",
       "description": "All threads have been permanently deleted."
+    },
+    "deleteAllAgentThreads": {
+      "title": "Delete All Agent Chats",
+      "description": "All Agent chats have been permanently deleted."
     },
     "renameThread": {
       "title": "Rename Thread",

@@ -1,127 +1,131 @@
 import { render, screen } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useLocation } from '@tanstack/react-router'
 import { NavMain } from '../NavMain'
 
-// A forwardRef stub for the animated icons (NavMain attaches a ref to them).
-const { IconStub } = vi.hoisted(() => {
-  const React = require('react')
-  return { IconStub: React.forwardRef(() => null) }
-})
-
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children, to, ...props }: any) => (
-    <a href={typeof to === 'string' ? to : '#'} {...props}>
-      {children}
-    </a>
+  Link: ({ children, to }: { children: React.ReactNode; to: string }) => (
+    <a href={to}>{children}</a>
   ),
-  useNavigate: () => vi.fn(),
   useLocation: vi.fn(),
+  useNavigate: () => vi.fn(),
 }))
 
-// Surface `isActive` as `data-active` so the test asserts the wiring.
 vi.mock('@/components/ui/sidebar', () => ({
-  SidebarMenu: ({ children }: any) => <ul>{children}</ul>,
-  SidebarMenuItem: ({ children }: any) => <li>{children}</li>,
-  SidebarMenuButton: ({ children, isActive }: any) => (
-    <div data-testid="nav-button" data-active={String(!!isActive)}>
-      {children}
-    </div>
+  SidebarMenu: ({ children }: { children: React.ReactNode }) => (
+    <ul>{children}</ul>
+  ),
+  SidebarMenuItem: ({ children }: { children: React.ReactNode }) => (
+    <li>{children}</li>
+  ),
+  SidebarMenuButton: ({
+    children,
+    isActive,
+  }: {
+    children: React.ReactNode
+    isActive: boolean
+  }) => <div data-active={String(isActive)}>{children}</div>,
+}))
+
+vi.mock('@/components/animated-icon/plug', () => ({
+  PlugIcon: () => null,
+}))
+
+vi.mock('@/containers/dialogs/SearchDialog', () => ({
+  SearchDialog: ({ mode }: { mode: string }) => (
+    <div data-testid="search-mode">{mode}</div>
   ),
 }))
 
-vi.mock('@/components/ui/kbd', () => ({
-  Kbd: ({ children }: any) => <span>{children}</span>,
-  KbdGroup: ({ children }: any) => <span>{children}</span>,
+vi.mock('@/containers/dialogs/AddProjectDialog', () => ({
+  default: () => null,
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
 
-vi.mock('@/containers/PlatformMetaKey', () => ({ PlatformMetaKey: () => null }))
-vi.mock('@/components/animated-icon/search', () => ({ SearchIcon: IconStub }))
-vi.mock('@/components/animated-icon/folder-plus', () => ({
-  FolderPlusIcon: IconStub,
+vi.mock('@/hooks/useGeneralSetting', () => ({
+  useGeneralSetting: () => true,
 }))
-vi.mock('@/components/animated-icon/message-circle', () => ({
-  MessageCircleIcon: IconStub,
-}))
-vi.mock('@/components/animated-icon/settings', () => ({
-  SettingsIcon: IconStub,
-}))
-vi.mock('@/components/animated-icon/blocks', () => ({ BlocksIcon: IconStub }))
-vi.mock('@/components/animated-icon/bot', () => ({ BotIcon: IconStub }))
 
-vi.mock('@/containers/dialogs/AddProjectDialog', () => ({
-  default: () => null,
+vi.mock('@/hooks/useSearchDialog', () => ({
+  useSearchDialog: () => ({ open: false, setOpen: vi.fn() }),
 }))
-vi.mock('@/containers/dialogs/SearchDialog', () => ({
-  SearchDialog: () => null,
+
+vi.mock('@/hooks/useProjectDialog', () => ({
+  useProjectDialog: (
+    selector: (state: { open: boolean; setOpen: () => void }) => unknown
+  ) => selector({ open: false, setOpen: vi.fn() }),
 }))
 
 vi.mock('@/hooks/useThreadManagement', () => ({
   useThreadManagement: () => ({ addFolder: vi.fn() }),
 }))
-vi.mock('@/hooks/useSearchDialog', () => ({
-  useSearchDialog: () => ({ open: false, setOpen: vi.fn() }),
-}))
-vi.mock('@/hooks/useProjectDialog', () => ({
-  useProjectDialog: () => ({ open: false, setOpen: vi.fn() }),
-}))
-vi.mock('@/hooks/useAgentMode', () => ({
-  useAgentMode: {
-    getState: () => ({ removeThread: vi.fn(), setAgentMode: vi.fn() }),
-  },
-}))
-vi.mock('@/constants/chat', () => ({ TEMPORARY_CHAT_ID: 'temp' }))
-vi.mock('@/lib/shortcuts', () => ({
-  ShortcutAction: {
-    NEW_CHAT: 'NEW_CHAT',
-    NEW_AGENT_CHAT: 'NEW_AGENT_CHAT',
-    NEW_PROJECT: 'NEW_PROJECT',
-    SEARCH: 'SEARCH',
-  },
-  PlatformShortcuts: new Proxy({}, { get: () => ({ key: 'k' }) }),
-}))
 
-const buttonFor = (label: string) =>
-  screen.getByText(label).closest('[data-testid="nav-button"]')
-
-describe('NavMain active highlight', () => {
+describe('NavMain', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.mocked(useLocation).mockReturnValue({ pathname: '/' } as never)
   })
 
-  it('highlights Settings across its sub-pages, not the action items', () => {
-    vi.mocked(useLocation).mockReturnValue({
-      pathname: '/settings/privacy',
-    } as never)
+  it('shows Integrations only in Chat mode', () => {
+    const { rerender } = render(<NavMain mode="chat" />)
 
-    render(<NavMain />)
+    expect(screen.getByText('common:launch')).toBeInTheDocument()
 
-    expect(buttonFor('common:settings')).toHaveAttribute('data-active', 'true')
-    expect(buttonFor('common:models')).toHaveAttribute('data-active', 'false')
-    expect(buttonFor('common:launch')).toHaveAttribute('data-active', 'false')
-    // Action items (no route) never highlight.
-    expect(buttonFor('common:newChat')).toHaveAttribute('data-active', 'false')
+    rerender(<NavMain mode="agent" />)
+
+    expect(screen.queryByText('common:launch')).not.toBeInTheDocument()
   })
 
-  it('highlights Models on the hub route', () => {
-    vi.mocked(useLocation).mockReturnValue({ pathname: '/hub/' } as never)
+  it('shows New Projects only in Chat mode', () => {
+    const { rerender } = render(<NavMain mode="chat" />)
 
-    render(<NavMain />)
+    expect(screen.getByText('common:projects.new')).toBeInTheDocument()
 
-    expect(buttonFor('common:models')).toHaveAttribute('data-active', 'true')
-    expect(buttonFor('common:settings')).toHaveAttribute('data-active', 'false')
+    rerender(<NavMain mode="agent" />)
+
+    expect(screen.queryByText('common:projects.new')).not.toBeInTheDocument()
+  })
+
+  it('shows Models in both modes', () => {
+    const { rerender } = render(<NavMain mode="chat" />)
+
+    expect(screen.getByText('common:models')).toBeInTheDocument()
+
+    rerender(<NavMain mode="agent" />)
+
+    expect(screen.getByText('common:models')).toBeInTheDocument()
+  })
+
+  it('labels the new conversation action as New Chat in both modes', () => {
+    const { rerender } = render(<NavMain mode="chat" />)
+
+    expect(screen.getByText('common:newChat')).toBeInTheDocument()
+
+    rerender(<NavMain mode="agent" />)
+
+    expect(screen.getByText('common:newChat')).toBeInTheDocument()
+    expect(screen.queryByText('common:newAgentChat')).not.toBeInTheDocument()
+  })
+
+  it('passes the active mode to search', () => {
+    const { rerender } = render(<NavMain mode="chat" />)
+
+    expect(screen.getByTestId('search-mode')).toHaveTextContent('chat')
+
+    rerender(<NavMain mode="agent" />)
+
+    expect(screen.getByTestId('search-mode')).toHaveTextContent('agent')
   })
 
   it('highlights Integrations on the launch route', () => {
     vi.mocked(useLocation).mockReturnValue({ pathname: '/launch/' } as never)
 
-    render(<NavMain />)
+    render(<NavMain mode="chat" />)
 
-    expect(buttonFor('common:launch')).toHaveAttribute('data-active', 'true')
-    expect(buttonFor('common:models')).toHaveAttribute('data-active', 'false')
+    expect(
+      screen.getByText('common:launch').closest('[data-active]')
+    ).toHaveAttribute('data-active', 'true')
   })
 })
