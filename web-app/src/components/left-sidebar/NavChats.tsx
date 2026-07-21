@@ -54,11 +54,11 @@ export function NavChats({ mode }: { mode: SidebarMode }) {
         {t('common:chats')}
       </SidebarGroupLabel>
       <SidebarGroupAction
-        className="right-10 hover:bg-sidebar-foreground/8"
+        className="right-10 hover:bg-sidebar-foreground/8 [&>svg]:size-3"
         onClick={() => setSearchOpen(true)}
         aria-label={t('common:search')}
       >
-        <Search className="size-3 text-muted-foreground" />
+        <Search className="text-muted-foreground" />
       </SidebarGroupAction>
       {threadsWithoutProject.length > 0 && (
         <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
