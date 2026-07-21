@@ -2,7 +2,7 @@
 //!
 //! Ported from `grammars/tool-call.gbnf` in the TypeScript `atomic-agent`,
 //! trimmed to the fixed iteration-1 tool set (see [`crate::core::agent::prompt::ITERATION_ONE_TOOLS`]).
-//! No `browser` / `memory` / `tasks` / `skill` / `mcp` branches — the
+//! No `browser` / `memory` / `tasks` / `mcp` branches — the
 //! grammar is built statically under a known catalog, so the dynamic
 //! rule-stitching / `removeBrowserToolRule` filtering from `build-grammar.ts`
 //! is unnecessary.
@@ -20,9 +20,14 @@
 /// structural rules (`object` / `array` / `string` / `number` / ...) are
 /// verbatim from the reference grammar.
 pub const TOOL_CALL_GBNF: &str = r##"root ::= tool-call-array
-tool-call ::= "{" ws "\"tool\"" ws ":" ws tool-name ws "," ws "\"args\"" ws ":" ws object ws "}"
+tool-call ::= skill-view-call | skill-run-script-call | generic-tool-call
+skill-view-call ::= "{" ws "\"tool\"" ws ":" ws "\"skill.view\"" ws "," ws "\"args\"" ws ":" ws skill-view-args ws "}"
+skill-view-args ::= "{" ws "\"name\"" ws ":" ws string ws "}"
+skill-run-script-call ::= "{" ws "\"tool\"" ws ":" ws "\"skill.run_script\"" ws "," ws "\"args\"" ws ":" ws skill-run-script-args ws "}"
+skill-run-script-args ::= "{" ws "\"skill\"" ws ":" ws string ws "," ws "\"script\"" ws ":" ws string ( ws "," ws "\"args\"" ws ":" ws string-array )? ( ws "," ws "\"timeout_ms\"" ws ":" ws positive-integer )? ws "}"
+generic-tool-call ::= "{" ws "\"tool\"" ws ":" ws generic-tool-name ws "," ws "\"args\"" ws ":" ws object ws "}"
 tool-call-array ::= "[" ws tool-call ( ws "," ws tool-call ){0,15} ws "]"
-tool-name ::= "\"tool.view\"" | os-tool | "\"vision.describe\"" | "\"reply\"" | "\"finish\""
+generic-tool-name ::= "\"tool.view\"" | os-tool | "\"vision.describe\"" | "\"reply\"" | "\"finish\""
 os-tool ::= "\"os." ( "shell.run" | "fs.archive.read_entry" | "fs.archive.extract" | "fs.archive.list" | "fs.read_document" | "fs.read" | "fs.write" | "fs.mkdir" | "fs.trash" | "fs.list" | "fs.grep" | "fs.glob" | "fs.edit" | "fs.hash" | "fs.diff" | "fs.patch" | "http.request" | "web.search" | "web.fetch" | "git.status" | "git.log" | "git.diff" | "git.show" | "git.blame" | "git.branch" | "proc.list" | "proc.kill" | "clipboard.read" | "clipboard.write" | "notify" ) "\""
 
 value ::= object | array | string | number | boolean | null-lit
@@ -31,6 +36,7 @@ object ::= "{" ws ( pair ( ws "," ws pair )* )? ws "}"
 pair ::= string ws ":" ws value
 
 array ::= "[" ws ( value ( ws "," ws value )* )? ws "]"
+string-array ::= "[" ws ( string ( ws "," ws string )* )? ws "]"
 
 string ::= "\"" chars "\""
 chars ::= char*
@@ -40,6 +46,7 @@ hex ::= [0-9a-fA-F]
 
 number ::= integer fraction? exponent?
 integer ::= "-"? ( "0" | [1-9] [0-9]* )
+positive-integer ::= [1-9] [0-9]*
 fraction ::= "." [0-9]+
 exponent ::= ("e" | "E") ("+" | "-")? [0-9]+
 
@@ -59,6 +66,8 @@ ws ::= [ \t\n\r]*
 /// `grammar_covers_every_iteration_one_tool` test enforces the invariant.
 pub const GRAMMAR_TOOL_NAMES: &[&str] = &[
     "tool.view",
+    "skill.view",
+    "skill.run_script",
     "os.shell.run",
     "os.fs.archive.read_entry",
     "os.fs.archive.extract",
@@ -130,7 +139,6 @@ mod tests {
             "discovery-tool",
             "mcp-native-tool",
             "mcp-server-tool",
-            "skill.",
             "browser.",
             "memory.",
             "tasks.",

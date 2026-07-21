@@ -13,6 +13,7 @@ export type InitialMessagePayload = {
   text: string
   files?: InitialMessageFile[]
   documents?: Attachment[]
+  agentSkillName?: string
 }
 
 type InitialMessageStore = {

@@ -3,6 +3,7 @@ use std::process::Command;
 
 use tokio_util::sync::CancellationToken;
 
+use super::super::skills::{loaded::LoadedSkills, SkillRegistry};
 use super::tool_view::LoadedTools;
 use super::{execute, ToolContext, MAX_TOOL_OUTPUT_CHARS};
 use crate::core::agent::test_support::{RecordingApproval, RecordingDesktop, TestWorkspace};
@@ -14,26 +15,36 @@ struct ToolFixture {
     desktop: RecordingDesktop,
     cancellation: CancellationToken,
     loaded_tools: LoadedTools,
+    loaded_skills: LoadedSkills,
+    skill_registry: SkillRegistry,
 }
 
 impl ToolFixture {
     fn allowed() -> Self {
+        let workspace = TestWorkspace::new();
+        let skill_registry = workspace.skill_registry();
         Self {
-            workspace: TestWorkspace::new(),
+            workspace,
             approval: RecordingApproval::allow(),
             desktop: RecordingDesktop::default(),
             cancellation: CancellationToken::new(),
             loaded_tools: LoadedTools::default(),
+            loaded_skills: LoadedSkills::default(),
+            skill_registry,
         }
     }
 
     fn denied() -> Self {
+        let workspace = TestWorkspace::new();
+        let skill_registry = workspace.skill_registry();
         Self {
-            workspace: TestWorkspace::new(),
+            workspace,
             approval: RecordingApproval::deny(),
             desktop: RecordingDesktop::default(),
             cancellation: CancellationToken::new(),
             loaded_tools: LoadedTools::default(),
+            loaded_skills: LoadedSkills::default(),
+            skill_registry,
         }
     }
 
@@ -50,6 +61,9 @@ impl ToolFixture {
                 approval: &self.approval,
                 cancellation: &self.cancellation,
                 loaded_tools: &self.loaded_tools,
+                loaded_skills: &self.loaded_skills,
+                skill_registry: &self.skill_registry,
+                bundled_script_runtime: None,
                 desktop: &self.desktop,
             },
         )
@@ -502,6 +516,8 @@ async fn symlink_escape_requires_approval_and_denial_prevents_read() {
     let desktop = RecordingDesktop::default();
     let cancellation = CancellationToken::new();
     let loaded_tools = LoadedTools::default();
+    let loaded_skills = LoadedSkills::default();
+    let skill_registry = parent.skill_registry();
     let outcome = execute(
         &ToolCallPayload {
             tool: "os.fs.read".into(),
@@ -514,6 +530,9 @@ async fn symlink_escape_requires_approval_and_denial_prevents_read() {
             approval: &approval,
             cancellation: &cancellation,
             loaded_tools: &loaded_tools,
+            loaded_skills: &loaded_skills,
+            skill_registry: &skill_registry,
+            bundled_script_runtime: None,
             desktop: &desktop,
         },
     )

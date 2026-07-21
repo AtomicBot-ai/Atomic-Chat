@@ -111,6 +111,7 @@ impl LiveHarness {
         .expect("create live llama-server client");
         let stable_prefix = build_stable_prefix(
             ITERATION_ONE_TOOLS,
+            &[],
             &CapabilitiesSummary {
                 platform: std::env::consts::OS.into(),
                 arch: std::env::consts::ARCH.into(),
@@ -142,6 +143,7 @@ impl LiveHarness {
         let desktop = RecordingDesktop::default();
         let cancellation = CancellationToken::new();
         let mut session = AgentSessionState::new(run_id);
+        let skill_registry = self.workspace.skill_registry();
         let mut events = Vec::new();
         let result = tokio::time::timeout(
             self.timeout,
@@ -150,6 +152,7 @@ impl LiveHarness {
                     run_id,
                     session_id: run_id,
                     user_message,
+                    selected_skill: None,
                     stable_prefix: &self.stable_prefix,
                     working_dir: self.workspace.path(),
                     trusted_read_roots: &[],
@@ -159,6 +162,8 @@ impl LiveHarness {
                     desktop: &desktop,
                     cancellation: &cancellation,
                     session: &mut session,
+                    skill_registry: &skill_registry,
+                    bundled_script_runtime: None,
                 },
                 |event| collect_event(&mut events, event),
             ),

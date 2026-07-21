@@ -8,6 +8,8 @@ mod http;
 mod notify;
 mod proc;
 mod shell;
+mod skill_run_script;
+mod skill_view;
 pub(super) mod tool_view;
 mod vision;
 mod web;
@@ -27,6 +29,7 @@ use super::llm_client::LlamaServerClient;
 use super::path_policy::prepare_call_paths;
 use super::resource_class::{resource_class_for, ResourceClass};
 use super::shell_guard::{evaluate_shell_command, join_command_stream, ShellGuardVerdict};
+use super::skills::{loaded::LoadedSkills, SkillRegistry};
 use super::types::{ApprovalRequest, ApprovalResource, ToolCallPayload, ToolOutcome};
 
 pub const MAX_TOOL_OUTPUT_CHARS: usize = 16_000;
@@ -49,6 +52,9 @@ pub struct ToolContext<'a> {
     pub approval: &'a dyn ApprovalHook,
     pub cancellation: &'a CancellationToken,
     pub loaded_tools: &'a tool_view::LoadedTools,
+    pub loaded_skills: &'a LoadedSkills,
+    pub skill_registry: &'a SkillRegistry,
+    pub bundled_script_runtime: Option<&'a Path>,
     pub desktop: &'a dyn DesktopServices,
 }
 
@@ -94,6 +100,8 @@ pub async fn execute(call: &ToolCallPayload, context: &ToolContext<'_>) -> ToolO
         "os.clipboard.write" => clipboard::write(&call.args, context).await,
         "os.notify" => notify::execute(&call.args, context).await,
         "vision.describe" => vision::describe(&call.args, context).await,
+        "skill.run_script" => skill_run_script::execute(&call.args, context).await,
+        "skill.view" => skill_view::execute(&call.args, context).await,
         "tool.view" => tool_view::execute(&call.args, context.loaded_tools).await,
         "reply" => required_string(&call.args, "text")
             .map(ToolOutcome::ok)
@@ -114,6 +122,7 @@ async fn authorize_call(
         .await
         .map_err(ToolOutcome::error)?;
     let mut reasons = Vec::new();
+    let mut skill_invocation = None;
     if prepared.call.tool == "os.shell.run" {
         let invocation = shell::parse_invocation(&prepared.call.args)?;
         match evaluate_shell_command(&join_command_stream(
@@ -127,6 +136,25 @@ async fn authorize_call(
             }
         }
     }
+    if prepared.call.tool == "skill.run_script" {
+        let invocation = skill_run_script::prepare(
+            &prepared.call.args,
+            context.skill_registry,
+            context.bundled_script_runtime,
+        )
+        .await?;
+        match evaluate_shell_command(&join_command_stream(
+            &invocation.program,
+            &invocation.arguments,
+        )) {
+            ShellGuardVerdict::Allow => {}
+            ShellGuardVerdict::ApprovalRequired(reason) => reasons.push(reason),
+            ShellGuardVerdict::Block(reason) => {
+                return Err(ToolOutcome::denied(reason, "command-blocked"));
+            }
+        }
+        skill_invocation = Some(invocation);
+    }
     if resource_class_for(&prepared.call.tool) == ResourceClass::ApprovalGated {
         reasons.push("tool is approval-gated".to_string());
     }
@@ -139,6 +167,18 @@ async fn authorize_call(
 
     let mut resources = prepared.resources;
     resources.extend(non_path_resources(&prepared.call));
+    if let Some(invocation) = skill_invocation {
+        resources.push(ApprovalResource {
+            kind: "skill".into(),
+            value: invocation.skill_name,
+            operation: "run_script".into(),
+        });
+        resources.push(ApprovalResource {
+            kind: "file".into(),
+            value: invocation.script_path.display().to_string(),
+            operation: "execute".into(),
+        });
+    }
     let request = ApprovalRequest {
         tool: prepared.call.tool.clone(),
         reason: reasons.join("; "),
@@ -167,6 +207,9 @@ fn safe_preview(call: &ToolCallPayload) -> Value {
         "pid",
         "signal",
         "apply",
+        "skill",
+        "script",
+        "timeout_ms",
     ];
     if let Some(args) = call.args.as_object() {
         for key in allowed {
@@ -190,10 +233,58 @@ fn safe_preview(call: &ToolCallPayload) -> Value {
             Value::String("<arguments omitted>".into()),
         );
     }
+    if call.tool == "skill.run_script" {
+        const MAX_PREVIEW_ARGUMENTS: usize = 16;
+        let values = call
+            .args
+            .get("args")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let mut arguments = values
+            .iter()
+            .take(MAX_PREVIEW_ARGUMENTS)
+            .filter_map(Value::as_str)
+            .map(safe_script_argument_preview)
+            .map(Value::String)
+            .collect::<Vec<_>>();
+        let omitted = values.len().saturating_sub(MAX_PREVIEW_ARGUMENTS);
+        if omitted > 0 {
+            arguments.push(Value::String(format!(
+                "<{omitted} additional arguments omitted>"
+            )));
+        }
+        preview.insert("argument_count".into(), Value::from(values.len()));
+        preview.insert("args".into(), Value::Array(arguments));
+    }
     if let Some(url) = call.args.get("url").and_then(Value::as_str) {
         preview.insert("url".into(), Value::String(safe_url_preview(url)));
     }
     Value::Object(preview)
+}
+
+fn safe_script_argument_preview(raw: &str) -> String {
+    const MAX_ARGUMENT_CHARS: usize = 256;
+    if raw.starts_with("http://") || raw.starts_with("https://") {
+        return safe_url_preview(raw);
+    }
+    let lower = raw.to_ascii_lowercase();
+    if [
+        "authorization",
+        "bearer ",
+        "api_key",
+        "apikey",
+        "password",
+        "token=",
+        "secret=",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker))
+        || lower.starts_with("hf_")
+    {
+        return "<redacted>".into();
+    }
+    truncate(raw.to_owned(), MAX_ARGUMENT_CHARS)
 }
 
 fn safe_url_preview(raw: &str) -> String {
@@ -338,6 +429,33 @@ mod tests {
         path
     }
 
+    fn test_skill_registry(root: &Path) -> SkillRegistry {
+        SkillRegistry::load(
+            root.join(".agent-skills"),
+            &std::collections::BTreeSet::new(),
+            &std::collections::BTreeSet::new(),
+        )
+        .unwrap()
+    }
+
+    fn test_script_skill_registry(root: &Path) -> SkillRegistry {
+        let skills_root = root.join(".agent-skills");
+        let skill_root = skills_root.join("test-skill");
+        std::fs::create_dir_all(skill_root.join("scripts")).unwrap();
+        std::fs::write(skill_root.join("scripts/inspect.sh"), "echo ready").unwrap();
+        std::fs::write(
+            skill_root.join("SKILL.md"),
+            "---\nname: test-skill\ndescription: Test\nrequires_scripts: [inspect.sh]\n---\nBody",
+        )
+        .unwrap();
+        SkillRegistry::load(
+            skills_root,
+            &std::collections::BTreeSet::new(),
+            &std::collections::BTreeSet::new(),
+        )
+        .unwrap()
+    }
+
     #[async_trait]
     impl ApprovalHook for TestApproval {
         async fn request(&self, _request: ApprovalRequest) -> Result<bool, String> {
@@ -373,6 +491,8 @@ mod tests {
         let outside = parent.join("outside.txt");
         tokio::fs::write(&outside, "secret").await.unwrap();
         let loaded_tools = tool_view::LoadedTools::default();
+        let loaded_skills = LoadedSkills::default();
+        let skill_registry = test_skill_registry(&root);
         let desktop = TestDesktop::default();
         let cancellation = CancellationToken::new();
 
@@ -388,6 +508,9 @@ mod tests {
                 approval: &approval,
                 cancellation: &cancellation,
                 loaded_tools: &loaded_tools,
+                loaded_skills: &loaded_skills,
+                skill_registry: &skill_registry,
+                bundled_script_runtime: None,
                 desktop: &desktop,
             };
             let outcome = execute(
@@ -415,6 +538,8 @@ mod tests {
             calls: AtomicUsize::new(0),
         };
         let loaded_tools = tool_view::LoadedTools::default();
+        let loaded_skills = LoadedSkills::default();
+        let skill_registry = test_skill_registry(&root);
         let desktop = TestDesktop::default();
         let cancellation = CancellationToken::new();
         let context = ToolContext {
@@ -424,6 +549,9 @@ mod tests {
             approval: &approval,
             cancellation: &cancellation,
             loaded_tools: &loaded_tools,
+            loaded_skills: &loaded_skills,
+            skill_registry: &skill_registry,
+            bundled_script_runtime: None,
             desktop: &desktop,
         };
         let outcome = execute(
@@ -447,6 +575,8 @@ mod tests {
             calls: AtomicUsize::new(0),
         };
         let loaded_tools = tool_view::LoadedTools::default();
+        let loaded_skills = LoadedSkills::default();
+        let skill_registry = test_skill_registry(&root);
         let desktop = TestDesktop::default();
         let cancellation = CancellationToken::new();
         let context = ToolContext {
@@ -456,6 +586,9 @@ mod tests {
             approval: &approval,
             cancellation: &cancellation,
             loaded_tools: &loaded_tools,
+            loaded_skills: &loaded_skills,
+            skill_registry: &skill_registry,
+            bundled_script_runtime: None,
             desktop: &desktop,
         };
 
@@ -492,6 +625,8 @@ mod tests {
             calls: AtomicUsize::new(0),
         };
         let loaded_tools = tool_view::LoadedTools::default();
+        let loaded_skills = LoadedSkills::default();
+        let skill_registry = test_skill_registry(&root);
         let desktop = TestDesktop::default();
         let cancellation = CancellationToken::new();
         let context = ToolContext {
@@ -501,6 +636,9 @@ mod tests {
             approval: &approval,
             cancellation: &cancellation,
             loaded_tools: &loaded_tools,
+            loaded_skills: &loaded_skills,
+            skill_registry: &skill_registry,
+            bundled_script_runtime: None,
             desktop: &desktop,
         };
 
@@ -529,6 +667,47 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    #[tokio::test]
+    async fn skill_scripts_always_require_approval() {
+        let root = test_dir();
+        let approval = TestApproval {
+            approved: false,
+            calls: AtomicUsize::new(0),
+        };
+        let loaded_tools = tool_view::LoadedTools::default();
+        let loaded_skills = LoadedSkills::default();
+        let skill_registry = test_script_skill_registry(&root);
+        let desktop = TestDesktop::default();
+        let cancellation = CancellationToken::new();
+        let context = ToolContext {
+            working_dir: &root,
+            trusted_read_roots: &[],
+            client: None,
+            approval: &approval,
+            cancellation: &cancellation,
+            loaded_tools: &loaded_tools,
+            loaded_skills: &loaded_skills,
+            skill_registry: &skill_registry,
+            bundled_script_runtime: None,
+            desktop: &desktop,
+        };
+
+        let denied = execute(
+            &ToolCallPayload {
+                tool: "skill.run_script".into(),
+                args: serde_json::json!({
+                    "skill": "test-skill",
+                    "script": "inspect.sh"
+                }),
+            },
+            &context,
+        )
+        .await;
+        assert_eq!(denied.status, ToolStatus::Denied);
+        assert_eq!(approval.calls.load(Ordering::SeqCst), 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn approval_preview_omits_shell_arguments_and_url_credentials() {
         let shell = safe_preview(&ToolCallPayload {
@@ -550,5 +729,50 @@ mod tests {
             }),
         });
         assert_eq!(http["url"], "https://example.com/path");
+    }
+
+    #[test]
+    fn approval_preview_includes_bounded_scrubbed_skill_arguments() {
+        let preview = safe_preview(&ToolCallPayload {
+            tool: "skill.run_script".into(),
+            args: serde_json::json!({
+                "skill": "github",
+                "script": "inspect.ts",
+                "args": [
+                    "--repo",
+                    "AtomicBot-ai/Atomic-Chat",
+                    "Authorization: Bearer secret",
+                    "https://user:password@example.com/path?token=secret"
+                ],
+                "timeout_ms": 30_000
+            }),
+        });
+
+        assert_eq!(preview["args"][0], "--repo");
+        assert_eq!(preview["args"][1], "AtomicBot-ai/Atomic-Chat");
+        assert_eq!(preview["args"][2], "<redacted>");
+        assert_eq!(preview["args"][3], "https://example.com/path");
+        assert_eq!(preview["argument_count"], 4);
+        assert!(!preview.to_string().contains("secret"));
+        assert!(!preview.to_string().contains("password"));
+    }
+
+    #[test]
+    fn approval_preview_marks_arguments_beyond_the_visible_limit() {
+        let arguments = (0..20)
+            .map(|index| format!("argument-{index}"))
+            .collect::<Vec<_>>();
+        let preview = safe_preview(&ToolCallPayload {
+            tool: "skill.run_script".into(),
+            args: serde_json::json!({
+                "skill": "test-skill",
+                "script": "inspect.sh",
+                "args": arguments
+            }),
+        });
+
+        assert_eq!(preview["argument_count"], 20);
+        assert_eq!(preview["args"].as_array().unwrap().len(), 17);
+        assert_eq!(preview["args"][16], "<4 additional arguments omitted>");
     }
 }

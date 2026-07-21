@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 use std::convert::Infallible;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
 use std::path::{Path, PathBuf};
@@ -13,6 +13,7 @@ use serde_json::Value;
 use tokio::sync::oneshot;
 
 use super::llm_client::{LlamaServerClient, LlamaSessionTarget};
+use super::skills::SkillRegistry;
 use super::tools::{ApprovalHook, DesktopServices};
 use super::types::{AgentEvent, ApprovalRequest};
 
@@ -43,6 +44,15 @@ impl TestWorkspace {
 
     pub(crate) fn read(&self, relative: &str) -> Vec<u8> {
         std::fs::read(self.path.join(relative)).expect("read fixture")
+    }
+
+    pub(crate) fn skill_registry(&self) -> SkillRegistry {
+        SkillRegistry::load(
+            self.path.join(".agent-skills"),
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+        )
+        .expect("create empty skill registry")
     }
 }
 

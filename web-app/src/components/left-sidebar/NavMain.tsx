@@ -17,7 +17,12 @@ import { useProjectDialog } from '@/hooks/useProjectDialog'
 import { useSearchDialog } from '@/hooks/useSearchDialog'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import type { SidebarMode } from '@/hooks/useAgentMode'
-import { IconBlocks, IconFolderPlus, IconPlus } from '@tabler/icons-react'
+import {
+  IconBlocks,
+  IconFolderPlus,
+  IconPlus,
+  IconSparkles,
+} from '@tabler/icons-react'
 
 export function NavMain({ mode }: { mode: SidebarMode }) {
   const { t } = useTranslation()
@@ -67,6 +72,20 @@ export function NavMain({ mode }: { mode: SidebarMode }) {
             </Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
+        {mode === 'agent' && (
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              isActive={pathname.startsWith('/skills')}
+              className="data-[active=true]:bg-sidebar-foreground/15"
+            >
+              <Link to={route.skills.index}>
+                <IconSparkles />
+                <span>{t('common:skills')}</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        )}
         {mode === 'chat' && (
           <>
             <SidebarMenuItem>

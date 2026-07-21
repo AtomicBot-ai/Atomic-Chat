@@ -15,6 +15,7 @@ struct TestRun {
     result: Result<(), String>,
     events: Vec<AgentEvent>,
     requests: Vec<serde_json::Value>,
+    session: AgentSessionState,
 }
 
 async fn run_script(
@@ -29,11 +30,13 @@ async fn run_script(
     let desktop = RecordingDesktop::default();
     let mut events = Vec::new();
     let mut session = AgentSessionState::new("test-session");
+    let skill_registry = workspace.skill_registry();
     let result = run_turn(
         RunTurnInput {
             run_id: "test-run",
             session_id: "test-session",
             user_message: "perform the fixture task",
+            selected_skill: None,
             stable_prefix: "TEST_STABLE_PREFIX",
             working_dir: workspace.path(),
             trusted_read_roots: &[],
@@ -43,6 +46,8 @@ async fn run_script(
             desktop: &desktop,
             cancellation,
             session: &mut session,
+            skill_registry: &skill_registry,
+            bundled_script_runtime: None,
         },
         |event| collect_event(&mut events, event),
     )
@@ -51,6 +56,7 @@ async fn run_script(
         result,
         events,
         requests: server.requests(),
+        session,
     }
 }
 
@@ -217,6 +223,7 @@ async fn sequential_runs_share_the_session_transcript() {
     let desktop = RecordingDesktop::default();
     let cancellation = CancellationToken::new();
     let mut session = AgentSessionState::new("shared-session");
+    let skill_registry = workspace.skill_registry();
 
     for (run_id, user_message) in [("run-1", "first user"), ("run-2", "second user")] {
         run_turn(
@@ -224,6 +231,7 @@ async fn sequential_runs_share_the_session_transcript() {
                 run_id,
                 session_id: "shared-session",
                 user_message,
+                selected_skill: None,
                 stable_prefix: "TEST_STABLE_PREFIX",
                 working_dir: workspace.path(),
                 trusted_read_roots: &[],
@@ -233,6 +241,8 @@ async fn sequential_runs_share_the_session_transcript() {
                 desktop: &desktop,
                 cancellation: &cancellation,
                 session: &mut session,
+                skill_registry: &skill_registry,
+                bundled_script_runtime: None,
             },
             |_| Ok(()),
         )
@@ -542,12 +552,14 @@ async fn cancellation_interrupts_an_in_flight_completion() {
     let cancellation = CancellationToken::new();
     let mut events = Vec::new();
     let mut session = AgentSessionState::new("cancel-session");
+    let skill_registry = workspace.skill_registry();
     let cancel = cancellation.clone();
     let run = run_turn(
         RunTurnInput {
             run_id: "cancel-run",
             session_id: "cancel-session",
             user_message: "wait",
+            selected_skill: None,
             stable_prefix: "TEST_STABLE_PREFIX",
             working_dir: workspace.path(),
             trusted_read_roots: &[],
@@ -557,6 +569,8 @@ async fn cancellation_interrupts_an_in_flight_completion() {
             desktop: &desktop,
             cancellation: &cancellation,
             session: &mut session,
+            skill_registry: &skill_registry,
+            bundled_script_runtime: None,
         },
         |event| collect_event(&mut events, event),
     );
@@ -660,4 +674,175 @@ async fn tool_view_exposes_the_rare_schema_on_the_following_step() {
         assert!(prompt.contains("### loaded-tools"));
         assert!(prompt.contains("- os.fs.hash { path: string, algorithm?:"));
     }
+}
+
+#[tokio::test]
+async fn skill_view_loads_the_body_and_restores_it_on_the_next_turn() {
+    let workspace = TestWorkspace::new();
+    workspace.write(
+        ".agent-skills/pdf/SKILL.md",
+        "---\nname: pdf\ndescription: PDF workflow\nversion: 1.0.0\n---\n# Durable PDF instructions",
+    );
+    let first = run_script(
+        &workspace,
+        vec![
+            ScriptedResponse::completion(r#"[{"tool":"skill.view","args":{"name":"pdf"}}]"#),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"loaded"}}]"#),
+        ],
+        &RecordingApproval::deny(),
+        &CancellationToken::new(),
+        3,
+    )
+    .await;
+    assert!(first.result.is_ok());
+    assert_eq!(first.session.loaded_skills[0].name, "pdf");
+    let loaded_prompt = first.requests[1]["prompt"]
+        .as_str()
+        .expect("prompt after skill.view");
+    assert!(loaded_prompt.contains("### loaded-skills\n# skill: pdf (v1.0.0)"));
+    assert!(loaded_prompt.contains("This skill declares no bundled scripts"));
+    assert!(loaded_prompt.contains("# Durable PDF instructions"));
+
+    let server = ScriptedCompletionServer::start(vec![ScriptedResponse::completion(
+        r#"[{"tool":"reply","args":{"text":"restored"}}]"#,
+    )])
+    .await;
+    let client = server.client();
+    let desktop = RecordingDesktop::default();
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let registry = workspace.skill_registry();
+    let mut restored_session: AgentSessionState =
+        serde_json::from_slice(&serde_json::to_vec(&first.session).unwrap()).unwrap();
+    let mut events = Vec::new();
+    run_turn(
+        RunTurnInput {
+            run_id: "restore-run",
+            session_id: "test-session",
+            user_message: "use the loaded skill",
+            selected_skill: None,
+            stable_prefix: "TEST_STABLE_PREFIX",
+            working_dir: workspace.path(),
+            trusted_read_roots: &[],
+            max_steps: 2,
+            client: &client,
+            approval: &approval,
+            desktop: &desktop,
+            cancellation: &cancellation,
+            session: &mut restored_session,
+            skill_registry: &registry,
+            bundled_script_runtime: None,
+        },
+        |event| collect_event(&mut events, event),
+    )
+    .await
+    .expect("restored turn");
+
+    let restored_requests = server.requests();
+    let restored_prompt = restored_requests[0]["prompt"]
+        .as_str()
+        .expect("restored prompt");
+    assert!(restored_prompt.contains("### loaded-skills\n# skill: pdf (v1.0.0)"));
+    assert!(restored_prompt.contains("This skill declares no bundled scripts"));
+    assert!(restored_prompt.contains("# Durable PDF instructions"));
+}
+
+#[tokio::test]
+async fn selected_skill_is_loaded_into_the_first_prompt_without_skill_view() {
+    let workspace = TestWorkspace::new();
+    workspace.write(
+        ".agent-skills/pdf/SKILL.md",
+        "---\nname: pdf\ndescription: PDF workflow\nversion: 1.0.0\n---\n# Deterministic PDF instructions",
+    );
+    let server = ScriptedCompletionServer::start(vec![ScriptedResponse::completion(
+        r#"[{"tool":"reply","args":{"text":"loaded"}}]"#,
+    )])
+    .await;
+    let client = server.client();
+    let desktop = RecordingDesktop::default();
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let registry = workspace.skill_registry();
+    let mut session = AgentSessionState::new("selected-skill-session");
+    let mut events = Vec::new();
+
+    run_turn(
+        RunTurnInput {
+            run_id: "selected-skill-run",
+            session_id: "selected-skill-session",
+            user_message: "use the selected workflow",
+            selected_skill: Some("pdf"),
+            stable_prefix: "TEST_STABLE_PREFIX",
+            working_dir: workspace.path(),
+            trusted_read_roots: &[],
+            max_steps: 2,
+            client: &client,
+            approval: &approval,
+            desktop: &desktop,
+            cancellation: &cancellation,
+            session: &mut session,
+            skill_registry: &registry,
+            bundled_script_runtime: None,
+        },
+        |event| collect_event(&mut events, event),
+    )
+    .await
+    .expect("selected skill turn");
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 1);
+    let first_prompt = requests[0]["prompt"].as_str().expect("first prompt");
+    assert!(first_prompt.contains("### loaded-skills\n# skill: pdf (v1.0.0)"));
+    assert!(first_prompt.contains("# Deterministic PDF instructions"));
+    assert!(!events.iter().any(|event| {
+        matches!(
+            event,
+            AgentEvent::ToolCallExecuted { result } if result.call.tool == "skill.view"
+        )
+    }));
+    assert_eq!(session.loaded_skills[0].name, "pdf");
+}
+
+#[tokio::test]
+async fn unknown_selected_skill_fails_before_completion() {
+    let workspace = TestWorkspace::new();
+    let server = ScriptedCompletionServer::start(vec![ScriptedResponse::completion(
+        r#"[{"tool":"reply","args":{"text":"must not run"}}]"#,
+    )])
+    .await;
+    let client = server.client();
+    let desktop = RecordingDesktop::default();
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let registry = workspace.skill_registry();
+    let mut session = AgentSessionState::new("missing-skill-session");
+    let mut events = Vec::new();
+
+    let error = run_turn(
+        RunTurnInput {
+            run_id: "missing-skill-run",
+            session_id: "missing-skill-session",
+            user_message: "must not be persisted",
+            selected_skill: Some("missing"),
+            stable_prefix: "TEST_STABLE_PREFIX",
+            working_dir: workspace.path(),
+            trusted_read_roots: &[],
+            max_steps: 2,
+            client: &client,
+            approval: &approval,
+            desktop: &desktop,
+            cancellation: &cancellation,
+            session: &mut session,
+            skill_registry: &registry,
+            bundled_script_runtime: None,
+        },
+        |event| collect_event(&mut events, event),
+    )
+    .await
+    .expect_err("missing selected skill must fail");
+
+    assert!(error.contains("missing, disabled, incompatible, or unavailable"));
+    assert!(server.requests().is_empty());
+    assert!(session.turns.is_empty());
+    assert_eq!(finished_reason(&events), Some(("failed", 0)));
 }

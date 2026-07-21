@@ -88,6 +88,7 @@ import { AgentWorkspaceLayout } from '@/containers/AgentWorkspaceLayout'
 import { useArtifactStore } from '@/stores/artifact-store'
 import posthog from 'posthog-js'
 import { useAgentRun } from '@/hooks/useAgentRun'
+import { readAgentSkillName } from '@/lib/agent-skill-selection'
 import {
   buildAgentUIMessage,
   claimAgentRunPersistence,
@@ -121,6 +122,7 @@ const agentAttachmentsFromMessage = (
   text: string
   files: InitialMessageFile[]
   documents: Attachment[]
+  agentSkillName?: string
 } => {
   const metadata = (message.metadata ?? {}) as Record<string, unknown>
   const storedText = metadata.agent_input_text
@@ -180,7 +182,9 @@ const agentAttachmentsFromMessage = (
     ]
   })
 
-  return { text, files, documents }
+  const agentSkillName = readAgentSkillName(metadata)
+
+  return { text, files, documents, agentSkillName }
 }
 
 type SearchParams = {
@@ -742,6 +746,7 @@ function ThreadDetail() {
       text: string,
       files?: InitialMessageFile[],
       documentsFromPayload?: Attachment[],
+      agentSkillName?: string,
       persistUserMessage = true
     ) => {
       if (selectedProvider === 'mlx') {
@@ -833,6 +838,7 @@ function ThreadDetail() {
         userMessage.metadata = {
           ...(userMessage.metadata ?? {}),
           agent_input_text: text,
+          ...(agentSkillName ? { agent_skill_name: agentSkillName } : {}),
           image_attachment_names: mediaAttachments.map(
             (attachment) => attachment.name
           ),
@@ -866,6 +872,7 @@ function ThreadDetail() {
             session_id: threadId,
             model_id: selectedModel.id,
             user_message: text,
+            selected_skill: agentSkillName,
             attachments: ipcAttachments,
             working_dir: workingDir,
             auto_approve:
@@ -913,14 +920,20 @@ function ThreadDetail() {
     async (
       text: string,
       files?: InitialMessageFile[],
-      documentsFromPayload?: Attachment[]
+      documentsFromPayload?: Attachment[],
+      agentSkillName?: string
     ) => {
       if (
         resolveMessageExecutionRoute(
           useAgentMode.getState().isAgentMode(threadId)
         ) === 'agent-ipc'
       ) {
-        await processAndRunAgent(text, files, documentsFromPayload)
+        await processAndRunAgent(
+          text,
+          files,
+          documentsFromPayload,
+          agentSkillName
+        )
         return
       }
       ttftBegin()
@@ -1142,7 +1155,8 @@ function ThreadDetail() {
         await processAndSendMessage(
           message.text,
           message.files,
-          message.documents
+          message.documents,
+          message.agentSkillName
         )
       } catch (error) {
         console.error('[ThreadPage] Failed to process initial message:', error)
@@ -1152,8 +1166,12 @@ function ThreadDetail() {
 
   // Handle submit from ChatInput
   const handleSubmit = useCallback(
-    async (text: string, files?: InitialMessageFile[]) => {
-      await processAndSendMessage(text, files)
+    async (
+      text: string,
+      files?: InitialMessageFile[],
+      agentSkillName?: string
+    ) => {
+      await processAndSendMessage(text, files, undefined, agentSkillName)
     },
     [processAndSendMessage]
   )
@@ -1198,6 +1216,7 @@ function ThreadDetail() {
           text,
           files: agentFiles,
           documents: agentDocuments,
+          agentSkillName,
         } = agentAttachmentsFromMessage(userMessage)
         const retainedMessages = currentLocalMessages.slice(
           0,
@@ -1212,7 +1231,13 @@ function ThreadDetail() {
           convertThreadMessagesToUIMessages(retainedMessages)
         chatMessagesRef.current = retainedUiMessages
         setChatMessages(retainedUiMessages)
-        await processAndRunAgent(text, agentFiles, agentDocuments, false)
+        await processAndRunAgent(
+          text,
+          agentFiles,
+          agentDocuments,
+          agentSkillName,
+          false
+        )
         return
       }
 

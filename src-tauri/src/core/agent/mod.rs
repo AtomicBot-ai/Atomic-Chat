@@ -27,6 +27,7 @@ pub mod resource_class;
 pub mod runner;
 pub mod session;
 pub mod shell_guard;
+pub mod skills;
 pub mod tools;
 pub mod types;
 pub mod workspace;

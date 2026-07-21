@@ -17,10 +17,12 @@ use super::attachments::stage_attachments;
 use super::llm_client::{find_session_by_model_id, LlamaServerClient};
 use super::path_policy::{expand_home, lexical_normalize};
 use super::prompt::{
-    build_stable_prefix, CapabilitiesSummary, DEFAULT_MAX_PARALLEL_TOOL_CALLS, ITERATION_ONE_TOOLS,
+    build_stable_prefix, CapabilitiesSummary, SkillDescriptor, DEFAULT_MAX_PARALLEL_TOOL_CALLS,
+    ITERATION_ONE_TOOLS,
 };
 use super::runner::{run_turn, RunTurnInput, MAX_STEPS};
 use super::session::{load_session, save_session, validate_session_id};
+use super::skills::load_registry;
 use super::tools::DesktopServices;
 use super::types::{AgentApprovalDecision, AgentEvent, AgentTurnRequest};
 use super::workspace::default_agent_workspace;
@@ -315,8 +317,22 @@ pub async fn agent_run_turn<R: Runtime>(
         has_wmctrl: false,
         has_notifications: cfg!(desktop),
     };
+    let skill_registry = load_registry(&data_folder)?;
+    let bundled_script_runtime = resolve_bundled_script_runtime(&app_handle);
+    let skill_descriptors = skill_registry
+        .enabled()
+        .map(|record| SkillDescriptor {
+            name: record.manifest.name.clone(),
+            description: record.manifest.description.clone(),
+            version: record.manifest.version.clone(),
+            requires_tools: record.manifest.requires_tools.clone(),
+            requires_scripts: record.manifest.requires_scripts.clone(),
+            dangerous: record.manifest.dangerous,
+        })
+        .collect::<Vec<_>>();
     let stable_prefix = build_stable_prefix(
         ITERATION_ONE_TOOLS,
+        &skill_descriptors,
         &capabilities,
         DEFAULT_MAX_PARALLEL_TOOL_CALLS,
         None,
@@ -346,6 +362,7 @@ pub async fn agent_run_turn<R: Runtime>(
                         run_id: &request.run_id,
                         session_id: &request.session_id,
                         user_message: &user_message,
+                        selected_skill: request.selected_skill.as_deref(),
                         stable_prefix: &stable_prefix,
                         working_dir: &working_dir,
                         trusted_read_roots,
@@ -355,6 +372,8 @@ pub async fn agent_run_turn<R: Runtime>(
                         desktop: &desktop,
                         cancellation: &cancellation,
                         session: &mut session,
+                        skill_registry: &skill_registry,
+                        bundled_script_runtime: bundled_script_runtime.as_deref(),
                     },
                     |event| on_event.send(event).map_err(|error| error.to_string()),
                 )
@@ -374,6 +393,16 @@ pub async fn agent_run_turn<R: Runtime>(
         .remove(&request.run_id);
     clear_pending_approvals_for_run(&state, &request.run_id).await;
     result
+}
+
+fn resolve_bundled_script_runtime<R: Runtime>(app_handle: &AppHandle<R>) -> Option<PathBuf> {
+    let executable = if cfg!(windows) { "bun.exe" } else { "bun" };
+    app_handle
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|root| root.join("resources/bin").join(executable))
+        .filter(|path| path.is_file())
 }
 
 fn ensure_vision_requirement(has_images: bool, has_vision: bool) -> Result<(), String> {

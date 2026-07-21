@@ -24,6 +24,7 @@ export type AgentTurnRequest = {
   session_id: string
   model_id: string
   user_message: string
+  selected_skill?: string
   attachments?: AgentAttachment[]
   working_dir?: string
   max_steps?: number

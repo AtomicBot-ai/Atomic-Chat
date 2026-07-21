@@ -143,7 +143,7 @@ features = [
   "image-png",
 ]
 
-[target.'cfg(windows)'.dev-dependencies]
+[dev-dependencies]
 tempfile = "3.20.0"
 
 [target.'cfg(unix)'.dependencies]

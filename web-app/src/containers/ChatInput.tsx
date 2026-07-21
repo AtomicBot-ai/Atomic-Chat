@@ -112,6 +112,16 @@ import { ModelFactory } from '@/lib/model-factory'
 import { canSelectChatAgentMode } from '@/containers/ChatAgentModeSwitch'
 import { AgentApprovalModeSelect } from '@/containers/AgentApprovalModeSelect'
 import { AgentWorkspaceSelect } from '@/containers/AgentWorkspaceSelect'
+import { AgentSkillSlashMenu } from '@/containers/AgentSkillSlashMenu'
+import {
+  filterAgentSkills,
+  findAgentSkillSlashQuery,
+  moveAgentSkillActiveIndex,
+  removeAgentSkillSlashQuery,
+  type AgentSkillSlashQuery,
+} from '@/containers/agentSkillSlash'
+import { useAgentSkills } from '@/hooks/useAgentSkills'
+import type { AgentSkill } from '@/services/agent/skills'
 
 type ChatInputProps = {
   className?: string
@@ -119,7 +129,11 @@ type ChatInputProps = {
   model?: ThreadModel
   initialMessage?: boolean
   projectId?: string
-  onSubmit?: (text: string, files?: InitialMessageFile[]) => void
+  onSubmit?: (
+    text: string,
+    files?: InitialMessageFile[],
+    agentSkillName?: string
+  ) => void
   onStop?: () => void
   chatStatus?: ChatStatus
 }
@@ -177,6 +191,18 @@ const ChatInput = memo(function ChatInput({
   )
   const effectiveAgentMode =
     isAgentMode && !projectId && !(canSelectAgentMode && isMlxSelected)
+  const { skills: agentSkills, loading: agentSkillsLoading } =
+    useAgentSkills(effectiveAgentMode)
+  const [selectedAgentSkill, setSelectedAgentSkill] =
+    useState<AgentSkill | null>(null)
+  const [agentSkillSlashQuery, setAgentSkillSlashQuery] =
+    useState<AgentSkillSlashQuery | null>(null)
+  const [agentSkillMenuOpen, setAgentSkillMenuOpen] = useState(false)
+  const [agentSkillActiveIndex, setAgentSkillActiveIndex] = useState(0)
+  const eligibleAgentSkills = useMemo(
+    () => filterAgentSkills(agentSkills, agentSkillSlashQuery?.query ?? ''),
+    [agentSkillSlashQuery?.query, agentSkills]
+  )
   const setAgentMode = useAgentMode((state) => state.setAgentMode)
   const approvalMode = useAgentMode(
     (state) => state.approvalModes[agentModeKey] ?? 'manual'
@@ -196,6 +222,17 @@ const ChatInput = memo(function ChatInput({
     isMlxSelected,
     setAgentMode,
   ])
+
+  useEffect(() => {
+    if (effectiveAgentMode) return
+    setSelectedAgentSkill(null)
+    setAgentSkillSlashQuery(null)
+    setAgentSkillMenuOpen(false)
+  }, [effectiveAgentMode])
+
+  useEffect(() => {
+    setAgentSkillActiveIndex(0)
+  }, [agentSkillSlashQuery?.query])
 
   const handleApprovalModeChange = useCallback(
     (mode: 'manual' | 'skip') => {
@@ -519,6 +556,26 @@ const ChatInput = memo(function ChatInput({
   const mcpExtension = extensionManager.get<MCPExtension>(ExtensionTypeEnum.MCP)
   const MCPToolComponent = mcpExtension?.getToolComponent?.()
 
+  const updateAgentSkillSlashQuery = (value: string, cursor: number | null) => {
+    if (!effectiveAgentMode) return
+    const nextQuery = findAgentSkillSlashQuery(value, cursor)
+    setAgentSkillSlashQuery(nextQuery)
+    setAgentSkillMenuOpen(nextQuery !== null)
+  }
+
+  const handleAgentSkillSelect = (skill: AgentSkill) => {
+    if (!agentSkillSlashQuery) return
+    const next = removeAgentSkillSlashQuery(prompt, agentSkillSlashQuery)
+    setPrompt(next.value)
+    setSelectedAgentSkill(skill)
+    setAgentSkillSlashQuery(null)
+    setAgentSkillMenuOpen(false)
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus()
+      textareaRef.current?.setSelectionRange(next.cursor, next.cursor)
+    })
+  }
+
   const handleSendMessage = async (prompt: string) => {
     if (!selectedModel) {
       setMessage('Please select a model to start chatting.')
@@ -566,8 +623,13 @@ const ChatInput = memo(function ChatInput({
           url: att.dataUrl!,
         }))
 
-      onSubmit(prompt, files.length > 0 ? files : undefined)
+      onSubmit(
+        prompt,
+        files.length > 0 ? files : undefined,
+        selectedAgentSkill?.name
+      )
       setPrompt('')
+      setSelectedAgentSkill(null)
       clearAttachmentsForThread(attachmentsKey)
     } else {
       // No onSubmit provided - create a new thread and navigate to it
@@ -601,6 +663,7 @@ const ChatInput = memo(function ChatInput({
         text: prompt,
         files: files.length > 0 ? files : [],
         documents: docsSnapshot.length > 0 ? docsSnapshot : undefined,
+        agentSkillName: selectedAgentSkill?.name,
       }
 
       // Clear input UI immediately so the chip and text disappear in the
@@ -608,6 +671,7 @@ const ChatInput = memo(function ChatInput({
       // thread's key (transferAttachments runs during await createThread)
       // until processAttachmentsForSend finishes indexing the document.
       setPrompt('')
+      setSelectedAgentSkill(null)
       clearAttachmentsForThread(attachmentsKey)
 
       // #region agent log
@@ -2152,7 +2216,8 @@ const ChatInput = memo(function ChatInput({
       <div className="relative">
         <div
           className={cn(
-            'relative overflow-hidden p-0.5 rounded-3xl',
+            'relative p-0.5 rounded-3xl',
+            effectiveAgentMode ? 'overflow-visible' : 'overflow-hidden',
             isStreaming && 'opacity-70'
           )}
         >
@@ -2289,6 +2354,18 @@ const ChatInput = memo(function ChatInput({
                   )}
                 </div>
               )}
+              {effectiveAgentMode && (
+                <AgentSkillSlashMenu
+                  skills={eligibleAgentSkills}
+                  selectedSkill={selectedAgentSkill}
+                  activeIndex={agentSkillActiveIndex}
+                  loading={agentSkillsLoading}
+                  open={agentSkillMenuOpen}
+                  onSelect={handleAgentSkillSelect}
+                  onRemove={() => setSelectedAgentSkill(null)}
+                  onActiveIndexChange={setAgentSkillActiveIndex}
+                />
+              )}
               <TextareaAutosize
                 dir="auto"
                 ref={textareaRef}
@@ -2299,6 +2376,10 @@ const ChatInput = memo(function ChatInput({
                 data-testid={'chat-input'}
                 onChange={(e) => {
                   setPrompt(e.target.value)
+                  updateAgentSkillSlashQuery(
+                    e.target.value,
+                    e.target.selectionStart
+                  )
                   // Count the number of newlines to estimate rows
                   const newRows = (e.target.value.match(/\n/g) || []).length + 1
                   setRows(Math.min(newRows, maxRows))
@@ -2307,6 +2388,37 @@ const ChatInput = memo(function ChatInput({
                   // e.keyCode 229 is for IME input with Safari
                   const isComposing =
                     e.nativeEvent.isComposing || e.keyCode === 229
+                  if (
+                    agentSkillMenuOpen &&
+                    eligibleAgentSkills.length > 0 &&
+                    !isComposing
+                  ) {
+                    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                      e.preventDefault()
+                      const direction = e.key === 'ArrowDown' ? 1 : -1
+                      setAgentSkillActiveIndex((current) =>
+                        moveAgentSkillActiveIndex(
+                          current,
+                          direction,
+                          eligibleAgentSkills.length
+                        )
+                      )
+                      return
+                    }
+                    if (e.key === 'Enter' || e.key === 'Tab') {
+                      e.preventDefault()
+                      handleAgentSkillSelect(
+                        eligibleAgentSkills[agentSkillActiveIndex] ??
+                          eligibleAgentSkills[0]
+                      )
+                      return
+                    }
+                  }
+                  if (agentSkillMenuOpen && e.key === 'Escape') {
+                    e.preventDefault()
+                    setAgentSkillMenuOpen(false)
+                    return
+                  }
                   if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
                     e.preventDefault()
                     // Submit prompt when the following conditions are met:
@@ -2324,6 +2436,12 @@ const ChatInput = memo(function ChatInput({
                     // When Shift+Enter is pressed, a new line is added (default behavior)
                   }
                 }}
+                onClick={(e) =>
+                  updateAgentSkillSlashQuery(
+                    e.currentTarget.value,
+                    e.currentTarget.selectionStart
+                  )
+                }
                 onPaste={handlePaste}
                 placeholder={
                   effectiveAgentMode

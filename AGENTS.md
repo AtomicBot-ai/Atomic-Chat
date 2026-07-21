@@ -309,6 +309,55 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-07-21 — Preload explicitly selected Agent skills
+- **Context:** Agent could discover skills through the prompt catalog and load
+  them with `skill.view`, but users could not bind a specific workflow to a
+  turn from the composer or reproduce that choice during regeneration.
+- **Decision:** In Agent mode, expose enabled and compatible skills through a
+  slash picker with one removable chip. Persist the selected name as
+  `agent_skill_name` on the user message and pass it as `selected_skill` in
+  the Agent turn request. Before appending the user turn or performing the
+  first completion, restore session-loaded skills and load the explicit
+  selection through the existing bounded `LoadedSkills` state.
+- **Consequences:** The selected skill body is guaranteed to appear in the
+  first prompt's `### loaded-skills` section, and regenerate/edit-regenerate
+  reuse the same selection. A skill that became missing, disabled,
+  incompatible, or unavailable fails the turn before inference and leaves the
+  user turn unpersisted in the Agent session.
+- **Owner:** team.
+- **Links:** [`web-app/src/containers/AgentSkillSlashMenu.tsx`](web-app/src/containers/AgentSkillSlashMenu.tsx),
+  [`web-app/src/routes/threads/$threadId.tsx`](web-app/src/routes/threads/$threadId.tsx),
+  [`src-tauri/src/core/agent/runner.rs`](src-tauri/src/core/agent/runner.rs).
+
+---
+
+### 2026-07-21 — Add global SKILL.md capabilities to Agent mode
+- **Context:** The Rust Agent had a fixed tool catalog but could not consume
+  reusable Atomic Agent `SKILL.md` workflows, persist loaded instructions, or
+  expose local skill management in Atomic Chat.
+- **Decision:** Use `<data-folder>/agent-skills` as the single skill root.
+  Seed the 17 bundled starter skills on every startup, replacing only reserved
+  bundled names while preserving custom directories and durable disabled
+  names. Render eligible summaries in stable-prefix `### skills`, materialize
+  bodies through `skill.view` into bounded session-persisted
+  `### loaded-skills`, and execute only declared scripts through
+  approval-gated `skill.run_script` with shell-policy, path, timeout, output,
+  and cancellation guards. Expose local list/detail, enable/disable, refresh,
+  and custom-delete controls on an Agent-mode-only Skills sidebar page.
+- **Consequences:** Agent can reuse the Atomic Agent starter workflows without
+  network installation or project-local precedence. The new stable skill
+  catalog invalidates prompt-prefix cache once; loaded bodies remain in the
+  variable tail and `agent-session.json`. Bundled updates overwrite local
+  edits to reserved skills on release, custom skills remain user-owned, and
+  every script run still requires explicit approval.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/skills/`](src-tauri/src/core/agent/skills/),
+  [`src-tauri/src/core/agent/tools/skill_view.rs`](src-tauri/src/core/agent/tools/skill_view.rs),
+  [`src-tauri/src/core/agent/tools/skill_run_script.rs`](src-tauri/src/core/agent/tools/skill_run_script.rs),
+  [`web-app/src/routes/skills/index.tsx`](web-app/src/routes/skills/index.tsx).
+
+---
+
 ### 2026-07-21 — Separate Chat and Agent navigation in the sidebar
 - **Context:** Chat and Agent shared one sidebar history and selected their
   execution mode inside the composer, which crowded the input and mixed

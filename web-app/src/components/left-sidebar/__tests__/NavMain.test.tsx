@@ -98,6 +98,16 @@ describe('NavMain', () => {
     expect(screen.getByText('common:models')).toBeInTheDocument()
   })
 
+  it('shows Skills only in Agent mode', () => {
+    const { rerender } = render(<NavMain mode="chat" />)
+
+    expect(screen.queryByText('common:skills')).not.toBeInTheDocument()
+
+    rerender(<NavMain mode="agent" />)
+
+    expect(screen.getByText('common:skills')).toBeInTheDocument()
+  })
+
   it('labels the new conversation action as New Chat in both modes', () => {
     const { rerender } = render(<NavMain mode="chat" />)
 

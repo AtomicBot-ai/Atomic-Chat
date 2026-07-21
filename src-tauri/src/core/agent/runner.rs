@@ -18,6 +18,7 @@ use super::loop_guard::{
 use super::prompt::build_prompt;
 use super::resource_class::{is_batchable, resource_class_for, ResourceClass};
 use super::session::AgentSessionState;
+use super::skills::{loaded::LoadedSkills, SkillRegistry};
 use super::tools::{self, ApprovalHook, DesktopServices, ToolContext};
 use super::types::{
     AgentEvent, LoopLevel, ToolCallPayload, ToolExecution, ToolOutcome, ToolStatus,
@@ -32,6 +33,7 @@ pub struct RunTurnInput<'a> {
     pub run_id: &'a str,
     pub session_id: &'a str,
     pub user_message: &'a str,
+    pub selected_skill: Option<&'a str>,
     pub stable_prefix: &'a str,
     pub working_dir: &'a Path,
     pub trusted_read_roots: &'a [PathBuf],
@@ -41,6 +43,8 @@ pub struct RunTurnInput<'a> {
     pub desktop: &'a dyn DesktopServices,
     pub cancellation: &'a CancellationToken,
     pub session: &'a mut AgentSessionState,
+    pub skill_registry: &'a SkillRegistry,
+    pub bundled_script_runtime: Option<&'a Path>,
 }
 
 pub async fn run_turn(
@@ -52,22 +56,42 @@ pub async fn run_turn(
         session_id: input.session_id.to_owned(),
     })?;
     let max_steps = input.max_steps.clamp(1, MAX_STEPS);
-    input.session.push_user(input.user_message);
     let mut notice: Option<String> = None;
     let mut tracker = ToolLoopTracker::default();
     let loaded_tools = tools::tool_view::LoadedTools::restore(&input.session.loaded_tools);
+    let loaded_skills = LoadedSkills::restore(&input.session.loaded_skills, input.skill_registry);
+    if let Some(selected_skill) = input.selected_skill {
+        let outcome = loaded_skills
+            .view(selected_skill, input.skill_registry)
+            .await;
+        if outcome.status != ToolStatus::Ok {
+            let message = outcome.summary;
+            emit(AgentEvent::StepError {
+                message: message.clone(),
+                category: "skill".into(),
+            })?;
+            emit(AgentEvent::TurnFinished {
+                reason: "failed".into(),
+                step_count: 0,
+            })?;
+            return Err(message);
+        }
+    }
+    input.session.push_user(input.user_message);
 
     for step_index in 0..max_steps {
         if input.cancellation.is_cancelled() {
-            finish_session(input.session, &loaded_tools, None).await;
+            finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
             return finish_cancelled(step_index, &mut emit);
         }
         emit(AgentEvent::StepStarted { step_index })?;
         let loaded_tool_names = loaded_tools.snapshot().await;
+        let loaded_skill_entries = loaded_skills.snapshot().await;
         let conversation = input.session.render_conversation();
         let prompt = build_prompt(
             input.stable_prefix,
             &loaded_tool_names,
+            &loaded_skill_entries,
             &conversation,
             notice.as_deref(),
         );
@@ -76,7 +100,7 @@ pub async fn run_turn(
         let completion = match input.client.complete(&request, input.cancellation).await {
             Ok(completion) => completion,
             Err(LlamaClientError::Cancelled) => {
-                finish_session(input.session, &loaded_tools, None).await;
+                finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
                 return finish_cancelled(step_index, &mut emit);
             }
             Err(error) => {
@@ -88,7 +112,7 @@ pub async fn run_turn(
                     reason: "failed".into(),
                     step_count: step_index,
                 })?;
-                finish_session(input.session, &loaded_tools, None).await;
+                finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
                 return Err(error.to_string());
             }
         };
@@ -116,7 +140,7 @@ pub async fn run_turn(
                 {
                     Ok(parsed) => parsed,
                     Err(LlamaClientError::Cancelled) => {
-                        finish_session(input.session, &loaded_tools, None).await;
+                        finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
                         return finish_cancelled(step_index, &mut emit);
                     }
                     Err(error) => {
@@ -129,7 +153,7 @@ pub async fn run_turn(
                             reason: "failed".into(),
                             step_count: step_index + 1,
                         })?;
-                        finish_session(input.session, &loaded_tools, None).await;
+                        finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
                         return Err(message);
                     }
                 }
@@ -170,7 +194,7 @@ pub async fn run_turn(
                 {
                     Ok(repaired) => parsed = repaired,
                     Err(LlamaClientError::Cancelled) => {
-                        finish_session(input.session, &loaded_tools, None).await;
+                        finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
                         return finish_cancelled(step_index, &mut emit);
                     }
                     Err(error) => {
@@ -183,7 +207,7 @@ pub async fn run_turn(
                             reason: "failed".into(),
                             step_count: step_index + 1,
                         })?;
-                        finish_session(input.session, &loaded_tools, None).await;
+                        finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
                         return Err(message);
                     }
                 }
@@ -261,7 +285,7 @@ pub async fn run_turn(
                 reason: "reply".into(),
                 step_count: step_index + 1,
             })?;
-            finish_session(input.session, &loaded_tools, Some(&reply)).await;
+            finish_session(input.session, &loaded_tools, &loaded_skills, Some(&reply)).await;
             return Ok(());
         }
 
@@ -272,6 +296,9 @@ pub async fn run_turn(
             approval: input.approval,
             cancellation: input.cancellation,
             loaded_tools: &loaded_tools,
+            loaded_skills: &loaded_skills,
+            skill_registry: input.skill_registry,
+            bundled_script_runtime: input.bundled_script_runtime,
             desktop: input.desktop,
         };
         let has_terminal_tail = parsed
@@ -326,7 +353,7 @@ pub async fn run_turn(
                 reason: reason.into(),
                 step_count: step_index + 1,
             })?;
-            finish_session(input.session, &loaded_tools, Some(&text)).await;
+            finish_session(input.session, &loaded_tools, &loaded_skills, Some(&text)).await;
             return Ok(());
         }
     }
@@ -338,7 +365,7 @@ pub async fn run_turn(
         reason: "max_steps".into(),
         step_count: max_steps,
     })?;
-    finish_session(input.session, &loaded_tools, Some(&text)).await;
+    finish_session(input.session, &loaded_tools, &loaded_skills, Some(&text)).await;
     Ok(())
 }
 
@@ -517,12 +544,14 @@ fn repair_error_category(error: &LlamaClientError) -> &'static str {
 async fn finish_session(
     session: &mut AgentSessionState,
     loaded_tools: &tools::tool_view::LoadedTools,
+    loaded_skills: &LoadedSkills,
     reply: Option<&str>,
 ) {
     if let Some(reply) = reply {
         session.push_reply(reply);
     }
     session.set_loaded_tools(loaded_tools.snapshot().await);
+    session.set_loaded_skills(loaded_skills.snapshot().await);
     session.finish_turn();
 }
 

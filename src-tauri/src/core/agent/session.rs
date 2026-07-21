@@ -4,11 +4,12 @@ use serde::{Deserialize, Serialize};
 
 use super::compressor::{compress_tool_result, should_compress_tool};
 use super::prompt::ToolTier;
+use super::skills::loaded::{LoadedSkillState, LOADED_SKILLS_CAP, LOADED_SKILL_BODY_MAX_CHARS};
 use super::tools::tool_view::{descriptor_for, LOADED_TOOLS_CAP};
 use super::types::{ToolCallPayload, ToolOutcome, ToolStatus};
 use crate::core::threads::utils::{get_data_dir, get_thread_dir};
 
-const SESSION_VERSION: u32 = 1;
+const SESSION_VERSION: u32 = 2;
 const SESSION_FILE_NAME: &str = "agent-session.json";
 const MAX_SESSION_FILE_BYTES: u64 = 512 * 1024;
 const MAX_TURNS: usize = 96;
@@ -45,6 +46,8 @@ pub struct AgentSessionState {
     pub turn_count: u64,
     pub turns: Vec<AgentSessionTurn>,
     pub loaded_tools: Vec<String>,
+    #[serde(default)]
+    pub loaded_skills: Vec<LoadedSkillState>,
 }
 
 impl AgentSessionState {
@@ -55,6 +58,7 @@ impl AgentSessionState {
             turn_count: 0,
             turns: Vec::new(),
             loaded_tools: Vec::new(),
+            loaded_skills: Vec::new(),
         }
     }
 
@@ -102,6 +106,10 @@ impl AgentSessionState {
         self.loaded_tools = names.into_iter().take(LOADED_TOOLS_CAP).collect();
     }
 
+    pub fn set_loaded_skills(&mut self, skills: Vec<LoadedSkillState>) {
+        self.loaded_skills = skills.into_iter().take(LOADED_SKILLS_CAP).collect();
+    }
+
     pub fn render_conversation(&self) -> String {
         let rendered = self.turns.iter().map(render_turn).collect::<Vec<_>>();
         let mut selected = Vec::new();
@@ -144,6 +152,15 @@ impl AgentSessionState {
             })
         {
             return Err("Agent session contains invalid loaded tools".into());
+        }
+        if self.loaded_skills.len() > LOADED_SKILLS_CAP
+            || self.loaded_skills.iter().any(|skill| {
+                skill.name.is_empty()
+                    || skill.version.is_empty()
+                    || skill.body.chars().count() > LOADED_SKILL_BODY_MAX_CHARS
+            })
+        {
+            return Err("Agent session contains invalid loaded skills".into());
         }
         for turn in &self.turns {
             match turn {
@@ -200,8 +217,11 @@ pub async fn load_session(data_dir: &Path, session_id: &str) -> Result<AgentSess
     let bytes = tokio::fs::read(&path)
         .await
         .map_err(|error| format!("Could not read agent session: {error}"))?;
-    let state: AgentSessionState = serde_json::from_slice(&bytes)
+    let mut state: AgentSessionState = serde_json::from_slice(&bytes)
         .map_err(|error| format!("Could not parse agent session: {error}"))?;
+    if state.version == 1 {
+        state.version = SESSION_VERSION;
+    }
     state.validate(session_id)?;
     Ok(state)
 }
@@ -441,7 +461,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn round_trip_preserves_bounded_transcript_count_and_loaded_tools() {
+    async fn round_trip_preserves_transcript_loaded_tools_and_loaded_skills() {
         let fixture = SessionFixture::new(&["thread-a"]);
         let mut state = AgentSessionState::new("thread-a");
         state.push_user("first question");
@@ -454,6 +474,12 @@ mod tests {
         );
         state.push_reply("first answer");
         state.set_loaded_tools(vec!["os.fs.hash".into()]);
+        state.set_loaded_skills(vec![LoadedSkillState {
+            name: "pdf".into(),
+            version: "1.0.0".into(),
+            body: "# PDF instructions".into(),
+            loaded_at: 7,
+        }]);
         state.finish_turn();
 
         save_session(&fixture.data_dir, &state)
@@ -467,6 +493,25 @@ mod tests {
         assert_eq!(loaded.turn_count, 1);
         assert!(loaded.render_conversation().contains("first observation"));
         assert_eq!(loaded.loaded_tools, ["os.fs.hash"]);
+        assert_eq!(loaded.loaded_skills[0].name, "pdf");
+    }
+
+    #[tokio::test]
+    async fn migrates_version_one_sessions_with_empty_loaded_skills() {
+        let fixture = SessionFixture::new(&["thread-a"]);
+        let path = get_thread_dir(&fixture.data_dir, "thread-a").join(SESSION_FILE_NAME);
+        tokio::fs::write(
+            &path,
+            br#"{"version":1,"session_id":"thread-a","turn_count":0,"turns":[],"loaded_tools":[]}"#,
+        )
+        .await
+        .expect("write v1 session");
+
+        let loaded = load_session(&fixture.data_dir, "thread-a")
+            .await
+            .expect("migrate v1 session");
+        assert_eq!(loaded.version, SESSION_VERSION);
+        assert!(loaded.loaded_skills.is_empty());
     }
 
     #[tokio::test]

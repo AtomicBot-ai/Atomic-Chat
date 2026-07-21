@@ -111,6 +111,9 @@ pub struct AgentTurnRequest {
     pub model_id: String,
     /// The user's message for this turn.
     pub user_message: String,
+    /// Optional enabled skill that must be loaded before the first inference.
+    #[serde(default)]
+    pub selected_skill: Option<String>,
     /// Files staged into the owning thread before the agent loop begins.
     #[serde(default)]
     pub attachments: Vec<AgentAttachment>,

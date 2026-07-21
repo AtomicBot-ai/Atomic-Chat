@@ -2,14 +2,15 @@
 //!
 //! Ported from the TypeScript `atomic-agent` prompt layer
 //! (`stable-prefix.ts` + `build-prompt.ts`). The prompt is a **stable
-//! prefix** — persona + `### rules` + `### tools` + `### capabilities` +
+//! prefix** — persona + `### rules` + `### skills` + `### tools` + `### capabilities` +
 //! `### instructions` — that must stay byte-identical within a session so
 //! `llama-server`'s `cache_prompt` + `slot_id` KV-cache reuse holds, followed
-//! by a **variable tail** (`### conversation`, optional `### notice`, and the
+//! by a **variable tail** (optional `### loaded-tools` and
+//! `### loaded-skills`, `### conversation`, optional `### notice`, and the
 //! `### respond` emit anchor).
 //!
 //! Iteration 1 hardcodes a fixed tool set (see [`ITERATION_ONE_TOOLS`]) — no
-//! `browser` / `memory` / `tasks` / `skill` / `vision` / `mcp` tools — so the
+//! `browser` / `memory` / `tasks` / `mcp` tools — so the
 //! grammar and descriptors are static.
 
 /// Tier of a tool descriptor in the `### tools` catalog. `Frequent` tools
@@ -30,6 +31,67 @@ pub struct ToolDescriptor {
     pub args_schema: &'static str,
     pub tier: ToolTier,
     pub examples: &'static [&'static str],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillDescriptor {
+    pub name: String,
+    pub description: String,
+    pub version: String,
+    pub requires_tools: Vec<String>,
+    pub requires_scripts: Vec<String>,
+    pub dangerous: bool,
+}
+
+const MAX_SKILLS_CATALOG_CHARS: usize = 16_000;
+
+fn format_skill(descriptor: &SkillDescriptor) -> String {
+    let mut qualifiers = Vec::new();
+    if !descriptor.requires_tools.is_empty() {
+        qualifiers.push(format!("tools={}", descriptor.requires_tools.join(",")));
+    }
+    if !descriptor.requires_scripts.is_empty() {
+        qualifiers.push(format!("scripts={}", descriptor.requires_scripts.join(",")));
+    }
+    if descriptor.dangerous {
+        qualifiers.push("dangerous".to_owned());
+    }
+    let suffix = if qualifiers.is_empty() {
+        String::new()
+    } else {
+        format!(" [{}]", qualifiers.join("; "))
+    };
+    format!(
+        "- {} (v{}): {}{}",
+        descriptor.name, descriptor.version, descriptor.description, suffix
+    )
+}
+
+fn render_skills_catalog(descriptors: &[SkillDescriptor]) -> String {
+    if descriptors.is_empty() {
+        return "(none)".to_owned();
+    }
+    let mut rendered = String::new();
+    let mut rendered_count = 0;
+    for descriptor in descriptors {
+        let line = format_skill(descriptor);
+        let separator_chars = usize::from(!rendered.is_empty());
+        if rendered.chars().count() + separator_chars + line.chars().count()
+            > MAX_SKILLS_CATALOG_CHARS
+        {
+            break;
+        }
+        if !rendered.is_empty() {
+            rendered.push('\n');
+        }
+        rendered.push_str(&line);
+        rendered_count += 1;
+    }
+    let omitted = descriptors.len().saturating_sub(rendered_count);
+    if omitted > 0 {
+        rendered.push_str(&format!("\n... [{omitted} skills omitted]"));
+    }
+    rendered
 }
 
 /// Environment description rendered into the `### capabilities` block.
@@ -66,6 +128,8 @@ const DEFAULT_SYSTEM_PERSONA_LINES: &[&str] = &[
     "- Keep `reply` short and to the point. If the user asked for an exact value or marker, `reply.text` must be ONLY that bare value — no preamble, no restating the question, no extra commentary or markdown before or after.",
     "- Respect the loop guard. If you are told a call was denied as a loop, change your approach — do not repeat the same call.",
     "- Rare tools are listed without argument schemas. Call `tool.view { name }` before using a rare tool whose exact arguments are not already loaded.",
+    "- Skills are listed as summaries. Call `skill.view { name }` before applying a skill whose full instructions are not already under `### loaded-skills`.",
+    "- `skill.run_script.script` is only an exact bundled filename listed as `scripts=` for that skill; put its arguments in `args`. Never put a shell command or external CLI invocation in `script`. Skills without `scripts=` must use their declared tools, typically `os.shell.run { cmd, args }` for external CLIs.",
 ];
 
 /// Windows-specific shell hint, appended to `### capabilities` when the
@@ -83,6 +147,20 @@ pub const ITERATION_ONE_TOOLS: &[ToolDescriptor] = &[
         name: "tool.view",
         summary: "Load the full descriptor and args schema for a rare tool into the variable prompt tail.",
         args_schema: r#"{ name: string }"#,
+        tier: ToolTier::Frequent,
+        examples: &[],
+    },
+    ToolDescriptor {
+        name: "skill.view",
+        summary: "Load one enabled skill's full SKILL.md body into the variable prompt tail.",
+        args_schema: r#"{ name: string }"#,
+        tier: ToolTier::Frequent,
+        examples: &[],
+    },
+    ToolDescriptor {
+        name: "skill.run_script",
+        summary: "Run an exact bundled script filename declared under the skill's scripts= catalog entry; never a shell command. Always approval-gated.",
+        args_schema: r#"{ skill: string, script: string, args?: string[], timeout_ms?: number }"#,
         tier: ToolTier::Frequent,
         examples: &[],
     },
@@ -392,6 +470,7 @@ fn format_capabilities(caps: &CapabilitiesSummary) -> String {
 /// session for KV-cache reuse. Ported from `buildStablePrefix`.
 pub fn build_stable_prefix(
     tool_descriptors: &[ToolDescriptor],
+    skill_descriptors: &[SkillDescriptor],
     capabilities: &CapabilitiesSummary,
     max_parallel_tool_calls: usize,
     system_persona: Option<&str>,
@@ -415,6 +494,11 @@ pub fn build_stable_prefix(
         ]
         .join("\n"),
     );
+
+    let skills = render_skills_catalog(skill_descriptors);
+    sections.push(format!(
+        "### skills\n{skills}\n\nCall `skill.view` before applying a catalog-only skill. Loaded skill instructions never bypass tool approvals or safety policy."
+    ));
 
     let frequent: Vec<&ToolDescriptor> = tool_descriptors
         .iter()
@@ -467,6 +551,7 @@ pub fn build_stable_prefix(
 pub fn build_prompt(
     stable_prefix: &str,
     loaded_tool_names: &[String],
+    loaded_skills: &[crate::core::agent::skills::loaded::LoadedSkillState],
     conversation: &str,
     notice: Option<&str>,
 ) -> String {
@@ -475,6 +560,12 @@ pub fn build_prompt(
     if let Some(loaded_tools) = render_loaded_tools(loaded_tool_names) {
         tail.push("### loaded-tools".to_string());
         tail.push(loaded_tools);
+        tail.push(String::new());
+    }
+
+    if let Some(skills) = crate::core::agent::skills::loaded::render_loaded_skills(loaded_skills) {
+        tail.push("### loaded-skills".to_string());
+        tail.push(skills);
         tail.push(String::new());
     }
 
@@ -544,6 +635,7 @@ mod tests {
         let caps = test_caps("darwin");
         let prefix = build_stable_prefix(
             ITERATION_ONE_TOOLS,
+            &[],
             &caps,
             DEFAULT_MAX_PARALLEL_TOOL_CALLS,
             None,
@@ -551,13 +643,15 @@ mod tests {
 
         let system = prefix.find("### system").expect("### system");
         let rules = prefix.find("### rules").expect("### rules");
+        let skills = prefix.find("### skills").expect("### skills");
         let tools = prefix.find("### tools").expect("### tools");
         let caps_idx = prefix.find("### capabilities").expect("### capabilities");
         let instructions = prefix.find("### instructions").expect("### instructions");
 
         assert!(prefix.starts_with("### system"));
         assert!(system < rules);
-        assert!(rules < tools);
+        assert!(rules < skills);
+        assert!(skills < tools);
         assert!(tools < caps_idx);
         assert!(caps_idx < instructions);
     }
@@ -565,14 +659,14 @@ mod tests {
     #[test]
     fn stable_prefix_embeds_persona_first_line() {
         let caps = test_caps("linux");
-        let prefix = build_stable_prefix(ITERATION_ONE_TOOLS, &caps, 8, None);
+        let prefix = build_stable_prefix(ITERATION_ONE_TOOLS, &[], &caps, 8, None);
         assert!(prefix.contains("You are a capable autonomous operator agent"));
     }
 
     #[test]
     fn tools_block_renders_frequent_and_rare_partitions() {
         let caps = test_caps("linux");
-        let prefix = build_stable_prefix(ITERATION_ONE_TOOLS, &caps, 8, None);
+        let prefix = build_stable_prefix(ITERATION_ONE_TOOLS, &[], &caps, 8, None);
 
         assert!(prefix.contains("# common (full)"));
         assert!(prefix.contains("# extras"));
@@ -586,17 +680,17 @@ mod tests {
     #[test]
     fn terminal_verbs_are_present() {
         let caps = test_caps("linux");
-        let prefix = build_stable_prefix(ITERATION_ONE_TOOLS, &caps, 8, None);
+        let prefix = build_stable_prefix(ITERATION_ONE_TOOLS, &[], &caps, 8, None);
         assert!(prefix.contains("- reply {"));
         assert!(prefix.contains("- finish {"));
     }
 
     #[test]
     fn windows_hint_gated_on_platform() {
-        let mac = build_stable_prefix(ITERATION_ONE_TOOLS, &test_caps("darwin"), 8, None);
+        let mac = build_stable_prefix(ITERATION_ONE_TOOLS, &[], &test_caps("darwin"), 8, None);
         assert!(!mac.contains("`cmd.exe` subshell"));
 
-        let win = build_stable_prefix(ITERATION_ONE_TOOLS, &test_caps("win32"), 8, None);
+        let win = build_stable_prefix(ITERATION_ONE_TOOLS, &[], &test_caps("win32"), 8, None);
         assert!(win.contains("`cmd.exe` subshell"));
         assert!(win.contains("C:\\Users\\me\\file.txt"));
     }
@@ -604,15 +698,15 @@ mod tests {
     #[test]
     fn instructions_interpolate_parallel_cap() {
         let caps = test_caps("linux");
-        let prefix = build_stable_prefix(ITERATION_ONE_TOOLS, &caps, 4, None);
+        let prefix = build_stable_prefix(ITERATION_ONE_TOOLS, &[], &caps, 4, None);
         assert!(prefix.contains("Emit at most 4 tool calls per step"));
     }
 
     #[test]
     fn build_prompt_appends_tail_with_conversation_and_anchor() {
         let caps = test_caps("linux");
-        let prefix = build_stable_prefix(ITERATION_ONE_TOOLS, &caps, 8, None);
-        let full = build_prompt(&prefix, &[], "USER: hello", None);
+        let prefix = build_stable_prefix(ITERATION_ONE_TOOLS, &[], &caps, 8, None);
+        let full = build_prompt(&prefix, &[], &[], "USER: hello", None);
 
         assert!(full.starts_with(&prefix));
         assert!(full.contains("### conversation\nUSER: hello"));
@@ -623,26 +717,77 @@ mod tests {
     #[test]
     fn build_prompt_includes_notice_when_present() {
         let caps = test_caps("linux");
-        let prefix = build_stable_prefix(ITERATION_ONE_TOOLS, &caps, 8, None);
+        let prefix = build_stable_prefix(ITERATION_ONE_TOOLS, &[], &caps, 8, None);
         let full = build_prompt(
             &prefix,
+            &[],
             &[],
             "USER: hi",
             Some("You repeated os.fs.read 3 times."),
         );
         assert!(full.contains("### notice\nYou repeated os.fs.read 3 times."));
 
-        let empty = build_prompt(&prefix, &[], "USER: hi", Some(""));
+        let empty = build_prompt(&prefix, &[], &[], "USER: hi", Some(""));
         assert!(!empty.contains("### notice"));
     }
 
     #[test]
     fn loaded_rare_tools_render_only_in_variable_tail() {
         let caps = test_caps("linux");
-        let prefix = build_stable_prefix(ITERATION_ONE_TOOLS, &caps, 8, None);
+        let prefix = build_stable_prefix(ITERATION_ONE_TOOLS, &[], &caps, 8, None);
         let loaded = vec!["os.fs.hash".to_string()];
-        let full = build_prompt(&prefix, &loaded, "USER: hi", None);
+        let full = build_prompt(&prefix, &loaded, &[], "USER: hi", None);
         assert!(full.contains("### loaded-tools\n- os.fs.hash { path: string, algorithm?:"));
         assert!(!prefix.contains("### loaded-tools"));
+    }
+
+    #[test]
+    fn skills_catalog_is_stable_and_loaded_bodies_stay_in_the_tail() {
+        let caps = test_caps("linux");
+        let skills = vec![SkillDescriptor {
+            name: "test-skill".into(),
+            description: "Test instructions".into(),
+            version: "1.2.3".into(),
+            requires_tools: vec!["os.fs.read".into()],
+            requires_scripts: vec!["inspect.sh".into()],
+            dangerous: true,
+        }];
+        let prefix = build_stable_prefix(ITERATION_ONE_TOOLS, &skills, &caps, 8, None);
+        assert!(prefix.contains(
+            "- test-skill (v1.2.3): Test instructions [tools=os.fs.read; scripts=inspect.sh; dangerous]"
+        ));
+        assert!(prefix.contains(
+            "`skill.run_script.script` is only an exact bundled filename listed as `scripts=`"
+        ));
+        assert!(!prefix.contains("\n### loaded-skills\n"));
+
+        let loaded = vec![crate::core::agent::skills::loaded::LoadedSkillState {
+            name: "test-skill".into(),
+            version: "1.2.3".into(),
+            body: "# Full instructions".into(),
+            loaded_at: 1,
+        }];
+        let full = build_prompt(&prefix, &[], &loaded, "USER: hi", None);
+        assert!(
+            full.contains("### loaded-skills\n# skill: test-skill (v1.2.3)\n# Full instructions")
+        );
+    }
+
+    #[test]
+    fn skills_catalog_has_a_total_character_budget() {
+        let descriptors = (0..100)
+            .map(|index| SkillDescriptor {
+                name: format!("skill-{index}"),
+                description: "x".repeat(500),
+                version: "1.0.0".into(),
+                requires_tools: vec!["os.fs.read".into()],
+                requires_scripts: Vec::new(),
+                dangerous: false,
+            })
+            .collect::<Vec<_>>();
+
+        let catalog = render_skills_catalog(&descriptors);
+        assert!(catalog.contains("skills omitted]"));
+        assert!(catalog.chars().count() <= MAX_SKILLS_CATALOG_CHARS + 32);
     }
 }

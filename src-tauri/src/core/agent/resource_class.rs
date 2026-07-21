@@ -19,6 +19,7 @@ pub enum ResourceClass {
 pub fn resource_class_for(tool_name: &str) -> ResourceClass {
     match tool_name {
         "tool.view"
+        | "skill.view"
         | "os.fs.read"
         | "os.fs.read_document"
         | "os.fs.list"
@@ -48,7 +49,8 @@ pub fn resource_class_for(tool_name: &str) -> ResourceClass {
         | "os.fs.archive.extract"
         | "os.shell.run"
         | "os.proc.kill"
-        | "os.http.request" => ResourceClass::ApprovalGated,
+        | "os.http.request"
+        | "skill.run_script" => ResourceClass::ApprovalGated,
         "reply" | "finish" => ResourceClass::Terminal,
         _ => ResourceClass::Unknown,
     }

@@ -13,7 +13,7 @@ use jan_utils::generate_app_token;
 #[cfg(not(feature = "cli"))]
 use std::{collections::HashMap, sync::Arc};
 #[cfg(not(feature = "cli"))]
-use tauri::{Emitter, Manager, RunEvent};
+use tauri::{path::BaseDirectory, Emitter, Manager, RunEvent};
 #[cfg(all(not(feature = "cli"), target_os = "windows"))]
 use tauri_plugin_llamacpp_upstream::install_bundled_backend;
 #[cfg(not(feature = "cli"))]
@@ -180,6 +180,11 @@ pub fn run() {
         core::agent::commands::agent_workspace_list,
         core::agent::commands::agent_workspace_stat,
         core::agent::commands::agent_workspace_read_text,
+        core::agent::skills::commands::agent_list_skills,
+        core::agent::skills::commands::agent_get_skill,
+        core::agent::skills::commands::agent_set_skill_enabled,
+        core::agent::skills::commands::agent_delete_skill,
+        core::agent::skills::commands::agent_refresh_skills,
         core::mcp::commands::restart_mcp_servers,
         core::mcp::commands::get_connected_servers,
         core::mcp::commands::save_mcp_configs,
@@ -310,6 +315,11 @@ pub fn run() {
         core::agent::commands::agent_workspace_list,
         core::agent::commands::agent_workspace_stat,
         core::agent::commands::agent_workspace_read_text,
+        core::agent::skills::commands::agent_list_skills,
+        core::agent::skills::commands::agent_get_skill,
+        core::agent::skills::commands::agent_set_skill_enabled,
+        core::agent::skills::commands::agent_delete_skill,
+        core::agent::skills::commands::agent_refresh_skills,
         core::mcp::commands::restart_mcp_servers,
         core::mcp::commands::get_connected_servers,
         core::mcp::commands::save_mcp_configs,
@@ -471,6 +481,19 @@ pub fn run() {
             let data_folder = get_jan_data_folder_path(app.handle().clone());
             if let Err(e) = core::agent::workspace::ensure_default_agent_workspace(&data_folder) {
                 log::error!("{e}");
+            }
+            match app.path().resolve(
+                core::agent::skills::BUNDLED_AGENT_SKILLS_RESOURCE_DIR,
+                BaseDirectory::Resource,
+            ) {
+                Ok(bundled_skills) => {
+                    if let Err(error) =
+                        core::agent::skills::initialize_skills(&data_folder, &bundled_skills)
+                    {
+                        log::error!("{error}");
+                    }
+                }
+                Err(error) => log::error!("Failed to resolve bundled Agent skills: {error}"),
             }
 
             // Store the new app version
