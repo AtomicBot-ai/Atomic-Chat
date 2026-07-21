@@ -1,3 +1,4 @@
+mod authoring;
 pub mod commands;
 pub mod loaded;
 mod manifest;

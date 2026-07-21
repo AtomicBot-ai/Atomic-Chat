@@ -1,8 +1,16 @@
 import { useState, type ReactNode } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { IconAlertTriangle, IconRefresh, IconTrash } from '@tabler/icons-react'
+import {
+  IconAlertTriangle,
+  IconChevronDown,
+  IconFolderPlus,
+  IconPencilPlus,
+  IconRefresh,
+  IconTrash,
+} from '@tabler/icons-react'
 import { toast } from 'sonner'
 import HeaderPage from '@/containers/HeaderPage'
+import { AgentSkillCreateDialog } from '@/containers/AgentSkillCreateDialog'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { Button } from '@/components/ui/button'
 import {
@@ -13,9 +21,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Switch } from '@/components/ui/switch'
 import { route } from '@/constants/routes'
 import { useAgentSkills } from '@/hooks/useAgentSkills'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
 
@@ -26,15 +41,37 @@ export const Route = createFileRoute(route.skills.index as any)({
 
 export function SkillsPage() {
   const { t } = useTranslation()
-  const { skills, selected, loading, error, load, select, setEnabled, remove } =
-    useAgentSkills()
+  const serviceHub = useServiceHub()
+  const {
+    skills,
+    selected,
+    loading,
+    error,
+    load,
+    select,
+    setEnabled,
+    addCreated,
+    addImported,
+    remove,
+  } = useAgentSkills()
   const [deleteName, setDeleteName] = useState<string | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
 
   const mutate = async (operation: () => Promise<void>) => {
     try {
       await operation()
     } catch (reason) {
       toast.error(String(reason))
+    }
+  }
+
+  const importFolder = async () => {
+    const selectedPath = await serviceHub.dialog().open({
+      multiple: false,
+      directory: true,
+    })
+    if (typeof selectedPath === 'string') {
+      await addImported(selectedPath)
     }
   }
 
@@ -45,15 +82,35 @@ export function SkillsPage() {
           <span className="font-studio text-base font-medium">
             {t('common:skills')}
           </span>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={loading}
-            onClick={() => void load(true)}
-          >
-            <IconRefresh className={cn(loading && 'animate-spin')} />
-            {t('common:refresh')}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={loading}
+              onClick={() => void load(true)}
+            >
+              <IconRefresh className={cn(loading && 'animate-spin')} />
+              {t('common:refresh')}
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm">
+                  {t('common:createNewSkill')}
+                  <IconChevronDown />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuItem onSelect={() => void mutate(importFolder)}>
+                  <IconFolderPlus />
+                  {t('common:fromFolder')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setCreateOpen(true)}>
+                  <IconPencilPlus />
+                  {t('common:newSkill')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </HeaderPage>
 
@@ -208,6 +265,11 @@ export function SkillsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <AgentSkillCreateDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreate={addCreated}
+      />
     </div>
   )
 }

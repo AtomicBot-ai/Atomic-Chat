@@ -19,9 +19,12 @@ const hookState = vi.hoisted(() => ({
     load: ReturnType<typeof vi.fn>
     select: ReturnType<typeof vi.fn>
     setEnabled: ReturnType<typeof vi.fn>
+    addCreated: ReturnType<typeof vi.fn>
+    addImported: ReturnType<typeof vi.fn>
     remove: ReturnType<typeof vi.fn>
   },
 }))
+const dialogOpen = vi.hoisted(() => vi.fn())
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: object) => config,
@@ -33,6 +36,14 @@ vi.mock('@/containers/HeaderPage', () => ({
 
 vi.mock('@/hooks/useAgentSkills', () => ({
   useAgentSkills: () => hookState.value,
+}))
+
+vi.mock('@/hooks/useServiceHub', () => ({
+  useServiceHub: () => ({
+    dialog: () => ({
+      open: dialogOpen,
+    }),
+  }),
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -57,6 +68,23 @@ vi.mock('@/components/ui/dialog', () => ({
   DialogTitle: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }))
 
+vi.mock('@/components/ui/dropdown-menu', () => ({
+  DropdownMenu: ({ children }: { children: ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DropdownMenuContent: ({ children }: { children: ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DropdownMenuItem: ({
+    children,
+    onSelect,
+  }: {
+    children: ReactNode
+    onSelect: () => void
+  }) => <button onClick={onSelect}>{children}</button>,
+  DropdownMenuTrigger: ({ children }: { children: ReactNode }) => children,
+}))
+
 const customSkill: AgentSkillDetail = {
   name: 'custom-skill',
   description: 'Custom skill',
@@ -75,6 +103,7 @@ const customSkill: AgentSkillDetail = {
 
 describe('SkillsPage', () => {
   beforeEach(() => {
+    dialogOpen.mockReset()
     hookState.value = {
       skills: [customSkill],
       selected: customSkill,
@@ -83,8 +112,31 @@ describe('SkillsPage', () => {
       load: vi.fn(),
       select: vi.fn(),
       setEnabled: vi.fn(),
+      addCreated: vi.fn().mockResolvedValue(undefined),
+      addImported: vi.fn().mockResolvedValue(undefined),
       remove: vi.fn().mockResolvedValue(undefined),
     }
+  })
+
+  it('offers folder import and in-app skill creation', async () => {
+    dialogOpen.mockResolvedValue('/tmp/imported-skill')
+    render(<SkillsPage />)
+
+    expect(
+      screen.getByRole('button', { name: 'common:createNewSkill' })
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByText('common:fromFolder'))
+
+    await waitFor(() =>
+      expect(hookState.value.addImported).toHaveBeenCalledWith(
+        '/tmp/imported-skill'
+      )
+    )
+
+    fireEvent.click(screen.getByText('common:newSkill'))
+    expect(
+      screen.getByText('common:writeSkillInstructions')
+    ).toBeInTheDocument()
   })
 
   it('shows skill details and confirms custom deletion', () => {

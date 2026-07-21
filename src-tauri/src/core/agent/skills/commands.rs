@@ -1,9 +1,12 @@
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
-use super::{global_skills_dir, load_registry, SkillListEntry};
+use super::{
+    authoring::{create_custom_skill, import_custom_skill, CreateAgentSkillRequest},
+    global_skills_dir, load_registry, SkillListEntry,
+};
 use crate::core::app::commands::get_jan_data_folder_path;
 
 #[derive(Debug, Clone, Serialize)]
@@ -52,6 +55,32 @@ pub async fn agent_set_skill_enabled<R: Runtime>(
     let data_folder = get_jan_data_folder_path(app_handle);
     let mut registry = load_registry(&data_folder)?;
     registry.set_enabled(&name, enabled)
+}
+
+#[tauri::command]
+pub async fn agent_create_skill<R: Runtime>(
+    app_handle: AppHandle<R>,
+    request: CreateAgentSkillRequest,
+) -> Result<AgentSkillDetail, String> {
+    let data_folder = get_jan_data_folder_path(app_handle.clone());
+    let name = request.name.trim().to_string();
+    tokio::task::spawn_blocking(move || create_custom_skill(&data_folder, request))
+        .await
+        .map_err(|error| format!("Agent skill creation task failed: {error}"))??;
+    agent_get_skill(app_handle, name).await
+}
+
+#[tauri::command]
+pub async fn agent_import_skill<R: Runtime>(
+    app_handle: AppHandle<R>,
+    source_path: String,
+) -> Result<AgentSkillDetail, String> {
+    let data_folder = get_jan_data_folder_path(app_handle.clone());
+    let source = PathBuf::from(source_path);
+    let name = tokio::task::spawn_blocking(move || import_custom_skill(&data_folder, &source))
+        .await
+        .map_err(|error| format!("Agent skill import task failed: {error}"))??;
+    agent_get_skill(app_handle, name).await
 }
 
 #[tauri::command]

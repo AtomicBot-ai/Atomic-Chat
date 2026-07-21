@@ -21,6 +21,12 @@ export interface AgentSkillDetail extends AgentSkill {
   body: string
 }
 
+export interface CreateAgentSkillRequest {
+  name: string
+  description: string
+  instructions: string
+}
+
 export function listAgentSkills(): Promise<AgentSkill[]> {
   return invoke<AgentSkill[]>('agent_list_skills')
 }
@@ -34,6 +40,18 @@ export function setAgentSkillEnabled(
   enabled: boolean
 ): Promise<void> {
   return invoke<void>('agent_set_skill_enabled', { name, enabled })
+}
+
+export function createAgentSkill(
+  request: CreateAgentSkillRequest
+): Promise<AgentSkillDetail> {
+  return invoke<AgentSkillDetail>('agent_create_skill', { request })
+}
+
+export function importAgentSkill(
+  sourcePath: string
+): Promise<AgentSkillDetail> {
+  return invoke<AgentSkillDetail>('agent_import_skill', { sourcePath })
 }
 
 export function deleteAgentSkill(name: string): Promise<void> {

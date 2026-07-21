@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  createAgentSkill,
   deleteAgentSkill,
   getAgentSkill,
+  importAgentSkill,
   listAgentSkills,
   refreshAgentSkills,
   setAgentSkillEnabled,
   type AgentSkill,
   type AgentSkillDetail,
+  type CreateAgentSkillRequest,
 } from '@/services/agent/skills'
 
 export function useAgentSkills(enabled = true) {
@@ -67,6 +70,26 @@ export function useAgentSkills(enabled = true) {
     [load, select, selected?.name]
   )
 
+  const addCreated = useCallback(
+    async (request: CreateAgentSkillRequest) => {
+      const detail = await createAgentSkill(request)
+      selectedNameRef.current = detail.name
+      setSelected(detail)
+      await load()
+    },
+    [load]
+  )
+
+  const addImported = useCallback(
+    async (sourcePath: string) => {
+      const detail = await importAgentSkill(sourcePath)
+      selectedNameRef.current = detail.name
+      setSelected(detail)
+      await load()
+    },
+    [load]
+  )
+
   const remove = useCallback(
     async (name: string) => {
       await deleteAgentSkill(name)
@@ -87,6 +110,8 @@ export function useAgentSkills(enabled = true) {
     load,
     select,
     setEnabled,
+    addCreated,
+    addImported,
     remove,
   }
 }
