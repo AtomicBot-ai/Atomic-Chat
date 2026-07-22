@@ -23,13 +23,19 @@ pub fn map_old_backend_to_new(old_backend: String) -> String {
     // ggml-org tarball filename (e.g. llama-bXXXX-bin-ubuntu-vulkan-x64.tar.gz).
     // Map them to the internal linux-* ids used throughout this extension so
     // they are recognised by findCompatibleInstalledBackend and the rest of
-    // the backend machinery (ATO-233).
+    // the backend machinery (ATO-233). Preserve user-imported ubuntu-cuda-*
+    // names as linux-cuda-* instead of collapsing them to CPU; CUDA is not
+    // auto-offered on Linux, but a manually imported CUDA build should remain
+    // selectable and runnable.
     if old_backend.starts_with("ubuntu-") {
         let arch_suffix = if old_backend.contains("-arm64") {
             "arm64"
         } else {
             "x64"
         };
+        if old_backend.contains("cuda") {
+            return old_backend.replacen("ubuntu-", "linux-", 1);
+        }
         if old_backend.contains("vulkan") {
             return format!("linux-vulkan-{}", arch_suffix);
         }
@@ -107,23 +113,31 @@ pub fn map_old_backend_to_new(old_backend: String) -> String {
     // legacy janhq-mirror id (`linux-common_cpus-x64`,
     // `linux-cuda-{11,12,13}-common_cpus-x64`,
     // `linux-vulkan-common_cpus-x64`, AVX variants, …) is translated to
-    // its closest current equivalent so old user settings keep resolving
-    // to a backend we can actually download. Linux CUDA tiers fall
-    // through to the CPU build because upstream publishes no
-    // `ubuntu-cuda-*` asset — NVIDIA users opt into Vulkan separately
-    // via the "Find optimal backend" flow.
+    // its closest current equivalent so old user settings keep resolving.
+    // Linux CUDA is not auto-offered because upstream publishes no
+    // `ubuntu-cuda-*` asset, but manually imported CUDA backends are preserved.
     if is_linux {
         // ggml-org native ids — already correct, pass through.
         if old_backend == "linux-cpu-x64" || old_backend == "linux-vulkan-x64" {
             return old_backend;
         }
-        // x86_64 host: collapse everything onto cpu or vulkan.
+        // User-imported CUDA builds: preserve the exact CUDA backend id.
+        // Upstream does not publish ubuntu-cuda-* assets, so auto-detection
+        // never expands CUDA into the Linux supported matrix; this exception is
+        // strictly for already-imported/manual backend archives.
+        if old_backend.contains("cuda")
+            || old_backend.contains("cu12")
+            || old_backend.contains("cu13")
+            || old_backend.contains("cu11")
+        {
+            return old_backend;
+        }
+        // x86_64 host: collapse everything else onto cpu or vulkan.
         if is_x64 {
             if old_backend.contains("vulkan") {
                 return "linux-vulkan-x64".to_string();
             }
-            // Legacy linux-cuda-* and linux-common_cpus-x64 / AVX variants
-            // all map to the CPU backend on x86_64.
+            // Legacy linux-common_cpus-x64 / AVX variants map to CPU.
             return "linux-cpu-x64".to_string();
         }
         // aarch64 host: Phase 2 territory, keep the placeholder.
@@ -357,16 +371,20 @@ pub fn determine_supported_backends(
             supported_backends.push("win-cpu-arm64".to_string());
         }
         "linux-x86_64" | "linux-x86" => {
-            // Per 2026-05-28 ADR *Linux ships only `llamacpp-upstream`*:
-            // ggml-org publishes no CUDA-Linux artefact, so NVIDIA / AMD /
-            // Intel users all share a single Vulkan-based GPU backend.
-            // ROCm 7.2 and OpenVINO 2026.0 are upstream-available but
-            // intentionally out of scope for Phase 1; adding either is a
-            // one-line whitelist edit here + a feature detector in
-            // `get_supported_features`.
+            // ggml-org publishes CPU and Vulkan Linux assets; CUDA is not
+            // available as a prebuilt artefact but users can compile from
+            // source and import via "Install Backend from File". When the
+            // host driver supports CUDA 12 / 13, list the family so locally
+            // installed CUDA backends are eligible for auto-selection.
             supported_backends.push("linux-cpu-x64".to_string());
             if features.vulkan {
                 supported_backends.push("linux-vulkan-x64".to_string());
+            }
+            if features.cuda12 {
+                supported_backends.push("linux-cuda-12-x64".to_string());
+            }
+            if features.cuda13 {
+                supported_backends.push("linux-cuda-13-x64".to_string());
             }
         }
         "linux-aarch64" | "linux-arm64" => {
@@ -812,6 +830,17 @@ fn get_backend_category(backend_string: &str) -> Option<String> {
         return Some("cuda-cu12.0".to_string());
     }
     if backend_string.contains("cuda-11-common_cpus") || backend_string.contains("cu11.7") {
+        return Some("cuda-cu11.7".to_string());
+    }
+    // Generic CUDA family matches for locally imported Linux backends
+    // (e.g. linux-cuda-12.0-x64, linux-cuda-13.1-x64).
+    if backend_string.contains("cuda-13") {
+        return Some("cuda-cu13".to_string());
+    }
+    if backend_string.contains("cuda-12") {
+        return Some("cuda-cu12.0".to_string());
+    }
+    if backend_string.contains("cuda-11") {
         return Some("cuda-cu11.7".to_string());
     }
     if backend_string.contains("vulkan") {
@@ -1399,21 +1428,24 @@ mod tests {
 
     #[test]
     fn test_map_old_backend_to_new_cuda() {
-        // Per 2026-05-28 ADR: Linux CUDA tiers collapse onto the bundled
-        // CPU backend because ggml-org publishes no ubuntu-cuda-* asset.
-        // NVIDIA users opt into Vulkan separately via "Find optimal
-        // backend" once their host enables `features.vulkan`.
+        // Linux CUDA is not auto-offered because ggml-org publishes no
+        // ubuntu-cuda-* asset, but user-imported CUDA builds must be preserved
+        // instead of being collapsed to CPU.
         assert_eq!(
             map_old_backend_to_new("linux-avx2-cuda-cu12.0-x64".to_string()),
-            "linux-cpu-x64"
+            "linux-avx2-cuda-cu12.0-x64"
         );
         assert_eq!(
             map_old_backend_to_new("linux-cuda-12-common_cpus-x64".to_string()),
-            "linux-cpu-x64"
+            "linux-cuda-12-common_cpus-x64"
         );
         assert_eq!(
             map_old_backend_to_new("linux-cuda-13-common_cpus-x64".to_string()),
-            "linux-cpu-x64"
+            "linux-cuda-13-common_cpus-x64"
+        );
+        assert_eq!(
+            map_old_backend_to_new("ubuntu-cuda-12.4-x64".to_string()),
+            "linux-cuda-12.4-x64"
         );
         // Legacy janhq-mirror Windows CUDA 11 → folded into ggml-org's
         // lowest CUDA tier (12.4) because ggml-org dropped CUDA 11 builds.
@@ -1776,10 +1808,8 @@ mod tests {
     }
 
     #[test]
-    fn test_determine_supported_backends_linux_x64_cuda_flags_ignored() {
-        // Per ADR: upstream publishes no ubuntu-cuda-* asset. NVIDIA
-        // detection flags (cuda11/12/13) must NOT expand into any
-        // supported backend on Linux — they only matter on Windows.
+    fn test_determine_supported_backends_linux_x64_cuda12_and_13() {
+        // CUDA detected on Linux → CPU + CUDA 12 + CUDA 13 families.
         let features = SystemFeatures {
             cuda11: true,
             cuda12: true,
@@ -1791,15 +1821,20 @@ mod tests {
             determine_supported_backends("linux".to_string(), "x86_64".to_string(), features)
                 .unwrap();
 
-        assert_eq!(result, vec!["linux-cpu-x64".to_string()]);
-        assert!(!result.iter().any(|b| b.contains("cuda")));
+        assert_eq!(
+            result,
+            vec![
+                "linux-cpu-x64".to_string(),
+                "linux-cuda-12-x64".to_string(),
+                "linux-cuda-13-x64".to_string()
+            ]
+        );
     }
 
     #[test]
     fn test_determine_supported_backends_linux_x64_nvidia_with_vulkan() {
         // Typical NVIDIA-on-Linux host: CUDA driver detected AND Vulkan
-        // loader available. The CUDA flags are ignored; user gets the
-        // Vulkan backend as their GPU path.
+        // loader available. All eligible backends are listed.
         let features = SystemFeatures {
             cuda11: true,
             cuda12: true,
@@ -1813,9 +1848,12 @@ mod tests {
 
         assert_eq!(
             result,
-            vec!["linux-cpu-x64".to_string(), "linux-vulkan-x64".to_string()]
+            vec![
+                "linux-cpu-x64".to_string(),
+                "linux-vulkan-x64".to_string(),
+                "linux-cuda-12-x64".to_string()
+            ]
         );
-        assert!(!result.iter().any(|b| b.contains("cuda")));
     }
 
     #[test]
