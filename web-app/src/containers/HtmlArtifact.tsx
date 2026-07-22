@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { Check, Code2, Copy, Download, Eye, Printer, X } from 'lucide-react'
 import { fs } from '@janhq/core'
 import { cn } from '@/lib/utils'
+import { useAutoScrollToBottom } from '@/hooks/useAutoScrollToBottom'
 import { Button } from '@/components/ui/button'
 import { CodeBlock } from '@/components/ai-elements/code-block'
 import { getServiceHub } from '@/hooks/useServiceHub'
@@ -93,6 +94,15 @@ function HtmlArtifactComponent({
   const artifactIdRef = useRef<string>('')
   if (!artifactIdRef.current) artifactIdRef.current = createArtifactId()
   const versionRef = useRef(0)
+
+  // Auto-scroll the HTML source ("Code" tab) to the bottom while it streams,
+  // but let the user scroll up to read without being yanked back down. Mirrors
+  // the stick-to-bottom behaviour used for the tool window / reasoning box.
+  const codeScrollRef = useRef<HTMLDivElement>(null)
+  const { handleScroll: handleCodeScroll } = useAutoScrollToBottom(
+    codeScrollRef,
+    { enabled: streaming }
+  )
 
   const [codeIdle, setCodeIdle] = useState(false)
   useEffect(() => {
@@ -393,6 +403,8 @@ function HtmlArtifactComponent({
         )}
       >
         <div
+          ref={codeScrollRef}
+          onScroll={handleCodeScroll}
           className={cn(
             'overflow-y-auto overflow-x-hidden',
             fill ? 'h-full' : 'max-h-[440px]'
