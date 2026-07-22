@@ -137,7 +137,7 @@ export function SkillsPage() {
       </HeaderPage>
 
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(260px,360px)_1fr]">
-        <div className="overflow-y-auto border-r p-3">
+        <div className="overflow-y-auto p-3">
           {error && (
             <div className="mb-3 rounded-md border border-destructive/40 p-3 text-sm text-destructive">
               {error}
@@ -201,45 +201,15 @@ export function SkillsPage() {
           </div>
         </div>
 
-        <div className="min-w-0 overflow-y-auto p-6">
+        <div className="min-w-0 overflow-y-auto p-3">
           {!selected ? (
             <p className="text-sm text-muted-foreground">
               {t('common:selectSkill')}
             </p>
           ) : (
-            <div className="mx-auto max-w-4xl space-y-4">
-              <section className="rounded-xl border bg-card p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h1 className="text-xl font-semibold">{selected.name}</h1>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {selected.description}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={!canTrySkill(selected)}
-                      onClick={() => tryInChat(selected.name)}
-                    >
-                      <IconMessage />
-                      {t('common:tryInChat')}
-                    </Button>
-                    <SkillActionsMenu
-                      skill={selected}
-                      canTry={canTrySkill(selected)}
-                      onDownload={() => void download(selected.name)}
-                      onTry={() => tryInChat(selected.name)}
-                      onEdit={() => setEditOpen(true)}
-                      onUninstall={() => setDeleteName(selected.name)}
-                    />
-                  </div>
-                </div>
-              </section>
-
+            <div className="space-y-2">
               {selected.unavailableReasons.length > 0 && (
-                <section className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
+                <section className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
                   <h2 className="mb-2 font-medium">
                     {t('common:skillUnavailable')}
                   </h2>
@@ -247,12 +217,12 @@ export function SkillsPage() {
                 </section>
               )}
               {selected.error && (
-                <section className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+                <section className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
                   <h2 className="mb-2 font-medium">{t('common:skillError')}</h2>
                   {selected.error}
                 </section>
               )}
-              <section className="rounded-xl border bg-card p-5 text-sm">
+              <section className="rounded-lg border bg-background p-4 text-sm">
                 <h2 className="mb-4 font-medium">
                   {t('common:skillInstructions')}
                 </h2>

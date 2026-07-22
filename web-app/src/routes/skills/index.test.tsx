@@ -175,8 +175,8 @@ describe('SkillsPage', () => {
     ).toBeInTheDocument()
     expect(screen.queryByText('common:dangerous')).not.toBeInTheDocument()
     expect(screen.queryByText('common:skillEnabled')).not.toBeInTheDocument()
-    expect(screen.getAllByText('common:downloadSkill')).toHaveLength(2)
-    expect(screen.getAllByText('common:editSkill')).toHaveLength(2)
+    expect(screen.getAllByText('common:downloadSkill')).toHaveLength(1)
+    expect(screen.getAllByText('common:editSkill')).toHaveLength(1)
     fireEvent.click(screen.getAllByText('common:uninstallSkill')[0])
 
     const dialog = screen.getByRole('dialog')
