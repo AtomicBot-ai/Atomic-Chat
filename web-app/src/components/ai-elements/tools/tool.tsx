@@ -5,6 +5,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
+import { useAutoScrollToBottom } from '@/hooks/useAutoScrollToBottom'
 import type { ToolUIPart } from 'ai'
 import { ChevronDownIcon, Loader2, WrenchIcon } from 'lucide-react'
 import type { ComponentProps, ReactNode } from 'react'
@@ -15,6 +16,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 import { CodeBlock } from '../code-block'
@@ -166,9 +168,9 @@ export const ToolInput = memo(
         <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
           Parameters
         </h4>
-        <div className="rounded-md max-h-40 overflow-auto border ">
+        <ScrolledOutput className="rounded-md max-h-40 overflow-auto border ">
           <CodeBlock code={JSON.stringify(input, null, 2)} language="json" />
-        </div>
+        </ScrolledOutput>
       </div>
     )
   }
@@ -227,6 +229,20 @@ export type ToolOutputProps = ComponentProps<'div'> & {
   resolver: (input: string) => Promise<string>
 }
 
+function ScrolledOutput({ children, className }: { children: ReactNode; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  // Follow streamed tool output to the bottom, but let the user scroll up to
+  // read. The rAF pin tracks content growth smoothly without ever falling
+  // behind (unlike an interrupted `scrollTo({ behavior: 'smooth' })`).
+  const { handleScroll } = useAutoScrollToBottom(ref, { enabled: true })
+
+  return (
+    <div ref={ref} onScroll={handleScroll} className={className}>
+      {children}
+    </div>
+  )
+}
+
 export const ToolOutput = memo(
   ({ className, output, errorText, resolver, ...props }: ToolOutputProps) => {
     const Output = useMemo(() => {
@@ -237,9 +253,9 @@ export const ToolOutput = memo(
       // Handle string output
       if (typeof output === 'string') {
         return (
-          <div className="max-h-40 overflow-auto rounded-md border ">
+          <ScrolledOutput className="max-h-40 overflow-auto rounded-md border ">
             <CodeBlock code={output} language="json" />
-          </div>
+          </ScrolledOutput>
         )
       }
 
@@ -266,12 +282,12 @@ export const ToolOutput = memo(
               {textItems.length > 0 && (
                 <div className="space-y-2">
                   {textItems.map((item, index) => (
-                    <div
+                    <ScrolledOutput
                       key={index}
                       className="rounded-md max-h-40 overflow-auto border "
                     >
                       <CodeBlock code={item.text || ''} language="markdown" />
-                    </div>
+                    </ScrolledOutput>
                   ))}
                 </div>
               )}
@@ -306,12 +322,12 @@ export const ToolOutput = memo(
             return (
               <div className="space-y-4">
                 {nonImageOutput.length > 0 && (
-                  <div className="rounded-md max-h-40 overflow-auto rounded-md border ">
+                  <ScrolledOutput className="rounded-md max-h-40 overflow-auto rounded-md border ">
                     <CodeBlock
                       code={JSON.stringify(nonImageOutput, null, 2)}
                       language="json"
                     />
-                  </div>
+                  </ScrolledOutput>
                 )}
                 {output
                   .filter(
@@ -331,20 +347,20 @@ export const ToolOutput = memo(
           }
 
           return (
-            <div className="rounded-md max-h-40 overflow-auto border ">
+            <ScrolledOutput className="rounded-md max-h-40 overflow-auto border ">
               <CodeBlock
                 code={JSON.stringify(output, null, 2)}
                 language="json"
               />
-            </div>
+            </ScrolledOutput>
           )
         }
 
         // Handle regular object
         return (
-          <div className="rounded-md max-h-40 overflow-auto border ">
+          <ScrolledOutput className="rounded-md max-h-40 overflow-auto border ">
             <CodeBlock code={JSON.stringify(output, null, 2)} language="json" />
-          </div>
+          </ScrolledOutput>
         )
       }
 
