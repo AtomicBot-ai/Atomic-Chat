@@ -1,7 +1,9 @@
 //! Direct HTTP client to the local `llama-server` `/completion` endpoint.
 
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
+use async_trait::async_trait;
 use futures_util::StreamExt;
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
@@ -11,10 +13,28 @@ use tauri_plugin_llamacpp_upstream::state::LlamacppState as LlamacppUpstreamStat
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
+use crate::core::server::context_expansion::is_context_limit_error;
+
+use super::token_budget::COMPLETION_MAX_TOKENS;
 use super::types::ToolCallPayload;
 
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
 const ERROR_DETAIL_MAX_LEN: usize = 300;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LlamaBackend {
+    Llamacpp,
+    LlamacppUpstream,
+}
+
+impl LlamaBackend {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Llamacpp => "llamacpp",
+            Self::LlamacppUpstream => "llamacpp-upstream",
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LlamaSessionTarget {
@@ -22,6 +42,16 @@ pub struct LlamaSessionTarget {
     pub api_key: String,
     pub model_id: String,
     pub has_vision: bool,
+    pub backend: LlamaBackend,
+}
+
+#[async_trait]
+pub trait ContextExpansionHook: Send + Sync {
+    async fn expand(
+        &self,
+        target: &LlamaSessionTarget,
+        cancellation: &CancellationToken,
+    ) -> Result<LlamaSessionTarget, String>;
 }
 
 #[derive(Debug, Clone)]
@@ -44,7 +74,7 @@ impl CompletionRequest {
             prompt: prompt.into(),
             grammar: Some(grammar.into()),
             slot_id: Some(slot_id),
-            max_tokens: 2048,
+            max_tokens: COMPLETION_MAX_TOKENS,
             temperature: 0.2,
             top_p: 0.95,
             top_k: 40,
@@ -155,10 +185,8 @@ struct CompletionEnvelope {
 
 pub struct LlamaServerClient {
     client: reqwest::Client,
-    base_url: String,
-    api_key: String,
-    model_id: String,
-    has_vision: bool,
+    target: RwLock<LlamaSessionTarget>,
+    context_expansion: Option<Arc<dyn ContextExpansionHook>>,
 }
 
 impl LlamaServerClient {
@@ -169,11 +197,58 @@ impl LlamaServerClient {
             .map_err(|error| LlamaClientError::Transport(error.to_string()))?;
         Ok(Self {
             client,
-            base_url: format!("http://127.0.0.1:{}", target.port),
-            api_key: target.api_key.clone(),
-            model_id: target.model_id.clone(),
-            has_vision: target.has_vision,
+            target: RwLock::new(target.clone()),
+            context_expansion: None,
         })
+    }
+
+    pub fn with_context_expansion(mut self, hook: Arc<dyn ContextExpansionHook>) -> Self {
+        self.context_expansion = Some(hook);
+        self
+    }
+
+    pub fn retarget(&self, target: &LlamaSessionTarget) {
+        *self.target.write().expect("llama target lock poisoned") = target.clone();
+    }
+
+    pub fn target(&self) -> LlamaSessionTarget {
+        self.target
+            .read()
+            .expect("llama target lock poisoned")
+            .clone()
+    }
+
+    pub async fn fetch_context_window(
+        &self,
+        cancellation: &CancellationToken,
+    ) -> Result<Option<usize>, LlamaClientError> {
+        let target = self.target();
+        let mut request = self
+            .client
+            .get(format!("http://127.0.0.1:{}/props", target.port));
+        if !target.api_key.is_empty() {
+            request = request.header(AUTHORIZATION, format!("Bearer {}", target.api_key));
+        }
+        let response = tokio::select! {
+            _ = cancellation.cancelled() => return Err(LlamaClientError::Cancelled),
+            result = request.send() => {
+                result.map_err(|error| LlamaClientError::Transport(error.to_string()))?
+            }
+        };
+        let status = response.status();
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|error| LlamaClientError::Transport(error.to_string()))?;
+        if !status.is_success() {
+            return Err(LlamaClientError::Http {
+                status: status.as_u16(),
+                detail: extract_error_detail(&String::from_utf8_lossy(&bytes)),
+            });
+        }
+        let props: Value = serde_json::from_slice(&bytes)
+            .map_err(|error| LlamaClientError::InvalidResponse(error.to_string()))?;
+        Ok(read_context_window(&props))
     }
 
     pub async fn describe_images(
@@ -182,20 +257,24 @@ impl LlamaServerClient {
         images: &[(String, String)],
         cancellation: &CancellationToken,
     ) -> Result<String, LlamaClientError> {
-        if !self.has_vision {
+        let target = self.target();
+        if !target.has_vision {
             return Err(LlamaClientError::InvalidResponse(
                 "active llama.cpp session is not vision-capable".into(),
             ));
         }
-        let payload = vision_request_payload(&self.model_id, prompt, images);
+        let payload = vision_request_payload(&target.model_id, prompt, images);
         let mut request = self
             .client
-            .post(format!("{}/v1/chat/completions", self.base_url))
+            .post(format!(
+                "http://127.0.0.1:{}/v1/chat/completions",
+                target.port
+            ))
             .header(ACCEPT, "application/json")
             .header(CONTENT_TYPE, "application/json")
             .json(&payload);
-        if !self.api_key.is_empty() {
-            request = request.header(AUTHORIZATION, format!("Bearer {}", self.api_key));
+        if !target.api_key.is_empty() {
+            request = request.header(AUTHORIZATION, format!("Bearer {}", target.api_key));
         }
         let response = tokio::select! {
             _ = cancellation.cancelled() => return Err(LlamaClientError::Cancelled),
@@ -350,6 +429,53 @@ impl LlamaServerClient {
         stream: bool,
         cancellation: &CancellationToken,
     ) -> Result<reqwest::Response, LlamaClientError> {
+        let target = self.target();
+        match self
+            .send_to_target(&target, request, stream, cancellation)
+            .await
+        {
+            Err(LlamaClientError::Http { status, detail })
+                if is_context_limit_error(status, &detail) && self.context_expansion.is_some() =>
+            {
+                let hook = self.context_expansion.as_ref().unwrap();
+                let replacement = match hook.expand(&target, cancellation).await {
+                    Ok(replacement) => replacement,
+                    Err(_) if cancellation.is_cancelled() => {
+                        return Err(LlamaClientError::Cancelled);
+                    }
+                    Err(error) => return Err(LlamaClientError::Transport(error)),
+                };
+                if replacement.backend != target.backend
+                    || !model_ids_match(&replacement.model_id, &target.model_id)
+                {
+                    return Err(LlamaClientError::Transport(
+                        "Context expansion returned a different model or backend".into(),
+                    ));
+                }
+                self.retarget(&replacement);
+                match self.fetch_context_window(cancellation).await {
+                    Err(LlamaClientError::Cancelled) => {
+                        return Err(LlamaClientError::Cancelled);
+                    }
+                    Err(error) => {
+                        log::warn!("Agent context profile refresh failed after expansion: {error}");
+                    }
+                    Ok(_) => {}
+                }
+                self.send_to_target(&replacement, request, stream, cancellation)
+                    .await
+            }
+            result => result,
+        }
+    }
+
+    async fn send_to_target(
+        &self,
+        target: &LlamaSessionTarget,
+        request: &CompletionRequest,
+        stream: bool,
+        cancellation: &CancellationToken,
+    ) -> Result<reqwest::Response, LlamaClientError> {
         let payload = CompletionPayload {
             prompt: &request.prompt,
             stream,
@@ -367,7 +493,7 @@ impl LlamaServerClient {
         };
         let mut builder = self
             .client
-            .post(format!("{}/completion", self.base_url))
+            .post(format!("http://127.0.0.1:{}/completion", target.port))
             .header(CONTENT_TYPE, "application/json")
             .header(
                 ACCEPT,
@@ -378,8 +504,8 @@ impl LlamaServerClient {
                 },
             )
             .json(&payload);
-        if !self.api_key.is_empty() {
-            builder = builder.header(AUTHORIZATION, format!("Bearer {}", self.api_key));
+        if !target.api_key.is_empty() {
+            builder = builder.header(AUTHORIZATION, format!("Bearer {}", target.api_key));
         }
         let response = tokio::select! {
             _ = cancellation.cancelled() => return Err(LlamaClientError::Cancelled),
@@ -439,6 +565,7 @@ pub async fn find_session_by_model_id(
                 api_key: session.info.api_key.clone(),
                 model_id: session.info.model_id.clone(),
                 has_vision: session.info.mmproj_path.is_some(),
+                backend: LlamaBackend::Llamacpp,
             });
         }
     }
@@ -451,8 +578,59 @@ pub async fn find_session_by_model_id(
             api_key: session.info.api_key.clone(),
             model_id: session.info.model_id.clone(),
             has_vision: session.info.mmproj_path.is_some(),
+            backend: LlamaBackend::LlamacppUpstream,
         })
         .ok_or_else(|| LlamaClientError::SessionNotFound(model_id.to_owned()))
+}
+
+pub async fn find_session_by_model_and_backend(
+    model_id: &str,
+    backend: LlamaBackend,
+    llamacpp: &LlamacppState,
+    upstream: &LlamacppUpstreamState,
+) -> Result<LlamaSessionTarget, LlamaClientError> {
+    match backend {
+        LlamaBackend::Llamacpp => {
+            let sessions = llamacpp.llama_server_process.lock().await;
+            sessions
+                .values()
+                .find(|session| model_ids_match(&session.info.model_id, model_id))
+                .map(|session| LlamaSessionTarget {
+                    port: session.info.port,
+                    api_key: session.info.api_key.clone(),
+                    model_id: session.info.model_id.clone(),
+                    has_vision: session.info.mmproj_path.is_some(),
+                    backend,
+                })
+        }
+        LlamaBackend::LlamacppUpstream => {
+            let sessions = upstream.llama_server_process.lock().await;
+            sessions
+                .values()
+                .find(|session| model_ids_match(&session.info.model_id, model_id))
+                .map(|session| LlamaSessionTarget {
+                    port: session.info.port,
+                    api_key: session.info.api_key.clone(),
+                    model_id: session.info.model_id.clone(),
+                    has_vision: session.info.mmproj_path.is_some(),
+                    backend,
+                })
+        }
+    }
+    .ok_or_else(|| LlamaClientError::SessionNotFound(model_id.to_owned()))
+}
+
+fn read_context_window(props: &Value) -> Option<usize> {
+    props
+        .pointer("/default_generation_settings/n_ctx")
+        .or_else(|| props.get("n_ctx"))
+        .and_then(|value| {
+            value
+                .as_u64()
+                .or_else(|| value.as_str()?.parse::<u64>().ok())
+        })
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|value| *value > 0)
 }
 
 pub fn parse_tool_calls(raw: &str) -> Result<ParsedToolCalls, LlamaClientError> {
@@ -737,7 +915,201 @@ fn model_ids_match(left: &str, right: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use reqwest::StatusCode;
+
     use super::*;
+    use crate::core::agent::test_support::{ScriptedCompletionServer, ScriptedResponse};
+
+    struct StaticExpansion {
+        calls: AtomicUsize,
+        result: Result<LlamaSessionTarget, String>,
+    }
+
+    #[async_trait]
+    impl ContextExpansionHook for StaticExpansion {
+        async fn expand(
+            &self,
+            _target: &LlamaSessionTarget,
+            _cancellation: &CancellationToken,
+        ) -> Result<LlamaSessionTarget, String> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.result.clone()
+        }
+    }
+
+    struct CancellingExpansion;
+
+    #[async_trait]
+    impl ContextExpansionHook for CancellingExpansion {
+        async fn expand(
+            &self,
+            _target: &LlamaSessionTarget,
+            cancellation: &CancellationToken,
+        ) -> Result<LlamaSessionTarget, String> {
+            cancellation.cancel();
+            Err("cancelled".into())
+        }
+    }
+
+    #[test]
+    fn normal_completion_uses_atomic_agent_limit() {
+        let request = CompletionRequest::tool_call("prompt", "root ::= \"ok\"", 0);
+        assert_eq!(request.max_tokens, 8_192);
+    }
+
+    #[test]
+    fn reads_context_window_from_props_variants() {
+        assert_eq!(
+            read_context_window(&serde_json::json!({
+                "default_generation_settings": {"n_ctx": 16_384},
+                "n_ctx": 8_192
+            })),
+            Some(16_384)
+        );
+        assert_eq!(
+            read_context_window(&serde_json::json!({"n_ctx": "32768"})),
+            Some(32_768)
+        );
+        assert_eq!(read_context_window(&serde_json::json!({})), None);
+        assert_eq!(read_context_window(&serde_json::json!({"n_ctx": 0})), None);
+    }
+
+    #[tokio::test]
+    async fn retries_once_after_context_expansion_and_retargets_same_backend() {
+        let first = ScriptedCompletionServer::start(vec![ScriptedResponse::http_error(
+            StatusCode::BAD_REQUEST,
+            "the request exceeds the available context size",
+        )])
+        .await;
+        let replacement =
+            ScriptedCompletionServer::start(vec![ScriptedResponse::completion("ok")]).await;
+        let replacement_target = replacement.client().target();
+        let hook = Arc::new(StaticExpansion {
+            calls: AtomicUsize::new(0),
+            result: Ok(replacement_target.clone()),
+        });
+        let client = first.client().with_context_expansion(hook.clone());
+
+        let completion = client
+            .complete(
+                &CompletionRequest::tool_call("prompt", "root ::= \"ok\"", 0),
+                &CancellationToken::new(),
+            )
+            .await
+            .expect("retry after context expansion");
+
+        assert_eq!(completion.content, "ok");
+        assert_eq!(hook.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(client.target().port, replacement_target.port);
+        assert_eq!(client.target().backend, LlamaBackend::Llamacpp);
+        assert_eq!(first.requests().len(), 1);
+        assert_eq!(replacement.requests().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn does_not_expand_for_non_context_http_errors() {
+        let server = ScriptedCompletionServer::start(vec![ScriptedResponse::http_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "backend crashed",
+        )])
+        .await;
+        let hook = Arc::new(StaticExpansion {
+            calls: AtomicUsize::new(0),
+            result: Err("must not run".into()),
+        });
+        let client = server.client().with_context_expansion(hook.clone());
+
+        let error = client
+            .complete(
+                &CompletionRequest::tool_call("prompt", "root ::= \"ok\"", 0),
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, LlamaClientError::Http { status: 500, .. }));
+        assert_eq!(hook.calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn reports_context_expansion_failure_without_second_completion() {
+        let server = ScriptedCompletionServer::start(vec![ScriptedResponse::http_error(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "context length exceeded",
+        )])
+        .await;
+        let hook = Arc::new(StaticExpansion {
+            calls: AtomicUsize::new(0),
+            result: Err("timeout_after_60s".into()),
+        });
+        let client = server.client().with_context_expansion(hook.clone());
+
+        let error = client
+            .complete(
+                &CompletionRequest::tool_call("prompt", "root ::= \"ok\"", 0),
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("timeout_after_60s"));
+        assert_eq!(hook.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(server.requests().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn cancellation_during_context_expansion_stops_without_retry() {
+        let server = ScriptedCompletionServer::start(vec![ScriptedResponse::http_error(
+            StatusCode::BAD_REQUEST,
+            "context size exceeded",
+        )])
+        .await;
+        let client = server
+            .client()
+            .with_context_expansion(Arc::new(CancellingExpansion));
+        let cancellation = CancellationToken::new();
+
+        let error = client
+            .complete(
+                &CompletionRequest::tool_call("prompt", "root ::= \"ok\"", 0),
+                &cancellation,
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, LlamaClientError::Cancelled));
+        assert_eq!(server.requests().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn rejects_context_expansion_target_from_another_backend() {
+        let server = ScriptedCompletionServer::start(vec![ScriptedResponse::http_error(
+            StatusCode::BAD_REQUEST,
+            "context size exceeded",
+        )])
+        .await;
+        let mut replacement = server.client().target();
+        replacement.backend = LlamaBackend::LlamacppUpstream;
+        let hook = Arc::new(StaticExpansion {
+            calls: AtomicUsize::new(0),
+            result: Ok(replacement),
+        });
+        let client = server.client().with_context_expansion(hook);
+
+        let error = client
+            .complete(
+                &CompletionRequest::tool_call("prompt", "root ::= \"ok\"", 0),
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("different model or backend"));
+        assert_eq!(client.target().backend, LlamaBackend::Llamacpp);
+        assert_eq!(server.requests().len(), 1);
+    }
 
     #[test]
     fn parses_batch_tool_calls_and_normalizes_aliases() {
@@ -847,6 +1219,7 @@ mod tests {
             api_key: String::new(),
             model_id: "text-model".into(),
             has_vision: false,
+            backend: LlamaBackend::Llamacpp,
         })
         .unwrap();
         let error = client

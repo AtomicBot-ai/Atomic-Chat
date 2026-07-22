@@ -373,6 +373,7 @@ async fn malformed_completion_is_repaired_once() {
         1
     );
     assert_eq!(run.requests.len(), 2);
+    assert_eq!(run.requests[0]["n_predict"], 8192);
     assert_eq!(run.requests[1]["n_predict"], 1024);
     assert!(run.requests[1]["prompt"]
         .as_str()

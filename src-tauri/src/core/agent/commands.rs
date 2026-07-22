@@ -14,7 +14,10 @@ use tokio_util::sync::CancellationToken;
 
 use super::approval::ApprovalGate;
 use super::attachments::stage_attachments;
-use super::llm_client::{find_session_by_model_id, LlamaServerClient};
+use super::llm_client::{
+    find_session_by_model_and_backend, find_session_by_model_id, ContextExpansionHook,
+    LlamaServerClient, LlamaSessionTarget,
+};
 use super::path_policy::{expand_home, lexical_normalize};
 use super::prompt::{
     build_stable_prefix, CapabilitiesSummary, SkillDescriptor, DEFAULT_MAX_PARALLEL_TOOL_CALLS,
@@ -27,6 +30,7 @@ use super::tools::DesktopServices;
 use super::types::{AgentApprovalDecision, AgentEvent, AgentTurnRequest};
 use super::workspace::default_agent_workspace;
 use crate::core::app::commands::get_jan_data_folder_path;
+use crate::core::server::context_expansion::request_context_increase;
 use crate::core::state::{AgentSessionLocks, AppState};
 
 const DEFAULT_WORKSPACE_TEXT_BYTES: usize = 512 * 1024;
@@ -73,6 +77,46 @@ pub struct AgentWorkspaceText {
 
 struct AgentDesktopServices<R: Runtime> {
     app_handle: AppHandle<R>,
+}
+
+struct AgentContextExpansion<R: Runtime> {
+    app_handle: AppHandle<R>,
+    state: Arc<crate::core::state::AutoIncreaseState>,
+}
+
+#[async_trait]
+impl<R: Runtime> ContextExpansionHook for AgentContextExpansion<R> {
+    async fn expand(
+        &self,
+        target: &LlamaSessionTarget,
+        cancellation: &CancellationToken,
+    ) -> Result<LlamaSessionTarget, String> {
+        let outcome = request_context_increase(
+            &self.app_handle,
+            &self.state,
+            target.backend.as_str(),
+            &target.model_id,
+            "error",
+            Some(cancellation),
+        )
+        .await;
+        if !outcome.ok {
+            return Err(format!(
+                "Context expansion failed: {}",
+                outcome.reason.as_deref().unwrap_or("unknown")
+            ));
+        }
+        let llama_state: State<LlamacppState> = self.app_handle.state();
+        let upstream_state: State<LlamacppUpstreamState> = self.app_handle.state();
+        find_session_by_model_and_backend(
+            &target.model_id,
+            target.backend,
+            &llama_state,
+            &upstream_state,
+        )
+        .await
+        .map_err(|error| error.to_string())
+    }
 }
 
 #[async_trait]
@@ -201,6 +245,20 @@ pub async fn agent_workspace_stat<R: Runtime>(
 }
 
 #[tauri::command]
+pub async fn agent_workspace_resolve_path<R: Runtime>(
+    app_handle: AppHandle<R>,
+    request: AgentWorkspaceRequest,
+) -> Result<String, String> {
+    let relative = request
+        .path
+        .as_deref()
+        .ok_or_else(|| "Workspace path is required".to_string())?;
+    let (_, path) =
+        resolve_workspace_path(app_handle, request.working_dir.as_deref(), relative).await?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
 pub async fn agent_workspace_read_text<R: Runtime>(
     app_handle: AppHandle<R>,
     request: AgentWorkspaceRequest,
@@ -291,8 +349,14 @@ pub async fn agent_run_turn<R: Runtime>(
         .as_ref()
         .map(std::slice::from_ref)
         .unwrap_or(&[]);
-    let client = LlamaServerClient::new(&target).map_err(|error| error.to_string())?;
     let cancellation = CancellationToken::new();
+    let context_expansion = Arc::new(AgentContextExpansion {
+        app_handle: app_handle.clone(),
+        state: state.auto_increase_ctx.clone(),
+    });
+    let client = LlamaServerClient::new(&target)
+        .map_err(|error| error.to_string())?
+        .with_context_expansion(context_expansion);
     let (cancel_tx, cancel_rx) = oneshot::channel();
     {
         let mut cancellations = state.tool_call_cancellations.lock().await;

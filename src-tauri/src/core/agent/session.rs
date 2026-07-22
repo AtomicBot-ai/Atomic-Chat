@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use super::compressor::{compress_tool_result, should_compress_tool};
 use super::prompt::ToolTier;
 use super::skills::loaded::{LoadedSkillState, LOADED_SKILLS_CAP, LOADED_SKILL_BODY_MAX_CHARS};
+use super::token_budget::estimate_tokens;
 use super::tools::tool_view::{descriptor_for, LOADED_TOOLS_CAP};
 use super::types::{ToolCallPayload, ToolOutcome, ToolStatus};
 use crate::core::threads::utils::{get_data_dir, get_thread_dir};
@@ -16,7 +17,7 @@ const MAX_TURNS: usize = 96;
 const MAX_USER_TEXT_CHARS: usize = 8_000;
 const MAX_REPLY_TEXT_CHARS: usize = 12_000;
 const MAX_TOOL_SUMMARY_CHARS: usize = 1_200;
-const MAX_CONVERSATION_CHARS: usize = 32_000;
+const SUMMARY_TOKEN_RESERVE: usize = 80;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -110,20 +111,39 @@ impl AgentSessionState {
         self.loaded_skills = skills.into_iter().take(LOADED_SKILLS_CAP).collect();
     }
 
-    pub fn render_conversation(&self) -> String {
+    pub fn render_conversation(&self, max_tokens: usize) -> String {
         let rendered = self.turns.iter().map(render_turn).collect::<Vec<_>>();
-        let mut selected = Vec::new();
+        let costs = rendered
+            .iter()
+            .map(|turn| estimate_tokens(turn) + 1)
+            .collect::<Vec<_>>();
+        if costs.iter().sum::<usize>() <= max_tokens {
+            return rendered.join("\n");
+        }
+
+        let budget = max_tokens.saturating_sub(SUMMARY_TOKEN_RESERVE).max(1);
         let mut used = 0usize;
-        for turn in rendered.into_iter().rev() {
-            let cost = turn.chars().count() + usize::from(!selected.is_empty());
-            if !selected.is_empty() && used + cost > MAX_CONVERSATION_CHARS {
+        let mut start = self.turns.len();
+        for index in (0..self.turns.len()).rev() {
+            if used + costs[index] > budget {
                 break;
             }
-            used += cost;
-            selected.push(turn);
+            used += costs[index];
+            start = index;
         }
-        selected.reverse();
-        selected.join("\n")
+        if let Some(last_user) = self
+            .turns
+            .iter()
+            .rposition(|turn| matches!(turn, AgentSessionTurn::User { .. }))
+        {
+            start = start.min(last_user);
+        }
+        if start == 0 {
+            return rendered.join("\n");
+        }
+        let mut packed = vec![render_dropped_summary(&self.turns[..start])];
+        packed.extend(rendered.into_iter().skip(start));
+        packed.join("\n")
     }
 
     fn push_turn(&mut self, turn: AgentSessionTurn) {
@@ -188,6 +208,28 @@ impl AgentSessionState {
         }
         Ok(())
     }
+}
+
+fn render_dropped_summary(turns: &[AgentSessionTurn]) -> String {
+    let users = turns
+        .iter()
+        .filter(|turn| matches!(turn, AgentSessionTurn::User { .. }))
+        .count();
+    let tool_calls = turns
+        .iter()
+        .filter(|turn| matches!(turn, AgentSessionTurn::AssistantToolCall { .. }))
+        .count();
+    let replies = turns
+        .iter()
+        .filter(|turn| matches!(turn, AgentSessionTurn::AssistantReply { .. }))
+        .count();
+    format!(
+        "summary: {} older turns dropped ({} user, {} tool calls, {} replies)",
+        turns.len(),
+        users,
+        tool_calls,
+        replies
+    )
 }
 
 pub fn validate_session_id(session_id: &str) -> Result<(), String> {
@@ -387,14 +429,14 @@ mod tests {
         );
 
         assert!(state
-            .render_conversation()
+            .render_conversation(32_000)
             .contains(r#"{"path":"secret.txt"}"#));
         assert!(!serde_json::to_string(&state)
             .expect("serialize session")
             .contains("secret.txt"));
 
         state.finish_turn();
-        assert!(!state.render_conversation().contains("secret.txt"));
+        assert!(!state.render_conversation(32_000).contains("secret.txt"));
     }
 
     #[test]
@@ -413,7 +455,7 @@ mod tests {
             std::slice::from_ref(&outcome),
         );
 
-        let rendered = state.render_conversation();
+        let rendered = state.render_conversation(32_000);
         assert!(rendered.contains("… [omitted 18 lines]"));
         assert!(rendered.contains("detailed line 29"));
         assert!(!rendered.contains("detailed line 0\n"));
@@ -441,7 +483,7 @@ mod tests {
         );
 
         assert!(state
-            .render_conversation()
+            .render_conversation(32_000)
             .contains("key: Error: database connection failed"));
     }
 
@@ -457,7 +499,23 @@ mod tests {
             &[ToolOutcome::ok(summary)],
         );
 
-        assert!(state.render_conversation().contains(summary));
+        assert!(state.render_conversation(32_000).contains(summary));
+    }
+
+    #[test]
+    fn token_budget_drops_old_turns_but_preserves_latest_user() {
+        let mut state = AgentSessionState::new("thread-a");
+        state.push_user(&format!("old question {}", "detail ".repeat(120)));
+        state.push_reply(&format!("old answer {}", "detail ".repeat(120)));
+        state.push_user("latest question");
+
+        let rendered = state.render_conversation(40);
+
+        assert!(rendered
+            .starts_with("summary: 2 older turns dropped (1 user, 0 tool calls, 1 replies)"));
+        assert!(rendered.contains("USER: latest question"));
+        assert!(!rendered.contains("old question"));
+        assert!(!rendered.contains("old answer"));
     }
 
     #[tokio::test]
@@ -491,7 +549,9 @@ mod tests {
 
         assert_eq!(loaded, state);
         assert_eq!(loaded.turn_count, 1);
-        assert!(loaded.render_conversation().contains("first observation"));
+        assert!(loaded
+            .render_conversation(32_000)
+            .contains("first observation"));
         assert_eq!(loaded.loaded_tools, ["os.fs.hash"]);
         assert_eq!(loaded.loaded_skills[0].name, "pdf");
     }
@@ -529,7 +589,7 @@ mod tests {
             .expect("load second session");
         assert_eq!(second.turn_count, 0);
         assert!(second.turns.is_empty());
-        assert!(!second.render_conversation().contains("only in a"));
+        assert!(!second.render_conversation(32_000).contains("only in a"));
     }
 
     #[tokio::test]

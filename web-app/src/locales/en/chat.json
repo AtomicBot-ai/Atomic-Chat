@@ -62,13 +62,13 @@
   },
   "agentTasks": {
     "title": "Ideas for you",
-    "organizeDesktop": {
-      "title": "Organize desktop files",
-      "prompt": "Review the files on my desktop and propose a safe organization plan. Do not move or delete anything until I approve the plan."
+    "summarizeDocument": {
+      "title": "Summarize a document",
+      "prompt": "Summarize the attached document. Highlight its main points, key facts, and any action items."
     },
-    "reviewProject": {
-      "title": "Review project changes",
-      "prompt": "Review the current project's uncommitted changes and summarize risks, likely bugs, and missing tests. Do not modify any files."
+    "inspectFolder": {
+      "title": "Inspect this folder",
+      "prompt": "Inspect this workspace folder and explain what it contains, how it is organized, and which files are most important. Do not modify anything."
     },
     "findLargeFiles": {
       "title": "Find large files",

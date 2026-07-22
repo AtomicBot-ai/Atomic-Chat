@@ -107,6 +107,7 @@ impl LiveHarness {
             api_key: String::new(),
             model_id: REQUIRED_MODEL_ID.into(),
             has_vision: false,
+            backend: super::llm_client::LlamaBackend::Llamacpp,
         })
         .expect("create live llama-server client");
         let stable_prefix = build_stable_prefix(

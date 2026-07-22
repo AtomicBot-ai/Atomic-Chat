@@ -13,10 +13,10 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
     t: (key: string) => {
       const translations: Record<string, string> = {
         'chat:agentTasks.title': 'Ideas for you',
-        'chat:agentTasks.organizeDesktop.title': 'Organize desktop files',
-        'chat:agentTasks.organizeDesktop.prompt': 'Organize prompt',
-        'chat:agentTasks.reviewProject.title': 'Review project changes',
-        'chat:agentTasks.reviewProject.prompt': 'Review prompt',
+        'chat:agentTasks.summarizeDocument.title': 'Summarize a document',
+        'chat:agentTasks.summarizeDocument.prompt': 'Summarize prompt',
+        'chat:agentTasks.inspectFolder.title': 'Inspect this folder',
+        'chat:agentTasks.inspectFolder.prompt': 'Inspect prompt',
         'chat:agentTasks.findLargeFiles.title': 'Find large files',
         'chat:agentTasks.findLargeFiles.prompt': 'Large files prompt',
       }
@@ -96,10 +96,10 @@ describe('Chat and Agent workspace controls', () => {
 
     rerender(<AgentTaskSuggestions visible onSelect={onSelect} />)
     await user.click(
-      screen.getByRole('button', { name: /Organize desktop files/ })
+      screen.getByRole('button', { name: /Summarize a document/ })
     )
 
-    expect(onSelect).toHaveBeenCalledWith('Organize prompt')
+    expect(onSelect).toHaveBeenCalledWith('Summarize prompt')
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(screen.getAllByRole('button')).toHaveLength(3)
   })

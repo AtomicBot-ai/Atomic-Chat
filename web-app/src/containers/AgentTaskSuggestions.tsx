@@ -1,6 +1,6 @@
 import {
-  FolderCog,
-  GitPullRequestArrow,
+  FileText,
+  FolderSearch,
   HardDrive,
   type LucideIcon,
 } from 'lucide-react'
@@ -11,8 +11,8 @@ const TASK_ICONS: Record<
   (typeof AGENT_TASK_SUGGESTIONS)[number]['id'],
   LucideIcon
 > = {
-  organizeDesktop: FolderCog,
-  reviewProject: GitPullRequestArrow,
+  summarizeDocument: FileText,
+  inspectFolder: FolderSearch,
   findLargeFiles: HardDrive,
 }
 

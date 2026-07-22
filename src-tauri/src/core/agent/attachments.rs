@@ -19,6 +19,7 @@ pub struct StagedAttachment {
     pub name: String,
     pub media_type: Option<String>,
     pub path: PathBuf,
+    pub original_path: Option<PathBuf>,
     pub size_bytes: u64,
 }
 
@@ -39,7 +40,7 @@ impl StagedAttachments {
         if self.items.is_empty() {
             return user_message.to_owned();
         }
-        let mut text = String::with_capacity(user_message.len() + self.items.len() * 160);
+        let mut text = String::with_capacity(user_message.len() + self.items.len() * 256);
         text.push_str(user_message);
         text.push_str("\n\n[ATTACHED_FILES]\n");
         for item in &self.items {
@@ -52,8 +53,16 @@ impl StagedAttachments {
                 .file_name()
                 .and_then(|value| value.to_str())
                 .unwrap_or("attachment.bin");
+            let original_path = item
+                .original_path
+                .as_ref()
+                .map(|path| {
+                    serde_json::to_string(&path.to_string_lossy())
+                        .expect("attachment path serializes as JSON")
+                })
+                .unwrap_or_else(|| "null".to_string());
             text.push_str(&format!(
-                "- kind={kind}; name={}; mime={}; size={}; path={ATTACHMENT_URI_PREFIX}{staged_name}\n",
+                "- kind={kind}; name={}; mime={}; size={}; path={ATTACHMENT_URI_PREFIX}{staged_name}; original_path={original_path}\n",
                 item.name,
                 item.media_type
                     .as_deref()
@@ -63,6 +72,7 @@ impl StagedAttachments {
         }
         text.push_str(
             "Copy attachment:// paths exactly; they are virtual references resolved by the runtime. \
+For file attachments, original_path is the canonical absolute path selected by the user. \
 Use vision.describe for images, os.fs.read_document for supported documents, \
 os.fs.read for text or source files, and archive tools for archives. Do not interpret \
 unknown binary formats as text.\n[/ATTACHED_FILES]",
@@ -191,7 +201,7 @@ async fn stage_all(
     let mut staged = Vec::with_capacity(attachments.len());
     let mut total_bytes = 0_u64;
     for (index, attachment) in attachments.iter().enumerate() {
-        let bytes = match attachment.kind {
+        let (bytes, original_path) = match attachment.kind {
             AgentAttachmentKind::File => {
                 let source = tokio::fs::canonicalize(
                     attachment.path.as_deref().expect("validated file path"),
@@ -216,11 +226,12 @@ async fn stage_all(
                     ));
                 }
                 enforce_size(attachment, metadata.len(), &mut total_bytes)?;
-                tokio::fs::read(&source).await.map_err(|error| {
+                let bytes = tokio::fs::read(&source).await.map_err(|error| {
                     format!("Could not read attachment '{}': {error}", attachment.name)
-                })?
+                })?;
+                (bytes, Some(source))
             }
-            AgentAttachmentKind::Image => decode_image_data_url(attachment)?,
+            AgentAttachmentKind::Image => (decode_image_data_url(attachment)?, None),
         };
         let size_bytes = u64::try_from(bytes.len()).map_err(|_| "Attachment is too large")?;
         if attachment.kind == AgentAttachmentKind::Image {
@@ -253,6 +264,7 @@ async fn stage_all(
             name: attachment.name.clone(),
             media_type: detected_image_media_type.or_else(|| attachment.media_type.clone()),
             path: destination,
+            original_path,
             size_bytes,
         });
     }
@@ -412,6 +424,17 @@ mod tests {
         assert!(manifest.contains("[ATTACHED_FILES]"));
         assert!(manifest.contains("name=notes.txt"));
         assert!(manifest.contains("path=attachment://01.txt"));
+        assert!(manifest.contains(&format!(
+            "original_path={}",
+            serde_json::to_string(
+                &tokio::fs::canonicalize(&source)
+                    .await
+                    .unwrap()
+                    .to_string_lossy()
+            )
+            .unwrap()
+        )));
+        assert!(manifest.contains("path=attachment://02.png; original_path=null"));
         assert!(!manifest.contains(&trusted_root.to_string_lossy().into_owned()));
         assert!(manifest.contains("Use vision.describe for images"));
         assert!(!manifest.contains("iVBORw0KGgo"));

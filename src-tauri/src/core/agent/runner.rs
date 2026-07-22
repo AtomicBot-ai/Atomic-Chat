@@ -19,6 +19,10 @@ use super::prompt::build_prompt;
 use super::resource_class::{is_batchable, resource_class_for, ResourceClass};
 use super::session::AgentSessionState;
 use super::skills::{loaded::LoadedSkills, SkillRegistry};
+use super::token_budget::{
+    compute_effective_conversation_cap, estimate_tokens, COMPLETION_MAX_TOKENS,
+    CONFIGURED_CONVERSATION_CAP,
+};
 use super::tools::{self, ApprovalHook, DesktopServices, ToolContext};
 use super::types::{
     AgentEvent, LoopLevel, ToolCallPayload, ToolExecution, ToolOutcome, ToolStatus,
@@ -87,7 +91,31 @@ pub async fn run_turn(
         emit(AgentEvent::StepStarted { step_index })?;
         let loaded_tool_names = loaded_tools.snapshot().await;
         let loaded_skill_entries = loaded_skills.snapshot().await;
-        let conversation = input.session.render_conversation();
+        let fixed_prompt = build_prompt(
+            input.stable_prefix,
+            &loaded_tool_names,
+            &loaded_skill_entries,
+            "",
+            notice.as_deref(),
+        );
+        let context_window = match input.client.fetch_context_window(input.cancellation).await {
+            Ok(value) => value,
+            Err(LlamaClientError::Cancelled) => {
+                finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
+                return finish_cancelled(step_index, &mut emit);
+            }
+            Err(error) => {
+                log::warn!("Agent /props context probe failed; using configured cap: {error}");
+                None
+            }
+        };
+        let conversation_cap = compute_effective_conversation_cap(
+            CONFIGURED_CONVERSATION_CAP,
+            context_window,
+            estimate_tokens(&fixed_prompt),
+            COMPLETION_MAX_TOKENS,
+        );
+        let conversation = input.session.render_conversation(conversation_cap);
         let prompt = build_prompt(
             input.stable_prefix,
             &loaded_tool_names,

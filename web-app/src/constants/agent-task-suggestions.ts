@@ -1,13 +1,13 @@
 export const AGENT_TASK_SUGGESTIONS = [
   {
-    id: 'organizeDesktop',
-    titleKey: 'chat:agentTasks.organizeDesktop.title',
-    promptKey: 'chat:agentTasks.organizeDesktop.prompt',
+    id: 'summarizeDocument',
+    titleKey: 'chat:agentTasks.summarizeDocument.title',
+    promptKey: 'chat:agentTasks.summarizeDocument.prompt',
   },
   {
-    id: 'reviewProject',
-    titleKey: 'chat:agentTasks.reviewProject.title',
-    promptKey: 'chat:agentTasks.reviewProject.prompt',
+    id: 'inspectFolder',
+    titleKey: 'chat:agentTasks.inspectFolder.title',
+    promptKey: 'chat:agentTasks.inspectFolder.prompt',
   },
   {
     id: 'findLargeFiles',

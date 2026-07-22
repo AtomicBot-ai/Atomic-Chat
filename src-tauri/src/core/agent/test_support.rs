@@ -231,6 +231,7 @@ impl ScriptedCompletionServer {
             api_key: String::new(),
             model_id: "scripted-test-model".into(),
             has_vision: false,
+            backend: super::llm_client::LlamaBackend::Llamacpp,
         })
         .expect("create scripted llama client")
     }

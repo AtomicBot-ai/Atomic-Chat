@@ -7,7 +7,12 @@ import {
   IconFile,
   IconFolder,
 } from '@tabler/icons-react'
-import { listAgentWorkspace } from '@/services/agent/tauri'
+import { toast } from 'sonner'
+import {
+  listAgentWorkspace,
+  resolveAgentWorkspacePath,
+} from '@/services/agent/tauri'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import { useWorkspacePreviewStore } from '@/stores/workspace-preview-store'
 import type { AgentWorkspaceEntry } from '@/types/agent'
 import { cn } from '@/lib/utils'
@@ -34,6 +39,7 @@ export function AgentWorkspaceFiles({
   refreshKey,
   onClose,
 }: AgentWorkspaceFilesProps) {
+  const serviceHub = useServiceHub()
   const openFile = useWorkspacePreviewStore((state) => state.openFile)
   const [directories, setDirectories] = useState<
     Record<string, DirectoryState>
@@ -87,6 +93,22 @@ export function AgentWorkspaceFiles({
     [loadDirectory]
   )
 
+  const revealEntry = useCallback(
+    async (path: string) => {
+      try {
+        const absolutePath = await resolveAgentWorkspacePath({
+          workingDir,
+          path,
+        })
+        await serviceHub.opener().revealItemInDir(absolutePath)
+      } catch (error) {
+        console.error('Failed to reveal Agent workspace entry:', error)
+        toast.error('Could not show this item on disk.')
+      }
+    },
+    [serviceHub, workingDir]
+  )
+
   const rootState = directories['']
   const title = useMemo(() => workspaceName(workingDir), [workingDir])
 
@@ -122,10 +144,12 @@ export function AgentWorkspaceFiles({
               entry.kind === 'unknown' && 'text-muted-foreground'
             )}
             style={{ paddingLeft: `${8 + depth * 14}px` }}
-            onClick={() => {
+            onClick={(event) => {
+              if (event.detail > 1) return
               if (isDirectory) toggleDirectory(entry.path)
               else if (entry.kind === 'file') openFile(entry.path)
             }}
+            onDoubleClick={() => void revealEntry(entry.path)}
             title={entry.path}
           >
             {isDirectory ? (

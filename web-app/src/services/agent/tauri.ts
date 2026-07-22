@@ -42,6 +42,12 @@ export function statAgentWorkspaceFile(
   return invoke<AgentWorkspaceFile>('agent_workspace_stat', { request })
 }
 
+export function resolveAgentWorkspacePath(
+  request: AgentWorkspaceRequest
+): Promise<string> {
+  return invoke<string>('agent_workspace_resolve_path', { request })
+}
+
 export function readAgentWorkspaceText(
   request: AgentWorkspaceRequest
 ): Promise<AgentWorkspaceText> {
