@@ -155,6 +155,45 @@
     color: var(--shiki-dark, var(--foreground)) !important;
   }
 
+  /* Tables: window frame with rounded corners */
+  table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin-bottom: 1em;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    font-size: var(--text-sm);
+    transform: translateZ(0);
+  }
+
+  thead {
+    background-color: var(--muted);
+  }
+
+  th {
+    text-align: left;
+    font-weight: 600;
+    padding: 0.5em 0.75em;
+    border-bottom: 1px solid var(--border);
+    white-space: normal;
+  }
+
+  td {
+    padding: 0.5em 0.75em;
+    border-bottom: 1px solid var(--border);
+    white-space: normal;
+  }
+
+  tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  tbody tr:nth-child(even) {
+    background-color: color-mix(in srgb, var(--muted) 40%, transparent);
+  }
+
   /* Links */
   a {
     color: var(--color-primary);
