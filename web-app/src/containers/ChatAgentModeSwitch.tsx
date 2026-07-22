@@ -31,7 +31,7 @@ export function ChatAgentModeSwitch({
 }: ChatAgentModeSwitchProps) {
   return (
     <div
-      className="flex w-full items-center rounded-lg border border-border/60 bg-muted/80 p-1"
+      className="flex w-full items-center rounded-lg border border-border/60 bg-muted/80 p-0.5"
       role="group"
       aria-label={`${chatLabel} / ${agentLabel}`}
     >
@@ -50,7 +50,7 @@ export function ChatAgentModeSwitch({
             disabled={isDisabled}
             onClick={() => onChange(mode.value)}
             className={cn(
-              'flex-1 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'flex-1 rounded-md px-3 py-0.5 text-xs font-medium text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               isActive &&
                 'bg-background text-foreground shadow-sm ring-1 ring-border/70 dark:bg-secondary',
               isDisabled && 'cursor-not-allowed opacity-50'

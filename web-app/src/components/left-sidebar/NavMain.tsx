@@ -5,6 +5,10 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
+import { BlocksIcon } from '@/components/animated-icon/blocks'
+import { FileTextIcon } from '@/components/animated-icon/file-text'
+import { FolderPlusIcon } from '@/components/animated-icon/folder-plus'
+import { MessageCircleIcon } from '@/components/animated-icon/message-circle'
 import { PlugIcon, type PlugIconHandle } from '@/components/animated-icon/plug'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { SearchDialog } from '@/containers/dialogs/SearchDialog'
@@ -17,18 +21,21 @@ import { useProjectDialog } from '@/hooks/useProjectDialog'
 import { useSearchDialog } from '@/hooks/useSearchDialog'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import type { SidebarMode } from '@/hooks/useAgentMode'
-import {
-  IconBlocks,
-  IconFolderPlus,
-  IconPlus,
-  IconSparkles,
-} from '@tabler/icons-react'
+
+type AnimatedIconHandle = {
+  startAnimation: () => void
+  stopAnimation: () => void
+}
 
 export function NavMain({ mode }: { mode: SidebarMode }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { pathname } = useLocation()
-  const iconRef = useRef<PlugIconHandle>(null)
+  const newChatIconRef = useRef<AnimatedIconHandle>(null)
+  const modelsIconRef = useRef<AnimatedIconHandle>(null)
+  const skillsIconRef = useRef<AnimatedIconHandle>(null)
+  const projectIconRef = useRef<AnimatedIconHandle>(null)
+  const integrationsIconRef = useRef<PlugIconHandle>(null)
   const integrationsBadgeSeen = useGeneralSetting(
     (state) => state.integrationsBadgeSeen
   )
@@ -53,10 +60,19 @@ export function NavMain({ mode }: { mode: SidebarMode }) {
 
   return (
     <>
-      <SidebarMenu className="mt-3">
+      <SidebarMenu className="mt-3 px-2">
         <SidebarMenuItem>
-          <SidebarMenuButton className="font-medium" onClick={handleNewChat}>
-            <IconPlus />
+          <SidebarMenuButton
+            className="font-medium"
+            onClick={handleNewChat}
+            onMouseEnter={() => newChatIconRef.current?.startAnimation()}
+            onMouseLeave={() => newChatIconRef.current?.stopAnimation()}
+          >
+            <MessageCircleIcon
+              ref={newChatIconRef}
+              className="text-foreground/70"
+              size={16}
+            />
             <span>{t('common:newChat')}</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
@@ -65,9 +81,15 @@ export function NavMain({ mode }: { mode: SidebarMode }) {
             asChild
             isActive={pathname.startsWith('/hub')}
             className="data-[active=true]:bg-sidebar-foreground/15"
+            onMouseEnter={() => modelsIconRef.current?.startAnimation()}
+            onMouseLeave={() => modelsIconRef.current?.stopAnimation()}
           >
             <Link to={route.hub.index}>
-              <IconBlocks />
+              <BlocksIcon
+                ref={modelsIconRef}
+                className="text-foreground/70"
+                size={16}
+              />
               <span>{t('common:models')}</span>
             </Link>
           </SidebarMenuButton>
@@ -78,9 +100,15 @@ export function NavMain({ mode }: { mode: SidebarMode }) {
               asChild
               isActive={pathname.startsWith('/skills')}
               className="data-[active=true]:bg-sidebar-foreground/15"
+              onMouseEnter={() => skillsIconRef.current?.startAnimation()}
+              onMouseLeave={() => skillsIconRef.current?.stopAnimation()}
             >
               <Link to={route.skills.index}>
-                <IconSparkles />
+                <FileTextIcon
+                  ref={skillsIconRef}
+                  className="text-foreground/70"
+                  size={16}
+                />
                 <span>{t('common:skills')}</span>
               </Link>
             </SidebarMenuButton>
@@ -89,8 +117,16 @@ export function NavMain({ mode }: { mode: SidebarMode }) {
         {mode === 'chat' && (
           <>
             <SidebarMenuItem>
-              <SidebarMenuButton onClick={() => setProjectDialogOpen(true)}>
-                <IconFolderPlus className="text-foreground/70" />
+              <SidebarMenuButton
+                onClick={() => setProjectDialogOpen(true)}
+                onMouseEnter={() => projectIconRef.current?.startAnimation()}
+                onMouseLeave={() => projectIconRef.current?.stopAnimation()}
+              >
+                <FolderPlusIcon
+                  ref={projectIconRef}
+                  className="text-foreground/70"
+                  size={16}
+                />
                 <span>{t('common:projects.new')}</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -99,12 +135,16 @@ export function NavMain({ mode }: { mode: SidebarMode }) {
                 asChild
                 isActive={pathname.startsWith('/launch')}
                 className="data-[active=true]:bg-sidebar-foreground/15"
-                onMouseEnter={() => iconRef.current?.startAnimation()}
-                onMouseLeave={() => iconRef.current?.stopAnimation()}
+                onMouseEnter={() =>
+                  integrationsIconRef.current?.startAnimation()
+                }
+                onMouseLeave={() =>
+                  integrationsIconRef.current?.stopAnimation()
+                }
               >
                 <Link to={route.launch.index}>
                   <PlugIcon
-                    ref={iconRef}
+                    ref={integrationsIconRef}
                     className="text-foreground/70"
                     size={16}
                   />

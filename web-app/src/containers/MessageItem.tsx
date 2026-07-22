@@ -340,6 +340,7 @@ export const MessageItem = memo(
           durationLabel={t('activity.workedFor', {
             count: durationSeconds,
           })}
+          hasDetails={toolCount > 0 || block.reasoning.length > 0}
         >
           {toolCount > 0 && (
             <ActivityDetail

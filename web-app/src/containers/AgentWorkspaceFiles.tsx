@@ -116,7 +116,9 @@ export function AgentWorkspaceFiles({
     const state = directories[path]
     if (state?.loading) {
       return (
-        <div className="px-3 py-2 text-xs text-muted-foreground">Loading…</div>
+        <div className="px-2 py-2 text-xs text-sidebar-foreground/70">
+          Loading…
+        </div>
       )
     }
     if (state?.error) {
@@ -128,7 +130,9 @@ export function AgentWorkspaceFiles({
     }
     if (state?.entries?.length === 0) {
       return (
-        <div className="px-3 py-2 text-xs text-muted-foreground">Empty</div>
+        <div className="px-2 py-2 text-xs text-sidebar-foreground/70">
+          Empty
+        </div>
       )
     }
 
@@ -140,10 +144,10 @@ export function AgentWorkspaceFiles({
           <button
             type="button"
             className={cn(
-              'flex h-7 w-full items-center gap-1.5 truncate rounded-sm pr-2 text-left text-xs hover:bg-accent',
-              entry.kind === 'unknown' && 'text-muted-foreground'
+              'flex h-8 w-full items-center gap-2 overflow-hidden rounded-md pr-2 text-left text-sm text-sidebar-foreground outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-foreground/8 hover:text-sidebar-accent-foreground focus-visible:ring-2',
+              entry.kind === 'unknown' && 'text-sidebar-foreground/70'
             )}
-            style={{ paddingLeft: `${8 + depth * 14}px` }}
+            style={{ paddingLeft: `${8 + depth * 16}px` }}
             onClick={(event) => {
               if (event.detail > 1) return
               if (isDirectory) toggleDirectory(entry.path)
@@ -162,9 +166,9 @@ export function AgentWorkspaceFiles({
               <span className="size-3.5 shrink-0" />
             )}
             {isDirectory ? (
-              <IconFolder className="size-4 shrink-0 text-muted-foreground" />
+              <IconFolder className="size-4 shrink-0 text-sidebar-foreground/70" />
             ) : (
-              <IconFile className="size-4 shrink-0 text-muted-foreground" />
+              <IconFile className="size-4 shrink-0 text-sidebar-foreground/70" />
             )}
             <span className="truncate">{entry.name}</span>
           </button>
@@ -175,33 +179,35 @@ export function AgentWorkspaceFiles({
   }
 
   return (
-    <aside className="flex h-full min-w-0 flex-col border-l bg-background">
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b px-2">
-        <span
-          className="min-w-0 flex-1 truncate px-1 text-xs font-medium"
-          title={workingDir}
-        >
-          {title}
-        </span>
-        <button
-          type="button"
-          className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-          aria-label="Close files sidebar"
-          title="Close files sidebar"
-          onClick={onClose}
-        >
-          <PanelRight className="size-4" />
-        </button>
-      </div>
-      <div className="min-h-0 flex-1 overflow-auto p-1">
-        {!rootState ? (
-          <div className="px-3 py-2 text-xs text-muted-foreground">
-            Loading…
-          </div>
-        ) : (
-          renderEntries('', 0)
-        )}
-      </div>
-    </aside>
+    <div className="h-full p-2 pl-0">
+      <aside className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-sidebar-border bg-clip-padding bg-linear-to-b from-sidebar to-background text-sidebar-foreground shadow dark:from-sidebar/70">
+        <div className="flex h-10 shrink-0 items-center gap-2 px-2">
+          <span
+            className="min-w-0 flex-1 truncate px-2 text-xs font-medium text-sidebar-foreground/70"
+            title={workingDir}
+          >
+            {title}
+          </span>
+          <button
+            type="button"
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/70 outline-none ring-sidebar-ring hover:bg-sidebar-foreground/8 hover:text-sidebar-foreground focus-visible:ring-2"
+            aria-label="Close files sidebar"
+            title="Close files sidebar"
+            onClick={onClose}
+          >
+            <PanelRight className="size-4" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto p-2">
+          {!rootState ? (
+            <div className="px-2 py-2 text-xs text-sidebar-foreground/70">
+              Loading…
+            </div>
+          ) : (
+            renderEntries('', 0)
+          )}
+        </div>
+      </aside>
+    </div>
   )
 }

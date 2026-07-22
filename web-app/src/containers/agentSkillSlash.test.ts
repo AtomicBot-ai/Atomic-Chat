@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { AgentSkill } from '@/services/agent/skills'
 import {
   filterAgentSkills,
+  findAvailableAgentSkill,
   findAgentSkillSlashQuery,
   moveAgentSkillActiveIndex,
   removeAgentSkillSlashQuery,
@@ -51,6 +52,17 @@ describe('agent skill slash picker', () => {
       'pdf',
       'notes',
     ])
+  })
+
+  it('finds only a skill eligible for Agent selection', () => {
+    const skills = [
+      skill('disabled', 'Disabled', { enabled: false }),
+      skill('ready', 'Ready'),
+    ]
+
+    expect(findAvailableAgentSkill(skills, 'ready')?.name).toBe('ready')
+    expect(findAvailableAgentSkill(skills, 'disabled')).toBeNull()
+    expect(findAvailableAgentSkill(skills, 'missing')).toBeNull()
   })
 
   it('wraps keyboard selection in both directions', () => {

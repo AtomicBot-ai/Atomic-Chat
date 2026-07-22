@@ -17,6 +17,9 @@
     "calledTools": "Called {{count}} tools",
     "reasoned": "Reasoned"
   },
+  "workspacePreview": {
+    "generating": "Preview will be available after generation finishes."
+  },
   "agentMode": {
     "chat": "Chat",
     "agent": "Agent",

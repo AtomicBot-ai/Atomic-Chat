@@ -13,39 +13,42 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import type { CreateAgentSkillRequest } from '@/services/agent/skills'
+import type {
+  AgentSkillDetail,
+  UpdateAgentSkillRequest,
+} from '@/services/agent/skills'
 
-type AgentSkillCreateDialogProps = {
+type AgentSkillEditDialogProps = {
+  skill: AgentSkillDetail | null
   open: boolean
   onOpenChange: (open: boolean) => void
-  onCreate: (request: CreateAgentSkillRequest) => Promise<void>
+  onUpdate: (request: UpdateAgentSkillRequest) => Promise<void>
 }
 
-export function AgentSkillCreateDialog({
+export function AgentSkillEditDialog({
+  skill,
   open,
   onOpenChange,
-  onCreate,
-}: AgentSkillCreateDialogProps) {
+  onUpdate,
+}: AgentSkillEditDialogProps) {
   const { t } = useTranslation()
-  const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [instructions, setInstructions] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    if (!open) {
-      setName('')
-      setDescription('')
-      setInstructions('')
-      setSubmitting(false)
-    }
-  }, [open])
+    if (!open || !skill) return
+    setDescription(skill.description)
+    setInstructions(skill.body)
+    setSubmitting(false)
+  }, [open, skill])
 
   const submit = async () => {
+    if (!skill) return
     setSubmitting(true)
     try {
-      await onCreate({
-        name: name.trim(),
+      await onUpdate({
+        name: skill.name,
         description: description.trim(),
         instructions: instructions.trim(),
       })
@@ -60,43 +63,41 @@ export function AgentSkillCreateDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{t('common:writeSkillInstructions')}</DialogTitle>
+          <DialogTitle>{t('common:editSkill')}</DialogTitle>
           <DialogDescription>
-            {t('common:createSkillDescription')}
+            {t('common:editSkillDescription')}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-5 py-2">
           <div className="space-y-2">
-            <Label htmlFor="agent-skill-name">{t('common:skillName')}</Label>
+            <Label htmlFor="agent-skill-edit-name">
+              {t('common:skillName')}
+            </Label>
             <Input
-              id="agent-skill-name"
-              value={name}
-              placeholder={t('common:skillNamePlaceholder')}
-              disabled={submitting}
-              onChange={(event) => setName(event.target.value)}
+              id="agent-skill-edit-name"
+              value={skill?.name ?? ''}
+              disabled
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="agent-skill-description">
+            <Label htmlFor="agent-skill-edit-description">
               {t('common:description')}
             </Label>
             <Textarea
-              id="agent-skill-description"
+              id="agent-skill-edit-description"
               value={description}
-              placeholder={t('common:skillDescriptionPlaceholder')}
               className="min-h-24 resize-none"
               disabled={submitting}
               onChange={(event) => setDescription(event.target.value)}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="agent-skill-instructions">
+            <Label htmlFor="agent-skill-edit-instructions">
               {t('common:instructions')}
             </Label>
             <Textarea
-              id="agent-skill-instructions"
+              id="agent-skill-edit-instructions"
               value={instructions}
-              placeholder={t('common:skillInstructionsPlaceholder')}
               className="min-h-64 resize-y"
               disabled={submitting}
               onChange={(event) => setInstructions(event.target.value)}
@@ -112,15 +113,10 @@ export function AgentSkillCreateDialog({
             {t('common:cancel')}
           </Button>
           <Button
-            disabled={
-              submitting ||
-              !name.trim() ||
-              !description.trim() ||
-              !instructions.trim()
-            }
+            disabled={submitting || !description.trim() || !instructions.trim()}
             onClick={() => void submit()}
           >
-            {t('common:create')}
+            {t('common:save')}
           </Button>
         </DialogFooter>
       </DialogContent>

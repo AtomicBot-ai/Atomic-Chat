@@ -3,22 +3,34 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createAgentSkill,
   deleteAgentSkill,
+  exportAgentSkill,
   getAgentSkill,
   importAgentSkill,
   listAgentSkills,
   refreshAgentSkills,
   setAgentSkillEnabled,
+  updateAgentSkill,
 } from '@/services/agent/skills'
 import { useAgentSkills } from './useAgentSkills'
 
 vi.mock('@/services/agent/skills', () => ({
   createAgentSkill: vi.fn(),
   deleteAgentSkill: vi.fn(),
+  exportAgentSkill: vi.fn(),
   getAgentSkill: vi.fn(),
   importAgentSkill: vi.fn(),
   listAgentSkills: vi.fn(),
   refreshAgentSkills: vi.fn(),
   setAgentSkillEnabled: vi.fn(),
+  updateAgentSkill: vi.fn(),
+}))
+
+const saveDialog = vi.hoisted(() => vi.fn())
+
+vi.mock('@/hooks/useServiceHub', () => ({
+  getServiceHub: () => ({
+    dialog: () => ({ save: saveDialog }),
+  }),
 }))
 
 const skill = {
@@ -46,6 +58,28 @@ describe('useAgentSkills', () => {
     vi.mocked(importAgentSkill).mockResolvedValue({ ...skill, body: '# Body' })
     vi.mocked(setAgentSkillEnabled).mockResolvedValue()
     vi.mocked(deleteAgentSkill).mockResolvedValue()
+    vi.mocked(exportAgentSkill).mockResolvedValue()
+    vi.mocked(updateAgentSkill).mockResolvedValue({ ...skill, body: '# Body' })
+    saveDialog.mockReset()
+  })
+
+  it('selects the first skill alphabetically after loading', async () => {
+    const alpha = { ...skill, name: 'alpha' }
+    const zulu = { ...skill, name: 'zulu' }
+    vi.mocked(listAgentSkills).mockResolvedValue([zulu, alpha])
+    vi.mocked(getAgentSkill).mockImplementation(async (name) => ({
+      ...(name === 'alpha' ? alpha : zulu),
+      body: '# Body',
+    }))
+
+    const { result } = renderHook(() => useAgentSkills())
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.skills.map(({ name }) => name)).toEqual([
+      'alpha',
+      'zulu',
+    ])
+    expect(result.current.selected?.name).toBe('alpha')
   })
 
   it('creates and imports a skill, then selects it', async () => {
@@ -66,7 +100,16 @@ describe('useAgentSkills', () => {
     expect(result.current.selected?.name).toBe(skill.name)
   })
 
-  it('loads, selects, enables, and deletes skills', async () => {
+  it('loads, selects, enables, and selects the next skill after deletion', async () => {
+    const nextSkill = { ...skill, name: 'next-skill' }
+    vi.mocked(listAgentSkills)
+      .mockResolvedValueOnce([skill, nextSkill])
+      .mockResolvedValueOnce([skill, nextSkill])
+      .mockResolvedValueOnce([nextSkill])
+    vi.mocked(getAgentSkill).mockImplementation(async (name) => ({
+      ...(name === skill.name ? skill : nextSkill),
+      body: '# Body',
+    }))
     const { result } = renderHook(() => useAgentSkills())
     await waitFor(() => expect(result.current.loading).toBe(false))
 
@@ -78,7 +121,7 @@ describe('useAgentSkills', () => {
 
     await act(() => result.current.remove(skill.name))
     expect(deleteAgentSkill).toHaveBeenCalledWith(skill.name)
-    expect(result.current.selected).toBeNull()
+    expect(result.current.selected?.name).toBe(nextSkill.name)
   })
 
   it('reloads the selected skill detail during refresh', async () => {
@@ -97,5 +140,40 @@ describe('useAgentSkills', () => {
       enabled: false,
       body: '# Updated body',
     })
+  })
+
+  it('updates and exports a skill through the save dialog', async () => {
+    const updated = {
+      ...skill,
+      description: 'Updated',
+      body: '# Updated body',
+    }
+    vi.mocked(updateAgentSkill).mockResolvedValue(updated)
+    saveDialog.mockResolvedValue('/tmp/custom-skill.skill')
+    const { result } = renderHook(() => useAgentSkills())
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    await act(() =>
+      result.current.update({
+        name: skill.name,
+        description: 'Updated',
+        instructions: '# Updated body',
+      })
+    )
+    expect(result.current.selected).toEqual(updated)
+
+    let exported = false
+    await act(async () => {
+      exported = await result.current.exportSkill(skill.name)
+    })
+    expect(exported).toBe(true)
+    expect(saveDialog).toHaveBeenCalledWith({
+      defaultPath: 'custom-skill.skill',
+      filters: [{ name: 'Atomic Chat Skill', extensions: ['skill'] }],
+    })
+    expect(exportAgentSkill).toHaveBeenCalledWith(
+      skill.name,
+      '/tmp/custom-skill.skill'
+    )
   })
 })

@@ -26,6 +26,7 @@ type ThreadModel = {
 
 type SearchParams = {
   threadModel?: ThreadModel
+  agentSkill?: string
 }
 
 export const Route = createFileRoute(route.home as any)({
@@ -33,6 +34,8 @@ export const Route = createFileRoute(route.home as any)({
   validateSearch: (search: Record<string, unknown>): SearchParams => {
     const result: SearchParams = {
       threadModel: search.threadModel as ThreadModel | undefined,
+      agentSkill:
+        typeof search.agentSkill === 'string' ? search.agentSkill : undefined,
     }
 
     return result
@@ -44,6 +47,7 @@ function Index() {
   const { providers, selectedProvider } = useModelProvider()
   const search = useSearch({ from: route.home as any })
   const threadModel = search.threadModel
+  const agentSkill = search.agentSkill
   const { setCurrentThreadId } = useThreads()
   const isAgentMode = useAgentMode(
     (state) => state.agentThreads[TEMPORARY_CHAT_ID] === true
@@ -117,6 +121,7 @@ function Index() {
               showSpeedToken={false}
               model={threadModel}
               initialMessage={true}
+              preselectedAgentSkillName={agentSkill}
             />
           </div>
           <div className="absolute inset-x-0 top-full pt-4">

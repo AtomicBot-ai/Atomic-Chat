@@ -1,4 +1,5 @@
-import { IconLoader2, IconSparkles } from '@tabler/icons-react'
+import { IconLoader2 } from '@tabler/icons-react'
+import { FileTextIcon } from '@/components/animated-icon/file-text'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { AgentSkill } from '@/services/agent/skills'
 
@@ -55,7 +56,11 @@ export function AgentSkillSlashMenu({
               onMouseEnter={() => onActiveIndexChange(index)}
               onClick={() => onSelect(skill)}
             >
-              <IconSparkles size={15} className="shrink-0 text-primary" />
+              <FileTextIcon
+                active={index === activeIndex}
+                size={15}
+                className="shrink-0 text-primary"
+              />
               <span className="min-w-0 truncate text-sm font-medium">
                 {skill.name}
               </span>

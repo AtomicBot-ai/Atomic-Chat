@@ -4,7 +4,10 @@ use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
 use super::{
-    authoring::{create_custom_skill, import_custom_skill, CreateAgentSkillRequest},
+    authoring::{
+        create_custom_skill, export_skill_archive, import_custom_skill, update_custom_skill,
+        CreateAgentSkillRequest, UpdateAgentSkillRequest,
+    },
     global_skills_dir, load_registry, SkillListEntry,
 };
 use crate::core::app::commands::get_jan_data_folder_path;
@@ -84,6 +87,43 @@ pub async fn agent_import_skill<R: Runtime>(
 }
 
 #[tauri::command]
+pub async fn agent_update_skill<R: Runtime>(
+    app_handle: AppHandle<R>,
+    request: UpdateAgentSkillRequest,
+) -> Result<AgentSkillDetail, String> {
+    let data_folder = get_jan_data_folder_path(app_handle.clone());
+    let name = request.name.trim().to_string();
+    let registry = load_registry(&data_folder)?;
+    let record = registry
+        .get(&name)
+        .ok_or_else(|| format!("Skill `{name}` was not found or is invalid"))?;
+    ensure_skill_can_be_edited(&name, record.reserved)?;
+    let skill_dir = resolve_skill_directory(&data_folder, &name).await?;
+    tokio::task::spawn_blocking(move || update_custom_skill(&skill_dir, request))
+        .await
+        .map_err(|error| format!("Agent skill update task failed: {error}"))??;
+    agent_get_skill(app_handle, name).await
+}
+
+#[tauri::command]
+pub async fn agent_export_skill<R: Runtime>(
+    app_handle: AppHandle<R>,
+    name: String,
+    target_path: String,
+) -> Result<(), String> {
+    let data_folder = get_jan_data_folder_path(app_handle);
+    let registry = load_registry(&data_folder)?;
+    if registry.get(&name).is_none() {
+        return Err(format!("Skill `{name}` was not found or is invalid"));
+    }
+    let skill_dir = resolve_skill_directory(&data_folder, &name).await?;
+    let target = PathBuf::from(target_path);
+    tokio::task::spawn_blocking(move || export_skill_archive(&skill_dir, &target))
+        .await
+        .map_err(|error| format!("Agent skill export task failed: {error}"))?
+}
+
+#[tauri::command]
 pub async fn agent_delete_skill<R: Runtime>(
     app_handle: AppHandle<R>,
     name: String,
@@ -127,6 +167,31 @@ fn ensure_skill_can_be_deleted(name: &str, reserved: bool) -> Result<(), String>
     }
 }
 
+fn ensure_skill_can_be_edited(name: &str, reserved: bool) -> Result<(), String> {
+    if reserved {
+        Err(format!("Bundled skill `{name}` cannot be edited"))
+    } else {
+        Ok(())
+    }
+}
+
+async fn resolve_skill_directory(data_folder: &Path, name: &str) -> Result<PathBuf, String> {
+    if !is_direct_child_name(name) {
+        return Err("Skill target must be a direct child name".into());
+    }
+    let root = global_skills_dir(data_folder);
+    let canonical_root = tokio::fs::canonicalize(&root)
+        .await
+        .map_err(|error| format!("Failed to resolve Agent skills directory: {error}"))?;
+    let canonical_target = tokio::fs::canonicalize(root.join(name))
+        .await
+        .map_err(|error| format!("Failed to resolve skill `{name}`: {error}"))?;
+    if canonical_target.parent() != Some(canonical_root.as_path()) {
+        return Err("Skill target is not a direct child of the skills root".into());
+    }
+    Ok(canonical_target)
+}
+
 #[tauri::command]
 pub async fn agent_refresh_skills<R: Runtime>(
     app_handle: AppHandle<R>,
@@ -145,6 +210,15 @@ mod tests {
             "Bundled skill `bundled-skill` cannot be deleted"
         );
         assert!(ensure_skill_can_be_deleted("custom-skill", false).is_ok());
+    }
+
+    #[test]
+    fn refuses_to_edit_bundled_skills() {
+        assert_eq!(
+            ensure_skill_can_be_edited("bundled-skill", true).unwrap_err(),
+            "Bundled skill `bundled-skill` cannot be edited"
+        );
+        assert!(ensure_skill_can_be_edited("custom-skill", false).is_ok());
     }
 
     #[test]

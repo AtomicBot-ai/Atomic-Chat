@@ -12,6 +12,7 @@ type AgentActivityProps = {
   active: boolean
   durationLabel: string
   workingLabel: string
+  hasDetails?: boolean
   children: ReactNode
 }
 
@@ -19,6 +20,7 @@ export function AgentActivity({
   active,
   durationLabel,
   workingLabel,
+  hasDetails = true,
   children,
 }: AgentActivityProps) {
   const [open, setOpen] = useState(false)
@@ -29,7 +31,15 @@ export function AgentActivity({
       onOpenChange={setOpen}
       className="not-prose mb-3 text-sm text-muted-foreground"
     >
-      <CollapsibleTrigger className="flex items-center gap-1.5 py-0.5 transition-colors hover:text-foreground">
+      <CollapsibleTrigger
+        disabled={!hasDetails}
+        className={cn(
+          'flex items-center gap-1.5 py-0.5 transition-colors',
+          hasDetails
+            ? 'hover:text-foreground'
+            : 'cursor-default hover:text-muted-foreground'
+        )}
+      >
         {active ? (
           <>
             <LoaderIcon className="size-3.5 animate-spin" />
@@ -38,13 +48,20 @@ export function AgentActivity({
         ) : (
           <span>{durationLabel}</span>
         )}
-        <ChevronDownIcon
-          className={cn('size-3.5 transition-transform', open && 'rotate-180')}
-        />
+        {hasDetails && (
+          <ChevronDownIcon
+            className={cn(
+              'size-3.5 transition-transform',
+              open && 'rotate-180'
+            )}
+          />
+        )}
       </CollapsibleTrigger>
-      <CollapsibleContent className="mt-2 space-y-1 border-l border-border/60 pl-3">
-        {children}
-      </CollapsibleContent>
+      {hasDetails && (
+        <CollapsibleContent className="mt-2 space-y-1 border-l border-border/60 pl-3">
+          {children}
+        </CollapsibleContent>
+      )}
     </Collapsible>
   )
 }

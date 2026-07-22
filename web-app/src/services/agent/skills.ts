@@ -27,6 +27,12 @@ export interface CreateAgentSkillRequest {
   instructions: string
 }
 
+export interface UpdateAgentSkillRequest {
+  name: string
+  description: string
+  instructions: string
+}
+
 export function listAgentSkills(): Promise<AgentSkill[]> {
   return invoke<AgentSkill[]>('agent_list_skills')
 }
@@ -52,6 +58,19 @@ export function importAgentSkill(
   sourcePath: string
 ): Promise<AgentSkillDetail> {
   return invoke<AgentSkillDetail>('agent_import_skill', { sourcePath })
+}
+
+export function updateAgentSkill(
+  request: UpdateAgentSkillRequest
+): Promise<AgentSkillDetail> {
+  return invoke<AgentSkillDetail>('agent_update_skill', { request })
+}
+
+export function exportAgentSkill(
+  name: string,
+  targetPath: string
+): Promise<void> {
+  return invoke<void>('agent_export_skill', { name, targetPath })
 }
 
 export function deleteAgentSkill(name: string): Promise<void> {

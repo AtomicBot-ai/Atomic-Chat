@@ -115,6 +115,7 @@ import { AgentWorkspaceSelect } from '@/containers/AgentWorkspaceSelect'
 import { AgentSkillSlashMenu } from '@/containers/AgentSkillSlashMenu'
 import {
   filterAgentSkills,
+  findAvailableAgentSkill,
   findAgentSkillSlashQuery,
   moveAgentSkillActiveIndex,
   removeAgentSkillSlashQuery,
@@ -128,6 +129,7 @@ type ChatInputProps = {
   showSpeedToken?: boolean
   model?: ThreadModel
   initialMessage?: boolean
+  preselectedAgentSkillName?: string
   projectId?: string
   onSubmit?: (
     text: string,
@@ -141,6 +143,7 @@ type ChatInputProps = {
 const ChatInput = memo(function ChatInput({
   className,
   initialMessage,
+  preselectedAgentSkillName,
   projectId,
   onSubmit,
   onStop,
@@ -195,6 +198,7 @@ const ChatInput = memo(function ChatInput({
     useAgentSkills(effectiveAgentMode)
   const [selectedAgentSkill, setSelectedAgentSkill] =
     useState<AgentSkill | null>(null)
+  const preselectedAgentSkillAppliedRef = useRef<string | null>(null)
   const [agentSkillSlashQuery, setAgentSkillSlashQuery] =
     useState<AgentSkillSlashQuery | null>(null)
   const [agentSkillMenuOpen, setAgentSkillMenuOpen] = useState(false)
@@ -229,6 +233,31 @@ const ChatInput = memo(function ChatInput({
     setAgentSkillSlashQuery(null)
     setAgentSkillMenuOpen(false)
   }, [effectiveAgentMode])
+
+  useEffect(() => {
+    if (!preselectedAgentSkillName) {
+      preselectedAgentSkillAppliedRef.current = null
+      return
+    }
+    if (
+      !effectiveAgentMode ||
+      agentSkillsLoading ||
+      preselectedAgentSkillAppliedRef.current === preselectedAgentSkillName
+    ) {
+      return
+    }
+    const skill = findAvailableAgentSkill(
+      agentSkills,
+      preselectedAgentSkillName
+    )
+    preselectedAgentSkillAppliedRef.current = preselectedAgentSkillName
+    if (skill) setSelectedAgentSkill(skill)
+  }, [
+    agentSkills,
+    agentSkillsLoading,
+    effectiveAgentMode,
+    preselectedAgentSkillName,
+  ])
 
   useEffect(() => {
     setAgentSkillActiveIndex(0)
@@ -2212,7 +2241,7 @@ const ChatInput = memo(function ChatInput({
   const isStreaming = chatStatus === 'submitted' || chatStatus === 'streaming'
 
   return (
-    <div className="relative">
+    <div className="relative mx-auto w-full max-w-3xl">
       <div className="relative">
         <div
           className={cn(

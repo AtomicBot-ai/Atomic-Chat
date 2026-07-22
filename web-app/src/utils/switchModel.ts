@@ -110,11 +110,13 @@ function emitModelLoad(
   }
 }
 
-// Local providers whose models are served by on-device engines (llamacpp /
-// llamacpp-upstream / mlx). Foundation Models is deliberately excluded here
-// because it has its own lifecycle plumbing and does not participate in the
-// generic start/stop flow.
-const LOCAL_PROVIDERS = ['llamacpp', 'llamacpp-upstream', 'mlx'] as const
+// Local providers whose models are served by on-device engines.
+const LOCAL_PROVIDERS = [
+  'llamacpp',
+  'llamacpp-upstream',
+  'mlx',
+  'foundation-models',
+] as const
 type LocalProviderName = (typeof LOCAL_PROVIDERS)[number]
 
 function isLocalEngineProvider(providerName: string): boolean {

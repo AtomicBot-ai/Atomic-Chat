@@ -7,7 +7,9 @@ import {
   IconLoader2,
   IconX,
 } from '@tabler/icons-react'
+import { AnimatePresence, motion } from 'motion/react'
 import { useArtifactStore } from '@/stores/artifact-store'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   useWorkspacePreviewStore,
   type WorkspaceFilePreviewTab,
@@ -18,9 +20,11 @@ import {
 } from '@/services/agent/tauri'
 import { classifyWorkspacePreview } from '@/lib/workspace-preview-kind'
 import { cn } from '@/lib/utils'
+import { HtmlArtifact } from './HtmlArtifact'
 
 type AgentWorkspacePreviewProps = {
   workingDir?: string
+  isGenerating?: boolean
 }
 
 function FilePreview({
@@ -31,6 +35,7 @@ function FilePreview({
   workingDir?: string
 }) {
   const kind = useMemo(() => classifyWorkspacePreview(tab.path), [tab.path])
+  const isHtml = tab.path.toLowerCase().endsWith('.html')
   const [assetUrl, setAssetUrl] = useState<string>()
   const [text, setText] = useState<string>()
   const [truncated, setTruncated] = useState(false)
@@ -114,6 +119,10 @@ function FilePreview({
   }
 
   if (kind === 'text' && text !== undefined) {
+    if (isHtml) {
+      return <HtmlArtifact code={text} fill showActions={false} />
+    }
+
     return (
       <div className="flex h-full min-h-0 flex-col">
         {truncated && (
@@ -137,7 +146,9 @@ function FilePreview({
 
 export function AgentWorkspacePreview({
   workingDir,
+  isGenerating = false,
 }: AgentWorkspacePreviewProps) {
+  const { t } = useTranslation('chat')
   const tabs = useWorkspacePreviewStore((state) => state.tabs)
   const activeTabId = useWorkspacePreviewStore((state) => state.activeTabId)
   const closeTab = useWorkspacePreviewStore((state) => state.closeTab)
@@ -150,57 +161,79 @@ export function AgentWorkspacePreview({
   }
 
   return (
-    <section className="flex h-full min-w-0 flex-col border-l bg-background">
-      <div className="flex h-11 shrink-0 items-center gap-1 overflow-x-auto border-b bg-muted/20 px-2">
-        {tabs.map((tab) => (
-          <div
-            key={tab.id}
-            className={cn(
-              'flex h-7 min-w-28 max-w-56 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground transition-colors',
-              tab.id === activeTabId
-                ? 'bg-background text-foreground shadow-sm ring-1 ring-border/60'
-                : 'hover:bg-background/60 hover:text-foreground'
-            )}
-            title={tab.name}
-          >
-            {tab.kind === 'file' ? (
-              <IconFile className="size-3.5 shrink-0" />
-            ) : (
-              <IconCode className="size-3.5 shrink-0" />
-            )}
-            <button
-              type="button"
-              className="min-w-0 flex-1 truncate text-left font-medium"
-              onClick={() =>
-                useWorkspacePreviewStore.setState({ activeTabId: tab.id })
-              }
+    <div className="h-full p-2 pl-0">
+      <section className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-sidebar-border bg-clip-padding bg-linear-to-b from-sidebar to-background text-sidebar-foreground shadow dark:from-sidebar/70">
+        <div className="flex h-11 shrink-0 items-center gap-1 overflow-x-auto border-b border-sidebar-border bg-muted/20 px-2">
+          {tabs.map((tab) => (
+            <div
+              key={tab.id}
+              className={cn(
+                'flex h-7 min-w-28 max-w-56 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground transition-colors',
+                tab.id === activeTabId
+                  ? 'bg-background text-foreground shadow-sm ring-1 ring-border/60'
+                  : 'hover:bg-background/60 hover:text-foreground'
+              )}
+              title={tab.name}
             >
-              {tab.name}
-            </button>
-            <button
-              type="button"
-              className="flex size-5 shrink-0 items-center justify-center rounded opacity-60 hover:bg-accent hover:opacity-100"
-              aria-label={`Close ${tab.name}`}
-              onClick={() => close(tab.id)}
+              {tab.kind === 'file' ? (
+                <IconFile className="size-3.5 shrink-0" />
+              ) : (
+                <IconCode className="size-3.5 shrink-0" />
+              )}
+              <button
+                type="button"
+                className="min-w-0 flex-1 truncate text-left font-medium"
+                onClick={() =>
+                  useWorkspacePreviewStore.setState({ activeTabId: tab.id })
+                }
+              >
+                {tab.name}
+              </button>
+              <button
+                type="button"
+                className="flex size-5 shrink-0 items-center justify-center rounded opacity-60 hover:bg-accent hover:opacity-100"
+                aria-label={`Close ${tab.name}`}
+                onClick={() => close(tab.id)}
+              >
+                <IconX className="size-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="min-h-0 flex-1">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={isGenerating ? 'generating' : (activeTab?.id ?? 'empty')}
+              className="h-full"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.16, ease: 'easeOut' }}
             >
-              <IconX className="size-3.5" />
-            </button>
-          </div>
-        ))}
-      </div>
-      <div className="min-h-0 flex-1">
-        {activeTab?.kind === 'file' && (
-          <FilePreview tab={activeTab} workingDir={workingDir} />
-        )}
-        {activeTab?.kind === 'artifact' && (
-          <iframe
-            srcDoc={artifact.code}
-            title={artifact.title}
-            sandbox="allow-scripts"
-            className="h-full w-full border-0 bg-white"
-          />
-        )}
-      </div>
-    </section>
+              {isGenerating ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-muted-foreground">
+                  <IconFileOff className="size-8" />
+                  <p className="text-sm">{t('workspacePreview.generating')}</p>
+                </div>
+              ) : (
+                <>
+                  {activeTab?.kind === 'file' && (
+                    <FilePreview tab={activeTab} workingDir={workingDir} />
+                  )}
+                  {activeTab?.kind === 'artifact' && (
+                    <HtmlArtifact
+                      code={artifact.code}
+                      streaming={artifact.streaming}
+                      fill
+                      showActions={false}
+                    />
+                  )}
+                </>
+              )}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </section>
+    </div>
   )
 }

@@ -1573,6 +1573,7 @@ function ThreadDetail() {
       agentModeActive={agentModeActive}
       workingDir={agentWorkingDir}
       refreshKey={agentRun?.finishedAtMs ?? 0}
+      isGenerating={requestActive}
     >
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
         <HeaderPage>

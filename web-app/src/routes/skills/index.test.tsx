@@ -22,12 +22,18 @@ const hookState = vi.hoisted(() => ({
     addCreated: ReturnType<typeof vi.fn>
     addImported: ReturnType<typeof vi.fn>
     remove: ReturnType<typeof vi.fn>
+    update: ReturnType<typeof vi.fn>
+    exportSkill: ReturnType<typeof vi.fn>
   },
 }))
 const dialogOpen = vi.hoisted(() => vi.fn())
+const navigate = vi.hoisted(() => vi.fn())
+const setSidebarMode = vi.hoisted(() => vi.fn())
+const setAgentMode = vi.hoisted(() => vi.fn())
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: object) => config,
+  useNavigate: () => navigate,
 }))
 
 vi.mock('@/containers/HeaderPage', () => ({
@@ -36,6 +42,11 @@ vi.mock('@/containers/HeaderPage', () => ({
 
 vi.mock('@/hooks/useAgentSkills', () => ({
   useAgentSkills: () => hookState.value,
+}))
+
+vi.mock('@/hooks/useAgentMode', () => ({
+  useAgentMode: (selector: (state: object) => unknown) =>
+    selector({ setSidebarMode, setAgentMode }),
 }))
 
 vi.mock('@/hooks/useServiceHub', () => ({
@@ -78,11 +89,22 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenuItem: ({
     children,
     onSelect,
+    disabled,
   }: {
     children: ReactNode
     onSelect: () => void
-  }) => <button onClick={onSelect}>{children}</button>,
+    disabled?: boolean
+  }) => (
+    <button disabled={disabled} onClick={onSelect}>
+      {children}
+    </button>
+  ),
+  DropdownMenuSeparator: () => <hr />,
   DropdownMenuTrigger: ({ children }: { children: ReactNode }) => children,
+}))
+
+vi.mock('@/containers/RenderMarkdown', () => ({
+  RenderMarkdown: ({ content }: { content: string }) => <div>{content}</div>,
 }))
 
 const customSkill: AgentSkillDetail = {
@@ -104,6 +126,9 @@ const customSkill: AgentSkillDetail = {
 describe('SkillsPage', () => {
   beforeEach(() => {
     dialogOpen.mockReset()
+    navigate.mockReset()
+    setSidebarMode.mockReset()
+    setAgentMode.mockReset()
     hookState.value = {
       skills: [customSkill],
       selected: customSkill,
@@ -115,46 +140,51 @@ describe('SkillsPage', () => {
       addCreated: vi.fn().mockResolvedValue(undefined),
       addImported: vi.fn().mockResolvedValue(undefined),
       remove: vi.fn().mockResolvedValue(undefined),
+      update: vi.fn().mockResolvedValue(undefined),
+      exportSkill: vi.fn().mockResolvedValue(true),
     }
   })
 
-  it('offers folder import and in-app skill creation', async () => {
-    dialogOpen.mockResolvedValue('/tmp/imported-skill')
+  it('offers skill upload and in-app skill creation', async () => {
+    dialogOpen.mockResolvedValue('/tmp/imported.skill')
     render(<SkillsPage />)
 
     expect(
       screen.getByRole('button', { name: 'common:createNewSkill' })
     ).toBeInTheDocument()
-    fireEvent.click(screen.getByText('common:fromFolder'))
+    fireEvent.click(screen.getByText('common:uploadASkill'))
+    fireEvent.click(
+      screen.getByRole('button', { name: 'common:dropSkillToUpload' })
+    )
 
     await waitFor(() =>
       expect(hookState.value.addImported).toHaveBeenCalledWith(
-        '/tmp/imported-skill'
+        '/tmp/imported.skill'
       )
     )
 
-    fireEvent.click(screen.getByText('common:newSkill'))
-    expect(
-      screen.getByText('common:writeSkillInstructions')
-    ).toBeInTheDocument()
+    fireEvent.click(screen.getByText('common:writeSkillInstructions'))
+    expect(screen.getAllByText('common:writeSkillInstructions')).toHaveLength(2)
   })
 
-  it('shows skill details and confirms custom deletion', () => {
+  it('shows modular skill details without badges and confirms uninstall', () => {
     render(<SkillsPage />)
 
     expect(
-      screen.getByRole('heading', { name: 'Instructions' })
+      screen.getByRole('heading', { name: 'common:skillInstructions' })
     ).toBeInTheDocument()
-    expect(screen.getByText('common:dangerous')).toBeInTheDocument()
-    expect(screen.getByText('common:skillEnabled')).toBeInTheDocument()
-    fireEvent.click(screen.getByTitle('common:delete'))
+    expect(screen.queryByText('common:dangerous')).not.toBeInTheDocument()
+    expect(screen.queryByText('common:skillEnabled')).not.toBeInTheDocument()
+    expect(screen.getAllByText('common:downloadSkill')).toHaveLength(2)
+    expect(screen.getAllByText('common:editSkill')).toHaveLength(2)
+    fireEvent.click(screen.getAllByText('common:uninstallSkill')[0])
 
     const dialog = screen.getByRole('dialog')
     fireEvent.click(within(dialog).getByText('common:delete'))
     expect(hookState.value.remove).toHaveBeenCalledWith('custom-skill')
   })
 
-  it('keeps malformed skills visible and hides bundled deletion', () => {
+  it('keeps malformed bundled skills visible and hides custom actions', () => {
     const malformed: AgentSkillDetail = {
       ...customSkill,
       name: 'bundled-skill',
@@ -173,10 +203,12 @@ describe('SkillsPage', () => {
     render(<SkillsPage />)
 
     expect(screen.getAllByText('Invalid SKILL.md')).toHaveLength(2)
-    expect(screen.getByText('common:bundled')).toBeInTheDocument()
-    expect(screen.getByText('common:skillDisabled')).toBeInTheDocument()
-    expect(screen.getByText('common:incompatible')).toBeInTheDocument()
-    expect(screen.queryByTitle('common:delete')).not.toBeInTheDocument()
+    expect(screen.queryByText('common:bundled')).not.toBeInTheDocument()
+    expect(screen.queryByText('common:editSkill')).not.toBeInTheDocument()
+    expect(screen.queryByText('common:uninstallSkill')).not.toBeInTheDocument()
+    for (const button of screen.getAllByText('common:tryInChat')) {
+      expect(button.closest('button')).toBeDisabled()
+    }
   })
 
   it('updates the selected skill from its switch', async () => {
@@ -191,5 +223,27 @@ describe('SkillsPage', () => {
         false
       )
     )
+  })
+
+  it('opens a new Agent chat with the selected skill', () => {
+    render(<SkillsPage />)
+
+    fireEvent.click(screen.getAllByText('common:tryInChat')[0])
+
+    expect(setSidebarMode).toHaveBeenCalledWith('agent')
+    expect(setAgentMode).toHaveBeenCalledWith('temporary-chat', true)
+    expect(navigate).toHaveBeenCalledWith({
+      to: '/',
+      search: { agentSkill: 'custom-skill' },
+    })
+  })
+
+  it('opens Edit only for a custom skill', () => {
+    render(<SkillsPage />)
+
+    fireEvent.click(screen.getAllByText('common:editSkill')[0])
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('custom-skill')).toBeDisabled()
   })
 })

@@ -11,7 +11,11 @@ import { ChatAgentModeSwitch } from '@/containers/ChatAgentModeSwitch'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { route } from '@/constants/routes'
 import { Link, useLocation, useNavigate } from '@tanstack/react-router'
-import { IconSettings } from '@tabler/icons-react'
+import {
+  SettingsIcon,
+  type SettingsIconHandle,
+} from '@/components/animated-icon/settings'
+import { useRef } from 'react'
 
 import {
   Sidebar,
@@ -34,6 +38,7 @@ export function LeftSidebar() {
   const setSidebarMode = useAgentMode((state) => state.setSidebarMode)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const isMlxSelected = selectedProvider === 'mlx'
+  const settingsIconRef = useRef<SettingsIconHandle>(null)
 
   const selectMode = (mode: SidebarMode) => {
     if (mode === 'agent' && isMlxSelected) return
@@ -185,9 +190,15 @@ export function LeftSidebar() {
                 asChild
                 isActive={pathname.startsWith('/settings')}
                 className="data-[active=true]:bg-sidebar-foreground/15"
+                onMouseEnter={() => settingsIconRef.current?.startAnimation()}
+                onMouseLeave={() => settingsIconRef.current?.stopAnimation()}
               >
                 <Link to={route.settings.general}>
-                  <IconSettings />
+                  <SettingsIcon
+                    ref={settingsIconRef}
+                    className="text-foreground/70"
+                    size={16}
+                  />
                   <span>{t('common:settings')}</span>
                 </Link>
               </SidebarMenuButton>

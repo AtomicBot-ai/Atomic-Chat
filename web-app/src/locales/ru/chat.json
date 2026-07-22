@@ -17,6 +17,9 @@
     "calledTools": "Вызвано инструментов: {{count}}",
     "reasoned": "Обдумано"
   },
+  "workspacePreview": {
+    "generating": "Предпросмотр станет доступен после завершения генерации."
+  },
   "agentMode": {
     "chat": "Чат",
     "agent": "Агент",

@@ -106,6 +106,28 @@ describe('AgentWorkspaceLayout', () => {
     })
   })
 
+  it('holds the preview until generation finishes', async () => {
+    const { container } = render(
+      <AgentWorkspaceLayout
+        threadId="thread"
+        agentModeActive
+        refreshKey={0}
+        isGenerating
+      >
+        <div>Chat</div>
+      </AgentWorkspaceLayout>
+    )
+
+    act(() => {
+      useArtifactStore.getState().open('source', '<h1>Artifact</h1>')
+    })
+
+    expect(
+      await screen.findByText('chat:workspacePreview.generating')
+    ).toBeInTheDocument()
+    expect(container.querySelector('iframe')).toBeNull()
+  })
+
   it('closes and reopens the files sidebar', () => {
     render(
       <AgentWorkspaceLayout threadId="thread" agentModeActive refreshKey={0}>

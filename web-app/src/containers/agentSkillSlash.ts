@@ -21,6 +21,22 @@ export function filterAgentSkills(
     )
 }
 
+export function findAvailableAgentSkill(
+  skills: AgentSkill[],
+  name: string
+): AgentSkill | null {
+  return (
+    skills.find(
+      (skill) =>
+        skill.name === name &&
+        skill.enabled &&
+        skill.compatible &&
+        !skill.error &&
+        skill.unavailableReasons.length === 0
+    ) ?? null
+  )
+}
+
 export function moveAgentSkillActiveIndex(
   current: number,
   direction: 1 | -1,

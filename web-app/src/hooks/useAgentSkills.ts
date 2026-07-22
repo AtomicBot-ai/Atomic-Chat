@@ -2,15 +2,19 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   createAgentSkill,
   deleteAgentSkill,
+  exportAgentSkill,
   getAgentSkill,
   importAgentSkill,
   listAgentSkills,
   refreshAgentSkills,
   setAgentSkillEnabled,
+  updateAgentSkill,
   type AgentSkill,
   type AgentSkillDetail,
   type CreateAgentSkillRequest,
+  type UpdateAgentSkillRequest,
 } from '@/services/agent/skills'
+import { getServiceHub } from '@/hooks/useServiceHub'
 
 export function useAgentSkills(enabled = true) {
   const [skills, setSkills] = useState<AgentSkill[]>([])
@@ -26,15 +30,19 @@ export function useAgentSkills(enabled = true) {
       const next = refresh
         ? await refreshAgentSkills()
         : await listAgentSkills()
-      setSkills(next)
+      const sorted = [...next].sort((left, right) =>
+        left.name.localeCompare(right.name)
+      )
+      setSkills(sorted)
       const selectedName = selectedNameRef.current
-      if (selectedName && next.some((skill) => skill.name === selectedName)) {
+      if (selectedName && sorted.some((skill) => skill.name === selectedName)) {
         if (refresh) {
           setSelected(await getAgentSkill(selectedName))
         }
-      } else if (selectedName) {
-        selectedNameRef.current = null
-        setSelected(null)
+      } else {
+        const fallbackName = sorted[0]?.name ?? null
+        selectedNameRef.current = fallbackName
+        setSelected(fallbackName ? await getAgentSkill(fallbackName) : null)
       }
     } catch (reason) {
       setError(String(reason))
@@ -102,6 +110,30 @@ export function useAgentSkills(enabled = true) {
     [load]
   )
 
+  const update = useCallback(async (request: UpdateAgentSkillRequest) => {
+    const detail = await updateAgentSkill(request)
+    setSkills((current) =>
+      current.map((skill) =>
+        skill.name === detail.name ? { ...skill, ...detail } : skill
+      )
+    )
+    if (selectedNameRef.current === detail.name) {
+      setSelected(detail)
+    }
+  }, [])
+
+  const exportSkill = useCallback(async (name: string) => {
+    const targetPath = await getServiceHub()
+      .dialog()
+      .save({
+        defaultPath: `${name}.skill`,
+        filters: [{ name: 'Atomic Chat Skill', extensions: ['skill'] }],
+      })
+    if (!targetPath) return false
+    await exportAgentSkill(name, targetPath)
+    return true
+  }, [])
+
   return {
     skills,
     selected,
@@ -113,5 +145,7 @@ export function useAgentSkills(enabled = true) {
     addCreated,
     addImported,
     remove,
+    update,
+    exportSkill,
   }
 }

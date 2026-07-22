@@ -60,5 +60,7 @@ describe('PromptProgress', () => {
     const loader = container.querySelector('svg.animate-spin')
     expect(loader).not.toBeNull()
     expect(loader?.classList.contains('animate-spin')).toBe(true)
+    expect(container.querySelectorAll('svg')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: /working/i })).toBeDisabled()
   })
 })

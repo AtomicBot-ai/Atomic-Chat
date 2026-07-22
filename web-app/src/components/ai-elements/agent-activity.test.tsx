@@ -48,6 +48,22 @@ describe('AgentActivity', () => {
     expect(screen.getByText('Tool result')).toBeInTheDocument()
   })
 
+  it('hides the disclosure icon until details exist', () => {
+    const { container } = render(
+      <AgentActivity
+        active
+        workingLabel="Working"
+        durationLabel="Worked for 1 s"
+        hasDetails={false}
+      >
+        {null}
+      </AgentActivity>
+    )
+
+    expect(container.querySelectorAll('svg')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: /working/i })).toBeDisabled()
+  })
+
   it('shows the completed duration label', () => {
     render(
       <AgentActivity

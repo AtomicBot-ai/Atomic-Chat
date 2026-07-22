@@ -9,8 +9,8 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreHorizontal, Search } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { MoreHorizontal } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useThreads } from '@/hooks/useThreads'
 import ThreadList from '@/containers/ThreadList'
@@ -21,6 +21,10 @@ import {
   filterDeletableSidebarHistoryThreads,
   filterSidebarHistoryThreads,
 } from '@/lib/sidebar-thread-mode'
+import {
+  SearchIcon,
+  type SearchIconHandle,
+} from '@/components/animated-icon/search'
 
 export function NavChats({ mode }: { mode: SidebarMode }) {
   const { t } = useTranslation()
@@ -30,6 +34,7 @@ export function NavChats({ mode }: { mode: SidebarMode }) {
   const agentThreads = useAgentMode((state) => state.agentThreads)
   const setSearchOpen = useSearchDialog((state) => state.setOpen)
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const searchIconRef = useRef<SearchIconHandle>(null)
 
   const threadsWithoutProject = useMemo(() => {
     return filterSidebarHistoryThreads(
@@ -50,15 +55,19 @@ export function NavChats({ mode }: { mode: SidebarMode }) {
 
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-      <SidebarGroupLabel>
-        {t('common:chats')}
-      </SidebarGroupLabel>
+      <SidebarGroupLabel>{t('common:chats')}</SidebarGroupLabel>
       <SidebarGroupAction
         className="right-10 hover:bg-sidebar-foreground/8 [&>svg]:size-3"
         onClick={() => setSearchOpen(true)}
+        onMouseEnter={() => searchIconRef.current?.startAnimation()}
+        onMouseLeave={() => searchIconRef.current?.stopAnimation()}
         aria-label={t('common:search')}
       >
-        <Search className="text-muted-foreground" />
+        <SearchIcon
+          ref={searchIconRef}
+          className="text-muted-foreground"
+          size={14}
+        />
       </SidebarGroupAction>
       {threadsWithoutProject.length > 0 && (
         <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>

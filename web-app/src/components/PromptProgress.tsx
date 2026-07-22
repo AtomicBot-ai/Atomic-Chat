@@ -21,7 +21,12 @@ export function PromptProgress() {
     percentage < 100
 
   return (
-    <AgentActivity active workingLabel={t('activity.working')} durationLabel="">
+    <AgentActivity
+      active
+      workingLabel={t('activity.working')}
+      durationLabel=""
+      hasDetails={Boolean(showReadingProgress)}
+    >
       {showReadingProgress && (
         <ActivityDetail label={t('activity.reading', { count: percentage })}>
           <div className="h-1.5 overflow-hidden rounded-full bg-muted">

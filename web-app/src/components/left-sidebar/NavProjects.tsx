@@ -1,7 +1,6 @@
 import {
   ChevronRight,
   FolderEditIcon,
-  FolderIcon,
   FolderOpenIcon,
   GripVertical,
   MoreHorizontal,
@@ -50,13 +49,17 @@ import {
   useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { ThreadFolder } from '@/services/projects/types'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { DeleteProjectDialog } from '@/containers/dialogs/DeleteProjectDialog'
 import ThreadList from '@/containers/ThreadList'
 import { cn } from '@/lib/utils'
+import {
+  FoldersIcon,
+  type FoldersIconHandle,
+} from '@/components/animated-icon/folders'
 
 function ProjectItem({
   item,
@@ -76,6 +79,7 @@ function ProjectItem({
   onDelete: (project: ThreadFolder) => void
 }) {
   const navigate = useNavigate()
+  const folderIconRef = useRef<FoldersIconHandle>(null)
   const {
     attributes,
     listeners,
@@ -123,9 +127,18 @@ function ProjectItem({
                 />
               </button>
             </CollapsibleTrigger>
-            <SidebarMenuButton asChild className="min-w-0 flex-1 pr-8">
+            <SidebarMenuButton
+              asChild
+              className="min-w-0 flex-1 pr-8"
+              onMouseEnter={() => folderIconRef.current?.startAnimation()}
+              onMouseLeave={() => folderIconRef.current?.stopAnimation()}
+            >
               <Link to="/project/$projectId" params={{ projectId: item.id }}>
-                <FolderIcon className="text-foreground/70" size={16} />
+                <FoldersIcon
+                  ref={folderIconRef}
+                  className="text-foreground/70"
+                  size={16}
+                />
                 <span className="truncate">{item.name}</span>
               </Link>
             </SidebarMenuButton>
