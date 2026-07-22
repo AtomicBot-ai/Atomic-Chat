@@ -3006,10 +3006,15 @@ export default class llamacpp_upstream_extension extends AIEngine {
     // are named `llama-bXXXX-bin-ubuntu-{vulkan,}-x64.tar.gz` on Linux, but
     // the extension stores backends under `linux-vulkan-x64` / `linux-cpu-x64`
     // so that findCompatibleInstalledBackend and the rest of the backend
-    // resolution machinery can find them by the correct internal id.
+    // resolution machinery can find them by the correct internal id. If a user
+    // imports a custom CUDA tarball named `ubuntu-cuda-*`, preserve it as
+    // `linux-cuda-*` instead of collapsing it to CPU; CUDA is not auto-offered
+    // on Linux, but manually imported CUDA builds should stay selectable.
     const backendIdentifier =
       IS_LINUX && rawBackendIdentifier.startsWith('ubuntu-')
-        ? rawBackendIdentifier.includes('vulkan')
+        ? rawBackendIdentifier.includes('cuda')
+          ? rawBackendIdentifier.replace(/^ubuntu-/, 'linux-')
+          : rawBackendIdentifier.includes('vulkan')
           ? `linux-vulkan-${rawBackendIdentifier.includes('arm64') ? 'arm64' : 'x64'}`
           : `linux-cpu-${rawBackendIdentifier.includes('arm64') ? 'arm64' : 'x64'}`
         : rawBackendIdentifier
