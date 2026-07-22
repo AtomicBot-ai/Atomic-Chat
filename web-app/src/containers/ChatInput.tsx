@@ -32,7 +32,6 @@ import {
   IconLoader2,
   IconWorld,
   IconMusic,
-  IconSparkles,
 } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -2368,22 +2367,10 @@ const ChatInput = memo(function ChatInput({
               <div className="flex w-full items-start gap-2 px-4 pt-3">
                 {selectedAgentSkill && (
                   <div
-                    className="mt-0.5 inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-primary/40 bg-primary/15 px-2 text-sm font-medium text-primary shadow-sm"
+                    className="inline-flex shrink-0 text-sm font-medium leading-6 text-blue-600 dark:text-blue-400"
                     data-testid="agent-skill-inline-token"
                   >
-                    <IconSparkles size={14} aria-hidden="true" />
                     <span>/{selectedAgentSkill.name}</span>
-                    <button
-                      type="button"
-                      className="ml-0.5 rounded-sm text-primary/70 transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
-                      aria-label={t('common:agentSkill.remove')}
-                      onClick={() => {
-                        setSelectedAgentSkill(null)
-                        textareaRef.current?.focus()
-                      }}
-                    >
-                      <IconX size={13} />
-                    </button>
                   </div>
                 )}
                 <TextareaAutosize
@@ -2474,9 +2461,11 @@ const ChatInput = memo(function ChatInput({
                   }
                   onPaste={handlePaste}
                   placeholder={
-                    effectiveAgentMode
-                      ? t('chat:agentMode.placeholder')
-                      : t('common:placeholder.chatInput')
+                    selectedAgentSkill
+                      ? ''
+                      : effectiveAgentMode
+                        ? t('chat:agentMode.placeholder')
+                        : t('common:placeholder.chatInput')
                   }
                   autoFocus
                   spellCheck={spellCheckChatInput}
@@ -2484,7 +2473,7 @@ const ChatInput = memo(function ChatInput({
                   data-gramm_editor={spellCheckChatInput}
                   data-gramm_grammarly={spellCheckChatInput}
                   className={cn(
-                    'min-w-0 flex-1 resize-none border-none bg-transparent p-0 pt-1 outline-0',
+                    'min-w-0 flex-1 resize-none border-none bg-transparent p-0 text-sm leading-6 outline-0',
                     rows < maxRows && 'scrollbar-hide',
                     className
                   )}
