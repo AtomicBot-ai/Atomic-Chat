@@ -183,12 +183,16 @@ const extractCodeBlockPayload = (
   return { code, language }
 }
 
-const downloadViaTauri = async (
-  payload: CodeBlockPayload,
+/**
+ * Generic text save through Tauri's native save dialog + `write_file_sync`.
+ * Used for code blocks and table exports (csv/markdown).
+ */
+const saveTextViaTauri = async (
+  content: string,
+  defaultPath: string,
+  ext: string,
+  filterName: string,
 ): Promise<void> => {
-  const ext = LANG_TO_EXT[payload.language] ?? 'txt'
-  const defaultPath = `${getDefaultFileBaseName()}.${ext}`
-
   if (!isServiceHubInitialized()) {
     console.warn('[code-block-download] ServiceHub not initialized yet')
     return
@@ -197,18 +201,72 @@ const downloadViaTauri = async (
   const dialog = getServiceHub().dialog()
   const targetPath = await dialog.save({
     defaultPath,
-    filters: [
-      {
-        name: payload.language || 'Text',
-        extensions: [ext],
-      },
-    ],
+    filters: [{ name: filterName, extensions: [ext] }],
   })
   if (!targetPath) return
 
   await invoke('write_file_sync', {
-    args: [targetPath, payload.code],
+    args: [targetPath, content],
   })
+}
+
+const downloadViaTauri = async (
+  payload: CodeBlockPayload,
+): Promise<void> => {
+  const ext = LANG_TO_EXT[payload.language] ?? 'txt'
+  const defaultPath = `${getDefaultFileBaseName()}.${ext}`
+  await saveTextViaTauri(
+    payload.code,
+    defaultPath,
+    ext,
+    payload.language || 'Text',
+  )
+}
+
+/* ------------------------------------------------------------------ *
+ * Table downloads (csv / markdown).
+ *
+ * Streamdown renders a "table-wrapper" with a download button that
+ * offers CSV / Markdown. Its own save path is a Blob `<a download>`
+ * click, which Tauri's webview ignores — so the click does nothing.
+ * We intercept those clicks and route them through Tauri instead.
+ * ------------------------------------------------------------------ */
+
+/** Extract { headers, rows } from a rendered <table> element. */
+const extractTable = (table: Element): { headers: string[]; rows: string[][] } => {
+  const headers: string[] = []
+  table.querySelectorAll('thead th').forEach((th) => {
+    headers.push((th.textContent ?? '').trim())
+  })
+  const rows: string[][] = []
+  table.querySelectorAll('tbody tr').forEach((tr) => {
+    const cells: string[] = []
+    tr.querySelectorAll('td').forEach((td) => {
+      cells.push((td.textContent ?? '').trim())
+    })
+    rows.push(cells)
+  })
+  return { headers, rows }
+}
+
+const csvCell = (value: string): string => {
+  if (value.includes('"') || value.includes(',') || value.includes('\n') || value.includes('\r')) {
+    return `"${value.replace(/"/g, '""')}"`
+  }
+  return value
+}
+
+const tableToCsv = ({ headers, rows }: { headers: string[]; rows: string[][] }): string => {
+  const lines = [headers, ...rows].map((row) => row.map(csvCell).join(','))
+  return lines.join('\n')
+}
+
+const tableToMarkdown = ({ headers, rows }: { headers: string[]; rows: string[][] }): string => {
+  const escape = (value: string) => value.replace(/\|/g, '\\|')
+  const headerLine = `| ${headers.map(escape).join(' | ')} |`
+  const sepLine = `| ${headers.map(() => '---').join(' | ')} |`
+  const bodyLines = rows.map((row) => `| ${row.map(escape).join(' | ')} |`)
+  return [headerLine, sepLine, ...bodyLines].join('\n')
 }
 
 let installed = false
@@ -227,6 +285,38 @@ export const installCodeBlockDownloadHandler = (): void => {
     (event) => {
       const target = event.target
       if (!(target instanceof Element)) return
+
+      // Streamdown table downloads: the "Download table as CSV / Markdown"
+      // menu buttons create a Blob `<a download>` that Tauri's webview
+      // ignores. Intercept and route through Tauri's save dialog.
+      const menuBtn = target.closest('button')
+      if (menuBtn) {
+        const title = menuBtn.getAttribute('title') ?? ''
+        const m = title.match(/Download table as (CSV|Markdown)/i)
+        if (m) {
+          event.preventDefault()
+          event.stopPropagation()
+          const format = m[1].toLowerCase() === 'csv' ? 'csv' : 'md'
+          const wrapper = menuBtn.closest('[data-streamdown="table-wrapper"]')
+          const table = wrapper?.querySelector('table')
+          if (table) {
+            const { headers, rows } = extractTable(table)
+            const content =
+              format === 'csv'
+                ? tableToCsv({ headers, rows })
+                : tableToMarkdown({ headers, rows })
+            void saveTextViaTauri(
+              content,
+              `table.${format}`,
+              format,
+              format.toUpperCase(),
+            ).catch((error) => {
+              console.error('[table-download] save failed:', error)
+            })
+          }
+          return
+        }
+      }
 
       const button = target.closest(DOWNLOAD_BUTTON_SELECTOR)
       if (!button) return
