@@ -769,6 +769,12 @@ function backendTypeEquivalents(backendType: string): Set<string> {
   const ids = new Set<string>()
   const bt = backendType.replace(/\uFEFF/g, '').trim()
   ids.add(bt)
+  // Generic linux-* ↔ ubuntu-* aliases, including custom CUDA archives
+  // installed from file. CUDA is not auto-offered on Linux because upstream
+  // does not publish ubuntu-cuda-* assets, but imported CUDA builds must remain
+  // discoverable as the same backend type regardless of archive prefix.
+  if (bt.startsWith('linux-')) ids.add(`ubuntu-${bt.slice('linux-'.length)}`)
+  if (bt.startsWith('ubuntu-')) ids.add(`linux-${bt.slice('ubuntu-'.length)}`)
   // linux-vulkan-x64 ↔ ubuntu-vulkan-x64
   if (bt === 'linux-vulkan-x64') ids.add('ubuntu-vulkan-x64')
   if (bt === 'linux-vulkan-arm64') ids.add('ubuntu-vulkan-arm64')
