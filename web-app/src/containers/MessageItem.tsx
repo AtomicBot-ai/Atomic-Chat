@@ -50,6 +50,7 @@ export type MessageItemProps = {
   isLastMessage: boolean
   status: ChatStatus
   reasoningContainerRef?: React.RefObject<HTMLDivElement | null>
+  onReasoningScroll?: () => void
   onRegenerate?: (messageId: string) => void
   onEdit?: (messageId: string, newText: string) => void
   onDelete?: (messageId: string) => void
@@ -67,6 +68,7 @@ export const MessageItem = memo(
     isAnimating,
     hideActions,
     reasoningContainerRef,
+    onReasoningScroll,
     onRegenerate,
     onEdit,
     onDelete,
@@ -238,10 +240,11 @@ export const MessageItem = memo(
             )}
             <div
               ref={isStreaming ? reasoningContainerRef : null}
+              onScroll={isStreaming ? onReasoningScroll : undefined}
               className={twMerge(
-                'w-full overflow-auto relative',
+                'w-full relative',
                 isStreaming
-                  ? 'max-h-32 opacity-70 mt-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
+                  ? 'opacity-70 mt-2 overflow-auto max-h-32 [overflow-anchor:none]'
                   : 'h-auto opacity-100'
               )}
             >
@@ -303,6 +306,7 @@ export const MessageItem = memo(
           key={block.key}
           state={block.state}
           className="mb-4 rounded-lg border border-border/60 bg-muted/20 px-3 py-2"
+          style={{ transform: 'translateZ(0)' }}
         >
           <ToolRenderer presentation={block.presentation} state={block.state} />
         </Tool>
