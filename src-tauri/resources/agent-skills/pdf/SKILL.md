@@ -6,6 +6,10 @@ requires_tools:
   - os.shell.run
   - os.fs.read_document
 dangerous: false
+platforms:
+  - darwin
+  - linux
+  - win32
 ---
 
 # pdf
@@ -52,6 +56,19 @@ On yes:
 
 On Linux use `apt-get install qpdf poppler-utils ocrmypdf`. If `brew` itself is
 missing, point the user at https://brew.sh/ and stop.
+
+On Windows, qpdf and Poppler can be installed after confirmation with:
+
+```
+[{ "tool": "os.shell.run", "args": { "cmd": "winget", "args": ["install", "--id", "QPDF.QPDF", "-e"] } }]
+```
+
+```
+[{ "tool": "os.shell.run", "args": { "cmd": "winget", "args": ["install", "--id", "oschwartz10612.Poppler", "-e"] } }]
+```
+
+Do not claim native Windows OCR support or attempt to install `ocrmypdf`
+automatically; direct OCR work to WSL or another supported environment.
 
 ## When to use
 

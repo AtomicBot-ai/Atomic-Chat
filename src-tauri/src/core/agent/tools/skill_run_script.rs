@@ -400,6 +400,21 @@ mod tests {
         SkillRegistry::load(root, &BTreeSet::new(), &BTreeSet::new()).unwrap()
     }
 
+    #[cfg(windows)]
+    fn create_junction(link: &Path, target: &Path) {
+        let output = std::process::Command::new("cmd.exe")
+            .args(["/C", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "mklink /J failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
     #[tokio::test]
     async fn prepares_only_declared_scripts_and_bounds_timeout() {
         let temp = TempDir::new().unwrap();
@@ -717,5 +732,79 @@ mod tests {
         )
         .await
         .is_err());
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn rejects_junctioned_scripts_directory() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("skills");
+        let skill_root = root.join("test-skill");
+        let outside = temp.path().join("outside-scripts");
+        fs::create_dir_all(&skill_root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("escape.cmd"), "@echo outside").unwrap();
+        let junction = skill_root.join("scripts");
+        create_junction(&junction, &outside);
+        fs::write(
+            skill_root.join("SKILL.md"),
+            "---\nname: test-skill\ndescription: Test\nrequires_scripts: [escape.cmd]\n---\nBody",
+        )
+        .unwrap();
+        let registry = SkillRegistry::load(root, &BTreeSet::new(), &BTreeSet::new()).unwrap();
+
+        assert!(prepare(
+            &serde_json::json!({
+                "skill": "test-skill",
+                "script": "escape.cmd"
+            }),
+            &registry,
+            None,
+        )
+        .await
+        .is_err());
+
+        fs::remove_dir(&junction).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn rejects_symlinked_scripts_directory_when_creation_is_allowed() {
+        use std::os::windows::fs::symlink_dir;
+
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("skills");
+        let skill_root = root.join("test-skill");
+        let outside = temp.path().join("outside-scripts");
+        fs::create_dir_all(&skill_root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("escape.cmd"), "@echo outside").unwrap();
+        let link = skill_root.join("scripts");
+        if let Err(error) = symlink_dir(&outside, &link) {
+            if error.kind() == io::ErrorKind::PermissionDenied || error.raw_os_error() == Some(1314)
+            {
+                return;
+            }
+            panic!("could not create directory symlink fixture: {error}");
+        }
+        fs::write(
+            skill_root.join("SKILL.md"),
+            "---\nname: test-skill\ndescription: Test\nrequires_scripts: [escape.cmd]\n---\nBody",
+        )
+        .unwrap();
+        let registry = SkillRegistry::load(root, &BTreeSet::new(), &BTreeSet::new()).unwrap();
+
+        assert!(prepare(
+            &serde_json::json!({
+                "skill": "test-skill",
+                "script": "escape.cmd"
+            }),
+            &registry,
+            None,
+        )
+        .await
+        .is_err());
+
+        fs::remove_dir(&link).unwrap();
     }
 }

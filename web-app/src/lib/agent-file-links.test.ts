@@ -22,6 +22,32 @@ describe('agent file links', () => {
     ).toEqual(['/Users/misha/Desktop/summary.txt'])
   })
 
+  it('extracts supported Windows paths and rejects device namespaces', () => {
+    expect(
+      extractAgentToolPaths([
+        {
+          type: 'tool-os.fs.write',
+          input: { path: '\\\\?\\C:\\Users\\Misha\\summary.txt' },
+        },
+        {
+          type: 'tool-os.fs.read',
+          input: { path: '\\\\server\\share\\report.txt' },
+        },
+        {
+          type: 'tool-os.fs.read',
+          input: { path: '\\\\.\\C:\\device.txt' },
+        },
+        {
+          type: 'tool-os.fs.read',
+          input: { path: '\\\\?\\GLOBALROOT\\Device\\file.txt' },
+        },
+      ])
+    ).toEqual([
+      '\\\\?\\C:\\Users\\Misha\\summary.txt',
+      '\\\\server\\share\\report.txt',
+    ])
+  })
+
   it('extracts named attachment paths from file parts', () => {
     expect(
       extractAgentAttachmentReferences([

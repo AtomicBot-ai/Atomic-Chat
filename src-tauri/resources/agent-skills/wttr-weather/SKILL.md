@@ -6,6 +6,10 @@ requires_tools:
   - os.http.request
   - os.shell.run
 dangerous: false
+platforms:
+  - darwin
+  - linux
+  - win32
 ---
 
 # wttr-weather

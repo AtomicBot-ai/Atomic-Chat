@@ -5,6 +5,10 @@ version: 1.0.0
 requires_tools:
   - os.shell.run
 dangerous: true
+platforms:
+  - darwin
+  - linux
+  - win32
 ---
 
 # docker
@@ -40,9 +44,12 @@ Reply (solo `reply` step):
 Do NOT attempt to install Docker Desktop silently — it needs a GUI launch and
 privileged setup.
 
+On Windows, direct the user to Docker Desktop at
+https://docker.com/products/docker-desktop. Do not attempt a silent install.
+
 ### daemon not running
 
-> «Docker установлен, но демон не запущен. Откройте Docker Desktop (или `systemctl start docker` на Linux) и скажите "готово".»
+> «Docker установлен, но демон не запущен. Откройте Docker Desktop (macOS/Windows) или запустите службу Docker в Linux и скажите "готово".»
 
 Do not try to start the daemon via `os.shell.run` on macOS — it requires the
 Desktop app.

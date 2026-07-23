@@ -116,7 +116,10 @@ fn copy_tree(source: &Path, destination: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
+    use crate::core::agent::skills::SkillPlatform;
     use tempfile::TempDir;
 
     fn write_skill(root: &Path, name: &str, body: &str) {
@@ -155,5 +158,55 @@ mod tests {
         let result = seed_starter_skills(&source, &destination).unwrap();
         assert_eq!(result.removed, [REMOVED_STARTER_SKILLS[0]]);
         assert!(!destination.join(REMOVED_STARTER_SKILLS[0]).exists());
+    }
+
+    #[test]
+    fn bundled_skills_follow_explicit_platform_metadata_policy() {
+        use SkillPlatform::{Darwin, Linux, Win32};
+
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/agent-skills");
+        let expected = BTreeMap::from([
+            ("apple-calendar", vec![Darwin]),
+            ("apple-notes", vec![Darwin]),
+            ("apple-reminders", vec![Darwin]),
+            ("audio-transcribe", vec![Darwin, Linux]),
+            ("currency", vec![Darwin, Linux, Win32]),
+            ("docker", vec![Darwin, Linux, Win32]),
+            ("ffmpeg", vec![Darwin, Linux, Win32]),
+            ("github", vec![Darwin, Linux, Win32]),
+            ("gog-workspace", vec![Darwin, Linux]),
+            ("imagemagick", vec![Darwin, Linux, Win32]),
+            ("notion", vec![Darwin, Linux]),
+            ("obsidian", vec![Darwin, Linux]),
+            ("pandoc", vec![Darwin, Linux, Win32]),
+            ("pdf", vec![Darwin, Linux, Win32]),
+            ("skill-creator", vec![Darwin, Linux, Win32]),
+            ("wttr-weather", vec![Darwin, Linux, Win32]),
+            ("xlsx", vec![Darwin, Linux]),
+        ]);
+
+        let names = list_starter_skill_names(&source);
+        assert_eq!(
+            names.len(),
+            expected.len(),
+            "every bundled skill must have an explicit reviewed platform policy"
+        );
+
+        for name in names {
+            let skill_root = source.join(&name);
+            let content = fs::read_to_string(skill_root.join("SKILL.md")).unwrap();
+            let parsed = parse_skill_file(&content).unwrap();
+            assert_eq!(
+                parsed.manifest.platforms.as_ref(),
+                expected.get(name.as_str()),
+                "platform metadata changed for bundled skill `{name}`; review and update the policy explicitly"
+            );
+            for script in &parsed.manifest.requires_scripts {
+                assert!(
+                    skill_root.join("scripts").join(script).is_file(),
+                    "bundled skill `{name}` declares missing script `{script}`"
+                );
+            }
+        }
     }
 }

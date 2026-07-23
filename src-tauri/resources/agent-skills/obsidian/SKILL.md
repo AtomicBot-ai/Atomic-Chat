@@ -10,6 +10,9 @@ requires_tools:
   - os.fs.list
   - os.shell.run
 dangerous: false
+platforms:
+  - darwin
+  - linux
 ---
 
 # obsidian

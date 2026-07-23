@@ -5,6 +5,10 @@ version: 1.0.0
 requires_tools:
   - os.shell.run
 dangerous: false
+platforms:
+  - darwin
+  - linux
+  - win32
 ---
 
 # ffmpeg
@@ -40,6 +44,12 @@ On yes:
 ```
 
 On Linux: `apt-get install ffmpeg`.
+
+On Windows, offer this exact winget command after confirmation:
+
+```
+[{ "tool": "os.shell.run", "args": { "cmd": "winget", "args": ["install", "--id", "Gyan.FFmpeg", "-e"] } }]
+```
 
 ## When to use
 

@@ -7,6 +7,10 @@ requires_tools:
   - os.fs.write
   - os.fs.list
 dangerous: false
+platforms:
+  - darwin
+  - linux
+  - win32
 ---
 
 # skill-creator
@@ -27,6 +31,10 @@ version: 1.0.0
 requires_tools: []
 requires_scripts: []
 dangerous: false
+platforms:
+  - darwin
+  - linux
+  - win32
 ---
 
 # my-skill-name

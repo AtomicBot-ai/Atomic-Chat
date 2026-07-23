@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { agentPathBasename } from '@/lib/agent-path'
 
 export type WorkspaceFilePreviewTab = {
   id: string
@@ -32,7 +33,7 @@ function fileTabId(path: string): string {
 }
 
 function fileName(path: string): string {
-  return path.split('/').filter(Boolean).at(-1) ?? path
+  return agentPathBasename(path)
 }
 
 function withoutTab(

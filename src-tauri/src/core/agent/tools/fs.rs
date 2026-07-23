@@ -1,5 +1,9 @@
-use std::path::Path;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
+use diffy::{apply, create_patch, Patch};
+use ignore::WalkBuilder;
+use regex::Regex;
 use serde_json::Value;
 use sha2::{Digest, Sha256, Sha512};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
@@ -10,6 +14,9 @@ use super::{
     MAX_TOOL_OUTPUT_CHARS,
 };
 use crate::core::agent::types::ToolOutcome;
+
+/// Upper bound for in-process text reads used by grep/diff/patch.
+const MAX_TEXT_FILE_BYTES: u64 = 1_048_576;
 
 pub async fn execute(
     tool: &str,
@@ -131,10 +138,7 @@ async fn glob_paths(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutco
         .map_err(|error| ToolOutcome::error(error.to_string()))?
         .filter_map(Result::ok)
         .map(|path| {
-            path.strip_prefix(&base)
-                .unwrap_or(&path)
-                .to_string_lossy()
-                .to_string()
+            display_relative_path(path.strip_prefix(&base).unwrap_or(&path))
         })
         .collect::<Vec<_>>();
     Ok(ToolOutcome::ok(truncate(
@@ -150,22 +154,124 @@ async fn grep(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, To
         .and_then(Value::as_str)
         .map(|value| resolve_path(context.working_dir, value))
         .unwrap_or_else(|| context.working_dir.to_path_buf());
-    let mut command = Command::new("rg");
-    command
-        .arg("--line-number")
-        .arg("--color=never")
-        .arg("--")
-        .arg(pattern)
-        .arg(path)
-        .current_dir(context.working_dir);
-    let output = command
-        .output()
+    let working_dir = context.working_dir.to_path_buf();
+    let result = tokio::task::spawn_blocking(move || grep_sync(&pattern, &path, &working_dir))
         .await
-        .map_err(|error| ToolOutcome::error(format!("Could not run rg: {error}")))?;
-    if output.status.code() == Some(1) {
-        return Ok(ToolOutcome::ok("No matches"));
+        .map_err(|error| ToolOutcome::error(format!("Grep task failed: {error}")))?
+        .map_err(ToolOutcome::error)?;
+    Ok(ToolOutcome::ok(result))
+}
+
+fn grep_sync(pattern: &str, path: &Path, working_dir: &Path) -> Result<String, String> {
+    let regex = Regex::new(pattern).map_err(|error| format!("Invalid regex: {error}"))?;
+    let mut files = if path.is_file() {
+        vec![path.to_path_buf()]
+    } else if path.is_dir() {
+        WalkBuilder::new(path)
+            .follow_links(false)
+            .standard_filters(true)
+            .build()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().is_some_and(|kind| kind.is_file()))
+            .map(|entry| entry.into_path())
+            .collect::<Vec<_>>()
+    } else {
+        return Err(format!("{}: path does not exist", path.display()));
+    };
+    files.sort();
+
+    let direct_file = path.is_file();
+    let mut output = String::new();
+    for file in files {
+        let bytes = match read_text_file_bytes(&file) {
+            Ok(bytes) => bytes,
+            Err(_) if !direct_file => continue,
+            Err(error) => return Err(error),
+        };
+        let text = match utf8_text(&bytes, &file) {
+            Ok(text) => text,
+            Err(_) if !direct_file => continue,
+            Err(error) => return Err(error),
+        };
+        let display_path = display_relative_path(file.strip_prefix(working_dir).unwrap_or(&file));
+        for (index, line) in text.lines().enumerate() {
+            if regex.is_match(line) {
+                output.push_str(&format!("{display_path}:{}:{line}\n", index + 1));
+                if output.chars().count() > MAX_TOOL_OUTPUT_CHARS {
+                    return Ok(truncate(output, MAX_TOOL_OUTPUT_CHARS));
+                }
+            }
+        }
     }
-    command_outcome(output)
+    if output.is_empty() {
+        Ok("No matches".into())
+    } else {
+        output.pop();
+        Ok(output)
+    }
+}
+
+/// Stable relative path labels for Agent observations (`/` on every platform).
+fn display_relative_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn strip_windows_verbatim_prefix(path: &Path) -> PathBuf {
+    let raw = path.to_string_lossy();
+    if let Some(rest) = raw.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!(r"\\{rest}"))
+    } else if let Some(rest) = raw.strip_prefix(r"\\?\") {
+        PathBuf::from(rest)
+    } else {
+        path.to_path_buf()
+    }
+}
+
+/// Prefer a workspace-relative label after path-policy rewrites args to absolute
+/// (and on Windows, verbatim) paths.
+fn observation_path_label(working_dir: &Path, path: &Path) -> String {
+    let path = strip_windows_verbatim_prefix(path);
+    let working_dir = strip_windows_verbatim_prefix(working_dir);
+    display_relative_path(path.strip_prefix(&working_dir).unwrap_or(&path))
+}
+
+fn format_unified_diff(left: &str, right: &str, left_text: &str, right_text: &str) -> String {
+    if left_text == right_text {
+        return String::new();
+    }
+    let generated = create_patch(left_text, right_text)
+        .to_string()
+        .replace("\r\n", "\n")
+        .replace('\r', "\n");
+    let body = generated.lines().skip(2).collect::<Vec<_>>().join("\n");
+    if generated.ends_with('\n') {
+        format!("--- {left}\n+++ {right}\n{body}\n")
+    } else {
+        format!("--- {left}\n+++ {right}\n{body}")
+    }
+}
+
+fn utf8_text<'a>(bytes: &'a [u8], path: &Path) -> Result<&'a str, String> {
+    if bytes.contains(&0) {
+        return Err(format!(
+            "{}: binary files are not supported",
+            path.display()
+        ));
+    }
+    std::str::from_utf8(bytes)
+        .map_err(|_| format!("{}: file is not valid UTF-8 text", path.display()))
+}
+
+fn read_text_file_bytes(path: &Path) -> Result<Vec<u8>, String> {
+    let metadata = std::fs::metadata(path).map_err(|error| format!("{}: {error}", path.display()))?;
+    if metadata.len() > MAX_TEXT_FILE_BYTES {
+        return Err(format!(
+            "{}: file exceeds the {} byte text-tool limit",
+            path.display(),
+            MAX_TEXT_FILE_BYTES
+        ));
+    }
+    std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))
 }
 
 async fn hash(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, ToolOutcome> {
@@ -257,20 +363,27 @@ async fn hash_with_system_tool(path: &Path, algorithm: &str) -> Result<ToolOutco
 async fn diff(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, ToolOutcome> {
     let left = required_string(args, "pathA").map_err(ToolOutcome::error)?;
     let right = required_string(args, "pathB").map_err(ToolOutcome::error)?;
-    let output = Command::new("diff")
-        .args(["-u", "--"])
-        .arg(resolve_path(context.working_dir, &left))
-        .arg(resolve_path(context.working_dir, &right))
-        .output()
-        .await
-        .map_err(|error| ToolOutcome::error(error.to_string()))?;
-    if matches!(output.status.code(), Some(0 | 1)) {
-        return Ok(ToolOutcome::ok(truncate(
-            String::from_utf8_lossy(&output.stdout).into_owned(),
-            MAX_TOOL_OUTPUT_CHARS,
-        )));
-    }
-    command_outcome(output)
+    let left_path = resolve_path(context.working_dir, &left);
+    let right_path = resolve_path(context.working_dir, &right);
+    let working_dir = context.working_dir.to_path_buf();
+    let left_label = observation_path_label(&working_dir, &left_path);
+    let right_label = observation_path_label(&working_dir, &right_path);
+    let result = tokio::task::spawn_blocking(move || {
+        let left_bytes = read_text_file_bytes(&left_path)?;
+        let right_bytes = read_text_file_bytes(&right_path)?;
+        let left_text = utf8_text(&left_bytes, &left_path)?;
+        let right_text = utf8_text(&right_bytes, &right_path)?;
+        Ok::<_, String>(format_unified_diff(
+            &left_label,
+            &right_label,
+            left_text,
+            right_text,
+        ))
+    })
+    .await
+    .map_err(|error| ToolOutcome::error(format!("Diff task failed: {error}")))?
+    .map_err(ToolOutcome::error)?;
+    Ok(ToolOutcome::ok(truncate(result, MAX_TOOL_OUTPUT_CHARS)))
 }
 
 async fn write(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, ToolOutcome> {
@@ -388,60 +501,255 @@ async fn trash(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, T
         context.working_dir,
         &required_string(args, "path").map_err(ToolOutcome::error)?,
     );
-    let trash_root = dirs::home_dir()
-        .map(|home| {
-            if cfg!(target_os = "macos") {
-                home.join(".Trash")
-            } else {
-                home.join(".local/share/Trash/files")
-            }
-        })
-        .ok_or_else(|| ToolOutcome::error("Could not resolve trash directory"))?;
-    tokio::fs::create_dir_all(&trash_root)
+    let display = source.display().to_string();
+    tokio::task::spawn_blocking(move || trash::delete(&source))
         .await
-        .map_err(|error| ToolOutcome::error(error.to_string()))?;
-    let name = source
-        .file_name()
-        .ok_or_else(|| ToolOutcome::error("Path has no file name"))?;
-    let destination = trash_root.join(format!(
-        "{}-{}",
-        chrono::Utc::now().timestamp_millis(),
-        name.to_string_lossy()
-    ));
-    tokio::fs::rename(&source, &destination)
-        .await
-        .map_err(|error| ToolOutcome::error(error.to_string()))?;
-    Ok(ToolOutcome::ok(format!(
-        "Moved {} to trash",
-        source.display()
-    )))
+        .map_err(|error| ToolOutcome::error(format!("Trash task failed: {error}")))?
+        .map_err(|error| ToolOutcome::error(format!("{display}: {error}")))?;
+    Ok(ToolOutcome::ok(format!("Moved {display} to trash")))
 }
 
 async fn patch(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, ToolOutcome> {
     let patch_text = required_string(args, "patch").map_err(ToolOutcome::error)?;
     let apply = args.get("apply").and_then(Value::as_bool).unwrap_or(false);
-    let mut child = Command::new("patch")
-        .args(if apply {
-            vec!["--batch", "-p0"]
+    let working_dir = context.working_dir.to_path_buf();
+    let result = tokio::task::spawn_blocking(move || patch_sync(&patch_text, &working_dir, apply))
+        .await
+        .map_err(|error| ToolOutcome::error(format!("Patch task failed: {error}")))?
+        .map_err(ToolOutcome::error)?;
+    Ok(ToolOutcome::ok(result))
+}
+
+#[derive(Debug)]
+struct PlannedPatch {
+    original: Option<Vec<u8>>,
+    updated: Option<Vec<u8>>,
+}
+
+fn patch_sync(patch_text: &str, working_dir: &Path, should_apply: bool) -> Result<String, String> {
+    let patches = split_unified_patches(patch_text)?;
+    let mut changes = BTreeMap::<PathBuf, PlannedPatch>::new();
+
+    for patch_text in patches {
+        let patch = Patch::from_str(patch_text)
+            .map_err(|error| format!("Invalid unified diff: {error}"))?;
+        let original_name = patch.original().filter(|path| *path != "/dev/null");
+        let modified_name = patch.modified().filter(|path| *path != "/dev/null");
+        let source = original_name.map(|path| resolve_path(working_dir, path));
+        let target = modified_name.map(|path| resolve_path(working_dir, path));
+        let base = if let Some(source) = &source {
+            staged_or_disk_text(&changes, source)?
         } else {
-            vec!["--batch", "--dry-run", "-p0"]
+            String::new()
+        };
+        let updated =
+            apply(&base, &patch).map_err(|error| format!("Patch validation failed: {error}"))?;
+
+        match (source, target) {
+            (None, Some(target)) => {
+                if changes.contains_key(&target) || target.exists() {
+                    return Err(format!(
+                        "{}: create target already exists",
+                        target.display()
+                    ));
+                }
+                changes.insert(
+                    target,
+                    PlannedPatch {
+                        original: None,
+                        updated: Some(updated.into_bytes()),
+                    },
+                );
+            }
+            (Some(source), None) => {
+                if !updated.is_empty() {
+                    return Err(format!(
+                        "{}: delete patch did not produce an empty file",
+                        source.display()
+                    ));
+                }
+                let original = original_bytes(&changes, &source)?;
+                changes.insert(
+                    source,
+                    PlannedPatch {
+                        original: Some(original),
+                        updated: None,
+                    },
+                );
+            }
+            (Some(source), Some(target)) if source == target => {
+                let original = original_bytes(&changes, &source)?;
+                changes.insert(
+                    source,
+                    PlannedPatch {
+                        original: Some(original),
+                        updated: Some(updated.into_bytes()),
+                    },
+                );
+            }
+            (Some(source), Some(target)) => {
+                if changes.contains_key(&target) || target.exists() {
+                    return Err(format!("{}: patch target already exists", target.display()));
+                }
+                let original = original_bytes(&changes, &source)?;
+                changes.insert(
+                    source,
+                    PlannedPatch {
+                        original: Some(original),
+                        updated: None,
+                    },
+                );
+                changes.insert(
+                    target,
+                    PlannedPatch {
+                        original: None,
+                        updated: Some(updated.into_bytes()),
+                    },
+                );
+            }
+            (None, None) => return Err("Patch has no source or target path".into()),
+        }
+    }
+
+    if changes.is_empty() {
+        return Err("Patch contains no file changes".into());
+    }
+    if should_apply {
+        apply_planned_changes(&changes)?;
+        Ok(format!("Applied patch to {} file(s)", changes.len()))
+    } else {
+        Ok(format!(
+            "Patch valid for {} file(s); no files changed",
+            changes.len()
+        ))
+    }
+}
+
+fn split_unified_patches(input: &str) -> Result<Vec<&str>, String> {
+    let mut lines = Vec::new();
+    let mut offset = 0;
+    for line in input.split_inclusive('\n') {
+        lines.push((offset, line));
+        offset += line.len();
+    }
+    if offset < input.len() {
+        lines.push((offset, &input[offset..]));
+    }
+    let mut starts = lines
+        .windows(3)
+        .filter(|group| {
+            group[0].1.starts_with("--- ")
+                && group[1].1.starts_with("+++ ")
+                && group[2].1.starts_with("@@ ")
         })
-        .current_dir(context.working_dir)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|error| ToolOutcome::error(error.to_string()))?;
-    child
-        .stdin
-        .take()
-        .ok_or_else(|| ToolOutcome::error("Patch stdin unavailable"))?
-        .write_all(patch_text.as_bytes())
-        .await
-        .map_err(|error| ToolOutcome::error(error.to_string()))?;
-    let output = child
-        .wait_with_output()
-        .await
-        .map_err(|error| ToolOutcome::error(error.to_string()))?;
-    command_outcome(output)
+        .map(|group| group[0].0)
+        .collect::<Vec<_>>();
+    if starts.is_empty() {
+        return Err("Invalid unified diff: missing `---` header".into());
+    }
+    starts.push(input.len());
+    Ok(starts
+        .windows(2)
+        .map(|range| &input[range[0]..range[1]])
+        .collect())
+}
+
+fn staged_or_disk_text(
+    changes: &BTreeMap<PathBuf, PlannedPatch>,
+    path: &Path,
+) -> Result<String, String> {
+    let bytes = if let Some(change) = changes.get(path) {
+        change
+            .updated
+            .clone()
+            .ok_or_else(|| format!("{}: file was already deleted by this patch", path.display()))?
+    } else {
+        read_text_file_bytes(path)?
+    };
+    utf8_text(&bytes, path).map(str::to_owned)
+}
+
+fn original_bytes(
+    changes: &BTreeMap<PathBuf, PlannedPatch>,
+    path: &Path,
+) -> Result<Vec<u8>, String> {
+    if let Some(change) = changes.get(path) {
+        return change
+            .original
+            .clone()
+            .ok_or_else(|| format!("{}: file was created earlier in this patch", path.display()));
+    }
+    read_text_file_bytes(path)
+}
+
+fn apply_planned_changes(changes: &BTreeMap<PathBuf, PlannedPatch>) -> Result<(), String> {
+    let mut completed = Vec::<&PathBuf>::new();
+    for (path, change) in changes {
+        let result = match &change.updated {
+            Some(bytes) => std::fs::write(path, bytes),
+            None => std::fs::remove_file(path),
+        };
+        if let Err(error) = result {
+            for completed_path in completed.into_iter().rev() {
+                if let Some(original) = &changes[completed_path].original {
+                    let _ = std::fs::write(completed_path, original);
+                } else {
+                    let _ = std::fs::remove_file(completed_path);
+                }
+            }
+            return Err(format!(
+                "{}: {error}; prior writes were rolled back",
+                path.display()
+            ));
+        }
+        completed.push(path);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        display_relative_path, format_unified_diff, observation_path_label,
+        strip_windows_verbatim_prefix,
+    };
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn relative_paths_use_forward_slashes() {
+        assert_eq!(
+            display_relative_path(Path::new("nested").join("written.txt").as_path()),
+            "nested/written.txt"
+        );
+    }
+
+    #[test]
+    fn unified_diff_uses_requested_labels_and_hunk_body() {
+        let summary = format_unified_diff(
+            "left.txt",
+            "right.txt",
+            "alpha\nbefore\n",
+            "alpha\nafter\n",
+        );
+        assert!(
+            summary.starts_with("--- left.txt\n+++ right.txt\n@@"),
+            "{summary:?}"
+        );
+        assert!(summary.contains("-before"));
+        assert!(summary.contains("+after"));
+    }
+
+    #[test]
+    fn observation_labels_strip_windows_verbatim_workspace_prefix() {
+        let working_dir = PathBuf::from(r"C:\Work\ws");
+        let absolute = PathBuf::from(r"\\?\C:\Work\ws\nested\left.txt");
+        assert_eq!(
+            strip_windows_verbatim_prefix(&absolute),
+            PathBuf::from(r"C:\Work\ws\nested\left.txt")
+        );
+        assert_eq!(
+            observation_path_label(&working_dir, &absolute),
+            "nested/left.txt"
+        );
+    }
 }

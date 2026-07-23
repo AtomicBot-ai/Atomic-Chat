@@ -638,6 +638,11 @@ jobs:
       - name: Copy assets to Tauri
         run: yarn copy:assets:tauri
 
+      - name: Gate Agent checks (Windows)
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib --features test-tauri core::agent::
+          yarn workspace @janhq/web-app vitest --run src/lib/agent-path.test.ts src/lib/agent-file-links.test.ts src/stores/workspace-preview-store.test.ts
+
       - name: Build CLI
         shell: bash
         run: |

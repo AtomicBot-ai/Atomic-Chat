@@ -402,6 +402,36 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    #[cfg(windows)]
+    fn create_junction(link: &Path, target: &Path) {
+        let output = std::process::Command::new("cmd.exe")
+            .args(["/C", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .output()
+            .expect("run mklink /J");
+        assert!(
+            output.status.success(),
+            "mklink /J failed: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[cfg(windows)]
+    fn create_file_symlink_if_allowed(link: &Path, target: &Path) -> bool {
+        match std::os::windows::fs::symlink_file(target, link) {
+            Ok(()) => true,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::PermissionDenied
+                    || error.raw_os_error() == Some(1314) =>
+            {
+                false
+            }
+            Err(error) => panic!("create file symlink: {error}"),
+        }
+    }
+
     #[test]
     fn loads_enabled_skills_and_persists_disabled_names() {
         let temp = TempDir::new().unwrap();
@@ -509,5 +539,50 @@ mod tests {
             Some("SKILL.md must not be a symbolic link")
         );
         assert!(registry.get("linked-skill").is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn rejects_windows_reparse_points_in_skill_registry() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("skills");
+        let outside_skill = temp.path().join("outside-skill");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&outside_skill).unwrap();
+        fs::write(
+            outside_skill.join("SKILL.md"),
+            "---\nname: junction-skill\ndescription: Escaped\n---\nBody",
+        )
+        .unwrap();
+        let junction = root.join("junction-skill");
+        create_junction(&junction, &outside_skill);
+
+        let registry = SkillRegistry::load(&root, &BTreeSet::new(), &BTreeSet::new()).unwrap();
+        assert!(registry.get("junction-skill").is_none());
+        fs::remove_dir(&junction).unwrap();
+
+        let linked_skill = root.join("linked-skill");
+        fs::create_dir_all(&linked_skill).unwrap();
+        let outside_manifest = temp.path().join("outside.md");
+        fs::write(
+            &outside_manifest,
+            "---\nname: linked-skill\ndescription: Escaped\n---\nBody",
+        )
+        .unwrap();
+        let manifest_link = linked_skill.join("SKILL.md");
+        if create_file_symlink_if_allowed(&manifest_link, &outside_manifest) {
+            let registry = SkillRegistry::load(&root, &BTreeSet::new(), &BTreeSet::new()).unwrap();
+            let entry = registry
+                .list_all()
+                .into_iter()
+                .find(|entry| entry.name == "linked-skill")
+                .unwrap();
+            assert_eq!(
+                entry.error.as_deref(),
+                Some("SKILL.md must not be a symbolic link")
+            );
+            assert!(registry.get("linked-skill").is_none());
+            fs::remove_file(&manifest_link).unwrap();
+        }
     }
 }

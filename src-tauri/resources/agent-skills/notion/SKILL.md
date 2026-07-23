@@ -6,6 +6,9 @@ requires_tools:
   - os.shell.run
   - os.http.request
 dangerous: false
+platforms:
+  - darwin
+  - linux
 ---
 
 # notion

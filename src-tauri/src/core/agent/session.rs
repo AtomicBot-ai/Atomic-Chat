@@ -393,6 +393,36 @@ fn truncate_chars(value: &str, max_chars: usize) -> String {
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
+    fn create_junction(link: &Path, target: &Path) {
+        let output = std::process::Command::new("cmd.exe")
+            .args(["/C", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .output()
+            .expect("run mklink /J");
+        assert!(
+            output.status.success(),
+            "mklink /J failed: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[cfg(windows)]
+    fn create_directory_symlink_if_allowed(link: &Path, target: &Path) -> bool {
+        match std::os::windows::fs::symlink_dir(target, link) {
+            Ok(()) => true,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::PermissionDenied
+                    || error.raw_os_error() == Some(1314) =>
+            {
+                false
+            }
+            Err(error) => panic!("create directory symlink: {error}"),
+        }
+    }
+
     struct SessionFixture {
         data_dir: PathBuf,
     }
@@ -655,5 +685,28 @@ mod tests {
         assert!(load_session(&fixture.data_dir, "thread-link")
             .await
             .is_err());
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn rejects_thread_windows_reparse_points_that_escape_threads_root() {
+        let fixture = SessionFixture::new(&[]);
+        let outside = fixture.data_dir.join("outside");
+        std::fs::create_dir_all(&outside).expect("create outside directory");
+
+        let junction = get_thread_dir(&fixture.data_dir, "thread-junction");
+        create_junction(&junction, &outside);
+        assert!(load_session(&fixture.data_dir, "thread-junction")
+            .await
+            .is_err());
+        std::fs::remove_dir(&junction).expect("remove junction");
+
+        let symlink = get_thread_dir(&fixture.data_dir, "thread-symlink");
+        if create_directory_symlink_if_allowed(&symlink, &outside) {
+            assert!(load_session(&fixture.data_dir, "thread-symlink")
+                .await
+                .is_err());
+            std::fs::remove_dir(&symlink).expect("remove symlink");
+        }
     }
 }

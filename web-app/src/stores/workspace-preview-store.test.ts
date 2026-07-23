@@ -52,4 +52,15 @@ describe('useWorkspacePreviewStore', () => {
     ])
     expect(useWorkspacePreviewStore.getState().activeTabId).toBe('artifact')
   })
+
+  it('uses the filename for Windows workspace paths', () => {
+    useWorkspacePreviewStore
+      .getState()
+      .openFile('C:\\Work\\Atomic-Chat\\README.md')
+
+    expect(useWorkspacePreviewStore.getState().tabs[0]).toMatchObject({
+      path: 'C:\\Work\\Atomic-Chat\\README.md',
+      name: 'README.md',
+    })
+  })
 })

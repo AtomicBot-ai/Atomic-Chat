@@ -382,6 +382,36 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
+    fn create_junction(link: &Path, target: &Path) {
+        let output = std::process::Command::new("cmd.exe")
+            .args(["/C", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .output()
+            .expect("run mklink /J");
+        assert!(
+            output.status.success(),
+            "mklink /J failed: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[cfg(windows)]
+    fn create_directory_symlink_if_allowed(link: &Path, target: &Path) -> bool {
+        match std::os::windows::fs::symlink_dir(target, link) {
+            Ok(()) => true,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::PermissionDenied
+                    || error.raw_os_error() == Some(1314) =>
+            {
+                false
+            }
+            Err(error) => panic!("create directory symlink: {error}"),
+        }
+    }
+
     #[tokio::test]
     async fn stages_files_and_images_under_the_owning_thread() {
         let data_folder = temp_data_folder();
@@ -467,6 +497,40 @@ mod tests {
             .await
             .unwrap_err()
             .contains("requires a base64 image data URL"));
+
+        std::fs::remove_dir_all(data_folder).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn rejects_thread_directory_windows_reparse_point_escapes() {
+        let data_folder = temp_data_folder();
+        let threads_root = get_data_dir(&data_folder);
+        std::fs::create_dir_all(&threads_root).unwrap();
+        let outside = data_folder.join("outside-thread");
+        std::fs::create_dir_all(&outside).unwrap();
+        let source = data_folder.join("source.txt");
+        std::fs::write(&source, "fixture").unwrap();
+        let attachments = vec![file_attachment("source.txt", &source)];
+
+        let junction_id = "junction-thread";
+        let junction = get_thread_dir(&data_folder, junction_id);
+        create_junction(&junction, &outside);
+        assert!(stage_attachments(&data_folder, junction_id, &attachments)
+            .await
+            .unwrap_err()
+            .contains("escapes"));
+        std::fs::remove_dir(&junction).unwrap();
+
+        let symlink_id = "symlink-thread";
+        let symlink = get_thread_dir(&data_folder, symlink_id);
+        if create_directory_symlink_if_allowed(&symlink, &outside) {
+            assert!(stage_attachments(&data_folder, symlink_id, &attachments)
+                .await
+                .unwrap_err()
+                .contains("escapes"));
+            std::fs::remove_dir(&symlink).unwrap();
+        }
 
         std::fs::remove_dir_all(data_folder).unwrap();
     }

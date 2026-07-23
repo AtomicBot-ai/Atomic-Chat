@@ -5,6 +5,10 @@ version: 1.0.1
 requires_tools:
   - os.shell.run
 dangerous: false
+platforms:
+  - darwin
+  - linux
+  - win32
 ---
 
 # pandoc
@@ -44,6 +48,12 @@ On yes:
 ```
 
 On Linux: `apt-get install pandoc`.
+
+On Windows, offer this exact winget command after confirmation:
+
+```
+[{ "tool": "os.shell.run", "args": { "cmd": "winget", "args": ["install", "--id", "JohnMacFarlane.Pandoc", "-e"] } }]
+```
 
 ### PDF engine missing
 

@@ -309,6 +309,86 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-07-23 — Isolate the Windows Common Controls test manifest by feature
+- **Context:** The Common Controls v6 manifest added for Windows libtest was
+  emitted through package-wide `cargo:rustc-link-arg`. Tauri already embeds
+  the application manifest in `resource.lib`, so linking the desktop binary
+  produced `CVT1100: duplicate resource` for manifest resource id 1. Cargo
+  rejects `cargo:rustc-link-arg-tests` because this package has no explicit
+  `[[test]]` target even though it has a library unit-test harness.
+- **Decision:** Gate the package-wide manifest linker arguments behind the
+  existing `test-tauri` feature and disable Tauri's generated app manifest
+  under that feature. Run the Windows Agent library-test gate with
+  `--features test-tauri`; leave normal builds on Tauri's default manifest.
+- **Consequences:** The Agent libtest harness retains its Common Controls v6
+  activation context without creating a duplicate resource. Normal desktop
+  builds receive no custom manifest linker arguments and link only Tauri's
+  `resource.lib`.
+- **Owner:** team.
+- **Links:** [`src-tauri/build.rs`](src-tauri/build.rs),
+  [`src-tauri/windows-test.manifest`](src-tauri/windows-test.manifest),
+  [`.github/workflows/release.yml`](.github/workflows/release.yml).
+
+### 2026-07-23 — Bound Windows GPU detection and bypass it in fast development
+- **Context:** `make dev-windows-fast` could remain indefinitely at
+  `Detecting GPU hardware` because `Get-CimInstance Win32_VideoController`
+  hung inside WMI before the script reached its existing-backend reuse path.
+- **Decision:** Reuse an existing upstream backend before any hardware probe
+  when `-SkipBackendDownload` is active. For ordinary Windows development,
+  query video controllers once in a background job with a 10-second timeout
+  and reuse that bounded result for NVIDIA-driver and fallback VRAM detection.
+- **Consequences:** Fast development no longer depends on WMI when its backend
+  is already present. Normal development degrades to Vulkan/CPU selection
+  instead of hanging when WMI is unhealthy; registry VRAM detection remains
+  authoritative when available.
+- **Owner:** team.
+- **Links:** [`scripts/dev-windows.ps1`](scripts/dev-windows.ps1),
+  [`Makefile`](Makefile) (`dev-windows-fast`).
+
+### 2026-07-23 — Finish Windows Agent hardening: in-process text tools, native trash, test harness
+- **Context:** The Windows Agent hardening plan still needed verified
+  malformed-verbatim path coverage, replacement of external `grep`/`diff`/
+  `patch`/`trash` shell helpers, native Recycle Bin deletion, and a way to
+  run `cargo test --lib` on Windows after Tauri-linked harnesses died at
+  process start with `STATUS_ENTRYPOINT_NOT_FOUND` (0xc0000139) because
+  libtest imported Common Controls v6 APIs without a v6 activation context.
+- **Decision:** Keep grep/diff/patch fully in-process (`ignore` + `regex` +
+  `diffy`) with a 1 MiB text-file cap and symlink-skipping walks; route trash
+  through the `trash` crate; emit workspace-relative `/`-separated path labels
+  (stripping `\\?\` before prefixing) so authorization-rewritten absolute args
+  do not leak verbatim paths into observations; embed
+  `windows-test.manifest` via `build.rs` `cargo:rustc-link-arg` so Windows
+  libtest harnesses activate Common Controls v6.
+- **Consequences:** Agent file tools no longer depend on host GNU/BusyBox
+  utilities; Windows deletions use the Recycle Bin API; path/diff/glob/grep
+  contract tests and the release Agent gate can run on Windows. The manifest
+  link-arg also applies when linking non-test artefacts from this crate — it
+  only adds the same Common Controls v6 dependency Tauri already ships.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/tools/fs.rs`](src-tauri/src/core/agent/tools/fs.rs),
+  [`src-tauri/src/core/agent/tools/contract_tests.rs`](src-tauri/src/core/agent/tools/contract_tests.rs),
+  [`src-tauri/build.rs`](src-tauri/build.rs),
+  [`src-tauri/windows-test.manifest`](src-tauri/windows-test.manifest),
+  [`.github/workflows/release.yml`](.github/workflows/release.yml).
+
+### 2026-07-23 — Repair malformed Windows verbatim paths before Agent tool execution
+- **Context:** Agent could receive a Windows extended path with one leading
+  slash (`\?\C:\...`) after JSON generation instead of the valid
+  `\\?\C:\...` form. Rust treated that malformed form as relative, so a request
+  to write to a selected folder was redirected beneath the Agent workspace.
+- **Decision:** Normalize the exact malformed `\?\` prefix to `\\?\` at the
+  shared Agent path-input boundary before absolute-path resolution. Preserve
+  ordinary absolute, valid verbatim, relative, home-relative, and attachment
+  paths unchanged.
+- **Consequences:** Files requested through malformed drive or UNC verbatim
+  paths resolve to their intended external location and retain the existing
+  approval gate. Windows tests cover plain absolute, valid verbatim, and
+  malformed verbatim write targets.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/path_policy.rs`](src-tauri/src/core/agent/path_policy.rs).
+
+---
+
 ### 2026-07-22 — Keep Gemma 4 Unified checkpoints on the multimodal MLX path
 - **Context:** `gemma-4-12B-it-4bit` declares the top-level
   `gemma4_unified` architecture but uses `embed_vision`, `vision_embedder`,

@@ -6,6 +6,9 @@ requires_tools:
   - os.shell.run
   - os.fs.read_document
 dangerous: false
+platforms:
+  - darwin
+  - linux
 ---
 
 # xlsx

@@ -541,6 +541,36 @@ mod tests {
     use tempfile::TempDir;
     use zip::write::FileOptions;
 
+    #[cfg(windows)]
+    fn create_junction(link: &Path, target: &Path) {
+        let output = std::process::Command::new("cmd.exe")
+            .args(["/C", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .output()
+            .expect("run mklink /J");
+        assert!(
+            output.status.success(),
+            "mklink /J failed: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[cfg(windows)]
+    fn create_file_symlink_if_allowed(link: &Path, target: &Path) -> bool {
+        match std::os::windows::fs::symlink_file(target, link) {
+            Ok(()) => true,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::PermissionDenied
+                    || error.raw_os_error() == Some(1314) =>
+            {
+                false
+            }
+            Err(error) => panic!("create file symlink: {error}"),
+        }
+    }
+
     #[test]
     fn creates_a_valid_custom_skill() {
         let temp = TempDir::new().unwrap();
@@ -770,5 +800,72 @@ mod tests {
             .unwrap_err()
             .contains("symbolic links"));
         assert!(!target.exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn rejects_windows_reparse_points_inside_imported_and_exported_skills() {
+        let temp = TempDir::new().unwrap();
+        let outside_dir = temp.path().join("outside-directory");
+        fs::create_dir_all(&outside_dir).unwrap();
+        fs::write(outside_dir.join("secret.txt"), "secret").unwrap();
+
+        let import_source = temp.path().join("junction-import-source");
+        fs::create_dir_all(&import_source).unwrap();
+        fs::write(
+            import_source.join("SKILL.md"),
+            "---\nname: junction-import\ndescription: Imported\n---\nInstructions",
+        )
+        .unwrap();
+        let import_junction = import_source.join("references");
+        create_junction(&import_junction, &outside_dir);
+        assert!(import_custom_skill(temp.path(), &import_source)
+            .unwrap_err()
+            .contains("symbolic links"));
+        assert!(!global_skills_dir(temp.path())
+            .join("junction-import")
+            .exists());
+        fs::remove_dir(&import_junction).unwrap();
+
+        let export_source = temp.path().join("junction-export-source");
+        fs::create_dir_all(&export_source).unwrap();
+        fs::write(
+            export_source.join("SKILL.md"),
+            "---\nname: junction-export\ndescription: Exported\n---\nInstructions",
+        )
+        .unwrap();
+        let export_junction = export_source.join("references");
+        create_junction(&export_junction, &outside_dir);
+        let export_target = temp.path().join("junction-export.skill");
+        assert!(export_skill_archive(&export_source, &export_target)
+            .unwrap_err()
+            .contains("symbolic links"));
+        assert!(!export_target.exists());
+        fs::remove_dir(&export_junction).unwrap();
+
+        let outside_file = temp.path().join("outside.txt");
+        fs::write(&outside_file, "secret").unwrap();
+        let symlink_source = temp.path().join("symlink-import-source");
+        fs::create_dir_all(&symlink_source).unwrap();
+        fs::write(
+            symlink_source.join("SKILL.md"),
+            "---\nname: symlink-import\ndescription: Imported\n---\nInstructions",
+        )
+        .unwrap();
+        let file_link = symlink_source.join("reference.txt");
+        if create_file_symlink_if_allowed(&file_link, &outside_file) {
+            assert!(import_custom_skill(temp.path(), &symlink_source)
+                .unwrap_err()
+                .contains("symbolic links"));
+            assert!(!global_skills_dir(temp.path())
+                .join("symlink-import")
+                .exists());
+            let symlink_export = temp.path().join("symlink-export.skill");
+            assert!(export_skill_archive(&symlink_source, &symlink_export)
+                .unwrap_err()
+                .contains("symbolic links"));
+            assert!(!symlink_export.exists());
+            fs::remove_file(&file_link).unwrap();
+        }
     }
 }

@@ -8,6 +8,9 @@ requires_tools:
 requires_scripts:
   - check-gog.sh
 dangerous: true
+platforms:
+  - darwin
+  - linux
 ---
 
 # gog workspace
@@ -63,12 +66,6 @@ macOS / Linux:
 
 ```bash
 bash "<Atomic Chat data folder>/agent-skills/gog-workspace/scripts/setup-gog.sh"
-```
-
-Windows:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File "<Atomic Chat data folder>\agent-skills\gog-workspace\scripts\setup-gog.ps1"
 ```
 
 The user needs a Desktop OAuth client JSON from Google Cloud Console. The setup script stores it with `gog auth credentials ...`, then runs `gog auth add ...`.

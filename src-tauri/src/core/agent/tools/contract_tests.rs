@@ -118,7 +118,11 @@ async fn filesystem_tools_apply_real_operations_in_an_isolated_workspace() {
     let glob = fixture
         .call("os.fs.glob", serde_json::json!({"pattern": "**/*.txt"}))
         .await;
-    assert!(glob.summary.contains("nested/written.txt"));
+    assert!(
+        glob.summary.contains("nested/written.txt"),
+        "unexpected glob summary: {:?}",
+        glob.summary
+    );
     assert!(glob.summary.contains("source.txt"));
 
     let grep = fixture
@@ -169,6 +173,187 @@ async fn filesystem_tools_apply_real_operations_in_an_isolated_workspace() {
         .await;
     assert_eq!(applied.status, ToolStatus::Ok);
     assert_eq!(fixture.workspace.read("patch.txt"), b"after\n");
+}
+
+#[tokio::test]
+async fn filesystem_grep_is_recursive_bounded_and_skips_non_text_files() {
+    let fixture = ToolFixture::allowed();
+    fixture
+        .workspace
+        .write("nested/match.txt", "first\nneedle\n");
+    fixture
+        .workspace
+        .write("nested/binary.bin", b"needle\0hidden");
+    fixture
+        .workspace
+        .write("nested/non-utf8.txt", b"needle\xffhidden");
+    fixture
+        .workspace
+        .write("large.txt", format!("needle {}\n", "x".repeat(20_000)));
+
+    let grep = fixture
+        .call(
+            "os.fs.grep",
+            serde_json::json!({"pattern": "needle", "path": "nested"}),
+        )
+        .await;
+    assert_eq!(grep.status, ToolStatus::Ok);
+    assert!(
+        grep.summary.contains("nested/match.txt:2:needle"),
+        "unexpected grep summary: {:?}",
+        grep.summary
+    );
+    assert!(!grep.summary.contains("binary.bin"));
+    assert!(!grep.summary.contains("non-utf8.txt"));
+
+    let no_matches = fixture
+        .call(
+            "os.fs.grep",
+            serde_json::json!({"pattern": "absent", "path": "nested"}),
+        )
+        .await;
+    assert_eq!(no_matches.summary, "No matches");
+
+    let direct_binary = fixture
+        .call(
+            "os.fs.grep",
+            serde_json::json!({"pattern": "needle", "path": "nested/binary.bin"}),
+        )
+        .await;
+    assert_eq!(direct_binary.status, ToolStatus::Error);
+    assert!(direct_binary
+        .summary
+        .contains("binary files are not supported"));
+
+    let bounded = fixture
+        .call(
+            "os.fs.grep",
+            serde_json::json!({"pattern": "needle", "path": "large.txt"}),
+        )
+        .await;
+    assert!(bounded.summary.ends_with("[truncated]"));
+    assert!(bounded.summary.chars().count() <= MAX_TOOL_OUTPUT_CHARS + 12);
+}
+
+#[tokio::test]
+async fn filesystem_diff_is_unified_and_rejects_non_text_files() {
+    let fixture = ToolFixture::allowed();
+    fixture.workspace.write("left.txt", "alpha\nbefore\n");
+    fixture.workspace.write("right.txt", "alpha\nafter\n");
+
+    let diff = fixture
+        .call(
+            "os.fs.diff",
+            serde_json::json!({"pathA": "left.txt", "pathB": "right.txt"}),
+        )
+        .await;
+    assert_eq!(diff.status, ToolStatus::Ok);
+    assert!(
+        diff.summary.starts_with("--- left.txt\n+++ right.txt\n@@"),
+        "unexpected diff summary: {:?}",
+        diff.summary
+    );
+    assert!(diff.summary.contains("-before"));
+    assert!(diff.summary.contains("+after"));
+
+    fixture.workspace.write("binary.bin", b"alpha\0beta");
+    let binary = fixture
+        .call(
+            "os.fs.diff",
+            serde_json::json!({"pathA": "left.txt", "pathB": "binary.bin"}),
+        )
+        .await;
+    assert_eq!(binary.status, ToolStatus::Error);
+    assert!(binary.summary.contains("binary files are not supported"));
+}
+
+#[tokio::test]
+async fn filesystem_patch_defaults_to_validation_and_prevalidates_every_file() {
+    let fixture = ToolFixture::allowed();
+    fixture.workspace.write("one.txt", "one\n");
+    fixture.workspace.write("two.txt", "two\n");
+    let valid = "--- one.txt\n+++ one.txt\n@@ -1 +1 @@\n-one\n+ONE\n";
+    let invalid = "--- two.txt\n+++ two.txt\n@@ -1 +1 @@\n-missing\n+TWO\n";
+
+    let dry_run = fixture
+        .call("os.fs.patch", serde_json::json!({"patch": valid}))
+        .await;
+    assert_eq!(dry_run.status, ToolStatus::Ok);
+    assert!(dry_run.summary.contains("no files changed"));
+    assert_eq!(fixture.workspace.read("one.txt"), b"one\n");
+
+    let rejected = fixture
+        .call(
+            "os.fs.patch",
+            serde_json::json!({"patch": format!("{valid}{invalid}"), "apply": true}),
+        )
+        .await;
+    assert_eq!(rejected.status, ToolStatus::Error);
+    assert_eq!(fixture.workspace.read("one.txt"), b"one\n");
+    assert_eq!(fixture.workspace.read("two.txt"), b"two\n");
+
+    let second_valid = "--- two.txt\n+++ two.txt\n@@ -1 +1 @@\n-two\n+TWO\n";
+    let applied = fixture
+        .call(
+            "os.fs.patch",
+            serde_json::json!({
+                "patch": format!("{valid}{second_valid}"),
+                "apply": true
+            }),
+        )
+        .await;
+    assert_eq!(applied.status, ToolStatus::Ok);
+    assert_eq!(fixture.workspace.read("one.txt"), b"ONE\n");
+    assert_eq!(fixture.workspace.read("two.txt"), b"TWO\n");
+}
+
+#[tokio::test]
+async fn filesystem_trash_moves_directories_through_the_native_trash_api() {
+    let fixture = ToolFixture::allowed();
+    fixture.workspace.write("discard/nested.txt", "recoverable");
+    let linux_trash = dirs::home_dir()
+        .expect("home directory")
+        .join(".local/share/Trash/files");
+    let linux_trash_existed = linux_trash.exists();
+
+    let trashed = fixture
+        .call("os.fs.trash", serde_json::json!({"path": "discard"}))
+        .await;
+    assert_eq!(trashed.status, ToolStatus::Ok);
+    assert!(!fixture.workspace.path().join("discard").exists());
+    assert_eq!(fixture.approval.requests().len(), 1);
+    if !linux_trash_existed {
+        assert!(
+            !linux_trash.exists(),
+            "native trash must not create the Linux FreeDesktop trash path"
+        );
+    }
+}
+
+#[tokio::test]
+async fn filesystem_text_tools_reject_oversized_files() {
+    let fixture = ToolFixture::allowed();
+    let oversized = vec![b'a'; 1_048_577];
+    fixture.workspace.write("huge.txt", &oversized);
+
+    let grep = fixture
+        .call(
+            "os.fs.grep",
+            serde_json::json!({"pattern": "a", "path": "huge.txt"}),
+        )
+        .await;
+    assert_eq!(grep.status, ToolStatus::Error);
+    assert!(grep.summary.contains("text-tool limit"));
+
+    fixture.workspace.write("small.txt", "a\n");
+    let diff = fixture
+        .call(
+            "os.fs.diff",
+            serde_json::json!({"pathA": "small.txt", "pathB": "huge.txt"}),
+        )
+        .await;
+    assert_eq!(diff.status, ToolStatus::Error);
+    assert!(diff.summary.contains("text-tool limit"));
 }
 
 #[tokio::test]

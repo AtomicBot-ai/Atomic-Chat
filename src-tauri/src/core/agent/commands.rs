@@ -672,6 +672,36 @@ mod tests {
     use super::*;
     use crate::core::agent::test_support::TestWorkspace;
 
+    #[cfg(windows)]
+    fn create_junction(link: &Path, target: &Path) {
+        let output = std::process::Command::new("cmd.exe")
+            .args(["/C", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .output()
+            .expect("run mklink /J");
+        assert!(
+            output.status.success(),
+            "mklink /J failed: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[cfg(windows)]
+    fn create_directory_symlink_if_allowed(link: &Path, target: &Path) -> bool {
+        match std::os::windows::fs::symlink_dir(target, link) {
+            Ok(()) => true,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::PermissionDenied
+                    || error.raw_os_error() == Some(1314) =>
+            {
+                false
+            }
+            Err(error) => panic!("create directory symlink: {error}"),
+        }
+    }
+
     #[tokio::test]
     async fn same_session_serializes_while_different_sessions_remain_independent() {
         let locks: AgentSessionLocks = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
@@ -769,6 +799,34 @@ mod tests {
             .unwrap_err();
 
         assert!(error.contains("escapes"));
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn workspace_candidate_rejects_windows_reparse_point_escapes() {
+        let workspace = TestWorkspace::new();
+        let outside = TestWorkspace::new();
+        fs::write(outside.path().join("secret.txt"), "secret").expect("write outside file");
+        let root = tokio::fs::canonicalize(workspace.path())
+            .await
+            .expect("canonical root");
+
+        let junction = workspace.path().join("junction");
+        create_junction(&junction, outside.path());
+        let junction_error = resolve_workspace_candidate(&root, "junction/secret.txt")
+            .await
+            .unwrap_err();
+        assert!(junction_error.contains("escapes"));
+        fs::remove_dir(&junction).expect("remove junction");
+
+        let symlink = workspace.path().join("symlink");
+        if create_directory_symlink_if_allowed(&symlink, outside.path()) {
+            let symlink_error = resolve_workspace_candidate(&root, "symlink/secret.txt")
+                .await
+                .unwrap_err();
+            assert!(symlink_error.contains("escapes"));
+            fs::remove_dir(&symlink).expect("remove symlink");
+        }
     }
 
     #[tokio::test]

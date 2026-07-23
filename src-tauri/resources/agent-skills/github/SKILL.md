@@ -5,6 +5,10 @@ version: 1.1.0
 requires_tools:
   - os.shell.run
 dangerous: true
+platforms:
+  - darwin
+  - linux
+  - win32
 ---
 
 # github
@@ -44,6 +48,8 @@ On yes:
 
 If `brew` itself is missing, do NOT bootstrap Homebrew — point the user at
 https://cli.github.com/ for their platform, then stop.
+
+On Windows, offer `winget install --id GitHub.cli -e` instead of Homebrew.
 
 ### not authenticated
 

@@ -377,6 +377,19 @@ async fn resolve_candidate(root: &Path, raw: &str) -> Result<PathBuf, String> {
     Ok(resolved)
 }
 
+#[cfg(windows)]
+fn path_buf_from_input(raw: &str) -> PathBuf {
+    if let Some(rest) = raw.strip_prefix(r"\?\") {
+        return PathBuf::from(format!(r"\\?\{rest}"));
+    }
+    PathBuf::from(raw)
+}
+
+#[cfg(not(windows))]
+fn path_buf_from_input(raw: &str) -> PathBuf {
+    PathBuf::from(raw)
+}
+
 pub(super) fn expand_home(raw: &str) -> Result<PathBuf, String> {
     if raw == "~" {
         return dirs::home_dir().ok_or_else(|| "Could not resolve home directory".to_string());
@@ -386,7 +399,7 @@ pub(super) fn expand_home(raw: &str) -> Result<PathBuf, String> {
             .map(|home| home.join(rest))
             .ok_or_else(|| "Could not resolve home directory".to_string());
     }
-    Ok(PathBuf::from(raw))
+    Ok(path_buf_from_input(raw))
 }
 
 pub(super) fn lexical_normalize(path: &Path) -> PathBuf {
@@ -452,6 +465,21 @@ mod tests {
         path
     }
 
+    #[cfg(windows)]
+    fn create_junction(link: &Path, target: &Path) {
+        let output = std::process::Command::new("cmd.exe")
+            .args(["/C", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "mklink /J failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
     #[tokio::test]
     async fn resolves_relative_and_missing_write_targets_inside_root() {
         let root = test_dir();
@@ -470,6 +498,59 @@ mod tests {
                 .as_ref()
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn resolves_windows_absolute_and_verbatim_write_targets_outside_root() {
+        let parent = test_dir();
+        let root = parent.join("workspace");
+        let outside = parent.join("outside");
+        tokio::fs::create_dir(&root).await.unwrap();
+        tokio::fs::create_dir(&outside).await.unwrap();
+        let canonical_outside = tokio::fs::canonicalize(&outside).await.unwrap();
+        let verbatim = canonical_outside.to_string_lossy().into_owned();
+        let plain = verbatim
+            .strip_prefix(r"\\?\UNC\")
+            .map(|rest| format!(r"\\{rest}"))
+            .or_else(|| verbatim.strip_prefix(r"\\?\").map(str::to_owned))
+            .unwrap_or_else(|| verbatim.clone());
+        let malformed_verbatim = verbatim
+            .strip_prefix(r"\\?\")
+            .map(|rest| format!(r"\?\{rest}"))
+            .expect("Windows canonical paths use the verbatim prefix");
+
+        for (index, base) in [plain, verbatim, malformed_verbatim]
+            .into_iter()
+            .enumerate()
+        {
+            let file_name = format!("case-{index}.txt");
+            let call = ToolCallPayload {
+                tool: "os.fs.write".into(),
+                args: serde_json::json!({
+                    "path": PathBuf::from(base).join(&file_name),
+                    "content": "x"
+                }),
+            };
+            let prepared = prepare_call_paths(&call, &root, &[]).await.unwrap();
+
+            assert!(prepared.escaped_root);
+            assert_eq!(
+                prepared.call.args["path"],
+                canonical_outside
+                    .join(&file_name)
+                    .to_string_lossy()
+                    .as_ref()
+            );
+            let resolved = PathBuf::from(prepared.call.args["path"].as_str().unwrap());
+            tokio::fs::write(&resolved, b"x").await.unwrap();
+            assert_eq!(
+                tokio::fs::read(outside.join(&file_name)).await.unwrap(),
+                b"x"
+            );
+        }
+
+        std::fs::remove_dir_all(parent).unwrap();
     }
 
     #[tokio::test]
@@ -604,6 +685,82 @@ mod tests {
             prepared.call.args["path"],
             canonical_outside.join("new.txt").to_string_lossy().as_ref()
         );
+        std::fs::remove_dir_all(parent).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn detects_junction_escape_for_existing_and_missing_targets() {
+        let parent = test_dir();
+        let root = parent.join("root");
+        let outside = parent.join("outside");
+        tokio::fs::create_dir(&root).await.unwrap();
+        tokio::fs::create_dir(&outside).await.unwrap();
+        tokio::fs::write(outside.join("existing.txt"), "outside")
+            .await
+            .unwrap();
+        let junction = root.join("link");
+        create_junction(&junction, &outside);
+        let canonical_outside = tokio::fs::canonicalize(&outside).await.unwrap();
+
+        for (path, expected) in [
+            ("link/existing.txt", canonical_outside.join("existing.txt")),
+            ("link/missing.txt", canonical_outside.join("missing.txt")),
+        ] {
+            let call = ToolCallPayload {
+                tool: "os.fs.write".into(),
+                args: serde_json::json!({"path": path, "content": "x"}),
+            };
+            let prepared = prepare_call_paths(&call, &root, &[]).await.unwrap();
+            assert!(prepared.escaped_root, "{path} must escape through junction");
+            assert_eq!(
+                prepared.call.args["path"],
+                expected.to_string_lossy().as_ref()
+            );
+        }
+
+        std::fs::remove_dir(&junction).unwrap();
+        std::fs::remove_dir_all(parent).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn detects_directory_symlink_escape_when_creation_is_allowed() {
+        use std::os::windows::fs::symlink_dir;
+
+        let parent = test_dir();
+        let root = parent.join("root");
+        let outside = parent.join("outside");
+        tokio::fs::create_dir(&root).await.unwrap();
+        tokio::fs::create_dir(&outside).await.unwrap();
+        let link = root.join("link");
+        if let Err(error) = symlink_dir(&outside, &link) {
+            if error.kind() == std::io::ErrorKind::PermissionDenied
+                || error.raw_os_error() == Some(1314)
+            {
+                std::fs::remove_dir_all(parent).unwrap();
+                return;
+            }
+            panic!("could not create directory symlink fixture: {error}");
+        }
+
+        let call = ToolCallPayload {
+            tool: "os.fs.write".into(),
+            args: serde_json::json!({"path": "link/new.txt", "content": "x"}),
+        };
+        let prepared = prepare_call_paths(&call, &root, &[]).await.unwrap();
+        assert!(prepared.escaped_root);
+        assert_eq!(
+            prepared.call.args["path"],
+            tokio::fs::canonicalize(&outside)
+                .await
+                .unwrap()
+                .join("new.txt")
+                .to_string_lossy()
+                .as_ref()
+        );
+
+        std::fs::remove_dir(&link).unwrap();
         std::fs::remove_dir_all(parent).unwrap();
     }
 

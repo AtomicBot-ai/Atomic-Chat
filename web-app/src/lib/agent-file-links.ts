@@ -1,6 +1,6 @@
+import { agentPathBasename, isAbsoluteAgentPath } from './agent-path'
+
 const FILE_LINK_OR_CODE = /(```[\s\S]*?```|`[^`\n]+`|\[[^\]]*\]\([^)]+\))/g
-const WINDOWS_ABSOLUTE_PATH = /^[a-zA-Z]:[\\/]/
-const UNIX_ABSOLUTE_PATH = /^\//
 const FILE_LINK_PREFIX = 'https://atomic.local/open-file?path='
 
 export type AgentFileReference = {
@@ -8,17 +8,8 @@ export type AgentFileReference = {
   name?: string
 }
 
-function isAbsolutePath(value: string): boolean {
-  return UNIX_ABSOLUTE_PATH.test(value) || WINDOWS_ABSOLUTE_PATH.test(value)
-}
-
-function basename(path: string): string {
-  const segments = path.split(/[\\/]/)
-  return segments.at(-1) ?? path
-}
-
 function referenceNames(reference: AgentFileReference): string[] {
-  const pathBasename = basename(reference.path)
+  const pathBasename = agentPathBasename(reference.path)
   return reference.name && reference.name !== pathBasename
     ? [pathBasename, reference.name]
     : [pathBasename]
@@ -35,7 +26,7 @@ function extractPathValues(value: unknown, paths: Set<string>): void {
     if (
       typeof child === 'string' &&
       (key === 'path' || key.endsWith('_path')) &&
-      isAbsolutePath(child)
+      isAbsoluteAgentPath(child)
     ) {
       paths.add(child)
       continue
@@ -77,7 +68,7 @@ export function extractAgentAttachmentReferences(
     if (
       candidate.type !== 'file' ||
       typeof candidate.url !== 'string' ||
-      !isAbsolutePath(candidate.url)
+      !isAbsoluteAgentPath(candidate.url)
     ) {
       continue
     }
@@ -122,7 +113,7 @@ export function linkAgentFileReferences(
   for (const reference of uniqueReferences.values()) {
     displayNamesByPath.set(
       reference.path,
-      reference.name ?? basename(reference.path)
+      reference.name ?? agentPathBasename(reference.path)
     )
     for (const name of referenceNames(reference)) {
       nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1)
@@ -154,7 +145,7 @@ export function linkAgentFileReferences(
         if (!path) return label
         const displayLabel =
           label === path
-            ? (displayNamesByPath.get(path) ?? basename(path))
+            ? (displayNamesByPath.get(path) ?? agentPathBasename(path))
             : label
         return `[${displayLabel}](${FILE_LINK_PREFIX}${encodeURIComponent(path)})`
       })

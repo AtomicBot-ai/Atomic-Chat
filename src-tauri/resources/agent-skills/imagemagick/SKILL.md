@@ -6,6 +6,10 @@ requires_tools:
   - os.shell.run
   - vision.describe
 dangerous: false
+platforms:
+  - darwin
+  - linux
+  - win32
 ---
 
 # imagemagick
@@ -45,6 +49,12 @@ On yes:
 ```
 
 On Linux: `apt-get install imagemagick`.
+
+On Windows, offer this exact winget command after confirmation:
+
+```
+[{ "tool": "os.shell.run", "args": { "cmd": "winget", "args": ["install", "--id", "ImageMagick.ImageMagick", "-e"] } }]
+```
 
 ## When to use
 
