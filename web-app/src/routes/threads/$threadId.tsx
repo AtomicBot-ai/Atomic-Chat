@@ -1531,12 +1531,17 @@ function ThreadDetail() {
       stop()
       return
     }
-    useAgentRun.getState().clearPendingApproval(threadId)
+    if (agentRun.pendingApproval) {
+      useAgentRun
+        .getState()
+        .clearPendingApproval(threadId, agentRun.pendingApproval.approval_id)
+    }
     void cancelAgentTurn(agentRun.runId).catch(() => {
       toast.error(t('chat:agentErrors.cancelFailed'))
     })
   }, [
     agentModeActive,
+    agentRun?.pendingApproval,
     agentRun?.runId,
     isAgentRunning,
     sessionData,
@@ -1587,7 +1592,7 @@ function ThreadDetail() {
             <div className="flex-1 relative">
               <Conversation className="absolute inset-0 text-start">
                 <ConversationContent
-                  className={cn('mx-auto w-full md:w-4/5 xl:w-4/6')}
+                  className={cn('mx-auto w-full max-w-3xl md:w-4/5 xl:w-4/6')}
                 >
                   {chatMessages.map((message, index) => {
                     const isLastMessage = index === chatMessages.length - 1

@@ -53,6 +53,10 @@ export function NavChats({ mode }: { mode: SidebarMode }) {
     ).forEach((thread) => deleteThread(thread.id))
   }
 
+  if (threadsWithoutProject.length === 0) {
+    return null
+  }
+
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
       <SidebarGroupLabel>{t('common:chats')}</SidebarGroupLabel>
@@ -69,23 +73,21 @@ export function NavChats({ mode }: { mode: SidebarMode }) {
           size={14}
         />
       </SidebarGroupAction>
-      {threadsWithoutProject.length > 0 && (
-        <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
-          <DropdownMenuTrigger asChild>
-            <SidebarGroupAction className="hover:bg-sidebar-foreground/8">
-              <MoreHorizontal className="text-muted-foreground" />
-              <span className="sr-only">More</span>
-            </SidebarGroupAction>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="right" align="start">
-            <DeleteAllThreadsDialog
-              onDeleteAll={deleteModeThreads}
-              onDropdownClose={() => setDropdownOpen(false)}
-              mode={mode}
-            />
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
+      <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
+        <DropdownMenuTrigger asChild>
+          <SidebarGroupAction className="hover:bg-sidebar-foreground/8">
+            <MoreHorizontal className="text-muted-foreground" />
+            <span className="sr-only">More</span>
+          </SidebarGroupAction>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="right" align="start">
+          <DeleteAllThreadsDialog
+            onDeleteAll={deleteModeThreads}
+            onDropdownClose={() => setDropdownOpen(false)}
+            mode={mode}
+          />
+        </DropdownMenuContent>
+      </DropdownMenu>
       <SidebarMenu>
         <ThreadList threads={threadsWithoutProject} />
       </SidebarMenu>

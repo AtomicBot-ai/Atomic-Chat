@@ -5,19 +5,20 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { PanelRight } from 'lucide-react'
-import { motion } from 'motion/react'
 import {
   Panel,
   PanelGroup,
   PanelResizeHandle,
   type ImperativePanelGroupHandle,
 } from 'react-resizable-panels'
+import { AnimatePresence, motion } from 'motion/react'
+import { PanelRight } from 'lucide-react'
 import { AgentWorkspaceFiles } from './AgentWorkspaceFiles'
 import { AgentWorkspacePreview } from './AgentWorkspacePreview'
 import { ArtifactPanel } from './ArtifactPanel'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useDesktopScreen } from '@/hooks/useMediaQuery'
+import { listAgentWorkspace } from '@/services/agent/tauri'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useWorkspacePreviewStore } from '@/stores/workspace-preview-store'
 
@@ -43,6 +44,11 @@ function ResizeHandle({ hidden = false }: { hidden?: boolean }) {
       className={`group relative z-20 -mx-2 w-4 cursor-ew-resize border-0 bg-transparent p-0 outline-none transition-all ease-linear ${hidden ? 'invisible pointer-events-none' : ''}`}
     />
   )
+}
+
+const RIGHT_PANEL_TRANSITION = {
+  duration: 0.2,
+  ease: 'linear' as const,
 }
 
 function cssLengthToPixels(value: string): number | undefined {
@@ -71,10 +77,12 @@ export function AgentWorkspaceLayout({
   const tabs = useWorkspacePreviewStore((state) => state.tabs)
   const artifactOpen = useArtifactStore((state) => state.isOpen)
   const artifactTitle = useArtifactStore((state) => state.title)
-  const [filesOpen, setFilesOpen] = useState(true)
+  const [filesOpen, setFilesOpen] = useState(false)
   const panelGroupRef = useRef<ImperativePanelGroupHandle>(null)
   const workspaceRef = useRef<HTMLElement>(null)
   const sidebarWidth = useRef(useLeftPanel.getState().width)
+  const workspaceKeyRef = useRef<string | undefined>(undefined)
+  const previousWorkspaceHasEntriesRef = useRef<boolean | undefined>(undefined)
 
   useEffect(() => {
     if (!agentModeActive || !isDesktop) {
@@ -93,6 +101,42 @@ export function AgentWorkspaceLayout({
     useArtifactStore.getState().close()
   }, [threadId, workingDir])
 
+  useEffect(() => {
+    if (!agentModeActive || !isDesktop) return
+
+    const workspaceKey = `${threadId}\0${workingDir ?? ''}`
+    if (workspaceKeyRef.current !== workspaceKey) {
+      workspaceKeyRef.current = workspaceKey
+      previousWorkspaceHasEntriesRef.current = undefined
+      setFilesOpen(false)
+    }
+
+    let cancelled = false
+    void listAgentWorkspace({ workingDir }).then(
+      (entries) => {
+        if (cancelled) return
+        const hasEntries = entries.length > 0
+        const previouslyHadEntries = previousWorkspaceHasEntriesRef.current
+
+        if (!hasEntries) {
+          setFilesOpen(false)
+        } else if (previouslyHadEntries !== true) {
+          setFilesOpen(true)
+        }
+        previousWorkspaceHasEntriesRef.current = hasEntries
+      },
+      () => {
+        if (cancelled || previousWorkspaceHasEntriesRef.current !== undefined)
+          return
+        setFilesOpen(false)
+      }
+    )
+
+    return () => {
+      cancelled = true
+    }
+  }, [agentModeActive, isDesktop, refreshKey, threadId, workingDir])
+
   useEffect(
     () => () => {
       useWorkspacePreviewStore.getState().reset()
@@ -102,6 +146,7 @@ export function AgentWorkspaceLayout({
   )
 
   const hasPreview = tabs.length > 0
+  const filesVisible = filesOpen
 
   useLayoutEffect(() => {
     if (!agentModeActive || !isDesktop) return
@@ -113,7 +158,7 @@ export function AgentWorkspaceLayout({
       workspaceWidth && sidebarWidthPx
         ? (sidebarWidthPx / workspaceWidth) * 100
         : 24
-    const filesSize = filesOpen
+    const filesSize = filesVisible
       ? Math.min(40, Math.max(8, matchingSidebarSize))
       : 0
     panelGroupRef.current?.setLayout([
@@ -121,7 +166,7 @@ export function AgentWorkspaceLayout({
       previewSize,
       filesSize,
     ])
-  }, [agentModeActive, filesOpen, hasPreview, isDesktop])
+  }, [agentModeActive, filesVisible, hasPreview, isDesktop])
 
   if (!agentModeActive) {
     return (
@@ -146,10 +191,12 @@ export function AgentWorkspaceLayout({
       ref={workspaceRef}
       className="relative flex h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))] w-full min-w-0 overflow-hidden"
     >
-      {!filesOpen && (
+      {!filesVisible && (
         <button
           type="button"
-          className="absolute top-1.5 right-2 z-30 flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+          className={`absolute top-[17px] z-30 flex size-8 items-center justify-center rounded-md text-muted-foreground outline-none ring-ring transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 ${
+            IS_WINDOWS ? 'left-3' : 'right-3'
+          }`}
           aria-label="Open files sidebar"
           title="Open files sidebar"
           onClick={() => setFilesOpen(true)}
@@ -162,7 +209,13 @@ export function AgentWorkspaceLayout({
         direction="horizontal"
         className="h-full w-full"
       >
-        <Panel id="agent-chat" order={1} defaultSize={76} minSize={32}>
+        <Panel
+          id="agent-chat"
+          order={1}
+          defaultSize={76}
+          minSize={32}
+          className="transition-[flex-grow] duration-200 ease-linear"
+        >
           <div className="flex h-full min-w-0">{children}</div>
         </Panel>
         <ResizeHandle hidden={!hasPreview} />
@@ -173,22 +226,27 @@ export function AgentWorkspaceLayout({
           minSize={24}
           collapsedSize={0}
           collapsible
+          className="overflow-hidden transition-[flex-grow] duration-200 ease-linear"
         >
-          {hasPreview && (
-            <motion.div
-              className="h-full"
-              initial={{ opacity: 0, x: 16 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.2, ease: 'easeOut' }}
-            >
-              <AgentWorkspacePreview
-                workingDir={workingDir}
-                isGenerating={isGenerating}
-              />
-            </motion.div>
-          )}
+          <AnimatePresence initial={false}>
+            {hasPreview && (
+              <motion.div
+                key="agent-preview"
+                className="h-full"
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={RIGHT_PANEL_TRANSITION}
+              >
+                <AgentWorkspacePreview
+                  workingDir={workingDir}
+                  isGenerating={isGenerating}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </Panel>
-        <ResizeHandle hidden={!filesOpen} />
+        <ResizeHandle hidden={!filesVisible} />
         <Panel
           id="agent-files"
           order={3}
@@ -197,21 +255,26 @@ export function AgentWorkspaceLayout({
           maxSize={40}
           collapsedSize={0}
           collapsible
+          className="overflow-hidden transition-[flex-grow] duration-200 ease-linear"
         >
-          {filesOpen && (
-            <motion.div
-              className="h-full"
-              initial={{ opacity: 0, x: 16 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.2, ease: 'easeOut' }}
-            >
-              <AgentWorkspaceFiles
-                workingDir={workingDir}
-                refreshKey={refreshKey}
-                onClose={() => setFilesOpen(false)}
-              />
-            </motion.div>
-          )}
+          <AnimatePresence initial={false}>
+            {filesVisible && (
+              <motion.div
+                key="agent-files"
+                className="h-full"
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={RIGHT_PANEL_TRANSITION}
+              >
+                <AgentWorkspaceFiles
+                  workingDir={workingDir}
+                  refreshKey={refreshKey}
+                  onClose={() => setFilesOpen(false)}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </Panel>
       </PanelGroup>
     </main>

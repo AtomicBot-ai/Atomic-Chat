@@ -5,6 +5,7 @@ use serde_json::{Map, Value};
 use super::types::{ApprovalResource, ToolCallPayload};
 
 const ATTACHMENT_URI_PREFIX: &str = "attachment://";
+pub(super) const MAX_TRASH_PATHS: usize = 500;
 
 #[derive(Debug)]
 pub struct PreparedPaths {
@@ -29,6 +30,7 @@ pub async fn prepare_call_paths(
     let mut resources = Vec::new();
 
     expand_attachment_aliases(&call.tool, args, trusted_read_roots).await?;
+    validate_destructive_args(&call.tool, args)?;
 
     match call.tool.as_str() {
         "os.fs.read" | "os.fs.read_document" | "os.fs.hash" => {
@@ -75,14 +77,34 @@ pub async fn prepare_call_paths(
             resolve_field(args, "path", &[], None, "edit", &root, &mut resources).await?;
         }
         "os.fs.trash" => {
-            resolve_field(args, "path", &[], None, "trash", &root, &mut resources).await?;
+            normalize_trash_paths(args)?;
+            resolve_array_field(args, "paths", "trash", &root, &mut resources).await?;
+            reject_protected_trash_targets(args, &root).await?;
         }
         "os.fs.patch" => {
             let patch = string_arg(args, "patch", &[])?;
-            for path in patch_paths(&patch) {
-                let resolved = resolve_candidate(&root, &path).await?;
-                resources.push(path_resource(&resolved, "patch"));
+            let targets = patch_paths(&patch);
+            if targets.is_empty() {
+                return Err("Patch must contain at least one file target".into());
             }
+            let mut resolved_targets = Vec::new();
+            for path in targets {
+                validate_patch_target(&path)?;
+                let resolved = resolve_candidate(&root, &path).await?;
+                if !resolved_targets.contains(&resolved) {
+                    resources.push(path_resource(&resolved, "patch"));
+                    resolved_targets.push(resolved);
+                }
+            }
+            args.insert(
+                "patch_paths".into(),
+                Value::Array(
+                    resolved_targets
+                        .into_iter()
+                        .map(|path| Value::String(path.to_string_lossy().into_owned()))
+                        .collect(),
+                ),
+            );
         }
         "os.fs.archive.list" | "os.fs.archive.read_entry" => {
             resolve_field(args, "path", &[], None, "read", &root, &mut resources).await?;
@@ -156,6 +178,138 @@ pub async fn prepare_call_paths(
         resources,
         escaped_root,
     })
+}
+
+fn validate_destructive_args(tool: &str, args: &Map<String, Value>) -> Result<(), String> {
+    match tool {
+        "os.fs.write" => {
+            string_arg(args, "path", &[])?;
+            args.get("content")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "Missing string argument `content`".to_string())?;
+            if let Some(mode) = args.get("mode") {
+                match mode.as_str() {
+                    Some("replace" | "append") => {}
+                    _ => return Err("`mode` must be \"replace\" or \"append\"".into()),
+                }
+            }
+        }
+        "os.fs.mkdir" => {
+            string_arg(args, "path", &[])?;
+            if args
+                .get("recursive")
+                .is_some_and(|value| !value.is_boolean())
+            {
+                return Err("`recursive` must be a boolean".into());
+            }
+        }
+        "os.fs.edit" => {
+            string_arg(args, "path", &[])?;
+            let old = string_arg(args, "oldString", &[])?;
+            let new = args
+                .get("newString")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "Missing string argument `newString`".to_string())?;
+            if old == new {
+                return Err("`newString` must differ from `oldString`".into());
+            }
+            if args
+                .get("replaceAll")
+                .is_some_and(|value| !value.is_boolean())
+            {
+                return Err("`replaceAll` must be a boolean".into());
+            }
+        }
+        "os.fs.trash" => {
+            if !args.contains_key("paths") {
+                string_arg(args, "path", &[])?;
+            }
+        }
+        "os.fs.patch" => {
+            string_arg(args, "patch", &[])?;
+            if args.get("apply").is_some_and(|value| !value.is_boolean()) {
+                return Err("`apply` must be a boolean".into());
+            }
+        }
+        "os.fs.archive.extract" => {
+            string_arg(args, "path", &[])?;
+            string_arg(args, "destination", &["dest"])?;
+            if args
+                .get("overwrite")
+                .is_some_and(|value| !value.is_boolean())
+            {
+                return Err("`overwrite` must be a boolean".into());
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn normalize_trash_paths(args: &mut Map<String, Value>) -> Result<(), String> {
+    if !args.contains_key("paths") {
+        let path = args
+            .remove("path")
+            .ok_or_else(|| "Missing non-empty array argument `paths`".to_string())?;
+        args.insert("paths".into(), Value::Array(vec![path]));
+    } else {
+        args.remove("path");
+    }
+    let paths = args
+        .get("paths")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "`paths` must be a non-empty array of strings".to_string())?;
+    if paths.is_empty() {
+        return Err("`paths` must be a non-empty array of strings".into());
+    }
+    if paths.len() > MAX_TRASH_PATHS {
+        return Err(format!(
+            "`paths` accepts at most {MAX_TRASH_PATHS} entries (got {})",
+            paths.len()
+        ));
+    }
+    Ok(())
+}
+
+async fn reject_protected_trash_targets(
+    args: &Map<String, Value>,
+    working_root: &Path,
+) -> Result<(), String> {
+    let mut protected = vec![working_root.to_path_buf()];
+    for candidate in [
+        dirs::home_dir(),
+        dirs::desktop_dir(),
+        dirs::document_dir(),
+        dirs::download_dir(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if let Ok(canonical) = tokio::fs::canonicalize(candidate).await {
+            protected.push(canonical);
+        }
+    }
+    let paths = args
+        .get("paths")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "Missing resolved trash paths".to_string())?;
+    let mut seen = std::collections::HashSet::new();
+    for path in paths {
+        let raw = path
+            .as_str()
+            .ok_or_else(|| "`paths` must contain only non-empty strings".to_string())?;
+        let target = PathBuf::from(raw);
+        if !seen.insert(target.clone()) {
+            return Err(format!("Duplicate trash target: {}", target.display()));
+        }
+        if target.parent().is_none() || protected.iter().any(|root| root == &target) {
+            return Err(format!(
+                "Refusing to trash protected root '{}'; select concrete child paths instead",
+                target.display()
+            ));
+        }
+    }
+    Ok(())
 }
 
 async fn expand_attachment_aliases(
@@ -434,6 +588,24 @@ fn patch_paths(patch: &str) -> Vec<String> {
         .collect()
 }
 
+fn validate_patch_target(path: &str) -> Result<(), String> {
+    let path = Path::new(path);
+    if path.is_absolute()
+        || path.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        return Err(format!(
+            "Patch target must be relative and must not traverse parents: {}",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
 fn path_resource(path: &Path, operation: &str) -> ApprovalResource {
     ApprovalResource {
         kind: "path".into(),
@@ -623,6 +795,88 @@ mod tests {
             prepared.call.args["destination"],
             canonical_root.join("out").to_string_lossy().as_ref()
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn trash_rejects_workspace_root_but_allows_concrete_children() {
+        let root = test_dir();
+        let child = root.join("image.png");
+        tokio::fs::write(&child, b"image").await.unwrap();
+
+        let root_call = ToolCallPayload {
+            tool: "os.fs.trash".into(),
+            args: serde_json::json!({"paths": [root.to_string_lossy()]}),
+        };
+        let error = prepare_call_paths(&root_call, &root, &[])
+            .await
+            .unwrap_err();
+        assert!(error.contains("protected root"));
+
+        let child_call = ToolCallPayload {
+            tool: "os.fs.trash".into(),
+            args: serde_json::json!({"paths": ["image.png"]}),
+        };
+        let prepared = prepare_call_paths(&child_call, &root, &[]).await.unwrap();
+        let canonical_child = tokio::fs::canonicalize(&child).await.unwrap();
+        assert_eq!(
+            prepared.call.args["paths"],
+            serde_json::json!([canonical_child])
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn trash_normalizes_legacy_path_and_rejects_invalid_batches() {
+        let root = test_dir();
+        let child = root.join("one.txt");
+        tokio::fs::write(&child, b"one").await.unwrap();
+
+        let legacy = ToolCallPayload {
+            tool: "os.fs.trash".into(),
+            args: serde_json::json!({"path": "one.txt"}),
+        };
+        let prepared = prepare_call_paths(&legacy, &root, &[]).await.unwrap();
+        assert!(prepared.call.args.get("path").is_none());
+        assert_eq!(prepared.call.args["paths"].as_array().unwrap().len(), 1);
+
+        for args in [
+            serde_json::json!({"paths": []}),
+            serde_json::json!({"paths": [""]}),
+            serde_json::json!({"paths": [1]}),
+            serde_json::json!({"paths": ["one.txt", "./one.txt"]}),
+        ] {
+            let call = ToolCallPayload {
+                tool: "os.fs.trash".into(),
+                args,
+            };
+            assert!(prepare_call_paths(&call, &root, &[]).await.is_err());
+        }
+
+        let oversized = ToolCallPayload {
+            tool: "os.fs.trash".into(),
+            args: serde_json::json!({"paths": vec!["one.txt"; MAX_TRASH_PATHS + 1]}),
+        };
+        assert!(prepare_call_paths(&oversized, &root, &[]).await.is_err());
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn patch_rejects_absolute_and_parent_traversal_targets() {
+        let root = test_dir();
+        for patch in [
+            "--- /tmp/file.txt\n+++ /tmp/file.txt\n@@ -1 +1 @@\n-a\n+b\n",
+            "--- ../file.txt\n+++ ../file.txt\n@@ -1 +1 @@\n-a\n+b\n",
+        ] {
+            let call = ToolCallPayload {
+                tool: "os.fs.patch".into(),
+                args: serde_json::json!({"patch": patch, "apply": true}),
+            };
+            let error = prepare_call_paths(&call, &root, &[]).await.unwrap_err();
+            assert!(error.contains("relative"));
+        }
         std::fs::remove_dir_all(root).unwrap();
     }
 }

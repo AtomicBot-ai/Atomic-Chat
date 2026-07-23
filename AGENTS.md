@@ -309,6 +309,115 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-07-23 — Remember exact Agent approvals globally
+- **Context:** Agent approval requests supported only deny, one-time approval,
+  or the turn-wide unsafe skip policy, so users had to approve an identical
+  safe action again in every thread and after every restart.
+- **Decision:** Add `always_allow` for approval-gated actions whose prepared
+  paths remain inside the trusted workspace. Fingerprint the tool name and
+  canonicalized prepared arguments with full SHA-256, store only that digest
+  in the versioned global `agent-approval-allowlist.json`, and update it
+  atomically before execution continues. Evaluate shell hard blocks before
+  allowlist matching, and never offer or honor remembered approval when path
+  preparation reports an escape from the trusted root.
+- **Consequences:** An exact action can be approved once and reused across all
+  Agent threads and application restarts without persisting commands, paths,
+  URLs, or secrets. Any argument change requires approval again. Shell hard
+  blocks, timeouts, cancellation, stale decisions, and workspace escapes
+  remain fail-closed. Revoking saved approvals has no UI in this iteration.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/approval_allowlist.rs`](src-tauri/src/core/agent/approval_allowlist.rs),
+  [`src-tauri/src/core/agent/tools/mod.rs`](src-tauri/src/core/agent/tools/mod.rs),
+  [`src-tauri/src/core/agent/approval.rs`](src-tauri/src/core/agent/approval.rs),
+  [`web-app/src/containers/dialogs/AgentApprovalDialog.tsx`](web-app/src/containers/dialogs/AgentApprovalDialog.tsx).
+
+---
+
+### 2026-07-23 — Fail closed before destructive Agent filesystem operations
+- **Context:** The Rust Agent accepted weakly validated destructive filesystem
+  arguments, moved trash targets by renaming them into `~/.Trash`, and could
+  request approval for unsafe or malformed paths. A model that intended to
+  remove matching Desktop files could therefore substitute the Desktop
+  directory itself or fall back to an unrelated shell deletion after trash
+  failed.
+- **Decision:** Validate and resolve write, mkdir, edit, trash, patch, and
+  archive-extract arguments before approval. Publish `os.fs.trash` as a bounded
+  exact-path batch, reject protected roots and duplicate targets, and use each
+  platform's native trash mechanism. Make replacement writes and edits atomic,
+  require patch targets to remain relative and dry-run immediately before
+  apply, and preflight archive entries against traversal, links, special files,
+  output conflicts, entry-count, per-entry-size, and total-size limits.
+- **Consequences:** Invalid calls cannot produce an approval prompt or mutate
+  the filesystem. Trash failures identify the failing batch item and completed
+  count, file replacement avoids partial content, and archive extraction
+  defaults to no overwrite. Existing single-path trash calls remain executable
+  through compatibility normalization, while `os.shell.run` and its current
+  `rm` policy remain unchanged by explicit scope.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/path_policy.rs`](src-tauri/src/core/agent/path_policy.rs),
+  [`src-tauri/src/core/agent/tools/fs.rs`](src-tauri/src/core/agent/tools/fs.rs),
+  [`src-tauri/src/core/agent/tools/archive.rs`](src-tauri/src/core/agent/tools/archive.rs),
+  [`src-tauri/src/core/agent/tools/mod.rs`](src-tauri/src/core/agent/tools/mod.rs),
+  [`src-tauri/src/core/agent/prompt.rs`](src-tauri/src/core/agent/prompt.rs).
+
+---
+
+### 2026-07-23 — Present the Agent working directory as the Files root
+- **Context:** The Agent composer displayed the selected directory as a text
+  control while the Files panel rendered only its children, so the workspace
+  tree had no visible root and panel visibility was controlled elsewhere.
+- **Decision:** Render the selected or default working directory as the
+  collapsible first-level folder in Files. Keep directory selection in the
+  composer and place the Files-panel toggle on its own row above the root.
+  Align both the expanded-panel toggle and the collapsed-panel opener to the
+  left on Windows, clear of the window controls, and to the right on macOS.
+- **Consequences:** The workspace tree now reflects the real directory
+  hierarchy, the selected folder remains visible and changeable in the
+  composer, and panel visibility is controlled from the panel edge. Empty
+  workspaces can still be opened manually while automatic opening remains
+  content-driven.
+- **Owner:** team.
+- **Links:** [`web-app/src/containers/AgentWorkspaceFiles.tsx`](web-app/src/containers/AgentWorkspaceFiles.tsx),
+  [`web-app/src/containers/AgentWorkspaceSelect.tsx`](web-app/src/containers/AgentWorkspaceSelect.tsx),
+  [`web-app/src/containers/ChatInput.tsx`](web-app/src/containers/ChatInput.tsx).
+
+---
+
+### 2026-07-23 — Animate Agent workspace panels like the primary sidebar
+- **Context:** The Agent Files and Preview panels appeared by changing the
+  resizable layout immediately, while the primary left sidebar slides into and
+  out of view over 200 ms.
+- **Decision:** Apply the same 200 ms linear layout transition to the Agent
+  panel group and slide Files and Preview across their full width on mount and
+  unmount. Keep panel content mounted through its exit animation.
+- **Consequences:** Opening a workspace file or toggling the Files panel no
+  longer causes an abrupt layout jump. Chat width and both right-side panels
+  move together, while manual resizing and the existing three-panel structure
+  remain unchanged.
+- **Owner:** team.
+- **Links:** [`web-app/src/containers/AgentWorkspaceLayout.tsx`](web-app/src/containers/AgentWorkspaceLayout.tsx),
+  [`web-app/src/containers/AgentWorkspaceLayout.test.tsx`](web-app/src/containers/AgentWorkspaceLayout.test.tsx).
+
+---
+
+### 2026-07-23 — Reveal Agent workspace files only when content exists
+- **Context:** Desktop Agent threads opened the Files sidebar even when the
+  selected or default workspace was empty, reducing chat width without showing
+  useful content.
+- **Decision:** Probe the workspace root when a thread opens and after each
+  Agent run. Keep the Files sidebar hidden while the root is empty, and
+  automatically open it only when the workspace first contains an entry.
+  Preserve a user's manual close while the workspace remains non-empty.
+- **Consequences:** Empty Agent workspaces start with the full width available
+  to chat. The Files sidebar appears when the Agent creates its first output,
+  remains manually closable, and disappears again if a refreshed workspace is
+  empty.
+- **Owner:** team.
+- **Links:** [`web-app/src/containers/AgentWorkspaceLayout.tsx`](web-app/src/containers/AgentWorkspaceLayout.tsx),
+  [`web-app/src/containers/AgentWorkspaceLayout.test.tsx`](web-app/src/containers/AgentWorkspaceLayout.test.tsx).
+
+---
+
 ### 2026-07-22 — Keep Gemma 4 Unified checkpoints on the multimodal MLX path
 - **Context:** `gemma-4-12B-it-4bit` declares the top-level
   `gemma4_unified` architecture but uses `embed_vision`, `vision_embedder`,

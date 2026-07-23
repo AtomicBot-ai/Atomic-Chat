@@ -27,7 +27,7 @@ use super::runner::{run_turn, RunTurnInput, MAX_STEPS};
 use super::session::{load_session, save_session, validate_session_id};
 use super::skills::load_registry;
 use super::tools::DesktopServices;
-use super::types::{AgentApprovalDecision, AgentEvent, AgentTurnRequest};
+use super::types::{AgentApprovalDecision, AgentEvent, AgentTurnRequest, ApprovalDecision};
 use super::workspace::default_agent_workspace;
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::server::context_expansion::request_context_increase;
@@ -331,6 +331,11 @@ pub async fn agent_run_turn<R: Runtime>(
 ) -> Result<(), String> {
     validate_request(&request)?;
     let data_folder = get_jan_data_folder_path(app_handle.clone());
+    state
+        .agent_approval_allowlist
+        .lock()
+        .await
+        .load_for_data_folder(&data_folder)?;
     let working_dir = resolve_working_dir(request.working_dir.as_deref(), &data_folder).await?;
     let llama_state: State<LlamacppState> = app_handle.state();
     let upstream_state: State<LlamacppUpstreamState> = app_handle.state();
@@ -406,6 +411,7 @@ pub async fn agent_run_turn<R: Runtime>(
         request.run_id.clone(),
         request.auto_approve,
         state.agent_pending_approvals.clone(),
+        state.agent_approval_allowlist.clone(),
         Arc::new(move |event| {
             approval_events
                 .send(event)
@@ -518,9 +524,24 @@ pub async fn agent_resolve_approval(
         .await
         .remove(&decision.approval_id)
         .ok_or_else(|| format!("Approval '{}' is not pending", decision.approval_id))?;
+    if decision.decision == ApprovalDecision::AlwaysAllow {
+        if !pending.can_remember {
+            let _ = pending.sender.send(ApprovalDecision::Deny);
+            return Err("This Agent action cannot be remembered".into());
+        }
+        if let Err(error) = state
+            .agent_approval_allowlist
+            .lock()
+            .await
+            .insert(pending.fingerprint.clone())
+        {
+            let _ = pending.sender.send(ApprovalDecision::Deny);
+            return Err(error);
+        }
+    }
     pending
         .sender
-        .send(decision.approved)
+        .send(decision.decision)
         .map_err(|_| format!("Approval '{}' is no longer active", decision.approval_id))
 }
 
@@ -533,7 +554,7 @@ async fn clear_pending_approvals_for_run(state: &AppState, run_id: &str) {
         .collect::<Vec<_>>();
     for approval_id in approval_ids {
         if let Some(approval) = pending.remove(&approval_id) {
-            let _ = approval.sender.send(false);
+            let _ = approval.sender.send(ApprovalDecision::Deny);
         }
     }
 }

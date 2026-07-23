@@ -9,7 +9,8 @@ use super::{
     command_outcome, optional_usize, required_string, resolve_path, truncate, ToolContext,
     MAX_TOOL_OUTPUT_CHARS,
 };
-use crate::core::agent::types::ToolOutcome;
+use crate::core::agent::path_policy::MAX_TRASH_PATHS;
+use crate::core::agent::types::{ToolOutcome, ToolStatus};
 
 pub async fn execute(
     tool: &str,
@@ -306,15 +307,21 @@ async fn write(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, T
             .await
             .map_err(|error| ToolOutcome::error(error.to_string()))?;
     } else {
-        tokio::fs::write(&path, content)
-            .await
-            .map_err(|error| ToolOutcome::error(error.to_string()))?;
+        atomic_write(&path, content.as_bytes()).await?;
     }
-    Ok(ToolOutcome::ok(format!(
-        "Wrote {} bytes to {} ({mode})",
-        content.len(),
-        path.display()
-    )))
+    Ok(ToolOutcome {
+        status: ToolStatus::Ok,
+        summary: format!(
+            "Wrote {} bytes to {} ({mode})",
+            content.len(),
+            path.display()
+        ),
+        details: Some(serde_json::json!({
+            "path": path,
+            "mode": mode,
+            "bytesWritten": content.len(),
+        })),
+    })
 }
 
 async fn mkdir(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, ToolOutcome> {
@@ -348,6 +355,15 @@ async fn edit(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, To
         .get("newString")
         .and_then(Value::as_str)
         .ok_or_else(|| ToolOutcome::error("Missing string argument `newString`"))?;
+    let metadata = tokio::fs::metadata(&path)
+        .await
+        .map_err(|error| ToolOutcome::error(format!("{}: {error}", path.display())))?;
+    if !metadata.is_file() {
+        return Err(ToolOutcome::error(format!(
+            "{} is not a regular file",
+            path.display()
+        )));
+    }
     let content = tokio::fs::read_to_string(&path)
         .await
         .map_err(|error| ToolOutcome::error(error.to_string()))?;
@@ -368,65 +384,100 @@ async fn edit(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, To
     } else {
         content.replacen(&old, new, 1)
     };
-    tokio::fs::write(&path, updated)
-        .await
-        .map_err(|error| ToolOutcome::error(error.to_string()))?;
-    Ok(ToolOutcome::ok(format!(
-        "Edited {} ({} replacement{})",
-        path.display(),
-        if replace_all { match_count } else { 1 },
-        if replace_all && match_count != 1 {
-            "s"
-        } else {
-            ""
-        }
-    )))
+    let replacements = if replace_all { match_count } else { 1 };
+    let bytes_before = content.len();
+    let bytes_after = updated.len();
+    atomic_write(&path, updated.as_bytes()).await?;
+    Ok(ToolOutcome {
+        status: ToolStatus::Ok,
+        summary: format!(
+            "Edited {} ({} replacement{})",
+            path.display(),
+            replacements,
+            if replacements != 1 { "s" } else { "" }
+        ),
+        details: Some(serde_json::json!({
+            "path": path,
+            "replaceAll": replace_all,
+            "replacements": replacements,
+            "bytesBefore": bytes_before,
+            "bytesAfter": bytes_after,
+        })),
+    })
 }
 
 async fn trash(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, ToolOutcome> {
-    let source = resolve_path(
-        context.working_dir,
-        &required_string(args, "path").map_err(ToolOutcome::error)?,
-    );
-    let trash_root = dirs::home_dir()
-        .map(|home| {
-            if cfg!(target_os = "macos") {
-                home.join(".Trash")
-            } else {
-                home.join(".local/share/Trash/files")
-            }
-        })
-        .ok_or_else(|| ToolOutcome::error("Could not resolve trash directory"))?;
-    tokio::fs::create_dir_all(&trash_root)
-        .await
-        .map_err(|error| ToolOutcome::error(error.to_string()))?;
-    let name = source
-        .file_name()
-        .ok_or_else(|| ToolOutcome::error("Path has no file name"))?;
-    let destination = trash_root.join(format!(
-        "{}-{}",
-        chrono::Utc::now().timestamp_millis(),
-        name.to_string_lossy()
-    ));
-    tokio::fs::rename(&source, &destination)
-        .await
-        .map_err(|error| ToolOutcome::error(error.to_string()))?;
-    Ok(ToolOutcome::ok(format!(
-        "Moved {} to trash",
-        source.display()
-    )))
+    let raw_paths = args
+        .get("paths")
+        .and_then(Value::as_array)
+        .ok_or_else(|| ToolOutcome::error("Missing array argument `paths`"))?;
+    if raw_paths.is_empty() || raw_paths.len() > MAX_TRASH_PATHS {
+        return Err(ToolOutcome::error(format!(
+            "`paths` must contain 1..={MAX_TRASH_PATHS} entries"
+        )));
+    }
+    let mut paths = Vec::with_capacity(raw_paths.len());
+    for raw in raw_paths {
+        let raw = raw
+            .as_str()
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| ToolOutcome::error("`paths` must contain non-empty strings"))?;
+        let path = resolve_path(context.working_dir, raw);
+        tokio::fs::symlink_metadata(&path)
+            .await
+            .map_err(|error| ToolOutcome::error(format!("{}: {error}", path.display())))?;
+        if path.file_name().is_none() {
+            return Err(ToolOutcome::error(format!(
+                "{} has no file name",
+                path.display()
+            )));
+        }
+        paths.push(path);
+    }
+    for (index, path) in paths.iter().enumerate() {
+        if let Err(error) = trash_one(path).await {
+            return Err(ToolOutcome::error(format!(
+                "Trash failed at paths[{index}] '{}': {error}; {index} item(s) already moved",
+                path.display()
+            )));
+        }
+    }
+    Ok(ToolOutcome {
+        status: ToolStatus::Ok,
+        summary: format!("Moved {} item(s) to the system trash", paths.len()),
+        details: Some(serde_json::json!({
+            "count": paths.len(),
+            "paths": paths,
+        })),
+    })
 }
 
 async fn patch(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, ToolOutcome> {
     let patch_text = required_string(args, "patch").map_err(ToolOutcome::error)?;
     let apply = args.get("apply").and_then(Value::as_bool).unwrap_or(false);
+    let dry_run = run_patch(&patch_text, context.working_dir, true).await?;
+    if !dry_run.status.success() {
+        return command_outcome(dry_run);
+    }
+    if !apply {
+        return command_outcome(dry_run);
+    }
+    command_outcome(run_patch(&patch_text, context.working_dir, false).await?)
+}
+
+async fn run_patch(
+    patch_text: &str,
+    working_dir: &Path,
+    dry_run: bool,
+) -> Result<std::process::Output, ToolOutcome> {
+    let mut arguments = vec!["--batch"];
+    if dry_run {
+        arguments.push("--dry-run");
+    }
+    arguments.push("-p0");
     let mut child = Command::new("patch")
-        .args(if apply {
-            vec!["--batch", "-p0"]
-        } else {
-            vec!["--batch", "--dry-run", "-p0"]
-        })
-        .current_dir(context.working_dir)
+        .args(arguments)
+        .current_dir(working_dir)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -443,5 +494,178 @@ async fn patch(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, T
         .wait_with_output()
         .await
         .map_err(|error| ToolOutcome::error(error.to_string()))?;
-    command_outcome(output)
+    Ok(output)
+}
+
+async fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), ToolOutcome> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| ToolOutcome::error(format!("{} has no parent", path.display())))?;
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| ToolOutcome::error(format!("{} has no file name", path.display())))?
+        .to_string_lossy();
+    let temporary = parent.join(format!(".{file_name}.atomic-{}.tmp", uuid::Uuid::new_v4()));
+    let result = async {
+        let mut file = tokio::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temporary)
+            .await?;
+        file.write_all(bytes).await?;
+        file.flush().await?;
+        file.sync_all().await?;
+        if let Ok(metadata) = tokio::fs::metadata(path).await {
+            tokio::fs::set_permissions(&temporary, metadata.permissions()).await?;
+        }
+        atomic_replace(&temporary, path).await
+    }
+    .await;
+    if let Err(error) = result {
+        let _ = tokio::fs::remove_file(&temporary).await;
+        return Err(ToolOutcome::error(format!("{}: {error}", path.display())));
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+async fn atomic_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
+    tokio::fs::rename(source, destination).await
+}
+
+#[cfg(windows)]
+async fn atomic_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let source = source
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    let destination = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    let result = unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            destination.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if result == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+async fn trash_one(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        return run_trash_command(
+            "osascript",
+            &[
+                "-e",
+                "on run argv",
+                "-e",
+                "set targetItem to POSIX file (item 1 of argv) as alias",
+                "-e",
+                "tell application \"Finder\" to delete targetItem",
+                "-e",
+                "end run",
+                "--",
+            ],
+            path,
+        )
+        .await;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        match run_trash_command("gio", &["trash", "--"], path).await {
+            Ok(()) => return Ok(()),
+            Err(gio_error) => {
+                return run_trash_command("trash-put", &["--"], path)
+                    .await
+                    .map_err(|fallback| format!("gio: {gio_error}; trash-put: {fallback}"));
+            }
+        }
+    }
+    #[cfg(windows)]
+    {
+        return run_trash_command(
+            "powershell",
+            &[
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Add-Type -AssemblyName Microsoft.VisualBasic; $p=$args[0]; $ui=[Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs; $recycle=[Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin; if ((Get-Item -LiteralPath $p).PSIsContainer) { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($p, $ui, $recycle) } else { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($p, $ui, $recycle) }",
+            ],
+            path,
+        )
+        .await;
+    }
+    #[allow(unreachable_code)]
+    Err("System trash is unsupported on this platform".into())
+}
+
+async fn run_trash_command(program: &str, arguments: &[&str], path: &Path) -> Result<(), String> {
+    let output = Command::new(program)
+        .args(arguments)
+        .arg(path)
+        .output()
+        .await
+        .map_err(|error| format!("could not run {program}: {error}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+    Err(if stderr.is_empty() {
+        format!("{program} exited with {}", output.status)
+    } else {
+        format!("{program} exited with {}: {stderr}", output.status)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn atomic_write_cleans_temporary_file_when_replace_fails() {
+        let temp = tempfile::tempdir().unwrap();
+        let destination = temp.path().join("destination");
+        std::fs::create_dir(&destination).unwrap();
+        std::fs::write(destination.join("keep.txt"), b"keep").unwrap();
+
+        assert!(atomic_write(&destination, b"replacement").await.is_err());
+        assert_eq!(
+            std::fs::read(destination.join("keep.txt")).unwrap(),
+            b"keep"
+        );
+        let siblings = std::fs::read_dir(temp.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(siblings, vec!["destination"]);
+    }
+
+    #[tokio::test]
+    async fn atomic_write_replaces_file_without_leaving_a_sibling_temp() {
+        let temp = tempfile::tempdir().unwrap();
+        let destination = temp.path().join("file.txt");
+        std::fs::write(&destination, b"before").unwrap();
+
+        atomic_write(&destination, b"after").await.unwrap();
+        assert_eq!(std::fs::read(&destination).unwrap(), b"after");
+        let siblings = std::fs::read_dir(temp.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(siblings, vec!["file.txt"]);
+    }
 }

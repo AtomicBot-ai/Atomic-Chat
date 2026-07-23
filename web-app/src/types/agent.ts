@@ -59,9 +59,11 @@ export type AgentWorkspaceText = {
   truncated: boolean
 }
 
+export type AgentApprovalResolution = 'deny' | 'allow_once' | 'always_allow'
+
 export type AgentApprovalDecision = {
   approval_id: string
-  approved: boolean
+  decision: AgentApprovalResolution
 }
 
 export type AgentApprovalResource = {
@@ -108,6 +110,7 @@ export type AgentEvent =
       reason: string
       preview: unknown
       affected_resources: AgentApprovalResource[]
+      can_remember: boolean
     }
   | {
       type: 'loop_detected'

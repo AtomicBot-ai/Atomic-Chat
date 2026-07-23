@@ -42,6 +42,7 @@
     "resources": "Affected resources",
     "timeoutNotice": "If you do not respond, this request will be denied automatically after the backend timeout.",
     "deny": "Deny",
+    "alwaysAllow": "Always allow this action",
     "approveOnce": "Approve once",
     "resolveFailed": "Failed to send the approval decision."
   },

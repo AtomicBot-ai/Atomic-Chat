@@ -25,18 +25,22 @@ use async_trait::async_trait;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
+use super::approval_allowlist::fingerprint_prepared_action;
 use super::llm_client::LlamaServerClient;
 use super::path_policy::prepare_call_paths;
 use super::resource_class::{resource_class_for, ResourceClass};
 use super::shell_guard::{evaluate_shell_command, join_command_stream, ShellGuardVerdict};
 use super::skills::{loaded::LoadedSkills, SkillRegistry};
-use super::types::{ApprovalRequest, ApprovalResource, ToolCallPayload, ToolOutcome};
+use super::types::{
+    ApprovalDecision, ApprovalRequest, ApprovalResource, ToolCallPayload, ToolOutcome,
+};
 
 pub const MAX_TOOL_OUTPUT_CHARS: usize = 16_000;
 
 #[async_trait]
 pub trait ApprovalHook: Send + Sync {
-    async fn request(&self, request: ApprovalRequest) -> Result<bool, String>;
+    async fn is_allowed(&self, fingerprint: &str) -> bool;
+    async fn request(&self, request: ApprovalRequest) -> Result<ApprovalDecision, String>;
 }
 
 #[async_trait]
@@ -155,13 +159,19 @@ async fn authorize_call(
         }
         skill_invocation = Some(invocation);
     }
-    if resource_class_for(&prepared.call.tool) == ResourceClass::ApprovalGated {
+    let is_approval_gated = resource_class_for(&prepared.call.tool) == ResourceClass::ApprovalGated;
+    if is_approval_gated {
         reasons.push("tool is approval-gated".to_string());
     }
     if prepared.escaped_root {
         reasons.push("one or more paths escape the trusted working directory".to_string());
     }
     if reasons.is_empty() {
+        return Ok(prepared.call);
+    }
+    let fingerprint = fingerprint_prepared_action(&prepared.call.tool, &prepared.call.args);
+    let can_remember = is_approval_gated && !prepared.escaped_root;
+    if can_remember && context.approval.is_allowed(&fingerprint).await {
         return Ok(prepared.call);
     }
 
@@ -184,10 +194,18 @@ async fn authorize_call(
         reason: reasons.join("; "),
         preview: safe_preview(&prepared.call),
         affected_resources: resources,
+        fingerprint,
+        can_remember,
     };
     match context.approval.request(request).await {
-        Ok(true) => Ok(prepared.call),
-        Ok(false) => Err(ToolOutcome::denied("Approval denied", "approval-required")),
+        Ok(decision) if decision.is_approved() => Ok(prepared.call),
+        Ok(ApprovalDecision::Deny) => {
+            Err(ToolOutcome::denied("Approval denied", "approval-required"))
+        }
+        Ok(_) => Err(ToolOutcome::denied(
+            "Approval decision is not permitted",
+            "approval-required",
+        )),
         Err(error) => Err(ToolOutcome::denied(
             format!("Approval failed: {error}"),
             "approval-failed",
@@ -217,6 +235,73 @@ fn safe_preview(call: &ToolCallPayload) -> Value {
                 preview.insert(key.into(), value.clone());
             }
         }
+    }
+    match call.tool.as_str() {
+        "os.fs.trash" => {
+            let paths = call
+                .args
+                .get("paths")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            preview.insert("count".into(), Value::from(paths.len()));
+            preview.insert("paths".into(), Value::Array(paths));
+        }
+        "os.fs.write" => {
+            let mode = call
+                .args
+                .get("mode")
+                .and_then(Value::as_str)
+                .unwrap_or("replace");
+            let byte_count = call
+                .args
+                .get("content")
+                .and_then(Value::as_str)
+                .map(str::len)
+                .unwrap_or(0);
+            preview.insert("mode".into(), Value::String(mode.into()));
+            preview.insert("byte_count".into(), Value::from(byte_count));
+        }
+        "os.fs.edit" => {
+            preview.insert(
+                "replaceAll".into(),
+                Value::Bool(
+                    call.args
+                        .get("replaceAll")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                ),
+            );
+        }
+        "os.fs.archive.extract" => {
+            preview.insert(
+                "overwrite".into(),
+                Value::Bool(
+                    call.args
+                        .get("overwrite")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                ),
+            );
+            preview.insert(
+                "limits".into(),
+                serde_json::json!({
+                    "maxEntries": archive::MAX_EXTRACT_ENTRIES,
+                    "maxEntryBytes": archive::MAX_EXTRACT_ENTRY_BYTES,
+                    "maxTotalBytes": archive::MAX_EXTRACT_TOTAL_BYTES,
+                }),
+            );
+        }
+        "os.fs.patch" => {
+            let targets = call
+                .args
+                .get("patch_paths")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            preview.insert("targets".into(), Value::Array(targets));
+        }
+        _ => {}
     }
     if call.tool == "os.shell.run" {
         let program = call.args.get("cmd").and_then(Value::as_str).unwrap_or("");
@@ -400,8 +485,10 @@ pub(super) fn command_outcome(output: std::process::Output) -> Result<ToolOutcom
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex as StdMutex;
 
     use super::*;
     use crate::core::agent::types::ToolStatus;
@@ -421,6 +508,24 @@ mod tests {
     struct TestApproval {
         approved: bool,
         calls: AtomicUsize,
+    }
+
+    #[derive(Default)]
+    struct RememberingApproval {
+        allowed: StdMutex<BTreeSet<String>>,
+        requests: StdMutex<Vec<ApprovalRequest>>,
+    }
+
+    #[async_trait]
+    impl ApprovalHook for RememberingApproval {
+        async fn is_allowed(&self, fingerprint: &str) -> bool {
+            self.allowed.lock().unwrap().contains(fingerprint)
+        }
+
+        async fn request(&self, request: ApprovalRequest) -> Result<ApprovalDecision, String> {
+            self.requests.lock().unwrap().push(request);
+            Ok(ApprovalDecision::AllowOnce)
+        }
     }
 
     fn test_dir() -> PathBuf {
@@ -458,9 +563,17 @@ mod tests {
 
     #[async_trait]
     impl ApprovalHook for TestApproval {
-        async fn request(&self, _request: ApprovalRequest) -> Result<bool, String> {
+        async fn is_allowed(&self, _fingerprint: &str) -> bool {
+            false
+        }
+
+        async fn request(&self, _request: ApprovalRequest) -> Result<ApprovalDecision, String> {
             self.calls.fetch_add(1, Ordering::SeqCst);
-            Ok(self.approved)
+            Ok(if self.approved {
+                ApprovalDecision::AllowOnce
+            } else {
+                ApprovalDecision::Deny
+            })
         }
     }
 
@@ -668,6 +781,128 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn exact_remembered_action_skips_approval_but_changed_args_ask_again() {
+        let root = test_dir();
+        let approval = RememberingApproval::default();
+        let loaded_tools = tool_view::LoadedTools::default();
+        let loaded_skills = LoadedSkills::default();
+        let skill_registry = test_skill_registry(&root);
+        let desktop = TestDesktop::default();
+        let cancellation = CancellationToken::new();
+        let context = ToolContext {
+            working_dir: &root,
+            trusted_read_roots: &[],
+            client: None,
+            approval: &approval,
+            cancellation: &cancellation,
+            loaded_tools: &loaded_tools,
+            loaded_skills: &loaded_skills,
+            skill_registry: &skill_registry,
+            bundled_script_runtime: None,
+            desktop: &desktop,
+        };
+        let original = ToolCallPayload {
+            tool: "os.fs.write".into(),
+            args: serde_json::json!({"path": "result.txt", "content": "one"}),
+        };
+
+        assert!(authorize_call(&original, &context).await.is_ok());
+        let fingerprint = approval.requests.lock().unwrap()[0].fingerprint.clone();
+        approval.allowed.lock().unwrap().insert(fingerprint);
+        assert!(authorize_call(&original, &context).await.is_ok());
+        assert_eq!(approval.requests.lock().unwrap().len(), 1);
+
+        let changed = ToolCallPayload {
+            tool: "os.fs.write".into(),
+            args: serde_json::json!({"path": "result.txt", "content": "two"}),
+        };
+        assert!(authorize_call(&changed, &context).await.is_ok());
+        assert_eq!(approval.requests.lock().unwrap().len(), 2);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn escaped_action_cannot_use_or_create_a_remembered_permission() {
+        let parent = test_dir();
+        let root = parent.join("root");
+        tokio::fs::create_dir(&root).await.unwrap();
+        let approval = RememberingApproval::default();
+        let loaded_tools = tool_view::LoadedTools::default();
+        let loaded_skills = LoadedSkills::default();
+        let skill_registry = test_skill_registry(&root);
+        let desktop = TestDesktop::default();
+        let cancellation = CancellationToken::new();
+        let context = ToolContext {
+            working_dir: &root,
+            trusted_read_roots: &[],
+            client: None,
+            approval: &approval,
+            cancellation: &cancellation,
+            loaded_tools: &loaded_tools,
+            loaded_skills: &loaded_skills,
+            skill_registry: &skill_registry,
+            bundled_script_runtime: None,
+            desktop: &desktop,
+        };
+        let escaped = ToolCallPayload {
+            tool: "os.fs.write".into(),
+            args: serde_json::json!({"path": "../outside.txt", "content": "one"}),
+        };
+
+        assert!(authorize_call(&escaped, &context).await.is_ok());
+        let request = approval.requests.lock().unwrap()[0].clone();
+        assert!(!request.can_remember);
+        approval.allowed.lock().unwrap().insert(request.fingerprint);
+
+        assert!(authorize_call(&escaped, &context).await.is_ok());
+        assert_eq!(approval.requests.lock().unwrap().len(), 2);
+        std::fs::remove_dir_all(parent).unwrap();
+    }
+
+    #[tokio::test]
+    async fn remembered_fingerprint_cannot_bypass_shell_hard_block() {
+        let root = test_dir();
+        let blocked_args = serde_json::json!({"cmd": "echo ready && sudo rm -rf /"});
+        let approval = RememberingApproval::default();
+        approval
+            .allowed
+            .lock()
+            .unwrap()
+            .insert(fingerprint_prepared_action("os.shell.run", &blocked_args));
+        let loaded_tools = tool_view::LoadedTools::default();
+        let loaded_skills = LoadedSkills::default();
+        let skill_registry = test_skill_registry(&root);
+        let desktop = TestDesktop::default();
+        let cancellation = CancellationToken::new();
+        let context = ToolContext {
+            working_dir: &root,
+            trusted_read_roots: &[],
+            client: None,
+            approval: &approval,
+            cancellation: &cancellation,
+            loaded_tools: &loaded_tools,
+            loaded_skills: &loaded_skills,
+            skill_registry: &skill_registry,
+            bundled_script_runtime: None,
+            desktop: &desktop,
+        };
+
+        let denied = authorize_call(
+            &ToolCallPayload {
+                tool: "os.shell.run".into(),
+                args: blocked_args,
+            },
+            &context,
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(denied.status, ToolStatus::Denied);
+        assert!(approval.requests.lock().unwrap().is_empty());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
     async fn skill_scripts_always_require_approval() {
         let root = test_dir();
         let approval = TestApproval {
@@ -774,5 +1009,55 @@ mod tests {
         assert_eq!(preview["argument_count"], 20);
         assert_eq!(preview["args"].as_array().unwrap().len(), 17);
         assert_eq!(preview["args"][16], "<4 additional arguments omitted>");
+    }
+
+    #[test]
+    fn approval_preview_summarizes_destructive_filesystem_calls_without_content() {
+        let write = safe_preview(&ToolCallPayload {
+            tool: "os.fs.write".into(),
+            args: serde_json::json!({
+                "path": "/workspace/file.txt",
+                "content": "sensitive body",
+                "mode": "replace"
+            }),
+        });
+        assert_eq!(write["mode"], "replace");
+        assert_eq!(write["byte_count"], 14);
+        assert!(write.get("content").is_none());
+
+        let trash = safe_preview(&ToolCallPayload {
+            tool: "os.fs.trash".into(),
+            args: serde_json::json!({
+                "paths": ["/workspace/a.png", "/workspace/b.png"]
+            }),
+        });
+        assert_eq!(trash["count"], 2);
+        assert_eq!(trash["paths"].as_array().unwrap().len(), 2);
+
+        let extract = safe_preview(&ToolCallPayload {
+            tool: "os.fs.archive.extract".into(),
+            args: serde_json::json!({
+                "path": "/workspace/input.zip",
+                "destination": "/workspace/out",
+                "overwrite": true
+            }),
+        });
+        assert_eq!(extract["overwrite"], true);
+        assert_eq!(
+            extract["limits"]["maxEntries"],
+            archive::MAX_EXTRACT_ENTRIES
+        );
+
+        let patch = safe_preview(&ToolCallPayload {
+            tool: "os.fs.patch".into(),
+            args: serde_json::json!({
+                "patch": "sensitive patch body",
+                "apply": true,
+                "patch_paths": ["/workspace/file.txt"]
+            }),
+        });
+        assert_eq!(patch["apply"], true);
+        assert_eq!(patch["targets"][0], "/workspace/file.txt");
+        assert!(patch.get("patch").is_none());
     }
 }

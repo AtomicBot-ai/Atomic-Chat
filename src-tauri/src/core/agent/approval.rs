@@ -8,7 +8,8 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use super::tools::ApprovalHook;
-use super::types::{AgentEvent, ApprovalRequest};
+use super::types::{AgentEvent, ApprovalDecision, ApprovalRequest};
+use crate::core::agent::approval_allowlist::ApprovalAllowlist;
 use crate::core::state::PendingAgentApproval;
 
 const DEFAULT_APPROVAL_TIMEOUT: Duration = Duration::from_secs(120);
@@ -20,6 +21,7 @@ pub struct ApprovalGate {
     run_id: String,
     auto_approve: bool,
     pending: PendingApprovals,
+    allowlist: Arc<Mutex<ApprovalAllowlist>>,
     emit: EventSink,
     cancellation: CancellationToken,
     timeout: Duration,
@@ -30,6 +32,7 @@ impl ApprovalGate {
         run_id: String,
         auto_approve: bool,
         pending: PendingApprovals,
+        allowlist: Arc<Mutex<ApprovalAllowlist>>,
         emit: EventSink,
         cancellation: CancellationToken,
     ) -> Self {
@@ -37,6 +40,7 @@ impl ApprovalGate {
             run_id,
             auto_approve,
             pending,
+            allowlist,
             emit,
             cancellation,
             timeout: DEFAULT_APPROVAL_TIMEOUT,
@@ -52,9 +56,13 @@ impl ApprovalGate {
 
 #[async_trait]
 impl ApprovalHook for ApprovalGate {
-    async fn request(&self, request: ApprovalRequest) -> Result<bool, String> {
+    async fn is_allowed(&self, fingerprint: &str) -> bool {
+        self.allowlist.lock().await.contains(fingerprint)
+    }
+
+    async fn request(&self, request: ApprovalRequest) -> Result<ApprovalDecision, String> {
         if self.auto_approve {
-            return Ok(true);
+            return Ok(ApprovalDecision::AllowOnce);
         }
 
         let approval_id = Uuid::new_v4().to_string();
@@ -63,6 +71,8 @@ impl ApprovalHook for ApprovalGate {
             approval_id.clone(),
             PendingAgentApproval {
                 run_id: self.run_id.clone(),
+                fingerprint: request.fingerprint,
+                can_remember: request.can_remember,
                 sender,
             },
         );
@@ -74,15 +84,16 @@ impl ApprovalHook for ApprovalGate {
             reason: request.reason,
             preview: request.preview,
             affected_resources: request.affected_resources,
+            can_remember: request.can_remember,
         }) {
             self.pending.lock().await.remove(&approval_id);
             return Err(error);
         }
 
         let decision = tokio::select! {
-            result = receiver => result.unwrap_or(false),
-            _ = self.cancellation.cancelled() => false,
-            _ = tokio::time::sleep(self.timeout) => false,
+            result = receiver => result.unwrap_or(ApprovalDecision::Deny),
+            _ = self.cancellation.cancelled() => ApprovalDecision::Deny,
+            _ = tokio::time::sleep(self.timeout) => ApprovalDecision::Deny,
         };
         self.pending.lock().await.remove(&approval_id);
         Ok(decision)
@@ -105,7 +116,13 @@ mod tests {
                 value: "/tmp/work/file".into(),
                 operation: "write".into(),
             }],
+            fingerprint: "a".repeat(64),
+            can_remember: true,
         }
+    }
+
+    fn allowlist() -> Arc<Mutex<ApprovalAllowlist>> {
+        Arc::new(Mutex::new(ApprovalAllowlist::default()))
     }
 
     #[tokio::test]
@@ -115,10 +132,14 @@ mod tests {
             "run".into(),
             true,
             pending.clone(),
+            allowlist(),
             Arc::new(|_| panic!("auto approval must not emit")),
             CancellationToken::new(),
         );
-        assert!(gate.request(request()).await.unwrap());
+        assert_eq!(
+            gate.request(request()).await.unwrap(),
+            ApprovalDecision::AllowOnce
+        );
         assert!(pending.lock().await.is_empty());
     }
 
@@ -131,6 +152,7 @@ mod tests {
             "run".into(),
             false,
             pending.clone(),
+            allowlist(),
             Arc::new(move |event| {
                 emitted_for_sink.lock().unwrap().push(event);
                 Ok(())
@@ -148,9 +170,12 @@ mod tests {
             event => panic!("unexpected event: {event:?}"),
         };
         let pending_request = pending.lock().await.remove(&approval_id).unwrap();
-        pending_request.sender.send(true).unwrap();
+        pending_request
+            .sender
+            .send(ApprovalDecision::AllowOnce)
+            .unwrap();
 
-        assert!(task.await.unwrap().unwrap());
+        assert_eq!(task.await.unwrap().unwrap(), ApprovalDecision::AllowOnce);
         assert!(pending.lock().await.is_empty());
     }
 
@@ -161,11 +186,15 @@ mod tests {
             "run".into(),
             false,
             pending.clone(),
+            allowlist(),
             Arc::new(|_| Ok(())),
             CancellationToken::new(),
         )
         .with_timeout(Duration::from_millis(1));
-        assert!(!gate.request(request()).await.unwrap());
+        assert_eq!(
+            gate.request(request()).await.unwrap(),
+            ApprovalDecision::Deny
+        );
         assert!(pending.lock().await.is_empty());
     }
 
@@ -177,6 +206,7 @@ mod tests {
             "run".into(),
             false,
             pending.clone(),
+            allowlist(),
             Arc::new(|_| Ok(())),
             cancellation.clone(),
         ));
@@ -188,7 +218,7 @@ mod tests {
         tokio::task::yield_now().await;
         cancellation.cancel();
 
-        assert!(!task.await.unwrap().unwrap());
+        assert_eq!(task.await.unwrap().unwrap(), ApprovalDecision::Deny);
         assert!(pending.lock().await.is_empty());
     }
 }

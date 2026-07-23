@@ -188,7 +188,7 @@ type AgentRunStore = {
   startRun: (threadId: string, runId: string) => void
   applyEvent: (threadId: string, event: AgentEvent) => void
   setApprovalResolving: (threadId: string, resolving: boolean) => void
-  clearPendingApproval: (threadId: string) => void
+  clearPendingApproval: (threadId: string, approvalId: string) => void
   clearRun: (threadId: string) => void
   clearAll: () => void
 }
@@ -235,10 +235,10 @@ export const useAgentRun = create<AgentRunStore>()((set, get) => ({
       }
     })
   },
-  clearPendingApproval: (threadId) => {
+  clearPendingApproval: (threadId, approvalId) => {
     set((state) => {
       const run = state.runs[threadId]
-      if (!run) return state
+      if (!run || run.pendingApproval?.approval_id !== approvalId) return state
       return {
         runs: {
           ...state.runs,
