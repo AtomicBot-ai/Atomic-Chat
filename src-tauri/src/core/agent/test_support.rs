@@ -15,7 +15,7 @@ use tokio::sync::oneshot;
 use super::llm_client::{LlamaServerClient, LlamaSessionTarget};
 use super::skills::SkillRegistry;
 use super::tools::{ApprovalHook, DesktopServices};
-use super::types::{AgentEvent, ApprovalRequest};
+use super::types::{AgentEvent, ApprovalDecision, ApprovalRequest};
 
 pub(crate) struct TestWorkspace {
     path: PathBuf,
@@ -92,14 +92,22 @@ impl RecordingApproval {
 
 #[async_trait]
 impl ApprovalHook for RecordingApproval {
-    async fn request(&self, request: ApprovalRequest) -> Result<bool, String> {
+    async fn is_allowed(&self, _fingerprint: &str) -> bool {
+        false
+    }
+
+    async fn request(&self, request: ApprovalRequest) -> Result<ApprovalDecision, String> {
         self.requests
             .lock()
             .expect("approval requests")
             .push(request);
         match &self.error {
             Some(error) => Err(error.clone()),
-            None => Ok(self.approved),
+            None => Ok(if self.approved {
+                ApprovalDecision::AllowOnce
+            } else {
+                ApprovalDecision::Deny
+            }),
         }
     }
 }

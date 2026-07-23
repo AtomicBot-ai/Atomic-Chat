@@ -368,6 +368,7 @@ pub fn run() {
             server_handle: Arc::new(Mutex::new(None)),
             tool_call_cancellations: Arc::new(Mutex::new(HashMap::new())),
             agent_pending_approvals: Arc::new(Mutex::new(HashMap::new())),
+            agent_approval_allowlist: Arc::new(Mutex::new(Default::default())),
             agent_session_locks: Arc::new(Mutex::new(HashMap::new())),
             mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
             mcp_shutdown_in_progress: Arc::new(Mutex::new(false)),

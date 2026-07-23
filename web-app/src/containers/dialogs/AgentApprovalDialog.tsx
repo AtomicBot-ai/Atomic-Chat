@@ -15,6 +15,7 @@ import {
   isStaleAgentApprovalError,
   resolveAgentApproval,
 } from '@/services/agent/tauri'
+import type { AgentApprovalResolution } from '@/types/agent'
 
 const PREVIEW_LIMIT = 4_000
 const RESOURCE_VALUE_LIMIT = 512
@@ -52,7 +53,7 @@ export default function AgentApprovalDialog() {
     return null
   }
 
-  const resolve = async (approved: boolean) => {
+  const resolve = async (decision: AgentApprovalResolution) => {
     if (
       run.approvalResolving ||
       resolvingApprovalIdRef.current === approval.approval_id
@@ -64,12 +65,16 @@ export default function AgentApprovalDialog() {
     try {
       await resolveAgentApproval({
         approval_id: approval.approval_id,
-        approved,
+        decision,
       })
-      useAgentRun.getState().clearPendingApproval(threadId)
+      useAgentRun
+        .getState()
+        .clearPendingApproval(threadId, approval.approval_id)
     } catch (error) {
       if (isStaleAgentApprovalError(error)) {
-        useAgentRun.getState().clearPendingApproval(threadId)
+        useAgentRun
+          .getState()
+          .clearPendingApproval(threadId, approval.approval_id)
         return
       }
       resolvingApprovalIdRef.current = undefined
@@ -82,7 +87,7 @@ export default function AgentApprovalDialog() {
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open) void resolve(false)
+        if (!open) void resolve('deny')
       }}
     >
       <DialogContent showCloseButton={false}>
@@ -145,14 +150,24 @@ export default function AgentApprovalDialog() {
             variant="ghost"
             size="sm"
             disabled={run.approvalResolving}
-            onClick={() => void resolve(false)}
+            onClick={() => void resolve('deny')}
           >
             {t('agentApproval.deny')}
           </Button>
+          {approval.can_remember && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={run.approvalResolving}
+              onClick={() => void resolve('always_allow')}
+            >
+              {t('agentApproval.alwaysAllow')}
+            </Button>
+          )}
           <Button
             size="sm"
             disabled={run.approvalResolving}
-            onClick={() => void resolve(true)}
+            onClick={() => void resolve('allow_once')}
             autoFocus
           >
             {t('agentApproval.approveOnce')}

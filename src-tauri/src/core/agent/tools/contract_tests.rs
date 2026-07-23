@@ -431,6 +431,52 @@ async fn filesystem_edit_supports_explicit_replace_all() {
 }
 
 #[tokio::test]
+async fn destructive_filesystem_calls_reject_invalid_args_before_approval() {
+    let fixture = ToolFixture::allowed();
+    fixture.workspace.write("editable.txt", "before");
+    fixture.workspace.write("archive.zip", []);
+
+    for (tool, args) in [
+        (
+            "os.fs.write",
+            serde_json::json!({"path": "file.txt", "content": "x", "mode": "invalid"}),
+        ),
+        (
+            "os.fs.mkdir",
+            serde_json::json!({"path": "dir", "recursive": "yes"}),
+        ),
+        (
+            "os.fs.edit",
+            serde_json::json!({
+                "path": "editable.txt",
+                "oldString": "",
+                "newString": "after"
+            }),
+        ),
+        ("os.fs.trash", serde_json::json!({"paths": []})),
+        (
+            "os.fs.patch",
+            serde_json::json!({
+                "patch": "--- ../file.txt\n+++ ../file.txt\n@@ -1 +1 @@\n-a\n+b\n",
+                "apply": true
+            }),
+        ),
+        (
+            "os.fs.archive.extract",
+            serde_json::json!({
+                "path": "archive.zip",
+                "destination": "out",
+                "overwrite": "yes"
+            }),
+        ),
+    ] {
+        let outcome = fixture.call(tool, args).await;
+        assert_eq!(outcome.status, ToolStatus::Error, "{tool}");
+    }
+    assert!(fixture.approval.requests().is_empty());
+}
+
+#[tokio::test]
 async fn filesystem_read_document_extracts_docx_and_honors_character_cap() {
     let fixture = ToolFixture::allowed();
     let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -571,6 +617,45 @@ async fn archive_tools_list_read_extract_and_reject_traversal() {
     assert_eq!(unsafe_extract.status, ToolStatus::Error);
     assert!(unsafe_extract.summary.contains("unsafe path"));
     assert!(!fixture.workspace.path().join("escaped.txt").exists());
+
+    create_zip(
+        &fixture.workspace,
+        "overwrite.zip",
+        &[("entry.txt", "replacement")],
+    );
+    fixture
+        .workspace
+        .write("overwrite-out/entry.txt", "original");
+    let rejected_overwrite = fixture
+        .call(
+            "os.fs.archive.extract",
+            serde_json::json!({
+                "path": "overwrite.zip",
+                "destination": "overwrite-out"
+            }),
+        )
+        .await;
+    assert_eq!(rejected_overwrite.status, ToolStatus::Error);
+    assert_eq!(
+        fixture.workspace.read("overwrite-out/entry.txt"),
+        b"original"
+    );
+
+    let allowed_overwrite = fixture
+        .call(
+            "os.fs.archive.extract",
+            serde_json::json!({
+                "path": "overwrite.zip",
+                "destination": "overwrite-out",
+                "overwrite": true
+            }),
+        )
+        .await;
+    assert_eq!(allowed_overwrite.status, ToolStatus::Ok);
+    assert_eq!(
+        fixture.workspace.read("overwrite-out/entry.txt"),
+        b"replacement"
+    );
 }
 
 #[tokio::test]

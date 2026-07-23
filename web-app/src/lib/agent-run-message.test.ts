@@ -42,6 +42,7 @@ describe('agent run message projection', () => {
       reason: 'Write file',
       preview: { secret: 'must-not-persist' },
       affected_resources: [],
+      can_remember: true,
     }
 
     const message = buildAgentUIMessage(state)

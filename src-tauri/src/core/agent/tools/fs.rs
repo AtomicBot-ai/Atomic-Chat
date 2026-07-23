@@ -13,7 +13,8 @@ use super::{
     command_outcome, optional_usize, required_string, resolve_path, truncate, ToolContext,
     MAX_TOOL_OUTPUT_CHARS,
 };
-use crate::core::agent::types::ToolOutcome;
+use crate::core::agent::path_policy::MAX_TRASH_PATHS;
+use crate::core::agent::types::{ToolOutcome, ToolStatus};
 
 /// Upper bound for in-process text reads used by grep/diff/patch.
 const MAX_TEXT_FILE_BYTES: u64 = 1_048_576;
@@ -137,9 +138,7 @@ async fn glob_paths(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutco
     let paths = glob::glob(&absolute_pattern)
         .map_err(|error| ToolOutcome::error(error.to_string()))?
         .filter_map(Result::ok)
-        .map(|path| {
-            display_relative_path(path.strip_prefix(&base).unwrap_or(&path))
-        })
+        .map(|path| display_relative_path(path.strip_prefix(&base).unwrap_or(&path)))
         .collect::<Vec<_>>();
     Ok(ToolOutcome::ok(truncate(
         paths.join("\n"),
@@ -263,7 +262,8 @@ fn utf8_text<'a>(bytes: &'a [u8], path: &Path) -> Result<&'a str, String> {
 }
 
 fn read_text_file_bytes(path: &Path) -> Result<Vec<u8>, String> {
-    let metadata = std::fs::metadata(path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let metadata =
+        std::fs::metadata(path).map_err(|error| format!("{}: {error}", path.display()))?;
     if metadata.len() > MAX_TEXT_FILE_BYTES {
         return Err(format!(
             "{}: file exceeds the {} byte text-tool limit",
@@ -419,15 +419,21 @@ async fn write(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, T
             .await
             .map_err(|error| ToolOutcome::error(error.to_string()))?;
     } else {
-        tokio::fs::write(&path, content)
-            .await
-            .map_err(|error| ToolOutcome::error(error.to_string()))?;
+        atomic_write(&path, content.as_bytes()).await?;
     }
-    Ok(ToolOutcome::ok(format!(
-        "Wrote {} bytes to {} ({mode})",
-        content.len(),
-        path.display()
-    )))
+    Ok(ToolOutcome {
+        status: ToolStatus::Ok,
+        summary: format!(
+            "Wrote {} bytes to {} ({mode})",
+            content.len(),
+            path.display()
+        ),
+        details: Some(serde_json::json!({
+            "path": path,
+            "mode": mode,
+            "bytesWritten": content.len(),
+        })),
+    })
 }
 
 async fn mkdir(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, ToolOutcome> {
@@ -461,6 +467,15 @@ async fn edit(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, To
         .get("newString")
         .and_then(Value::as_str)
         .ok_or_else(|| ToolOutcome::error("Missing string argument `newString`"))?;
+    let metadata = tokio::fs::metadata(&path)
+        .await
+        .map_err(|error| ToolOutcome::error(format!("{}: {error}", path.display())))?;
+    if !metadata.is_file() {
+        return Err(ToolOutcome::error(format!(
+            "{} is not a regular file",
+            path.display()
+        )));
+    }
     let content = tokio::fs::read_to_string(&path)
         .await
         .map_err(|error| ToolOutcome::error(error.to_string()))?;
@@ -481,32 +496,76 @@ async fn edit(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, To
     } else {
         content.replacen(&old, new, 1)
     };
-    tokio::fs::write(&path, updated)
-        .await
-        .map_err(|error| ToolOutcome::error(error.to_string()))?;
-    Ok(ToolOutcome::ok(format!(
-        "Edited {} ({} replacement{})",
-        path.display(),
-        if replace_all { match_count } else { 1 },
-        if replace_all && match_count != 1 {
-            "s"
-        } else {
-            ""
-        }
-    )))
+    let replacements = if replace_all { match_count } else { 1 };
+    let bytes_before = content.len();
+    let bytes_after = updated.len();
+    atomic_write(&path, updated.as_bytes()).await?;
+    Ok(ToolOutcome {
+        status: ToolStatus::Ok,
+        summary: format!(
+            "Edited {} ({} replacement{})",
+            path.display(),
+            replacements,
+            if replacements != 1 { "s" } else { "" }
+        ),
+        details: Some(serde_json::json!({
+            "path": path,
+            "replaceAll": replace_all,
+            "replacements": replacements,
+            "bytesBefore": bytes_before,
+            "bytesAfter": bytes_after,
+        })),
+    })
 }
 
 async fn trash(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, ToolOutcome> {
-    let source = resolve_path(
-        context.working_dir,
-        &required_string(args, "path").map_err(ToolOutcome::error)?,
-    );
-    let display = source.display().to_string();
-    tokio::task::spawn_blocking(move || trash::delete(&source))
-        .await
-        .map_err(|error| ToolOutcome::error(format!("Trash task failed: {error}")))?
-        .map_err(|error| ToolOutcome::error(format!("{display}: {error}")))?;
-    Ok(ToolOutcome::ok(format!("Moved {display} to trash")))
+    let raw_paths = args
+        .get("paths")
+        .and_then(Value::as_array)
+        .ok_or_else(|| ToolOutcome::error("Missing array argument `paths`"))?;
+    if raw_paths.is_empty() || raw_paths.len() > MAX_TRASH_PATHS {
+        return Err(ToolOutcome::error(format!(
+            "`paths` must contain 1..={MAX_TRASH_PATHS} entries"
+        )));
+    }
+    let mut paths = Vec::with_capacity(raw_paths.len());
+    for raw in raw_paths {
+        let raw = raw
+            .as_str()
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| ToolOutcome::error("`paths` must contain non-empty strings"))?;
+        let path = resolve_path(context.working_dir, raw);
+        tokio::fs::symlink_metadata(&path)
+            .await
+            .map_err(|error| ToolOutcome::error(format!("{}: {error}", path.display())))?;
+        if path.file_name().is_none() {
+            return Err(ToolOutcome::error(format!(
+                "{} has no file name",
+                path.display()
+            )));
+        }
+        paths.push(path);
+    }
+    for (index, path) in paths.iter().enumerate() {
+        let path = path.to_path_buf();
+        let display = path.display().to_string();
+        let result = tokio::task::spawn_blocking(move || trash::delete(&path))
+            .await
+            .map_err(|error| ToolOutcome::error(format!("Trash task failed: {error}")))?;
+        if let Err(error) = result {
+            return Err(ToolOutcome::error(format!(
+                "Trash failed at paths[{index}] '{display}': {error}; {index} item(s) already moved"
+            )));
+        }
+    }
+    Ok(ToolOutcome {
+        status: ToolStatus::Ok,
+        summary: format!("Moved {} item(s) to the system trash", paths.len()),
+        details: Some(serde_json::json!({
+            "count": paths.len(),
+            "paths": paths,
+        })),
+    })
 }
 
 async fn patch(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, ToolOutcome> {
@@ -707,13 +766,76 @@ fn apply_planned_changes(changes: &BTreeMap<PathBuf, PlannedPatch>) -> Result<()
     Ok(())
 }
 
+async fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), ToolOutcome> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| ToolOutcome::error(format!("{} has no parent", path.display())))?;
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| ToolOutcome::error(format!("{} has no file name", path.display())))?
+        .to_string_lossy();
+    let temporary = parent.join(format!(".{file_name}.atomic-{}.tmp", uuid::Uuid::new_v4()));
+    let result = async {
+        let mut file = tokio::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temporary)
+            .await?;
+        file.write_all(bytes).await?;
+        file.flush().await?;
+        file.sync_all().await?;
+        if let Ok(metadata) = tokio::fs::metadata(path).await {
+            tokio::fs::set_permissions(&temporary, metadata.permissions()).await?;
+        }
+        atomic_replace(&temporary, path).await
+    }
+    .await;
+    if let Err(error) = result {
+        let _ = tokio::fs::remove_file(&temporary).await;
+        return Err(ToolOutcome::error(format!("{}: {error}", path.display())));
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+async fn atomic_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
+    tokio::fs::rename(source, destination).await
+}
+
+#[cfg(windows)]
+async fn atomic_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let source = source
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    let destination = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    let result = unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            destination.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if result == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{
-        display_relative_path, format_unified_diff, observation_path_label,
-        strip_windows_verbatim_prefix,
-    };
-    use std::path::{Path, PathBuf};
+    use super::*;
 
     #[test]
     fn relative_paths_use_forward_slashes() {
@@ -725,12 +847,8 @@ mod tests {
 
     #[test]
     fn unified_diff_uses_requested_labels_and_hunk_body() {
-        let summary = format_unified_diff(
-            "left.txt",
-            "right.txt",
-            "alpha\nbefore\n",
-            "alpha\nafter\n",
-        );
+        let summary =
+            format_unified_diff("left.txt", "right.txt", "alpha\nbefore\n", "alpha\nafter\n");
         assert!(
             summary.starts_with("--- left.txt\n+++ right.txt\n@@"),
             "{summary:?}"
@@ -751,5 +869,39 @@ mod tests {
             observation_path_label(&working_dir, &absolute),
             "nested/left.txt"
         );
+    }
+
+    #[tokio::test]
+    async fn atomic_write_cleans_temporary_file_when_replace_fails() {
+        let temp = tempfile::tempdir().unwrap();
+        let destination = temp.path().join("destination");
+        std::fs::create_dir(&destination).unwrap();
+        std::fs::write(destination.join("keep.txt"), b"keep").unwrap();
+
+        assert!(atomic_write(&destination, b"replacement").await.is_err());
+        assert_eq!(
+            std::fs::read(destination.join("keep.txt")).unwrap(),
+            b"keep"
+        );
+        let siblings = std::fs::read_dir(temp.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(siblings, vec!["destination"]);
+    }
+
+    #[tokio::test]
+    async fn atomic_write_replaces_file_without_leaving_a_sibling_temp() {
+        let temp = tempfile::tempdir().unwrap();
+        let destination = temp.path().join("file.txt");
+        std::fs::write(&destination, b"before").unwrap();
+
+        atomic_write(&destination, b"after").await.unwrap();
+        assert_eq!(std::fs::read(&destination).unwrap(), b"after");
+        let siblings = std::fs::read_dir(temp.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(siblings, vec!["file.txt"]);
     }
 }

@@ -142,12 +142,28 @@ pub struct ApprovalRequest {
     pub reason: String,
     pub preview: serde_json::Value,
     pub affected_resources: Vec<ApprovalResource>,
+    pub fingerprint: String,
+    pub can_remember: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalDecision {
+    Deny,
+    AllowOnce,
+    AlwaysAllow,
+}
+
+impl ApprovalDecision {
+    pub fn is_approved(self) -> bool {
+        matches!(self, Self::AllowOnce | Self::AlwaysAllow)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct AgentApprovalDecision {
     pub approval_id: String,
-    pub approved: bool,
+    pub decision: ApprovalDecision,
 }
 
 /// Loop-guard severity surfaced to observers.
@@ -202,6 +218,7 @@ pub enum AgentEvent {
         reason: String,
         preview: serde_json::Value,
         affected_resources: Vec<ApprovalResource>,
+        can_remember: bool,
     },
     LoopDetected {
         level: LoopLevel,

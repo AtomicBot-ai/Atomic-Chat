@@ -110,7 +110,7 @@ function Index() {
           'h-full overflow-y-auto inline-flex flex-col gap-2 justify-center px-3'
         )}
       >
-        <div className={cn('relative mx-auto w-full md:w-4/5 xl:w-4/6 -mt-20')}>
+        <div className={cn('mx-auto w-full md:w-4/5 xl:w-4/6 -mt-20')}>
           <div className={cn('text-center mb-4')}>
             <h1 className={cn('text-2xl mt-2 font-studio font-medium')}>
               {t('chat:description')}
@@ -124,7 +124,7 @@ function Index() {
               preselectedAgentSkillName={agentSkill}
             />
           </div>
-          <div className="absolute inset-x-0 top-full pt-4">
+          <div className="mx-auto w-full max-w-3xl">
             <AgentTaskSuggestions
               visible={isAgentMode}
               onSelect={handleSelectAgentTask}

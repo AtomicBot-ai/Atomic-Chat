@@ -136,8 +136,7 @@ mod windows_impl {
     type AdlAdapterNumberofadaptersGet = unsafe extern "C" fn(*mut c_int) -> c_int;
     type AdlAdapterAdapterinfoGet = unsafe extern "C" fn(*mut AdapterInfo, c_int) -> c_int;
     type AdlAdapterActiveGet = unsafe extern "C" fn(c_int, *mut c_int) -> c_int;
-    type AdlGetDedicatedVramUsage =
-        unsafe extern "C" fn(*mut c_void, c_int, *mut c_int) -> c_int;
+    type AdlGetDedicatedVramUsage = unsafe extern "C" fn(*mut c_void, c_int, *mut c_int) -> c_int;
 
     // === ADL Memory Allocator ===
     unsafe extern "C" fn adl_malloc(i_size: i32) -> *mut c_void {

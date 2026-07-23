@@ -14,6 +14,7 @@
 //! the `tauri-plugin-llamacpp` session map.
 
 pub mod approval;
+pub mod approval_allowlist;
 pub mod attachments;
 pub mod commands;
 pub mod compressor;
@@ -41,6 +42,6 @@ mod runner_tests;
 pub(crate) mod test_support;
 
 pub use types::{
-    AgentApprovalDecision, AgentEvent, AgentTurnRequest, ApprovalRequest, ApprovalResource,
-    ToolCallPayload, ToolExecution, ToolOutcome, ToolStatus,
+    AgentApprovalDecision, AgentEvent, AgentTurnRequest, ApprovalDecision, ApprovalRequest,
+    ApprovalResource, ToolCallPayload, ToolExecution, ToolOutcome, ToolStatus,
 };

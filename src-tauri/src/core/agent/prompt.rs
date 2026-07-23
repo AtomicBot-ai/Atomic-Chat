@@ -194,8 +194,8 @@ pub const ITERATION_ONE_TOOLS: &[ToolDescriptor] = &[
     },
     ToolDescriptor {
         name: "os.fs.trash",
-        summary: "Move a file or directory to the OS trash (recoverable). Approval-gated.",
-        args_schema: r#"{ path: string }"#,
+        summary: "Move exact files/directories to the OS trash (recoverable). First find exact matches with os.fs.list/os.fs.glob and pass those paths. Never replace matched children with their parent directory or use shell deletion as fallback. Approval-gated.",
+        args_schema: r#"{ paths: string[] } // 1..500 exact paths"#,
         tier: ToolTier::Frequent,
         examples: &[],
     },
@@ -250,8 +250,8 @@ pub const ITERATION_ONE_TOOLS: &[ToolDescriptor] = &[
     },
     ToolDescriptor {
         name: "os.fs.archive.extract",
-        summary: "Extract a zip, tar, tar.gz, or tgz archive to a directory with path-traversal protection. Approval-gated.",
-        args_schema: r#"{ path: string, destination: string }"#,
+        summary: "Safely extract a zip, tar, tar.gz, or tgz archive with traversal, special-entry, and expanded-size guards. Existing outputs are rejected unless overwrite=true. Approval-gated.",
+        args_schema: r#"{ path: string, destination: string, overwrite?: boolean }"#,
         tier: ToolTier::Rare,
         examples: &[],
     },

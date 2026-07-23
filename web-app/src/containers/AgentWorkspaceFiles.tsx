@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { PanelRight } from 'lucide-react'
 import {
   IconChevronDown,
   IconChevronRight,
   IconFile,
   IconFolder,
 } from '@tabler/icons-react'
+import { PanelRight } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   listAgentWorkspace,
@@ -111,26 +111,37 @@ export function AgentWorkspaceFiles({
 
   const rootState = directories['']
   const title = useMemo(() => workspaceName(workingDir), [workingDir])
+  const rootExpanded = expanded.has('')
 
   const renderEntries = (path: string, depth: number): ReactNode => {
     const state = directories[path]
     if (state?.loading) {
       return (
-        <div className="px-2 py-2 text-xs text-sidebar-foreground/70">
+        <div
+          className="py-2 pr-2 text-xs text-sidebar-foreground/70"
+          style={{ paddingLeft: `${54 + depth * 16}px` }}
+        >
           Loading…
         </div>
       )
     }
     if (state?.error) {
       return (
-        <div className="px-3 py-2 text-xs text-destructive" title={state.error}>
+        <div
+          className="py-2 pr-3 text-xs text-destructive"
+          style={{ paddingLeft: `${54 + depth * 16}px` }}
+          title={state.error}
+        >
           Could not load this directory.
         </div>
       )
     }
     if (state?.entries?.length === 0) {
       return (
-        <div className="px-2 py-2 text-xs text-sidebar-foreground/70">
+        <div
+          className="py-2 pr-2 text-xs text-sidebar-foreground/70"
+          style={{ paddingLeft: `${54 + depth * 16}px` }}
+        >
           Empty
         </div>
       )
@@ -181,31 +192,46 @@ export function AgentWorkspaceFiles({
   return (
     <div className="h-full p-2 pl-0">
       <aside className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-sidebar-border bg-clip-padding bg-linear-to-b from-sidebar to-background text-sidebar-foreground shadow dark:from-sidebar/70">
-        <div className="flex h-10 shrink-0 items-center gap-2 px-2">
-          <span
-            className="min-w-0 flex-1 truncate px-2 text-xs font-medium text-sidebar-foreground/70"
-            title={workingDir}
+        <div className="min-h-0 flex-1 overflow-auto p-2">
+          <div
+            className={cn(
+              'flex h-8 items-center',
+              !IS_WINDOWS && 'justify-end'
+            )}
           >
-            {title}
-          </span>
+            <button
+              type="button"
+              className="flex size-8 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/70 outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-foreground/8 hover:text-sidebar-foreground focus-visible:ring-2"
+              aria-label="Close files sidebar"
+              title="Close files sidebar"
+              onClick={onClose}
+            >
+              <PanelRight className="size-4" />
+            </button>
+          </div>
           <button
             type="button"
-            className="flex size-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/70 outline-none ring-sidebar-ring hover:bg-sidebar-foreground/8 hover:text-sidebar-foreground focus-visible:ring-2"
-            aria-label="Close files sidebar"
-            title="Close files sidebar"
-            onClick={onClose}
+            className="flex h-8 w-full min-w-0 items-center gap-2 overflow-hidden rounded-md px-2 text-left text-sm font-medium text-sidebar-foreground outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-foreground/8 hover:text-sidebar-accent-foreground focus-visible:ring-2"
+            aria-label={`${rootExpanded ? 'Collapse' : 'Expand'} ${title}`}
+            title={workingDir ?? title}
+            onClick={() => toggleDirectory('')}
           >
-            <PanelRight className="size-4" />
+            {rootExpanded ? (
+              <IconChevronDown className="size-3.5 shrink-0" />
+            ) : (
+              <IconChevronRight className="size-3.5 shrink-0" />
+            )}
+            <IconFolder className="size-4 shrink-0 text-sidebar-foreground/70" />
+            <span className="truncate">{title}</span>
           </button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-auto p-2">
-          {!rootState ? (
-            <div className="px-2 py-2 text-xs text-sidebar-foreground/70">
-              Loading…
-            </div>
-          ) : (
-            renderEntries('', 0)
-          )}
+          {rootExpanded &&
+            (!rootState ? (
+              <div className="py-2 pl-10 text-xs text-sidebar-foreground/70">
+                Loading…
+              </div>
+            ) : (
+              renderEntries('', 1)
+            ))}
         </div>
       </aside>
     </div>

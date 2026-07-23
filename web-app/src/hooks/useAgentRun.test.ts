@@ -96,6 +96,7 @@ describe('useAgentRun', () => {
       reason: 'Filesystem write',
       preview: { path: '/tmp/a' },
       affected_resources: [],
+      can_remember: true,
     }
     const awaiting = reduceAgentRunState(createAgentRunState(), approval)
     expect(awaiting.status).toBe('awaiting_approval')

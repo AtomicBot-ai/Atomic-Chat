@@ -65,10 +65,7 @@ pub async fn graceful_terminate_process(child: &mut tokio::process::Child) {
 
     if let Some(raw_pid) = child.id() {
         let raw_pid = raw_pid as i32;
-        log::info!(
-            "Sending SIGTERM to Foundation Models PID {}",
-            raw_pid
-        );
+        log::info!("Sending SIGTERM to Foundation Models PID {}", raw_pid);
         let _ = kill(Pid::from_raw(raw_pid), Signal::SIGTERM);
 
         match timeout(Duration::from_secs(5), child.wait()).await {
