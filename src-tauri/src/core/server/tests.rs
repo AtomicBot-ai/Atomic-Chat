@@ -125,7 +125,10 @@ mod tests {
 
     #[test]
     fn test_model_ids_match_exact() {
-        assert!(proxy::model_ids_match("Qwen3.5-9B-MLX-4bit", "Qwen3.5-9B-MLX-4bit"));
+        assert!(proxy::model_ids_match(
+            "Qwen3.5-9B-MLX-4bit",
+            "Qwen3.5-9B-MLX-4bit"
+        ));
         assert!(proxy::model_ids_match("", ""));
     }
 
@@ -403,10 +406,7 @@ mod tests {
         );
         assert_eq!(msgs[1]["role"], "user");
         assert_eq!(msgs[1]["content"], "hi");
-        let system_count = msgs
-            .iter()
-            .filter(|m| m["role"] == "system")
-            .count();
+        let system_count = msgs.iter().filter(|m| m["role"] == "system").count();
         assert_eq!(system_count, 1);
     }
 
@@ -520,14 +520,19 @@ mod tests {
         let closers = conv.finish(Some(&json!({
             "prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4
         })));
-        let closer_types: Vec<&str> =
-            closers.iter().map(|e| e["type"].as_str().unwrap()).collect();
+        let closer_types: Vec<&str> = closers
+            .iter()
+            .map(|e| e["type"].as_str().unwrap())
+            .collect();
         assert!(closer_types.contains(&"response.output_text.done"));
         assert!(closer_types.contains(&"response.output_item.done"));
         let completed = closers.last().unwrap();
         assert_eq!(completed["type"], "response.completed");
         assert_eq!(completed["response"]["status"], "completed");
-        assert_eq!(completed["response"]["output"][0]["content"][0]["text"], "Hello");
+        assert_eq!(
+            completed["response"]["output"][0]["content"][0]["text"],
+            "Hello"
+        );
         assert_eq!(completed["response"]["usage"]["output_tokens"], 1);
     }
 

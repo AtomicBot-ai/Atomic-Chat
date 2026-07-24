@@ -131,6 +131,10 @@ dialoguer = { version = "0.11", optional = true }
 env_logger = { version = "0.11", optional = true }
 indicatif = { version = "0.17", optional = true }
 console = { version = "0.15", optional = true }
+ignore = "=0.4.30"
+regex = "1.13.1"
+diffy = "0.4.2"
+trash = "=5.2.3"
 
 [dependencies.tauri]
 version = "2.8.5"
@@ -143,7 +147,7 @@ features = [
   "image-png",
 ]
 
-[target.'cfg(windows)'.dev-dependencies]
+[dev-dependencies]
 tempfile = "3.20.0"
 
 [target.'cfg(unix)'.dependencies]

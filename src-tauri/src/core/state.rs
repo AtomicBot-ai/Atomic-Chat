@@ -1,6 +1,9 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crate::core::{downloads::models::DownloadManagerState, mcp::models::McpSettings};
+use crate::core::{
+    agent::approval_allowlist::ApprovalAllowlist, downloads::models::DownloadManagerState,
+    mcp::models::McpSettings,
+};
 use rmcp::{
     model::{CallToolRequestParam, CallToolResult, InitializeRequestParam, Tool},
     service::{Peer, RunningService},
@@ -55,6 +58,20 @@ pub struct AutoIncreaseState {
     pub last_outcome: Arc<Mutex<HashMap<String, AutoIncreaseOutcome>>>,
 }
 
+pub struct PendingAgentApproval {
+    pub run_id: String,
+    pub fingerprint: String,
+    pub can_remember: bool,
+    pub sender: oneshot::Sender<crate::core::agent::types::ApprovalDecision>,
+}
+
+pub struct PendingAgentFolderAccess {
+    pub run_id: String,
+    pub sender: oneshot::Sender<bool>,
+}
+
+pub type AgentSessionLocks = Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>;
+
 pub enum RunningServiceEnum {
     NoInit(RunningService<RoleClient, ()>),
     WithInit(RunningService<RoleClient, InitializeRequestParam>),
@@ -69,6 +86,10 @@ pub struct AppState {
     pub mcp_active_servers: Arc<Mutex<HashMap<String, serde_json::Value>>>,
     pub server_handle: Arc<Mutex<Option<ServerHandle>>>,
     pub tool_call_cancellations: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
+    pub agent_pending_approvals: Arc<Mutex<HashMap<String, PendingAgentApproval>>>,
+    pub agent_pending_folder_access: Arc<Mutex<HashMap<String, PendingAgentFolderAccess>>>,
+    pub agent_approval_allowlist: Arc<Mutex<ApprovalAllowlist>>,
+    pub agent_session_locks: AgentSessionLocks,
     pub mcp_settings: Arc<Mutex<McpSettings>>,
     pub mcp_shutdown_in_progress: Arc<Mutex<bool>>,
     pub mcp_monitoring_tasks: Arc<Mutex<HashMap<String, tokio::task::JoinHandle<()>>>>,

@@ -7,9 +7,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::time::Instant;
 
 use crate::error::{ErrorCode, FoundationModelsError, ServerError, ServerResult};
-use crate::process::{
-    find_active_session, get_random_available_port, is_process_running_by_pid,
-};
+use crate::process::{find_active_session, get_random_available_port, is_process_running_by_pid};
 use crate::state::{FoundationModelsBackendSession, FoundationModelsState, SessionInfo};
 
 #[cfg(unix)]
@@ -53,7 +51,11 @@ pub async fn load_foundation_models_server_impl(
         args.push(api_key.clone());
     }
 
-    log::info!("Launching Foundation Models server: {:?} {:?}", bin_path, args);
+    log::info!(
+        "Launching Foundation Models server: {:?} {:?}",
+        bin_path,
+        args
+    );
 
     let mut child = tokio::process::Command::new(&bin_path)
         .args(&args)
@@ -217,7 +219,10 @@ pub async fn unload_foundation_models_server<R: Runtime>(
     } else {
         Ok(UnloadResult {
             success: false,
-            error: Some(format!("No active Foundation Models session found for PID {}", pid)),
+            error: Some(format!(
+                "No active Foundation Models session found for PID {}",
+                pid
+            )),
         })
     }
 }
@@ -298,9 +303,7 @@ pub async fn check_foundation_models_availability<R: Runtime>(
         .await
         .map_err(|e| e.to_string())?;
 
-    let status = String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .to_string();
+    let status = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
     let resolved = if status.is_empty() {
         "unavailable".to_string()

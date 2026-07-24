@@ -6,7 +6,6 @@ use tauri_plugin_mlx::state::MlxState;
 use crate::core::server::proxy;
 use crate::core::state::AppState;
 
-
 #[derive(serde::Deserialize)]
 pub struct StartServerConfig {
     pub host: String,

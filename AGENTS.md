@@ -309,6 +309,993 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-07-24 — Let users revoke or downgrade Agent folder access
+- **Context:** Connected external Agent folders were permanently editable for
+  the thread and had no management controls after being added.
+- **Decision:** Persist an explicit `canEdit` permission per external root and
+  expose Can edit, View only, and Remove actions in the Files-panel overflow
+  menu. Keep view-only roots available to read tools while excluding them from
+  editable path policy; removing a root disconnects it from subsequent runs and
+  closes its open previews without deleting anything from disk.
+- **Consequences:** Users can reduce or revoke thread-scoped Agent access
+  without removing local files. Existing persisted roots migrate to Can edit,
+  preserving their prior behavior.
+- **Owner:** team.
+- **Links:** [`web-app/src/hooks/useAgentMode.ts`](web-app/src/hooks/useAgentMode.ts),
+  [`web-app/src/containers/AgentWorkspaceFiles.tsx`](web-app/src/containers/AgentWorkspaceFiles.tsx),
+  [`src-tauri/src/core/agent/commands.rs`](src-tauri/src/core/agent/commands.rs),
+  [`src-tauri/src/core/agent/prompt.rs`](src-tauri/src/core/agent/prompt.rs).
+
+### 2026-07-24 — Connect editable Agent folders per thread
+- **Context:** Agent threads exposed one working directory, so users could not
+  attach additional project folders or grant access when a filesystem call
+  targeted an unconnected location such as Desktop.
+- **Decision:** Keep the primary workspace as the base for relative paths and
+  persist canonical external roots per thread as `CAN EDIT`. Permit reads and
+  ordinary write/edit/mkdir calls inside those roots without action approval,
+  while retaining approval for destructive tools. Gate an explicit filesystem
+  path outside all connected roots through a separate run-scoped Allow folder
+  request; on approval, add the canonical folder to the active run and thread
+  before retrying the original call. Keep attachment roots read-only and
+  separate.
+- **Consequences:** Agent can browse and modify several independent roots,
+  manually connected folders survive restart, and dynamically approved folders
+  appear in the Files panel immediately. Relative paths remain unambiguous.
+  Shell strings are not inspected for paths, and trash, patch, archive extract,
+  shell, and other high-risk actions still require their existing approval.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/path_policy.rs`](src-tauri/src/core/agent/path_policy.rs),
+  [`src-tauri/src/core/agent/folder_access.rs`](src-tauri/src/core/agent/folder_access.rs),
+  [`web-app/src/hooks/useAgentMode.ts`](web-app/src/hooks/useAgentMode.ts),
+  [`web-app/src/containers/AgentWorkspaceFiles.tsx`](web-app/src/containers/AgentWorkspaceFiles.tsx),
+  [`web-app/src/containers/dialogs/AgentFolderAccessDialog.tsx`](web-app/src/containers/dialogs/AgentFolderAccessDialog.tsx).
+
+### 2026-07-24 — Route live Agent messages by their originating thread
+- **Context:** An Agent run retained its original thread id while its React
+  component instance followed route navigation. Live events therefore combined
+  the originating id with the newly active thread's message ref, making a
+  response from one thread appear in another thread's UI.
+- **Decision:** Upsert Agent UI messages directly into the chat session keyed by
+  the run's captured thread id. Do not route asynchronous Agent events through
+  the currently rendered thread's message ref or setter.
+- **Consequences:** Navigating between threads while an Agent runs no longer
+  redirects its live or terminal response. Backend message persistence remains
+  unchanged, and ordinary Chat message handling keeps its existing path.
+- **Owner:** team.
+- **Links:** [`web-app/src/stores/chat-session-store.ts`](web-app/src/stores/chat-session-store.ts),
+  [`web-app/src/routes/threads/$threadId.tsx`](web-app/src/routes/threads/$threadId.tsx),
+  [`web-app/src/stores/chat-session-store.test.ts`](web-app/src/stores/chat-session-store.test.ts).
+
+### 2026-07-24 — Frame Gemma 4 Agent turns with native reasoning channels
+- **Context:** Gemma 4 12B could degrade into repeated tokens and expose
+  `<|channel>thought` markers after several Agent tool steps. The Rust Agent
+  treated every local llama.cpp model as plain instruct, while Gemma 4's chat
+  template activates reasoning only when `<|think|>` is inside a native system
+  turn and generation begins at the native model-turn opener.
+- **Decision:** Detect the Gemma channel template from llama.cpp `/props` and
+  select a run-scoped model profile. For that profile, wrap the stable prompt
+  in Gemma's native system/model turn tokens, let the model emit its own
+  reasoning-channel opener, constrain the completion with a channel-aware GBNF
+  prelude whose post-channel whitespace is bounded to eight characters, and
+  strip the channel envelope before validating tool-call JSON. Keep the
+  existing plain profile as the fail-open fallback when probing or detection
+  fails, and preserve the same framing during grammar-repair completions.
+- **Consequences:** Gemma 4 Agent turns follow the working Atomic Agent framing
+  contract instead of leaking reasoning syntax into replies or drifting in
+  unbounded whitespace after tool-heavy context. The `/props` probe adds one
+  bounded local request per Agent turn. Other models retain the existing prompt,
+  grammar, and parser behavior.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/model_profile.rs`](src-tauri/src/core/agent/model_profile.rs),
+  [`src-tauri/src/core/agent/prompt.rs`](src-tauri/src/core/agent/prompt.rs),
+  [`src-tauri/src/core/agent/grammar.rs`](src-tauri/src/core/agent/grammar.rs),
+  [`src-tauri/src/core/agent/llm_client.rs`](src-tauri/src/core/agent/llm_client.rs),
+  [`src-tauri/src/core/agent/runner.rs`](src-tauri/src/core/agent/runner.rs).
+
+### 2026-07-24 — Use hosted Exa as the Agent's primary web backend
+- **Context:** The Rust Agent's web tools depended on DuckDuckGo HTML search
+  and direct page downloads, which provide limited extraction quality and are
+  frequently rejected by public sites.
+- **Decision:** Call the keyless hosted Exa MCP endpoint first for
+  `os.web.search` and `os.web.fetch`, with bounded request time, response size,
+  result count, and extracted content. Preserve DuckDuckGo search and the
+  SSRF-guarded direct HTTP extractor as automatic fail-open fallbacks for
+  transport, HTTP, MCP, parsing, and empty-result failures. Record only a
+  stable failure category in tool details; add no API key, setting, or
+  dependency.
+- **Consequences:** Agent web operations normally receive Exa's structured
+  results and extracted page content without user configuration. Exa outages
+  do not remove the existing keyless local paths, and internal MCP payloads
+  are not exposed to the model. Availability still depends on the hosted Exa
+  endpoint and its unauthenticated service policy.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/tools/web_exa.rs`](src-tauri/src/core/agent/tools/web_exa.rs),
+  [`src-tauri/src/core/agent/tools/web.rs`](src-tauri/src/core/agent/tools/web.rs),
+  [`src-tauri/src/core/agent/prompt.rs`](src-tauri/src/core/agent/prompt.rs).
+
+### 2026-07-24 — Schedule Agent batches by resource class
+- **Context:** Valid multi-tool Agent steps executed every non-terminal call
+  concurrently, despite the existing resource taxonomy requiring serial access
+  for stateful same-class tools. The loop tracker also implemented whole-batch
+  observation but the runner never invoked it.
+- **Decision:** Group non-terminal calls by `ResourceClass`, run `PureRead`
+  calls concurrently within their group, serialize every other batchable class,
+  and run distinct groups concurrently while restoring outcomes to original
+  batch order. Classify vision as its own serial resource and retain the
+  terminal-tail barrier. Observe executed multi-call batches as advisory
+  composites: emit deduplicated warnings and next-step guidance without vetoing
+  calls or advancing the breaker.
+- **Consequences:** Independent reads retain fan-out, stateful tools no longer
+  overlap with same-class siblings, distinct resources still make concurrent
+  progress, and final `reply`/`finish` runs only after all preceding groups.
+  Repeated identical batches become visible to the model and activity stream;
+  permuted batches remain distinct and composite signals cannot end a turn.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/batch_executor.rs`](src-tauri/src/core/agent/batch_executor.rs),
+  [`src-tauri/src/core/agent/resource_class.rs`](src-tauri/src/core/agent/resource_class.rs),
+  [`src-tauri/src/core/agent/runner.rs`](src-tauri/src/core/agent/runner.rs),
+  [`src-tauri/src/core/agent/runner_tests.rs`](src-tauri/src/core/agent/runner_tests.rs).
+
+### 2026-07-24 — Constrain and bound Agent tool-call generation
+- **Context:** Agent completions could satisfy a permissive generic-argument
+  grammar with malformed payloads, hallucinate unavailable skill names, or
+  spend an unbounded interval generating a tool step. Repeated `skill.view`
+  guesses also evaded the URL-oriented wandering-loop detector.
+- **Decision:** Build one schema-specific GBNF grammar per turn from the static
+  tool catalog, enabled skills, and actual rare tools, and reuse it unchanged
+  for normal and repair completions. Apply a 180-second deadline to each
+  completion attempt; after an initial timeout, allow exactly one
+  grammar-constrained repair capped at 1,024 tokens. Keep user cancellation
+  distinct, and classify varying `skill.view` names as wandering with
+  skill-specific redirect guidance.
+- **Consequences:** Malformed argument shapes and unavailable skill/tool names
+  are rejected during generation, while stalled generations terminate within
+  a bounded two-attempt window. Runtime validators remain defense in depth.
+  The grammar now changes when enabled skills or the rare-tool catalog changes,
+  intentionally invalidating that turn's prompt cache prefix.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/grammar.rs`](src-tauri/src/core/agent/grammar.rs),
+  [`src-tauri/src/core/agent/runner.rs`](src-tauri/src/core/agent/runner.rs),
+  [`src-tauri/src/core/agent/llm_client.rs`](src-tauri/src/core/agent/llm_client.rs),
+  [`src-tauri/src/core/agent/loop_guard.rs`](src-tauri/src/core/agent/loop_guard.rs).
+
+### 2026-07-24 — Restrict Agent mode to local llama.cpp providers
+- **Context:** Agent mode could still be selected or retained while an MLX or
+  cloud-provider model was active, although the Rust Agent loop currently
+  supports only the two local llama.cpp providers.
+- **Decision:** Treat only `llamacpp` and `llamacpp-upstream` as Agent-capable.
+  Disable the sidebar Agent selector for every other provider, clear stale
+  Agent mode when the provider changes, and reject non-llama.cpp Agent runs
+  at the thread boundary.
+- **Consequences:** MLX and cloud models remain available for ordinary Chat
+  but cannot enter Agent mode. Existing Agent threads fail closed if their
+  selected provider is no longer one of the two local llama.cpp providers.
+- **Owner:** team.
+- **Links:** [`web-app/src/components/left-sidebar/index.tsx`](web-app/src/components/left-sidebar/index.tsx),
+  [`web-app/src/containers/ChatInput.tsx`](web-app/src/containers/ChatInput.tsx),
+  [`web-app/src/routes/threads/$threadId.tsx`](web-app/src/routes/threads/$threadId.tsx).
+
+### 2026-07-23 — Isolate the Windows Common Controls test manifest by feature
+- **Context:** The Common Controls v6 manifest added for Windows libtest was
+  emitted through package-wide `cargo:rustc-link-arg`. Tauri already embeds
+  the application manifest in `resource.lib`, so linking the desktop binary
+  produced `CVT1100: duplicate resource` for manifest resource id 1. Cargo
+  rejects `cargo:rustc-link-arg-tests` because this package has no explicit
+  `[[test]]` target even though it has a library unit-test harness.
+- **Decision:** Gate the package-wide manifest linker arguments behind the
+  existing `test-tauri` feature and disable Tauri's generated app manifest
+  under that feature. Run the Windows Agent library-test gate with
+  `--features test-tauri`; leave normal builds on Tauri's default manifest.
+- **Consequences:** The Agent libtest harness retains its Common Controls v6
+  activation context without creating a duplicate resource. Normal desktop
+  builds receive no custom manifest linker arguments and link only Tauri's
+  `resource.lib`.
+- **Owner:** team.
+- **Links:** [`src-tauri/build.rs`](src-tauri/build.rs),
+  [`src-tauri/windows-test.manifest`](src-tauri/windows-test.manifest),
+  [`.github/workflows/release.yml`](.github/workflows/release.yml).
+
+### 2026-07-23 — Bound Windows GPU detection and bypass it in fast development
+- **Context:** `make dev-windows-fast` could remain indefinitely at
+  `Detecting GPU hardware` because `Get-CimInstance Win32_VideoController`
+  hung inside WMI before the script reached its existing-backend reuse path.
+- **Decision:** Reuse an existing upstream backend before any hardware probe
+  when `-SkipBackendDownload` is active. For ordinary Windows development,
+  query video controllers once in a background job with a 10-second timeout
+  and reuse that bounded result for NVIDIA-driver and fallback VRAM detection.
+- **Consequences:** Fast development no longer depends on WMI when its backend
+  is already present. Normal development degrades to Vulkan/CPU selection
+  instead of hanging when WMI is unhealthy; registry VRAM detection remains
+  authoritative when available.
+- **Owner:** team.
+- **Links:** [`scripts/dev-windows.ps1`](scripts/dev-windows.ps1),
+  [`Makefile`](Makefile) (`dev-windows-fast`).
+
+### 2026-07-23 — Finish Windows Agent hardening: in-process text tools, native trash, test harness
+- **Context:** The Windows Agent hardening plan still needed verified
+  malformed-verbatim path coverage, replacement of external `grep`/`diff`/
+  `patch`/`trash` shell helpers, native Recycle Bin deletion, and a way to
+  run `cargo test --lib` on Windows after Tauri-linked harnesses died at
+  process start with `STATUS_ENTRYPOINT_NOT_FOUND` (0xc0000139) because
+  libtest imported Common Controls v6 APIs without a v6 activation context.
+- **Decision:** Keep grep/diff/patch fully in-process (`ignore` + `regex` +
+  `diffy`) with a 1 MiB text-file cap and symlink-skipping walks; route trash
+  through the `trash` crate; emit workspace-relative `/`-separated path labels
+  (stripping `\\?\` before prefixing) so authorization-rewritten absolute args
+  do not leak verbatim paths into observations; embed
+  `windows-test.manifest` via `build.rs` `cargo:rustc-link-arg` so Windows
+  libtest harnesses activate Common Controls v6.
+- **Consequences:** Agent file tools no longer depend on host GNU/BusyBox
+  utilities; Windows deletions use the Recycle Bin API; path/diff/glob/grep
+  contract tests and the release Agent gate can run on Windows. The manifest
+  link-arg also applies when linking non-test artefacts from this crate — it
+  only adds the same Common Controls v6 dependency Tauri already ships.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/tools/fs.rs`](src-tauri/src/core/agent/tools/fs.rs),
+  [`src-tauri/src/core/agent/tools/contract_tests.rs`](src-tauri/src/core/agent/tools/contract_tests.rs),
+  [`src-tauri/build.rs`](src-tauri/build.rs),
+  [`src-tauri/windows-test.manifest`](src-tauri/windows-test.manifest),
+  [`.github/workflows/release.yml`](.github/workflows/release.yml).
+
+### 2026-07-23 — Repair malformed Windows verbatim paths before Agent tool execution
+- **Context:** Agent could receive a Windows extended path with one leading
+  slash (`\?\C:\...`) after JSON generation instead of the valid
+  `\\?\C:\...` form. Rust treated that malformed form as relative, so a request
+  to write to a selected folder was redirected beneath the Agent workspace.
+- **Decision:** Normalize the exact malformed `\?\` prefix to `\\?\` at the
+  shared Agent path-input boundary before absolute-path resolution. Preserve
+  ordinary absolute, valid verbatim, relative, home-relative, and attachment
+  paths unchanged.
+- **Consequences:** Files requested through malformed drive or UNC verbatim
+  paths resolve to their intended external location and retain the existing
+  approval gate. Windows tests cover plain absolute, valid verbatim, and
+  malformed verbatim write targets.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/path_policy.rs`](src-tauri/src/core/agent/path_policy.rs).
+
+---
+
+### 2026-07-23 — Remember exact Agent approvals globally
+- **Context:** Agent approval requests supported only deny, one-time approval,
+  or the turn-wide unsafe skip policy, so users had to approve an identical
+  safe action again in every thread and after every restart.
+- **Decision:** Add `always_allow` for approval-gated actions whose prepared
+  paths remain inside the trusted workspace. Fingerprint the tool name and
+  canonicalized prepared arguments with full SHA-256, store only that digest
+  in the versioned global `agent-approval-allowlist.json`, and update it
+  atomically before execution continues. Evaluate shell hard blocks before
+  allowlist matching, and never offer or honor remembered approval when path
+  preparation reports an escape from the trusted root.
+- **Consequences:** An exact action can be approved once and reused across all
+  Agent threads and application restarts without persisting commands, paths,
+  URLs, or secrets. Any argument change requires approval again. Shell hard
+  blocks, timeouts, cancellation, stale decisions, and workspace escapes
+  remain fail-closed. Revoking saved approvals has no UI in this iteration.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/approval_allowlist.rs`](src-tauri/src/core/agent/approval_allowlist.rs),
+  [`src-tauri/src/core/agent/tools/mod.rs`](src-tauri/src/core/agent/tools/mod.rs),
+  [`src-tauri/src/core/agent/approval.rs`](src-tauri/src/core/agent/approval.rs),
+  [`web-app/src/containers/dialogs/AgentApprovalDialog.tsx`](web-app/src/containers/dialogs/AgentApprovalDialog.tsx).
+
+---
+
+### 2026-07-23 — Fail closed before destructive Agent filesystem operations
+- **Context:** The Rust Agent accepted weakly validated destructive filesystem
+  arguments, moved trash targets by renaming them into `~/.Trash`, and could
+  request approval for unsafe or malformed paths. A model that intended to
+  remove matching Desktop files could therefore substitute the Desktop
+  directory itself or fall back to an unrelated shell deletion after trash
+  failed.
+- **Decision:** Validate and resolve write, mkdir, edit, trash, patch, and
+  archive-extract arguments before approval. Publish `os.fs.trash` as a bounded
+  exact-path batch, reject protected roots and duplicate targets, and use each
+  platform's native trash mechanism. Make replacement writes and edits atomic,
+  require patch targets to remain relative and dry-run immediately before
+  apply, and preflight archive entries against traversal, links, special files,
+  output conflicts, entry-count, per-entry-size, and total-size limits.
+- **Consequences:** Invalid calls cannot produce an approval prompt or mutate
+  the filesystem. Trash failures identify the failing batch item and completed
+  count, file replacement avoids partial content, and archive extraction
+  defaults to no overwrite. Existing single-path trash calls remain executable
+  through compatibility normalization, while `os.shell.run` and its current
+  `rm` policy remain unchanged by explicit scope.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/path_policy.rs`](src-tauri/src/core/agent/path_policy.rs),
+  [`src-tauri/src/core/agent/tools/fs.rs`](src-tauri/src/core/agent/tools/fs.rs),
+  [`src-tauri/src/core/agent/tools/archive.rs`](src-tauri/src/core/agent/tools/archive.rs),
+  [`src-tauri/src/core/agent/tools/mod.rs`](src-tauri/src/core/agent/tools/mod.rs),
+  [`src-tauri/src/core/agent/prompt.rs`](src-tauri/src/core/agent/prompt.rs).
+
+---
+
+### 2026-07-23 — Present the Agent working directory as the Files root
+- **Context:** The Agent composer displayed the selected directory as a text
+  control while the Files panel rendered only its children, so the workspace
+  tree had no visible root and panel visibility was controlled elsewhere.
+- **Decision:** Render the selected or default working directory as the
+  collapsible first-level folder in Files. Keep directory selection in the
+  composer and place the Files-panel toggle on its own row above the root.
+  Align both the expanded-panel toggle and the collapsed-panel opener to the
+  left on Windows, clear of the window controls, and to the right on macOS.
+- **Consequences:** The workspace tree now reflects the real directory
+  hierarchy, the selected folder remains visible and changeable in the
+  composer, and panel visibility is controlled from the panel edge. Empty
+  workspaces can still be opened manually while automatic opening remains
+  content-driven.
+- **Owner:** team.
+- **Links:** [`web-app/src/containers/AgentWorkspaceFiles.tsx`](web-app/src/containers/AgentWorkspaceFiles.tsx),
+  [`web-app/src/containers/AgentWorkspaceSelect.tsx`](web-app/src/containers/AgentWorkspaceSelect.tsx),
+  [`web-app/src/containers/ChatInput.tsx`](web-app/src/containers/ChatInput.tsx).
+
+---
+
+### 2026-07-23 — Animate Agent workspace panels like the primary sidebar
+- **Context:** The Agent Files and Preview panels appeared by changing the
+  resizable layout immediately, while the primary left sidebar slides into and
+  out of view over 200 ms.
+- **Decision:** Apply the same 200 ms linear layout transition to the Agent
+  panel group and slide Files and Preview across their full width on mount and
+  unmount. Keep panel content mounted through its exit animation.
+- **Consequences:** Opening a workspace file or toggling the Files panel no
+  longer causes an abrupt layout jump. Chat width and both right-side panels
+  move together, while manual resizing and the existing three-panel structure
+  remain unchanged.
+- **Owner:** team.
+- **Links:** [`web-app/src/containers/AgentWorkspaceLayout.tsx`](web-app/src/containers/AgentWorkspaceLayout.tsx),
+  [`web-app/src/containers/AgentWorkspaceLayout.test.tsx`](web-app/src/containers/AgentWorkspaceLayout.test.tsx).
+
+---
+
+### 2026-07-23 — Reveal Agent workspace files only when content exists
+- **Context:** Desktop Agent threads opened the Files sidebar even when the
+  selected or default workspace was empty, reducing chat width without showing
+  useful content.
+- **Decision:** Probe the workspace root when a thread opens and after each
+  Agent run. Keep the Files sidebar hidden while the root is empty, and
+  automatically open it only when the workspace first contains an entry.
+  Preserve a user's manual close while the workspace remains non-empty.
+- **Consequences:** Empty Agent workspaces start with the full width available
+  to chat. The Files sidebar appears when the Agent creates its first output,
+  remains manually closable, and disappears again if a refreshed workspace is
+  empty.
+- **Owner:** team.
+- **Links:** [`web-app/src/containers/AgentWorkspaceLayout.tsx`](web-app/src/containers/AgentWorkspaceLayout.tsx),
+  [`web-app/src/containers/AgentWorkspaceLayout.test.tsx`](web-app/src/containers/AgentWorkspaceLayout.test.tsx).
+
+---
+
+### 2026-07-22 — Keep Gemma 4 Unified checkpoints on the multimodal MLX path
+- **Context:** `gemma-4-12B-it-4bit` declares the top-level
+  `gemma4_unified` architecture but uses `embed_vision`, `vision_embedder`,
+  and `embed_audio` weight prefixes. The MLX checkpoint classifier did not
+  recognize those prefixes, misclassified the checkpoint as text-only, and
+  attempted to load the nested `gemma4_unified_text` type through `mlx-lm`,
+  which reported that the architecture was unsupported.
+- **Decision:** Treat the three Gemma 4 Unified vision/audio weight prefixes
+  as embodied multimodal weights in `mlx-vlm` and pin classification coverage
+  for each prefix.
+- **Consequences:** Gemma 4 12B Unified now resolves through
+  `mlx_vlm.models.gemma4_unified` and loads with its vision/audio modules
+  instead of failing through the nonexistent `mlx_lm.models.gemma4_unified_text`
+  path. Text-only checkpoints with multimodal metadata remain routed through
+  the existing text-only adapter when no embodied multimodal weights exist.
+- **Owner:** team.
+- **Links:** [`AtomicBot-ai/mlx-vlm`](https://github.com/AtomicBot-ai/mlx-vlm),
+  [`mlx_vlm/utils.py`](../mlx-vlm/mlx_vlm/utils.py),
+  [`mlx_vlm/tests/test_utils.py`](../mlx-vlm/mlx_vlm/tests/test_utils.py).
+
+---
+
+### 2026-07-22 — Edit, export, and launch Agent skills from the Skills page
+- **Context:** The Skills page could create, upload, enable, inspect, and
+  delete custom skills, but it could not revise their authored content,
+  package a skill for sharing, or start an Agent chat with a chosen workflow.
+- **Decision:** Allow custom skills to update only their description and
+  instructions while preserving identity, requirements, safety metadata, and
+  auxiliary files. Export any valid skill as a deterministic `.skill` ZIP
+  without symlinks or path escapes. Add card-level toggles and overflow
+  actions, keep Edit and Uninstall custom-only, and route Try in chat to a new
+  Agent Home session with the eligible skill preselected.
+- **Consequences:** Users can maintain and share portable skills without
+  manually editing the data folder, and can immediately exercise an enabled,
+  compatible skill in a fresh Agent chat. Bundled skills remain immutable;
+  disabled, erroneous, or unavailable skills cannot be tried.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/skills/authoring.rs`](src-tauri/src/core/agent/skills/authoring.rs),
+  [`web-app/src/routes/skills/index.tsx`](web-app/src/routes/skills/index.tsx),
+  [`web-app/src/containers/AgentSkillEditDialog.tsx`](web-app/src/containers/AgentSkillEditDialog.tsx),
+  [`web-app/src/containers/ChatInput.tsx`](web-app/src/containers/ChatInput.tsx).
+
+---
+
+### 2026-07-22 — Upload Agent skills from portable files
+- **Context:** The Skills page imported only selected directories, while users
+  expected a Claude-style upload dialog with drag-and-drop and portable skill
+  files.
+- **Decision:** Accept one `.md`, `.zip`, or `.skill` upload. Treat Markdown as
+  the complete `SKILL.md`; require archives to contain exactly one
+  `SKILL.md`, import files relative to its directory, and retain the existing
+  traversal, symlink, entry-count, and expanded-size safeguards.
+- **Consequences:** Custom skills can be uploaded through the file picker or
+  native desktop drag-and-drop, including scripts and supporting archive
+  files. Directory imports remain supported by the backend contract, while the
+  Skills UI exposes the portable-file workflow.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/skills/authoring.rs`](src-tauri/src/core/agent/skills/authoring.rs),
+  [`web-app/src/containers/AgentSkillUploadDialog.tsx`](web-app/src/containers/AgentSkillUploadDialog.tsx),
+  [`web-app/src/routes/skills/index.tsx`](web-app/src/routes/skills/index.tsx).
+
+---
+
+### 2026-07-22 — Align Agent context budgeting with Atomic Agent
+- **Context:** Atomic Chat's Rust Agent capped normal completions below Atomic
+  Agent, packed conversation history by characters instead of estimated
+  tokens, did not account for the active llama.cpp session's physical
+  context, and could not use the Local API Server's existing context
+  auto-expansion path.
+- **Decision:** Set normal Agent completions to 8,192 tokens and repairs to
+  1,024. Port Atomic Agent's deterministic token estimator, 32K configured
+  conversation cap, 512-token safety margin and floor, and `/props` `n_ctx`
+  probe. Pack the newest conversation turns within the resulting prompt-time
+  budget while retaining the latest user turn and a deterministic dropped
+  history summary. Extract the proxy's context-expansion coordination into a
+  shared server module and let normal or repair completion retry exactly once
+  after a confirmed context overflow, accepting only a reloaded session with
+  the same model and backend.
+- **Consequences:** Agent prompts now reserve output space against the real
+  context window when available and degrade to the configured cap when
+  `/props` cannot be read. A context overflow reloads through the existing
+  TypeScript-owned context ladder without replaying the macro-turn or executed
+  tools. Cancellation and non-context failures are not retried. No frontend,
+  IPC, persisted-session-schema, or Local API Server contract changed.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/token_budget.rs`](src-tauri/src/core/agent/token_budget.rs),
+  [`src-tauri/src/core/agent/llm_client.rs`](src-tauri/src/core/agent/llm_client.rs),
+  [`src-tauri/src/core/agent/session.rs`](src-tauri/src/core/agent/session.rs),
+  [`src-tauri/src/core/server/context_expansion.rs`](src-tauri/src/core/server/context_expansion.rs).
+
+---
+
+### 2026-07-22 — Expose the original absolute path of Agent file attachments
+- **Context:** Agent turns received a safe `attachment://` reference to the
+  staged copy, but could not identify the original file selected through the
+  composer when a workflow explicitly needed that location.
+- **Decision:** Keep staging and the trusted `attachment://` reference
+  unchanged, and additionally include the canonical absolute source path as
+  `original_path` in the attachment manifest for file attachments. Continue
+  representing in-memory image attachments with `original_path=null`.
+- **Consequences:** Agent can refer to the user-selected source file directly,
+  including for approval-gated operations outside its workspace. The model
+  context now exposes local path information such as the OS username and
+  directory layout; staged copies remain the preferred read path and the
+  original file is not added to the trusted attachment root.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/attachments.rs`](src-tauri/src/core/agent/attachments.rs).
+
+---
+
+### 2026-07-21 — Author and import custom Agent skills in the Skills UI
+- **Context:** The Skills page could inspect, enable, disable, refresh, and
+  delete custom skills, but adding one required manually writing files in the
+  Atomic Chat data folder.
+- **Decision:** Add one Create New menu with two paths: author a minimal
+  `SKILL.md` from validated name, description, and instructions fields, or
+  import a selected directory containing a valid `SKILL.md`. Keep both paths
+  backend-owned, reject reserved names, collisions, symlinks, traversal, and
+  oversized imports, and select the resulting skill after registry refresh.
+- **Consequences:** Users can add custom skills without leaving Atomic Chat,
+  while bundled skills remain immutable and imported auxiliary files stay
+  available to the skill. Existing skill directories are never overwritten.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/skills/authoring.rs`](src-tauri/src/core/agent/skills/authoring.rs),
+  [`web-app/src/containers/AgentSkillCreateDialog.tsx`](web-app/src/containers/AgentSkillCreateDialog.tsx),
+  [`web-app/src/routes/skills/index.tsx`](web-app/src/routes/skills/index.tsx).
+
+---
+
+### 2026-07-21 — Preload explicitly selected Agent skills
+- **Context:** Agent could discover skills through the prompt catalog and load
+  them with `skill.view`, but users could not bind a specific workflow to a
+  turn from the composer or reproduce that choice during regeneration.
+- **Decision:** In Agent mode, expose enabled and compatible skills through a
+  slash picker with one removable chip. Persist the selected name as
+  `agent_skill_name` on the user message and pass it as `selected_skill` in
+  the Agent turn request. Before appending the user turn or performing the
+  first completion, restore session-loaded skills and load the explicit
+  selection through the existing bounded `LoadedSkills` state.
+- **Consequences:** The selected skill body is guaranteed to appear in the
+  first prompt's `### loaded-skills` section, and regenerate/edit-regenerate
+  reuse the same selection. A skill that became missing, disabled,
+  incompatible, or unavailable fails the turn before inference and leaves the
+  user turn unpersisted in the Agent session.
+- **Owner:** team.
+- **Links:** [`web-app/src/containers/AgentSkillSlashMenu.tsx`](web-app/src/containers/AgentSkillSlashMenu.tsx),
+  [`web-app/src/routes/threads/$threadId.tsx`](web-app/src/routes/threads/$threadId.tsx),
+  [`src-tauri/src/core/agent/runner.rs`](src-tauri/src/core/agent/runner.rs).
+
+---
+
+### 2026-07-21 — Add global SKILL.md capabilities to Agent mode
+- **Context:** The Rust Agent had a fixed tool catalog but could not consume
+  reusable Atomic Agent `SKILL.md` workflows, persist loaded instructions, or
+  expose local skill management in Atomic Chat.
+- **Decision:** Use `<data-folder>/agent-skills` as the single skill root.
+  Seed the 17 bundled starter skills on every startup, replacing only reserved
+  bundled names while preserving custom directories and durable disabled
+  names. Render eligible summaries in stable-prefix `### skills`, materialize
+  bodies through `skill.view` into bounded session-persisted
+  `### loaded-skills`, and execute only declared scripts through
+  approval-gated `skill.run_script` with shell-policy, path, timeout, output,
+  and cancellation guards. Expose local list/detail, enable/disable, refresh,
+  and custom-delete controls on an Agent-mode-only Skills sidebar page.
+- **Consequences:** Agent can reuse the Atomic Agent starter workflows without
+  network installation or project-local precedence. The new stable skill
+  catalog invalidates prompt-prefix cache once; loaded bodies remain in the
+  variable tail and `agent-session.json`. Bundled updates overwrite local
+  edits to reserved skills on release, custom skills remain user-owned, and
+  every script run still requires explicit approval.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/skills/`](src-tauri/src/core/agent/skills/),
+  [`src-tauri/src/core/agent/tools/skill_view.rs`](src-tauri/src/core/agent/tools/skill_view.rs),
+  [`src-tauri/src/core/agent/tools/skill_run_script.rs`](src-tauri/src/core/agent/tools/skill_run_script.rs),
+  [`web-app/src/routes/skills/index.tsx`](web-app/src/routes/skills/index.tsx).
+
+---
+
+### 2026-07-21 — Separate Chat and Agent navigation in the sidebar
+- **Context:** Chat and Agent shared one sidebar history and selected their
+  execution mode inside the composer, which crowded the input and mixed
+  mode-specific navigation, search, and bulk actions.
+- **Decision:** Persist a top-level Chat/Agent sidebar mode while retaining
+  `agentThreads` as the source of truth for each thread. Synchronize the mode
+  when Home or an existing thread opens; scope history, search, and bulk
+  deletion to it. Show Projects and Integrations only in Chat, move Models and
+  Settings to the shared footer, and remove the composer mode switch.
+- **Consequences:** Chat and Agent now have separate navigation surfaces and
+  histories without changing thread storage or routes. Existing Agent approval
+  and workspace settings remain thread-bound, and MLX still cannot start a new
+  Agent chat.
+- **Owner:** team.
+- **Links:** [`web-app/src/components/left-sidebar/index.tsx`](web-app/src/components/left-sidebar/index.tsx),
+  [`web-app/src/components/left-sidebar/NavChats.tsx`](web-app/src/components/left-sidebar/NavChats.tsx),
+  [`web-app/src/containers/dialogs/SearchDialog.tsx`](web-app/src/containers/dialogs/SearchDialog.tsx),
+  [`web-app/src/hooks/useAgentMode.ts`](web-app/src/hooks/useAgentMode.ts).
+
+---
+
+### 2026-07-20 — Keep the Agent preview panel structurally stable
+- **Context:** Opening the first workspace file dynamically inserted a new
+  resizable panel and changed the Files panel's default width, causing the
+  entire Agent thread layout to visibly jump.
+- **Decision:** Keep all three panels mounted and set the complete group layout
+  atomically when Preview or Files visibility changes. Allocate 24% to each
+  visible workspace panel and take that space only from Chat. Present the
+  single file preview as a compact, icon-labelled tab instead of an unbounded
+  rectangular tab.
+- **Consequences:** Replacing the active file no longer reconstructs or
+  renormalizes the three-column panel group. Opening or closing Preview still
+  resizes Chat as intended, while Files retains its current width.
+- **Owner:** team.
+- **Links:** [`web-app/src/containers/AgentWorkspaceLayout.tsx`](web-app/src/containers/AgentWorkspaceLayout.tsx),
+  [`web-app/src/containers/AgentWorkspacePreview.tsx`](web-app/src/containers/AgentWorkspacePreview.tsx).
+
+---
+
+### 2026-07-20 — Add a scoped three-column workspace to Agent threads
+- **Context:** Agent threads could operate on a selected workspace and link
+  generated files, but users had no persistent workspace tree or shared place
+  to inspect files and HTML artifacts alongside the conversation.
+- **Decision:** On desktop Agent threads, render resizable
+  `Chat → Preview → Files` columns. Keep Files permanently visible and open
+  deduplicated file tabs plus the existing HTML artifact in one conditional
+  preview host. Expose separate read-only Agent workspace IPC commands for
+  lazy directory listing, file metadata, and bounded UTF-8 text reads; resolve
+  every target against the selected or default workspace and reject traversal
+  and symlink escapes after canonicalization.
+- **Consequences:** Agent users can browse directories and preview text,
+  images, PDFs, unsupported files, and HTML artifacts without leaving the
+  thread. Ordinary Chat and narrow-screen layouts retain the existing artifact
+  panel, file changes are not permitted through this surface, and text preview
+  remains bounded and UTF-8-only.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/commands.rs`](src-tauri/src/core/agent/commands.rs),
+  [`web-app/src/containers/AgentWorkspaceLayout.tsx`](web-app/src/containers/AgentWorkspaceLayout.tsx),
+  [`web-app/src/containers/AgentWorkspaceFiles.tsx`](web-app/src/containers/AgentWorkspaceFiles.tsx),
+  [`web-app/src/containers/AgentWorkspacePreview.tsx`](web-app/src/containers/AgentWorkspacePreview.tsx),
+  [`web-app/src/stores/workspace-preview-store.ts`](web-app/src/stores/workspace-preview-store.ts).
+
+---
+
+### 2026-07-20 — Open Agent-referenced files from assistant summaries
+- **Context:** Agent replies commonly report created output as an absolute path
+  and refer to staged input attachments by their original filename, but both
+  rendered as inert text.
+- **Decision:** In Agent assistant messages only, link absolute paths observed
+  in tool-call arguments and original filenames from preceding attachment
+  parts. Resolve duplicate filenames conservatively, intercept only an
+  internal Atomic Chat file-link URL, and open the resolved local path through
+  the existing desktop system command. Render absolute references using only
+  the filename as the visible link label while retaining the full path as the
+  hidden open target.
+- **Consequences:** Users can open generated files or referenced attachments
+  directly from an Agent summary. Ordinary Chat rendering, code spans, fenced
+  code, existing Markdown links, and ambiguous attachment names remain
+  unchanged.
+- **Owner:** team.
+- **Links:** [`web-app/src/lib/agent-file-links.ts`](web-app/src/lib/agent-file-links.ts),
+  [`web-app/src/containers/MessageItem.tsx`](web-app/src/containers/MessageItem.tsx),
+  [`web-app/src/routes/threads/$threadId.tsx`](web-app/src/routes/threads/$threadId.tsx).
+
+---
+
+### 2026-07-20 — Compress verbose Agent observations only at the session boundary
+- **Context:** Rust Agent retained bounded tool output for frontend activity
+  events but copied up to 1,200 characters of every observation into the
+  active prompt and durable session. Verbose reads, searches, logs, HTTP
+  responses, and document extracts therefore consumed context with low-signal
+  leading output.
+- **Decision:** Port the deterministic Atomic Agent tail compressor and log
+  summarizer. For potentially verbose read/inspection tools, retain the last
+  12 nonblank lines, preserve the first recognized error signature, and cap
+  the model-visible summary at 400 Unicode characters with explicit
+  omission/truncation markers. Apply compression only when observations enter
+  `AgentSessionState`; keep `ToolOutcome` and `ToolCallExecuted` unchanged.
+- **Consequences:** The next model step and persisted `agent-session.json`
+  receive compact observations while the activity UI retains the original
+  bounded result. Concise mutation acknowledgements and control tools remain
+  unchanged, and the existing 1,200-character session limit remains as
+  defense in depth.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/compressor.rs`](src-tauri/src/core/agent/compressor.rs),
+  [`src-tauri/src/core/agent/session.rs`](src-tauri/src/core/agent/session.rs),
+  [`src-tauri/src/core/agent/runner_tests.rs`](src-tauri/src/core/agent/runner_tests.rs).
+
+---
+
+### 2026-07-20 — Stage Agent attachments and isolate image analysis from the agent slot
+- **Context:** Agent threads rejected attachments even though ordinary Chat
+  already captured local documents and image data. The Rust loop had document
+  parsing tools but no bounded attachment IPC contract, no safe read boundary
+  outside the selected workspace, and no vision tool. Local llama.cpp sessions
+  may also be text-only, so an image cannot be accepted optimistically and
+  interpreted later without checking the active session.
+  Image files can also carry misleading names (for example JPEG or WebP bytes
+  under a `.png` suffix), so requiring the suffix to match the encoded payload
+  rejects images that browsers can decode correctly.
+- **Decision:** Accept at most eight file/image attachments per Agent turn,
+  validate and copy them into
+  `<thread>/agent-attachments/<turn>/`, and append a compact manifest containing
+  deterministic `attachment://<staged-name>` references instead of absolute
+  UUID-heavy paths. Resolve those references only against the turn-scoped
+  read-only trusted root while retaining approval gates for writes and deletes
+  outside the workspace. Keep documents on `os.fs.read_document`; add bounded
+  `vision.describe` requests through `/v1/chat/completions` on the active
+  llama.cpp session, separate from the grammar-constrained `/completion` slot.
+  For image attachments, treat the PNG/JPEG/GIF/WebP byte signature as
+  authoritative, assign the staged file its canonical extension and MIME type,
+  and let `vision.describe` detect the payload from those bytes rather than
+  rejecting a valid image because of its original suffix.
+  Reject image turns before staging when the selected session has no `mmproj`,
+  and repeat the capability check inside the vision tool. Audio remains
+  unsupported.
+- **Consequences:** Agent submit, history, edit-regeneration, and retry retain
+  documents, arbitrary local files, and images without persisting base64 or
+  original external paths in the Agent session transcript. Models no longer
+  need to reproduce long application-data and UUID paths when invoking file
+  tools. Text-only models fail before creating a user turn and prompt the user
+  to choose a vision-capable model. Staged files consume thread storage until
+  that thread is deleted; image analysis is limited to PNG, JPEG, GIF, and
+  WebP. Mislabelled supported images remain usable while unknown image
+  encodings still fail before inference.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/attachments.rs`](src-tauri/src/core/agent/attachments.rs),
+  [`src-tauri/src/core/agent/tools/vision.rs`](src-tauri/src/core/agent/tools/vision.rs),
+  [`src-tauri/src/core/agent/path_policy.rs`](src-tauri/src/core/agent/path_policy.rs),
+  [`web-app/src/routes/threads/$threadId.tsx`](web-app/src/routes/threads/$threadId.tsx).
+
+---
+
+### 2026-07-20 — Give Agent runs a shared default workspace
+- **Context:** Agent mode required every new thread to select a working
+  directory before its first turn. The Rust request contract already made
+  `working_dir` optional, but its fallback was the desktop process current
+  directory, while the frontend rejected missing values before IPC.
+- **Decision:** Create `<data-folder>/agent-workspace` idempotently during app
+  startup and recreate it on demand when an Agent turn omits `working_dir`.
+  Keep explicit per-thread workspace selections unchanged and pass an omitted
+  value through to Rust when no custom directory is selected.
+- **Consequences:** Fresh installs and upgraded profiles share one reliable
+  Agent workspace without an initial picker step. Existing custom thread
+  workspaces remain authoritative, and changing the configured Atomic Chat
+  data folder naturally moves the default workspace root.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/workspace.rs`](src-tauri/src/core/agent/workspace.rs),
+  [`src-tauri/src/core/agent/commands.rs`](src-tauri/src/core/agent/commands.rs),
+  [`web-app/src/containers/AgentWorkspaceSelect.tsx`](web-app/src/containers/AgentWorkspaceSelect.tsx).
+
+---
+
+### 2026-07-17 — Make Agent tool contracts bounded and truthful
+- **Context:** The Rust Agent exposed several contracts that diverged from
+  execution: process termination accepted unsafe PIDs and arbitrary signals;
+  HTTP redirects reused credentials and POST bodies without a whole-request
+  deadline or response-size bound; zero-valued limits produced accidental empty
+  results; `fs.edit` advertised an unimplemented `replaceAll`; and
+  `fs.read_document` was only a text-file alias despite claiming document
+  extraction. Buffered append/edit writes could also be observed before their
+  contents were flushed under parallel tests.
+- **Decision:** Validate `os.proc.kill` before approval, restrict it to positive
+  PIDs and four explicit signals, avoid implicit Windows tree termination, and
+  sort process listings by PID. Manually follow at most five HTTP redirects,
+  re-running SSRF checks at every hop, applying standard POST redirect
+  semantics, stripping credentials across origins, sharing one timeout budget,
+  and reading at most 2 MB. Treat zero optional limits as "use the default."
+  Implement explicit `replaceAll`, flush append writes, and route
+  `os.fs.read_document` through the existing `tauri-plugin-rag` parser on a
+  blocking worker with bounded output. Correct prompt schemas to describe only
+  arguments and guarantees the executors actually implement.
+- **Consequences:** Invalid process actions fail before an approval prompt;
+  redirected requests cannot silently carry credentials to another origin or
+  stream unbounded bodies; file operations are deterministic after return; and
+  Agent can extract PDF, DOCX, spreadsheet, presentation, HTML, and text-family
+  documents without a new dependency. Document extraction remains non-OCR, and
+  HTTP response details now expose whether the 2 MB body cap truncated data.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/tools/proc.rs`](src-tauri/src/core/agent/tools/proc.rs),
+  [`src-tauri/src/core/agent/tools/http.rs`](src-tauri/src/core/agent/tools/http.rs),
+  [`src-tauri/src/core/agent/tools/fs.rs`](src-tauri/src/core/agent/tools/fs.rs),
+  [`src-tauri/plugins/tauri-plugin-rag/src/lib.rs`](src-tauri/plugins/tauri-plugin-rag/src/lib.rs).
+
+---
+
+### 2026-07-17 — Return structured web search results and bounded page extracts
+- **Context:** Rust Agent web search stripped tags from DuckDuckGo HTML, losing
+  result URLs and structure, while web fetch applied the same crude conversion
+  despite advertising readable page extraction. The model therefore received
+  low-signal observations and repeated identical searches until the loop guard
+  intervened.
+- **Decision:** Parse DuckDuckGo HTML into bounded title, resolved destination
+  URL, and snippet records; detect bot-challenge and empty-result pages
+  explicitly. Extract fetched pages from `article`, `main`, or `body`, remove
+  page chrome, decode entities, support bounded Markdown or text output, and
+  cap response bodies before extraction. Keep both tools behind the existing
+  SSRF and HTTP-status guards.
+- **Consequences:** Agent observations now preserve the links needed for a
+  search-then-fetch workflow and report blocked search pages diagnostically
+  instead of inviting retries. Extraction remains intentionally lightweight:
+  it does not execute JavaScript, authenticate, or claim full browser
+  Readability parity.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/tools/web.rs`](src-tauri/src/core/agent/tools/web.rs),
+  [`src-tauri/src/core/agent/tools/web_search.rs`](src-tauri/src/core/agent/tools/web_search.rs),
+  [`src-tauri/src/core/agent/tools/web_extract.rs`](src-tauri/src/core/agent/tools/web_extract.rs).
+
+---
+
+### 2026-07-17 — Give Agent an explicit empty-directory tool
+- **Context:** Agent could only approximate empty-directory creation by writing
+  an empty placeholder file. The Rust `os.fs.write` contract also rejected
+  empty content, so this strategy could fail or oscillate between writing a
+  marker and deleting the now-nonempty directory.
+- **Decision:** Align `os.fs.write` with the Atomic Agent file contract by
+  accepting empty content and append mode. Add approval-gated
+  `os.fs.mkdir { path, recursive? }` to the Rust Agent grammar, prompt catalog,
+  path policy, resource taxonomy, and executor. Default `recursive` to true.
+- **Consequences:** Agent can create a genuinely empty directory without a
+  `.gitkeep` artifact, while directory creation remains path-normalized,
+  run-scoped approval-gated, and restricted to a length-1 tool-call batch.
+  `recursive=false` preserves strict single-level creation semantics.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/tools/fs.rs`](src-tauri/src/core/agent/tools/fs.rs),
+  [`src-tauri/src/core/agent/path_policy.rs`](src-tauri/src/core/agent/path_policy.rs),
+  [`src-tauri/src/core/agent/prompt.rs`](src-tauri/src/core/agent/prompt.rs).
+
+---
+
+### 2026-07-17 — Collapse Agent, tool, and MCP traces into one compact activity block
+- **Context:** Chat tool/MCP calls and direct Agent runs rendered reasoning,
+  tool cards, and Agent status as separate heavy surfaces. Active work also
+  lacked one consistent label, and completed history did not retain the full
+  wall-clock duration of the response.
+- **Decision:** Project reasoning plus all tool/MCP calls into one expandable
+  activity block. Render `Working` while the response is active, then
+  `Worked for N s`, with nested `Called N tool(s)` and `Reasoned` details.
+  Persist the Chat request duration in message metadata and the Agent duration
+  in `metadata.agent_run.duration_ms`. Remove the standalone Agent status card.
+  Keep Chat activity live across intermediate AI SDK finishes while tool calls
+  remain pending, and hide completion actions and token metrics until the
+  whole request chain ends.
+  Keep existing specialized tool renderers inside the compact expansion.
+  Preserve all packed Exa search results in a bounded scroll area and render
+  multiline or long tool parameters as tail-following syntax-highlighted
+  blocks, retaining the authored commits from PRs #172 and #189.
+  Remove only the amber warning icon and styling from the approval dialog.
+- **Consequences:** Agent and ordinary Chat traces now share one minimal,
+  durable presentation while retaining tool parameters, results, errors,
+  reasoning, and approval behavior. Duration is client wall-clock time and is
+  rounded up to seconds for display; existing histories without duration
+  metadata display the one-second floor. Tool-step boundaries no longer make
+  an active request appear completed.
+- **Owner:** team.
+- **Links:** [`web-app/src/components/ai-elements/agent-activity.tsx`](web-app/src/components/ai-elements/agent-activity.tsx),
+  [`web-app/src/lib/tools/message-trace-parts.ts`](web-app/src/lib/tools/message-trace-parts.ts),
+  [`web-app/src/lib/tools/presenters/web-search-exa.ts`](web-app/src/lib/tools/presenters/web-search-exa.ts),
+  [`web-app/src/lib/toolParamPreview.ts`](web-app/src/lib/toolParamPreview.ts),
+  [`web-app/src/lib/agent-run-message.ts`](web-app/src/lib/agent-run-message.ts),
+  [`web-app/src/containers/MessageItem.tsx`](web-app/src/containers/MessageItem.tsx),
+  [`web-app/src/containers/dialogs/AgentApprovalDialog.tsx`](web-app/src/containers/dialogs/AgentApprovalDialog.tsx),
+  [PR #172](https://github.com/AtomicBot-ai/Atomic-Chat/pull/172),
+  [PR #189](https://github.com/AtomicBot-ai/Atomic-Chat/pull/189).
+
+---
+
+### 2026-07-17 — Make each Agent thread a durable session and recover invalid tool batches
+- **Context:** Every Agent IPC run previously started with only its current
+  user message, so sequential turns in one thread lost tool observations and
+  loaded rare-tool schemas. A malformed or structurally invalid tool-call
+  batch also failed the run immediately, including recoverable attempts to
+  batch approval-gated tools.
+- **Decision:** Treat `threadId` as the durable Agent `session_id` and keep
+  `run_id` as the ephemeral macro-turn identifier. Persist one bounded,
+  semantic `agent-session.json` inside the existing thread directory, restore
+  its transcript and rare-tool LRU on every run, and serialize same-session
+  runs with per-session FIFO locks. Trim a batch whose only violation is an
+  approval-gated solo constraint to its first gated call and add a one-shot
+  notice; for parse errors and all other validation failures, perform exactly
+  one grammar-preserving repair completion capped at 1024 tokens.
+- **Consequences:** Agent turns in one thread retain bounded context across app
+  restarts while different threads remain isolated. Session files contain no
+  raw tool arguments, approval previews, or event logs. Recovery diagnostics
+  are streamed as `parse_retry` / `batch_trimmed` but remain absent from
+  persisted message metadata; approvals themselves remain run-scoped and do
+  not survive restart.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/session.rs`](src-tauri/src/core/agent/session.rs),
+  [`src-tauri/src/core/agent/runner.rs`](src-tauri/src/core/agent/runner.rs),
+  [`src-tauri/src/core/agent/commands.rs`](src-tauri/src/core/agent/commands.rs),
+  [`web-app/src/hooks/useAgentRun.ts`](web-app/src/hooks/useAgentRun.ts).
+
+---
+
+### 2026-07-17 — Preserve thread execution mode during regeneration
+- **Context:** New turns in Agent threads routed through `agent_run_turn`, but
+  regenerate and edit-regenerate always called the AI SDK `regenerate`
+  function, silently recreating the response through ordinary Chat transport.
+- **Decision:** Resolve regeneration from the thread's persisted mode. Keep
+  Chat regeneration on `CustomChatTransport`; in Agent threads, retain the
+  selected user message, remove following messages, and rerun its text through
+  Agent IPC without inserting a duplicate user message.
+- **Consequences:** A thread now uses one execution mode for sends,
+  regeneration, edit-regeneration, and failed-run retries. Agent regeneration
+  retains the thread's workspace and approval policy; staged composer
+  attachments are left untouched.
+- **Owner:** team.
+- **Links:** [`web-app/src/routes/threads/$threadId.tsx`](web-app/src/routes/threads/$threadId.tsx).
+
+---
+
+### 2026-07-17 — Route Agent threads through direct IPC with run-scoped HITL
+- **Context:** The isolated Rust agent loop and approval gate were exposed
+  through Tauri commands, but Agent threads still submitted through the
+  ordinary AI SDK chat transport and had no frontend lifecycle for workspace,
+  streamed events, cancellation, or approval decisions.
+- **Decision:** Route Agent-thread turns directly through `agent_run_turn` and
+  keep ordinary Chat threads on `CustomChatTransport`. Persist a working
+  directory and the existing manual/skip approval policy per thread. Project
+  streamed events into thread-scoped live UI state, resolve sensitive actions
+  through a dedicated run-scoped Approve once/Deny dialog, and persist one
+  bounded `metadata.agent_run` summary on the terminal event without approval
+  previews or a raw event log.
+- **Consequences:** Agent v1 now has a complete text-only llama.cpp workflow
+  with cancellation and human approval while ordinary chat behavior remains
+  unchanged. Pending approvals do not survive restart, workspace access is
+  explicit, and cloud, MLX, attachments, MCP/RAG, browser execution, approval
+  history, and always-allow policies remain outside this iteration.
+- **Owner:** team.
+- **Links:** [`web-app/src/services/agent/tauri.ts`](web-app/src/services/agent/tauri.ts),
+  [`web-app/src/hooks/useAgentRun.ts`](web-app/src/hooks/useAgentRun.ts),
+  [`web-app/src/containers/dialogs/AgentApprovalDialog.tsx`](web-app/src/containers/dialogs/AgentApprovalDialog.tsx),
+  [`web-app/src/routes/threads/$threadId.tsx`](web-app/src/routes/threads/$threadId.tsx).
+
+---
+
+### 2026-07-16 — Test the Rust agent deterministically and keep model acceptance local
+- **Context:** The autonomous Rust agent needed coverage of its complete
+  prompt-decide-execute-observe loop and real OS tool contracts, while a model
+  acceptance test must use a large local GGUF and a specific TurboQuant
+  backend that are unsuitable for mandatory CI or automatic download.
+- **Decision:** Make the default `core::agent` suite deterministic: use a
+  scripted loopback `/completion` server for runner tests and isolated local
+  workspaces for filesystem, archive, Git, and shell contracts. Add one
+  sequential ignored acceptance ritual that starts an
+  env-supplied `AtomicBot-ai/atomic-llama-cpp-turboquant` `llama-server`,
+  requires the exact
+  `unsloth/Qwen3_5-9B-GGUF-Qwen3_5-9B-IQ4_XS` IQ4_XS GGUF, records backend
+  provenance, runs all scenarios against one slot, and owns process cleanup.
+- **Consequences:** Normal Rust tests need no model, network, or artifact
+  download and can run routinely. Model/tool regressions can be checked
+  locally against the production-class stack, but that ignored suite depends
+  on explicit local paths, GPU/CPU capacity, and operator invocation. CI
+  provisioning and automated model/backend downloads remain deferred.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/runner_tests.rs`](src-tauri/src/core/agent/runner_tests.rs),
+  [`src-tauri/src/core/agent/tools/contract_tests.rs`](src-tauri/src/core/agent/tools/contract_tests.rs),
+  [`src-tauri/src/core/agent/model_e2e.rs`](src-tauri/src/core/agent/model_e2e.rs),
+  [`src-tauri/src/core/agent/ARCHITECTURE.md`](src-tauri/src/core/agent/ARCHITECTURE.md).
+
+---
+
+### 2026-07-16 — Bind the agent approval policy to its thread
+- **Context:** Agent mode needs a visible safety policy below the composer, but
+  the iteration-1 Rust gate currently exposes only `auto_approve=false`
+  (pause for sensitive actions) and `auto_approve=true` (skip every approval).
+- **Decision:** Offer exactly those two policies in the frontend: "Manually
+  approve" as the fail-closed default and "Skip all approvals" as an explicit
+  unsafe choice. Persist the policy with the temporary Home selection and
+  transfer it to the created Agent thread alongside the mode.
+- **Consequences:** The UI does not imply a selective safe-action policy that
+  the backend cannot enforce. Agent IPC callers can map `manual` to
+  `auto_approve=false` and `skip` to `auto_approve=true`; interactive rendering
+  of emitted approval requests remains separate work.
+- **Owner:** team.
+- **Links:** [`web-app/src/hooks/useAgentMode.ts`](web-app/src/hooks/useAgentMode.ts),
+  [`web-app/src/containers/AgentApprovalModeSelect.tsx`](web-app/src/containers/AgentApprovalModeSelect.tsx),
+  [`src-tauri/src/core/agent/approval.rs`](src-tauri/src/core/agent/approval.rs).
+
+---
+
+### 2026-07-16 — Secure iteration 1b agent tools with run-scoped approvals
+- **Context:** The first autonomous Rust agent loop had mismatched archive and
+  shell contracts, no interactive approval protocol, no trusted-root path
+  boundary, and no way to expose complete schemas for rare tools. Clipboard
+  write and desktop notification actions were also absent.
+- **Decision:** Add a unified authorization preflight that combines resource
+  class, canonical path resources, and shell-guard verdicts into at most one
+  approval request per call. Use a run-scoped `ApprovalGate`: `auto_approve`
+  permits approval-required actions; otherwise the backend emits a pending
+  request and waits for `agent_resolve_approval`, timeout, or cancellation.
+  Treat `working_dir` as the trusted canonical root and make path escape
+  approval-mediated and call-scoped. Route shell calls through direct argv or
+  a platform shell only after hard-block and approval checks. Keep rare schemas
+  out of the stable prefix and expose them through bounded `tool.view` state in
+  `### loaded-tools`. Add serialized `os.clipboard.write` and `os.notify`
+  adapters using existing desktop services.
+- **Consequences:** Read-only in-root actions remain confirmation-free;
+  dangerous, destructive, and out-of-root actions fail closed unless globally
+  auto-approved or explicitly resolved. Hard-block shell rules cannot be
+  bypassed by auto-approval. The frontend approval UI remains deferred, so
+  callers using the default `auto_approve=false` must resolve emitted requests
+  through IPC or accept timeout denial. The static catalog, grammar, resource
+  classes, and dispatch table gain `tool.view`, clipboard write, and notify.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/ARCHITECTURE.md`](src-tauri/src/core/agent/ARCHITECTURE.md),
+  [`src-tauri/src/core/agent/approval.rs`](src-tauri/src/core/agent/approval.rs),
+  [`src-tauri/src/core/agent/path_policy.rs`](src-tauri/src/core/agent/path_policy.rs),
+  [`src-tauri/src/core/agent/shell_guard.rs`](src-tauri/src/core/agent/shell_guard.rs).
+
+---
+
+### 2026-07-16 — Isolate the first autonomous agent loop in the Rust backend
+- **Context:** Atomic Chat needs a grammar-constrained autonomous mode without
+  coupling its execution loop to the regular web chat or Vercel AI SDK path.
+- **Decision:** Add an isolated `core::agent` Rust module that talks directly
+  to the active local llama.cpp session over `/completion`, uses a static
+  array-only GBNF tool grammar and stable prompt prefix, executes the
+  iteration-one OS tool catalog behind resource-class, approval, SSRF, loop,
+  and cancellation guards, and exposes `agent_run_turn` /
+  `agent_cancel_turn` through Tauri IPC channels. Keep the web app, memory,
+  tasks, browser, vision, MLX, and cloud-provider integration out of this
+  iteration.
+- **Consequences:** A future frontend can consume streamed agent events without
+  changing ordinary chat behavior. The first iteration is local llama.cpp
+  only, uses a fixed tool catalog, and defaults approval-gated calls to denial
+  until an interactive approval surface is connected.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/`](src-tauri/src/core/agent/),
+  [`src-tauri/src/lib.rs`](src-tauri/src/lib.rs).
+
+---
+
 ### 2026-07-15 — Aggregate Local API Server request telemetry into three-minute summaries (ATO-297)
 - **Context:** `api_server_request` emitted one PostHog event for every
  eligible Local API Server request and accounted for most analytics volume.

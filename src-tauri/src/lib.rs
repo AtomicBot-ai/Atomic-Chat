@@ -13,7 +13,7 @@ use jan_utils::generate_app_token;
 #[cfg(not(feature = "cli"))]
 use std::{collections::HashMap, sync::Arc};
 #[cfg(not(feature = "cli"))]
-use tauri::{Emitter, Manager, RunEvent};
+use tauri::{path::BaseDirectory, Emitter, Manager, RunEvent};
 #[cfg(all(not(feature = "cli"), target_os = "windows"))]
 use tauri_plugin_llamacpp_upstream::install_bundled_backend;
 #[cfg(not(feature = "cli"))]
@@ -174,6 +174,24 @@ pub fn run() {
         core::mcp::commands::get_tools,
         core::mcp::commands::call_tool,
         core::mcp::commands::cancel_tool_call,
+        core::agent::commands::agent_run_turn,
+        core::agent::commands::agent_cancel_turn,
+        core::agent::commands::agent_resolve_approval,
+        core::agent::commands::agent_resolve_folder_access,
+        core::agent::commands::agent_workspace_list,
+        core::agent::commands::agent_workspace_root,
+        core::agent::commands::agent_workspace_stat,
+        core::agent::commands::agent_workspace_resolve_path,
+        core::agent::commands::agent_workspace_read_text,
+        core::agent::skills::commands::agent_list_skills,
+        core::agent::skills::commands::agent_get_skill,
+        core::agent::skills::commands::agent_set_skill_enabled,
+        core::agent::skills::commands::agent_create_skill,
+        core::agent::skills::commands::agent_import_skill,
+        core::agent::skills::commands::agent_update_skill,
+        core::agent::skills::commands::agent_export_skill,
+        core::agent::skills::commands::agent_delete_skill,
+        core::agent::skills::commands::agent_refresh_skills,
         core::mcp::commands::restart_mcp_servers,
         core::mcp::commands::get_connected_servers,
         core::mcp::commands::save_mcp_configs,
@@ -298,6 +316,24 @@ pub fn run() {
         core::mcp::commands::get_tools,
         core::mcp::commands::call_tool,
         core::mcp::commands::cancel_tool_call,
+        core::agent::commands::agent_run_turn,
+        core::agent::commands::agent_cancel_turn,
+        core::agent::commands::agent_resolve_approval,
+        core::agent::commands::agent_resolve_folder_access,
+        core::agent::commands::agent_workspace_list,
+        core::agent::commands::agent_workspace_root,
+        core::agent::commands::agent_workspace_stat,
+        core::agent::commands::agent_workspace_resolve_path,
+        core::agent::commands::agent_workspace_read_text,
+        core::agent::skills::commands::agent_list_skills,
+        core::agent::skills::commands::agent_get_skill,
+        core::agent::skills::commands::agent_set_skill_enabled,
+        core::agent::skills::commands::agent_create_skill,
+        core::agent::skills::commands::agent_import_skill,
+        core::agent::skills::commands::agent_update_skill,
+        core::agent::skills::commands::agent_export_skill,
+        core::agent::skills::commands::agent_delete_skill,
+        core::agent::skills::commands::agent_refresh_skills,
         core::mcp::commands::restart_mcp_servers,
         core::mcp::commands::get_connected_servers,
         core::mcp::commands::save_mcp_configs,
@@ -335,6 +371,10 @@ pub fn run() {
             mcp_active_servers: Arc::new(Mutex::new(HashMap::new())),
             server_handle: Arc::new(Mutex::new(None)),
             tool_call_cancellations: Arc::new(Mutex::new(HashMap::new())),
+            agent_pending_approvals: Arc::new(Mutex::new(HashMap::new())),
+            agent_pending_folder_access: Arc::new(Mutex::new(HashMap::new())),
+            agent_approval_allowlist: Arc::new(Mutex::new(Default::default())),
+            agent_session_locks: Arc::new(Mutex::new(HashMap::new())),
             mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
             mcp_shutdown_in_progress: Arc::new(Mutex::new(false)),
             mcp_monitoring_tasks: Arc::new(Mutex::new(HashMap::new())),
@@ -452,6 +492,24 @@ pub fn run() {
             // Migrate MCP servers
             if let Err(e) = setup::migrate_mcp_servers(app.handle().clone(), store.clone()) {
                 log::error!("Failed to migrate MCP servers: {e}");
+            }
+
+            let data_folder = get_jan_data_folder_path(app.handle().clone());
+            if let Err(e) = core::agent::workspace::ensure_default_agent_workspace(&data_folder) {
+                log::error!("{e}");
+            }
+            match app.path().resolve(
+                core::agent::skills::BUNDLED_AGENT_SKILLS_RESOURCE_DIR,
+                BaseDirectory::Resource,
+            ) {
+                Ok(bundled_skills) => {
+                    if let Err(error) =
+                        core::agent::skills::initialize_skills(&data_folder, &bundled_skills)
+                    {
+                        log::error!("{error}");
+                    }
+                }
+                Err(error) => log::error!("Failed to resolve bundled Agent skills: {error}"),
             }
 
             // Store the new app version

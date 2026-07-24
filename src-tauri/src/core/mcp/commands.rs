@@ -294,7 +294,9 @@ pub async fn call_tool(
         let tools = match service.list_all_tools().await {
             Ok(tools) => tools,
             Err(e) => {
-                log::warn!("MCP server {srv_name}: failed to list tools while resolving {tool_name}: {e}");
+                log::warn!(
+                    "MCP server {srv_name}: failed to list tools while resolving {tool_name}: {e}"
+                );
                 continue;
             }
         };
@@ -506,10 +508,7 @@ pub async fn get_mcp_configs<R: Runtime>(app: AppHandle<R>) -> Result<String, St
         .and_then(|v| v.as_object_mut())
     {
         for server in servers.values_mut() {
-            if let Some(args) = server
-                .get_mut("args")
-                .and_then(|v| v.as_array_mut())
-            {
+            if let Some(args) = server.get_mut("args").and_then(|v| v.as_array_mut()) {
                 for arg in args.iter_mut() {
                     if arg.as_str() == Some(FILESYSTEM_MCP_PACKAGE) {
                         *arg = Value::String(pinned_spec.clone());

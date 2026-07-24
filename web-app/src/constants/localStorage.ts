@@ -37,6 +37,7 @@ export const localStorageKey = {
   recentSearches: 'recent-searches',
   janModelPromptDismissed: 'jan-model-prompt-dismissed',
   agentMode: 'agent-mode',
+  agentModeAttentionSeen: 'agent-mode-attention-seen-v1',
   factoryResetPending: 'factory-reset-pending',
   lastSeenVersion: 'last-seen-version',
   threadNotifications: 'thread-notifications',

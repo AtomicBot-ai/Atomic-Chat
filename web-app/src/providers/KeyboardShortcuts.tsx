@@ -33,7 +33,8 @@ export function KeyboardShortcutsProvider() {
   useKeyboardShortcut({
     ...newChatShortcut,
     callback: () => {
-      useAgentMode.getState().removeThread(TEMPORARY_CHAT_ID)
+      const { sidebarMode, setAgentMode } = useAgentMode.getState()
+      setAgentMode(TEMPORARY_CHAT_ID, sidebarMode === 'agent')
       router.navigate({ to: route.home })
     },
   })

@@ -201,9 +201,42 @@ if ($LASTEXITCODE -ne 0) { Write-Host 'download:bin failed' -ForegroundColor Red
 # ── Detect GPU hardware and select best backend ──────────────
 Write-Step 'Detecting GPU hardware'
 
-function Get-NvidiaDriverVersion {
+$llamacppDir = 'src-tauri/resources/llamacpp-backend-upstream'
+$llamaServerExe = "$llamacppDir/build/bin/llama-server.exe"
+$backendTxtPath = "$llamacppDir/backend.txt"
+$existingBackend = $null
+if (Test-Path $backendTxtPath) {
+    $existingBackend = (Get-Content $backendTxtPath -Raw).Trim()
+}
+$reuseExistingBackend = $SkipBackendDownload -and (Test-Path $llamaServerExe)
+
+function Get-VideoControllers {
+    $job = Start-Job {
+        Get-CimInstance -ClassName Win32_VideoController -ErrorAction Stop |
+            Select-Object Name, DriverVersion, AdapterRAM
+    }
+
     try {
-        $gpu = Get-CimInstance -ClassName Win32_VideoController -ErrorAction Stop |
+        if (-not (Wait-Job -Job $job -Timeout 10)) {
+            Write-Host '  WMI GPU detection timed out after 10s; continuing without WMI data.' -ForegroundColor Yellow
+            return @()
+        }
+        return @(Receive-Job -Job $job -ErrorAction Stop)
+    } catch {
+        Write-Host "  WMI GPU detection failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        return @()
+    } finally {
+        if ($job.State -eq 'Running') {
+            Stop-Job -Job $job
+        }
+        Remove-Job -Job $job -Force
+    }
+}
+
+function Get-NvidiaDriverVersion {
+    param([object[]]$VideoControllers)
+    try {
+        $gpu = $VideoControllers |
             Where-Object { $_.Name -match 'NVIDIA' } |
             Select-Object -First 1
         if ($gpu -and $gpu.DriverVersion) {
@@ -317,87 +350,92 @@ function Invoke-BackendManifest {
     return $null
 }
 
-$nvidiaDriver = Get-NvidiaDriverVersion
-$hasVulkan = Test-VulkanSupport
-$cudaTier = $null
-
-if ($nvidiaDriver) {
-    Write-Host "  NVIDIA GPU detected, driver version: $nvidiaDriver" -ForegroundColor Green
-
-    # Thresholds match src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs
-    # (min_cuda13_driver = 581.15, min_cuda12_driver = 551.61). ggml-org
-    # publishes CUDA 12.4 and 13.x Windows builds; CUDA 11 is no longer produced
-    # upstream and is unsupported on Windows after the llamacpp-upstream
-    # consolidation (ADR 2026-05-22). The concrete CUDA-13 minor (13.1 → 13.3 →
-    # …) drifts release to release, so we select a minor-less *family* id here
-    # and resolve the published minor from the release assets below (ATO-174).
-    if ((Compare-VersionStrings $nvidiaDriver '581.15') -ge 0) {
-        $cudaTier = 13
-        Write-Host "  CUDA tier: 13.x (driver >= 581.15)" -ForegroundColor Green
-    } elseif ((Compare-VersionStrings $nvidiaDriver '551.61') -ge 0) {
-        $cudaTier = 12
-        Write-Host "  CUDA tier: 12.4 (driver >= 551.61)" -ForegroundColor Green
-    } else {
-        Write-Host "  NVIDIA driver too old for upstream CUDA ($nvidiaDriver < 551.61)" -ForegroundColor Yellow
-    }
+if ($reuseExistingBackend) {
+    $existingLabel = if ($existingBackend) { $existingBackend } else { '<unknown>' }
+    Write-Host "  -SkipBackendDownload: skipping GPU detection and reusing existing backend ($existingLabel)." -ForegroundColor Yellow
+    $backend = if ($existingBackend) { $existingBackend } else { 'win-cpu-x64' }
 } else {
-    Write-Host '  No NVIDIA GPU detected' -ForegroundColor Yellow
-}
+    $videoControllers = Get-VideoControllers
+    $nvidiaDriver = Get-NvidiaDriverVersion -VideoControllers $videoControllers
+    $hasVulkan = Test-VulkanSupport
+    $cudaTier = $null
 
-if ($hasVulkan) {
-    Write-Host '  Vulkan runtime: available' -ForegroundColor Green
-} else {
-    Write-Host '  Vulkan runtime: not found' -ForegroundColor Yellow
-}
+    if ($nvidiaDriver) {
+        Write-Host "  NVIDIA GPU detected, driver version: $nvidiaDriver" -ForegroundColor Green
 
-# Check GPU VRAM (>= 6 GiB threshold — matches runtime logic in extensions/llamacpp-extension/src/index.ts)
-# Win32_VideoController.AdapterRAM is uint32 and caps at ~4 GiB, so we read
-# the 64-bit qwMemorySize from the registry for accurate results.
-$gpuVramMiB = 0
-try {
-    $regItems = Get-ItemProperty 'HKLM:\SYSTEM\ControlSet001\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0*' `
-        -Name 'HardwareInformation.qwMemorySize' -ErrorAction SilentlyContinue
-    if ($regItems) {
-        $maxBytes = ($regItems | ForEach-Object { $_.'HardwareInformation.qwMemorySize' } |
-            Sort-Object -Descending | Select-Object -First 1)
-        if ($maxBytes -and $maxBytes -gt 0) {
-            $gpuVramMiB = [math]::Floor($maxBytes / 1048576)
+        # Thresholds match src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs
+        # (min_cuda13_driver = 581.15, min_cuda12_driver = 551.61). ggml-org
+        # publishes CUDA 12.4 and 13.x Windows builds; CUDA 11 is no longer produced
+        # upstream and is unsupported on Windows after the llamacpp-upstream
+        # consolidation (ADR 2026-05-22). The concrete CUDA-13 minor (13.1 → 13.3 →
+        # …) drifts release to release, so we select a minor-less *family* id here
+        # and resolve the published minor from the release assets below (ATO-174).
+        if ((Compare-VersionStrings $nvidiaDriver '581.15') -ge 0) {
+            $cudaTier = 13
+            Write-Host "  CUDA tier: 13.x (driver >= 581.15)" -ForegroundColor Green
+        } elseif ((Compare-VersionStrings $nvidiaDriver '551.61') -ge 0) {
+            $cudaTier = 12
+            Write-Host "  CUDA tier: 12.4 (driver >= 551.61)" -ForegroundColor Green
+        } else {
+            Write-Host "  NVIDIA driver too old for upstream CUDA ($nvidiaDriver < 551.61)" -ForegroundColor Yellow
         }
+    } else {
+        Write-Host '  No NVIDIA GPU detected' -ForegroundColor Yellow
     }
-} catch {}
-if ($gpuVramMiB -eq 0) {
+
+    if ($hasVulkan) {
+        Write-Host '  Vulkan runtime: available' -ForegroundColor Green
+    } else {
+        Write-Host '  Vulkan runtime: not found' -ForegroundColor Yellow
+    }
+
+    # Check GPU VRAM (>= 6 GiB threshold — matches runtime logic in extensions/llamacpp-extension/src/index.ts)
+    # Win32_VideoController.AdapterRAM is uint32 and caps at ~4 GiB, so we read
+    # the 64-bit qwMemorySize from the registry for accurate results.
+    $gpuVramMiB = 0
     try {
-        $vramBytes = Get-CimInstance -ClassName Win32_VideoController -ErrorAction Stop |
+        $regItems = Get-ItemProperty 'HKLM:\SYSTEM\ControlSet001\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0*' `
+            -Name 'HardwareInformation.qwMemorySize' -ErrorAction SilentlyContinue
+        if ($regItems) {
+            $maxBytes = ($regItems | ForEach-Object { $_.'HardwareInformation.qwMemorySize' } |
+                Sort-Object -Descending | Select-Object -First 1)
+            if ($maxBytes -and $maxBytes -gt 0) {
+                $gpuVramMiB = [math]::Floor($maxBytes / 1048576)
+            }
+        }
+    } catch {}
+    if ($gpuVramMiB -eq 0) {
+        $vramBytes = $videoControllers |
             ForEach-Object { $_.AdapterRAM } |
             Sort-Object -Descending |
             Select-Object -First 1
         if ($vramBytes -and $vramBytes -gt 0) {
             $gpuVramMiB = [math]::Floor($vramBytes / 1048576)
         }
-    } catch {}
-}
-$hasEnoughVram = $gpuVramMiB -ge 6144
-Write-Host "  GPU VRAM: $gpuVramMiB MiB (enough for GPU inference: $hasEnoughVram)"
+    }
+    $hasEnoughVram = $gpuVramMiB -ge 6144
+    Write-Host "  GPU VRAM: $gpuVramMiB MiB (enough for GPU inference: $hasEnoughVram)"
 
-# Priority order matches prioritize_backends() in
-# src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs:
-#   With enough VRAM: cuda → vulkan → cpu;  without: cuda → cpu → vulkan.
-# CUDA is selected as a minor-less family id (win-cuda-13-x64 / win-cuda-12-x64);
-# Resolve-BackendFromManifest turns it into the highest published concrete minor.
-if ($cudaTier -eq 13) {
-    $backend = 'win-cuda-13-x64'
-} elseif ($cudaTier -eq 12) {
-    $backend = 'win-cuda-12-x64'
-} elseif ($hasVulkan -and $hasEnoughVram) {
-    $backend = 'win-vulkan-x64'
-} else {
-    $backend = 'win-cpu-x64'
-}
+    # Priority order matches prioritize_backends() in
+    # src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs:
+    #   With enough VRAM: cuda → vulkan → cpu;  without: cuda → cpu → vulkan.
+    # CUDA is selected as a minor-less family id (win-cuda-13-x64 / win-cuda-12-x64);
+    # Resolve-BackendFromManifest turns it into the highest published concrete minor.
+    if ($cudaTier -eq 13) {
+        $backend = 'win-cuda-13-x64'
+    } elseif ($cudaTier -eq 12) {
+        $backend = 'win-cuda-12-x64'
+    } elseif ($hasVulkan -and $hasEnoughVram) {
+        $backend = 'win-vulkan-x64'
+    } else {
+        $backend = 'win-cpu-x64'
+    }
 
-# Allow manual override via LLAMACPP_BACKEND env var
-if ($env:LLAMACPP_BACKEND) {
-    Write-Host "  Overriding backend via LLAMACPP_BACKEND env var: $env:LLAMACPP_BACKEND" -ForegroundColor Cyan
-    $backend = $env:LLAMACPP_BACKEND
+    # Allow manual override via LLAMACPP_BACKEND env var
+    if ($env:LLAMACPP_BACKEND) {
+        Write-Host "  Overriding backend via LLAMACPP_BACKEND env var: $env:LLAMACPP_BACKEND" -ForegroundColor Cyan
+        $backend = $env:LLAMACPP_BACKEND
+    }
 }
 
 Write-Host ''
@@ -407,15 +445,6 @@ Write-Host "  Selected backend: $backend" -ForegroundColor Cyan
 # Per ADR 2026-05-22, Windows ships only the upstream provider, so the
 # dev-windows backend resource dir is `llamacpp-backend-upstream/`.
 Write-Step "Download upstream llamacpp backend: $backend"
-$llamacppDir = 'src-tauri/resources/llamacpp-backend-upstream'
-$llamaServerExe = "$llamacppDir/build/bin/llama-server.exe"
-$backendTxtPath = "$llamacppDir/backend.txt"
-
-# Re-download if backend type changed (e.g. switched GPU)
-$existingBackend = $null
-if (Test-Path $backendTxtPath) {
-    $existingBackend = (Get-Content $backendTxtPath -Raw).Trim()
-}
 
 $skipDownload = $false
 if ($SkipBackendDownload -and (Test-Path $llamaServerExe)) {

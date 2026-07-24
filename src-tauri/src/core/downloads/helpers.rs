@@ -407,7 +407,11 @@ pub async fn _get_file_size(
 ) -> Result<u64, Box<dyn std::error::Error>> {
     // ATO-233: 30-second per-request timeout so a slow or unresponsive CDN
     // endpoint (e.g. a 404 redirect chain) fails fast rather than hanging.
-    let resp = client.head(url).timeout(Duration::from_secs(30)).send().await?;
+    let resp = client
+        .head(url)
+        .timeout(Duration::from_secs(30))
+        .send()
+        .await?;
     if !resp.status().is_success() {
         return Err(format!("Failed to get file size: HTTP status {}", resp.status()).into());
     }

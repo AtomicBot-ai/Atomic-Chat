@@ -162,4 +162,19 @@ describe('ThreadList active highlight', () => {
     expect(activeCard?.className.split(' ')).toContain('bg-secondary')
     expect(inactiveCard?.className.split(' ')).not.toContain('bg-secondary')
   })
+
+  it('does not render chat type icons', async () => {
+    vi.mocked(useParams).mockReturnValue({} as never)
+
+    await act(async () => {
+      render(<ThreadList threads={threads} />)
+    })
+
+    expect(
+      screen.queryByLabelText('chat:threadType.chat')
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByLabelText('chat:threadType.agent')
+    ).not.toBeInTheDocument()
+  })
 })

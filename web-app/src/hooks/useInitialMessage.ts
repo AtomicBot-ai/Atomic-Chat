@@ -6,12 +6,14 @@ export type InitialMessageFile = {
   type: string
   mediaType: string
   url: string
+  name: string
 }
 
 export type InitialMessagePayload = {
   text: string
   files?: InitialMessageFile[]
   documents?: Attachment[]
+  agentSkillName?: string
 }
 
 type InitialMessageStore = {

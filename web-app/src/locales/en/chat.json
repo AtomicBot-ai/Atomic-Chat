@@ -8,5 +8,96 @@
   },
   "sendMessage": "Send Message",
   "newConversation": "New Conversation",
-  "clearHistory": "Clear History"
+  "clearHistory": "Clear History",
+  "activity": {
+    "working": "Working...",
+    "reading": "Reading: {{count}}%",
+    "workedFor": "Worked for {{count}}s",
+    "calledTool": "Called {{count}} tool",
+    "calledTools": "Called {{count}} tools",
+    "reasoned": "Reasoned"
+  },
+  "workspacePreview": {
+    "generating": "Preview will be available after generation finishes."
+  },
+  "agentMode": {
+    "chat": "Chat",
+    "agent": "Agent",
+    "placeholder": "Describe a task for the agent...",
+    "providerUnavailable": "Agent mode is available only with a local llama.cpp model."
+  },
+  "agentApprovals": {
+    "manualSelected": "Manually",
+    "manual": "Manually approve",
+    "manualDescription": "Pause before sensitive actions.",
+    "skipSelected": "Skip",
+    "skip": "Skip all approvals",
+    "skipDescription": "Run without asking."
+  },
+  "agentApproval": {
+    "title": "Agent approval required",
+    "description": "{{tool}} is waiting for your decision.",
+    "reason": "Reason",
+    "preview": "Action preview",
+    "resources": "Affected resources",
+    "timeoutNotice": "If you do not respond, this request will be denied automatically after the backend timeout.",
+    "deny": "Deny",
+    "alwaysAllow": "Always allow this action",
+    "approveOnce": "Approve once",
+    "resolveFailed": "Failed to send the approval decision."
+  },
+  "agentFolderAccess": {
+    "title": "Allow folder access",
+    "description": "{{tool}} needs access to this folder.",
+    "canEditNotice": "Allowing adds this folder to External with CAN EDIT access for this Agent thread.",
+    "deny": "Deny",
+    "allow": "Allow folder",
+    "resolveFailed": "Failed to send the folder access decision."
+  },
+  "agentWorkspace": {
+    "choose": "Choose workspace",
+    "change": "Change agent workspace",
+    "default": "Default",
+    "defaultDescription": "Uses the agent-workspace folder inside the Atomic Chat data folder.",
+    "projectFiles": "Project Files",
+    "external": "External",
+    "canEdit": "CAN EDIT",
+    "viewOnly": "VIEW ONLY",
+    "addFolder": "Add external folder",
+    "folderOptions": "Folder options",
+    "allowEditing": "Can edit",
+    "makeViewOnly": "View only",
+    "removeFolder": "Remove from Agent"
+  },
+  "agentErrors": {
+    "audioUnsupported": "Agent mode does not support audio attachments.",
+    "invalidAttachment": "One or more files could not be attached. Choose local files and try again.",
+    "visionModelRequired": "Select a vision-capable model before sending images.",
+    "localLlamacppRequired": "Agent mode requires an active local llama.cpp model.",
+    "providerUnavailableTitle": "Agent mode is unavailable for this provider",
+    "providerUnavailableDescription": "Switch to a local llama.cpp model and try again.",
+    "unsupportedTools": "Agent mode does not support MCP, RAG, or browser tools yet.",
+    "runFailed": "The agent run failed to start.",
+    "cancelFailed": "The agent run could not be cancelled.",
+    "saveFailed": "The agent reply could not be saved."
+  },
+  "agentTasks": {
+    "title": "Ideas for you",
+    "findLatestNews": {
+      "title": "Find the latest news",
+      "prompt": "Find the latest news and summarize the most important recent developments with links to the sources."
+    },
+    "inspectFolder": {
+      "title": "Organize my Desktop",
+      "prompt": "Sort through my Desktop files and folders. Do not delete, overwrite, replace, rename, or modify any files or folders."
+    },
+    "findLargeFiles": {
+      "title": "Find large files",
+      "prompt": "Find the largest files in my Downloads folder and suggest safe cleanup candidates. Do not delete anything."
+    }
+  },
+  "threadType": {
+    "chat": "Chat thread",
+    "agent": "Agent thread"
+  }
 }

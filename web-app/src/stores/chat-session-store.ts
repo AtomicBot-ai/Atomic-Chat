@@ -35,6 +35,7 @@ interface ChatSessionState {
     title?: string,
   ) => Chat<UIMessage>;
   getSessionData: (sessionId: string) => SessionData;
+  upsertMessage: (sessionId: string, message: UIMessage) => void;
   updateStatus: (sessionId: string, status: ChatStatus) => void;
   setSessionTitle: (sessionId: string, title?: string) => void;
   removeSession: (sessionId: string) => void;
@@ -131,6 +132,15 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
       standaloneData[sessionId] = createSessionData();
     }
     return standaloneData[sessionId];
+  },
+  upsertMessage: (sessionId, message) => {
+    const existing = get().sessions[sessionId];
+    if (!existing) return;
+
+    existing.chat.messages = [
+      ...existing.chat.messages.filter((item) => item.id !== message.id),
+      message,
+    ];
   },
   updateStatus: (sessionId, status) => {
     set((state) => {
