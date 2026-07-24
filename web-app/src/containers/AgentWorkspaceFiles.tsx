@@ -8,6 +8,7 @@ import {
   IconFolderOpen,
   IconPencil,
   IconPlus,
+  IconRefresh,
   IconTrash,
 } from '@tabler/icons-react'
 import { PanelRight } from 'lucide-react'
@@ -85,7 +86,7 @@ function WorkspaceSection({
 }: WorkspaceSectionProps) {
   return (
     <section className="mt-2">
-      <div className="flex h-8 items-center justify-between px-2 text-xs font-medium uppercase tracking-wide text-sidebar-foreground/60">
+      <div className="flex h-8 items-center justify-between pl-2 text-xs font-medium uppercase tracking-wide text-sidebar-foreground/60">
         <span>{title}</span>
         {action}
       </div>
@@ -191,6 +192,7 @@ export function AgentWorkspaceFiles({
     Record<string, DirectoryState>
   >({})
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const roots = useMemo(
     () =>
       [workspace.primaryRoot, ...workspace.externalRoots].filter(
@@ -281,6 +283,26 @@ export function AgentWorkspaceFiles({
     },
     [directories, entryKey, expanded, loadDirectory]
   )
+
+  const refreshDirectories = useCallback(async () => {
+    if (isRefreshing) return
+    setIsRefreshing(true)
+    try {
+      await Promise.all(
+        roots.flatMap((root) => {
+          const prefix = `${root.rootId}:`
+          const loadedPaths = Object.keys(directories)
+            .filter((key) => key.startsWith(prefix))
+            .map((key) => key.slice(prefix.length))
+          return [...new Set(['', ...loadedPaths])].map((path) =>
+            loadDirectory(root, path)
+          )
+        })
+      )
+    } finally {
+      setIsRefreshing(false)
+    }
+  }, [directories, isRefreshing, loadDirectory, roots])
 
   const revealEntry = useCallback(
     async (root: AgentWorkspaceRoot, path: string) => {
@@ -389,12 +411,30 @@ export function AgentWorkspaceFiles({
           <div
             className={cn(
               'flex h-8 items-center',
-              !IS_WINDOWS && 'justify-end'
+              IS_WINDOWS ? 'justify-start' : 'justify-between'
             )}
           >
             <button
               type="button"
-              className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-foreground/70 outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-foreground/8 hover:text-sidebar-foreground focus-visible:ring-2"
+              className={cn(
+                'flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-foreground/70 outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-foreground/8 hover:text-sidebar-foreground focus-visible:ring-2 disabled:cursor-default disabled:opacity-50',
+                IS_WINDOWS && 'order-2'
+              )}
+              aria-label={t('common:refresh')}
+              title={t('common:refresh')}
+              disabled={isRefreshing}
+              onClick={() => void refreshDirectories()}
+            >
+              <IconRefresh
+                className={cn('size-4', isRefreshing && 'animate-spin')}
+              />
+            </button>
+            <button
+              type="button"
+              className={cn(
+                'flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-foreground/70 outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-foreground/8 hover:text-sidebar-foreground focus-visible:ring-2',
+                IS_WINDOWS && 'order-1'
+              )}
               aria-label="Close files sidebar"
               title="Close files sidebar"
               onClick={onClose}
@@ -438,7 +478,7 @@ export function AgentWorkspaceFiles({
             action={
               <button
                 type="button"
-                className="flex size-7 items-center justify-center rounded-md text-sidebar-foreground/70 hover:bg-sidebar-foreground/8"
+                className="flex size-8 items-center justify-center rounded-md text-sidebar-foreground/70 hover:bg-sidebar-foreground/8"
                 onClick={onAddExternal}
                 aria-label={t('agentWorkspace.addFolder')}
                 title={t('agentWorkspace.addFolder')}

@@ -83,6 +83,20 @@ describe('Chat and Agent workspace controls', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
+  it('shows the Agent attention dot when requested', () => {
+    render(
+      <ChatAgentModeSwitch
+        isAgentMode={false}
+        onChange={vi.fn()}
+        chatLabel="Chat"
+        agentLabel="Agent"
+        showAgentAttention
+      />
+    )
+
+    expect(screen.getByTestId('agent-mode-attention-dot')).toBeInTheDocument()
+  })
+
   it('shows suggestions only in Agent mode and fills without submitting', async () => {
     const user = userEvent.setup()
     const onSelect = vi.fn()

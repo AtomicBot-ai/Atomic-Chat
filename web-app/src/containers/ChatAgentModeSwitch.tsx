@@ -12,6 +12,7 @@ type ChatAgentModeSwitchProps = {
   agentLabel: string
   agentDisabled?: boolean
   agentDisabledTooltip?: string
+  showAgentAttention?: boolean
 }
 
 export function canSelectChatAgentMode(
@@ -28,6 +29,7 @@ export function ChatAgentModeSwitch({
   agentLabel,
   agentDisabled = false,
   agentDisabledTooltip,
+  showAgentAttention = false,
 }: ChatAgentModeSwitchProps) {
   return (
     <div
@@ -50,13 +52,20 @@ export function ChatAgentModeSwitch({
             disabled={isDisabled}
             onClick={() => onChange(mode.value)}
             className={cn(
-              'flex-1 cursor-pointer rounded-md px-3 py-0.5 text-xs font-medium text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'relative flex-1 cursor-pointer rounded-md px-3 py-0.5 text-xs font-medium text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               isActive &&
                 'bg-background text-foreground shadow-sm ring-1 ring-border/70 dark:bg-secondary',
               isDisabled && 'cursor-not-allowed opacity-50'
             )}
           >
             {mode.label}
+            {mode.value && showAgentAttention && (
+              <span
+                data-testid="agent-mode-attention-dot"
+                aria-hidden="true"
+                className="absolute right-2 top-1/2 size-1.5 -translate-y-1/2 rounded-full bg-blue-500"
+              />
+            )}
           </button>
         )
 

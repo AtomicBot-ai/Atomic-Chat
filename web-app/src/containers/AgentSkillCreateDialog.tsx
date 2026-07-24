@@ -21,6 +21,14 @@ type AgentSkillCreateDialogProps = {
   onCreate: (request: CreateAgentSkillRequest) => Promise<void>
 }
 
+function normalizeSkillName(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+/, '')
+    .slice(0, 64)
+}
+
 export function AgentSkillCreateDialog({
   open,
   onOpenChange,
@@ -42,10 +50,11 @@ export function AgentSkillCreateDialog({
   }, [open])
 
   const submit = async () => {
+    const normalizedName = normalizeSkillName(name).replace(/-+$/, '')
     setSubmitting(true)
     try {
       await onCreate({
-        name: name.trim(),
+        name: normalizedName,
         description: description.trim(),
         instructions: instructions.trim(),
       })
@@ -73,7 +82,9 @@ export function AgentSkillCreateDialog({
               value={name}
               placeholder={t('common:skillNamePlaceholder')}
               disabled={submitting}
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) =>
+                setName(normalizeSkillName(event.target.value))
+              }
             />
           </div>
           <div className="space-y-2">
@@ -114,7 +125,7 @@ export function AgentSkillCreateDialog({
           <Button
             disabled={
               submitting ||
-              !name.trim() ||
+              normalizeSkillName(name).replace(/-+$/, '').length < 2 ||
               !description.trim() ||
               !instructions.trim()
             }

@@ -88,12 +88,12 @@
       "prompt": "Find the latest news and summarize the most important recent developments with links to the sources."
     },
     "inspectFolder": {
-      "title": "Inspect this folder",
-      "prompt": "Inspect this workspace folder and explain what it contains, how it is organized, and which files are most important. Do not modify anything."
+      "title": "Organize my Desktop",
+      "prompt": "Sort through my Desktop files and folders. Do not delete, overwrite, replace, rename, or modify any files or folders."
     },
     "findLargeFiles": {
       "title": "Find large files",
-      "prompt": "Find the largest files in my workspace and suggest safe cleanup candidates. Do not delete anything."
+      "prompt": "Find the largest files in my Downloads folder and suggest safe cleanup candidates. Do not delete anything."
     }
   },
   "threadType": {

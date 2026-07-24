@@ -246,4 +246,15 @@ describe('SkillsPage', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.getByDisplayValue('custom-skill')).toBeDisabled()
   })
+
+  it('opens Edit from the instructions card', () => {
+    render(<SkillsPage />)
+
+    const editButtons = screen.getAllByRole('button', {
+      name: 'common:editSkill',
+    })
+    fireEvent.click(editButtons[editButtons.length - 1])
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
 })

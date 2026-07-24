@@ -1642,8 +1642,10 @@ function ThreadDetail() {
                         requestActive={requestActive}
                         reasoningContainerRef={reasoningContainerRef}
                         onRegenerate={handleRegenerate}
-                        onEdit={handleEditMessage}
-                        onDelete={handleDeleteMessage}
+                        onEdit={agentModeActive ? undefined : handleEditMessage}
+                        onDelete={
+                          agentModeActive ? undefined : handleDeleteMessage
+                        }
                         isAnimating={!pendingContinueMessage}
                         hideActions={!!pendingContinueMessage}
                         agentAttachmentReferences={agentAttachmentReferencesByMessageId.get(
@@ -1662,8 +1664,10 @@ function ThreadDetail() {
                         status={status}
                         reasoningContainerRef={reasoningContainerRef}
                         onRegenerate={handleRegenerate}
-                        onEdit={handleEditMessage}
-                        onDelete={handleDeleteMessage}
+                        onEdit={agentModeActive ? undefined : handleEditMessage}
+                        onDelete={
+                          agentModeActive ? undefined : handleDeleteMessage
+                        }
                         hideActions
                         isAnimating={false}
                       />
@@ -1681,8 +1685,10 @@ function ThreadDetail() {
                       status={status}
                       reasoningContainerRef={reasoningContainerRef}
                       onRegenerate={handleRegenerate}
-                      onEdit={handleEditMessage}
-                      onDelete={handleDeleteMessage}
+                      onEdit={agentModeActive ? undefined : handleEditMessage}
+                      onDelete={
+                        agentModeActive ? undefined : handleDeleteMessage
+                      }
                       hideActions
                       isAnimating={false}
                     />

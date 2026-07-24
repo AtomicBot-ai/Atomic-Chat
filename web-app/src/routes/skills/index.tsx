@@ -100,7 +100,7 @@ export function SkillsPage() {
   }
 
   return (
-    <div className="flex h-svh w-full flex-col">
+    <div className="grid h-svh w-full grid-cols-[minmax(260px,360px)_1fr] grid-rows-[auto_minmax(0,1fr)]">
       <HeaderPage>
         <div className="flex w-full max-w-[332px] items-center justify-between">
           <span className="font-studio text-base font-medium">
@@ -138,105 +138,113 @@ export function SkillsPage() {
         </div>
       </HeaderPage>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(260px,360px)_1fr]">
-        <div className="overflow-y-auto p-3">
-          {error && (
-            <div className="mb-3 rounded-md border border-destructive/40 p-3 text-sm text-destructive">
-              {error}
-            </div>
-          )}
-          {!loading && skills.length === 0 && (
-            <p className="p-3 text-sm text-muted-foreground">
-              {t('common:skillsEmpty')}
-            </p>
-          )}
-          <div className="space-y-2">
-            {skills.map((skill) => {
-              const canTry = canTrySkill(skill)
-              return (
-                <div
-                  key={skill.name}
-                  className={cn(
-                    'flex w-full items-center gap-2 rounded-lg border p-2 transition-colors hover:bg-accent',
-                    selected?.name === skill.name && 'bg-accent'
-                  )}
-                >
-                  <button
-                    type="button"
-                    className="min-w-0 flex-1 p-1 text-left"
-                    onClick={() => void select(skill.name)}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="min-w-0 flex-1 truncate font-medium">
-                        {skill.name}
-                      </span>
-                      {skill.error && (
-                        <IconAlertTriangle className="size-4 text-destructive" />
-                      )}
-                    </div>
-                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                      {skill.error || skill.description}
-                    </p>
-                  </button>
-                  <Switch
-                    checked={skill.enabled}
-                    disabled={Boolean(skill.error)}
-                    aria-label={t('common:enableSkill')}
-                    onCheckedChange={(enabled) =>
-                      void mutate(() => setEnabled(skill.name, enabled))
-                    }
-                  />
-                  <SkillActionsMenu
-                    skill={skill}
-                    canTry={canTry}
-                    onDownload={() => void download(skill.name)}
-                    onTry={() => tryInChat(skill.name)}
-                    onEdit={() => {
-                      void select(skill.name)
-                      setEditOpen(true)
-                    }}
-                    onUninstall={() => setDeleteName(skill.name)}
-                  />
-                </div>
-              )
-            })}
+      <div className="min-h-0 overflow-y-auto p-3">
+        {error && (
+          <div className="mb-3 rounded-md border border-destructive/40 p-3 text-sm text-destructive">
+            {error}
           </div>
-        </div>
-
-        <div className="min-w-0 overflow-y-auto p-3">
-          {!selected ? (
-            <p className="text-sm text-muted-foreground">
-              {t('common:selectSkill')}
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {selected.unavailableReasons.length > 0 && (
-                <section className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
-                  <h2 className="mb-2 font-medium">
-                    {t('common:skillUnavailable')}
-                  </h2>
-                  {selected.unavailableReasons.join('\n')}
-                </section>
-              )}
-              {selected.error && (
-                <section className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
-                  <h2 className="mb-2 font-medium">{t('common:skillError')}</h2>
-                  {selected.error}
-                </section>
-              )}
-              <section className="rounded-lg border bg-background p-4 text-sm">
-                <h2 className="mb-4 font-medium">
-                  {t('common:skillInstructions')}
-                </h2>
-                <RenderMarkdown
-                  content={selected.body}
-                  components={{}}
-                  isAnimating={false}
+        )}
+        {!loading && skills.length === 0 && (
+          <p className="p-3 text-sm text-muted-foreground">
+            {t('common:skillsEmpty')}
+          </p>
+        )}
+        <div className="space-y-2">
+          {skills.map((skill) => {
+            const canTry = canTrySkill(skill)
+            return (
+              <div
+                key={skill.name}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-lg border p-2 transition-colors hover:bg-accent',
+                  selected?.name === skill.name && 'bg-accent'
+                )}
+              >
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 p-1 text-left"
+                  onClick={() => void select(skill.name)}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate font-medium">
+                      {skill.name}
+                    </span>
+                    {skill.error && (
+                      <IconAlertTriangle className="size-4 text-destructive" />
+                    )}
+                  </div>
+                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                    {skill.error || skill.description}
+                  </p>
+                </button>
+                <Switch
+                  checked={skill.enabled}
+                  disabled={Boolean(skill.error)}
+                  aria-label={t('common:enableSkill')}
+                  onCheckedChange={(enabled) =>
+                    void mutate(() => setEnabled(skill.name, enabled))
+                  }
                 />
-              </section>
-            </div>
-          )}
+                <SkillActionsMenu
+                  skill={skill}
+                  canTry={canTry}
+                  onDownload={() => void download(skill.name)}
+                  onTry={() => tryInChat(skill.name)}
+                  onEdit={() => {
+                    void select(skill.name)
+                    setEditOpen(true)
+                  }}
+                  onUninstall={() => setDeleteName(skill.name)}
+                />
+              </div>
+            )
+          })}
         </div>
+      </div>
+
+      <div className="col-start-2 row-span-2 row-start-1 min-h-0 min-w-0 overflow-y-auto p-3">
+        {!selected ? (
+          <p className="text-sm text-muted-foreground">
+            {t('common:selectSkill')}
+          </p>
+        ) : (
+          <div className="flex min-h-full flex-col gap-2">
+            {selected.unavailableReasons.length > 0 && (
+              <section className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
+                <h2 className="mb-2 font-medium">
+                  {t('common:skillUnavailable')}
+                </h2>
+                {selected.unavailableReasons.join('\n')}
+              </section>
+            )}
+            {selected.error && (
+              <section className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+                <h2 className="mb-2 font-medium">{t('common:skillError')}</h2>
+                {selected.error}
+              </section>
+            )}
+            <section className="flex-1 rounded-lg border bg-background p-4 text-sm">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="font-medium">{t('common:skillInstructions')}</h2>
+                {!selected.reserved && (
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={t('common:editSkill')}
+                    onClick={() => setEditOpen(true)}
+                  >
+                    <IconEdit />
+                  </Button>
+                )}
+              </div>
+              <RenderMarkdown
+                content={selected.body}
+                components={{}}
+                isAnimating={false}
+              />
+            </section>
+          </div>
+        )}
       </div>
 
       <Dialog

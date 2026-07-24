@@ -9,13 +9,14 @@ import { useAgentMode, type SidebarMode } from '@/hooks/useAgentMode'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { ChatAgentModeSwitch } from '@/containers/ChatAgentModeSwitch'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
+import { localStorageKey } from '@/constants/localStorage'
 import { route } from '@/constants/routes'
 import { Link, useLocation, useNavigate } from '@tanstack/react-router'
 import {
   SettingsIcon,
   type SettingsIconHandle,
 } from '@/components/animated-icon/settings'
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 
 import {
   Sidebar,
@@ -39,9 +40,17 @@ export function LeftSidebar() {
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const isAgentProviderSelected = isLlamacppProvider(selectedProvider)
   const settingsIconRef = useRef<SettingsIconHandle>(null)
+  const [showAgentAttention, setShowAgentAttention] = useState(
+    () =>
+      localStorage.getItem(localStorageKey.agentModeAttentionSeen) !== 'true'
+  )
 
   const selectMode = (mode: SidebarMode) => {
     if (mode === 'agent' && !isAgentProviderSelected) return
+    if (mode === 'agent' && showAgentAttention) {
+      localStorage.setItem(localStorageKey.agentModeAttentionSeen, 'true')
+      setShowAgentAttention(false)
+    }
     setSidebarMode(mode)
     useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, mode === 'agent')
     navigate({ to: route.home })
@@ -175,6 +184,7 @@ export function LeftSidebar() {
               agentLabel={t('chat:agentMode.agent')}
               agentDisabled={!isAgentProviderSelected}
               agentDisabledTooltip={t('chat:agentMode.providerUnavailable')}
+              showAgentAttention={showAgentAttention}
             />
           </div>
         </SidebarHeader>
