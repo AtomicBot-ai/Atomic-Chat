@@ -205,14 +205,14 @@ const HIGHLIGHT_SURFACE =
  * itself, so it eases to the tail instead of snapping, handles the height jump
  * when a new line lands, and releases when the reader scrolls away.
  */
-const ToolInputBlock = memo(
+const ToolTextBlock = memo(
   ({
     name,
     value,
     language,
     streaming,
   }: {
-    name: string
+    name?: string
     value: string
     language: string
     streaming: boolean
@@ -282,9 +282,11 @@ const ToolInputBlock = memo(
 
     return (
       <div className="space-y-1">
-        <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
-          {name}
-        </h4>
+        {name && (
+          <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+            {name}
+          </h4>
+        )}
         {/* StickToBottom scrolls an inner element it renders with
             `height: 100%`, so this wrapper needs a *definite* height for the
             scroller to be bounded — a `max-height` leaves it indefinite, so
@@ -353,7 +355,7 @@ export const ToolInput = memo(
               </div>
             )}
             {blocks.map((block) => (
-              <ToolInputBlock
+              <ToolTextBlock
                 key={block.key}
                 name={block.key}
                 value={block.value}
@@ -431,9 +433,11 @@ export const ToolOutput = memo(
       // Handle string output
       if (typeof output === 'string') {
         return (
-          <div className="max-h-40 overflow-auto rounded-md border ">
-            <CodeBlock code={output} language="json" />
-          </div>
+          <ToolTextBlock
+            value={output}
+            language={guessBlockLanguage(null, output)}
+            streaming={false}
+          />
         )
       }
 
@@ -460,12 +464,12 @@ export const ToolOutput = memo(
               {textItems.length > 0 && (
                 <div className="space-y-2">
                   {textItems.map((item, index) => (
-                    <div
+                    <ToolTextBlock
                       key={index}
-                      className="rounded-md max-h-40 overflow-auto border "
-                    >
-                      <CodeBlock code={item.text || ''} language="markdown" />
-                    </div>
+                      value={item.text || ''}
+                      language={guessBlockLanguage(null, item.text)}
+                      streaming={false}
+                    />
                   ))}
                 </div>
               )}
@@ -535,6 +539,31 @@ export const ToolOutput = memo(
         }
 
         // Handle regular object
+        const { compact, blocks } = splitToolInput(output)
+        if (blocks.length > 0) {
+          return (
+            <div className="space-y-2">
+              {compact && (
+                <div className="rounded-md max-h-40 overflow-auto border">
+                  <CodeBlock
+                    code={JSON.stringify(compact, null, 2)}
+                    language="json"
+                  />
+                </div>
+              )}
+              {blocks.map((block) => (
+                <ToolTextBlock
+                  key={block.key}
+                  name={block.key}
+                  value={block.value}
+                  language={guessBlockLanguage(compact, block.value)}
+                  streaming={false}
+                />
+              ))}
+            </div>
+          )
+        }
+
         return (
           <div className="rounded-md max-h-40 overflow-auto border ">
             <CodeBlock code={JSON.stringify(output, null, 2)} language="json" />
@@ -556,7 +585,7 @@ export const ToolOutput = memo(
         </h4>
         <div className="rounded-md overflow-hidden">
           {errorText && (
-            <div className="m-2 p-2 bg-destructive/10 text-destructive rounded-md">
+            <div className="m-2 whitespace-pre-wrap p-2 bg-destructive/10 text-destructive rounded-md">
               {errorText}
             </div>
           )}

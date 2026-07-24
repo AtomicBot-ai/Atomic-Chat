@@ -155,7 +155,7 @@ export function AgentWorkspaceFiles({
           <button
             type="button"
             className={cn(
-              'flex h-8 w-full items-center gap-2 overflow-hidden rounded-md pr-2 text-left text-sm text-sidebar-foreground outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-foreground/8 hover:text-sidebar-accent-foreground focus-visible:ring-2',
+              'flex h-8 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md pr-2 text-left text-sm text-sidebar-foreground outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-foreground/8 hover:text-sidebar-accent-foreground focus-visible:ring-2',
               entry.kind === 'unknown' && 'text-sidebar-foreground/70'
             )}
             style={{ paddingLeft: `${8 + depth * 16}px` }}
@@ -201,7 +201,7 @@ export function AgentWorkspaceFiles({
           >
             <button
               type="button"
-              className="flex size-8 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/70 outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-foreground/8 hover:text-sidebar-foreground focus-visible:ring-2"
+              className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-foreground/70 outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-foreground/8 hover:text-sidebar-foreground focus-visible:ring-2"
               aria-label="Close files sidebar"
               title="Close files sidebar"
               onClick={onClose}
@@ -211,7 +211,7 @@ export function AgentWorkspaceFiles({
           </div>
           <button
             type="button"
-            className="flex h-8 w-full min-w-0 items-center gap-2 overflow-hidden rounded-md px-2 text-left text-sm font-medium text-sidebar-foreground outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-foreground/8 hover:text-sidebar-accent-foreground focus-visible:ring-2"
+            className="flex h-8 w-full min-w-0 cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2 text-left text-sm font-medium text-sidebar-foreground outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-foreground/8 hover:text-sidebar-accent-foreground focus-visible:ring-2"
             aria-label={`${rootExpanded ? 'Collapse' : 'Expand'} ${title}`}
             title={workingDir ?? title}
             onClick={() => toggleDirectory('')}

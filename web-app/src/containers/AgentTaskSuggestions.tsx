@@ -46,7 +46,7 @@ export function AgentTaskSuggestions({
               key={task.id}
               type="button"
               onClick={() => onSelect(t(task.promptKey))}
-              className="group flex min-w-0 items-center gap-3 rounded-lg px-1 py-1.5 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="group flex min-w-0 cursor-pointer items-center gap-3 rounded-lg px-1 py-1.5 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border/80 text-muted-foreground/80">
                 <TaskIcon

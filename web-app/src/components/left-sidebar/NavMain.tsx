@@ -8,6 +8,7 @@ import {
 import { BlocksIcon } from '@/components/animated-icon/blocks'
 import { FileTextIcon } from '@/components/animated-icon/file-text'
 import { FolderPlusIcon } from '@/components/animated-icon/folder-plus'
+import { ListTodoIcon } from '@/components/animated-icon/list-todo'
 import { MessageCircleIcon } from '@/components/animated-icon/message-circle'
 import { PlugIcon, type PlugIconHandle } from '@/components/animated-icon/plug'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
@@ -68,12 +69,22 @@ export function NavMain({ mode }: { mode: SidebarMode }) {
             onMouseEnter={() => newChatIconRef.current?.startAnimation()}
             onMouseLeave={() => newChatIconRef.current?.stopAnimation()}
           >
-            <MessageCircleIcon
-              ref={newChatIconRef}
-              className="text-foreground/70"
-              size={16}
-            />
-            <span>{t('common:newChat')}</span>
+            {mode === 'agent' ? (
+              <ListTodoIcon
+                ref={newChatIconRef}
+                className="text-foreground/70"
+                size={16}
+              />
+            ) : (
+              <MessageCircleIcon
+                ref={newChatIconRef}
+                className="text-foreground/70"
+                size={16}
+              />
+            )}
+            <span>
+              {mode === 'agent' ? t('common:newTask') : t('common:newChat')}
+            </span>
           </SidebarMenuButton>
         </SidebarMenuItem>
         <SidebarMenuItem>

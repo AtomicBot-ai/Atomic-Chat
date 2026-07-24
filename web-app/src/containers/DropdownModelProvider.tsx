@@ -9,7 +9,10 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
 import { highlightFzfMatch } from '@/utils/highlight'
 import Capabilities from './Capabilities'
-import { ModelSourceBadge, MissingModelBadge } from '@/components/ModelSourceBadge'
+import {
+  ModelSourceBadge,
+  MissingModelBadge,
+} from '@/components/ModelSourceBadge'
 import { IconSettings, IconX, IconDownload } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
@@ -160,8 +163,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
           const activeModelId = activeModelIds?.[0]
           if (activeModelId) {
             const activeProvider = providers.find(
-              (p) =>
-                p.active && p.models.some((m) => m.id === activeModelId)
+              (p) => p.active && p.models.some((m) => m.id === activeModelId)
             )
             if (activeProvider) {
               selectModelProvider(activeProvider.provider, activeModelId)
@@ -509,6 +511,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         >
           <button
             type="button"
+            title={selectedModel?.id ?? displayModel}
             className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20 max-w-50"
           >
             {provider && (

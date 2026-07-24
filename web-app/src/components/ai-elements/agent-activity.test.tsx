@@ -39,7 +39,7 @@ describe('AgentActivity', () => {
     )
 
     expect(screen.getByText('Working')).toBeInTheDocument()
-    expect(container.querySelector('svg.animate-spin')).not.toBeNull()
+    expect(container.querySelector('svg.animate-spin')).toBeNull()
     expect(screen.queryByText('Called 1 tool')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /working/i }))
@@ -60,7 +60,7 @@ describe('AgentActivity', () => {
       </AgentActivity>
     )
 
-    expect(container.querySelectorAll('svg')).toHaveLength(1)
+    expect(container.querySelectorAll('svg')).toHaveLength(0)
     expect(screen.getByRole('button', { name: /working/i })).toBeDisabled()
   })
 

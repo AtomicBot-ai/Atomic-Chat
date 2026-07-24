@@ -10,7 +10,7 @@
   "newConversation": "New Conversation",
   "clearHistory": "Clear History",
   "activity": {
-    "working": "Working",
+    "working": "Working...",
     "reading": "Reading: {{count}}%",
     "workedFor": "Worked for {{count}}s",
     "calledTool": "Called {{count}} tool",
@@ -30,7 +30,7 @@
     "manualSelected": "Manually",
     "manual": "Manually approve",
     "manualDescription": "Pause before sensitive actions.",
-    "skipSelected": "Skip All",
+    "skipSelected": "Skip",
     "skip": "Skip all approvals",
     "skipDescription": "Run without asking."
   },

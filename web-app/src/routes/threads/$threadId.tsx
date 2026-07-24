@@ -24,6 +24,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { renderInstructions } from '@/lib/instructionTemplate'
 import {
   Conversation,
+  ConversationAutoScroll,
   ConversationContent,
   ConversationScrollButton,
 } from '@/components/ai-elements/conversation'
@@ -707,16 +708,9 @@ function ThreadDetail() {
         metadata: uiMessage.metadata as Record<string, unknown>,
       }
       addMessage(assistantMessage)
-      const messages = [
-        ...chatMessagesRef.current.filter(
-          (message) => message.id !== uiMessage.id
-        ),
-        uiMessage,
-      ]
-      chatMessagesRef.current = messages
-      setChatMessages(messages)
+      useChatSessions.getState().upsertMessage(threadId, uiMessage)
     },
-    [addMessage, setChatMessages, threadId]
+    [addMessage, threadId]
   )
 
   const applyAgentEvent = useCallback(
@@ -729,16 +723,9 @@ function ThreadDetail() {
       }
       if (!run.runId) return
       const uiMessage = buildAgentUIMessage(run)
-      const messages = [
-        ...chatMessagesRef.current.filter(
-          (message) => message.id !== uiMessage.id
-        ),
-        uiMessage,
-      ]
-      chatMessagesRef.current = messages
-      setChatMessages(messages)
+      useChatSessions.getState().upsertMessage(threadId, uiMessage)
     },
-    [persistAgentRun, setChatMessages, threadId]
+    [persistAgentRun, threadId]
   )
 
   const processAndRunAgent = useCallback(
@@ -1552,6 +1539,14 @@ function ThreadDetail() {
   const inputStatus = requestActive ? CHAT_STATUS.SUBMITTED : status
   const lastChatMessage = chatMessages[chatMessages.length - 1]
   const hasActiveAssistantMessage = lastChatMessage?.role === 'assistant'
+  const latestUserMessageId = useMemo(() => {
+    for (let index = chatMessages.length - 1; index >= 0; index -= 1) {
+      if (chatMessages[index].role === 'user') {
+        return chatMessages[index].id
+      }
+    }
+    return undefined
+  }, [chatMessages])
   const agentAttachmentReferencesByMessageId = useMemo(() => {
     const referencesByMessageId = new Map<string, AgentFileReference[]>()
     const references: AgentFileReference[] = []
@@ -1740,6 +1735,9 @@ function ThreadDetail() {
                       )
                     })()}
                 </ConversationContent>
+                <ConversationAutoScroll
+                  trigger={requestActive ? latestUserMessageId : undefined}
+                />
                 <ConversationScrollButton />
               </Conversation>
             </div>

@@ -50,7 +50,7 @@ export function ChatAgentModeSwitch({
             disabled={isDisabled}
             onClick={() => onChange(mode.value)}
             className={cn(
-              'flex-1 rounded-md px-3 py-0.5 text-xs font-medium text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'flex-1 cursor-pointer rounded-md px-3 py-0.5 text-xs font-medium text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               isActive &&
                 'bg-background text-foreground shadow-sm ring-1 ring-border/70 dark:bg-secondary',
               isDisabled && 'cursor-not-allowed opacity-50'

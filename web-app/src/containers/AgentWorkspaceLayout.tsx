@@ -194,7 +194,7 @@ export function AgentWorkspaceLayout({
       {!filesVisible && (
         <button
           type="button"
-          className={`absolute top-[17px] z-30 flex size-8 items-center justify-center rounded-md text-muted-foreground outline-none ring-ring transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 ${
+          className={`absolute top-[17px] z-30 flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none ring-ring transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 ${
             IS_WINDOWS ? 'left-3' : 'right-3'
           }`}
           aria-label="Open files sidebar"

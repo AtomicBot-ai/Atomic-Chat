@@ -182,7 +182,7 @@ export function AgentWorkspacePreview({
               )}
               <button
                 type="button"
-                className="min-w-0 flex-1 truncate text-left font-medium"
+                className="min-w-0 flex-1 cursor-pointer truncate text-left font-medium"
                 onClick={() =>
                   useWorkspacePreviewStore.setState({ activeTabId: tab.id })
                 }
@@ -191,7 +191,7 @@ export function AgentWorkspacePreview({
               </button>
               <button
                 type="button"
-                className="flex size-5 shrink-0 items-center justify-center rounded opacity-60 hover:bg-accent hover:opacity-100"
+                className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded opacity-60 hover:bg-accent hover:opacity-100"
                 aria-label={`Close ${tab.name}`}
                 onClick={() => close(tab.id)}
               >

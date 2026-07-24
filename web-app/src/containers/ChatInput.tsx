@@ -219,12 +219,7 @@ const ChatInput = memo(function ChatInput({
     if (!isAgentProviderSelected && isAgentMode) {
       setAgentMode(agentModeKey, false)
     }
-  }, [
-    agentModeKey,
-    isAgentProviderSelected,
-    isAgentMode,
-    setAgentMode,
-  ])
+  }, [agentModeKey, isAgentProviderSelected, isAgentMode, setAgentMode])
 
   useEffect(() => {
     if (effectiveAgentMode) return
@@ -2778,7 +2773,6 @@ const ChatInput = memo(function ChatInput({
               <div className="flex items-center gap-2">
                 {isLlamacppProvider(selectedProvider) &&
                   tokenCounterCompact &&
-                  !effectiveAgentMode &&
                   !initialMessage &&
                   (threadMessages?.length > 0 || prompt.trim().length > 0) && (
                     <div className="flex-1 flex justify-center">
@@ -2852,7 +2846,6 @@ const ChatInput = memo(function ChatInput({
 
       {isLlamacppProvider(selectedProvider) &&
         isModelActive &&
-        !effectiveAgentMode &&
         !tokenCounterCompact &&
         !initialMessage &&
         (threadMessages?.length > 0 || prompt.trim().length > 0) && (

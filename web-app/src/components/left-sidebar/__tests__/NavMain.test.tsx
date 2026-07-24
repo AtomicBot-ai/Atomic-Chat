@@ -108,15 +108,15 @@ describe('NavMain', () => {
     expect(screen.getByText('common:skills')).toBeInTheDocument()
   })
 
-  it('labels the new conversation action as New Chat in both modes', () => {
+  it('labels the new conversation action for the active mode', () => {
     const { rerender } = render(<NavMain mode="chat" />)
 
     expect(screen.getByText('common:newChat')).toBeInTheDocument()
 
     rerender(<NavMain mode="agent" />)
 
-    expect(screen.getByText('common:newChat')).toBeInTheDocument()
-    expect(screen.queryByText('common:newAgentChat')).not.toBeInTheDocument()
+    expect(screen.getByText('common:newTask')).toBeInTheDocument()
+    expect(screen.queryByText('common:newChat')).not.toBeInTheDocument()
   })
 
   it('passes the active mode to search', () => {

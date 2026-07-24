@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { ChevronDownIcon, LoaderIcon } from 'lucide-react'
+import { ChevronDownIcon } from 'lucide-react'
 import {
   Collapsible,
   CollapsibleContent,
@@ -41,10 +41,7 @@ export function AgentActivity({
         )}
       >
         {active ? (
-          <>
-            <LoaderIcon className="size-3.5 animate-spin" />
-            <Shimmer duration={1}>{workingLabel}</Shimmer>
-          </>
+          <Shimmer duration={1}>{workingLabel}</Shimmer>
         ) : (
           <span>{durationLabel}</span>
         )}
