@@ -38,8 +38,8 @@ pub fn resource_class_for(tool_name: &str) -> ResourceClass {
         | "os.proc.list"
         | "os.web.search"
         | "os.web.fetch"
-        | "vision.describe"
         | "os.clipboard.read" => ResourceClass::PureRead,
+        "vision.describe" => ResourceClass::Vision,
         "os.clipboard.write" | "os.notify" => ResourceClass::MemoryWrite,
         "os.fs.write"
         | "os.fs.mkdir"
@@ -95,7 +95,14 @@ mod tests {
         assert!(is_batchable(ResourceClass::PureRead));
         assert!(is_parallel_within_group(ResourceClass::PureRead));
         assert!(!is_parallel_within_group(ResourceClass::FsWrite));
+        assert!(is_batchable(ResourceClass::Vision));
+        assert!(!is_parallel_within_group(ResourceClass::Vision));
         assert!(!is_batchable(ResourceClass::ApprovalGated));
         assert!(!is_batchable(ResourceClass::Terminal));
+    }
+
+    #[test]
+    fn classifies_vision_as_a_serial_group() {
+        assert_eq!(resource_class_for("vision.describe"), ResourceClass::Vision);
     }
 }

@@ -24,7 +24,7 @@
     "chat": "Chat",
     "agent": "Agent",
     "placeholder": "Describe a task for the agent...",
-    "mlxUnavailable": "Switch to a llama.cpp model to use Agent mode."
+    "providerUnavailable": "Agent mode is available only with a local llama.cpp model."
   },
   "agentApprovals": {
     "manualSelected": "Manually",
@@ -57,8 +57,8 @@
     "invalidAttachment": "One or more files could not be attached. Choose local files and try again.",
     "visionModelRequired": "Select a vision-capable model before sending images.",
     "localLlamacppRequired": "Agent mode requires an active local llama.cpp model.",
-    "mlxUnavailableTitle": "Agent mode is unavailable with MLX",
-    "mlxUnavailableDescription": "Switch to a llama.cpp model and try again.",
+    "providerUnavailableTitle": "Agent mode is unavailable for this provider",
+    "providerUnavailableDescription": "Switch to a local llama.cpp model and try again.",
     "unsupportedTools": "Agent mode does not support MCP, RAG, or browser tools yet.",
     "runFailed": "The agent run failed to start.",
     "cancelFailed": "The agent run could not be cancelled.",
@@ -66,9 +66,9 @@
   },
   "agentTasks": {
     "title": "Ideas for you",
-    "summarizeDocument": {
-      "title": "Summarize a document",
-      "prompt": "Summarize the attached document. Highlight its main points, key facts, and any action items."
+    "findLatestNews": {
+      "title": "Find the latest news",
+      "prompt": "Find the latest news and summarize the most important recent developments with links to the sources."
     },
     "inspectFolder": {
       "title": "Inspect this folder",

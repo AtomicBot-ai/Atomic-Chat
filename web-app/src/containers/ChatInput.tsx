@@ -185,7 +185,7 @@ const ChatInput = memo(function ChatInput({
   const updateProvider = useModelProvider((state) => state.updateProvider)
 
   const canSelectAgentMode = canSelectChatAgentMode(initialMessage, projectId)
-  const isMlxSelected = selectedProvider === 'mlx'
+  const isAgentProviderSelected = isLlamacppProvider(selectedProvider)
   const agentModeKey = canSelectAgentMode
     ? TEMPORARY_CHAT_ID
     : (currentThreadId ?? TEMPORARY_CHAT_ID)
@@ -193,7 +193,7 @@ const ChatInput = memo(function ChatInput({
     (state) => state.agentThreads[agentModeKey] === true
   )
   const effectiveAgentMode =
-    isAgentMode && !projectId && !(canSelectAgentMode && isMlxSelected)
+    isAgentMode && !projectId && isAgentProviderSelected
   const { skills: agentSkills, loading: agentSkillsLoading } =
     useAgentSkills(effectiveAgentMode)
   const [selectedAgentSkill, setSelectedAgentSkill] =
@@ -216,14 +216,13 @@ const ChatInput = memo(function ChatInput({
   const setWorkingDir = useAgentMode((state) => state.setWorkingDir)
 
   useEffect(() => {
-    if (canSelectAgentMode && isMlxSelected && isAgentMode) {
+    if (!isAgentProviderSelected && isAgentMode) {
       setAgentMode(agentModeKey, false)
     }
   }, [
     agentModeKey,
-    canSelectAgentMode,
+    isAgentProviderSelected,
     isAgentMode,
-    isMlxSelected,
     setAgentMode,
   ])
 

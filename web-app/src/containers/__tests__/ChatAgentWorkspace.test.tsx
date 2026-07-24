@@ -13,8 +13,8 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
     t: (key: string) => {
       const translations: Record<string, string> = {
         'chat:agentTasks.title': 'Ideas for you',
-        'chat:agentTasks.summarizeDocument.title': 'Summarize a document',
-        'chat:agentTasks.summarizeDocument.prompt': 'Summarize prompt',
+        'chat:agentTasks.findLatestNews.title': 'Find the latest news',
+        'chat:agentTasks.findLatestNews.prompt': 'Latest news prompt',
         'chat:agentTasks.inspectFolder.title': 'Inspect this folder',
         'chat:agentTasks.inspectFolder.prompt': 'Inspect prompt',
         'chat:agentTasks.findLargeFiles.title': 'Find large files',
@@ -96,10 +96,10 @@ describe('Chat and Agent workspace controls', () => {
 
     rerender(<AgentTaskSuggestions visible onSelect={onSelect} />)
     await user.click(
-      screen.getByRole('button', { name: /Summarize a document/ })
+      screen.getByRole('button', { name: /Find the latest news/ })
     )
 
-    expect(onSelect).toHaveBeenCalledWith('Summarize prompt')
+    expect(onSelect).toHaveBeenCalledWith('Latest news prompt')
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(screen.getAllByRole('button')).toHaveLength(3)
   })

@@ -8,8 +8,9 @@ use reqwest::Method;
 use serde_json::Value;
 
 use super::http::request_guarded;
+use super::web_exa::{self, ExaFailure, ExaFetchContent};
 use super::web_extract::{extract_web_content, ExtractMode};
-use super::web_search::{parse_duckduckgo_page, DuckDuckGoPage};
+use super::web_search::{parse_duckduckgo_page, DuckDuckGoPage, WebSearchResult};
 use super::{optional_usize, required_string, truncate, ToolContext, MAX_TOOL_OUTPUT_CHARS};
 use crate::core::agent::types::{ToolOutcome, ToolStatus};
 
@@ -32,6 +33,17 @@ pub async fn execute(
 async fn search(args: &Value, _context: &ToolContext<'_>) -> Result<ToolOutcome, ToolOutcome> {
     let query = required_string(args, "query").map_err(ToolOutcome::error)?;
     let max_results = optional_usize(args, "maxResults", 8, 20);
+    match web_exa::search(&query, max_results).await {
+        Ok(results) => Ok(search_outcome(&query, results, "exa", None, false)),
+        Err(error) => annotate_fallback(
+            search_duckduckgo(&query, max_results).await,
+            "duckduckgo",
+            error,
+        ),
+    }
+}
+
+async fn search_duckduckgo(query: &str, max_results: usize) -> Result<ToolOutcome, ToolOutcome> {
     let url = format!(
         "https://html.duckduckgo.com/html/?q={}",
         url::form_urlencoded::byte_serialize(query.as_bytes()).collect::<String>()
@@ -78,31 +90,13 @@ async fn search(args: &Value, _context: &ToolContext<'_>) -> Result<ToolOutcome,
                 "responseTruncated": response_truncated,
             })),
         }),
-        DuckDuckGoPage::Results(results) => {
-            let rendered = results
-                .iter()
-                .enumerate()
-                .map(|(index, result)| {
-                    let snippet = if result.snippet.is_empty() {
-                        String::new()
-                    } else {
-                        format!("\n{}", result.snippet)
-                    };
-                    format!("{}. {}\n{}{}", index + 1, result.title, result.url, snippet)
-                })
-                .collect::<Vec<_>>()
-                .join("\n\n");
-            Ok(ToolOutcome {
-                status: ToolStatus::Ok,
-                summary: truncate(rendered, MAX_TOOL_OUTPUT_CHARS),
-                details: Some(serde_json::json!({
-                    "provider": "duckduckgo",
-                    "query": query,
-                    "results": results,
-                    "responseTruncated": response_truncated,
-                })),
-            })
-        }
+        DuckDuckGoPage::Results(results) => Ok(search_outcome(
+            query,
+            results,
+            "duckduckgo",
+            None,
+            response_truncated,
+        )),
     }
 }
 
@@ -122,6 +116,21 @@ async fn fetch(args: &Value, _context: &ToolContext<'_>) -> Result<ToolOutcome, 
             )))
         }
     };
+    match web_exa::fetch(&url, max_chars).await {
+        Ok(content) => Ok(exa_fetch_outcome(&url, content, extract_mode)),
+        Err(error) => annotate_fallback(
+            fetch_direct(&url, max_chars, extract_mode).await,
+            "direct_http",
+            error,
+        ),
+    }
+}
+
+async fn fetch_direct(
+    url: &str,
+    max_chars: usize,
+    extract_mode: ExtractMode,
+) -> Result<ToolOutcome, ToolOutcome> {
     let mut headers = browser_headers();
     headers.insert(
         ACCEPT,
@@ -183,6 +192,96 @@ async fn fetch(args: &Value, _context: &ToolContext<'_>) -> Result<ToolOutcome, 
     })
 }
 
+fn search_outcome(
+    query: &str,
+    results: Vec<WebSearchResult>,
+    provider: &'static str,
+    fallback_reason: Option<&'static str>,
+    response_truncated: bool,
+) -> ToolOutcome {
+    let rendered = results
+        .iter()
+        .enumerate()
+        .map(|(index, result)| {
+            let snippet = if result.snippet.is_empty() {
+                String::new()
+            } else {
+                format!("\n{}", result.snippet)
+            };
+            format!("{}. {}\n{}{}", index + 1, result.title, result.url, snippet)
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    ToolOutcome {
+        status: ToolStatus::Ok,
+        summary: truncate(rendered, MAX_TOOL_OUTPUT_CHARS),
+        details: Some(serde_json::json!({
+            "provider": provider,
+            "query": query,
+            "results": results,
+            "fallbackReason": fallback_reason,
+            "responseTruncated": response_truncated,
+        })),
+    }
+}
+
+fn exa_fetch_outcome(
+    url: &str,
+    content: ExaFetchContent,
+    extract_mode: ExtractMode,
+) -> ToolOutcome {
+    let truncated = content.truncated;
+    ToolOutcome {
+        status: ToolStatus::Ok,
+        summary: content.text,
+        details: Some(serde_json::json!({
+            "provider": "exa",
+            "url": url,
+            "finalUrl": url,
+            "extractor": "exa",
+            "title": content.title,
+            "extractMode": match extract_mode {
+                ExtractMode::Markdown => "markdown",
+                ExtractMode::Text => "text",
+            },
+            "truncated": truncated,
+        })),
+    }
+}
+
+fn add_fallback_details(
+    outcome: &mut ToolOutcome,
+    provider: &'static str,
+    exa_failure: ExaFailure,
+) {
+    let details = outcome.details.get_or_insert_with(|| serde_json::json!({}));
+    if let Some(object) = details.as_object_mut() {
+        object.insert("provider".into(), Value::String(provider.into()));
+        object.insert(
+            "fallbackReason".into(),
+            Value::String(exa_failure.reason().into()),
+        );
+        object.insert("fallbackFrom".into(), Value::String("exa".into()));
+    }
+}
+
+fn annotate_fallback(
+    result: Result<ToolOutcome, ToolOutcome>,
+    provider: &'static str,
+    exa_failure: ExaFailure,
+) -> Result<ToolOutcome, ToolOutcome> {
+    match result {
+        Ok(mut outcome) => {
+            add_fallback_details(&mut outcome, provider, exa_failure);
+            Ok(outcome)
+        }
+        Err(mut outcome) => {
+            add_fallback_details(&mut outcome, provider, exa_failure);
+            Err(outcome)
+        }
+    }
+}
+
 fn browser_headers() -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert(USER_AGENT, HeaderValue::from_static(WEB_USER_AGENT));
@@ -221,4 +320,50 @@ async fn read_body_limited(
         bytes.extend_from_slice(&chunk);
     }
     Ok((String::from_utf8_lossy(&bytes).into_owned(), truncated))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn annotates_successful_fallback_without_exposing_exa_payloads() {
+        let result = annotate_fallback(
+            Ok(ToolOutcome {
+                status: ToolStatus::Ok,
+                summary: "fallback result".into(),
+                details: Some(serde_json::json!({"provider": "legacy"})),
+            }),
+            "duckduckgo",
+            ExaFailure::new("mcp_error"),
+        )
+        .unwrap();
+        assert_eq!(
+            result.details,
+            Some(serde_json::json!({
+                "provider": "duckduckgo",
+                "fallbackFrom": "exa",
+                "fallbackReason": "mcp_error",
+            }))
+        );
+    }
+
+    #[test]
+    fn preserves_fallback_errors_and_records_the_route() {
+        let result = annotate_fallback(
+            Err(ToolOutcome::error("direct fetch failed")),
+            "direct_http",
+            ExaFailure::new("transport_error"),
+        )
+        .unwrap_err();
+        assert_eq!(result.summary, "direct fetch failed");
+        assert_eq!(
+            result.details,
+            Some(serde_json::json!({
+                "provider": "direct_http",
+                "fallbackFrom": "exa",
+                "fallbackReason": "transport_error",
+            }))
+        );
+    }
 }

@@ -2,11 +2,14 @@
 //!
 //! (`loop` is a reserved keyword, so the loop lives here.)
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
-use futures_util::future::join_all;
 use tokio_util::sync::CancellationToken;
 
+use super::batch_executor::{execute_batch, PlannedCall};
 use super::grammar::tool_call_grammar;
 use super::llm_client::{
     parse_tool_calls, CompletionRequest, LlamaClientError, LlamaServerClient, ParsedToolCalls,
@@ -32,6 +35,10 @@ pub const MAX_STEPS: u32 = 25;
 pub const MAX_PARALLEL_TOOL_CALLS: usize = 8;
 const AGENT_SLOT_ID: i32 = 0;
 const REPAIR_MAX_TOKENS: u32 = 1024;
+#[cfg(not(test))]
+const TOOL_STEP_COMPLETION_DEADLINE: Duration = Duration::from_secs(180);
+#[cfg(test)]
+const TOOL_STEP_COMPLETION_DEADLINE: Duration = Duration::from_millis(100);
 
 pub struct RunTurnInput<'a> {
     pub run_id: &'a str,
@@ -82,6 +89,7 @@ pub async fn run_turn(
         }
     }
     input.session.push_user(input.user_message);
+    let tool_grammar = tool_call_grammar(input.skill_registry);
 
     for step_index in 0..max_steps {
         if input.cancellation.is_cancelled() {
@@ -124,44 +132,68 @@ pub async fn run_turn(
             notice.as_deref(),
         );
         notice = None;
-        let request = CompletionRequest::tool_call(prompt, tool_call_grammar(), AGENT_SLOT_ID);
-        let completion = match input.client.complete(&request, input.cancellation).await {
-            Ok(completion) => completion,
-            Err(LlamaClientError::Cancelled) => {
-                finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
-                return finish_cancelled(step_index, &mut emit);
+        let request = CompletionRequest::tool_call(prompt, tool_grammar.clone(), AGENT_SLOT_ID);
+        let completion = complete_with_deadline(input.client, &request, input.cancellation).await;
+        let mut previous_output = String::new();
+        let mut parsed = match completion {
+            Ok(completion) => {
+                previous_output.clone_from(&completion.content);
+                if !completion.reasoning_content.is_empty() {
+                    emit(AgentEvent::ReasoningDelta {
+                        step_index,
+                        text: completion.reasoning_content.clone(),
+                    })?;
+                }
+                match parse_tool_calls(&completion.content) {
+                    Ok(parsed) => parsed,
+                    Err(error) => {
+                        emit(AgentEvent::ParseRetry {
+                            step_index,
+                            reason: error.to_string(),
+                        })?;
+                        match repair_tool_calls(
+                            input.client,
+                            &request,
+                            &completion.content,
+                            &error.to_string(),
+                            input.cancellation,
+                        )
+                        .await
+                        {
+                            Ok(parsed) => parsed,
+                            Err(LlamaClientError::Cancelled) => {
+                                finish_session(input.session, &loaded_tools, &loaded_skills, None)
+                                    .await;
+                                return finish_cancelled(step_index, &mut emit);
+                            }
+                            Err(error) => {
+                                let message = error.to_string();
+                                emit(AgentEvent::StepError {
+                                    message: message.clone(),
+                                    category: repair_error_category(&error).into(),
+                                })?;
+                                emit(AgentEvent::TurnFinished {
+                                    reason: "failed".into(),
+                                    step_count: step_index + 1,
+                                })?;
+                                finish_session(input.session, &loaded_tools, &loaded_skills, None)
+                                    .await;
+                                return Err(message);
+                            }
+                        }
+                    }
+                }
             }
-            Err(error) => {
-                emit(AgentEvent::StepError {
-                    message: error.to_string(),
-                    category: "llm".into(),
-                })?;
-                emit(AgentEvent::TurnFinished {
-                    reason: "failed".into(),
-                    step_count: step_index,
-                })?;
-                finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
-                return Err(error.to_string());
-            }
-        };
-        if !completion.reasoning_content.is_empty() {
-            emit(AgentEvent::ReasoningDelta {
-                step_index,
-                text: completion.reasoning_content.clone(),
-            })?;
-        }
-        let mut parsed = match parse_tool_calls(&completion.content) {
-            Ok(parsed) => parsed,
-            Err(error) => {
+            Err(LlamaClientError::TimedOut) => {
                 emit(AgentEvent::ParseRetry {
                     step_index,
-                    reason: error.to_string(),
+                    reason: "Tool-step completion exceeded the 180-second deadline".into(),
                 })?;
                 match repair_tool_calls(
                     input.client,
                     &request,
-                    &completion.content,
-                    &error.to_string(),
+                    "",
+                    "Tool-step completion exceeded the 180-second deadline",
                     input.cancellation,
                 )
                 .await
@@ -185,6 +217,22 @@ pub async fn run_turn(
                         return Err(message);
                     }
                 }
+            }
+            Err(LlamaClientError::Cancelled) => {
+                finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
+                return finish_cancelled(step_index, &mut emit);
+            }
+            Err(error) => {
+                emit(AgentEvent::StepError {
+                    message: error.to_string(),
+                    category: "llm".into(),
+                })?;
+                emit(AgentEvent::TurnFinished {
+                    reason: "failed".into(),
+                    step_count: step_index,
+                })?;
+                finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
+                return Err(error.to_string());
             }
         };
         if let Some(reasoning) = parsed.reasoning.filter(|value| !value.is_empty()) {
@@ -214,7 +262,7 @@ pub async fn run_turn(
                 match repair_tool_calls(
                     input.client,
                     &request,
-                    &completion.content,
+                    &previous_output,
                     &error.to_string(),
                     input.cancellation,
                 )
@@ -334,27 +382,7 @@ pub async fn run_turn(
             .last()
             .is_some_and(|call| resource_class_for(&call.tool) == ResourceClass::Terminal);
         let parallel_len = batch_size - usize::from(has_terminal_tail);
-        let futures = parsed.calls[..parallel_len]
-            .iter()
-            .zip(planned[..parallel_len].iter())
-            .map(|(call, plan)| {
-                let tool_context = &tool_context;
-                async move {
-                    match plan {
-                        PlannedCall::Execute => tools::execute(call, tool_context).await,
-                        PlannedCall::Denied(outcome) => outcome.clone(),
-                    }
-                }
-            });
-        let mut outcomes = join_all(futures).await;
-        if has_terminal_tail {
-            let call = &parsed.calls[parallel_len];
-            let outcome = match &planned[parallel_len] {
-                PlannedCall::Execute => tools::execute(call, &tool_context).await,
-                PlannedCall::Denied(outcome) => outcome.clone(),
-            };
-            outcomes.push(outcome);
-        }
+        let outcomes = execute_batch(&parsed.calls, &planned, &tool_context).await;
         let mut terminal: Option<(&str, String)> = None;
         for (batch_index, (call, outcome)) in parsed.calls.iter().zip(outcomes.iter()).enumerate() {
             tracker.record_outcome(&call.tool, &call.args, outcome);
@@ -369,6 +397,20 @@ pub async fn run_turn(
             if outcome.status == ToolStatus::Ok && matches!(call.tool.as_str(), "reply" | "finish")
             {
                 terminal = Some((call.tool.as_str(), outcome.summary.clone()));
+            }
+        }
+        if batch_size > 1 {
+            let verdict = tracker.observe_batch_composite(&parsed.calls, &outcomes);
+            if verdict.level != LoopCheckLevel::Ok
+                && tracker.should_emit_warning(&verdict.warning_key, verdict.count)
+            {
+                let message = format_repeat_notice(&verdict);
+                emit(AgentEvent::LoopDetected {
+                    level: LoopLevel::Warn,
+                    detector: verdict.detector,
+                    message: message.clone(),
+                })?;
+                notice = Some(message);
             }
         }
         input
@@ -395,11 +437,6 @@ pub async fn run_turn(
     })?;
     finish_session(input.session, &loaded_tools, &loaded_skills, Some(&text)).await;
     Ok(())
-}
-
-enum PlannedCall {
-    Execute,
-    Denied(ToolOutcome),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -556,15 +593,34 @@ async fn repair_tool_calls(
     let mut request = original_request.clone();
     request.prompt = repair_prompt;
     request.max_tokens = REPAIR_MAX_TOKENS;
-    let completion = client.complete(&request, cancellation).await?;
+    let completion = complete_with_deadline(client, &request, cancellation).await?;
     parse_and_validate(&completion.content)
         .map_err(|error| LlamaClientError::InvalidResponse(format!("Repair failed: {error}")))
+}
+
+async fn complete_with_deadline(
+    client: &LlamaServerClient,
+    request: &CompletionRequest,
+    cancellation: &CancellationToken,
+) -> Result<super::llm_client::CompletionResult, LlamaClientError> {
+    tokio::select! {
+        biased;
+        _ = cancellation.cancelled() => Err(LlamaClientError::Cancelled),
+        result = tokio::time::timeout(
+            TOOL_STEP_COMPLETION_DEADLINE,
+            client.complete(request, cancellation),
+        ) => match result {
+            Ok(result) => result,
+            Err(_) => Err(LlamaClientError::TimedOut),
+        },
+    }
 }
 
 fn repair_error_category(error: &LlamaClientError) -> &'static str {
     match error {
         LlamaClientError::InvalidResponse(_) => "grammar",
         LlamaClientError::Cancelled => "cancelled",
+        LlamaClientError::TimedOut => "timeout",
         _ => "llm",
     }
 }

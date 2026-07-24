@@ -381,6 +381,58 @@ async fn malformed_completion_is_repaired_once() {
 }
 
 #[tokio::test]
+async fn timed_out_completion_is_repaired_once() {
+    let workspace = TestWorkspace::new();
+    let run = run_script(
+        &workspace,
+        vec![
+            ScriptedResponse::completion("late").delayed(Duration::from_millis(250)),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"repaired"}}]"#),
+        ],
+        &RecordingApproval::deny(),
+        &CancellationToken::new(),
+        2,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(finished_reason(&run.events), Some(("reply", 1)));
+    assert!(run.events.iter().any(|event| matches!(
+        event,
+        AgentEvent::ParseRetry { reason, .. }
+            if reason.contains("180-second deadline")
+    )));
+    assert_eq!(run.requests.len(), 2);
+    assert_eq!(run.requests[1]["n_predict"], 1024);
+    assert_eq!(run.requests[0]["grammar"], run.requests[1]["grammar"]);
+}
+
+#[tokio::test]
+async fn timed_out_completion_and_repair_finish_as_timeout_failure() {
+    let workspace = TestWorkspace::new();
+    let run = run_script(
+        &workspace,
+        vec![
+            ScriptedResponse::completion("late").delayed(Duration::from_millis(250)),
+            ScriptedResponse::completion("also late").delayed(Duration::from_millis(250)),
+        ],
+        &RecordingApproval::deny(),
+        &CancellationToken::new(),
+        2,
+    )
+    .await;
+
+    assert!(run.result.is_err());
+    assert!(run.events.iter().any(|event| matches!(
+        event,
+        AgentEvent::StepError { category, message }
+            if category == "timeout" && message.contains("180-second deadline")
+    )));
+    assert_eq!(finished_reason(&run.events), Some(("failed", 1)));
+    assert_eq!(run.requests.len(), 2);
+}
+
+#[tokio::test]
 async fn repeated_repair_failure_finishes_as_grammar_failure() {
     let workspace = TestWorkspace::new();
     let run = run_script(
@@ -584,6 +636,10 @@ async fn cancellation_interrupts_an_in_flight_completion() {
     assert!(result.is_ok());
     assert_eq!(finished_reason(&events), Some(("cancelled", 0)));
     assert!(executed(&events).is_empty());
+    assert!(!events
+        .iter()
+        .any(|event| matches!(event, AgentEvent::ParseRetry { .. })));
+    assert_eq!(server.requests().len(), 1);
 }
 
 #[tokio::test]
@@ -644,6 +700,94 @@ async fn repeated_no_progress_calls_trip_the_breaker() {
         }
     )));
     assert_eq!(finished_reason(&run.events), Some(("reply", 7)));
+}
+
+#[tokio::test]
+async fn repeated_identical_batches_emit_advisory_notice_and_still_reply() {
+    let workspace = TestWorkspace::new();
+    workspace.write("alpha.txt", "alpha");
+    workspace.write("beta.txt", "beta");
+    let batch = ScriptedResponse::completion(
+        r#"[
+            {"tool":"os.fs.read","args":{"path":"alpha.txt"}},
+            {"tool":"os.fs.read","args":{"path":"beta.txt"}}
+        ]"#,
+    );
+    let run = run_script(
+        &workspace,
+        vec![
+            batch.clone(),
+            batch.clone(),
+            batch.clone(),
+            batch,
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"done"}}]"#),
+        ],
+        &RecordingApproval::deny(),
+        &CancellationToken::new(),
+        6,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(finished_reason(&run.events), Some(("reply", 5)));
+    assert!(run.events.iter().any(|event| matches!(
+        event,
+        AgentEvent::LoopDetected {
+            level: LoopLevel::Warn,
+            message,
+            ..
+        } if message.contains("`<batch>`")
+    )));
+    let final_prompt = run.requests[4]["prompt"].as_str().expect("final prompt");
+    assert!(final_prompt.contains("### notice"));
+    assert!(final_prompt.contains("`<batch>`"));
+    assert_eq!(
+        executed(&run.events)
+            .iter()
+            .filter(|(tool, status)| *tool == "os.fs.read" && *status == ToolStatus::Ok)
+            .count(),
+        8
+    );
+}
+
+#[tokio::test]
+async fn permuted_batch_does_not_count_as_an_identical_composite() {
+    let workspace = TestWorkspace::new();
+    workspace.write("alpha.txt", "alpha");
+    workspace.write("beta.txt", "beta");
+    let original = ScriptedResponse::completion(
+        r#"[
+            {"tool":"os.fs.read","args":{"path":"alpha.txt"}},
+            {"tool":"os.fs.read","args":{"path":"beta.txt"}}
+        ]"#,
+    );
+    let permuted = ScriptedResponse::completion(
+        r#"[
+            {"tool":"os.fs.read","args":{"path":"beta.txt"}},
+            {"tool":"os.fs.read","args":{"path":"alpha.txt"}}
+        ]"#,
+    );
+    let run = run_script(
+        &workspace,
+        vec![
+            original.clone(),
+            original.clone(),
+            original,
+            permuted,
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"done"}}]"#),
+        ],
+        &RecordingApproval::deny(),
+        &CancellationToken::new(),
+        6,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(finished_reason(&run.events), Some(("reply", 5)));
+    assert!(!run.events.iter().any(|event| matches!(
+        event,
+        AgentEvent::LoopDetected { message, .. } if message.contains("`<batch>`")
+    )));
 }
 
 #[tokio::test]

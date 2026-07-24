@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute, useParams, useSearch } from '@tanstack/react-router'
-import { cn } from '@/lib/utils'
+import { cn, isLlamacppProvider } from '@/lib/utils'
 
 import HeaderPage from '@/containers/HeaderPage'
 import { useThreads } from '@/hooks/useThreads'
@@ -749,9 +749,9 @@ function ThreadDetail() {
       agentSkillName?: string,
       persistUserMessage = true
     ) => {
-      if (selectedProvider === 'mlx') {
-        toast.error(t('chat:agentErrors.mlxUnavailableTitle'), {
-          description: t('chat:agentErrors.mlxUnavailableDescription'),
+      if (!isLlamacppProvider(selectedProvider)) {
+        toast.error(t('chat:agentErrors.providerUnavailableTitle'), {
+          description: t('chat:agentErrors.providerUnavailableDescription'),
         })
         return
       }
@@ -799,9 +799,7 @@ function ThreadDetail() {
         })),
       ]
       const workingDir = useAgentMode.getState().getWorkingDir(threadId)
-      const providerSupportsAgent = ['llamacpp', 'llamacpp-upstream'].includes(
-        selectedProvider
-      )
+      const providerSupportsAgent = isLlamacppProvider(selectedProvider)
       const providerActiveModels = providerSupportsAgent
         ? await serviceHub
             .models()

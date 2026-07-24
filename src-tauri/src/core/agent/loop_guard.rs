@@ -359,8 +359,10 @@ impl ToolLoopTracker {
 }
 
 pub fn is_wandering_prone_tool(tool: &str) -> bool {
-    matches!(tool, "os.web.fetch" | "os.web.search" | "os.http.request")
-        || tool.starts_with("browser.")
+    matches!(
+        tool,
+        "skill.view" | "os.web.fetch" | "os.web.search" | "os.http.request"
+    ) || tool.starts_with("browser.")
 }
 
 pub fn is_loop_veto_result(outcome: &ToolOutcome) -> bool {
@@ -418,6 +420,14 @@ pub fn format_veto_instruction(verdict: &LoopCheckVerdict) -> String {
 }
 
 pub fn format_wandering_redirect(tool: &str, spread: usize) -> String {
+    if tool == "skill.view" {
+        return format!(
+            "You have called `skill.view` with {spread} different skill names this turn without \
+             converging. This is a wandering loop. STOP guessing skill names. Use only an enabled \
+             skill listed under `### skills`, continue with the tools already available, or end \
+             the turn with `reply` and your best-effort answer."
+        );
+    }
     format!(
         "You have called `{tool}` with {spread} different arguments this turn without converging. \
 This is a wandering loop. STOP probing more URLs/pages and change strategy. \
@@ -635,6 +645,26 @@ mod tests {
         assert!(tracker
             .is_wandering_escalated("os.web.fetch", &serde_json::json!({"url": "https://e/3"})));
         assert!(!tracker.is_wandering_escalated("os.fs.read", &serde_json::json!({"path": "new"})));
+    }
+
+    #[test]
+    fn detects_varying_skill_view_names_as_wandering() {
+        let mut options = ToolLoopTrackerOptions::default();
+        options.wandering_threshold = 3;
+        options.wandering_escalation = 4;
+        let mut tracker = ToolLoopTracker::new(options);
+        for name in ["pdf", "web-research"] {
+            let args = serde_json::json!({"name": name});
+            record(&mut tracker, "skill.view", &args, &outcome("not found"));
+        }
+        let third = serde_json::json!({"name": "documents"});
+        let verdict = tracker.check("skill.view", &third);
+        assert_eq!(verdict.detector, LoopDetector::Wandering);
+        assert!(format_wandering_redirect("skill.view", verdict.count)
+            .contains("STOP guessing skill names"));
+        record(&mut tracker, "skill.view", &third, &outcome("not found"));
+        assert!(tracker
+            .is_wandering_escalated("skill.view", &serde_json::json!({"name": "another-skill"})));
     }
 
     #[test]

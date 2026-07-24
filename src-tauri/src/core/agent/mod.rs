@@ -16,6 +16,7 @@
 pub mod approval;
 pub mod approval_allowlist;
 pub mod attachments;
+mod batch_executor;
 pub mod commands;
 pub mod compressor;
 pub mod grammar;

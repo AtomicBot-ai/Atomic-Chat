@@ -1,7 +1,7 @@
 import {
-  FileText,
   FolderSearch,
   HardDrive,
+  Newspaper,
   type LucideIcon,
 } from 'lucide-react'
 import { AGENT_TASK_SUGGESTIONS } from '@/constants/agent-task-suggestions'
@@ -11,7 +11,7 @@ const TASK_ICONS: Record<
   (typeof AGENT_TASK_SUGGESTIONS)[number]['id'],
   LucideIcon
 > = {
-  summarizeDocument: FileText,
+  findLatestNews: Newspaper,
   inspectFolder: FolderSearch,
   findLargeFiles: HardDrive,
 }

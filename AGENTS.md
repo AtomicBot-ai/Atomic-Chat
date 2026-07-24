@@ -309,6 +309,89 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-07-24 — Use hosted Exa as the Agent's primary web backend
+- **Context:** The Rust Agent's web tools depended on DuckDuckGo HTML search
+  and direct page downloads, which provide limited extraction quality and are
+  frequently rejected by public sites.
+- **Decision:** Call the keyless hosted Exa MCP endpoint first for
+  `os.web.search` and `os.web.fetch`, with bounded request time, response size,
+  result count, and extracted content. Preserve DuckDuckGo search and the
+  SSRF-guarded direct HTTP extractor as automatic fail-open fallbacks for
+  transport, HTTP, MCP, parsing, and empty-result failures. Record only a
+  stable failure category in tool details; add no API key, setting, or
+  dependency.
+- **Consequences:** Agent web operations normally receive Exa's structured
+  results and extracted page content without user configuration. Exa outages
+  do not remove the existing keyless local paths, and internal MCP payloads
+  are not exposed to the model. Availability still depends on the hosted Exa
+  endpoint and its unauthenticated service policy.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/tools/web_exa.rs`](src-tauri/src/core/agent/tools/web_exa.rs),
+  [`src-tauri/src/core/agent/tools/web.rs`](src-tauri/src/core/agent/tools/web.rs),
+  [`src-tauri/src/core/agent/prompt.rs`](src-tauri/src/core/agent/prompt.rs).
+
+### 2026-07-24 — Schedule Agent batches by resource class
+- **Context:** Valid multi-tool Agent steps executed every non-terminal call
+  concurrently, despite the existing resource taxonomy requiring serial access
+  for stateful same-class tools. The loop tracker also implemented whole-batch
+  observation but the runner never invoked it.
+- **Decision:** Group non-terminal calls by `ResourceClass`, run `PureRead`
+  calls concurrently within their group, serialize every other batchable class,
+  and run distinct groups concurrently while restoring outcomes to original
+  batch order. Classify vision as its own serial resource and retain the
+  terminal-tail barrier. Observe executed multi-call batches as advisory
+  composites: emit deduplicated warnings and next-step guidance without vetoing
+  calls or advancing the breaker.
+- **Consequences:** Independent reads retain fan-out, stateful tools no longer
+  overlap with same-class siblings, distinct resources still make concurrent
+  progress, and final `reply`/`finish` runs only after all preceding groups.
+  Repeated identical batches become visible to the model and activity stream;
+  permuted batches remain distinct and composite signals cannot end a turn.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/batch_executor.rs`](src-tauri/src/core/agent/batch_executor.rs),
+  [`src-tauri/src/core/agent/resource_class.rs`](src-tauri/src/core/agent/resource_class.rs),
+  [`src-tauri/src/core/agent/runner.rs`](src-tauri/src/core/agent/runner.rs),
+  [`src-tauri/src/core/agent/runner_tests.rs`](src-tauri/src/core/agent/runner_tests.rs).
+
+### 2026-07-24 — Constrain and bound Agent tool-call generation
+- **Context:** Agent completions could satisfy a permissive generic-argument
+  grammar with malformed payloads, hallucinate unavailable skill names, or
+  spend an unbounded interval generating a tool step. Repeated `skill.view`
+  guesses also evaded the URL-oriented wandering-loop detector.
+- **Decision:** Build one schema-specific GBNF grammar per turn from the static
+  tool catalog, enabled skills, and actual rare tools, and reuse it unchanged
+  for normal and repair completions. Apply a 180-second deadline to each
+  completion attempt; after an initial timeout, allow exactly one
+  grammar-constrained repair capped at 1,024 tokens. Keep user cancellation
+  distinct, and classify varying `skill.view` names as wandering with
+  skill-specific redirect guidance.
+- **Consequences:** Malformed argument shapes and unavailable skill/tool names
+  are rejected during generation, while stalled generations terminate within
+  a bounded two-attempt window. Runtime validators remain defense in depth.
+  The grammar now changes when enabled skills or the rare-tool catalog changes,
+  intentionally invalidating that turn's prompt cache prefix.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/grammar.rs`](src-tauri/src/core/agent/grammar.rs),
+  [`src-tauri/src/core/agent/runner.rs`](src-tauri/src/core/agent/runner.rs),
+  [`src-tauri/src/core/agent/llm_client.rs`](src-tauri/src/core/agent/llm_client.rs),
+  [`src-tauri/src/core/agent/loop_guard.rs`](src-tauri/src/core/agent/loop_guard.rs).
+
+### 2026-07-24 — Restrict Agent mode to local llama.cpp providers
+- **Context:** Agent mode could still be selected or retained while an MLX or
+  cloud-provider model was active, although the Rust Agent loop currently
+  supports only the two local llama.cpp providers.
+- **Decision:** Treat only `llamacpp` and `llamacpp-upstream` as Agent-capable.
+  Disable the sidebar Agent selector for every other provider, clear stale
+  Agent mode when the provider changes, and reject non-llama.cpp Agent runs
+  at the thread boundary.
+- **Consequences:** MLX and cloud models remain available for ordinary Chat
+  but cannot enter Agent mode. Existing Agent threads fail closed if their
+  selected provider is no longer one of the two local llama.cpp providers.
+- **Owner:** team.
+- **Links:** [`web-app/src/components/left-sidebar/index.tsx`](web-app/src/components/left-sidebar/index.tsx),
+  [`web-app/src/containers/ChatInput.tsx`](web-app/src/containers/ChatInput.tsx),
+  [`web-app/src/routes/threads/$threadId.tsx`](web-app/src/routes/threads/$threadId.tsx).
+
 ### 2026-07-23 — Isolate the Windows Common Controls test manifest by feature
 - **Context:** The Common Controls v6 manifest added for Windows libtest was
   emitted through package-wide `cargo:rustc-link-arg`. Tauri already embeds

@@ -3,7 +3,7 @@ import { NavChats } from './NavChats'
 import { NavMain } from './NavMain'
 import { NavProjects } from './NavProjects'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
-import { cn } from '@/lib/utils'
+import { cn, isLlamacppProvider } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAgentMode, type SidebarMode } from '@/hooks/useAgentMode'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -37,11 +37,11 @@ export function LeftSidebar() {
   const sidebarMode = useAgentMode((state) => state.sidebarMode)
   const setSidebarMode = useAgentMode((state) => state.setSidebarMode)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
-  const isMlxSelected = selectedProvider === 'mlx'
+  const isAgentProviderSelected = isLlamacppProvider(selectedProvider)
   const settingsIconRef = useRef<SettingsIconHandle>(null)
 
   const selectMode = (mode: SidebarMode) => {
-    if (mode === 'agent' && isMlxSelected) return
+    if (mode === 'agent' && !isAgentProviderSelected) return
     setSidebarMode(mode)
     useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, mode === 'agent')
     navigate({ to: route.home })
@@ -173,8 +173,8 @@ export function LeftSidebar() {
               onChange={(isAgent) => selectMode(isAgent ? 'agent' : 'chat')}
               chatLabel={t('chat:agentMode.chat')}
               agentLabel={t('chat:agentMode.agent')}
-              agentDisabled={isMlxSelected}
-              agentDisabledTooltip={t('chat:agentMode.mlxUnavailable')}
+              agentDisabled={!isAgentProviderSelected}
+              agentDisabledTooltip={t('chat:agentMode.providerUnavailable')}
             />
           </div>
         </SidebarHeader>

@@ -1,8 +1,8 @@
 export const AGENT_TASK_SUGGESTIONS = [
   {
-    id: 'summarizeDocument',
-    titleKey: 'chat:agentTasks.summarizeDocument.title',
-    promptKey: 'chat:agentTasks.summarizeDocument.prompt',
+    id: 'findLatestNews',
+    titleKey: 'chat:agentTasks.findLatestNews.title',
+    promptKey: 'chat:agentTasks.findLatestNews.prompt',
   },
   {
     id: 'inspectFolder',

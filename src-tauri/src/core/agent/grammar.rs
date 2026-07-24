@@ -1,11 +1,10 @@
-//! Static GBNF grammar for grammar-constrained tool calls.
+//! Schema-specific GBNF grammar for grammar-constrained tool calls.
 //!
 //! Ported from `grammars/tool-call.gbnf` in the TypeScript `atomic-agent`,
 //! trimmed to the fixed iteration-1 tool set (see [`crate::core::agent::prompt::ITERATION_ONE_TOOLS`]).
 //! No `browser` / `memory` / `tasks` / `mcp` branches — the
-//! grammar is built statically under a known catalog, so the dynamic
-//! rule-stitching / `removeBrowserToolRule` filtering from `build-grammar.ts`
-//! is unnecessary.
+//! core catalog is static, while enabled skill names are stitched into the
+//! grammar for each turn.
 //!
 //! Root is **array-only** (`root ::= tool-call-array`): every completion starts
 //! with `[` so the model cannot fall into the single-object form via
@@ -13,46 +12,211 @@
 //! emitting `[{...}]`. Up to 16 calls per completion (the runtime also clamps
 //! via `DEFAULT_MAX_PARALLEL_TOOL_CALLS`).
 
-/// The complete GBNF grammar string sent to `llama-server` as the `grammar`
-/// field of every `/completion` request that must produce a tool call.
-///
-/// The `tool-name` rule enumerates exactly the iteration-1 tools; the JSON
-/// structural rules (`object` / `array` / `string` / `number` / ...) are
-/// verbatim from the reference grammar.
-pub const TOOL_CALL_GBNF: &str = r##"root ::= tool-call-array
-tool-call ::= skill-view-call | skill-run-script-call | generic-tool-call
-skill-view-call ::= "{" ws "\"tool\"" ws ":" ws "\"skill.view\"" ws "," ws "\"args\"" ws ":" ws skill-view-args ws "}"
-skill-view-args ::= "{" ws "\"name\"" ws ":" ws string ws "}"
-skill-run-script-call ::= "{" ws "\"tool\"" ws ":" ws "\"skill.run_script\"" ws "," ws "\"args\"" ws ":" ws skill-run-script-args ws "}"
-skill-run-script-args ::= "{" ws "\"skill\"" ws ":" ws string ws "," ws "\"script\"" ws ":" ws string ( ws "," ws "\"args\"" ws ":" ws string-array )? ( ws "," ws "\"timeout_ms\"" ws ":" ws positive-integer )? ws "}"
-generic-tool-call ::= "{" ws "\"tool\"" ws ":" ws generic-tool-name ws "," ws "\"args\"" ws ":" ws object ws "}"
-tool-call-array ::= "[" ws tool-call ( ws "," ws tool-call ){0,15} ws "]"
-generic-tool-name ::= "\"tool.view\"" | os-tool | "\"vision.describe\"" | "\"reply\"" | "\"finish\""
-os-tool ::= "\"os." ( "shell.run" | "fs.archive.read_entry" | "fs.archive.extract" | "fs.archive.list" | "fs.read_document" | "fs.read" | "fs.write" | "fs.mkdir" | "fs.trash" | "fs.list" | "fs.grep" | "fs.glob" | "fs.edit" | "fs.hash" | "fs.diff" | "fs.patch" | "http.request" | "web.search" | "web.fetch" | "git.status" | "git.log" | "git.diff" | "git.show" | "git.blame" | "git.branch" | "proc.list" | "proc.kill" | "clipboard.read" | "clipboard.write" | "notify" ) "\""
+use std::fmt::Write;
 
-value ::= object | array | string | number | boolean | null-lit
+use super::{
+    prompt::{ToolTier, ITERATION_ONE_TOOLS},
+    skills::SkillRegistry,
+};
 
-object ::= "{" ws ( pair ( ws "," ws pair )* )? ws "}"
-pair ::= string ws ":" ws value
+struct ToolGrammar {
+    name: &'static str,
+    rule: &'static str,
+    args: &'static str,
+}
 
-array ::= "[" ws ( value ( ws "," ws value )* )? ws "]"
+const STATIC_TOOL_GRAMMARS: &[ToolGrammar] = &[
+    ToolGrammar {
+        name: "tool.view",
+        rule: "tool-view",
+        args: r#""{" ws "\"name\"" ws ":" ws rare-tool-name ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.shell.run",
+        rule: "shell-run",
+        args: r#""{" ws "\"cmd\"" ws ":" ws non-empty-string ( ws "," ws "\"args\"" ws ":" ws string-array )? ( ws "," ws "\"cwd\"" ws ":" ws non-empty-string )? ( ws "," ws "\"timeoutMs\"" ws ":" ws positive-integer )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.fs.archive.read_entry",
+        rule: "fs-archive-read-entry",
+        args: r#""{" ws "\"path\"" ws ":" ws non-empty-string ws "," ws "\"entry\"" ws ":" ws non-empty-string ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.fs.archive.extract",
+        rule: "fs-archive-extract",
+        args: r#""{" ws "\"path\"" ws ":" ws non-empty-string ws "," ws "\"destination\"" ws ":" ws non-empty-string ( ws "," ws "\"overwrite\"" ws ":" ws boolean )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.fs.archive.list",
+        rule: "fs-archive-list",
+        args: r#""{" ws "\"path\"" ws ":" ws non-empty-string ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.fs.read_document",
+        rule: "fs-read-document",
+        args: r#""{" ws "\"path\"" ws ":" ws non-empty-string ( ws "," ws "\"maxChars\"" ws ":" ws positive-integer )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.fs.read",
+        rule: "fs-read",
+        args: r#""{" ws "\"path\"" ws ":" ws non-empty-string ( ws "," ws "\"offset\"" ws ":" ws nonnegative-integer )? ( ws "," ws "\"limit\"" ws ":" ws positive-integer )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.fs.write",
+        rule: "fs-write",
+        args: r#""{" ws "\"path\"" ws ":" ws non-empty-string ws "," ws "\"content\"" ws ":" ws string ( ws "," ws "\"mode\"" ws ":" ws ( "\"replace\"" | "\"append\"" ) )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.fs.mkdir",
+        rule: "fs-mkdir",
+        args: r#""{" ws "\"path\"" ws ":" ws non-empty-string ( ws "," ws "\"recursive\"" ws ":" ws boolean )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.fs.trash",
+        rule: "fs-trash",
+        args: r#""{" ws "\"paths\"" ws ":" ws non-empty-string-array ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.fs.list",
+        rule: "fs-list",
+        args: r#""{" ws ( "\"path\"" ws ":" ws non-empty-string )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.fs.grep",
+        rule: "fs-grep",
+        args: r#""{" ws "\"pattern\"" ws ":" ws non-empty-string ( ws "," ws "\"path\"" ws ":" ws non-empty-string )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.fs.glob",
+        rule: "fs-glob",
+        args: r#""{" ws "\"pattern\"" ws ":" ws non-empty-string ( ws "," ws "\"cwd\"" ws ":" ws non-empty-string )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.fs.edit",
+        rule: "fs-edit",
+        args: r#""{" ws "\"path\"" ws ":" ws non-empty-string ws "," ws "\"oldString\"" ws ":" ws non-empty-string ws "," ws "\"newString\"" ws ":" ws string ( ws "," ws "\"replaceAll\"" ws ":" ws boolean )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.fs.hash",
+        rule: "fs-hash",
+        args: r#""{" ws "\"path\"" ws ":" ws non-empty-string ( ws "," ws "\"algorithm\"" ws ":" ws ( "\"md5\"" | "\"sha1\"" | "\"sha256\"" | "\"sha512\"" ) )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.fs.diff",
+        rule: "fs-diff",
+        args: r#""{" ws "\"pathA\"" ws ":" ws non-empty-string ws "," ws "\"pathB\"" ws ":" ws non-empty-string ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.fs.patch",
+        rule: "fs-patch",
+        args: r#""{" ws "\"patch\"" ws ":" ws non-empty-string ( ws "," ws "\"apply\"" ws ":" ws boolean )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.http.request",
+        rule: "http-request",
+        args: r#""{" ws "\"url\"" ws ":" ws non-empty-string ( ws "," ws "\"method\"" ws ":" ws non-empty-string )? ( ws "," ws "\"headers\"" ws ":" ws string-map )? ( ws "," ws "\"body\"" ws ":" ws string )? ( ws "," ws "\"timeoutMs\"" ws ":" ws positive-integer )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.web.search",
+        rule: "web-search",
+        args: r#""{" ws "\"query\"" ws ":" ws non-empty-string ( ws "," ws "\"maxResults\"" ws ":" ws positive-integer )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.web.fetch",
+        rule: "web-fetch",
+        args: r#""{" ws "\"url\"" ws ":" ws non-empty-string ( ws "," ws "\"extractMode\"" ws ":" ws ( "\"markdown\"" | "\"text\"" ) )? ( ws "," ws "\"maxChars\"" ws ":" ws positive-integer )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "vision.describe",
+        rule: "vision-describe",
+        args: r#""{" ws "\"paths\"" ws ":" ws non-empty-string-array ws "," ws "\"prompt\"" ws ":" ws non-empty-string ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.git.status",
+        rule: "git-status",
+        args: r#""{" ws ( "\"cwd\"" ws ":" ws non-empty-string )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.git.log",
+        rule: "git-log",
+        args: r#""{" ws ( "\"cwd\"" ws ":" ws non-empty-string ( ws "," ws "\"maxCount\"" ws ":" ws positive-integer )? ( ws "," ws "\"path\"" ws ":" ws non-empty-string )? | "\"maxCount\"" ws ":" ws positive-integer ( ws "," ws "\"path\"" ws ":" ws non-empty-string )? | "\"path\"" ws ":" ws non-empty-string )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.git.diff",
+        rule: "git-diff",
+        args: r#""{" ws ( "\"cwd\"" ws ":" ws non-empty-string ( ws "," ws "\"staged\"" ws ":" ws boolean )? ( ws "," ws "\"revision\"" ws ":" ws non-empty-string )? ( ws "," ws "\"path\"" ws ":" ws non-empty-string )? | "\"staged\"" ws ":" ws boolean ( ws "," ws "\"revision\"" ws ":" ws non-empty-string )? ( ws "," ws "\"path\"" ws ":" ws non-empty-string )? | "\"revision\"" ws ":" ws non-empty-string ( ws "," ws "\"path\"" ws ":" ws non-empty-string )? | "\"path\"" ws ":" ws non-empty-string )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.git.show",
+        rule: "git-show",
+        args: r#""{" ws ( "\"cwd\"" ws ":" ws non-empty-string ws "," ws )? "\"revision\"" ws ":" ws non-empty-string ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.git.blame",
+        rule: "git-blame",
+        args: r#""{" ws ( "\"cwd\"" ws ":" ws non-empty-string ws "," ws )? "\"path\"" ws ":" ws non-empty-string ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.git.branch",
+        rule: "git-branch",
+        args: r#""{" ws ( "\"cwd\"" ws ":" ws non-empty-string )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.proc.list",
+        rule: "proc-list",
+        args: r#""{" ws ( "\"filter\"" ws ":" ws non-empty-string ( ws "," ws "\"maxEntries\"" ws ":" ws positive-integer )? | "\"maxEntries\"" ws ":" ws positive-integer )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.proc.kill",
+        rule: "proc-kill",
+        args: r#""{" ws "\"pid\"" ws ":" ws positive-integer ( ws "," ws "\"signal\"" ws ":" ws ( "\"SIGTERM\"" | "\"SIGKILL\"" | "\"SIGINT\"" | "\"SIGHUP\"" ) )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.clipboard.read",
+        rule: "clipboard-read",
+        args: r#""{" ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.clipboard.write",
+        rule: "clipboard-write",
+        args: r#""{" ws "\"text\"" ws ":" ws string ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.notify",
+        rule: "notify",
+        args: r#""{" ws "\"title\"" ws ":" ws non-empty-string ( ws "," ws "\"body\"" ws ":" ws string )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "reply",
+        rule: "reply",
+        args: r#""{" ws "\"text\"" ws ":" ws non-empty-string ws "}""#,
+    },
+    ToolGrammar {
+        name: "finish",
+        rule: "finish",
+        args: r#""{" ws "\"summary\"" ws ":" ws non-empty-string ws "}""#,
+    },
+];
+
+const JSON_RULES: &str = r##"tool-call-array ::= "[" ws tool-call ( ws "," ws tool-call ){0,15} ws "]"
+call-prefix ::= "{" ws "\"tool\"" ws ":" ws
+args-prefix ::= ws "," ws "\"args\"" ws ":" ws
+call-suffix ::= ws "}"
+
+string-map ::= "{" ws ( string ws ":" ws string ( ws "," ws string ws ":" ws string )* )? ws "}"
 string-array ::= "[" ws ( string ( ws "," ws string )* )? ws "]"
+non-empty-string-array ::= "[" ws non-empty-string ( ws "," ws non-empty-string )* ws "]"
 
 string ::= "\"" chars "\""
+non-empty-string ::= "\"" char+ "\""
 chars ::= char*
 char ::= [^"\\\x00-\x1f] | "\\" escape
 escape ::= "\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t" | "u" hex hex hex hex
 hex ::= [0-9a-fA-F]
 
-number ::= integer fraction? exponent?
-integer ::= "-"? ( "0" | [1-9] [0-9]* )
+nonnegative-integer ::= "0" | [1-9] [0-9]*
 positive-integer ::= [1-9] [0-9]*
-fraction ::= "." [0-9]+
-exponent ::= ("e" | "E") ("+" | "-")? [0-9]+
-
 boolean ::= "true" | "false"
-null-lit ::= "null"
-
 ws ::= [ \t\n\r]*
 "##;
 
@@ -103,34 +267,123 @@ pub const GRAMMAR_TOOL_NAMES: &[&str] = &[
     "finish",
 ];
 
-/// Return the static tool-call grammar. A function (not just the const) so
-/// future iterations can build it dynamically without touching call sites.
-pub fn tool_call_grammar() -> &'static str {
-    TOOL_CALL_GBNF
+/// Build the tool-call grammar from the fixed tool catalog and the enabled,
+/// compatible skill registry visible to this turn.
+pub fn tool_call_grammar(skill_registry: &SkillRegistry) -> String {
+    let skill_names = skill_registry
+        .enabled()
+        .map(|record| record.manifest.name.as_str())
+        .collect::<Vec<_>>();
+    let mut call_rules = STATIC_TOOL_GRAMMARS
+        .iter()
+        .map(|grammar| format!("{}-call", grammar.rule))
+        .collect::<Vec<_>>();
+    if !skill_names.is_empty() {
+        call_rules.insert(1, "skill-view-call".into());
+        call_rules.insert(2, "skill-run-script-call".into());
+    }
+
+    let mut grammar = format!(
+        "root ::= tool-call-array\ntool-call ::= {}\n",
+        call_rules.join(" | ")
+    );
+    for tool in STATIC_TOOL_GRAMMARS {
+        writeln!(
+            grammar,
+            "{}-call ::= call-prefix {} args-prefix {}-args call-suffix",
+            tool.rule,
+            gbnf_json_literal(tool.name),
+            tool.rule
+        )
+        .expect("writing tool grammar to String cannot fail");
+        writeln!(grammar, "{}-args ::= {}", tool.rule, tool.args)
+            .expect("writing tool args grammar to String cannot fail");
+    }
+
+    if !skill_names.is_empty() {
+        grammar.push_str(
+            "skill-view-call ::= call-prefix \"\\\"skill.view\\\"\" args-prefix skill-view-args call-suffix\n\
+             skill-view-args ::= \"{\" ws \"\\\"name\\\"\" ws \":\" ws skill-name ws \"}\"\n\
+             skill-run-script-call ::= call-prefix \"\\\"skill.run_script\\\"\" args-prefix skill-run-script-args call-suffix\n\
+             skill-run-script-args ::= \"{\" ws \"\\\"skill\\\"\" ws \":\" ws skill-name ws \",\" ws \"\\\"script\\\"\" ws \":\" ws non-empty-string ( ws \",\" ws \"\\\"args\\\"\" ws \":\" ws string-array )? ( ws \",\" ws \"\\\"timeout_ms\\\"\" ws \":\" ws positive-integer )? ws \"}\"\n",
+        );
+        writeln!(
+            grammar,
+            "skill-name ::= {}",
+            skill_names
+                .iter()
+                .map(|name| gbnf_json_literal(name))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        )
+        .expect("writing skill grammar to String cannot fail");
+    }
+
+    let rare_tool_names = ITERATION_ONE_TOOLS
+        .iter()
+        .filter(|descriptor| descriptor.tier == ToolTier::Rare)
+        .map(|descriptor| gbnf_json_literal(descriptor.name))
+        .collect::<Vec<_>>();
+    writeln!(
+        grammar,
+        "rare-tool-name ::= {}",
+        rare_tool_names.join(" | ")
+    )
+    .expect("writing rare tool grammar to String cannot fail");
+    grammar.push_str(JSON_RULES);
+    grammar
+}
+
+fn gbnf_json_literal(value: &str) -> String {
+    let json = serde_json::to_string(value).expect("serializing a string cannot fail");
+    let terminal = json.replace('\\', "\\\\").replace('"', "\\\"");
+    format!("\"{terminal}\"")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::agent::prompt::ITERATION_ONE_TOOLS;
+    use std::{collections::BTreeSet, fs};
+
+    use tempfile::TempDir;
+
+    fn grammar_with_skills(names: &[&str]) -> String {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("skills");
+        fs::create_dir_all(&root).unwrap();
+        for name in names {
+            let skill = root.join(name);
+            fs::create_dir_all(&skill).unwrap();
+            fs::write(
+                skill.join("SKILL.md"),
+                format!("---\nname: {name}\ndescription: Test\n---\nBody"),
+            )
+            .unwrap();
+        }
+        let registry = SkillRegistry::load(&root, &BTreeSet::new(), &BTreeSet::new()).unwrap();
+        tool_call_grammar(&registry)
+    }
 
     #[test]
     fn root_is_array_only() {
         // The very first rule must bind `root` to the array form, never the
         // single-object form — this is the first-token-bias guard.
-        let first_line = TOOL_CALL_GBNF.lines().next().expect("non-empty grammar");
+        let grammar = grammar_with_skills(&[]);
+        let first_line = grammar.lines().next().expect("non-empty grammar");
         assert_eq!(first_line, "root ::= tool-call-array");
-        assert!(TOOL_CALL_GBNF.contains("tool-call-array ::= \"[\""));
+        assert!(grammar.contains("tool-call-array ::= \"[\""));
     }
 
     #[test]
     fn terminal_verbs_present() {
-        assert!(TOOL_CALL_GBNF.contains(r#""\"reply\"""#));
-        assert!(TOOL_CALL_GBNF.contains(r#""\"finish\"""#));
+        let grammar = grammar_with_skills(&[]);
+        assert!(grammar.contains(r#""\"reply\"""#));
+        assert!(grammar.contains(r#""\"finish\"""#));
     }
 
     #[test]
     fn excluded_categories_absent() {
+        let grammar = grammar_with_skills(&[]);
         // No deferred tool families leak into the iteration-1 grammar.
         for excluded in [
             "browser-tool",
@@ -145,7 +398,7 @@ mod tests {
             "mcp.",
         ] {
             assert!(
-                !TOOL_CALL_GBNF.contains(excluded),
+                !grammar.contains(excluded),
                 "grammar must not contain deferred category `{excluded}`"
             );
         }
@@ -174,44 +427,97 @@ mod tests {
 
     #[test]
     fn every_os_tool_name_appears_in_the_os_rule() {
-        // The `os-tool` alternation must literally contain each os.* suffix.
+        let grammar = grammar_with_skills(&["pdf"]);
         for name in GRAMMAR_TOOL_NAMES {
-            if let Some(suffix) = name.strip_prefix("os.") {
-                assert!(
-                    TOOL_CALL_GBNF.contains(&format!("\"{suffix}\"")),
-                    "os-tool rule is missing `{suffix}`"
-                );
-            }
+            assert!(
+                grammar.contains(&gbnf_json_literal(name)),
+                "grammar is missing `{name}`"
+            );
+        }
+    }
+
+    #[test]
+    fn emits_every_static_tool_with_its_exact_argument_rule() {
+        let grammar = grammar_with_skills(&[]);
+        for tool in STATIC_TOOL_GRAMMARS {
+            assert!(grammar.contains(&format!(
+                "{}-call ::= call-prefix {} args-prefix {}-args call-suffix",
+                tool.rule,
+                gbnf_json_literal(tool.name),
+                tool.rule
+            )));
+            assert!(
+                grammar.contains(&format!("{}-args ::= {}", tool.rule, tool.args)),
+                "grammar emitted the wrong args rule for `{}`",
+                tool.name
+            );
         }
     }
 
     #[test]
     fn more_specific_names_precede_their_prefixes() {
-        // In a GBNF alternation the parser tries branches left-to-right; a
-        // shorter prefix listed first would shadow the longer specific name.
-        let idx = |needle: &str| TOOL_CALL_GBNF.find(needle).unwrap_or(usize::MAX);
-        assert!(idx("\"fs.read_document\"") < idx("\"fs.read\""));
-        assert!(idx("\"fs.archive.list\"") < idx("\"fs.list\""));
-        assert!(idx("\"fs.archive.read_entry\"") < idx("\"fs.read\""));
+        let grammar = grammar_with_skills(&[]);
+        let idx = |needle: &str| grammar.find(needle).unwrap_or(usize::MAX);
+        assert!(idx(r#""\"os.fs.read_document\"""#) < idx(r#""\"os.fs.read\"""#));
+        assert!(idx(r#""\"os.fs.archive.list\"""#) < idx(r#""\"os.fs.list\"""#));
+        assert!(idx(r#""\"os.fs.archive.read_entry\"""#) < idx(r#""\"os.fs.read\"""#));
     }
 
     #[test]
     fn json_structural_rules_present() {
+        let grammar = grammar_with_skills(&[]);
         for rule in [
-            "value ::=",
-            "object ::=",
-            "pair ::=",
-            "array ::=",
+            "string-map ::=",
+            "string-array ::=",
+            "non-empty-string-array ::=",
             "string ::=",
-            "number ::=",
+            "non-empty-string ::=",
+            "nonnegative-integer ::=",
+            "positive-integer ::=",
             "boolean ::=",
-            "null-lit ::=",
             "ws ::=",
         ] {
             assert!(
-                TOOL_CALL_GBNF.contains(rule),
+                grammar.contains(rule),
                 "grammar missing structural rule `{rule}`"
             );
         }
+    }
+
+    #[test]
+    fn enumerates_only_enabled_skills_and_rare_tools() {
+        let grammar = grammar_with_skills(&["pdf", "web-research"]);
+        assert!(grammar.contains(r#"skill-name ::= "\"pdf\"" | "\"web-research\"""#));
+        assert!(grammar.contains(r#""\"os.fs.hash\"""#));
+        assert!(!grammar.contains(r#""\"os.fs.read\"" |"#));
+    }
+
+    #[test]
+    fn omits_skill_calls_when_no_skill_is_available() {
+        let grammar = grammar_with_skills(&[]);
+        let tool_call_rule = grammar.lines().nth(1).unwrap();
+        assert!(!tool_call_rule.contains("skill-view-call"));
+        assert!(!tool_call_rule.contains("skill-run-script-call"));
+        assert!(!grammar.contains("skill-name ::="));
+    }
+
+    #[test]
+    fn web_fetch_has_an_exact_non_empty_url_schema() {
+        let grammar = grammar_with_skills(&[]);
+        assert!(
+            grammar.contains(r#"web-fetch-args ::= "{" ws "\"url\"" ws ":" ws non-empty-string"#)
+        );
+        assert!(!grammar.contains(r#""\"cmd\"" ws ":" ws "\"os.web.fetch\"""#));
+        assert!(!grammar.contains(r#""\"\"" ws ":""#));
+        assert!(!grammar.contains("generic-tool-call"));
+        assert!(!grammar.contains("pair ::="));
+    }
+
+    #[test]
+    fn escapes_json_literals_for_gbnf_terminals() {
+        assert_eq!(
+            gbnf_json_literal("quoted\"name\\tail"),
+            r#""\"quoted\\\"name\\\\tail\"""#
+        );
     }
 }

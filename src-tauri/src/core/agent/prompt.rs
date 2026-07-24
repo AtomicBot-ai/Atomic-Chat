@@ -341,7 +341,7 @@ pub const ITERATION_ONE_TOOLS: &[ToolDescriptor] = &[
     },
     ToolDescriptor {
         name: "os.web.search",
-        summary: "Search the web via keyless DuckDuckGo. Returns structured titles, resolved destination URLs, and snippets; reports bot challenges explicitly. Read-only.",
+            summary: "Search the web through keyless hosted Exa, which returns structured titles, URLs, and extracted highlights. Automatically falls back to DuckDuckGo when Exa is unavailable. Read-only.",
         args_schema: r#"{ query: string, maxResults?: number }"#,
         tier: ToolTier::Frequent,
         examples: &[
@@ -350,7 +350,7 @@ pub const ITERATION_ONE_TOOLS: &[ToolDescriptor] = &[
     },
     ToolDescriptor {
         name: "os.web.fetch",
-        summary: "Read a web page as bounded markdown/text. Prefers server-provided Markdown, otherwise extracts article/main/body content and removes page chrome. GET only, no JS or auth; SSRF-guarded; read-only. For raw API/JSON or POST, use os.http.request.",
+            summary: "Read a web page as bounded markdown/text through keyless hosted Exa, including pages that reject simple HTTP clients. Automatically falls back to the existing SSRF-guarded direct GET/extractor. Read-only; for raw API/JSON or POST, use os.http.request.",
         args_schema: r#"{ url: string, extractMode?: "markdown" | "text", maxChars?: number }"#,
         tier: ToolTier::Frequent,
         examples: &[
