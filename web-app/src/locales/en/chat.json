@@ -49,7 +49,7 @@
   "agentWorkspace": {
     "choose": "Choose workspace",
     "change": "Change agent workspace",
-    "default": "Default workspace",
+    "default": "Default",
     "defaultDescription": "Uses the agent-workspace folder inside the Atomic Chat data folder."
   },
   "agentErrors": {
