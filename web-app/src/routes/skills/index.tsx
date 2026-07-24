@@ -102,37 +102,39 @@ export function SkillsPage() {
   return (
     <div className="flex h-svh w-full flex-col">
       <HeaderPage>
-        <div className="flex w-full items-center gap-2 pr-3">
+        <div className="flex w-full max-w-[332px] items-center justify-between">
           <span className="font-studio text-base font-medium">
             {t('common:skills')}
           </span>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            title={t('common:refresh')}
-            disabled={loading}
-            onClick={() => void load(true)}
-          >
-            <IconRefresh className={cn(loading && 'animate-spin')} />
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm">
-                {t('common:createNewSkill')}
-                <IconChevronDown />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-max">
-              <DropdownMenuItem onSelect={() => setCreateOpen(true)}>
-                <IconClipboardText />
-                {t('common:writeSkillInstructions')}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setUploadOpen(true)}>
-                <IconUpload />
-                {t('common:uploadASkill')}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="flex items-center gap-2">
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              title={t('common:refresh')}
+              disabled={loading}
+              onClick={() => void load(true)}
+            >
+              <IconRefresh className={cn(loading && 'animate-spin')} />
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm">
+                  {t('common:createNewSkill')}
+                  <IconChevronDown />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-max">
+                <DropdownMenuItem onSelect={() => setCreateOpen(true)}>
+                  <IconClipboardText />
+                  {t('common:writeSkillInstructions')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setUploadOpen(true)}>
+                  <IconUpload />
+                  {t('common:uploadASkill')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </HeaderPage>
 

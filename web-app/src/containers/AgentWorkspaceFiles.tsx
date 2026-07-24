@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import {
-  IconChevronDown,
-  IconChevronRight,
-  IconFile,
-  IconFolder,
-} from '@tabler/icons-react'
+import { IconFile, IconFolder, IconFolderOpen } from '@tabler/icons-react'
 import { PanelRight } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -47,7 +42,7 @@ export function AgentWorkspaceFiles({
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['']))
 
   const loadDirectory = useCallback(
-    async (path: string) => {
+    async (path: string): Promise<AgentWorkspaceEntry[] | undefined> => {
       setDirectories((state) => ({
         ...state,
         [path]: { ...state[path], loading: true, error: undefined },
@@ -61,36 +56,50 @@ export function AgentWorkspaceFiles({
           ...state,
           [path]: { entries, loading: false },
         }))
+        return entries
       } catch (error) {
         setDirectories((state) => ({
           ...state,
           [path]: { loading: false, error: String(error) },
         }))
+        return undefined
       }
     },
     [workingDir]
   )
 
   useEffect(() => {
+    let active = true
     setDirectories({})
-    setExpanded(new Set(['']))
-    void loadDirectory('')
+    setExpanded(new Set())
+    void loadDirectory('').then((entries) => {
+      if (!active || entries?.length === 0) return
+      setExpanded(new Set(['']))
+    })
+    return () => {
+      active = false
+    }
   }, [loadDirectory, refreshKey])
 
   const toggleDirectory = useCallback(
-    (path: string) => {
-      setExpanded((current) => {
-        const next = new Set(current)
-        if (next.has(path)) {
+    async (path: string) => {
+      if (expanded.has(path)) {
+        setExpanded((current) => {
+          const next = new Set(current)
           next.delete(path)
-        } else {
-          next.add(path)
-          void loadDirectory(path)
-        }
-        return next
-      })
+          return next
+        })
+        return
+      }
+
+      const cached = directories[path]
+      if (cached?.loading) return
+      const entries = cached?.entries ?? (await loadDirectory(path))
+      if (entries?.length === 0) return
+
+      setExpanded((current) => new Set(current).add(path))
     },
-    [loadDirectory]
+    [directories, expanded, loadDirectory]
   )
 
   const revealEntry = useCallback(
@@ -136,16 +145,7 @@ export function AgentWorkspaceFiles({
         </div>
       )
     }
-    if (state?.entries?.length === 0) {
-      return (
-        <div
-          className="py-2 pr-2 text-xs text-sidebar-foreground/70"
-          style={{ paddingLeft: `${54 + depth * 16}px` }}
-        >
-          Empty
-        </div>
-      )
-    }
+    if (state?.entries?.length === 0) return null
 
     return state?.entries?.map((entry) => {
       const isDirectory = entry.kind === 'directory'
@@ -161,7 +161,7 @@ export function AgentWorkspaceFiles({
             style={{ paddingLeft: `${8 + depth * 16}px` }}
             onClick={(event) => {
               if (event.detail > 1) return
-              if (isDirectory) toggleDirectory(entry.path)
+              if (isDirectory) void toggleDirectory(entry.path)
               else if (entry.kind === 'file') openFile(entry.path)
             }}
             onDoubleClick={() => void revealEntry(entry.path)}
@@ -169,15 +169,10 @@ export function AgentWorkspaceFiles({
           >
             {isDirectory ? (
               isExpanded ? (
-                <IconChevronDown className="size-3.5 shrink-0" />
+                <IconFolderOpen className="size-4 shrink-0 text-sidebar-foreground/70" />
               ) : (
-                <IconChevronRight className="size-3.5 shrink-0" />
+                <IconFolder className="size-4 shrink-0 text-sidebar-foreground/70" />
               )
-            ) : (
-              <span className="size-3.5 shrink-0" />
-            )}
-            {isDirectory ? (
-              <IconFolder className="size-4 shrink-0 text-sidebar-foreground/70" />
             ) : (
               <IconFile className="size-4 shrink-0 text-sidebar-foreground/70" />
             )}
@@ -214,14 +209,13 @@ export function AgentWorkspaceFiles({
             className="flex h-8 w-full min-w-0 cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2 text-left text-sm font-medium text-sidebar-foreground outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-foreground/8 hover:text-sidebar-accent-foreground focus-visible:ring-2"
             aria-label={`${rootExpanded ? 'Collapse' : 'Expand'} ${title}`}
             title={workingDir ?? title}
-            onClick={() => toggleDirectory('')}
+            onClick={() => void toggleDirectory('')}
           >
             {rootExpanded ? (
-              <IconChevronDown className="size-3.5 shrink-0" />
+              <IconFolderOpen className="size-4 shrink-0 text-sidebar-foreground/70" />
             ) : (
-              <IconChevronRight className="size-3.5 shrink-0" />
+              <IconFolder className="size-4 shrink-0 text-sidebar-foreground/70" />
             )}
-            <IconFolder className="size-4 shrink-0 text-sidebar-foreground/70" />
             <span className="truncate">{title}</span>
           </button>
           {rootExpanded &&
