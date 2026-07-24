@@ -15,6 +15,7 @@
 use std::fmt::Write;
 
 use super::{
+    model_profile::AgentModelProfile,
     prompt::{ToolTier, ITERATION_ONE_TOOLS},
     skills::SkillRegistry,
 };
@@ -270,6 +271,13 @@ pub const GRAMMAR_TOOL_NAMES: &[&str] = &[
 /// Build the tool-call grammar from the fixed tool catalog and the enabled,
 /// compatible skill registry visible to this turn.
 pub fn tool_call_grammar(skill_registry: &SkillRegistry) -> String {
+    tool_call_grammar_for_profile(skill_registry, AgentModelProfile::Plain)
+}
+
+pub fn tool_call_grammar_for_profile(
+    skill_registry: &SkillRegistry,
+    profile: AgentModelProfile,
+) -> String {
     let skill_names = skill_registry
         .enabled()
         .map(|record| record.manifest.name.as_str())
@@ -283,8 +291,13 @@ pub fn tool_call_grammar(skill_registry: &SkillRegistry) -> String {
         call_rules.insert(2, "skill-run-script-call".into());
     }
 
+    let root = if profile == AgentModelProfile::Gemma4Think {
+        "channel-prelude tool-call-array"
+    } else {
+        "tool-call-array"
+    };
     let mut grammar = format!(
-        "root ::= tool-call-array\ntool-call ::= {}\n",
+        "root ::= {root}\ntool-call ::= {}\n",
         call_rules.join(" | ")
     );
     for tool in STATIC_TOOL_GRAMMARS {
@@ -331,7 +344,55 @@ pub fn tool_call_grammar(skill_registry: &SkillRegistry) -> String {
     )
     .expect("writing rare tool grammar to String cannot fail");
     grammar.push_str(JSON_RULES);
+    if let (Some(open), Some(close)) = (profile.reasoning_open_tag(), profile.reasoning_close_tag())
+    {
+        write_reasoning_prelude(&mut grammar, "channel", open, close);
+    }
     grammar
+}
+
+fn write_reasoning_prelude(grammar: &mut String, stem: &str, open: &str, close: &str) {
+    let mut fragments = vec![format!(
+        "[^{}]+",
+        escape_char_class(close.as_bytes()[0] as char)
+    )];
+    for index in 0..close.len() - 1 {
+        let prefix = &close[..=index];
+        let next = close.as_bytes()[index + 1] as char;
+        fragments.push(format!(
+            "{} [^{}]",
+            gbnf_string_literal(prefix),
+            escape_char_class(next)
+        ));
+    }
+    writeln!(
+        grammar,
+        "{stem}-prelude ::= {} {stem}-body {} prelude-trail-ws",
+        gbnf_string_literal(open),
+        gbnf_string_literal(close)
+    )
+    .expect("writing reasoning grammar to String cannot fail");
+    writeln!(grammar, "{stem}-body ::= {stem}-fragment*")
+        .expect("writing reasoning grammar to String cannot fail");
+    writeln!(grammar, "{stem}-fragment ::= {}", fragments.join(" | "))
+        .expect("writing reasoning grammar to String cannot fail");
+    grammar.push_str("prelude-trail-ws ::= ( [ \\t\\n\\r] ){0,8}\n");
+}
+
+fn gbnf_string_literal(value: &str) -> String {
+    let terminal = value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r");
+    format!("\"{terminal}\"")
+}
+
+fn escape_char_class(value: char) -> String {
+    match value {
+        '\\' | ']' | '^' | '-' => format!("\\{value}"),
+        value => value.to_string(),
+    }
 }
 
 fn gbnf_json_literal(value: &str) -> String {
@@ -362,6 +423,21 @@ mod tests {
         }
         let registry = SkillRegistry::load(&root, &BTreeSet::new(), &BTreeSet::new()).unwrap();
         tool_call_grammar(&registry)
+    }
+
+    #[test]
+    fn gemma4_grammar_requires_model_emitted_channel_prelude() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("skills");
+        fs::create_dir_all(&root).unwrap();
+        let registry = SkillRegistry::load(&root, &BTreeSet::new(), &BTreeSet::new()).unwrap();
+        let grammar = tool_call_grammar_for_profile(&registry, AgentModelProfile::Gemma4Think);
+
+        assert!(grammar.starts_with("root ::= channel-prelude tool-call-array\n"));
+        assert!(grammar.contains(
+            "channel-prelude ::= \"<|channel>thought\\n\" channel-body \"<channel|>\" prelude-trail-ws"
+        ));
+        assert!(grammar.contains("prelude-trail-ws ::= ( [ \\t\\n\\r] ){0,8}"));
     }
 
     #[test]

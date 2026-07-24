@@ -10,15 +10,17 @@ use std::{
 use tokio_util::sync::CancellationToken;
 
 use super::batch_executor::{execute_batch, PlannedCall};
-use super::grammar::tool_call_grammar;
+use super::grammar::tool_call_grammar_for_profile;
 use super::llm_client::{
-    parse_tool_calls, CompletionRequest, LlamaClientError, LlamaServerClient, ParsedToolCalls,
+    parse_tool_calls_for_profile, CompletionRequest, LlamaClientError, LlamaServerClient,
+    ParsedToolCalls,
 };
 use super::loop_guard::{
     format_forced_loop_reply, format_repeat_notice, format_veto_instruction,
     format_wandering_redirect, LoopCheckLevel, ToolLoopTracker,
 };
-use super::prompt::build_prompt;
+use super::model_profile::AgentModelProfile;
+use super::prompt::build_prompt_for_profile;
 use super::resource_class::{is_batchable, resource_class_for, ResourceClass};
 use super::session::AgentSessionState;
 use super::skills::{loaded::LoadedSkills, SkillRegistry};
@@ -46,6 +48,7 @@ pub struct RunTurnInput<'a> {
     pub user_message: &'a str,
     pub selected_skill: Option<&'a str>,
     pub stable_prefix: &'a str,
+    pub model_profile: AgentModelProfile,
     pub working_dir: &'a Path,
     pub trusted_read_roots: &'a [PathBuf],
     pub max_steps: u32,
@@ -89,7 +92,7 @@ pub async fn run_turn(
         }
     }
     input.session.push_user(input.user_message);
-    let tool_grammar = tool_call_grammar(input.skill_registry);
+    let tool_grammar = tool_call_grammar_for_profile(input.skill_registry, input.model_profile);
 
     for step_index in 0..max_steps {
         if input.cancellation.is_cancelled() {
@@ -99,12 +102,13 @@ pub async fn run_turn(
         emit(AgentEvent::StepStarted { step_index })?;
         let loaded_tool_names = loaded_tools.snapshot().await;
         let loaded_skill_entries = loaded_skills.snapshot().await;
-        let fixed_prompt = build_prompt(
+        let fixed_prompt = build_prompt_for_profile(
             input.stable_prefix,
             &loaded_tool_names,
             &loaded_skill_entries,
             "",
             notice.as_deref(),
+            input.model_profile,
         );
         let context_window = match input.client.fetch_context_window(input.cancellation).await {
             Ok(value) => value,
@@ -124,12 +128,13 @@ pub async fn run_turn(
             COMPLETION_MAX_TOKENS,
         );
         let conversation = input.session.render_conversation(conversation_cap);
-        let prompt = build_prompt(
+        let prompt = build_prompt_for_profile(
             input.stable_prefix,
             &loaded_tool_names,
             &loaded_skill_entries,
             &conversation,
             notice.as_deref(),
+            input.model_profile,
         );
         notice = None;
         let request = CompletionRequest::tool_call(prompt, tool_grammar.clone(), AGENT_SLOT_ID);
@@ -144,7 +149,7 @@ pub async fn run_turn(
                         text: completion.reasoning_content.clone(),
                     })?;
                 }
-                match parse_tool_calls(&completion.content) {
+                match parse_tool_calls_for_profile(&completion.content, input.model_profile) {
                     Ok(parsed) => parsed,
                     Err(error) => {
                         emit(AgentEvent::ParseRetry {
@@ -157,6 +162,7 @@ pub async fn run_turn(
                             &completion.content,
                             &error.to_string(),
                             input.cancellation,
+                            input.model_profile,
                         )
                         .await
                         {
@@ -195,6 +201,7 @@ pub async fn run_turn(
                     "",
                     "Tool-step completion exceeded the 180-second deadline",
                     input.cancellation,
+                    input.model_profile,
                 )
                 .await
                 {
@@ -265,6 +272,7 @@ pub async fn run_turn(
                     &previous_output,
                     &error.to_string(),
                     input.cancellation,
+                    input.model_profile,
                 )
                 .await
                 {
@@ -569,8 +577,12 @@ fn format_batch_trim_notice(kept_tool: &str, dropped_tools: &[String]) -> String
     )
 }
 
-fn parse_and_validate(content: &str) -> Result<ParsedToolCalls, String> {
-    let parsed = parse_tool_calls(content).map_err(|error| error.to_string())?;
+fn parse_and_validate(
+    content: &str,
+    profile: AgentModelProfile,
+) -> Result<ParsedToolCalls, String> {
+    let parsed =
+        parse_tool_calls_for_profile(content, profile).map_err(|error| error.to_string())?;
     validate_batch(&parsed.calls).map_err(|error| error.to_string())?;
     Ok(parsed)
 }
@@ -581,20 +593,39 @@ async fn repair_tool_calls(
     invalid_output: &str,
     reason: &str,
     cancellation: &CancellationToken,
+    profile: AgentModelProfile,
 ) -> Result<ParsedToolCalls, LlamaClientError> {
     let invalid_output = invalid_output.chars().take(4_000).collect::<String>();
-    let repair_prompt = format!(
-        "{}\n\n### tool-call-repair\nThe previous tool-call output was invalid: {reason}\n\
+    let repair_instruction = format!(
+        "### tool-call-repair\nThe previous tool-call output was invalid: {reason}\n\
          Emit one corrected JSON array only. Approval-gated or dependent calls must be emitted \
          as a length-1 array. A terminal call may appear only once and only last.\n\
-         Previous output:\n{invalid_output}",
-        original_request.prompt
+         Previous output:\n{invalid_output}"
     );
+    let repair_prompt = if let Some(framing) = profile.turn_framing() {
+        let suffix = format!(
+            "{}\n{}",
+            framing.turn_close.trim_end(),
+            framing.assistant_open.trim_end()
+        );
+        let base = original_request
+            .prompt
+            .trim_end()
+            .strip_suffix(&suffix)
+            .unwrap_or(original_request.prompt.trim_end())
+            .trim_end();
+        format!(
+            "{base}\n\n{repair_instruction}\n\n{}{}",
+            framing.turn_close, framing.assistant_open
+        )
+    } else {
+        format!("{}\n\n{repair_instruction}", original_request.prompt)
+    };
     let mut request = original_request.clone();
     request.prompt = repair_prompt;
     request.max_tokens = REPAIR_MAX_TOKENS;
     let completion = complete_with_deadline(client, &request, cancellation).await?;
-    parse_and_validate(&completion.content)
+    parse_and_validate(&completion.content, profile)
         .map_err(|error| LlamaClientError::InvalidResponse(format!("Repair failed: {error}")))
 }
 

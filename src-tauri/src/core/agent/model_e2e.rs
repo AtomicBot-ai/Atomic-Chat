@@ -155,6 +155,7 @@ impl LiveHarness {
                     user_message,
                     selected_skill: None,
                     stable_prefix: &self.stable_prefix,
+                    model_profile: super::model_profile::AgentModelProfile::Plain,
                     working_dir: self.workspace.path(),
                     trusted_read_roots: &[],
                     max_steps,

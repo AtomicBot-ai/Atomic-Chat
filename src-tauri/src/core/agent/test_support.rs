@@ -195,6 +195,10 @@ pub(crate) struct ScriptedCompletionServer {
 
 impl ScriptedCompletionServer {
     pub(crate) async fn start(responses: Vec<ScriptedResponse>) -> Self {
+        Self::start_with_props(responses, serde_json::json!({})).await
+    }
+
+    pub(crate) async fn start_with_props(responses: Vec<ScriptedResponse>, props: Value) -> Self {
         let listener = TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
             .expect("bind scripted completion server");
         listener
@@ -209,9 +213,15 @@ impl ScriptedCompletionServer {
         let make_service = make_service_fn(move |_| {
             let responses = Arc::clone(&service_responses);
             let requests = Arc::clone(&service_requests);
+            let props = props.clone();
             async move {
                 Ok::<_, Infallible>(service_fn(move |request| {
-                    serve_completion(request, Arc::clone(&responses), Arc::clone(&requests))
+                    serve_completion(
+                        request,
+                        Arc::clone(&responses),
+                        Arc::clone(&requests),
+                        props.clone(),
+                    )
                 }))
             }
         });
@@ -262,7 +272,11 @@ async fn serve_completion(
     request: Request<Body>,
     responses: Arc<tokio::sync::Mutex<VecDeque<ScriptedResponse>>>,
     requests: Arc<Mutex<Vec<Value>>>,
+    props: Value,
 ) -> Result<Response<Body>, Infallible> {
+    if request.method() == Method::GET && request.uri().path() == "/props" {
+        return Ok(json_response(StatusCode::OK, props));
+    }
     if request.method() != Method::POST || request.uri().path() != "/completion" {
         return Ok(json_response(
             StatusCode::NOT_FOUND,

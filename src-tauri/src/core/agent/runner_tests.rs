@@ -38,6 +38,7 @@ async fn run_script(
             user_message: "perform the fixture task",
             selected_skill: None,
             stable_prefix: "TEST_STABLE_PREFIX",
+            model_profile: super::model_profile::AgentModelProfile::Plain,
             working_dir: workspace.path(),
             trusted_read_roots: &[],
             max_steps,
@@ -141,6 +142,60 @@ async fn immediate_reply_preserves_event_order_and_completion_contract() {
 }
 
 #[tokio::test]
+async fn gemma4_turn_uses_native_framing_and_parses_channel_reasoning() {
+    let workspace = TestWorkspace::new();
+    let server = ScriptedCompletionServer::start(vec![ScriptedResponse::completion(
+        "<|channel>thought\ninspect first<channel|>\
+         [{\"tool\":\"reply\",\"args\":{\"text\":\"done\"}}]",
+    )])
+    .await;
+    let client = server.client();
+    let desktop = RecordingDesktop::default();
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let mut events = Vec::new();
+    let mut session = AgentSessionState::new("gemma-session");
+    let skill_registry = workspace.skill_registry();
+
+    let result = run_turn(
+        RunTurnInput {
+            run_id: "gemma-run",
+            session_id: "gemma-session",
+            user_message: "perform the fixture task",
+            selected_skill: None,
+            stable_prefix: "<|turn>system\n<|think|>\n### system\nTEST_STABLE_PREFIX",
+            model_profile: super::model_profile::AgentModelProfile::Gemma4Think,
+            working_dir: workspace.path(),
+            trusted_read_roots: &[],
+            max_steps: 1,
+            client: &client,
+            approval: &approval,
+            desktop: &desktop,
+            cancellation: &cancellation,
+            session: &mut session,
+            skill_registry: &skill_registry,
+            bundled_script_runtime: None,
+        },
+        |event| collect_event(&mut events, event),
+    )
+    .await;
+
+    assert!(result.is_ok());
+    let request = &server.requests()[0];
+    assert!(request["prompt"]
+        .as_str()
+        .is_some_and(|prompt| prompt.ends_with("<turn|>\n<|turn>model\n")));
+    assert!(request["grammar"]
+        .as_str()
+        .is_some_and(|grammar| grammar.starts_with("root ::= channel-prelude tool-call-array\n")));
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AgentEvent::ReasoningDelta { text, .. } if text == "inspect first"
+    )));
+    assert_eq!(finished_reason(&events), Some(("reply", 1)));
+}
+
+#[tokio::test]
 async fn read_observation_is_visible_to_the_next_completion() {
     let workspace = TestWorkspace::new();
     workspace.write("fixture.txt", "SENTINEL_READ_73");
@@ -233,6 +288,7 @@ async fn sequential_runs_share_the_session_transcript() {
                 user_message,
                 selected_skill: None,
                 stable_prefix: "TEST_STABLE_PREFIX",
+                model_profile: super::model_profile::AgentModelProfile::Plain,
                 working_dir: workspace.path(),
                 trusted_read_roots: &[],
                 max_steps: 3,
@@ -614,6 +670,7 @@ async fn cancellation_interrupts_an_in_flight_completion() {
             user_message: "wait",
             selected_skill: None,
             stable_prefix: "TEST_STABLE_PREFIX",
+            model_profile: super::model_profile::AgentModelProfile::Plain,
             working_dir: workspace.path(),
             trusted_read_roots: &[],
             max_steps: 2,
@@ -867,6 +924,7 @@ async fn skill_view_loads_the_body_and_restores_it_on_the_next_turn() {
             user_message: "use the loaded skill",
             selected_skill: None,
             stable_prefix: "TEST_STABLE_PREFIX",
+            model_profile: super::model_profile::AgentModelProfile::Plain,
             working_dir: workspace.path(),
             trusted_read_roots: &[],
             max_steps: 2,
@@ -918,6 +976,7 @@ async fn selected_skill_is_loaded_into_the_first_prompt_without_skill_view() {
             user_message: "use the selected workflow",
             selected_skill: Some("pdf"),
             stable_prefix: "TEST_STABLE_PREFIX",
+            model_profile: super::model_profile::AgentModelProfile::Plain,
             working_dir: workspace.path(),
             trusted_read_roots: &[],
             max_steps: 2,
@@ -970,6 +1029,7 @@ async fn unknown_selected_skill_fails_before_completion() {
             user_message: "must not be persisted",
             selected_skill: Some("missing"),
             stable_prefix: "TEST_STABLE_PREFIX",
+            model_profile: super::model_profile::AgentModelProfile::Plain,
             working_dir: workspace.path(),
             trusted_read_roots: &[],
             max_steps: 2,

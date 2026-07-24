@@ -22,6 +22,7 @@ pub mod compressor;
 pub mod grammar;
 pub mod llm_client;
 pub mod loop_guard;
+pub mod model_profile;
 pub mod path_policy;
 pub mod prompt;
 pub mod resource_class;

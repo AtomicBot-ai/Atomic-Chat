@@ -16,12 +16,13 @@ use super::approval::ApprovalGate;
 use super::attachments::stage_attachments;
 use super::llm_client::{
     find_session_by_model_and_backend, find_session_by_model_id, ContextExpansionHook,
-    LlamaServerClient, LlamaSessionTarget,
+    LlamaClientError, LlamaServerClient, LlamaSessionTarget,
 };
+use super::model_profile::{detect_model_profile, AgentModelProfile};
 use super::path_policy::{expand_home, lexical_normalize};
 use super::prompt::{
-    build_stable_prefix, CapabilitiesSummary, SkillDescriptor, DEFAULT_MAX_PARALLEL_TOOL_CALLS,
-    ITERATION_ONE_TOOLS,
+    build_stable_prefix_for_profile, CapabilitiesSummary, SkillDescriptor,
+    DEFAULT_MAX_PARALLEL_TOOL_CALLS, ITERATION_ONE_TOOLS,
 };
 use super::runner::{run_turn, RunTurnInput, MAX_STEPS};
 use super::session::{load_session, save_session, validate_session_id};
@@ -399,12 +400,21 @@ pub async fn agent_run_turn<R: Runtime>(
             dangerous: record.manifest.dangerous,
         })
         .collect::<Vec<_>>();
-    let stable_prefix = build_stable_prefix(
+    let model_profile = match client.fetch_props(&cancellation).await {
+        Ok(props) => detect_model_profile(&props),
+        Err(LlamaClientError::Cancelled) => AgentModelProfile::Plain,
+        Err(error) => {
+            log::warn!("Agent model-profile probe failed; using plain profile: {error}");
+            AgentModelProfile::Plain
+        }
+    };
+    let stable_prefix = build_stable_prefix_for_profile(
         ITERATION_ONE_TOOLS,
         &skill_descriptors,
         &capabilities,
         DEFAULT_MAX_PARALLEL_TOOL_CALLS,
         None,
+        model_profile,
     );
     let approval_events = on_event.clone();
     let approval = ApprovalGate::new(
@@ -434,6 +444,7 @@ pub async fn agent_run_turn<R: Runtime>(
                         user_message: &user_message,
                         selected_skill: request.selected_skill.as_deref(),
                         stable_prefix: &stable_prefix,
+                        model_profile,
                         working_dir: &working_dir,
                         trusted_read_roots,
                         max_steps: request.max_steps.unwrap_or(MAX_STEPS),

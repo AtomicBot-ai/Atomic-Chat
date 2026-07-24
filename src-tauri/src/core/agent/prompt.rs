@@ -475,13 +475,42 @@ pub fn build_stable_prefix(
     max_parallel_tool_calls: usize,
     system_persona: Option<&str>,
 ) -> String {
+    build_stable_prefix_for_profile(
+        tool_descriptors,
+        skill_descriptors,
+        capabilities,
+        max_parallel_tool_calls,
+        system_persona,
+        crate::core::agent::model_profile::AgentModelProfile::Plain,
+    )
+}
+
+pub fn build_stable_prefix_for_profile(
+    tool_descriptors: &[ToolDescriptor],
+    skill_descriptors: &[SkillDescriptor],
+    capabilities: &CapabilitiesSummary,
+    max_parallel_tool_calls: usize,
+    system_persona: Option<&str>,
+    profile: crate::core::agent::model_profile::AgentModelProfile,
+) -> String {
     let persona = system_persona
         .map(str::to_string)
         .unwrap_or_else(default_system_persona);
 
     let mut sections: Vec<String> = Vec::new();
 
-    sections.push(format!("### system\n{persona}"));
+    let system_head = match profile.turn_framing() {
+        Some(framing) => format!(
+            "{}{}### system",
+            framing.system_open,
+            profile.reasoning_system_token().unwrap_or_default()
+        ),
+        None => match profile.reasoning_system_token() {
+            Some(token) => format!("### system\n{}", token.trim_end()),
+            None => "### system".to_string(),
+        },
+    };
+    sections.push(format!("{system_head}\n{persona}"));
 
     sections.push(
         [
@@ -555,6 +584,24 @@ pub fn build_prompt(
     conversation: &str,
     notice: Option<&str>,
 ) -> String {
+    build_prompt_for_profile(
+        stable_prefix,
+        loaded_tool_names,
+        loaded_skills,
+        conversation,
+        notice,
+        crate::core::agent::model_profile::AgentModelProfile::Plain,
+    )
+}
+
+pub fn build_prompt_for_profile(
+    stable_prefix: &str,
+    loaded_tool_names: &[String],
+    loaded_skills: &[crate::core::agent::skills::loaded::LoadedSkillState],
+    conversation: &str,
+    notice: Option<&str>,
+    profile: crate::core::agent::model_profile::AgentModelProfile,
+) -> String {
     let mut tail: Vec<String> = Vec::new();
 
     if let Some(loaded_tools) = render_loaded_tools(loaded_tool_names) {
@@ -583,6 +630,12 @@ pub fn build_prompt(
 
     tail.push("### respond".to_string());
     tail.push("Respond now.".to_string());
+    if let Some(framing) = profile.turn_framing() {
+        tail.push(String::new());
+        tail.push(framing.turn_close.trim_end().to_string());
+        tail.push(framing.assistant_open.trim_end().to_string());
+        tail.push(String::new());
+    }
 
     format!("{stable_prefix}\n{}", tail.join("\n"))
 }
@@ -712,6 +765,19 @@ mod tests {
         assert!(full.contains("### conversation\nUSER: hello"));
         assert!(full.trim_end().ends_with("### respond\nRespond now."));
         assert!(!full.contains("### notice"));
+    }
+
+    #[test]
+    fn gemma4_prompt_uses_native_turn_and_channel_framing() {
+        let caps = test_caps("linux");
+        let profile = crate::core::agent::model_profile::AgentModelProfile::Gemma4Think;
+        let prefix =
+            build_stable_prefix_for_profile(ITERATION_ONE_TOOLS, &[], &caps, 8, None, profile);
+        let full = build_prompt_for_profile(&prefix, &[], &[], "USER: hello", None, profile);
+
+        assert!(prefix.starts_with("<|turn>system\n<|think|>\n### system"));
+        assert!(full.ends_with("<turn|>\n<|turn>model\n"));
+        assert!(!full.ends_with("<|channel>thought\n"));
     }
 
     #[test]

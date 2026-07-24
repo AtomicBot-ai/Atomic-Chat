@@ -15,6 +15,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::core::server::context_expansion::is_context_limit_error;
 
+use super::model_profile::AgentModelProfile;
 use super::token_budget::COMPLETION_MAX_TOKENS;
 use super::types::ToolCallPayload;
 
@@ -224,6 +225,14 @@ impl LlamaServerClient {
         &self,
         cancellation: &CancellationToken,
     ) -> Result<Option<usize>, LlamaClientError> {
+        let props = self.fetch_props(cancellation).await?;
+        Ok(read_context_window(&props))
+    }
+
+    pub async fn fetch_props(
+        &self,
+        cancellation: &CancellationToken,
+    ) -> Result<Value, LlamaClientError> {
         let target = self.target();
         let mut request = self
             .client
@@ -248,9 +257,8 @@ impl LlamaServerClient {
                 detail: extract_error_detail(&String::from_utf8_lossy(&bytes)),
             });
         }
-        let props: Value = serde_json::from_slice(&bytes)
-            .map_err(|error| LlamaClientError::InvalidResponse(error.to_string()))?;
-        Ok(read_context_window(&props))
+        serde_json::from_slice(&bytes)
+            .map_err(|error| LlamaClientError::InvalidResponse(error.to_string()))
     }
 
     pub async fn describe_images(
@@ -636,7 +644,17 @@ fn read_context_window(props: &Value) -> Option<usize> {
 }
 
 pub fn parse_tool_calls(raw: &str) -> Result<ParsedToolCalls, LlamaClientError> {
-    let (reasoning, body) = extract_reasoning(raw);
+    parse_tool_calls_for_profile(raw, AgentModelProfile::Plain)
+}
+
+pub fn parse_tool_calls_for_profile(
+    raw: &str,
+    profile: AgentModelProfile,
+) -> Result<ParsedToolCalls, LlamaClientError> {
+    let (reasoning, body) = match (profile.reasoning_open_tag(), profile.reasoning_close_tag()) {
+        (Some(open), Some(close)) => extract_tagged_reasoning(raw, open, close),
+        _ => extract_reasoning(raw),
+    };
     let json_text = extract_json_root(&body)?;
     let parsed: Value = serde_json::from_str(json_text)
         .map_err(|error| LlamaClientError::ToolCallParse(error.to_string()))?;
@@ -657,6 +675,20 @@ pub fn parse_tool_calls(raw: &str) -> Result<ParsedToolCalls, LlamaClientError> 
         calls,
         reasoning: (!reasoning.is_empty()).then_some(reasoning),
     })
+}
+
+fn extract_tagged_reasoning(raw: &str, open_tag: &str, close_tag: &str) -> (String, String) {
+    let trimmed = raw.trim_start();
+    let Some(after_open) = trimmed.strip_prefix(open_tag) else {
+        return (String::new(), raw.trim().to_owned());
+    };
+    let Some(close) = after_open.find(close_tag) else {
+        return (after_open.trim().to_owned(), String::new());
+    };
+    (
+        after_open[..close].trim().to_owned(),
+        after_open[close + close_tag.len()..].trim().to_owned(),
+    )
 }
 
 fn normalize_tool_call(value: &Value, index: usize) -> Result<ToolCallPayload, LlamaClientError> {
@@ -979,6 +1011,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn fetches_model_profile_props_without_consuming_completion_script() {
+        let props = serde_json::json!({
+            "model_alias": "gemma-4-12b-it",
+            "chat_template": "<|turn>system\n<|channel>thought\n<channel|><turn|>"
+        });
+        let server = ScriptedCompletionServer::start_with_props(
+            vec![ScriptedResponse::completion("ok")],
+            props.clone(),
+        )
+        .await;
+
+        assert_eq!(
+            server
+                .client()
+                .fetch_props(&CancellationToken::new())
+                .await
+                .expect("fetch props"),
+            props
+        );
+        assert!(server.requests().is_empty());
+    }
+
+    #[tokio::test]
     async fn retries_once_after_context_expansion_and_retargets_same_backend() {
         let first = ScriptedCompletionServer::start(vec![ScriptedResponse::http_error(
             StatusCode::BAD_REQUEST,
@@ -1130,6 +1185,20 @@ mod tests {
         assert_eq!(parsed.calls[0].args["nested"][1]["x"], "}");
         assert_eq!(parsed.calls[1].tool, "os.git.status");
         assert_eq!(parsed.calls[1].args["path"], ".");
+    }
+
+    #[test]
+    fn parses_gemma4_model_emitted_channel_reasoning() {
+        let parsed = parse_tool_calls_for_profile(
+            "<|channel>thought\ninspect the workspace<channel|>\
+             [{\"tool\":\"reply\",\"args\":{\"text\":\"done\"}}]",
+            AgentModelProfile::Gemma4Think,
+        )
+        .expect("Gemma channel output should parse");
+
+        assert_eq!(parsed.reasoning.as_deref(), Some("inspect the workspace"));
+        assert_eq!(parsed.calls[0].tool, "reply");
+        assert_eq!(parsed.calls[0].args["text"], "done");
     }
 
     #[test]
