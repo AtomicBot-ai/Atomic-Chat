@@ -120,6 +120,9 @@ pub struct AgentTurnRequest {
     /// Optional working directory for OS tools (defaults to the app cwd).
     #[serde(default)]
     pub working_dir: Option<String>,
+    /// Additional thread-scoped roots with explicit read/write permissions.
+    #[serde(default)]
+    pub external_roots: Vec<AgentExternalRoot>,
     /// Optional cap on inference steps (defaults to `MAX_STEPS`).
     #[serde(default)]
     pub max_steps: Option<u32>,
@@ -127,6 +130,17 @@ pub struct AgentTurnRequest {
     /// actions wait for an explicit approval decision.
     #[serde(default)]
     pub auto_approve: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentExternalRoot {
+    pub path: String,
+    #[serde(default = "default_can_edit")]
+    pub can_edit: bool,
+}
+
+fn default_can_edit() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -164,6 +178,22 @@ impl ApprovalDecision {
 pub struct AgentApprovalDecision {
     pub approval_id: String,
     pub decision: ApprovalDecision,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AgentFolderAccessDecision {
+    pub access_id: String,
+    pub run_id: String,
+    pub allow: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct FolderAccessRequest {
+    pub tool: String,
+    pub path: String,
+    pub display_name: String,
+    pub root_id: String,
+    pub reason: String,
 }
 
 /// Loop-guard severity surfaced to observers.
@@ -219,6 +249,15 @@ pub enum AgentEvent {
         preview: serde_json::Value,
         affected_resources: Vec<ApprovalResource>,
         can_remember: bool,
+    },
+    FolderAccessRequested {
+        run_id: String,
+        access_id: String,
+        tool: String,
+        path: String,
+        display_name: String,
+        root_id: String,
+        reason: String,
     },
     LoopDetected {
         level: LoopLevel,

@@ -19,6 +19,7 @@ pub mod attachments;
 mod batch_executor;
 pub mod commands;
 pub mod compressor;
+pub mod folder_access;
 pub mod grammar;
 pub mod llm_client;
 pub mod loop_guard;
@@ -44,6 +45,7 @@ mod runner_tests;
 pub(crate) mod test_support;
 
 pub use types::{
-    AgentApprovalDecision, AgentEvent, AgentTurnRequest, ApprovalDecision, ApprovalRequest,
-    ApprovalResource, ToolCallPayload, ToolExecution, ToolOutcome, ToolStatus,
+    AgentApprovalDecision, AgentEvent, AgentExternalRoot, AgentFolderAccessDecision,
+    AgentTurnRequest, ApprovalDecision, ApprovalRequest, ApprovalResource, ToolCallPayload,
+    ToolExecution, ToolOutcome, ToolStatus,
 };

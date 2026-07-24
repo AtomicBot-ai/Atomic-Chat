@@ -23,19 +23,15 @@ import { cn } from '@/lib/utils'
 import { HtmlArtifact } from './HtmlArtifact'
 
 type AgentWorkspacePreviewProps = {
-  workingDir?: string
   isGenerating?: boolean
 }
 
-function FilePreview({
-  tab,
-  workingDir,
-}: {
-  tab: WorkspaceFilePreviewTab
-  workingDir?: string
-}) {
-  const kind = useMemo(() => classifyWorkspacePreview(tab.path), [tab.path])
-  const isHtml = tab.path.toLowerCase().endsWith('.html')
+function FilePreview({ tab }: { tab: WorkspaceFilePreviewTab }) {
+  const kind = useMemo(
+    () => classifyWorkspacePreview(tab.relativePath),
+    [tab.relativePath]
+  )
+  const isHtml = tab.relativePath.toLowerCase().endsWith('.html')
   const [assetUrl, setAssetUrl] = useState<string>()
   const [text, setText] = useState<string>()
   const [truncated, setTruncated] = useState(false)
@@ -51,8 +47,9 @@ function FilePreview({
     const load = async () => {
       try {
         const file = await statAgentWorkspaceFile({
-          workingDir,
-          path: tab.path,
+          rootId: tab.rootId,
+          rootPath: tab.rootPath,
+          relativePath: tab.relativePath,
         })
         if (cancelled) return
         if (kind === 'image' || kind === 'pdf') {
@@ -61,8 +58,9 @@ function FilePreview({
         }
         if (kind === 'text') {
           const result = await readAgentWorkspaceText({
-            workingDir,
-            path: tab.path,
+            rootId: tab.rootId,
+            rootPath: tab.rootPath,
+            relativePath: tab.relativePath,
           })
           if (!cancelled) {
             setText(result.content)
@@ -78,7 +76,7 @@ function FilePreview({
     return () => {
       cancelled = true
     }
-  }, [kind, tab.path, workingDir])
+  }, [kind, tab.relativePath, tab.rootId, tab.rootPath])
 
   if (kind === 'unsupported') {
     return (
@@ -145,7 +143,6 @@ function FilePreview({
 }
 
 export function AgentWorkspacePreview({
-  workingDir,
   isGenerating = false,
 }: AgentWorkspacePreviewProps) {
   const { t } = useTranslation('chat')
@@ -218,7 +215,7 @@ export function AgentWorkspacePreview({
               ) : (
                 <>
                   {activeTab?.kind === 'file' && (
-                    <FilePreview tab={activeTab} workingDir={workingDir} />
+                    <FilePreview tab={activeTab} />
                   )}
                   {activeTab?.kind === 'artifact' && (
                     <HtmlArtifact

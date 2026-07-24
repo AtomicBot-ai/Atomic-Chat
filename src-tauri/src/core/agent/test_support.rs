@@ -14,8 +14,8 @@ use tokio::sync::oneshot;
 
 use super::llm_client::{LlamaServerClient, LlamaSessionTarget};
 use super::skills::SkillRegistry;
-use super::tools::{ApprovalHook, DesktopServices};
-use super::types::{AgentEvent, ApprovalDecision, ApprovalRequest};
+use super::tools::{ApprovalHook, DesktopServices, FolderAccessHook};
+use super::types::{AgentEvent, ApprovalDecision, ApprovalRequest, FolderAccessRequest};
 
 pub(crate) struct TestWorkspace {
     path: PathBuf,
@@ -109,6 +109,45 @@ impl ApprovalHook for RecordingApproval {
                 ApprovalDecision::Deny
             }),
         }
+    }
+}
+
+pub(crate) struct RecordingFolderAccess {
+    allowed: bool,
+    requests: Mutex<Vec<FolderAccessRequest>>,
+}
+
+impl RecordingFolderAccess {
+    pub(crate) fn allow() -> Self {
+        Self {
+            allowed: true,
+            requests: Mutex::new(Vec::new()),
+        }
+    }
+
+    pub(crate) fn deny() -> Self {
+        Self {
+            allowed: false,
+            requests: Mutex::new(Vec::new()),
+        }
+    }
+
+    pub(crate) fn requests(&self) -> Vec<FolderAccessRequest> {
+        self.requests
+            .lock()
+            .expect("folder access requests")
+            .clone()
+    }
+}
+
+#[async_trait]
+impl FolderAccessHook for RecordingFolderAccess {
+    async fn request(&self, request: FolderAccessRequest) -> Result<bool, String> {
+        self.requests
+            .lock()
+            .expect("folder access requests")
+            .push(request);
+        Ok(self.allowed)
     }
 }
 

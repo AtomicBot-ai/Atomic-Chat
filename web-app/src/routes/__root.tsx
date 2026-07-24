@@ -21,6 +21,7 @@ import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useTrayStatusSync } from '@/hooks/useTrayStatusSync'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
 import AgentApprovalDialog from '@/containers/dialogs/AgentApprovalDialog'
+import AgentFolderAccessDialog from '@/containers/dialogs/AgentFolderAccessDialog'
 import { TranslationProvider } from '@/i18n/TranslationContext'
 import OutOfContextPromiseModal from '@/containers/dialogs/OutOfContextDialog'
 import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionDialog'
@@ -201,6 +202,7 @@ function RootLayout() {
           {/* <TanStackRouterDevtools position="bottom-right" /> */}
           <ToolApproval />
           <AgentApprovalDialog />
+          <AgentFolderAccessDialog />
           <AttachmentIngestionDialog />
           <OutOfContextPromiseModal />
         </TranslationProvider>

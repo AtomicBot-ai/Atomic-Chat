@@ -9,6 +9,7 @@ export function createAgentRunState(): AgentRunState {
   return {
     status: 'idle',
     approvalResolving: false,
+    folderAccessResolving: false,
     trace: {
       reasoning: {},
       assistantText: '',
@@ -106,7 +107,9 @@ export function reduceAgentRunState(
         ...state,
         status: 'running',
         pendingApproval: undefined,
+        pendingFolderAccess: undefined,
         approvalResolving: false,
+        folderAccessResolving: false,
         trace: {
           ...state.trace,
           tools: replaceParsedTool(state.trace.tools, event),
@@ -118,6 +121,13 @@ export function reduceAgentRunState(
         status: 'awaiting_approval',
         pendingApproval: event,
         approvalResolving: false,
+      }
+    case 'folder_access_requested':
+      return {
+        ...state,
+        status: 'awaiting_folder_access',
+        pendingFolderAccess: event,
+        folderAccessResolving: false,
       }
     case 'loop_detected':
       return {
@@ -150,7 +160,9 @@ export function reduceAgentRunState(
         ...state,
         status: 'failed',
         pendingApproval: undefined,
+        pendingFolderAccess: undefined,
         approvalResolving: false,
+        folderAccessResolving: false,
         trace: {
           ...state.trace,
           error: {
@@ -171,7 +183,9 @@ export function reduceAgentRunState(
         finishedAtMs: nowMs,
         status,
         pendingApproval: undefined,
+        pendingFolderAccess: undefined,
         approvalResolving: false,
+        folderAccessResolving: false,
         trace: {
           ...state.trace,
           finishReason: event.reason,
@@ -188,7 +202,9 @@ type AgentRunStore = {
   startRun: (threadId: string, runId: string) => void
   applyEvent: (threadId: string, event: AgentEvent) => void
   setApprovalResolving: (threadId: string, resolving: boolean) => void
+  setFolderAccessResolving: (threadId: string, resolving: boolean) => void
   clearPendingApproval: (threadId: string, approvalId: string) => void
+  clearPendingFolderAccess: (threadId: string, accessId: string) => void
   clearRun: (threadId: string) => void
   clearAll: () => void
 }
@@ -235,6 +251,21 @@ export const useAgentRun = create<AgentRunStore>()((set, get) => ({
       }
     })
   },
+  setFolderAccessResolving: (threadId, resolving) => {
+    set((state) => {
+      const run = state.runs[threadId]
+      if (!run) return state
+      return {
+        runs: {
+          ...state.runs,
+          [threadId]: {
+            ...run,
+            folderAccessResolving: resolving,
+          },
+        },
+      }
+    })
+  },
   clearPendingApproval: (threadId, approvalId) => {
     set((state) => {
       const run = state.runs[threadId]
@@ -247,6 +278,24 @@ export const useAgentRun = create<AgentRunStore>()((set, get) => ({
             status: run.status === 'awaiting_approval' ? 'running' : run.status,
             pendingApproval: undefined,
             approvalResolving: false,
+          },
+        },
+      }
+    })
+  },
+  clearPendingFolderAccess: (threadId, accessId) => {
+    set((state) => {
+      const run = state.runs[threadId]
+      if (!run || run.pendingFolderAccess?.access_id !== accessId) return state
+      return {
+        runs: {
+          ...state.runs,
+          [threadId]: {
+            ...run,
+            status:
+              run.status === 'awaiting_folder_access' ? 'running' : run.status,
+            pendingFolderAccess: undefined,
+            folderAccessResolving: false,
           },
         },
       }

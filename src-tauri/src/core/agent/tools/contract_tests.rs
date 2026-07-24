@@ -3,15 +3,20 @@ use std::process::Command;
 
 use tokio_util::sync::CancellationToken;
 
+use super::super::path_policy::EditableRoots;
 use super::super::skills::{loaded::LoadedSkills, SkillRegistry};
 use super::tool_view::LoadedTools;
 use super::{execute, ToolContext, MAX_TOOL_OUTPUT_CHARS};
-use crate::core::agent::test_support::{RecordingApproval, RecordingDesktop, TestWorkspace};
+use crate::core::agent::test_support::{
+    RecordingApproval, RecordingDesktop, RecordingFolderAccess, TestWorkspace,
+};
 use crate::core::agent::types::{ToolCallPayload, ToolOutcome, ToolStatus};
 
 struct ToolFixture {
     workspace: TestWorkspace,
+    editable_roots: EditableRoots,
     approval: RecordingApproval,
+    folder_access: RecordingFolderAccess,
     desktop: RecordingDesktop,
     cancellation: CancellationToken,
     loaded_tools: LoadedTools,
@@ -22,10 +27,13 @@ struct ToolFixture {
 impl ToolFixture {
     fn allowed() -> Self {
         let workspace = TestWorkspace::new();
+        let editable_roots = EditableRoots::for_test(workspace.path());
         let skill_registry = workspace.skill_registry();
         Self {
             workspace,
+            editable_roots,
             approval: RecordingApproval::allow(),
+            folder_access: RecordingFolderAccess::deny(),
             desktop: RecordingDesktop::default(),
             cancellation: CancellationToken::new(),
             loaded_tools: LoadedTools::default(),
@@ -36,10 +44,13 @@ impl ToolFixture {
 
     fn denied() -> Self {
         let workspace = TestWorkspace::new();
+        let editable_roots = EditableRoots::for_test(workspace.path());
         let skill_registry = workspace.skill_registry();
         Self {
             workspace,
+            editable_roots,
             approval: RecordingApproval::deny(),
+            folder_access: RecordingFolderAccess::deny(),
             desktop: RecordingDesktop::default(),
             cancellation: CancellationToken::new(),
             loaded_tools: LoadedTools::default(),
@@ -56,9 +67,11 @@ impl ToolFixture {
             },
             &ToolContext {
                 working_dir: self.workspace.path(),
+                editable_roots: &self.editable_roots,
                 trusted_read_roots: &[],
                 client: None,
                 approval: &self.approval,
+                folder_access: &self.folder_access,
                 cancellation: &self.cancellation,
                 loaded_tools: &self.loaded_tools,
                 loaded_skills: &self.loaded_skills,
@@ -512,7 +525,7 @@ async fn filesystem_read_document_extracts_docx_and_honors_character_cap() {
 }
 
 #[tokio::test]
-async fn filesystem_mkdir_creates_empty_directories_and_honors_approval() {
+async fn filesystem_mkdir_creates_empty_directories_without_approval() {
     let fixture = ToolFixture::allowed();
     let created = fixture
         .call("os.fs.mkdir", serde_json::json!({"path": "parent/empty"}))
@@ -521,7 +534,7 @@ async fn filesystem_mkdir_creates_empty_directories_and_honors_approval() {
     let path = fixture.workspace.path().join("parent/empty");
     assert!(path.is_dir());
     assert_eq!(std::fs::read_dir(&path).unwrap().count(), 0);
-    assert_eq!(fixture.approval.requests().len(), 1);
+    assert!(fixture.approval.requests().is_empty());
 
     let non_recursive = fixture
         .call(
@@ -536,8 +549,9 @@ async fn filesystem_mkdir_creates_empty_directories_and_honors_approval() {
     let denied_outcome = denied
         .call("os.fs.mkdir", serde_json::json!({"path": "must-not-exist"}))
         .await;
-    assert_eq!(denied_outcome.status, ToolStatus::Denied);
-    assert!(!denied.workspace.path().join("must-not-exist").exists());
+    assert_eq!(denied_outcome.status, ToolStatus::Ok);
+    assert!(denied.workspace.path().join("must-not-exist").is_dir());
+    assert!(denied.approval.requests().is_empty());
 }
 
 #[tokio::test]
@@ -771,7 +785,7 @@ async fn output_contract_is_bounded() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn symlink_escape_requires_approval_and_denial_prevents_read() {
+async fn symlink_escape_requires_folder_access_and_denial_prevents_read() {
     use std::os::unix::fs::symlink;
 
     let parent = TestWorkspace::new();
@@ -788,16 +802,21 @@ async fn symlink_escape_requires_approval_and_denial_prevents_read() {
     let loaded_tools = LoadedTools::default();
     let loaded_skills = LoadedSkills::default();
     let skill_registry = parent.skill_registry();
+    let root = parent.path().join("root");
+    let editable_roots = EditableRoots::for_test(&root);
+    let folder_access = RecordingFolderAccess::deny();
     let outcome = execute(
         &ToolCallPayload {
             tool: "os.fs.read".into(),
             args: serde_json::json!({"path": "link.txt"}),
         },
         &ToolContext {
-            working_dir: &parent.path().join("root"),
+            working_dir: &root,
+            editable_roots: &editable_roots,
             trusted_read_roots: &[],
             client: None,
             approval: &approval,
+            folder_access: &folder_access,
             cancellation: &cancellation,
             loaded_tools: &loaded_tools,
             loaded_skills: &loaded_skills,
@@ -809,7 +828,8 @@ async fn symlink_escape_requires_approval_and_denial_prevents_read() {
     .await;
 
     assert_eq!(outcome.status, ToolStatus::Denied);
-    assert_eq!(approval.requests().len(), 1);
+    assert!(approval.requests().is_empty());
+    assert_eq!(folder_access.requests().len(), 1);
 }
 
 fn create_zip(workspace: &TestWorkspace, relative: &str, entries: &[(&str, &str)]) {

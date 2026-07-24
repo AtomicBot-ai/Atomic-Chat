@@ -10,6 +10,16 @@ const panelLayouts = vi.hoisted(() => ({ values: [] as number[][] }))
 const workspace = vi.hoisted(() => ({
   entries: [{ name: 'output.txt', path: 'output.txt', kind: 'file' }],
 }))
+const agentWorkspace = {
+  primaryRoot: {
+    id: 'primary',
+    path: '/workspace',
+    name: 'workspace',
+    canEdit: true,
+  },
+  externalRoots: [],
+}
+const onAddExternal = vi.fn()
 
 vi.mock('@/hooks/useMediaQuery', () => ({
   useDesktopScreen: () => media.desktop,
@@ -28,8 +38,18 @@ vi.mock('react-resizable-panels', () => ({
     }))
     return <>{children}</>
   }),
-  Panel: ({ children, id }: { children: ReactNode; id: string }) => (
-    <div data-testid={`panel-${id}`}>{children}</div>
+  Panel: ({
+    children,
+    id,
+    defaultSize,
+  }: {
+    children: ReactNode
+    id: string
+    defaultSize: number
+  }) => (
+    <div data-testid={`panel-${id}`} data-default-size={defaultSize}>
+      {children}
+    </div>
   ),
   PanelResizeHandle: () => <div />,
 }))
@@ -62,7 +82,13 @@ describe('AgentWorkspaceLayout', () => {
 
   it('uses the workspace layout only for desktop Agent threads', async () => {
     const agentLayout = render(
-      <AgentWorkspaceLayout threadId="agent" agentModeActive refreshKey={0}>
+      <AgentWorkspaceLayout
+        threadId="agent"
+        agentModeActive
+        workspace={agentWorkspace}
+        onAddExternal={onAddExternal}
+        refreshKey={0}
+      >
         <div>Agent chat</div>
       </AgentWorkspaceLayout>
     )
@@ -79,6 +105,8 @@ describe('AgentWorkspaceLayout', () => {
       <AgentWorkspaceLayout
         threadId="chat"
         agentModeActive={false}
+        workspace={agentWorkspace}
+        onAddExternal={onAddExternal}
         refreshKey={0}
       >
         <div>Chat</div>
@@ -90,7 +118,13 @@ describe('AgentWorkspaceLayout', () => {
 
     media.desktop = false
     render(
-      <AgentWorkspaceLayout threadId="narrow" agentModeActive refreshKey={0}>
+      <AgentWorkspaceLayout
+        threadId="narrow"
+        agentModeActive
+        workspace={agentWorkspace}
+        onAddExternal={onAddExternal}
+        refreshKey={0}
+      >
         <div>Narrow Agent chat</div>
       </AgentWorkspaceLayout>
     )
@@ -100,7 +134,13 @@ describe('AgentWorkspaceLayout', () => {
 
   it('projects an opened HTML artifact into the shared preview tabs', async () => {
     render(
-      <AgentWorkspaceLayout threadId="thread" agentModeActive refreshKey={0}>
+      <AgentWorkspaceLayout
+        threadId="thread"
+        agentModeActive
+        workspace={agentWorkspace}
+        onAddExternal={onAddExternal}
+        refreshKey={0}
+      >
         <div>Chat</div>
       </AgentWorkspaceLayout>
     )
@@ -121,6 +161,8 @@ describe('AgentWorkspaceLayout', () => {
       <AgentWorkspaceLayout
         threadId="thread"
         agentModeActive
+        workspace={agentWorkspace}
+        onAddExternal={onAddExternal}
         refreshKey={0}
         isGenerating
       >
@@ -140,7 +182,13 @@ describe('AgentWorkspaceLayout', () => {
 
   it('closes and reopens the files sidebar', async () => {
     render(
-      <AgentWorkspaceLayout threadId="thread" agentModeActive refreshKey={0}>
+      <AgentWorkspaceLayout
+        threadId="thread"
+        agentModeActive
+        workspace={agentWorkspace}
+        onAddExternal={onAddExternal}
+        refreshKey={0}
+      >
         <div>Chat</div>
       </AgentWorkspaceLayout>
     )
@@ -159,7 +207,13 @@ describe('AgentWorkspaceLayout', () => {
   it('opens the files sidebar when an empty workspace gains an entry', async () => {
     workspace.entries = []
     const { rerender } = render(
-      <AgentWorkspaceLayout threadId="thread" agentModeActive refreshKey={0}>
+      <AgentWorkspaceLayout
+        threadId="thread"
+        agentModeActive
+        workspace={agentWorkspace}
+        onAddExternal={onAddExternal}
+        refreshKey={0}
+      >
         <div>Chat</div>
       </AgentWorkspaceLayout>
     )
@@ -175,8 +229,67 @@ describe('AgentWorkspaceLayout', () => {
       { name: 'result.txt', path: 'result.txt', kind: 'file' },
     ]
     rerender(
-      <AgentWorkspaceLayout threadId="thread" agentModeActive refreshKey={1}>
+      <AgentWorkspaceLayout
+        threadId="thread"
+        agentModeActive
+        workspace={agentWorkspace}
+        onAddExternal={onAddExternal}
+        refreshKey={1}
+      >
         <div>Chat</div>
+      </AgentWorkspaceLayout>
+    )
+
+    expect(await screen.findByText('Files')).toBeInTheDocument()
+  })
+
+  it('starts an empty Agent workspace at full chat width', async () => {
+    workspace.entries = []
+    render(
+      <AgentWorkspaceLayout
+        threadId="home"
+        agentModeActive
+        workspace={{ externalRoots: [] }}
+        onAddExternal={onAddExternal}
+        refreshKey={0}
+      >
+        <div>Agent home</div>
+      </AgentWorkspaceLayout>
+    )
+
+    await waitFor(() => {
+      expect(screen.queryByText('Files')).not.toBeInTheDocument()
+    })
+    expect(screen.getByTestId('panel-agent-chat')).toHaveAttribute(
+      'data-default-size',
+      '100'
+    )
+    expect(screen.getByTestId('panel-agent-files')).toHaveAttribute(
+      'data-default-size',
+      '0'
+    )
+  })
+
+  it('opens the files sidebar when an empty external folder is connected', async () => {
+    workspace.entries = []
+    render(
+      <AgentWorkspaceLayout
+        threadId="home"
+        agentModeActive
+        workspace={{
+          externalRoots: [
+            {
+              rootId: 'external',
+              path: '/external',
+              name: 'external',
+              canEdit: true,
+            },
+          ],
+        }}
+        onAddExternal={onAddExternal}
+        refreshKey={0}
+      >
+        <div>Agent home</div>
       </AgentWorkspaceLayout>
     )
 
@@ -185,13 +298,23 @@ describe('AgentWorkspaceLayout', () => {
 
   it('opens preview space without changing the files panel width', async () => {
     render(
-      <AgentWorkspaceLayout threadId="thread" agentModeActive refreshKey={0}>
+      <AgentWorkspaceLayout
+        threadId="thread"
+        agentModeActive
+        workspace={agentWorkspace}
+        onAddExternal={onAddExternal}
+        refreshKey={0}
+      >
         <div>Chat</div>
       </AgentWorkspaceLayout>
     )
 
     act(() => {
-      useWorkspacePreviewStore.getState().openFile('poem.txt')
+      useWorkspacePreviewStore.getState().openFile({
+        rootId: 'primary',
+        rootPath: '/workspace',
+        relativePath: 'poem.txt',
+      })
     })
 
     await waitFor(() => {

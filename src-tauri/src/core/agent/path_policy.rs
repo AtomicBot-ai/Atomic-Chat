@@ -1,8 +1,11 @@
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
 use serde_json::{Map, Value};
+use sha2::{Digest, Sha256};
+use tokio::sync::RwLock;
 
-use super::types::{ApprovalResource, ToolCallPayload};
+use super::types::{ApprovalResource, FolderAccessRequest, ToolCallPayload};
 
 const ATTACHMENT_URI_PREFIX: &str = "attachment://";
 pub(super) const MAX_TRASH_PATHS: usize = 500;
@@ -12,16 +15,58 @@ pub struct PreparedPaths {
     pub call: ToolCallPayload,
     pub resources: Vec<ApprovalResource>,
     pub escaped_root: bool,
+    pub folder_access: Option<FolderAccessRequest>,
+}
+
+#[derive(Clone, Debug)]
+pub struct EditableRoots {
+    roots: Arc<RwLock<Vec<PathBuf>>>,
+}
+
+impl EditableRoots {
+    pub async fn new(primary_root: &Path, external_roots: &[PathBuf]) -> Result<Self, String> {
+        let primary = canonical_directory(primary_root).await?;
+        let mut roots = vec![primary];
+        for root in external_roots {
+            let canonical = canonical_directory(root).await?;
+            if !roots.contains(&canonical) {
+                roots.push(canonical);
+            }
+        }
+        Ok(Self {
+            roots: Arc::new(RwLock::new(roots)),
+        })
+    }
+
+    pub async fn add(&self, root: &Path) -> Result<PathBuf, String> {
+        let canonical = canonical_directory(root).await?;
+        let mut roots = self.roots.write().await;
+        if !roots.contains(&canonical) {
+            roots.push(canonical.clone());
+        }
+        Ok(canonical)
+    }
+
+    pub async fn snapshot(&self) -> Vec<PathBuf> {
+        self.roots.read().await.clone()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(primary_root: &Path) -> Self {
+        let primary = std::fs::canonicalize(primary_root).expect("canonical test root");
+        Self {
+            roots: Arc::new(RwLock::new(vec![primary])),
+        }
+    }
 }
 
 pub async fn prepare_call_paths(
     call: &ToolCallPayload,
-    working_dir: &Path,
+    primary_root: &Path,
+    editable_roots: &EditableRoots,
     trusted_read_roots: &[PathBuf],
 ) -> Result<PreparedPaths, String> {
-    let root = tokio::fs::canonicalize(working_dir)
-        .await
-        .map_err(|error| format!("Could not resolve working directory: {error}"))?;
+    let root = canonical_directory(primary_root).await?;
     let mut prepared = call.clone();
     let args = prepared
         .args
@@ -160,24 +205,108 @@ pub async fn prepare_call_paths(
         _ => {}
     }
 
-    let escaped_root = resources
+    let editable_roots = editable_roots.snapshot().await;
+    let escaped_resource = resources
         .iter()
         .filter(|resource| resource.kind == "path")
-        .any(|resource| {
+        .find(|resource| {
             let path = Path::new(&resource.value);
-            if path.starts_with(&root) {
+            if editable_roots
+                .iter()
+                .any(|editable_root| path.starts_with(editable_root))
+            {
                 return false;
             }
             !is_read_operation(&resource.operation)
                 || !trusted_read_roots
                     .iter()
                     .any(|trusted_root| path.starts_with(trusted_root))
-        });
+        })
+        .cloned();
+    let folder_access = match escaped_resource {
+        Some(ref resource) if is_path_aware_filesystem_tool(&call.tool) => {
+            let path = Path::new(&resource.value);
+            let requested_root = nearest_existing_directory(path).await?;
+            Some(FolderAccessRequest {
+                tool: call.tool.clone(),
+                path: requested_root.to_string_lossy().into_owned(),
+                display_name: requested_root
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| requested_root.display().to_string()),
+                root_id: root_id_for_path(&requested_root),
+                reason: format!(
+                    "{} needs access to a folder outside the connected roots",
+                    call.tool
+                ),
+            })
+        }
+        _ => None,
+    };
     Ok(PreparedPaths {
         call: prepared,
         resources,
-        escaped_root,
+        escaped_root: escaped_resource.is_some(),
+        folder_access,
     })
+}
+
+pub(super) async fn canonical_directory(path: &Path) -> Result<PathBuf, String> {
+    let canonical = tokio::fs::canonicalize(path)
+        .await
+        .map_err(|error| format!("Could not resolve directory '{}': {error}", path.display()))?;
+    let metadata = tokio::fs::metadata(&canonical)
+        .await
+        .map_err(|error| format!("Could not inspect directory '{}': {error}", path.display()))?;
+    if !metadata.is_dir() {
+        return Err(format!("Path is not a directory: {}", path.display()));
+    }
+    Ok(canonical)
+}
+
+async fn nearest_existing_directory(path: &Path) -> Result<PathBuf, String> {
+    let mut candidate = path;
+    loop {
+        match tokio::fs::metadata(candidate).await {
+            Ok(metadata) if metadata.is_dir() => {
+                return tokio::fs::canonicalize(candidate).await.map_err(|error| {
+                    format!(
+                        "Could not resolve folder '{}': {error}",
+                        candidate.display()
+                    )
+                });
+            }
+            Ok(_) => {
+                candidate = candidate.parent().ok_or_else(|| {
+                    format!(
+                        "Could not find a containing folder for '{}'",
+                        path.display()
+                    )
+                })?;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                candidate = candidate.parent().ok_or_else(|| {
+                    format!("Could not find an existing folder for '{}'", path.display())
+                })?;
+            }
+            Err(error) => {
+                return Err(format!(
+                    "Could not inspect folder candidate '{}': {error}",
+                    candidate.display()
+                ));
+            }
+        }
+    }
+}
+
+fn is_path_aware_filesystem_tool(tool: &str) -> bool {
+    tool.starts_with("os.fs.") || tool.starts_with("os.git.") || tool == "vision.describe"
+}
+
+pub fn root_id_for_path(path: &Path) -> String {
+    let mut digest = Sha256::new();
+    digest.update(path.to_string_lossy().as_bytes());
+    format!("root-{:x}", digest.finalize())
 }
 
 fn validate_destructive_args(tool: &str, args: &Map<String, Value>) -> Result<(), String> {
@@ -631,6 +760,15 @@ fn path_resource(path: &Path, operation: &str) -> ApprovalResource {
 mod tests {
     use super::*;
 
+    async fn prepare_call_paths(
+        call: &ToolCallPayload,
+        primary_root: &Path,
+        trusted_read_roots: &[PathBuf],
+    ) -> Result<PreparedPaths, String> {
+        let editable_roots = EditableRoots::new(primary_root, &[]).await?;
+        super::prepare_call_paths(call, primary_root, &editable_roots, trusted_read_roots).await
+    }
+
     fn test_dir() -> PathBuf {
         let path = std::env::temp_dir().join(format!("atomic-chat-agent-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&path).unwrap();
@@ -670,6 +808,61 @@ mod tests {
                 .as_ref()
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn trusts_canonical_external_editable_roots_and_deduplicates_them() {
+        let parent = test_dir();
+        let primary = parent.join("primary");
+        let external = parent.join("external");
+        tokio::fs::create_dir(&primary).await.unwrap();
+        tokio::fs::create_dir(&external).await.unwrap();
+        let roots = EditableRoots::new(&primary, &[external.clone(), external.clone()])
+            .await
+            .unwrap();
+        assert_eq!(roots.snapshot().await.len(), 2);
+
+        let call = ToolCallPayload {
+            tool: "os.fs.write".into(),
+            args: serde_json::json!({
+                "path": external.join("new.txt"),
+                "content": "x"
+            }),
+        };
+        let prepared = super::prepare_call_paths(&call, &primary, &roots, &[])
+            .await
+            .unwrap();
+        assert!(!prepared.escaped_root);
+        assert!(prepared.folder_access.is_none());
+        std::fs::remove_dir_all(parent).unwrap();
+    }
+
+    #[tokio::test]
+    async fn requests_nearest_existing_parent_for_new_external_file() {
+        let parent = test_dir();
+        let primary = parent.join("primary");
+        let desktop = parent.join("Desktop");
+        tokio::fs::create_dir(&primary).await.unwrap();
+        tokio::fs::create_dir(&desktop).await.unwrap();
+        let roots = EditableRoots::new(&primary, &[]).await.unwrap();
+        let call = ToolCallPayload {
+            tool: "os.fs.write".into(),
+            args: serde_json::json!({
+                "path": desktop.join("nested/new.txt"),
+                "content": "x"
+            }),
+        };
+
+        let prepared = super::prepare_call_paths(&call, &primary, &roots, &[])
+            .await
+            .unwrap();
+        let request = prepared.folder_access.unwrap();
+        assert_eq!(
+            PathBuf::from(request.path),
+            tokio::fs::canonicalize(&desktop).await.unwrap()
+        );
+        assert!(prepared.escaped_root);
+        std::fs::remove_dir_all(parent).unwrap();
     }
 
     #[cfg(windows)]

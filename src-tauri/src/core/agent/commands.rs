@@ -14,12 +14,13 @@ use tokio_util::sync::CancellationToken;
 
 use super::approval::ApprovalGate;
 use super::attachments::stage_attachments;
+use super::folder_access::FolderAccessGate;
 use super::llm_client::{
     find_session_by_model_and_backend, find_session_by_model_id, ContextExpansionHook,
     LlamaClientError, LlamaServerClient, LlamaSessionTarget,
 };
 use super::model_profile::{detect_model_profile, AgentModelProfile};
-use super::path_policy::{expand_home, lexical_normalize};
+use super::path_policy::{canonical_directory, expand_home, lexical_normalize, EditableRoots};
 use super::prompt::{
     build_stable_prefix_for_profile, CapabilitiesSummary, SkillDescriptor,
     DEFAULT_MAX_PARALLEL_TOOL_CALLS, ITERATION_ONE_TOOLS,
@@ -28,7 +29,10 @@ use super::runner::{run_turn, RunTurnInput, MAX_STEPS};
 use super::session::{load_session, save_session, validate_session_id};
 use super::skills::load_registry;
 use super::tools::DesktopServices;
-use super::types::{AgentApprovalDecision, AgentEvent, AgentTurnRequest, ApprovalDecision};
+use super::types::{
+    AgentApprovalDecision, AgentEvent, AgentFolderAccessDecision, AgentTurnRequest,
+    ApprovalDecision,
+};
 use super::workspace::default_agent_workspace;
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::server::context_expansion::request_context_increase;
@@ -43,9 +47,28 @@ pub struct AgentWorkspaceRequest {
     #[serde(default)]
     pub working_dir: Option<String>,
     #[serde(default)]
-    pub path: Option<String>,
+    pub root_id: Option<String>,
+    #[serde(default)]
+    pub root_path: Option<String>,
+    #[serde(default, alias = "path")]
+    pub relative_path: Option<String>,
     #[serde(default)]
     pub max_bytes: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentWorkspaceRootRequest {
+    #[serde(default)]
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentWorkspaceRoot {
+    pub root_id: String,
+    pub path: String,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -74,6 +97,23 @@ pub struct AgentWorkspaceText {
     pub path: String,
     pub content: String,
     pub truncated: bool,
+}
+
+#[tauri::command]
+pub async fn agent_workspace_root<R: Runtime>(
+    app_handle: AppHandle<R>,
+    request: AgentWorkspaceRootRequest,
+) -> Result<AgentWorkspaceRoot, String> {
+    let data_folder = get_jan_data_folder_path(app_handle);
+    let root = resolve_working_dir(request.path.as_deref(), &data_folder).await?;
+    Ok(AgentWorkspaceRoot {
+        root_id: super::path_policy::root_id_for_path(&root),
+        path: root.to_string_lossy().into_owned(),
+        name: root
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| root.to_string_lossy().into_owned()),
+    })
 }
 
 struct AgentDesktopServices<R: Runtime> {
@@ -163,8 +203,8 @@ pub async fn agent_workspace_list<R: Runtime>(
 ) -> Result<Vec<AgentWorkspaceEntry>, String> {
     let (root, path) = resolve_workspace_path(
         app_handle,
-        request.working_dir.as_deref(),
-        request.path.as_deref().unwrap_or(""),
+        &request,
+        request.relative_path.as_deref().unwrap_or(""),
     )
     .await?;
     list_workspace_directory(&root, &path).await
@@ -226,11 +266,10 @@ pub async fn agent_workspace_stat<R: Runtime>(
     request: AgentWorkspaceRequest,
 ) -> Result<AgentWorkspaceFile, String> {
     let relative = request
-        .path
+        .relative_path
         .as_deref()
         .ok_or_else(|| "Workspace file path is required".to_string())?;
-    let (root, path) =
-        resolve_workspace_path(app_handle, request.working_dir.as_deref(), relative).await?;
+    let (root, path) = resolve_workspace_path(app_handle, &request, relative).await?;
     let metadata = workspace_file_metadata(&path).await?;
     Ok(AgentWorkspaceFile {
         path: workspace_relative_path(&root, &path)?,
@@ -251,11 +290,10 @@ pub async fn agent_workspace_resolve_path<R: Runtime>(
     request: AgentWorkspaceRequest,
 ) -> Result<String, String> {
     let relative = request
-        .path
+        .relative_path
         .as_deref()
         .ok_or_else(|| "Workspace path is required".to_string())?;
-    let (_, path) =
-        resolve_workspace_path(app_handle, request.working_dir.as_deref(), relative).await?;
+    let (_, path) = resolve_workspace_path(app_handle, &request, relative).await?;
     Ok(path.to_string_lossy().into_owned())
 }
 
@@ -265,11 +303,10 @@ pub async fn agent_workspace_read_text<R: Runtime>(
     request: AgentWorkspaceRequest,
 ) -> Result<AgentWorkspaceText, String> {
     let relative = request
-        .path
+        .relative_path
         .as_deref()
         .ok_or_else(|| "Workspace file path is required".to_string())?;
-    let (root, path) =
-        resolve_workspace_path(app_handle, request.working_dir.as_deref(), relative).await?;
+    let (root, path) = resolve_workspace_path(app_handle, &request, relative).await?;
     workspace_file_metadata(&path).await?;
     let limit = request
         .max_bytes
@@ -338,6 +375,17 @@ pub async fn agent_run_turn<R: Runtime>(
         .await
         .load_for_data_folder(&data_folder)?;
     let working_dir = resolve_working_dir(request.working_dir.as_deref(), &data_folder).await?;
+    let mut editable_external_roots = Vec::new();
+    let mut read_only_external_roots = Vec::new();
+    for root in &request.external_roots {
+        let expanded = expand_home(&root.path)?;
+        if root.can_edit {
+            editable_external_roots.push(expanded);
+        } else {
+            read_only_external_roots.push(canonical_directory(&expanded).await?);
+        }
+    }
+    let editable_roots = EditableRoots::new(&working_dir, &editable_external_roots).await?;
     let llama_state: State<LlamacppState> = app_handle.state();
     let upstream_state: State<LlamacppUpstreamState> = app_handle.state();
     let target = find_session_by_model_id(&request.model_id, &llama_state, &upstream_state)
@@ -350,11 +398,11 @@ pub async fn agent_run_turn<R: Runtime>(
     ensure_vision_requirement(has_images, target.has_vision)?;
     let staged = stage_attachments(&data_folder, &request.session_id, &request.attachments).await?;
     let user_message = staged.append_manifest(&request.user_message);
-    let trusted_read_roots = staged
-        .trusted_root
-        .as_ref()
-        .map(std::slice::from_ref)
-        .unwrap_or(&[]);
+    let mut trusted_read_roots = read_only_external_roots;
+    let external_read_only_count = trusted_read_roots.len();
+    if let Some(attachment_root) = staged.trusted_root.as_ref() {
+        trusted_read_roots.push(attachment_root.clone());
+    }
     let cancellation = CancellationToken::new();
     let context_expansion = Arc::new(AgentContextExpansion {
         app_handle: app_handle.clone(),
@@ -429,6 +477,17 @@ pub async fn agent_run_turn<R: Runtime>(
         }),
         cancellation.clone(),
     );
+    let folder_access_events = on_event.clone();
+    let folder_access = FolderAccessGate::new(
+        request.run_id.clone(),
+        state.agent_pending_folder_access.clone(),
+        Arc::new(move |event| {
+            folder_access_events
+                .send(event)
+                .map_err(|error| error.to_string())
+        }),
+        cancellation.clone(),
+    );
     let desktop = AgentDesktopServices {
         app_handle: app_handle.clone(),
     };
@@ -446,10 +505,13 @@ pub async fn agent_run_turn<R: Runtime>(
                         stable_prefix: &stable_prefix,
                         model_profile,
                         working_dir: &working_dir,
-                        trusted_read_roots,
+                        editable_roots: &editable_roots,
+                        external_read_only_roots: &trusted_read_roots[..external_read_only_count],
+                        trusted_read_roots: &trusted_read_roots,
                         max_steps: request.max_steps.unwrap_or(MAX_STEPS),
                         client: &client,
                         approval: &approval,
+                        folder_access: &folder_access,
                         desktop: &desktop,
                         cancellation: &cancellation,
                         session: &mut session,
@@ -473,6 +535,7 @@ pub async fn agent_run_turn<R: Runtime>(
         .await
         .remove(&request.run_id);
     clear_pending_approvals_for_run(&state, &request.run_id).await;
+    clear_pending_folder_access_for_run(&state, &request.run_id).await;
     result
 }
 
@@ -521,6 +584,7 @@ pub async fn agent_cancel_turn(state: State<'_, AppState>, run_id: String) -> Re
         .ok_or_else(|| format!("Agent run '{run_id}' is not active"))?;
     let _ = sender.send(());
     clear_pending_approvals_for_run(&state, &run_id).await;
+    clear_pending_folder_access_for_run(&state, &run_id).await;
     Ok(())
 }
 
@@ -556,6 +620,30 @@ pub async fn agent_resolve_approval(
         .map_err(|_| format!("Approval '{}' is no longer active", decision.approval_id))
 }
 
+#[tauri::command]
+pub async fn agent_resolve_folder_access(
+    state: State<'_, AppState>,
+    decision: AgentFolderAccessDecision,
+) -> Result<(), String> {
+    let mut pending = state.agent_pending_folder_access.lock().await;
+    let request = pending
+        .get(&decision.access_id)
+        .ok_or_else(|| format!("Folder access '{}' is not pending", decision.access_id))?;
+    if request.run_id != decision.run_id {
+        return Err(format!(
+            "Folder access '{}' belongs to another Agent run",
+            decision.access_id
+        ));
+    }
+    let request = pending
+        .remove(&decision.access_id)
+        .expect("pending folder access was checked above");
+    request
+        .sender
+        .send(decision.allow)
+        .map_err(|_| format!("Folder access '{}' is no longer active", decision.access_id))
+}
+
 async fn clear_pending_approvals_for_run(state: &AppState, run_id: &str) {
     let mut pending = state.agent_pending_approvals.lock().await;
     let approval_ids = pending
@@ -566,6 +654,20 @@ async fn clear_pending_approvals_for_run(state: &AppState, run_id: &str) {
     for approval_id in approval_ids {
         if let Some(approval) = pending.remove(&approval_id) {
             let _ = approval.sender.send(ApprovalDecision::Deny);
+        }
+    }
+}
+
+async fn clear_pending_folder_access_for_run(state: &AppState, run_id: &str) {
+    let mut pending = state.agent_pending_folder_access.lock().await;
+    let access_ids = pending
+        .iter()
+        .filter(|(_, access)| access.run_id == run_id)
+        .map(|(access_id, _)| access_id.clone())
+        .collect::<Vec<_>>();
+    for access_id in access_ids {
+        if let Some(access) = pending.remove(&access_id) {
+            let _ = access.sender.send(false);
         }
     }
 }
@@ -636,11 +738,20 @@ async fn resolve_working_dir(value: Option<&str>, data_folder: &Path) -> Result<
 
 async fn resolve_workspace_path<R: Runtime>(
     app_handle: AppHandle<R>,
-    working_dir: Option<&str>,
+    request: &AgentWorkspaceRequest,
     relative: &str,
 ) -> Result<(PathBuf, PathBuf), String> {
     let data_folder = get_jan_data_folder_path(app_handle);
-    let root = resolve_working_dir(working_dir, &data_folder).await?;
+    let requested_root = request
+        .root_path
+        .as_deref()
+        .or(request.working_dir.as_deref());
+    let root = resolve_working_dir(requested_root, &data_folder).await?;
+    if let Some(root_id) = request.root_id.as_deref() {
+        if root_id != super::path_policy::root_id_for_path(&root) {
+            return Err("Workspace root identifier does not match its canonical path".into());
+        }
+    }
     let candidate = resolve_workspace_candidate(&root, relative).await?;
     Ok((root, candidate))
 }

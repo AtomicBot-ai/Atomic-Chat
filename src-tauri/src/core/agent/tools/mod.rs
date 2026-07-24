@@ -28,12 +28,13 @@ use tokio_util::sync::CancellationToken;
 
 use super::approval_allowlist::fingerprint_prepared_action;
 use super::llm_client::LlamaServerClient;
-use super::path_policy::prepare_call_paths;
+use super::path_policy::{prepare_call_paths, EditableRoots};
 use super::resource_class::{resource_class_for, ResourceClass};
 use super::shell_guard::{evaluate_shell_command, join_command_stream, ShellGuardVerdict};
 use super::skills::{loaded::LoadedSkills, SkillRegistry};
 use super::types::{
-    ApprovalDecision, ApprovalRequest, ApprovalResource, ToolCallPayload, ToolOutcome,
+    ApprovalDecision, ApprovalRequest, ApprovalResource, FolderAccessRequest, ToolCallPayload,
+    ToolOutcome,
 };
 
 pub const MAX_TOOL_OUTPUT_CHARS: usize = 16_000;
@@ -45,6 +46,11 @@ pub trait ApprovalHook: Send + Sync {
 }
 
 #[async_trait]
+pub trait FolderAccessHook: Send + Sync {
+    async fn request(&self, request: FolderAccessRequest) -> Result<bool, String>;
+}
+
+#[async_trait]
 pub trait DesktopServices: Send + Sync {
     async fn write_clipboard(&self, text: String) -> Result<(), String>;
     async fn notify(&self, title: String, body: String) -> Result<(), String>;
@@ -52,9 +58,11 @@ pub trait DesktopServices: Send + Sync {
 
 pub struct ToolContext<'a> {
     pub working_dir: &'a Path,
+    pub editable_roots: &'a EditableRoots,
     pub trusted_read_roots: &'a [PathBuf],
     pub client: Option<&'a LlamaServerClient>,
     pub approval: &'a dyn ApprovalHook,
+    pub folder_access: &'a dyn FolderAccessHook,
     pub cancellation: &'a CancellationToken,
     pub loaded_tools: &'a tool_view::LoadedTools,
     pub loaded_skills: &'a LoadedSkills,
@@ -123,9 +131,40 @@ async fn authorize_call(
     call: &ToolCallPayload,
     context: &ToolContext<'_>,
 ) -> Result<ToolCallPayload, ToolOutcome> {
-    let prepared = prepare_call_paths(call, context.working_dir, context.trusted_read_roots)
+    let mut prepared = prepare_call_paths(
+        call,
+        context.working_dir,
+        context.editable_roots,
+        context.trusted_read_roots,
+    )
+    .await
+    .map_err(ToolOutcome::error)?;
+    while let Some(folder_request) = prepared.folder_access.clone() {
+        let allowed = context
+            .folder_access
+            .request(folder_request.clone())
+            .await
+            .map_err(ToolOutcome::error)?;
+        if !allowed {
+            return Err(ToolOutcome::denied(
+                format!("Folder access denied for {}", folder_request.path),
+                "folder-access-denied",
+            ));
+        }
+        context
+            .editable_roots
+            .add(Path::new(&folder_request.path))
+            .await
+            .map_err(ToolOutcome::error)?;
+        prepared = prepare_call_paths(
+            call,
+            context.working_dir,
+            context.editable_roots,
+            context.trusted_read_roots,
+        )
         .await
         .map_err(ToolOutcome::error)?;
+    }
     let mut reasons = Vec::new();
     let mut skill_invocation = None;
     if prepared.call.tool == "os.shell.run" {
@@ -165,7 +204,7 @@ async fn authorize_call(
         reasons.push("tool is approval-gated".to_string());
     }
     if prepared.escaped_root {
-        reasons.push("one or more paths escape the trusted working directory".to_string());
+        reasons.push("one or more paths escape the connected workspace roots".to_string());
     }
     if reasons.is_empty() {
         return Ok(prepared.call);
@@ -511,6 +550,19 @@ mod tests {
         calls: AtomicUsize,
     }
 
+    struct TestFolderAccess {
+        allowed: bool,
+        calls: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl FolderAccessHook for TestFolderAccess {
+        async fn request(&self, _request: FolderAccessRequest) -> Result<bool, String> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(self.allowed)
+        }
+    }
+
     #[derive(Default)]
     struct RememberingApproval {
         allowed: StdMutex<BTreeSet<String>>,
@@ -598,7 +650,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn path_escape_requires_one_call_scoped_approval() {
+    async fn path_escape_requires_one_call_scoped_folder_access() {
         let parent = test_dir();
         let root = parent.join("root");
         tokio::fs::create_dir(&root).await.unwrap();
@@ -609,17 +661,24 @@ mod tests {
         let skill_registry = test_skill_registry(&root);
         let desktop = TestDesktop::default();
         let cancellation = CancellationToken::new();
+        let editable_roots = EditableRoots::for_test(&root);
 
         for (approved, expected) in [(false, ToolStatus::Denied), (true, ToolStatus::Ok)] {
             let approval = TestApproval {
                 approved,
                 calls: AtomicUsize::new(0),
             };
+            let folder_access = TestFolderAccess {
+                allowed: approved,
+                calls: AtomicUsize::new(0),
+            };
             let context = ToolContext {
                 working_dir: &root,
+                editable_roots: &editable_roots,
                 trusted_read_roots: &[],
                 client: None,
                 approval: &approval,
+                folder_access: &folder_access,
                 cancellation: &cancellation,
                 loaded_tools: &loaded_tools,
                 loaded_skills: &loaded_skills,
@@ -636,8 +695,72 @@ mod tests {
             )
             .await;
             assert_eq!(outcome.status, expected);
-            assert_eq!(approval.calls.load(Ordering::SeqCst), 1);
+            assert_eq!(approval.calls.load(Ordering::SeqCst), 0);
+            assert_eq!(folder_access.calls.load(Ordering::SeqCst), 1);
         }
+        std::fs::remove_dir_all(parent).unwrap();
+    }
+
+    #[tokio::test]
+    async fn one_call_can_connect_two_external_roots() {
+        let parent = test_dir();
+        let root = parent.join("root");
+        let external_a = parent.join("external-a");
+        let external_b = parent.join("external-b");
+        tokio::fs::create_dir(&root).await.unwrap();
+        tokio::fs::create_dir(&external_a).await.unwrap();
+        tokio::fs::create_dir(&external_b).await.unwrap();
+        tokio::fs::write(external_a.join("one.txt"), "one")
+            .await
+            .unwrap();
+        tokio::fs::write(external_b.join("two.txt"), "two")
+            .await
+            .unwrap();
+        let approval = TestApproval {
+            approved: false,
+            calls: AtomicUsize::new(0),
+        };
+        let folder_access = TestFolderAccess {
+            allowed: true,
+            calls: AtomicUsize::new(0),
+        };
+        let editable_roots = EditableRoots::for_test(&root);
+        let loaded_tools = tool_view::LoadedTools::default();
+        let loaded_skills = LoadedSkills::default();
+        let skill_registry = test_skill_registry(&root);
+        let desktop = TestDesktop::default();
+        let cancellation = CancellationToken::new();
+        let context = ToolContext {
+            working_dir: &root,
+            editable_roots: &editable_roots,
+            trusted_read_roots: &[],
+            client: None,
+            approval: &approval,
+            folder_access: &folder_access,
+            cancellation: &cancellation,
+            loaded_tools: &loaded_tools,
+            loaded_skills: &loaded_skills,
+            skill_registry: &skill_registry,
+            bundled_script_runtime: None,
+            desktop: &desktop,
+        };
+
+        let outcome = execute(
+            &ToolCallPayload {
+                tool: "os.fs.diff".into(),
+                args: serde_json::json!({
+                    "pathA": external_a.join("one.txt"),
+                    "pathB": external_b.join("two.txt"),
+                }),
+            },
+            &context,
+        )
+        .await;
+
+        assert_eq!(outcome.status, ToolStatus::Ok);
+        assert_eq!(folder_access.calls.load(Ordering::SeqCst), 2);
+        assert_eq!(approval.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(editable_roots.snapshot().await.len(), 3);
         std::fs::remove_dir_all(parent).unwrap();
     }
 
@@ -656,11 +779,18 @@ mod tests {
         let skill_registry = test_skill_registry(&root);
         let desktop = TestDesktop::default();
         let cancellation = CancellationToken::new();
+        let editable_roots = EditableRoots::for_test(&root);
+        let folder_access = TestFolderAccess {
+            allowed: false,
+            calls: AtomicUsize::new(0),
+        };
         let context = ToolContext {
             working_dir: &root,
+            editable_roots: &editable_roots,
             trusted_read_roots: &[],
             client: None,
             approval: &approval,
+            folder_access: &folder_access,
             cancellation: &cancellation,
             loaded_tools: &loaded_tools,
             loaded_skills: &loaded_skills,
@@ -693,11 +823,18 @@ mod tests {
         let skill_registry = test_skill_registry(&root);
         let desktop = TestDesktop::default();
         let cancellation = CancellationToken::new();
+        let editable_roots = EditableRoots::for_test(&root);
+        let folder_access = TestFolderAccess {
+            allowed: false,
+            calls: AtomicUsize::new(0),
+        };
         let context = ToolContext {
             working_dir: &root,
+            editable_roots: &editable_roots,
             trusted_read_roots: &[],
             client: None,
             approval: &approval,
+            folder_access: &folder_access,
             cancellation: &cancellation,
             loaded_tools: &loaded_tools,
             loaded_skills: &loaded_skills,
@@ -743,11 +880,18 @@ mod tests {
         let skill_registry = test_skill_registry(&root);
         let desktop = TestDesktop::default();
         let cancellation = CancellationToken::new();
+        let editable_roots = EditableRoots::for_test(&root);
+        let folder_access = TestFolderAccess {
+            allowed: false,
+            calls: AtomicUsize::new(0),
+        };
         let context = ToolContext {
             working_dir: &root,
+            editable_roots: &editable_roots,
             trusted_read_roots: &[],
             client: None,
             approval: &approval,
+            folder_access: &folder_access,
             cancellation: &cancellation,
             loaded_tools: &loaded_tools,
             loaded_skills: &loaded_skills,
@@ -790,11 +934,18 @@ mod tests {
         let skill_registry = test_skill_registry(&root);
         let desktop = TestDesktop::default();
         let cancellation = CancellationToken::new();
+        let editable_roots = EditableRoots::for_test(&root);
+        let folder_access = TestFolderAccess {
+            allowed: false,
+            calls: AtomicUsize::new(0),
+        };
         let context = ToolContext {
             working_dir: &root,
+            editable_roots: &editable_roots,
             trusted_read_roots: &[],
             client: None,
             approval: &approval,
+            folder_access: &folder_access,
             cancellation: &cancellation,
             loaded_tools: &loaded_tools,
             loaded_skills: &loaded_skills,
@@ -803,9 +954,10 @@ mod tests {
             desktop: &desktop,
         };
         let original = ToolCallPayload {
-            tool: "os.fs.write".into(),
-            args: serde_json::json!({"path": "result.txt", "content": "one"}),
+            tool: "os.fs.trash".into(),
+            args: serde_json::json!({"paths": ["result.txt"]}),
         };
+        std::fs::write(root.join("result.txt"), "one").unwrap();
 
         assert!(authorize_call(&original, &context).await.is_ok());
         let fingerprint = approval.requests.lock().unwrap()[0].fingerprint.clone();
@@ -814,16 +966,17 @@ mod tests {
         assert_eq!(approval.requests.lock().unwrap().len(), 1);
 
         let changed = ToolCallPayload {
-            tool: "os.fs.write".into(),
-            args: serde_json::json!({"path": "result.txt", "content": "two"}),
+            tool: "os.fs.trash".into(),
+            args: serde_json::json!({"paths": ["other.txt"]}),
         };
+        std::fs::write(root.join("other.txt"), "two").unwrap();
         assert!(authorize_call(&changed, &context).await.is_ok());
         assert_eq!(approval.requests.lock().unwrap().len(), 2);
         std::fs::remove_dir_all(root).unwrap();
     }
 
     #[tokio::test]
-    async fn escaped_action_cannot_use_or_create_a_remembered_permission() {
+    async fn folder_access_then_destructive_action_can_be_remembered() {
         let parent = test_dir();
         let root = parent.join("root");
         tokio::fs::create_dir(&root).await.unwrap();
@@ -833,11 +986,18 @@ mod tests {
         let skill_registry = test_skill_registry(&root);
         let desktop = TestDesktop::default();
         let cancellation = CancellationToken::new();
+        let editable_roots = EditableRoots::for_test(&root);
+        let folder_access = TestFolderAccess {
+            allowed: true,
+            calls: AtomicUsize::new(0),
+        };
         let context = ToolContext {
             working_dir: &root,
+            editable_roots: &editable_roots,
             trusted_read_roots: &[],
             client: None,
             approval: &approval,
+            folder_access: &folder_access,
             cancellation: &cancellation,
             loaded_tools: &loaded_tools,
             loaded_skills: &loaded_skills,
@@ -846,17 +1006,18 @@ mod tests {
             desktop: &desktop,
         };
         let escaped = ToolCallPayload {
-            tool: "os.fs.write".into(),
-            args: serde_json::json!({"path": "../outside.txt", "content": "one"}),
+            tool: "os.fs.trash".into(),
+            args: serde_json::json!({"paths": ["../outside.txt"]}),
         };
+        std::fs::write(parent.join("outside.txt"), "one").unwrap();
 
         assert!(authorize_call(&escaped, &context).await.is_ok());
         let request = approval.requests.lock().unwrap()[0].clone();
-        assert!(!request.can_remember);
+        assert!(request.can_remember);
         approval.allowed.lock().unwrap().insert(request.fingerprint);
 
         assert!(authorize_call(&escaped, &context).await.is_ok());
-        assert_eq!(approval.requests.lock().unwrap().len(), 2);
+        assert_eq!(approval.requests.lock().unwrap().len(), 1);
         std::fs::remove_dir_all(parent).unwrap();
     }
 
@@ -875,11 +1036,18 @@ mod tests {
         let skill_registry = test_skill_registry(&root);
         let desktop = TestDesktop::default();
         let cancellation = CancellationToken::new();
+        let editable_roots = EditableRoots::for_test(&root);
+        let folder_access = TestFolderAccess {
+            allowed: false,
+            calls: AtomicUsize::new(0),
+        };
         let context = ToolContext {
             working_dir: &root,
+            editable_roots: &editable_roots,
             trusted_read_roots: &[],
             client: None,
             approval: &approval,
+            folder_access: &folder_access,
             cancellation: &cancellation,
             loaded_tools: &loaded_tools,
             loaded_skills: &loaded_skills,
@@ -915,11 +1083,18 @@ mod tests {
         let skill_registry = test_script_skill_registry(&root);
         let desktop = TestDesktop::default();
         let cancellation = CancellationToken::new();
+        let editable_roots = EditableRoots::for_test(&root);
+        let folder_access = TestFolderAccess {
+            allowed: false,
+            calls: AtomicUsize::new(0),
+        };
         let context = ToolContext {
             working_dir: &root,
+            editable_roots: &editable_roots,
             trusted_read_roots: &[],
             client: None,
             approval: &approval,
+            folder_access: &folder_access,
             cancellation: &cancellation,
             loaded_tools: &loaded_tools,
             loaded_skills: &loaded_skills,

@@ -229,9 +229,13 @@ fn strip_windows_verbatim_prefix(path: &Path) -> PathBuf {
 /// Prefer a workspace-relative label after path-policy rewrites args to absolute
 /// (and on Windows, verbatim) paths.
 fn observation_path_label(working_dir: &Path, path: &Path) -> String {
-    let path = strip_windows_verbatim_prefix(path);
-    let working_dir = strip_windows_verbatim_prefix(working_dir);
-    display_relative_path(path.strip_prefix(&working_dir).unwrap_or(&path))
+    let path = display_relative_path(&strip_windows_verbatim_prefix(path));
+    let working_dir = display_relative_path(&strip_windows_verbatim_prefix(working_dir))
+        .trim_end_matches('/')
+        .to_string();
+    path.strip_prefix(&format!("{working_dir}/"))
+        .unwrap_or(&path)
+        .to_string()
 }
 
 fn format_unified_diff(left: &str, right: &str, left_text: &str, right_text: &str) -> String {

@@ -99,7 +99,11 @@ import {
   extractAgentAttachmentReferences,
   type AgentFileReference,
 } from '@/lib/agent-file-links'
-import { cancelAgentTurn, runAgentTurn } from '@/services/agent/tauri'
+import {
+  cancelAgentTurn,
+  resolveAgentWorkspaceRoot,
+  runAgentTurn,
+} from '@/services/agent/tauri'
 import type {
   AgentAttachment as AgentIpcAttachment,
   AgentEvent,
@@ -785,7 +789,8 @@ function ThreadDetail() {
           path: attachment.path,
         })),
       ]
-      const workingDir = useAgentMode.getState().getWorkingDir(threadId)
+      const workspace = useAgentMode.getState().getWorkspace(threadId)
+      const workingDir = workspace.primaryRoot?.path
       const providerSupportsAgent = isLlamacppProvider(selectedProvider)
       const providerActiveModels = providerSupportsAgent
         ? await serviceHub
@@ -804,7 +809,8 @@ function ThreadDetail() {
       const currentRun = useAgentRun.getState().getRun(threadId)
       if (
         currentRun.status === 'running' ||
-        currentRun.status === 'awaiting_approval'
+        currentRun.status === 'awaiting_approval' ||
+        currentRun.status === 'awaiting_folder_access'
       ) {
         return
       }
@@ -860,6 +866,10 @@ function ThreadDetail() {
             selected_skill: agentSkillName,
             attachments: ipcAttachments,
             working_dir: workingDir,
+            external_roots: workspace.externalRoots.map((root) => ({
+              path: root.path,
+              can_edit: root.canEdit,
+            })),
             auto_approve:
               useAgentMode.getState().getApprovalMode(threadId) === 'skip',
           },
@@ -1458,7 +1468,38 @@ function ThreadDetail() {
 
   // Skip auto-context-increase in agent mode
   const agentModeActive = useAgentMode((s) => s.agentThreads[threadId] === true)
-  const agentWorkingDir = useAgentMode((s) => s.workingDirs[threadId])
+  const agentWorkspace = useAgentMode((s) => s.workspaces[threadId])
+  useEffect(() => {
+    const currentRoot = agentWorkspace?.primaryRoot
+    if (
+      !agentModeActive ||
+      (currentRoot && !currentRoot.rootId.startsWith('legacy:'))
+    )
+      return
+    void resolveAgentWorkspaceRoot(currentRoot?.path)
+      .then((root) => {
+        useAgentMode.getState().setPrimaryRoot(threadId, {
+          ...root,
+          canEdit: true,
+        })
+      })
+      .catch((resolveError) => {
+        console.error('Failed to resolve the Agent primary workspace', resolveError)
+      })
+  }, [agentModeActive, agentWorkspace?.primaryRoot, threadId])
+
+  const addExternalAgentRoot = useCallback(async () => {
+    const selected = await serviceHub.dialog().open({
+      multiple: false,
+      directory: true,
+    })
+    if (typeof selected !== 'string') return
+    const root = await resolveAgentWorkspaceRoot(selected)
+    useAgentMode.getState().addExternalRoot(threadId, {
+      ...root,
+      canEdit: true,
+    })
+  }, [serviceHub, threadId])
   useEffect(() => {
     if (!error || agentModeActive) return
     const autoIncrease =
@@ -1569,7 +1610,8 @@ function ThreadDetail() {
     <AgentWorkspaceLayout
       threadId={threadId}
       agentModeActive={agentModeActive}
-      workingDir={agentWorkingDir}
+      workspace={agentWorkspace ?? { externalRoots: [] }}
+      onAddExternal={() => void addExternalAgentRoot()}
       refreshKey={agentRun?.finishedAtMs ?? 0}
       isGenerating={requestActive}
     >

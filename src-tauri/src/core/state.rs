@@ -65,6 +65,11 @@ pub struct PendingAgentApproval {
     pub sender: oneshot::Sender<crate::core::agent::types::ApprovalDecision>,
 }
 
+pub struct PendingAgentFolderAccess {
+    pub run_id: String,
+    pub sender: oneshot::Sender<bool>,
+}
+
 pub type AgentSessionLocks = Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>;
 
 pub enum RunningServiceEnum {
@@ -82,6 +87,7 @@ pub struct AppState {
     pub server_handle: Arc<Mutex<Option<ServerHandle>>>,
     pub tool_call_cancellations: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
     pub agent_pending_approvals: Arc<Mutex<HashMap<String, PendingAgentApproval>>>,
+    pub agent_pending_folder_access: Arc<Mutex<HashMap<String, PendingAgentFolderAccess>>>,
     pub agent_approval_allowlist: Arc<Mutex<ApprovalAllowlist>>,
     pub agent_session_locks: AgentSessionLocks,
     pub mcp_settings: Arc<Mutex<McpSettings>>,

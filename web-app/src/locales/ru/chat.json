@@ -46,11 +46,28 @@
     "approveOnce": "Разрешить один раз",
     "resolveFailed": "Не удалось отправить решение."
   },
+  "agentFolderAccess": {
+    "title": "Разрешить доступ к папке",
+    "description": "Инструменту {{tool}} нужен доступ к этой папке.",
+    "canEditNotice": "После разрешения папка появится в External с доступом CAN EDIT для текущего треда агента.",
+    "deny": "Отклонить",
+    "allow": "Разрешить папку",
+    "resolveFailed": "Не удалось отправить решение о доступе к папке."
+  },
   "agentWorkspace": {
     "choose": "Выбрать workspace",
     "change": "Изменить workspace агента",
     "default": "Workspace по умолчанию",
-    "defaultDescription": "Используется папка agent-workspace внутри папки данных Atomic Chat."
+    "defaultDescription": "Используется папка agent-workspace внутри папки данных Atomic Chat.",
+    "projectFiles": "Project Files",
+    "external": "External",
+    "canEdit": "CAN EDIT",
+    "viewOnly": "ТОЛЬКО ПРОСМОТР",
+    "addFolder": "Добавить внешнюю папку",
+    "folderOptions": "Настройки папки",
+    "allowEditing": "Можно редактировать",
+    "makeViewOnly": "Только просмотр",
+    "removeFolder": "Убрать из Agent"
   },
   "agentErrors": {
     "audioUnsupported": "Agent-режим не поддерживает аудиовложения.",

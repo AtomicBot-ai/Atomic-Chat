@@ -46,11 +46,28 @@
     "approveOnce": "Approve once",
     "resolveFailed": "Failed to send the approval decision."
   },
+  "agentFolderAccess": {
+    "title": "Allow folder access",
+    "description": "{{tool}} needs access to this folder.",
+    "canEditNotice": "Allowing adds this folder to External with CAN EDIT access for this Agent thread.",
+    "deny": "Deny",
+    "allow": "Allow folder",
+    "resolveFailed": "Failed to send the folder access decision."
+  },
   "agentWorkspace": {
     "choose": "Choose workspace",
     "change": "Change agent workspace",
     "default": "Default",
-    "defaultDescription": "Uses the agent-workspace folder inside the Atomic Chat data folder."
+    "defaultDescription": "Uses the agent-workspace folder inside the Atomic Chat data folder.",
+    "projectFiles": "Project Files",
+    "external": "External",
+    "canEdit": "CAN EDIT",
+    "viewOnly": "VIEW ONLY",
+    "addFolder": "Add external folder",
+    "folderOptions": "Folder options",
+    "allowEditing": "Can edit",
+    "makeViewOnly": "View only",
+    "removeFolder": "Remove from Agent"
   },
   "agentErrors": {
     "audioUnsupported": "Agent mode does not support audio attachments.",

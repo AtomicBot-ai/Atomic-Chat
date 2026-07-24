@@ -4,17 +4,36 @@ import { localStorageKey } from '@/constants/localStorage'
 
 export type AgentApprovalMode = 'manual' | 'skip'
 export type SidebarMode = 'chat' | 'agent'
+export type AgentWorkspaceRoot = {
+  rootId: string
+  path: string
+  name: string
+  canEdit: boolean
+}
+export type AgentWorkspace = {
+  primaryRoot?: AgentWorkspaceRoot
+  externalRoots: AgentWorkspaceRoot[]
+}
 
 type AgentModeState = {
   /** Map of threadId → agent mode enabled */
   agentThreads: Record<string, boolean>
   approvalModes: Record<string, AgentApprovalMode>
-  workingDirs: Record<string, string>
+  workspaces: Record<string, AgentWorkspace>
   sidebarMode: SidebarMode
 
   isAgentMode: (threadId: string) => boolean
   getApprovalMode: (threadId: string) => AgentApprovalMode
   getWorkingDir: (threadId: string) => string | undefined
+  getWorkspace: (threadId: string) => AgentWorkspace
+  setPrimaryRoot: (threadId: string, root: AgentWorkspaceRoot) => void
+  addExternalRoot: (threadId: string, root: AgentWorkspaceRoot) => void
+  setExternalRootPermission: (
+    threadId: string,
+    rootId: string,
+    canEdit: boolean
+  ) => void
+  removeExternalRoot: (threadId: string, rootId: string) => void
   setSidebarMode: (mode: SidebarMode) => void
   toggleAgentMode: (threadId: string) => void
   setAgentMode: (threadId: string, enabled: boolean) => void
@@ -31,7 +50,7 @@ export const useAgentMode = create<AgentModeState>()(
     (set, get) => ({
       agentThreads: {},
       approvalModes: {},
-      workingDirs: {},
+      workspaces: {},
       sidebarMode: 'chat',
 
       isAgentMode: (threadId) => {
@@ -43,7 +62,83 @@ export const useAgentMode = create<AgentModeState>()(
       },
 
       getWorkingDir: (threadId) => {
-        return get().workingDirs[threadId]
+        return get().workspaces[threadId]?.primaryRoot?.path
+      },
+
+      getWorkspace: (threadId) => {
+        return get().workspaces[threadId] ?? { externalRoots: [] }
+      },
+
+      setPrimaryRoot: (threadId, root) => {
+        set((state) => ({
+          workspaces: {
+            ...state.workspaces,
+            [threadId]: {
+              ...(state.workspaces[threadId] ?? { externalRoots: [] }),
+              primaryRoot: root,
+              externalRoots: (
+                state.workspaces[threadId]?.externalRoots ?? []
+              ).filter((item) => item.rootId !== root.rootId),
+            },
+          },
+        }))
+      },
+
+      addExternalRoot: (threadId, root) => {
+        set((state) => {
+          const workspace = state.workspaces[threadId] ?? { externalRoots: [] }
+          if (
+            workspace.primaryRoot?.rootId === root.rootId ||
+            workspace.externalRoots.some((item) => item.rootId === root.rootId)
+          ) {
+            return state
+          }
+          return {
+            workspaces: {
+              ...state.workspaces,
+              [threadId]: {
+                ...workspace,
+                externalRoots: [...workspace.externalRoots, root],
+              },
+            },
+          }
+        })
+      },
+
+      setExternalRootPermission: (threadId, rootId, canEdit) => {
+        set((state) => {
+          const workspace = state.workspaces[threadId]
+          if (!workspace) return state
+          return {
+            workspaces: {
+              ...state.workspaces,
+              [threadId]: {
+                ...workspace,
+                externalRoots: workspace.externalRoots.map((root) =>
+                  root.rootId === rootId ? { ...root, canEdit } : root
+                ),
+              },
+            },
+          }
+        })
+      },
+
+      removeExternalRoot: (threadId, rootId) => {
+        set((state) => {
+          const workspace = state.workspaces[threadId]
+          if (!workspace) return state
+          return {
+            workspaces: {
+              ...state.workspaces,
+              [threadId]: {
+                ...workspace,
+                externalRoots: workspace.externalRoots.filter(
+                  (root) => root.rootId !== rootId
+                ),
+              },
+            },
+          }
+        })
       },
 
       setSidebarMode: (mode) => {
@@ -79,9 +174,19 @@ export const useAgentMode = create<AgentModeState>()(
 
       setWorkingDir: (threadId, workingDir) => {
         set((state) => ({
-          workingDirs: {
-            ...state.workingDirs,
-            [threadId]: workingDir,
+          workspaces: {
+            ...state.workspaces,
+            [threadId]: {
+              ...(state.workspaces[threadId] ?? { externalRoots: [] }),
+              primaryRoot: {
+                rootId: `legacy:${workingDir}`,
+                path: workingDir,
+                name:
+                  workingDir.split(/[\\/]/).filter(Boolean).at(-1) ??
+                  workingDir,
+                canEdit: true,
+              },
+            },
           },
         }))
       },
@@ -90,16 +195,16 @@ export const useAgentMode = create<AgentModeState>()(
         set((state) => {
           const isAgentMode = state.agentThreads[fromThreadId] === true
           const approvalMode = state.approvalModes[fromThreadId] ?? 'manual'
-          const workingDir = state.workingDirs[fromThreadId]
+          const workspace = state.workspaces[fromThreadId]
           const remainingThreads = { ...state.agentThreads }
           const remainingApprovalModes = { ...state.approvalModes }
-          const remainingWorkingDirs = { ...state.workingDirs }
+          const remainingWorkspaces = { ...state.workspaces }
           delete remainingThreads[fromThreadId]
           delete remainingThreads[toThreadId]
           delete remainingApprovalModes[fromThreadId]
           delete remainingApprovalModes[toThreadId]
-          delete remainingWorkingDirs[fromThreadId]
-          delete remainingWorkingDirs[toThreadId]
+          delete remainingWorkspaces[fromThreadId]
+          delete remainingWorkspaces[toThreadId]
 
           return {
             agentThreads: isAgentMode
@@ -108,10 +213,10 @@ export const useAgentMode = create<AgentModeState>()(
             approvalModes: isAgentMode
               ? { ...remainingApprovalModes, [toThreadId]: approvalMode }
               : remainingApprovalModes,
-            workingDirs:
-              isAgentMode && workingDir
-                ? { ...remainingWorkingDirs, [toThreadId]: workingDir }
-                : remainingWorkingDirs,
+            workspaces:
+              isAgentMode && workspace
+                ? { ...remainingWorkspaces, [toThreadId]: workspace }
+                : remainingWorkspaces,
           }
         })
       },
@@ -120,11 +225,11 @@ export const useAgentMode = create<AgentModeState>()(
         set((state) => {
           const agentThreads = { ...state.agentThreads }
           const approvalModes = { ...state.approvalModes }
-          const workingDirs = { ...state.workingDirs }
+          const workspaces = { ...state.workspaces }
           delete agentThreads[threadId]
           delete approvalModes[threadId]
-          delete workingDirs[threadId]
-          return { agentThreads, approvalModes, workingDirs }
+          delete workspaces[threadId]
+          return { agentThreads, approvalModes, workspaces }
         })
       },
 
@@ -132,7 +237,7 @@ export const useAgentMode = create<AgentModeState>()(
         set({
           agentThreads: {},
           approvalModes: {},
-          workingDirs: {},
+          workspaces: {},
           sidebarMode: 'chat',
         })
       },
@@ -140,6 +245,49 @@ export const useAgentMode = create<AgentModeState>()(
     {
       name: localStorageKey.agentMode,
       storage: createJSONStorage(() => localStorage),
+      version: 2,
+      migrate: (persistedState: unknown, version) => {
+        const state = (persistedState ?? {}) as Record<string, unknown>
+        let workspaces = state.workspaces as
+          | Record<string, AgentWorkspace>
+          | undefined
+        if (version < 1 && state.workingDirs) {
+          const workingDirs = state.workingDirs as Record<string, string>
+          workspaces = Object.fromEntries(
+            Object.entries(workingDirs).map(([threadId, path]) => [
+              threadId,
+              {
+                primaryRoot: {
+                  rootId: `legacy:${path}`,
+                  path,
+                  name: path.split(/[\\/]/).filter(Boolean).at(-1) ?? path,
+                  canEdit: true,
+                },
+                externalRoots: [],
+              },
+            ])
+          )
+        }
+        if (!workspaces) return state
+        return {
+          ...state,
+          workspaces: Object.fromEntries(
+            Object.entries(workspaces).map(([threadId, workspace]) => [
+              threadId,
+              {
+                ...workspace,
+                primaryRoot: workspace.primaryRoot
+                  ? { ...workspace.primaryRoot, canEdit: true }
+                  : undefined,
+                externalRoots: workspace.externalRoots.map((root) => ({
+                  ...root,
+                  canEdit: root.canEdit !== false,
+                })),
+              },
+            ])
+          ),
+        }
+      },
     }
   )
 )

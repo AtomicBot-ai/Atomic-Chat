@@ -41,10 +41,8 @@ pub fn resource_class_for(tool_name: &str) -> ResourceClass {
         | "os.clipboard.read" => ResourceClass::PureRead,
         "vision.describe" => ResourceClass::Vision,
         "os.clipboard.write" | "os.notify" => ResourceClass::MemoryWrite,
-        "os.fs.write"
-        | "os.fs.mkdir"
-        | "os.fs.edit"
-        | "os.fs.trash"
+        "os.fs.write" | "os.fs.mkdir" | "os.fs.edit" => ResourceClass::FsWrite,
+        "os.fs.trash"
         | "os.fs.patch"
         | "os.fs.archive.extract"
         | "os.shell.run"

@@ -1,11 +1,13 @@
 import { Channel, invoke } from '@tauri-apps/api/core'
 import type {
   AgentApprovalDecision,
+  AgentFolderAccessDecision,
   AgentEvent,
   AgentTurnRequest,
   AgentWorkspaceEntry,
   AgentWorkspaceFile,
   AgentWorkspaceRequest,
+  AgentWorkspaceRoot,
   AgentWorkspaceText,
 } from '@/types/agent'
 
@@ -28,6 +30,20 @@ export function resolveAgentApproval(
   decision: AgentApprovalDecision
 ): Promise<void> {
   return invoke<void>('agent_resolve_approval', { decision })
+}
+
+export function resolveAgentFolderAccess(
+  decision: AgentFolderAccessDecision
+): Promise<void> {
+  return invoke<void>('agent_resolve_folder_access', { decision })
+}
+
+export function resolveAgentWorkspaceRoot(
+  path?: string
+): Promise<AgentWorkspaceRoot> {
+  return invoke<AgentWorkspaceRoot>('agent_workspace_root', {
+    request: { path },
+  })
 }
 
 export function listAgentWorkspace(
@@ -58,6 +74,15 @@ export function isStaleAgentApprovalError(error: unknown): boolean {
   const message = String(error).toLowerCase()
   return (
     message.includes('approval') &&
+    (message.includes('is not pending') ||
+      message.includes('is no longer active'))
+  )
+}
+
+export function isStaleAgentFolderAccessError(error: unknown): boolean {
+  const message = String(error).toLowerCase()
+  return (
+    message.includes('folder access') &&
     (message.includes('is not pending') ||
       message.includes('is no longer active'))
   )

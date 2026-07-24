@@ -13,6 +13,8 @@
 //! `browser` / `memory` / `tasks` / `mcp` tools — so the
 //! grammar and descriptors are static.
 
+use std::path::{Path, PathBuf};
+
 /// Tier of a tool descriptor in the `### tools` catalog. `Frequent` tools
 /// render with their full `args` schema under `# common (full)`; `Rare` tools
 /// render as one-line entries under `# extras`.
@@ -602,6 +604,26 @@ pub fn build_prompt_for_profile(
     notice: Option<&str>,
     profile: crate::core::agent::model_profile::AgentModelProfile,
 ) -> String {
+    build_prompt_with_workspace_for_profile(
+        stable_prefix,
+        loaded_tool_names,
+        loaded_skills,
+        None,
+        conversation,
+        notice,
+        profile,
+    )
+}
+
+pub fn build_prompt_with_workspace_for_profile(
+    stable_prefix: &str,
+    loaded_tool_names: &[String],
+    loaded_skills: &[crate::core::agent::skills::loaded::LoadedSkillState],
+    workspace: Option<&str>,
+    conversation: &str,
+    notice: Option<&str>,
+    profile: crate::core::agent::model_profile::AgentModelProfile,
+) -> String {
     let mut tail: Vec<String> = Vec::new();
 
     if let Some(loaded_tools) = render_loaded_tools(loaded_tool_names) {
@@ -613,6 +635,12 @@ pub fn build_prompt_for_profile(
     if let Some(skills) = crate::core::agent::skills::loaded::render_loaded_skills(loaded_skills) {
         tail.push("### loaded-skills".to_string());
         tail.push(skills);
+        tail.push(String::new());
+    }
+
+    if let Some(workspace) = workspace.filter(|value| !value.is_empty()) {
+        tail.push("### workspace".to_string());
+        tail.push(workspace.to_string());
         tail.push(String::new());
     }
 
@@ -638,6 +666,52 @@ pub fn build_prompt_for_profile(
     }
 
     format!("{stable_prefix}\n{}", tail.join("\n"))
+}
+
+pub fn format_workspace(
+    primary_root: &Path,
+    editable_roots: &[PathBuf],
+    read_only_roots: &[PathBuf],
+) -> String {
+    let mut lines = vec![
+        format!("primary: {}", primary_root.display()),
+        "Relative paths resolve against primary.".to_string(),
+    ];
+    let mut seen = std::collections::HashSet::new();
+    let external = editable_roots
+        .iter()
+        .filter(|root| root.as_path() != primary_root)
+        .filter(|root| seen.insert(root.as_path()))
+        .collect::<Vec<_>>();
+    let read_only = read_only_roots
+        .iter()
+        .filter(|root| root.as_path() != primary_root)
+        .filter(|root| seen.insert(root.as_path()))
+        .collect::<Vec<_>>();
+    if external.is_empty() && read_only.is_empty() {
+        lines.push("external: none".to_string());
+    }
+    if !external.is_empty() {
+        lines.push("external (CAN EDIT; use explicit paths):".to_string());
+        lines.extend(
+            external
+                .into_iter()
+                .map(|root| format!("- {}", root.display())),
+        );
+    }
+    if !read_only.is_empty() {
+        lines.push("external (VIEW ONLY; use explicit paths):".to_string());
+        lines.extend(
+            read_only
+                .into_iter()
+                .map(|root| format!("- {}", root.display())),
+        );
+    }
+    lines.push(
+        "For an unknown folder, issue the real filesystem call so access can be requested; never claim access before it is granted."
+            .to_string(),
+    );
+    lines.join("\n")
 }
 
 const LOADED_TOOLS_MAX_CHARS: usize = 8_000;
@@ -795,6 +869,34 @@ mod tests {
 
         let empty = build_prompt(&prefix, &[], &[], "USER: hi", Some(""));
         assert!(!empty.contains("### notice"));
+    }
+
+    #[test]
+    fn workspace_tail_lists_primary_and_external_roots() {
+        let primary = PathBuf::from("/tmp/project");
+        let external = PathBuf::from("/tmp/Desktop");
+        let read_only = PathBuf::from("/tmp/Downloads");
+        let workspace = format_workspace(
+            &primary,
+            &[primary.clone(), external.clone(), external.clone()],
+            std::slice::from_ref(&read_only),
+        );
+        let full = build_prompt_with_workspace_for_profile(
+            "stable",
+            &[],
+            &[],
+            Some(&workspace),
+            "USER: create a file on Desktop",
+            None,
+            crate::core::agent::model_profile::AgentModelProfile::Plain,
+        );
+
+        assert!(full.contains("### workspace\nprimary: /tmp/project"));
+        assert!(full.contains("Relative paths resolve against primary."));
+        assert!(full.contains("external (CAN EDIT; use explicit paths):\n- /tmp/Desktop"));
+        assert!(full.contains("external (VIEW ONLY; use explicit paths):\n- /tmp/Downloads"));
+        assert!(full.contains("issue the real filesystem call so access can be requested"));
+        assert_eq!(full.matches("- /tmp/Desktop").count(), 1);
     }
 
     #[test]

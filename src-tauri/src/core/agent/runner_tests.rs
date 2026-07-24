@@ -3,11 +3,12 @@ use std::time::Duration;
 use hyper::StatusCode;
 use tokio_util::sync::CancellationToken;
 
+use super::path_policy::EditableRoots;
 use super::runner::{run_turn, RunTurnInput};
 use super::session::AgentSessionState;
 use super::test_support::{
-    collect_event, RecordingApproval, RecordingDesktop, ScriptedCompletionServer, ScriptedResponse,
-    TestWorkspace,
+    collect_event, RecordingApproval, RecordingDesktop, RecordingFolderAccess,
+    ScriptedCompletionServer, ScriptedResponse, TestWorkspace,
 };
 use super::types::{AgentEvent, LoopLevel, ToolStatus};
 
@@ -31,6 +32,8 @@ async fn run_script(
     let mut events = Vec::new();
     let mut session = AgentSessionState::new("test-session");
     let skill_registry = workspace.skill_registry();
+    let editable_roots = EditableRoots::new(workspace.path(), &[]).await.unwrap();
+    let folder_access = RecordingFolderAccess::deny();
     let result = run_turn(
         RunTurnInput {
             run_id: "test-run",
@@ -40,10 +43,13 @@ async fn run_script(
             stable_prefix: "TEST_STABLE_PREFIX",
             model_profile: super::model_profile::AgentModelProfile::Plain,
             working_dir: workspace.path(),
+            editable_roots: &editable_roots,
+            external_read_only_roots: &[],
             trusted_read_roots: &[],
             max_steps,
             client: &client,
             approval,
+            folder_access: &folder_access,
             desktop: &desktop,
             cancellation,
             session: &mut session,
@@ -70,6 +76,7 @@ fn event_kind(event: &AgentEvent) -> &'static str {
         AgentEvent::ToolCallParsed { .. } => "tool_call_parsed",
         AgentEvent::ToolCallExecuted { .. } => "tool_call_executed",
         AgentEvent::ApprovalRequested { .. } => "approval_requested",
+        AgentEvent::FolderAccessRequested { .. } => "folder_access_requested",
         AgentEvent::LoopDetected { .. } => "loop_detected",
         AgentEvent::ParseRetry { .. } => "parse_retry",
         AgentEvent::BatchTrimmed { .. } => "batch_trimmed",
@@ -156,6 +163,8 @@ async fn gemma4_turn_uses_native_framing_and_parses_channel_reasoning() {
     let mut events = Vec::new();
     let mut session = AgentSessionState::new("gemma-session");
     let skill_registry = workspace.skill_registry();
+    let editable_roots = EditableRoots::for_test(workspace.path());
+    let folder_access = RecordingFolderAccess::deny();
 
     let result = run_turn(
         RunTurnInput {
@@ -166,10 +175,13 @@ async fn gemma4_turn_uses_native_framing_and_parses_channel_reasoning() {
             stable_prefix: "<|turn>system\n<|think|>\n### system\nTEST_STABLE_PREFIX",
             model_profile: super::model_profile::AgentModelProfile::Gemma4Think,
             working_dir: workspace.path(),
+            editable_roots: &editable_roots,
+            external_read_only_roots: &[],
             trusted_read_roots: &[],
             max_steps: 1,
             client: &client,
             approval: &approval,
+            folder_access: &folder_access,
             desktop: &desktop,
             cancellation: &cancellation,
             session: &mut session,
@@ -279,6 +291,8 @@ async fn sequential_runs_share_the_session_transcript() {
     let cancellation = CancellationToken::new();
     let mut session = AgentSessionState::new("shared-session");
     let skill_registry = workspace.skill_registry();
+    let editable_roots = EditableRoots::for_test(workspace.path());
+    let folder_access = RecordingFolderAccess::deny();
 
     for (run_id, user_message) in [("run-1", "first user"), ("run-2", "second user")] {
         run_turn(
@@ -290,10 +304,13 @@ async fn sequential_runs_share_the_session_transcript() {
                 stable_prefix: "TEST_STABLE_PREFIX",
                 model_profile: super::model_profile::AgentModelProfile::Plain,
                 working_dir: workspace.path(),
+                editable_roots: &editable_roots,
+                external_read_only_roots: &[],
                 trusted_read_roots: &[],
                 max_steps: 3,
                 client: &client,
                 approval: &approval,
+                folder_access: &folder_access,
                 desktop: &desktop,
                 cancellation: &cancellation,
                 session: &mut session,
@@ -357,7 +374,7 @@ async fn pure_reads_complete_before_the_tail_terminal() {
 }
 
 #[tokio::test]
-async fn approved_write_changes_the_workspace() {
+async fn safe_write_changes_the_workspace_without_approval() {
     let workspace = TestWorkspace::new();
     let approval = RecordingApproval::allow();
     let run = run_script(
@@ -376,12 +393,12 @@ async fn approved_write_changes_the_workspace() {
 
     assert!(run.result.is_ok());
     assert_eq!(workspace.read("written.txt"), b"EXACT_BYTES");
-    assert_eq!(approval.requests().len(), 1);
+    assert!(approval.requests().is_empty());
     assert_eq!(executed(&run.events)[0].1, ToolStatus::Ok);
 }
 
 #[tokio::test]
-async fn denied_write_has_no_side_effect() {
+async fn safe_write_is_not_blocked_by_a_denied_approval_policy() {
     let workspace = TestWorkspace::new();
     let approval = RecordingApproval::deny();
     let run = run_script(
@@ -399,9 +416,9 @@ async fn denied_write_has_no_side_effect() {
     .await;
 
     assert!(run.result.is_ok());
-    assert!(!workspace.path().join("denied.txt").exists());
-    assert_eq!(approval.requests().len(), 1);
-    assert_eq!(executed(&run.events)[0].1, ToolStatus::Denied);
+    assert_eq!(workspace.read("denied.txt"), b"forbidden");
+    assert!(approval.requests().is_empty());
+    assert_eq!(executed(&run.events)[0].1, ToolStatus::Ok);
 }
 
 #[tokio::test]
@@ -513,7 +530,7 @@ async fn repeated_repair_failure_finishes_as_grammar_failure() {
 }
 
 #[tokio::test]
-async fn approval_gated_batch_is_trimmed_without_repair_and_noticed_next_step() {
+async fn safe_filesystem_writes_share_a_serial_batch_without_trimming() {
     let workspace = TestWorkspace::new();
     let run = run_script(
         &workspace,
@@ -533,30 +550,28 @@ async fn approval_gated_batch_is_trimmed_without_repair_and_noticed_next_step() 
     .await;
 
     assert!(run.result.is_ok());
-    assert_eq!(workspace.read("kept.txt"), b"KEPT");
+    assert_eq!(workspace.read("kept.txt"), b"DROPPED");
     assert_eq!(
         executed(&run.events),
-        [("os.fs.write", ToolStatus::Ok), ("reply", ToolStatus::Ok)]
+        [
+            ("os.fs.write", ToolStatus::Ok),
+            ("os.fs.edit", ToolStatus::Ok),
+            ("reply", ToolStatus::Ok)
+        ]
     );
     assert!(!run
         .events
         .iter()
         .any(|event| matches!(event, AgentEvent::ParseRetry { .. })));
-    assert!(run.events.iter().any(|event| matches!(
-        event,
-        AgentEvent::BatchTrimmed { kept_tool, dropped_tools, .. }
-            if kept_tool == "os.fs.write" && dropped_tools == &["os.fs.edit"]
-    )));
+    assert!(!run
+        .events
+        .iter()
+        .any(|event| matches!(event, AgentEvent::BatchTrimmed { .. })));
     assert_eq!(run.requests.len(), 2);
-    assert!(run.requests[1]["prompt"]
-        .as_str()
-        .is_some_and(|prompt| prompt.contains("### notice")
-            && prompt.contains("os.fs.edit")
-            && prompt.contains("length-1")));
 }
 
 #[tokio::test]
-async fn mixed_read_and_approval_batch_keeps_the_approval_call() {
+async fn mixed_read_and_safe_write_batch_executes_both_calls() {
     let workspace = TestWorkspace::new();
     workspace.write("edit.txt", "OLD");
     let run = run_script(
@@ -580,7 +595,11 @@ async fn mixed_read_and_approval_batch_keeps_the_approval_call() {
     assert_eq!(workspace.read("edit.txt"), b"NEW");
     assert_eq!(
         executed(&run.events),
-        [("os.fs.edit", ToolStatus::Ok), ("reply", ToolStatus::Ok)]
+        [
+            ("os.fs.read", ToolStatus::Ok),
+            ("os.fs.edit", ToolStatus::Ok),
+            ("reply", ToolStatus::Ok)
+        ]
     );
     assert!(!run
         .events
@@ -662,6 +681,8 @@ async fn cancellation_interrupts_an_in_flight_completion() {
     let mut events = Vec::new();
     let mut session = AgentSessionState::new("cancel-session");
     let skill_registry = workspace.skill_registry();
+    let editable_roots = EditableRoots::for_test(workspace.path());
+    let folder_access = RecordingFolderAccess::deny();
     let cancel = cancellation.clone();
     let run = run_turn(
         RunTurnInput {
@@ -672,10 +693,13 @@ async fn cancellation_interrupts_an_in_flight_completion() {
             stable_prefix: "TEST_STABLE_PREFIX",
             model_profile: super::model_profile::AgentModelProfile::Plain,
             working_dir: workspace.path(),
+            editable_roots: &editable_roots,
+            external_read_only_roots: &[],
             trusted_read_roots: &[],
             max_steps: 2,
             client: &client,
             approval: &approval,
+            folder_access: &folder_access,
             desktop: &desktop,
             cancellation: &cancellation,
             session: &mut session,
@@ -917,6 +941,8 @@ async fn skill_view_loads_the_body_and_restores_it_on_the_next_turn() {
     let mut restored_session: AgentSessionState =
         serde_json::from_slice(&serde_json::to_vec(&first.session).unwrap()).unwrap();
     let mut events = Vec::new();
+    let editable_roots = EditableRoots::for_test(workspace.path());
+    let folder_access = RecordingFolderAccess::deny();
     run_turn(
         RunTurnInput {
             run_id: "restore-run",
@@ -926,10 +952,13 @@ async fn skill_view_loads_the_body_and_restores_it_on_the_next_turn() {
             stable_prefix: "TEST_STABLE_PREFIX",
             model_profile: super::model_profile::AgentModelProfile::Plain,
             working_dir: workspace.path(),
+            editable_roots: &editable_roots,
+            external_read_only_roots: &[],
             trusted_read_roots: &[],
             max_steps: 2,
             client: &client,
             approval: &approval,
+            folder_access: &folder_access,
             desktop: &desktop,
             cancellation: &cancellation,
             session: &mut restored_session,
@@ -968,6 +997,8 @@ async fn selected_skill_is_loaded_into_the_first_prompt_without_skill_view() {
     let registry = workspace.skill_registry();
     let mut session = AgentSessionState::new("selected-skill-session");
     let mut events = Vec::new();
+    let editable_roots = EditableRoots::for_test(workspace.path());
+    let folder_access = RecordingFolderAccess::deny();
 
     run_turn(
         RunTurnInput {
@@ -978,10 +1009,13 @@ async fn selected_skill_is_loaded_into_the_first_prompt_without_skill_view() {
             stable_prefix: "TEST_STABLE_PREFIX",
             model_profile: super::model_profile::AgentModelProfile::Plain,
             working_dir: workspace.path(),
+            editable_roots: &editable_roots,
+            external_read_only_roots: &[],
             trusted_read_roots: &[],
             max_steps: 2,
             client: &client,
             approval: &approval,
+            folder_access: &folder_access,
             desktop: &desktop,
             cancellation: &cancellation,
             session: &mut session,
@@ -1021,6 +1055,8 @@ async fn unknown_selected_skill_fails_before_completion() {
     let registry = workspace.skill_registry();
     let mut session = AgentSessionState::new("missing-skill-session");
     let mut events = Vec::new();
+    let editable_roots = EditableRoots::for_test(workspace.path());
+    let folder_access = RecordingFolderAccess::deny();
 
     let error = run_turn(
         RunTurnInput {
@@ -1031,10 +1067,13 @@ async fn unknown_selected_skill_fails_before_completion() {
             stable_prefix: "TEST_STABLE_PREFIX",
             model_profile: super::model_profile::AgentModelProfile::Plain,
             working_dir: workspace.path(),
+            editable_roots: &editable_roots,
+            external_read_only_roots: &[],
             trusted_read_roots: &[],
             max_steps: 2,
             client: &client,
             approval: &approval,
+            folder_access: &folder_access,
             desktop: &desktop,
             cancellation: &cancellation,
             session: &mut session,

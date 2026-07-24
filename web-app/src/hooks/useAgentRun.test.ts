@@ -129,6 +129,40 @@ describe('useAgentRun', () => {
     expect(finished.status).toBe('cancelled')
   })
 
+  it('tracks folder access separately from ordinary approvals', () => {
+    const awaiting = reduceAgentRunState(createAgentRunState(), {
+      type: 'folder_access_requested',
+      run_id: 'run-a',
+      access_id: 'access-a',
+      tool: 'os.fs.write',
+      path: '/Users/test/Desktop',
+      display_name: 'Desktop',
+      root_id: 'desktop-root',
+      reason: 'Folder access is required',
+    })
+
+    expect(awaiting.status).toBe('awaiting_folder_access')
+    expect(awaiting.pendingFolderAccess).toEqual({
+      type: 'folder_access_requested',
+      run_id: 'run-a',
+      access_id: 'access-a',
+      tool: 'os.fs.write',
+      path: '/Users/test/Desktop',
+      display_name: 'Desktop',
+      root_id: 'desktop-root',
+      reason: 'Folder access is required',
+    })
+    expect(awaiting.pendingApproval).toBeUndefined()
+
+    const finished = reduceAgentRunState(awaiting, {
+      type: 'turn_finished',
+      reason: 'cancelled',
+      step_count: 1,
+    })
+    expect(finished.pendingFolderAccess).toBeUndefined()
+    expect(finished.status).toBe('cancelled')
+  })
+
   it('forwards the thread-bound session id to the agent command', async () => {
     vi.mocked(invoke).mockResolvedValue(undefined)
     const request = {

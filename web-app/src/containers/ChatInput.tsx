@@ -111,7 +111,7 @@ import { ttftPreBegin } from '@/lib/ttft-timing'
 import { ModelFactory } from '@/lib/model-factory'
 import { canSelectChatAgentMode } from '@/containers/ChatAgentModeSwitch'
 import { AgentApprovalModeSelect } from '@/containers/AgentApprovalModeSelect'
-import { AgentWorkspaceSelect } from '@/containers/AgentWorkspaceSelect'
+import { AgentExternalFolderButton } from '@/containers/AgentExternalFolderButton'
 import { AgentSkillSlashMenu } from '@/containers/AgentSkillSlashMenu'
 import {
   filterAgentSkills,
@@ -212,8 +212,6 @@ const ChatInput = memo(function ChatInput({
     (state) => state.approvalModes[agentModeKey] ?? 'manual'
   )
   const setApprovalMode = useAgentMode((state) => state.setApprovalMode)
-  const workingDir = useAgentMode((state) => state.workingDirs[agentModeKey])
-  const setWorkingDir = useAgentMode((state) => state.setWorkingDir)
 
   useEffect(() => {
     if (!isAgentProviderSelected && isAgentMode) {
@@ -262,13 +260,6 @@ const ChatInput = memo(function ChatInput({
       setApprovalMode(agentModeKey, mode)
     },
     [agentModeKey, setApprovalMode]
-  )
-
-  const handleWorkingDirChange = useCallback(
-    (nextWorkingDir: string) => {
-      setWorkingDir(agentModeKey, nextWorkingDir)
-    },
-    [agentModeKey, setWorkingDir]
   )
 
   // Get current thread messages for token counting
@@ -2591,10 +2582,7 @@ const ChatInput = memo(function ChatInput({
 
                   {effectiveAgentMode && (
                     <>
-                      <AgentWorkspaceSelect
-                        workingDir={workingDir}
-                        onChange={handleWorkingDirChange}
-                      />
+                      <AgentExternalFolderButton workspaceKey={agentModeKey} />
                       <AgentApprovalModeSelect
                         mode={approvalMode}
                         onChange={handleApprovalModeChange}

@@ -21,12 +21,14 @@ import { useDesktopScreen } from '@/hooks/useMediaQuery'
 import { listAgentWorkspace } from '@/services/agent/tauri'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useWorkspacePreviewStore } from '@/stores/workspace-preview-store'
+import type { AgentWorkspace, AgentWorkspaceRoot } from '@/hooks/useAgentMode'
 
 type AgentWorkspaceLayoutProps = {
   children: ReactNode
   threadId: string
   agentModeActive: boolean
-  workingDir?: string
+  workspace: AgentWorkspace
+  onAddExternal: () => void
   refreshKey: number
   isGenerating?: boolean
 }
@@ -69,7 +71,8 @@ export function AgentWorkspaceLayout({
   children,
   threadId,
   agentModeActive,
-  workingDir,
+  workspace,
+  onAddExternal,
   refreshKey,
   isGenerating = false,
 }: AgentWorkspaceLayoutProps) {
@@ -99,12 +102,15 @@ export function AgentWorkspaceLayout({
   useEffect(() => {
     useWorkspacePreviewStore.getState().reset()
     useArtifactStore.getState().close()
-  }, [threadId, workingDir])
+  }, [threadId, workspace.primaryRoot?.rootId])
 
   useEffect(() => {
     if (!agentModeActive || !isDesktop) return
 
-    const workspaceKey = `${threadId}\0${workingDir ?? ''}`
+    const roots = [workspace.primaryRoot, ...workspace.externalRoots].filter(
+      (root): root is AgentWorkspaceRoot => Boolean(root)
+    )
+    const workspaceKey = `${threadId}\0${roots.map((root) => root.rootId).join('\0')}`
     if (workspaceKeyRef.current !== workspaceKey) {
       workspaceKeyRef.current = workspaceKey
       previousWorkspaceHasEntriesRef.current = undefined
@@ -112,10 +118,19 @@ export function AgentWorkspaceLayout({
     }
 
     let cancelled = false
-    void listAgentWorkspace({ workingDir }).then(
-      (entries) => {
+    void Promise.all(
+      roots.map((root) =>
+        listAgentWorkspace({
+          rootId: root.rootId,
+          rootPath: root.path,
+        }).catch(() => [])
+      )
+    ).then(
+      (rootEntries) => {
         if (cancelled) return
-        const hasEntries = entries.length > 0
+        const hasEntries =
+          workspace.externalRoots.length > 0 ||
+          rootEntries.some((entries) => entries.length > 0)
         const previouslyHadEntries = previousWorkspaceHasEntriesRef.current
 
         if (!hasEntries) {
@@ -135,7 +150,14 @@ export function AgentWorkspaceLayout({
     return () => {
       cancelled = true
     }
-  }, [agentModeActive, isDesktop, refreshKey, threadId, workingDir])
+  }, [
+    agentModeActive,
+    isDesktop,
+    refreshKey,
+    threadId,
+    workspace.externalRoots,
+    workspace.primaryRoot,
+  ])
 
   useEffect(
     () => () => {
@@ -147,6 +169,9 @@ export function AgentWorkspaceLayout({
 
   const hasPreview = tabs.length > 0
   const filesVisible = filesOpen
+  const initialPreviewSize = hasPreview ? 24 : 0
+  const initialFilesSize = filesVisible ? 24 : 0
+  const initialChatSize = 100 - initialPreviewSize - initialFilesSize
 
   useLayoutEffect(() => {
     if (!agentModeActive || !isDesktop) return
@@ -212,7 +237,7 @@ export function AgentWorkspaceLayout({
         <Panel
           id="agent-chat"
           order={1}
-          defaultSize={76}
+          defaultSize={initialChatSize}
           minSize={32}
           className="transition-[flex-grow] duration-200 ease-linear"
         >
@@ -222,7 +247,7 @@ export function AgentWorkspaceLayout({
         <Panel
           id="agent-preview"
           order={2}
-          defaultSize={0}
+          defaultSize={initialPreviewSize}
           minSize={24}
           collapsedSize={0}
           collapsible
@@ -238,10 +263,7 @@ export function AgentWorkspaceLayout({
                 exit={{ x: '100%' }}
                 transition={RIGHT_PANEL_TRANSITION}
               >
-                <AgentWorkspacePreview
-                  workingDir={workingDir}
-                  isGenerating={isGenerating}
-                />
+                <AgentWorkspacePreview isGenerating={isGenerating} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -250,7 +272,7 @@ export function AgentWorkspaceLayout({
         <Panel
           id="agent-files"
           order={3}
-          defaultSize={24}
+          defaultSize={initialFilesSize}
           minSize={8}
           maxSize={40}
           collapsedSize={0}
@@ -268,9 +290,12 @@ export function AgentWorkspaceLayout({
                 transition={RIGHT_PANEL_TRANSITION}
               >
                 <AgentWorkspaceFiles
-                  workingDir={workingDir}
+                  threadId={threadId}
+                  workspace={workspace}
                   refreshKey={refreshKey}
+                  isGenerating={Boolean(isGenerating)}
                   onClose={() => setFilesOpen(false)}
+                  onAddExternal={onAddExternal}
                 />
               </motion.div>
             )}

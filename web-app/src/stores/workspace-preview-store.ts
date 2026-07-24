@@ -4,7 +4,9 @@ import { agentPathBasename } from '@/lib/agent-path'
 export type WorkspaceFilePreviewTab = {
   id: string
   kind: 'file'
-  path: string
+  rootId: string
+  rootPath: string
+  relativePath: string
   name: string
 }
 
@@ -21,15 +23,19 @@ export type WorkspacePreviewTab =
 type WorkspacePreviewState = {
   tabs: WorkspacePreviewTab[]
   activeTabId: string | null
-  openFile: (path: string) => void
+  openFile: (file: {
+    rootId: string
+    rootPath: string
+    relativePath: string
+  }) => void
   openArtifact: (name?: string) => void
   closeTab: (id: string) => void
   removeArtifact: () => void
   reset: () => void
 }
 
-function fileTabId(path: string): string {
-  return `file:${path}`
+function fileTabId(rootId: string, relativePath: string): string {
+  return `file:${rootId}:${relativePath}`
 }
 
 function fileName(path: string): string {
@@ -62,14 +68,16 @@ export const useWorkspacePreviewStore = create<WorkspacePreviewState>()(
   (set) => ({
     tabs: [],
     activeTabId: null,
-    openFile: (path) => {
-      const id = fileTabId(path)
+    openFile: ({ rootId, rootPath, relativePath }) => {
+      const id = fileTabId(rootId, relativePath)
       set((state) => {
         const nextTab: WorkspaceFilePreviewTab = {
           id,
           kind: 'file',
-          path,
-          name: fileName(path),
+          rootId,
+          rootPath,
+          relativePath,
+          name: fileName(relativePath),
         }
         const fileIndex = state.tabs.findIndex((tab) => tab.kind === 'file')
 

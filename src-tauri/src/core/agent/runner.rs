@@ -20,7 +20,8 @@ use super::loop_guard::{
     format_wandering_redirect, LoopCheckLevel, ToolLoopTracker,
 };
 use super::model_profile::AgentModelProfile;
-use super::prompt::build_prompt_for_profile;
+use super::path_policy::EditableRoots;
+use super::prompt::{build_prompt_with_workspace_for_profile, format_workspace};
 use super::resource_class::{is_batchable, resource_class_for, ResourceClass};
 use super::session::AgentSessionState;
 use super::skills::{loaded::LoadedSkills, SkillRegistry};
@@ -28,7 +29,7 @@ use super::token_budget::{
     compute_effective_conversation_cap, estimate_tokens, COMPLETION_MAX_TOKENS,
     CONFIGURED_CONVERSATION_CAP,
 };
-use super::tools::{self, ApprovalHook, DesktopServices, ToolContext};
+use super::tools::{self, ApprovalHook, DesktopServices, FolderAccessHook, ToolContext};
 use super::types::{
     AgentEvent, LoopLevel, ToolCallPayload, ToolExecution, ToolOutcome, ToolStatus,
 };
@@ -50,10 +51,13 @@ pub struct RunTurnInput<'a> {
     pub stable_prefix: &'a str,
     pub model_profile: AgentModelProfile,
     pub working_dir: &'a Path,
+    pub editable_roots: &'a EditableRoots,
+    pub external_read_only_roots: &'a [PathBuf],
     pub trusted_read_roots: &'a [PathBuf],
     pub max_steps: u32,
     pub client: &'a LlamaServerClient,
     pub approval: &'a dyn ApprovalHook,
+    pub folder_access: &'a dyn FolderAccessHook,
     pub desktop: &'a dyn DesktopServices,
     pub cancellation: &'a CancellationToken,
     pub session: &'a mut AgentSessionState,
@@ -102,10 +106,21 @@ pub async fn run_turn(
         emit(AgentEvent::StepStarted { step_index })?;
         let loaded_tool_names = loaded_tools.snapshot().await;
         let loaded_skill_entries = loaded_skills.snapshot().await;
-        let fixed_prompt = build_prompt_for_profile(
+        let editable_roots = input.editable_roots.snapshot().await;
+        let primary_root = editable_roots
+            .first()
+            .map(PathBuf::as_path)
+            .unwrap_or(input.working_dir);
+        let workspace = format_workspace(
+            primary_root,
+            &editable_roots,
+            input.external_read_only_roots,
+        );
+        let fixed_prompt = build_prompt_with_workspace_for_profile(
             input.stable_prefix,
             &loaded_tool_names,
             &loaded_skill_entries,
+            Some(&workspace),
             "",
             notice.as_deref(),
             input.model_profile,
@@ -128,10 +143,11 @@ pub async fn run_turn(
             COMPLETION_MAX_TOKENS,
         );
         let conversation = input.session.render_conversation(conversation_cap);
-        let prompt = build_prompt_for_profile(
+        let prompt = build_prompt_with_workspace_for_profile(
             input.stable_prefix,
             &loaded_tool_names,
             &loaded_skill_entries,
+            Some(&workspace),
             &conversation,
             notice.as_deref(),
             input.model_profile,
@@ -375,9 +391,11 @@ pub async fn run_turn(
 
         let tool_context = ToolContext {
             working_dir: input.working_dir,
+            editable_roots: input.editable_roots,
             trusted_read_roots: input.trusted_read_roots,
             client: Some(input.client),
             approval: input.approval,
+            folder_access: input.folder_access,
             cancellation: input.cancellation,
             loaded_tools: &loaded_tools,
             loaded_skills: &loaded_skills,

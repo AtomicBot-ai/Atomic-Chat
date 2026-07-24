@@ -7,12 +7,15 @@ use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
 use super::llm_client::{LlamaServerClient, LlamaSessionTarget};
+use super::path_policy::EditableRoots;
 use super::prompt::{
     build_stable_prefix, CapabilitiesSummary, DEFAULT_MAX_PARALLEL_TOOL_CALLS, ITERATION_ONE_TOOLS,
 };
 use super::runner::{run_turn, RunTurnInput};
 use super::session::AgentSessionState;
-use super::test_support::{collect_event, RecordingApproval, RecordingDesktop, TestWorkspace};
+use super::test_support::{
+    collect_event, RecordingApproval, RecordingDesktop, RecordingFolderAccess, TestWorkspace,
+};
 use super::types::{AgentEvent, ToolStatus};
 
 const REQUIRED_MODEL_ID: &str = "unsloth/Qwen3_5-9B-GGUF-Qwen3_5-9B-IQ4_XS";
@@ -145,6 +148,10 @@ impl LiveHarness {
         let cancellation = CancellationToken::new();
         let mut session = AgentSessionState::new(run_id);
         let skill_registry = self.workspace.skill_registry();
+        let editable_roots = EditableRoots::new(self.workspace.path(), &[])
+            .await
+            .unwrap();
+        let folder_access = RecordingFolderAccess::deny();
         let mut events = Vec::new();
         let result = tokio::time::timeout(
             self.timeout,
@@ -157,10 +164,13 @@ impl LiveHarness {
                     stable_prefix: &self.stable_prefix,
                     model_profile: super::model_profile::AgentModelProfile::Plain,
                     working_dir: self.workspace.path(),
+                    editable_roots: &editable_roots,
+                    external_read_only_roots: &[],
                     trusted_read_roots: &[],
                     max_steps,
                     client: &self.client,
                     approval,
+                    folder_access: &folder_access,
                     desktop: &desktop,
                     cancellation: &cancellation,
                     session: &mut session,

@@ -27,14 +27,24 @@ export type AgentTurnRequest = {
   selected_skill?: string
   attachments?: AgentAttachment[]
   working_dir?: string
+  external_roots?: Array<{ path: string; can_edit: boolean }>
   max_steps?: number
   auto_approve: boolean
 }
 
 export type AgentWorkspaceRequest = {
   workingDir?: string
+  rootId?: string
+  rootPath?: string
+  relativePath?: string
   path?: string
   maxBytes?: number
+}
+
+export type AgentWorkspaceRoot = {
+  rootId: string
+  path: string
+  name: string
 }
 
 export type AgentWorkspaceEntry = {
@@ -64,6 +74,12 @@ export type AgentApprovalResolution = 'deny' | 'allow_once' | 'always_allow'
 export type AgentApprovalDecision = {
   approval_id: string
   decision: AgentApprovalResolution
+}
+
+export type AgentFolderAccessDecision = {
+  run_id: string
+  access_id: string
+  allow: boolean
 }
 
 export type AgentApprovalResource = {
@@ -113,6 +129,16 @@ export type AgentEvent =
       can_remember: boolean
     }
   | {
+      type: 'folder_access_requested'
+      run_id: string
+      access_id: string
+      tool: string
+      path: string
+      display_name: string
+      root_id: string
+      reason: string
+    }
+  | {
       type: 'loop_detected'
       level: AgentLoopLevel
       detector: AgentLoopDetector
@@ -139,10 +165,16 @@ export type AgentApprovalRequestEvent = Extract<
   { type: 'approval_requested' }
 >
 
+export type AgentFolderAccessRequestEvent = Extract<
+  AgentEvent,
+  { type: 'folder_access_requested' }
+>
+
 export type AgentRunStatus =
   | 'idle'
   | 'running'
   | 'awaiting_approval'
+  | 'awaiting_folder_access'
   | 'finished'
   | 'failed'
   | 'cancelled'
@@ -181,7 +213,9 @@ export type AgentRunState = {
   finishedAtMs?: number
   status: AgentRunStatus
   pendingApproval?: AgentApprovalRequestEvent
+  pendingFolderAccess?: AgentFolderAccessRequestEvent
   approvalResolving: boolean
+  folderAccessResolving: boolean
   trace: AgentRunTrace
 }
 
