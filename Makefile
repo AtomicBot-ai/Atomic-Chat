@@ -276,7 +276,11 @@ test-agent:
 
 ATOMIC_AGENT_E2E_LLAMA_SERVER ?= $(CURDIR)/src-tauri/resources/llamacpp-backend/build/bin/llama-server
 ATOMIC_AGENT_E2E_MODEL ?= $(HOME)/Library/Application Support/Atomic Chat/data/llamacpp/models/unsloth/Qwen3_5-9B-GGUF-Qwen3_5-9B-IQ4_XS/model.gguf
+ifeq ($(OS),Windows_NT)
+GAIA_LLAMA_SERVER ?= $(CURDIR)/src-tauri/resources/llamacpp-backend-upstream/build/bin/llama-server.exe
+else
 GAIA_LLAMA_SERVER ?= $(ATOMIC_AGENT_E2E_LLAMA_SERVER)
+endif
 GAIA_MODEL ?= $(ATOMIC_AGENT_E2E_MODEL)
 
 test-agent-model:

@@ -45,7 +45,7 @@ pub struct GaiaEvalArgs {
     mmproj: Option<PathBuf>,
     #[arg(long, env = "GAIA_HF_TOKEN")]
     hf_token: Option<String>,
-    #[arg(long, env = "GAIA_LEVEL")]
+    #[arg(long, env = "GAIA_LEVEL", default_value = "1")]
     level: Option<u8>,
     #[arg(long, env = "GAIA_LIMIT")]
     limit: Option<usize>,
