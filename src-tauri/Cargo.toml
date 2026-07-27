@@ -26,7 +26,7 @@ required-features = ["cli"]
 
 [[example]]
 name = "gaia-eval"
-path = "src/bin/gaia-eval.rs"
+path = "examples/gaia-eval.rs"
 required-features = ["gaia-eval"]
 
 [features]
