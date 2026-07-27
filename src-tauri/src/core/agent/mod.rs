@@ -19,6 +19,8 @@ pub mod attachments;
 mod batch_executor;
 pub mod commands;
 pub mod compressor;
+#[cfg(feature = "gaia-eval")]
+pub mod eval;
 pub mod folder_access;
 pub mod grammar;
 pub mod llm_client;
