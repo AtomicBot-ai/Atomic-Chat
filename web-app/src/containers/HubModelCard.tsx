@@ -280,7 +280,7 @@ export function HubModelCard({
               <TooltipTrigger asChild>
                 <span
                   className={cn(
-                    'text-xs font-semibold px-2.5 py-1 rounded-[6px] whitespace-nowrap',
+                    'inline-flex w-[102px] justify-center text-xs font-semibold px-2.5 py-1 rounded-[6px] whitespace-nowrap',
                     FIT_BADGE_CLASS[cardFit]
                   )}
                 >

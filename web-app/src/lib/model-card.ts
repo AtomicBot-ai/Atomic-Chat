@@ -15,15 +15,15 @@ export const HARDWARE_FIT: Record<
   { label: string; tip: string }
 > = {
   ok: {
-    label: 'Recommended',
+    label: 'Good fit',
     tip: 'This model is likely to run on your hardware',
   },
   maybe: {
-    label: 'Heavy for your device',
+    label: 'Should run',
     tip: 'This model can probably run on your hardware',
   },
   no: {
-    label: 'Not enough memory',
+    label: 'Too large',
     tip: 'This model is probably too large for your hardware',
   },
 }
