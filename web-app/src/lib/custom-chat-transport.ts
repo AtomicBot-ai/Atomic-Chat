@@ -58,6 +58,9 @@ import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ttftMark } from '@/lib/ttft-timing'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
+import type { ServiceHub } from '@/services'
+import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
+import { isLocalProvider as isLocalProviderName } from '@/utils/registerRemoteProvider'
 
 /// Local inference backends (mlx, llamacpp, llamacpp-upstream,
 /// foundation-models) get special handling at the `streamText` boundary:
@@ -260,18 +263,6 @@ export type OnFinishCallback = (params: {
 export type OnToolCallCallback = (params: {
   toolCall: { toolCallId: string; toolName: string; input: unknown }
 }) => void
-export type ServiceHub = {
-  rag(): {
-    getTools(): Promise<
-      Array<{ name: string; description: string; inputSchema: unknown }>
-    >
-  }
-  mcp(): {
-    getTools(): Promise<
-      Array<{ name: string; description: string; inputSchema: unknown }>
-    >
-  }
-}
 
 /**
  * Wraps a UIMessageChunk stream so that when the first `text-start` chunk
@@ -683,9 +674,13 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
             : []
 
         ttftMark('deltaStart')
+        const effectiveProvider = updatedProvider ?? provider
+        if (!isLocalProviderName(effectiveProvider.provider)) {
+          await ensureRemoteProviderReady(effectiveProvider, this.serviceHub)
+        }
         this.model = await ModelFactory.createModel(
           modelId,
-          updatedProvider ?? provider,
+          effectiveProvider,
           inferenceParams ?? {},
           hasOverride ? effectiveReasoningOverride : undefined,
           audioInputParts.length > 0 ? audioInputParts : undefined

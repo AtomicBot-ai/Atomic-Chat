@@ -1618,7 +1618,7 @@ function ThreadDetail() {
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
         <HeaderPage>
           <div className="flex items-center justify-between w-full pr-2">
-            <DropdownModelProvider />
+            <DropdownModelProvider showSampler={!agentModeActive} />
           </div>
         </HeaderPage>
         <div className="flex flex-1 overflow-hidden">

@@ -309,6 +309,51 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-07-27 — Reconcile remote providers before proxy-routed requests
+- **Context:** Remote models intentionally send through the Local API Server
+  proxy, but startup left that proxy stopped when no local engine model was
+  active. A restored remote selection could therefore send its first request
+  to an unavailable `localhost:1337` and fail with connection refused until
+  the user reselected the model.
+- **Decision:** Add one serialized, idempotent remote-provider readiness
+  preflight that validates and registers the selected provider, then starts
+  the Local API Server when needed. Invoke it after provider hydration for the
+  restored remote selection and immediately before constructing a remote chat
+  model. Keep remote traffic on the existing local proxy architecture.
+- **Consequences:** Restored and first-use remote models cannot race provider
+  registration or proxy startup. Local-engine startup policy remains
+  unchanged, while remote sends may now wait for one bounded proxy-start
+  attempt and surface its failure before model construction.
+- **Owner:** team.
+- **Links:** [ATO-306](https://linear.app/atomicchat/issue/ATO-306),
+  [`web-app/src/utils/ensureRemoteProviderReady.ts`](web-app/src/utils/ensureRemoteProviderReady.ts),
+  [`web-app/src/providers/DataProvider.tsx`](web-app/src/providers/DataProvider.tsx),
+  [`web-app/src/lib/custom-chat-transport.ts`](web-app/src/lib/custom-chat-transport.ts).
+
+### 2026-07-27 — Replace advanced model settings with a focused context control
+- **Context:** The model pill exposed an advanced settings sheet whose engine
+  options were too complex for the primary Chat and Agent surfaces, while
+  context size still needed a direct control on Home and in active threads.
+- **Decision:** Remove the per-model settings gear from the model pill and add
+  one compact composer control that retains the token-usage percentage and
+  circular meter on its trigger while opening a context-size editor. Back the
+  popover with each selected local model's existing `ctx_len`
+  metadata for `llamacpp`, `llamacpp-upstream`, and `mlx`; expose the range as
+  a full-width slider whose upper bound comes from the engine's
+  `getMaxCtxTrain` capability; persist changes through the model-provider store
+  and restart a running model using its saved settings.
+- **Consequences:** Chat and Agent share one focused context-size control on
+  Home and in threads, including before token usage is available. The compact
+  token meter is no longer duplicated beside a separate context-size button.
+  Users can select any supported context size up to the model's training
+  maximum without entering a raw value. Provider navigation gears remain
+  available, and advanced model settings are no longer directly exposed from
+  the model pill.
+- **Owner:** team.
+- **Links:** [`web-app/src/containers/ContextSizeControl.tsx`](web-app/src/containers/ContextSizeControl.tsx),
+  [`web-app/src/containers/ChatInput.tsx`](web-app/src/containers/ChatInput.tsx),
+  [`web-app/src/containers/DropdownModelProvider.tsx`](web-app/src/containers/DropdownModelProvider.tsx).
+
 ### 2026-07-27 — Run Windows GAIA evaluation on the selected upstream GPU backend
 - **Context:** `make gaia-eval` inherited the macOS-oriented TurboQuant
   `llama-server` path on every platform. On Windows this omitted `.exe` and

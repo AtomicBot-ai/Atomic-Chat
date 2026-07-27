@@ -40,6 +40,7 @@ import {
   unregisterRemoteProvider,
 } from '@/utils/registerRemoteProvider'
 import { hydrateActiveModelsForRunningServer } from '@/utils/activeModelsSync'
+import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
 
 const safeRegisterRemoteProvider = async (provider: ModelProvider) => {
   try {
@@ -177,6 +178,25 @@ export function DataProvider() {
             registeredProviderNames.add(provider.provider)
           }
         })
+
+        const modelState = useModelProvider.getState()
+        const selectedProvider = modelState.getProviderByName(
+          modelState.selectedProvider
+        )
+        if (
+          modelState.selectedModel &&
+          selectedProvider &&
+          !isLocalProvider(selectedProvider.provider)
+        ) {
+          void ensureRemoteProviderReady(selectedProvider, serviceHub).catch(
+            (error) => {
+              console.error(
+                `[LocalAPI:startup] Failed to prepare remote provider ${selectedProvider.provider}:`,
+                error
+              )
+            }
+          )
+        }
       })
     serviceHub
       .mcp()

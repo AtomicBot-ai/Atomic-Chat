@@ -130,7 +130,7 @@ function Index() {
       <div className="flex h-full w-full min-w-0 flex-col justify-center">
         <HeaderPage>
           <div className="flex items-center gap-2 w-full">
-            <DropdownModelProvider />
+            <DropdownModelProvider showSampler={!isAgentMode} />
           </div>
         </HeaderPage>
         <div

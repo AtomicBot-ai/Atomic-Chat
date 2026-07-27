@@ -57,6 +57,7 @@ import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
+import { ContextSizeControl } from '@/containers/ContextSizeControl'
 import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
 import { McpExtensionToolLoader } from './McpExtensionToolLoader'
@@ -2759,27 +2760,18 @@ const ChatInput = memo(function ChatInput({
               </div>
 
               <div className="flex items-center gap-2">
-                {isLlamacppProvider(selectedProvider) &&
-                  tokenCounterCompact &&
-                  !initialMessage &&
-                  (threadMessages?.length > 0 || prompt.trim().length > 0) && (
-                    <div className="flex-1 flex justify-center">
-                      <TokenCounter
-                        messages={threadMessages || []}
-                        compact={true}
-                        uploadedFiles={attachments
-                          .filter((a) => a.type === 'image' && a.dataUrl)
-                          .map((a) => ({
-                            name: a.name,
-                            type:
-                              a.mimeType || getFileTypeFromExtension(a.name),
-                            size: a.size || 0,
-                            base64: a.base64 || '',
-                            dataUrl: a.dataUrl!,
-                          }))}
-                      />
-                    </div>
-                  )}
+                <ContextSizeControl
+                  messages={threadMessages || []}
+                  uploadedFiles={attachments
+                    .filter((a) => a.type === 'image' && a.dataUrl)
+                    .map((a) => ({
+                      name: a.name,
+                      type: a.mimeType || getFileTypeFromExtension(a.name),
+                      size: a.size || 0,
+                      base64: a.base64 || '',
+                      dataUrl: a.dataUrl!,
+                    }))}
+                />
 
                 {isStreaming ? (
                   <Button

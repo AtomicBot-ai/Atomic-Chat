@@ -16,7 +16,6 @@ import {
 import { IconSettings, IconX, IconDownload } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
-import { ModelSetting } from '@/containers/ModelSetting'
 import { SamplerPopover } from '@/containers/SamplerPopover'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { ModelSupportStatus } from '@/containers/ModelSupportStatus'
@@ -64,7 +63,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     providers,
     getProviderByName,
     selectModelProvider,
-    getModelBy,
     selectedProvider,
     selectedModel,
     updateProvider,
@@ -489,10 +487,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     ]
   )
 
-  const currentModel = selectedModel?.id
-    ? getModelBy(selectedModel?.id)
-    : undefined
-
   if (!providers.length) return null
 
   const provider = getProviderByName(selectedProvider)
@@ -529,18 +523,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
             </span>
             <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
           </button>
-          {currentModel?.settings &&
-            provider &&
-            (provider.provider === 'llamacpp' ||
-              provider.provider === 'llamacpp-upstream' ||
-              provider.provider === 'mlx') && (
-              <div onClick={(e) => e.stopPropagation()}>
-                <ModelSetting
-                  model={currentModel as Model}
-                  provider={provider}
-                />
-              </div>
-            )}
           <ModelSupportStatus
             modelId={selectedModel?.id}
             provider={selectedProvider}
