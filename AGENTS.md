@@ -309,6 +309,47 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-07-27 — Run Windows GAIA evaluation on the selected upstream GPU backend
+- **Context:** `make gaia-eval` inherited the macOS-oriented TurboQuant
+  `llama-server` path on every platform. On Windows this omitted `.exe` and
+  selected the bundled TurboQuant CPU fallback even when development setup had
+  already installed the hardware-selected upstream backend, such as
+  `win-cuda-13.3-x64`.
+- **Decision:** Default `GAIA_LLAMA_SERVER` on Windows to the prepared
+  `llamacpp-backend-upstream/build/bin/llama-server.exe`. Preserve the existing
+  TurboQuant default on other platforms and preserve an explicit
+  `GAIA_LLAMA_SERVER` override everywhere.
+- **Consequences:** Windows GAIA runs use the same CUDA 13, CUDA 12, Vulkan, or
+  CPU upstream binary selected by the existing Windows backend setup instead
+  of silently benchmarking the TurboQuant CPU fallback. GAIA does not download
+  or replace backends itself; the selected resource must already exist.
+- **Owner:** team.
+- **Links:** [`Makefile`](Makefile) (`GAIA_LLAMA_SERVER`, `gaia-eval`),
+  [`scripts/dev-windows.ps1`](scripts/dev-windows.ps1).
+
+### 2026-07-27 — Evaluate the Rust Agent sequentially on gated GAIA validation
+- **Context:** Atomic Chat needed a repeatable benchmark for its direct Rust
+  Agent loop that fits one local model in memory and does not depend on the
+  Tauri UI or IPC.
+- **Decision:** Add a feature-gated headless `gaia-eval` binary and
+  `make gaia-eval`. Load and cache the official gated GAIA 2023 validation
+  split through Hugging Face, start one dedicated `llama-server` with one
+  slot, and call `core::agent::runner::run_turn` directly for isolated tasks
+  in a strictly sequential loop. Keep workspace path policy, shell hard
+  blocks, SSRF protections, task timeouts, event capture, GAIA-compatible
+  scoring, and JSON plus terminal reporting. Default runs to Level 1 while
+  retaining `GAIA_LEVEL` / `--level` as an explicit override.
+- **Consequences:** Local models can be compared through one reproducible
+  command without competing inference jobs or GUI state. A valid gated
+  Hugging Face token and local server/model paths remain operator
+  prerequisites. Unconfigured runs cover only Level 1; Levels 2 and 3 require
+  an explicit filter. Parallel execution is deliberately deferred until
+  models or hardware can support multiple independent slots.
+- **Owner:** team.
+- **Links:** [`src-tauri/src/core/agent/eval/`](src-tauri/src/core/agent/eval/),
+  [`src-tauri/src/bin/gaia-eval.rs`](src-tauri/src/bin/gaia-eval.rs),
+  [`Makefile`](Makefile) (`gaia-eval`).
+
 ### 2026-07-24 — Let users revoke or downgrade Agent folder access
 - **Context:** Connected external Agent folders were permanently editable for
   the thread and had no management controls after being added.

@@ -19,6 +19,11 @@ name = "jan-cli"
 path = "src/bin/jan-cli.rs"
 required-features = ["cli"]
 
+[[bin]]
+name = "gaia-eval"
+path = "src/bin/gaia-eval.rs"
+required-features = ["gaia-eval"]
+
 [features]
 default = [
     "tauri/wry",
@@ -57,6 +62,7 @@ test-tauri = [
     "desktop",
 ]
 cli = ["dep:env_logger", "dep:dialoguer", "dep:indicatif", "dep:console"]
+gaia-eval = ["dep:env_logger", "dep:indicatif", "dep:parquet"]
 
 [build-dependencies]
 tauri-build = { version = "2.0.2", features = [] }
@@ -126,7 +132,7 @@ sysinfo = "0.34.2"
 hostname = "0.4"
 base64 = "0.22"
 glob = "0.3"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 dialoguer = { version = "0.11", optional = true }
 env_logger = { version = "0.11", optional = true }
 indicatif = { version = "0.17", optional = true }
@@ -135,6 +141,7 @@ ignore = "=0.4.30"
 regex = "1.13.1"
 diffy = "0.4.2"
 trash = "=5.2.3"
+parquet = { version = "54.3.1", default-features = false, features = ["brotli", "flate2", "json", "lz4", "snap", "zstd"], optional = true }
 
 [dependencies.tauri]
 version = "2.8.5"
