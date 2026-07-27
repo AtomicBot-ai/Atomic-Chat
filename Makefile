@@ -298,7 +298,7 @@ gaia-eval:
 	GAIA_LLAMA_SERVER="$(GAIA_LLAMA_SERVER)" \
 	GAIA_MODEL="$(GAIA_MODEL)" \
 	cargo run --manifest-path src-tauri/Cargo.toml -p Atomic-Chat \
-		--features gaia-eval --bin gaia-eval
+		--features gaia-eval --example gaia-eval
 
 test: lint install-rust-targets
 	yarn download:bin
