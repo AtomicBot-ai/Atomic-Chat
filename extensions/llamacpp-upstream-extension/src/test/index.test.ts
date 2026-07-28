@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import llamacpp_extension from '../index'
 
 import {
+  getSupportedFeaturesFromRust,
   loadLlamaModel,
   mapOldBackendToNew,
   normalizeLlamacppConfig,
@@ -9,6 +10,8 @@ import {
   removeOldBackendVersions,
   unloadLlamaModel,
 } from '../../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index'
+import { listSupportedBackends } from '../backend'
+import { getSystemInfo } from '../hardware'
 
 // Mock fetch globally
 global.fetch = vi.fn()
@@ -27,6 +30,11 @@ vi.mock('../backend', () => ({
   getBackendDir: vi.fn(),
 }))
 
+vi.mock('../hardware', () => ({
+  getSystemInfo: vi.fn(),
+  getSystemUsage: vi.fn(),
+}))
+
 // The extension imports the guest bridge by relative path, so mock that exact
 // module rather than the package alias.
 vi.mock(
@@ -40,6 +48,7 @@ vi.mock(
 
     return {
       ...actual,
+      getSupportedFeaturesFromRust: vi.fn(),
       loadLlamaModel: vi.fn(),
       mapOldBackendToNew: vi.fn(),
       readGgufMetadata: vi.fn(),
@@ -71,6 +80,119 @@ describe('llamacpp_extension', () => {
       expect(extension.provider).toBe('llamacpp-upstream')
       expect(extension.providerId).toBe('llamacpp-upstream')
       expect(extension.autoUnload).toBe(false)
+    })
+  })
+
+  describe('hardware backend recommendation', () => {
+    const discreteGpu = {
+      name: 'Test GPU',
+      total_memory: 12 * 1024,
+      vendor: 'Test',
+      uuid: 'gpu-1',
+      driver_version: '1',
+      vulkan_info: { device_type: 'DiscreteGpu' },
+    }
+
+    it('selects the published CUDA 13 asset on a supported Windows host', async () => {
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'windows',
+        os_name: 'Windows',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [{ ...discreteGpu, nvidia_info: {} }],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: false,
+        cuda12: true,
+        cuda13: true,
+        vulkan: true,
+      })
+      vi.mocked(listSupportedBackends).mockResolvedValue([
+        { version: 'b9937', backend: 'win-cpu-x64', order: 0 },
+        { version: 'b9937', backend: 'win-cuda-12.4-x64', order: 0 },
+        { version: 'b9937', backend: 'win-cuda-13.3-x64', order: 0 },
+        { version: 'b9937', backend: 'win-vulkan-x64', order: 0 },
+      ])
+      vi.spyOn(extension as any, 'tierEnumeratesDevices').mockResolvedValue(
+        'works'
+      )
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'gpu',
+        backend: 'win-cuda-13.3-x64',
+      })
+    })
+
+    it('uses Vulkan for a Linux NVIDIA host and ignores CUDA flags', async () => {
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'linux',
+        os_name: 'Linux',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [{ ...discreteGpu, nvidia_info: {} }],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: true,
+        cuda12: true,
+        cuda13: true,
+        vulkan: true,
+      })
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'gpu',
+        backend: 'linux-vulkan-x64',
+      })
+      expect(listSupportedBackends).not.toHaveBeenCalled()
+    })
+
+    it('keeps an integrated-only Vulkan host on CPU', async () => {
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'linux',
+        os_name: 'Linux',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [
+          {
+            ...discreteGpu,
+            name: 'Integrated GPU',
+            nvidia_info: undefined,
+            vulkan_info: { device_type: 'IntegratedGpu' },
+          },
+        ],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: false,
+        cuda12: false,
+        cuda13: false,
+        vulkan: true,
+      })
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'cpu-optimal',
+      })
+    })
+
+    it('reports detection failure when a Windows GPU tier has no release asset', async () => {
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'windows',
+        os_name: 'Windows',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [{ ...discreteGpu, nvidia_info: {} }],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: false,
+        cuda12: true,
+        cuda13: true,
+        vulkan: false,
+      })
+      vi.mocked(listSupportedBackends).mockResolvedValue([
+        { version: 'b9937', backend: 'win-cpu-x64', order: 0 },
+      ])
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'detection-failed',
+      })
     })
   })
 

@@ -9,12 +9,13 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-148 records, 2026-05-19 → 2026-07-28.
+151 records, 2026-05-19 → 2026-07-28.
 
 ---
 
 ## Load-bearing — read before touching platform / provider / agent code
 
+- **2026-07-28** — [Ship dual llama providers on Windows and Linux](2026-07-28-ship-dual-llama-providers-on-windows-and-linux.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 - **2026-05-22** — [Windows ships only `llamacpp-upstream`, sourced from `ggml-org/llama.cpp`](2026-05-22-windows-ships-only-llamacpp-upstream-sourced-from-ggml-org.md)
 - **2026-05-28** — [Linux ships only `llamacpp-upstream` (AppImage, upstream `ggml-org/llama.cpp`); Vulkan is the sole GPU path](2026-05-28-linux-ships-only-llamacpp-upstream-appimage-upstream-ggml-org.md)
@@ -204,8 +205,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Other (4)
+## Other (6)
 
+- **2026-07-28** — [Grade tests by critical-flow evidence](2026-07-28-grade-tests-by-critical-flow-evidence.md)
+- **2026-07-28** — [Pin backend artifacts to verified tags](2026-07-28-pin-backend-artifacts-to-verified-tags.md)
 - **2026-07-28** — [Test frontend Tauri adapters through official mocks](2026-07-28-test-frontend-tauri-through-official-mocks.md)
 - **2026-07-28** — [Isolate the unstable Tauri IPC test API](2026-07-28-isolate-tauri-ipc-test-api.md)
 - **2026-07-23** — [Isolate the Windows Common Controls test manifest by feature](2026-07-23-isolate-the-windows-common-controls-test-manifest-by-feature.md)

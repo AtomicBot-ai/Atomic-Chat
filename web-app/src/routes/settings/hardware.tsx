@@ -38,16 +38,9 @@ function HardwareContent() {
   } = useHardware()
 
   const { providers } = useModelProvider()
-  // Look up the locally-running llama.cpp provider by the OS-appropriate
-  // id, not the hardcoded string 'llamacpp'. On Windows / Linux the
-  // turboquant `@janhq/llamacpp-extension` is NOT installed (see the
-  // 2026-05-22 ADR *Windows ships only `llamacpp-upstream`* and the
-  // matching Linux story), and the only registered provider is
-  // `llamacpp-upstream`. Without this fix, the entire GPU section of
-  // this screen was render-gated by `llamacpp && (...)` to `false` on
-  // Windows and Linux — which is why end users on Windows reported
-  // "GPUs not shown at all" in Settings → Hardware even when the
-  // llama.cpp backend was running on GPU happily.
+  // Hardware status follows the default local provider rather than a
+  // hardcoded TurboQuant id. Both llama.cpp providers may be installed, but
+  // upstream is the fresh-install default on every desktop platform.
   const llamacpp = providers.find(
     (p) => p.provider === LOCAL_LLAMACPP_PROVIDER
   )

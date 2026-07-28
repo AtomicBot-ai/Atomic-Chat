@@ -5,6 +5,9 @@ import {
   isBackendInstalled,
   fetchRemoteBackends,
   getBackendArchiveName,
+  getBackendDownloadUrl,
+  LLAMACPP_UPSTREAM_PINNED_TAG,
+  resolveCudaFamilyConcrete,
 } from '../backend'
 import { getSystemInfo } from '../hardware'
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
@@ -78,6 +81,28 @@ describe('Backend functions', () => {
       expect(getBackendArchiveName('b9691', 'win-cpu-x64')).toBe(
         'llama-b9691-bin-win-cpu-x64.zip'
       )
+    })
+
+    it('maps supported ids to exact upstream release URLs', () => {
+      expect(getBackendDownloadUrl('b9937', 'win-cuda-13.3-x64')).toBe(
+        'https://github.com/ggml-org/llama.cpp/releases/download/b9937/llama-b9937-bin-win-cuda-13.3-x64.zip'
+      )
+      expect(getBackendDownloadUrl('b9937', 'linux-vulkan-x64')).toBe(
+        'https://github.com/ggml-org/llama.cpp/releases/download/b9937/llama-b9937-bin-ubuntu-vulkan-x64.tar.gz'
+      )
+      expect(() =>
+        getBackendDownloadUrl('latest', 'win-cpu-x64')
+      ).toThrow("unresolved 'latest' tag")
+    })
+
+    it('resolves the CUDA 13 family to the newest published minor', () => {
+      expect(
+        resolveCudaFamilyConcrete('win-cuda-13-x64', [
+          { version: 'b9900', backend: 'win-cuda-13.1-x64', order: 0 },
+          { version: 'b9937', backend: 'win-cuda-13.3-x64', order: 0 },
+          { version: 'b9937', backend: 'win-cuda-12.4-x64', order: 0 },
+        ])
+      ).toBe('b9937/win-cuda-13.3-x64')
     })
   })
 
@@ -161,14 +186,14 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
   const MANIFEST = {
     $schema: './schema.json',
     updated_at: '2026-06-17T00:00:00Z',
-    tag_name: 'b9691',
+    tag_name: 'b9937',
     assets: [
-      { name: 'llama-b9691-bin-win-cpu-x64.zip' },
-      { name: 'llama-b9691-bin-win-cuda-12.4-x64.zip' },
-      { name: 'llama-b9691-bin-win-cuda-13.3-x64.zip' },
-      { name: 'llama-b9691-bin-win-vulkan-x64.zip' },
-      { name: 'llama-b9691-bin-ubuntu-x64.tar.gz' },
-      { name: 'llama-b9691-bin-ubuntu-vulkan-x64.tar.gz' },
+      { name: 'llama-b9937-bin-win-cpu-x64.zip' },
+      { name: 'llama-b9937-bin-win-cuda-12.4-x64.zip' },
+      { name: 'llama-b9937-bin-win-cuda-13.3-x64.zip' },
+      { name: 'llama-b9937-bin-win-vulkan-x64.zip' },
+      { name: 'llama-b9937-bin-ubuntu-x64.tar.gz' },
+      { name: 'llama-b9937-bin-ubuntu-vulkan-x64.tar.gz' },
       { name: 'cudart-llama-bin-win-cuda-12.4-x64.zip' },
       { name: 'cudart-llama-bin-win-cuda-13.3-x64.zip' },
     ],
@@ -218,6 +243,27 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
     ])
   })
 
+  it('rejects a moving manifest tag until compatibility is updated', async () => {
+    vi.mocked(getSystemInfo).mockResolvedValue({
+      os_type: 'windows',
+      cpu: { arch: 'x86_64', extensions: [] },
+      gpus: [],
+    } as any)
+    vi.mocked(tauriFetch).mockResolvedValue(
+      okResponse({
+        ...MANIFEST,
+        tag_name: 'b10000',
+        assets: [{ name: 'llama-b10000-bin-win-cpu-x64.zip' }],
+      })
+    )
+
+    const backends = await fetchRemoteBackends()
+
+    expect(new Set(backends.map((backend) => backend.version))).toEqual(
+      new Set([LLAMACPP_UPSTREAM_PINNED_TAG])
+    )
+  })
+
   it('resolves the manifest from raw atomic-chat-conf, not api.github.com', async () => {
     vi.mocked(getSystemInfo).mockResolvedValue({
       os_type: 'windows',
@@ -252,7 +298,7 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
     ])
     // cudart companions are not surfaced as backends.
     expect(names).not.toContain('cudart-llama-bin-win-cuda-12.4-x64')
-    backends.forEach((b) => expect(b.version).toBe('b9691'))
+    backends.forEach((b) => expect(b.version).toBe('b9937'))
   })
 
   it('returns cpu + vulkan for Linux x64', async () => {
@@ -266,7 +312,7 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
     const names = backends.map((b) => b.backend).sort()
 
     expect(names).toEqual(['linux-cpu-x64', 'linux-vulkan-x64'])
-    backends.forEach((b) => expect(b.version).toBe('b9691'))
+    backends.forEach((b) => expect(b.version).toBe('b9937'))
   })
 
   it('returns [] on macOS without any network call to the manifest', async () => {

@@ -524,8 +524,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Per ADR 2026-05-22 Windows ships only `llamacpp-upstream`; per
-          # ATO-199 the backend INDEX is resolved from the static
+          # Upstream remains the Windows default provider. Per ATO-199 its
+          # backend INDEX is resolved from the static
           # atomic-chat-conf manifest (raw.githubusercontent.com, no
           # api.github.com rate limit). The archive itself still comes from the
           # ggml-org CDN. Inline bash (not `make ...-win-cpu`) because that
@@ -586,7 +586,7 @@ jobs:
           # PowerShell one-liner whose `$(...)` is mangled by make's /usr/bin/sh.
           DIR="src-tauri/resources/llamacpp-backend"
           BACKEND="windows-x64-cpu"
-          MANIFEST_URL="https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/turboquant-manifest.json"
+          MANIFEST_URL="https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/f149c30e55a3dfcdcbcc5d4a72be7c691db8f5e2/backends/turboquant-manifest.json"
           rm -rf "$DIR"
           mkdir -p "$DIR"
           echo "Resolving TurboQuant backend index from atomic-chat-conf manifest..."
@@ -799,8 +799,8 @@ jobs:
     if: github.event_name == 'push' || inputs.build_linux
     # Pinned to ubuntu-22.04 (glibc 2.35) so the produced AppImage stays
     # compatible with Ubuntu 22.04 / 24.04 / Debian 12 / Fedora 40 /
-    # Mint / Pop!_OS / Arch — per 2026-05-28 ADR
-    # "Linux ships only `llamacpp-upstream`".
+    # Mint / Pop!_OS / Arch. Upstream remains the Linux default while the
+    # TurboQuant Vulkan build ships as the optional second provider.
     runs-on: ubuntu-22.04
     needs: create-draft-release
     outputs:

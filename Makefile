@@ -385,9 +385,11 @@ endif
 
 # Download MLX server binary (mlx-vlm fork) from GitHub releases (macOS only)
 # Supports GH_TOKEN env var for authenticated GitHub API requests (avoids rate limits in CI)
-# Override MLXVLM_TAG to pin a specific release, e.g.:
+# Pinned compatibility baseline. Override only for a dedicated compatibility
+# validation run; normal builds never resolve a moving latest release.
+# Example:
 #   make build-mlx-server MLXVLM_TAG=mlxvlm-macos-arm64-abc1234
-MLXVLM_TAG ?=
+MLXVLM_TAG ?= mlxvlm-macos-arm64-d784fc5
 build-mlx-server:
 ifeq ($(shell uname -s),Darwin)
 	@mkdir -p src-tauri/resources/bin
@@ -479,8 +481,7 @@ else
 	@echo "Skipping MLX server download (macOS only)"
 endif
 
-# Download MLX server if missing, outdated, or a leftover Swift binary.
-# Compares local version tag with the latest GitHub release.
+# Download MLX server if missing or different from the verified pin.
 build-mlx-server-if-exists:
 ifeq ($(shell uname -s),Darwin)
 	@if [ ! -f "src-tauri/resources/bin/mlx-server" ] || [ ! -f "src-tauri/resources/bin/mlx-server-version.txt" ]; then \
@@ -488,18 +489,10 @@ ifeq ($(shell uname -s),Darwin)
 		make build-mlx-server; \
 	else \
 		LOCAL_TAG=$$(cat src-tauri/resources/bin/mlx-server-version.txt 2>/dev/null); \
-		API_URL="https://api.github.com/repos/AtomicBot-ai/mlx-vlm/releases"; \
-		if [ -n "$$GH_TOKEN" ]; then \
-			LATEST_TAG=$$(curl -sf -H "Authorization: Bearer $$GH_TOKEN" "$$API_URL" | python3 -c "import sys,json; rs=json.load(sys.stdin); ts=sorted([r for r in rs if r['tag_name'].startswith('mlxvlm-macos-arm64')], key=lambda r: r.get('published_at') or r.get('created_at') or '', reverse=True); print(ts[0]['tag_name'] if ts else '')" 2>/dev/null); \
-		else \
-			LATEST_TAG=$$(curl -sf "$$API_URL" | python3 -c "import sys,json; rs=json.load(sys.stdin); ts=sorted([r for r in rs if r['tag_name'].startswith('mlxvlm-macos-arm64')], key=lambda r: r.get('published_at') or r.get('created_at') or '', reverse=True); print(ts[0]['tag_name'] if ts else '')" 2>/dev/null); \
-		fi; \
-		if [ -z "$$LATEST_TAG" ]; then \
-			echo "Could not fetch latest release tag — keeping current ($$LOCAL_TAG)"; \
-		elif [ "$$LOCAL_TAG" = "$$LATEST_TAG" ]; then \
+		if [ "$$LOCAL_TAG" = "$(MLXVLM_TAG)" ]; then \
 			echo "MLX server is up-to-date ($$LOCAL_TAG)"; \
 		else \
-			echo "MLX server outdated: local=$$LOCAL_TAG remote=$$LATEST_TAG — updating..."; \
+			echo "MLX server differs from verified pin: local=$$LOCAL_TAG pinned=$(MLXVLM_TAG) — updating..."; \
 			make build-mlx-server; \
 		fi; \
 	fi
@@ -543,13 +536,21 @@ endif
 
 # Download llamacpp turboquant backend for bundling
 # Supports GH_TOKEN env var for authenticated GitHub API requests (avoids rate limits in CI)
-# Override LLAMACPP_TAG to pin a specific release, e.g.:
+# Verified Apple Silicon compatibility baseline. LLAMACPP_TAG remains the
+# explicit developer override used by non-macOS legacy targets.
+# Example:
 #   make download-llamacpp-backend LLAMACPP_TAG=turboquant-macos-arm64-7c01058
-LLAMACPP_TAG ?=
+ATOMIC_CHAT_CONF_BACKEND_REV ?= f149c30e55a3dfcdcbcc5d4a72be7c691db8f5e2
+LLAMACPP_MACOS_ARM64_TAG ?= turboquant-macos-arm64-066cc29
+LLAMACPP_TAG ?= $(if $(filter Darwin,$(shell uname -s)),$(if $(filter arm64,$(shell uname -m)),$(LLAMACPP_MACOS_ARM64_TAG),),)
 download-llamacpp-backend:
 ifeq ($(shell uname -s),Darwin)
 	@mkdir -p src-tauri/resources/llamacpp-backend
 	@ARCH=$$(uname -m); \
+	if [ "$$ARCH" != "arm64" ]; then \
+		echo "Skipping TurboQuant backend: no verified macOS x64 release exists"; \
+		exit 0; \
+	fi; \
 	if [ "$$ARCH" = "arm64" ]; then BACKEND="macos-arm64"; else BACKEND="macos-x64"; fi; \
 	echo "Platform: $$BACKEND"; \
 	if [ -n "$(LLAMACPP_TAG)" ]; then \
@@ -671,7 +672,7 @@ else ifeq ($(shell uname -s),Linux)
 	else \
 		echo "Resolving TurboQuant backend index from atomic-chat-conf manifest..."; \
 		TMPREL=$$(mktemp /tmp/turboquant-manifest-XXXXXX.json); \
-		MANIFEST_URL="https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/turboquant-manifest.json"; \
+		MANIFEST_URL="https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/$(ATOMIC_CHAT_CONF_BACKEND_REV)/backends/turboquant-manifest.json"; \
 		if ! curl -sS --retry 5 --retry-delay 3 -H "User-Agent: atomic-chat-ci" -o "$$TMPREL" "$$MANIFEST_URL"; then \
 			echo "Error: failed to fetch turboquant manifest from $$MANIFEST_URL"; \
 			rm -f "$$TMPREL"; exit 1; \
@@ -718,8 +719,8 @@ endif
 # Sources the official upstream ggml-org/llama.cpp release into the upstream
 # backend resource dir. The app will auto-detect GPU and download the optimal
 # backend (CUDA/Vulkan) at runtime via the llamacpp-upstream extension.
-# Per ADR 2026-05-22, Windows ships only `llamacpp-upstream` — this target is
-# the canonical CPU bundle source for that pipeline.
+# Upstream remains the Windows default; this target owns its CPU fallback.
+# TurboQuant uses the separate `download-llamacpp-backend-win-cpu` target.
 download-llamacpp-upstream-backend-win-cpu:
 	powershell -NoProfile -Command " \
 		$$ErrorActionPreference = 'Stop'; \
@@ -775,7 +776,7 @@ download-llamacpp-backend-win-cpu:
 		Write-Host 'Resolving TurboQuant backend index from atomic-chat-conf manifest...'; \
 		$$headers = @{ 'User-Agent' = 'atomic-chat' }; \
 		$$backend = 'windows-x64-cpu'; \
-		$$manifest = Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/turboquant-manifest.json' -Headers $$headers; \
+		$$manifest = Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/$(ATOMIC_CHAT_CONF_BACKEND_REV)/backends/turboquant-manifest.json' -Headers $$headers; \
 		$$entry = $$manifest.backends | Where-Object { $$_.id -eq $$backend } | Select-Object -First 1; \
 		if (-not $$entry) { throw 'atomic-chat-conf turboquant manifest does not list the windows-x64-cpu backend (update backends/turboquant-manifest.json)' }; \
 		$$tag = $$entry.tag; \
@@ -1014,8 +1015,8 @@ else ifeq ($(OS),Windows_NT)
 	echo "Downloaded and extracted upstream llamacpp backend ($$BACKEND) for Windows successfully"
 else ifeq ($(shell uname -s),Linux)
 	@mkdir -p src-tauri/resources/llamacpp-backend-upstream
-	@# Per 2026-05-28 ADR *Linux ships only `llamacpp-upstream`*: Phase 1
-	@# bundles the CPU-only build by default. NVIDIA / AMD / Intel users
+	@# Upstream remains the Linux default and bundles its CPU-only build.
+	@# NVIDIA / AMD / Intel users
 	@# get `linux-vulkan-x64` at runtime through the "Find optimal
 	@# backend" flow — we deliberately do NOT auto-detect GPU at build
 	@# time, since the bundled artefact is meant to be the offline
@@ -1120,7 +1121,7 @@ ifeq ($(shell uname -s),Darwin)
 	fi
 else ifeq ($(OS),Windows_NT)
 	@echo "download-llamacpp-backend-if-exists is a no-op on Windows."
-	@echo "Run download-llamacpp-upstream-backend-if-exists instead (Windows ships only the upstream provider)."
+	@echo "Release packaging installs TurboQuant separately; use the upstream dev target for the default provider."
 else
 	@echo "Skipping llamacpp backend (unsupported platform)"
 endif

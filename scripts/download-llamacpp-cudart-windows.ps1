@@ -3,7 +3,7 @@
 # Atomic Chat — merge CUDA Toolkit runtime DLLs into a Windows llama.cpp
 # backend bundle.
 #
-# Per ADR 2026-05-22 ("Windows ships only `llamacpp-upstream`") the Windows
+# For the default upstream provider, Windows
 # `llama-{tag}-bin-win-cuda-{12.x,13.x}-x64.zip` archives are sourced from
 # ggml-org/llama.cpp. They ship llama-server.exe + direct deps only; the
 # CUDA Toolkit runtime DLLs (cudart64_*.dll, cublas64_*.dll,

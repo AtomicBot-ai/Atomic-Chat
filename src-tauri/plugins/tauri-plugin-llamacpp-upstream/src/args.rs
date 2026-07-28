@@ -149,14 +149,13 @@ impl ArgumentBuilder {
         self.version.starts_with("turboquant-")
     }
 
-    /// Standard cache types supported by upstream llama.cpp.
-    /// Extended types like `turbo3` are only available in turboquant builds.
+    /// Cache types supported by the pinned upstream llama.cpp provider.
     const STANDARD_CACHE_TYPES: &'static [&'static str] = &[
         "f32", "f16", "bf16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1",
     ];
 
     fn sanitize_cache_type(&self, value: &str) -> String {
-        if Self::STANDARD_CACHE_TYPES.contains(&value) || self.is_turboquant() {
+        if Self::STANDARD_CACHE_TYPES.contains(&value) {
             return value.to_string();
         }
         log::warn!(
@@ -1293,7 +1292,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cache_type_turbo3_kept_on_turboquant() {
+    fn test_cache_type_turbo3_cannot_leak_through_mislabeled_upstream_version() {
         let mut config = default_config();
         config.version_backend = "turboquant-macos-arm64-abc123/macos-arm64".to_string();
         config.cache_type_k = "turbo3".to_string();
@@ -1301,7 +1300,7 @@ mod tests {
         let builder = ArgumentBuilder::new(config, false).unwrap();
         let args = builder.build("test", "/path", 8080, None);
 
-        assert_arg_pair(&args, "--cache-type-k", "turbo3");
+        assert_arg_pair(&args, "--cache-type-k", "q8_0");
     }
 
     #[test]

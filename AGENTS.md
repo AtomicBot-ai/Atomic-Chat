@@ -35,12 +35,12 @@ much of the tree still carries `jan*` / `@janhq/*` names — see §4.
 | `web-app/src/routes/launch/`              | "Launch" page — install/configure external coding agents against the local API. Catalog: `web-app/src/constants/integrations.ts`; commands: `src-tauri/src/core/system/commands.rs`. |
 | `core/`                                   | Shared TS core: types, browser runtime, extension contracts. Built + `yarn pack`'d, consumed by extensions. |
 | `extensions/`                             | Pluggable backend extensions (TS, rolldown-bundled). Each has `src/`, `package.json`, `settings.json`. |
-| `extensions/llamacpp-extension/`          | Driver for our `atomic-llama-cpp-turboquant` fork. **macOS only.**                    |
+| `extensions/llamacpp-extension/`          | Driver for our `atomic-llama-cpp-turboquant` fork. All desktop platforms.             |
 | `extensions/llamacpp-upstream-extension/` | Driver for stock `ggml-org/llama.cpp`. Provider id `llamacpp-upstream`. All platforms. |
 | `extensions/mlx-extension/`               | Driver for the MLX-VLM backend. Apple Silicon only.                                   |
 | `extensions/foundation-models-extension/` | Driver for Apple Foundation Models (macOS/iOS).                                       |
 | `src-tauri/`                              | Rust/Tauri shell: `src/lib.rs`, `src/main.rs`, plugins, capabilities, bundle configs.  |
-| `mlx-server/`, `foundation-models-server/`| Swift sidecars. Built via `make build-mlx-server` etc.                                 |
+| `mlx-server/`, `foundation-models-server/`| Legacy MLX Swift source + Foundation Models Swift sidecar. Production MLX downloads the `mlx-vlm` PyInstaller binary. |
 | `pre-install/`                            | Pre-built extension tarballs bundled into the installer. Still named `janhq-*-*.tgz` (legacy, load-bearing). |
 | `scripts/`                                | Build, packaging, signing, download helpers.                                          |
 | `docs/`                                   | Public docs site (Next.js/MDX) + `docs/decisions/` (ADR log).                          |
@@ -57,25 +57,30 @@ Our own upstream repos, checked out next to this one under `/Users/misha/Work/At
 
 **Which llama.cpp ships where:**
 
-| Platform | Provider(s)                                   | TurboQuant KV/weights, Gemma 4 MTP, Qwen NextN |
-| -------- | --------------------------------------------- | ---------------------------------------------- |
-| macOS    | `llamacpp` (our fork) **+** `llamacpp-upstream` | yes, on the fork provider only                 |
-| Windows  | `llamacpp-upstream` only                       | **no**                                         |
-| Linux    | `llamacpp-upstream` only (Vulkan is the sole GPU path) | **no**                                 |
+| Platform | Provider(s) | Default / GPU policy |
+| -------- | ----------- | -------------------- |
+| macOS | `llamacpp` (our fork) **+** `llamacpp-upstream` | upstream is the default; MLX is separate on Apple Silicon |
+| Windows | `llamacpp-upstream` **+** optional `llamacpp` | upstream is the default; CUDA/Vulkan tiers are provider-specific |
+| Linux | `llamacpp-upstream` **+** optional `llamacpp` | upstream is the default; Vulkan is the sole GPU path |
 
 Consequences you must respect:
 
-- Fork-only flags (`-ctk`/`-ctv turbo*`, `--mtp-head`, `--spec-type mtp\|nextn`)
-  must be guarded by a platform/backend check before reaching the UI. They do
-  not exist on Windows or Linux.
-- `download-llamacpp-backend` is a no-op on Windows and skips on Linux;
-  `download-llamacpp-upstream-backend` is the one that matters there.
+- Fork-only cache types (`-ctk`/`-ctv turbo*`) must be guarded by provider
+  identity, not by OS: they are valid only for `llamacpp`, including its
+  Windows/Linux builds. Never leak them into `llamacpp-upstream`.
+- Speculative flags are provider/build-gated. `llamacpp-upstream` currently
+  wires build-checked `draft-mtp` / `draft-dflash`; do not infer support from a
+  model family or expose an unverified fork flag.
+- Release builds bundle both provider trees on Windows/Linux.
+  `download-llamacpp-backend-if-exists` remains a no-op on Windows and skips on
+  Linux, but the release-specific download paths are active there.
 - On Linux there is no CUDA/HIP path. NVIDIA, AMD and Intel all share
-  `linux-vulkan-x64`.
+  Vulkan; internal backend ids differ between the two providers.
 
-**MLX** (Apple Silicon): `mlx-server/` Swift sidecar wrapping `mlx_vlm.server`,
-driven by `extensions/mlx-extension/`. Speculative decoding via `--draft-kind
-dflash|eagle3|mtp`; KV quantization via `--kv-bits` / `--kv-quant-scheme`.
+**MLX** (Apple Silicon): production downloads the AtomicBot-ai `mlx-vlm`
+PyInstaller sidecar; `mlx-server/Sources/` is legacy Swift source. It is driven
+by `extensions/mlx-extension/`. Speculative decoding uses `--draft-kind
+dflash|eagle3|mtp`; KV quantization uses `--kv-bits` / `--kv-quant-scheme`.
 
 **Apple Foundation Models**: macOS/iOS only. Out of scope unless asked.
 
