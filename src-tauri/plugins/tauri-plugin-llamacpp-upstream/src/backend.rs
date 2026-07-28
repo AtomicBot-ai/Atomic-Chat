@@ -1504,6 +1504,14 @@ mod tests {
             map_old_backend_to_new("linux-vulkan-x64".to_string()),
             "linux-vulkan-x64"
         );
+        assert_eq!(
+            map_old_backend_to_new("ubuntu-vulkan-x64".to_string()),
+            "linux-vulkan-x64"
+        );
+        assert_eq!(
+            map_old_backend_to_new("ubuntu-vulkan-arm64".to_string()),
+            "linux-vulkan-arm64"
+        );
         // Legacy janhq Windows Vulkan → ggml-org Windows Vulkan.
         assert_eq!(
             map_old_backend_to_new("win-vulkan-common_cpus-x64".to_string()),
@@ -1870,6 +1878,66 @@ mod tests {
                 .unwrap();
 
         assert_eq!(result, vec!["linux-cpu-arm64".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_prioritize_backends_prefers_newest_cuda13_asset() {
+        let available = vec![
+            BackendInfo {
+                version: "b9900".into(),
+                backend: "win-cuda-13.1-x64".into(),
+                order: 10,
+            },
+            BackendInfo {
+                version: "b9937".into(),
+                backend: "win-cuda-13.3-x64".into(),
+                order: 1,
+            },
+            BackendInfo {
+                version: "b9937".into(),
+                backend: "win-cuda-12.4-x64".into(),
+                order: 1,
+            },
+            BackendInfo {
+                version: "b9937".into(),
+                backend: "win-vulkan-x64".into(),
+                order: 1,
+            },
+        ];
+
+        let result = prioritize_backends(available, true).await.unwrap();
+
+        assert_eq!(result.backend_string, "b9937/win-cuda-13.3-x64");
+        assert_eq!(result.backend_type, "win-cuda-13.3-x64");
+    }
+
+    #[tokio::test]
+    async fn test_prioritize_backends_linux_vulkan_requires_enough_gpu_memory() {
+        let available = vec![
+            BackendInfo {
+                version: "b9937".into(),
+                backend: "linux-cpu-x64".into(),
+                order: 1,
+            },
+            BackendInfo {
+                version: "b9937".into(),
+                backend: "linux-vulkan-x64".into(),
+                order: 1,
+            },
+        ];
+
+        let gpu_result = prioritize_backends(available.clone(), true).await.unwrap();
+        let cpu_result = prioritize_backends(available, false).await.unwrap();
+
+        assert_eq!(gpu_result.backend_type, "linux-vulkan-x64");
+        assert_eq!(cpu_result.backend_type, "linux-cpu-x64");
+    }
+
+    #[tokio::test]
+    async fn test_prioritize_backends_rejects_empty_catalog() {
+        let result = prioritize_backends(vec![], true).await;
+
+        assert_eq!(result.unwrap_err(), "No backends available");
     }
 
     // --- Tests for list_supported_backends ---

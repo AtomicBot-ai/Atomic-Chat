@@ -1,11 +1,9 @@
 /**
- * Regression coverage for the Windows-only provider-routing bug fixed
- * alongside this file. See bug-report-roberto-1.1.79-ru and ADR
- * 2026-05-22 (*Windows ships only `llamacpp-upstream`*).
+ * Regression coverage for routing fresh Windows installs through their
+ * default `llamacpp-upstream` provider.
  *
- * Background: on Windows the build excludes `@janhq/llamacpp-extension`,
- * so the only local llama.cpp engine the EngineManager knows about is
- * registered under provider id `'llamacpp-upstream'`. Prior to the fix
+ * Background: Windows packages both providers, but fresh installs default to
+ * the engine registered under `'llamacpp-upstream'`. Prior to the fix
  * `DefaultModelsService` hard-coded the lookup to `'llamacpp'`, which
  * resolved to `undefined` and made `pullModel` / `validateGgufFile` /
  * `isModelSupported` silently no-op — visible to users as "Download

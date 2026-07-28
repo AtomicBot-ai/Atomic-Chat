@@ -4,6 +4,8 @@ import '@testing-library/jest-dom'
 import DropdownModelProvider from '../DropdownModelProvider'
 import { getModelDisplayName } from '@/lib/utils'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import type { ModelsService } from '@/services/models/types'
+import { seedServiceHub } from '@/test/service-hub'
 
 // Define basic types to avoid missing declarations
 type ModelProvider = {
@@ -44,15 +46,6 @@ vi.mock('@/hooks/useThreads', () => ({
   })),
 }))
 
-vi.mock('@/hooks/useServiceHub', () => ({
-  useServiceHub: vi.fn(() => ({
-    models: () => ({
-      checkMmprojExists: vi.fn(() => Promise.resolve(false)),
-      checkMmprojExistsAndUpdateOffloadMMprojSetting: vi.fn(() => Promise.resolve()),
-    }),
-  })),
-}))
-
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: vi.fn(() => ({
     t: (key: string) => key,
@@ -79,7 +72,9 @@ vi.mock('@/lib/platform/const', () => ({
 
 // Mock UI components
 vi.mock('@/components/ui/popover', () => ({
-  Popover: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Popover: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
   PopoverTrigger: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="popover-trigger">{children}</div>
   ),
@@ -106,6 +101,10 @@ vi.mock('../ModelSetting', () => ({
 
 vi.mock('../ModelSupportStatus', () => ({
   ModelSupportStatus: () => <div data-testid="model-support-status" />,
+}))
+
+vi.mock('../SamplerPopover', () => ({
+  SamplerPopover: () => <div data-testid="sampler-popover" />,
 }))
 
 describe('DropdownModelProvider - Display Name Integration', () => {
@@ -142,6 +141,14 @@ describe('DropdownModelProvider - Display Name Integration', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    seedServiceHub({
+      models: {
+        checkMmprojExists: vi.fn().mockResolvedValue(false),
+        checkMmprojExistsAndUpdateOffloadMMprojSetting: vi
+          .fn()
+          .mockResolvedValue(undefined),
+      } as unknown as ModelsService,
+    })
 
     // Reset the mock for each test
     vi.mocked(useModelProvider).mockReturnValue({
@@ -218,8 +225,12 @@ describe('DropdownModelProvider - Display Name Integration', () => {
     } as Model
 
     expect(getModelDisplayName(modelWithDisplayName)).toBe('Short Name')
-    expect(getModelDisplayName(modelWithoutDisplayName)).toBe('model-without-display-name.gguf')
-    expect(getModelDisplayName(modelWithEmptyDisplayName)).toBe('model-with-empty.gguf')
+    expect(getModelDisplayName(modelWithoutDisplayName)).toBe(
+      'model-without-display-name.gguf'
+    )
+    expect(getModelDisplayName(modelWithEmptyDisplayName)).toBe(
+      'model-with-empty.gguf'
+    )
   })
 
   it('should maintain model ID for internal operations while showing display name', () => {
@@ -269,10 +280,14 @@ describe('DropdownModelProvider - Display Name Integration', () => {
     render(<DropdownModelProvider />)
 
     // Check trigger shows Short Name
-    expect(screen.getByRole('button')).toHaveTextContent('Short Name')
+    expect(
+      screen.getByRole('button', { name: /short name/i })
+    ).toHaveTextContent('Short Name')
     // Short Name appears in dropdown (at least 1 occurrence)
     expect(screen.getAllByText('Short Name').length).toBeGreaterThanOrEqual(1)
     // Custom Model 1 is also in the dropdown
-    expect(screen.getAllByText('Custom Model 1').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('Custom Model 1').length).toBeGreaterThanOrEqual(
+      1
+    )
   })
 })

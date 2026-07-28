@@ -442,8 +442,8 @@ Write-Host ''
 Write-Host "  Selected backend: $backend" -ForegroundColor Cyan
 
 # ── Download llamacpp backend from ggml-org/llama.cpp ─────────
-# Per ADR 2026-05-22, Windows ships only the upstream provider, so the
-# dev-windows backend resource dir is `llamacpp-backend-upstream/`.
+# Upstream remains the Windows default, so this first download populates
+# `llamacpp-backend-upstream/`; TurboQuant is installed separately below.
 Write-Step "Download upstream llamacpp backend: $backend"
 
 $skipDownload = $false
@@ -594,7 +594,7 @@ if ($SkipBackendDownload -and $tqIsTurboquant) {
         Write-Host "  Existing backend in $tqDir is not a TurboQuant build (version.txt missing or != 'turboquant-*'); replacing it." -ForegroundColor Yellow
         Remove-Item -Path $tqDir -Recurse -Force -ErrorAction SilentlyContinue
     }
-    $tqManifestUrl = 'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/turboquant-manifest.json'
+    $tqManifestUrl = 'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/f149c30e55a3dfcdcbcc5d4a72be7c691db8f5e2/backends/turboquant-manifest.json'
     $tqHeaders = @{ 'User-Agent' = 'atomic-chat-dev' }
 
     Write-Host '  Fetching TurboQuant backend manifest...'

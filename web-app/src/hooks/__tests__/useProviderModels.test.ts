@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
 import { useProviderModels } from '../useProviderModels'
-import { useServiceHub } from '@/hooks/useServiceHub'
+import type { ProvidersService } from '@/services/providers/types'
+import { seedServiceHub } from '@/test/service-hub'
 
 // Local minimal provider type for tests
 type MockModelProvider = {
@@ -30,11 +31,12 @@ describe('useProviderModels', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
     vi.clearAllMocks()
-    const hub = (useServiceHub as unknown as () => any)()
     const mockedFetch = vi.fn()
-    vi.spyOn(hub, 'providers').mockReturnValue({
-      fetchModelsFromProvider: mockedFetch,
-    } as any)
+    seedServiceHub({
+      providers: {
+        fetchModelsFromProvider: mockedFetch,
+      } as ProvidersService,
+    })
     fetchModelsSpy = mockedFetch
   })
 
@@ -64,7 +66,11 @@ describe('useProviderModels', () => {
     const { result } = renderHook(() => useProviderModels(mockProvider))
 
     await waitFor(() => {
-      expect(result.current.models).toEqual(['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo'])
+      expect(result.current.models).toEqual([
+        'gpt-3.5-turbo',
+        'gpt-4',
+        'gpt-4-turbo',
+      ])
     })
 
     expect(result.current.error).toBe(null)
@@ -79,10 +85,17 @@ describe('useProviderModels', () => {
       { initialProps: { provider: mockProvider } }
     )
 
-    await waitFor(() => {
-      expect(result.current.models).toEqual(['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo'])
-      expect(result.current.loading).toBe(false)
-    }, { timeout: 500 })
+    await waitFor(
+      () => {
+        expect(result.current.models).toEqual([
+          'gpt-3.5-turbo',
+          'gpt-4',
+          'gpt-4-turbo',
+        ])
+        expect(result.current.loading).toBe(false)
+      },
+      { timeout: 500 }
+    )
 
     // Switch to invalid provider
     rerender({ provider: { ...mockProvider, base_url: undefined } })

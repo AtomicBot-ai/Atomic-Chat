@@ -374,7 +374,7 @@ describe('DefaultThreadsService', () => {
         expect.objectContaining({
           assistants: [
             expect.objectContaining({
-              model: { id: '*', engine: 'llamacpp' },
+              model: { id: '*', engine: 'llamacpp-upstream' },
             }),
           ],
         })
@@ -471,7 +471,7 @@ describe('DefaultThreadsService', () => {
         expect.objectContaining({
           assistants: [
             expect.objectContaining({
-              model: { id: '*', engine: 'llamacpp' },
+              model: { id: '*', engine: 'llamacpp-upstream' },
             }),
           ],
         })

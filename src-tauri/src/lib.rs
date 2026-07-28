@@ -1,5 +1,8 @@
 pub mod core;
 
+#[cfg(test)]
+pub(crate) mod test_support;
+
 #[cfg(not(feature = "cli"))]
 use core::{
     app::commands::get_jan_data_folder_path,

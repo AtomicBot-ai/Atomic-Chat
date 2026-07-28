@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import llamacpp_extension from '../index'
 
-import { normalizeLlamacppConfig } from '@janhq/tauri-plugin-llamacpp-api'
+import { normalizeLlamacppConfig } from '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
 
 // Mock fetch globally
 global.fetch = vi.fn()
@@ -21,17 +21,22 @@ vi.mock('../backend', () => ({
 }))
 
 // Mock tauri-plugin-llamacpp-api (partial mock)
-vi.mock('@janhq/tauri-plugin-llamacpp-api', async () => {
-  const actual = await vi.importActual<
-    typeof import('@janhq/tauri-plugin-llamacpp-api')
-  >('@janhq/tauri-plugin-llamacpp-api')
+vi.mock(
+  '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index',
+  async () => {
+    const actual = await vi.importActual<
+      typeof import('../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index')
+    >('../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index')
 
-  return {
-    ...actual,
-    mapOldBackendToNew: vi.fn(),
-    removeOldBackendVersions: vi.fn(),
+    return {
+      ...actual,
+      mapOldBackendToNew: vi.fn(),
+      removeOldBackendVersions: vi.fn(),
+      readGgufMetadata: vi.fn(),
+      unloadLlamaModel: vi.fn(),
+    }
   }
-})
+)
 describe('llamacpp_extension', () => {
   let extension: llamacpp_extension
 
@@ -48,15 +53,13 @@ describe('llamacpp_extension', () => {
     it('should initialize with correct default values', () => {
       expect(extension.provider).toBe('llamacpp')
       expect(extension.providerId).toBe('llamacpp')
-      expect(extension.autoUnload).toBe(true)
+      expect(extension.autoUnload).toBe(false)
     })
   })
 
   describe('backend preference storage', () => {
     it('uses the TurboQuant-specific key', () => {
-      vi.mocked(localStorage.getItem).mockReturnValueOnce(
-        'windows-x64-vulkan'
-      )
+      vi.mocked(localStorage.getItem).mockReturnValueOnce('windows-x64-vulkan')
 
       expect(extension['getStoredBackendType']()).toBe('windows-x64-vulkan')
       expect(localStorage.getItem).toHaveBeenCalledWith(
@@ -149,11 +152,16 @@ describe('llamacpp_extension', () => {
       })
 
       vi.mocked(fs.existsSync)
-        .mockResolvedValueOnce(true) // modelsDir exists
-        .mockResolvedValueOnce(false) // model.yml doesn't exist at modelsDir level
-        .mockResolvedValueOnce(true) // model.yml exists in test-model dir
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(true)
+        .mockResolvedValue(true)
 
-      vi.mocked(fs.readdirSync).mockResolvedValue(['test-model'])
+      vi.mocked(fs.readdirSync)
+        .mockResolvedValueOnce(['test-model'])
+        .mockResolvedValue([])
       vi.mocked(fs.fileStat).mockResolvedValue({
         isDirectory: true,
         size: 1000,
@@ -164,19 +172,25 @@ describe('llamacpp_extension', () => {
         name: 'Test Model',
         size_bytes: 1000000,
       })
+      const { readGgufMetadata } = await import(
+        '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
+      )
+      vi.mocked(readGgufMetadata).mockResolvedValue({
+        version: 3,
+        tensor_count: 1,
+        metadata: { 'general.architecture': 'llama' },
+      } as any)
 
       const result = await extension.list()
 
-      // Note: There's a bug in the original code where it pushes just the child name
-      // instead of the full path, causing the model ID to be empty
-      expect(result).toEqual([
+      expect(result).toMatchObject([
         {
-          id: '', // This should be 'test-model' but the original code has a bug
+          id: 'test-model',
           name: 'Test Model',
-          quant_type: undefined,
           providerId: 'llamacpp',
-          port: 0,
           sizeBytes: 1000000,
+          embedding: false,
+          missing: false,
         },
       ])
     })
@@ -223,6 +237,14 @@ describe('llamacpp_extension', () => {
       vi.mocked(fs.fileStat).mockResolvedValue({ size: 1000000 })
       vi.mocked(fs.mkdir).mockResolvedValue(undefined)
       vi.mocked(invoke).mockResolvedValue(undefined)
+      const { readGgufMetadata } = await import(
+        '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
+      )
+      vi.mocked(readGgufMetadata).mockResolvedValue({
+        version: 3,
+        tensor_count: 1,
+        metadata: { 'general.architecture': 'llama' },
+      } as any)
 
       await extension.import('test-model', {
         modelPath: 'https://example.com/model.gguf',
@@ -236,8 +258,7 @@ describe('llamacpp_extension', () => {
 
   describe('load', () => {
     it('should throw error if model is already loaded', async () => {
-      // Mock that model is already loaded
-      extension['activeSessions'].set(123, {
+      extension['findSessionByModel'] = vi.fn().mockResolvedValue({
         model_id: 'test-model',
         pid: 123,
         port: 3000,
@@ -250,80 +271,14 @@ describe('llamacpp_extension', () => {
     })
 
     it('should load model successfully', async () => {
-      const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      const { invoke } = await import('@tauri-apps/api/core')
-
-      // Mock system info for getBackendExePath
-      const getSystemInfo = vi.fn().mockResolvedValue({
-        os_type: 'linux',
-      })
-
-      // Mock backend functions to avoid download
-      const backendModule = await import('../backend')
-      vi.mocked(backendModule.isBackendInstalled).mockResolvedValue(true)
-      vi.mocked(backendModule.getBackendExePath).mockResolvedValue(
-        '/path/to/backend/executable'
-      )
-
-      // Mock fs for backend check
-      vi.mocked(fs.existsSync).mockResolvedValue(true)
-
-      // Mock configuration
-      extension['config'] = {
-        version_backend: 'v1.0.0/win-avx2-x64',
-        ctx_size: 2048,
-        n_gpu_layers: 10,
-        threads: 4,
-        chat_template: '',
-        threads_batch: 0,
-        n_predict: 0,
-        batch_size: 0,
-        ubatch_size: 0,
-        device: '',
-        split_mode: '',
-        main_gpu: 0,
-        flash_attn: false,
-        cont_batching: false,
-        no_mmap: false,
-        mlock: false,
-        no_kv_offload: false,
-        cache_type_k: 'f16',
-        cache_type_v: 'f16',
-        defrag_thold: 0.1,
-        rope_scaling: 'linear',
-        rope_scale: 1.0,
-        rope_freq_base: 10000,
-        rope_freq_scale: 1.0,
-        reasoning_budget: 0,
-        auto_unload: true,
+      const session = {
+        model_id: 'test-model',
+        pid: 123,
+        port: 3000,
+        api_key: 'test-api-key',
       }
-
-      // Set up providerPath
-      extension['providerPath'] = '/path/to/jan/llamacpp'
-
-      vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
-      vi.mocked(joinPath).mockImplementation((paths) =>
-        Promise.resolve(paths.join('/'))
-      )
-
-      // Mock model config
-      vi.mocked(invoke)
-        .mockResolvedValueOnce({
-          // read_yaml
-          model_path: 'test-model/model.gguf',
-          name: 'Test Model',
-          size_bytes: 1000000,
-        })
-        .mockResolvedValueOnce('test-api-key') // generate_api_key
-        .mockResolvedValueOnce({
-          // load_llama_model
-          model_id: 'test-model',
-          pid: 123,
-          port: 3000,
-          api_key: 'test-api-key',
-        })
-
-      // Mock successful health check
+      extension['findSessionByModel'] = vi.fn().mockResolvedValue(null)
+      extension['performLoad'] = vi.fn().mockResolvedValue(session)
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: vi.fn().mockResolvedValue({ status: 'ok' }),
@@ -331,19 +286,13 @@ describe('llamacpp_extension', () => {
 
       const result = await extension.load('test-model')
 
-      expect(result).toEqual({
-        model_id: 'test-model',
-        pid: 123,
-        port: 3000,
-        api_key: 'test-api-key',
-      })
-
-      expect(extension['activeSessions'].get(123)).toEqual({
-        model_id: 'test-model',
-        pid: 123,
-        port: 3000,
-        api_key: 'test-api-key',
-      })
+      expect(result).toEqual(session)
+      expect(extension['performLoad']).toHaveBeenCalledWith(
+        'test-model',
+        undefined,
+        false,
+        false
+      )
     })
   })
 
@@ -355,17 +304,18 @@ describe('llamacpp_extension', () => {
     })
 
     it('should unload model successfully', async () => {
-      const { invoke } = await import('@tauri-apps/api/core')
+      const { unloadLlamaModel } = await import(
+        '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
+      )
 
-      // Set up active session
-      extension['activeSessions'].set(123, {
+      extension['sessionCache'].set('test-model', {
         model_id: 'test-model',
         pid: 123,
         port: 3000,
         api_key: 'test-key',
       })
 
-      vi.mocked(invoke).mockResolvedValue({
+      vi.mocked(unloadLlamaModel).mockResolvedValue({
         success: true,
         error: null,
       })
@@ -377,7 +327,7 @@ describe('llamacpp_extension', () => {
         error: null,
       })
 
-      expect(extension['activeSessions'].has(123)).toBe(false)
+      expect(extension['sessionCache'].has('test-model')).toBe(false)
     })
   })
 
@@ -396,8 +346,7 @@ describe('llamacpp_extension', () => {
     it('should handle non-streaming chat request', async () => {
       const { invoke } = await import('@tauri-apps/api/core')
 
-      // Set up active session
-      extension['activeSessions'].set(123, {
+      extension['sessionCache'].set('test-model', {
         model_id: 'test-model',
         pid: 123,
         port: 3000,
@@ -678,19 +627,8 @@ describe('llamacpp_extension', () => {
 
   describe('getLoadedModels', () => {
     it('should return list of loaded models', async () => {
-      extension['activeSessions'].set(123, {
-        model_id: 'model1',
-        pid: 123,
-        port: 3000,
-        api_key: 'key1',
-      })
-
-      extension['activeSessions'].set(456, {
-        model_id: 'model2',
-        pid: 456,
-        port: 3001,
-        api_key: 'key2',
-      })
+      const { invoke } = await import('@tauri-apps/api/core')
+      vi.mocked(invoke).mockResolvedValue(['model1', 'model2'])
 
       const result = await extension.getLoadedModels()
 
@@ -776,7 +714,7 @@ describe('llamacpp_extension', () => {
         vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/backends')
 
         const { mapOldBackendToNew, removeOldBackendVersions } = await import(
-          '@janhq/tauri-plugin-llamacpp-api'
+          '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
         )
         vi.mocked(mapOldBackendToNew).mockResolvedValue('linux-avx2-x64')
         vi.mocked(removeOldBackendVersions).mockResolvedValue([])
@@ -840,17 +778,17 @@ describe('llamacpp_extension', () => {
         vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/backends')
 
         const { mapOldBackendToNew, removeOldBackendVersions } = await import(
-          '@janhq/tauri-plugin-llamacpp-api'
+          '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
         )
         vi.mocked(mapOldBackendToNew).mockResolvedValue('linux-avx2-x64')
         vi.mocked(removeOldBackendVersions).mockResolvedValue([])
 
-        await extension.updateBackend('v2.0.0/linux-avx2-x64')
+        const result = await extension.updateBackend('v2.0.0/linux-avx2-x64')
 
-        // setStoredBackendType should be called with the backend type only, not "version/backend"
-        const storedValue = vi.mocked(extension['setStoredBackendType']).mock
-          .calls[0]?.[0]
-        expect(storedValue).not.toContain('/')
+        expect(result.wasUpdated).toBe(true)
+        expect(extension['setStoredBackendType']).toHaveBeenCalledWith(
+          'linux-avx2-x64'
+        )
       })
     })
 
@@ -869,7 +807,7 @@ describe('llamacpp_extension', () => {
         vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/backends')
 
         const { mapOldBackendToNew, removeOldBackendVersions } = await import(
-          '@janhq/tauri-plugin-llamacpp-api'
+          '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
         )
         vi.mocked(mapOldBackendToNew).mockResolvedValue('linux-avx2-x64')
         vi.mocked(removeOldBackendVersions).mockResolvedValue([])

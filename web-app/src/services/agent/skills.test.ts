@@ -1,4 +1,5 @@
-import { invoke } from '@tauri-apps/api/core'
+import type { InvokeArgs } from '@tauri-apps/api/core'
+import { mockIPC } from '@tauri-apps/api/mocks'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createAgentSkill,
@@ -10,17 +11,16 @@ import {
   setAgentSkillEnabled,
 } from './skills'
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
-}))
-
 describe('agent skills service', () => {
+  let ipcHandler: ReturnType<typeof vi.fn>
+
   beforeEach(() => {
-    vi.mocked(invoke).mockReset()
+    ipcHandler = vi.fn()
+    mockIPC((command: string, args?: InvokeArgs) => ipcHandler(command, args))
   })
 
   it('uses typed Agent skills commands and payloads', async () => {
-    vi.mocked(invoke).mockResolvedValue(undefined)
+    ipcHandler.mockResolvedValue(undefined)
 
     await listAgentSkills()
     await getAgentSkill('pdf')
@@ -34,8 +34,8 @@ describe('agent skills service', () => {
     await deleteAgentSkill('custom-skill')
     await refreshAgentSkills()
 
-    expect(vi.mocked(invoke).mock.calls).toEqual([
-      ['agent_list_skills'],
+    expect(ipcHandler.mock.calls).toEqual([
+      ['agent_list_skills', {}],
       ['agent_get_skill', { name: 'pdf' }],
       ['agent_set_skill_enabled', { name: 'pdf', enabled: false }],
       [
@@ -50,7 +50,7 @@ describe('agent skills service', () => {
       ],
       ['agent_import_skill', { sourcePath: '/tmp/imported-skill' }],
       ['agent_delete_skill', { name: 'custom-skill' }],
-      ['agent_refresh_skills'],
+      ['agent_refresh_skills', {}],
     ])
   })
 })

@@ -3,6 +3,8 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ContextSizeControl } from '@/containers/ContextSizeControl'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import type { ModelsService } from '@/services/models/types'
+import { seedServiceHub } from '@/test/service-hub'
 
 const stopModel = vi.fn()
 const startModel = vi.fn()
@@ -18,16 +20,6 @@ class MockResizeObserver {
 beforeAll(() => {
   global.ResizeObserver = MockResizeObserver
 })
-
-vi.mock('@/hooks/useServiceHub', () => ({
-  useServiceHub: () => ({
-    models: () => ({
-      stopModel,
-      startModel,
-      getActiveModels,
-    }),
-  }),
-}))
 
 vi.mock('@/hooks/useTokensCount', () => ({
   useTokensCount: () => ({
@@ -80,6 +72,13 @@ describe('ContextSizeControl', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     getActiveModels.mockResolvedValue([])
+    seedServiceHub({
+      models: {
+        stopModel,
+        startModel,
+        getActiveModels,
+      } as unknown as ModelsService,
+    })
   })
 
   it.each(['llamacpp', 'llamacpp-upstream', 'mlx'])(
@@ -107,27 +106,20 @@ describe('ContextSizeControl', () => {
     setSelectedModel('llamacpp')
     render(<ContextSizeControl />)
 
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Context usage: 1.0%' })
-    )
+    fireEvent.click(screen.getByRole('button', { name: 'Context usage: 1.0%' }))
 
     expect(screen.getByText('Text')).toBeInTheDocument()
     expect(screen.getByText('Remaining')).toBeInTheDocument()
     expect(screen.getByText('164')).toBeInTheDocument()
     expect(screen.getByText('164 / 16.4K')).toBeInTheDocument()
-    expect(screen.getByRole('slider')).toHaveAttribute(
-      'aria-valuemax',
-      '65536'
-    )
+    expect(screen.getByRole('slider')).toHaveAttribute('aria-valuemax', '65536')
   })
 
   it('persists the edited context size through the model provider store', () => {
     setSelectedModel('llamacpp')
     render(<ContextSizeControl />)
 
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Context usage: 1.0%' })
-    )
+    fireEvent.click(screen.getByRole('button', { name: 'Context usage: 1.0%' }))
     const slider = screen.getByRole('slider')
     fireEvent.keyDown(slider, { key: 'End' })
     fireEvent.keyUp(slider, { key: 'End' })
@@ -144,9 +136,7 @@ describe('ContextSizeControl', () => {
     setSelectedModel('mlx')
     render(<ContextSizeControl />)
 
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Context usage: 1.0%' })
-    )
+    fireEvent.click(screen.getByRole('button', { name: 'Context usage: 1.0%' }))
     const slider = screen.getByRole('slider')
     fireEvent.keyDown(slider, { key: 'End' })
     fireEvent.keyUp(slider, { key: 'End' })

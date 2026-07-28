@@ -2796,13 +2796,14 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // otherwise, look into subdirectories
       const children = await fs.readdirSync(currentDir)
       for (const child of children) {
+        const childPath = await joinPath([currentDir, child])
         // skip files
-        const dirInfo = await fs.fileStat(child)
+        const dirInfo = await fs.fileStat(childPath)
         if (!dirInfo.isDirectory) {
           continue
         }
 
-        stack.push(child)
+        stack.push(childPath)
       }
     }
 

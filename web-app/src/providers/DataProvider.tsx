@@ -61,9 +61,8 @@ const syncRemoteProviders = () => {
   providers.forEach((provider) => {
     // Only cloud providers should be registered with the backend proxy. Local
     // engines (`llamacpp`, `llamacpp-upstream`, `mlx`, `foundation-models`)
-    // run in-process and must never be treated as remote — see ADR
-    // 2026-05-19 *Ship upstream `ggml-org/llama.cpp` as a second macOS
-    // provider* / ADR 2026-05-22 *Windows ships only `llamacpp-upstream`*.
+    // run in-process and must never be treated as remote. Both local llama.cpp
+    // provider ids are packaged on every desktop platform.
     // The pre-fix check excluded only `'llamacpp'`, which silently leaked
     // `'llamacpp-upstream'` into the remote-registration path on Windows.
     if (
@@ -327,15 +326,9 @@ export function DataProvider() {
         return
       }
 
-      // Resolve the provider against the *post-setProviders* store, not the
-      // raw `getProviders()` payload. On Windows the store strips the
-      // turboquant `'llamacpp'` provider (ADR 2026-05-22 *Windows ships only
-      // `llamacpp-upstream`*), but the raw payload may still carry a
-      // ghost `'llamacpp'` entry from leftover persisted state — picking
-      // it here would route the subsequent `switchToModel` to a provider
-      // id that the store doesn't know about and crash with `Provider
-      // 'llamacpp' not found`, leaving the previous model unloaded and
-      // the server stopped.
+      // Resolve against the post-merge store, not the raw extension payload.
+      // This keeps model/provider selection aligned with migrations and
+      // persisted deletions before `switchToModel` runs.
       const storeProviders = useModelProvider.getState().providers
       let provider = storeProviders.find((p) =>
         p?.models?.some((m: { id: string }) => m.id === modelId)

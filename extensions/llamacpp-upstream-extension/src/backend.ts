@@ -30,6 +30,7 @@ const LLAMACPP_BACKEND_MANIFEST_URL =
 const LLAMACPP_DOWNLOAD_BASE =
   'https://github.com/ggml-org/llama.cpp/releases/download'
 const MANIFEST_FETCH_TIMEOUT_MS = 8_000
+export const LLAMACPP_UPSTREAM_PINNED_TAG = 'b9937'
 
 // Bundled baseline manifest — a known-good snapshot that ships with the
 // extension. Parsed by `fetchRemoteBackends` as a last resort when ALL
@@ -39,7 +40,7 @@ const MANIFEST_FETCH_TIMEOUT_MS = 8_000
 // than the live manifest until the network recovers. Update this whenever
 // the atomic-chat-conf manifest is updated.
 const BUNDLED_MANIFEST_BASELINE = {
-  tag_name: 'b9937',
+  tag_name: LLAMACPP_UPSTREAM_PINNED_TAG,
   assets: [
     { name: 'llama-b9937-bin-win-cpu-x64.zip' },
     { name: 'llama-b9937-bin-win-cuda-12.4-x64.zip' },
@@ -410,6 +411,12 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
     if (!tag) {
       console.warn(
         '[fetchRemoteBackends] Manifest missing tag_name; using bundled baseline (not cached, will retry next call)'
+      )
+      return parseManifestForPlatform(BUNDLED_MANIFEST_BASELINE, osType, archSuffix)
+    }
+    if (tag !== LLAMACPP_UPSTREAM_PINNED_TAG) {
+      console.warn(
+        `[fetchRemoteBackends] Manifest tag ${tag} is not the verified ${LLAMACPP_UPSTREAM_PINNED_TAG} pin; using bundled baseline until a compatibility update lands`
       )
       return parseManifestForPlatform(BUNDLED_MANIFEST_BASELINE, osType, archSuffix)
     }

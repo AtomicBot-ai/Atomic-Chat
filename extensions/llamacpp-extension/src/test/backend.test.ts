@@ -4,6 +4,8 @@ import {
   getBackendExePath,
   isBackendInstalled,
   getBackendDownloadUrl,
+  TURBOQUANT_BACKEND_MANIFEST_REVISION,
+  TURBOQUANT_BACKEND_MANIFEST_URL,
 } from '../backend'
 import { getSystemInfo } from '../hardware'
 import { fs, getJanDataFolderPath } from '@janhq/core'
@@ -216,6 +218,14 @@ describe('Backend functions', () => {
       expect(url).toContain(
         'github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download'
       )
+    })
+
+    it('pins the backend index to an immutable atomic-chat-conf revision', () => {
+      expect(TURBOQUANT_BACKEND_MANIFEST_REVISION).toMatch(/^[0-9a-f]{40}$/)
+      expect(TURBOQUANT_BACKEND_MANIFEST_URL).toContain(
+        `/atomic-chat-conf/${TURBOQUANT_BACKEND_MANIFEST_REVISION}/`
+      )
+      expect(TURBOQUANT_BACKEND_MANIFEST_URL).not.toContain('/main/')
     })
 
     it('uses the per-backend manifest tag verbatim + .zip on Windows', () => {

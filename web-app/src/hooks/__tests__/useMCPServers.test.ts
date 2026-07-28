@@ -2,23 +2,22 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useMCPServers, DEFAULT_MCP_SETTINGS } from '../useMCPServers'
 import type { MCPServerConfig } from '../useMCPServers'
+import type { MCPService } from '@/services/mcp/types'
+import { seedServiceHub } from '@/test/service-hub'
 
 // Mock the ServiceHub
 const mockUpdateMCPConfig = vi.fn().mockResolvedValue(undefined)
 const mockRestartMCPServers = vi.fn().mockResolvedValue(undefined)
 
-vi.mock('@/hooks/useServiceHub', () => ({
-  getServiceHub: () => ({
-    mcp: () => ({
-      updateMCPConfig: mockUpdateMCPConfig,
-      restartMCPServers: mockRestartMCPServers,
-    }),
-  }),
-}))
-
 describe('useMCPServers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    seedServiceHub({
+      mcp: {
+        updateMCPConfig: mockUpdateMCPConfig,
+        restartMCPServers: mockRestartMCPServers,
+      } as MCPService,
+    })
     // Reset store state to defaults
     useMCPServers.setState({
       open: true,
@@ -70,7 +69,7 @@ describe('useMCPServers', () => {
   describe('getServerConfig', () => {
     it('should return server config if exists', () => {
       const { result } = renderHook(() => useMCPServers())
-      
+
       const serverConfig: MCPServerConfig = {
         command: 'node',
         args: ['server.js'],
@@ -97,7 +96,7 @@ describe('useMCPServers', () => {
   describe('addServer', () => {
     it('should add a new server', () => {
       const { result } = renderHook(() => useMCPServers())
-      
+
       const serverConfig: MCPServerConfig = {
         command: 'python',
         args: ['main.py', '--port', '8080'],
@@ -116,7 +115,7 @@ describe('useMCPServers', () => {
 
     it('should update existing server with same key', () => {
       const { result } = renderHook(() => useMCPServers())
-      
+
       const initialConfig: MCPServerConfig = {
         command: 'node',
         args: ['server.js'],
@@ -146,7 +145,7 @@ describe('useMCPServers', () => {
 
     it('should add multiple servers', () => {
       const { result } = renderHook(() => useMCPServers())
-      
+
       const serverA: MCPServerConfig = {
         command: 'node',
         args: ['serverA.js'],
@@ -289,7 +288,7 @@ describe('useMCPServers', () => {
   describe('setServers', () => {
     it('should merge servers with existing ones', () => {
       const { result } = renderHook(() => useMCPServers())
-      
+
       const existingServer: MCPServerConfig = {
         command: 'node',
         args: ['existing.js'],
@@ -325,7 +324,7 @@ describe('useMCPServers', () => {
 
     it('should overwrite existing servers with same keys', () => {
       const { result } = renderHook(() => useMCPServers())
-      
+
       const originalServer: MCPServerConfig = {
         command: 'node',
         args: ['original.js'],
@@ -353,7 +352,7 @@ describe('useMCPServers', () => {
   describe('deleteServer', () => {
     it('should delete existing server', () => {
       const { result } = renderHook(() => useMCPServers())
-      
+
       const serverConfig: MCPServerConfig = {
         command: 'node',
         args: ['server.js'],
@@ -386,7 +385,7 @@ describe('useMCPServers', () => {
 
     it('should handle multiple deletions', () => {
       const { result } = renderHook(() => useMCPServers())
-      
+
       const serverA: MCPServerConfig = {
         command: 'node',
         args: ['serverA.js'],
@@ -447,7 +446,7 @@ describe('useMCPServers', () => {
   describe('syncServers', () => {
     it('should call updateMCPConfig with current servers', async () => {
       const { result } = renderHook(() => useMCPServers())
-      
+
       const serverConfig: MCPServerConfig = {
         command: 'node',
         args: ['server.js'],
@@ -491,7 +490,7 @@ describe('useMCPServers', () => {
   describe('syncServersAndRestart', () => {
     it('should call updateMCPConfig and then mockRestartMCPServers', async () => {
       const { result } = renderHook(() => useMCPServers())
-      
+
       const serverConfig: MCPServerConfig = {
         command: 'python',
         args: ['server.py'],
@@ -540,7 +539,7 @@ describe('useMCPServers', () => {
   describe('complex scenarios', () => {
     it('should handle complete server lifecycle', () => {
       const { result } = renderHook(() => useMCPServers())
-      
+
       const initialConfig: MCPServerConfig = {
         command: 'node',
         args: ['server.js'],
@@ -560,14 +559,18 @@ describe('useMCPServers', () => {
         result.current.addServer('lifecycle-server', initialConfig)
       })
 
-      expect(result.current.mcpServers['lifecycle-server']).toEqual(initialConfig)
+      expect(result.current.mcpServers['lifecycle-server']).toEqual(
+        initialConfig
+      )
 
       // Edit server
       act(() => {
         result.current.editServer('lifecycle-server', updatedConfig)
       })
 
-      expect(result.current.mcpServers['lifecycle-server']).toEqual(updatedConfig)
+      expect(result.current.mcpServers['lifecycle-server']).toEqual(
+        updatedConfig
+      )
 
       // Delete server
       act(() => {

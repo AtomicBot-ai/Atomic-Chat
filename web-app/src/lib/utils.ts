@@ -118,12 +118,9 @@ export function getProviderLogo(provider: string) {
 
 /**
  * The DEFAULT local llama.cpp provider id for THIS platform.
- *   - Windows: ships only the upstream provider — see ADR 2026-05-22
- *     "Windows ships only `llamacpp-upstream`".
- *   - Linux: ships only the upstream provider — see ADR 2026-05-28
- *     "Linux ships only `llamacpp-upstream` (AppImage, upstream
- *     `ggml-org/llama.cpp`)".
- *   - macOS: the default is now `llamacpp-upstream` too — see ADR
+ *   - Windows and Linux ship upstream plus the optional TurboQuant provider;
+ *     upstream remains the default.
+ *   - macOS defaults to `llamacpp-upstream` too — see ADR
  *     2026-06-09 (ATO-116). The vanilla upstream backend understands the
  *     full Gemma 4 projector set (`gemma4uv`/`gemma4ua`), so the bundled
  *     "Recommended" Gemma 4 vision model loads out of the box. The
@@ -143,11 +140,9 @@ export const LOCAL_LLAMACPP_PROVIDER = 'llamacpp-upstream'
 /**
  * Extension name (`@janhq/...`) that drives the DEFAULT llama.cpp provider
  * on THIS platform. Mirrors `LOCAL_LLAMACPP_PROVIDER` — the extension
- * manager resolves the upstream extension on every platform (Windows /
- * Linux exclude the turboquant extension from the build entirely; macOS
- * ships both but defaults to upstream per ADR 2026-06-09 / ATO-116). The
- * turboquant `@janhq/llamacpp-extension` remains registered on macOS and is
- * reached when the user selects the turboquant provider explicitly.
+ * manager resolves the upstream extension on every platform. The TurboQuant
+ * extension is also packaged on every desktop OS and is reached when the user
+ * selects that provider explicitly.
  */
 export const LOCAL_LLAMACPP_EXTENSION_NAME = '@janhq/llamacpp-upstream-extension'
 

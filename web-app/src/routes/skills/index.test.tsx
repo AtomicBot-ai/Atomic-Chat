@@ -8,6 +8,8 @@ import {
 } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentSkillDetail } from '@/services/agent/skills'
+import type { DialogService } from '@/services/dialog/types'
+import { seedServiceHub } from '@/test/service-hub'
 import { SkillsPage } from './index'
 
 const hookState = vi.hoisted(() => ({
@@ -47,14 +49,6 @@ vi.mock('@/hooks/useAgentSkills', () => ({
 vi.mock('@/hooks/useAgentMode', () => ({
   useAgentMode: (selector: (state: object) => unknown) =>
     selector({ setSidebarMode, setAgentMode }),
-}))
-
-vi.mock('@/hooks/useServiceHub', () => ({
-  useServiceHub: () => ({
-    dialog: () => ({
-      open: dialogOpen,
-    }),
-  }),
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -129,6 +123,11 @@ describe('SkillsPage', () => {
     navigate.mockReset()
     setSidebarMode.mockReset()
     setAgentMode.mockReset()
+    seedServiceHub({
+      dialog: {
+        open: dialogOpen,
+      } as unknown as DialogService,
+    })
     hookState.value = {
       skills: [customSkill],
       selected: customSkill,

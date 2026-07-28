@@ -24,8 +24,9 @@ import {
 // from the upstream manifest is that each turboquant entry carries its own
 // `tag`. The backend *archives* themselves are still downloaded from the
 // GitHub releases CDN via LLAMACPP_DOWNLOAD_BASE.
-const TURBOQUANT_BACKEND_MANIFEST_URL =
-  'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/turboquant-manifest.json'
+export const TURBOQUANT_BACKEND_MANIFEST_REVISION =
+  'f149c30e55a3dfcdcbcc5d4a72be7c691db8f5e2'
+export const TURBOQUANT_BACKEND_MANIFEST_URL = `https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/${TURBOQUANT_BACKEND_MANIFEST_REVISION}/backends/turboquant-manifest.json`
 const LLAMACPP_DOWNLOAD_BASE =
   'https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download'
 const MANIFEST_FETCH_TIMEOUT_MS = 8_000

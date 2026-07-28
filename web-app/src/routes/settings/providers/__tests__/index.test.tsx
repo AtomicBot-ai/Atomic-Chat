@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { Route as ProvidersRoute } from '../index'
+import type { ModelsService } from '@/services/models/types'
+import type { ProvidersService } from '@/services/providers/types'
+import { seedServiceHub } from '@/test/service-hub'
 
 // Mock dependencies
 vi.mock('@/containers/SettingsMenu', () => ({
@@ -14,16 +17,32 @@ vi.mock('@/containers/HeaderPage', () => ({
 }))
 
 vi.mock('@/containers/Card', () => ({
-  Card: ({ header, children }: { header?: React.ReactNode; children: React.ReactNode }) => (
+  Card: ({
+    header,
+    children,
+  }: {
+    header?: React.ReactNode
+    children: React.ReactNode
+  }) => (
     <div data-testid="card">
       {header && <div data-testid="card-header">{header}</div>}
       {children}
     </div>
   ),
-  CardItem: ({ title, description, actions }: { title?: string; description?: string; actions?: React.ReactNode }) => (
+  CardItem: ({
+    title,
+    description,
+    actions,
+  }: {
+    title?: string
+    description?: string
+    actions?: React.ReactNode
+  }) => (
     <div data-testid="card-item" data-title={title}>
       {title && <div data-testid="card-item-title">{title}</div>}
-      {description && <div data-testid="card-item-description">{description}</div>}
+      {description && (
+        <div data-testid="card-item-description">{description}</div>
+      )}
       {actions && <div data-testid="card-item-actions">{actions}</div>}
     </div>
   ),
@@ -61,7 +80,6 @@ vi.mock('@/lib/utils', () => ({
   cn: (...args: any[]) => args.filter(Boolean).join(' '),
 }))
 
-
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: (path: string) => (config: any) => ({
     ...config,
@@ -71,7 +89,15 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 vi.mock('@/components/ui/button', () => ({
-  Button: ({ children, onClick, ...props }: { children: React.ReactNode; onClick?: () => void; [key: string]: any }) => (
+  Button: ({
+    children,
+    onClick,
+    ...props
+  }: {
+    children: React.ReactNode
+    onClick?: () => void
+    [key: string]: any
+  }) => (
     <button data-testid="button" onClick={onClick} {...props}>
       {children}
     </button>
@@ -79,17 +105,39 @@ vi.mock('@/components/ui/button', () => ({
 }))
 
 vi.mock('@/components/ui/dialog', () => ({
-  Dialog: ({ children }: { children: React.ReactNode }) => <div data-testid="dialog">{children}</div>,
-  DialogClose: ({ children }: { children: React.ReactNode }) => <div data-testid="dialog-close">{children}</div>,
-  DialogContent: ({ children }: { children: React.ReactNode }) => <div data-testid="dialog-content">{children}</div>,
-  DialogFooter: ({ children }: { children: React.ReactNode }) => <div data-testid="dialog-footer">{children}</div>,
-  DialogHeader: ({ children }: { children: React.ReactNode }) => <div data-testid="dialog-header">{children}</div>,
-  DialogTitle: ({ children }: { children: React.ReactNode }) => <div data-testid="dialog-title">{children}</div>,
-  DialogTrigger: ({ children }: { children: React.ReactNode }) => <div data-testid="dialog-trigger">{children}</div>,
+  Dialog: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dialog">{children}</div>
+  ),
+  DialogClose: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dialog-close">{children}</div>
+  ),
+  DialogContent: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dialog-content">{children}</div>
+  ),
+  DialogFooter: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dialog-footer">{children}</div>
+  ),
+  DialogHeader: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dialog-header">{children}</div>
+  ),
+  DialogTitle: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dialog-title">{children}</div>
+  ),
+  DialogTrigger: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dialog-trigger">{children}</div>
+  ),
 }))
 
 vi.mock('@/components/ui/input', () => ({
-  Input: ({ value, onChange, placeholder }: { value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; placeholder?: string }) => (
+  Input: ({
+    value,
+    onChange,
+    placeholder,
+  }: {
+    value: string
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => void
+    placeholder?: string
+  }) => (
     <input
       data-testid="input"
       value={value}
@@ -100,7 +148,13 @@ vi.mock('@/components/ui/input', () => ({
 }))
 
 vi.mock('@/components/ui/switch', () => ({
-  Switch: ({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: (checked: boolean) => void }) => (
+  Switch: ({
+    checked,
+    onCheckedChange,
+  }: {
+    checked: boolean
+    onCheckedChange: (checked: boolean) => void
+  }) => (
     <input
       data-testid="switch"
       type="checkbox"
@@ -144,6 +198,14 @@ vi.mock('@/constants/routes', () => ({
 describe('Providers Settings Route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    seedServiceHub({
+      providers: {
+        getProviders: vi.fn().mockResolvedValue([]),
+      } as unknown as ProvidersService,
+      models: {
+        stopAllModels: vi.fn().mockResolvedValue(undefined),
+      } as unknown as ModelsService,
+    })
   })
 
   it('should render the providers settings page', () => {
@@ -238,7 +300,11 @@ describe('Providers Settings Route', () => {
     fireEvent.change(input, { target: { value: 'new-provider' } })
 
     const buttons = screen.getAllByTestId('button')
-    const addButton = buttons.find(button => button.textContent?.includes('Add') || button.textContent?.includes('Create'))
+    const addButton = buttons.find(
+      (button) =>
+        button.textContent?.includes('Add') ||
+        button.textContent?.includes('Create')
+    )
     if (addButton) {
       fireEvent.click(addButton)
       expect(addButton).toBeInTheDocument()
@@ -253,7 +319,11 @@ describe('Providers Settings Route', () => {
     fireEvent.change(input, { target: { value: 'openai' } })
 
     const buttons = screen.getAllByTestId('button')
-    const addButton = buttons.find(button => button.textContent?.includes('Add') || button.textContent?.includes('Create'))
+    const addButton = buttons.find(
+      (button) =>
+        button.textContent?.includes('Add') ||
+        button.textContent?.includes('Create')
+    )
     if (addButton) {
       fireEvent.click(addButton)
       expect(addButton).toBeInTheDocument()
@@ -266,7 +336,7 @@ describe('Providers Settings Route', () => {
 
     const container = screen.getByTestId('header-page')
     expect(container).toBeInTheDocument()
-    
+
     const settingsMenu = screen.getByTestId('settings-menu')
     expect(settingsMenu).toBeInTheDocument()
   })
@@ -291,7 +361,11 @@ describe('Providers Settings Route', () => {
     render(<Component />)
 
     const buttons = screen.getAllByTestId('button')
-    const addButton = buttons.find(button => button.textContent?.includes('Add') || button.textContent?.includes('Create'))
+    const addButton = buttons.find(
+      (button) =>
+        button.textContent?.includes('Add') ||
+        button.textContent?.includes('Create')
+    )
     if (addButton) {
       fireEvent.click(addButton)
       expect(addButton).toBeInTheDocument()

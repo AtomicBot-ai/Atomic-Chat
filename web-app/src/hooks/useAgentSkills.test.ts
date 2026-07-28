@@ -11,6 +11,8 @@ import {
   setAgentSkillEnabled,
   updateAgentSkill,
 } from '@/services/agent/skills'
+import type { DialogService } from '@/services/dialog/types'
+import { seedServiceHub } from '@/test/service-hub'
 import { useAgentSkills } from './useAgentSkills'
 
 vi.mock('@/services/agent/skills', () => ({
@@ -26,12 +28,6 @@ vi.mock('@/services/agent/skills', () => ({
 }))
 
 const saveDialog = vi.hoisted(() => vi.fn())
-
-vi.mock('@/hooks/useServiceHub', () => ({
-  getServiceHub: () => ({
-    dialog: () => ({ save: saveDialog }),
-  }),
-}))
 
 const skill = {
   name: 'custom-skill',
@@ -51,6 +47,11 @@ const skill = {
 describe('useAgentSkills', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    seedServiceHub({
+      dialog: {
+        save: saveDialog,
+      } as DialogService,
+    })
     vi.mocked(listAgentSkills).mockResolvedValue([skill])
     vi.mocked(refreshAgentSkills).mockResolvedValue([skill])
     vi.mocked(getAgentSkill).mockResolvedValue({ ...skill, body: '# Body' })

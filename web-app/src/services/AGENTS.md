@@ -184,10 +184,9 @@ npx vitest run src/routes/settings/providers/__tests__/index.test.tsx
 npx vitest run src/containers/__tests__/DropdownModelProvider.displayName.test.tsx
 ```
 
-The full suite has pre-existing unrelated failures
-(`models.test.ts`, `useReleaseNotes.test.ts`, `interface.test.tsx`,
-`SettingsMenu.test.tsx`, `utils.test.ts > getProviderTitle`); investigate
-those independently, do not block registry work on them.
+The full root suite is expected to pass. Do not normalize or document a
+permanently red baseline: fix a regression where it belongs, or quarantine it
+explicitly with an owner and a follow-up reference.
 
 # 2. Recommended-Models Registry
 

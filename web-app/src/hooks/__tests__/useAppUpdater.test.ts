@@ -1,9 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useAppUpdater } from '../useAppUpdater'
+import type { EventsService } from '@/services/events/types'
+import type { ModelsService } from '@/services/models/types'
+import type { UpdaterService } from '@/services/updater/types'
+import { seedServiceHub } from '@/test/service-hub'
 
 // Mock dependencies
-vi.mock('@/lib/utils', () => ({
+vi.mock('@/lib/utils', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/utils')>()),
   isDev: vi.fn(() => false),
 }))
 
@@ -32,21 +37,6 @@ const mockUpdaterCheck = vi.fn()
 const mockUpdaterDownloadAndInstall = vi.fn()
 const mockUpdaterDownloadAndInstallWithProgress = vi.fn()
 const mockEventsEmit = vi.fn()
-vi.mock('@/hooks/useServiceHub', () => ({
-  getServiceHub: () => ({
-    models: () => ({
-      stopAllModels: mockStopAllModels,
-    }),
-    updater: () => ({
-      check: mockUpdaterCheck,
-      downloadAndInstall: mockUpdaterDownloadAndInstall,
-      downloadAndInstallWithProgress: mockUpdaterDownloadAndInstallWithProgress,
-    }),
-    events: () => ({
-      emit: mockEventsEmit,
-    }),
-  }),
-}))
 
 // Mock global window.core
 Object.defineProperty(window, 'core', {
@@ -74,6 +64,20 @@ describe('useAppUpdater', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    seedServiceHub({
+      models: {
+        stopAllModels: mockStopAllModels,
+      } as ModelsService,
+      updater: {
+        check: mockUpdaterCheck,
+        downloadAndInstall: mockUpdaterDownloadAndInstall,
+        downloadAndInstallWithProgress:
+          mockUpdaterDownloadAndInstallWithProgress,
+      } as unknown as UpdaterService,
+      events: {
+        emit: mockEventsEmit,
+      } as EventsService,
+    })
     mockIsDev.mockReturnValue(false)
   })
 
@@ -167,7 +171,9 @@ describe('useAppUpdater', () => {
     })
 
     it('should handle errors during update check', async () => {
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const consoleErrorSpy = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {})
       mockUpdaterCheck.mockRejectedValue(new Error('Network error'))
 
       const { result } = renderHook(() => useAppUpdater())
@@ -253,7 +259,6 @@ describe('useAppUpdater', () => {
     })
   })
 
-
   describe('downloadAndInstallUpdate', () => {
     it('should download and install update successfully', async () => {
       const mockDownloadAndInstall = vi.fn()
@@ -273,24 +278,26 @@ describe('useAppUpdater', () => {
       })
 
       // Mock the download and install process
-      mockUpdaterDownloadAndInstallWithProgress.mockImplementation(async (progressCallback) => {
-        // Simulate download events
-        progressCallback({
-          event: 'Started',
-          data: { contentLength: 1000 },
-        })
-        progressCallback({
-          event: 'Progress',
-          data: { chunkLength: 500 },
-        })
-        progressCallback({
-          event: 'Progress',
-          data: { chunkLength: 500 },
-        })
-        progressCallback({
-          event: 'Finished',
-        })
-      })
+      mockUpdaterDownloadAndInstallWithProgress.mockImplementation(
+        async (progressCallback) => {
+          // Simulate download events
+          progressCallback({
+            event: 'Started',
+            data: { contentLength: 1000 },
+          })
+          progressCallback({
+            event: 'Progress',
+            data: { chunkLength: 500 },
+          })
+          progressCallback({
+            event: 'Progress',
+            data: { chunkLength: 500 },
+          })
+          progressCallback({
+            event: 'Finished',
+          })
+        }
+      )
 
       await act(async () => {
         await result.current.downloadAndInstallUpdate()
@@ -303,7 +310,9 @@ describe('useAppUpdater', () => {
     })
 
     it('should handle download errors', async () => {
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const consoleErrorSpy = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {})
       const mockDownloadAndInstall = vi.fn()
       const mockUpdate = {
         version: '1.2.0',
@@ -320,7 +329,9 @@ describe('useAppUpdater', () => {
         await result.current.checkForUpdate()
       })
 
-      mockUpdaterDownloadAndInstallWithProgress.mockRejectedValue(new Error('Download failed'))
+      mockUpdaterDownloadAndInstallWithProgress.mockRejectedValue(
+        new Error('Download failed')
+      )
 
       await act(async () => {
         await result.current.downloadAndInstallUpdate()
@@ -365,35 +376,46 @@ describe('useAppUpdater', () => {
         await result.current.checkForUpdate()
       })
 
-      mockUpdaterDownloadAndInstallWithProgress.mockImplementation(async (progressCallback) => {
-        progressCallback({
-          event: 'Started',
-          data: { contentLength: 2000 },
-        })
-        progressCallback({
-          event: 'Progress',
-          data: { chunkLength: 1000 },
-        })
-        progressCallback({
-          event: 'Finished',
-        })
-      })
+      mockUpdaterDownloadAndInstallWithProgress.mockImplementation(
+        async (progressCallback) => {
+          progressCallback({
+            event: 'Started',
+            data: { contentLength: 2000 },
+          })
+          progressCallback({
+            event: 'Progress',
+            data: { chunkLength: 1000 },
+          })
+          progressCallback({
+            event: 'Finished',
+          })
+        }
+      )
 
       await act(async () => {
         await result.current.downloadAndInstallUpdate()
       })
 
-      expect(mockEvents.emit).toHaveBeenCalledWith('onAppUpdateDownloadUpdate', {
-        progress: 0,
-        downloadedBytes: 0,
-        totalBytes: 2000,
-      })
-      expect(mockEvents.emit).toHaveBeenCalledWith('onAppUpdateDownloadUpdate', {
-        progress: 0.5,
-        downloadedBytes: 1000,
-        totalBytes: 2000,
-      })
-      expect(mockEvents.emit).toHaveBeenCalledWith('onAppUpdateDownloadSuccess', {})
+      expect(mockEvents.emit).toHaveBeenCalledWith(
+        'onAppUpdateDownloadUpdate',
+        {
+          progress: 0,
+          downloadedBytes: 0,
+          totalBytes: 2000,
+        }
+      )
+      expect(mockEvents.emit).toHaveBeenCalledWith(
+        'onAppUpdateDownloadUpdate',
+        {
+          progress: 0.5,
+          downloadedBytes: 1000,
+          totalBytes: 2000,
+        }
+      )
+      expect(mockEvents.emit).toHaveBeenCalledWith(
+        'onAppUpdateDownloadSuccess',
+        {}
+      )
     })
   })
 })

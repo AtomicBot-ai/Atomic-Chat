@@ -266,6 +266,7 @@ describe('migrateLegacyModels', () => {
         name: 'Test Model',
         model_path: 'models/test/model.gguf',
         size_bytes: 1000000,
+        embedding: false,
       })
 
       await extension.list()

@@ -1,7 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import llamacpp_extension from '../index'
 
-import { normalizeLlamacppConfig } from '@janhq/tauri-plugin-llamacpp-upstream-api'
+import {
+  getSupportedFeaturesFromRust,
+  loadLlamaModel,
+  mapOldBackendToNew,
+  normalizeLlamacppConfig,
+  readGgufMetadata,
+  removeOldBackendVersions,
+  unloadLlamaModel,
+} from '../../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index'
+import { listSupportedBackends } from '../backend'
+import { getSystemInfo } from '../hardware'
 
 // Mock fetch globally
 global.fetch = vi.fn()
@@ -20,23 +30,44 @@ vi.mock('../backend', () => ({
   getBackendDir: vi.fn(),
 }))
 
-// Mock tauri-plugin-llamacpp-api (partial mock)
-vi.mock('@janhq/tauri-plugin-llamacpp-upstream-api', async () => {
-  const actual = await vi.importActual<
-    typeof import('@janhq/tauri-plugin-llamacpp-upstream-api')
-  >('@janhq/tauri-plugin-llamacpp-upstream-api')
+vi.mock('../hardware', () => ({
+  getSystemInfo: vi.fn(),
+  getSystemUsage: vi.fn(),
+}))
 
-  return {
-    ...actual,
-    mapOldBackendToNew: vi.fn(),
-    removeOldBackendVersions: vi.fn(),
+// The extension imports the guest bridge by relative path, so mock that exact
+// module rather than the package alias.
+vi.mock(
+  '../../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index',
+  async () => {
+    const actual = await vi.importActual<
+      typeof import('../../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index')
+    >(
+      '../../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index'
+    )
+
+    return {
+      ...actual,
+      getSupportedFeaturesFromRust: vi.fn(),
+      loadLlamaModel: vi.fn(),
+      mapOldBackendToNew: vi.fn(),
+      readGgufMetadata: vi.fn(),
+      removeOldBackendVersions: vi.fn(),
+      unloadLlamaModel: vi.fn(),
+    }
   }
-})
+)
+
 describe('llamacpp_extension', () => {
   let extension: llamacpp_extension
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(readGgufMetadata).mockResolvedValue({
+      version: 3,
+      tensor_count: 1,
+      metadata: { 'general.architecture': 'llama' },
+    } as any)
     extension = new llamacpp_extension()
   })
 
@@ -46,9 +77,122 @@ describe('llamacpp_extension', () => {
 
   describe('constructor', () => {
     it('should initialize with correct default values', () => {
-      expect(extension.provider).toBe('llamacpp')
-      expect(extension.providerId).toBe('llamacpp')
-      expect(extension.autoUnload).toBe(true)
+      expect(extension.provider).toBe('llamacpp-upstream')
+      expect(extension.providerId).toBe('llamacpp-upstream')
+      expect(extension.autoUnload).toBe(false)
+    })
+  })
+
+  describe('hardware backend recommendation', () => {
+    const discreteGpu = {
+      name: 'Test GPU',
+      total_memory: 12 * 1024,
+      vendor: 'Test',
+      uuid: 'gpu-1',
+      driver_version: '1',
+      vulkan_info: { device_type: 'DiscreteGpu' },
+    }
+
+    it('selects the published CUDA 13 asset on a supported Windows host', async () => {
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'windows',
+        os_name: 'Windows',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [{ ...discreteGpu, nvidia_info: {} }],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: false,
+        cuda12: true,
+        cuda13: true,
+        vulkan: true,
+      })
+      vi.mocked(listSupportedBackends).mockResolvedValue([
+        { version: 'b9937', backend: 'win-cpu-x64', order: 0 },
+        { version: 'b9937', backend: 'win-cuda-12.4-x64', order: 0 },
+        { version: 'b9937', backend: 'win-cuda-13.3-x64', order: 0 },
+        { version: 'b9937', backend: 'win-vulkan-x64', order: 0 },
+      ])
+      vi.spyOn(extension as any, 'tierEnumeratesDevices').mockResolvedValue(
+        'works'
+      )
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'gpu',
+        backend: 'win-cuda-13.3-x64',
+      })
+    })
+
+    it('uses Vulkan for a Linux NVIDIA host and ignores CUDA flags', async () => {
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'linux',
+        os_name: 'Linux',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [{ ...discreteGpu, nvidia_info: {} }],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: true,
+        cuda12: true,
+        cuda13: true,
+        vulkan: true,
+      })
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'gpu',
+        backend: 'linux-vulkan-x64',
+      })
+      expect(listSupportedBackends).not.toHaveBeenCalled()
+    })
+
+    it('keeps an integrated-only Vulkan host on CPU', async () => {
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'linux',
+        os_name: 'Linux',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [
+          {
+            ...discreteGpu,
+            name: 'Integrated GPU',
+            nvidia_info: undefined,
+            vulkan_info: { device_type: 'IntegratedGpu' },
+          },
+        ],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: false,
+        cuda12: false,
+        cuda13: false,
+        vulkan: true,
+      })
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'cpu-optimal',
+      })
+    })
+
+    it('reports detection failure when a Windows GPU tier has no release asset', async () => {
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'windows',
+        os_name: 'Windows',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [{ ...discreteGpu, nvidia_info: {} }],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: false,
+        cuda12: true,
+        cuda13: true,
+        vulkan: false,
+      })
+      vi.mocked(listSupportedBackends).mockResolvedValue([
+        { version: 'b9937', backend: 'win-cpu-x64', order: 0 },
+      ])
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'detection-failed',
+      })
     })
   })
 
@@ -146,10 +290,11 @@ describe('llamacpp_extension', () => {
         return Promise.resolve(paths.join('/'))
       })
 
-      vi.mocked(fs.existsSync)
-        .mockResolvedValueOnce(true) // modelsDir exists
-        .mockResolvedValueOnce(false) // model.yml doesn't exist at modelsDir level
-        .mockResolvedValueOnce(true) // model.yml exists in test-model dir
+      vi.mocked(fs.existsSync).mockImplementation(async (path: string) => {
+        if (path === modelsDir) return true
+        if (path === `${modelsDir}/test-model/model.yml`) return true
+        return false
+      })
 
       vi.mocked(fs.readdirSync).mockResolvedValue(['test-model'])
       vi.mocked(fs.fileStat).mockResolvedValue({
@@ -161,22 +306,19 @@ describe('llamacpp_extension', () => {
         model_path: 'test-model/model.gguf',
         name: 'Test Model',
         size_bytes: 1000000,
+        embedding: false,
       })
 
       const result = await extension.list()
 
-      // Note: There's a bug in the original code where it pushes just the child name
-      // instead of the full path, causing the model ID to be empty
-      expect(result).toEqual([
-        {
-          id: '', // This should be 'test-model' but the original code has a bug
-          name: 'Test Model',
-          quant_type: undefined,
-          providerId: 'llamacpp',
-          port: 0,
-          sizeBytes: 1000000,
-        },
-      ])
+      expect(result).toHaveLength(1)
+      expect(result[0]).toMatchObject({
+        id: 'test-model',
+        name: 'Test Model',
+        providerId: 'llamacpp-upstream',
+        sizeBytes: 1000000,
+        embedding: false,
+      })
     })
   })
 
@@ -234,8 +376,7 @@ describe('llamacpp_extension', () => {
 
   describe('load', () => {
     it('should throw error if model is already loaded', async () => {
-      // Mock that model is already loaded
-      extension['activeSessions'].set(123, {
+      extension['findSessionByModel'] = vi.fn().mockResolvedValue({
         model_id: 'test-model',
         pid: 123,
         port: 3000,
@@ -251,11 +392,6 @@ describe('llamacpp_extension', () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
       const { invoke } = await import('@tauri-apps/api/core')
 
-      // Mock system info for getBackendExePath
-      const getSystemInfo = vi.fn().mockResolvedValue({
-        os_type: 'linux',
-      })
-
       // Mock backend functions to avoid download
       const backendModule = await import('../backend')
       vi.mocked(backendModule.isBackendInstalled).mockResolvedValue(true)
@@ -265,6 +401,10 @@ describe('llamacpp_extension', () => {
 
       // Mock fs for backend check
       vi.mocked(fs.existsSync).mockResolvedValue(true)
+      vi.mocked(fs.fileStat).mockResolvedValue({
+        isDirectory: false,
+        size: 1000000,
+      })
 
       // Mock configuration
       extension['config'] = {
@@ -298,6 +438,8 @@ describe('llamacpp_extension', () => {
 
       // Set up providerPath
       extension['providerPath'] = '/path/to/jan/llamacpp'
+      extension['findSessionByModel'] = vi.fn().mockResolvedValue(undefined)
+      extension['getLoadedModels'] = vi.fn().mockResolvedValue([])
 
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockImplementation((paths) =>
@@ -313,13 +455,13 @@ describe('llamacpp_extension', () => {
           size_bytes: 1000000,
         })
         .mockResolvedValueOnce('test-api-key') // generate_api_key
-        .mockResolvedValueOnce({
-          // load_llama_model
-          model_id: 'test-model',
-          pid: 123,
-          port: 3000,
-          api_key: 'test-api-key',
-        })
+
+      vi.mocked(loadLlamaModel).mockResolvedValue({
+        model_id: 'test-model',
+        pid: 123,
+        port: 3000,
+        api_key: 'test-api-key',
+      } as any)
 
       // Mock successful health check
       global.fetch = vi.fn().mockResolvedValue({
@@ -336,7 +478,7 @@ describe('llamacpp_extension', () => {
         api_key: 'test-api-key',
       })
 
-      expect(extension['activeSessions'].get(123)).toEqual({
+      expect(extension['sessionCache'].get('test-model')).toEqual({
         model_id: 'test-model',
         pid: 123,
         port: 3000,
@@ -356,14 +498,14 @@ describe('llamacpp_extension', () => {
       const { invoke } = await import('@tauri-apps/api/core')
 
       // Set up active session
-      extension['activeSessions'].set(123, {
+      extension['sessionCache'].set('test-model', {
         model_id: 'test-model',
         pid: 123,
         port: 3000,
         api_key: 'test-key',
       })
 
-      vi.mocked(invoke).mockResolvedValue({
+      vi.mocked(unloadLlamaModel).mockResolvedValue({
         success: true,
         error: null,
       })
@@ -375,7 +517,7 @@ describe('llamacpp_extension', () => {
         error: null,
       })
 
-      expect(extension['activeSessions'].has(123)).toBe(false)
+      expect(extension['sessionCache'].has('test-model')).toBe(false)
     })
   })
 
@@ -395,7 +537,7 @@ describe('llamacpp_extension', () => {
       const { invoke } = await import('@tauri-apps/api/core')
 
       // Set up active session
-      extension['activeSessions'].set(123, {
+      extension['sessionCache'].set('test-model', {
         model_id: 'test-model',
         pid: 123,
         port: 3000,
@@ -676,19 +818,8 @@ describe('llamacpp_extension', () => {
 
   describe('getLoadedModels', () => {
     it('should return list of loaded models', async () => {
-      extension['activeSessions'].set(123, {
-        model_id: 'model1',
-        pid: 123,
-        port: 3000,
-        api_key: 'key1',
-      })
-
-      extension['activeSessions'].set(456, {
-        model_id: 'model2',
-        pid: 456,
-        port: 3001,
-        api_key: 'key2',
-      })
+      const { invoke } = await import('@tauri-apps/api/core')
+      vi.mocked(invoke).mockResolvedValue(['model1', 'model2'])
 
       const result = await extension.getLoadedModels()
 
@@ -773,9 +904,6 @@ describe('llamacpp_extension', () => {
         vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
         vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/backends')
 
-        const { mapOldBackendToNew, removeOldBackendVersions } = await import(
-          '@janhq/tauri-plugin-llamacpp-upstream-api'
-        )
         vi.mocked(mapOldBackendToNew).mockResolvedValue('linux-avx2-x64')
         vi.mocked(removeOldBackendVersions).mockResolvedValue([])
 
@@ -837,9 +965,6 @@ describe('llamacpp_extension', () => {
         vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
         vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/backends')
 
-        const { mapOldBackendToNew, removeOldBackendVersions } = await import(
-          '@janhq/tauri-plugin-llamacpp-upstream-api'
-        )
         vi.mocked(mapOldBackendToNew).mockResolvedValue('linux-avx2-x64')
         vi.mocked(removeOldBackendVersions).mockResolvedValue([])
 
@@ -866,9 +991,6 @@ describe('llamacpp_extension', () => {
         vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
         vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/backends')
 
-        const { mapOldBackendToNew, removeOldBackendVersions } = await import(
-          '@janhq/tauri-plugin-llamacpp-upstream-api'
-        )
         vi.mocked(mapOldBackendToNew).mockResolvedValue('linux-avx2-x64')
         vi.mocked(removeOldBackendVersions).mockResolvedValue([])
 

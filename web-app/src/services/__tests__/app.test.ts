@@ -1,82 +1,52 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { mockIPC } from '@tauri-apps/api/mocks'
+import type { InvokeArgs } from '@tauri-apps/api/core'
+import { APIs } from '@/lib/service'
+import { TauriCoreService } from '../core/tauri'
 import { TauriAppService } from '../app/tauri'
+import { seedServiceHub } from '@/test/service-hub'
 
-// Mock dependencies
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
+const engineMocks = vi.hoisted(() => ({
+  getLoadedModels: vi.fn().mockResolvedValue(['model1', 'model2']),
+  unload: vi.fn().mockResolvedValue(undefined),
 }))
 
-// Mock EngineManager
 vi.mock('@janhq/core', async (importOriginal) => {
-  const actual = await importOriginal()
+  const actual = await importOriginal<typeof import('@janhq/core')>()
   return {
     ...actual,
     EngineManager: {
       instance: () => ({
-        engines: new Map([
-          ['engine1', {
-            getLoadedModels: vi.fn().mockResolvedValue(['model1', 'model2']),
-            unload: vi.fn().mockResolvedValue(undefined),
-          }],
-        ]),
+        engines: new Map([['engine1', engineMocks]]),
       }),
     },
   }
 })
 
-vi.mock('@tauri-apps/api/event', () => ({
-  emit: vi.fn(),
-}))
-
-vi.mock('../models', () => ({
-  stopAllModels: vi.fn(),
-}))
-
-vi.mock('@janhq/core', () => ({
-  fs: {
-    rm: vi.fn(),
-  },
-}))
-
-// Mock the global window object
-const mockWindow = {
-  core: {
-    api: {
-      installExtensions: vi.fn(),
-      relaunch: vi.fn(),
-      getAppConfigurations: vi.fn(),
-      changeAppDataFolder: vi.fn(),
-    },
-  },
-  localStorage: {
-    clear: vi.fn(),
-  },
-}
-
-Object.defineProperty(window, 'core', {
-  value: mockWindow.core,
-  writable: true,
-})
-
-Object.defineProperty(window, 'localStorage', {
-  value: mockWindow.localStorage,
-  writable: true,
-})
-
 describe('TauriAppService', () => {
   let appService: TauriAppService
+  let ipcHandler: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
-    appService = new TauriAppService()
     vi.clearAllMocks()
+    ipcHandler = vi.fn()
+    mockIPC((command: string, args?: InvokeArgs) => ipcHandler(command, args))
+    seedServiceHub({ core: new TauriCoreService() })
+    window.core = {
+      api: APIs,
+      extensionManager: undefined,
+    }
+    appService = new TauriAppService()
+    window.localStorage.clear()
   })
 
   describe('parseLogLine', () => {
-    it('should parse valid log line', () => {
-      const logLine = '[2024-01-01][10:00:00][target][INFO] Test message'
-      const result = appService.parseLogLine(logLine)
-
-      expect(result).toEqual({
+    it('parses a valid log line', () => {
+      expect(
+        appService.parseLogLine(
+          '[2024-01-01][10:00:00][target][INFO] Test message'
+        )
+      ).toEqual({
         timestamp: '2024-01-01T10:00:00Z',
         level: 'info',
         target: 'target',
@@ -84,85 +54,81 @@ describe('TauriAppService', () => {
       })
     })
 
-    it('should handle invalid log line format', () => {
-      const logLine = 'Invalid log line'
-      const result = appService.parseLogLine(logLine)
+    it('preserves an invalid log line as an info entry', () => {
+      const result = appService.parseLogLine('Invalid log line')
 
-      expect(result.message).toBe('Invalid log line')
-      expect(result.level).toBe('info')
-      expect(result.target).toBe('info')
+      expect(result).toEqual(
+        expect.objectContaining({
+          level: 'info',
+          target: 'info',
+          message: 'Invalid log line',
+        })
+      )
       expect(typeof result.timestamp).toBe('number')
     })
   })
 
-  describe('readLogs', () => {
-    it('should read and parse logs', async () => {
-      const { invoke } = await import('@tauri-apps/api/core')
-      const mockLogs =
-        '[2024-01-01][10:00:00Z][target][INFO] Test message\n[2024-01-01][10:01:00Z][target][ERROR] Error message'
-      vi.mocked(invoke).mockResolvedValue(mockLogs)
+  it('reads and parses logs through real invoke', async () => {
+    ipcHandler.mockReturnValue(
+      '[2024-01-01][10:00:00Z][target][INFO] Test message\n' +
+        '[2024-01-01][10:01:00Z][target][ERROR] Error message'
+    )
 
-      const result = await appService.readLogs()
+    const result = await appService.readLogs()
 
-      expect(invoke).toHaveBeenCalledWith('read_logs')
-      expect(result).toHaveLength(2)
-      expect(result[0].message).toBe('Test message')
-      expect(result[1].message).toBe('Error message')
-    })
+    expect(ipcHandler).toHaveBeenCalledWith('read_logs', {})
+    expect(result.map((entry) => entry.message)).toEqual([
+      'Test message',
+      'Error message',
+    ])
+  })
 
-    it('should handle empty logs', async () => {
-      const { invoke } = await import('@tauri-apps/api/core')
-      vi.mocked(invoke).mockResolvedValue('')
+  it('routes data-folder reads through APIs and TauriCoreService', async () => {
+    ipcHandler.mockReturnValue({ data_folder: '/path/to/atomic/data' })
 
-      const result = await appService.readLogs()
+    await expect(appService.getJanDataFolder()).resolves.toBe(
+      '/path/to/atomic/data'
+    )
+    expect(ipcHandler).toHaveBeenCalledWith('get_app_configurations', {})
+  })
 
-      expect(result).toEqual([expect.objectContaining({ message: '' })])
+  it('routes data-folder relocation through APIs and TauriCoreService', async () => {
+    ipcHandler.mockReturnValue(undefined)
+
+    await appService.relocateJanDataFolder('/new/path/to/atomic/data')
+
+    expect(ipcHandler).toHaveBeenCalledWith('change_app_data_folder', {
+      newDataFolder: '/new/path/to/atomic/data',
     })
   })
 
-  describe('getJanDataFolder', () => {
-    it('should get jan data folder path', async () => {
-      const mockConfig = { data_folder: '/path/to/jan/data' }
-      mockWindow.core.api.getAppConfigurations.mockResolvedValue(mockConfig)
+  it('performs factory reset through real invoke and preserves backend keys', async () => {
+    window.localStorage.setItem('llama_cpp_backend_type', 'cpu')
+    window.localStorage.setItem('discard-me', 'value')
+    ipcHandler.mockReturnValue(undefined)
 
-      const result = await appService.getJanDataFolder()
+    await appService.factoryReset()
 
-      expect(mockWindow.core.api.getAppConfigurations).toHaveBeenCalled()
-      expect(result).toBe('/path/to/jan/data')
-    })
+    expect(engineMocks.unload).toHaveBeenCalledTimes(2)
+    expect(window.localStorage.getItem('llama_cpp_backend_type')).toBe('cpu')
+    expect(window.localStorage.getItem('discard-me')).toBeNull()
+    expect(ipcHandler).toHaveBeenCalledWith('factory_reset', {})
   })
 
-  describe('relocateJanDataFolder', () => {
-    it('should relocate jan data folder', async () => {
-      const newPath = '/new/path/to/jan/data'
-      mockWindow.core.api.changeAppDataFolder.mockResolvedValue(undefined)
+  it('returns undefined when installer type invoke rejects', async () => {
+    ipcHandler.mockRejectedValue(new Error('unavailable'))
 
-      await appService.relocateJanDataFolder(newPath)
-
-      expect(mockWindow.core.api.changeAppDataFolder).toHaveBeenCalledWith({
-        newDataFolder: newPath,
-      })
-    })
+    await expect(appService.getInstallerType()).resolves.toBeUndefined()
   })
 
-  describe('factoryReset', () => {
-    it.skip('should perform factory reset', async () => {
-      const { invoke } = await import('@tauri-apps/api/core')
+  it('passes readYaml arguments through real invoke', async () => {
+    ipcHandler.mockReturnValue({ enabled: true })
 
-      // Use fake timers
-      vi.useFakeTimers()
-
-      const factoryResetPromise = appService.factoryReset()
-
-      // Advance timers and run all pending timers
-      await vi.advanceTimersByTimeAsync(1000)
-
-      await factoryResetPromise
-
-      expect(mockWindow.localStorage.clear).toHaveBeenCalled()
-      expect(invoke).toHaveBeenCalledWith('factory_reset')
-
-      vi.useRealTimers()
+    await expect(appService.readYaml('/tmp/config.yml')).resolves.toEqual({
+      enabled: true,
+    })
+    expect(ipcHandler).toHaveBeenCalledWith('read_yaml', {
+      path: '/tmp/config.yml',
     })
   })
 })

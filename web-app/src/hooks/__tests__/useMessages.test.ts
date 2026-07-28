@@ -2,27 +2,24 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useMessages } from '../useMessages'
 import { ThreadMessage } from '@janhq/core'
+import type { MessagesService } from '@/services/messages/types'
+import { seedServiceHub } from '@/test/service-hub'
 
 // Mock the ServiceHub
 const mockCreateMessage = vi.fn()
 const mockModifyMessage = vi.fn()
 const mockDeleteMessage = vi.fn()
 
-vi.mock('@/hooks/useServiceHub', () => ({
-  getServiceHub: () => ({
-    messages: () => ({
-      createMessage: mockCreateMessage,
-      modifyMessage: mockModifyMessage,
-      deleteMessage: mockDeleteMessage,
-    }),
-  }),
-}))
-
-
 describe('useMessages', () => {
-
   beforeEach(() => {
     vi.clearAllMocks()
+    seedServiceHub({
+      messages: {
+        createMessage: mockCreateMessage,
+        modifyMessage: mockModifyMessage,
+        deleteMessage: mockDeleteMessage,
+      } as MessagesService,
+    })
     // Reset store state
     useMessages.setState({ messages: {} })
   })
@@ -324,7 +321,10 @@ describe('useMessages', () => {
         result.current.deleteMessage('empty-thread', 'non-existent-msg')
       })
 
-      expect(mockDeleteMessage).toHaveBeenCalledWith('empty-thread', 'non-existent-msg')
+      expect(mockDeleteMessage).toHaveBeenCalledWith(
+        'empty-thread',
+        'non-existent-msg'
+      )
       expect(result.current.messages['empty-thread']).toEqual([])
     })
 
@@ -349,7 +349,10 @@ describe('useMessages', () => {
         result.current.deleteMessage('thread1', 'non-existent-msg')
       })
 
-      expect(mockDeleteMessage).toHaveBeenCalledWith('thread1', 'non-existent-msg')
+      expect(mockDeleteMessage).toHaveBeenCalledWith(
+        'thread1',
+        'non-existent-msg'
+      )
       expect(result.current.messages['thread1']).toEqual(testMessages)
     })
   })

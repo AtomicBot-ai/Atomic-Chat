@@ -511,11 +511,10 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
   /// already on the optimal backend (callers typically toast in that case).
   const recheckOptimalBackend = useCallback(async () => {
     const allExtensions = ExtensionManager.getInstance().listExtensions()
-    // Resolve the platform-active llama.cpp extension: Windows ships only
-    // the upstream extension, macOS/Linux ship the turboquant fork as the
-    // primary. The fallback class-name scan below catches the
-    // bundled-from-tarball flow where extensions are registered under
-    // their JS class name instead of the npm package id.
+    // Resolve the extension for the selected/default provider. Both llama.cpp
+    // providers can be present on every desktop platform. The fallback
+    // class-name scan catches bundled tarballs registered under their JS class
+    // name instead of the npm package id.
     const primary = ExtensionManager.getInstance().getByName(
       extensionName
     )

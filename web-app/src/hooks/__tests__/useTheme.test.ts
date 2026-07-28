@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { checkOSDarkMode } from '../useTheme'
+import type { ThemeService } from '@/services/theme/types'
+import { seedServiceHub } from '@/test/service-hub'
 
 // Mock Tauri API
 vi.mock('@tauri-apps/api/window', () => ({
@@ -35,6 +37,11 @@ describe('useTheme', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    seedServiceHub({
+      theme: {
+        setTheme: vi.fn().mockResolvedValue(undefined),
+      } as unknown as ThemeService,
+    })
     // Mock window.matchMedia
     originalMatchMedia = window.matchMedia
     window.matchMedia = vi.fn()
@@ -55,7 +62,9 @@ describe('useTheme', () => {
 
       const result = checkOSDarkMode()
       expect(result).toBe(true)
-      expect(window.matchMedia).toHaveBeenCalledWith('(prefers-color-scheme: dark)')
+      expect(window.matchMedia).toHaveBeenCalledWith(
+        '(prefers-color-scheme: dark)'
+      )
     })
 
     it('should return false when OS prefers light mode', () => {
@@ -76,7 +85,7 @@ describe('useTheme', () => {
 
       const result = checkOSDarkMode()
       expect(result).toBeFalsy()
-      
+
       // Restore
       window.matchMedia = originalMatchMedia
     })
