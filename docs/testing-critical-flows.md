@@ -76,7 +76,7 @@ Verified local artifacts:
   not include TurboQuant values.
 - Both llama binaries advertise `draft-mtp` and `draft-dflash` speculative
   modes; backend-specific cache types remain distinct.
-- MLX `mlxvlm-macos-arm64-d784fc5` advertises
+- MLX `mlxvlm-macos-arm64-addaf9f` advertises
   `--draft-kind dflash|eagle3|mtp`,
   `--kv-quant-scheme uniform|turboquant`, floating-point `--kv-bits`,
   `--max-kv-size`, and `--draft-block-size`.

@@ -389,7 +389,7 @@ endif
 # validation run; normal builds never resolve a moving latest release.
 # Example:
 #   make build-mlx-server MLXVLM_TAG=mlxvlm-macos-arm64-abc1234
-MLXVLM_TAG ?= mlxvlm-macos-arm64-d784fc5
+MLXVLM_TAG ?= mlxvlm-macos-arm64-addaf9f
 build-mlx-server:
 ifeq ($(shell uname -s),Darwin)
 	@mkdir -p src-tauri/resources/bin
