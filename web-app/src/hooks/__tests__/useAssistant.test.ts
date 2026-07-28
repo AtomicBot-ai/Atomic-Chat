@@ -1,16 +1,18 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useAssistant, defaultAssistant } from '../useAssistant'
-
-// Mock the services
-vi.mock('@/services/assistants', () => ({
-  createAssistant: vi.fn(() => Promise.resolve()),
-  deleteAssistant: vi.fn(() => Promise.resolve()),
-}))
+import type { AssistantsService } from '@/services/assistants/types'
+import { seedServiceHub } from '@/test/service-hub'
 
 describe('useAssistant', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    seedServiceHub({
+      assistants: {
+        createAssistant: vi.fn().mockResolvedValue(undefined),
+        deleteAssistant: vi.fn().mockResolvedValue(undefined),
+      } as unknown as AssistantsService,
+    })
     // Reset Zustand store to default state
     act(() => {
       useAssistant.setState({

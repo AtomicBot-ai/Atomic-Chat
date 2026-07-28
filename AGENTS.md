@@ -115,7 +115,8 @@ Wiring new code into an existing `@janhq/*` package is fine; adding a new
 make dev      # first-time setup: deps, core, extensions, icons, launch Tauri
 yarn dev      # hot loop after make dev has run once
 make build    # production build (see Makefile / package.json for per-platform targets)
-make test     # vitest + lints
+make test-local # root + extension Vitest and platform Rust suites; creates inert Tauri resource stubs
+make test     # full suite: lint, downloads, generated icons, sidecars, CLI, tests
 yarn lint     # eslint in @janhq/web-app
 ```
 

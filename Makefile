@@ -271,6 +271,78 @@ lint: install-and-build
 	yarn lint
 
 # Testing
+.PHONY: test test-local test-web test-extensions test-rust stub-resources
+
+test-web:
+	yarn test
+
+test-extensions:
+	yarn --cwd extensions workspaces foreach -A \
+		--include '@janhq/llamacpp-extension' \
+		--include '@janhq/llamacpp-upstream-extension' \
+		--include '@janhq/mlx-extension' \
+		--include '@janhq/download-extension' \
+		run test:run
+
+# Tauri validates bundle.resources and externalBin paths while compiling the
+# test target. Tests never execute these artefacts, so create only missing
+# placeholders and never overwrite a real local build.
+stub-resources:
+ifeq ($(OS),Windows_NT)
+	powershell -NoProfile -Command "\
+		$$files = @( \
+			'src-tauri/resources/LICENSE', \
+			'src-tauri/resources/pre-install/test-placeholder', \
+			'src-tauri/resources/bin/jan-cli.exe', \
+			'src-tauri/resources/bin/bun-x86_64-pc-windows-msvc.exe', \
+			'src-tauri/resources/bin/uv-x86_64-pc-windows-msvc.exe', \
+			'src-tauri/resources/llamacpp-backend/test-placeholder', \
+			'src-tauri/resources/llamacpp-backend-upstream/test-placeholder' \
+		); \
+		foreach ($$file in $$files) { \
+			$$parent = Split-Path -Parent $$file; \
+			New-Item -ItemType Directory -Force -Path $$parent | Out-Null; \
+			if (-not (Test-Path $$file)) { New-Item -ItemType File -Path $$file | Out-Null } \
+		}"
+else ifeq ($(shell uname -s),Darwin)
+	@mkdir -p src-tauri/resources/bin src-tauri/resources/pre-install src-tauri/resources/llamacpp-backend src-tauri/resources/llamacpp-backend-upstream
+	@[ -e src-tauri/resources/LICENSE ] || touch src-tauri/resources/LICENSE
+	@[ -e src-tauri/resources/pre-install/test-placeholder ] || touch src-tauri/resources/pre-install/test-placeholder
+	@[ -e src-tauri/resources/bin/jan-cli ] || touch src-tauri/resources/bin/jan-cli
+	@[ -e src-tauri/resources/bin/mlx-server ] || touch src-tauri/resources/bin/mlx-server
+	@[ -e src-tauri/resources/bin/mlx-server-version.txt ] || touch src-tauri/resources/bin/mlx-server-version.txt
+	@[ -e src-tauri/resources/bin/mlx-server-backend.txt ] || touch src-tauri/resources/bin/mlx-server-backend.txt
+	@[ -e src-tauri/resources/bin/foundation-models-server ] || touch src-tauri/resources/bin/foundation-models-server
+	@[ -e src-tauri/resources/bin/bun-aarch64-apple-darwin ] || touch src-tauri/resources/bin/bun-aarch64-apple-darwin
+	@[ -e src-tauri/resources/bin/bun-x86_64-apple-darwin ] || touch src-tauri/resources/bin/bun-x86_64-apple-darwin
+	@[ -e src-tauri/resources/bin/uv-aarch64-apple-darwin ] || touch src-tauri/resources/bin/uv-aarch64-apple-darwin
+	@[ -e src-tauri/resources/bin/uv-x86_64-apple-darwin ] || touch src-tauri/resources/bin/uv-x86_64-apple-darwin
+else
+	@mkdir -p src-tauri/resources/bin src-tauri/resources/pre-install src-tauri/resources/llamacpp-backend src-tauri/resources/llamacpp-backend-upstream
+	@[ -e src-tauri/resources/LICENSE ] || touch src-tauri/resources/LICENSE
+	@[ -e src-tauri/resources/pre-install/test-placeholder ] || touch src-tauri/resources/pre-install/test-placeholder
+	@[ -e src-tauri/resources/bin/jan-cli ] || touch src-tauri/resources/bin/jan-cli
+	@[ -e src-tauri/resources/bin/sqlite-vec.so ] || touch src-tauri/resources/bin/sqlite-vec.so
+	@[ -e src-tauri/resources/bin/uv-x86_64-unknown-linux-gnu ] || touch src-tauri/resources/bin/uv-x86_64-unknown-linux-gnu
+	@[ -e src-tauri/resources/llamacpp-backend/test-placeholder ] || touch src-tauri/resources/llamacpp-backend/test-placeholder
+	@[ -e src-tauri/resources/llamacpp-backend-upstream/test-placeholder ] || touch src-tauri/resources/llamacpp-backend-upstream/test-placeholder
+endif
+
+test-rust: export TAURI_CONFIG := {"bundle":{"icon":["icons/icon.png"]}}
+test-rust: stub-resources
+	cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
+	cargo test --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
+	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
+	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp-upstream/Cargo.toml -- --test-threads=1
+ifeq ($(shell uname -s),Darwin)
+	cargo test --manifest-path src-tauri/plugins/tauri-plugin-mlx/Cargo.toml
+endif
+	cargo test --manifest-path src-tauri/utils/Cargo.toml
+
+# Fast local suite: root Vitest, extension Vitest, and every test-bearing
+# Rust crate supported on the current platform.
+test-local: test-web test-extensions test-rust
+
 test-agent:
 	cargo test --manifest-path src-tauri/Cargo.toml -p Atomic-Chat core::agent
 
@@ -304,16 +376,12 @@ test: lint install-rust-targets
 	yarn download:bin
 ifeq ($(OS),Windows_NT)
 endif
-	yarn test
 	yarn copy:assets:tauri
 	yarn build:icon
 	yarn build:mlx-server
 	make build-foundation-models-server-if-exists
 	make build-cli
-	cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
-	cargo test --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
-	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
-	cargo test --manifest-path src-tauri/utils/Cargo.toml
+	$(MAKE) test-local
 
 # Download MLX server binary (mlx-vlm fork) from GitHub releases (macOS only)
 # Supports GH_TOKEN env var for authenticated GitHub API requests (avoids rate limits in CI)

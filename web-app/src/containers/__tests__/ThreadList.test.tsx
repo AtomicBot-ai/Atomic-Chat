@@ -2,6 +2,8 @@ import { render, screen, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { useParams } from '@tanstack/react-router'
 import ThreadList from '../ThreadList'
+import type { MessagesService } from '@/services/messages/types'
+import { seedServiceHub } from '@/test/service-hub'
 
 // Render Link as a plain anchor, forwarding any extra props (e.g. the
 // data-active / className the sidebar button merges onto it).
@@ -69,6 +71,7 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 
 vi.mock('@/lib/utils', () => ({
   cn: (...args: any[]) => args.filter(Boolean).join(' '),
+  LOCAL_LLAMACPP_PROVIDER: 'llamacpp-upstream',
 }))
 
 vi.mock('@/hooks/useThreads', () => ({
@@ -92,12 +95,6 @@ vi.mock('@/hooks/useThreadManagement', () => ({
   useThreadManagement: () => ({ getFolderById: vi.fn(), folders: [] }),
 }))
 
-vi.mock('@/hooks/useServiceHub', () => ({
-  useServiceHub: () => ({
-    messages: () => ({ fetchMessages: () => Promise.resolve([]) }),
-  }),
-}))
-
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }))
@@ -112,6 +109,11 @@ const threads: Thread[] = [
 describe('ThreadList active highlight', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    seedServiceHub({
+      messages: {
+        fetchMessages: vi.fn().mockResolvedValue([]),
+      } as unknown as MessagesService,
+    })
   })
 
   it('marks the open thread active and the others inactive', async () => {

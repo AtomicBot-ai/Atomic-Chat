@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ModelFactory } from '../model-factory'
 import type { ProviderObject } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
+import type { ModelsService } from '@/services/models/types'
+import { seedServiceHub } from '@/test/service-hub'
 
 // Mock the Tauri invoke function
 vi.mock('@tauri-apps/api/core', () => ({
@@ -39,22 +41,18 @@ vi.mock('ai', () => ({
 
 const mockStartModel = vi.fn().mockResolvedValue(undefined)
 
-vi.mock('@/hooks/useServiceHub', () => ({
-  useServiceStore: {
-    getState: () => ({
-      serviceHub: {
-        models: () => ({ startModel: mockStartModel }),
-      },
-    }),
-  },
-}))
-
 const mockedInvoke = vi.mocked(invoke)
 
 describe('ModelFactory', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockStartModel.mockResolvedValue(undefined)
+    seedServiceHub({
+      models: {
+        startModel: mockStartModel,
+      } as ModelsService,
+    })
+    ModelFactory.invalidateFoundationModelsAvailabilityCache()
   })
 
   describe('createModel', () => {

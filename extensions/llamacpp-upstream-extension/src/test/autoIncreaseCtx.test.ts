@@ -171,7 +171,7 @@ describe('llamacpp_extension auto_increase_ctx handler', () => {
       { ok: true, new_ctx_len: 32768 }
     )
     expect(eventsEmitMock).toHaveBeenCalledWith('OnAutoIncreasedCtxLen', {
-      provider: 'llamacpp',
+      provider: 'llamacpp-upstream',
       modelId: 'm',
       newCtxLen: 32768,
     })

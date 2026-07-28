@@ -1,6 +1,10 @@
 import { renderHook, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { SystemEvent } from '@/types/events'
+import type { EventsService } from '@/services/events/types'
+import type { MCPService } from '@/services/mcp/types'
+import type { RAGService } from '@/services/rag/types'
+import { seedServiceHub } from '@/test/service-hub'
 
 // Mock functions
 const mockGetTools = vi.fn()
@@ -13,24 +17,20 @@ vi.mock('../useAppState', () => ({
   useAppState: (selector: any) => selector({ updateTools: mockUpdateTools }),
 }))
 
-// Mock the ServiceHub
-vi.mock('@/hooks/useServiceHub', () => ({
-  getServiceHub: () => ({
-    mcp: () => ({
-      getTools: mockGetTools,
-    }),
-    rag: () => ({
-      getToolNames: vi.fn(() => Promise.resolve([])),
-    }),
-    events: () => ({
-      listen: mockListen,
-    }),
-  }),
-}))
-
 describe('useTools', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    seedServiceHub({
+      mcp: {
+        getTools: mockGetTools,
+      } as MCPService,
+      rag: {
+        getToolNames: vi.fn(() => Promise.resolve([])),
+      } as RAGService,
+      events: {
+        listen: mockListen,
+      } as EventsService,
+    })
     mockListen.mockResolvedValue(mockUnsubscribe)
     mockGetTools.mockResolvedValue([])
   })
@@ -41,7 +41,7 @@ describe('useTools', () => {
 
   it('should call getTools and updateTools on mount', async () => {
     const { useTools } = await import('../useTools')
-    
+
     const mockTools = [
       { name: 'test-tool', description: 'A test tool' },
       { name: 'another-tool', description: 'Another test tool' },
@@ -52,7 +52,7 @@ describe('useTools', () => {
 
     // Wait for async operations to complete
     await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0))
+      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     expect(mockGetTools).toHaveBeenCalledTimes(1)
@@ -61,11 +61,11 @@ describe('useTools', () => {
 
   it('should set up event listener for MCP_UPDATE', async () => {
     const { useTools } = await import('../useTools')
-    
+
     renderHook(() => useTools())
 
     await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0))
+      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     expect(mockListen).toHaveBeenCalledWith(
@@ -76,7 +76,7 @@ describe('useTools', () => {
 
   it('should call setTools when MCP_UPDATE event is triggered', async () => {
     const { useTools } = await import('../useTools')
-    
+
     const mockTools = [{ name: 'updated-tool', description: 'Updated tool' }]
     mockGetTools.mockResolvedValue(mockTools)
 
@@ -91,7 +91,7 @@ describe('useTools', () => {
 
     // Wait for initial setup
     await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0))
+      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     // Clear the initial calls
@@ -101,7 +101,7 @@ describe('useTools', () => {
     // Trigger the event
     await act(async () => {
       eventCallback()
-      await new Promise(resolve => setTimeout(resolve, 0))
+      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     expect(mockGetTools).toHaveBeenCalledTimes(1)
@@ -110,11 +110,11 @@ describe('useTools', () => {
 
   it('should return unsubscribe function for cleanup', async () => {
     const { useTools } = await import('../useTools')
-    
+
     const { unmount } = renderHook(() => useTools())
 
     await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0))
+      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     expect(mockListen).toHaveBeenCalled()
@@ -130,15 +130,17 @@ describe('useTools', () => {
 
   it('should handle getTools errors gracefully', async () => {
     const { useTools } = await import('../useTools')
-    
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {})
     mockGetTools.mockRejectedValue(new Error('Failed to get tools'))
 
     renderHook(() => useTools())
 
     await act(async () => {
       // Give enough time for the promise to be handled
-      await new Promise(resolve => setTimeout(resolve, 100))
+      await new Promise((resolve) => setTimeout(resolve, 100))
     })
 
     expect(mockGetTools).toHaveBeenCalledTimes(1)
@@ -150,15 +152,17 @@ describe('useTools', () => {
 
   it('should handle event listener setup errors gracefully', async () => {
     const { useTools } = await import('../useTools')
-    
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {})
     mockListen.mockRejectedValue(new Error('Failed to set up listener'))
 
     renderHook(() => useTools())
 
     await act(async () => {
       // Give enough time for the promise to be handled
-      await new Promise(resolve => setTimeout(resolve, 100))
+      await new Promise((resolve) => setTimeout(resolve, 100))
     })
 
     // Initial getTools should still work
@@ -170,7 +174,7 @@ describe('useTools', () => {
 
   it('should only set up effect once with empty dependency array', async () => {
     const { useTools } = await import('../useTools')
-    
+
     const { rerender } = renderHook(() => useTools())
 
     // Initial render

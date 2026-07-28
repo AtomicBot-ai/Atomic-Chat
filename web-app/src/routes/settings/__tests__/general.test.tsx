@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { Route as GeneralRoute } from '../general'
+import type { ServiceHub } from '@/services'
+import { seedServiceHub } from '@/test/service-hub'
 
 // Mock all the dependencies
 vi.mock('@/containers/SettingsMenu', () => ({
@@ -183,32 +185,6 @@ vi.mock('@/services/models/default', () => ({
   })),
 }))
 
-vi.mock('@/hooks/useServiceHub', () => ({
-  useServiceHub: () => ({
-    app: () => ({
-      factoryReset: vi.fn(),
-      getJanDataFolder: vi.fn().mockResolvedValue('/test/data/folder'),
-      relocateJanDataFolder: vi.fn(),
-    }),
-    models: () => ({
-      stopAllModels: vi.fn(),
-    }),
-    dialog: () => ({
-      open: vi.fn().mockResolvedValue('/test/path'),
-    }),
-    events: () => ({
-      emit: vi.fn(),
-    }),
-    window: () => ({
-      openLogsWindow: vi.fn(),
-    }),
-    opener: () => ({
-      open: mockOpenerOpen,
-      revealItemInDir: mockRevealItemInDir,
-    }),
-  }),
-}))
-
 // Add tests for rfd dialog
 // vi.mock('@tauri-apps/plugin-dialog', () => ({
 //   open: vi.fn(),
@@ -245,7 +221,8 @@ vi.mock('sonner', () => ({
   },
 }))
 
-vi.mock('@/lib/utils', () => ({
+vi.mock('@/lib/utils', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/utils')>()),
   isDev: vi.fn().mockReturnValue(false),
 }))
 
@@ -302,6 +279,29 @@ Object.assign(navigator, {
 describe('General Settings Route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    seedServiceHub({
+      app: {
+        factoryReset: vi.fn(),
+        getJanDataFolder: vi.fn().mockResolvedValue('/test/data/folder'),
+        relocateJanDataFolder: vi.fn(),
+      } as ReturnType<ServiceHub['app']>,
+      models: {
+        stopAllModels: vi.fn(),
+      } as ReturnType<ServiceHub['models']>,
+      dialog: {
+        open: vi.fn().mockResolvedValue('/test/path'),
+      } as ReturnType<ServiceHub['dialog']>,
+      events: {
+        emit: vi.fn(),
+      } as ReturnType<ServiceHub['events']>,
+      window: {
+        openLogsWindow: vi.fn(),
+      } as ReturnType<ServiceHub['window']>,
+      opener: {
+        open: mockOpenerOpen,
+        revealItemInDir: mockRevealItemInDir,
+      } as ReturnType<ServiceHub['opener']>,
+    })
     // Reset the mock to return a promise that resolves immediately by default
     mockCheckForUpdate.mockResolvedValue(null)
     mockOpenerOpen.mockResolvedValue(undefined)

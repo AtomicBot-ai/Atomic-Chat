@@ -274,7 +274,16 @@ function RenderMarkdownComponent({
     return { code: CodeRenderer, ...(components ?? {}) }
   }, [enableHtmlPreview, components, delegateProps, isStreaming])
 
-  if (content.length > 0 && content.length < 32 && !components) {
+  const containsMath =
+    normalizedContent.includes('$$') ||
+    /(^|[^\\])\$[^$\n]+\$/.test(normalizedContent)
+
+  if (
+    content.length > 0 &&
+    content.length < 32 &&
+    !components &&
+    !containsMath
+  ) {
     return (
       <div
         dir="auto"

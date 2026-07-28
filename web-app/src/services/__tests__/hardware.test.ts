@@ -1,17 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { TauriHardwareService } from '../hardware/tauri'
 import { HardwareData, SystemUsage } from '@/hooks/useHardware'
-import { invoke } from '@tauri-apps/api/core'
-
-// Mock @tauri-apps/api/core
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
-}))
+import type { InvokeArgs } from '@tauri-apps/api/core'
+import { mockIPC } from '@tauri-apps/api/mocks'
 
 describe('TauriHardwareService', () => {
   let hardwareService: TauriHardwareService
+  let ipcHandler: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
+    ipcHandler = vi.fn()
+    mockIPC((command: string, args?: InvokeArgs) => ipcHandler(command, args))
     hardwareService = new TauriHardwareService()
     vi.clearAllMocks()
   })
@@ -51,20 +50,28 @@ describe('TauriHardwareService', () => {
         total_memory: 16384,
       }
 
-      vi.mocked(invoke).mockResolvedValue(mockHardwareData)
+      ipcHandler.mockResolvedValue(mockHardwareData)
 
       const result = await hardwareService.getHardwareInfo()
 
-      expect(vi.mocked(invoke)).toHaveBeenCalledWith('plugin:hardware|get_system_info')
+      expect(ipcHandler).toHaveBeenCalledWith(
+        'plugin:hardware|get_system_info',
+        {}
+      )
       expect(result).toEqual(mockHardwareData)
     })
 
     it('should handle invoke rejection', async () => {
       const mockError = new Error('Failed to get hardware info')
-      vi.mocked(invoke).mockRejectedValue(mockError)
+      ipcHandler.mockRejectedValue(mockError)
 
-      await expect(hardwareService.getHardwareInfo()).rejects.toThrow('Failed to get hardware info')
-      expect(vi.mocked(invoke)).toHaveBeenCalledWith('plugin:hardware|get_system_info')
+      await expect(hardwareService.getHardwareInfo()).rejects.toThrow(
+        'Failed to get hardware info'
+      )
+      expect(ipcHandler).toHaveBeenCalledWith(
+        'plugin:hardware|get_system_info',
+        {}
+      )
     })
 
     it('should return correct type from invoke', async () => {
@@ -82,7 +89,7 @@ describe('TauriHardwareService', () => {
         total_memory: 8192,
       }
 
-      vi.mocked(invoke).mockResolvedValue(mockHardwareData)
+      ipcHandler.mockResolvedValue(mockHardwareData)
 
       const result = await hardwareService.getHardwareInfo()
 
@@ -111,20 +118,28 @@ describe('TauriHardwareService', () => {
         ],
       }
 
-      vi.mocked(invoke).mockResolvedValue(mockSystemUsage)
+      ipcHandler.mockResolvedValue(mockSystemUsage)
 
       const result = await hardwareService.getSystemUsage()
 
-      expect(vi.mocked(invoke)).toHaveBeenCalledWith('plugin:hardware|get_system_usage')
+      expect(ipcHandler).toHaveBeenCalledWith(
+        'plugin:hardware|get_system_usage',
+        {}
+      )
       expect(result).toEqual(mockSystemUsage)
     })
 
     it('should handle invoke rejection', async () => {
       const mockError = new Error('Failed to get system usage')
-      vi.mocked(invoke).mockRejectedValue(mockError)
+      ipcHandler.mockRejectedValue(mockError)
 
-      await expect(hardwareService.getSystemUsage()).rejects.toThrow('Failed to get system usage')
-      expect(vi.mocked(invoke)).toHaveBeenCalledWith('plugin:hardware|get_system_usage')
+      await expect(hardwareService.getSystemUsage()).rejects.toThrow(
+        'Failed to get system usage'
+      )
+      expect(ipcHandler).toHaveBeenCalledWith(
+        'plugin:hardware|get_system_usage',
+        {}
+      )
     })
 
     it('should return correct type from invoke', async () => {
@@ -135,7 +150,7 @@ describe('TauriHardwareService', () => {
         gpus: [],
       }
 
-      vi.mocked(invoke).mockResolvedValue(mockSystemUsage)
+      ipcHandler.mockResolvedValue(mockSystemUsage)
 
       const result = await hardwareService.getSystemUsage()
 
@@ -165,7 +180,7 @@ describe('TauriHardwareService', () => {
         ],
       }
 
-      vi.mocked(invoke).mockResolvedValue(mockSystemUsage)
+      ipcHandler.mockResolvedValue(mockSystemUsage)
 
       const result = await hardwareService.getSystemUsage()
 
@@ -213,7 +228,9 @@ describe('TauriHardwareService', () => {
     it('should complete successfully', async () => {
       const gpuData = { gpus: [0, 1] }
 
-      await expect(hardwareService.setActiveGpus(gpuData)).resolves.toBeUndefined()
+      await expect(
+        hardwareService.setActiveGpus(gpuData)
+      ).resolves.toBeUndefined()
     })
 
     it('should not throw any errors', async () => {
@@ -246,7 +263,7 @@ describe('TauriHardwareService', () => {
         gpus: [],
       }
 
-      vi.mocked(invoke)
+      ipcHandler
         .mockResolvedValueOnce(mockHardwareData)
         .mockResolvedValueOnce(mockSystemUsage)
 
@@ -257,9 +274,17 @@ describe('TauriHardwareService', () => {
 
       expect(hardwareResult).toEqual(mockHardwareData)
       expect(usageResult).toEqual(mockSystemUsage)
-      expect(vi.mocked(invoke)).toHaveBeenCalledTimes(2)
-      expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(1, 'plugin:hardware|get_system_info')
-      expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(2, 'plugin:hardware|get_system_usage')
+      expect(ipcHandler).toHaveBeenCalledTimes(2)
+      expect(ipcHandler).toHaveBeenNthCalledWith(
+        1,
+        'plugin:hardware|get_system_info',
+        {}
+      )
+      expect(ipcHandler).toHaveBeenNthCalledWith(
+        2,
+        'plugin:hardware|get_system_usage',
+        {}
+      )
     })
   })
 })

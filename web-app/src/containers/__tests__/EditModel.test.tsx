@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render } from '@testing-library/react'
 import { DialogEditModel } from '../dialogs/EditModel'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import type { ProvidersService } from '@/services/providers/types'
+import { seedServiceHub } from '@/test/service-hub'
 import '@testing-library/jest-dom'
 
 // Mock the dependencies
@@ -9,14 +11,6 @@ vi.mock('@/hooks/useModelProvider', () => ({
   useModelProvider: vi.fn(() => ({
     updateProvider: vi.fn(),
     setProviders: vi.fn(),
-  })),
-}))
-
-vi.mock('@/hooks/useServiceHub', () => ({
-  useServiceHub: vi.fn(() => ({
-    providers: () => ({
-      getProviders: vi.fn(() => Promise.resolve([])),
-    }),
   })),
 }))
 
@@ -37,8 +31,16 @@ vi.mock('sonner', () => ({
 vi.mock('@/components/ui/dialog', () => ({
   Dialog: ({ children, open }: { children: React.ReactNode; open: boolean }) =>
     open ? <div data-testid="dialog">{children}</div> : null,
-  DialogContent: ({ children, onKeyDown }: { children: React.ReactNode; onKeyDown?: (e: React.KeyboardEvent) => void }) => (
-    <div data-testid="dialog-content" onKeyDown={onKeyDown}>{children}</div>
+  DialogContent: ({
+    children,
+    onKeyDown,
+  }: {
+    children: React.ReactNode
+    onKeyDown?: (e: React.KeyboardEvent) => void
+  }) => (
+    <div data-testid="dialog-content" onKeyDown={onKeyDown}>
+      {children}
+    </div>
   ),
   DialogHeader: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="dialog-header">{children}</div>
@@ -104,6 +106,11 @@ describe('DialogEditModel - Basic Component Tests', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    seedServiceHub({
+      providers: {
+        getProviders: vi.fn().mockResolvedValue([]),
+      } as unknown as ProvidersService,
+    })
 
     vi.mocked(useModelProvider).mockReturnValue({
       updateProvider: mockUpdateProvider,
@@ -113,10 +120,7 @@ describe('DialogEditModel - Basic Component Tests', () => {
 
   it('should render without errors', () => {
     const { container } = render(
-      <DialogEditModel
-        provider={mockProvider}
-        modelId="test-model.gguf"
-      />
+      <DialogEditModel provider={mockProvider} modelId="test-model.gguf" />
     )
 
     // Component should render without throwing errors
@@ -130,10 +134,7 @@ describe('DialogEditModel - Basic Component Tests', () => {
     } as any
 
     const { container } = render(
-      <DialogEditModel
-        provider={emptyProvider}
-        modelId="test-model.gguf"
-      />
+      <DialogEditModel provider={emptyProvider} modelId="test-model.gguf" />
     )
 
     // Component should handle empty models gracefully
@@ -142,10 +143,7 @@ describe('DialogEditModel - Basic Component Tests', () => {
 
   it('should accept provider and modelId props', () => {
     const { container } = render(
-      <DialogEditModel
-        provider={mockProvider}
-        modelId="different-model.gguf"
-      />
+      <DialogEditModel provider={mockProvider} modelId="different-model.gguf" />
     )
 
     expect(container).toBeInTheDocument()
@@ -160,21 +158,13 @@ describe('DialogEditModel - Basic Component Tests', () => {
     } as any
 
     expect(() => {
-      render(
-        <DialogEditModel
-          provider={minimalProvider}
-          modelId="any-model"
-        />
-      )
+      render(<DialogEditModel provider={minimalProvider} modelId="any-model" />)
     }).not.toThrow()
   })
 
   it('should have mocked dependencies available', () => {
     render(
-      <DialogEditModel
-        provider={mockProvider}
-        modelId="test-model.gguf"
-      />
+      <DialogEditModel provider={mockProvider} modelId="test-model.gguf" />
     )
 
     // Verify our mocks are in place
@@ -197,10 +187,7 @@ describe('DialogEditModel - Basic Component Tests', () => {
     } as any
 
     const { container } = render(
-      <DialogEditModel
-        provider={providerWithCaps}
-        modelId="test-model.gguf"
-      />
+      <DialogEditModel provider={providerWithCaps} modelId="test-model.gguf" />
     )
 
     // Should render without issues - capabilities helper function should work
@@ -209,10 +196,7 @@ describe('DialogEditModel - Basic Component Tests', () => {
 
   it('should handle Enter key press with keyDown handler', () => {
     const { container } = render(
-      <DialogEditModel
-        provider={mockProvider}
-        modelId="test-model.gguf"
-      />
+      <DialogEditModel provider={mockProvider} modelId="test-model.gguf" />
     )
 
     // Component should render with keyDown handler
@@ -227,7 +211,14 @@ describe('DialogEditModel - Basic Component Tests', () => {
         {
           id: 'test-model.gguf',
           displayName: 'Test Model',
-          capabilities: ['vision', 'tools', 'completion', 'embeddings', 'web_search', 'reasoning'],
+          capabilities: [
+            'vision',
+            'tools',
+            'completion',
+            'embeddings',
+            'web_search',
+            'reasoning',
+          ],
         },
       ],
       settings: [],

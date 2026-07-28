@@ -88,11 +88,13 @@ describe('Backend functions', () => {
       ) // Mock build dir check
 
       const dir = await getBackendDir('linux-avx2-x64', 'v1.2.3')
-      expect(dir).toBe(`/path/to/jan/llamacpp/backends/v1.2.3/linux-avx2-x64`)
+      expect(dir).toBe(
+        `/path/to/jan/llamacpp-upstream/backends/v1.2.3/linux-avx2-x64`
+      )
 
       const exePath = await getBackendExePath('linux-avx2-x64', 'v1.2.3')
       expect(exePath).toBe(
-        `/path/to/jan/llamacpp/backends/v1.2.3/linux-avx2-x64/build/bin/llama-server`
+        `/path/to/jan/llamacpp-upstream/backends/v1.2.3/linux-avx2-x64/build/bin/llama-server`
       )
     })
 
@@ -103,12 +105,12 @@ describe('Backend functions', () => {
 
       const dir = await getBackendDir('win-common_cpus-x64', 'v2.0.0')
       expect(dir).toBe(
-        `/path/to/jan/llamacpp/backends/v2.0.0/win-common_cpus-x64`
+        `/path/to/jan/llamacpp-upstream/backends/v2.0.0/win-common_cpus-x64`
       )
 
       const exePath = await getBackendExePath('win-common_cpus-x64', 'v2.0.0')
       expect(exePath).toBe(
-        `/path/to/jan/llamacpp/backends/v2.0.0/win-common_cpus-x64/build/bin/llama-server`
+        `/path/to/jan/llamacpp-upstream/backends/v2.0.0/win-common_cpus-x64/build/bin/llama-server`
       )
     })
   })
@@ -118,7 +120,7 @@ describe('Backend functions', () => {
       vi.stubGlobal('IS_WINDOWS', false) // Linux/macOS for llama-server
       // Mock both the check for the 'build' directory and the final executable path
       vi.mocked(fs.existsSync).mockImplementation(async (path: string) => {
-        const expectedExePath = `/path/to/jan/llamacpp/backends/v1.0.0/win-avx2-x64/build/bin/llama-server`
+        const expectedExePath = `/path/to/jan/llamacpp-upstream/backends/v1.0.0/win-avx2-x64/build/bin/llama-server`
         if (path === expectedExePath) return true
         if (path.endsWith('/build')) return true
         return false
@@ -128,7 +130,7 @@ describe('Backend functions', () => {
       expect(result).toBe(true)
       // Check that it was called with the final exe path
       expect(fs.existsSync).toHaveBeenCalledWith(
-        `/path/to/jan/llamacpp/backends/v1.0.0/win-avx2-x64/build/bin/llama-server`
+        `/path/to/jan/llamacpp-upstream/backends/v1.0.0/win-avx2-x64/build/bin/llama-server`
       )
     })
   })
@@ -137,7 +139,7 @@ describe('Backend functions', () => {
       vi.stubGlobal('IS_WINDOWS', false) // Linux/macOS for llama-server
       // Mock both the check for the 'build' directory and the final executable path
       vi.mocked(fs.existsSync).mockImplementation(async (path: string) => {
-        const expectedExePath = `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/win-avx2-x64/build/bin/llama-server`
+        const expectedExePath = `${MOCK_JAN_PATH_STRING}/llamacpp-upstream/backends/v1.0.0/win-avx2-x64/build/bin/llama-server`
         if (path === expectedExePath) return true
         if (path.endsWith('/build')) return true
         return false
@@ -147,7 +149,7 @@ describe('Backend functions', () => {
       expect(result).toBe(true)
       // Check that it was called with the final exe path
       expect(fs.existsSync).toHaveBeenCalledWith(
-        `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/win-avx2-x64/build/bin/llama-server`
+        `${MOCK_JAN_PATH_STRING}/llamacpp-upstream/backends/v1.0.0/win-avx2-x64/build/bin/llama-server`
       )
     })
   })
@@ -186,10 +188,34 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(tauriFetch).mockResolvedValue(okResponse(MANIFEST))
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('web fetch unavailable')))
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it('returns the bundled baseline when every manifest transport fails', async () => {
+    vi.mocked(getSystemInfo).mockResolvedValue({
+      os_type: 'windows',
+      cpu: { arch: 'x86_64', extensions: [] },
+      gpus: [],
+    } as any)
+    vi.mocked(tauriFetch).mockResolvedValue({
+      ok: false,
+      status: 503,
+      headers: { get: () => null },
+      json: async () => ({}),
+    } as unknown as Response)
+    vi.mocked(globalThis.fetch).mockRejectedValue(new Error('offline'))
+
+    const backends = await fetchRemoteBackends()
+    expect(backends.map((backend) => backend.version)).toEqual([
+      'b9937',
+      'b9937',
+      'b9937',
+      'b9937',
+    ])
   })
 
   it('resolves the manifest from raw atomic-chat-conf, not api.github.com', async () => {
@@ -201,10 +227,11 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
 
     await fetchRemoteBackends()
 
-    expect(tauriFetch).toHaveBeenCalledTimes(1)
-    const calledUrl = vi.mocked(tauriFetch).mock.calls[0][0]
-    expect(calledUrl).toBe(RAW_MANIFEST_URL)
-    expect(calledUrl).not.toContain('api.github.com')
+    expect(tauriFetch).toHaveBeenCalledTimes(2)
+    for (const [calledUrl] of vi.mocked(tauriFetch).mock.calls) {
+      expect(calledUrl).toBe(RAW_MANIFEST_URL)
+      expect(calledUrl).not.toContain('api.github.com')
+    }
   })
 
   it('returns the whitelisted Windows backend catalog', async () => {
@@ -255,20 +282,4 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
     expect(tauriFetch).not.toHaveBeenCalled()
   })
 
-  it('returns [] when the manifest fetch fails (offline floor)', async () => {
-    vi.mocked(getSystemInfo).mockResolvedValue({
-      os_type: 'windows',
-      cpu: { arch: 'x86_64', extensions: [] },
-      gpus: [],
-    } as any)
-    vi.mocked(tauriFetch).mockResolvedValue({
-      ok: false,
-      status: 503,
-      headers: { get: () => null },
-      json: async () => ({}),
-    } as unknown as Response)
-
-    const backends = await fetchRemoteBackends()
-    expect(backends).toEqual([])
-  })
 })

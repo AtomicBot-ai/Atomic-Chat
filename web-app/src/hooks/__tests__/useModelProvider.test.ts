@@ -1,15 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useModelProvider } from '../useModelProvider'
-
-// Mock getServiceHub
-vi.mock('@/hooks/useServiceHub', () => ({
-  getServiceHub: vi.fn(() => ({
-    path: () => ({
-      sep: () => '/',
-    }),
-  })),
-}))
+import type { PathService } from '@/services/path/types'
+import { seedServiceHub } from '@/test/service-hub'
 
 // Mock the localStorage key constants
 vi.mock('@/constants/localStorage', () => ({
@@ -34,6 +27,11 @@ Object.defineProperty(window, 'localStorage', {
 
 describe('useModelProvider - displayName functionality', () => {
   beforeEach(() => {
+    seedServiceHub({
+      path: {
+        sep: () => '/',
+      } as PathService,
+    })
     // Reset the mock implementations instead of clearing them
     localStorageMock.getItem.mockReturnValue(null)
     localStorageMock.setItem.mockClear()
