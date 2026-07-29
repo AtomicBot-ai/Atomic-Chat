@@ -1,0 +1,132 @@
+[
+  {
+    "name": "windows-x64-nvidia-cuda13",
+    "system_info": {
+      "os_type": "windows",
+      "os_name": "Windows",
+      "total_memory": 32768,
+      "cpu": {
+        "name": "x64 test CPU",
+        "core_count": 16,
+        "arch": "x86_64",
+        "extensions": []
+      },
+      "gpus": [
+        {
+          "name": "NVIDIA test GPU",
+          "total_memory": 12288,
+          "vendor": "NVIDIA",
+          "uuid": "fixture-nvidia",
+          "driver_version": "fixture",
+          "nvidia_info": {},
+          "vulkan_info": { "device_type": "DiscreteGpu" }
+        }
+      ]
+    },
+    "features": {
+      "cuda11": false,
+      "cuda12": true,
+      "cuda13": true,
+      "vulkan": true
+    },
+    "expected": {
+      "turboquant": "windows-x64-cuda-13.3",
+      "upstream": "win-cuda-13.3-x64"
+    }
+  },
+  {
+    "name": "linux-x64-nvidia-vulkan",
+    "system_info": {
+      "os_type": "linux",
+      "os_name": "Linux",
+      "total_memory": 32768,
+      "cpu": {
+        "name": "x64 test CPU",
+        "core_count": 16,
+        "arch": "x86_64",
+        "extensions": []
+      },
+      "gpus": [
+        {
+          "name": "NVIDIA test GPU",
+          "total_memory": 12288,
+          "vendor": "NVIDIA",
+          "uuid": "fixture-nvidia",
+          "driver_version": "fixture",
+          "nvidia_info": {},
+          "vulkan_info": { "device_type": "DiscreteGpu" }
+        }
+      ]
+    },
+    "features": {
+      "cuda11": true,
+      "cuda12": true,
+      "cuda13": true,
+      "vulkan": true
+    },
+    "expected": {
+      "turboquant": "linux-x64-vulkan",
+      "upstream": "linux-vulkan-x64"
+    }
+  },
+  {
+    "name": "linux-x64-integrated-vulkan",
+    "system_info": {
+      "os_type": "linux",
+      "os_name": "Linux",
+      "total_memory": 16384,
+      "cpu": {
+        "name": "x64 test CPU",
+        "core_count": 8,
+        "arch": "x86_64",
+        "extensions": []
+      },
+      "gpus": [
+        {
+          "name": "Integrated test GPU",
+          "total_memory": 8192,
+          "vendor": "Intel",
+          "uuid": "fixture-integrated",
+          "driver_version": "fixture",
+          "nvidia_info": null,
+          "vulkan_info": { "device_type": "IntegratedGpu" }
+        }
+      ]
+    },
+    "features": {
+      "cuda11": false,
+      "cuda12": false,
+      "cuda13": false,
+      "vulkan": true
+    },
+    "expected": {
+      "turboquant": "cpu-optimal",
+      "upstream": "cpu-optimal"
+    }
+  },
+  {
+    "name": "macos-arm64-apple-silicon",
+    "system_info": {
+      "os_type": "macos",
+      "os_name": "macOS",
+      "total_memory": 32768,
+      "cpu": {
+        "name": "Apple Silicon",
+        "core_count": 12,
+        "arch": "arm64",
+        "extensions": []
+      },
+      "gpus": []
+    },
+    "features": {
+      "cuda11": false,
+      "cuda12": false,
+      "cuda13": false,
+      "vulkan": false
+    },
+    "expected": {
+      "turboquant": "cpu-optimal",
+      "upstream": "cpu-optimal"
+    }
+  }
+]

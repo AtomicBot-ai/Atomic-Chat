@@ -498,7 +498,9 @@ fn extract_tool_result_content(content: Option<&serde_json::Value>) -> String {
 }
 
 /// Transform OpenAI non-streaming response to Anthropic /messages format
-fn transform_openai_response_to_anthropic(response: &serde_json::Value) -> serde_json::Value {
+pub(crate) fn transform_openai_response_to_anthropic(
+    response: &serde_json::Value,
+) -> serde_json::Value {
     let choice = response
         .get("choices")
         .and_then(|c| c.as_array())

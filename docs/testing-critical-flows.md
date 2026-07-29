@@ -44,13 +44,17 @@ Existing evidence:
 - Windows and Linux package both providers. Upstream remains the default;
   TurboQuant keeps separate ids, assets, driver gates, and storage.
 - `models.windowsProviderRouting.test.ts` checks frontend routing on Windows.
+- `tests/fixtures/hardware/profiles.json` is consumed by deterministic contract
+  tests for Windows CUDA 13, Linux NVIDIA Vulkan, integrated Vulkan fallback,
+  and Apple Silicon. The contract pins provider-specific ids and verifies that
+  selected backends resolve to published manifest assets.
+- The TurboQuant extension now covers remote-manifest transport fallback and
+  hardware recommendation parity with upstream.
 
 Gap:
 
-- No scenario carries one hardware profile through feature detection,
-  recommendation, published-asset filtering, priority, provider id, and exact
-  archive URL.
-- The TurboQuant matrix is not covered as deeply as upstream on Windows/Linux.
+- The shared profile fixture does not yet drive both Rust feature detection and
+  TypeScript asset selection in one cross-language test.
 - macOS Intel has no published TurboQuant tag in the current fork release
   catalog. The build now skips that pairing, but there is no executable test
   for the build-time branch.
@@ -98,6 +102,12 @@ Existing evidence:
 - MLX registry, vision classification, and context-growth helpers are tested.
 - MLX early validation tests distinguish missing binary from missing model
   without waiting for the process-session lock.
+- Pinned capability snapshots cover TurboQuant, upstream llama.cpp, and MLX.
+  Every long flag emitted by each Rust builder must exist in its provider's
+  snapshot; `make capture-capabilities` refreshes snapshots explicitly.
+- `make test-live` can launch configured local sidecars on loopback and verify
+  readiness, model listing, completion, SSE ordering, cancellation recovery,
+  optional tool calls, bad model paths, and sanitized cassette output.
 
 Gap:
 
@@ -106,12 +116,12 @@ Gap:
 - The extension has no `performLoad` contract test.
 - Windows/Linux TurboQuant binaries still need platform-native `--help` and
   process acceptance before advancing the pinned manifest revision.
-- There is no lightweight sidecar contract for readiness, request shape,
-  streamed chunks, cancellation, model-id handling, and error translation.
+- Live sidecar acceptance is opt-in and still needs platform-native execution
+  before advancing a binary pin.
 - `mlx-server/Sources/MLXServer` is legacy Swift source; release builds download
   the PyInstaller binary from `AtomicBot-ai/mlx-vlm`.
 
-### Onboarding — missing, P0
+### Onboarding — partial, P0
 
 Production entrypoints:
 
@@ -119,11 +129,10 @@ Production entrypoints:
 - `web-app/src/containers/SetupBackendStep.tsx`
 - `web-app/src/hooks/useModelProvider.ts`
 
-The file named `SetupScreen.test.tsx` imports the production component but
-renders a local `MockSetupScreen` in every test. Its ten passing tests execute
-zero production statements. There is no evidence for backend recommendation,
-provider selection, failed download recovery, completion persistence, or the
-transition into the main application.
+`SetupScreen.test.tsx` now renders the production component and verifies the
+post-discovery onboarding UI plus persisted skip completion. Backend
+recommendation, failed download recovery, provider selection, and the
+transition into the main application remain unproved as one flow.
 
 ### Hub model install and start — partial, P0
 
@@ -148,10 +157,13 @@ Production entrypoints:
 - `web-app/src/hooks/useMessages.ts`
 - `web-app/src/containers/RenderMarkdown.tsx`
 
-Message-store persistence and markdown rendering have isolated tests. The
-transport has no dedicated test and only a small portion executes indirectly.
-No test starts from user submit and proves ordered streaming deltas, final
-assistant persistence, cancellation, and an error outcome.
+Message-store persistence and markdown rendering have isolated tests. A
+production `CustomChatTransport` harness now verifies ordered deltas, leaked
+MLX-token filtering, and malformed streamed tool-input repair. Pure contracts
+cover Anthropic serial tool waves, disabled-tool filtering, llama template
+overrides, MCP/RAG execution, output continuation, and cancellation. No test
+yet starts from user submit and proves final assistant persistence plus an
+error outcome.
 
 ### Thread persistence and reload — strong below the UI
 
@@ -236,26 +248,26 @@ cleanup as one lifecycle.
 
 ## Coverage snapshot
 
-Commands run on 2026-07-28:
+Commands run on 2026-07-29:
 
 ```text
-yarn workspace @janhq/web-app exec vitest run --coverage
-yarn workspace @janhq/core exec vitest run --coverage
+yarn test:coverage
+yarn --cwd extensions workspace @janhq/llamacpp-extension test:coverage
+yarn --cwd extensions workspace @janhq/llamacpp-upstream-extension test:coverage
+node scripts/check-coverage-floor.mjs
 ```
 
 Results:
 
-- Web app: 1,440 tests passed; statements 27.50%, branches 73.64%,
-  functions 51.12%.
-- Core: 156 tests passed and 5 skipped; statements 92.24%, branches 94.02%,
-  functions 77.65%.
-- `SetupScreen.tsx` and `SetupBackendStep.tsx`: 0 executed production
-  statements.
-- `getModelToStart.ts`: 5/49 statements, 0/3 functions.
-- `custom-chat-transport.ts`: 96/721 statements.
-- `useModelProvider.ts`: 255/520 statements.
-- `useThreads.ts`: 188/427 statements.
-- `useAgentRun.ts`: 209/290 statements.
+- Root project set: 1,595 tests passed and 5 skipped; statements 26.03%,
+  branches 68.79%, functions 46.20%.
+- TurboQuant extension: 108 tests passed; statements 31.56%, branches 70.85%,
+  functions 48.11%.
+- Upstream extension: 167 tests passed; statements 33.06%, branches 67.34%,
+  functions 51.72%.
+- Critical-file floors include `custom-chat-transport.ts` at 65.60%
+  statements, `SetupScreen.tsx` at 34.44%, TurboQuant `backend.ts` at 70.09%,
+  and upstream `backend.ts` at 54.59%.
 
 The low web-app statement figure is not itself a failure criterion. The
 zero-execution and low-execution values above are used only to corroborate
@@ -263,14 +275,13 @@ specific critical-flow gaps.
 
 ## Known false-confidence signals
 
-- `SetupScreen.test.tsx` tests a replacement fixture instead of
-  `SetupScreen`.
-- `ChatInput.simple.test.tsx` tests a replacement fixture instead of the
-  production `ChatInput`.
-- `DataProvider.test.tsx` mocks the module under test and therefore proves only
-  the replacement fixture.
-- `huggingface-conversion.test.ts` duplicates conversion logic instead of
-  importing the production converter.
+- `scripts/check-test-quality.mjs` rejects newly introduced mocked subjects,
+  replacement `Mock*` components, call-only assertions, tautological
+  expectations, duplicated production helpers, and broken evidence-map links.
+- Existing debt is explicit in `tests/test-quality-allowlist.json`; deleting a
+  violation requires deleting its allowlist entry.
+- The former replacement tests for SetupScreen, ChatInput, DataProvider, and
+  Hugging Face conversion now exercise production code.
 - `serviceHub.integration.test.ts` primarily asserts constructor names and
   object existence; it proves branch wiring, not adapter behavior.
 - Interaction-only assertions such as `toHaveBeenCalled()` are partial unless
@@ -307,12 +318,14 @@ now regression-tested rather than retroactively rewriting the score.
 
 ### P0 — required evidence
 
-1. Production onboarding is not executed by its namesake test.
-2. Chat submit to streamed render, persistence, cancellation, and error has no
+1. Onboarding backend recommendation, failed-download recovery, and completion
+   do not yet form one production flow.
+2. Chat submit to streamed render, persistence, and error has no
    integrated test.
-3. Hardware selection has no single hardware-to-exact-asset scenario.
-4. Backend process birth, readiness, timeout, cancellation, and unload have no
-   deterministic sidecar contract.
+3. Hardware selection has no one cross-language Rust-to-TypeScript
+   hardware-to-exact-asset scenario.
+4. Backend process acceptance exists only as an opt-in live contract, not a
+   deterministic default-gate sidecar lifecycle.
 5. The local OpenAI-compatible API has no real socket round-trip to a
    deterministic backend stub.
 6. Hub download/start and Launch-agent installation have no production route

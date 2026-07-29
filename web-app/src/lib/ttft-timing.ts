@@ -51,7 +51,9 @@ function ttftDebugLog(
   _message: string,
   _data?: Record<string, unknown>
 ): void {
-  /* no-op */
+  void _location
+  void _message
+  void _data
 }
 
 export function ttftPreBegin(label: string, data?: Record<string, unknown>): void {

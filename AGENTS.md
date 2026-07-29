@@ -120,6 +120,9 @@ Wiring new code into an existing `@janhq/*` package is fine; adding a new
 make dev      # first-time setup: deps, core, extensions, icons, launch Tauri
 yarn dev      # hot loop after make dev has run once
 make build    # production build (see Makefile / package.json for per-platform targets)
+make verify-fast # local agent gate: lint, quality guards, Vitest + critical coverage floors
+make verify   # verify-fast plus every platform-supported Rust suite
+make test-all # exhaustive artefact build + verify + configured live contracts
 make test-local # root + extension Vitest and platform Rust suites; creates inert Tauri resource stubs
 make test     # full suite: lint, downloads, generated icons, sidecars, CLI, tests
 yarn lint     # eslint in @janhq/web-app
@@ -144,8 +147,9 @@ defaults on conflict.
 3. **OpenAI-compat is a contract.** `http://localhost:1337/v1` must stay
    OpenAI-compatible — OpenCode, Codex, Hermes and others depend on it. Adding
    non-standard fields is fine; breaking standard ones is not.
-4. **Verify before you finish.** TS/JS: `yarn lint` + `yarn test` in the
-   affected workspace. Rust: `cargo check` and `cargo clippy` in `src-tauri/`.
+4. **Verify before you finish.** Run `make verify` for agent-authored changes.
+   For focused iteration, TS/JS uses lint + tests in the affected workspace;
+   Rust uses `cargo check` and `cargo clippy` in `src-tauri/`.
 5. **Never commit unless explicitly asked.**
 6. **No new top-level folders, config files or runtime dependencies** without
    the user's explicit "ok" (name + reason first).

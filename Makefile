@@ -271,7 +271,10 @@ lint: install-and-build
 	yarn lint
 
 # Testing
-.PHONY: test test-local test-web test-extensions test-rust stub-resources
+.PHONY: test test-all test-local test-web test-extensions test-rust stub-resources \
+	verify-fast verify test-quality test-hardening-contracts \
+	test-coverage-critical capture-capabilities capture-hw-profile \
+	test-live test-live-cloud mutants
 
 test-web:
 	yarn test
@@ -343,6 +346,59 @@ endif
 # Rust crate supported on the current platform.
 test-local: test-web test-extensions test-rust
 
+# Deterministic local gate for agent-authored changes. Coverage replaces the
+# ordinary Vitest runs here, so the suites execute once while also producing
+# the critical-flow summaries consumed by check-coverage-floor.mjs.
+test-quality:
+	node scripts/check-test-quality.mjs
+
+test-hardening-contracts:
+	node --test tests/capabilities.test.mjs \
+		tests/registry-contracts.test.mjs \
+		tests/hardware-profiles.test.mjs
+
+test-coverage-critical:
+	yarn test:coverage
+	yarn --cwd extensions workspaces foreach -A \
+		--include '@janhq/llamacpp-extension' \
+		--include '@janhq/llamacpp-upstream-extension' \
+		run test:coverage
+	node scripts/check-coverage-floor.mjs
+
+verify-fast:
+	yarn lint
+	$(MAKE) test-quality
+	$(MAKE) test-hardening-contracts
+	$(MAKE) test-coverage-critical
+
+verify: verify-fast test-rust
+
+# Explicitly live capture commands. The caller supplies paths/identity so these
+# never download artifacts or mutate fixtures during a normal verification run.
+capture-capabilities:
+	@test -n "$(PROVIDER)" || (echo "PROVIDER is required" && exit 2)
+	@test -n "$(BINARY)" || (echo "BINARY is required" && exit 2)
+	@test -n "$(OUTPUT)" || (echo "OUTPUT is required" && exit 2)
+	node scripts/capture-capabilities.mjs "$(PROVIDER)" "$(BINARY)" "$(OUTPUT)" "$(VERSION)"
+
+capture-hw-profile:
+	@test -n "$(OUTPUT)" || (echo "OUTPUT is required" && exit 2)
+	node scripts/capture-hw-profile.mjs "$(OUTPUT)"
+
+# Opt-in acceptance against live local binaries and moving external registries.
+# Missing sidecar env vars are reported as skips; use REQUIRE=1 to make them
+# mandatory. These targets are intentionally excluded from verify/verify-fast.
+test-live:
+	python3 scripts/test-local-sidecars.py $(if $(filter 1,$(REQUIRE)),--require,)
+	ATOMIC_TEST_LIVE_REGISTRIES=1 yarn workspace @janhq/web-app vitest --run \
+		src/services/__tests__/external-contracts.test.ts
+
+test-live-cloud:
+	python3 scripts/record-cloud-live.py $(if $(filter 1,$(REQUIRE)),--require,)
+
+mutants:
+	bash scripts/test-cargo-mutants.sh
+
 test-agent:
 	cargo test --manifest-path src-tauri/Cargo.toml -p Atomic-Chat core::agent
 
@@ -382,6 +438,21 @@ endif
 	make build-foundation-models-server-if-exists
 	make build-cli
 	$(MAKE) test-local
+
+# Exhaustive developer verification: prepare every bundled artefact, run the
+# deterministic quality/coverage/Rust gate, then exercise live contracts.
+# Unconfigured sidecars and cloud providers are reported as skips. REQUIRE=1
+# makes those live prerequisites mandatory.
+test-all: install-and-build install-rust-targets
+	yarn download:bin
+	yarn copy:assets:tauri
+	yarn build:icon
+	yarn build:mlx-server
+	$(MAKE) build-foundation-models-server-if-exists
+	$(MAKE) build-cli
+	$(MAKE) verify
+	$(MAKE) test-live REQUIRE=$(REQUIRE)
+	$(MAKE) test-live-cloud REQUIRE=$(REQUIRE)
 
 # Download MLX server binary (mlx-vlm fork) from GitHub releases (macOS only)
 # Supports GH_TOKEN env var for authenticated GitHub API requests (avoids rate limits in CI)

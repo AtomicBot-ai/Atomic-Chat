@@ -1,0 +1,44 @@
+{
+  "web-app/src/lib/custom-chat-transport.ts": {
+    "statements": 65.6,
+    "branches": 45.96,
+    "functions": 60.71,
+    "lines": 65.6
+  },
+  "web-app/src/containers/SetupScreen.tsx": {
+    "statements": 34.44,
+    "branches": 63.63,
+    "functions": 22.22,
+    "lines": 34.44
+  },
+  "web-app/src/containers/SetupBackendStep.tsx": {
+    "statements": 3.21,
+    "branches": 100,
+    "functions": 0,
+    "lines": 3.21
+  },
+  "web-app/src/utils/getModelToStart.ts": {
+    "statements": 10.2,
+    "branches": 100,
+    "functions": 0,
+    "lines": 10.2
+  },
+  "web-app/src/hooks/useModelProvider.ts": {
+    "statements": 49.03,
+    "branches": 62.63,
+    "functions": 63.63,
+    "lines": 49.03
+  },
+  "extensions/llamacpp-extension/src/backend.ts": {
+    "statements": 70.09,
+    "branches": 79.66,
+    "functions": 87.5,
+    "lines": 70.09
+  },
+  "extensions/llamacpp-upstream-extension/src/backend.ts": {
+    "statements": 54.59,
+    "branches": 73.25,
+    "functions": 59.37,
+    "lines": 54.59
+  }
+}

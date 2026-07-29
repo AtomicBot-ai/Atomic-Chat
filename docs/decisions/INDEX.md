@@ -205,8 +205,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Other (6)
+## Other (7)
 
+- **2026-07-29** — [Gate agent changes with local contract evidence](2026-07-29-gate-agent-changes-with-local-contract-evidence.md)
 - **2026-07-28** — [Grade tests by critical-flow evidence](2026-07-28-grade-tests-by-critical-flow-evidence.md)
 - **2026-07-28** — [Pin backend artifacts to verified tags](2026-07-28-pin-backend-artifacts-to-verified-tags.md)
 - **2026-07-28** — [Test frontend Tauri adapters through official mocks](2026-07-28-test-frontend-tauri-through-official-mocks.md)

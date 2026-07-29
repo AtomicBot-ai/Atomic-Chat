@@ -1,0 +1,37 @@
+{
+  "$schema": "./schema.json",
+  "schema_version": 1,
+  "updated_at": "2026-07-09T11:16:00Z",
+  "providers": [
+    {
+      "active": true,
+      "api_key": "",
+      "base_url": "https://api.openai.com/v1",
+      "explore_models_url": "https://platform.openai.com/docs/models",
+      "provider": "openai",
+      "settings": [
+        {
+          "key": "api-key",
+          "title": "API Key",
+          "description": "OpenAI API key.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "Insert API Key",
+            "value": "",
+            "type": "password",
+            "input_actions": ["unobscure", "copy"]
+          }
+        }
+      ],
+      "models": [
+        {
+          "id": "gpt-5.5",
+          "name": "GPT-5.5",
+          "version": "1.0",
+          "description": "Next-generation OpenAI flagship.",
+          "capabilities": ["completion", "tools", "vision", "reasoning"]
+        }
+      ]
+    }
+  ]
+}

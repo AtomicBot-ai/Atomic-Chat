@@ -3,12 +3,19 @@ import {
   getBackendDir,
   getBackendExePath,
   isBackendInstalled,
+  fetchRemoteBackends,
   getBackendDownloadUrl,
   TURBOQUANT_BACKEND_MANIFEST_REVISION,
   TURBOQUANT_BACKEND_MANIFEST_URL,
 } from '../backend'
 import { getSystemInfo } from '../hardware'
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 import { fs, getJanDataFolderPath } from '@janhq/core'
+import {
+  determineSupportedBackends,
+  getSupportedFeaturesFromRust,
+  normalizeFeatures,
+} from '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
 
 // Mock constants: Hardcode path string directly inside the mock to avoid hoisting issues
 const MOCK_JAN_PATH_STRING = '/path/to/jan'
@@ -29,6 +36,26 @@ vi.mock('@janhq/core', () => ({
 vi.mock('../hardware', () => ({
   getSystemInfo: vi.fn(),
 }))
+vi.mock('@tauri-apps/plugin-http', () => ({
+  fetch: vi.fn(),
+}))
+vi.mock('../util', () => ({
+  getProxyConfig: vi.fn(() => undefined),
+}))
+vi.mock(
+  '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index',
+  async () => {
+    const actual = await vi.importActual<
+      typeof import('../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index')
+    >('../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index')
+    return {
+      ...actual,
+      determineSupportedBackends: vi.fn(),
+      getSupportedFeaturesFromRust: vi.fn(),
+      normalizeFeatures: vi.fn((features) => features),
+    }
+  }
+)
 
 vi.stubGlobal('IS_WINDOWS', false)
 
@@ -160,7 +187,9 @@ describe('Backend functions', () => {
       })
       // Only the exe was relocated into build/bin - CI packaging regression,
       // its dependency DLLs never made it (the root cause this check exists for)
-      vi.mocked(fs.readdirSync).mockResolvedValue([`${exeDir}/llama-server.exe`])
+      vi.mocked(fs.readdirSync).mockResolvedValue([
+        `${exeDir}/llama-server.exe`,
+      ])
 
       const result = await isBackendInstalled('windows-x64-cpu', 'v1.0.0')
       expect(result).toBe(false)
@@ -187,7 +216,9 @@ describe('Backend functions', () => {
         if (path.endsWith('/build')) return true
         return path === `${exeDir}/llama-server.exe`
       })
-      vi.mocked(fs.readdirSync).mockRejectedValue(new Error('permission denied'))
+      vi.mocked(fs.readdirSync).mockRejectedValue(
+        new Error('permission denied')
+      )
 
       const result = await isBackendInstalled('windows-x64-cpu', 'v1.0.0')
       expect(result).toBe(true)
@@ -249,5 +280,102 @@ describe('Backend functions', () => {
         'https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/turboquant-linux-x64-vulkan-d86eb0b/llama-turboquant-linux-x64-vulkan.tar.gz'
       )
     })
+  })
+})
+
+describe('fetchRemoteBackends (TurboQuant manifest)', () => {
+  const manifest = {
+    commit: '61ee3eb',
+    backends: [
+      {
+        id: 'windows-x64-cpu',
+        tag: 'turboquant-windows-x64-cpu-61ee3eb',
+        asset: 'llama-turboquant-windows-x64-cpu.zip',
+      },
+      {
+        id: 'windows-x64-cuda-13.3',
+        tag: 'turboquant-windows-x64-cuda-13.3-61ee3eb',
+        asset: 'llama-turboquant-windows-x64-cuda-13.3.zip',
+      },
+      {
+        id: 'linux-x64-vulkan',
+        tag: 'turboquant-linux-x64-vulkan-61ee3eb',
+        asset: 'llama-turboquant-linux-x64-vulkan.tar.gz',
+      },
+    ],
+  }
+  const okResponse = {
+    ok: true,
+    status: 200,
+    json: async () => manifest,
+  } as Response
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubGlobal('fetch', vi.fn())
+    vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({} as any)
+    vi.mocked(normalizeFeatures).mockImplementation(
+      (features) => features as any
+    )
+    vi.mocked(globalThis.fetch).mockResolvedValue(okResponse)
+    vi.mocked(tauriFetch).mockResolvedValue(okResponse)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    vi.stubGlobal('IS_WINDOWS', false)
+  })
+
+  it('returns only manifest entries supported by Windows hardware', async () => {
+    vi.mocked(getSystemInfo).mockResolvedValue({
+      os_type: 'windows',
+      cpu: { arch: 'x86_64', extensions: [] },
+      gpus: [],
+    } as any)
+    vi.mocked(determineSupportedBackends).mockResolvedValue([
+      'windows-x64-cpu',
+      'windows-x64-cuda-13.3',
+    ])
+
+    await expect(fetchRemoteBackends()).resolves.toEqual([
+      {
+        version: 'turboquant-windows-x64-cpu-61ee3eb',
+        backend: 'windows-x64-cpu',
+        order: 0,
+      },
+      {
+        version: 'turboquant-windows-x64-cuda-13.3-61ee3eb',
+        backend: 'windows-x64-cuda-13.3',
+        order: 0,
+      },
+    ])
+  })
+
+  it('returns local-only fallback when every manifest transport fails', async () => {
+    vi.mocked(getSystemInfo).mockResolvedValue({
+      os_type: 'linux',
+      cpu: { arch: 'x86_64', extensions: [] },
+      gpus: [],
+    } as any)
+    vi.mocked(determineSupportedBackends).mockResolvedValue([
+      'linux-x64-vulkan',
+    ])
+    vi.mocked(globalThis.fetch).mockRejectedValue(new Error('offline'))
+    vi.mocked(tauriFetch).mockRejectedValue(new Error('offline'))
+
+    await expect(fetchRemoteBackends()).resolves.toEqual([])
+  })
+
+  it('skips manifest transport on macOS', async () => {
+    vi.mocked(getSystemInfo).mockResolvedValue({
+      os_type: 'macos',
+      cpu: { arch: 'arm64', extensions: [] },
+      gpus: [],
+    } as any)
+
+    await expect(fetchRemoteBackends()).resolves.toEqual([])
+    expect(globalThis.fetch).not.toHaveBeenCalled()
+    expect(tauriFetch).not.toHaveBeenCalled()
   })
 })

@@ -974,6 +974,15 @@ pub(super) async fn download_single_file_for_test(
     download_single_file(app, item, save_path, file_id, expected_size, ctx).await
 }
 
+#[cfg(test)]
+pub(super) async fn validate_downloaded_file_for_test(
+    item: &DownloadItem,
+    save_path: &Path,
+    app: &tauri::AppHandle<tauri::test::MockRuntime>,
+) -> Result<(), String> {
+    validate_downloaded_file(item, save_path, app, &CancellationToken::new(), false).await
+}
+
 // ===== HTTP CLIENT HELPER FUNCTIONS =====
 
 /// Downloads from the original URL directly
