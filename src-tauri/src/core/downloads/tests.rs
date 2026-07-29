@@ -86,6 +86,36 @@ async fn spawn_interrupted_download_server(
     )
 }
 
+async fn spawn_model_contract_server() -> (String, tokio::task::JoinHandle<Result<(), hyper::Error>>)
+{
+    let make_service = make_service_fn(move |_| async move {
+        Ok::<_, Infallible>(service_fn(|request: Request<Body>| async move {
+            let response = if request.uri().path() == "/tiny-model.gguf" {
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header(CONTENT_LENGTH, "6")
+                    .header("content-type", "application/octet-stream")
+                    .body(Body::from("abcdef"))
+                    .unwrap()
+            } else {
+                Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .body(Body::empty())
+                    .unwrap()
+            };
+            Ok::<_, Infallible>(response)
+        }))
+    });
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = Server::from_tcp(listener).unwrap().serve(make_service);
+    (
+        format!("http://{address}/tiny-model.gguf"),
+        tokio::spawn(server),
+    )
+}
+
 fn test_download_path(name: &str) -> std::path::PathBuf {
     std::env::temp_dir()
         .join(format!(
@@ -431,6 +461,43 @@ async fn restarts_an_interrupted_download_when_content_range_is_mismatched() {
 
     assert_eq!(bytes, b"abcdef");
     assert_eq!(requests, 3);
+    let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
+}
+
+#[tokio::test]
+async fn downloads_model_fixture_and_enforces_size_and_hash_contract() {
+    let (url, server) = spawn_model_contract_server().await;
+    let save_path = test_download_path("tiny-model.gguf");
+    let item = DownloadItem {
+        url,
+        save_path: save_path.to_string_lossy().into_owned(),
+        proxy: None,
+        sha256: Some(
+            "bef57ec7f53a6d40beb640a780a639c83bc29ac8a9816f1fc6c5c6dcd93c4721".to_string(),
+        ),
+        size: Some(6),
+        model_id: Some("fixture/tiny-model".to_string()),
+    };
+    let app = mock_app();
+
+    download_single_file_for_test(app.handle().clone(), &item, &save_path, 6)
+        .await
+        .unwrap();
+    validate_downloaded_file_for_test(&item, &save_path, app.handle())
+        .await
+        .unwrap();
+    assert_eq!(tokio::fs::read(&save_path).await.unwrap(), b"abcdef");
+
+    let mut wrong_contract = item.clone();
+    wrong_contract.sha256 = Some("0".repeat(64));
+    assert!(
+        validate_downloaded_file_for_test(&wrong_contract, &save_path, app.handle())
+            .await
+            .unwrap_err()
+            .contains("Hash verification failed")
+    );
+
+    server.abort();
     let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
 }
 

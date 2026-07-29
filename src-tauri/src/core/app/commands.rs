@@ -9,6 +9,26 @@ use super::{
 };
 use crate::core::state::AppState;
 
+#[cfg(test)]
+thread_local! {
+    static TEST_DATA_DIR: std::cell::RefCell<Option<tempfile::TempDir>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+fn fallback_test_data_folder() -> PathBuf {
+    TEST_DATA_DIR.with(|dir| {
+        let mut dir = dir.borrow_mut();
+        let temp_dir = dir.get_or_insert_with(|| {
+            tempfile::Builder::new()
+                .prefix("atomic-chat-test-data-")
+                .tempdir()
+                .expect("failed to create temporary Atomic Chat test data directory")
+        });
+        temp_dir.path().to_path_buf()
+    })
+}
+
 fn select_configuration_file_path(current_dir: &Path, legacy_dir: &Path) -> PathBuf {
     let parent = if legacy_dir.exists() {
         legacy_dir
@@ -158,31 +178,12 @@ pub fn get_jan_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> 
         return root.0.clone();
     }
 
-    if cfg!(test) {
-        use std::cell::RefCell;
-        thread_local! {
-            static TEST_DATA_DIR: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
-        }
+    #[cfg(test)]
+    return fallback_test_data_folder();
 
-        return TEST_DATA_DIR.with(|dir| {
-            let mut dir = dir.borrow_mut();
-            if dir.is_none() {
-                let unique_id = std::thread::current().id();
-                let timestamp = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_nanos())
-                    .unwrap_or(0);
-                let path = std::env::current_dir()
-                    .unwrap_or_else(|_| PathBuf::from("."))
-                    .join(format!("test-data-{unique_id:?}-{timestamp}"));
-                let _ = fs::create_dir_all(&path);
-                *dir = Some(path);
-            }
-            dir.clone().unwrap()
-        });
-    }
-
+    #[cfg(not(test))]
     let app_configurations = get_app_configurations(app_handle);
+    #[cfg(not(test))]
     PathBuf::from(app_configurations.data_folder)
 }
 
@@ -307,6 +308,16 @@ pub fn app_token(state: State<'_, AppState>) -> Option<String> {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn removes_fallback_test_data_when_its_thread_exits() {
+        let path = std::thread::spawn(fallback_test_data_folder)
+            .join()
+            .unwrap();
+
+        assert!(path.starts_with(std::env::temp_dir()));
+        assert!(!path.exists());
+    }
 
     #[test]
     fn selects_current_config_for_a_clean_install() {

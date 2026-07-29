@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "provider": "mlx",
+  "source": "documented-pinned-output",
+  "binary": "mlx-server",
+  "version": "mlx-vlm-server",
+  "note": "The bundled PyInstaller executable is present but its embedded Python framework has a mismatched Team ID in this checkout. Flags are pinned from mlx_vlm/server/cli.py in the adjacent pinned source checkout.",
+  "flags": [
+    "--draft-block-size",
+    "--draft-kind",
+    "--draft-model",
+    "--host",
+    "--kv-bits",
+    "--kv-quant-scheme",
+    "--max-kv-size",
+    "--model",
+    "--port"
+  ],
+  "values": {
+    "--draft-kind": ["dflash", "eagle3", "mtp"],
+    "--kv-quant-scheme": ["uniform", "turboquant"]
+  }
+}

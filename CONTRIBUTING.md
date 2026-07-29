@@ -183,10 +183,23 @@ make dev
 ## Testing
 
 ```bash
+make test-all   # Exhaustive: artefacts, verify, live registries/sidecars/cloud
+make verify     # Required local gate: lint, guards, coverage floors, all Rust tests
+make verify-fast # Same gate without Rust; also runs from the pre-push hook
 make test-local # Root/extension Vitest and platform-supported Rust suites
 make test-rust  # Rust suites with inert Tauri resource stubs
 yarn test      # Root Vitest projects only
 ```
+
+`make test-all` is the broadest developer command. Live sidecars and cloud
+providers are skipped when their environment variables are absent; pass
+`REQUIRE=1` to fail on missing live prerequisites.
+
+`verify-fast` is deterministic: it does not download models, contact cloud
+providers, or require API keys. It rejects new false-confidence test patterns
+and regressions below the committed coverage floor for critical production
+files. Existing exceptions live in `tests/test-quality-allowlist.json`; do not
+add one when the test can assert a persisted, rendered, or serialized outcome.
 
 Rust command tests use two layers:
 

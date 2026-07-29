@@ -28,7 +28,7 @@ import {
   ConversationContent,
   ConversationScrollButton,
 } from '@/components/ai-elements/conversation'
-import { generateId, lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
+import { generateId } from 'ai'
 import type { UIMessage } from '@ai-sdk/react'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useThreadReadStatus } from '@/stores/thread-read-store'
@@ -59,6 +59,10 @@ import {
 } from '@/hooks/useChatAttachments'
 import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { downscaleToolResultContent } from '@/lib/toolResultImages'
+import {
+  executeChatToolCalls,
+  shouldSendToolFollowUp,
+} from '@/lib/execute-chat-tool-calls'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
@@ -241,13 +245,7 @@ function ThreadDetail() {
   // Check if we should follow up with tool calls (respects abort signal)
   const followUpMessage = useCallback(
     ({ messages }: { messages: UIMessage[] }) => {
-      if (
-        !toolCallAbortController.current ||
-        toolCallAbortController.current?.signal.aborted
-      ) {
-        return false
-      }
-      return lastAssistantMessageIsCompleteWithToolCalls({ messages })
+      return shouldSendToolFollowUp(messages, toolCallAbortController.current)
     },
     []
   )
@@ -436,95 +434,28 @@ function ThreadDetail() {
 
       // Process tool calls sequentially, requesting approval for each if needed
       ;(async () => {
-        for (const toolCall of sessionData.tools) {
-          // Check if already aborted before starting
-          if (signal.aborted) {
-            break
-          }
-
-          try {
-            const toolName = toolCall.toolName
-
-            // Request approval if needed (unless auto-approve is enabled)
-            const approved = await useToolApproval
+        await executeChatToolCalls({
+          toolCalls: sessionData.tools,
+          signal,
+          threadId,
+          ragToolNames,
+          mcpToolNames,
+          approve: (toolName, currentThreadId, input) =>
+            useToolApproval
               .getState()
-              .showApprovalModal(toolName, threadId, toolCall.input)
-
-            if (!approved) {
-              // User denied the tool call
-              addToolOutput({
-                state: 'output-error',
-                tool: toolCall.toolName,
-                toolCallId: toolCall.toolCallId,
-                errorText: 'Tool execution denied by user',
-              })
-              continue
-            }
-
-            let result
-
-            // Route to the appropriate service based on tool name
-            if (ragToolNames.has(toolName)) {
-              // Resolve the project scope from the live thread record (keyed on
-              // the route's threadId) at call time — a render-captured value
-              // could belong to a previously open thread and leak its project
-              // files into this chat via RAG.
-              const currentProjectId =
-                useThreads.getState().threads[threadId]?.metadata?.project?.id
-              result = await serviceHub.rag().callTool({
-                toolName,
-                arguments: toolCall.input,
-                threadId,
-                projectId: currentProjectId,
-                scope: currentProjectId ? 'project' : 'thread',
-              })
-            } else if (mcpToolNames.has(toolName)) {
-              result = await serviceHub.mcp().callTool({
-                toolName,
-                arguments: toolCall.input,
-              })
-            } else {
-              // Tool not found in either service
-              result = {
-                error: `Tool '${toolName}' not found in any service`,
-              }
-            }
-
-            if (result.error) {
-              addToolOutput({
-                state: 'output-error',
-                tool: toolCall.toolName,
-                toolCallId: toolCall.toolCallId,
-                errorText: `Error: ${result.error}`,
-              })
-            } else {
-              // Downscale any image blocks in the tool result (e.g. MCP
-              // screenshot tools) so oversized images don't bloat persisted
-              // history or the in-chat preview. The base64 is additionally
-              // stripped from the model-bound payload in the transport layer.
-              const processedOutput = await downscaleToolResultContent(
-                result.content,
-                useGeneralSetting.getState().maxImageSizePx
-              )
-              addToolOutput({
-                tool: toolCall.toolName,
-                toolCallId: toolCall.toolCallId,
-                output: processedOutput,
-              })
-            }
-          } catch (error) {
-            // Ignore abort errors
-            if ((error as Error).name !== 'AbortError') {
-              console.error('Tool call error:', error)
-              addToolOutput({
-                state: 'output-error',
-                tool: toolCall.toolName,
-                toolCallId: toolCall.toolCallId,
-                errorText: `Error: ${JSON.stringify(error)}`,
-              })
-            }
-          }
-        }
+              .showApprovalModal(toolName, currentThreadId, input),
+          callRagTool: (args) => serviceHub.rag().callTool(args),
+          callMcpTool: (args) => serviceHub.mcp().callTool(args),
+          // Resolve project scope from the live route-keyed thread record.
+          getProjectId: () =>
+            useThreads.getState().threads[threadId]?.metadata?.project?.id,
+          processOutput: (content) =>
+            downscaleToolResultContent(
+              content,
+              useGeneralSetting.getState().maxImageSizePx
+            ),
+          addToolOutput,
+        })
 
         // Clear tools after processing all
         sessionData.tools = []
@@ -1484,7 +1415,10 @@ function ThreadDetail() {
         })
       })
       .catch((resolveError) => {
-        console.error('Failed to resolve the Agent primary workspace', resolveError)
+        console.error(
+          'Failed to resolve the Agent primary workspace',
+          resolveError
+        )
       })
   }, [agentModeActive, agentWorkspace?.primaryRoot, threadId])
 

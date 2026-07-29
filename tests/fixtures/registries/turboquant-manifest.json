@@ -1,0 +1,32 @@
+{
+  "$schema": "./turboquant-schema.json",
+  "updated_at": "2026-07-02T12:08:43Z",
+  "commit": "61ee3eb",
+  "backends": [
+    {
+      "id": "windows-x64-cpu",
+      "tag": "turboquant-windows-x64-cpu-61ee3eb",
+      "asset": "llama-turboquant-windows-x64-cpu.zip"
+    },
+    {
+      "id": "windows-x64-cuda-12.4",
+      "tag": "turboquant-windows-x64-cuda-12.4-61ee3eb",
+      "asset": "llama-turboquant-windows-x64-cuda-12.4.zip"
+    },
+    {
+      "id": "windows-x64-cuda-13.3",
+      "tag": "turboquant-windows-x64-cuda-13.3-61ee3eb",
+      "asset": "llama-turboquant-windows-x64-cuda-13.3.zip"
+    },
+    {
+      "id": "windows-x64-vulkan",
+      "tag": "turboquant-windows-x64-vulkan-61ee3eb",
+      "asset": "llama-turboquant-windows-x64-vulkan.zip"
+    },
+    {
+      "id": "linux-x64-vulkan",
+      "tag": "turboquant-linux-x64-vulkan-61ee3eb",
+      "asset": "llama-turboquant-linux-x64-vulkan.tar.gz"
+    }
+  ]
+}
