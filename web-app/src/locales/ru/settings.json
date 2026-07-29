@@ -353,6 +353,23 @@
     "downloadFailed": "Не удалось загрузить GPU-бэкенд",
     "detectionUnavailable": "Не удалось обратиться к серверу релизов бэкендов (GitHub). Текущий бэкенд оставлен без изменений — проверьте соединение или прокси и попробуйте снова."
   },
+  "backendMismatch": {
+    "runtimeCpuTitle": "Модель считается на процессоре",
+    "runtimeCpuDescLayers": "Выбран {{configured}}, но модель загружена на процессор: на GPU вынесено {{offloaded}} из {{total}} слоёв. Генерация будет намного медленнее, чем позволяет ваше железо.",
+    "runtimeCpuDesc": "Выбран {{configured}}, но модель загружена на {{device}}. Генерация будет намного медленнее, чем позволяет ваше железо.",
+    "silentFallbackTitle": "Работает другой бэкенд",
+    "silentFallbackDesc": "В настройках указан {{configured}}, но модель запущена на {{effective}}, потому что выбранный бэкенд оказался недоступен.",
+    "suboptimalTitle": "Есть более быстрый бэкенд",
+    "suboptimalDesc": "Сейчас используется {{configured}}. Для вашего железа подходит {{ideal}} — он будет заметно быстрее.",
+    "cudaRuntimeHint": "Выбранная сборка CUDA не нашла на этой машине среду выполнения CUDA. Помогает установка NVIDIA CUDA runtime или переход на бэкенд, который включает её в себя.",
+    "vulkanDriverHint": "Бэкенду Vulkan нужен работающий драйвер Vulkan. Если ваша видеокарта должна поддерживаться, обычно помогает обновление драйвера, а на Linux — установка Vulkan runtime.",
+    "fix": "Исправить",
+    "later": "Позже",
+    "dontRemind": "Не напоминать",
+    "actuallyRunning": "Фактически работает: {{backend}}",
+    "actuallyRunningCpuLayers": "Фактически считает процессор: на GPU {{offloaded}} из {{total}} слоёв",
+    "actuallyRunningDevice": "Фактически работает на {{device}}"
+  },
   "turboquantOptimalPrompt": {
     "title": "Оптимизировать бэкенд Turboquant?",
     "description": "Atomic Llama.cpp Turboquant поставляется с CPU-бэкендом, поэтому работает сразу. Мы можем определить и загрузить самый быстрый бэкенд для вашего оборудования (CUDA / Vulkan).",

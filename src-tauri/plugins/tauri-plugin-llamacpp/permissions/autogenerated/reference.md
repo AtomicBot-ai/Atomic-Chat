@@ -8,6 +8,7 @@ Default permissions for the llamacpp plugin
 - `allow-load-llama-model`
 - `allow-unload-llama-model`
 - `allow-get-devices`
+- `allow-get-runtime-device`
 - `allow-generate-api-key`
 - `allow-is-process-running`
 - `allow-get-random-port`
@@ -379,6 +380,32 @@ Enables the get_random_port command without any pre-configured scope.
 <td>
 
 Denies the get_random_port command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-get-runtime-device`
+
+</td>
+<td>
+
+Enables the get_runtime_device command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-get-runtime-device`
+
+</td>
+<td>
+
+Denies the get_runtime_device command without any pre-configured scope.
 
 </td>
 </tr>

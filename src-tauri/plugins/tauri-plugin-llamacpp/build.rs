@@ -5,6 +5,7 @@ const COMMANDS: &[&str] = &[
     "load_llama_model",
     "unload_llama_model",
     "get_devices",
+    "get_runtime_device",
     "generate_api_key",
     "is_process_running",
     "get_random_port",

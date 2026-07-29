@@ -4,6 +4,7 @@ import { createRootRoute, Outlet } from '@tanstack/react-router'
 import DialogAppUpdater from '@/containers/dialogs/AppUpdater'
 import BackendUpdater from '@/containers/dialogs/BackendUpdater'
 import TurboquantOptimalBackendDialog from '@/containers/dialogs/TurboquantOptimalBackendDialog'
+import SuboptimalBackendDialog from '@/containers/dialogs/SuboptimalBackendDialog'
 import { Fragment } from 'react/jsx-runtime'
 import { ThemeProvider } from '@/providers/ThemeProvider'
 import { InterfaceProvider } from '@/providers/InterfaceProvider'
@@ -119,6 +120,7 @@ const AppLayout = () => {
         <DialogAppUpdater />
         {isSetupCompleted && <BackendUpdater />}
         {isSetupCompleted && <TurboquantOptimalBackendDialog />}
+        {isSetupCompleted && <SuboptimalBackendDialog />}
         <WhatsNewDialog />
         <LeftSidebar />
         <SidebarInset>

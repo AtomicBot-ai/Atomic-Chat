@@ -58,6 +58,7 @@ import {
   isCpuBackend,
   isUnsupportedNoAvxCpu,
   CPU_NO_AVX_ERROR_CODE,
+  classifyBackendMismatch,
   type EmbedBatchResult,
 } from './util'
 import {
@@ -103,6 +104,7 @@ import {
   normalizeFeatures,
   isCudaInstalledFromRust,
   checkSpecTypeSupport,
+  getRuntimeDevice,
 } from '../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index'
 
 // Error message constant - matches web-app/src/utils/error.ts
@@ -431,6 +433,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
   private unlistenValidationStarted?: () => void
   private unlistenAutoIncreaseCtx?: () => void
   private unlistenSessionDied?: () => void
+  /// `<version>/<backend>` the last load actually launched. Diverges from the
+  /// persisted `version_backend` when `resolveBackendFallback` tier 3 degrades
+  /// to an installed backend without persisting the swap — the case where the
+  /// settings dropdown keeps showing a backend that is not running.
+  private effectiveVersionBackend: string | null = null
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -3756,9 +3763,103 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // on or the request is clamped to the model's training-max). Fire and
       // forget: this must never block or fail the load.
       void this.syncLoadedCtxSize(result, isEmbedding)
+      void this.reportBackendMismatch(
+        result,
+        isEmbedding,
+        overrideSettings?.n_gpu_layers ?? this.config?.n_gpu_layers
+      )
       return result
     } finally {
       this.loadingModels.delete(modelId)
+    }
+  }
+
+  /// Backend the last successful load actually launched, as
+  /// `<version>/<backend>`. Settings read this to show the truth next to the
+  /// persisted selection when the two diverge.
+  getEffectiveBackend(): string | null {
+    return this.effectiveVersionBackend
+  }
+
+  /// Compare the backend the user sees, the one that was launched and the
+  /// device the process reports, and announce any disagreement so the web-app
+  /// can offer a fix.
+  ///
+  /// The "better tier available" input is taken from the recommendation the
+  /// existing detect flows already stored, never from a fresh hardware probe:
+  /// `detectIdealBackendType` spawns `--list-devices` per tier and has no place
+  /// on the load path. Fire and forget — this must never affect a load.
+  private async reportBackendMismatch(
+    sInfo: SessionInfo,
+    isEmbedding: boolean,
+    requestedGpuLayers?: number
+  ): Promise<void> {
+    if (isEmbedding) return
+    try {
+      const configured = stripBom(
+        (await this.getSetting<string>('version_backend', '')) || ''
+      )
+      const effective = this.effectiveVersionBackend ?? configured
+
+      // `load_tensors` normally precedes "listening on", but on a slow mmap the
+      // snapshot taken at readiness can still be empty — re-ask the plugin.
+      let runtimeDevice = sInfo.runtime_device ?? null
+      if (!runtimeDevice) {
+        try {
+          runtimeDevice = await getRuntimeDevice(sInfo.pid)
+        } catch (e) {
+          logger.warn(`reportBackendMismatch: get_runtime_device failed: ${e}`)
+        }
+      }
+
+      const mismatch = classifyBackendMismatch({
+        configuredBackend: configured.split('/')[1] ?? '',
+        effectiveBackend: effective.split('/')[1] ?? '',
+        runtimeDevice,
+        idealBackend: this.storedRecommendedBackendType(),
+        requestedGpuLayers,
+        categoryOf: get_backend_category,
+      })
+
+      const payload = {
+        provider: this.provider,
+        modelId: sInfo.model_id,
+        configuredVersionBackend: configured,
+        effectiveVersionBackend: effective,
+        mismatch,
+      }
+      if (mismatch.kind === 'ok') {
+        logger.info(
+          `reportBackendMismatch: ${sInfo.model_id} running as configured (${effective})`
+        )
+      } else {
+        logger.warn(
+          `reportBackendMismatch: ${mismatch.kind} for ${sInfo.model_id} — configured=${configured} effective=${effective} primaryDevice=${
+            runtimeDevice?.primary_device ?? 'unknown'
+          }`
+        )
+      }
+      // A healthy verdict is reported too: it is what clears a warning the user
+      // has already acted on.
+      if (events && typeof events.emit === 'function') {
+        events.emit(AppEvent.onBackendRuntimeReported, payload)
+      }
+    } catch (e) {
+      logger.warn(`reportBackendMismatch failed for ${sInfo.model_id}: ${e}`)
+    }
+  }
+
+  /// Backend type from the recommendation `recheckOptimalBackend` /
+  /// `configureBackends` last wrote, or `null` when none is pending.
+  private storedRecommendedBackendType(): string | null {
+    try {
+      const raw = localStorage.getItem('llama_cpp_better_backend_recommendation')
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { recommendedBackend?: string }
+      const recommended = stripBom(parsed?.recommendedBackend ?? '')
+      return recommended.split('/')[1] || null
+    } catch {
+      return null
     }
   }
 
@@ -3982,6 +4083,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       version,
       true
     ))
+    this.effectiveVersionBackend = `${version}/${backend}`
 
     const janDataFolderPath = await getJanDataFolderPath()
     const modelConfigPath = await joinPath([

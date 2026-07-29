@@ -386,6 +386,23 @@
     "hotSwapSuccess": "Backend switched",
     "hotSwapSuccessDesc": "{{backend}} is now active. No restart needed."
   },
+  "backendMismatch": {
+    "runtimeCpuTitle": "Your model is running on the CPU",
+    "runtimeCpuDescLayers": "{{configured}} is selected, but the model was loaded on the CPU: {{offloaded}} of {{total}} layers are on the GPU. Generation will be much slower than your hardware allows.",
+    "runtimeCpuDesc": "{{configured}} is selected, but the model was loaded on {{device}}. Generation will be much slower than your hardware allows.",
+    "silentFallbackTitle": "A different backend is running",
+    "silentFallbackDesc": "Settings show {{configured}}, but the model was started on {{effective}} because the selected backend was unavailable.",
+    "suboptimalTitle": "A faster backend is available",
+    "suboptimalDesc": "You are running {{configured}}. {{ideal}} matches your hardware and will be noticeably faster.",
+    "cudaRuntimeHint": "The selected CUDA build could not find a CUDA runtime on this machine. Installing the NVIDIA CUDA runtime, or switching to a backend that bundles it, fixes this.",
+    "vulkanDriverHint": "A Vulkan backend needs a working Vulkan driver. If your GPU should be supported, updating the graphics driver — or installing the Vulkan runtime on Linux — usually fixes this.",
+    "fix": "Fix it",
+    "later": "Later",
+    "dontRemind": "Don't remind me",
+    "actuallyRunning": "Actually running: {{backend}}",
+    "actuallyRunningCpuLayers": "Actually running on the CPU: {{offloaded}} of {{total}} layers on the GPU",
+    "actuallyRunningDevice": "Actually running on {{device}}"
+  },
   "turboquantOptimalPrompt": {
     "title": "Optimize the Turboquant backend?",
     "description": "Atomic Llama.cpp Turboquant ships a CPU-ready backend so it works out of the box. We can detect and download the fastest backend for your hardware (CUDA / Vulkan) instead.",

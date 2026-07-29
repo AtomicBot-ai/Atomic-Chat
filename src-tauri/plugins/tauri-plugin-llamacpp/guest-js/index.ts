@@ -13,6 +13,7 @@ import {
   UpdateCheckResult,
   SettingUpdateResult,
   BundledBackendResult,
+  RuntimeDeviceInfo,
 } from './types'
 
 // Helpers
@@ -125,6 +126,12 @@ export async function getDevices(
     backendPath,
     libraryPath,
   })
+}
+
+export async function getRuntimeDevice(
+  pid: number
+): Promise<RuntimeDeviceInfo | null> {
+  return await invoke('plugin:llamacpp|get_runtime_device', { pid })
 }
 
 export async function generateApiKey(

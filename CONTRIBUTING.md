@@ -193,7 +193,8 @@ yarn test      # Root Vitest projects only
 
 `make test-all` is the broadest developer command. Live sidecars and cloud
 providers are skipped when their environment variables are absent; pass
-`REQUIRE=1` to fail on missing live prerequisites.
+`REQUIRE=1` to fail on missing live prerequisites. Its final summary aggregates
+phase durations and Vitest, Rust, Node TAP, and live check totals.
 
 `verify-fast` is deterministic: it does not download models, contact cloud
 providers, or require API keys. It rejects new false-confidence test patterns

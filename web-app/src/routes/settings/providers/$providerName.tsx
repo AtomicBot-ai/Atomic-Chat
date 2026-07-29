@@ -56,6 +56,7 @@ import {
 } from '@/utils/registerRemoteProvider'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 import {
+  IconAlertTriangle,
   IconFolderPlus,
   IconLoader,
   IconRefresh,
@@ -63,6 +64,7 @@ import {
   IconSearch,
   IconUpload,
 } from '@tabler/icons-react'
+import { useBackendMismatch } from '@/hooks/useBackendMismatch'
 import { toast } from 'sonner'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -235,6 +237,33 @@ function ProviderDetail() {
     recommendationPhase,
     selectManualBackend,
   } = useBackendUpdater(backendUpdaterConfig)
+  /// The last load may have run on a backend other than the one selected here
+  /// (a silent in-memory swap, or a GPU build that fell back to the CPU). Show
+  /// that truth next to the dropdown instead of letting the stale selection
+  /// speak for the running process.
+  const { pending: backendMismatch } = useBackendMismatch()
+  const runningBackendNotice = useMemo(() => {
+    if (!backendMismatch || backendMismatch.provider !== providerName) {
+      return null
+    }
+    const { mismatch } = backendMismatch
+    if (mismatch.kind === 'silent-fallback') {
+      return t('settings:backendMismatch.actuallyRunning', {
+        backend: mismatch.effective,
+      })
+    }
+    if (mismatch.kind === 'runtime-cpu') {
+      return mismatch.total
+        ? t('settings:backendMismatch.actuallyRunningCpuLayers', {
+            offloaded: mismatch.offloaded ?? 0,
+            total: mismatch.total,
+          })
+        : t('settings:backendMismatch.actuallyRunningDevice', {
+            device: mismatch.primaryDevice,
+          })
+    }
+    return null
+  }, [backendMismatch, providerName, t])
   const navigate = useNavigate()
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
   const provider = getProviderByName(providerName)
@@ -2304,6 +2333,13 @@ function ProviderDetail() {
                                     setting.controller_props.recommended}
                                 </span>
                                 <span> is the recommended backend.</span>
+                              </div>
+                            )}
+                          {setting.key === 'version_backend' &&
+                            runningBackendNotice && (
+                              <div className="mt-1 flex items-center gap-1.5 text-sm text-amber-600 dark:text-amber-500">
+                                <IconAlertTriangle size={14} />
+                                <span>{runningBackendNotice}</span>
                               </div>
                             )}
                           {setting.key === 'version_backend' &&

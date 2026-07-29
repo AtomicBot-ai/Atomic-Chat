@@ -41,6 +41,7 @@ import {
   getProxyConfig,
   buildEmbedBatches,
   mergeEmbedResponses,
+  classifyBackendMismatch,
   type EmbedBatchResult,
 } from './util'
 import { basename } from '@tauri-apps/api/path'
@@ -71,6 +72,7 @@ import {
   checkBackendForUpdates as checkBackendForUpdatesFromRust,
   getSupportedFeaturesFromRust,
   normalizeFeatures,
+  getRuntimeDevice,
 } from '../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
 
 // Error message constant - matches web-app/src/utils/error.ts
@@ -356,6 +358,11 @@ export default class llamacpp_extension extends AIEngine {
   private modelMaxCtxTrain = new Map<string, number>()
   private unlistenValidationStarted?: () => void
   private unlistenAutoIncreaseCtx?: () => void
+  /// `<version>/<backend>` the last load actually launched. Diverges from the
+  /// persisted `version_backend` when the load path recovered a different
+  /// backend from bundled resources without persisting the swap — the case
+  /// where the settings dropdown keeps showing a backend that is not running.
+  private effectiveVersionBackend: string | null = null
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -1537,16 +1544,29 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   /**
-   * Apply a freshly-downloaded backend to the running process: stop any
-   * loaded llama.cpp models, swap `version_backend` via `updateBackend()`,
-   * clear the pending marker, and notify the UI via a window event.
+   * Apply a freshly-downloaded backend to the running process: swap
+   * `version_backend` via `updateBackend()` first, then stop any loaded
+   * llama.cpp models, clear the pending marker, and notify the UI via a
+   * window event.
+   *
+   * Order matters: `updateBackend()` must commit the new `version_backend`
+   * into `this.config` *before* any model is unloaded. Unloading flips the
+   * model's status to stopped, which the web-app's local-model auto-start
+   * effect (`ChatInput.tsx`) reacts to by immediately reloading it via
+   * `switchToModel()`. `performLoad()` snapshots `this.config` synchronously
+   * at call time, so an unload-before-update ordering let that auto-reload
+   * race ahead of `updateBackend()` and respawn `llama-server` against the
+   * *old* backend — the UI would then report the switch as complete while
+   * the running process silently stayed on the previous (e.g. CPU) build.
    *
    * Failure modes:
+   *   - `updateBackend()` throws → we propagate without touching any loaded
+   *     model, so a failed hot-swap never kills a working session. Caller
+   *     leaves the pending marker in place so `activatePendingBackend()`
+   *     retries on next launch.
    *   - `unload()` throws when a session can't be cleanly stopped → we log
-   *     and continue, because `updateBackend()` only mutates settings and
-   *     does not require an empty session table.
-   *   - `updateBackend()` throws → we propagate. Caller leaves the pending
-   *     marker in place so `activatePendingBackend()` retries on next launch.
+   *     and continue; the new backend is already persisted, so the next
+   *     load (auto or manual) picks it up regardless.
    */
   private async applyBackendLive(backendString: string): Promise<void> {
     let loaded: string[] = []
@@ -1554,6 +1574,13 @@ export default class llamacpp_extension extends AIEngine {
       loaded = await this.getLoadedModels()
     } catch (err) {
       logger.warn('applyBackendLive: getLoadedModels failed (continuing):', err)
+    }
+
+    const result = await this.updateBackend(backendString)
+    if (!result.wasUpdated) {
+      throw new Error(
+        `updateBackend reported wasUpdated=false for ${backendString}`
+      )
     }
 
     for (const modelId of loaded) {
@@ -1565,13 +1592,6 @@ export default class llamacpp_extension extends AIEngine {
           err
         )
       }
-    }
-
-    const result = await this.updateBackend(backendString)
-    if (!result.wasUpdated) {
-      throw new Error(
-        `updateBackend reported wasUpdated=false for ${backendString}`
-      )
     }
 
     localStorage.removeItem(TURBOQUANT_PENDING_KEY)
@@ -2654,10 +2674,104 @@ export default class llamacpp_extension extends AIEngine {
     try {
       const result = await loadingPromise
       void this.syncLoadedCtxSize(result, isEmbedding)
+      void this.reportBackendMismatch(
+        result,
+        isEmbedding,
+        overrideSettings?.n_gpu_layers ?? this.config?.n_gpu_layers
+      )
 
       return result
     } finally {
       this.loadingModels.delete(modelId)
+    }
+  }
+
+  /// Backend the last successful load actually launched, as
+  /// `<version>/<backend>`. Settings read this to show the truth next to the
+  /// persisted selection when the two diverge.
+  getEffectiveBackend(): string | null {
+    return this.effectiveVersionBackend
+  }
+
+  /// Compare the backend the user sees, the one that was launched and the
+  /// device the process reports, and announce any disagreement so the web-app
+  /// can offer a fix.
+  ///
+  /// The "better tier available" input is taken from the recommendation the
+  /// existing detect flows already stored, never from a fresh hardware probe:
+  /// `detectIdealBackendType` spawns `--list-devices` per tier and has no place
+  /// on the load path. Fire and forget — this must never affect a load.
+  private async reportBackendMismatch(
+    sInfo: SessionInfo,
+    isEmbedding: boolean,
+    requestedGpuLayers?: number
+  ): Promise<void> {
+    if (isEmbedding) return
+    try {
+      const configured = stripBom(
+        (await this.getSetting<string>('version_backend', '')) || ''
+      )
+      const effective = this.effectiveVersionBackend ?? configured
+
+      // `load_tensors` normally precedes "listening on", but on a slow mmap the
+      // snapshot taken at readiness can still be empty — re-ask the plugin.
+      let runtimeDevice = sInfo.runtime_device ?? null
+      if (!runtimeDevice) {
+        try {
+          runtimeDevice = await getRuntimeDevice(sInfo.pid)
+        } catch (e) {
+          logger.warn(`reportBackendMismatch: get_runtime_device failed: ${e}`)
+        }
+      }
+
+      const mismatch = classifyBackendMismatch({
+        configuredBackend: configured.split('/')[1] ?? '',
+        effectiveBackend: effective.split('/')[1] ?? '',
+        runtimeDevice,
+        idealBackend: this.storedRecommendedBackendType(),
+        requestedGpuLayers,
+        categoryOf: get_backend_category,
+      })
+
+      const payload = {
+        provider: this.provider,
+        modelId: sInfo.model_id,
+        configuredVersionBackend: configured,
+        effectiveVersionBackend: effective,
+        mismatch,
+      }
+      if (mismatch.kind === 'ok') {
+        logger.info(
+          `reportBackendMismatch: ${sInfo.model_id} running as configured (${effective})`
+        )
+      } else {
+        logger.warn(
+          `reportBackendMismatch: ${mismatch.kind} for ${sInfo.model_id} — configured=${configured} effective=${effective} primaryDevice=${
+            runtimeDevice?.primary_device ?? 'unknown'
+          }`
+        )
+      }
+      // A healthy verdict is reported too: it is what clears a warning the user
+      // has already acted on.
+      if (events && typeof events.emit === 'function') {
+        events.emit(AppEvent.onBackendRuntimeReported, payload)
+      }
+    } catch (e) {
+      logger.warn(`reportBackendMismatch failed for ${sInfo.model_id}: ${e}`)
+    }
+  }
+
+  /// Backend type from the recommendation `recheckOptimalBackend` /
+  /// `configureBackends` last wrote, or `null` when none is pending.
+  private storedRecommendedBackendType(): string | null {
+    try {
+      const raw = localStorage.getItem(TURBOQUANT_RECOMMENDATION_KEY)
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { recommendedBackend?: string }
+      const recommended = stripBom(parsed?.recommendedBackend ?? '')
+      return recommended.split('/')[1] || null
+    } catch {
+      return null
     }
   }
 
@@ -2797,6 +2911,7 @@ export default class llamacpp_extension extends AIEngine {
 
     // Ensure backend is downloaded and ready before proceeding
     await this.ensureBackendReady(backend, version)
+    this.effectiveVersionBackend = `${version}/${backend}`
 
     const janDataFolderPath = await getJanDataFolderPath()
     const modelConfigPath = await joinPath([

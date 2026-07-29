@@ -123,6 +123,10 @@ import {
   type AgentSkillSlashQuery,
 } from '@/containers/agentSkillSlash'
 import { useAgentSkills } from '@/hooks/useAgentSkills'
+import {
+  BACKEND_MISMATCH_PROMPT_EVENT,
+  useBackendMismatch,
+} from '@/hooks/useBackendMismatch'
 import type { AgentSkill } from '@/services/agent/skills'
 
 type ChatInputProps = {
@@ -173,6 +177,7 @@ const ChatInput = memo(function ChatInput({
     (state) => state.tokenCounterCompact
   )
   const maxImageSizePx = useGeneralSetting((state) => state.maxImageSizePx)
+  const { shouldPrompt: shouldPromptBackendMismatch } = useBackendMismatch()
   useTools()
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
@@ -621,6 +626,13 @@ const ChatInput = memo(function ChatInput({
     }
 
     setMessage('')
+
+    // A previous model load found that the running backend is not the one the UI
+    // shows (or that a faster one exists). Raise it here, on the first send after
+    // the load, rather than interrupting the load itself. Never blocks the send.
+    if (shouldPromptBackendMismatch) {
+      window.dispatchEvent(new Event(BACKEND_MISMATCH_PROMPT_EVENT))
+    }
 
     // Use onSubmit prop if available (AI SDK), otherwise create thread and navigate
     if (onSubmit) {
