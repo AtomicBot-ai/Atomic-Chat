@@ -6,8 +6,8 @@
  * directly via `serviceHub.models().fetchModelCatalog()` and persisted the
  * result through `zustand/middleware:persist`. After the migration to the
  * curated `AtomicBot-ai/atomic-chat-model-catalog` source, persistence and
- * caching are handled by `model-catalog-store` (which writes its own
- * localStorage cache keyed `atomic_model_catalog_cache_v1`). This module
+ * caching are handled by `model-catalog-store` (which writes its cache to a
+ * Tauri `plugin-store` file). This module
  * keeps the original API surface (`sources`, `fetchSources`, `loading`,
  * `error`) so the dozens of existing consumers do not need to change in
  * lockstep, but every reactive read now flows through the new store.
