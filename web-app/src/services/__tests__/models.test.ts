@@ -42,6 +42,18 @@ vi.mock('@tauri-apps/plugin-http', () => ({
   fetch: vi.fn(),
 }))
 
+vi.mock('@tauri-apps/plugin-store', () => ({
+  load: vi.fn(() =>
+    Promise.resolve({
+      get: vi.fn(() => Promise.resolve(null)),
+      set: vi.fn(() => Promise.resolve()),
+      delete: vi.fn(() => Promise.resolve()),
+      clear: vi.fn(() => Promise.resolve()),
+      save: vi.fn(() => Promise.resolve()),
+    })
+  ),
+}))
+
 // Mock fetch
 global.fetch = vi.fn()
 
@@ -103,8 +115,8 @@ describe('DefaultModelsService', () => {
     // the bundled baseline and never throws. These tests assert that
     // contract.
 
-    beforeEach(() => {
-      clearCatalogCache()
+    beforeEach(async () => {
+      await clearCatalogCache()
     })
 
     it('should fetch model catalog successfully', async () => {

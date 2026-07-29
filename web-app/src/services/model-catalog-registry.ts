@@ -3,10 +3,11 @@
  * model catalog and its pre-built MiniSearch index.
  *
  * Mirrors the architecture of `provider-registry.ts` and
- * `recommended-models-registry.ts`: fetch from GitHub Releases, cache in
- * `localStorage` for one hour, fall back to a bundled baseline. The
- * cache holds two independent payloads (catalog + index) with separate
- * keys so each can be refreshed without invalidating the other.
+ * `recommended-models-registry.ts`: fetch from GitHub Releases, cache
+ * for one hour, fall back to a bundled baseline. The catalog and index
+ * are stored in a dedicated Tauri `plugin-store` file because the
+ * manifest is tens of megabytes raw and exceeds browser `localStorage`
+ * quotas.
  *
  * Failure-safe by construction: `getCatalogOrFallback()` and
  * `getIndexOrFallback()` never throw — UI code can render unconditionally.
@@ -19,6 +20,7 @@
  */
 
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
+import { load, type Store } from '@tauri-apps/plugin-store'
 import { BASELINE_MODEL_CATALOG } from '@/constants/models'
 import type { CatalogModel } from '@/services/models/types'
 
@@ -59,10 +61,18 @@ export const SUPPORTED_INDEX_VERSION = 1
 /** Cache TTL (1 hour) — same posture as the sibling registries. */
 export const CACHE_TTL_MS = 60 * 60 * 1000
 
-const CATALOG_CACHE_KEY = 'atomic_model_catalog_cache_v1'
-const CATALOG_CACHE_TS_KEY = 'atomic_model_catalog_cache_ts_v1'
-const INDEX_CACHE_KEY = 'atomic_model_catalog_idx_v1'
-const INDEX_CACHE_TS_KEY = 'atomic_model_catalog_idx_ts_v1'
+const CACHE_STORE_NAME = 'atomic-catalog-cache.json'
+
+const CATALOG_CACHE_KEY = 'atomic_model_catalog_cache_v2'
+const INDEX_CACHE_KEY = 'atomic_model_catalog_idx_v2'
+
+// Legacy localStorage keys from the v1 implementation. They are cleared on
+// `clearCatalogCache()` so a stale multi-megabyte snapshot does not sit around
+// forever after the migration to the Tauri store.
+const CATALOG_CACHE_V1_KEY = 'atomic_model_catalog_cache_v1'
+const CATALOG_CACHE_V1_TS_KEY = 'atomic_model_catalog_cache_ts_v1'
+const INDEX_CACHE_V1_KEY = 'atomic_model_catalog_idx_v1'
+const INDEX_CACHE_V1_TS_KEY = 'atomic_model_catalog_idx_ts_v1'
 
 // 60 s for the catalog (~13 MB raw, ~3-4 MB gzipped) — covers users on
 // slow connections to GitHub Releases CDN (~300 KB/s in the worst case
@@ -188,6 +198,69 @@ const safeLocalStorage = (): Storage | null => {
   }
 }
 
+type CacheEntry = { value: string; fetchedAt: number }
+
+let cacheStorePromise: Promise<Store | null> | null = null
+
+const getCacheStore = async (): Promise<Store | null> => {
+  if (cacheStorePromise) return cacheStorePromise
+  cacheStorePromise = (async () => {
+    try {
+      return await load(CACHE_STORE_NAME, { autoSave: true, defaults: {} })
+    } catch (error) {
+      console.warn(
+        '[model-catalog-registry] Failed to load cache store:',
+        error instanceof Error ? error.message : error
+      )
+      return null
+    }
+  })()
+  return cacheStorePromise
+}
+
+const resetCacheStore = (): void => {
+  cacheStorePromise = null
+}
+
+const getCacheEntry = async (key: string): Promise<CacheEntry | null> => {
+  const store = await getCacheStore()
+  if (!store) return null
+  try {
+    const entry = await store.get<CacheEntry>(key)
+    if (
+      !entry ||
+      typeof entry.value !== 'string' ||
+      !Number.isFinite(entry.fetchedAt)
+    ) {
+      return null
+    }
+    return entry
+  } catch (error) {
+    console.warn(
+      '[model-catalog-registry] Failed to read cache entry:',
+      error instanceof Error ? error.message : error
+    )
+    return null
+  }
+}
+
+const setCacheEntry = async (
+  key: string,
+  value: string,
+  fetchedAt: number
+): Promise<void> => {
+  const store = await getCacheStore()
+  if (!store) return
+  try {
+    await store.set(key, { value, fetchedAt })
+  } catch (error) {
+    console.warn(
+      '[model-catalog-registry] Failed to write cache entry:',
+      error instanceof Error ? error.message : error
+    )
+  }
+}
+
 const isManifestShape = (value: unknown): value is CatalogManifest => {
   if (typeof value !== 'object' || value === null) return false
   const v = value as Record<string, unknown>
@@ -211,36 +284,26 @@ const isIndexShape = (value: unknown): value is CatalogIndexPayload => {
 type CachedCatalog = { manifest: CatalogManifest; fetchedAt: number }
 type CachedIndex = { payload: CatalogIndexPayload; fetchedAt: number }
 
-export const getCachedCatalog = (): CachedCatalog | null => {
-  const ls = safeLocalStorage()
-  if (!ls) return null
+export const getCachedCatalog = async (): Promise<CachedCatalog | null> => {
+  const entry = await getCacheEntry(CATALOG_CACHE_KEY)
+  if (!entry) return null
   try {
-    const raw = ls.getItem(CATALOG_CACHE_KEY)
-    const tsRaw = ls.getItem(CATALOG_CACHE_TS_KEY)
-    if (!raw || !tsRaw) return null
-    const fetchedAt = Number(tsRaw)
-    if (!Number.isFinite(fetchedAt)) return null
-    const parsed = JSON.parse(raw) as unknown
+    const parsed = JSON.parse(entry.value) as unknown
     if (!isManifestShape(parsed)) return null
-    return { manifest: parsed, fetchedAt }
+    return { manifest: parsed, fetchedAt: entry.fetchedAt }
   } catch {
     return null
   }
 }
 
-export const getCachedIndex = (): CachedIndex | null => {
-  const ls = safeLocalStorage()
-  if (!ls) return null
+export const getCachedIndex = async (): Promise<CachedIndex | null> => {
+  const entry = await getCacheEntry(INDEX_CACHE_KEY)
+  if (!entry) return null
   try {
-    const raw = ls.getItem(INDEX_CACHE_KEY)
-    const tsRaw = ls.getItem(INDEX_CACHE_TS_KEY)
-    if (!raw || !tsRaw) return null
-    const fetchedAt = Number(tsRaw)
-    if (!Number.isFinite(fetchedAt)) return null
-    const parsed = JSON.parse(raw) as unknown
+    const parsed = JSON.parse(entry.value) as unknown
     if (!isIndexShape(parsed)) return null
     if (parsed.index_version > SUPPORTED_INDEX_VERSION) return null
-    return { payload: parsed, fetchedAt }
+    return { payload: parsed, fetchedAt: entry.fetchedAt }
   } catch {
     return null
   }
@@ -253,47 +316,44 @@ export const isCacheFresh = (
   return Date.now() - cached.fetchedAt < CACHE_TTL_MS
 }
 
-const writeCatalogCache = (
+const writeCatalogCache = async (
   manifest: CatalogManifest,
   fetchedAt: number
-): void => {
-  const ls = safeLocalStorage()
-  if (!ls) return
-  try {
-    ls.setItem(CATALOG_CACHE_KEY, JSON.stringify(manifest))
-    ls.setItem(CATALOG_CACHE_TS_KEY, String(fetchedAt))
-  } catch (error) {
-    // Catalog can grow to a few MB. `QuotaExceededError` is recoverable: we
-    // just lose the persistent cache for this session.
-    console.warn('[model-catalog-registry] Failed to write catalog cache:', error)
-  }
+): Promise<void> => {
+  await setCacheEntry(CATALOG_CACHE_KEY, JSON.stringify(manifest), fetchedAt)
 }
 
-const writeIndexCache = (
+const writeIndexCache = async (
   payload: CatalogIndexPayload,
   fetchedAt: number
-): void => {
-  const ls = safeLocalStorage()
-  if (!ls) return
-  try {
-    ls.setItem(INDEX_CACHE_KEY, JSON.stringify(payload))
-    ls.setItem(INDEX_CACHE_TS_KEY, String(fetchedAt))
-  } catch (error) {
-    console.warn('[model-catalog-registry] Failed to write index cache:', error)
-  }
+): Promise<void> => {
+  await setCacheEntry(INDEX_CACHE_KEY, JSON.stringify(payload), fetchedAt)
 }
 
-export const clearCatalogCache = (): void => {
-  const ls = safeLocalStorage()
-  if (!ls) return
-  try {
-    ls.removeItem(CATALOG_CACHE_KEY)
-    ls.removeItem(CATALOG_CACHE_TS_KEY)
-    ls.removeItem(INDEX_CACHE_KEY)
-    ls.removeItem(INDEX_CACHE_TS_KEY)
-  } catch (error) {
-    console.warn('[model-catalog-registry] Failed to clear cache:', error)
+export const clearCatalogCache = async (): Promise<void> => {
+  const store = await getCacheStore()
+  if (store) {
+    try {
+      await store.clear()
+    } catch (error) {
+      console.warn(
+        '[model-catalog-registry] Failed to clear cache store:',
+        error instanceof Error ? error.message : error
+      )
+    }
   }
+  try {
+    const ls = safeLocalStorage()
+    if (ls) {
+      ls.removeItem(CATALOG_CACHE_V1_KEY)
+      ls.removeItem(CATALOG_CACHE_V1_TS_KEY)
+      ls.removeItem(INDEX_CACHE_V1_KEY)
+      ls.removeItem(INDEX_CACHE_V1_TS_KEY)
+    }
+  } catch {
+    // ignore
+  }
+  resetCacheStore()
 }
 
 const isTauriRuntime = (): boolean => {
@@ -363,9 +423,11 @@ const fetchJsonGzip = async (
 }
 
 /**
- * Fetch a JSON artefact, preferring the gzipped variant for ~10x smaller
- * transfer when both exist. Tries `${url}.gz` first; on 404 / network /
- * decompression error falls back to the plain `${url}`.
+ * Fetch a JSON artefact, always using the gzipped variant for ~10x
+ * smaller transfer. The production CDN only publishes `${url}.gz`; the
+ * plain `${url}` path is not available. When the runtime lacks
+ * `DecompressionStream` (e.g., some test environments), it falls back to
+ * the plain path.
  *
  * Transport priority (mirrors `recommended-models-registry.ts`):
  *
@@ -390,15 +452,7 @@ const fetchJson = async <T,>(
     if (hasDecompressionStream()) {
       const [path, query] = url.split('?', 2)
       const gzipUrl = `${path}.gz${query ? `?${query}` : ''}`
-      try {
-        return await fetchJsonGzip(transport, gzipUrl, signal)
-      } catch (gzipError) {
-        console.info(
-          `[model-catalog-registry] gzip variant unavailable for ${label}, falling back to plain JSON:`,
-          gzipError instanceof Error ? gzipError.message : gzipError
-        )
-        return await fetchJsonRaw(transport, url, signal)
-      }
+      return await fetchJsonGzip(transport, gzipUrl, signal)
     }
     return await fetchJsonRaw(transport, url, signal)
   }
@@ -466,7 +520,7 @@ export const getCatalogOrFallback = async (
     timeoutMs = CATALOG_FETCH_TIMEOUT_MS,
   } = options
 
-  const cached = getCachedCatalog()
+  const cached = await getCachedCatalog()
   if (!force && isCacheFresh(cached) && cached) {
     return {
       manifest: cached.manifest,
@@ -500,7 +554,7 @@ export const getCatalogOrFallback = async (
       )
     }
     const fetchedAt = Date.now()
-    writeCatalogCache(manifest, fetchedAt)
+    await writeCatalogCache(manifest, fetchedAt)
     console.info(
       `[model-catalog-registry] Loaded ${manifest.models.length} models ` +
         `(schema_version=${manifest.schema_version}, updated_at=${manifest.updated_at})`
@@ -553,7 +607,7 @@ export const getIndexOrFallback = async (
     timeoutMs = INDEX_FETCH_TIMEOUT_MS,
   } = options
 
-  const cached = getCachedIndex()
+  const cached = await getCachedIndex()
   if (!force && isCacheFresh(cached) && cached) {
     return {
       payload: cached.payload,
@@ -586,7 +640,7 @@ export const getIndexOrFallback = async (
       )
     }
     const fetchedAt = Date.now()
-    writeIndexCache(payload, fetchedAt)
+    await writeIndexCache(payload, fetchedAt)
     return { payload, source: 'remote', fetchedAt }
   } catch (error) {
     try {

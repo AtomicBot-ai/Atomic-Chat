@@ -19,23 +19,37 @@ vi.mock('@tauri-apps/plugin-http', () => ({
   fetch: vi.fn(),
 }))
 
-const localStorageMock = (() => {
-  let store: Record<string, string> = {}
-  return {
-    getItem: vi.fn((k: string) => (k in store ? store[k] : null)),
-    setItem: vi.fn((k: string, v: string) => {
-      store[k] = v
+vi.mock('@tauri-apps/plugin-store', () => {
+  const memory = new Map<string, unknown>()
+  const store = {
+    get: vi.fn((key: string) => Promise.resolve(memory.get(key) ?? null)),
+    set: vi.fn((key: string, value: unknown) => {
+      if (value === null || value === undefined) memory.delete(key)
+      else memory.set(key, value)
+      return Promise.resolve()
     }),
-    removeItem: vi.fn((k: string) => {
-      delete store[k]
+    delete: vi.fn((key: string) => {
+      memory.delete(key)
+      return Promise.resolve()
     }),
-    clear: () => {
-      store = {}
-    },
+    clear: vi.fn(() => {
+      memory.clear()
+      return Promise.resolve()
+    }),
+    save: vi.fn(() => Promise.resolve()),
+    reset: vi.fn(() => {
+      memory.clear()
+      return Promise.resolve()
+    }),
+    close: vi.fn(() => Promise.resolve()),
+    load: vi.fn(() => Promise.resolve()),
+    onKeyChange: vi.fn(),
+    onKeysChange: vi.fn(),
   }
-})()
-
-Object.defineProperty(window, 'localStorage', { value: localStorageMock })
+  return {
+    load: vi.fn(() => Promise.resolve(store)),
+  }
+})
 
 const buildManifest = (
   overrides: Partial<CatalogManifest> = {}
@@ -58,11 +72,11 @@ const buildManifest = (
 beforeEach(() => {
   vi.resetModules()
   vi.clearAllMocks()
-  localStorageMock.clear()
 })
 
 afterEach(() => {
   vi.useRealTimers()
+  vi.unstubAllGlobals()
 })
 
 describe('model-catalog-registry', () => {
@@ -78,7 +92,7 @@ describe('model-catalog-registry', () => {
     const { getCatalogOrFallback, clearCatalogCache } = await import(
       '@/services/model-catalog-registry'
     )
-    clearCatalogCache()
+    await clearCatalogCache()
 
     const result = await getCatalogOrFallback()
     expect(result.source).toBe('remote')
@@ -98,7 +112,7 @@ describe('model-catalog-registry', () => {
     const { getCatalogOrFallback, clearCatalogCache } = await import(
       '@/services/model-catalog-registry'
     )
-    clearCatalogCache()
+    await clearCatalogCache()
 
     const first = await getCatalogOrFallback()
     expect(first.source).toBe('remote')
@@ -115,7 +129,7 @@ describe('model-catalog-registry', () => {
     const { getCatalogOrFallback, clearCatalogCache } = await import(
       '@/services/model-catalog-registry'
     )
-    clearCatalogCache()
+    await clearCatalogCache()
 
     const result = await getCatalogOrFallback()
     expect(result.source).toBe('baseline')
@@ -138,7 +152,7 @@ describe('model-catalog-registry', () => {
     const { getCatalogOrFallback, clearCatalogCache } = await import(
       '@/services/model-catalog-registry'
     )
-    clearCatalogCache()
+    await clearCatalogCache()
 
     await getCatalogOrFallback()
     const fallback = await getCatalogOrFallback({ force: true })
@@ -159,7 +173,7 @@ describe('model-catalog-registry', () => {
     const { getCatalogOrFallback, clearCatalogCache } = await import(
       '@/services/model-catalog-registry'
     )
-    clearCatalogCache()
+    await clearCatalogCache()
 
     const result = await getCatalogOrFallback()
     expect(result.source).toBe('baseline')
@@ -177,10 +191,73 @@ describe('model-catalog-registry', () => {
     const { getCatalogOrFallback, clearCatalogCache } = await import(
       '@/services/model-catalog-registry'
     )
-    clearCatalogCache()
+    await clearCatalogCache()
 
     const result = await getCatalogOrFallback()
     expect(result.source).toBe('baseline')
     expect(result.error).toMatch(/not a valid catalog/)
+  })
+
+  it('caches and retrieves a manifest larger than any localStorage quota', async () => {
+    const bigManifest = buildManifest({
+      models: [
+        {
+          ...buildManifest().models[0],
+          description: 'x'.repeat(2_000_000),
+        },
+      ],
+    })
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => bigManifest,
+    } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { getCatalogOrFallback, clearCatalogCache } = await import(
+      '@/services/model-catalog-registry'
+    )
+    await clearCatalogCache()
+
+    const first = await getCatalogOrFallback()
+    expect(first.source).toBe('remote')
+
+    const second = await getCatalogOrFallback()
+    expect(second.source).toBe('cache')
+    expect(second.manifest.models[0].description).toHaveLength(2_000_000)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not write the catalog to localStorage, even for large payloads', async () => {
+    const localStorageSetItem = vi.fn()
+    vi.stubGlobal('localStorage', {
+      getItem: vi.fn(),
+      setItem: localStorageSetItem,
+      removeItem: vi.fn(),
+      clear: vi.fn(),
+    })
+
+    const bigManifest = buildManifest({
+      models: [
+        {
+          ...buildManifest().models[0],
+          description: 'x'.repeat(2_000_000),
+        },
+      ],
+    })
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => bigManifest,
+    } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { getCatalogOrFallback, clearCatalogCache } = await import(
+      '@/services/model-catalog-registry'
+    )
+    await clearCatalogCache()
+    await getCatalogOrFallback()
+
+    expect(localStorageSetItem).not.toHaveBeenCalled()
   })
 })

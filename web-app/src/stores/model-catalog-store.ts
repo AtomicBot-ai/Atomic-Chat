@@ -18,8 +18,6 @@ import {
   getBundledSeedCatalog,
   getBundledSeedIndex,
   getCatalogOrFallback,
-  getCachedCatalog,
-  getCachedIndex,
   getIndexOrFallback,
   type CatalogFetchResult,
   type CatalogIndexPayload,
@@ -49,16 +47,10 @@ type ModelCatalogState = {
   refresh: (options?: FetchOptions) => Promise<void>
 }
 
-const seedCatalog = (): CatalogModel[] => {
-  const cached = getCachedCatalog()
-  if (cached) return cached.manifest.models.slice()
-  return BASELINE_MODEL_CATALOG.slice()
-}
-
-const seedIndex = (): CatalogIndexPayload | null => {
-  const cached = getCachedIndex()
-  return cached ? cached.payload : null
-}
+// The cache is async (Tauri plugin-store), so the initial Zustand state
+// starts from the hard-coded baseline. The first `refresh()` promotes it
+// to the bundled seed, then to a fresh cached or remote catalog as soon as
+// the store lookup resolves.
 
 const baselineFallback = (message: string): CatalogFetchResult => ({
   manifest: {
@@ -81,15 +73,15 @@ const baselineIndex = (message: string): IndexFetchResult => ({
 })
 
 export const useModelCatalogStore = create<ModelCatalogState>()((set) => ({
-  catalog: seedCatalog(),
-  manifestUpdatedAt: getCachedCatalog()?.manifest.updated_at ?? null,
-  source: getCachedCatalog() ? 'cache' : 'baseline',
+  catalog: BASELINE_MODEL_CATALOG.slice(),
+  manifestUpdatedAt: null,
+  source: 'baseline',
   status: 'idle',
-  fetchedAt: getCachedCatalog()?.fetchedAt ?? null,
+  fetchedAt: null,
   error: null,
-  index: seedIndex(),
-  indexSource: getCachedIndex() ? 'cache' : 'baseline',
-  indexFetchedAt: getCachedIndex()?.fetchedAt ?? null,
+  index: null,
+  indexSource: 'baseline',
+  indexFetchedAt: null,
   hasInitialized: false,
   refresh: async (options?: FetchOptions) => {
     const initialState = useModelCatalogStore.getState()
