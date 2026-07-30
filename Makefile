@@ -367,9 +367,9 @@ test-coverage-critical:
 
 verify-fast:
 	yarn lint
-	$(MAKE) test-quality
-	$(MAKE) test-hardening-contracts
-	$(MAKE) test-coverage-critical
+	"$(MAKE)" test-quality
+	"$(MAKE)" test-hardening-contracts
+	"$(MAKE)" test-coverage-critical
 
 verify: verify-fast test-rust
 
