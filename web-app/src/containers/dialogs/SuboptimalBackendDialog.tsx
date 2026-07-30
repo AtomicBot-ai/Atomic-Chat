@@ -1,21 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import {
-  IconAlertTriangle,
+  IconBolt,
   IconCheck,
   IconLoader2,
   IconRefresh,
   IconRocket,
+  IconX,
 } from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { toast } from 'sonner'
@@ -56,10 +49,10 @@ const UPSTREAM_CONFIG: UseBackendUpdaterConfig = {
  * Mounted globally in `__root.tsx`. The mismatch is detected at model load and
  * recorded in `useBackendMismatch`; `ChatInput` dispatches
  * `BACKEND_MISMATCH_PROMPT_EVENT` on the first send afterwards so the message
- * still goes through while this overlays it. One provider-agnostic dialog serves
- * both llama.cpp providers — the provider comes from the recorded event, and the
- * fix runs through the already-debugged `useBackendUpdater`
- * detect -> download -> hot-swap path.
+ * still goes through while the non-blocking prompt appears in the lower-right
+ * corner. One provider-agnostic dialog serves both llama.cpp providers — the
+ * provider comes from the recorded event, and the fix runs through the
+ * already-debugged `useBackendUpdater` detect -> download -> hot-swap path.
  */
 const SuboptimalBackendDialog = () => {
   const { t } = useTranslation()
@@ -202,104 +195,149 @@ const SuboptimalBackendDialog = () => {
     return null
   })()
 
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next && !busy) setOpen(false)
-      }}
-    >
-      <DialogContent
-        showCloseButton={!busy}
-        onInteractOutside={(e) => {
-          if (busy) e.preventDefault()
-        }}
-      >
-        {view === 'prompt' && (
-          <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <IconAlertTriangle size={18} className="text-amber-500" />
-                {title}
-              </DialogTitle>
-              <DialogDescription>{description}</DialogDescription>
-            </DialogHeader>
-            {runtimeHint && (
-              <p className="text-sm text-main-view-fg/70">{runtimeHint}</p>
-            )}
-            <DialogFooter>
-              <Button variant="link" onClick={handleDontRemind}>
-                {t('settings:backendMismatch.dontRemind')}
-              </Button>
-              <Button variant="outline" onClick={handleLater}>
-                {t('settings:backendMismatch.later')}
-              </Button>
-              <Button onClick={handleFix}>
-                <IconRocket size={16} className="mr-1" />
-                {t('settings:backendMismatch.fix')}
-              </Button>
-            </DialogFooter>
-          </>
-        )}
+  if (!open) return null
 
-        {busy && (
-          <>
-            <DialogHeader>
-              <DialogTitle>
-                {recommendationPhase === 'completed'
-                  ? t('settings:backendUpdater.hotSwapSuccess')
-                  : recommendationPhase === 'hotswapping'
-                    ? t('settings:backendUpdater.hotSwapping')
-                    : t('settings:backendUpdater.downloadingBackend')}
-              </DialogTitle>
-              <DialogDescription>
-                {recommendationPhase === 'completed'
-                  ? t('settings:backendUpdater.hotSwapSuccessDesc', {
-                      backend:
-                        recommendation?.recommendedCategory ??
-                        recommendation?.recommendedBackend ??
-                        '',
-                    })
-                  : recommendationPhase === 'hotswapping'
-                    ? t('settings:backendUpdater.hotSwappingDesc', {
-                        backend:
-                          recommendation?.recommendedCategory ??
-                          recommendation?.recommendedBackend ??
-                          '',
-                      })
-                    : t('settings:backendUpdater.downloadingBackendDesc')}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="flex items-center justify-center py-4">
-              {recommendationPhase === 'completed' ? (
-                <IconCheck size={32} className="text-emerald-500" />
-              ) : (
-                <IconLoader2 size={32} className="text-blue-500 animate-spin" />
+  const workingTitle =
+    recommendationPhase === 'completed'
+      ? t('settings:backendUpdater.hotSwapSuccess')
+      : recommendationPhase === 'hotswapping'
+        ? t('settings:backendUpdater.hotSwapping')
+        : t('settings:backendUpdater.downloadingBackend')
+
+  const workingDescription =
+    recommendationPhase === 'completed'
+      ? t('settings:backendUpdater.hotSwapSuccessDesc', {
+          backend:
+            recommendation?.recommendedCategory ??
+            recommendation?.recommendedBackend ??
+            '',
+        })
+      : recommendationPhase === 'hotswapping'
+        ? t('settings:backendUpdater.hotSwappingDesc', {
+            backend:
+              recommendation?.recommendedCategory ??
+              recommendation?.recommendedBackend ??
+              '',
+          })
+        : t('settings:backendUpdater.downloadingBackendDesc')
+
+  return (
+    <section
+      role="dialog"
+      aria-modal="false"
+      aria-live="polite"
+      aria-label={view === 'prompt' ? title : workingTitle}
+      className="fixed right-3 bottom-3 z-50 w-[min(26rem,calc(100vw-1.5rem))] overflow-hidden rounded-xl border bg-background shadow-xl outline-none animate-in fade-in-0 slide-in-from-bottom-3 duration-200"
+    >
+      {view === 'prompt' && (
+        <>
+          <div className="flex items-start gap-3 p-4 pr-11">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
+              <IconBolt size={19} stroke={1.8} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-sm font-semibold leading-5 text-foreground">
+                {title}
+              </h2>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {description}
+              </p>
+              {runtimeHint && (
+                <p className="mt-2 rounded-md bg-muted/60 px-2.5 py-2 text-xs leading-4 text-muted-foreground">
+                  {runtimeHint}
+                </p>
               )}
             </div>
-          </>
-        )}
-
-        {restartRequired && (
-          <>
-            <DialogHeader>
-              <DialogTitle>
-                {t('settings:backendUpdater.restartRequired')}
-              </DialogTitle>
-              <DialogDescription>
-                {t('settings:backendUpdater.restartRequiredDesc')}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button onClick={handleRestart}>
-                <IconRefresh size={16} className="mr-1" />
-                {t('settings:backendUpdater.restartNow')}
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="absolute top-3 right-3 text-muted-foreground"
+              onClick={handleLater}
+              aria-label={t('settings:backendMismatch.later')}
+            >
+              <IconX />
+            </Button>
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t bg-muted/20 px-4 py-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="px-2 text-muted-foreground"
+              onClick={handleDontRemind}
+            >
+              {t('settings:backendMismatch.dontRemind')}
+            </Button>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-24"
+                onClick={handleLater}
+              >
+                {t('settings:backendMismatch.later')}
               </Button>
-            </DialogFooter>
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
+              <Button size="sm" className="w-24" onClick={handleFix}>
+                <IconRocket />
+                {t('settings:backendMismatch.fix')}
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {busy && (
+        <div className="relative flex items-start gap-3 p-4">
+          <div
+            className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${
+              recommendationPhase === 'completed'
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+            }`}
+          >
+            {recommendationPhase === 'completed' ? (
+              <IconCheck size={20} stroke={2} />
+            ) : (
+              <IconLoader2 size={20} className="animate-spin" />
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-semibold leading-5">{workingTitle}</h2>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              {workingDescription}
+            </p>
+          </div>
+          {recommendationPhase !== 'completed' && (
+            <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-blue-500/15">
+              <div className="h-full w-1/2 animate-pulse rounded-full bg-blue-500" />
+            </div>
+          )}
+        </div>
+      )}
+
+      {restartRequired && (
+        <>
+          <div className="flex items-start gap-3 p-4">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
+              <IconRefresh size={19} stroke={1.8} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-sm font-semibold leading-5">
+                {t('settings:backendUpdater.restartRequired')}
+              </h2>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {t('settings:backendUpdater.restartRequiredDesc')}
+              </p>
+            </div>
+          </div>
+          <div className="flex justify-end border-t bg-muted/20 px-4 py-3">
+            <Button size="sm" onClick={handleRestart}>
+              <IconRefresh />
+              {t('settings:backendUpdater.restartNow')}
+            </Button>
+          </div>
+        </>
+      )}
+    </section>
   )
 }
 

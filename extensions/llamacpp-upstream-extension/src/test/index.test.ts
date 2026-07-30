@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import llamacpp_extension from '../index'
+import llamacpp_extension, {
+  BACKEND_DETECTION_FAILED,
+  OPTIMAL_BACKEND_CACHE_KEY,
+} from '../index'
 
 import {
   getSupportedFeaturesFromRust,
@@ -1489,7 +1492,14 @@ describe('llamacpp_extension', () => {
         expect(localStorage.removeItem).toHaveBeenCalledWith(
           'llama_cpp_better_backend_recommendation'
         )
-        expect(localStorage.setItem).not.toHaveBeenCalled()
+        expect(localStorage.setItem).toHaveBeenCalledWith(
+          OPTIMAL_BACKEND_CACHE_KEY,
+          expect.any(String)
+        )
+        expect(localStorage.setItem).not.toHaveBeenCalledWith(
+          'llama_cpp_better_backend_recommendation',
+          expect.anything()
+        )
       })
 
       it('returns nothing when CPU genuinely is the best this host can do', async () => {
@@ -1499,7 +1509,10 @@ describe('llamacpp_extension', () => {
 
         await expect(extension.recheckOptimalBackend()).resolves.toBeNull()
 
-        expect(localStorage.setItem).not.toHaveBeenCalled()
+        expect(localStorage.setItem).toHaveBeenCalledWith(
+          OPTIMAL_BACKEND_CACHE_KEY,
+          expect.any(String)
+        )
       })
 
       it('raises a distinct signal when detection could not complete', async () => {
@@ -1514,6 +1527,171 @@ describe('llamacpp_extension', () => {
         // The current backend and any earlier recommendation stay untouched.
         expect(localStorage.setItem).not.toHaveBeenCalled()
         expect(localStorage.removeItem).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('optimal backend cache', () => {
+      const stubLatestLookup = (latest: string | null) => {
+        ;(window as any).__TAURI_INTERNALS__ = {
+          invoke: vi.fn(async (cmd: string) =>
+            cmd.endsWith('find_latest_version_for_backend') ? latest : undefined
+          ),
+        }
+      }
+
+      afterEach(() => {
+        delete (window as any).__TAURI_INTERNALS__
+      })
+
+      it('caches a resolved GPU result without recommendation side effects', async () => {
+        vi.spyOn(Date, 'now').mockReturnValue(1_777_777_777_777)
+        vi.spyOn(extension as any, 'detectIdealBackendType').mockResolvedValue({
+          kind: 'gpu',
+          backend: 'win-cuda-13.3-x64',
+        })
+        vi.mocked(listSupportedBackends).mockResolvedValue([
+          { version: 'b9937', backend: 'win-cuda-13.3-x64', order: 0 },
+        ])
+        stubLatestLookup(RECOMMENDED)
+
+        const result = await extension.refreshOptimalBackendCache()
+
+        expect(result).toEqual({
+          schemaVersion: 1,
+          provider: 'llamacpp-upstream',
+          detectedAt: 1_777_777_777_777,
+          detectionKind: 'gpu',
+          currentBackend: 'b9800/win-cpu-x64',
+          idealBackendId: 'win-cuda-13.3-x64',
+          recommendedBackend: RECOMMENDED,
+          recommendedCategory: 'CUDA 13',
+        })
+        expect(localStorage.setItem).toHaveBeenCalledTimes(1)
+        expect(localStorage.setItem).toHaveBeenCalledWith(
+          OPTIMAL_BACKEND_CACHE_KEY,
+          JSON.stringify(result)
+        )
+        expect(localStorage.removeItem).not.toHaveBeenCalled()
+
+        const { events, AppEvent } = await import('@janhq/core')
+        expect(events.emit).not.toHaveBeenCalledWith(
+          AppEvent.onBetterBackendDetected,
+          expect.anything()
+        )
+      })
+
+      it('caches a CPU-optimal result', async () => {
+        vi.spyOn(Date, 'now').mockReturnValue(1_888_888_888_888)
+        vi.spyOn(extension as any, 'detectIdealBackendType').mockResolvedValue({
+          kind: 'cpu-optimal',
+        })
+
+        const result = await extension.refreshOptimalBackendCache()
+
+        expect(result).toEqual({
+          schemaVersion: 1,
+          provider: 'llamacpp-upstream',
+          detectedAt: 1_888_888_888_888,
+          detectionKind: 'cpu-optimal',
+          currentBackend: 'b9800/win-cpu-x64',
+          recommendedCategory: 'CPU',
+        })
+        expect(localStorage.setItem).toHaveBeenCalledWith(
+          OPTIMAL_BACKEND_CACHE_KEY,
+          JSON.stringify(result)
+        )
+        expect(listSupportedBackends).not.toHaveBeenCalled()
+      })
+
+      it('uses the confirmed CPU-only fast path without hardware detection', async () => {
+        const detect = vi.spyOn(extension as any, 'detectIdealBackendType')
+
+        const result = await extension.refreshOptimalBackendCache({
+          hardwareHasNoGpu: true,
+        })
+
+        expect(result?.detectionKind).toBe('cpu-optimal')
+        expect(detect).not.toHaveBeenCalled()
+        expect(listSupportedBackends).not.toHaveBeenCalled()
+      })
+
+      it('preserves a successful cache when detection fails', async () => {
+        const previous = {
+          schemaVersion: 1,
+          provider: 'llamacpp-upstream',
+          detectedAt: 1_700_000_000_000,
+          detectionKind: 'cpu-optimal',
+          currentBackend: 'b9800/win-cpu-x64',
+          recommendedCategory: 'CPU',
+        }
+        vi.mocked(localStorage.getItem).mockImplementation((key: string) =>
+          key === OPTIMAL_BACKEND_CACHE_KEY ? JSON.stringify(previous) : null
+        )
+        vi.spyOn(extension as any, 'detectIdealBackendType').mockResolvedValue({
+          kind: 'detection-failed',
+        })
+
+        await expect(extension.refreshOptimalBackendCache()).rejects.toThrow(
+          BACKEND_DETECTION_FAILED
+        )
+
+        expect(localStorage.setItem).not.toHaveBeenCalled()
+        expect(localStorage.removeItem).not.toHaveBeenCalled()
+        expect(extension.getCachedOptimalBackend()).toEqual(previous)
+      })
+
+      it('returns only validated cached records', () => {
+        vi.mocked(localStorage.getItem).mockReturnValue(
+          JSON.stringify({
+            schemaVersion: 1,
+            provider: 'llamacpp-upstream',
+            detectedAt: 1_700_000_000_000,
+            detectionKind: 'gpu',
+            currentBackend: 'b9800/win-cpu-x64',
+            idealBackendId: 'win-cuda-13.3-x64',
+            recommendedBackend: 'latest/win-cuda-13.3-x64',
+            recommendedCategory: 'CUDA 13',
+          })
+        )
+
+        expect(extension.getCachedOptimalBackend()).toBeNull()
+      })
+
+      it('prefers cached GPU idealBackendId then falls back to the legacy key', () => {
+        const cached = {
+          schemaVersion: 1,
+          provider: 'llamacpp-upstream',
+          detectedAt: 1_700_000_000_000,
+          detectionKind: 'gpu',
+          currentBackend: 'b9800/win-cpu-x64',
+          idealBackendId: 'win-cuda-13.3-x64',
+          recommendedBackend: RECOMMENDED,
+          recommendedCategory: 'CUDA 13',
+        }
+        vi.mocked(localStorage.getItem).mockImplementation((key: string) => {
+          if (key === OPTIMAL_BACKEND_CACHE_KEY) return JSON.stringify(cached)
+          if (key === 'llama_cpp_better_backend_recommendation') {
+            return JSON.stringify({
+              recommendedBackend: 'b9937/win-vulkan-x64',
+            })
+          }
+          return null
+        })
+
+        expect(extension['storedRecommendedBackendType']()).toBe(
+          'win-cuda-13.3-x64'
+        )
+
+        vi.mocked(localStorage.getItem).mockImplementation((key: string) =>
+          key === 'llama_cpp_better_backend_recommendation'
+            ? JSON.stringify({
+                recommendedBackend: 'b9937/win-vulkan-x64',
+              })
+            : null
+        )
+        expect(extension['storedRecommendedBackendType']()).toBe(
+          'win-vulkan-x64'
+        )
       })
     })
   })

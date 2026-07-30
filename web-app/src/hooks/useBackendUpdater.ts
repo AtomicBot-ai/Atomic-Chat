@@ -97,6 +97,17 @@ async function getCurrentBackendTypeFromSettings(
   return currentBackendType
 }
 
+export type OptimalBackendCacheRecord = {
+  schemaVersion: 1
+  provider: 'llamacpp' | 'llamacpp-upstream'
+  detectedAt: number
+  detectionKind: 'gpu' | 'cpu-optimal'
+  currentBackend: string
+  idealBackendId?: string
+  recommendedBackend?: string
+  recommendedCategory?: string
+}
+
 interface LlamacppExtension {
   getSettings?(): Promise<ExtensionSetting[]>
   checkBackendForUpdates?(): Promise<BackendUpdateInfo>
@@ -108,6 +119,10 @@ interface LlamacppExtension {
   downloadRecommendedBackend?(backendString: string): Promise<void>
   recheckOptimalBackend?(): Promise<BetterBackendRecommendation | null>
   downloadManualBackend?(selection: string): Promise<void>
+  getCachedOptimalBackend?(): OptimalBackendCacheRecord | null
+  refreshOptimalBackendCache?(options?: {
+    hardwareHasNoGpu?: boolean
+  }): Promise<OptimalBackendCacheRecord | null>
 }
 
 export interface BackendDownloadState {

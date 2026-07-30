@@ -1061,6 +1061,8 @@ describe('llamacpp_extension', () => {
     const RECOMMENDED = 'v1.2.0/windows-x64-cuda-13.3'
     const PENDING_KEY = 'turboquant_pending_backend'
     const RECOMMENDATION_KEY = 'turboquant_better_backend_recommendation'
+    const OPTIMAL_CACHE_KEY =
+      'atomic_llamacpp_turboquant_optimal_backend_v1'
 
     /**
      * `updateBackend` fans out to the settings store, the stored-type
@@ -1332,7 +1334,14 @@ describe('llamacpp_extension', () => {
         await expect(extension.recheckOptimalBackend()).resolves.toBeNull()
 
         expect(localStorage.removeItem).toHaveBeenCalledWith(RECOMMENDATION_KEY)
-        expect(localStorage.setItem).not.toHaveBeenCalled()
+        expect(localStorage.setItem).toHaveBeenCalledWith(
+          OPTIMAL_CACHE_KEY,
+          expect.any(String)
+        )
+        expect(localStorage.setItem).not.toHaveBeenCalledWith(
+          RECOMMENDATION_KEY,
+          expect.anything()
+        )
       })
 
       it('returns nothing when CPU genuinely is the best this host can do', async () => {
@@ -1342,7 +1351,10 @@ describe('llamacpp_extension', () => {
 
         await expect(extension.recheckOptimalBackend()).resolves.toBeNull()
 
-        expect(localStorage.setItem).not.toHaveBeenCalled()
+        expect(localStorage.setItem).toHaveBeenCalledWith(
+          OPTIMAL_CACHE_KEY,
+          expect.any(String)
+        )
       })
 
       it('skips the recommendation when the tier has no catalog entry', async () => {
@@ -1356,7 +1368,10 @@ describe('llamacpp_extension', () => {
 
         await expect(extension.recheckOptimalBackend()).resolves.toBeNull()
 
-        expect(localStorage.setItem).not.toHaveBeenCalled()
+        expect(localStorage.setItem).toHaveBeenCalledWith(
+          OPTIMAL_CACHE_KEY,
+          expect.any(String)
+        )
       })
 
       it('raises a distinct signal when detection could not complete', async () => {
@@ -1371,6 +1386,181 @@ describe('llamacpp_extension', () => {
         // The current backend and any earlier recommendation stay untouched.
         expect(localStorage.setItem).not.toHaveBeenCalled()
         expect(localStorage.removeItem).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('optimal backend cache', () => {
+      it('caches a resolved GPU optimum without surfacing a recommendation', async () => {
+        vi.spyOn(Date, 'now').mockReturnValue(1_722_345_678_901)
+        vi.spyOn(extension as any, 'detectIdealBackendType').mockResolvedValue({
+          kind: 'gpu',
+          backend: 'windows-x64-cuda-13.3',
+        })
+        vi.mocked(listSupportedBackends).mockResolvedValue([
+          { version: 'v1.2.0', backend: 'windows-x64-cuda-13.3', order: 0 },
+        ])
+
+        const result = await extension.refreshOptimalBackendCache()
+
+        expect(result).toEqual({
+          schemaVersion: 1,
+          detectedAt: 1_722_345_678_901,
+          provider: 'llamacpp',
+          detectionKind: 'gpu',
+          currentBackend: 'v1.0.0/windows-x64-cpu',
+          idealBackendId: 'windows-x64-cuda-13.3',
+          recommendedBackend: RECOMMENDED,
+          recommendedCategory: 'CUDA 13',
+        })
+        expect(localStorage.setItem).toHaveBeenCalledWith(
+          OPTIMAL_CACHE_KEY,
+          JSON.stringify(result)
+        )
+        expect(localStorage.setItem).not.toHaveBeenCalledWith(
+          RECOMMENDATION_KEY,
+          expect.anything()
+        )
+
+        const { events, AppEvent } = await import('@janhq/core')
+        expect(events.emit).not.toHaveBeenCalledWith(
+          AppEvent.onBetterBackendDetected,
+          expect.anything()
+        )
+      })
+
+      it('caches a genuine CPU optimum', async () => {
+        vi.spyOn(extension as any, 'detectIdealBackendType').mockResolvedValue({
+          kind: 'cpu-optimal',
+        })
+
+        const result = await extension.refreshOptimalBackendCache()
+
+        expect(result).toMatchObject({
+          schemaVersion: 1,
+          provider: 'llamacpp',
+          detectionKind: 'cpu-optimal',
+          currentBackend: 'v1.0.0/windows-x64-cpu',
+          recommendedCategory: 'CPU',
+        })
+        expect(result).not.toHaveProperty('idealBackendId')
+        expect(result).not.toHaveProperty('recommendedBackend')
+      })
+
+      it('uses the confirmed CPU-only fast path without hardware detection', async () => {
+        const detect = vi.spyOn(extension as any, 'detectIdealBackendType')
+
+        const result = await extension.refreshOptimalBackendCache({
+          hardwareHasNoGpu: true,
+        })
+
+        expect(result.detectionKind).toBe('cpu-optimal')
+        expect(detect).not.toHaveBeenCalled()
+        expect(listSupportedBackends).not.toHaveBeenCalled()
+      })
+
+      it('preserves the previous successful cache when detection fails', async () => {
+        const previous = {
+          schemaVersion: 1,
+          detectedAt: 1_700_000_000_000,
+          provider: 'llamacpp',
+          detectionKind: 'gpu',
+          currentBackend: 'v1/windows-x64-cpu',
+          idealBackendId: 'windows-x64-vulkan',
+          recommendedBackend: 'v2/windows-x64-vulkan',
+          recommendedCategory: 'Vulkan',
+        }
+        vi.mocked(localStorage.getItem).mockImplementation((key: string) =>
+          key === OPTIMAL_CACHE_KEY ? JSON.stringify(previous) : null
+        )
+        vi.spyOn(extension as any, 'detectIdealBackendType').mockResolvedValue({
+          kind: 'detection-failed',
+        })
+
+        await expect(extension.refreshOptimalBackendCache()).rejects.toThrow(
+          'BACKEND_DETECTION_FAILED'
+        )
+
+        expect(localStorage.setItem).not.toHaveBeenCalled()
+        expect(localStorage.removeItem).not.toHaveBeenCalledWith(
+          OPTIMAL_CACHE_KEY
+        )
+        expect(extension.getCachedOptimalBackend()).toEqual(previous)
+      })
+
+      it('returns null for an invalid persisted cache record', () => {
+        vi.mocked(localStorage.getItem).mockImplementation((key: string) =>
+          key === OPTIMAL_CACHE_KEY
+            ? JSON.stringify({
+                schemaVersion: 2,
+                provider: 'llamacpp',
+                detectionKind: 'gpu',
+              })
+            : null
+        )
+
+        expect(extension.getCachedOptimalBackend()).toBeNull()
+      })
+
+      it('prefers the cached GPU optimum and falls back to the old recommendation', async () => {
+        const { events } = await import('@janhq/core')
+        extension['getSetting'] = vi
+          .fn()
+          .mockResolvedValue('v1.0.0/windows-x64-cpu')
+        extension['effectiveVersionBackend'] =
+          'v1.0.0/windows-x64-cpu'
+        const recommendation = {
+          recommendedBackend: 'v2.0.0/windows-x64-vulkan',
+        }
+        const cache = {
+          schemaVersion: 1,
+          detectedAt: 1_700_000_000_000,
+          provider: 'llamacpp',
+          detectionKind: 'gpu',
+          currentBackend: 'v1.0.0/windows-x64-cpu',
+          idealBackendId: 'windows-x64-cuda-13.3',
+          recommendedBackend: RECOMMENDED,
+          recommendedCategory: 'CUDA 13',
+        }
+        vi.mocked(localStorage.getItem).mockImplementation((key: string) => {
+          if (key === OPTIMAL_CACHE_KEY) return JSON.stringify(cache)
+          if (key === RECOMMENDATION_KEY) return JSON.stringify(recommendation)
+          return null
+        })
+
+        await extension['reportBackendMismatch'](
+          {
+            model_id: 'fixture-model',
+            pid: 1,
+            runtime_device: { primary_device: 'CPU_Mapped' },
+          } as any,
+          false
+        )
+
+        let payload = vi.mocked(events.emit).mock.calls.at(-1)?.[1] as any
+        expect(payload.mismatch).toMatchObject({
+          kind: 'suboptimal-config',
+          ideal: 'windows-x64-cuda-13.3',
+        })
+
+        vi.mocked(events.emit).mockClear()
+        vi.mocked(localStorage.getItem).mockImplementation((key: string) =>
+          key === RECOMMENDATION_KEY ? JSON.stringify(recommendation) : null
+        )
+
+        await extension['reportBackendMismatch'](
+          {
+            model_id: 'fixture-model',
+            pid: 1,
+            runtime_device: { primary_device: 'CPU_Mapped' },
+          } as any,
+          false
+        )
+
+        payload = vi.mocked(events.emit).mock.calls.at(-1)?.[1] as any
+        expect(payload.mismatch).toMatchObject({
+          kind: 'suboptimal-config',
+          ideal: 'windows-x64-vulkan',
+        })
       })
     })
   })

@@ -309,6 +309,17 @@ type IdealBackendResult =
   | { kind: 'cpu-optimal' }
   | { kind: 'detection-failed' }
 
+export interface TurboquantOptimalBackendCache {
+  schemaVersion: 1
+  detectedAt: number
+  provider: 'llamacpp'
+  detectionKind: 'gpu' | 'cpu-optimal'
+  currentBackend: string
+  idealBackendId?: string
+  recommendedBackend?: string
+  recommendedCategory: string
+}
+
 /// Sentinel thrown by `recheckOptimalBackend()` when backend detection could
 /// not complete (manifest/release stream unreachable, slow, or rate-limited)
 /// on a GPU-capable host. The web-app surfaces a calm "couldn't reach the
@@ -321,6 +332,8 @@ export const BACKEND_DETECTION_FAILED = 'BACKEND_DETECTION_FAILED'
 /// clobbering each other's recommendation / pending-backend state.
 const TURBOQUANT_RECOMMENDATION_KEY = 'turboquant_better_backend_recommendation'
 const TURBOQUANT_PENDING_KEY = 'turboquant_pending_backend'
+const TURBOQUANT_OPTIMAL_BACKEND_CACHE_KEY =
+  'atomic_llamacpp_turboquant_optimal_backend_v1'
 
 // Folder structure for llamacpp extension:
 // <Jan's data folder>/llamacpp
@@ -1616,6 +1629,158 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  private async detectOptimalBackend(): Promise<
+    Exclude<IdealBackendResult, { kind: 'detection-failed' }>
+  > {
+    const detection = await this.withTimeout(
+      this.detectIdealBackendType(),
+      20_000,
+      { kind: 'detection-failed' } as IdealBackendResult
+    )
+    if (detection.kind === 'detection-failed') {
+      throw new Error(BACKEND_DETECTION_FAILED)
+    }
+    return detection
+  }
+
+  private async resolveConcreteBackend(
+    idealBackendId: string
+  ): Promise<string | undefined> {
+    try {
+      const catalog = await this.withTimeout(
+        listSupportedBackends(),
+        20_000,
+        [] as Awaited<ReturnType<typeof listSupportedBackends>>
+      )
+      const match = catalog.find(
+        (backend) => stripBom(backend.backend) === idealBackendId
+      )
+      if (match) {
+        return `${stripBom(match.version)}/${stripBom(match.backend)}`
+      }
+    } catch (err) {
+      logger.warn(
+        'resolveConcreteBackend: failed to resolve concrete tag from catalog:',
+        err
+      )
+    }
+    return undefined
+  }
+
+  private persistOptimalBackendCache(
+    detection: Exclude<IdealBackendResult, { kind: 'detection-failed' }>,
+    currentBackend: string,
+    recommendedBackend?: string
+  ): TurboquantOptimalBackendCache {
+    const record: TurboquantOptimalBackendCache =
+      detection.kind === 'cpu-optimal'
+        ? {
+            schemaVersion: 1,
+            detectedAt: Date.now(),
+            provider: 'llamacpp',
+            detectionKind: 'cpu-optimal',
+            currentBackend,
+            recommendedCategory: 'CPU',
+          }
+        : {
+            schemaVersion: 1,
+            detectedAt: Date.now(),
+            provider: 'llamacpp',
+            detectionKind: 'gpu',
+            currentBackend,
+            idealBackendId: detection.backend,
+            recommendedBackend,
+            recommendedCategory: backendCategoryToLabel(
+              get_backend_category(detection.backend)
+            ),
+          }
+
+    localStorage.setItem(
+      TURBOQUANT_OPTIMAL_BACKEND_CACHE_KEY,
+      JSON.stringify(record)
+    )
+    return record
+  }
+
+  /**
+   * Silently refresh the provider-scoped optimal-backend cache. Unlike
+   * `recheckOptimalBackend`, this does not write a recommendation or emit a UI
+   * event. A failed detection leaves the last successful cache untouched.
+   */
+  async refreshOptimalBackendCache(options?: {
+    hardwareHasNoGpu?: boolean
+  }): Promise<TurboquantOptimalBackendCache> {
+    const detection: Exclude<IdealBackendResult, { kind: 'detection-failed' }> =
+      options?.hardwareHasNoGpu
+        ? { kind: 'cpu-optimal' }
+        : await this.detectOptimalBackend()
+    const currentBackend = stripBom(this.config.version_backend || '')
+    const recommendedBackend =
+      detection.kind === 'gpu'
+        ? await this.resolveConcreteBackend(detection.backend)
+        : undefined
+    return this.persistOptimalBackendCache(
+      detection,
+      currentBackend,
+      recommendedBackend
+    )
+  }
+
+  /**
+   * Return the last successfully detected provider-scoped optimum, rejecting
+   * malformed or incompatible persisted data.
+   */
+  getCachedOptimalBackend(): TurboquantOptimalBackendCache | null {
+    try {
+      const raw = localStorage.getItem(TURBOQUANT_OPTIMAL_BACKEND_CACHE_KEY)
+      if (!raw) return null
+      const record = JSON.parse(raw) as Partial<TurboquantOptimalBackendCache>
+      if (
+        record.schemaVersion !== 1 ||
+        record.provider !== 'llamacpp' ||
+        (record.detectionKind !== 'gpu' &&
+          record.detectionKind !== 'cpu-optimal') ||
+        typeof record.detectedAt !== 'number' ||
+        !Number.isFinite(record.detectedAt) ||
+        record.detectedAt < 0 ||
+        typeof record.currentBackend !== 'string' ||
+        typeof record.recommendedCategory !== 'string' ||
+        !record.recommendedCategory
+      ) {
+        return null
+      }
+
+      if (record.detectionKind === 'gpu') {
+        if (
+          typeof record.idealBackendId !== 'string' ||
+          !stripBom(record.idealBackendId)
+        ) {
+          return null
+        }
+        if (record.recommendedBackend !== undefined) {
+          if (typeof record.recommendedBackend !== 'string') return null
+          const parts = stripBom(record.recommendedBackend).split('/')
+          if (
+            parts.length !== 2 ||
+            !parts[0] ||
+            parts[1] !== stripBom(record.idealBackendId)
+          ) {
+            return null
+          }
+        }
+      } else if (
+        record.idealBackendId !== undefined ||
+        record.recommendedBackend !== undefined
+      ) {
+        return null
+      }
+
+      return record as TurboquantOptimalBackendCache
+    } catch {
+      return null
+    }
+  }
+
   /**
    * Manually re-runs hardware detection and returns a recommendation if a
    * better GPU backend than the current one is available. Used by:
@@ -1644,39 +1809,31 @@ export default class llamacpp_extension extends AIEngine {
     }
     try {
       logger.info('recheckOptimalBackend: detecting ideal backend type')
-      const detection = await this.withTimeout(
-        this.detectIdealBackendType(),
-        20_000,
-        { kind: 'detection-failed' } as IdealBackendResult
-      )
-
-      if (detection.kind === 'detection-failed') {
-        // Distinguish "couldn't reach the manifest/release stream" from "CPU
-        // is genuinely best". Throw the sentinel so the caller surfaces an
-        // actionable message and leaves the current backend untouched.
-        logger.warn(
-          'recheckOptimalBackend: backend detection failed — keeping current backend (no silent CPU fallback)'
-        )
-        throw new Error(BACKEND_DETECTION_FAILED)
-      }
+      const detection = await this.detectOptimalBackend()
+      const currentBackend = stripBom(this.config.version_backend || '')
 
       if (detection.kind === 'cpu-optimal') {
         logger.info(
           'recheckOptimalBackend: CPU is optimal — no better GPU backend for this hardware'
         )
+        this.persistOptimalBackendCache(detection, currentBackend)
         localStorage.removeItem(TURBOQUANT_RECOMMENDATION_KEY)
         return null
       }
 
       const idealType = detection.backend
       const idealCat = get_backend_category(idealType)
-      const currentBackend = stripBom(this.config.version_backend || '')
       const currentType = currentBackend.split('/')[1] || ''
       const currentCat = get_backend_category(currentType)
       if (idealCat === currentCat) {
         // Already on the optimal family — no recommendation to surface.
         logger.info(
           `recheckOptimalBackend: already on optimal category ${currentCat} (${currentBackend})`
+        )
+        this.persistOptimalBackendCache(
+          detection,
+          currentBackend,
+          currentType === idealType ? currentBackend : undefined
         )
         localStorage.removeItem(TURBOQUANT_RECOMMENDATION_KEY)
         return null
@@ -1686,23 +1843,12 @@ export default class llamacpp_extension extends AIEngine {
       // catalog. Each turboquant backend variant ships in its OWN release with
       // its OWN tag, so we must NOT reuse the current backend's tag — we read
       // the matching entry's tag straight from the catalog.
-      let recommendedBackend: string | null = null
-      try {
-        const catalog = await this.withTimeout(
-          listSupportedBackends(),
-          20_000,
-          [] as Awaited<ReturnType<typeof listSupportedBackends>>
-        )
-        const match = catalog.find((b) => stripBom(b.backend) === idealType)
-        if (match) {
-          recommendedBackend = `${stripBom(match.version)}/${stripBom(match.backend)}`
-        }
-      } catch (err) {
-        logger.warn(
-          'recheckOptimalBackend: failed to resolve concrete tag from catalog:',
-          err
-        )
-      }
+      const recommendedBackend = await this.resolveConcreteBackend(idealType)
+      this.persistOptimalBackendCache(
+        detection,
+        currentBackend,
+        recommendedBackend
+      )
 
       if (!recommendedBackend) {
         logger.warn(
@@ -2734,7 +2880,9 @@ export default class llamacpp_extension extends AIEngine {
         configuredBackend: configured.split('/')[1] ?? '',
         effectiveBackend: effective.split('/')[1] ?? '',
         runtimeDevice,
-        idealBackend: this.storedRecommendedBackendType(),
+        idealBackend:
+          this.cachedGpuIdealBackendType() ??
+          this.storedRecommendedBackendType(),
         requestedGpuLayers,
         categoryOf: get_backend_category,
       })
@@ -2765,6 +2913,11 @@ export default class llamacpp_extension extends AIEngine {
     } catch (e) {
       logger.warn(`reportBackendMismatch failed for ${sInfo.model_id}: ${e}`)
     }
+  }
+
+  private cachedGpuIdealBackendType(): string | null {
+    const cached = this.getCachedOptimalBackend()
+    return cached?.detectionKind === 'gpu' ? cached.idealBackendId ?? null : null
   }
 
   /// Backend type from the recommendation `recheckOptimalBackend` /

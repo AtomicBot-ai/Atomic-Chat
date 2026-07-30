@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-154 records, 2026-05-19 → 2026-07-29.
+156 records, 2026-05-19 → 2026-07-30.
 
 ---
 
@@ -121,8 +121,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 - **2026-05-19** — [Use `AtomicBot-ai/mlx-vlm` as the MLX backend](2026-05-19-use-atomicbot-ai-mlx-vlm-as-the-mlx-backend.md)
 
-## llama.cpp providers & backend selection (36)
+## llama.cpp providers & backend selection (37)
 
+- **2026-07-30** — [Cache optimal backends for chat upgrade prompts](2026-07-30-cache-optimal-backends-for-chat-upgrade-prompts.md)
 - **2026-07-29** — [Repair TurboQuant Windows CUDA backends missing cudart by copying from an installed upstream CUDA bin or downloading the ggml-org companion](2026-07-29-repair-turboquant-windows-cuda-missing-cudart-via-upstream-copy-or-ggml-org-companion.md)
 - **2026-07-29** — [Mirror the hot-swap persist-before-unload order into the TurboQuant `llamacpp` provider and lock both orders down with tests](2026-07-29-mirror-the-hot-swap-persist-before-unload-order-into-turboquant.md)
 - **2026-07-29** — [Derive the actually-used device from llama-server startup logs, not `--list-devices`](2026-07-29-derive-the-actually-used-device-from-llama-server-startup-logs.md)
@@ -198,8 +199,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (7)
+## UI / UX (8)
 
+- **2026-07-30** — [Reveal the Windows window after native setup](2026-07-30-reveal-windows-after-first-frontend-frame.md)
 - **2026-07-27** — [Replace advanced model settings with a focused context control](2026-07-27-replace-advanced-model-settings-with-a-focused-context-control.md)
 - **2026-07-23** — [Present the Agent working directory as the Files root](2026-07-23-present-the-agent-working-directory-as-the-files-root.md)
 - **2026-07-21** — [Separate Chat and Agent navigation in the sidebar](2026-07-21-separate-chat-and-agent-navigation-in-the-sidebar.md)

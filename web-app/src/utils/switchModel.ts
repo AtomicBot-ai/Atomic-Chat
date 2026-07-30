@@ -254,29 +254,10 @@ function clearModelLoadError() {
 }
 
 /**
- * Window event dispatched after the first successful model launch on the
- * turboquant (`llamacpp`) provider on Windows/Linux. The dialog mounted in
- * `__root.tsx` listens for it to offer a one-time "find optimal backend"
- * prompt. The once-ever guard lives in the dialog (it sets the localStorage
- * flag when shown); this helper only fires when the flag is still unset.
+ * Legacy event name retained for the dormant once-ever Turboquant dialog.
+ * Startup detection now feeds the shared chat mismatch prompt instead.
  */
 export const TURBOQUANT_OPTIMAL_PROMPT_EVENT = 'turboquant:offer-optimal-backend'
-
-function maybePromptTurboquantOptimal(providerName: string) {
-  // Turboquant ships a backend catalog to optimize only on Windows/Linux
-  // (macOS has the single `macos-arm64` build).
-  if (!(IS_WINDOWS || IS_LINUX)) return
-  if (providerName !== 'llamacpp') return
-  if (typeof window === 'undefined') return
-  try {
-    if (localStorage.getItem(localStorageKey.turboquantOptimalPromptShown)) {
-      return
-    }
-  } catch {
-    return
-  }
-  window.dispatchEvent(new CustomEvent(TURBOQUANT_OPTIMAL_PROMPT_EVENT))
-}
 
 function syncModelSelection(providerName: string, modelId: string) {
   const serverState = useLocalApiServer.getState()
@@ -400,7 +381,6 @@ export async function switchToModel(params: {
       clearAutoStartFailure(params.providerName, params.modelId)
       // ATO-63: the model is up — drop any stale "Failed to load" toast.
       clearModelLoadError()
-      maybePromptTurboquantOptimal(params.providerName)
       console.log(
         '[switchToModel] Target already active, skipping restart:',
         params.modelId,
@@ -600,8 +580,6 @@ async function doSwitchToModel(params: {
     // ATO-63: a previous backend may have raised a persistent "Failed to load"
     // toast; this load succeeded, so dismiss it and clear the stored error.
     clearModelLoadError()
-    maybePromptTurboquantOptimal(providerName)
-
     console.log('[switchToModel] Global state synchronised')
   } catch (error) {
     console.error('[switchToModel] Failed to switch model:', error)
