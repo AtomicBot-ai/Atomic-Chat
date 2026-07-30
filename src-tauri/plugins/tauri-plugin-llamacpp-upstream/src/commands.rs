@@ -19,6 +19,7 @@ use crate::process::{
     find_session_by_model_id, get_all_active_sessions, get_all_loaded_model_ids,
     get_random_available_port, is_process_running_by_pid,
 };
+use crate::runtime_device::{self, RuntimeDeviceInfo};
 use crate::state::{LLamaBackendSession, LlamacppState, SessionInfo};
 use jan_utils::{
     add_cuda_paths, binary_requires_cuda, setup_library_path, setup_windows_process_flags,
@@ -132,6 +133,11 @@ pub async fn load_llama_model_impl(
     command.kill_on_drop(true);
     setup_windows_process_flags(&mut command);
 
+    // The startup log is the only signal that reflects which device the model
+    // actually ended up on; llama.cpp splits it across stdout and stderr, so
+    // both readers feed the same accumulator.
+    let runtime_device = runtime_device::new_shared();
+
     // Try to add CUDA paths (works on both Windows and Linux)
     let cuda_found = add_cuda_paths(&mut command);
 
@@ -140,6 +146,10 @@ pub async fn load_llama_model_impl(
         log::warn!(
             "llama.cpp backend appears to require CUDA, but CUDA not found. Process may fail to start. Please install cuda runtime and try again!"
         );
+        // A CUDA build without a CUDA runtime still starts and silently runs on
+        // the CPU, so record it: the extension turns this into an actionable
+        // "install the CUDA runtime" hint rather than a bare tier downgrade.
+        runtime_device::mark_cuda_runtime_missing(&runtime_device);
     }
 
     // Add the binary's directory to library path
@@ -156,6 +166,7 @@ pub async fn load_llama_model_impl(
 
     // Spawn task to monitor stdout for readiness
     let stdout_ready_tx = ready_tx.clone();
+    let stdout_runtime_device = runtime_device.clone();
     let _stdout_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stdout);
         let mut byte_buffer = Vec::new();
@@ -169,6 +180,7 @@ pub async fn load_llama_model_impl(
                     let line = line.trim_end();
                     if !line.is_empty() {
                         log::info!("[llamacpp stdout] {}", line);
+                        runtime_device::ingest_line(&stdout_runtime_device, line);
                     }
 
                     // Check for readiness indicators
@@ -188,6 +200,7 @@ pub async fn load_llama_model_impl(
 
     // Spawn task to capture stderr and monitor for errors
     let stderr_ready_tx = ready_tx.clone();
+    let stderr_runtime_device = runtime_device.clone();
     let stderr_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stderr);
         let mut byte_buffer = Vec::new();
@@ -205,6 +218,7 @@ pub async fn load_llama_model_impl(
                         stderr_buffer.push_str(line);
                         stderr_buffer.push('\n');
                         log::info!("[llamacpp] {}", line);
+                        runtime_device::ingest_line(&stderr_runtime_device, line);
 
                         // Check for readiness indicator
                         let line_lower = line.to_string().to_lowercase();
@@ -325,6 +339,17 @@ pub async fn load_llama_model_impl(
     let pid = child.id().map(|id| id as i32).unwrap_or(-1);
 
     log::info!("Server process started with PID: {} and is ready", pid);
+
+    let device_info = runtime_device::snapshot(&runtime_device);
+    log::info!(
+        "Runtime device for model '{}': backends={:?} primary={} offloaded={:?}/{:?}",
+        model_id,
+        device_info.loaded_backends,
+        device_info.primary_device,
+        device_info.gpu_layers_offloaded,
+        device_info.total_layers
+    );
+
     let session_info = SessionInfo {
         pid: pid.clone(),
         port: port.into(),
@@ -333,6 +358,11 @@ pub async fn load_llama_model_impl(
         is_embedding: is_embedding,
         api_key: api_key,
         mmproj_path: mmproj_path_string,
+        runtime_device: if device_info.is_inconclusive() {
+            None
+        } else {
+            Some(device_info)
+        },
     };
 
     {
@@ -342,6 +372,7 @@ pub async fn load_llama_model_impl(
             LLamaBackendSession {
                 child,
                 info: session_info.clone(),
+                runtime_device,
             },
         );
     }
@@ -524,6 +555,23 @@ pub async fn get_devices(
     envs: HashMap<String, String>,
 ) -> ServerResult<Vec<DeviceInfo>> {
     get_devices_from_backend(backend_path, envs).await
+}
+
+/// Re-snapshot which device a live session actually runs on.
+///
+/// `load_llama_model` already returns a snapshot taken at readiness; this
+/// command covers the case where the `load_tensors` lines arrive after the
+/// "listening on" line. Returns `None` when no session owns that PID.
+#[tauri::command]
+pub async fn get_runtime_device<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    pid: i32,
+) -> ServerResult<Option<RuntimeDeviceInfo>> {
+    let state: State<LlamacppState> = app_handle.state();
+    let map = state.llama_server_process.lock().await;
+    Ok(map
+        .get(&pid)
+        .map(|session| runtime_device::snapshot(&session.runtime_device)))
 }
 
 /// Check whether the installed llama-server binary advertises a speculative type.

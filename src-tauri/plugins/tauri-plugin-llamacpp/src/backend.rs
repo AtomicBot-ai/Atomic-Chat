@@ -429,6 +429,57 @@ fn compare_versions(v1: &str, v2: &str) -> i32 {
     0
 }
 
+/// Copy Windows CUDA runtime DLLs (`cudart*`, `cublas*`, …) from one
+/// `build/bin` directory into another without removing the source.
+///
+/// Used by the TurboQuant provider to repair CUDA backends that shipped
+/// without their runtime DLLs by copying from an already-installed
+/// `llamacpp-upstream` CUDA bin (or any other donor directory). Prefixes
+/// are matched case-insensitively against the file stem+extension.
+#[tauri::command]
+pub async fn copy_backend_dlls(
+    src_dir: String,
+    dst_dir: String,
+    name_prefixes: Vec<String>,
+) -> Result<u32, String> {
+    use std::path::PathBuf;
+
+    let src = PathBuf::from(&src_dir);
+    let dst = PathBuf::from(&dst_dir);
+    if !src.is_dir() {
+        return Err(format!("source dir does not exist: {src_dir}"));
+    }
+    std::fs::create_dir_all(&dst).map_err(|e| format!("create {dst_dir}: {e}"))?;
+
+    let prefixes_lower: Vec<String> = name_prefixes
+        .iter()
+        .map(|p| p.to_ascii_lowercase())
+        .collect();
+
+    let mut copied = 0u32;
+    for entry in std::fs::read_dir(&src).map_err(|e| format!("read {src_dir}: {e}"))? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let lower = name.to_ascii_lowercase();
+        if !lower.ends_with(".dll") {
+            continue;
+        }
+        if !prefixes_lower.iter().any(|p| lower.starts_with(p.as_str())) {
+            continue;
+        }
+        let dest = dst.join(name);
+        std::fs::copy(&path, &dest).map_err(|e| format!("copy {name}: {e}"))?;
+        copied += 1;
+    }
+    Ok(copied)
+}
+
 #[tauri::command]
 pub async fn is_cuda_installed(
     backend_dir: String,
@@ -436,11 +487,11 @@ pub async fn is_cuda_installed(
     os_type: String,
     jan_data_folder_path: String,
 ) -> Result<bool, String> {
-    // TurboQuant CUDA archives bundle the cudart/cublas DLLs inside the
-    // backend's own `build/bin` (no separate cudart download, no legacy
-    // janhq migration path). We only need to confirm the runtime lib is
-    // present in that dir. `jan_data_folder_path` is unused now but kept in
-    // the command signature for IPC compatibility.
+    // Probe for the CUDA runtime lib in the backend's own `build/bin`.
+    // TurboQuant release zips *should* ship cudart/cublas inline; when they
+    // do not, the extension repairs via copy-from-upstream or a ggml-org
+    // companion download. `jan_data_folder_path` is unused but kept for IPC
+    // compatibility with the upstream plugin signature.
     let _ = jan_data_folder_path;
 
     // Resolve the cudart runtime lib name by CUDA major version. The `version`
@@ -1605,6 +1656,33 @@ mod tests {
         .unwrap();
 
         assert!(installed, "12.4 should resolve cudart64_12.dll");
+    }
+
+    #[tokio::test]
+    async fn test_copy_backend_dlls_copies_matching_prefixes_only() {
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+        File::create(src.path().join("cudart64_13.dll")).unwrap();
+        File::create(src.path().join("cublas64_13.dll")).unwrap();
+        File::create(src.path().join("cublasLt64_13.dll")).unwrap();
+        File::create(src.path().join("ggml-cuda.dll")).unwrap();
+        File::create(src.path().join("readme.txt")).unwrap();
+
+        let copied = copy_backend_dlls(
+            src.path().to_string_lossy().to_string(),
+            dst.path().to_string_lossy().to_string(),
+            vec!["cudart".into(), "cublas".into()],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(copied, 3);
+        assert!(dst.path().join("cudart64_13.dll").exists());
+        assert!(dst.path().join("cublas64_13.dll").exists());
+        assert!(dst.path().join("cublasLt64_13.dll").exists());
+        assert!(!dst.path().join("ggml-cuda.dll").exists());
+        // Source must remain intact — we copy, never move.
+        assert!(src.path().join("cudart64_13.dll").exists());
     }
 
     // --- Tests for find_latest_version_for_backend ---

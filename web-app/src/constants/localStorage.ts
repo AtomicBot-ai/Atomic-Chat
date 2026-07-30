@@ -59,6 +59,10 @@ export const localStorageKey = {
   // reappears; the optimal-backend recommendation stays reachable via the
   // manual button in provider settings.
   turboquantOptimalPromptShown: 'turboquant-optimal-prompt-shown',
+  // Backend pairs ("<configured>→<effective-or-ideal>") the user chose never to
+  // be reminded about again. Suppression is per pair, not global, so a later
+  // hardware or backend change still surfaces a fresh mismatch.
+  backendMismatchSuppressed: 'backend-mismatch-suppressed',
 }
 
 export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24

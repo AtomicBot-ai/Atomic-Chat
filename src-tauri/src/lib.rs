@@ -17,8 +17,6 @@ use jan_utils::generate_app_token;
 use std::{collections::HashMap, sync::Arc};
 #[cfg(not(feature = "cli"))]
 use tauri::{path::BaseDirectory, Emitter, Manager, RunEvent};
-#[cfg(all(not(feature = "cli"), target_os = "windows"))]
-use tauri_plugin_llamacpp_upstream::install_bundled_backend;
 #[cfg(not(feature = "cli"))]
 use tauri_plugin_store::StoreExt;
 #[cfg(not(feature = "cli"))]
@@ -435,40 +433,6 @@ pub fn run() {
                 }
             }
 
-            #[cfg(target_os = "windows")]
-            {
-                // Windows installs the bundled upstream backend on startup
-                // (turboquant fork is not shipped on Windows — see ADR
-                // 2026-05-22 "Windows ships only `llamacpp-upstream`"). The
-                // upstream extension reads from `llamacpp-upstream/backends/`.
-                let backends_dir = get_jan_data_folder_path(app.handle().clone())
-                    .join("llamacpp-upstream")
-                    .join("backends");
-                // block_on is safe here: the setup closure runs on the main
-                // thread, which is never a tokio runtime worker.
-                match tauri::async_runtime::block_on(install_bundled_backend(
-                    app.handle().clone(),
-                    backends_dir.to_string_lossy().to_string(),
-                )) {
-                    Ok(result) => {
-                        if let Some(backend_string) = result.backend_string {
-                            log::info!(
-                                "Bundled llama.cpp backend ready during startup: {}",
-                                backend_string
-                            );
-                        } else {
-                            log::info!("No bundled llama.cpp backend installed during startup");
-                        }
-                    }
-                    Err(err) => {
-                        log::warn!(
-                            "Failed to install bundled llama.cpp backend during startup: {}",
-                            err
-                        );
-                    }
-                }
-            }
-
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
@@ -558,6 +522,18 @@ pub fn run() {
             #[cfg(desktop)]
             setup::setup_jan_cli(app.handle().clone(), stored_version != app_version);
             setup::setup_theme_listener(app)?;
+
+            // Keep the transparent Windows window hidden until synchronous
+            // setup is complete, then let WebView2 begin navigation. A fully
+            // hidden WebView2 does not load, so the frontend cannot reveal
+            // itself from JavaScript.
+            #[cfg(target_os = "windows")]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    window.show()?;
+                }
+            }
+
             Ok(())
         })
         .build(tauri::generate_context!())

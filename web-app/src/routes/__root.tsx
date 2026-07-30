@@ -3,7 +3,7 @@ import { createRootRoute, Outlet } from '@tanstack/react-router'
 
 import DialogAppUpdater from '@/containers/dialogs/AppUpdater'
 import BackendUpdater from '@/containers/dialogs/BackendUpdater'
-import TurboquantOptimalBackendDialog from '@/containers/dialogs/TurboquantOptimalBackendDialog'
+import SuboptimalBackendDialog from '@/containers/dialogs/SuboptimalBackendDialog'
 import { Fragment } from 'react/jsx-runtime'
 import { ThemeProvider } from '@/providers/ThemeProvider'
 import { InterfaceProvider } from '@/providers/InterfaceProvider'
@@ -31,6 +31,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import GlobalError from '@/containers/GlobalError'
 import * as Sentry from '@sentry/react'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
+import { StartupBackendCoordinator } from '@/providers/StartupBackendCoordinator'
 import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { LeftSidebar } from '@/components/left-sidebar'
@@ -118,7 +119,10 @@ const AppLayout = () => {
         )}
         <DialogAppUpdater />
         {isSetupCompleted && <BackendUpdater />}
-        {isSetupCompleted && <TurboquantOptimalBackendDialog />}
+        {/* Unlike the recommendation dialogs above, this dialog only opens
+            after ChatInput dispatches a mismatch prompt. Keep it mounted for
+            upgraded/legacy users whose setup-completed flag is absent. */}
+        <SuboptimalBackendDialog />
         <WhatsNewDialog />
         <LeftSidebar />
         <SidebarInset>
@@ -197,6 +201,7 @@ function RootLayout() {
           <ExtensionProvider>
             <DataProvider />
             <GlobalEventHandler />
+            <StartupBackendCoordinator />
             {IS_LOGS_ROUTE ? <LogsLayout /> : <AppLayout />}
           </ExtensionProvider>
           {/* <TanStackRouterDevtools position="bottom-right" /> */}

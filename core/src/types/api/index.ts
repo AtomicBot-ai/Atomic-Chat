@@ -63,6 +63,13 @@ export enum AppEvent {
   onBackendDownloadStarted = 'onBackendDownloadStarted',
   onBackendDownloadFinished = 'onBackendDownloadFinished',
   onBetterBackendDetected = 'onBetterBackendDetected',
+  /**
+   * Verdict on the backend a successful load actually ran on: it disagrees with
+   * the backend the UI shows, or a faster tier is available, or all is well.
+   * Emitted per load by the llama.cpp providers. A `kind: 'ok'` verdict is what
+   * retires a warning the user has since fixed.
+   */
+  onBackendRuntimeReported = 'onBackendRuntimeReported',
 
   onUserSubmitQuickAsk = 'onUserSubmitQuickAsk',
   onSelectedText = 'onSelectedText',

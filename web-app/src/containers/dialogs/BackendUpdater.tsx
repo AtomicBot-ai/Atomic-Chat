@@ -1,7 +1,6 @@
 import { useBackendUpdater } from '@/hooks/useBackendUpdater'
 
 import {
-  IconCheck,
   IconDownload,
   IconLoader2,
   IconRefresh,
@@ -69,8 +68,8 @@ const BackendUpdater = () => {
 
   // Show toast on non-recommendation download completion. We deliberately
   // skip the toast when the recommendation flow is in progress because the
-  // dialog itself surfaces the next step (hotswapping → completed →
-  // restart-required) and a stacked toast would be redundant noise.
+  // compact dialog already surfaces downloading/hot-swapping. Completion uses
+  // the dedicated success toast below; restart-required remains a dialog.
   useEffect(() => {
     if (
       downloadState.status === 'completed' &&
@@ -107,7 +106,6 @@ const BackendUpdater = () => {
     recommendationPhase === 'recommend' ||
     recommendationPhase === 'downloading' ||
     recommendationPhase === 'hotswapping' ||
-    recommendationPhase === 'completed' ||
     recommendationPhase === 'restart-required'
 
   const showVersionUpdateToast =
@@ -127,6 +125,7 @@ const BackendUpdater = () => {
         }}
       >
         <DialogContent
+          className="gap-4 p-4 sm:max-w-[18rem]"
           showCloseButton={recommendationPhase === 'recommend'}
           onInteractOutside={(e) => {
             if (recommendationPhase !== 'recommend') {
@@ -135,28 +134,35 @@ const BackendUpdater = () => {
           }}
         >
           {recommendationPhase === 'recommend' && recommendation && (
-            <>
-              <DialogHeader>
-                <DialogTitle>
+            <div className="flex flex-col gap-3">
+              <DialogHeader className="gap-1 pr-6 text-left">
+                <DialogTitle className="text-base leading-5">
                   {t('settings:backendUpdater.betterBackendTitle')}
                 </DialogTitle>
-                <DialogDescription>
+                <DialogDescription className="text-xs leading-5">
                   {t('settings:backendUpdater.betterBackendDesc', {
                     backend: recommendation.recommendedCategory,
                   })}
                 </DialogDescription>
               </DialogHeader>
-              <DialogFooter>
-                <Button variant="outline" onClick={dismissRecommendation}>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  onClick={dismissRecommendation}
+                  className="h-10"
+                >
                   <IconX size={16} className="mr-1" />
                   {t('settings:backendUpdater.notNow')}
                 </Button>
-                <Button onClick={handleDownloadRecommended}>
+                <Button
+                  onClick={handleDownloadRecommended}
+                  className="h-10"
+                >
                   <IconDownload size={16} className="mr-1" />
                   {t('settings:backendUpdater.downloadNow')}
                 </Button>
-              </DialogFooter>
-            </>
+              </div>
+            </div>
           )}
 
           {recommendationPhase === 'downloading' && (
@@ -169,8 +175,8 @@ const BackendUpdater = () => {
                   {t('settings:backendUpdater.downloadingBackendDesc')}
                 </DialogDescription>
               </DialogHeader>
-              <div className="flex items-center justify-center py-4">
-                <IconLoader2 size={32} className="text-blue-500 animate-spin" />
+              <div className="flex items-center justify-center py-2">
+                <IconLoader2 size={24} className="text-blue-500 animate-spin" />
               </div>
             </>
           )}
@@ -190,29 +196,8 @@ const BackendUpdater = () => {
                   })}
                 </DialogDescription>
               </DialogHeader>
-              <div className="flex items-center justify-center py-4">
-                <IconLoader2 size={32} className="text-blue-500 animate-spin" />
-              </div>
-            </>
-          )}
-
-          {recommendationPhase === 'completed' && (
-            <>
-              <DialogHeader>
-                <DialogTitle>
-                  {t('settings:backendUpdater.hotSwapSuccess')}
-                </DialogTitle>
-                <DialogDescription>
-                  {t('settings:backendUpdater.hotSwapSuccessDesc', {
-                    backend:
-                      recommendation?.recommendedCategory ??
-                      recommendation?.recommendedBackend ??
-                      '',
-                  })}
-                </DialogDescription>
-              </DialogHeader>
-              <div className="flex items-center justify-center py-4">
-                <IconCheck size={32} className="text-emerald-500" />
+              <div className="flex items-center justify-center py-2">
+                <IconLoader2 size={24} className="text-blue-500 animate-spin" />
               </div>
             </>
           )}

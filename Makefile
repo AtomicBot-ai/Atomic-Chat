@@ -367,9 +367,9 @@ test-coverage-critical:
 
 verify-fast:
 	yarn lint
-	$(MAKE) test-quality
-	$(MAKE) test-hardening-contracts
-	$(MAKE) test-coverage-critical
+	"$(MAKE)" test-quality
+	"$(MAKE)" test-hardening-contracts
+	"$(MAKE)" test-coverage-critical
 
 verify: verify-fast test-rust
 
@@ -450,9 +450,9 @@ test-all: install-and-build install-rust-targets
 	yarn build:mlx-server
 	$(MAKE) build-foundation-models-server-if-exists
 	$(MAKE) build-cli
-	$(MAKE) verify
-	$(MAKE) test-live REQUIRE=$(REQUIRE)
-	$(MAKE) test-live-cloud REQUIRE=$(REQUIRE)
+	python3 scripts/run_test_all.py \
+		--make "$(MAKE)" \
+		$(if $(filter 1,$(REQUIRE)),--require-live,)
 
 # Download MLX server binary (mlx-vlm fork) from GitHub releases (macOS only)
 # Supports GH_TOKEN env var for authenticated GitHub API requests (avoids rate limits in CI)

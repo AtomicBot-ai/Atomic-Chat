@@ -12,6 +12,7 @@
         "fullscreen": false,
         "zoomHotkeysEnabled": true,
         "center": true,
+        "visible": false,
         "hiddenTitle": true,
         "transparent": true,
         "decorations": false,

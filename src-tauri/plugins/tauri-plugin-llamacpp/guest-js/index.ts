@@ -13,6 +13,7 @@ import {
   UpdateCheckResult,
   SettingUpdateResult,
   BundledBackendResult,
+  RuntimeDeviceInfo,
 } from './types'
 
 // Helpers
@@ -125,6 +126,12 @@ export async function getDevices(
     backendPath,
     libraryPath,
   })
+}
+
+export async function getRuntimeDevice(
+  pid: number
+): Promise<RuntimeDeviceInfo | null> {
+  return await invoke('plugin:llamacpp|get_runtime_device', { pid })
 }
 
 export async function generateApiKey(
@@ -276,6 +283,19 @@ export async function isCudaInstalledFromRust(
     version,
     osType,
     janDataFolderPath,
+  })
+}
+
+/** Copy DLL files whose names start with any of `namePrefixes` from `srcDir` to `dstDir`. */
+export async function copyBackendDlls(
+  srcDir: string,
+  dstDir: string,
+  namePrefixes: string[]
+): Promise<number> {
+  return invoke<number>('plugin:llamacpp|copy_backend_dlls', {
+    srcDir,
+    dstDir,
+    namePrefixes,
   })
 }
 

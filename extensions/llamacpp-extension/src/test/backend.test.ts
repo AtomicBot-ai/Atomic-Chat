@@ -5,6 +5,12 @@ import {
   isBackendInstalled,
   fetchRemoteBackends,
   getBackendDownloadUrl,
+  getCudaToolkitVersion,
+  getCudartArchiveName,
+  getCudartDownloadUrl,
+  findUpstreamCudaBinWithCudart,
+  upstreamCudaBackendId,
+  GGML_ORG_CUDART_PINNED_TAG,
   TURBOQUANT_BACKEND_MANIFEST_REVISION,
   TURBOQUANT_BACKEND_MANIFEST_URL,
 } from '../backend'
@@ -280,6 +286,45 @@ describe('Backend functions', () => {
         'https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/turboquant-linux-x64-vulkan-d86eb0b/llama-turboquant-linux-x64-vulkan.tar.gz'
       )
     })
+  })
+})
+
+describe('TurboQuant cudart helpers', () => {
+  it('maps clean Windows CUDA ids to toolkit minors and archive names', () => {
+    expect(getCudaToolkitVersion('windows-x64-cuda-13.3')).toBe('13.3')
+    expect(getCudaToolkitVersion('windows-x64-cuda-12.4')).toBe('12.4')
+    expect(getCudaToolkitVersion('windows-x64-cpu')).toBeNull()
+    expect(getCudaToolkitVersion('linux-x64-vulkan')).toBeNull()
+    expect(getCudartArchiveName('windows-x64-cuda-13.3')).toBe(
+      'cudart-llama-bin-win-cuda-13.3-x64.zip'
+    )
+    expect(upstreamCudaBackendId('13.3')).toBe('win-cuda-13.3-x64')
+  })
+
+  it('builds ggml-org companion URLs from the pinned upstream tag', () => {
+    expect(getCudartDownloadUrl('windows-x64-cuda-13.3')).toBe(
+      `https://github.com/ggml-org/llama.cpp/releases/download/${GGML_ORG_CUDART_PINNED_TAG}/cudart-llama-bin-win-cuda-13.3-x64.zip`
+    )
+    expect(getCudartDownloadUrl('windows-x64-cpu')).toBeNull()
+  })
+
+  it('finds an upstream CUDA bin that already has cudart', async () => {
+    const jan = '/path/to/jan'
+    const donorBin =
+      '/path/to/jan/llamacpp-upstream/backends/b9937/win-cuda-13.3-x64/build/bin'
+    vi.mocked(fs.existsSync).mockImplementation(async (path: string) => {
+      if (path === `${jan}/llamacpp-upstream/backends`) return true
+      if (path === `${donorBin}/cudart64_13.dll`) return true
+      return false
+    })
+    vi.mocked(fs.readdirSync).mockResolvedValue([
+      '/path/to/jan/llamacpp-upstream/backends/b9691',
+      '/path/to/jan/llamacpp-upstream/backends/b9937',
+    ] as any)
+
+    await expect(
+      findUpstreamCudaBinWithCudart(jan, '13.3')
+    ).resolves.toBe(donorBin)
   })
 })
 

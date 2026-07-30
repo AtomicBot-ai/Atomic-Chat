@@ -58,6 +58,7 @@ import {
   isCpuBackend,
   isUnsupportedNoAvxCpu,
   CPU_NO_AVX_ERROR_CODE,
+  classifyBackendMismatch,
   type EmbedBatchResult,
 } from './util'
 import {
@@ -103,6 +104,7 @@ import {
   normalizeFeatures,
   isCudaInstalledFromRust,
   checkSpecTypeSupport,
+  getRuntimeDevice,
 } from '../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index'
 
 // Error message constant - matches web-app/src/utils/error.ts
@@ -391,6 +393,27 @@ type IdealBackendResult =
   | { kind: 'cpu-optimal' }
   | { kind: 'detection-failed' }
 
+export const OPTIMAL_BACKEND_CACHE_KEY =
+  'atomic_llamacpp_upstream_optimal_backend_v1'
+
+type OptimalBackendCacheBase = {
+  schemaVersion: 1
+  provider: 'llamacpp-upstream'
+  detectedAt: number
+  currentBackend: string
+  recommendedCategory: string
+}
+
+export type OptimalBackendCacheRecord =
+  | (OptimalBackendCacheBase & {
+      detectionKind: 'gpu'
+      idealBackendId: string
+      recommendedBackend?: string
+    })
+  | (OptimalBackendCacheBase & {
+      detectionKind: 'cpu-optimal'
+    })
+
 /**
  * Sentinel `Error.message` thrown by `recheckOptimalBackend()` when backend
  * detection could not complete (ATO-161). Callers
@@ -431,6 +454,97 @@ export default class llamacpp_upstream_extension extends AIEngine {
   private unlistenValidationStarted?: () => void
   private unlistenAutoIncreaseCtx?: () => void
   private unlistenSessionDied?: () => void
+  /// `<version>/<backend>` the last load actually launched. Diverges from the
+  /// persisted `version_backend` when `resolveBackendFallback` tier 3 degrades
+  /// to an installed backend without persisting the swap — the case where the
+  /// settings dropdown keeps showing a backend that is not running.
+  private effectiveVersionBackend: string | null = null
+
+  /**
+   * Returns the provider-scoped optimal-backend cache when its schema and
+   * required fields are valid. Invalid or stale-shaped values are ignored.
+   */
+  getCachedOptimalBackend(): OptimalBackendCacheRecord | null {
+    try {
+      const raw = localStorage.getItem(OPTIMAL_BACKEND_CACHE_KEY)
+      if (!raw) return null
+
+      const value = JSON.parse(raw) as Record<string, unknown>
+      if (
+        value.schemaVersion !== 1 ||
+        value.provider !== 'llamacpp-upstream' ||
+        !Number.isFinite(value.detectedAt) ||
+        (value.detectedAt as number) < 0 ||
+        typeof value.currentBackend !== 'string' ||
+        typeof value.recommendedCategory !== 'string' ||
+        !value.recommendedCategory
+      ) {
+        return null
+      }
+
+      if (value.detectionKind === 'gpu') {
+        const recommendedType =
+          typeof value.recommendedBackend === 'string'
+            ? stripBom(value.recommendedBackend).split('/')[1]
+            : undefined
+        if (
+          typeof value.idealBackendId !== 'string' ||
+          !value.idealBackendId ||
+          (value.recommendedBackend !== undefined &&
+            (typeof value.recommendedBackend !== 'string' ||
+              !isConcreteVersionBackend(value.recommendedBackend) ||
+              recommendedType !== stripBom(value.idealBackendId)))
+        ) {
+          return null
+        }
+        return value as OptimalBackendCacheRecord
+      }
+      if (value.detectionKind === 'cpu-optimal') {
+        if (
+          value.idealBackendId !== undefined ||
+          value.recommendedBackend !== undefined
+        ) {
+          return null
+        }
+        return value as OptimalBackendCacheRecord
+      }
+      return null
+    } catch {
+      return null
+    }
+  }
+
+  private persistOptimalBackendCache(
+    detection: Exclude<IdealBackendResult, { kind: 'detection-failed' }>,
+    currentBackend: string,
+    recommendedBackend?: string | null
+  ): OptimalBackendCacheRecord {
+    const record: OptimalBackendCacheRecord =
+      detection.kind === 'cpu-optimal'
+        ? {
+            schemaVersion: 1,
+            provider: 'llamacpp-upstream',
+            detectedAt: Date.now(),
+            detectionKind: 'cpu-optimal',
+            currentBackend,
+            recommendedCategory: 'CPU',
+          }
+        : {
+            schemaVersion: 1,
+            provider: 'llamacpp-upstream',
+            detectedAt: Date.now(),
+            detectionKind: 'gpu',
+            currentBackend,
+            idealBackendId: detection.backend,
+            ...(recommendedBackend ? { recommendedBackend } : {}),
+            recommendedCategory: backendCategoryToLabel(
+              get_backend_category(detection.backend)
+            ),
+          }
+
+    localStorage.setItem(OPTIMAL_BACKEND_CACHE_KEY, JSON.stringify(record))
+    return record
+  }
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -2071,6 +2185,95 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
   }
 
+  private async resolveConcreteOptimalBackend(
+    idealType: string,
+    currentBackend: string,
+    operation: string
+  ): Promise<string | null> {
+    let recommendedBackend: string | null = null
+    try {
+      const versionBackends = await this.withTimeout(
+        listSupportedBackends(),
+        20_000,
+        []
+      )
+      recommendedBackend = await findLatestVersionForBackend(
+        versionBackends,
+        idealType
+      )
+    } catch (err) {
+      logger.warn(
+        `${operation}: failed to resolve latest backend for ${idealType}, falling back to current version: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      )
+    }
+
+    if (!recommendedBackend) {
+      recommendedBackend = await this.withTimeout(
+        this.resolveLatestBackendString(idealType),
+        20_000,
+        null
+      )
+      if (!recommendedBackend) {
+        const fallbackVersion = currentBackend.split('/')[0]
+        if (!fallbackVersion) {
+          logger.warn(
+            `${operation}: could not resolve a concrete tag for ${idealType} and no current backend tag to fall back to`
+          )
+          return null
+        }
+        recommendedBackend = `${fallbackVersion}/${idealType}`
+      }
+    }
+
+    return recommendedBackend
+  }
+
+  /**
+   * Silently refreshes the provider-scoped optimal-backend cache. Unlike
+   * `recheckOptimalBackend`, this never writes the legacy recommendation key
+   * and never emits `onBetterBackendDetected`.
+   */
+  async refreshOptimalBackendCache(options?: {
+    hardwareHasNoGpu?: boolean
+  }): Promise<OptimalBackendCacheRecord | null> {
+    if (IS_MAC) return null
+
+    const detection: IdealBackendResult = options?.hardwareHasNoGpu
+      ? { kind: 'cpu-optimal' }
+      : await this.withTimeout(this.detectIdealBackendType(), 20_000, {
+          kind: 'detection-failed',
+        } as const)
+    if (detection.kind === 'detection-failed') {
+      throw new Error(BACKEND_DETECTION_FAILED)
+    }
+
+    const currentBackend = stripBom(this.config.version_backend || '')
+    if (detection.kind === 'cpu-optimal') {
+      return this.persistOptimalBackendCache(detection, currentBackend)
+    }
+
+    let recommendedBackend: string | null = null
+    try {
+      recommendedBackend = await this.resolveConcreteOptimalBackend(
+        detection.backend,
+        currentBackend,
+        'refreshOptimalBackendCache'
+      )
+    } catch (err) {
+      logger.warn(
+        'refreshOptimalBackendCache: concrete backend resolution failed:',
+        err
+      )
+    }
+    return this.persistOptimalBackendCache(
+      detection,
+      currentBackend,
+      recommendedBackend
+    )
+  }
+
   /**
    * Manually re-runs hardware detection and returns a recommendation if a
    * better GPU backend than the current one is available. Used by:
@@ -2127,18 +2330,19 @@ export default class llamacpp_upstream_extension extends AIEngine {
         throw new Error(BACKEND_DETECTION_FAILED)
       }
 
+      const currentBackend = stripBom(this.config.version_backend || '')
       if (detection.kind === 'cpu-optimal') {
         // CPU genuinely is the best this hardware can do.
         logger.info(
           'recheckOptimalBackend: CPU is optimal — no better GPU backend for this hardware'
         )
+        this.persistOptimalBackendCache(detection, currentBackend)
         localStorage.removeItem('llama_cpp_better_backend_recommendation')
         return null
       }
 
       const idealType = detection.backend
       const idealCat = get_backend_category(idealType)
-      const currentBackend = stripBom(this.config.version_backend || '')
       const currentType = currentBackend.split('/')[1] || ''
       const currentCat = get_backend_category(currentType)
       const sameCategory = idealCat === currentCat
@@ -2148,6 +2352,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
         logger.info(
           `recheckOptimalBackend: already on optimal backend ${currentBackend}`
         )
+        this.persistOptimalBackendCache(
+          detection,
+          currentBackend,
+          currentBackend
+        )
         localStorage.removeItem('llama_cpp_better_backend_recommendation')
         return null
       }
@@ -2156,52 +2365,19 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // This handles in-family migrations such as CUDA 13.1 -> CUDA 13.3/13.4
       // when the currently-selected backend is still "optimal category"
       // but no longer the latest downloadable variant.
-      let recommendedBackend: string | null = null
-      try {
-        // ATO-104: cap the supported-backends lookup (it fans out to a
-        // GitHub release fetch) so detection terminates even when the
-        // network stalls past the inner AbortController.
-        const versionBackends = await this.withTimeout(
-          listSupportedBackends(),
-          20_000,
-          []
-        )
-        recommendedBackend = await findLatestVersionForBackend(
-          versionBackends,
-          idealType
-        )
-      } catch (err) {
-        logger.warn(
-          `recheckOptimalBackend: failed to resolve latest backend for ${idealType}, falling back to current version: ${
-            err instanceof Error ? err.message : String(err)
-          }`
-        )
-      }
+      const recommendedBackend = await this.resolveConcreteOptimalBackend(
+        idealType,
+        currentBackend,
+        'recheckOptimalBackend'
+      )
+      this.persistOptimalBackendCache(
+        detection,
+        currentBackend,
+        recommendedBackend
+      )
       if (!recommendedBackend) {
-        // `listSupportedBackends()` / `findLatestVersionForBackend()` came
-        // up empty (e.g. the ggml-org release fetch failed). Resolve a
-        // concrete release tag for the ideal type directly rather than
-        // emitting a `latest/<backend>` sentinel — the literal `latest`
-        // produces a 404 download URL downstream (ATO-95).
-        recommendedBackend = await this.withTimeout(
-          this.resolveLatestBackendString(idealType),
-          20_000,
-          null
-        )
-        if (!recommendedBackend) {
-          // Last resort: reuse the tag of the currently-installed backend,
-          // but only when we actually have one. A bare `latest` tag is never
-          // valid for ggml-org's `/releases/download/<tag>/...` asset path.
-          const fallbackVersion = currentBackend.split('/')[0]
-          if (!fallbackVersion) {
-            logger.warn(
-              `recheckOptimalBackend: could not resolve a concrete tag for ${idealType} and no current backend tag to fall back to — skipping recommendation`
-            )
-            localStorage.removeItem('llama_cpp_better_backend_recommendation')
-            return null
-          }
-          recommendedBackend = `${fallbackVersion}/${idealType}`
-        }
+        localStorage.removeItem('llama_cpp_better_backend_recommendation')
+        return null
       }
       if (recommendedBackend === currentBackend) {
         logger.info(
@@ -3756,9 +3932,108 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // on or the request is clamped to the model's training-max). Fire and
       // forget: this must never block or fail the load.
       void this.syncLoadedCtxSize(result, isEmbedding)
+      void this.reportBackendMismatch(
+        result,
+        isEmbedding,
+        overrideSettings?.n_gpu_layers ?? this.config?.n_gpu_layers
+      )
       return result
     } finally {
       this.loadingModels.delete(modelId)
+    }
+  }
+
+  /// Backend the last successful load actually launched, as
+  /// `<version>/<backend>`. Settings read this to show the truth next to the
+  /// persisted selection when the two diverge.
+  getEffectiveBackend(): string | null {
+    return this.effectiveVersionBackend
+  }
+
+  /// Compare the backend the user sees, the one that was launched and the
+  /// device the process reports, and announce any disagreement so the web-app
+  /// can offer a fix.
+  ///
+  /// The "better tier available" input is taken from the recommendation the
+  /// existing detect flows already stored, never from a fresh hardware probe:
+  /// `detectIdealBackendType` spawns `--list-devices` per tier and has no place
+  /// on the load path. Fire and forget — this must never affect a load.
+  private async reportBackendMismatch(
+    sInfo: SessionInfo,
+    isEmbedding: boolean,
+    requestedGpuLayers?: number
+  ): Promise<void> {
+    if (isEmbedding) return
+    try {
+      const configured = stripBom(
+        (await this.getSetting<string>('version_backend', '')) || ''
+      )
+      const effective = this.effectiveVersionBackend ?? configured
+
+      // `load_tensors` normally precedes "listening on", but on a slow mmap the
+      // snapshot taken at readiness can still be empty — re-ask the plugin.
+      let runtimeDevice = sInfo.runtime_device ?? null
+      if (!runtimeDevice) {
+        try {
+          runtimeDevice = await getRuntimeDevice(sInfo.pid)
+        } catch (e) {
+          logger.warn(`reportBackendMismatch: get_runtime_device failed: ${e}`)
+        }
+      }
+
+      const mismatch = classifyBackendMismatch({
+        configuredBackend: configured.split('/')[1] ?? '',
+        effectiveBackend: effective.split('/')[1] ?? '',
+        runtimeDevice,
+        idealBackend: this.storedRecommendedBackendType(),
+        requestedGpuLayers,
+        categoryOf: get_backend_category,
+      })
+
+      const payload = {
+        provider: this.provider,
+        modelId: sInfo.model_id,
+        configuredVersionBackend: configured,
+        effectiveVersionBackend: effective,
+        mismatch,
+      }
+      if (mismatch.kind === 'ok') {
+        logger.info(
+          `reportBackendMismatch: ${sInfo.model_id} running as configured (${effective})`
+        )
+      } else {
+        logger.warn(
+          `reportBackendMismatch: ${mismatch.kind} for ${sInfo.model_id} — configured=${configured} effective=${effective} primaryDevice=${
+            runtimeDevice?.primary_device ?? 'unknown'
+          }`
+        )
+      }
+      // A healthy verdict is reported too: it is what clears a warning the user
+      // has already acted on.
+      if (events && typeof events.emit === 'function') {
+        events.emit(AppEvent.onBackendRuntimeReported, payload)
+      }
+    } catch (e) {
+      logger.warn(`reportBackendMismatch failed for ${sInfo.model_id}: ${e}`)
+    }
+  }
+
+  /// Backend type from the recommendation `recheckOptimalBackend` /
+  /// `configureBackends` last wrote, or `null` when none is pending.
+  private storedRecommendedBackendType(): string | null {
+    const cached = this.getCachedOptimalBackend()
+    if (cached?.detectionKind === 'gpu') {
+      return cached.idealBackendId
+    }
+
+    try {
+      const raw = localStorage.getItem('llama_cpp_better_backend_recommendation')
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { recommendedBackend?: string }
+      const recommended = stripBom(parsed?.recommendedBackend ?? '')
+      return recommended.split('/')[1] || null
+    } catch {
+      return null
     }
   }
 
@@ -3982,6 +4257,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       version,
       true
     ))
+    this.effectiveVersionBackend = `${version}/${backend}`
 
     const janDataFolderPath = await getJanDataFolderPath()
     const modelConfigPath = await joinPath([

@@ -153,6 +153,163 @@ export function isMtpCapable(
   return mtpDraftPath.length > 0 || hasEmbeddedMtp(metadata)
 }
 
+// --- Backend mismatch classification ---
+
+/**
+ * Startup-log evidence of which device a loaded model actually runs on, as
+ * returned by the Tauri plugin (`SessionInfo.runtime_device`).
+ */
+export interface RuntimeDeviceSnapshot {
+  loaded_backends?: string[]
+  primary_device?: string
+  gpu_layers_offloaded?: number | null
+  total_layers?: number | null
+  gpu_buffer_bytes?: number | null
+  cuda_runtime_missing?: boolean
+  device_init_error?: string | null
+}
+
+/**
+ * Ways the backend the user sees can disagree with the one actually doing the
+ * work. All three are real and independent:
+ *
+ * - `silent-fallback`: the load path swapped the backend in memory without
+ *   persisting it, so the settings dropdown still shows the old pick.
+ * - `runtime-cpu`: the selected GPU build launched but the model landed on the
+ *   CPU anyway (missing CUDA runtime, parked dGPU, driver/ABI mismatch).
+ * - `suboptimal-config`: the backend runs as selected, but this host has a
+ *   faster tier available.
+ */
+export type BackendMismatch =
+  | { kind: 'ok' }
+  | {
+      kind: 'silent-fallback'
+      configured: string
+      effective: string
+    }
+  | {
+      kind: 'runtime-cpu'
+      configured: string
+      primaryDevice: string
+      offloaded: number | null
+      total: number | null
+      gpuKind: GpuKind
+      cudaRuntimeMissing: boolean
+      deviceInitError: string | null
+    }
+  | {
+      kind: 'suboptimal-config'
+      configured: string
+      ideal: string
+    }
+
+const GPU_BACKEND_CATEGORIES = new Set([
+  'cuda-cu13',
+  'cuda-cu13.0',
+  'cuda-cu12.4',
+  'cuda-cu12.0',
+  'cuda-cu11.7',
+  'vulkan',
+])
+
+export function isGpuBackendCategory(category: string): boolean {
+  return GPU_BACKEND_CATEGORIES.has(category)
+}
+
+/**
+ * Which GPU stack a build targets. A CUDA build on the CPU and a Vulkan build
+ * on the CPU need different advice: install the NVIDIA CUDA runtime versus
+ * install/update the Vulkan driver, which on Linux is also the only GPU path
+ * for AMD and Intel.
+ */
+export type GpuKind = 'cuda' | 'vulkan' | 'other'
+
+export function gpuKindOf(category: string): GpuKind {
+  if (category.startsWith('cuda-')) return 'cuda'
+  if (category === 'vulkan') return 'vulkan'
+  return 'other'
+}
+
+function normalizeBackendId(backend: string | undefined | null): string {
+  return (backend ?? '').replace(/\uFEFF/g, '').trim()
+}
+
+/**
+ * True when the startup log shows the weights sitting in CPU buffers. Zero
+ * offloaded layers is conclusive on its own; an absent/unparsed device is not
+ * treated as CPU so a quieter build never triggers a false warning.
+ */
+export function runtimeRanOnCpu(
+  runtimeDevice: RuntimeDeviceSnapshot | undefined | null
+): boolean {
+  if (!runtimeDevice) return false
+  if (runtimeDevice.gpu_layers_offloaded === 0) return true
+  const primary = (runtimeDevice.primary_device ?? '').trim()
+  if (!primary) return false
+  return primary === 'CPU' || primary.startsWith('CPU_')
+}
+
+/**
+ * Compare what the UI shows, what was launched and what the process reports.
+ * `categoryOf` is injected because the two providers use different backend id
+ * schemes (`win-cuda-13.3-x64` vs `windows-x64-cuda-13.3`).
+ *
+ * Precedence: a silent swap first (the UI is outright wrong), then a GPU build
+ * that degraded to CPU, then a merely better tier being available.
+ *
+ * `requestedGpuLayers` is the `-ngl` the load asked for. The "GPU Layers" model
+ * setting documents 0 as "CPU only", so zero offloaded layers is then the
+ * outcome the user asked for, not a degradation to report.
+ */
+export function classifyBackendMismatch(input: {
+  configuredBackend: string | undefined | null
+  effectiveBackend: string | undefined | null
+  runtimeDevice?: RuntimeDeviceSnapshot | null
+  idealBackend?: string | null
+  requestedGpuLayers?: number | null
+  categoryOf: (backend: string) => string
+}): BackendMismatch {
+  const configured = normalizeBackendId(input.configuredBackend)
+  const effective = normalizeBackendId(input.effectiveBackend) || configured
+  if (!configured) return { kind: 'ok' }
+
+  if (effective && effective !== configured) {
+    return { kind: 'silent-fallback', configured, effective }
+  }
+
+  const effectiveCategory = input.categoryOf(effective)
+  const cpuOnlyByRequest = input.requestedGpuLayers === 0
+
+  if (
+    isGpuBackendCategory(effectiveCategory) &&
+    !cpuOnlyByRequest &&
+    runtimeRanOnCpu(input.runtimeDevice)
+  ) {
+    return {
+      kind: 'runtime-cpu',
+      configured: effective,
+      primaryDevice: (input.runtimeDevice?.primary_device ?? '').trim() || 'CPU',
+      offloaded: input.runtimeDevice?.gpu_layers_offloaded ?? null,
+      total: input.runtimeDevice?.total_layers ?? null,
+      gpuKind: gpuKindOf(effectiveCategory),
+      cudaRuntimeMissing: input.runtimeDevice?.cuda_runtime_missing === true,
+      deviceInitError: input.runtimeDevice?.device_init_error ?? null,
+    }
+  }
+
+  const ideal = normalizeBackendId(input.idealBackend)
+  if (ideal) {
+    const idealCategory = input.categoryOf(ideal)
+    // Only ever nudge upward: a user who deliberately picked CPU while the
+    // detector also says CPU, or whose GPU tier is already ideal, is left alone.
+    if (isGpuBackendCategory(idealCategory) && idealCategory !== effectiveCategory) {
+      return { kind: 'suboptimal-config', configured: effective, ideal }
+    }
+  }
+
+  return { kind: 'ok' }
+}
+
 // Zustand proxy state structure
 interface ProxyState {
   proxyEnabled: boolean

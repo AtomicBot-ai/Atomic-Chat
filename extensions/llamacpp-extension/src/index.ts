@@ -35,12 +35,17 @@ import {
   getBackendDir,
   getLocalInstalledBackends,
   getBackendDownloadUrl,
+  getCudaToolkitVersion,
+  getCudartArchiveName,
+  getCudartDownloadUrl,
+  findUpstreamCudaBinWithCudart,
 } from './backend'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import {
   getProxyConfig,
   buildEmbedBatches,
   mergeEmbedResponses,
+  classifyBackendMismatch,
   type EmbedBatchResult,
 } from './util'
 import { basename } from '@tauri-apps/api/path'
@@ -71,6 +76,9 @@ import {
   checkBackendForUpdates as checkBackendForUpdatesFromRust,
   getSupportedFeaturesFromRust,
   normalizeFeatures,
+  getRuntimeDevice,
+  isCudaInstalledFromRust,
+  copyBackendDlls,
 } from '../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
 
 // Error message constant - matches web-app/src/utils/error.ts
@@ -301,6 +309,17 @@ type IdealBackendResult =
   | { kind: 'cpu-optimal' }
   | { kind: 'detection-failed' }
 
+export interface TurboquantOptimalBackendCache {
+  schemaVersion: 1
+  detectedAt: number
+  provider: 'llamacpp'
+  detectionKind: 'gpu' | 'cpu-optimal'
+  currentBackend: string
+  idealBackendId?: string
+  recommendedBackend?: string
+  recommendedCategory: string
+}
+
 /// Sentinel thrown by `recheckOptimalBackend()` when backend detection could
 /// not complete (manifest/release stream unreachable, slow, or rate-limited)
 /// on a GPU-capable host. The web-app surfaces a calm "couldn't reach the
@@ -313,6 +332,8 @@ export const BACKEND_DETECTION_FAILED = 'BACKEND_DETECTION_FAILED'
 /// clobbering each other's recommendation / pending-backend state.
 const TURBOQUANT_RECOMMENDATION_KEY = 'turboquant_better_backend_recommendation'
 const TURBOQUANT_PENDING_KEY = 'turboquant_pending_backend'
+const TURBOQUANT_OPTIMAL_BACKEND_CACHE_KEY =
+  'atomic_llamacpp_turboquant_optimal_backend_v1'
 
 // Folder structure for llamacpp extension:
 // <Jan's data folder>/llamacpp
@@ -356,6 +377,11 @@ export default class llamacpp_extension extends AIEngine {
   private modelMaxCtxTrain = new Map<string, number>()
   private unlistenValidationStarted?: () => void
   private unlistenAutoIncreaseCtx?: () => void
+  /// `<version>/<backend>` the last load actually launched. Diverges from the
+  /// persisted `version_backend` when the load path recovered a different
+  /// backend from bundled resources without persisting the swap — the case
+  /// where the settings dropdown keeps showing a backend that is not running.
+  private effectiveVersionBackend: string | null = null
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -1537,16 +1563,29 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   /**
-   * Apply a freshly-downloaded backend to the running process: stop any
-   * loaded llama.cpp models, swap `version_backend` via `updateBackend()`,
-   * clear the pending marker, and notify the UI via a window event.
+   * Apply a freshly-downloaded backend to the running process: swap
+   * `version_backend` via `updateBackend()` first, then stop any loaded
+   * llama.cpp models, clear the pending marker, and notify the UI via a
+   * window event.
+   *
+   * Order matters: `updateBackend()` must commit the new `version_backend`
+   * into `this.config` *before* any model is unloaded. Unloading flips the
+   * model's status to stopped, which the web-app's local-model auto-start
+   * effect (`ChatInput.tsx`) reacts to by immediately reloading it via
+   * `switchToModel()`. `performLoad()` snapshots `this.config` synchronously
+   * at call time, so an unload-before-update ordering let that auto-reload
+   * race ahead of `updateBackend()` and respawn `llama-server` against the
+   * *old* backend — the UI would then report the switch as complete while
+   * the running process silently stayed on the previous (e.g. CPU) build.
    *
    * Failure modes:
+   *   - `updateBackend()` throws → we propagate without touching any loaded
+   *     model, so a failed hot-swap never kills a working session. Caller
+   *     leaves the pending marker in place so `activatePendingBackend()`
+   *     retries on next launch.
    *   - `unload()` throws when a session can't be cleanly stopped → we log
-   *     and continue, because `updateBackend()` only mutates settings and
-   *     does not require an empty session table.
-   *   - `updateBackend()` throws → we propagate. Caller leaves the pending
-   *     marker in place so `activatePendingBackend()` retries on next launch.
+   *     and continue; the new backend is already persisted, so the next
+   *     load (auto or manual) picks it up regardless.
    */
   private async applyBackendLive(backendString: string): Promise<void> {
     let loaded: string[] = []
@@ -1554,6 +1593,13 @@ export default class llamacpp_extension extends AIEngine {
       loaded = await this.getLoadedModels()
     } catch (err) {
       logger.warn('applyBackendLive: getLoadedModels failed (continuing):', err)
+    }
+
+    const result = await this.updateBackend(backendString)
+    if (!result.wasUpdated) {
+      throw new Error(
+        `updateBackend reported wasUpdated=false for ${backendString}`
+      )
     }
 
     for (const modelId of loaded) {
@@ -1565,13 +1611,6 @@ export default class llamacpp_extension extends AIEngine {
           err
         )
       }
-    }
-
-    const result = await this.updateBackend(backendString)
-    if (!result.wasUpdated) {
-      throw new Error(
-        `updateBackend reported wasUpdated=false for ${backendString}`
-      )
     }
 
     localStorage.removeItem(TURBOQUANT_PENDING_KEY)
@@ -1587,6 +1626,158 @@ export default class llamacpp_extension extends AIEngine {
           detail: { backend: backendString },
         })
       )
+    }
+  }
+
+  private async detectOptimalBackend(): Promise<
+    Exclude<IdealBackendResult, { kind: 'detection-failed' }>
+  > {
+    const detection = await this.withTimeout(
+      this.detectIdealBackendType(),
+      20_000,
+      { kind: 'detection-failed' } as IdealBackendResult
+    )
+    if (detection.kind === 'detection-failed') {
+      throw new Error(BACKEND_DETECTION_FAILED)
+    }
+    return detection
+  }
+
+  private async resolveConcreteBackend(
+    idealBackendId: string
+  ): Promise<string | undefined> {
+    try {
+      const catalog = await this.withTimeout(
+        listSupportedBackends(),
+        20_000,
+        [] as Awaited<ReturnType<typeof listSupportedBackends>>
+      )
+      const match = catalog.find(
+        (backend) => stripBom(backend.backend) === idealBackendId
+      )
+      if (match) {
+        return `${stripBom(match.version)}/${stripBom(match.backend)}`
+      }
+    } catch (err) {
+      logger.warn(
+        'resolveConcreteBackend: failed to resolve concrete tag from catalog:',
+        err
+      )
+    }
+    return undefined
+  }
+
+  private persistOptimalBackendCache(
+    detection: Exclude<IdealBackendResult, { kind: 'detection-failed' }>,
+    currentBackend: string,
+    recommendedBackend?: string
+  ): TurboquantOptimalBackendCache {
+    const record: TurboquantOptimalBackendCache =
+      detection.kind === 'cpu-optimal'
+        ? {
+            schemaVersion: 1,
+            detectedAt: Date.now(),
+            provider: 'llamacpp',
+            detectionKind: 'cpu-optimal',
+            currentBackend,
+            recommendedCategory: 'CPU',
+          }
+        : {
+            schemaVersion: 1,
+            detectedAt: Date.now(),
+            provider: 'llamacpp',
+            detectionKind: 'gpu',
+            currentBackend,
+            idealBackendId: detection.backend,
+            recommendedBackend,
+            recommendedCategory: backendCategoryToLabel(
+              get_backend_category(detection.backend)
+            ),
+          }
+
+    localStorage.setItem(
+      TURBOQUANT_OPTIMAL_BACKEND_CACHE_KEY,
+      JSON.stringify(record)
+    )
+    return record
+  }
+
+  /**
+   * Silently refresh the provider-scoped optimal-backend cache. Unlike
+   * `recheckOptimalBackend`, this does not write a recommendation or emit a UI
+   * event. A failed detection leaves the last successful cache untouched.
+   */
+  async refreshOptimalBackendCache(options?: {
+    hardwareHasNoGpu?: boolean
+  }): Promise<TurboquantOptimalBackendCache> {
+    const detection: Exclude<IdealBackendResult, { kind: 'detection-failed' }> =
+      options?.hardwareHasNoGpu
+        ? { kind: 'cpu-optimal' }
+        : await this.detectOptimalBackend()
+    const currentBackend = stripBom(this.config.version_backend || '')
+    const recommendedBackend =
+      detection.kind === 'gpu'
+        ? await this.resolveConcreteBackend(detection.backend)
+        : undefined
+    return this.persistOptimalBackendCache(
+      detection,
+      currentBackend,
+      recommendedBackend
+    )
+  }
+
+  /**
+   * Return the last successfully detected provider-scoped optimum, rejecting
+   * malformed or incompatible persisted data.
+   */
+  getCachedOptimalBackend(): TurboquantOptimalBackendCache | null {
+    try {
+      const raw = localStorage.getItem(TURBOQUANT_OPTIMAL_BACKEND_CACHE_KEY)
+      if (!raw) return null
+      const record = JSON.parse(raw) as Partial<TurboquantOptimalBackendCache>
+      if (
+        record.schemaVersion !== 1 ||
+        record.provider !== 'llamacpp' ||
+        (record.detectionKind !== 'gpu' &&
+          record.detectionKind !== 'cpu-optimal') ||
+        typeof record.detectedAt !== 'number' ||
+        !Number.isFinite(record.detectedAt) ||
+        record.detectedAt < 0 ||
+        typeof record.currentBackend !== 'string' ||
+        typeof record.recommendedCategory !== 'string' ||
+        !record.recommendedCategory
+      ) {
+        return null
+      }
+
+      if (record.detectionKind === 'gpu') {
+        if (
+          typeof record.idealBackendId !== 'string' ||
+          !stripBom(record.idealBackendId)
+        ) {
+          return null
+        }
+        if (record.recommendedBackend !== undefined) {
+          if (typeof record.recommendedBackend !== 'string') return null
+          const parts = stripBom(record.recommendedBackend).split('/')
+          if (
+            parts.length !== 2 ||
+            !parts[0] ||
+            parts[1] !== stripBom(record.idealBackendId)
+          ) {
+            return null
+          }
+        }
+      } else if (
+        record.idealBackendId !== undefined ||
+        record.recommendedBackend !== undefined
+      ) {
+        return null
+      }
+
+      return record as TurboquantOptimalBackendCache
+    } catch {
+      return null
     }
   }
 
@@ -1618,39 +1809,31 @@ export default class llamacpp_extension extends AIEngine {
     }
     try {
       logger.info('recheckOptimalBackend: detecting ideal backend type')
-      const detection = await this.withTimeout(
-        this.detectIdealBackendType(),
-        20_000,
-        { kind: 'detection-failed' } as IdealBackendResult
-      )
-
-      if (detection.kind === 'detection-failed') {
-        // Distinguish "couldn't reach the manifest/release stream" from "CPU
-        // is genuinely best". Throw the sentinel so the caller surfaces an
-        // actionable message and leaves the current backend untouched.
-        logger.warn(
-          'recheckOptimalBackend: backend detection failed — keeping current backend (no silent CPU fallback)'
-        )
-        throw new Error(BACKEND_DETECTION_FAILED)
-      }
+      const detection = await this.detectOptimalBackend()
+      const currentBackend = stripBom(this.config.version_backend || '')
 
       if (detection.kind === 'cpu-optimal') {
         logger.info(
           'recheckOptimalBackend: CPU is optimal — no better GPU backend for this hardware'
         )
+        this.persistOptimalBackendCache(detection, currentBackend)
         localStorage.removeItem(TURBOQUANT_RECOMMENDATION_KEY)
         return null
       }
 
       const idealType = detection.backend
       const idealCat = get_backend_category(idealType)
-      const currentBackend = stripBom(this.config.version_backend || '')
       const currentType = currentBackend.split('/')[1] || ''
       const currentCat = get_backend_category(currentType)
       if (idealCat === currentCat) {
         // Already on the optimal family — no recommendation to surface.
         logger.info(
           `recheckOptimalBackend: already on optimal category ${currentCat} (${currentBackend})`
+        )
+        this.persistOptimalBackendCache(
+          detection,
+          currentBackend,
+          currentType === idealType ? currentBackend : undefined
         )
         localStorage.removeItem(TURBOQUANT_RECOMMENDATION_KEY)
         return null
@@ -1660,23 +1843,12 @@ export default class llamacpp_extension extends AIEngine {
       // catalog. Each turboquant backend variant ships in its OWN release with
       // its OWN tag, so we must NOT reuse the current backend's tag — we read
       // the matching entry's tag straight from the catalog.
-      let recommendedBackend: string | null = null
-      try {
-        const catalog = await this.withTimeout(
-          listSupportedBackends(),
-          20_000,
-          [] as Awaited<ReturnType<typeof listSupportedBackends>>
-        )
-        const match = catalog.find((b) => stripBom(b.backend) === idealType)
-        if (match) {
-          recommendedBackend = `${stripBom(match.version)}/${stripBom(match.backend)}`
-        }
-      } catch (err) {
-        logger.warn(
-          'recheckOptimalBackend: failed to resolve concrete tag from catalog:',
-          err
-        )
-      }
+      const recommendedBackend = await this.resolveConcreteBackend(idealType)
+      this.persistOptimalBackendCache(
+        detection,
+        currentBackend,
+        recommendedBackend
+      )
 
       if (!recommendedBackend) {
         logger.warn(
@@ -2654,10 +2826,111 @@ export default class llamacpp_extension extends AIEngine {
     try {
       const result = await loadingPromise
       void this.syncLoadedCtxSize(result, isEmbedding)
+      void this.reportBackendMismatch(
+        result,
+        isEmbedding,
+        overrideSettings?.n_gpu_layers ?? this.config?.n_gpu_layers
+      )
 
       return result
     } finally {
       this.loadingModels.delete(modelId)
+    }
+  }
+
+  /// Backend the last successful load actually launched, as
+  /// `<version>/<backend>`. Settings read this to show the truth next to the
+  /// persisted selection when the two diverge.
+  getEffectiveBackend(): string | null {
+    return this.effectiveVersionBackend
+  }
+
+  /// Compare the backend the user sees, the one that was launched and the
+  /// device the process reports, and announce any disagreement so the web-app
+  /// can offer a fix.
+  ///
+  /// The "better tier available" input is taken from the recommendation the
+  /// existing detect flows already stored, never from a fresh hardware probe:
+  /// `detectIdealBackendType` spawns `--list-devices` per tier and has no place
+  /// on the load path. Fire and forget — this must never affect a load.
+  private async reportBackendMismatch(
+    sInfo: SessionInfo,
+    isEmbedding: boolean,
+    requestedGpuLayers?: number
+  ): Promise<void> {
+    if (isEmbedding) return
+    try {
+      const configured = stripBom(
+        (await this.getSetting<string>('version_backend', '')) || ''
+      )
+      const effective = this.effectiveVersionBackend ?? configured
+
+      // `load_tensors` normally precedes "listening on", but on a slow mmap the
+      // snapshot taken at readiness can still be empty — re-ask the plugin.
+      let runtimeDevice = sInfo.runtime_device ?? null
+      if (!runtimeDevice) {
+        try {
+          runtimeDevice = await getRuntimeDevice(sInfo.pid)
+        } catch (e) {
+          logger.warn(`reportBackendMismatch: get_runtime_device failed: ${e}`)
+        }
+      }
+
+      const mismatch = classifyBackendMismatch({
+        configuredBackend: configured.split('/')[1] ?? '',
+        effectiveBackend: effective.split('/')[1] ?? '',
+        runtimeDevice,
+        idealBackend:
+          this.cachedGpuIdealBackendType() ??
+          this.storedRecommendedBackendType(),
+        requestedGpuLayers,
+        categoryOf: get_backend_category,
+      })
+
+      const payload = {
+        provider: this.provider,
+        modelId: sInfo.model_id,
+        configuredVersionBackend: configured,
+        effectiveVersionBackend: effective,
+        mismatch,
+      }
+      if (mismatch.kind === 'ok') {
+        logger.info(
+          `reportBackendMismatch: ${sInfo.model_id} running as configured (${effective})`
+        )
+      } else {
+        logger.warn(
+          `reportBackendMismatch: ${mismatch.kind} for ${sInfo.model_id} — configured=${configured} effective=${effective} primaryDevice=${
+            runtimeDevice?.primary_device ?? 'unknown'
+          }`
+        )
+      }
+      // A healthy verdict is reported too: it is what clears a warning the user
+      // has already acted on.
+      if (events && typeof events.emit === 'function') {
+        events.emit(AppEvent.onBackendRuntimeReported, payload)
+      }
+    } catch (e) {
+      logger.warn(`reportBackendMismatch failed for ${sInfo.model_id}: ${e}`)
+    }
+  }
+
+  private cachedGpuIdealBackendType(): string | null {
+    const cached = this.getCachedOptimalBackend()
+    return cached?.detectionKind === 'gpu' ? cached.idealBackendId ?? null : null
+  }
+
+  /// Backend type from the recommendation `recheckOptimalBackend` /
+  /// `configureBackends` last wrote, or `null` when none is pending.
+  private storedRecommendedBackendType(): string | null {
+    try {
+      const raw = localStorage.getItem(TURBOQUANT_RECOMMENDATION_KEY)
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { recommendedBackend?: string }
+      const recommended = stripBom(parsed?.recommendedBackend ?? '')
+      return recommended.split('/')[1] || null
+    } catch {
+      return null
     }
   }
 
@@ -2797,6 +3070,7 @@ export default class llamacpp_extension extends AIEngine {
 
     // Ensure backend is downloaded and ready before proceeding
     await this.ensureBackendReady(backend, version)
+    this.effectiveVersionBackend = `${version}/${backend}`
 
     const janDataFolderPath = await getJanDataFolderPath()
     const modelConfigPath = await joinPath([
@@ -3221,10 +3495,18 @@ export default class llamacpp_extension extends AIEngine {
     version = stripBom(version)
     const backendKey = `${version}/${backend}`
     if (await isBackendInstalled(backend, version)) {
-      // TurboQuant Windows CUDA archives bundle the cudart/cublas DLLs inline
-      // (the AtomicBot-ai release zips already ship `cudart64`/`cublas64`/
-      // `cublasLt64`), so no separate cudart companion download is needed —
-      // an installed backend exe is sufficient.
+      // Exe present — still repair missing cudart for Windows CUDA tiers
+      // (some TurboQuant release zips omit the runtime DLLs).
+      const targetDir = await getBackendDir(backend, version)
+      try {
+        await this.ensureCudartReady(version, backend, targetDir, backendKey)
+      } catch (cudartErr) {
+        logger.warn(
+          `cudart pre-flight for ${backendKey} failed: ${
+            cudartErr instanceof Error ? cudartErr.message : String(cudartErr)
+          }`
+        )
+      }
       return
     }
 
@@ -3290,6 +3572,234 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   /**
+   * Ensure CUDA runtime DLLs exist in `<targetDir>/build/bin` for a Windows
+   * TurboQuant CUDA backend. Prefer copying from an already-installed
+   * `llamacpp-upstream` CUDA bin of the same minor; otherwise download the
+   * ggml-org `cudart-llama-bin-win-cuda-{minor}-x64.zip` companion.
+   *
+   * No-op off Windows / for non-CUDA backends / when cudart is already present.
+   */
+  private async ensureCudartReady(
+    _version: string,
+    backend: string,
+    targetDir: string,
+    backendString: string
+  ): Promise<void> {
+    if (!IS_WINDOWS) return
+
+    const toolkitVersion = getCudaToolkitVersion(backend)
+    const cudartName = getCudartArchiveName(backend)
+    const cudartUrl = getCudartDownloadUrl(backend)
+    if (!toolkitVersion || !cudartName || !cudartUrl) {
+      return
+    }
+
+    const janDataFolderPath = await getJanDataFolderPath()
+
+    try {
+      const alreadyInstalled = await isCudaInstalledFromRust(
+        targetDir,
+        toolkitVersion,
+        'windows',
+        janDataFolderPath
+      )
+      if (alreadyInstalled) {
+        logger.info(
+          `cudart for ${backendString} already present, skipping repair`
+        )
+        return
+      }
+    } catch (probeErr) {
+      logger.warn(
+        `is_cuda_installed probe failed for ${backendString}, will attempt cudart repair anyway: ${
+          probeErr instanceof Error ? probeErr.message : String(probeErr)
+        }`
+      )
+    }
+
+    const buildBinDir = await joinPath([targetDir, 'build', 'bin'])
+    if (!(await fs.existsSync(buildBinDir))) {
+      await fs.mkdir(buildBinDir)
+    }
+
+    // 1) Prefer copy from a sibling upstream CUDA install (no network).
+    try {
+      const donorBin = await findUpstreamCudaBinWithCudart(
+        janDataFolderPath,
+        toolkitVersion
+      )
+      if (donorBin) {
+        const copied = await copyBackendDlls(donorBin, buildBinDir, [
+          'cudart',
+          'cublas',
+        ])
+        if (copied > 0) {
+          logger.info(
+            `Copied ${copied} CUDA runtime DLL(s) from upstream ${donorBin} into ${buildBinDir} for ${backendString}`
+          )
+          const ok = await isCudaInstalledFromRust(
+            targetDir,
+            toolkitVersion,
+            'windows',
+            janDataFolderPath
+          )
+          if (ok) return
+          logger.warn(
+            `Copied DLLs for ${backendString} but is_cuda_installed still false — falling through to download`
+          )
+        }
+      }
+    } catch (copyErr) {
+      logger.warn(
+        `copy-from-upstream cudart for ${backendString} failed, will download: ${
+          copyErr instanceof Error ? copyErr.message : String(copyErr)
+        }`
+      )
+    }
+
+    // 2) Download ggml-org companion (same archive the upstream provider uses).
+    const tempDir = await joinPath([janDataFolderPath, 'llamacpp', 'tmp'])
+    if (!(await fs.existsSync(tempDir))) {
+      await fs.mkdir(tempDir)
+    }
+    const cudartArchivePath = await joinPath([tempDir, cudartName])
+    const cudartExtractDir = await joinPath([
+      tempDir,
+      `cudart-${backend}-${toolkitVersion}`,
+    ])
+
+    logger.info(`Downloading cudart for ${backendString} from ${cudartUrl}`)
+
+    const taskId = `llamacpp-cudart-${this.sanitizeForTauriEvent(
+      toolkitVersion
+    )}/${this.sanitizeForTauriEvent(backend)}`
+    const downloadManager = window.core?.extensionManager?.getByName(
+      '@janhq/download-extension'
+    ) as
+      | {
+          downloadFiles?: (
+            items: DownloadItem[],
+            taskId: string,
+            onProgress?: (transferred: number, total: number) => void,
+            resume?: boolean
+          ) => Promise<void>
+        }
+      | undefined
+
+    const onProgress = (transferred: number, total: number) => {
+      if (events && typeof events.emit === 'function') {
+        events.emit(DownloadEvent.onFileDownloadUpdate, {
+          modelId: taskId,
+          percent: total > 0 ? transferred / total : 0,
+          size: { transferred, total },
+          downloadType: 'Backend',
+        })
+      }
+    }
+
+    const proxy = getProxyConfig() ?? undefined
+
+    try {
+      if (downloadManager?.downloadFiles) {
+        await downloadManager.downloadFiles(
+          [{ url: cudartUrl, save_path: cudartArchivePath, proxy }],
+          taskId,
+          onProgress,
+          false
+        )
+      } else {
+        logger.warn(
+          'download-extension not available, falling back to raw download_files invoke for cudart'
+        )
+        await invoke<void>('download_files', {
+          items: [{ url: cudartUrl, save_path: cudartArchivePath, proxy }],
+          taskId,
+          headers: {},
+          resume: false,
+        })
+      }
+
+      if (!(await fs.existsSync(cudartExtractDir))) {
+        await fs.mkdir(cudartExtractDir)
+      }
+
+      logger.info(`Extracting cudart archive to ${cudartExtractDir}`)
+      await invoke('decompress', {
+        path: cudartArchivePath,
+        outputDir: cudartExtractDir,
+      })
+
+      let copied = 0
+      const stack: string[] = [cudartExtractDir]
+      while (stack.length > 0) {
+        const currentDir = stack.pop() as string
+        const entries = (await fs.readdirSync(currentDir)) as string[]
+        for (const entryPath of entries) {
+          let stat: { isDirectory?: boolean } | undefined
+          try {
+            stat = await fs.fileStat(entryPath)
+          } catch {
+            stat = undefined
+          }
+          if (stat?.isDirectory) {
+            stack.push(entryPath)
+            continue
+          }
+          const baseName = entryPath.split(/[/\\]/).filter(Boolean).pop()
+          if (!baseName) continue
+          if (baseName.toLowerCase().endsWith('.dll')) {
+            const dst = await joinPath([buildBinDir, baseName])
+            await fs.mv(entryPath, dst)
+            copied += 1
+          }
+        }
+      }
+
+      logger.info(
+        `Merged ${copied} cudart DLL(s) into ${buildBinDir} for ${backendString}`
+      )
+
+      if (copied === 0) {
+        throw new Error(
+          `cudart archive for ${backendString} contained no DLLs`
+        )
+      }
+
+      if (events && typeof events.emit === 'function') {
+        events.emit(DownloadEvent.onFileDownloadAndVerificationSuccess, {
+          modelId: taskId,
+          downloadType: 'Backend',
+        })
+      }
+    } catch (cudartErr) {
+      if (events && typeof events.emit === 'function') {
+        events.emit(DownloadEvent.onFileDownloadError, {
+          modelId: taskId,
+          error:
+            cudartErr instanceof Error ? cudartErr.message : String(cudartErr),
+          downloadType: 'Backend',
+        })
+      }
+      throw cudartErr
+    } finally {
+      try {
+        if (await fs.existsSync(cudartArchivePath)) {
+          await fs.rm(cudartArchivePath)
+        }
+      } catch {
+        // best-effort cleanup
+      }
+      try {
+        if (await fs.existsSync(cudartExtractDir)) {
+          await fs.rm(cudartExtractDir)
+        }
+      } catch {
+        // best-effort cleanup
+      }
+    }
+  }
+
+  /**
    * Downloads a backend archive from janhq/llama.cpp GitHub releases and
    * extracts it into the local backends directory.
    */
@@ -3307,6 +3817,21 @@ export default class llamacpp_extension extends AIEngine {
       logger.info(
         `Backend ${backendString} is already installed, skipping download`
       )
+      const installedDir = await getBackendDir(backend, version)
+      try {
+        await this.ensureCudartReady(
+          version,
+          backend,
+          installedDir,
+          backendString
+        )
+      } catch (cudartErr) {
+        logger.warn(
+          `cudart repair for already-installed ${backendString} failed: ${
+            cudartErr instanceof Error ? cudartErr.message : String(cudartErr)
+          }`
+        )
+      }
       return
     }
 
@@ -3455,9 +3980,17 @@ export default class llamacpp_extension extends AIEngine {
         )
       }
 
-      // TurboQuant Windows CUDA archives bundle the cudart/cublas DLLs inline,
-      // so there is no separate cudart companion archive to merge — the
-      // extracted backend is GPU-ready as-is.
+      // Prefer inline cudart from the zip; when absent, copy from an installed
+      // upstream CUDA bin or download the ggml-org companion.
+      try {
+        await this.ensureCudartReady(version, backend, targetDir, backendString)
+      } catch (cudartErr) {
+        logger.warn(
+          `Backend ${backendString} installed, but cudart DLL merge failed: ${
+            cudartErr instanceof Error ? cudartErr.message : String(cudartErr)
+          }`
+        )
+      }
 
       logger.info(`Backend ${backendString} installed successfully`)
 
