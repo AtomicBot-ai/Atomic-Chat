@@ -115,6 +115,21 @@ export function runtimeRanOnCpu(
 }
 
 /**
+ * True when a GPU-tier load failed to initialise the GPU stack even if
+ * `load_tensors` never printed an offload summary (empty primary / backends).
+ * Covers "no usable GPU found", missing cudart, and the spawn-time
+ * `cuda_runtime_missing` probe.
+ */
+export function runtimeGpuInitFailed(
+  runtimeDevice: RuntimeDeviceSnapshot | undefined | null
+): boolean {
+  if (!runtimeDevice) return false
+  if (runtimeDevice.cuda_runtime_missing === true) return true
+  const err = (runtimeDevice.device_init_error ?? '').trim()
+  return err.length > 0
+}
+
+/**
  * Compare what the UI shows, what was launched and what the process reports.
  * `categoryOf` is injected because the two providers use different backend id
  * schemes (`windows-x64-cuda-13.3` vs `win-cuda-13.3-x64`).
@@ -148,7 +163,8 @@ export function classifyBackendMismatch(input: {
   if (
     isGpuBackendCategory(effectiveCategory) &&
     !cpuOnlyByRequest &&
-    runtimeRanOnCpu(input.runtimeDevice)
+    (runtimeRanOnCpu(input.runtimeDevice) ||
+      runtimeGpuInitFailed(input.runtimeDevice))
   ) {
     return {
       kind: 'runtime-cpu',

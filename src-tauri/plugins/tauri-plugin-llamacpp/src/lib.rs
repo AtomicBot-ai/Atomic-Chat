@@ -50,6 +50,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             backend::determine_supported_backends,
             backend::get_supported_features,
             backend::is_cuda_installed,
+            backend::copy_backend_dlls,
             backend::find_latest_version_for_backend,
             backend::prioritize_backends,
             backend::parse_backend_version,

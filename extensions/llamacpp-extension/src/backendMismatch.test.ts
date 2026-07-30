@@ -156,6 +156,52 @@ describe('classifyBackendMismatch', () => {
     })
   })
 
+  it('treats device_init_error alone as runtime-cpu even with empty primary', () => {
+    // Repro from Windows TurboQuant CUDA zips missing cudart: llama.cpp prints
+    // "no usable GPU found" before any load_tensors lines, so the snapshot is
+    // backends=[], primary="", offloaded=None — previously classified as ok.
+    expect(
+      classifyBackendMismatch({
+        configuredBackend: 'windows-x64-cuda-13.3',
+        effectiveBackend: 'windows-x64-cuda-13.3',
+        runtimeDevice: {
+          loaded_backends: [],
+          primary_device: '',
+          device_init_error:
+            'warning: no usable GPU found, --gpu-layers option will be ignored',
+        },
+        categoryOf,
+      })
+    ).toEqual({
+      kind: 'runtime-cpu',
+      configured: 'windows-x64-cuda-13.3',
+      primaryDevice: 'CPU',
+      offloaded: null,
+      total: null,
+      gpuKind: 'cuda',
+      cudaRuntimeMissing: false,
+      deviceInitError:
+        'warning: no usable GPU found, --gpu-layers option will be ignored',
+    })
+  })
+
+  it('treats cuda_runtime_missing alone as runtime-cpu', () => {
+    expect(
+      classifyBackendMismatch({
+        configuredBackend: 'windows-x64-cuda-13.3',
+        effectiveBackend: 'windows-x64-cuda-13.3',
+        runtimeDevice: {
+          cuda_runtime_missing: true,
+        },
+        categoryOf,
+      })
+    ).toMatchObject({
+      kind: 'runtime-cpu',
+      cudaRuntimeMissing: true,
+      primaryDevice: 'CPU',
+    })
+  })
+
   it('stays silent when the user asked for CPU-only with GPU Layers = 0', () => {
     // The "GPU Layers" model setting documents 0 as CPU only, so `-ngl 0` and
     // `offloaded 0/33` are what was requested. Warning here would train the

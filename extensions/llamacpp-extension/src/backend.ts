@@ -29,7 +29,18 @@ export const TURBOQUANT_BACKEND_MANIFEST_REVISION =
 export const TURBOQUANT_BACKEND_MANIFEST_URL = `https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/${TURBOQUANT_BACKEND_MANIFEST_REVISION}/backends/turboquant-manifest.json`
 const LLAMACPP_DOWNLOAD_BASE =
   'https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download'
+/** ggml-org companion archives — same source the upstream provider uses. */
+const GGML_ORG_CUDART_DOWNLOAD_BASE =
+  'https://github.com/ggml-org/llama.cpp/releases/download'
+/**
+ * Pinned ggml-org tag that ships `cudart-llama-bin-win-cuda-{12.4,13.3}-x64.zip`.
+ * Keep in sync with `LLAMACPP_UPSTREAM_PINNED_TAG` in the upstream extension.
+ */
+export const GGML_ORG_CUDART_PINNED_TAG = 'b9937'
 const MANIFEST_FETCH_TIMEOUT_MS = 8_000
+
+/** Clean TurboQuant Windows CUDA ids, e.g. `windows-x64-cuda-13.3`. */
+const TQ_WINDOWS_CUDA_BACKEND_RE = /^windows-x64-cuda-(12\.\d+|13\.\d+)$/
 
 interface TurboquantManifestEntry {
   id: string
@@ -265,8 +276,10 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
  *
  * `version` is the per-backend release tag carried from the manifest (each
  * variant lives in its own release), so the scattered-release URL is exact.
- * Windows variants are `.zip`, Linux/macOS are `.tar.gz`. CUDA zips already
- * bundle the cudart/cublas DLLs inline — no separate cudart companion.
+ * Windows variants are `.zip`, Linux/macOS are `.tar.gz`. CUDA zips *should*
+ * bundle cudart/cublas inline; when they do not, `ensureCudartReady` repairs
+ * by copying from an installed upstream CUDA bin or downloading the ggml-org
+ * companion archive.
  */
 export function getBackendDownloadUrl(
   version: string,
@@ -276,6 +289,90 @@ export function getBackendDownloadUrl(
   backend = backend.replace(/\uFEFF/g, '').trim()
   const ext = IS_WINDOWS ? 'zip' : 'tar.gz'
   return `${LLAMACPP_DOWNLOAD_BASE}/${version}/llama-turboquant-${backend}.${ext}`
+}
+
+/**
+ * CUDA toolkit minor (`12.4`, `13.3`, …) for a TurboQuant Windows CUDA backend
+ * id, or `null` for non-CUDA / non-Windows ids.
+ */
+export function getCudaToolkitVersion(backend: string): string | null {
+  const match = TQ_WINDOWS_CUDA_BACKEND_RE.exec(
+    backend.replace(/\uFEFF/g, '').trim()
+  )
+  return match ? match[1] : null
+}
+
+/** Upstream provider id for the same CUDA minor: `win-cuda-13.3-x64`. */
+export function upstreamCudaBackendId(toolkitVersion: string): string {
+  return `win-cuda-${toolkitVersion}-x64`
+}
+
+export function getCudartArchiveName(backend: string): string | null {
+  const toolkitVersion = getCudaToolkitVersion(backend)
+  if (!toolkitVersion) return null
+  return `cudart-llama-bin-win-cuda-${toolkitVersion}-x64.zip`
+}
+
+/**
+ * ggml-org companion URL for a TurboQuant Windows CUDA backend. Uses the
+ * pinned upstream tag (not the turboquant release tag — those zips live on a
+ * different CDN and do not host cudart companions).
+ */
+export function getCudartDownloadUrl(
+  backend: string,
+  ggmlOrgTag: string = GGML_ORG_CUDART_PINNED_TAG
+): string | null {
+  const filename = getCudartArchiveName(backend)
+  if (!filename) return null
+  const tag = ggmlOrgTag.replace(/\uFEFF/g, '').trim()
+  if (!tag) return null
+  return `${GGML_ORG_CUDART_DOWNLOAD_BASE}/${tag}/${filename}`
+}
+
+/**
+ * Walk llamacpp-upstream/backends/<tag>/win-cuda-{minor}-x64/build/bin and
+ * return the first bin directory that contains the expected cudart DLL.
+ */
+export async function findUpstreamCudaBinWithCudart(
+  janDataFolderPath: string,
+  toolkitVersion: string
+): Promise<string | null> {
+  const major = toolkitVersion.split('.')[0] ?? ''
+  const cudartName =
+    major === '12'
+      ? 'cudart64_12.dll'
+      : major === '13'
+        ? 'cudart64_13.dll'
+        : major === '11'
+          ? 'cudart64_110.dll'
+          : null
+  if (!cudartName) return null
+
+  const upstreamRoot = await joinPath([
+    janDataFolderPath,
+    'llamacpp-upstream',
+    'backends',
+  ])
+  if (!(await fs.existsSync(upstreamRoot))) return null
+
+  const upstreamBackendId = upstreamCudaBackendId(toolkitVersion)
+  const versionEntries = (await fs.readdirSync(upstreamRoot)) as string[]
+  // Prefer newer install folders first (lexicographic on full path is fine —
+  // ggml-org tags like b9937 > b9691).
+  const sorted = [...versionEntries].sort().reverse()
+  for (const versionPath of sorted) {
+    const binDir = await joinPath([
+      versionPath,
+      upstreamBackendId,
+      'build',
+      'bin',
+    ])
+    const cudartPath = await joinPath([binDir, cudartName])
+    if (await fs.existsSync(cudartPath)) {
+      return binDir
+    }
+  }
+  return null
 }
 
 export async function listSupportedBackends(): Promise<BackendVersion[]> {
@@ -377,14 +474,15 @@ export async function getBackendExePath(
 /**
  * Windows-only defense-in-depth: a correctly packaged TurboQuant Windows
  * backend ships `llama-server.exe` alongside its dependency DLLs
- * (`llama-server-impl.dll`, `ggml*.dll`, cudart/cublas, ...) extracted from
- * the same archive into the same `build/bin` directory. A CI packaging
- * regression could relocate the exe without its DLLs, leaving a directory
- * that looks "installed" (the exe exists) but crashes on load with a
- * missing-DLL error ([LLAMA_CPP_PROCESS_ERROR]). Detect that shape
- * generically - without hardcoding DLL names, which vary per backend
- * variant (CPU/CUDA/Vulkan) - by requiring at least one `.dll` sibling
- * next to the exe.
+ * (`llama-server-impl.dll`, `ggml*.dll`, …) extracted into the same
+ * `build/bin` directory. A CI packaging regression could relocate the exe
+ * without its DLLs, leaving a directory that looks "installed" (the exe
+ * exists) but crashes on load with a missing-DLL error
+ * ([LLAMA_CPP_PROCESS_ERROR]). Detect that shape generically — without
+ * hardcoding DLL names, which vary per backend variant (CPU/CUDA/Vulkan) —
+ * by requiring at least one `.dll` sibling next to the exe. Missing CUDA
+ * *runtime* DLLs (cudart/cublas) are repaired separately by
+ * `ensureCudartReady` and are not required for this presence check.
  */
 async function windowsBackendHasDlls(exePath: string): Promise<boolean> {
   const lastSlash = Math.max(

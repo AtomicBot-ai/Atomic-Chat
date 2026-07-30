@@ -25,6 +25,7 @@ const COMMANDS: &[&str] = &[
     "determine_supported_backends",
     "get_supported_features",
     "is_cuda_installed",
+    "copy_backend_dlls",
     "find_latest_version_for_backend",
     "prioritize_backends",
     "parse_backend_version",

@@ -27,6 +27,7 @@ Default permissions for the llamacpp plugin
 - `allow-determine-supported-backends`
 - `allow-get-supported-features`
 - `allow-is-cuda-installed`
+- `allow-copy-backend-dlls`
 - `allow-find-latest-version-for-backend`
 - `allow-prioritize-backends`
 - `allow-parse-backend-version`
@@ -94,6 +95,32 @@ Enables the cleanup_llama_processes command without any pre-configured scope.
 <td>
 
 Denies the cleanup_llama_processes command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-copy-backend-dlls`
+
+</td>
+<td>
+
+Enables the copy_backend_dlls command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-copy-backend-dlls`
+
+</td>
+<td>
+
+Denies the copy_backend_dlls command without any pre-configured scope.
 
 </td>
 </tr>

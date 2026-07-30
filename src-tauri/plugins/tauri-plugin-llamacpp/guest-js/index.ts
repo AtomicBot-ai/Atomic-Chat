@@ -286,6 +286,19 @@ export async function isCudaInstalledFromRust(
   })
 }
 
+/** Copy DLL files whose names start with any of `namePrefixes` from `srcDir` to `dstDir`. */
+export async function copyBackendDlls(
+  srcDir: string,
+  dstDir: string,
+  namePrefixes: string[]
+): Promise<number> {
+  return invoke<number>('plugin:llamacpp|copy_backend_dlls', {
+    srcDir,
+    dstDir,
+    namePrefixes,
+  })
+}
+
 export async function findLatestVersionForBackend(
   versionBackends: BackendVersion[],
   backendType: string
