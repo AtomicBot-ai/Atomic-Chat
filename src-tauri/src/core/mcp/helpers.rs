@@ -262,6 +262,125 @@ pub async fn start_mcp_server<R: Runtime>(
     }
 }
 
+/// Build a shared `reqwest` client for HTTP-based MCP transports using the
+/// server's configured headers and timeout.
+fn build_mcp_http_client(config_params: &McpServerConfig) -> reqwest::Client {
+    reqwest::Client::builder()
+        .default_headers({
+            let mut headers = reqwest::header::HeaderMap::new();
+            for (key, value) in config_params.headers.iter() {
+                if let Some(v_str) = value.as_str() {
+                    // Try to map env keys to HTTP header names (case-insensitive)
+                    // Most HTTP headers are Title-Case, so we try to convert
+                    let header_name = reqwest::header::HeaderName::from_bytes(key.as_bytes());
+                    if let Ok(header_name) = header_name {
+                        if let Ok(header_value) = reqwest::header::HeaderValue::from_str(v_str) {
+                            headers.insert(header_name, header_value);
+                        }
+                    }
+                }
+            }
+            headers
+        })
+        .connect_timeout(config_params.timeout.unwrap_or(Duration::MAX))
+        .build()
+        .unwrap()
+}
+
+fn build_mcp_client_info(client_name: &str) -> ClientInfo {
+    ClientInfo {
+        protocol_version: Default::default(),
+        capabilities: ClientCapabilities::default(),
+        client_info: Implementation {
+            name: client_name.to_string(),
+            version: "0.0.1".to_string(),
+            title: None,
+            website_url: None,
+            icons: None,
+        },
+    }
+}
+
+async fn connect_streamable_http<R: Runtime>(
+    app: &AppHandle<R>,
+    servers: &SharedMcpServers,
+    name: &str,
+    config_params: &McpServerConfig,
+) -> Result<(), String> {
+    let url = config_params
+        .url
+        .as_ref()
+        .expect("url checked by caller")
+        .clone();
+    let transport = StreamableHttpClientTransport::with_client(
+        build_mcp_http_client(config_params),
+        StreamableHttpClientTransportConfig {
+            uri: url.into(),
+            ..Default::default()
+        },
+    );
+
+    let client = build_mcp_client_info("Atomic Chat Streamable Client")
+        .serve(transport)
+        .await
+        .map_err(|e| {
+            log::error!("Failed to connect to server via Streamable HTTP: {e}");
+            format!("Failed to connect via Streamable HTTP: {e}")
+        })?;
+
+    log::info!(
+        "Connected to server via Streamable HTTP: {:?}",
+        client.peer_info()
+    );
+    servers
+        .lock()
+        .await
+        .insert(name.to_string(), RunningServiceEnum::WithInit(client));
+    emit_mcp_update_event(app, name);
+    Ok(())
+}
+
+async fn connect_sse<R: Runtime>(
+    app: &AppHandle<R>,
+    servers: &SharedMcpServers,
+    name: &str,
+    config_params: &McpServerConfig,
+) -> Result<(), String> {
+    let url = config_params
+        .url
+        .as_ref()
+        .expect("url checked by caller")
+        .clone();
+    let transport = SseClientTransport::start_with_client(
+        build_mcp_http_client(config_params),
+        rmcp::transport::sse_client::SseClientConfig {
+            sse_endpoint: url.into(),
+            ..Default::default()
+        },
+    )
+    .await
+    .map_err(|e| {
+        log::error!("SSE transport error: {e:?}");
+        format!("Failed to start SSE transport: {e}")
+    })?;
+
+    let client = build_mcp_client_info("Atomic Chat SSE Client")
+        .serve(transport)
+        .await
+        .map_err(|e| {
+            log::error!("Failed to connect to server via SSE: {e}");
+            format!("Failed to connect via SSE: {e}")
+        })?;
+
+    log::info!("Connected to server via SSE: {:?}", client.peer_info());
+    servers
+        .lock()
+        .await
+        .insert(name.to_string(), RunningServiceEnum::WithInit(client));
+    emit_mcp_update_event(app, name);
+    Ok(())
+}
+
 async fn schedule_mcp_start_task<R: Runtime>(
     app: tauri::AppHandle<R>,
     servers: SharedMcpServers,
@@ -278,136 +397,51 @@ async fn schedule_mcp_start_task<R: Runtime>(
     let config_params = extract_command_args(&config)
         .ok_or_else(|| format!("Failed to extract command args from config for {name}"))?;
 
-    if config_params.transport_type.as_deref() == Some("http") && config_params.url.is_some() {
-        let transport = StreamableHttpClientTransport::with_client(
-            reqwest::Client::builder()
-                .default_headers({
-                    // Map envs to request headers
-                    let mut headers: tauri::http::HeaderMap = reqwest::header::HeaderMap::new();
-                    for (key, value) in config_params.headers.iter() {
-                        if let Some(v_str) = value.as_str() {
-                            // Try to map env keys to HTTP header names (case-insensitive)
-                            // Most HTTP headers are Title-Case, so we try to convert
-                            let header_name =
-                                reqwest::header::HeaderName::from_bytes(key.as_bytes());
-                            if let Ok(header_name) = header_name {
-                                if let Ok(header_value) =
-                                    reqwest::header::HeaderValue::from_str(v_str)
-                                {
-                                    headers.insert(header_name, header_value);
-                                }
-                            }
-                        }
-                    }
-                    headers
-                })
-                .connect_timeout(config_params.timeout.unwrap_or(Duration::MAX))
-                .build()
-                .unwrap(),
-            StreamableHttpClientTransportConfig {
-                uri: config_params.url.unwrap().into(),
-                ..Default::default()
-            },
-        );
+    if config_params.url.is_some() && config_params.transport_type.as_deref() != Some("stdio") {
+        let preferred = config_params.transport_type.as_deref();
 
-        let client_info = ClientInfo {
-            protocol_version: Default::default(),
-            capabilities: ClientCapabilities::default(),
-            client_info: Implementation {
-                name: "Jan Streamable Client".to_string(),
-                version: "0.0.1".to_string(),
-                title: None,
-                website_url: None,
-                icons: None,
-            },
+        // For remote servers, try the configured transport first and then fall
+        // back to the other HTTP-based transport. This matches mcp-remote's
+        // http-first strategy and fixes servers that advertise SSE but only
+        // answer Streamable HTTP (or vice versa) (ATO-385).
+        let first_error = if preferred == Some("sse") {
+            match connect_sse(&app, &servers, &name, &config_params).await {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    log::warn!(
+                        "MCP server {name} failed to connect via SSE ({e}), trying Streamable HTTP fallback"
+                    );
+                    e
+                }
+            }
+        } else {
+            match connect_streamable_http(&app, &servers, &name, &config_params).await {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    log::warn!(
+                        "MCP server {name} failed to connect via Streamable HTTP ({e}), trying SSE fallback"
+                    );
+                    e
+                }
+            }
         };
-        let client = client_info.serve(transport).await.inspect_err(|e| {
-            log::error!("client error: {e:?}");
-        });
 
-        match client {
-            Ok(client) => {
-                log::info!("Connected to server: {:?}", client.peer_info());
-                servers
-                    .lock()
-                    .await
-                    .insert(name.clone(), RunningServiceEnum::WithInit(client));
-
-                emit_mcp_update_event(&app, &name);
-            }
-            Err(e) => {
-                log::error!("Failed to connect to server: {e}");
-                return Err(format!("Failed to connect to server: {e}"));
-            }
-        }
-    } else if config_params.transport_type.as_deref() == Some("sse") && config_params.url.is_some()
-    {
-        let transport = SseClientTransport::start_with_client(
-            reqwest::Client::builder()
-                .default_headers({
-                    // Map envs to request headers
-                    let mut headers = reqwest::header::HeaderMap::new();
-                    for (key, value) in config_params.headers.iter() {
-                        if let Some(v_str) = value.as_str() {
-                            // Try to map env keys to HTTP header names (case-insensitive)
-                            // Most HTTP headers are Title-Case, so we try to convert
-                            let header_name =
-                                reqwest::header::HeaderName::from_bytes(key.as_bytes());
-                            if let Ok(header_name) = header_name {
-                                if let Ok(header_value) =
-                                    reqwest::header::HeaderValue::from_str(v_str)
-                                {
-                                    headers.insert(header_name, header_value);
-                                }
-                            }
-                        }
-                    }
-                    headers
+        if preferred == Some("sse") {
+            connect_streamable_http(&app, &servers, &name, &config_params)
+                .await
+                .map_err(|e| {
+                    format!(
+                        "MCP server {name} failed both SSE and Streamable HTTP: {e} (first error: {first_error})"
+                    )
                 })
-                .connect_timeout(config_params.timeout.unwrap_or(Duration::MAX))
-                .build()
-                .unwrap(),
-            rmcp::transport::sse_client::SseClientConfig {
-                sse_endpoint: config_params.url.unwrap().into(),
-                ..Default::default()
-            },
-        )
-        .await
-        .map_err(|e| {
-            log::error!("transport error: {e:?}");
-            format!("Failed to start SSE transport: {e}")
-        })?;
-
-        let client_info = ClientInfo {
-            protocol_version: Default::default(),
-            capabilities: ClientCapabilities::default(),
-            client_info: Implementation {
-                name: "Jan SSE Client".to_string(),
-                version: "0.0.1".to_string(),
-                title: None,
-                website_url: None,
-                icons: None,
-            },
-        };
-        let client = client_info.serve(transport).await.map_err(|e| {
-            log::error!("client error: {e:?}");
-            e.to_string()
-        });
-
-        match client {
-            Ok(client) => {
-                log::info!("Connected to server: {:?}", client.peer_info());
-                servers
-                    .lock()
-                    .await
-                    .insert(name.clone(), RunningServiceEnum::WithInit(client));
-
-                emit_mcp_update_event(&app, &name);
-            }
-            Err(e) => {
-                log::error!("Failed to connect to server: {e}");
-                return Err(format!("Failed to connect to server: {e}"));
-            }
+        } else {
+            connect_sse(&app, &servers, &name, &config_params)
+                .await
+                .map_err(|e| {
+                    format!(
+                        "MCP server {name} failed both Streamable HTTP and SSE: {e} (first error: {first_error})"
+                    )
+                })
         }
     } else {
         if name == "Jan Browser MCP" {
@@ -566,8 +600,8 @@ async fn schedule_mcp_start_task<R: Runtime>(
         }
 
         emit_mcp_update_event(&app, &name);
+        Ok(())
     }
-    Ok(())
 }
 
 fn emit_mcp_update_event<R: Runtime>(app: &AppHandle<R>, name: &str) {
