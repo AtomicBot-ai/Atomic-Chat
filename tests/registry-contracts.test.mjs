@@ -29,17 +29,40 @@ test('upstream manifest preserves the pinned release asset contract', () => {
   }
 })
 
-test('TurboQuant manifest preserves per-backend release identity', () => {
+test('TurboQuant manifest ships one unified release for every backend', () => {
   const manifest = fixture('turboquant-manifest')
   assert.match(manifest.commit, /^[0-9a-f]{7,40}$/)
   unique(
     manifest.backends.map(({ id }) => id),
     'TurboQuant backend ids must be unique'
   )
+  // The fork now cuts a single `b<upstream-build>-<fork-semver>` release that
+  // carries every platform, replacing the per-backend `turboquant-<id>-<sha>`
+  // tags. A split tag means the manifest was assembled from two releases.
+  const [{ tag: unifiedTag }] = manifest.backends
+  assert.match(unifiedTag, /^b\d+-\d+\.\d+\.\d+$/)
   for (const backend of manifest.backends) {
     nonEmpty(backend.id, 'backend id')
-    assert.ok(backend.tag.endsWith(manifest.commit))
+    assert.equal(backend.tag, unifiedTag)
     assert.ok(backend.asset.includes(backend.id))
+    assert.match(
+      backend.asset,
+      backend.id.startsWith('windows-') ? /\.zip$/ : /\.tar\.gz$/
+    )
+  }
+})
+
+test('TurboQuant manifest covers the full Linux backend matrix', () => {
+  const manifest = fixture('turboquant-manifest')
+  const ids = new Set(manifest.backends.map(({ id }) => id))
+  for (const id of [
+    'linux-x64-cpu',
+    'linux-x64-cuda-12.4',
+    'linux-x64-cuda-13.3',
+    'linux-x64-rocm',
+    'linux-x64-vulkan',
+  ]) {
+    assert.ok(ids.has(id), `manifest must publish ${id}`)
   }
 })
 

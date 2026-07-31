@@ -580,13 +580,14 @@ jobs:
           # optimal CUDA/Vulkan backend at runtime via the llamacpp-extension.
           # Backend INDEX is resolved from the static turboquant manifest in
           # atomic-chat-conf (raw.githubusercontent.com, no api.github.com rate
-          # limit); each entry carries its own tag (the releases are scattered).
+          # limit); the per-entry tag is read verbatim, so a unified release
+          # (`b<build>-<fork-semver>`) and a legacy scattered one both resolve.
           # The archive itself comes from the AtomicBot-ai releases CDN. Inline
           # bash (not `make ...-win-cpu`) because that make target is a
           # PowerShell one-liner whose `$(...)` is mangled by make's /usr/bin/sh.
           DIR="src-tauri/resources/llamacpp-backend"
           BACKEND="windows-x64-cpu"
-          MANIFEST_URL="https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/f149c30e55a3dfcdcbcc5d4a72be7c691db8f5e2/backends/turboquant-manifest.json"
+          MANIFEST_URL="https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/40665589ef2820f36cbdec282b23f554b60dd563/backends/turboquant-manifest.json"
           rm -rf "$DIR"
           mkdir -p "$DIR"
           echo "Resolving TurboQuant backend index from atomic-chat-conf manifest..."

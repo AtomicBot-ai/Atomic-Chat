@@ -61,7 +61,7 @@ Our own upstream repos, checked out next to this one under `/Users/misha/Work/At
 | -------- | ----------- | -------------------- |
 | macOS | `llamacpp` (our fork) **+** `llamacpp-upstream` | upstream is the default; MLX is separate on Apple Silicon |
 | Windows | `llamacpp-upstream` **+** optional `llamacpp` | upstream is the default; CUDA/Vulkan tiers are provider-specific |
-| Linux | `llamacpp-upstream` **+** optional `llamacpp` | upstream is the default; Vulkan is the sole GPU path |
+| Linux | `llamacpp-upstream` **+** optional `llamacpp` | upstream is the default; upstream GPU = Vulkan only, `llamacpp` adds CUDA/ROCm |
 
 Consequences you must respect:
 
@@ -74,8 +74,11 @@ Consequences you must respect:
 - Release builds bundle both provider trees on Windows/Linux.
   `download-llamacpp-backend-if-exists` remains a no-op on Windows and skips on
   Linux, but the release-specific download paths are active there.
-- On Linux there is no CUDA/HIP path. NVIDIA, AMD and Intel all share
-  Vulkan; internal backend ids differ between the two providers.
+- The optimal backend is a property of a provider *and* its pinned release, not
+  of the GPU. On Linux `llamacpp` picks CUDA 13.3 → CUDA 12.4 → ROCm → Vulkan →
+  CPU, while `llamacpp-upstream` stays Vulkan → CPU on the same hardware,
+  because ggml-org publishes no Linux CUDA/ROCm artifact. Never widen one
+  provider's matrix from the other's hardware probe.
 
 **MLX** (Apple Silicon): production downloads the AtomicBot-ai `mlx-vlm`
 PyInstaller sidecar; `mlx-server/Sources/` is legacy Swift source. It is driven

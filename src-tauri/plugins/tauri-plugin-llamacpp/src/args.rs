@@ -65,6 +65,36 @@ pub struct LlamacppConfig {
 /// flag to a string argument accepting auto|on|off (upstream PR #15434).
 const FLASH_ATTN_STRING_ARG_MIN_BUILD: u32 = 6325;
 
+/// True when a version string names a build from the TurboQuant fork's release
+/// train, in either shape the fork has published:
+///
+/// * legacy, one release per variant: `turboquant-<backend-id>-<sha>`
+/// * unified, one release per build: `b<upstream-build>-<fork-semver>`,
+///   e.g. `b10018-1.3.0`
+///
+/// A plain upstream tag (`b8149`) is deliberately NOT a fork build: a stock
+/// llama.cpp binary can end up inside the fork's backend tree (stale bundle,
+/// manual copy), and it must still get the safe cache-type fallback instead of
+/// being handed fork-only `turbo*` quantizations it cannot parse.
+pub(crate) fn is_turboquant_version(version: &str) -> bool {
+    if version.starts_with("turboquant-") {
+        return true;
+    }
+    let Some(rest) = version.strip_prefix('b') else {
+        return false;
+    };
+    let Some((build, fork_semver)) = rest.split_once('-') else {
+        return false;
+    };
+    let is_number = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    if !is_number(build) {
+        return false;
+    }
+    let mut parts = fork_semver.split('.');
+    let semver_ok = (0..3).all(|_| parts.next().is_some_and(is_number));
+    semver_ok && parts.next().is_none()
+}
+
 pub struct ArgumentBuilder {
     args: Vec<String>,
     config: LlamacppConfig,
@@ -97,16 +127,19 @@ impl ArgumentBuilder {
         })
     }
 
-    /// Parse the build number from a version string like "b6325".
-    /// Returns `None` if the format doesn't match.
+    /// Parse the upstream llama.cpp build number out of a version string.
+    /// Handles plain upstream tags ("b6325") and unified TurboQuant release
+    /// tags ("b10018-1.3.0", where b10018 is the upstream build the fork is
+    /// rebased on). Returns `None` when the tag carries no build number, as
+    /// legacy `turboquant-<id>-<sha>` tags do.
     fn parse_build_number(&self) -> Option<u32> {
-        self.version
-            .strip_prefix('b')
-            .and_then(|s| s.parse::<u32>().ok())
+        let rest = self.version.strip_prefix('b')?;
+        let build = rest.split('-').next()?;
+        build.parse::<u32>().ok()
     }
 
     fn is_turboquant(&self) -> bool {
-        self.version.starts_with("turboquant-")
+        is_turboquant_version(&self.version)
     }
 
     /// Standard cache types supported by upstream llama.cpp.
@@ -301,11 +334,11 @@ impl ArgumentBuilder {
             return;
         }
 
-        // Turboquant fork is rebased on recent ggml-org/llama.cpp (>> b6325)
-        // but its version string is `turboquant-<arch>-<sha>`, which has no
-        // build number. Treat it as string-arg-capable unconditionally so we
-        // don't fall back to the legacy boolean form (which the modern parser
-        // misreads, eating the next argv entry as the value).
+        // Turboquant fork is rebased on recent ggml-org/llama.cpp (>> b6325).
+        // Legacy fork tags (`turboquant-<arch>-<sha>`) carry no build number at
+        // all, so treat any fork build as string-arg-capable and don't fall
+        // back to the legacy boolean form (which the modern parser misreads,
+        // eating the next argv entry as the value).
         let supports_string_arg = self.is_turboquant()
             || self
                 .parse_build_number()
@@ -786,6 +819,66 @@ mod tests {
         let args = builder.build("test", "/path", 8080, None);
 
         assert_arg_pair(&args, "--flash-attn", "auto");
+    }
+
+    #[test]
+    fn test_unified_tag_is_recognised_as_a_fork_build() {
+        assert!(is_turboquant_version("b10018-1.3.0"));
+        assert!(is_turboquant_version("turboquant-linux-x64-vulkan-d86eb0b"));
+    }
+
+    // A stock ggml-org binary can end up inside the fork's backend tree, and
+    // its tag looks almost like the unified one. Fork-only cache types must
+    // never reach it.
+    #[test]
+    fn test_upstream_tag_is_not_a_fork_build() {
+        assert!(!is_turboquant_version("b10018"));
+        assert!(!is_turboquant_version("b10018-1.3"));
+        assert!(!is_turboquant_version("b10018-1.3.0.1"));
+        assert!(!is_turboquant_version("b10018-rc1"));
+        assert!(!is_turboquant_version("10018-1.3.0"));
+        assert!(!is_turboquant_version(""));
+    }
+
+    #[test]
+    fn test_unified_tag_keeps_fork_only_cache_types() {
+        let mut config = default_config();
+        config.version_backend = "b10018-1.3.0/linux-x64-rocm".to_string();
+        config.cache_type_k = "turbo3".to_string();
+        config.cache_type_v = "turbo3".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--cache-type-k", "turbo3");
+        assert_arg_pair(&args, "--cache-type-v", "turbo3");
+    }
+
+    #[test]
+    fn test_stock_build_in_fork_tree_falls_back_to_q8_0() {
+        let mut config = default_config();
+        config.version_backend = "b10018/linux-x64-rocm".to_string();
+        config.cache_type_k = "turbo3".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--cache-type-k", "q8_0");
+    }
+
+    // The upstream build the fork is rebased on drives every version gate, so
+    // it has to survive the `-<fork-semver>` suffix.
+    #[test]
+    fn test_unified_tag_uses_the_upstream_build_for_version_gates() {
+        let mut config = default_config();
+        config.version_backend = "b10018-1.3.0/linux-x64-rocm".to_string();
+        config.flash_attn = "on".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        assert_eq!(builder.parse_build_number(), Some(10018));
+
+        let args = builder.build("test", "/path", 8080, None);
+        assert_arg_pair(&args, "--flash-attn", "on");
     }
 
     #[test]

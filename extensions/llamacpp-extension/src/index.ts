@@ -39,6 +39,7 @@ import {
   getCudartArchiveName,
   getCudartDownloadUrl,
   findUpstreamCudaBinWithCudart,
+  isTurboQuantRelease,
 } from './backend'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import {
@@ -517,6 +518,7 @@ export default class llamacpp_extension extends AIEngine {
         //! Раньше отклонённый промис терялся; без лога сложно понять вечный «loading» в настройках.
         logger.error('configureBackends failed:', err)
       })
+      .then(() => this.reconcileBackendReleaseTag())
       .finally(() => {
         this.isInitializing = false
         this.configureBackendsPromise = null
@@ -1137,7 +1139,7 @@ export default class llamacpp_extension extends AIEngine {
           bundledType === currentType
 
         const shouldForceSwitch = IS_MAC
-          ? !effectiveBackendString.startsWith('turboquant-') || isBundledNewer
+          ? !isTurboQuantRelease(effectiveBackendString) || isBundledNewer
           : isBundledNewer
 
         if (shouldForceSwitch) {
@@ -1338,7 +1340,7 @@ export default class llamacpp_extension extends AIEngine {
         return hit ? stripBom(hit.backend) : null
       }
       const anyGpuBackendAvailable = catalog.some((b) =>
-        /(cuda-\d|vulkan)/.test(stripBom(b.backend))
+        /(cuda-\d|vulkan|rocm)/.test(stripBom(b.backend))
       )
 
       if (sysInfo.os_type === 'windows') {
@@ -1371,18 +1373,34 @@ export default class llamacpp_extension extends AIEngine {
         return { kind: 'cpu-optimal' }
       }
 
-      // Linux: the single linux-x64-vulkan build serves both CPU and GPU.
-      if (
-        features.vulkan &&
-        hasEnoughVram &&
-        archSuffix === 'x64' &&
-        !integratedGpuOnly
-      ) {
+      // Linux: the fork publishes discrete CPU / CUDA / ROCm / Vulkan builds,
+      // so this provider ranks CUDA 13.3 → CUDA 12.4 → ROCm → Vulkan → CPU.
+      // `llamacpp-upstream` stays Vulkan-only on the very same hardware — the
+      // optimal backend belongs to a provider and its release, not to the GPU.
+      if (archSuffix === 'x64') {
+        const cuda13 = pick(/^linux-x64-cuda-13(\.\d+)?$/)
+        const cuda12 = pick(/^linux-x64-cuda-12(\.\d+)?$/)
+        const rocm = pick(/^linux-x64-rocm$/)
         const vulkan = pick(/^linux-x64-vulkan$/)
-        if (vulkan) return { kind: 'gpu', backend: vulkan }
-        if (!anyGpuBackendAvailable) {
+
+        // ROCm shares Vulkan's guard: an APU-class RDNA part reports plenty of
+        // shared "VRAM" but loses to plain CPU inference.
+        const gpuWorthIt = hasEnoughVram && !integratedGpuOnly
+
+        if (features.cuda13 && cuda13) return { kind: 'gpu', backend: cuda13 }
+        if (features.cuda12 && cuda12) return { kind: 'gpu', backend: cuda12 }
+        if (features.rocm && gpuWorthIt && rocm)
+          return { kind: 'gpu', backend: rocm }
+        if (features.vulkan && gpuWorthIt && vulkan)
+          return { kind: 'gpu', backend: vulkan }
+
+        const gpuCapable =
+          features.cuda13 ||
+          features.cuda12 ||
+          ((features.rocm || features.vulkan) && gpuWorthIt)
+        if (gpuCapable && !anyGpuBackendAvailable) {
           logger.warn(
-            'detectIdealBackendType: Linux Vulkan-capable host but linux-x64-vulkan not in catalog — treating as detection failure (manifest likely unreachable)'
+            'detectIdealBackendType: GPU-capable Linux host but no turboquant GPU backend in catalog — treating as detection failure (manifest likely unreachable)'
           )
           return { kind: 'detection-failed' }
         }
@@ -1621,9 +1639,15 @@ export default class llamacpp_extension extends AIEngine {
     // available inside the Tauri WebView2 context where this extension
     // runs.
     if (typeof window !== 'undefined' && window.dispatchEvent) {
+      const [swappedVersion, swappedId] = backendString.split('/')
       window.dispatchEvent(
         new CustomEvent('app:backend-hotswapped', {
-          detail: { backend: backendString },
+          detail: {
+            backend: backendString,
+            provider: this.providerId,
+            version: swappedVersion,
+            backendId: swappedId,
+          },
         })
       )
     }
@@ -1803,6 +1827,8 @@ export default class llamacpp_extension extends AIEngine {
     recommendedBackend: string
     recommendedCategory: string
     provider: string
+    version: string
+    backendId: string
   } | null> {
     if (IS_MAC) {
       return null
@@ -1840,9 +1866,9 @@ export default class llamacpp_extension extends AIEngine {
       }
 
       // Resolve the concrete `${tag}/${id}` from the manifest-filtered
-      // catalog. Each turboquant backend variant ships in its OWN release with
-      // its OWN tag, so we must NOT reuse the current backend's tag — we read
-      // the matching entry's tag straight from the catalog.
+      // catalog. Never reuse the current backend's tag: the catalog entry is
+      // the only thing that knows which release actually carries this variant,
+      // and a legacy install can still be sitting on a per-variant tag.
       const recommendedBackend = await this.resolveConcreteBackend(idealType)
       this.persistOptimalBackendCache(
         detection,
@@ -1863,11 +1889,14 @@ export default class llamacpp_extension extends AIEngine {
         return null
       }
 
+      const [recommendedVersion, recommendedId] = recommendedBackend.split('/')
       const payload = {
         currentBackend,
         recommendedBackend,
         recommendedCategory: backendCategoryToLabel(idealCat),
         provider: this.providerId,
+        version: recommendedVersion,
+        backendId: recommendedId,
       }
       logger.info(
         `recheckOptimalBackend: surfacing recommendation ${recommendedBackend} (${payload.recommendedCategory})`
@@ -1917,6 +1946,69 @@ export default class llamacpp_extension extends AIEngine {
     } catch (err) {
       logger.warn('checkBackendForUpdates failed:', err)
       return { updateNeeded: false, newVersion: '0' }
+    }
+  }
+
+  /**
+   * Move an existing install onto the newest release tag of the backend type
+   * the user already runs.
+   *
+   * `configureBackends()` only force-switches when the freshly unpacked
+   * bundled backend has the *same* type as the configured one. Windows bundles
+   * `windows-x64-cpu` and Linux bundles `linux-x64-vulkan`, so anyone whose GPU
+   * tier was fetched at runtime (CUDA, ROCm) stays pinned to the release tag
+   * they first downloaded — an app update alone never reaches them. The
+   * hardware popup does not help either: it compares backend *categories*, so a
+   * CUDA user already counts as optimal and is never prompted.
+   *
+   * `checkBackendForUpdates()` resolves the newest tag for the current type
+   * across the merged local+manifest catalog. The running backend is itself
+   * part of that catalog, so the resolved target is never older — this cannot
+   * downgrade anyone.
+   *
+   * macOS is excluded: turboquant is bundled-only there, and the force-switch
+   * in `configureBackends()` already covers every app update.
+   */
+  private async reconcileBackendReleaseTag(): Promise<void> {
+    if (IS_MAC) return
+
+    try {
+      const current = stripBom(this.config.version_backend || '')
+      const currentType = current.split('/')[1]?.trim()
+      if (!current || current === 'none' || !currentType) {
+        logger.info(
+          'reconcileBackendReleaseTag: no concrete backend configured yet, skipping'
+        )
+        return
+      }
+
+      const { updateNeeded, targetBackend } = await this.checkBackendForUpdates()
+      const targetType = targetBackend?.split('/')[1]?.trim()
+      if (!updateNeeded || !targetBackend || !targetType) return
+
+      // Reconciliation bumps the release tag only; it must never move anyone
+      // between backend families. Legacy ids may land on their migrated form,
+      // which is what Rust resolves them to.
+      const migratedCurrentType = await mapOldBackendToNew(currentType)
+      if (targetType !== currentType && targetType !== migratedCurrentType) {
+        logger.warn(
+          `reconcileBackendReleaseTag: refusing to switch backend type ${currentType} -> ${targetType}`
+        )
+        return
+      }
+
+      logger.info(
+        `reconcileBackendReleaseTag: moving '${current}' -> '${targetBackend}'`
+      )
+      await this.downloadRecommendedBackend(targetBackend)
+      logger.info(
+        `reconcileBackendReleaseTag: reconciled to '${targetBackend}'`
+      )
+    } catch (err) {
+      logger.error(
+        'reconcileBackendReleaseTag: failed to reconcile the release tag (keeping current backend):',
+        err
+      )
     }
   }
 
@@ -3857,6 +3949,9 @@ export default class llamacpp_extension extends AIEngine {
       events.emit(AppEvent.onBackendDownloadStarted, {
         backend: backendString,
         status: 'downloading',
+        provider: this.providerId,
+        version,
+        backendId: backend,
       })
     }
 
@@ -4005,6 +4100,9 @@ export default class llamacpp_extension extends AIEngine {
         events.emit(AppEvent.onBackendDownloadFinished, {
           backend: backendString,
           status: 'completed',
+          provider: this.providerId,
+          version,
+          backendId: backend,
         })
       }
     } catch (downloadErr) {
@@ -4024,6 +4122,9 @@ export default class llamacpp_extension extends AIEngine {
           backend: backendString,
           status: 'failed',
           error: errorMessage,
+          provider: this.providerId,
+          version,
+          backendId: backend,
         })
       }
       throw downloadErr

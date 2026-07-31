@@ -64,6 +64,15 @@ describe('llamacpp_extension', () => {
   })
 
   describe('hardware backend recommendation', () => {
+    /// Everything the unified `b10018-1.3.0` release publishes for Linux x64.
+    const LINUX_CATALOG = [
+      'linux-x64-cpu',
+      'linux-x64-cuda-12.4',
+      'linux-x64-cuda-13.3',
+      'linux-x64-rocm',
+      'linux-x64-vulkan',
+    ]
+
     const discreteGpu = {
       name: 'Test GPU',
       total_memory: 12 * 1024,
@@ -94,7 +103,7 @@ describe('llamacpp_extension', () => {
         expected: { kind: 'gpu', backend: 'windows-x64-cuda-13.3' },
       },
       {
-        name: 'Linux NVIDIA via Vulkan',
+        name: 'Linux CUDA 13',
         system: {
           os_type: 'linux',
           os_name: 'Linux',
@@ -103,6 +112,62 @@ describe('llamacpp_extension', () => {
           gpus: [discreteGpu],
         },
         features: { cuda12: true, cuda13: true, vulkan: true },
+        catalog: LINUX_CATALOG,
+        expected: { kind: 'gpu', backend: 'linux-x64-cuda-13.3' },
+      },
+      {
+        name: 'Linux CUDA 12',
+        system: {
+          os_type: 'linux',
+          os_name: 'Linux',
+          total_memory: 32 * 1024,
+          cpu: { arch: 'x86_64', extensions: [] },
+          gpus: [discreteGpu],
+        },
+        features: { cuda12: true, cuda13: false, vulkan: true },
+        catalog: LINUX_CATALOG,
+        expected: { kind: 'gpu', backend: 'linux-x64-cuda-12.4' },
+      },
+      {
+        name: 'Linux ROCm',
+        system: {
+          os_type: 'linux',
+          os_name: 'Linux',
+          total_memory: 32 * 1024,
+          cpu: { arch: 'x86_64', extensions: [] },
+          gpus: [{ ...discreteGpu, vendor: 'AMD', nvidia_info: undefined }],
+        },
+        features: { cuda12: false, cuda13: false, rocm: true, vulkan: true },
+        catalog: LINUX_CATALOG,
+        expected: { kind: 'gpu', backend: 'linux-x64-rocm' },
+      },
+      {
+        // An AMD card whose ROCm probe came back negative (unsupported gfx
+        // target, or no HIP runtime installed) still gets a GPU — Vulkan.
+        name: 'Linux AMD without a usable ROCm runtime',
+        system: {
+          os_type: 'linux',
+          os_name: 'Linux',
+          total_memory: 32 * 1024,
+          cpu: { arch: 'x86_64', extensions: [] },
+          gpus: [{ ...discreteGpu, vendor: 'AMD', nvidia_info: undefined }],
+        },
+        features: { cuda12: false, cuda13: false, rocm: false, vulkan: true },
+        catalog: LINUX_CATALOG,
+        expected: { kind: 'gpu', backend: 'linux-x64-vulkan' },
+      },
+      {
+        // The release publishes ROCm, but this host's probe says no and the
+        // bundled Vulkan build is all that is installed offline.
+        name: 'Linux Vulkan-only catalog',
+        system: {
+          os_type: 'linux',
+          os_name: 'Linux',
+          total_memory: 32 * 1024,
+          cpu: { arch: 'x86_64', extensions: [] },
+          gpus: [discreteGpu],
+        },
+        features: { cuda12: false, cuda13: false, vulkan: true },
         catalog: ['linux-x64-vulkan'],
         expected: { kind: 'gpu', backend: 'linux-x64-vulkan' },
       },
@@ -150,6 +215,40 @@ describe('llamacpp_extension', () => {
           order: 0,
         },
       ])
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'cpu-optimal',
+      })
+    })
+
+    it('keeps an integrated-only ROCm-capable APU on CPU', async () => {
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'linux',
+        os_name: 'Linux',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [
+          {
+            ...discreteGpu,
+            vendor: 'AMD',
+            nvidia_info: undefined,
+            vulkan_info: { device_type: 'IntegratedGpu' },
+          },
+        ],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda12: false,
+        cuda13: false,
+        rocm: true,
+        vulkan: true,
+      } as any)
+      vi.mocked(listSupportedBackends).mockResolvedValue(
+        LINUX_CATALOG.map((backend) => ({
+          version: 'b10018-1.3.0',
+          backend,
+          order: 0,
+        }))
+      )
 
       await expect(extension['detectIdealBackendType']()).resolves.toEqual({
         kind: 'cpu-optimal',
@@ -1171,7 +1270,14 @@ describe('llamacpp_extension', () => {
         const event = vi.mocked((window as any).dispatchEvent).mock
           .calls[0][0] as CustomEvent
         expect(event.type).toBe('app:backend-hotswapped')
-        expect(event.detail).toEqual({ backend: RECOMMENDED })
+        // The detail names its provider so the other llama provider's popup
+        // ignores this swap instead of completing on it.
+        expect(event.detail).toEqual({
+          backend: RECOMMENDED,
+          provider: 'llamacpp',
+          version: 'v1.2.0',
+          backendId: 'windows-x64-cuda-13.3',
+        })
       })
 
       it('keeps loaded models alive when the swap cannot be persisted', async () => {
@@ -1562,6 +1668,133 @@ describe('llamacpp_extension', () => {
           ideal: 'windows-x64-vulkan',
         })
       })
+    })
+  })
+
+  /// An app update only reshuffles the bundled tier — CPU on Windows, Vulkan
+  /// on Linux. Anyone whose GPU tier was fetched at runtime keeps the tag they
+  /// first downloaded unless something pulls them forward, and the hardware
+  /// popup won't: it compares categories, and a CUDA user is already optimal.
+  describe('reconcileBackendReleaseTag', () => {
+    const CURRENT = 'b9937-1.2.0/windows-x64-cuda-13.3'
+    const TARGET = 'b10018-1.3.0/windows-x64-cuda-13.3'
+
+    const stubReconcileDeps = async () => {
+      extension['downloadRecommendedBackend'] = vi
+        .fn()
+        .mockResolvedValue(undefined)
+      const { mapOldBackendToNew } = await import(
+        '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
+      )
+      vi.mocked(mapOldBackendToNew).mockImplementation(async (b: string) => b)
+    }
+
+    beforeEach(async () => {
+      vi.stubGlobal('IS_MAC', false)
+      extension['config'] = { version_backend: CURRENT } as any
+      await stubReconcileDeps()
+    })
+
+    it('pulls a runtime-downloaded GPU tier onto the new release tag', async () => {
+      extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
+        updateNeeded: true,
+        newVersion: 'b10018-1.3.0',
+        targetBackend: TARGET,
+      })
+
+      await extension['reconcileBackendReleaseTag']()
+
+      expect(extension['downloadRecommendedBackend']).toHaveBeenCalledWith(
+        TARGET
+      )
+    })
+
+    it('leaves a user who already runs the newest tag alone', async () => {
+      extension.checkBackendForUpdates = vi
+        .fn()
+        .mockResolvedValue({ updateNeeded: false, newVersion: '0' })
+
+      await extension['reconcileBackendReleaseTag']()
+
+      expect(extension['downloadRecommendedBackend']).not.toHaveBeenCalled()
+    })
+
+    it('never runs on macOS, where the bundle is the only source', async () => {
+      vi.stubGlobal('IS_MAC', true)
+      extension.checkBackendForUpdates = vi.fn()
+
+      await extension['reconcileBackendReleaseTag']()
+
+      expect(extension.checkBackendForUpdates).not.toHaveBeenCalled()
+      expect(extension['downloadRecommendedBackend']).not.toHaveBeenCalled()
+    })
+
+    it('skips while no concrete backend is configured yet', async () => {
+      extension['config'] = { version_backend: 'none' } as any
+      extension.checkBackendForUpdates = vi.fn()
+
+      await extension['reconcileBackendReleaseTag']()
+
+      expect(extension.checkBackendForUpdates).not.toHaveBeenCalled()
+    })
+
+    it('refuses a target that would change the backend family', async () => {
+      extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
+        updateNeeded: true,
+        newVersion: 'b10018-1.3.0',
+        targetBackend: 'b10018-1.3.0/windows-x64-cpu',
+      })
+
+      await extension['reconcileBackendReleaseTag']()
+
+      expect(extension['downloadRecommendedBackend']).not.toHaveBeenCalled()
+    })
+
+    it('accepts a target that is the migrated form of a legacy id', async () => {
+      extension['config'] = { version_backend: 'b9937/linux-avx2-x64' } as any
+      const { mapOldBackendToNew } = await import(
+        '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
+      )
+      vi.mocked(mapOldBackendToNew).mockResolvedValue('linux-x64-vulkan')
+      extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
+        updateNeeded: true,
+        newVersion: 'b10018-1.3.0',
+        targetBackend: 'b10018-1.3.0/linux-x64-vulkan',
+      })
+
+      await extension['reconcileBackendReleaseTag']()
+
+      expect(extension['downloadRecommendedBackend']).toHaveBeenCalledWith(
+        'b10018-1.3.0/linux-x64-vulkan'
+      )
+    })
+
+    it('keeps the working backend when the download fails', async () => {
+      extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
+        updateNeeded: true,
+        newVersion: 'b10018-1.3.0',
+        targetBackend: TARGET,
+      })
+      extension['downloadRecommendedBackend'] = vi
+        .fn()
+        .mockRejectedValue(new Error('network down'))
+
+      await expect(
+        extension['reconcileBackendReleaseTag']()
+      ).resolves.toBeUndefined()
+      expect(extension['config'].version_backend).toBe(CURRENT)
+    })
+
+    it('survives a detection failure without touching the backend', async () => {
+      extension.checkBackendForUpdates = vi
+        .fn()
+        .mockRejectedValue(new Error('manifest unreachable'))
+
+      await expect(
+        extension['reconcileBackendReleaseTag']()
+      ).resolves.toBeUndefined()
+      expect(extension['downloadRecommendedBackend']).not.toHaveBeenCalled()
+      expect(extension['config'].version_backend).toBe(CURRENT)
     })
   })
 })

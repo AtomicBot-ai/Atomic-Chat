@@ -1,32 +1,57 @@
 {
   "$schema": "./turboquant-schema.json",
-  "updated_at": "2026-07-02T12:08:43Z",
-  "commit": "61ee3eb",
+  "updated_at": "2026-07-31T09:00:00Z",
+  "commit": "5bc5c248d",
   "backends": [
     {
       "id": "windows-x64-cpu",
-      "tag": "turboquant-windows-x64-cpu-61ee3eb",
+      "tag": "b10018-1.3.0",
       "asset": "llama-turboquant-windows-x64-cpu.zip"
     },
     {
       "id": "windows-x64-cuda-12.4",
-      "tag": "turboquant-windows-x64-cuda-12.4-61ee3eb",
+      "tag": "b10018-1.3.0",
       "asset": "llama-turboquant-windows-x64-cuda-12.4.zip"
     },
     {
       "id": "windows-x64-cuda-13.3",
-      "tag": "turboquant-windows-x64-cuda-13.3-61ee3eb",
+      "tag": "b10018-1.3.0",
       "asset": "llama-turboquant-windows-x64-cuda-13.3.zip"
     },
     {
       "id": "windows-x64-vulkan",
-      "tag": "turboquant-windows-x64-vulkan-61ee3eb",
+      "tag": "b10018-1.3.0",
       "asset": "llama-turboquant-windows-x64-vulkan.zip"
     },
     {
+      "id": "linux-x64-cpu",
+      "tag": "b10018-1.3.0",
+      "asset": "llama-turboquant-linux-x64-cpu.tar.gz"
+    },
+    {
+      "id": "linux-x64-cuda-12.4",
+      "tag": "b10018-1.3.0",
+      "asset": "llama-turboquant-linux-x64-cuda-12.4.tar.gz"
+    },
+    {
+      "id": "linux-x64-cuda-13.3",
+      "tag": "b10018-1.3.0",
+      "asset": "llama-turboquant-linux-x64-cuda-13.3.tar.gz"
+    },
+    {
+      "id": "linux-x64-rocm",
+      "tag": "b10018-1.3.0",
+      "asset": "llama-turboquant-linux-x64-rocm.tar.gz"
+    },
+    {
       "id": "linux-x64-vulkan",
-      "tag": "turboquant-linux-x64-vulkan-61ee3eb",
+      "tag": "b10018-1.3.0",
       "asset": "llama-turboquant-linux-x64-vulkan.tar.gz"
+    },
+    {
+      "id": "macos-arm64",
+      "tag": "b10018-1.3.0",
+      "asset": "llama-turboquant-macos-arm64.tar.gz"
     }
   ]
 }

@@ -1889,17 +1889,17 @@ mod tests {
                 order: 10,
             },
             BackendInfo {
-                version: "b9937".into(),
+                version: "b10205".into(),
                 backend: "win-cuda-13.3-x64".into(),
                 order: 1,
             },
             BackendInfo {
-                version: "b9937".into(),
+                version: "b10205".into(),
                 backend: "win-cuda-12.4-x64".into(),
                 order: 1,
             },
             BackendInfo {
-                version: "b9937".into(),
+                version: "b10205".into(),
                 backend: "win-vulkan-x64".into(),
                 order: 1,
             },
@@ -1907,7 +1907,7 @@ mod tests {
 
         let result = prioritize_backends(available, true).await.unwrap();
 
-        assert_eq!(result.backend_string, "b9937/win-cuda-13.3-x64");
+        assert_eq!(result.backend_string, "b10205/win-cuda-13.3-x64");
         assert_eq!(result.backend_type, "win-cuda-13.3-x64");
     }
 
@@ -1915,12 +1915,12 @@ mod tests {
     async fn test_prioritize_backends_linux_vulkan_requires_enough_gpu_memory() {
         let available = vec![
             BackendInfo {
-                version: "b9937".into(),
+                version: "b10205".into(),
                 backend: "linux-cpu-x64".into(),
                 order: 1,
             },
             BackendInfo {
-                version: "b9937".into(),
+                version: "b10205".into(),
                 backend: "linux-vulkan-x64".into(),
                 order: 1,
             },
@@ -1998,8 +1998,8 @@ mod tests {
     #[test]
     fn test_parse_binary_version() {
         assert_eq!(
-            parse_binary_version("version: 9937 (2021515a1)\nbuilt with AppleClang"),
-            Some(9937)
+            parse_binary_version("version: 10205 (1e2259952)\nbuilt with Clang"),
+            Some(10205)
         );
         assert_eq!(
             parse_binary_version("warning\nversion: 9222 (9a532ae4b)\n"),

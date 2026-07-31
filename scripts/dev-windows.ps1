@@ -567,8 +567,9 @@ if ($skipDownload) {
 # `windows-x64-cpu` build into the turboquant resource dir; the
 # llamacpp-extension auto-downloads the optimal CUDA/Vulkan variant at runtime.
 # Index resolved from the static turboquant manifest in atomic-chat-conf
-# (raw.githubusercontent.com — no api.github.com rate limit); each entry
-# carries its OWN tag because the variants live in scattered releases. The
+# (raw.githubusercontent.com — no api.github.com rate limit); every entry of a
+# unified release carries the same `b<build>-<fork-semver>` tag, and the
+# per-entry tag is read verbatim so legacy scattered releases still resolve. The
 # archive itself comes from the AtomicBot-ai releases CDN. This step is
 # NON-FATAL: a failure here only skips the offline fallback (the runtime
 # download path still serves the provider), so it must never abort `make dev`.
@@ -577,31 +578,56 @@ $tqDir = 'src-tauri/resources/llamacpp-backend'
 $tqServerExe = "$tqDir/build/bin/llama-server.exe"
 $tqBackend = 'windows-x64-cpu'
 
-# A bundle counts as a real TurboQuant backend only when its version.txt starts
-# with "turboquant-". A stale/legacy llama-server.exe (e.g. an old janhq "b8892"
-# build left over in this dir) must NOT satisfy the skip-guard, or the app will
-# run a non-TurboQuant binary that silently downgrades turbo3 KV -> q8_0.
+# A bundle counts as a real TurboQuant backend only when its version.txt names a
+# tag from the fork's release train: a legacy per-variant tag ("turboquant-*")
+# or a unified release tag ("b10018-1.3.0"). A stale/legacy llama-server.exe
+# (e.g. an old janhq "b8892" build left over in this dir) carries a plain
+# "b<build>" tag and must NOT satisfy the skip-guard, or the app will run a
+# non-TurboQuant binary that silently downgrades turbo3 KV -> q8_0.
 $tqVersionFile = "$tqDir/version.txt"
-$tqIsTurboquant = (Test-Path $tqServerExe) -and (Test-Path $tqVersionFile) -and `
-    ((Get-Content -Path $tqVersionFile -Raw -ErrorAction SilentlyContinue).Trim().StartsWith('turboquant-'))
+$tqVersionText = if (Test-Path $tqVersionFile) {
+    (Get-Content -Path $tqVersionFile -Raw -ErrorAction SilentlyContinue).Trim()
+} else { '' }
+$tqIsTurboquant = (Test-Path $tqServerExe) -and `
+    ($tqVersionText.StartsWith('turboquant-') -or ($tqVersionText -match '^b\d+-\d+\.\d+\.\d+$'))
 
-if ($SkipBackendDownload -and $tqIsTurboquant) {
-    Write-Host "  -SkipBackendDownload: reusing existing TurboQuant backend ($tqBackend), no fetch." -ForegroundColor Yellow
-} elseif ($tqIsTurboquant) {
-    Write-Host "  TurboQuant backend ($tqBackend) already present, skipping download."
-} else {
-    if (Test-Path $tqServerExe) {
-        Write-Host "  Existing backend in $tqDir is not a TurboQuant build (version.txt missing or != 'turboquant-*'); replacing it." -ForegroundColor Yellow
-        Remove-Item -Path $tqDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    $tqManifestUrl = 'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/f149c30e55a3dfcdcbcc5d4a72be7c691db8f5e2/backends/turboquant-manifest.json'
+# Resolve the pinned release BEFORE deciding whether to skip. Belonging to the
+# fork's release train is not enough — a bundle from an older fork release is
+# just as stale as a foreign build, and a dev tree that silently keeps it never
+# picks up a release bump. `-SkipBackendDownload` opts out of the fetch entirely
+# so `dev-windows-fast` stays offline-capable, which is its whole point.
+$tqReuseWithoutFetch = $SkipBackendDownload -and $tqIsTurboquant
+$tqEntry = $null
+$tqPinnedTag = ''
+if (-not $tqReuseWithoutFetch) {
+    $tqManifestUrl = 'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/40665589ef2820f36cbdec282b23f554b60dd563/backends/turboquant-manifest.json'
     $tqHeaders = @{ 'User-Agent' = 'atomic-chat-dev' }
 
     Write-Host '  Fetching TurboQuant backend manifest...'
     $tqManifest = Invoke-BackendManifest -Uri $tqManifestUrl -Headers $tqHeaders
-    $tqEntry = $null
     if ($tqManifest -and $tqManifest.backends) {
         $tqEntry = $tqManifest.backends | Where-Object { $_.id -eq $tqBackend } | Select-Object -First 1
+    }
+    if ($tqEntry -and $tqEntry.tag) { $tqPinnedTag = $tqEntry.tag }
+}
+
+# An unreachable manifest yields no pinned tag; keep whatever fork build is on
+# disk rather than wiping a working offline fallback over a network blip.
+$tqIsCurrent = $tqIsTurboquant -and `
+    ((-not $tqPinnedTag) -or ($tqVersionText -eq $tqPinnedTag))
+
+if ($tqReuseWithoutFetch) {
+    Write-Host "  -SkipBackendDownload: reusing existing TurboQuant backend ($tqBackend), no fetch." -ForegroundColor Yellow
+} elseif ($tqIsCurrent) {
+    Write-Host "  TurboQuant backend ($tqBackend, $tqVersionText) already present, skipping download."
+} else {
+    if (Test-Path $tqServerExe) {
+        if ($tqIsTurboquant) {
+            Write-Host "  Existing TurboQuant backend in $tqDir is release '$tqVersionText' but the manifest pins '$tqPinnedTag'; replacing it." -ForegroundColor Yellow
+        } else {
+            Write-Host "  Existing backend in $tqDir is not a TurboQuant build (version.txt missing or not a fork release tag); replacing it." -ForegroundColor Yellow
+        }
+        Remove-Item -Path $tqDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     if ($tqEntry -and $tqEntry.tag -and $tqEntry.asset) {

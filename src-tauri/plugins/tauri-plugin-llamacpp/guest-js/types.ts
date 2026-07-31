@@ -163,6 +163,8 @@ export type BackendFeatures = {
   cuda12: boolean
   cuda13: boolean
   vulkan: boolean
+  /** AMD ROCm, Linux only: a supported RDNA2–RDNA4 GPU plus a host runtime. */
+  rocm: boolean
 }
 
 export type SupportedFeatures = {
@@ -173,6 +175,7 @@ export type SupportedFeatures = {
   cuda12: boolean
   cuda13: boolean
   vulkan: boolean
+  rocm: boolean
 }
 export type NvidiaInfo = {
   compute_capability: string

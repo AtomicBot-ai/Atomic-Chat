@@ -4,7 +4,7 @@ import { events } from '@janhq/core'
 import { useBackendUpdater } from '../useBackendUpdater'
 import { localStorageKey } from '@/constants/localStorage'
 
-const RECOMMENDED = 'b9937/win-cuda-13.3-x64'
+const RECOMMENDED = 'b10205/win-cuda-13.3-x64'
 const RECOMMENDATION = {
   currentBackend: 'b9800/win-cpu-x64',
   recommendedBackend: RECOMMENDED,
@@ -276,6 +276,158 @@ describe('useBackendUpdater', () => {
       detect()
 
       expect(result.current.recommendationPhase).toBe('restart-required')
+    })
+  })
+
+  /// Both llama providers ship side by side on Windows/Linux and can be
+  /// downloading different backends at the same time. Every listener must be
+  /// scoped to its own provider, or one popup finishes on the other's work.
+  describe('provider isolation', () => {
+    const TURBOQUANT = {
+      extensionName: '@janhq/llamacpp-extension',
+      providerId: 'llamacpp',
+      recommendationKey: 'turboquant_better_backend_recommendation',
+      postUpgradeRecheckEnabled: false,
+    }
+    const TQ_RECOMMENDED = 'b10018-1.3.0/linux-x64-rocm'
+    const TQ_RECOMMENDATION = {
+      currentBackend: 'b10018-1.3.0/linux-x64-vulkan',
+      recommendedBackend: TQ_RECOMMENDED,
+      recommendedCategory: 'ROCm',
+      provider: 'llamacpp',
+      version: 'b10018-1.3.0',
+      backendId: 'linux-x64-rocm',
+    }
+
+    it('carries the release and backend id of its own recommendation', () => {
+      const { result } = renderHook(() => useBackendUpdater(TURBOQUANT))
+
+      detect(TQ_RECOMMENDATION)
+
+      expect(result.current.recommendation).toEqual(TQ_RECOMMENDATION)
+    })
+
+    it('ignores a download the other provider started', () => {
+      const { result } = renderHook(() => useBackendUpdater(TURBOQUANT))
+      detect(TQ_RECOMMENDATION)
+
+      act(() => {
+        events.emit('onBackendDownloadStarted', {
+          backend: RECOMMENDED,
+          status: 'downloading',
+        })
+      })
+
+      expect(result.current.recommendationPhase).toBe('recommend')
+      expect(result.current.downloadState.isDownloading).toBe(false)
+    })
+
+    it('does not advance when the other provider finishes downloading', () => {
+      const { result } = renderHook(() => useBackendUpdater(TURBOQUANT))
+      detect(TQ_RECOMMENDATION)
+
+      act(() => {
+        events.emit('onBackendDownloadFinished', {
+          backend: RECOMMENDED,
+          status: 'completed',
+        })
+      })
+
+      expect(result.current.recommendationPhase).toBe('recommend')
+    })
+
+    it('does not complete when the other provider hot-swaps', () => {
+      const { result } = renderHook(() => useBackendUpdater(TURBOQUANT))
+      detect(TQ_RECOMMENDATION)
+      act(() => {
+        events.emit('onBackendDownloadFinished', {
+          backend: TQ_RECOMMENDED,
+          status: 'completed',
+          provider: 'llamacpp',
+        })
+      })
+      expect(result.current.recommendationPhase).toBe('hotswapping')
+
+      act(() => {
+        window.dispatchEvent(
+          new CustomEvent(HOTSWAPPED_EVENT, {
+            detail: { backend: RECOMMENDED, provider: 'llamacpp-upstream' },
+          })
+        )
+      })
+
+      expect(result.current.recommendationPhase).toBe('hotswapping')
+    })
+
+    it('completes on its own hot-swap', () => {
+      const { result } = renderHook(() => useBackendUpdater(TURBOQUANT))
+      detect(TQ_RECOMMENDATION)
+      act(() => {
+        events.emit('onBackendDownloadFinished', {
+          backend: TQ_RECOMMENDED,
+          status: 'completed',
+          provider: 'llamacpp',
+        })
+      })
+
+      act(() => {
+        window.dispatchEvent(
+          new CustomEvent(HOTSWAPPED_EVENT, {
+            detail: { backend: TQ_RECOMMENDED, provider: 'llamacpp' },
+          })
+        )
+      })
+
+      expect(result.current.recommendationPhase).toBe('completed')
+    })
+
+    it('ignores a manual download driven from the other provider page', () => {
+      const { result } = renderHook(() => useBackendUpdater(TURBOQUANT))
+
+      act(() => {
+        events.emit('onManualBackendDownloading', RECOMMENDATION)
+      })
+
+      expect(result.current.recommendationPhase).toBe('idle')
+      expect(result.current.recommendation).toBeNull()
+    })
+
+    /// `reconcileBackendReleaseTag()` downloads on its own after an app
+    /// update, so there is no recommendation to attach to. The only signal the
+    /// progress surface can read is `downloadState`, and no modal may open.
+    it('reports an unattended download through downloadState without a modal', () => {
+      const { result } = renderHook(() => useBackendUpdater(TURBOQUANT))
+
+      act(() => {
+        events.emit('onBackendDownloadStarted', {
+          backend: TQ_RECOMMENDED,
+          status: 'downloading',
+          provider: 'llamacpp',
+        })
+      })
+
+      expect(result.current.downloadState).toMatchObject({
+        isDownloading: true,
+        backendName: TQ_RECOMMENDED,
+        status: 'downloading',
+      })
+      expect(result.current.recommendationPhase).toBe('idle')
+      expect(result.current.recommendation).toBeNull()
+    })
+
+    it('leaves the upstream instance untouched by an unattended turboquant download', () => {
+      const { result } = renderHook(() => useBackendUpdater())
+
+      act(() => {
+        events.emit('onBackendDownloadStarted', {
+          backend: TQ_RECOMMENDED,
+          status: 'downloading',
+          provider: 'llamacpp',
+        })
+      })
+
+      expect(result.current.downloadState.isDownloading).toBe(false)
+      expect(result.current.downloadState.backendName).toBeNull()
     })
   })
 

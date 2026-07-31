@@ -30,7 +30,7 @@ const LLAMACPP_BACKEND_MANIFEST_URL =
 const LLAMACPP_DOWNLOAD_BASE =
   'https://github.com/ggml-org/llama.cpp/releases/download'
 const MANIFEST_FETCH_TIMEOUT_MS = 8_000
-export const LLAMACPP_UPSTREAM_PINNED_TAG = 'b9937'
+export const LLAMACPP_UPSTREAM_PINNED_TAG = 'b10205'
 
 // Bundled baseline manifest — a known-good snapshot that ships with the
 // extension. Parsed by `fetchRemoteBackends` as a last resort when ALL
@@ -42,12 +42,12 @@ export const LLAMACPP_UPSTREAM_PINNED_TAG = 'b9937'
 const BUNDLED_MANIFEST_BASELINE = {
   tag_name: LLAMACPP_UPSTREAM_PINNED_TAG,
   assets: [
-    { name: 'llama-b9937-bin-win-cpu-x64.zip' },
-    { name: 'llama-b9937-bin-win-cuda-12.4-x64.zip' },
-    { name: 'llama-b9937-bin-win-cuda-13.3-x64.zip' },
-    { name: 'llama-b9937-bin-win-vulkan-x64.zip' },
-    { name: 'llama-b9937-bin-ubuntu-x64.tar.gz' },
-    { name: 'llama-b9937-bin-ubuntu-vulkan-x64.tar.gz' },
+    { name: 'llama-b10205-bin-win-cpu-x64.zip' },
+    { name: 'llama-b10205-bin-win-cuda-12.4-x64.zip' },
+    { name: 'llama-b10205-bin-win-cuda-13.3-x64.zip' },
+    { name: 'llama-b10205-bin-win-vulkan-x64.zip' },
+    { name: 'llama-b10205-bin-ubuntu-x64.tar.gz' },
+    { name: 'llama-b10205-bin-ubuntu-vulkan-x64.tar.gz' },
     { name: 'cudart-llama-bin-win-cuda-12.4-x64.zip' },
     { name: 'cudart-llama-bin-win-cuda-13.3-x64.zip' },
   ],
