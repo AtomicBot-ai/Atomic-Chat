@@ -35,7 +35,6 @@ import { StartupBackendCoordinator } from '@/providers/StartupBackendCoordinator
 import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { LeftSidebar } from '@/components/left-sidebar'
-import { WindowControls } from '@/components/WindowControls'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -103,20 +102,6 @@ const AppLayout = () => {
       >
         <AnalyticProvider />
         <KeyboardShortcutsProvider />
-        {/* Fake absolute panel top to enable window drag */}
-        {IS_WINDOWS && <WindowControls />}
-        {/* On Windows we use a fixed overlay for the drag region.
-            On macOS we attach data-tauri-drag-region directly to the
-            SidebarHeader and HeaderPage elements so that the drag area is
-            always the topmost element in those regions (the fixed overlay at
-            z-20 is covered by header content at the same z-level and
-            therefore never receives mousedown events on macOS). */}
-        {IS_WINDOWS && (
-          <div
-            className="fixed w-full h-12 z-20 top-0"
-            data-tauri-drag-region
-          />
-        )}
         <DialogAppUpdater />
         {isSetupCompleted && <BackendUpdater />}
         {/* Unlike the recommendation dialogs above, this dialog only opens

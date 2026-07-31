@@ -71,17 +71,24 @@ export function LeftSidebar() {
           below the traffic-light band, so it doesn't collide.
         */}
         <SidebarHeader className="flex flex-col gap-1 px-1 pb-0">
-          {/* On macOS this row sits inside the z-50 stacking context of the
-              LeftSidebar wrapper, so it is always above the z-20 fixed
-              overlay and can receive mousedown events for window dragging.
-              SidebarTrigger and DownloadManagement are <button> elements that
+          {/* SidebarTrigger and DownloadManagement are <button> elements that
               Tauri's drag handler explicitly excludes, so they remain clickable. */}
           <div
-            className="flex w-full items-center justify-end"
+            className={cn(
+              'flex w-full items-center',
+              IS_WINDOWS ? 'justify-between' : 'justify-end'
+            )}
             {...(IS_MACOS ? { 'data-tauri-drag-region': true } : {})}
           >
-            {isLeftPanelOpen && <DownloadManagement />}
-            <SidebarTrigger className="text-muted-foreground rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 relative z-50 ml-0.5" />
+            {IS_WINDOWS && (
+              <span className="pl-2 text-[10px] font-medium text-muted-foreground">
+                v{VERSION}
+              </span>
+            )}
+            <div className="flex items-center">
+              {isLeftPanelOpen && <DownloadManagement />}
+              <SidebarTrigger className="text-muted-foreground rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 relative z-50 ml-0.5" />
+            </div>
           </div>
           <div
             className={cn(

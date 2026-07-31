@@ -934,7 +934,7 @@ function HubContent() {
           <div
             className={cn(
               'pr-3 py-3 h-10 w-full flex items-center justify-between relative z-20',
-              !IS_MACOS && 'pr-30'
+              !IS_MACOS && !IS_WINDOWS && 'pr-30'
             )}
             {...(IS_WINDOWS || IS_MACOS
               ? { 'data-tauri-drag-region': true }
