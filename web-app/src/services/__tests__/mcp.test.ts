@@ -64,15 +64,38 @@ describe('TauriMCPService', () => {
     await expect(mcpService.getMCPConfig()).rejects.toThrow()
   })
 
+  it('drops legacy unused MCP restart settings', async () => {
+    ipcHandler.mockReturnValue(
+      JSON.stringify({
+        mcpServers: {},
+        mcpSettings: {
+          toolCallTimeoutSeconds: 12,
+          baseRestartDelayMs: 1000,
+          maxRestartDelayMs: 30000,
+          backoffMultiplier: 2,
+        },
+      })
+    )
+
+    await expect(mcpService.getMCPConfig()).resolves.toEqual({
+      mcpServers: {},
+      mcpSettings: { toolCallTimeoutSeconds: 12 },
+    })
+  })
+
   it('routes tool discovery and invocation through the real API facade', async () => {
     const tools = [{ name: 'read_file', inputSchema: { type: 'object' } }]
+    const statuses = [
+      { name: 'filesystem', status: 'connected' as const },
+    ]
     const toolResult = {
       error: '',
       content: [{ text: 'contents' }],
     }
     ipcHandler.mockImplementation((command: string) => {
-      if (command === 'get_tools') return tools
+      if (command === 'get_tools') return { tools, servers: statuses }
       if (command === 'get_connected_servers') return ['filesystem']
+      if (command === 'get_mcp_server_statuses') return statuses
       if (command === 'call_tool') return toolResult
       return undefined
     })
@@ -81,6 +104,7 @@ describe('TauriMCPService', () => {
     await expect(mcpService.getConnectedServers()).resolves.toEqual([
       'filesystem',
     ])
+    await expect(mcpService.getMCPServerStatuses()).resolves.toEqual(statuses)
     await expect(
       mcpService.callTool({
         toolName: 'read_file',

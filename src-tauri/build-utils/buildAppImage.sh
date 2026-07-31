@@ -5,21 +5,22 @@ set -euo pipefail
 # `bun` binary (and any other engine resources) are available inside the
 # AppImage runtime. `tauri build` produces a barebones AppImage that
 # does not know about resources we inject outside `tauri.linux.conf.json`,
-# so we unpack the AppDir, drop the extras in, and repackage with
-# upstream `appimagetool`.
+# so we add the extras to its AppDir and repackage it below.
 #
 # Product name is "Atomic Chat" (with a space) — preserve quoting
 # everywhere or the spaces will silently break the build.
 
-APPIMAGETOOL="./.cache/build-tools/appimagetool"
+RUNTIME="./.cache/build-tools/type2-runtime-x86_64"
 RELEASE_CHANNEL=${RELEASE_CHANNEL:-"stable"}
 PRODUCT_NAME="Atomic Chat"
 
+command -v mksquashfs >/dev/null \
+  || { echo "mksquashfs not found; install squashfs-tools."; exit 1; }
+
 mkdir -p ./.cache/build-tools
-if [ ! -x "${APPIMAGETOOL}" ]; then
-  wget https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -O "${APPIMAGETOOL}" \
-    || { echo "Failed to download appimagetool."; exit 1; }
-  chmod +x "${APPIMAGETOOL}"
+if [ ! -f "${RUNTIME}" ]; then
+  wget https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64 -O "${RUNTIME}" \
+    || { echo "Failed to download AppImage type2 runtime."; exit 1; }
 fi
 
 if [ "${RELEASE_CHANNEL}" != "stable" ]; then
@@ -55,5 +56,12 @@ else
   APP_IMAGE="./src-tauri/target/release/bundle/appimage/${PRODUCT_NAME}.AppImage"
 fi
 
-# Repackage AppImage with our additional resources baked in.
-"${APPIMAGETOOL}" "${APP_DIR}" "${APP_IMAGE}"
+# AppImageLauncher's squashfuse cannot mount the zstd image produced by
+# appimagetool continuous. Assemble a type-2 AppImage with gzip instead.
+SQUASHFS="${APP_IMAGE}.squashfs"
+rm -f "${SQUASHFS}"
+mksquashfs "${APP_DIR}" "${SQUASHFS}" -comp gzip -root-owned -noappend -quiet
+cat "${RUNTIME}" "${SQUASHFS}" > "${APP_IMAGE}"
+rm -f "${SQUASHFS}"
+chmod +x "${APP_IMAGE}"
+echo "AppImage created: ${APP_IMAGE}"

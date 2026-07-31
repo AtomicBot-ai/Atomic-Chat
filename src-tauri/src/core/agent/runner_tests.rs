@@ -473,7 +473,7 @@ async fn timed_out_completion_is_repaired_once() {
     assert!(run.events.iter().any(|event| matches!(
         event,
         AgentEvent::ParseRetry { reason, .. }
-            if reason.contains("180-second deadline")
+            if reason.contains("600-second deadline")
     )));
     assert_eq!(run.requests.len(), 2);
     assert_eq!(run.requests[1]["n_predict"], 1024);
@@ -499,7 +499,7 @@ async fn timed_out_completion_and_repair_finish_as_timeout_failure() {
     assert!(run.events.iter().any(|event| matches!(
         event,
         AgentEvent::StepError { category, message }
-            if category == "timeout" && message.contains("180-second deadline")
+            if category == "timeout" && message.contains("600-second deadline")
     )));
     assert_eq!(finished_reason(&run.events), Some(("failed", 1)));
     assert_eq!(run.requests.len(), 2);

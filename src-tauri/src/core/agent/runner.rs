@@ -39,7 +39,7 @@ pub const MAX_PARALLEL_TOOL_CALLS: usize = 8;
 const AGENT_SLOT_ID: i32 = 0;
 const REPAIR_MAX_TOKENS: u32 = 1024;
 #[cfg(not(test))]
-const TOOL_STEP_COMPLETION_DEADLINE: Duration = Duration::from_secs(180);
+const TOOL_STEP_COMPLETION_DEADLINE: Duration = Duration::from_secs(600);
 #[cfg(test)]
 const TOOL_STEP_COMPLETION_DEADLINE: Duration = Duration::from_millis(100);
 
@@ -209,13 +209,13 @@ pub async fn run_turn(
             Err(LlamaClientError::TimedOut) => {
                 emit(AgentEvent::ParseRetry {
                     step_index,
-                    reason: "Tool-step completion exceeded the 180-second deadline".into(),
+                    reason: "Tool-step completion exceeded the 600-second deadline".into(),
                 })?;
                 match repair_tool_calls(
                     input.client,
                     &request,
                     "",
-                    "Tool-step completion exceeded the 180-second deadline",
+                    "Tool-step completion exceeded the 600-second deadline",
                     input.cancellation,
                     input.model_profile,
                 )

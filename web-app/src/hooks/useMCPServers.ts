@@ -24,16 +24,10 @@ export type MCPServers = {
 
 export type MCPSettings = {
   toolCallTimeoutSeconds: number
-  baseRestartDelayMs: number
-  maxRestartDelayMs: number
-  backoffMultiplier: number
 }
 
 export const DEFAULT_MCP_SETTINGS: MCPSettings = {
   toolCallTimeoutSeconds: 30,
-  baseRestartDelayMs: 1000,
-  maxRestartDelayMs: 30000,
-  backoffMultiplier: 2,
 }
 
 type MCPServerStoreState = {

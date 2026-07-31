@@ -32,6 +32,7 @@ Object.defineProperty(globalThis, 'window', {
 })
 
 vi.stubGlobal('IS_WINDOWS', false)
+vi.stubGlobal('IS_LINUX', false)
 
 vi.mock('../hardware', () => ({
   getSystemInfo: vi.fn(),

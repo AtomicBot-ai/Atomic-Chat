@@ -853,6 +853,7 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libjavascriptcoregtk-4.1-dev \
             patchelf \
+            squashfs-tools \
             unzip
 
       - name: Install Python dependencies

@@ -9,7 +9,7 @@ import {
 } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import type { CatalogModel, ModelQuant } from '@/services/models/types'
+import type { CatalogModel } from '@/services/models/types'
 import {
   extractModelName,
   getMlxTotalFileSize,
@@ -27,10 +27,10 @@ import {
   HARDWARE_FIT,
   modelFormat,
   parseFileSizeToBytes,
+  pickSmallestQuant,
   quantLabel,
   type HardwareFit,
 } from '@/lib/model-card'
-import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import {
   Tooltip,
   TooltipContent,
@@ -58,16 +58,6 @@ export type HubModelCardProps = {
     model: CatalogModel,
     variant?: { model_id: string }
   ) => DownloadedModel | null | undefined
-}
-
-function pickDefaultQuant(model: CatalogModel): ModelQuant | undefined {
-  return (
-    model.quants?.find((q) =>
-      DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
-        q.model_id.toLowerCase().includes(e)
-      )
-    ) ?? model.quants?.[0]
-  )
 }
 
 /**
@@ -202,14 +192,14 @@ export function HubModelCard({
   const params = stats.params ?? deriveParams(model)
   const context = stats.context ?? deriveContext(model)
 
-  const defaultVariant = pickDefaultQuant(model)
+  const smallestVariant = pickSmallestQuant(model.quants)
   const sizeText = model.is_mlx
     ? getMlxTotalFileSize(model)
-    : getTotalDownloadFileSize(model, defaultVariant)
+    : getTotalDownloadFileSize(model, smallestVariant)
   const sizeBytes = parseFileSizeToBytes(sizeText)
   const cardFit = estimateFit(sizeBytes, budgetBytes)
 
-  const downloadedDefault = getDownloadedModel(model, defaultVariant)
+  const downloadedDefault = getDownloadedModel(model, smallestVariant)
   //* model_name часто уже содержит префикс автора (напр. "mlx-community/X").
   //* Подставляем developer только если в id нет "/", иначе получим дубль
   //* "mlx-community/mlx-community/X" → 404.
@@ -352,6 +342,7 @@ export function HubModelCard({
               ) : (
                 <DownloadButtonPlaceholder
                   model={model}
+                  variant={smallestVariant}
                   handleUseModel={handleUseModel}
                 />
               )}

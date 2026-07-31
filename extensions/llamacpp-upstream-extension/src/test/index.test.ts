@@ -13,8 +13,15 @@ import {
   removeOldBackendVersions,
   unloadLlamaModel,
 } from '../../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index'
-import { isBackendInstalled, listSupportedBackends } from '../backend'
+import {
+  getBackendDir,
+  isBackendInstalled,
+  listSupportedBackends,
+} from '../backend'
 import { getSystemInfo } from '../hardware'
+import { fs, joinPath } from '@janhq/core'
+import { invoke } from '@tauri-apps/api/core'
+import { basename } from '@tauri-apps/api/path'
 
 // Mock fetch globally
 global.fetch = vi.fn()
@@ -83,6 +90,64 @@ describe('llamacpp_extension', () => {
       expect(extension.provider).toBe('llamacpp-upstream')
       expect(extension.providerId).toBe('llamacpp-upstream')
       expect(extension.autoUnload).toBe(false)
+    })
+  })
+
+  describe('installBackend', () => {
+    it('normalizes an upstream macOS tarball before validating it', async () => {
+      const archivePath = '/downloads/llama-b9702-bin-macos-arm64.tar.gz'
+      const backendDir = '/data/llamacpp-upstream/backends/b9702/macos-arm64'
+      const expectedBin = `${backendDir}/build/bin/llama-server`
+
+      vi.mocked(basename).mockResolvedValue(
+        'llama-b9702-bin-macos-arm64.tar.gz'
+      )
+      vi.mocked(getBackendDir).mockResolvedValue(backendDir)
+      vi.mocked(joinPath).mockImplementation(async (parts: string[]) =>
+        parts.join('/')
+      )
+      vi.mocked(fs.existsSync).mockImplementation(
+        (path: string) => path === archivePath || path === expectedBin
+      )
+      vi.mocked(mapOldBackendToNew).mockResolvedValue('macos-arm64')
+      extension['config'] = {} as any
+      extension['configureBackends'] = vi.fn().mockResolvedValue(undefined)
+      extension['setStoredBackendType'] = vi.fn()
+      extension['getSettings'] = vi.fn().mockResolvedValue([])
+      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+
+      await extension.installBackend(archivePath)
+
+      expect(invoke).toHaveBeenNthCalledWith(1, 'decompress', {
+        path: archivePath,
+        outputDir: backendDir,
+      })
+      expect(invoke).toHaveBeenNthCalledWith(2, 'normalize_backend_layout', {
+        outputDir: backendDir,
+        exeName: 'llama-server',
+      })
+      expect(fs.rm).not.toHaveBeenCalled()
+    })
+
+    it('rejects an import when normalization leaves no llama-server binary', async () => {
+      const archivePath = '/downloads/llama-b9702-bin-macos-arm64.tar.gz'
+      const backendDir = '/data/llamacpp-upstream/backends/b9702/macos-arm64'
+
+      vi.mocked(basename).mockResolvedValue(
+        'llama-b9702-bin-macos-arm64.tar.gz'
+      )
+      vi.mocked(getBackendDir).mockResolvedValue(backendDir)
+      vi.mocked(joinPath).mockImplementation(async (parts: string[]) =>
+        parts.join('/')
+      )
+      vi.mocked(fs.existsSync).mockImplementation(
+        (path: string) => path === archivePath
+      )
+
+      await expect(extension.installBackend(archivePath)).rejects.toThrow(
+        'Missing llama-server binary'
+      )
+      expect(fs.rm).toHaveBeenCalledWith(backendDir)
     })
   })
 

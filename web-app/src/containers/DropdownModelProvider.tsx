@@ -665,6 +665,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                           <span className="capitalize text-sm font-medium text-muted-foreground">
                             {getProviderTitle(providerInfo.provider)}
                           </span>
+                          {providerInfo.provider === selectedProvider && (
+                            <span className="size-2 rounded-full bg-green-500 shrink-0" />
+                          )}
                         </div>
 
                         <div

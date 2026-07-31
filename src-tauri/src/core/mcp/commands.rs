@@ -10,16 +10,16 @@ use super::{
         default_filesystem_root, default_mcp_config, filesystem_mcp_pinned_spec,
         DEFAULT_MCP_TOOL_LIST_TIMEOUT_SECS, FILESYSTEM_MCP_PACKAGE, LEGACY_FILESYSTEM_PLACEHOLDER,
     },
-    helpers::{restart_active_mcp_servers, start_mcp_server},
+    helpers::{kill_process_tree_by_pid, restart_active_mcp_servers, start_mcp_server},
 };
 use crate::core::{
-    app::commands::get_jan_data_folder_path, mcp::models::McpSettings, state::AppState,
+    app::commands::get_jan_data_folder_path,
+    mcp::models::{
+        McpServerStatus, McpServerStatusKind, McpSettings, McpToolsResponse, ToolWithServer,
+    },
+    state::{AppState, RunningServiceEnum, SharedMcpServers},
 };
-use crate::core::{
-    mcp::models::ToolWithServer,
-    state::{RunningServiceEnum, SharedMcpServers},
-};
-use std::{fs, time::Duration};
+use std::{collections::BTreeSet, fs, time::Duration};
 
 async fn tool_call_timeout(state: &State<'_, AppState>) -> Duration {
     state.mcp_settings.lock().await.tool_call_timeout_duration()
@@ -67,33 +67,59 @@ pub async fn deactivate_mcp_server<R: Runtime>(
         active_servers.remove(&name);
         log::info!("Removed MCP server {name} from active servers list");
     }
-
     // Now remove and stop the server
     let servers = state.mcp_servers.clone();
     let mut servers_map = servers.lock().await;
 
-    let service = servers_map
-        .remove(&name)
-        .ok_or_else(|| format!("Server {name} not found"))?;
+    let service = servers_map.remove(&name);
+    let mut start_generations = state.mcp_start_generations.lock().await;
+    let start_generation = start_generations.entry(name.clone()).or_default();
+    *start_generation = start_generation.wrapping_add(1);
+    let mut generations = state.mcp_server_generations.lock().await;
+    let generation = generations.entry(name.clone()).or_default();
+    *generation = generation.wrapping_add(1);
+    state.mcp_server_errors.lock().await.remove(&name);
+    let process_pids = {
+        let mut pids = state.mcp_server_pids.lock().await;
+        pids.remove(&name)
+            .map(|server_pids| server_pids.into_values().collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
 
     // Release the lock before calling cancel
+    drop(generations);
+    drop(start_generations);
     drop(servers_map);
 
-    match service {
-        RunningServiceEnum::NoInit(service) => {
+    let cancel_result = match service {
+        Some(RunningServiceEnum::NoInit(service)) => {
             log::info!("Stopping server {name}...");
-            service.cancel().await.map_err(|e| e.to_string())?;
+            service
+                .cancel()
+                .await
+                .map(|_| ())
+                .map_err(|e| e.to_string())
         }
-        RunningServiceEnum::WithInit(service) => {
+        Some(RunningServiceEnum::WithInit(service)) => {
             log::info!("Stopping server {name} with initialization...");
-            service.cancel().await.map_err(|e| e.to_string())?;
+            service
+                .cancel()
+                .await
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
+        None => {
+            log::info!("MCP server {name} was not running");
+            Ok(())
+        }
+    };
+
+    for pid in process_pids {
+        if let Err(error) = kill_process_tree_by_pid(pid).await {
+            log::warn!("Failed to clean up MCP server {name} process tree: {error}");
         }
     }
-
-    {
-        let mut pids = state.mcp_server_pids.lock().await;
-        pids.remove(&name);
-    }
+    cancel_result?;
     // Delete lock file if this is Jan Browser MCP and we have a port
     if name == "Jan Browser MCP" {
         if let Some(port) = bridge_port {
@@ -115,6 +141,14 @@ pub async fn deactivate_mcp_server<R: Runtime>(
         }),
     ) {
         log::error!("Failed to emit mcp-update event: {e}");
+    }
+    if let Err(e) = app.emit(
+        "mcp-status-update",
+        serde_json::json!({
+            "server": name
+        }),
+    ) {
+        log::error!("Failed to emit mcp-status-update event: {e}");
     }
 
     Ok(())
@@ -156,7 +190,7 @@ pub async fn get_connected_servers(
 /// * `state` - Application state containing MCP server connections
 ///
 /// # Returns
-/// * `Result<Vec<Tool>, String>` - A vector of all tools if successful, or an error message if failed
+/// * `Result<McpToolsResponse, String>` - Tools and per-server listing status
 ///
 /// This function:
 /// 1. Locks the MCP servers mutex to access server connections
@@ -166,7 +200,10 @@ pub async fn get_connected_servers(
 /// 5. Combines all tools into a single vector
 /// 6. Returns the combined list of all available tools with server information
 #[tauri::command]
-pub async fn get_tools(state: State<'_, AppState>) -> Result<Vec<ToolWithServer>, String> {
+pub async fn get_tools(
+    app: AppHandle<impl Runtime>,
+    state: State<'_, AppState>,
+) -> Result<McpToolsResponse, String> {
     // Short, dedicated listing timeout — NOT the 30s tool-call timeout. Listing
     // is a metadata round-trip; a healthy server answers in ms.
     let list_timeout = Duration::from_secs(DEFAULT_MCP_TOOL_LIST_TIMEOUT_SECS);
@@ -178,52 +215,118 @@ pub async fn get_tools(state: State<'_, AppState>) -> Result<Vec<ToolWithServer>
     // that needs the map — chat send, model-switch re-init, the tools UI. With
     // the lock dropped here, listing runs entirely outside the critical section
     // (ATO-271).
-    let handles: Vec<(String, Peer<RoleClient>)> = {
+    let handles: Vec<(String, u64, Peer<RoleClient>)> = {
         let servers = state.mcp_servers.lock().await;
+        let generations = state.mcp_server_generations.lock().await;
         servers
             .iter()
-            .map(|(name, service)| (name.clone(), service.peer()))
+            .map(|(name, service)| {
+                (
+                    name.clone(),
+                    generations.get(name).copied().unwrap_or_default(),
+                    service.peer(),
+                )
+            })
             .collect()
     };
 
     // List every server concurrently, each capped by its own short timeout, so
     // one slow/dead server delays only itself — total latency is bounded by
     // `list_timeout`, not the sum across servers.
-    let per_server = handles.into_iter().map(|(server_name, peer)| {
-        let list_timeout = list_timeout;
-        async move {
+    let per_server = handles
+        .into_iter()
+        .map(|(server_name, generation, peer)| async move {
             match timeout(list_timeout, peer.list_all_tools()).await {
-                Ok(Ok(tools)) => (server_name, tools),
+                Ok(Ok(tools)) => (server_name, generation, Ok(tools)),
                 Ok(Err(e)) => {
-                    log::warn!("MCP server {server_name} failed to list tools: {e}");
-                    (server_name, Vec::new())
+                    let error = format!("Failed to list tools: {e}");
+                    log::warn!("MCP server {server_name} {error}");
+                    (server_name, generation, Err(error))
                 }
                 Err(_) => {
-                    log::warn!(
-                        "MCP server {server_name}: listing tools timed out after {}s",
-                        list_timeout.as_secs()
-                    );
-                    (server_name, Vec::new())
+                    let error = format!("Tool listing timed out after {}s", list_timeout.as_secs());
+                    log::warn!("MCP server {server_name}: {error}");
+                    (server_name, generation, Err(error))
+                }
+            }
+        });
+
+    let results = futures_util::future::join_all(per_server).await;
+    let mut all_tools: Vec<ToolWithServer> = Vec::new();
+    {
+        let connected_servers = state.mcp_servers.lock().await;
+        let generations = state.mcp_server_generations.lock().await;
+        let mut errors = state.mcp_server_errors.lock().await;
+        for (server_name, generation, result) in results {
+            if !connected_servers.contains_key(&server_name)
+                || generations.get(&server_name).copied().unwrap_or_default() != generation
+            {
+                continue;
+            }
+            match result {
+                Ok(tools) => {
+                    errors.remove(&server_name);
+                    for tool in tools {
+                        all_tools.push(ToolWithServer {
+                            name: tool.name.to_string(),
+                            description: tool.description.as_ref().map(|d| d.to_string()),
+                            input_schema: serde_json::Value::Object((*tool.input_schema).clone()),
+                            server: server_name.clone(),
+                        });
+                    }
+                }
+                Err(error) => {
+                    errors.insert(server_name, error);
                 }
             }
         }
-    });
-
-    let results = futures_util::future::join_all(per_server).await;
-
-    let mut all_tools: Vec<ToolWithServer> = Vec::new();
-    for (server_name, tools) in results {
-        for tool in tools {
-            all_tools.push(ToolWithServer {
-                name: tool.name.to_string(),
-                description: tool.description.as_ref().map(|d| d.to_string()),
-                input_schema: serde_json::Value::Object((*tool.input_schema).clone()),
-                server: server_name.clone(),
-            });
-        }
     }
 
-    Ok(all_tools)
+    let servers = collect_mcp_server_statuses(&state).await;
+    if let Err(e) = app.emit("mcp-status-update", &servers) {
+        log::error!("Failed to emit mcp-status-update event: {e}");
+    }
+
+    Ok(McpToolsResponse {
+        tools: all_tools,
+        servers,
+    })
+}
+
+#[tauri::command]
+pub async fn get_mcp_server_statuses(
+    state: State<'_, AppState>,
+) -> Result<Vec<McpServerStatus>, String> {
+    Ok(collect_mcp_server_statuses(&state).await)
+}
+
+pub(crate) async fn collect_mcp_server_statuses(state: &AppState) -> Vec<McpServerStatus> {
+    let connected: BTreeSet<String> = state.mcp_servers.lock().await.keys().cloned().collect();
+    let errors = state.mcp_server_errors.lock().await.clone();
+    let names: BTreeSet<String> = connected
+        .iter()
+        .cloned()
+        .chain(errors.keys().cloned())
+        .collect();
+
+    names
+        .into_iter()
+        .map(|name| {
+            if let Some(error) = errors.get(&name) {
+                McpServerStatus {
+                    name,
+                    status: McpServerStatusKind::Error,
+                    error: Some(error.clone()),
+                }
+            } else {
+                McpServerStatus {
+                    name,
+                    status: McpServerStatusKind::Connected,
+                    error: None,
+                }
+            }
+        })
+        .collect()
 }
 
 /// Calls a tool on an MCP server by name with optional arguments

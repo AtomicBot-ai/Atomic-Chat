@@ -32,6 +32,7 @@ import { SystemEvent } from '@/types/events'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { MCPLogViewer } from '@/components/MCPLogViewer'
+import type { MCPServerStatus } from '@/services/mcp/types'
 
 //! Совпадает с useJanBrowserExtension; скрыто вместе с кнопкой Browse в чате
 const JAN_BROWSER_MCP_SERVER_KEY = 'Jan Browser MCP'
@@ -133,7 +134,7 @@ function MCPServersDesktop() {
       }
     | undefined
   >(undefined)
-  const [connectedServers, setConnectedServers] = useState<string[]>([])
+  const [serverStatuses, setServerStatuses] = useState<MCPServerStatus[]>([])
   const [loadingServers, setLoadingServers] = useState<{
     [key: string]: boolean
   }>({})
@@ -150,6 +151,10 @@ function MCPServersDesktop() {
         ([key]) => key !== JAN_BROWSER_MCP_SERVER_KEY
       ),
     [mcpServers]
+  )
+  const serverStatusByName = useMemo(
+    () => new Map(serverStatuses.map((status) => [status.name, status])),
+    [serverStatuses]
   )
 
   const updateToolCallTimeout = (rawValue: string) => {
@@ -284,8 +289,10 @@ function MCPServersDesktop() {
 
       if (nextSettings) {
         setSettings({
-          ...DEFAULT_MCP_SETTINGS,
-          ...nextSettings,
+          toolCallTimeoutSeconds:
+            typeof nextSettings.toolCallTimeoutSeconds === 'number'
+              ? nextSettings.toolCallTimeoutSeconds
+              : DEFAULT_MCP_SETTINGS.toolCallTimeoutSeconds,
         })
       }
 
@@ -328,7 +335,7 @@ function MCPServersDesktop() {
                 ? t('mcp-servers:serverStatusActive', { serverKey })
                 : t('mcp-servers:serverStatusInactive', { serverKey })
             )
-            serviceHub.mcp().getConnectedServers().then(setConnectedServers)
+            serviceHub.mcp().getMCPServerStatuses().then(setServerStatuses)
           })
           .catch((error) => {
             editServer(serverKey, {
@@ -353,7 +360,7 @@ function MCPServersDesktop() {
           .mcp()
           .deactivateMCPServer(serverKey)
           .finally(() => {
-            serviceHub.mcp().getConnectedServers().then(setConnectedServers)
+            serviceHub.mcp().getMCPServerStatuses().then(setServerStatuses)
             setLoadingServers((prev) => ({ ...prev, [serverKey]: false }))
           })
       }
@@ -361,20 +368,31 @@ function MCPServersDesktop() {
   }
 
   useEffect(() => {
-    serviceHub.mcp().getConnectedServers().then(setConnectedServers)
+    serviceHub.mcp().getMCPServerStatuses().then(setServerStatuses)
 
-    let unlisten: (() => void) | undefined
+    let cancelled = false
+    let unlisten: Array<() => void> = []
     const setupListener = async () => {
-      unlisten = await listen(SystemEvent.MCP_UPDATE, () => {
-        serviceHub.mcp().getConnectedServers().then(setConnectedServers)
-      })
+      const refreshStatuses = () => {
+        serviceHub.mcp().getMCPServerStatuses().then(setServerStatuses)
+      }
+      const listeners = await Promise.all([
+        listen(SystemEvent.MCP_UPDATE, refreshStatuses),
+        listen(SystemEvent.MCP_STATUS_UPDATE, refreshStatuses),
+      ])
+      if (cancelled) {
+        listeners.forEach((unsubscribe) => unsubscribe())
+      } else {
+        unlisten = listeners
+      }
     }
-    setupListener()
+    void setupListener()
 
     return () => {
-      unlisten?.()
+      cancelled = true
+      unlisten.forEach((unsubscribe) => unsubscribe())
     }
-  }, [serviceHub, setConnectedServers])
+  }, [serviceHub])
 
   return (
     <Fragment>
@@ -521,11 +539,19 @@ function MCPServersDesktop() {
                       title={
                         <div className="flex items-center gap-x-2">
                           <div
+                            title={serverStatusByName.get(key)?.error}
+                            aria-label={
+                              serverStatusByName.get(key)?.status === 'error'
+                                ? `MCP server error: ${serverStatusByName.get(key)?.error}`
+                                : undefined
+                            }
                             className={twMerge(
                               'size-2 rounded-full',
-                              connectedServers.includes(key)
+                              serverStatusByName.get(key)?.status === 'connected'
                                 ? 'bg-green-600 dark:bg-green-600'
-                                : 'bg-secondary'
+                                : serverStatusByName.get(key)?.status === 'error'
+                                  ? 'bg-red-600 dark:bg-red-600'
+                                  : 'bg-secondary'
                             )}
                           />
                           <h1 className="text-foreground text-base capitalize font-studio">
@@ -551,6 +577,14 @@ function MCPServersDesktop() {
                               {config.type || 'stdio'}
                             </span>
                           </div>
+                          {serverStatusByName.get(key)?.status === 'error' && (
+                            <div
+                              className="mb-2 text-destructive break-words"
+                              title={serverStatusByName.get(key)?.error}
+                            >
+                              {serverStatusByName.get(key)?.error}
+                            </div>
+                          )}
 
                           {config.type === 'stdio' || !config.type ? (
                             <>

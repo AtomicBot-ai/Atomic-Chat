@@ -1115,11 +1115,11 @@ ifeq ($(shell uname -s),Darwin)
 		$(MAKE) download-llamacpp-upstream-backend; \
 	fi
 else ifeq ($(OS),Windows_NT)
-	@if [ -f "src-tauri/resources/llamacpp-backend-upstream/build/bin/llama-server.exe" ]; then \
-		echo "upstream llamacpp backend already exists, skipping download..."; \
-	else \
-		$(MAKE) download-llamacpp-upstream-backend; \
-	fi
+ifneq ($(wildcard src-tauri/resources/llamacpp-backend-upstream/build/bin/llama-server.exe),)
+	@echo "upstream llamacpp backend already exists, skipping download..."
+else
+	$(MAKE) download-llamacpp-upstream-backend
+endif
 else ifeq ($(shell uname -s),Linux)
 	@if [ -f "src-tauri/resources/llamacpp-backend-upstream/build/bin/llama-server" ]; then \
 		echo "upstream llamacpp backend already exists, skipping download..."; \
@@ -1178,11 +1178,12 @@ endif
 
 # Debug build for local dev (faster, native arch only)
 build-cli-dev:
-	mkdir -p src-tauri/resources/bin
-	cd src-tauri && cargo build --features cli --bin jan-cli
 ifeq ($(OS),Windows_NT)
+	cd src-tauri && cargo build --features cli --bin jan-cli
 	powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null; Copy-Item 'src-tauri/target/debug/jan-cli.exe' 'src-tauri/resources/bin/jan-cli.exe' -Force"
 else
+	mkdir -p src-tauri/resources/bin
+	cd src-tauri && cargo build --features cli --bin jan-cli
 	install -m755 src-tauri/target/debug/jan-cli src-tauri/resources/bin/jan-cli
 endif
 

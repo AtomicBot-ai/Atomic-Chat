@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-158 records, 2026-05-19 → 2026-07-31.
+163 records, 2026-05-19 → 2026-07-31.
 
 ---
 
@@ -48,8 +48,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Add a `/v1/responses` translation shim to the local proxy so Codex CLI works on llama.cpp models](2026-06-02-add-a-v1-responses-translation-shim-to-the-local-proxy-so-codex.md)
 - **2026-06-01** — [Add a "Launch" page to install + configure external coding agents / assistants against the local OpenAI-compatible API](2026-06-01-add-a-launch-page-to-install-configure-external-coding-agents.md)
 
-## Agent mode — autonomous loop, tools, skills, workspace (39)
+## Agent mode — autonomous loop, tools, skills, workspace (40)
 
+- **2026-07-31** — [Raise the Agent tool-step completion deadline to 600 seconds](2026-07-31-raise-agent-tool-step-completion-deadline-to-600-seconds.md)
 - **2026-07-27** — [Run Windows GAIA evaluation on the selected upstream GPU backend](2026-07-27-run-windows-gaia-evaluation-on-the-selected-upstream-gpu-backend.md)
 - **2026-07-27** — [Keep the GAIA evaluator out of desktop bundles](2026-07-27-keep-the-gaia-evaluator-out-of-desktop-bundles.md)
 - **2026-07-27** — [Evaluate the Rust Agent sequentially on gated GAIA validation](2026-07-27-evaluate-the-rust-agent-sequentially-on-gated-gaia-validation.md)
@@ -184,14 +185,16 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-07-15** — [Aggregate Local API Server request telemetry into three-minute summaries (ATO-297)](2026-07-15-aggregate-local-api-server-request-telemetry-into-three-minute.md)
 - **2026-06-09** — [Make the Local API Server "Invalid host header" rejection actionable + fix Trusted Hosts field copy (ATO-118, scope I+II)](2026-06-09-make-the-local-api-server-invalid-host-header-rejection.md)
 
-## Telemetry, crash reporting & error handling (3)
+## Telemetry, crash reporting & error handling (4)
 
+- **2026-07-31** — [Use a valid ADL2 context for Windows AMD VRAM monitoring](2026-07-31-use-a-valid-adl2-context-for-windows-amd-vram-monitoring.md)
 - **2026-06-11** — [ATO-135 (web-app slice): clear the stuck "Failed to load" toast on a successful load (ATO-63) + map classified engine errors to actionable messages (ATO-121)](2026-06-11-ato-135-web-app-slice-clear-the-stuck-failed-to-load-toast-on-a.md)
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (8)
+## Packaging, installers, autostart & platform policy (9)
 
+- **2026-07-31** — [Keep Linux AppImage updates compatible with AppImageLauncher](2026-07-31-keep-linux-appimage-updates-compatible-with-appimagelauncher.md)
 - **2026-07-13** — [Run tray status synchronization on Windows](2026-07-13-run-tray-status-synchronization-on-windows.md)
 - **2026-06-16** — [Switch macOS autostart from `LaunchAgent` to `AppleScript` (real Login Item) + one-time choice-preserving migration for existing users](2026-06-16-switch-macos-autostart-from-launchagent-to-applescript-real.md)
 - **2026-06-10** — [Default "Launch at startup" to ON for all users (new + existing), one-time seed, still user-disable-able](2026-06-10-default-launch-at-startup-to-on-for-all-users-new-existing-one.md)
@@ -212,8 +215,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Other (7)
+## Other (9)
 
+- **2026-07-31** — [Surface MCP server runtime errors (ATO-385)](2026-07-31-surface-mcp-server-runtime-errors.md)
+- **2026-07-31** — [Fallback between HTTP-based MCP transports (ATO-384, ATO-385)](2026-07-31-fallback-between-http-based-mcp-transports.md)
 - **2026-07-29** — [Gate agent changes with local contract evidence](2026-07-29-gate-agent-changes-with-local-contract-evidence.md)
 - **2026-07-28** — [Grade tests by critical-flow evidence](2026-07-28-grade-tests-by-critical-flow-evidence.md)
 - **2026-07-28** — [Pin backend artifacts to verified tags](2026-07-28-pin-backend-artifacts-to-verified-tags.md)
