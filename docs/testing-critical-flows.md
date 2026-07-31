@@ -76,7 +76,7 @@ Verified local artifacts:
 
 - TurboQuant `turboquant-macos-arm64-066cc29` reports commit `066cc29`. Its
   cache types include `turbo2`, `turbo3`, and `turbo4`.
-- Upstream `b9937` reports build `9937`, commit `2021515a1`. Its cache types do
+- Upstream `b10205` reports build `10205`, commit `1e2259952`. Its cache types do
   not include TurboQuant values.
 - Both llama binaries advertise `draft-mtp` and `draft-dflash` speculative
   modes; backend-specific cache types remain distinct.

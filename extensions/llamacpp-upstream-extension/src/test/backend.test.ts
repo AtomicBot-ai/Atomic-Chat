@@ -84,11 +84,11 @@ describe('Backend functions', () => {
     })
 
     it('maps supported ids to exact upstream release URLs', () => {
-      expect(getBackendDownloadUrl('b9937', 'win-cuda-13.3-x64')).toBe(
-        'https://github.com/ggml-org/llama.cpp/releases/download/b9937/llama-b9937-bin-win-cuda-13.3-x64.zip'
+      expect(getBackendDownloadUrl('b10205', 'win-cuda-13.3-x64')).toBe(
+        'https://github.com/ggml-org/llama.cpp/releases/download/b10205/llama-b10205-bin-win-cuda-13.3-x64.zip'
       )
-      expect(getBackendDownloadUrl('b9937', 'linux-vulkan-x64')).toBe(
-        'https://github.com/ggml-org/llama.cpp/releases/download/b9937/llama-b9937-bin-ubuntu-vulkan-x64.tar.gz'
+      expect(getBackendDownloadUrl('b10205', 'linux-vulkan-x64')).toBe(
+        'https://github.com/ggml-org/llama.cpp/releases/download/b10205/llama-b10205-bin-ubuntu-vulkan-x64.tar.gz'
       )
       expect(() =>
         getBackendDownloadUrl('latest', 'win-cpu-x64')
@@ -99,10 +99,10 @@ describe('Backend functions', () => {
       expect(
         resolveCudaFamilyConcrete('win-cuda-13-x64', [
           { version: 'b9900', backend: 'win-cuda-13.1-x64', order: 0 },
-          { version: 'b9937', backend: 'win-cuda-13.3-x64', order: 0 },
-          { version: 'b9937', backend: 'win-cuda-12.4-x64', order: 0 },
+          { version: 'b10205', backend: 'win-cuda-13.3-x64', order: 0 },
+          { version: 'b10205', backend: 'win-cuda-12.4-x64', order: 0 },
         ])
-      ).toBe('b9937/win-cuda-13.3-x64')
+      ).toBe('b10205/win-cuda-13.3-x64')
     })
   })
 
@@ -185,15 +185,15 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
   // a GitHub release shape ({ tag_name, assets: [{ name }] }).
   const MANIFEST = {
     $schema: './schema.json',
-    updated_at: '2026-06-17T00:00:00Z',
-    tag_name: 'b9937',
+    updated_at: '2026-07-31T13:26:25Z',
+    tag_name: 'b10205',
     assets: [
-      { name: 'llama-b9937-bin-win-cpu-x64.zip' },
-      { name: 'llama-b9937-bin-win-cuda-12.4-x64.zip' },
-      { name: 'llama-b9937-bin-win-cuda-13.3-x64.zip' },
-      { name: 'llama-b9937-bin-win-vulkan-x64.zip' },
-      { name: 'llama-b9937-bin-ubuntu-x64.tar.gz' },
-      { name: 'llama-b9937-bin-ubuntu-vulkan-x64.tar.gz' },
+      { name: 'llama-b10205-bin-win-cpu-x64.zip' },
+      { name: 'llama-b10205-bin-win-cuda-12.4-x64.zip' },
+      { name: 'llama-b10205-bin-win-cuda-13.3-x64.zip' },
+      { name: 'llama-b10205-bin-win-vulkan-x64.zip' },
+      { name: 'llama-b10205-bin-ubuntu-x64.tar.gz' },
+      { name: 'llama-b10205-bin-ubuntu-vulkan-x64.tar.gz' },
       { name: 'cudart-llama-bin-win-cuda-12.4-x64.zip' },
       { name: 'cudart-llama-bin-win-cuda-13.3-x64.zip' },
     ],
@@ -236,10 +236,10 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
 
     const backends = await fetchRemoteBackends()
     expect(backends.map((backend) => backend.version)).toEqual([
-      'b9937',
-      'b9937',
-      'b9937',
-      'b9937',
+      'b10205',
+      'b10205',
+      'b10205',
+      'b10205',
     ])
   })
 
@@ -298,7 +298,7 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
     ])
     // cudart companions are not surfaced as backends.
     expect(names).not.toContain('cudart-llama-bin-win-cuda-12.4-x64')
-    backends.forEach((b) => expect(b.version).toBe('b9937'))
+    backends.forEach((b) => expect(b.version).toBe('b10205'))
   })
 
   it('returns cpu + vulkan for Linux x64', async () => {
@@ -312,7 +312,7 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
     const names = backends.map((b) => b.backend).sort()
 
     expect(names).toEqual(['linux-cpu-x64', 'linux-vulkan-x64'])
-    backends.forEach((b) => expect(b.version).toBe('b9937'))
+    backends.forEach((b) => expect(b.version).toBe('b10205'))
   })
 
   it('returns [] on macOS without any network call to the manifest', async () => {

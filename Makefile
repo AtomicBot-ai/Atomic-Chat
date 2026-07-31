@@ -855,7 +855,7 @@ endif
 # the atomic-chat-conf manifest (Windows/Linux), e.g.:
 #   make download-llamacpp-upstream-backend LLAMACPP_UPSTREAM_TAG=b9222
 #   make download-llamacpp-upstream-backend LLAMACPP_UPSTREAM_TAG=
-LLAMACPP_UPSTREAM_TAG ?= b9937
+LLAMACPP_UPSTREAM_TAG ?= b10205
 download-llamacpp-upstream-backend:
 ifeq ($(shell uname -s),Darwin)
 	@rm -rf src-tauri/resources/llamacpp-backend-upstream

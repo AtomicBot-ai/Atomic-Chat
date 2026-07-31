@@ -111,10 +111,10 @@ describe('llamacpp_extension', () => {
         vulkan: true,
       })
       vi.mocked(listSupportedBackends).mockResolvedValue([
-        { version: 'b9937', backend: 'win-cpu-x64', order: 0 },
-        { version: 'b9937', backend: 'win-cuda-12.4-x64', order: 0 },
-        { version: 'b9937', backend: 'win-cuda-13.3-x64', order: 0 },
-        { version: 'b9937', backend: 'win-vulkan-x64', order: 0 },
+        { version: 'b10205', backend: 'win-cpu-x64', order: 0 },
+        { version: 'b10205', backend: 'win-cuda-12.4-x64', order: 0 },
+        { version: 'b10205', backend: 'win-cuda-13.3-x64', order: 0 },
+        { version: 'b10205', backend: 'win-vulkan-x64', order: 0 },
       ])
       vi.spyOn(extension as any, 'tierEnumeratesDevices').mockResolvedValue(
         'works'
@@ -239,8 +239,8 @@ describe('llamacpp_extension', () => {
         // The Vulkan asset is published, so CPU here is a decision about the
         // hardware, not a missing release artefact.
         vi.mocked(listSupportedBackends).mockResolvedValue([
-          { version: 'b9937', backend: 'win-cpu-x64', order: 0 },
-          { version: 'b9937', backend: 'win-vulkan-x64', order: 0 },
+          { version: 'b10205', backend: 'win-cpu-x64', order: 0 },
+          { version: 'b10205', backend: 'win-vulkan-x64', order: 0 },
         ])
         const probe = vi.spyOn(extension as any, 'tierEnumeratesDevices')
 
@@ -272,9 +272,9 @@ describe('llamacpp_extension', () => {
         vulkan: true,
       })
       vi.mocked(listSupportedBackends).mockResolvedValue([
-        { version: 'b9937', backend: 'win-cpu-x64', order: 0 },
-        { version: 'b9937', backend: 'win-cuda-13.3-x64', order: 0 },
-        { version: 'b9937', backend: 'win-vulkan-x64', order: 0 },
+        { version: 'b10205', backend: 'win-cpu-x64', order: 0 },
+        { version: 'b10205', backend: 'win-cuda-13.3-x64', order: 0 },
+        { version: 'b10205', backend: 'win-vulkan-x64', order: 0 },
       ])
       vi.spyOn(extension as any, 'tierEnumeratesDevices').mockResolvedValue(
         'works'
@@ -312,8 +312,8 @@ describe('llamacpp_extension', () => {
         vulkan: true,
       })
       vi.mocked(listSupportedBackends).mockResolvedValue([
-        { version: 'b9937', backend: 'win-cpu-x64', order: 0 },
-        { version: 'b9937', backend: 'win-vulkan-x64', order: 0 },
+        { version: 'b10205', backend: 'win-cpu-x64', order: 0 },
+        { version: 'b10205', backend: 'win-vulkan-x64', order: 0 },
       ])
       vi.spyOn(extension as any, 'tierEnumeratesDevices').mockResolvedValue(
         'works'
@@ -340,7 +340,7 @@ describe('llamacpp_extension', () => {
         vulkan: false,
       })
       vi.mocked(listSupportedBackends).mockResolvedValue([
-        { version: 'b9937', backend: 'win-cpu-x64', order: 0 },
+        { version: 'b10205', backend: 'win-cpu-x64', order: 0 },
       ])
 
       await expect(extension['detectIdealBackendType']()).resolves.toEqual({
@@ -1211,7 +1211,7 @@ describe('llamacpp_extension', () => {
   })
 
   describe('backend replacement', () => {
-    const RECOMMENDED = 'b9937/win-cuda-13.3-x64'
+    const RECOMMENDED = 'b10205/win-cuda-13.3-x64'
 
     /**
      * `updateBackend` fans out to the settings store, the stored-type
@@ -1275,7 +1275,7 @@ describe('llamacpp_extension', () => {
         expect(result).toEqual({ wasUpdated: true, newBackend: RECOMMENDED })
         expect(extension['ensureBackendReady']).toHaveBeenCalledWith(
           'win-cuda-13.3-x64',
-          'b9937'
+          'b10205'
         )
         expect(persistedVersionBackend()).toBe(RECOMMENDED)
         expect(extension['config'].version_backend).toBe(RECOMMENDED)
@@ -1336,7 +1336,7 @@ describe('llamacpp_extension', () => {
         expect(event.detail).toEqual({
           backend: RECOMMENDED,
           provider: 'llamacpp-upstream',
-          version: 'b9937',
+          version: 'b10205',
           backendId: 'win-cuda-13.3-x64',
         })
       })
@@ -1489,7 +1489,7 @@ describe('llamacpp_extension', () => {
         })
         vi.mocked(listSupportedBackends).mockResolvedValue([
           { version: 'b9800', backend: 'win-cuda-13.3-x64', order: 0 },
-          { version: 'b9937', backend: 'win-cuda-13.3-x64', order: 0 },
+          { version: 'b10205', backend: 'win-cuda-13.3-x64', order: 0 },
         ])
         stubLatestLookup(RECOMMENDED)
 
@@ -1584,7 +1584,7 @@ describe('llamacpp_extension', () => {
           backend: 'win-cuda-13.3-x64',
         })
         vi.mocked(listSupportedBackends).mockResolvedValue([
-          { version: 'b9937', backend: 'win-cuda-13.3-x64', order: 0 },
+          { version: 'b10205', backend: 'win-cuda-13.3-x64', order: 0 },
         ])
         stubLatestLookup(RECOMMENDED)
 
@@ -1706,7 +1706,7 @@ describe('llamacpp_extension', () => {
           if (key === OPTIMAL_BACKEND_CACHE_KEY) return JSON.stringify(cached)
           if (key === 'llama_cpp_better_backend_recommendation') {
             return JSON.stringify({
-              recommendedBackend: 'b9937/win-vulkan-x64',
+              recommendedBackend: 'b10205/win-vulkan-x64',
             })
           }
           return null
@@ -1719,7 +1719,7 @@ describe('llamacpp_extension', () => {
         vi.mocked(localStorage.getItem).mockImplementation((key: string) =>
           key === 'llama_cpp_better_backend_recommendation'
             ? JSON.stringify({
-                recommendedBackend: 'b9937/win-vulkan-x64',
+                recommendedBackend: 'b10205/win-vulkan-x64',
               })
             : null
         )

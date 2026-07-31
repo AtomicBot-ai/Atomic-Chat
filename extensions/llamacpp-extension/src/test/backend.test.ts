@@ -313,7 +313,7 @@ describe('isTurboQuantRelease', () => {
 
   it('rejects stock upstream builds so fork-only flags stay contained', () => {
     expect(isTurboQuantRelease('b10018')).toBe(false)
-    expect(isTurboQuantRelease('b9937/win-cuda-13.3-x64')).toBe(false)
+    expect(isTurboQuantRelease('b10205/win-cuda-13.3-x64')).toBe(false)
     expect(isTurboQuantRelease('')).toBe(false)
   })
 })
@@ -340,7 +340,7 @@ describe('TurboQuant cudart helpers', () => {
   it('finds an upstream CUDA bin that already has cudart', async () => {
     const jan = '/path/to/jan'
     const donorBin =
-      '/path/to/jan/llamacpp-upstream/backends/b9937/win-cuda-13.3-x64/build/bin'
+      '/path/to/jan/llamacpp-upstream/backends/b10205/win-cuda-13.3-x64/build/bin'
     vi.mocked(fs.existsSync).mockImplementation(async (path: string) => {
       if (path === `${jan}/llamacpp-upstream/backends`) return true
       if (path === `${donorBin}/cudart64_13.dll`) return true
@@ -348,7 +348,7 @@ describe('TurboQuant cudart helpers', () => {
     })
     vi.mocked(fs.readdirSync).mockResolvedValue([
       '/path/to/jan/llamacpp-upstream/backends/b9691',
-      '/path/to/jan/llamacpp-upstream/backends/b9937',
+      '/path/to/jan/llamacpp-upstream/backends/b10205',
     ] as any)
 
     await expect(
@@ -359,13 +359,13 @@ describe('TurboQuant cudart helpers', () => {
   it('knows the CUDA 11 cudart soname', async () => {
     const jan = '/path/to/jan'
     const donorBin =
-      '/path/to/jan/llamacpp-upstream/backends/b9937/win-cuda-11.7-x64/build/bin'
+      '/path/to/jan/llamacpp-upstream/backends/b10205/win-cuda-11.7-x64/build/bin'
     vi.mocked(fs.existsSync).mockImplementation(async (path: string) => {
       if (path === `${jan}/llamacpp-upstream/backends`) return true
       return path === `${donorBin}/cudart64_110.dll`
     })
     vi.mocked(fs.readdirSync).mockResolvedValue([
-      '/path/to/jan/llamacpp-upstream/backends/b9937',
+      '/path/to/jan/llamacpp-upstream/backends/b10205',
     ] as any)
 
     await expect(findUpstreamCudaBinWithCudart(jan, '11.7')).resolves.toBe(
@@ -393,7 +393,7 @@ describe('TurboQuant cudart helpers', () => {
       async (path: string) => path === `${jan}/llamacpp-upstream/backends`
     )
     vi.mocked(fs.readdirSync).mockResolvedValue([
-      '/path/to/jan/llamacpp-upstream/backends/b9937',
+      '/path/to/jan/llamacpp-upstream/backends/b10205',
     ] as any)
 
     await expect(findUpstreamCudaBinWithCudart(jan, '13.3')).resolves.toBeNull()

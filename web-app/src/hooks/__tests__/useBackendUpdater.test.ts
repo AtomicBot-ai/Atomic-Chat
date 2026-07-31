@@ -4,7 +4,7 @@ import { events } from '@janhq/core'
 import { useBackendUpdater } from '../useBackendUpdater'
 import { localStorageKey } from '@/constants/localStorage'
 
-const RECOMMENDED = 'b9937/win-cuda-13.3-x64'
+const RECOMMENDED = 'b10205/win-cuda-13.3-x64'
 const RECOMMENDATION = {
   currentBackend: 'b9800/win-cpu-x64',
   recommendedBackend: RECOMMENDED,

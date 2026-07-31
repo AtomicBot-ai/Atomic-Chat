@@ -1789,7 +1789,7 @@ mod tests {
     #[test]
     fn test_dflash_off_no_spec_flags() {
         let mut config = default_config();
-        config.version_backend = "b9937/standard".to_string();
+        config.version_backend = "b10205/standard".to_string();
         config.dflash = false;
         config.dflash_draft_path = "/path/to/dflash-draft.gguf".to_string();
 
@@ -1804,7 +1804,7 @@ mod tests {
     #[test]
     fn test_dflash_on_skips_unsupported_upstream_spec_type() {
         let mut config = default_config();
-        config.version_backend = "b9937/standard".to_string();
+        config.version_backend = "b10205/standard".to_string();
         config.dflash = true;
         config.dflash_draft_path = "/path/to/dflash-draft.gguf".to_string();
 
@@ -1819,7 +1819,7 @@ mod tests {
     #[test]
     fn test_dflash_on_emits_spec_flags_when_probe_supports_it() {
         let mut config = default_config();
-        config.version_backend = "b9937/standard".to_string();
+        config.version_backend = "b10205/standard".to_string();
         config.dflash = true;
         config.dflash_spec_supported = true;
         config.dflash_draft_path = "/path/to/dflash-draft.gguf".to_string();
@@ -1835,7 +1835,7 @@ mod tests {
     #[test]
     fn test_dflash_custom_n_max_skipped_with_unsupported_upstream_spec_type() {
         let mut config = default_config();
-        config.version_backend = "b9937/standard".to_string();
+        config.version_backend = "b10205/standard".to_string();
         config.dflash = true;
         config.dflash_draft_path = "/path/to/dflash-draft.gguf".to_string();
         config.dflash_n_max = 7;
@@ -1851,7 +1851,7 @@ mod tests {
     #[test]
     fn test_dflash_custom_n_max_emits_when_probe_supports_it() {
         let mut config = default_config();
-        config.version_backend = "b9937/standard".to_string();
+        config.version_backend = "b10205/standard".to_string();
         config.dflash = true;
         config.dflash_spec_supported = true;
         config.dflash_draft_path = "/path/to/dflash-draft.gguf".to_string();
@@ -1881,7 +1881,7 @@ mod tests {
     #[test]
     fn test_dflash_skipped_without_draft_path() {
         let mut config = default_config();
-        config.version_backend = "b9937/standard".to_string();
+        config.version_backend = "b10205/standard".to_string();
         config.dflash = true;
 
         let builder = ArgumentBuilder::new(config, false).unwrap();
@@ -1895,7 +1895,7 @@ mod tests {
     #[test]
     fn test_dflash_skipped_in_embedding_mode() {
         let mut config = default_config();
-        config.version_backend = "b9937/standard".to_string();
+        config.version_backend = "b10205/standard".to_string();
         config.dflash = true;
         config.dflash_draft_path = "/path/to/dflash-draft.gguf".to_string();
 
@@ -1911,7 +1911,7 @@ mod tests {
         // Defense-in-depth: when both toggles are somehow enabled and the
         // backend supports DFlash, emit only the DFlash speculative path.
         let mut config = default_config();
-        config.version_backend = "b9937/standard".to_string();
+        config.version_backend = "b10205/standard".to_string();
         config.mtp = true;
         config.dflash = true;
         config.dflash_spec_supported = true;

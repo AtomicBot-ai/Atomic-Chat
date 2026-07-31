@@ -36,7 +36,7 @@ const GGML_ORG_CUDART_DOWNLOAD_BASE =
  * Pinned ggml-org tag that ships `cudart-llama-bin-win-cuda-{12.4,13.3}-x64.zip`.
  * Keep in sync with `LLAMACPP_UPSTREAM_PINNED_TAG` in the upstream extension.
  */
-export const GGML_ORG_CUDART_PINNED_TAG = 'b9937'
+export const GGML_ORG_CUDART_PINNED_TAG = 'b10205'
 const MANIFEST_FETCH_TIMEOUT_MS = 8_000
 
 /** Clean TurboQuant Windows CUDA ids, e.g. `windows-x64-cuda-13.3`. */
