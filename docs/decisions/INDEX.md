@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-164 records, 2026-05-19 → 2026-07-31.
+165 records, 2026-05-19 → 2026-07-31.
 
 ---
 
@@ -164,8 +164,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-19** — [Use `AtomicBot-ai/atomic-llama-cpp-turboquant` as the LLM backend](2026-05-19-use-atomicbot-ai-atomic-llama-cpp-turboquant-as-the-llm-backend.md)
 - **2026-05-19** — [Ship upstream `ggml-org/llama.cpp` as a second macOS provider, no fork](2026-05-19-ship-upstream-ggml-org-llama-cpp-as-a-second-macos-provider-no.md)
 
-## Models, Hub & downloads (12)
+## Models, Hub & downloads (13)
 
+- **2026-07-31** — [Store model catalog snapshots in IndexedDB](2026-07-31-store-model-catalog-snapshots-in-indexeddb.md)
 - **2026-07-14** — [Resume interrupted model downloads from verified persisted offsets](2026-07-14-resume-interrupted-model-downloads-from-verified-persisted.md)
 - **2026-06-16** — [Validate the model/mmproj GGUF (presence + size) before load so a missing/partial download fails fast with an actionable, classified error (ATO-187)](2026-06-16-validate-the-model-mmproj-gguf-presence-size-before-load-so-a.md)
 - **2026-06-16** — [Raise the model-load readiness timeout to a 30-min floor so large/cold-storage loads aren't cut off at 600s (ATO-188, MODEL_LOAD_TIMED_OUT)](2026-06-16-raise-the-model-load-readiness-timeout-to-a-30-min-floor-so.md)

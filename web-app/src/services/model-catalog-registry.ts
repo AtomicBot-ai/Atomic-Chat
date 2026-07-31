@@ -4,7 +4,7 @@
  *
  * Mirrors the architecture of `provider-registry.ts` and
  * `recommended-models-registry.ts`: fetch from GitHub Releases, cache in
- * `localStorage` for one hour, fall back to a bundled baseline. The
+ * IndexedDB for one hour, fall back to a bundled baseline. The
  * cache holds two independent payloads (catalog + index) with separate
  * keys so each can be refreshed without invalidating the other.
  *
@@ -63,6 +63,9 @@ const CATALOG_CACHE_KEY = 'atomic_model_catalog_cache_v1'
 const CATALOG_CACHE_TS_KEY = 'atomic_model_catalog_cache_ts_v1'
 const INDEX_CACHE_KEY = 'atomic_model_catalog_idx_v1'
 const INDEX_CACHE_TS_KEY = 'atomic_model_catalog_idx_ts_v1'
+const CACHE_DB_NAME = 'atomic_model_catalog_cache'
+const CACHE_DB_VERSION = 1
+const CACHE_STORE_NAME = 'snapshots'
 
 // 60 s for the catalog (~13 MB raw, ~3-4 MB gzipped) — covers users on
 // slow connections to GitHub Releases CDN (~300 KB/s in the worst case
@@ -92,7 +95,7 @@ export type CatalogIndexPayload = {
  * Where the manifest came from, in priority order:
  *
  *   - `remote`   — fresh GET against `raw.githubusercontent.com`.
- *   - `cache`    — `localStorage` snapshot from a previous successful
+ *   - `cache`    — IndexedDB snapshot from a previous successful
  *                  remote fetch (TTL: 1 hour).
  *   - `bundled`  — gzipped catalog snapshot embedded in the app bundle
  *                  by `scripts/fetch-seed-catalog.mjs` at build time.
@@ -179,15 +182,6 @@ const baselineManifest = (): CatalogManifest => ({
   models: BASELINE_MODEL_CATALOG.slice(),
 })
 
-const safeLocalStorage = (): Storage | null => {
-  try {
-    if (typeof window === 'undefined') return null
-    return window.localStorage
-  } catch {
-    return null
-  }
-}
-
 const isManifestShape = (value: unknown): value is CatalogManifest => {
   if (typeof value !== 'object' || value === null) return false
   const v = value as Record<string, unknown>
@@ -211,44 +205,125 @@ const isIndexShape = (value: unknown): value is CatalogIndexPayload => {
 type CachedCatalog = { manifest: CatalogManifest; fetchedAt: number }
 type CachedIndex = { payload: CatalogIndexPayload; fetchedAt: number }
 
-export const getCachedCatalog = (): CachedCatalog | null => {
-  const ls = safeLocalStorage()
-  if (!ls) return null
+type CacheEntry = { value: unknown; fetchedAt: number }
+
+let cacheDbPromise: Promise<IDBDatabase | null> | null = null
+let catalogMemoryCache: CachedCatalog | null | undefined
+let indexMemoryCache: CachedIndex | null | undefined
+
+const removeLegacyLocalStorageCache = (): void => {
   try {
-    const raw = ls.getItem(CATALOG_CACHE_KEY)
-    const tsRaw = ls.getItem(CATALOG_CACHE_TS_KEY)
-    if (!raw || !tsRaw) return null
-    const fetchedAt = Number(tsRaw)
-    if (!Number.isFinite(fetchedAt)) return null
-    const parsed = JSON.parse(raw) as unknown
-    if (!isManifestShape(parsed)) return null
-    return { manifest: parsed, fetchedAt }
+    if (typeof window === 'undefined') return
+    const ls = window.localStorage
+    ls.removeItem(CATALOG_CACHE_KEY)
+    ls.removeItem(CATALOG_CACHE_TS_KEY)
+    ls.removeItem(INDEX_CACHE_KEY)
+    ls.removeItem(INDEX_CACHE_TS_KEY)
   } catch {
-    return null
+    // localStorage may be unavailable; IndexedDB remains the primary cache.
   }
 }
 
-export const getCachedIndex = (): CachedIndex | null => {
-  const ls = safeLocalStorage()
-  if (!ls) return null
-  try {
-    const raw = ls.getItem(INDEX_CACHE_KEY)
-    const tsRaw = ls.getItem(INDEX_CACHE_TS_KEY)
-    if (!raw || !tsRaw) return null
-    const fetchedAt = Number(tsRaw)
-    if (!Number.isFinite(fetchedAt)) return null
-    const parsed = JSON.parse(raw) as unknown
-    if (!isIndexShape(parsed)) return null
-    if (parsed.index_version > SUPPORTED_INDEX_VERSION) return null
-    return { payload: parsed, fetchedAt }
-  } catch {
-    return null
-  }
+const openCacheDb = (): Promise<IDBDatabase | null> => {
+  if (cacheDbPromise) return cacheDbPromise
+  cacheDbPromise = new Promise((resolve) => {
+    if (typeof indexedDB === 'undefined') {
+      resolve(null)
+      return
+    }
+    try {
+      const request = indexedDB.open(CACHE_DB_NAME, CACHE_DB_VERSION)
+      request.onupgradeneeded = () => {
+        const db = request.result
+        if (!db.objectStoreNames.contains(CACHE_STORE_NAME)) {
+          db.createObjectStore(CACHE_STORE_NAME)
+        }
+      }
+      request.onsuccess = () => {
+        removeLegacyLocalStorageCache()
+        resolve(request.result)
+      }
+      request.onerror = () => resolve(null)
+      request.onblocked = () => resolve(null)
+    } catch {
+      resolve(null)
+    }
+  })
+  return cacheDbPromise
 }
 
-export const isCacheFresh = (
-  cached: { fetchedAt: number } | null
-): boolean => {
+const readCacheEntry = async (key: string): Promise<CacheEntry | null> => {
+  const db = await openCacheDb()
+  if (!db) return null
+  return await new Promise((resolve) => {
+    try {
+      const request = db
+        .transaction(CACHE_STORE_NAME, 'readonly')
+        .objectStore(CACHE_STORE_NAME)
+        .get(key)
+      request.onsuccess = () => {
+        const entry = request.result as CacheEntry | undefined
+        resolve(entry && Number.isFinite(entry.fetchedAt) ? entry : null)
+      }
+      request.onerror = () => resolve(null)
+    } catch {
+      resolve(null)
+    }
+  })
+}
+
+const writeCacheEntry = async (
+  key: string,
+  entry: CacheEntry
+): Promise<boolean> => {
+  const db = await openCacheDb()
+  if (!db) return false
+  return await new Promise((resolve) => {
+    try {
+      const transaction = db.transaction(CACHE_STORE_NAME, 'readwrite')
+      transaction.objectStore(CACHE_STORE_NAME).put(entry, key)
+      transaction.oncomplete = () => resolve(true)
+      transaction.onerror = () => resolve(false)
+      transaction.onabort = () => resolve(false)
+    } catch {
+      resolve(false)
+    }
+  })
+}
+
+export const getCachedCatalog = async (): Promise<CachedCatalog | null> => {
+  if (catalogMemoryCache !== undefined) return catalogMemoryCache
+  const entry = await readCacheEntry(CATALOG_CACHE_KEY)
+  if (!entry || !isManifestShape(entry.value)) {
+    catalogMemoryCache = null
+    return null
+  }
+  catalogMemoryCache = {
+    manifest: entry.value,
+    fetchedAt: entry.fetchedAt,
+  }
+  return catalogMemoryCache
+}
+
+export const getCachedIndex = async (): Promise<CachedIndex | null> => {
+  if (indexMemoryCache !== undefined) return indexMemoryCache
+  const entry = await readCacheEntry(INDEX_CACHE_KEY)
+  if (
+    !entry ||
+    !isIndexShape(entry.value) ||
+    entry.value.index_version > SUPPORTED_INDEX_VERSION
+  ) {
+    indexMemoryCache = null
+    return null
+  }
+  indexMemoryCache = {
+    payload: entry.value,
+    fetchedAt: entry.fetchedAt,
+  }
+  return indexMemoryCache
+}
+
+export const isCacheFresh = (cached: { fetchedAt: number } | null): boolean => {
   if (!cached) return false
   return Date.now() - cached.fetchedAt < CACHE_TTL_MS
 }
@@ -256,44 +331,51 @@ export const isCacheFresh = (
 const writeCatalogCache = (
   manifest: CatalogManifest,
   fetchedAt: number
-): void => {
-  const ls = safeLocalStorage()
-  if (!ls) return
-  try {
-    ls.setItem(CATALOG_CACHE_KEY, JSON.stringify(manifest))
-    ls.setItem(CATALOG_CACHE_TS_KEY, String(fetchedAt))
-  } catch (error) {
-    // Catalog can grow to a few MB. `QuotaExceededError` is recoverable: we
-    // just lose the persistent cache for this session.
-    console.warn('[model-catalog-registry] Failed to write catalog cache:', error)
-  }
+): Promise<void> => {
+  catalogMemoryCache = { manifest, fetchedAt }
+  return writeCacheEntry(CATALOG_CACHE_KEY, {
+    value: manifest,
+    fetchedAt,
+  }).then((written) => {
+    if (!written) {
+      console.warn('[model-catalog-registry] Failed to write catalog cache')
+    }
+  })
 }
 
-const writeIndexCache = (
+const writeIndexCache = async (
   payload: CatalogIndexPayload,
   fetchedAt: number
-): void => {
-  const ls = safeLocalStorage()
-  if (!ls) return
-  try {
-    ls.setItem(INDEX_CACHE_KEY, JSON.stringify(payload))
-    ls.setItem(INDEX_CACHE_TS_KEY, String(fetchedAt))
-  } catch (error) {
-    console.warn('[model-catalog-registry] Failed to write index cache:', error)
+): Promise<void> => {
+  indexMemoryCache = { payload, fetchedAt }
+  const written = await writeCacheEntry(INDEX_CACHE_KEY, {
+    value: payload,
+    fetchedAt,
+  })
+  if (!written) {
+    console.warn('[model-catalog-registry] Failed to write index cache')
   }
 }
 
-export const clearCatalogCache = (): void => {
-  const ls = safeLocalStorage()
-  if (!ls) return
-  try {
-    ls.removeItem(CATALOG_CACHE_KEY)
-    ls.removeItem(CATALOG_CACHE_TS_KEY)
-    ls.removeItem(INDEX_CACHE_KEY)
-    ls.removeItem(INDEX_CACHE_TS_KEY)
-  } catch (error) {
-    console.warn('[model-catalog-registry] Failed to clear cache:', error)
+export const clearCatalogCache = async (): Promise<void> => {
+  catalogMemoryCache = null
+  indexMemoryCache = null
+  const db = await openCacheDb()
+  if (db) {
+    await new Promise<void>((resolve) => {
+      try {
+        const transaction = db.transaction(CACHE_STORE_NAME, 'readwrite')
+        transaction.objectStore(CACHE_STORE_NAME).clear()
+        transaction.oncomplete = () => resolve()
+        transaction.onerror = () => resolve()
+        transaction.onabort = () => resolve()
+      } catch {
+        resolve()
+      }
+    })
   }
+
+  removeLegacyLocalStorageCache()
 }
 
 const isTauriRuntime = (): boolean => {
@@ -306,8 +388,10 @@ const isTauriRuntime = (): boolean => {
 }
 
 const hasDecompressionStream = (): boolean => {
-  return typeof (globalThis as { DecompressionStream?: unknown })
-    .DecompressionStream === 'function'
+  return (
+    typeof (globalThis as { DecompressionStream?: unknown })
+      .DecompressionStream === 'function'
+  )
 }
 
 const gunzipToText = async (buf: ArrayBuffer): Promise<string> => {
@@ -317,7 +401,9 @@ const gunzipToText = async (buf: ArrayBuffer): Promise<string> => {
   // collect the result as UTF-8 text.
   const Decompressor = (
     globalThis as unknown as {
-      DecompressionStream: new (format: 'gzip' | 'deflate') => GenericTransformStream
+      DecompressionStream: new (
+        format: 'gzip' | 'deflate'
+      ) => GenericTransformStream
     }
   ).DecompressionStream
   const stream = new Blob([buf]).stream().pipeThrough(new Decompressor('gzip'))
@@ -380,7 +466,7 @@ const fetchJsonGzip = async (
  *      the primary transport for large gzipped payloads, so it stays
  *      strictly secondary here.
  */
-const fetchJson = async <T,>(
+const fetchJson = async <T>(
   url: string,
   validate: (value: unknown) => value is T,
   signal?: AbortSignal,
@@ -420,7 +506,7 @@ const fetchJson = async <T,>(
   return data
 }
 
-const withHardTimeout = <T,>(
+const withHardTimeout = <T>(
   promise: Promise<T>,
   timeoutMs: number,
   reason = `Catalog fetch timed out after ${timeoutMs}ms`
@@ -466,7 +552,7 @@ export const getCatalogOrFallback = async (
     timeoutMs = CATALOG_FETCH_TIMEOUT_MS,
   } = options
 
-  const cached = getCachedCatalog()
+  const cached = await getCachedCatalog()
   if (!force && isCacheFresh(cached) && cached) {
     return {
       manifest: cached.manifest,
@@ -500,7 +586,7 @@ export const getCatalogOrFallback = async (
       )
     }
     const fetchedAt = Date.now()
-    writeCatalogCache(manifest, fetchedAt)
+    await writeCatalogCache(manifest, fetchedAt)
     console.info(
       `[model-catalog-registry] Loaded ${manifest.models.length} models ` +
         `(schema_version=${manifest.schema_version}, updated_at=${manifest.updated_at})`
@@ -553,7 +639,7 @@ export const getIndexOrFallback = async (
     timeoutMs = INDEX_FETCH_TIMEOUT_MS,
   } = options
 
-  const cached = getCachedIndex()
+  const cached = await getCachedIndex()
   if (!force && isCacheFresh(cached) && cached) {
     return {
       payload: cached.payload,
@@ -586,7 +672,7 @@ export const getIndexOrFallback = async (
       )
     }
     const fetchedAt = Date.now()
-    writeIndexCache(payload, fetchedAt)
+    await writeIndexCache(payload, fetchedAt)
     return { payload, source: 'remote', fetchedAt }
   } catch (error) {
     try {
@@ -608,6 +694,11 @@ export const getIndexOrFallback = async (
         error: message,
       }
     }
-    return { payload: null, source: 'baseline', fetchedAt: null, error: message }
+    return {
+      payload: null,
+      source: 'baseline',
+      fetchedAt: null,
+      error: message,
+    }
   }
 }

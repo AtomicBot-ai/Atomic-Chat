@@ -486,17 +486,18 @@ flowchart LR
 
 - TTL: `CACHE_TTL_MS = 60 * 60 * 1000` (1 hour) — same posture as the
   provider / recommended-models registries.
-- `localStorage` keys (distinct from sibling registries):
-  - `atomic_model_catalog_cache_v1` — JSON-stringified manifest.
-  - `atomic_model_catalog_cache_ts_v1` — `Date.now()` at write time.
-  - `atomic_model_catalog_idx_v1` — JSON-stringified MiniSearch payload.
-  - `atomic_model_catalog_idx_ts_v1` — `Date.now()` at write time.
+- The catalog and MiniSearch snapshot live as structured-clone values in the
+  `atomic_model_catalog_cache` IndexedDB database, `snapshots` object store.
+  They must not move back to `localStorage`: the catalog is larger than every
+  supported webview's per-origin localStorage quota.
+- The former `atomic_model_catalog_*` localStorage keys are removed when the
+  cache is explicitly cleared.
 - A stale cache is reused as **fallback** only when the network attempt
   fails. If there is no cache at all, `BASELINE_MODEL_CATALOG` wins
   for the catalog half; the search service rebuilds the index locally
   when no snapshot is available.
-- The catalog can be a few MB; `QuotaExceededError` is caught and
-  reduces the cache to a no-op for the rest of the session.
+- IndexedDB failures degrade to the bundled seed and network refresh without
+  breaking the Hub.
 
 ## Search ranking
 

@@ -103,8 +103,8 @@ describe('DefaultModelsService', () => {
     // the bundled baseline and never throws. These tests assert that
     // contract.
 
-    beforeEach(() => {
-      clearCatalogCache()
+    beforeEach(async () => {
+      await clearCatalogCache()
     })
 
     it('should fetch model catalog successfully', async () => {
