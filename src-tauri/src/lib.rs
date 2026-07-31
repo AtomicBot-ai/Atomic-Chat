@@ -173,6 +173,7 @@ pub fn run() {
         core::server::remote_provider_commands::list_provider_configs,
         // MCP commands
         core::mcp::commands::get_tools,
+        core::mcp::commands::get_mcp_server_statuses,
         core::mcp::commands::call_tool,
         core::mcp::commands::cancel_tool_call,
         core::agent::commands::agent_run_turn,
@@ -315,6 +316,7 @@ pub fn run() {
         core::server::remote_provider_commands::abort_remote_stream,
         // MCP commands
         core::mcp::commands::get_tools,
+        core::mcp::commands::get_mcp_server_statuses,
         core::mcp::commands::call_tool,
         core::mcp::commands::cancel_tool_call,
         core::agent::commands::agent_run_turn,
@@ -368,6 +370,9 @@ pub fn run() {
         .manage(AppState {
             app_token: Some(generate_app_token()),
             mcp_servers: Arc::new(Mutex::new(HashMap::new())),
+            mcp_start_generations: Arc::new(Mutex::new(HashMap::new())),
+            mcp_server_generations: Arc::new(Mutex::new(HashMap::new())),
+            mcp_server_errors: Arc::new(Mutex::new(HashMap::new())),
             download_manager: Arc::new(Mutex::new(DownloadManagerState::default())),
             mcp_active_servers: Arc::new(Mutex::new(HashMap::new())),
             server_handle: Arc::new(Mutex::new(None)),
@@ -378,7 +383,6 @@ pub fn run() {
             agent_session_locks: Arc::new(Mutex::new(HashMap::new())),
             mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
             mcp_shutdown_in_progress: Arc::new(Mutex::new(false)),
-            mcp_monitoring_tasks: Arc::new(Mutex::new(HashMap::new())),
             background_cleanup_handle: Arc::new(Mutex::new(None)),
             mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
             provider_configs: Arc::new(Mutex::new(HashMap::new())),

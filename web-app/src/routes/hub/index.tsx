@@ -38,6 +38,7 @@ import { switchToModel } from '@/utils/switchModel'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { Button } from '@/components/ui/button'
 import { HubModelCard } from '@/containers/HubModelCard'
+import { getHubSearchQuery, setHubSearchQuery } from './hub-session'
 
 type SearchParams = {
   repo: string
@@ -153,7 +154,9 @@ function HubContent() {
     }))
   )
 
-  const [searchValue, setSearchValue] = useState(querySearchParam ?? '')
+  const [searchValue, setSearchValue] = useState(
+    querySearchParam ?? getHubSearchQuery()
+  )
   const [sortSelected, setSortSelected] = useState(
     engineSearchParam === 'mlx' || engineSearchParam === 'gguf'
       ? engineSearchParam
@@ -477,7 +480,9 @@ function HubContent() {
   }, [orphanIdsToEnrich, serviceHub, huggingfaceToken])
 
   const showRecommendedBlock =
-    debouncedSearchValue.length === 0 && !showOnlyDownloaded
+    debouncedSearchValue.length === 0 &&
+    !showOnlyDownloaded &&
+    sortSelected === 'newest'
 
   // Long-tail Hugging Face fallback (Path B).
   //
@@ -688,6 +693,7 @@ function HubContent() {
     const next = e.target.value
     setIsSearching(false)
     setSearchValue(next)
+    setHubSearchQuery(next)
     // Only drop the "found outside catalog" card when the new query can
     // not yield a result anyway (matches the ``< 3`` early-return in
     // ``fetchHuggingFaceModel``). Clearing it on every keystroke made the
@@ -704,10 +710,12 @@ function HubContent() {
 
   const navigate = useNavigate()
 
-  // Mirror the (debounced) search query into the URL `q` param so it survives opening a model detail page and coming back (Hub re-seeds `searchValue` from `q`); `replace` avoids history spam.
+  // Keep the session query after this route unmounts and mirror it into the URL
+  // so model detail navigation can restore it; `replace` avoids history spam.
   useEffect(() => {
     const current = querySearchParam ?? ''
     const next = debouncedSearchValue.trim()
+    setHubSearchQuery(next)
     if (next === current) return
     void navigate({
       to: route.hub.index,
@@ -925,9 +933,12 @@ function HubContent() {
         <HeaderPage>
           <div
             className={cn(
-              'pr-3 py-3  h-10 w-full flex items-center justify-between relative z-20',
+              'pr-3 py-3 h-10 w-full flex items-center justify-between relative z-20',
               !IS_MACOS && 'pr-30'
             )}
+            {...(IS_WINDOWS || IS_MACOS
+              ? { 'data-tauri-drag-region': true }
+              : {})}
           >
             <div className="flex items-center gap-2 w-full min-w-0">
               {isSearching ? (

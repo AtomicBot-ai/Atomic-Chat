@@ -331,7 +331,7 @@
   },
   "projects": {
     "title": "Projects",
-    "new": "New Projects",
+    "new": "New Project",
     "addProject": "Add Project",
     "addToProject": "Add to project",
     "removeFromProject": "Remove from project",

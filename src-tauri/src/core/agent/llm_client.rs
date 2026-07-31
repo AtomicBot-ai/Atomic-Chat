@@ -125,7 +125,7 @@ pub enum LlamaClientError {
     SessionNotFound(String),
     #[error("llama-server request was cancelled")]
     Cancelled,
-    #[error("llama-server completion exceeded the 180-second deadline")]
+    #[error("llama-server completion exceeded the 600-second deadline")]
     TimedOut,
     #[error("llama-server returned HTTP {status}: {detail}")]
     Http { status: u16, detail: String },

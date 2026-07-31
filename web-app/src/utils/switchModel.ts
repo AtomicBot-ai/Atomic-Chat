@@ -437,6 +437,40 @@ async function doSwitchToModel(params: {
   const shouldStartServer =
     !isLocal || serverState.enableOnStartup || wasServerRunning
 
+  const startLocalApiServer = async (): Promise<void> => {
+    let actualPort: number | undefined
+    try {
+      const startServerCall = window.core?.api?.startServer({
+        host: serverState.serverHost,
+        port: serverState.serverPort,
+        prefix: serverState.apiPrefix,
+        apiKey: serverState.apiKey,
+        trustedHosts: serverState.trustedHosts,
+        isCorsEnabled: serverState.corsEnabled,
+        isVerboseEnabled: serverState.verboseLogs,
+        proxyTimeout: serverState.proxyTimeout,
+      }) as Promise<number> | undefined
+      actualPort = startServerCall
+        ? await taggedWithTimeout(
+            startServerCall,
+            SERVER_START_WATCHDOG_MS,
+            'Timed out waiting for the Local API Server to start.'
+          )
+        : undefined
+    } catch (startErr) {
+      const msg =
+        startErr instanceof Error ? startErr.message : String(startErr)
+      if (!msg.includes('already running')) throw startErr
+    }
+
+    console.log('[switchToModel] Server started on port:', actualPort)
+
+    if (actualPort && actualPort !== serverState.serverPort) {
+      serverState.setServerPort(actualPort)
+    }
+    setServerStatus('running')
+  }
+
   setServerStatus(shouldStartServer ? 'pending' : 'stopped')
   updateLoadingModel(true)
   console.log(
@@ -520,37 +554,7 @@ async function doSwitchToModel(params: {
     //    they start it regardless of the toggle (see `shouldStartServer`
     //    computed up front).
     if (shouldStartServer) {
-      let actualPort: number | undefined
-      try {
-        const startServerCall = window.core?.api?.startServer({
-          host: serverState.serverHost,
-          port: serverState.serverPort,
-          prefix: serverState.apiPrefix,
-          apiKey: serverState.apiKey,
-          trustedHosts: serverState.trustedHosts,
-          isCorsEnabled: serverState.corsEnabled,
-          isVerboseEnabled: serverState.verboseLogs,
-          proxyTimeout: serverState.proxyTimeout,
-        }) as Promise<number> | undefined
-        actualPort = startServerCall
-          ? await taggedWithTimeout(
-              startServerCall,
-              SERVER_START_WATCHDOG_MS,
-              'Timed out waiting for the Local API Server to start.'
-            )
-          : undefined
-      } catch (startErr) {
-        const msg =
-          startErr instanceof Error ? startErr.message : String(startErr)
-        if (!msg.includes('already running')) throw startErr
-      }
-
-      console.log('[switchToModel] Server started on port:', actualPort)
-
-      if (actualPort && actualPort !== serverState.serverPort) {
-        serverState.setServerPort(actualPort)
-      }
-      setServerStatus('running')
+      await startLocalApiServer()
     } else {
       // Local model + auto-start disabled + server wasn't running: keep the
       // Local API Server down. The local engine already serves this chat on
@@ -583,7 +587,22 @@ async function doSwitchToModel(params: {
     console.log('[switchToModel] Global state synchronised')
   } catch (error) {
     console.error('[switchToModel] Failed to switch model:', error)
-    useAppState.getState().setServerStatus('stopped')
+    if (wasServerRunning) {
+      try {
+        await startLocalApiServer()
+        console.log(
+          '[switchToModel] Restored Local API Server after switch failure'
+        )
+      } catch (restoreError) {
+        console.error(
+          '[switchToModel] Failed to restore Local API Server:',
+          restoreError
+        )
+        useAppState.getState().setServerStatus('stopped')
+      }
+    } else {
+      useAppState.getState().setServerStatus('stopped')
+    }
     // WS2: record the failure so the auto-start effect doesn't re-loop on it —
     // terminal codes (missing model/binary) are never auto-retried; others back
     // off. Explicit user switches bypass `shouldAttemptAutoStart`, so a manual
