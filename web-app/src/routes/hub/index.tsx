@@ -480,7 +480,9 @@ function HubContent() {
   }, [orphanIdsToEnrich, serviceHub, huggingfaceToken])
 
   const showRecommendedBlock =
-    debouncedSearchValue.length === 0 && !showOnlyDownloaded
+    debouncedSearchValue.length === 0 &&
+    !showOnlyDownloaded &&
+    sortSelected === 'newest'
 
   // Long-tail Hugging Face fallback (Path B).
   //
@@ -931,9 +933,12 @@ function HubContent() {
         <HeaderPage>
           <div
             className={cn(
-              'pr-3 py-3  h-10 w-full flex items-center justify-between relative z-20',
+              'pr-3 py-3 h-10 w-full flex items-center justify-between relative z-20',
               !IS_MACOS && 'pr-30'
             )}
+            {...(IS_WINDOWS || IS_MACOS
+              ? { 'data-tauri-drag-region': true }
+              : {})}
           >
             <div className="flex items-center gap-2 w-full min-w-0">
               {isSearching ? (
