@@ -731,6 +731,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
         //! Раньше отклонённый промис терялся; без лога сложно понять вечный «loading» в настройках.
         logger.error('configureBackends failed:', err)
       })
+      // Reconcile the selected backend after configureBackends has resolved
+      // legacy/latest values to a concrete version/backend pair.
+      .then(() => this.enforcePinnedBackendVersion())
       .finally(() => {
         this.isInitializing = false
         this.configureBackendsPromise = null
@@ -1514,6 +1517,48 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // which is invoked only by user-driven UI surfaces.
     } finally {
       this.isConfiguringBackends = false
+    }
+  }
+
+  /**
+   * Reconciles the configured upstream backend to the release validated by the
+   * app while preserving the selected backend type.
+   *
+   * If that release does not contain the selected type, the existing backend
+   * remains active because downloadRecommendedBackend only persists after a
+   * successful download.
+   */
+  private async enforcePinnedBackendVersion(): Promise<void> {
+    try {
+      const current = stripBom(this.config.version_backend || '')
+      if (!isConcreteVersionBackend(current)) {
+        logger.info(
+          'enforcePinnedBackendVersion: no concrete backend configured yet, skipping'
+        )
+        return
+      }
+
+      const slashIdx = current.indexOf('/')
+      const currentTag = current.slice(0, slashIdx)
+      const currentType = current.slice(slashIdx + 1)
+
+      if (currentTag === PINNED_BACKEND_TAG) {
+        return
+      }
+
+      const target = `${PINNED_BACKEND_TAG}/${currentType}`
+      logger.info(
+        `enforcePinnedBackendVersion: pinning backend '${current}' -> '${target}'`
+      )
+      await this.downloadRecommendedBackend(target)
+      logger.info(
+        `enforcePinnedBackendVersion: backend pinned to '${target}'`
+      )
+    } catch (err) {
+      logger.error(
+        'enforcePinnedBackendVersion: failed to pin backend version (keeping current backend):',
+        err
+      )
     }
   }
 

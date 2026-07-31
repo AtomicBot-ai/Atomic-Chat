@@ -1327,6 +1327,47 @@ describe('llamacpp_extension', () => {
       delete (window as any).dispatchEvent
     })
 
+    describe('enforcePinnedBackendVersion', () => {
+      it('moves the selected backend type to the validated release', async () => {
+        extension['config'] = {
+          version_backend: 'b9937/win-cuda-13.3-x64',
+        } as any
+        extension.downloadRecommendedBackend = vi
+          .fn()
+          .mockResolvedValue(undefined)
+
+        await extension['enforcePinnedBackendVersion']()
+
+        expect(extension.downloadRecommendedBackend).toHaveBeenCalledWith(
+          'b10205/win-cuda-13.3-x64'
+        )
+      })
+
+      it('leaves the validated release alone', async () => {
+        extension['config'] = { version_backend: RECOMMENDED } as any
+        extension.downloadRecommendedBackend = vi
+          .fn()
+          .mockResolvedValue(undefined)
+
+        await extension['enforcePinnedBackendVersion']()
+
+        expect(extension.downloadRecommendedBackend).not.toHaveBeenCalled()
+      })
+
+      it('keeps the working backend when the pinned download fails', async () => {
+        const current = 'b9937/win-vulkan-x64'
+        extension['config'] = { version_backend: current } as any
+        extension.downloadRecommendedBackend = vi
+          .fn()
+          .mockRejectedValue(new Error('asset unavailable'))
+
+        await expect(
+          extension['enforcePinnedBackendVersion']()
+        ).resolves.toBeUndefined()
+        expect(extension['config'].version_backend).toBe(current)
+      })
+    })
+
     describe('version update', () => {
       it('bumps the version and keeps the backend type', async () => {
         await stubUpdateBackendDeps('win-cuda-13.3-x64')
