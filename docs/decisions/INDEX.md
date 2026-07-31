@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-156 records, 2026-05-19 → 2026-07-30.
+157 records, 2026-05-19 → 2026-07-31.
 
 ---
 
@@ -199,8 +199,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (8)
+## UI / UX (9)
 
+- **2026-07-31** — [Disable the transparent Windows window to stop the softbuffer fatal panic](2026-07-31-disable-transparent-windows-window-to-stop-softbuffer-panic.md)
 - **2026-07-30** — [Reveal the Windows window after native setup](2026-07-30-reveal-windows-after-first-frontend-frame.md)
 - **2026-07-27** — [Replace advanced model settings with a focused context control](2026-07-27-replace-advanced-model-settings-with-a-focused-context-control.md)
 - **2026-07-23** — [Present the Agent working directory as the Files root](2026-07-23-present-the-agent-working-directory-as-the-files-root.md)
