@@ -6,7 +6,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { MCPTool } from '@/types/completion'
 import { DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
 import type { MCPServerConfig, MCPServers, MCPSettings } from '@/hooks/useMCPServers'
-import type { MCPConfig } from './types'
+import type { MCPConfig, MCPServerStatus, MCPToolsResponse } from './types'
 import { DefaultMCPService } from './default'
 
 export class TauriMCPService extends DefaultMCPService {
@@ -46,9 +46,14 @@ export class TauriMCPService extends DefaultMCPService {
         ? (legacyServers as MCPServers)
         : ({} as MCPServers))
 
+    const rawSettings: Record<string, unknown> = isPlainObject(mcpSettings)
+      ? mcpSettings
+      : {}
     const normalizedSettings: MCPSettings = {
-      ...DEFAULT_MCP_SETTINGS,
-      ...(isPlainObject(mcpSettings) ? (mcpSettings as MCPSettings) : {}),
+      toolCallTimeoutSeconds:
+        typeof rawSettings.toolCallTimeoutSeconds === 'number'
+          ? rawSettings.toolCallTimeoutSeconds
+          : DEFAULT_MCP_SETTINGS.toolCallTimeoutSeconds,
     }
 
     return {
@@ -58,11 +63,20 @@ export class TauriMCPService extends DefaultMCPService {
   }
 
   async getTools(): Promise<MCPTool[]> {
+    const response = await this.getToolsWithStatus()
+    return response?.tools
+  }
+
+  async getToolsWithStatus(): Promise<MCPToolsResponse> {
     return window.core?.api?.getTools()
   }
 
   async getConnectedServers(): Promise<string[]> {
     return window.core?.api?.getConnectedServers()
+  }
+
+  async getMCPServerStatuses(): Promise<MCPServerStatus[]> {
+    return window.core?.api?.getMcpServerStatuses()
   }
 
   async callTool(args: {

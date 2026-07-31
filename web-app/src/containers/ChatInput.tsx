@@ -1371,7 +1371,8 @@ const ChatInput = memo(function ChatInput({
     return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
   }
 
-  const IMAGE_MAX_SIZE_BYTES = 10 * 1024 * 1024
+  const IMAGE_MAX_SIZE_MB = 10
+  const IMAGE_MAX_SIZE_BYTES = IMAGE_MAX_SIZE_MB * 1024 * 1024
   const IMAGE_ALLOWED_MIME_TYPES = [
     'image/jpg',
     'image/jpeg',
@@ -1393,10 +1394,6 @@ const ChatInput = memo(function ChatInput({
     const validFiles: File[] = []
 
     for (const file of files) {
-      if (file.size > IMAGE_MAX_SIZE_BYTES) {
-        oversized.push(file.name)
-        continue
-      }
       const detectedType = file.type || getFileTypeFromExtension(file.name)
       const actualType = getFileTypeFromExtension(file.name) || detectedType
       if (!IMAGE_ALLOWED_MIME_TYPES.includes(actualType)) {
@@ -1430,10 +1427,16 @@ const ChatInput = memo(function ChatInput({
         actualType
       )
 
+      const size = downscaled?.size ?? file.size
+      if (size > IMAGE_MAX_SIZE_BYTES) {
+        oversized.push(file.name)
+        continue
+      }
+
       candidates.push(
         createImageAttachment({
           name: file.name,
-          size: downscaled?.size ?? file.size,
+          size,
           mimeType: downscaled?.mimeType ?? actualType,
           base64: downscaled?.base64 ?? dataUrl.split(',')[1] ?? '',
           dataUrl: downscaled?.dataUrl ?? dataUrl,
@@ -1459,10 +1462,6 @@ const ChatInput = memo(function ChatInput({
       }
       try {
         const att = await readImageAttachmentFromPath(p)
-        if (typeof att.size === 'number' && att.size > IMAGE_MAX_SIZE_BYTES) {
-          oversized.push(att.name)
-          continue
-        }
         // Downscale oversized images so they don't flood the model's context.
         if (att.dataUrl) {
           const downscaled = await downscaleImageDataUrl(
@@ -1476,6 +1475,10 @@ const ChatInput = memo(function ChatInput({
             att.mimeType = downscaled.mimeType
             att.size = downscaled.size
           }
+        }
+        if (typeof att.size === 'number' && att.size > IMAGE_MAX_SIZE_BYTES) {
+          oversized.push(att.name)
+          continue
         }
         candidates.push(att)
       } catch (e) {
@@ -1594,7 +1597,14 @@ const ChatInput = memo(function ChatInput({
     const errors: string[] = []
     if (oversized.length > 0) {
       errors.push(
-        `File${oversized.length > 1 ? 's' : ''} too large (max 10MB): ${oversized.join(', ')}`
+        oversized
+          .map((fileName) =>
+            t('common:errors.fileTooLargeDescription', {
+              fileName,
+              maxFileSizeMB: IMAGE_MAX_SIZE_MB,
+            })
+          )
+          .join(', ')
       )
     }
 

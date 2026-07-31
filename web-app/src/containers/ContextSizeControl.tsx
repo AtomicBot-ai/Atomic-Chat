@@ -5,6 +5,10 @@ import {
   type AIEngine,
   type ThreadMessage,
 } from '@janhq/core'
+import {
+  IconArrowDown,
+  IconArrowUp,
+} from '@tabler/icons-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -12,6 +16,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { Progress } from '@/components/ui/progress'
 import { Slider } from '@/components/ui/slider'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
@@ -24,6 +29,7 @@ const LOCAL_CONTEXT_PROVIDERS = new Set([
   'llamacpp-upstream',
   'mlx',
 ])
+const FALLBACK_MAX_CONTEXT = 512 * 1024
 
 interface ContextSizeControlProps {
   messages?: ThreadMessage[]
@@ -55,6 +61,53 @@ function formatContextSize(value: number): string {
   return value.toString()
 }
 
+type LatestTokenUsage = {
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+}
+
+function getLatestTokenUsage(messages: ThreadMessage[]): LatestTokenUsage {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message.role !== 'assistant') continue
+
+    const metadata = message.metadata as Record<string, unknown> | undefined
+    const usage = metadata?.usage as
+      | {
+          inputTokens?: unknown
+          outputTokens?: unknown
+          totalTokens?: unknown
+        }
+      | undefined
+    const tokenSpeed = metadata?.tokenSpeed as
+      | { tokenCount?: unknown }
+      | undefined
+    const outputValue = usage?.outputTokens ?? tokenSpeed?.tokenCount
+    const outputTokens =
+      typeof outputValue === 'number' && Number.isFinite(outputValue)
+        ? Math.max(0, outputValue)
+        : 0
+    const totalTokens =
+      typeof usage?.totalTokens === 'number' &&
+      Number.isFinite(usage.totalTokens)
+        ? Math.max(0, usage.totalTokens)
+        : 0
+    const inputTokens =
+      typeof usage?.inputTokens === 'number' &&
+      Number.isFinite(usage.inputTokens)
+        ? Math.max(0, usage.inputTokens)
+        : Math.max(0, totalTokens - outputTokens)
+
+    return {
+      inputTokens,
+      outputTokens,
+      totalTokens: Math.max(totalTokens, inputTokens + outputTokens),
+    }
+  }
+  return { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
+}
+
 export function ContextSizeControl({
   messages = [],
   additionalTokens = 0,
@@ -68,11 +121,27 @@ export function ContextSizeControl({
   )
   const serviceHub = useServiceHub()
   const tokenData = useTokensCount(messages, uploadedFiles)
-  const totalTokens = tokenData.tokenCount + additionalTokens
+  const latestUsage = getLatestTokenUsage(messages)
+  const measuredTokens = tokenData.tokenCount + additionalTokens
+  const totalTokens =
+    measuredTokens > 0
+      ? measuredTokens
+      : latestUsage.totalTokens + additionalTokens
+  const completionTokens = Math.min(
+    totalTokens,
+    latestUsage.outputTokens
+  )
+  const promptTokens = Math.max(0, totalTokens - completionTokens)
   const percentage = tokenData.maxTokens
     ? (totalTokens / tokenData.maxTokens) * 100
     : 0
   const isOverLimit = percentage > 100
+  const progressTone =
+    percentage >= 90
+      ? 'bg-destructive'
+      : percentage >= 70
+        ? 'bg-orange-500'
+        : 'bg-emerald-500'
   const contextValue = Number(
     selectedModel?.settings?.ctx_len?.controller_props?.value
   )
@@ -81,9 +150,11 @@ export function ContextSizeControl({
   const configuredMax = Number(
     selectedContextProps?.max
   )
-  const [maxContext, setMaxContext] = useState<number | undefined>(
-    configuredMax > 0 ? configuredMax : undefined
+  const fallbackMaxContext = Math.max(
+    FALLBACK_MAX_CONTEXT,
+    configuredMax > 0 ? configuredMax : 0
   )
+  const [maxContext, setMaxContext] = useState(fallbackMaxContext)
   const [draftContext, setDraftContext] = useState(
     contextValue > 0 ? contextValue : 0
   )
@@ -117,13 +188,13 @@ export function ContextSizeControl({
       selectedModel?.settings?.ctx_len?.controller_props?.value
     )
     setDraftContext(currentValue > 0 ? currentValue : 0)
-    setMaxContext(configuredMax > 0 ? configuredMax : undefined)
+    setMaxContext(fallbackMaxContext)
 
     if (!selectedProvider || !selectedModel) return
 
     let cancelled = false
     const resolveMaxContext = async () => {
-      let resolvedMax = configuredMax > 0 ? configuredMax : undefined
+      let resolvedMax = fallbackMaxContext
       try {
         const engine = EngineManager.instance().get(selectedProvider) as
           | (AIEngine & {
@@ -149,7 +220,12 @@ export function ContextSizeControl({
     return () => {
       cancelled = true
     }
-  }, [configuredMax, selectedModel, selectedProvider])
+  }, [
+    configuredMax,
+    fallbackMaxContext,
+    selectedModel,
+    selectedProvider,
+  ])
 
   if (
     !selectedProvider ||
@@ -270,33 +346,34 @@ export function ContextSizeControl({
               {formatTokenCount(tokenData.maxTokens || 0)}
             </span>
           </div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-secondary/20">
-            <div
-              className={cn(
-                'h-2 rounded-full transition-all duration-500 ease-out',
-                isOverLimit ? 'bg-destructive' : 'bg-primary'
-              )}
-              style={{ width: `${Math.min(percentage, 100)}%` }}
-            />
-          </div>
+          <Progress
+            aria-label="Context usage"
+            value={Math.min(percentage, 100)}
+            className="h-1.5 bg-muted"
+            indicatorClassName={progressTone}
+          />
         </div>
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Text</span>
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              <IconArrowUp className="size-3.5" stroke={1.75} />
+              <span>Input</span>
+            </span>
             <span className="font-mono text-foreground">
-              {formatTokenCount(Math.max(0, tokenData.tokenCount))}
+              {formatTokenCount(promptTokens)}
             </span>
           </div>
-          <div className="flex items-center justify-between border-b border-border pb-3 text-sm">
-            <span className="text-muted-foreground">Remaining</span>
-            <span className="font-mono font-semibold text-foreground">
-              {formatTokenCount(
-                Math.max(0, (tokenData.maxTokens || 0) - totalTokens)
-              )}
+          <div className="flex items-center justify-between text-sm">
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              <IconArrowDown className="size-3.5" stroke={1.75} />
+              <span>Output</span>
+            </span>
+            <span className="font-mono text-foreground">
+              {formatTokenCount(completionTokens)}
             </span>
           </div>
         </div>
-        <div className="space-y-3">
+        <div className="space-y-3 border-t border-border pt-3">
           <div>
             <div className="flex items-center justify-between gap-3">
               <div className="text-xs font-medium">{contextSetting.title}</div>
@@ -317,7 +394,6 @@ export function ContextSizeControl({
             min={sliderMin}
             max={sliderMax}
             step={sliderStep}
-            disabled={!maxContext}
             onValueChange={([value]) => setDraftContext(value)}
             onValueCommit={([value]) => handleContextChange(value)}
           />

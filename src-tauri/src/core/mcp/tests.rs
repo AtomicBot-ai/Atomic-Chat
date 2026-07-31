@@ -1,14 +1,73 @@
-use super::commands::is_extension_not_connected_error;
-use super::helpers::{add_server_config, add_server_config_with_path, run_mcp_commands};
+use super::commands::{collect_mcp_server_statuses, is_extension_not_connected_error};
+use super::helpers::{
+    add_server_config, add_server_config_with_path, append_bounded_stderr, extract_command_args,
+    format_mcp_start_error, run_mcp_commands,
+};
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::{AppState, SharedMcpServers};
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{test::mock_app, Manager};
 use tokio::sync::Mutex;
+
+#[test]
+fn test_remote_config_does_not_require_stdio_fields() {
+    let config = serde_json::json!({
+        "type": "http",
+        "url": "https://example.com/mcp"
+    });
+
+    let parsed = extract_command_args(&config).expect("remote config should parse");
+
+    assert_eq!(parsed.transport_type.as_deref(), Some("http"));
+    assert_eq!(parsed.url.as_deref(), Some("https://example.com/mcp"));
+    assert!(parsed.command.is_empty());
+    assert!(parsed.args.is_empty());
+}
+
+#[test]
+fn test_mcp_start_error_preserves_transport_error_and_stderr_context() {
+    let error = format_mcp_start_error(
+        "Failed to start MCP server test: connection closed",
+        "[123] Using automatically selected callback port: 12198",
+    );
+
+    assert!(error.contains("connection closed"));
+    assert!(error.contains("stderr (context)"));
+    assert!(error.contains("Using automatically selected callback port"));
+}
+
+#[test]
+fn test_mcp_stderr_context_is_byte_bounded() {
+    let mut captured = VecDeque::new();
+    append_bounded_stderr(&mut captured, &vec![b'a'; 20 * 1024]);
+
+    assert_eq!(captured.len(), 16 * 1024);
+}
+
+#[tokio::test]
+async fn test_mcp_server_status_exposes_runtime_error() {
+    let state = AppState::default();
+    state
+        .mcp_server_errors
+        .lock()
+        .await
+        .insert("broken-server".to_string(), "Transport closed".to_string());
+
+    let statuses = collect_mcp_server_statuses(&state).await;
+
+    assert_eq!(statuses.len(), 1);
+    assert_eq!(statuses[0].name, "broken-server");
+    assert_eq!(
+        statuses[0].status,
+        super::models::McpServerStatusKind::Error
+    );
+    assert_eq!(statuses[0].error.as_deref(), Some("Transport closed"));
+}
 
 #[tokio::test]
 async fn test_run_mcp_commands() {

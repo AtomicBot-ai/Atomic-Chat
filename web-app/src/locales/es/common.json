@@ -266,7 +266,7 @@
   },
   "projects": {
     "title": "Proyectos",
-    "new": "Nuevos proyectos",
+    "new": "Nuevo proyecto",
     "addProject": "Agregar proyecto",
     "addToProject": "Agregar al proyecto",
     "removeFromProject": "Quitar del proyecto",

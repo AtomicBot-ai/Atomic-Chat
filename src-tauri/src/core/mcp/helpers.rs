@@ -1,13 +1,20 @@
 use rmcp::{
-    model::{ClientCapabilities, ClientInfo, Implementation},
+    model::{ClientCapabilities, ClientInfo, Implementation, InitializeRequestParam},
+    service::RunningService,
     transport::{
         streamable_http_client::StreamableHttpClientTransportConfig, SseClientTransport,
         StreamableHttpClientTransport, TokioChildProcess,
     },
-    ServiceExt,
+    RoleClient, ServiceExt,
 };
 use serde_json::Value;
-use std::{collections::HashMap, env, process::Stdio, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    env,
+    process::Stdio,
+    sync::Arc,
+    time::Duration,
+};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tauri_plugin_http::reqwest;
 use tokio::{
@@ -17,9 +24,14 @@ use tokio::{
     time::{sleep, timeout},
 };
 
+const MCP_STDERR_CONTEXT_MAX_BYTES: usize = 16 * 1024;
+
 use crate::core::{
     app::commands::get_jan_data_folder_path,
-    mcp::models::{McpServerConfig, McpSettings},
+    mcp::{
+        constants::DEFAULT_MCP_HANDSHAKE_TIMEOUT_SECS,
+        models::{McpServerConfig, McpSettings},
+    },
     state::{AppState, RunningServiceEnum, SharedMcpServers},
 };
 use jan_utils::{can_override_npx, can_override_uvx};
@@ -159,73 +171,6 @@ pub async fn run_mcp_commands<R: Runtime>(
     Ok(())
 }
 
-/// Monitor MCP server health without removing it from the HashMap
-pub async fn monitor_mcp_server_handle(
-    servers_state: SharedMcpServers,
-    name: String,
-    shutdown_flag: Arc<Mutex<bool>>,
-) -> Option<rmcp::service::QuitReason> {
-    log::info!("Monitoring MCP server {name} health");
-
-    // Monitor server health with periodic checks
-    loop {
-        // Small delay between health checks
-        sleep(Duration::from_secs(5)).await;
-
-        {
-            let shutdown = shutdown_flag.lock().await;
-            if *shutdown {
-                return Some(rmcp::service::QuitReason::Closed);
-            }
-        }
-
-        let health_check_result = {
-            let servers = servers_state.lock().await;
-            if let Some(service) = servers.get(&name) {
-                // Try to list tools as a health check with a short timeout
-                match timeout(Duration::from_secs(2), service.list_all_tools()).await {
-                    Ok(Ok(_)) => {
-                        // Server responded successfully
-                        true
-                    }
-                    Ok(Err(e)) => {
-                        log::warn!("MCP server {name} health check failed: {e}");
-                        false
-                    }
-                    Err(_) => {
-                        log::warn!("MCP server {name} health check timed out");
-                        false
-                    }
-                }
-            } else {
-                // Server was removed from HashMap (e.g., by deactivate_mcp_server)
-                log::info!("MCP server {name} no longer in running services");
-                return Some(rmcp::service::QuitReason::Closed);
-            }
-        };
-
-        if !health_check_result {
-            // Server failed health check - remove it and return
-            log::error!("MCP server {name} failed health check, removing from active servers");
-            let mut servers = servers_state.lock().await;
-            if let Some(service) = servers.remove(&name) {
-                // Try to cancel the service gracefully
-                match service {
-                    RunningServiceEnum::NoInit(service) => {
-                        log::info!("Stopping server {name}...");
-                        let _ = service.cancel().await;
-                    }
-                    RunningServiceEnum::WithInit(service) => {
-                        log::info!("Stopping server {name} with initialization...");
-                        let _ = service.cancel().await;
-                    }
-                }
-            }
-            return Some(rmcp::service::QuitReason::Closed);
-        }
-    }
-}
-
 /// Starts an MCP server
 /// Returns the result of the first start attempt
 pub async fn start_mcp_server<R: Runtime>(
@@ -236,9 +181,22 @@ pub async fn start_mcp_server<R: Runtime>(
 ) -> Result<(), String> {
     let app_state = app.state::<AppState>();
     let active_servers_state = app_state.mcp_active_servers.clone();
+    let shutdown_in_progress = app_state.mcp_shutdown_in_progress.lock().await;
+    if *shutdown_in_progress {
+        return Err(format!(
+            "Cannot start MCP server {name} while MCP shutdown is in progress"
+        ));
+    }
 
     // Store active server config for restart purposes
     store_active_server_config(&active_servers_state, &name, &config).await;
+    let start_generation = {
+        let mut generations = app_state.mcp_start_generations.lock().await;
+        let generation = generations.entry(name.clone()).or_default();
+        *generation = generation.wrapping_add(1);
+        *generation
+    };
+    drop(shutdown_in_progress);
 
     // Try the first start attempt and return its result
     log::info!("Starting MCP server {name} (Initial attempt)");
@@ -247,18 +205,182 @@ pub async fn start_mcp_server<R: Runtime>(
         servers_state.clone(),
         name.clone(),
         config.clone(),
+        start_generation,
     )
     .await;
 
+    let start_generations = app_state.mcp_start_generations.lock().await;
+    if start_generations.get(&name).copied() != Some(start_generation) {
+        log::info!("Ignoring superseded MCP server {name} startup result");
+        return first_start_result;
+    }
+
     match first_start_result {
         Ok(_) => {
+            app_state.mcp_server_errors.lock().await.remove(&name);
+            drop(start_generations);
             log::info!("MCP server {name} started successfully");
+            emit_mcp_status_update_event(&app, &name);
             Ok(())
         }
         Err(e) => {
+            app_state
+                .mcp_server_errors
+                .lock()
+                .await
+                .insert(name.clone(), e.clone());
+            drop(start_generations);
             log::error!("Failed to start MCP server {name} on first attempt: {e}");
+            emit_mcp_status_update_event(&app, &name);
             Err(e)
         }
+    }
+}
+
+async fn connect_remote_mcp(
+    config: &McpServerConfig,
+    transport_type: &str,
+) -> Result<RunningService<RoleClient, InitializeRequestParam>, String> {
+    let url = config
+        .url
+        .as_deref()
+        .filter(|url| !url.trim().is_empty())
+        .ok_or_else(|| format!("MCP {transport_type} transport requires a non-empty URL"))?;
+    let handshake_timeout = config
+        .timeout
+        .unwrap_or_else(|| Duration::from_secs(DEFAULT_MCP_HANDSHAKE_TIMEOUT_SECS));
+
+    timeout(handshake_timeout, async {
+        let client = build_remote_http_client(config, handshake_timeout)?;
+        let client_info = ClientInfo {
+            protocol_version: Default::default(),
+            capabilities: ClientCapabilities::default(),
+            client_info: Implementation {
+                name: "Atomic Chat MCP Client".to_string(),
+                version: env!("CARGO_PKG_VERSION").to_string(),
+                title: Some("Atomic Chat".to_string()),
+                website_url: None,
+                icons: None,
+            },
+        };
+
+        match transport_type {
+            "http" => {
+                let transport = StreamableHttpClientTransport::with_client(
+                    client,
+                    StreamableHttpClientTransportConfig {
+                        uri: url.into(),
+                        ..Default::default()
+                    },
+                );
+                client_info
+                    .serve(transport)
+                    .await
+                    .map_err(|e| format!("Streamable HTTP handshake failed: {e}"))
+            }
+            "sse" => {
+                let transport = SseClientTransport::start_with_client(
+                    client,
+                    rmcp::transport::sse_client::SseClientConfig {
+                        sse_endpoint: url.into(),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(|e| format!("SSE transport failed: {e}"))?;
+                client_info
+                    .serve(transport)
+                    .await
+                    .map_err(|e| format!("SSE handshake failed: {e}"))
+            }
+            other => Err(format!("Unsupported remote MCP transport '{other}'")),
+        }
+    })
+    .await
+    .map_err(|_| {
+        format!(
+            "{transport_type} handshake timed out after {}s",
+            handshake_timeout.as_secs()
+        )
+    })?
+}
+
+fn build_remote_http_client(
+    config: &McpServerConfig,
+    connect_timeout: Duration,
+) -> Result<reqwest::Client, String> {
+    let mut headers = reqwest::header::HeaderMap::new();
+    for (key, value) in &config.headers {
+        if let Some(value) = value.as_str() {
+            if let (Ok(name), Ok(value)) = (
+                reqwest::header::HeaderName::from_bytes(key.as_bytes()),
+                reqwest::header::HeaderValue::from_str(value),
+            ) {
+                headers.insert(name, value);
+            }
+        }
+    }
+
+    reqwest::Client::builder()
+        .default_headers(headers)
+        .connect_timeout(connect_timeout)
+        .build()
+        .map_err(|e| format!("Failed to build MCP HTTP client: {e}"))
+}
+
+pub(crate) fn append_bounded_stderr(captured: &mut VecDeque<u8>, chunk: &[u8]) {
+    captured.extend(chunk);
+    let excess = captured.len().saturating_sub(MCP_STDERR_CONTEXT_MAX_BYTES);
+    captured.drain(..excess);
+}
+
+pub(crate) fn format_mcp_start_error(service_error: &str, stderr_context: &str) -> String {
+    let stderr_context = stderr_context.trim();
+    if stderr_context.is_empty() {
+        service_error.to_string()
+    } else {
+        format!("{service_error}\nMCP server stderr (context):\n{stderr_context}")
+    }
+}
+
+async fn store_running_server<R: Runtime>(
+    app: &AppHandle<R>,
+    servers: &SharedMcpServers,
+    name: &str,
+    service: RunningServiceEnum,
+    start_generation: u64,
+) -> bool {
+    let mut servers_guard = servers.lock().await;
+    let state = app.state::<AppState>();
+    let start_generations = state.mcp_start_generations.lock().await;
+    if start_generations.get(name).copied() != Some(start_generation) {
+        return false;
+    }
+    let mut generations = state.mcp_server_generations.lock().await;
+    let generation = generations.entry(name.to_string()).or_default();
+    *generation = generation.wrapping_add(1);
+    servers_guard.insert(name.to_string(), service);
+    true
+}
+
+async fn remove_mcp_pid_if_matches<R: Runtime>(
+    app: &AppHandle<R>,
+    name: &str,
+    start_generation: u64,
+    pid: u32,
+) {
+    let state = app.state::<AppState>();
+    let mut pids = state.mcp_server_pids.lock().await;
+    let remove_server_entry = if let Some(server_pids) = pids.get_mut(name) {
+        if server_pids.get(&start_generation).copied() == Some(pid) {
+            server_pids.remove(&start_generation);
+        }
+        server_pids.is_empty()
+    } else {
+        false
+    };
+    if remove_server_entry {
+        pids.remove(name);
     }
 }
 
@@ -267,6 +389,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
     servers: SharedMcpServers,
     name: String,
     config: Value,
+    start_generation: u64,
 ) -> Result<(), String> {
     let app_path = get_jan_data_folder_path(app.clone());
     let exe_path = env::current_exe().expect("Failed to get current exe path");
@@ -278,138 +401,74 @@ async fn schedule_mcp_start_task<R: Runtime>(
     let config_params = extract_command_args(&config)
         .ok_or_else(|| format!("Failed to extract command args from config for {name}"))?;
 
-    if config_params.transport_type.as_deref() == Some("http") && config_params.url.is_some() {
-        let transport = StreamableHttpClientTransport::with_client(
-            reqwest::Client::builder()
-                .default_headers({
-                    // Map envs to request headers
-                    let mut headers: tauri::http::HeaderMap = reqwest::header::HeaderMap::new();
-                    for (key, value) in config_params.headers.iter() {
-                        if let Some(v_str) = value.as_str() {
-                            // Try to map env keys to HTTP header names (case-insensitive)
-                            // Most HTTP headers are Title-Case, so we try to convert
-                            let header_name =
-                                reqwest::header::HeaderName::from_bytes(key.as_bytes());
-                            if let Ok(header_name) = header_name {
-                                if let Ok(header_value) =
-                                    reqwest::header::HeaderValue::from_str(v_str)
-                                {
-                                    headers.insert(header_name, header_value);
-                                }
-                            }
-                        }
-                    }
-                    headers
-                })
-                .connect_timeout(config_params.timeout.unwrap_or(Duration::MAX))
-                .build()
-                .unwrap(),
-            StreamableHttpClientTransportConfig {
-                uri: config_params.url.unwrap().into(),
-                ..Default::default()
-            },
-        );
-
-        let client_info = ClientInfo {
-            protocol_version: Default::default(),
-            capabilities: ClientCapabilities::default(),
-            client_info: Implementation {
-                name: "Jan Streamable Client".to_string(),
-                version: "0.0.1".to_string(),
-                title: None,
-                website_url: None,
-                icons: None,
-            },
+    if matches!(
+        config_params.transport_type.as_deref(),
+        Some("http" | "sse")
+    ) {
+        let primary_transport = config_params.transport_type.as_deref().unwrap();
+        let fallback_transport = if primary_transport == "http" {
+            "sse"
+        } else {
+            "http"
         };
-        let client = client_info.serve(transport).await.inspect_err(|e| {
-            log::error!("client error: {e:?}");
-        });
 
-        match client {
+        let client = match connect_remote_mcp(&config_params, primary_transport).await {
             Ok(client) => {
-                log::info!("Connected to server: {:?}", client.peer_info());
-                servers
-                    .lock()
-                    .await
-                    .insert(name.clone(), RunningServiceEnum::WithInit(client));
-
-                emit_mcp_update_event(&app, &name);
+                log::info!("MCP server {name} connected using {primary_transport} transport");
+                client
             }
-            Err(e) => {
-                log::error!("Failed to connect to server: {e}");
-                return Err(format!("Failed to connect to server: {e}"));
-            }
-        }
-    } else if config_params.transport_type.as_deref() == Some("sse") && config_params.url.is_some()
-    {
-        let transport = SseClientTransport::start_with_client(
-            reqwest::Client::builder()
-                .default_headers({
-                    // Map envs to request headers
-                    let mut headers = reqwest::header::HeaderMap::new();
-                    for (key, value) in config_params.headers.iter() {
-                        if let Some(v_str) = value.as_str() {
-                            // Try to map env keys to HTTP header names (case-insensitive)
-                            // Most HTTP headers are Title-Case, so we try to convert
-                            let header_name =
-                                reqwest::header::HeaderName::from_bytes(key.as_bytes());
-                            if let Ok(header_name) = header_name {
-                                if let Ok(header_value) =
-                                    reqwest::header::HeaderValue::from_str(v_str)
-                                {
-                                    headers.insert(header_name, header_value);
-                                }
-                            }
-                        }
+            Err(primary_error) => {
+                log::warn!(
+                    "MCP server {name} failed using {primary_transport} transport: \
+                     {primary_error}; retrying with {fallback_transport}"
+                );
+                match connect_remote_mcp(&config_params, fallback_transport).await {
+                    Ok(client) => {
+                        log::info!(
+                            "MCP server {name} connected using fallback \
+                             {fallback_transport} transport"
+                        );
+                        client
                     }
-                    headers
-                })
-                .connect_timeout(config_params.timeout.unwrap_or(Duration::MAX))
-                .build()
-                .unwrap(),
-            rmcp::transport::sse_client::SseClientConfig {
-                sse_endpoint: config_params.url.unwrap().into(),
-                ..Default::default()
-            },
+                    Err(fallback_error) => {
+                        return Err(format!(
+                            "Failed to connect MCP server {name}: \
+                             {primary_transport}: {primary_error}; \
+                             {fallback_transport}: {fallback_error}"
+                        ));
+                    }
+                }
+            }
+        };
+
+        log::info!("Connected to server: {:?}", client.peer_info());
+        if !store_running_server(
+            &app,
+            &servers,
+            &name,
+            RunningServiceEnum::WithInit(client),
+            start_generation,
         )
         .await
-        .map_err(|e| {
-            log::error!("transport error: {e:?}");
-            format!("Failed to start SSE transport: {e}")
-        })?;
-
-        let client_info = ClientInfo {
-            protocol_version: Default::default(),
-            capabilities: ClientCapabilities::default(),
-            client_info: Implementation {
-                name: "Jan SSE Client".to_string(),
-                version: "0.0.1".to_string(),
-                title: None,
-                website_url: None,
-                icons: None,
-            },
-        };
-        let client = client_info.serve(transport).await.map_err(|e| {
-            log::error!("client error: {e:?}");
-            e.to_string()
-        });
-
-        match client {
-            Ok(client) => {
-                log::info!("Connected to server: {:?}", client.peer_info());
-                servers
-                    .lock()
-                    .await
-                    .insert(name.clone(), RunningServiceEnum::WithInit(client));
-
-                emit_mcp_update_event(&app, &name);
-            }
-            Err(e) => {
-                log::error!("Failed to connect to server: {e}");
-                return Err(format!("Failed to connect to server: {e}"));
-            }
+        {
+            return Err(format!("MCP server {name} startup was superseded"));
         }
+        emit_mcp_update_event(&app, &name);
     } else {
+        if let Some(transport_type) = config_params.transport_type.as_deref() {
+            if transport_type != "stdio" {
+                return Err(format!(
+                    "Unsupported MCP transport type '{transport_type}' for server {name}"
+                ));
+            }
+        } else if config_params.url.is_some() {
+            return Err(format!(
+                "MCP server {name} has a URL but no transport type; expected 'http' or 'sse'"
+            ));
+        }
+        if config_params.command.trim().is_empty() {
+            return Err(format!("MCP stdio server {name} has no command"));
+        }
         if name == "Jan Browser MCP" {
             if let Some(port_str) = config_params.envs.get("BRIDGE_PORT") {
                 if let Some(port_str) = port_str.as_str() {
@@ -468,6 +527,8 @@ async fn schedule_mcp_start_task<R: Runtime>(
         {
             cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW: prevents shell window on Windows
         }
+        #[cfg(unix)]
+        cmd.process_group(0);
 
         cmd.kill_on_drop(true);
 
@@ -500,37 +561,108 @@ async fn schedule_mcp_start_task<R: Runtime>(
             })?;
 
         let process_pid = process.id();
+        let app_state = app.state::<AppState>();
+        let start_generations = app_state.mcp_start_generations.lock().await;
+        if start_generations.get(&name).copied() != Some(start_generation) {
+            drop(start_generations);
+            if let Some(pid) = process_pid {
+                let _ = kill_process_tree_by_pid(pid).await;
+            }
+            return Err(format!("MCP server {name} startup was superseded"));
+        }
         if let Some(pid) = process_pid {
             log::info!("MCP server {name} spawned with PID {pid}");
-            let app_state = app.state::<AppState>();
-            let mut pids = app_state.mcp_server_pids.lock().await;
-            pids.insert(name.clone(), pid);
+            app_state
+                .mcp_server_pids
+                .lock()
+                .await
+                .entry(name.clone())
+                .or_default()
+                .insert(start_generation, pid);
         }
+        drop(start_generations);
 
-        let service = ()
-            .serve(process)
-            .await
-            .map_err(|e| format!("Failed to start MCP server {name}: {e}"));
+        let stderr_context = Arc::new(Mutex::new(VecDeque::<u8>::new()));
+        let stderr_context_for_task = stderr_context.clone();
+        let stderr_server_name = name.clone();
+        let stderr_task = tauri::async_runtime::spawn(async move {
+            let Some(mut stderr) = stderr else {
+                return;
+            };
+            let mut chunk = [0_u8; 4096];
+            loop {
+                match stderr.read(&mut chunk).await {
+                    Ok(0) => break,
+                    Ok(size) => {
+                        log::info!(
+                            "MCP server {stderr_server_name} stderr: {}",
+                            String::from_utf8_lossy(&chunk[..size]).trim_end()
+                        );
+                        let mut captured = stderr_context_for_task.lock().await;
+                        append_bounded_stderr(&mut captured, &chunk[..size]);
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "Failed reading MCP server {stderr_server_name} stderr: {error}"
+                        );
+                        break;
+                    }
+                }
+            }
+        });
+
+        let handshake_timeout = config_params
+            .timeout
+            .unwrap_or_else(|| Duration::from_secs(DEFAULT_MCP_HANDSHAKE_TIMEOUT_SECS));
+        let service = match timeout(handshake_timeout, ().serve(process)).await {
+            Ok(Ok(server)) => Ok(server),
+            Ok(Err(error)) => Err(format!("Failed to start MCP server {name}: {error}")),
+            Err(_) => Err(format!(
+                "MCP server {name} handshake timed out after {}s",
+                handshake_timeout.as_secs()
+            )),
+        };
 
         match service {
             Ok(server) => {
                 log::trace!("Connected to server: {:#?}", server.peer_info());
-                servers
-                    .lock()
-                    .await
-                    .insert(name.clone(), RunningServiceEnum::NoInit(server));
+                if !store_running_server(
+                    &app,
+                    &servers,
+                    &name,
+                    RunningServiceEnum::NoInit(server),
+                    start_generation,
+                )
+                .await
+                {
+                    if let Some(pid) = process_pid {
+                        if let Err(error) = kill_process_tree_by_pid(pid).await {
+                            log::warn!("Failed to clean up superseded MCP server {name}: {error}");
+                        }
+                        remove_mcp_pid_if_matches(&app, &name, start_generation, pid).await;
+                    }
+                    return Err(format!("MCP server {name} startup was superseded"));
+                }
                 log::info!("Server {name} started successfully.");
             }
-            Err(_) => {
-                let mut buffer = String::new();
-                let error = match stderr
-                    .expect("stderr must be piped")
-                    .read_to_string(&mut buffer)
+            Err(service_error) => {
+                let _ = timeout(Duration::from_secs(1), stderr_task).await;
+                let stderr_bytes = stderr_context
+                    .lock()
                     .await
-                {
-                    Ok(_) => format!("Failed to start MCP server {name}: {buffer}"),
-                    Err(_) => format!("Failed to read MCP server {name} stderr"),
-                };
+                    .iter()
+                    .copied()
+                    .collect::<Vec<_>>();
+                let stderr_context = String::from_utf8_lossy(&stderr_bytes);
+                let error = format_mcp_start_error(&service_error, &stderr_context);
+                if let Some(pid) = process_pid {
+                    if let Err(kill_error) = kill_process_tree_by_pid(pid).await {
+                        log::warn!(
+                            "Failed to clean up MCP server {name} process tree: {kill_error}"
+                        );
+                    }
+                    remove_mcp_pid_if_matches(&app, &name, start_generation, pid).await;
+                }
                 log::error!("{error}");
                 return Err(error);
             }
@@ -581,10 +713,29 @@ fn emit_mcp_update_event<R: Runtime>(app: &AppHandle<R>, name: &str) {
     }
 }
 
+fn emit_mcp_status_update_event<R: Runtime>(app: &AppHandle<R>, name: &str) {
+    if let Err(e) = app.emit(
+        "mcp-status-update",
+        serde_json::json!({
+            "server": name
+        }),
+    ) {
+        log::error!("Failed to emit mcp-status-update event: {e}");
+    }
+}
+
 pub fn extract_command_args(config: &Value) -> Option<McpServerConfig> {
     let obj = config.as_object()?;
-    let command = obj.get("command")?.as_str()?.to_string();
-    let args = obj.get("args")?.as_array()?.clone();
+    let command = obj
+        .get("command")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let args = obj
+        .get("args")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
     let url = obj.get("url").and_then(|u| u.as_str()).map(String::from);
     let transport_type = obj.get("type").and_then(|t| t.as_str()).map(String::from);
     let timeout = obj
@@ -798,6 +949,43 @@ async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(unix)]
+pub(crate) async fn kill_process_tree_by_pid(pid: u32) -> Result<(), String> {
+    use nix::errno::Errno;
+    use nix::sys::signal::{kill, Signal};
+    use nix::unistd::Pid;
+
+    let process_group = Pid::from_raw(-(pid as i32));
+    match kill(process_group, Signal::SIGTERM) {
+        Ok(()) | Err(Errno::ESRCH) => {}
+        Err(error) => {
+            return Err(format!(
+                "Failed to send SIGTERM to process group {pid}: {error}"
+            ))
+        }
+    }
+
+    for _ in 0..30 {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        if kill(process_group, None).is_err() {
+            return Ok(());
+        }
+    }
+
+    log::warn!("MCP process group {pid} unresponsive, sending SIGKILL");
+    match kill(process_group, Signal::SIGKILL) {
+        Ok(()) | Err(Errno::ESRCH) => Ok(()),
+        Err(error) => Err(format!(
+            "Failed to send SIGKILL to process group {pid}: {error}"
+        )),
+    }
+}
+
+#[cfg(windows)]
+pub(crate) async fn kill_process_tree_by_pid(pid: u32) -> Result<(), String> {
+    kill_process_by_pid(pid).await
+}
+
 pub async fn background_cleanup_mcp_servers<R: Runtime>(
     app: &AppHandle<R>,
     state: &State<'_, AppState>,
@@ -850,19 +1038,23 @@ pub async fn stop_mcp_servers_with_context<R: Runtime>(
         flag: state.mcp_shutdown_in_progress.clone(),
     };
 
-    {
-        let mut monitoring_tasks = state.mcp_monitoring_tasks.lock().await;
-        for (_name, handle) in monitoring_tasks.drain() {
-            handle.abort();
-        }
-    }
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
-    let pids_snapshot: std::collections::HashMap<String, u32> = {
-        let pids = state.mcp_server_pids.lock().await;
-        pids.clone()
+    let active_startup_names: Vec<String> = {
+        let active_servers = state.mcp_active_servers.lock().await;
+        active_servers.keys().cloned().collect()
     };
+    let mut start_generations = state.mcp_start_generations.lock().await;
+    let pids = state.mcp_server_pids.lock().await;
+    let pids_snapshot = pids.clone();
+    let startup_names: HashSet<String> = active_startup_names
+        .into_iter()
+        .chain(pids_snapshot.keys().cloned())
+        .collect();
+    for name in startup_names {
+        let generation = start_generations.entry(name).or_default();
+        *generation = generation.wrapping_add(1);
+    }
+    drop(pids);
+    drop(start_generations);
     let servers_to_stop: Vec<(String, RunningServiceEnum, Option<u16>)> = {
         let mut servers_map = state.mcp_servers.lock().await;
         let keys: Vec<String> = servers_map.keys().cloned().collect();
@@ -889,10 +1081,6 @@ pub async fn stop_mcp_servers_with_context<R: Runtime>(
         result
     };
 
-    if servers_to_stop.is_empty() {
-        return Ok(());
-    }
-
     let server_names: Vec<String> = servers_to_stop
         .iter()
         .map(|(name, _, _)| name.clone())
@@ -902,6 +1090,10 @@ pub async fn stop_mcp_servers_with_context<R: Runtime>(
         .into_iter()
         .map(|(name, service, port)| {
             let app_clone = app.clone();
+            let process_pids = pids_snapshot
+                .get(&name)
+                .map(|server_pids| server_pids.values().copied().collect::<Vec<_>>())
+                .unwrap_or_default();
 
             tauri::async_runtime::spawn(async move {
                 let cancel_future = async {
@@ -915,6 +1107,11 @@ pub async fn stop_mcp_servers_with_context<R: Runtime>(
                     .await
                     .map(|r| r.is_ok())
                     .unwrap_or(false);
+                for pid in process_pids {
+                    if let Err(error) = kill_process_tree_by_pid(pid).await {
+                        log::warn!("Failed to clean up MCP server {name} process tree: {error}");
+                    }
+                }
 
                 if name == "Jan Browser MCP" {
                     if let Some(port) = port {
@@ -938,7 +1135,7 @@ pub async fn stop_mcp_servers_with_context<R: Runtime>(
     )
     .await;
 
-    let failed_servers: Vec<String> = match results {
+    let _failed_servers: Vec<String> = match results {
         Ok(results) => {
             results
                 .into_iter()
@@ -956,12 +1153,12 @@ pub async fn stop_mcp_servers_with_context<R: Runtime>(
         }
     };
 
-    // Force-kill processes that didn't stop gracefully
-    for server_name in &failed_servers {
-        if let Some(&pid) = pids_snapshot.get(server_name) {
-            log::warn!("Force-killing MCP server {} (PID {})", server_name, pid);
-            if let Err(e) = kill_process_by_pid(pid).await {
-                log::error!("Failed to force-kill PID {}: {}", pid, e);
+    // Ensure every tracked process tree is gone, including servers still handshaking.
+    for (server_name, server_pids) in &pids_snapshot {
+        for pid in server_pids.values().copied() {
+            log::trace!("Ensuring MCP server {server_name} PID {pid} is stopped");
+            if let Err(e) = kill_process_tree_by_pid(pid).await {
+                log::error!("Failed to stop MCP process tree PID {}: {}", pid, e);
             }
         }
     }
@@ -969,8 +1166,20 @@ pub async fn stop_mcp_servers_with_context<R: Runtime>(
     // Clean up PIDs from tracking
     {
         let mut pids = state.mcp_server_pids.lock().await;
-        for name in &server_names {
-            pids.remove(name);
+        for (name, snapshot_pids) in &pids_snapshot {
+            let remove_server_entry = if let Some(current_pids) = pids.get_mut(name) {
+                for (generation, pid) in snapshot_pids {
+                    if current_pids.get(generation) == Some(pid) {
+                        current_pids.remove(generation);
+                    }
+                }
+                current_pids.is_empty()
+            } else {
+                false
+            };
+            if remove_server_entry {
+                pids.remove(name);
+            }
         }
     }
 
