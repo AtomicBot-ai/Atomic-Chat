@@ -523,10 +523,12 @@ pub fn run() {
             setup::setup_jan_cli(app.handle().clone(), stored_version != app_version);
             setup::setup_theme_listener(app)?;
 
-            // Keep the transparent Windows window hidden until synchronous
-            // setup is complete, then let WebView2 begin navigation. A fully
-            // hidden WebView2 does not load, so the frontend cannot reveal
-            // itself from JavaScript.
+            // Keep the Windows window hidden until synchronous setup is
+            // complete, then let WebView2 begin navigation. A fully hidden
+            // WebView2 does not load, so the frontend cannot reveal itself from
+            // JavaScript. The window is decorated/non-transparent on Windows to
+            // avoid the softbuffer resize panic that kills the process when the
+            // client area becomes zero (minimise, bad saved state, etc.).
             #[cfg(target_os = "windows")]
             {
                 if let Some(window) = app.get_webview_window("main") {
@@ -551,8 +553,23 @@ pub fn run() {
             }
         }
 
-        if let RunEvent::Exit = event {
-            let app_handle = app.clone();
+        match event {
+            RunEvent::ExitRequested { .. } => {
+                log::info!("Application exit requested");
+            }
+            RunEvent::WindowEvent { label, event: window_event, .. } => {
+                match window_event {
+                    tauri::WindowEvent::CloseRequested { .. } => {
+                        log::info!("Window close requested: {label}");
+                    }
+                    tauri::WindowEvent::Destroyed => {
+                        log::info!("Window destroyed: {label}");
+                    }
+                    _ => {}
+                }
+            }
+            RunEvent::Exit => {
+                let app_handle = app.clone();
 
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             {
@@ -641,5 +658,7 @@ pub fn run() {
                 });
             });
         }
-    });
+        _ => {}
+    }
+});
 }
