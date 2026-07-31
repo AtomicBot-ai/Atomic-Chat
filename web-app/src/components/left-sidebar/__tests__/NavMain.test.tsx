@@ -78,7 +78,7 @@ describe('NavMain', () => {
     expect(screen.queryByText('common:launch')).not.toBeInTheDocument()
   })
 
-  it('shows New Projects only in Chat mode', () => {
+  it('shows New Project only in Chat mode', () => {
     const { rerender } = render(<NavMain mode="chat" />)
 
     expect(screen.getByText('common:projects.new')).toBeInTheDocument()

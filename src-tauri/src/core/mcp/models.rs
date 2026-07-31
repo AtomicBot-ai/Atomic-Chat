@@ -23,39 +23,18 @@ fn default_tool_call_timeout_seconds() -> u64 {
     super::constants::DEFAULT_MCP_TOOL_CALL_TIMEOUT_SECS
 }
 
-fn default_base_restart_delay_ms() -> u64 {
-    super::constants::DEFAULT_MCP_BASE_RESTART_DELAY_MS
-}
-
-fn default_max_restart_delay_ms() -> u64 {
-    super::constants::DEFAULT_MCP_MAX_RESTART_DELAY_MS
-}
-
-fn default_backoff_multiplier() -> f64 {
-    super::constants::DEFAULT_MCP_BACKOFF_MULTIPLIER
-}
-
 /// Runtime MCP settings that can be adjusted via UI
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpSettings {
     #[serde(default = "default_tool_call_timeout_seconds")]
     pub tool_call_timeout_seconds: u64,
-    #[serde(default = "default_base_restart_delay_ms")]
-    pub base_restart_delay_ms: u64,
-    #[serde(default = "default_max_restart_delay_ms")]
-    pub max_restart_delay_ms: u64,
-    #[serde(default = "default_backoff_multiplier")]
-    pub backoff_multiplier: f64,
 }
 
 impl Default for McpSettings {
     fn default() -> Self {
         Self {
             tool_call_timeout_seconds: super::constants::DEFAULT_MCP_TOOL_CALL_TIMEOUT_SECS,
-            base_restart_delay_ms: super::constants::DEFAULT_MCP_BASE_RESTART_DELAY_MS,
-            max_restart_delay_ms: super::constants::DEFAULT_MCP_MAX_RESTART_DELAY_MS,
-            backoff_multiplier: super::constants::DEFAULT_MCP_BACKOFF_MULTIPLIER,
         }
     }
 }
@@ -75,4 +54,27 @@ pub struct ToolWithServer {
     #[serde(rename = "inputSchema")]
     pub input_schema: serde_json::Value,
     pub server: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum McpServerStatusKind {
+    Connected,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerStatus {
+    pub name: String,
+    pub status: McpServerStatusKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpToolsResponse {
+    pub tools: Vec<ToolWithServer>,
+    pub servers: Vec<McpServerStatus>,
 }

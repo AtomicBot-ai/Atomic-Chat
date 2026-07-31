@@ -82,6 +82,9 @@ pub type SharedMcpServers = Arc<Mutex<HashMap<String, RunningServiceEnum>>>;
 pub struct AppState {
     pub app_token: Option<String>,
     pub mcp_servers: SharedMcpServers,
+    pub mcp_start_generations: Arc<Mutex<HashMap<String, u64>>>,
+    pub mcp_server_generations: Arc<Mutex<HashMap<String, u64>>>,
+    pub mcp_server_errors: Arc<Mutex<HashMap<String, String>>>,
     pub download_manager: Arc<Mutex<DownloadManagerState>>,
     pub mcp_active_servers: Arc<Mutex<HashMap<String, serde_json::Value>>>,
     pub server_handle: Arc<Mutex<Option<ServerHandle>>>,
@@ -92,9 +95,8 @@ pub struct AppState {
     pub agent_session_locks: AgentSessionLocks,
     pub mcp_settings: Arc<Mutex<McpSettings>>,
     pub mcp_shutdown_in_progress: Arc<Mutex<bool>>,
-    pub mcp_monitoring_tasks: Arc<Mutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
     pub background_cleanup_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
-    pub mcp_server_pids: Arc<Mutex<HashMap<String, u32>>>,
+    pub mcp_server_pids: Arc<Mutex<HashMap<String, HashMap<u64, u32>>>>,
     /// Remote provider configurations (e.g., Anthropic, OpenAI, etc.)
     pub provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
     /// Coordinator state for the Local API Server auto-increase-ctx flow.

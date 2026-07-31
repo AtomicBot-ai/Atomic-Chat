@@ -195,12 +195,63 @@ pub async fn factory_reset<R: Runtime>(
     default_config.data_folder = default_data_folder_path(app_handle.clone());
     let _ = update_app_configuration(app_handle.clone(), default_config);
 
-    app_handle.restart()
+    restart_app(&app_handle)
+}
+
+#[cfg(any(target_os = "linux", test))]
+const APPIMAGE_RUNTIME_ENV_VARS: &[&str] = &[
+    "APPDIR",
+    "APPIMAGE",
+    "ARGV0",
+    "OWD",
+    "LD_LIBRARY_PATH",
+    "LD_PRELOAD",
+    "GDK_PIXBUF_MODULE_FILE",
+    "GDK_PIXBUF_MODULEDIR",
+    "GIO_EXTRA_MODULES",
+    "GIO_MODULE_DIR",
+    "GSETTINGS_SCHEMA_DIR",
+    "GST_PLUGIN_SCANNER",
+    "GST_PLUGIN_SYSTEM_PATH",
+    "GST_PLUGIN_SYSTEM_PATH_1_0",
+    "GTK_DATA_PREFIX",
+    "GTK_EXE_PREFIX",
+    "GTK_IM_MODULE_FILE",
+    "GTK_PATH",
+    "PERLLIB",
+    "PYTHONHOME",
+    "PYTHONPATH",
+    "QT_PLUGIN_PATH",
+];
+
+#[cfg(any(target_os = "linux", test))]
+fn sanitized_appimage_restart_command(appimage: &std::ffi::OsStr) -> std::process::Command {
+    let mut command = std::process::Command::new(appimage);
+    command.args(std::env::args_os().skip(1));
+    for variable in APPIMAGE_RUNTIME_ENV_VARS {
+        command.env_remove(variable);
+    }
+    command
+}
+
+/// Restart without leaking AppRun's environment into host launchers.
+fn restart_app<R: Runtime>(app: &AppHandle<R>) -> ! {
+    #[cfg(target_os = "linux")]
+    if let Some(appimage) = std::env::var_os("APPIMAGE") {
+        app.cleanup_before_exit();
+        match sanitized_appimage_restart_command(&appimage).spawn() {
+            Ok(_) => std::process::exit(0),
+            Err(error) => log::error!(
+                "Failed to spawn {appimage:?} for sanitized restart: {error}; falling back"
+            ),
+        }
+    }
+    app.restart()
 }
 
 #[tauri::command]
 pub fn relaunch<R: Runtime>(app: AppHandle<R>) {
-    app.restart()
+    restart_app(&app)
 }
 
 #[tauri::command]
@@ -4079,5 +4130,28 @@ mod tests {
             .await
             .expect("notification task panicked");
         });
+    }
+
+    #[test]
+    fn appimage_restart_strips_runtime_environment() {
+        let command =
+            sanitized_appimage_restart_command(std::ffi::OsStr::new("/tmp/atomic-chat.AppImage"));
+        let removed: Vec<_> = command
+            .get_envs()
+            .filter_map(|(key, value)| value.is_none().then(|| key.to_os_string()))
+            .collect();
+
+        for variable in APPIMAGE_RUNTIME_ENV_VARS {
+            assert!(
+                removed.iter().any(|key| key == variable),
+                "{variable} must be removed"
+            );
+        }
+        for variable in ["HOME", "PATH", "XDG_DATA_DIRS"] {
+            assert!(
+                !removed.iter().any(|key| key == variable),
+                "{variable} must be preserved"
+            );
+        }
     }
 }

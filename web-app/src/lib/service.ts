@@ -23,6 +23,7 @@ export const AppRoutes = [
   'getMcpConfigs',
   'restartMcpServers',
   'getConnectedServers',
+  'getMcpServerStatuses',
   'readLogs',
   'changeAppDataFolder',
 ]

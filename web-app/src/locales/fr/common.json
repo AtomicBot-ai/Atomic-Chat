@@ -248,7 +248,7 @@
   },
   "projects": {
     "title": "Projets",
-    "new": "Nouveaux Projets",
+    "new": "Nouveau projet",
     "addProject": "Ajouter un projet",
     "addToProject": "Ajouter au projet",
     "removeFromProject": "Retirer du projet",

@@ -85,6 +85,8 @@ import { useAppState } from '@/hooks/useAppState'
 import { useShallow } from 'zustand/shallow'
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
 import { AppEvent, EngineManager, events } from '@janhq/core'
+import debounce from 'lodash.debounce'
+import { restartLocalModel } from '@/utils/restartLocalModel'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -267,6 +269,36 @@ function ProviderDetail() {
   const navigate = useNavigate()
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
   const provider = getProviderByName(providerName)
+  const providerSettingsWriteRef = useRef<Promise<void>>(Promise.resolve())
+  const debouncedRestartLlamacppModel = useMemo(
+    () =>
+      debounce(async (targetProvider: string) => {
+        try {
+          await providerSettingsWriteRef.current
+          const loadedModels = await serviceHub
+            .models()
+            .getActiveModels(targetProvider)
+          const activeModel = loadedModels[0]
+          if (activeModel) {
+            await restartLocalModel(serviceHub, targetProvider, activeModel)
+          }
+        } catch (error) {
+          console.error(
+            'Failed to apply provider settings to the running model:',
+            error
+          )
+        }
+      }, 500),
+    [serviceHub]
+  )
+
+  useEffect(
+    () => () => {
+      debouncedRestartLlamacppModel.cancel()
+    },
+    [debouncedRestartLlamacppModel]
+  )
+
   const hasDownloadedModels =
     (provider?.models.filter((m) => m.id !== EMBEDDING_MODEL_ID).length ?? 0) >
     0
@@ -1469,7 +1501,7 @@ function ProviderDetail() {
       if (provider?.provider !== 'llamacpp-upstream' || !provider) return
       if (isTogglingLlamacppMtp) return
 
-      const writeSetting = (key: string, value: unknown) => {
+      const writeSetting = async (key: string, value: unknown) => {
         const next = provider.settings.map((s) =>
           s.key === key
             ? {
@@ -1481,7 +1513,7 @@ function ProviderDetail() {
               }
             : s
         )
-        serviceHub.providers().updateSettings(providerName, next)
+        await serviceHub.providers().updateSettings(providerName, next)
         updateProvider(providerName, { ...provider, settings: next })
       }
 
@@ -1532,9 +1564,9 @@ function ProviderDetail() {
               await engine.ensureGemmaMtpDraft?.(activeModel)
             }
           }
-          writeSetting('mtp', true)
+          await writeSetting('mtp', true)
         } else {
-          writeSetting('mtp', false)
+          await writeSetting('mtp', false)
         }
 
         /// Auto-restart the live session so the new --spec-type draft-mtp
@@ -1542,12 +1574,7 @@ function ProviderDetail() {
         /// running — the next manual start will pick up the flag.
         if (activeModel) {
           try {
-            await engine.unload?.(activeModel)
-          } catch (e) {
-            console.warn('Failed to unload before MTP restart:', e)
-          }
-          try {
-            await engine.load?.(activeModel)
+            await restartLocalModel(serviceHub, providerName, activeModel)
           } catch (e) {
             console.error('Failed to reload after MTP toggle:', e)
             toast.error(errTitle, {
@@ -2246,17 +2273,42 @@ function ProviderDetail() {
                                 }
                               }
 
+                              updateProvider(providerName, {
+                                ...provider,
+                                ...updateObj,
+                              })
+
+                              if (
+                                settingKey !== 'version_backend' &&
+                                (providerName === 'llamacpp' ||
+                                  providerName === 'llamacpp-upstream')
+                              ) {
+                                providerSettingsWriteRef.current =
+                                  providerSettingsWriteRef.current
+                                    .catch((error) => {
+                                      console.error(
+                                        'Previous provider settings update failed:',
+                                        error
+                                      )
+                                    })
+                                    .then(() =>
+                                      serviceHub
+                                        .providers()
+                                        .updateSettings(
+                                          providerName,
+                                          updateObj.settings ?? []
+                                        )
+                                    )
+                                debouncedRestartLlamacppModel(providerName)
+                                return
+                              }
+
                               serviceHub
                                 .providers()
                                 .updateSettings(
                                   providerName,
                                   updateObj.settings ?? []
                                 )
-                              updateProvider(providerName, {
-                                ...provider,
-                                ...updateObj,
-                              })
-
                               serviceHub.models().stopAllModels()
 
                               // Refresh active models after stopping. Use

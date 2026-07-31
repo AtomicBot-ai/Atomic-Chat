@@ -77,7 +77,13 @@ describe('Backend functions', () => {
       )
     })
 
-    it('keeps zip archive names for non-Linux backend archives', () => {
+    it('uses upstream tarball names for macOS backend archives', () => {
+      expect(getBackendArchiveName('b9702', 'macos-arm64')).toBe(
+        'llama-b9702-bin-macos-arm64.tar.gz'
+      )
+    })
+
+    it('keeps zip archive names for Windows backend archives', () => {
       expect(getBackendArchiveName('b9691', 'win-cpu-x64')).toBe(
         'llama-b9691-bin-win-cpu-x64.zip'
       )
@@ -90,9 +96,12 @@ describe('Backend functions', () => {
       expect(getBackendDownloadUrl('b9937', 'linux-vulkan-x64')).toBe(
         'https://github.com/ggml-org/llama.cpp/releases/download/b9937/llama-b9937-bin-ubuntu-vulkan-x64.tar.gz'
       )
-      expect(() =>
-        getBackendDownloadUrl('latest', 'win-cpu-x64')
-      ).toThrow("unresolved 'latest' tag")
+      expect(getBackendDownloadUrl('b9702', 'macos-arm64')).toBe(
+        'https://github.com/ggml-org/llama.cpp/releases/download/b9702/llama-b9702-bin-macos-arm64.tar.gz'
+      )
+      expect(() => getBackendDownloadUrl('latest', 'win-cpu-x64')).toThrow(
+        "unresolved 'latest' tag"
+      )
     })
 
     it('resolves the CUDA 13 family to the newest published minor', () => {
@@ -213,7 +222,10 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(tauriFetch).mockResolvedValue(okResponse(MANIFEST))
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('web fetch unavailable')))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockRejectedValue(new Error('web fetch unavailable'))
+    )
   })
 
   afterEach(() => {
@@ -327,5 +339,4 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
     expect(backends).toEqual([])
     expect(tauriFetch).not.toHaveBeenCalled()
   })
-
 })

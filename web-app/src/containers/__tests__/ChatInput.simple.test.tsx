@@ -8,6 +8,7 @@ import { seedServiceHub } from '@/test/service-hub'
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
+  downscaleImageDataUrl: vi.fn(),
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -16,6 +17,10 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
+}))
+
+vi.mock('@/lib/imageDownscale', () => ({
+  downscaleImageDataUrl: mocks.downscaleImageDataUrl,
 }))
 
 vi.mock('react-textarea-autosize', async () => {
@@ -168,5 +173,57 @@ describe('ChatInput', () => {
     )
     await waitFor(() => expect(input).toHaveValue(''))
     unmount()
+  })
+
+  it('downscales an image before applying the byte limit', async () => {
+    const model = {
+      id: 'vision-model',
+      capabilities: ['vision'],
+      settings: {},
+    } as Model
+    useModelProvider.setState({
+      providers: [
+        {
+          provider: 'openai',
+          active: true,
+          models: [model],
+          settings: [],
+        } as ModelProvider,
+      ],
+      selectedProvider: 'openai',
+      selectedModel: model,
+    })
+    mocks.downscaleImageDataUrl.mockResolvedValue({
+      dataUrl: 'data:image/jpeg;base64,dGVzdA==',
+      base64: 'dGVzdA==',
+      mimeType: 'image/jpeg',
+      size: 4,
+    })
+
+    render(<ChatInput />)
+    const file = new File(['test'], 'camera.jpg', { type: 'image/jpeg' })
+    Object.defineProperty(file, 'size', { value: 11 * 1024 * 1024 })
+
+    fireEvent.paste(screen.getByTestId('chat-input'), {
+      clipboardData: {
+        items: [
+          {
+            type: 'image/jpeg',
+            getAsFile: () => file,
+          },
+        ],
+      },
+    })
+
+    await waitFor(() => {
+      expect(useChatAttachments.getState().getAttachments()).toEqual([
+        expect.objectContaining({
+          name: 'camera.jpg',
+          mimeType: 'image/jpeg',
+          size: 4,
+          base64: 'dGVzdA==',
+        }),
+      ])
+    })
   })
 })
