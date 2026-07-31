@@ -148,6 +148,33 @@ describe('llamacpp_extension', () => {
       expect(listSupportedBackends).not.toHaveBeenCalled()
     })
 
+    /// Paired with the turboquant test of the same host, which picks
+    /// `linux-x64-rocm`. Upstream publishes no ROCm build, so a positive ROCm
+    /// probe must not pull this provider off Vulkan: the optimal backend
+    /// belongs to a provider's release, not to the GPU.
+    it('stays on Vulkan for a ROCm-capable AMD Linux host', async () => {
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'linux',
+        os_name: 'Linux',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [{ ...discreteGpu, vendor: 'AMD', nvidia_info: undefined }],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: false,
+        cuda12: false,
+        cuda13: false,
+        rocm: true,
+        vulkan: true,
+      } as any)
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'gpu',
+        backend: 'linux-vulkan-x64',
+      })
+      expect(listSupportedBackends).not.toHaveBeenCalled()
+    })
+
     it('keeps an integrated-only Vulkan host on CPU', async () => {
       vi.mocked(getSystemInfo).mockResolvedValue({
         os_type: 'linux',
@@ -1304,7 +1331,14 @@ describe('llamacpp_extension', () => {
         const event = vi.mocked((window as any).dispatchEvent).mock
           .calls[0][0] as CustomEvent
         expect(event.type).toBe('app:backend-hotswapped')
-        expect(event.detail).toEqual({ backend: RECOMMENDED })
+        // The detail names its provider so the turboquant popup ignores this
+        // swap instead of completing on it.
+        expect(event.detail).toEqual({
+          backend: RECOMMENDED,
+          provider: 'llamacpp-upstream',
+          version: 'b9937',
+          backendId: 'win-cuda-13.3-x64',
+        })
       })
 
       it('keeps loaded models alive when the swap cannot be persisted', async () => {

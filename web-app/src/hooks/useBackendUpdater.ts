@@ -148,6 +148,10 @@ export interface BetterBackendRecommendation {
   /// extension (`'llamacpp'`); absent on legacy upstream payloads, which are
   /// then attributed to the default upstream provider for routing.
   provider?: string
+  /// Release tag the recommended backend belongs to, e.g. `b10018-1.3.0`.
+  version?: string
+  /// Concrete clean backend id, e.g. `linux-x64-rocm`.
+  backendId?: string
 }
 
 export type RecommendationPhase =
@@ -241,17 +245,22 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
     }
   }, [recommendationKey])
 
+  /// Provider routing for every backend event this hook consumes.
+  ///
+  /// Both llama.cpp providers ship side by side on Windows/Linux and each has
+  /// its own optimal backend for the same hardware, so an event is only ours
+  /// when it carries our provider id. An untagged payload is attributed to the
+  /// default upstream provider, which is what every legacy emitter was.
+  const isOurEvent = useCallback(
+    (payload: { provider?: string } | null | undefined) =>
+      (payload?.provider ?? LOCAL_LLAMACPP_PROVIDER) === providerId,
+    [providerId]
+  )
+
   // Listen for the better-backend detection event from the extension
   useEffect(() => {
     const handleBetterBackendDetected = (payload: BetterBackendRecommendation) => {
-      // Provider routing: an untagged payload is attributed to the default
-      // upstream provider (legacy upstream emitters never set `provider`). A
-      // turboquant instance (providerId === 'llamacpp') only accepts its own
-      // tagged events, so the always-mounted upstream `<BackendUpdater />`
-      // never surfaces a turboquant recommendation and vice-versa — both
-      // providers ship side-by-side on Windows/Linux.
-      const payloadProvider = payload.provider ?? LOCAL_LLAMACPP_PROVIDER
-      if (payloadProvider !== providerId) return
+      if (!isOurEvent(payload)) return
       console.log('Better backend detected (event):', payload)
       setRecommendation(payload)
       setRecommendationPhase((prev) => {
@@ -265,7 +274,7 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
     return () => {
       events.off(AppEvent.onBetterBackendDetected, handleBetterBackendDetected)
     }
-  }, [providerId])
+  }, [isOurEvent])
 
   // Listen for backend download events from the extension.
   //
@@ -277,7 +286,12 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
   // match to drive the phase transitions from events alone, regardless
   // of which component initiated the download.
   useEffect(() => {
-    const handleDownloadStarted = (payload: { backend: string; status: string }) => {
+    const handleDownloadStarted = (payload: {
+      backend: string
+      status: string
+      provider?: string
+    }) => {
+      if (!isOurEvent(payload)) return
       setDownloadState({
         isDownloading: true,
         backendName: payload.backend,
@@ -296,7 +310,9 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
       backend: string
       status: 'completed' | 'failed'
       error?: string
+      provider?: string
     }) => {
+      if (!isOurEvent(payload)) return
       setDownloadState({
         isDownloading: false,
         backendName: payload.backend,
@@ -337,14 +353,16 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
       events.off(AppEvent.onBackendDownloadStarted, handleDownloadStarted)
       events.off(AppEvent.onBackendDownloadFinished, handleDownloadFinished)
     }
-  }, [recommendationPhase, recommendation, clearHotswapTimeout])
+  }, [recommendationPhase, recommendation, clearHotswapTimeout, isOurEvent])
 
   // Listen for the live hot-swap completion event dispatched by
   // `applyBackendLive()` in the llamacpp extension. The event arrives on
   // the DOM `window` because the extension does not depend on the
   // `@janhq/core` event bus for this purely UI-facing transition.
   useEffect(() => {
-    const handleHotswapped = () => {
+    const handleHotswapped = (event: Event) => {
+      const detail = (event as CustomEvent<{ provider?: string }>).detail
+      if (!isOurEvent(detail)) return
       clearHotswapTimeout()
       setRecommendationPhase('completed')
       clearCompletedTimeout()
@@ -359,7 +377,7 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
     return () => {
       window.removeEventListener(BACKEND_HOTSWAPPED_EVENT, handleHotswapped)
     }
-  }, [clearHotswapTimeout, clearCompletedTimeout])
+  }, [clearHotswapTimeout, clearCompletedTimeout, isOurEvent])
 
   // Manual "Latest <variant>" selection flow (extension-driven). The
   // extension's `downloadManualBackend()` emits these dedicated events so the
@@ -373,12 +391,14 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
   //     `app:backend-hotswapped` listeners above.
   useEffect(() => {
     const handleManualDownloading = (payload: BetterBackendRecommendation) => {
+      if (!isOurEvent(payload)) return
       clearHotswapTimeout()
       clearCompletedTimeout()
       setRecommendation(payload)
       setRecommendationPhase('downloading')
     }
-    const handleManualFailed = () => {
+    const handleManualFailed = (payload?: { provider?: string }) => {
+      if (!isOurEvent(payload)) return
       clearHotswapTimeout()
       clearCompletedTimeout()
       setRecommendation(null)
@@ -392,7 +412,7 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
       events.off('onManualBackendDownloading', handleManualDownloading)
       events.off('onManualBackendFailed', handleManualFailed)
     }
-  }, [clearHotswapTimeout, clearCompletedTimeout])
+  }, [clearHotswapTimeout, clearCompletedTimeout, isOurEvent])
 
   // Listen for backend update state sync events
   useEffect(() => {

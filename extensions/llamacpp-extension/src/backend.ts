@@ -13,19 +13,19 @@ import {
 } from '../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
 
 // The TurboQuant provider (this extension) points at our llama.cpp fork
-// AtomicBot-ai/atomic-llama-cpp-turboquant. Unlike the upstream provider
-// (a single ggml-org release), the fork ships *each* backend variant in its
-// OWN release with its OWN tag (all on the same SHA), so a /releases/latest
-// lookup is useless and a /releases scan would hammer the rate-limited
-// api.github.com. Instead the backend *index* (which variants exist + at
-// which tag) is resolved from a static manifest in our atomic-chat-conf repo,
-// served via raw.githubusercontent.com (no per-IP rate limit) — the same
-// channel llamacpp-upstream uses (ADR 2026-06-17). The only shape difference
-// from the upstream manifest is that each turboquant entry carries its own
-// `tag`. The backend *archives* themselves are still downloaded from the
-// GitHub releases CDN via LLAMACPP_DOWNLOAD_BASE.
+// AtomicBot-ai/atomic-llama-cpp-turboquant. The backend *index* (which
+// variants exist + at which tag) is resolved from a static manifest in our
+// atomic-chat-conf repo, served via raw.githubusercontent.com (no per-IP rate
+// limit) — the same channel llamacpp-upstream uses (ADR 2026-06-17) — because
+// a /releases scan would hammer the rate-limited api.github.com. The fork now
+// publishes every variant of a build under ONE release tag
+// (`b<upstream-build>-<fork-semver>`, e.g. b10018-1.3.0), so all entries share
+// a tag; the per-entry `tag` field is kept so legacy scattered releases
+// (`turboquant-<id>-<sha>`) still resolve for users who have them installed.
+// The backend *archives* themselves are still downloaded from the GitHub
+// releases CDN via LLAMACPP_DOWNLOAD_BASE.
 export const TURBOQUANT_BACKEND_MANIFEST_REVISION =
-  'f149c30e55a3dfcdcbcc5d4a72be7c691db8f5e2'
+  '40665589ef2820f36cbdec282b23f554b60dd563'
 export const TURBOQUANT_BACKEND_MANIFEST_URL = `https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/${TURBOQUANT_BACKEND_MANIFEST_REVISION}/backends/turboquant-manifest.json`
 const LLAMACPP_DOWNLOAD_BASE =
   'https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download'
@@ -41,6 +41,25 @@ const MANIFEST_FETCH_TIMEOUT_MS = 8_000
 
 /** Clean TurboQuant Windows CUDA ids, e.g. `windows-x64-cuda-13.3`. */
 const TQ_WINDOWS_CUDA_BACKEND_RE = /^windows-x64-cuda-(12\.\d+|13\.\d+)$/
+
+/** Unified fork release tag: `b<upstream-build>-<fork-semver>`. */
+const TQ_UNIFIED_TAG_RE = /^b\d+-\d+\.\d+\.\d+$/
+
+/**
+ * Whether a version string names a build from the TurboQuant fork's release
+ * train — either a legacy per-variant tag (`turboquant-<id>-<sha>`) or a
+ * unified release tag (`b10018-1.3.0`).
+ *
+ * A plain upstream tag (`b8149`) is deliberately not one: those can end up in
+ * this provider's backend tree from an old install and must still be treated as
+ * a foreign build that needs migrating.
+ *
+ * Accepts either a bare version or a full `version/backend` string.
+ */
+export function isTurboQuantRelease(versionOrPair: string): boolean {
+  const version = versionOrPair.split('/')[0]
+  return version.startsWith('turboquant-') || TQ_UNIFIED_TAG_RE.test(version)
+}
 
 interface TurboquantManifestEntry {
   id: string

@@ -605,15 +605,16 @@ else
 	@echo "Skipping Foundation Models server build (macOS only)"
 endif
 
-# Download llamacpp turboquant backend for bundling
-# Supports GH_TOKEN env var for authenticated GitHub API requests (avoids rate limits in CI)
-# Verified Apple Silicon compatibility baseline. LLAMACPP_TAG remains the
-# explicit developer override used by non-macOS legacy targets.
+# Download llamacpp turboquant backend for bundling.
+# The backend INDEX comes from the static turboquant manifest in
+# atomic-chat-conf (raw.githubusercontent.com — no api.github.com rate limit, so
+# no GH_TOKEN needed); the archive itself comes from the AtomicBot-ai releases
+# CDN. LLAMACPP_TAG stays the explicit developer override.
 # Example:
-#   make download-llamacpp-backend LLAMACPP_TAG=turboquant-macos-arm64-7c01058
-ATOMIC_CHAT_CONF_BACKEND_REV ?= f149c30e55a3dfcdcbcc5d4a72be7c691db8f5e2
-LLAMACPP_MACOS_ARM64_TAG ?= turboquant-macos-arm64-066cc29
-LLAMACPP_TAG ?= $(if $(filter Darwin,$(shell uname -s)),$(if $(filter arm64,$(shell uname -m)),$(LLAMACPP_MACOS_ARM64_TAG),),)
+#   make download-llamacpp-backend LLAMACPP_TAG=b10018-1.3.0
+ATOMIC_CHAT_CONF_BACKEND_REV ?= 40665589ef2820f36cbdec282b23f554b60dd563
+TURBOQUANT_MANIFEST_URL = https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/$(ATOMIC_CHAT_CONF_BACKEND_REV)/backends/turboquant-manifest.json
+LLAMACPP_TAG ?=
 download-llamacpp-backend:
 ifeq ($(shell uname -s),Darwin)
 	@mkdir -p src-tauri/resources/llamacpp-backend
@@ -622,92 +623,39 @@ ifeq ($(shell uname -s),Darwin)
 		echo "Skipping TurboQuant backend: no verified macOS x64 release exists"; \
 		exit 0; \
 	fi; \
-	if [ "$$ARCH" = "arm64" ]; then BACKEND="macos-arm64"; else BACKEND="macos-x64"; fi; \
+	BACKEND="macos-arm64"; \
 	echo "Platform: $$BACKEND"; \
+	ASSET="llama-turboquant-$$BACKEND.tar.gz"; \
 	if [ -n "$(LLAMACPP_TAG)" ]; then \
 		TAG="$(LLAMACPP_TAG)"; \
 		echo "Using pinned release: $$TAG"; \
 	else \
-		echo "Fetching latest llamacpp turboquant release..."; \
-		TMPREL=$$(mktemp /tmp/llamacpp-releases-XXXXXX.json); \
-		API_URL="https://api.github.com/repos/AtomicBot-ai/atomic-llama-cpp-turboquant/releases?per_page=50"; \
-		_gh_get() { \
-			if [ "$$1" = "1" ] && [ -n "$$GH_TOKEN" ]; then \
-				curl -sS -H "Authorization: Bearer $$GH_TOKEN" -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
-			else \
-				curl -sS -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
-			fi; \
-		}; \
-		_gh_fetch() { \
-			HTTP_CODE=""; \
-			for attempt in 1 2 3 4 5; do \
-				HTTP_CODE=$$(_gh_get "$$1" "$$2" "$$3"); \
-				case "$$HTTP_CODE" in \
-					2*) return 0 ;; \
-					403|429|5*|000) \
-						echo "  GitHub API attempt $$attempt/5 (auth=$$1): HTTP $$HTTP_CODE, retrying in $$((attempt * 2))s..."; \
-						sleep $$((attempt * 2)) ;; \
-					*) return 1 ;; \
-				esac; \
-			done; \
-			return 1; \
-		}; \
-		_response_ok() { \
-			[ -s "$$1" ] && jq -e 'type == "array" and length > 0' "$$1" >/dev/null 2>&1; \
-		}; \
-		USE_TOKEN=0; [ -n "$$GH_TOKEN" ] && USE_TOKEN=1; \
-		_gh_fetch "$$USE_TOKEN" "$$TMPREL" "$$API_URL" || true; \
-		FIRST_CODE="$$HTTP_CODE"; \
-		case "$$HTTP_CODE" in \
-			2*) \
-				if jq -e 'type == "array"' "$$TMPREL" >/dev/null 2>&1; then \
-					REL_COUNT=$$(jq 'length' "$$TMPREL"); \
-					echo "GitHub API returned $$REL_COUNT release(s) (auth=$$USE_TOKEN)"; \
-				else \
-					REL_COUNT=-1; \
-				fi ;; \
-			*) \
-				echo "  GitHub API request failed (auth=$$USE_TOKEN, HTTP $$HTTP_CODE)"; \
-				REL_COUNT=-1 ;; \
-		esac; \
-		if ! _response_ok "$$TMPREL" && [ "$$USE_TOKEN" = "1" ]; then \
-			echo "Token-authenticated request did not yield usable releases (HTTP $$FIRST_CODE); retrying unauthenticated..."; \
-			_gh_fetch "0" "$$TMPREL" "$$API_URL" || true; \
+		echo "Resolving TurboQuant backend index from atomic-chat-conf manifest..."; \
+		TMPREL=$$(mktemp /tmp/turboquant-manifest-XXXXXX.json); \
+		if ! curl -sS --retry 5 --retry-delay 3 -H "User-Agent: atomic-chat-ci" -o "$$TMPREL" "$(TURBOQUANT_MANIFEST_URL)"; then \
+			echo "Error: failed to fetch turboquant manifest from $(TURBOQUANT_MANIFEST_URL)"; \
+			rm -f "$$TMPREL"; exit 1; \
 		fi; \
-		case "$$HTTP_CODE" in \
-			2*) ;; \
-			*) echo "Error: GitHub API failed (last HTTP $$HTTP_CODE)"; \
-			   echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
-			   rm -f "$$TMPREL"; exit 1 ;; \
-		esac; \
-		if [ ! -s "$$TMPREL" ] || ! jq -e 'type == "array"' "$$TMPREL" >/dev/null 2>&1; then \
-			echo "Error: GitHub API returned non-array or empty response (HTTP $$HTTP_CODE):"; \
+		if ! jq -e '.backends' "$$TMPREL" >/dev/null 2>&1; then \
+			echo "Error: turboquant manifest did not parse or lacks backends[]:"; \
 			head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
 			rm -f "$$TMPREL"; exit 1; \
 		fi; \
-		REL_COUNT=$$(jq 'length' "$$TMPREL"); \
-		echo "Final response: $$REL_COUNT release(s)"; \
-		TAG=$$(jq -r --arg b "$$BACKEND" '[.[] | select(.tag_name | startswith("turboquant-" + $$b))][0].tag_name // empty' "$$TMPREL"); \
-		if [ -z "$$TAG" ]; then \
-			echo "No turboquant release found for $$BACKEND, trying legacy release..."; \
-			TAG=$$(jq -r '[.[] | select(.tag_name | startswith("turboquant-") | not)][0].tag_name // empty' "$$TMPREL"); \
-		fi; \
-		if [ -z "$$TAG" ]; then \
-			echo "Error: No matching release found for backend=$$BACKEND. First 10 tags in response:"; \
-			jq -r '.[0:10] | .[].tag_name' "$$TMPREL" || true; \
+		TAG=$$(jq -r --arg id "$$BACKEND" '.backends[] | select(.id == $$id) | .tag' "$$TMPREL"); \
+		ASSET=$$(jq -r --arg id "$$BACKEND" '.backends[] | select(.id == $$id) | .asset' "$$TMPREL"); \
+		if [ -z "$$TAG" ] || [ "$$TAG" = "null" ] || [ -z "$$ASSET" ] || [ "$$ASSET" = "null" ]; then \
+			echo "Error: turboquant manifest does not list backend $$BACKEND (update atomic-chat-conf/backends/turboquant-manifest.json):"; \
+			head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
 			rm -f "$$TMPREL"; exit 1; \
 		fi; \
 		rm -f "$$TMPREL"; \
 	fi; \
-	echo "Release: $$TAG"; \
-	case "$$TAG" in \
-		turboquant-*) URL="https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/$$TAG/llama-turboquant-$$BACKEND.tar.gz" ;; \
-		*) URL="https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/$$TAG/llama-$$TAG-bin-$$BACKEND.tar.gz" ;; \
-	esac; \
+	URL="https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/$$TAG/$$ASSET"; \
 	echo "$$TAG" > src-tauri/resources/llamacpp-backend/version.txt; \
 	echo "$$BACKEND" > src-tauri/resources/llamacpp-backend/backend.txt; \
+	echo "Release: $$TAG  Backend: $$BACKEND"; \
 	echo "Downloading: $$URL"; \
-	curl -fSL "$$URL" -o /tmp/llamacpp-backend.tar.gz; \
+	curl -fSL --retry 5 --retry-delay 3 "$$URL" -o /tmp/llamacpp-backend.tar.gz; \
 	tar -xzf /tmp/llamacpp-backend.tar.gz -C src-tauri/resources/llamacpp-backend/; \
 	rm -f /tmp/llamacpp-backend.tar.gz; \
 	echo "Downloaded and extracted llamacpp backend successfully"
@@ -728,12 +676,13 @@ else ifeq ($(OS),Windows_NT)
 else ifeq ($(shell uname -s),Linux)
 	@mkdir -p src-tauri/resources/llamacpp-backend
 	@# TurboQuant ships on Linux as the second provider alongside
-	@# llamacpp-upstream. The single Linux build (linux-x64-vulkan) serves
-	@# both CPU and GPU via GGML_BACKEND_DL, so it is the offline-fallback
-	@# bundle. The backend index is resolved from the static turboquant
-	@# manifest in atomic-chat-conf (raw.githubusercontent.com — no
-	@# api.github.com rate limit); the archive download itself comes from
-	@# the AtomicBot-ai releases CDN.
+	@# llamacpp-upstream. The fork also publishes Linux CPU/CUDA/ROCm builds,
+	@# but linux-x64-vulkan stays the ONLY bundled one: it serves both CPU and
+	@# GPU via GGML_BACKEND_DL, so it is the offline fallback that works on any
+	@# host. The GPU tiers are runtime downloads. The backend index is resolved
+	@# from the static turboquant manifest in atomic-chat-conf
+	@# (raw.githubusercontent.com — no api.github.com rate limit); the archive
+	@# download itself comes from the AtomicBot-ai releases CDN.
 	@BACKEND="linux-x64-vulkan"; \
 	echo "Platform: $$BACKEND (turboquant / Linux)"; \
 	if [ -n "$(LLAMACPP_TAG)" ]; then \
@@ -743,9 +692,8 @@ else ifeq ($(shell uname -s),Linux)
 	else \
 		echo "Resolving TurboQuant backend index from atomic-chat-conf manifest..."; \
 		TMPREL=$$(mktemp /tmp/turboquant-manifest-XXXXXX.json); \
-		MANIFEST_URL="https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/$(ATOMIC_CHAT_CONF_BACKEND_REV)/backends/turboquant-manifest.json"; \
-		if ! curl -sS --retry 5 --retry-delay 3 -H "User-Agent: atomic-chat-ci" -o "$$TMPREL" "$$MANIFEST_URL"; then \
-			echo "Error: failed to fetch turboquant manifest from $$MANIFEST_URL"; \
+		if ! curl -sS --retry 5 --retry-delay 3 -H "User-Agent: atomic-chat-ci" -o "$$TMPREL" "$(TURBOQUANT_MANIFEST_URL)"; then \
+			echo "Error: failed to fetch turboquant manifest from $(TURBOQUANT_MANIFEST_URL)"; \
 			rm -f "$$TMPREL"; exit 1; \
 		fi; \
 		if ! jq -e '.backends' "$$TMPREL" >/dev/null 2>&1; then \

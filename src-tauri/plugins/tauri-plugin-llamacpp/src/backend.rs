@@ -8,12 +8,13 @@ use tauri::{Manager, Runtime};
 /// TurboQuant id) onto the **clean** TurboQuant id scheme used on
 /// Windows/Linux/macOS:
 ///   `windows-x64-cpu`, `windows-x64-cuda-12.4`, `windows-x64-cuda-13.3`,
-///   `windows-x64-vulkan`, `linux-x64-vulkan`, `macos-arm64`, `macos-x64`.
+///   `windows-x64-vulkan`, `linux-x64-cpu`, `linux-x64-cuda-12.4`,
+///   `linux-x64-cuda-13.3`, `linux-x64-rocm`, `linux-x64-vulkan`,
+///   `macos-arm64`, `macos-x64`.
 ///
-/// The TurboQuant releases are scattered (each variant is its own release on
-/// the same SHA), so the manifest in `atomic-chat-conf` is the single source
-/// of "which tag"; here we only normalize the *backend id*. Idempotent: a
-/// clean id maps to itself.
+/// The manifest in `atomic-chat-conf` is the single source of "which tag";
+/// here we only normalize the *backend id*. Idempotent: a clean id maps to
+/// itself.
 #[tauri::command]
 pub fn map_old_backend_to_new(old_backend: String) -> String {
     let b = old_backend.replace('\u{FEFF}', "").trim().to_string();
@@ -24,6 +25,10 @@ pub fn map_old_backend_to_new(old_backend: String) -> String {
         | "windows-x64-cuda-12.4"
         | "windows-x64-cuda-13.3"
         | "windows-x64-vulkan"
+        | "linux-x64-cpu"
+        | "linux-x64-cuda-12.4"
+        | "linux-x64-cuda-13.3"
+        | "linux-x64-rocm"
         | "linux-x64-vulkan"
         | "macos-arm64"
         | "macos-x64" => return b,
@@ -49,8 +54,11 @@ pub fn map_old_backend_to_new(old_backend: String) -> String {
         return "windows-x64-cpu".to_string();
     }
 
-    // Legacy / clean Linux ids → the single `linux-x64-vulkan` build
-    // (serves CPU+GPU via GGML_BACKEND_DL; no TurboQuant CUDA-on-Linux build).
+    // Legacy Linux ids (`linux-avx2-x64`, `ubuntu-vulkan-x64`, …) predate the
+    // fork's Linux GPU tiers, so they all normalize onto `linux-x64-vulkan` —
+    // the build that also carries a portable CPU path via GGML_BACKEND_DL. The
+    // clean CUDA/ROCm/CPU ids returned above are never produced here; they only
+    // ever come from the manifest or from hardware detection.
     if b.starts_with("linux-") {
         // No TurboQuant Linux arm64 build; leave unrecognized arm64 ids as-is.
         if b.contains("arm64") || b.contains("aarch64") {
@@ -178,6 +186,8 @@ pub struct SystemFeatures {
     cuda12: bool,
     cuda13: bool,
     vulkan: bool,
+    #[serde(default)]
+    rocm: bool,
 }
 
 #[derive(Serialize)]
@@ -196,9 +206,9 @@ pub fn determine_supported_backends(
     let mut supported_backends: Vec<String> = Vec::new();
 
     // Determine supported backends based on system type and features, using
-    // the clean TurboQuant id scheme. Windows ships discrete CPU/CUDA/Vulkan
-    // variants; Linux ships a single `linux-x64-vulkan` build that serves
-    // CPU+GPU (GGML_BACKEND_DL); macOS is arm64-only (bundled).
+    // the clean TurboQuant id scheme. Windows and Linux both ship discrete
+    // CPU/CUDA/Vulkan variants, Linux additionally an AMD ROCm one; macOS is
+    // arm64-only (bundled).
     match sys_type.as_str() {
         "windows-x86_64" => {
             supported_backends.push("windows-x64-cpu".to_string());
@@ -218,7 +228,23 @@ pub fn determine_supported_backends(
             supported_backends.push("windows-arm64".to_string());
         }
         "linux-x86_64" | "linux-x86" => {
-            // Single build serves CPU + GPU; no TurboQuant CUDA-on-Linux build.
+            supported_backends.push("linux-x64-cpu".to_string());
+            // No TurboQuant Linux CUDA-11 build (features.cuda11 ignored here).
+            if features.cuda12 {
+                supported_backends.push("linux-x64-cuda-12.4".to_string());
+            }
+            if features.cuda13 {
+                supported_backends.push("linux-x64-cuda-13.3".to_string());
+            }
+            // ROCm is offered only when the conservative host probe in
+            // `get_supported_features` confirmed both a supported RDNA2–RDNA4
+            // device and a usable ROCm runtime.
+            if features.rocm {
+                supported_backends.push("linux-x64-rocm".to_string());
+            }
+            // Always offered: the Vulkan build also carries a portable CPU path
+            // (GGML_BACKEND_DL) and is the bundled offline fallback, so it must
+            // stay installable even on a host with no Vulkan device.
             supported_backends.push("linux-x64-vulkan".to_string());
         }
         "linux-aarch64" | "linux-arm64" => {
@@ -243,14 +269,50 @@ fn is_windows_backend(backend: &str) -> bool {
     backend.starts_with("win-") || backend.starts_with("windows-")
 }
 
+/// Ordering key for a unified TurboQuant release tag
+/// (`b<upstream-build>-<fork-major>.<minor>.<patch>`, e.g. `b10018-1.3.0`):
+/// newest upstream build first, then newest fork version. Returns `None` for
+/// legacy per-variant tags (`turboquant-<id>-<sha>`), which carry no monotonic
+/// component at all.
+fn unified_release_rank(version: &str) -> Option<(u32, u32, u32, u32)> {
+    let (build, fork_semver) = version.strip_prefix('b')?.split_once('-')?;
+    let build = build.parse::<u32>().ok()?;
+    let mut parts = fork_semver.split('.');
+    let major = parts.next()?.parse::<u32>().ok()?;
+    let minor = parts.next()?.parse::<u32>().ok()?;
+    let patch = parts.next()?.parse::<u32>().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((build, major, minor, patch))
+}
+
 fn compare_backend_versions_for_sort(
     left: &BackendInfo,
     right: &BackendInfo,
 ) -> std::cmp::Ordering {
-    // TurboQuant release tags (`turboquant-<id>-<sha>`) are NOT monotonic
-    // numbers, so numeric version comparison yields 0 for both and we fall
-    // through to install `order`. The numeric short-circuit below is kept for
-    // legacy janhq-style Windows ids (`win-*` with `bXXXX` numeric tags).
+    // Unified release tags are monotonic, so they decide directly, and any
+    // unified release outranks every legacy tag — moving to the unified train
+    // is always an upgrade.
+    match (
+        unified_release_rank(&left.version),
+        unified_release_rank(&right.version),
+    ) {
+        (Some(left_rank), Some(right_rank)) => {
+            let rank_cmp = right_rank.cmp(&left_rank);
+            if rank_cmp != std::cmp::Ordering::Equal {
+                return rank_cmp;
+            }
+        }
+        (Some(_), None) => return std::cmp::Ordering::Less,
+        (None, Some(_)) => return std::cmp::Ordering::Greater,
+        (None, None) => {}
+    }
+
+    // Legacy TurboQuant release tags (`turboquant-<id>-<sha>`) are NOT
+    // monotonic numbers, so numeric version comparison yields 0 for both and we
+    // fall through to install `order`. The numeric short-circuit below is kept
+    // for legacy janhq-style Windows ids (`win-*` with `bXXXX` numeric tags).
     if is_windows_backend(&left.backend) && is_windows_backend(&right.backend) {
         let left_version = parse_backend_version(left.version.clone());
         let right_version = parse_backend_version(right.version.clone());
@@ -331,11 +393,14 @@ pub struct SupportedFeatures {
     cuda12: bool,
     cuda13: bool,
     vulkan: bool,
+    rocm: bool,
 }
 
 #[derive(Deserialize)]
 pub struct GpuInfo {
     driver_version: String,
+    #[serde(default)]
+    vendor: Option<String>,
     nvidia_info: Option<NvidiaInfo>,
     vulkan_info: Option<VulkanInfo>,
 }
@@ -348,6 +413,103 @@ pub struct NvidiaInfo {
 #[derive(Deserialize)]
 pub struct VulkanInfo {
     api_version: String,
+}
+
+/// GPU architectures the fork's `linux-x64-rocm` archive is compiled for —
+/// RDNA2 through RDNA4, i.e. gfx1030/1100/1101/1102/1151/1200/1201 — expressed
+/// as amdkfd `gfx_target_version` values (major * 10000 + minor * 100 + step).
+/// Older GCN cards are not in the build and must use Vulkan.
+const ROCM_SUPPORTED_GFX_TARGET_VERSIONS: &[u32] =
+    &[100300, 110000, 110100, 110200, 115100, 120000, 120100];
+
+fn is_amd_gpu(gpu: &GpuInfo) -> bool {
+    gpu.vendor
+        .as_deref()
+        .is_some_and(|v| v.eq_ignore_ascii_case("amd"))
+}
+
+/// The ROCm decision, kept free of I/O so the policy itself is testable.
+///
+/// Deliberately conservative: every input must be affirmative. An AMD card we
+/// cannot place in the supported architecture set, or a host without a ROCm
+/// runtime, yields `false` and the caller falls back to Vulkan — a slower but
+/// working GPU path beats an archive that aborts on load.
+fn rocm_supported(has_amd_gpu: bool, gfx_target_versions: &[u32], has_runtime: bool) -> bool {
+    has_amd_gpu
+        && has_runtime
+        && gfx_target_versions
+            .iter()
+            .any(|v| ROCM_SUPPORTED_GFX_TARGET_VERSIONS.contains(v))
+}
+
+/// Read the GPU architectures the amdgpu kernel driver exposes to ROCm, from
+/// `/sys/class/kfd/kfd/topology/nodes/*/properties`. Nodes that are not GPUs
+/// report `gfx_target_version 0` and are skipped. Reading sysfs keeps the probe
+/// free of a HIP link-time or runtime dependency.
+#[cfg(target_os = "linux")]
+fn amdkfd_gfx_target_versions() -> Vec<u32> {
+    let Ok(nodes) = fs::read_dir("/sys/class/kfd/kfd/topology/nodes") else {
+        return Vec::new();
+    };
+    let mut versions = Vec::new();
+    for node in nodes.flatten() {
+        let Ok(properties) = fs::read_to_string(node.path().join("properties")) else {
+            continue;
+        };
+        for line in properties.lines() {
+            let Some(value) = line.strip_prefix("gfx_target_version ") else {
+                continue;
+            };
+            if let Ok(version) = value.trim().parse::<u32>() {
+                if version != 0 {
+                    versions.push(version);
+                }
+            }
+        }
+    }
+    versions
+}
+
+#[cfg(not(target_os = "linux"))]
+fn amdkfd_gfx_target_versions() -> Vec<u32> {
+    Vec::new()
+}
+
+/// Whether a ROCm/HIP runtime is installed on the host. The archive links
+/// against `libamdhip64.so`, so its presence in a ROCm install prefix or on the
+/// default library path is the cheapest honest signal that the build can start.
+#[cfg(target_os = "linux")]
+fn host_has_rocm_runtime() -> bool {
+    const LIBRARY_DIRS: &[&str] = &[
+        "/opt/rocm/lib",
+        "/opt/rocm/lib64",
+        "/usr/lib/x86_64-linux-gnu",
+        "/usr/lib64",
+        "/usr/lib",
+    ];
+    if LIBRARY_DIRS
+        .iter()
+        .any(|dir| PathBuf::from(dir).join("libamdhip64.so").exists())
+    {
+        return true;
+    }
+    // Versioned side-by-side installs, e.g. /opt/rocm-6.2.0/lib.
+    let Ok(entries) = fs::read_dir("/opt") else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with("rocm-")
+            && (entry.path().join("lib/libamdhip64.so").exists()
+                || entry.path().join("lib64/libamdhip64.so").exists())
+    })
+}
+
+#[cfg(not(target_os = "linux"))]
+fn host_has_rocm_runtime() -> bool {
+    false
 }
 
 #[tauri::command]
@@ -364,7 +526,17 @@ pub fn get_supported_features(
         cuda12: false,
         cuda13: false,
         vulkan: false,
+        rocm: false,
     };
+
+    // The fork's ROCm archive is Linux-only.
+    if os_type == "linux" {
+        features.rocm = rocm_supported(
+            gpus.iter().any(is_amd_gpu),
+            &amdkfd_gfx_target_versions(),
+            host_has_rocm_runtime(),
+        );
+    }
 
     // https://docs.nvidia.com/deploy/cuda-compatibility/#cuda-11-and-later-defaults-to-minor-version-compatibility
     // Windows CUDA 13 floor is the NVIDIA-documented CUDA Toolkit 13.1 minimum
@@ -576,6 +748,7 @@ pub async fn prioritize_backends(
             "cuda-cu13.0",
             "cuda-cu12.0",
             "cuda-cu11.7",
+            "rocm",
             "vulkan",
             "common_cpus",
             "avx512",
@@ -597,6 +770,7 @@ pub async fn prioritize_backends(
             "noavx",
             "arm64",
             "x64",
+            "rocm",
             "vulkan",
         ]
     };
@@ -653,6 +827,9 @@ fn get_backend_category(backend_string: &str) -> Option<String> {
     }
     if backend_string.contains("cuda-11") || backend_string.contains("cu11.7") {
         return Some("cuda-cu11.7".to_string());
+    }
+    if backend_string.contains("rocm") {
+        return Some("rocm".to_string());
     }
     if backend_string.contains("vulkan") {
         return Some("vulkan".to_string());
@@ -1290,6 +1467,7 @@ mod tests {
         // Driver 525.60.13 supports CUDA 12 on Linux
         let gpus = vec![GpuInfo {
             driver_version: "530.00".to_string(),
+            vendor: Some("NVIDIA".to_string()),
             nvidia_info: Some(NvidiaInfo {
                 compute_capability: "8.0".to_string(),
             }),
@@ -1307,6 +1485,7 @@ mod tests {
     fn test_get_supported_features_vulkan() {
         let gpus = vec![GpuInfo {
             driver_version: "0.0".to_string(),
+            vendor: Some("AMD".to_string()),
             nvidia_info: None,
             vulkan_info: Some(VulkanInfo {
                 api_version: "1.3".to_string(),
@@ -1328,6 +1507,7 @@ mod tests {
             cuda12: true,
             cuda13: false,
             vulkan: true,
+            rocm: false,
         };
 
         let result =
@@ -1342,21 +1522,65 @@ mod tests {
     }
 
     #[test]
-    fn test_determine_supported_backends_linux_single_vulkan() {
+    fn test_determine_supported_backends_linux_full_matrix() {
         let features = SystemFeatures {
             cuda11: true,
             cuda12: true,
             cuda13: true,
             vulkan: true,
+            rocm: true,
         };
 
         let result =
             determine_supported_backends("linux".to_string(), "x86_64".to_string(), features)
                 .unwrap();
 
-        // Linux ships a single build that serves CPU+GPU; no CUDA-on-Linux build.
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0], "linux-x64-vulkan");
+        assert!(result.contains(&"linux-x64-cpu".to_string()));
+        assert!(result.contains(&"linux-x64-cuda-12.4".to_string()));
+        assert!(result.contains(&"linux-x64-cuda-13.3".to_string()));
+        assert!(result.contains(&"linux-x64-rocm".to_string()));
+        assert!(result.contains(&"linux-x64-vulkan".to_string()));
+        // The fork publishes no Linux CUDA-11 build.
+        assert!(!result.iter().any(|b| b.contains("cuda-11")));
+    }
+
+    #[test]
+    fn test_determine_supported_backends_linux_cpu_only_keeps_vulkan_fallback() {
+        let features = SystemFeatures {
+            cuda11: false,
+            cuda12: false,
+            cuda13: false,
+            vulkan: false,
+            rocm: false,
+        };
+
+        let result =
+            determine_supported_backends("linux".to_string(), "x86_64".to_string(), features)
+                .unwrap();
+
+        // The Vulkan build carries a portable CPU path and is what the
+        // installer bundles, so it stays offered even with no GPU at all.
+        assert_eq!(result, vec!["linux-x64-cpu", "linux-x64-vulkan"]);
+    }
+
+    #[test]
+    fn test_determine_supported_backends_linux_rocm_absent_without_probe() {
+        // An AMD host whose ROCm probe came back negative gets Vulkan, never a
+        // ROCm archive it cannot load.
+        let features = SystemFeatures {
+            cuda11: false,
+            cuda12: false,
+            cuda13: false,
+            vulkan: true,
+            rocm: false,
+        };
+
+        let result =
+            determine_supported_backends("linux".to_string(), "x86_64".to_string(), features)
+                .unwrap();
+
+        assert!(!result.contains(&"linux-x64-rocm".to_string()));
+        assert!(result.contains(&"linux-x64-vulkan".to_string()));
     }
 
     #[test]
@@ -1366,6 +1590,7 @@ mod tests {
             cuda12: false,
             cuda13: false,
             vulkan: false,
+            rocm: false,
         };
 
         let result =
@@ -1714,6 +1939,54 @@ mod tests {
             result,
             Some("turboquant-linux-x64-vulkan-bbbb/linux-x64-vulkan".to_string())
         );
+    }
+
+    // Unified tags are monotonic, so they must beat install order the way
+    // numeric upstream tags always have — a freshly downloaded older release
+    // must not shadow a newer one.
+    #[test]
+    fn test_find_latest_version_prefers_the_newest_unified_release() {
+        let backends = vec![
+            BackendInfo {
+                version: "b10018-1.3.0".into(),
+                backend: "linux-x64-rocm".into(),
+                order: 1,
+            },
+            BackendInfo {
+                version: "b10018-1.2.9".into(),
+                backend: "linux-x64-rocm".into(),
+                order: 9,
+            },
+            BackendInfo {
+                version: "b9900-1.4.0".into(),
+                backend: "linux-x64-rocm".into(),
+                order: 8,
+            },
+        ];
+
+        let result = find_latest_version_for_backend(backends, "linux-x64-rocm".to_string());
+        assert_eq!(result, Some("b10018-1.3.0/linux-x64-rocm".to_string()));
+    }
+
+    // Legacy per-variant folders survive an upgrade, and moving to the unified
+    // train is always forward.
+    #[test]
+    fn test_find_latest_version_ranks_unified_above_legacy_tags() {
+        let backends = vec![
+            BackendInfo {
+                version: "turboquant-linux-x64-vulkan-bbbb".into(),
+                backend: "linux-x64-vulkan".into(),
+                order: 99,
+            },
+            BackendInfo {
+                version: "b10018-1.3.0".into(),
+                backend: "linux-x64-vulkan".into(),
+                order: 1,
+            },
+        ];
+
+        let result = find_latest_version_for_backend(backends, "linux-x64-vulkan".to_string());
+        assert_eq!(result, Some("b10018-1.3.0/linux-x64-vulkan".to_string()));
     }
 
     #[test]

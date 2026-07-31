@@ -78,6 +78,59 @@ export enum AppEvent {
   onMainViewStateChange = 'onMainViewStateChange',
 }
 
+/**
+ * Identity every backend event carries so a listener can tell whose operation
+ * it is watching.
+ *
+ * Both llama.cpp providers ship side by side and each has its own optimal
+ * backend for the same hardware, so a payload is only actionable together with
+ * the provider it came from and the release the backend belongs to. `provider`
+ * is optional purely for backwards compatibility: an untagged payload is
+ * attributed to `llamacpp-upstream`, which is what legacy emitters were.
+ */
+export interface BackendEventOrigin {
+  /** Provider id, e.g. `llamacpp` (TurboQuant) or `llamacpp-upstream`. */
+  provider?: string
+  /** Release tag the backend belongs to, e.g. `b10018-1.3.0`. */
+  version?: string
+  /** Concrete clean backend id, e.g. `linux-x64-rocm`. */
+  backendId?: string
+}
+
+/** Payload of {@link AppEvent.onBackendDownloadStarted}. */
+export interface BackendDownloadStartedPayload extends BackendEventOrigin {
+  /** Full `version/backend` string being downloaded. */
+  backend: string
+  status: 'downloading'
+}
+
+/** Payload of {@link AppEvent.onBackendDownloadFinished}. */
+export interface BackendDownloadFinishedPayload extends BackendEventOrigin {
+  backend: string
+  status: 'completed' | 'failed'
+  error?: string
+}
+
+/**
+ * Payload of {@link AppEvent.onBetterBackendDetected} and of the manual
+ * download events the provider settings page drives.
+ */
+export interface BetterBackendDetectedPayload extends BackendEventOrigin {
+  currentBackend: string
+  recommendedBackend: string
+  recommendedCategory: string
+}
+
+/**
+ * `detail` of the `app:backend-hotswapped` DOM event an extension dispatches
+ * after activating a backend without a restart. It travels on the window
+ * rather than the `@janhq/core` bus because it only drives UI transitions.
+ */
+export interface BackendHotswappedDetail extends BackendEventOrigin {
+  /** Full `version/backend` string now active. */
+  backend: string
+}
+
 export enum DownloadEvent {
   onFileDownloadUpdate = 'onFileDownloadUpdate',
   onFileDownloadError = 'onFileDownloadError',

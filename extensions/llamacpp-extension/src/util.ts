@@ -74,6 +74,7 @@ const GPU_BACKEND_CATEGORIES = new Set([
   'cuda-cu12.4',
   'cuda-cu12.0',
   'cuda-cu11.7',
+  'rocm',
   'vulkan',
 ])
 
@@ -82,15 +83,15 @@ export function isGpuBackendCategory(category: string): boolean {
 }
 
 /**
- * Which GPU stack a build targets. A CUDA build on the CPU and a Vulkan build
- * on the CPU need different advice: install the NVIDIA CUDA runtime versus
- * install/update the Vulkan driver, which on Linux is also the only GPU path
- * for AMD and Intel.
+ * Which GPU stack a build targets. Each one needs different advice when the
+ * build ends up on the CPU: install the NVIDIA CUDA runtime, install the AMD
+ * ROCm runtime, or install/update the Vulkan driver.
  */
-export type GpuKind = 'cuda' | 'vulkan' | 'other'
+export type GpuKind = 'cuda' | 'rocm' | 'vulkan' | 'other'
 
 export function gpuKindOf(category: string): GpuKind {
   if (category.startsWith('cuda-')) return 'cuda'
+  if (category === 'rocm') return 'rocm'
   if (category === 'vulkan') return 'vulkan'
   return 'other'
 }

@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-156 records, 2026-05-19 → 2026-07-30.
+158 records, 2026-05-19 → 2026-07-31.
 
 ---
 
@@ -121,8 +121,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 - **2026-05-19** — [Use `AtomicBot-ai/mlx-vlm` as the MLX backend](2026-05-19-use-atomicbot-ai-mlx-vlm-as-the-mlx-backend.md)
 
-## llama.cpp providers & backend selection (37)
+## llama.cpp providers & backend selection (39)
 
+- **2026-07-31** — [Reconcile the TurboQuant release tag automatically on app update](2026-07-31-reconcile-turboquant-release-tag-automatically-on-app-update.md)
+- **2026-07-31** — [Adopt unified TurboQuant release tags and expand the Linux backend matrix to CUDA/ROCm](2026-07-31-adopt-unified-turboquant-releases-and-expand-linux-backends.md)
 - **2026-07-30** — [Cache optimal backends for chat upgrade prompts](2026-07-30-cache-optimal-backends-for-chat-upgrade-prompts.md)
 - **2026-07-29** — [Repair TurboQuant Windows CUDA backends missing cudart by copying from an installed upstream CUDA bin or downloading the ggml-org companion](2026-07-29-repair-turboquant-windows-cuda-missing-cudart-via-upstream-copy-or-ggml-org-companion.md)
 - **2026-07-29** — [Mirror the hot-swap persist-before-unload order into the TurboQuant `llamacpp` provider and lock both orders down with tests](2026-07-29-mirror-the-hot-swap-persist-before-unload-order-into-turboquant.md)

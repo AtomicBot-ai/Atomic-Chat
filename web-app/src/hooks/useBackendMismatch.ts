@@ -16,7 +16,7 @@ export type BackendMismatch =
       offloaded: number | null
       total: number | null
       /** GPU stack of the build that fell back, so the advice can match it. */
-      gpuKind: 'cuda' | 'vulkan' | 'other'
+      gpuKind: 'cuda' | 'rocm' | 'vulkan' | 'other'
       cudaRuntimeMissing: boolean
       deviceInitError: string | null
     }

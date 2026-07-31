@@ -1,4 +1,7 @@
-import { useBackendUpdater } from '@/hooks/useBackendUpdater'
+import {
+  useBackendUpdater,
+  type UseBackendUpdaterConfig,
+} from '@/hooks/useBackendUpdater'
 
 import {
   IconDownload,
@@ -19,6 +22,19 @@ import {
 import { useEffect } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { toast } from 'sonner'
+import { getProviderTitle, LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
+
+/// Progress-only view onto the turboquant provider. The recommendation modal
+/// and the version toast stay upstream-owned so two providers can never argue
+/// over the same dialog, but `reconcileBackendReleaseTag()` starts a download
+/// on its own after an app update — sometimes several hundred megabytes — and
+/// that must not happen invisibly.
+const TURBOQUANT_PROGRESS_CONFIG: UseBackendUpdaterConfig = {
+  extensionName: '@janhq/llamacpp-extension',
+  providerId: 'llamacpp',
+  recommendationKey: 'turboquant_better_backend_recommendation',
+  postUpgradeRecheckEnabled: false,
+}
 
 const BackendUpdater = () => {
   const { t } = useTranslation()
@@ -33,6 +49,10 @@ const BackendUpdater = () => {
     dismissRecommendation,
     downloadRecommendedBackend,
   } = useBackendUpdater()
+
+  const { downloadState: turboquantDownload } = useBackendUpdater(
+    TURBOQUANT_PROGRESS_CONFIG
+  )
 
   useEffect(() => {
     checkForUpdate()
@@ -102,14 +122,38 @@ const BackendUpdater = () => {
     }
   }, [recommendationPhase, t])
 
+  /// The turboquant reconcile runs unattended, so its outcome only ever
+  /// reaches the user through these toasts.
+  useEffect(() => {
+    if (turboquantDownload.status === 'completed' && turboquantDownload.backendName) {
+      const backendType =
+        turboquantDownload.backendName.split('/').pop() ||
+        turboquantDownload.backendName
+      toast.success(
+        t('settings:backendUpdater.downloadComplete', { backend: backendType })
+      )
+    } else if (turboquantDownload.status === 'failed') {
+      toast.error(t('settings:backendUpdater.downloadFailed'))
+    }
+  }, [turboquantDownload.status, turboquantDownload.backendName, t])
+
   const showRecommendationDialog =
     recommendationPhase === 'recommend' ||
     recommendationPhase === 'downloading' ||
     recommendationPhase === 'hotswapping' ||
     recommendationPhase === 'restart-required'
 
+  const showTurboquantProgress =
+    !showRecommendationDialog && turboquantDownload.isDownloading
+
+  const turboquantBackendLabel =
+    turboquantDownload.backendName?.split('/').pop() ??
+    turboquantDownload.backendName ??
+    ''
+
   const showVersionUpdateToast =
     !showRecommendationDialog &&
+    !showTurboquantProgress &&
     updateState.isUpdateAvailable &&
     !updateState.remindMeLater
 
@@ -144,6 +188,18 @@ const BackendUpdater = () => {
                     backend: recommendation.recommendedCategory,
                   })}
                 </DialogDescription>
+                {/* Both llama providers can recommend a different backend for
+                    the same GPU, so name the one this dialog speaks for. */}
+                <p className="text-[11px] leading-4 text-muted-foreground">
+                  {t('settings:backendUpdater.betterBackendProviderContext', {
+                    provider: getProviderTitle(
+                      recommendation.provider ?? LOCAL_LLAMACPP_PROVIDER
+                    ),
+                    backend:
+                      recommendation.backendId ??
+                      recommendation.recommendedBackend,
+                  })}
+                </p>
               </DialogHeader>
               <div className="grid grid-cols-2 gap-2">
                 <Button
@@ -222,6 +278,26 @@ const BackendUpdater = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Unattended turboquant release-tag reconcile — non-blocking progress */}
+      {showTurboquantProgress && (
+        <div className="fixed z-50 bottom-3 right-3 bg-background flex items-start gap-2 border rounded-lg shadow-md px-4 py-3 max-w-[22rem]">
+          <IconLoader2
+            size={18}
+            className="shrink-0 text-blue-500 animate-spin mt-0.5"
+          />
+          <div>
+            <div className="text-sm font-medium">
+              {t('settings:backendUpdater.backgroundUpdateTitle')}
+            </div>
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              {t('settings:backendUpdater.backgroundUpdateDesc', {
+                backend: turboquantBackendLabel,
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Version update toast (existing flow, separate from GPU recommendation) */}
       {showVersionUpdateToast && (

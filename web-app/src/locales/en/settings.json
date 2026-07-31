@@ -367,6 +367,7 @@
     "downloadFailed": "Failed to download GPU backend",
     "betterBackendTitle": "Faster Backend Available",
     "betterBackendDesc": "Use {{backend}} for faster responses on this GPU.",
+    "betterBackendProviderContext": "{{provider}} · {{backend}}",
     "downloadNow": "Download",
     "notNow": "Cancel",
     "restartRequired": "Restart Required",
@@ -384,7 +385,9 @@
     "hotSwapping": "Switching backend",
     "hotSwappingDesc": "Activating {{backend}} without a restart…",
     "hotSwapSuccess": "Backend switched",
-    "hotSwapSuccessDesc": "{{backend}} is now active. No restart needed."
+    "hotSwapSuccessDesc": "{{backend}} is now active. No restart needed.",
+    "backgroundUpdateTitle": "Updating llama.cpp backend",
+    "backgroundUpdateDesc": "Downloading {{backend}} in the background. You can keep working."
   },
   "backendMismatch": {
     "runtimeCpuTitle": "Your model is running on the CPU",
@@ -396,6 +399,7 @@
     "suboptimalDesc": "Get faster responses with a backend optimized for your hardware.",
     "cudaRuntimeHint": "The selected CUDA build could not find a CUDA runtime on this machine. Installing the NVIDIA CUDA runtime, or switching to a backend that bundles it, fixes this.",
     "vulkanDriverHint": "A Vulkan backend needs a working Vulkan driver. If your GPU should be supported, updating the graphics driver — or installing the Vulkan runtime on Linux — usually fixes this.",
+    "rocmRuntimeHint": "A ROCm backend needs the AMD ROCm runtime installed and a supported RDNA2–RDNA4 GPU. Installing ROCm, or switching to the Vulkan backend, fixes this.",
     "fix": "Upgrade",
     "later": "Later",
     "dontRemind": "Don't remind me",

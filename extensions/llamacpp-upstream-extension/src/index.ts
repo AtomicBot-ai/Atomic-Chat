@@ -2177,9 +2177,15 @@ export default class llamacpp_upstream_extension extends AIEngine {
     // available inside the Tauri WebView2 context where this extension
     // runs.
     if (typeof window !== 'undefined' && window.dispatchEvent) {
+      const [swappedVersion, swappedId] = backendString.split('/')
       window.dispatchEvent(
         new CustomEvent('app:backend-hotswapped', {
-          detail: { backend: backendString },
+          detail: {
+            backend: backendString,
+            provider: this.providerId,
+            version: swappedVersion,
+            backendId: swappedId,
+          },
         })
       )
     }
@@ -2295,6 +2301,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
     currentBackend: string
     recommendedBackend: string
     recommendedCategory: string
+    provider: string
+    version: string
+    backendId: string
   } | null> {
     if (IS_MAC) {
       return null
@@ -2387,10 +2396,14 @@ export default class llamacpp_upstream_extension extends AIEngine {
         return null
       }
 
+      const [recommendedVersion, recommendedId] = recommendedBackend.split('/')
       const payload = {
         currentBackend,
         recommendedBackend,
         recommendedCategory: backendCategoryToLabel(idealCat),
+        provider: this.providerId,
+        version: recommendedVersion,
+        backendId: recommendedId,
       }
       logger.info(
         `recheckOptimalBackend: surfacing recommendation ${recommendedBackend} (${payload.recommendedCategory})`
@@ -2766,6 +2779,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
         currentBackend: current,
         recommendedBackend: dialogKey,
         recommendedCategory: label,
+        provider: this.providerId,
+        backendId,
       })
     }
 
@@ -2827,6 +2842,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
         events.emit(AppEvent.onBackendDownloadFinished, {
           backend: dialogKey,
           status: 'completed',
+          provider: this.providerId,
+          backendId,
         })
       }
 
@@ -2845,6 +2862,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
         events.emit('onManualBackendFailed', {
           backend: dialogKey,
           error: err instanceof Error ? err.message : String(err),
+          provider: this.providerId,
+          backendId,
         })
       }
       throw err
@@ -5322,6 +5341,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
       events.emit(AppEvent.onBackendDownloadStarted, {
         backend: backendString,
         status: 'downloading',
+        provider: this.providerId,
+        version,
+        backendId: backend,
       })
     }
 
@@ -5509,6 +5531,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
         events.emit(AppEvent.onBackendDownloadFinished, {
           backend: backendString,
           status: 'completed',
+          provider: this.providerId,
+          version,
+          backendId: backend,
         })
       }
     } catch (downloadErr) {
@@ -5528,6 +5553,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
           backend: backendString,
           status: 'failed',
           error: errorMessage,
+          provider: this.providerId,
+          version,
+          backendId: backend,
         })
       }
       throw downloadErr

@@ -99,6 +99,7 @@ export const Route = createFileRoute('/settings/providers/$providerName')({
 
 function ProviderDetail() {
   const { t } = useTranslation()
+  const { providerName } = useParams({ from: Route.id })
   const serviceHub = useServiceHub()
   const { setModelLoadError } = useModelLoad()
   const [activeModels, setActiveModels] = useAppState(
@@ -108,28 +109,37 @@ function ProviderDetail() {
   const [refreshingModels, setRefreshingModels] = useState(false)
   const [isInstallingBackend, setIsInstallingBackend] = useState(false)
   const [isRecheckingBackend, setIsRecheckingBackend] = useState(false)
-  /// Mirrors `localStorage.llama_cpp_pending_backend` so the provider
-  /// settings page can surface a "restart to activate" pill next to
-  /// the (still-old) `version_backend` value once a recommended GPU
-  /// backend has finished downloading. Updated reactively via
+  /// localStorage key holding the pending backend of the provider this page
+  /// shows. Each llama provider writes its own key, so reading the upstream
+  /// one on the turboquant page would show a foreign backend as pending.
+  const pendingBackendKey =
+    providerName === 'llamacpp'
+      ? 'turboquant_pending_backend'
+      : 'llama_cpp_pending_backend'
+  /// Mirrors the provider's pending-backend key so the provider settings
+  /// page can surface a "restart to activate" pill next to the (still-old)
+  /// `version_backend` value once a recommended GPU backend has finished
+  /// downloading. Updated reactively via
   /// `AppEvent.onBackendDownloadFinished` so the user gets feedback
   /// without having to refresh.
   const [pendingBackend, setPendingBackend] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null
-    const raw = localStorage.getItem('llama_cpp_pending_backend')
+    const raw = localStorage.getItem(pendingBackendKey)
     return raw ? raw.replace(/\uFEFF/g, '').trim() : null
   })
 
   useEffect(() => {
     const refresh = () => {
-      const raw = localStorage.getItem('llama_cpp_pending_backend')
+      const raw = localStorage.getItem(pendingBackendKey)
       setPendingBackend(raw ? raw.replace(/\uFEFF/g, '').trim() : null)
     }
-    const onFinished = (payload: { status: string }) => {
+    refresh()
+    const onFinished = (payload: { status: string; provider?: string }) => {
+      if ((payload?.provider ?? LOCAL_LLAMACPP_PROVIDER) !== providerName) return
       if (payload?.status === 'completed') refresh()
     }
-    /// Hot-swap path: the extension already cleared
-    /// `llama_cpp_pending_backend` and updated `version_backend` settings.
+    /// Hot-swap path: the extension already cleared its pending key and
+    /// updated `version_backend` settings.
     /// Drop the pill immediately and pull fresh provider settings so the
     /// `version_backend` row reflects the new value without a tab refresh.
     ///
@@ -138,7 +148,9 @@ function ProviderDetail() {
     /// `useModelProvider()` — that destructuring happens later in the
     /// component body, so referencing it here would hit a TDZ
     /// `ReferenceError` on the very first render.
-    const onHotswapped = () => {
+    const onHotswapped = (event: Event) => {
+      const detail = (event as CustomEvent<{ provider?: string }>).detail
+      if ((detail?.provider ?? LOCAL_LLAMACPP_PROVIDER) !== providerName) return
       setPendingBackend(null)
       void serviceHub
         .providers()
@@ -158,7 +170,7 @@ function ProviderDetail() {
       window.removeEventListener('storage', refresh)
       window.removeEventListener('app:backend-hotswapped', onHotswapped)
     }
-  }, [serviceHub])
+  }, [serviceHub, providerName, pendingBackendKey])
 
   const handleRestartForPendingBackend = useCallback(async () => {
     try {
@@ -211,7 +223,6 @@ function ProviderDetail() {
       modelId: string
       options: LlamacppDflashDraftOption[]
     } | null>(null)
-  const { providerName } = useParams({ from: Route.id })
   /// The turboquant provider (`llamacpp`) ships alongside upstream on
   /// Windows/Linux. Each owns its own backend tree + localStorage keys, so
   /// the updater must be configured per-provider to avoid cross-contamination
@@ -2419,7 +2430,7 @@ function ProviderDetail() {
                             )}
                           {/* Pending-backend banner: appears as soon as
                               the just-downloaded backend is sitting in
-                              `llama_cpp_pending_backend` and waiting
+                              this provider's pending key and waiting
                               for `activatePendingBackend()` on the
                               next launch. The `version_backend`
                               setting itself can't be hot-swapped while
@@ -2428,7 +2439,8 @@ function ProviderDetail() {
                               between "I clicked Find optimal" and "I
                               restarted the app". */}
                           {setting.key === 'version_backend' &&
-                            provider?.provider === 'llamacpp' &&
+                            (provider?.provider === 'llamacpp' ||
+                              provider?.provider === LOCAL_LLAMACPP_PROVIDER) &&
                             pendingBackend && (
                               <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-dashed border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-xs">
                                 <span className="font-medium text-emerald-600 dark:text-emerald-400">

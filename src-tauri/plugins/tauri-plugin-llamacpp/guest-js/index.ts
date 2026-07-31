@@ -235,6 +235,7 @@ export function normalizeFeatures(features: any): BackendFeatures {
     cuda12: features.cuda12 || false,
     cuda13: features.cuda13 || false,
     vulkan: features.vulkan || false,
+    rocm: features.rocm || false,
   }
 }
 

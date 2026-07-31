@@ -22,6 +22,7 @@ import {
   useBackendMismatch,
 } from '@/hooks/useBackendMismatch'
 import {
+  getProviderTitle,
   LOCAL_LLAMACPP_EXTENSION_NAME,
   LOCAL_LLAMACPP_PROVIDER,
 } from '@/lib/utils'
@@ -182,14 +183,16 @@ const SuboptimalBackendDialog = () => {
     }
   })()
 
-  // A GPU build that ended up on the CPU needs stack-specific advice: the CUDA
-  // runtime is a separate install, while Vulkan comes from the graphics driver.
-  // The CUDA wording asserts a missing runtime, so it stays gated on the probe
-  // that actually established that; the Vulkan wording only suggests a cause.
+  // A GPU build that ended up on the CPU needs stack-specific advice: CUDA and
+  // ROCm runtimes are separate installs, while Vulkan comes from the graphics
+  // driver. The CUDA wording asserts a missing runtime, so it stays gated on
+  // the probe that actually established that; the others suggest a cause.
   const runtimeHint = (() => {
     if (mismatch?.kind !== 'runtime-cpu') return null
     if (mismatch.cudaRuntimeMissing)
       return t('settings:backendMismatch.cudaRuntimeHint')
+    if (mismatch.gpuKind === 'rocm')
+      return t('settings:backendMismatch.rocmRuntimeHint')
     if (mismatch.gpuKind === 'vulkan')
       return t('settings:backendMismatch.vulkanDriverHint')
     return null
@@ -245,6 +248,17 @@ const SuboptimalBackendDialog = () => {
               {runtimeHint && (
                 <p className="mt-2 rounded-md bg-muted/60 px-2.5 py-2 text-xs leading-4 text-muted-foreground">
                   {runtimeHint}
+                </p>
+              )}
+              {/* Name the provider and release the verdict is about: the two
+                  llama providers reach different optimal backends on the same
+                  machine, so an unattributed notice is ambiguous. */}
+              {pending && (
+                <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+                  {t('settings:backendUpdater.betterBackendProviderContext', {
+                    provider: getProviderTitle(pending.provider),
+                    backend: pending.configuredVersionBackend,
+                  })}
                 </p>
               )}
             </div>
