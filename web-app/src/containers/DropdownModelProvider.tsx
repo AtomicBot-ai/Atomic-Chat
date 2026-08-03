@@ -334,9 +334,23 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
   // Get favorite models that are currently available
   const favoriteItems = useMemo(() => {
-    return searchableItems.filter((item) =>
+    const matched = searchableItems.filter((item) =>
       favoriteModels.some((fav) => fav.id === item.model.id)
     )
+    // A model id can appear under more than one provider (e.g. llamacpp +
+    // llamacpp-upstream). Favorites are keyed by model id, so collapse to a
+    // single entry per id — otherwise nicknaming one copy makes the favorite
+    // show twice (once as the nickname, once as the raw id). Prefer the copy
+    // that carries a user nickname (model.displayName); keep first match
+    // otherwise. Map.set on an existing key preserves insertion order.
+    const byId = new Map<string, SearchableModel>()
+    for (const item of matched) {
+      const existing = byId.get(item.model.id)
+      if (!existing || (!existing.model.displayName && item.model.displayName)) {
+        byId.set(item.model.id, item)
+      }
+    }
+    return Array.from(byId.values())
   }, [searchableItems, favoriteModels])
 
   // Filter models based on search value

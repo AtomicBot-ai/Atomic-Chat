@@ -4,6 +4,7 @@ import '@testing-library/jest-dom'
 import DropdownModelProvider from '../DropdownModelProvider'
 import { getModelDisplayName } from '@/lib/utils'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 import type { ModelsService } from '@/services/models/types'
 import { seedServiceHub } from '@/test/service-hub'
 
@@ -141,6 +142,13 @@ describe('DropdownModelProvider - Display Name Integration', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(useFavoriteModel).mockReturnValue({
+      favoriteModels: [],
+      addFavorite: vi.fn(),
+      removeFavorite: vi.fn(),
+      isFavorite: vi.fn(),
+      toggleFavorite: vi.fn(),
+    })
     seedServiceHub({
       models: {
         checkMmprojExists: vi.fn().mockResolvedValue(false),
@@ -206,6 +214,58 @@ describe('DropdownModelProvider - Display Name Integration', () => {
     expect(screen.getAllByText('Custom Model 1')).toHaveLength(2) // Selected: Trigger + dropdown
     expect(screen.getByText('Short Name')).toBeInTheDocument() // Only in dropdown
     expect(screen.getByText('model3.gguf')).toBeInTheDocument() // Only in dropdown
+  })
+
+  it('deduplicates favorites by model id and prefers the nicknamed copy', () => {
+    const duplicateProviders: ModelProvider[] = [
+      {
+        provider: 'llamacpp',
+        active: true,
+        models: [
+          {
+            id: 'shared-model.gguf',
+            capabilities: ['completion'],
+          },
+        ],
+        settings: [],
+      },
+      {
+        provider: 'llamacpp-upstream',
+        active: true,
+        models: [
+          {
+            id: 'shared-model.gguf',
+            displayName: 'Shared Model',
+            capabilities: ['completion'],
+          },
+        ],
+        settings: [],
+      },
+    ]
+
+    vi.mocked(useFavoriteModel).mockReturnValue({
+      favoriteModels: [{ id: 'shared-model.gguf' } as Model],
+      addFavorite: vi.fn(),
+      removeFavorite: vi.fn(),
+      isFavorite: vi.fn(),
+      toggleFavorite: vi.fn(),
+    })
+    vi.mocked(useModelProvider).mockReturnValue({
+      providers: duplicateProviders,
+      selectedProvider: 'llamacpp',
+      selectedModel: duplicateProviders[0].models[0],
+      getProviderByName: vi.fn((name: string) =>
+        duplicateProviders.find((provider) => provider.provider === name)
+      ),
+      selectModelProvider: vi.fn(),
+      getModelBy: vi.fn(),
+      updateProvider: vi.fn(),
+    } as MockHookReturn)
+
+    render(<DropdownModelProvider />)
+
+    expect(screen.getAllByText('Shared Model')).toHaveLength(1)
+    expect(screen.getAllByText('shared-model.gguf')).toHaveLength(1)
   })
 
   it('should use getModelDisplayName utility correctly', () => {
