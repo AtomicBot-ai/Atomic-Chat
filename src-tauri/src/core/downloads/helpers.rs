@@ -401,30 +401,104 @@ pub fn _convert_headers(
     Ok(header_map)
 }
 
-pub async fn _get_file_size(
+async fn head_file_size(
     client: &reqwest::Client,
     url: &str,
-) -> Result<u64, Box<dyn std::error::Error>> {
+) -> Result<u64, DownloadRequestError> {
     // ATO-233: 30-second per-request timeout so a slow or unresponsive CDN
     // endpoint (e.g. a 404 redirect chain) fails fast rather than hanging.
     let resp = client
         .head(url)
         .timeout(Duration::from_secs(30))
         .send()
-        .await?;
-    if !resp.status().is_success() {
-        return Err(format!("Failed to get file size: HTTP status {}", resp.status()).into());
+        .await
+        .map_err(|error| DownloadRequestError::Retryable(error.to_string()))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let message = format!("Failed to get file size: HTTP status {status}");
+        if status == reqwest::StatusCode::REQUEST_TIMEOUT
+            || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+            || status.is_server_error()
+        {
+            return Err(DownloadRequestError::Retryable(message));
+        }
+        return Err(DownloadRequestError::Fatal(message));
     }
     // this is buggy, always return 0 for HEAD request
     // Ok(resp.content_length().unwrap_or(0))
 
-    match resp.headers().get("content-length") {
-        Some(value) => {
-            let value_str = value.to_str()?;
-            let value_u64: u64 = value_str.parse()?;
-            Ok(value_u64)
+    Ok(resp
+        .headers()
+        .get("content-length")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(0))
+}
+
+async fn head_file_size_with_retry(
+    client: &reqwest::Client,
+    url: &str,
+    cancel_token: &CancellationToken,
+) -> Result<u64, DownloadRequestError> {
+    let mut retry_count = 0;
+    loop {
+        match head_file_size(client, url).await {
+            Ok(size) => return Ok(size),
+            Err(DownloadRequestError::Retryable(error)) if retry_count < MAX_STREAM_RETRIES => {
+                if cancel_token.is_cancelled() {
+                    return Err(DownloadRequestError::Fatal(
+                        "Download cancelled".to_string(),
+                    ));
+                }
+                let delay = retry_delay(retry_count);
+                log::warn!(
+                    "Preflight HEAD for '{}' failed: {}. Retry {}/{} after {}ms",
+                    url,
+                    error,
+                    retry_count + 1,
+                    MAX_STREAM_RETRIES,
+                    delay.as_millis()
+                );
+                wait_for_retry(delay, cancel_token)
+                    .await
+                    .map_err(DownloadRequestError::Fatal)?;
+                retry_count += 1;
+            }
+            Err(error) => return Err(error),
         }
-        None => Ok(0),
+    }
+}
+
+/// Resolves the expected size of a download before it starts.
+///
+/// ATO-302: the catalog size is preferred over a preflight HEAD request, and a
+/// HEAD failure is never fatal — the GET path has its own retry policy and
+/// surfaces the real error if the URL is actually unreachable. Only a
+/// cancellation aborts the preflight.
+pub(super) async fn preflight_file_size(
+    client: &reqwest::Client,
+    item: &DownloadItem,
+    cancel_token: &CancellationToken,
+) -> Result<u64, String> {
+    if cancel_token.is_cancelled() {
+        return Err("Download cancelled".to_string());
+    }
+    if let Some(size) = item.size.filter(|size| *size > 0) {
+        return Ok(size);
+    }
+    match head_file_size_with_retry(client, &item.url, cancel_token).await {
+        Ok(size) => Ok(size),
+        Err(error) => {
+            if cancel_token.is_cancelled() {
+                return Err("Download cancelled".to_string());
+            }
+            log::warn!(
+                "Preflight HEAD for '{}' failed: {}. Continuing with unknown size",
+                item.url,
+                error
+            );
+            Ok(0)
+        }
     }
 }
 
@@ -456,9 +530,7 @@ pub async fn _download_files_internal(
     let mut file_sizes: HashMap<String, u64> = HashMap::new();
     for item in items.iter() {
         let client = _get_client_for_item(item, &header_map).map_err(err_to_string)?;
-        let size = _get_file_size(&client, &item.url)
-            .await
-            .map_err(err_to_string)?;
+        let size = preflight_file_size(&client, item, &cancel_token).await?;
         file_sizes.insert(item.url.clone(), size);
     }
 

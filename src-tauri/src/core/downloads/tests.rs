@@ -1,15 +1,17 @@
 use super::helpers::*;
 use super::models::*;
+use crate::core::app::commands::get_jan_data_folder_path;
 use hyper::body::Bytes;
 use hyper::header::{CONTENT_LENGTH, CONTENT_RANGE, RANGE};
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Request, Response, Server, StatusCode};
+use hyper::{Body, Method, Request, Response, Server, StatusCode};
 use reqwest::header::HeaderMap;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tauri::test::mock_app;
+use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Copy)]
 enum TestRangeBehavior {
@@ -84,6 +86,274 @@ async fn spawn_interrupted_download_server(
         request_count,
         handle,
     )
+}
+
+async fn spawn_preflight_head_server(
+    failures_before_success: usize,
+    fail_status: StatusCode,
+) -> (
+    String,
+    Arc<AtomicUsize>,
+    tokio::task::JoinHandle<Result<(), hyper::Error>>,
+) {
+    let request_count = Arc::new(AtomicUsize::new(0));
+    let service_count = request_count.clone();
+    let make_service = make_service_fn(move |_| {
+        let service_count = service_count.clone();
+        async move {
+            Ok::<_, Infallible>(service_fn(move |_request: Request<Body>| {
+                let service_count = service_count.clone();
+                async move {
+                    let request_index = service_count.fetch_add(1, Ordering::SeqCst);
+                    let response = if request_index < failures_before_success {
+                        Response::builder()
+                            .status(fail_status)
+                            .body(Body::empty())
+                            .unwrap()
+                    } else {
+                        Response::builder()
+                            .status(StatusCode::OK)
+                            .header(CONTENT_LENGTH, "42")
+                            .body(Body::empty())
+                            .unwrap()
+                    };
+                    Ok::<_, Infallible>(response)
+                }
+            }))
+        }
+    });
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = Server::from_tcp(listener).unwrap().serve(make_service);
+    let handle = tokio::spawn(server);
+    (
+        format!("http://{address}/model.gguf"),
+        request_count,
+        handle,
+    )
+}
+
+fn preflight_test_item(url: String, size: Option<u64>) -> DownloadItem {
+    DownloadItem {
+        url,
+        save_path: "models/test/model.gguf".to_string(),
+        proxy: None,
+        sha256: None,
+        size,
+        model_id: None,
+    }
+}
+
+#[tokio::test]
+async fn preflight_uses_catalog_size_without_a_head_request() {
+    let (url, request_count, server) = spawn_preflight_head_server(0, StatusCode::OK).await;
+    let item = preflight_test_item(url, Some(6));
+    let client = reqwest::Client::new();
+    let size = preflight_file_size(&client, &item, &CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(size, 6);
+    assert_eq!(request_count.load(Ordering::SeqCst), 0);
+    server.abort();
+}
+
+#[tokio::test]
+async fn preflight_aborts_before_request_when_cancelled() {
+    let (url, request_count, server) = spawn_preflight_head_server(0, StatusCode::OK).await;
+    let item = preflight_test_item(url, None);
+    let client = reqwest::Client::new();
+    let cancel_token = CancellationToken::new();
+    cancel_token.cancel();
+
+    let error = preflight_file_size(&client, &item, &cancel_token)
+        .await
+        .unwrap_err();
+
+    assert_eq!(error, "Download cancelled");
+    assert_eq!(request_count.load(Ordering::SeqCst), 0);
+    server.abort();
+}
+
+#[tokio::test]
+async fn preflight_head_retries_transient_failures() {
+    let (url, request_count, server) =
+        spawn_preflight_head_server(2, StatusCode::INTERNAL_SERVER_ERROR).await;
+    let item = preflight_test_item(url, None);
+    let client = reqwest::Client::new();
+    let size = preflight_file_size(&client, &item, &CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(size, 42);
+    assert_eq!(request_count.load(Ordering::SeqCst), 3);
+    server.abort();
+}
+
+#[tokio::test]
+async fn preflight_head_failure_is_not_fatal() {
+    let (url, request_count, server) =
+        spawn_preflight_head_server(usize::MAX, StatusCode::INTERNAL_SERVER_ERROR).await;
+    let item = preflight_test_item(url, None);
+    let client = reqwest::Client::new();
+    let size = preflight_file_size(&client, &item, &CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(size, 0);
+    // Initial attempt plus MAX_STREAM_RETRIES retries.
+    assert_eq!(request_count.load(Ordering::SeqCst), 6);
+    server.abort();
+}
+
+/// Accepts TCP connections and slams the first `connection_drops` of them
+/// shut before sending any HTTP response, mimicking the transport-level
+/// failures from the ATO-302 report (TLS handshake EOF, connection reset).
+/// Later connections get a well-formed HEAD response.
+async fn spawn_connection_dropping_head_server(
+    connection_drops: usize,
+) -> (String, Arc<AtomicUsize>, tokio::task::JoinHandle<()>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let attempt_count = Arc::new(AtomicUsize::new(0));
+    let server_count = attempt_count.clone();
+    let handle = tokio::spawn(async move {
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                break;
+            };
+            let attempt = server_count.fetch_add(1, Ordering::SeqCst);
+            if attempt < connection_drops {
+                drop(socket);
+                continue;
+            }
+            let mut buf = [0u8; 1024];
+            let _ = socket.read(&mut buf).await;
+            let _ = socket
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\ncontent-length: 42\r\nconnection: close\r\n\r\n",
+                )
+                .await;
+        }
+    });
+    (
+        format!("http://{address}/model.gguf"),
+        attempt_count,
+        handle,
+    )
+}
+
+#[tokio::test]
+async fn preflight_head_retries_dropped_connections() {
+    let (url, attempt_count, server) = spawn_connection_dropping_head_server(2).await;
+    let item = preflight_test_item(url, None);
+    let client = reqwest::Client::new();
+    let size = preflight_file_size(&client, &item, &CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(size, 42);
+    assert_eq!(attempt_count.load(Ordering::SeqCst), 3);
+    server.abort();
+}
+
+async fn spawn_head_fails_get_succeeds_server() -> (
+    String,
+    Arc<AtomicUsize>,
+    Arc<AtomicUsize>,
+    tokio::task::JoinHandle<Result<(), hyper::Error>>,
+) {
+    let head_count = Arc::new(AtomicUsize::new(0));
+    let get_count = Arc::new(AtomicUsize::new(0));
+    let service_head_count = head_count.clone();
+    let service_get_count = get_count.clone();
+    let make_service = make_service_fn(move |_| {
+        let head_count = service_head_count.clone();
+        let get_count = service_get_count.clone();
+        async move {
+            Ok::<_, Infallible>(service_fn(move |request: Request<Body>| {
+                let head_count = head_count.clone();
+                let get_count = get_count.clone();
+                async move {
+                    let response = if request.method() == Method::HEAD {
+                        head_count.fetch_add(1, Ordering::SeqCst);
+                        Response::builder()
+                            .status(StatusCode::INTERNAL_SERVER_ERROR)
+                            .body(Body::empty())
+                            .unwrap()
+                    } else {
+                        get_count.fetch_add(1, Ordering::SeqCst);
+                        Response::builder()
+                            .status(StatusCode::OK)
+                            .header(CONTENT_LENGTH, "6")
+                            .body(Body::from("abcdef"))
+                            .unwrap()
+                    };
+                    Ok::<_, Infallible>(response)
+                }
+            }))
+        }
+    });
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = Server::from_tcp(listener).unwrap().serve(make_service);
+    let handle = tokio::spawn(server);
+    (
+        format!("http://{address}/model.gguf"),
+        head_count,
+        get_count,
+        handle,
+    )
+}
+
+// Regression test for ATO-302: a permanently failing preflight HEAD used to
+// abort the whole download; now the download must still complete via GET.
+#[tokio::test]
+async fn download_succeeds_when_preflight_head_always_fails() {
+    let (url, head_count, get_count, server) = spawn_head_fails_get_succeeds_server().await;
+    let item = DownloadItem {
+        url,
+        save_path: "models/test-ato-302/model.gguf".to_string(),
+        proxy: None,
+        sha256: None,
+        size: None,
+        model_id: Some("test/ato-302".to_string()),
+    };
+    let app = mock_app();
+
+    _download_files_internal(
+        app.handle().clone(),
+        std::slice::from_ref(&item),
+        &HashMap::new(),
+        "ato-302-test",
+        false,
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+
+    let data_dir = get_jan_data_folder_path(app.handle().clone());
+    let saved = tokio::fs::read(data_dir.join(&item.save_path)).await.unwrap();
+    assert_eq!(saved, b"abcdef");
+    // Initial attempt plus MAX_STREAM_RETRIES retries, then the fallback.
+    assert_eq!(head_count.load(Ordering::SeqCst), 6);
+    assert_eq!(get_count.load(Ordering::SeqCst), 1);
+    server.abort();
+    let _ = tokio::fs::remove_dir_all(data_dir.join("models/test-ato-302")).await;
+}
+
+#[tokio::test]
+async fn preflight_head_does_not_retry_fatal_status() {
+    let (url, request_count, server) =
+        spawn_preflight_head_server(usize::MAX, StatusCode::NOT_FOUND).await;
+    let item = preflight_test_item(url, None);
+    let client = reqwest::Client::new();
+    let size = preflight_file_size(&client, &item, &CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(size, 0);
+    assert_eq!(request_count.load(Ordering::SeqCst), 1);
+    server.abort();
 }
 
 async fn spawn_model_contract_server() -> (String, tokio::task::JoinHandle<Result<(), hyper::Error>>)
