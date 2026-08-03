@@ -40,6 +40,8 @@ import { resolveMtpDraft } from './mtpRegistry'
 import { resolveEagle3Draft } from './eagle3Registry'
 import { classifyMlxVisionCapability } from './visionCapability'
 import { buildMlxConfig, selectMlxDraftSettings } from './buildMlxConfig'
+import { mlxMainWeightFileName } from './weightFileName'
+import { planMlxShardRepair, repointLegacyWeightPath } from './shardRepair'
 
 /// The three mutually-exclusive speculative-decoding families surfaced by
 /// the MLX extension. Maps 1:1 onto mlx-vlm's `--draft-kind` choices
@@ -544,6 +546,7 @@ export default class mlx_extension extends AIEngine {
     const modelConfig = await invoke<ModelConfig>('read_yaml', {
       path: modelConfigPath,
     })
+    await this.repairLegacyShardName(modelConfig, modelConfigPath)
     const port = await this.getRandomPort()
 
     // mlx-vlm has no auth layer; we bind the server to 127.0.0.1 in the
@@ -669,6 +672,68 @@ export default class mlx_extension extends AIEngine {
     } catch (error) {
       logger.error(`Error loading MLX model: ${JSON.stringify(error)}`)
       throw error
+    }
+  }
+
+  /// Heal checkpoints downloaded before the shard-naming fix, which stored a
+  /// sharded model's first shard under a fixed `model.safetensors` and left
+  /// the name in `model.safetensors.index.json` unclaimed — the load then
+  /// fails with every shard-1 parameter reported missing. Renaming the file
+  /// and repointing `model.yml` spares those installs a re-download. Any
+  /// failure is logged and swallowed so the load still reports its own error.
+  private async repairLegacyShardName(
+    modelConfig: ModelConfig,
+    modelConfigPath: string
+  ): Promise<void> {
+    try {
+      const resolved = await this.resolveModelPath(modelConfig.model_path)
+      if (!resolved) return
+      const modelDir = resolved.endsWith('.safetensors')
+        ? resolved.substring(
+            0,
+            Math.max(resolved.lastIndexOf('/'), resolved.lastIndexOf('\\'))
+          )
+        : resolved
+      const indexPath = await joinPath([
+        modelDir,
+        'model.safetensors.index.json',
+      ])
+      if (!(await fs.existsSync(indexPath))) return
+
+      const index = JSON.parse(
+        await invoke<string>('read_file_sync', { args: [indexPath] })
+      )
+      /// `fs.readdirSync` from `@janhq/core` returns full absolute paths.
+      const entries = await fs.readdirSync(modelDir).catch(() => [] as string[])
+      const plan = planMlxShardRepair(
+        index?.weight_map,
+        entries.map((entry: string) => entry.split(/[/\\]/).pop() ?? '')
+      )
+      if (!plan) return
+
+      await fs.mv(
+        await joinPath([modelDir, plan.from]),
+        await joinPath([modelDir, plan.to])
+      )
+      modelConfig.model_path = repointLegacyWeightPath(
+        modelConfig.model_path,
+        plan.to
+      )
+      if (modelConfig.mmproj_path) {
+        modelConfig.mmproj_path = repointLegacyWeightPath(
+          modelConfig.mmproj_path,
+          plan.to
+        )
+      }
+      await invoke<void>('write_yaml', {
+        data: modelConfig,
+        savePath: modelConfigPath,
+      })
+      logger.info(
+        `Repaired mis-named MLX shard in ${modelDir}: ${plan.from} -> ${plan.to}`
+      )
+    } catch (e) {
+      logger.warn(`MLX shard-name repair failed: ${e}`)
     }
   }
 
@@ -1178,7 +1243,8 @@ export default class mlx_extension extends AIEngine {
         'models',
         modelId,
       ])
-      const localPath = await joinPath([modelDir, 'model.safetensors'])
+      const weightFileName = mlxMainWeightFileName(sourcePath)
+      const localPath = await joinPath([modelDir, weightFileName])
 
       const downloadManager = window.core.extensionManager.getByName(
         '@janhq/download-extension'
@@ -1232,14 +1298,14 @@ export default class mlx_extension extends AIEngine {
 
       // Create model.yml with relative path
       const modelConfig: any = {
-        model_path: `mlx/models/${modelId}/model.safetensors`,
+        model_path: `mlx/models/${modelId}/${weightFileName}`,
         name: modelId,
         size_bytes: opts.modelSize ?? 0,
       }
 
       // For vision models, add mmproj_path
       if (isVision) {
-        modelConfig.mmproj_path = `mlx/models/${modelId}/model.safetensors`
+        modelConfig.mmproj_path = `mlx/models/${modelId}/${weightFileName}`
         logger.info(`Vision model detected: ${modelId}`)
       }
       // Persist audio capability so listModels can re-derive it on restart.
