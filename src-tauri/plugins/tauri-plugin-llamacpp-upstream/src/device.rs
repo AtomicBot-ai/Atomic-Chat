@@ -63,7 +63,14 @@ pub async fn get_devices_from_backend(
     // Check if command executed successfully
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        log::error!("llama-server --list-devices failed: {}", stderr);
+        // warn! (not error!) — a failed probe degrades device selection but is
+        // recoverable (missing GPU runtime, wrong-arch binary), and the caller
+        // already surfaces it. It must not become a Sentry crash event.
+        log::warn!(
+            "llama-server --list-devices failed (exit {}): {}",
+            output.status,
+            stderr
+        );
         return Err(LlamacppError::from_stderr(&stderr).into());
     }
     // Parse the output

@@ -188,8 +188,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-07-15** — [Aggregate Local API Server request telemetry into three-minute summaries (ATO-297)](2026-07-15-aggregate-local-api-server-request-telemetry-into-three-minute.md)
 - **2026-06-09** — [Make the Local API Server "Invalid host header" rejection actionable + fix Trusted Hosts field copy (ATO-118, scope I+II)](2026-06-09-make-the-local-api-server-invalid-host-header-rejection.md)
 
-## Telemetry, crash reporting & error handling (4)
+## Telemetry, crash reporting & error handling (5)
 
+- **2026-08-03** — [Triage the Sentry backlog: fix real defects and stop reporting recoverable failures as crashes](2026-08-03-triage-the-sentry-backlog-fix-real-defects-and-stop.md)
 - **2026-07-31** — [Use a valid ADL2 context for Windows AMD VRAM monitoring](2026-07-31-use-a-valid-adl2-context-for-windows-amd-vram-monitoring.md)
 - **2026-06-11** — [ATO-135 (web-app slice): clear the stuck "Failed to load" toast on a successful load (ATO-63) + map classified engine errors to actionable messages (ATO-121)](2026-06-11-ato-135-web-app-slice-clear-the-stuck-failed-to-load-toast-on-a.md)
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)

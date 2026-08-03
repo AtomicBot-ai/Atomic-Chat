@@ -170,6 +170,36 @@ speculative-decoding (MTP) configuration is unsupported here."
             Some(stderr.into()),
         )
     }
+
+    /// Classify a non-success exit from both captured streams.
+    ///
+    /// llama.cpp routes its loader diagnostics to stdout in several builds, so
+    /// a plain `exit(1)` can leave stderr empty while stdout holds the real
+    /// cause (`unknown model architecture`, an allocation failure, a corrupt
+    /// GGUF). Classifying from stderr alone reduces all of those to the opaque
+    /// generic process error.
+    pub fn from_process_output(
+        status: &std::process::ExitStatus,
+        stderr: &str,
+        stdout: &str,
+    ) -> Self {
+        let base = Self::from_exit_status(status, stderr);
+        if !matches!(base.code, ErrorCode::LlamaCppProcessError) {
+            return base;
+        }
+
+        let from_stdout = Self::from_stderr(stdout);
+        if !matches!(from_stdout.code, ErrorCode::LlamaCppProcessError) {
+            return from_stdout;
+        }
+
+        // Still unclassified: keep the exit-status message but hand the caller
+        // the output that does exist instead of an empty `details`.
+        if stderr.trim().is_empty() && !stdout.trim().is_empty() {
+            return Self::new(base.code, base.message, Some(stdout.into()));
+        }
+        base
+    }
 }
 
 /// Whether a process exit status is a hard native crash (access violation /
@@ -242,3 +272,43 @@ impl serde::Serialize for ServerError {
 }
 
 pub type ServerResult<T> = Result<T, ServerError>;
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::process::ExitStatusExt;
+
+    fn exit_code(code: i32) -> std::process::ExitStatus {
+        std::process::ExitStatus::from_raw(code << 8)
+    }
+
+    #[test]
+    fn classifies_loader_failure_reported_on_stdout() {
+        let stdout = "0.00.319.245 E llama_model_load: error loading model: unknown model architecture: 'dflash'\n";
+
+        let error = LlamacppError::from_process_output(&exit_code(1), "", stdout);
+
+        assert!(matches!(error.code, ErrorCode::ModelArchNotSupported));
+    }
+
+    #[test]
+    fn keeps_stdout_as_details_when_exit_is_unclassified() {
+        let stdout = "0.00.121.737 I cmn common_param: verbosity = 3\n";
+
+        let error = LlamacppError::from_process_output(&exit_code(1), "", stdout);
+
+        assert!(matches!(error.code, ErrorCode::LlamaCppProcessError));
+        assert_eq!(error.details.as_deref(), Some(stdout));
+    }
+
+    #[test]
+    fn stderr_classification_wins_over_stdout() {
+        let error = LlamacppError::from_process_output(
+            &exit_code(1),
+            "ggml_backend_metal: out of memory\n",
+            "unknown model architecture: 'dflash'\n",
+        );
+
+        assert!(matches!(error.code, ErrorCode::OutOfMemory));
+    }
+}

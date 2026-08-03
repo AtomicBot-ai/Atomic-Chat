@@ -52,6 +52,57 @@ function scrubRecord(
   return scrubValue(record) as Record<string, unknown>
 }
 
+/**
+ * Sources that only exist while Vite serves the app: the HMR client and the
+ * React Refresh runtime. A packaged build contains neither, so matching on
+ * them cannot suppress a production exception.
+ */
+const DEV_ONLY_SOURCE_RE = /@react-refresh|@vite\/client|__vite_ping|\/@fs\//
+
+/** Messages raised by the dev-server module graph itself. */
+const DEV_ONLY_MESSAGE_RE = /RefreshRuntime|\[hmr\]|\[vite\]/i
+
+/**
+ * Whether an event was produced by the development toolchain swapping modules
+ * under a live component tree. These are a developer-session artefact and
+ * carry no signal about the shipped app.
+ */
+export function isDevelopmentOnlyEvent(event: Sentry.ErrorEvent): boolean {
+  const messages: string[] = []
+  if (typeof event.message === 'string') messages.push(event.message)
+
+  for (const exception of event.exception?.values ?? []) {
+    if (exception.value) messages.push(exception.value)
+    for (const frame of exception.stacktrace?.frames ?? []) {
+      const source = frame.abs_path ?? frame.filename ?? ''
+      if (DEV_ONLY_SOURCE_RE.test(source)) return true
+    }
+  }
+
+  return messages.some((message) => DEV_ONLY_MESSAGE_RE.test(message))
+}
+
+/**
+ * Tauri raises this from `_unlisten` when a listener registered by an async
+ * effect is detached twice. It surfaces from every hook that listens, so the
+ * default grouping (by stack) scatters one defect across several issues.
+ * Collapse them while the individual call sites are being fixed.
+ */
+const TAURI_UNLISTEN_RACE_RE = /listeners\[[^\]]+\]\.handlerId/
+
+export function applyKnownFingerprints(
+  event: Sentry.ErrorEvent
+): Sentry.ErrorEvent {
+  const raised = [
+    typeof event.message === 'string' ? event.message : '',
+    ...(event.exception?.values ?? []).map((e) => e.value ?? ''),
+  ]
+  if (raised.some((message) => TAURI_UNLISTEN_RACE_RE.test(message))) {
+    event.fingerprint = ['tauri-unlisten-race']
+  }
+  return event
+}
+
 /** Run an event through the zero-PII doctrine in-place and return it. */
 function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
   // Never ship machine name; keep only the anonymous device id on user.
@@ -126,7 +177,8 @@ export function initSentryFrontend(): void {
     // auto-captured) but add no tracing/replay integration.
     beforeSend(event) {
       if (!consentEnabled()) return null
-      return scrubEvent(event)
+      if (isDevelopmentOnlyEvent(event)) return null
+      return applyKnownFingerprints(scrubEvent(event))
     },
     beforeBreadcrumb(crumb) {
       if (!consentEnabled()) return null
@@ -161,6 +213,22 @@ export function setSentryConsent(enabled: boolean): void {
       )
       .catch(() => {
         // Rust telemetry may be unavailable (e.g. no DSN baked in) — ignore.
+      })
+  }
+}
+
+/**
+ * Give the Rust Sentry scope the same anonymous device id as the webview, so
+ * a native crash is attributed to a user instead of reporting "0 users
+ * impacted" on every desktop issue.
+ */
+export function setRustSentryUser(id: string | null | undefined): void {
+  if (!id) return
+  if (typeof IS_TAURI !== 'undefined' && IS_TAURI) {
+    import('@tauri-apps/api/core')
+      .then(({ invoke }) => invoke('set_telemetry_user', { id }))
+      .catch(() => {
+        // best-effort
       })
   }
 }

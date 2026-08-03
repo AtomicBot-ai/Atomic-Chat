@@ -44,6 +44,19 @@ pub enum UpdateError {
     NoEndpointsConfigured,
 }
 
+impl UpdateError {
+    /// Whether the check failed for want of a working network connection
+    /// (offline machine, DNS hiccup, timeout) rather than because the update
+    /// channel itself is broken. Transient failures are expected on every
+    /// launch of an offline app and must not be reported as crashes.
+    pub fn is_transient(&self) -> bool {
+        match self {
+            Self::RequestFailed(e) => e.is_timeout() || e.is_connect() || e.is_request(),
+            _ => false,
+        }
+    }
+}
+
 /// Update information returned by the update check endpoint
 /// Compatible with Tauri's updater format
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,8 +154,17 @@ impl CustomUpdater {
         }
 
         // All endpoints failed
-        log::error!("All {} endpoints failed", endpoints.len());
-        Err(last_error.unwrap_or(UpdateError::AllEndpointsFailed))
+        let error = last_error.unwrap_or(UpdateError::AllEndpointsFailed);
+        if error.is_transient() {
+            log::warn!(
+                "All {} endpoints failed, no usable network connection: {}",
+                endpoints.len(),
+                error
+            );
+        } else {
+            log::error!("All {} endpoints failed: {}", endpoints.len(), error);
+        }
+        Err(error)
     }
 
     /// Check endpoint with HMAC request signing
@@ -262,5 +284,29 @@ mod tests {
         assert!(!updater.is_update_available("1.0.0", "1.0.0"));
         assert!(!updater.is_update_available("1.0.1", "1.0.0"));
         assert!(updater.is_update_available("v1.0.0", "v1.0.1"));
+    }
+
+    #[test]
+    fn non_network_failures_stay_reportable() {
+        assert!(!UpdateError::AllEndpointsFailed.is_transient());
+        assert!(!UpdateError::NoEndpointsConfigured.is_transient());
+        assert!(!UpdateError::InvalidResponse("missing signature".into()).is_transient());
+    }
+
+    #[tokio::test]
+    async fn offline_check_is_transient() {
+        let updater = CustomUpdater::new().unwrap();
+
+        // Port 1 on loopback refuses instantly — the same shape as an offline
+        // machine: the request never reaches a server.
+        let error = updater
+            .check_for_updates(vec!["http://127.0.0.1:1/latest.json".into()], "seed", "1.0.0")
+            .await
+            .expect_err("connecting to a closed port must fail");
+
+        assert!(
+            error.is_transient(),
+            "offline update check must not be reported as a crash: {error}"
+        );
     }
 }

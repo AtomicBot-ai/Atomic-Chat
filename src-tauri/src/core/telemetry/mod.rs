@@ -81,6 +81,9 @@ pub fn init() -> Option<ClientInitGuard> {
             if is_duplicate_event(&event) {
                 return None;
             }
+            if is_transient_network_failure(&event) {
+                return None;
+            }
             Some(scrub_event(event))
         })),
         before_breadcrumb: Some(Arc::new(|crumb| {
@@ -147,6 +150,51 @@ fn is_duplicate_event(event: &Event<'static>) -> bool {
     }
     guard.insert(fingerprint, now);
     false
+}
+
+/// Loggers whose failures are dominated by connectivity, not by app defects.
+/// The background update check runs on every launch, so an offline machine or
+/// a briefly unreachable release host turns into a steady stream of crash
+/// events. A genuinely broken update channel still surfaces: only the
+/// connectivity-shaped failures below are dropped.
+const TRANSIENT_NETWORK_LOGGERS: &[&str] = &[
+    "tauri_plugin_updater",
+    "app_lib::core::updater::custom_updater",
+];
+
+/// Substrings `reqwest` uses for a request that never reached the server.
+const TRANSIENT_NETWORK_MARKERS: &[&str] = &[
+    "error sending request",
+    "operation timed out",
+    "dns error",
+    "connection refused",
+    "connection reset",
+    "network is unreachable",
+];
+
+/// Whether an event is an update check that failed for want of a working
+/// network connection.
+fn is_transient_network_failure(event: &Event<'static>) -> bool {
+    let logger = event.logger.as_deref().unwrap_or_default();
+    if !TRANSIENT_NETWORK_LOGGERS
+        .iter()
+        .any(|prefix| logger.starts_with(prefix))
+    {
+        return false;
+    }
+
+    let mut message = String::new();
+    if let Some(msg) = &event.message {
+        message.push_str(msg);
+    }
+    if let Some(logentry) = &event.logentry {
+        message.push_str(&logentry.message);
+    }
+    let message = message.to_ascii_lowercase();
+
+    TRANSIENT_NETWORK_MARKERS
+        .iter()
+        .any(|marker| message.contains(marker))
 }
 
 /// Strip machine name + IP, scrub every free-text field, and attach a scrubbed
@@ -224,4 +272,45 @@ fn read_log_tail() -> Option<String> {
     let data = std::fs::read(path).ok()?;
     let start = data.len().saturating_sub(LOG_TAIL_BYTES);
     Some(scrub(&String::from_utf8_lossy(&data[start..])))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn event(logger: &str, message: &str) -> Event<'static> {
+        Event {
+            logger: Some(logger.to_string()),
+            message: Some(message.to_string()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn drops_offline_update_checks() {
+        assert!(is_transient_network_failure(&event(
+            "tauri_plugin_updater::updater",
+            "failed to check for updates: error sending request for url (https://example.invalid/latest.json)",
+        )));
+        assert!(is_transient_network_failure(&event(
+            "app_lib::core::updater::custom_updater",
+            "All 1 endpoints failed, no usable network connection: HTTP request failed: operation timed out",
+        )));
+    }
+
+    #[test]
+    fn keeps_update_failures_that_are_not_connectivity() {
+        assert!(!is_transient_network_failure(&event(
+            "app_lib::core::updater::custom_updater",
+            "All 1 endpoints failed: Invalid response from server: missing signature",
+        )));
+    }
+
+    #[test]
+    fn keeps_network_shaped_failures_from_other_subsystems() {
+        assert!(!is_transient_network_failure(&event(
+            "app_lib::core::mcp::helpers",
+            "Failed to connect to server: error sending request",
+        )));
+    }
 }

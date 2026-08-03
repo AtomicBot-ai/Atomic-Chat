@@ -244,6 +244,40 @@ function codedLoadError(code: string, message: string): Error & { code: string }
 }
 
 /**
+ * Load failures that describe a recoverable user or environment condition
+ * rather than a backend crash. Mirrors `RECOVERABLE_MODEL_LOAD_CODES` in the
+ * web-app's `telemetry.ts`, which gates the same codes out of Sentry.
+ *
+ * The extension logger writes through `@tauri-apps/plugin-log` into the Rust
+ * logger, so an `error` here becomes a Sentry event regardless of the web-app
+ * gates — these have to be classified at the call site.
+ */
+const RECOVERABLE_LOAD_ERROR_CODES = new Set<string>([
+  ERR_MODEL_FILE_NOT_FOUND,
+  ERR_MODEL_FILE_CORRUPT,
+  ERR_MULTIMODAL_PROJECTOR_LOAD_FAILED,
+  'BINARY_NOT_FOUND',
+  'MODEL_ARCH_NOT_SUPPORTED',
+  'OS_VERSION_UNSUPPORTED',
+  'CPU_NO_AVX',
+])
+
+function isRecoverableLoadError(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null | undefined)?.code
+  return typeof code === 'string' && RECOVERABLE_LOAD_ERROR_CODES.has(code)
+}
+
+/**
+ * Log a failed load at the severity its cause deserves: recoverable
+ * conditions stay out of the crash channel, everything else keeps `error`.
+ */
+function logLoadFailure(context: string, err: unknown): void {
+  const message = `${context}\n${formatLoadError(err)}`
+  if (isRecoverableLoadError(err)) logger.warn(message)
+  else logger.error(message)
+}
+
+/**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
@@ -3295,14 +3329,14 @@ export default class llamacpp_extension extends AIEngine {
           }
           return sInfo
         } catch (retryError) {
-          logger.error(
-            'Text-only retry after unsupported projector also failed:\n' +
-              formatLoadError(retryError)
+          logLoadFailure(
+            'Text-only retry after unsupported projector also failed:',
+            retryError
           )
           throw toLoadError(retryError)
         }
       }
-      logger.error('Error in load command:\n' + formatLoadError(error))
+      logLoadFailure('Error in load command:', error)
       throw toLoadError(error)
     }
   }
@@ -4527,7 +4561,11 @@ export default class llamacpp_extension extends AIEngine {
 
       return dList
     } catch (error) {
-      logger.error('Failed to query devices:\n', error)
+      // A device probe that fails leaves the caller with the previous device
+      // list — a degraded but recoverable state, not a crash. It also has to
+      // be formatted: the Rust plugin rejects with a structured object that
+      // the logger would otherwise render as "[object Object]".
+      logger.warn('Failed to query devices:\n' + formatLoadError(error))
       throw new Error('Failed to load llamacpp backend')
     }
   }

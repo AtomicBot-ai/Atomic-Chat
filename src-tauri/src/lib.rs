@@ -231,6 +231,7 @@ pub fn run() {
         // Telemetry (ATO-113): consent sync + zero-PII context tags for Sentry
         core::telemetry::commands::set_telemetry_consent,
         core::telemetry::commands::set_telemetry_context,
+        core::telemetry::commands::set_telemetry_user,
     ]);
 
     // Mobile: no updater commands

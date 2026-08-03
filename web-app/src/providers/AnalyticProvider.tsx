@@ -20,6 +20,7 @@ import {
   setSentryTags,
   setSentryUser,
   setRustSentryContext,
+  setRustSentryUser,
 } from '@/lib/sentry'
 
 /** Zero-PII hardware/backend super-props promoted to Sentry tags. */
@@ -272,6 +273,7 @@ export function AnalyticProvider() {
             setSentryTags(sentryTags)
             setRustSentryContext(sentryTags)
             setSentryUser(posthog.get_distinct_id())
+            setRustSentryUser(posthog.get_distinct_id())
           } catch (err) {
             console.warn('Failed to collect hardware super-properties:', err)
           }

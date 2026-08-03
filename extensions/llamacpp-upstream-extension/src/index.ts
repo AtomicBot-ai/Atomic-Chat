@@ -158,6 +158,10 @@ const ERR_MODEL_FILE_NOT_FOUND = 'MODEL_FILE_NOT_FOUND'
 /// Rust `ModelFileCorrupt` code; the web-app maps it to a "delete and
 /// re-download" message.
 const ERR_MODEL_FILE_CORRUPT = 'MODEL_FILE_CORRUPT'
+/// The caller asked to download the `latest/<backend>` sentinel instead of a
+/// concrete release tag. The download is refused and the caller falls back to
+/// an installed backend, so this is a routing defect to fix, not a crash.
+const ERR_BACKEND_TAG_UNRESOLVED = 'BACKEND_TAG_UNRESOLVED'
 /// Broadcast channel emitted after a model that crashed on an unsupported
 /// multimodal projector is successfully reloaded in text-only mode. The
 /// web-app shows a one-shot, non-fatal toast so the user knows vision/audio
@@ -296,6 +300,40 @@ function codedLoadError(
   const e = new Error(message) as Error & { code: string }
   e.code = code
   return e
+}
+
+/**
+ * Load failures that describe a recoverable user or environment condition
+ * rather than a backend crash. Mirrors `RECOVERABLE_MODEL_LOAD_CODES` in the
+ * web-app's `telemetry.ts`, which gates the same codes out of Sentry.
+ *
+ * The extension logger writes through `@tauri-apps/plugin-log` into the Rust
+ * logger, so an `error` here becomes a Sentry event regardless of the web-app
+ * gates — these have to be classified at the call site.
+ */
+const RECOVERABLE_LOAD_ERROR_CODES = new Set<string>([
+  ERR_MODEL_FILE_NOT_FOUND,
+  ERR_MODEL_FILE_CORRUPT,
+  ERR_MULTIMODAL_PROJECTOR_LOAD_FAILED,
+  'BINARY_NOT_FOUND',
+  'MODEL_ARCH_NOT_SUPPORTED',
+  'OS_VERSION_UNSUPPORTED',
+  'CPU_NO_AVX',
+])
+
+function isRecoverableLoadError(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null | undefined)?.code
+  return typeof code === 'string' && RECOVERABLE_LOAD_ERROR_CODES.has(code)
+}
+
+/**
+ * Log a failed load at the severity its cause deserves: recoverable
+ * conditions stay out of the crash channel, everything else keeps `error`.
+ */
+function logLoadFailure(context: string, err: unknown): void {
+  const message = `${context}\n${formatLoadError(err)}`
+  if (isRecoverableLoadError(err)) logger.warn(message)
+  else logger.error(message)
 }
 
 /**
@@ -4586,9 +4624,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
           }
           return sInfo
         } catch (retryError) {
-          logger.error(
-            'Text-only retry after unsupported projector also failed:\n' +
-              formatLoadError(retryError)
+          logLoadFailure(
+            'Text-only retry after unsupported projector also failed:',
+            retryError
           )
           throw toLoadError(retryError)
         }
@@ -4624,15 +4662,12 @@ export default class llamacpp_upstream_extension extends AIEngine {
           }
           return sInfo
         } catch (retryError) {
-          logger.error(
-            'Retry after unsupported MTP also failed:\n' +
-              formatLoadError(retryError)
-          )
+          logLoadFailure('Retry after unsupported MTP also failed:', retryError)
           throw toLoadError(retryError)
         }
       }
 
-      logger.error('Error in load command:\n' + formatLoadError(error))
+      logLoadFailure('Error in load command:', error)
       throw toLoadError(error)
     }
   }
@@ -5111,7 +5146,12 @@ export default class llamacpp_upstream_extension extends AIEngine {
     try {
       await this.downloadAndInstallBackend(backendKey)
     } catch (err) {
-      logger.error(`Failed to download backend ${backendKey}:`, err)
+      const context = `Failed to download backend ${backendKey}:`
+      if ((err as { code?: string } | undefined)?.code === ERR_BACKEND_TAG_UNRESOLVED) {
+        logger.warn(`${context}\n${formatLoadError(err)}`)
+      } else {
+        logger.error(context, err)
+      }
     }
 
     if (await isBackendInstalled(backend, version)) {
@@ -5313,7 +5353,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
     // `<tag>/<backend>` (via `resolveLatestBackendString`) before reaching
     // here.
     if (version === 'latest') {
-      throw new Error(
+      throw codedLoadError(
+        ERR_BACKEND_TAG_UNRESOLVED,
         `downloadAndInstallBackend: refusing to download unresolved 'latest' tag for '${backend}'. Resolve the latest/<backend> sentinel to a concrete release tag first.`
       )
     }
@@ -6241,7 +6282,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
       return dList
     } catch (error) {
-      logger.error('Failed to query devices:\n', error)
+      // A device probe that fails leaves the caller with the previous device
+      // list — a degraded but recoverable state, not a crash. It also has to
+      // be formatted: the Rust plugin rejects with a structured object that
+      // the logger would otherwise render as "[object Object]".
+      logger.warn('Failed to query devices:\n' + formatLoadError(error))
       throw new Error('Failed to load llamacpp backend')
     }
   }

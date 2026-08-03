@@ -167,9 +167,12 @@ pub async fn load_llama_model_impl(
     // Spawn task to monitor stdout for readiness
     let stdout_ready_tx = ready_tx.clone();
     let stdout_runtime_device = runtime_device.clone();
-    let _stdout_task = tokio::spawn(async move {
+    let stdout_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stdout);
         let mut byte_buffer = Vec::new();
+        // Retained for error classification: llama.cpp reports loader failures
+        // on stdout in several builds, leaving stderr empty on exit.
+        let mut stdout_buffer = String::new();
 
         loop {
             byte_buffer.clear();
@@ -179,6 +182,8 @@ pub async fn load_llama_model_impl(
                     let line = String::from_utf8_lossy(&byte_buffer);
                     let line = line.trim_end();
                     if !line.is_empty() {
+                        stdout_buffer.push_str(line);
+                        stdout_buffer.push('\n');
                         log::info!("[llamacpp stdout] {}", line);
                         runtime_device::ingest_line(&stdout_runtime_device, line);
                     }
@@ -196,6 +201,8 @@ pub async fn load_llama_model_impl(
                 }
             }
         }
+
+        stdout_buffer
     });
 
     // Spawn task to capture stderr and monitor for errors
@@ -280,9 +287,12 @@ pub async fn load_llama_model_impl(
             // raise a duplicate crash event — the structured error returned below
             // is reported once by the frontend model-load choke point — and
             // classify native crash exit codes into an actionable error.
+            let stdout_output = stdout_task.await.unwrap_or_default();
             log::warn!("llama.cpp failed early with code {:?}", status);
             log::warn!("{}", stderr_output);
-            return Err(LlamacppError::from_exit_status(&status, &stderr_output).into());
+            return Err(
+                LlamacppError::from_process_output(&status, &stderr_output, &stdout_output).into(),
+            );
         }
     }
 
@@ -311,8 +321,9 @@ pub async fn load_llama_model_impl(
                         // error! here is a duplicate Sentry crash event.
                         // WS3.2: classify native crash exit codes (access violation /
                         // segfault) into an actionable, recoverable error.
+                        let stdout_output = stdout_task.await.unwrap_or_default();
                         log::warn!("llama.cpp exited with error code {:?}", status);
-                        return Err(LlamacppError::from_exit_status(&status, &stderr_output).into());
+                        return Err(LlamacppError::from_process_output(&status, &stderr_output, &stdout_output).into());
                     } else {
                         log::warn!("llama.cpp exited successfully but without ready signal");
                         return Err(LlamacppError::from_stderr(&stderr_output).into());

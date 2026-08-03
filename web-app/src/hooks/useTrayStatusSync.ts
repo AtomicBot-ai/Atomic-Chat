@@ -5,6 +5,7 @@ import { useShallow } from 'zustand/react/shallow'
 
 import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { createSafeUnlisten } from '@/lib/tauriEvent'
 
 type SystemUsage = {
   cpu: number
@@ -138,15 +139,18 @@ export function useTrayStatusSync(): void {
   // error the next time the user opens the app.
   useEffect(() => {
     if (!IS_TAURI || !(IS_MACOS || IS_WINDOWS)) return
-    const unlisteners: Array<() => void> = []
+    const unlisteners: Array<() => Promise<void>> = []
     let cancelled = false
-    const register = (
-      promise: Promise<() => void>
-    ): void => {
-      promise.then((fn) => {
-        if (cancelled) fn()
-        else unlisteners.push(fn)
-      })
+    const register = (promise: Promise<() => void>): void => {
+      promise
+        .then((fn) => {
+          const detach = createSafeUnlisten(fn)
+          if (cancelled) void detach()
+          else unlisteners.push(detach)
+        })
+        .catch((error: unknown) => {
+          console.warn('[tray] failed to attach listener', error)
+        })
     }
 
     register(
@@ -198,7 +202,7 @@ export function useTrayStatusSync(): void {
 
     return () => {
       cancelled = true
-      unlisteners.forEach((fn) => fn())
+      unlisteners.splice(0).forEach((detach) => void detach())
     }
   }, [])
 }

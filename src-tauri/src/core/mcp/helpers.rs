@@ -29,7 +29,7 @@ const MCP_STDERR_CONTEXT_MAX_BYTES: usize = 16 * 1024;
 use crate::core::{
     app::commands::get_jan_data_folder_path,
     mcp::{
-        constants::DEFAULT_MCP_HANDSHAKE_TIMEOUT_SECS,
+        constants::{default_mcp_config, DEFAULT_MCP_HANDSHAKE_TIMEOUT_SECS},
         models::{McpServerConfig, McpSettings},
     },
     state::{AppState, RunningServiceEnum, SharedMcpServers},
@@ -1196,6 +1196,30 @@ pub async fn store_active_server_config(
 ) {
     let mut active_servers = active_servers_state.lock().await;
     active_servers.insert(name.to_string(), config.clone());
+}
+
+/// Materialise `mcp_config.json` from the default template when it is missing.
+///
+/// Startup migrations run before `setup_mcp` spawns, so any caller that reads
+/// the config during setup must guarantee its existence itself.
+pub fn ensure_mcp_config_exists<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+) -> Result<std::path::PathBuf, String> {
+    let config_path = get_jan_data_folder_path(app_handle).join("mcp_config.json");
+    if config_path.exists() {
+        return Ok(config_path);
+    }
+
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create MCP config directory: {e}"))?;
+    }
+
+    log::info!("mcp_config.json not found, creating default config");
+    std::fs::write(&config_path, default_mcp_config())
+        .map_err(|e| format!("Failed to create default MCP config: {e}"))?;
+
+    Ok(config_path)
 }
 
 // Add a new server configuration to the MCP config file

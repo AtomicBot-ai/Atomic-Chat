@@ -71,13 +71,12 @@ pub fn validate_model_path(args: &mut Vec<String>) -> ServerResult<PathBuf> {
             .and_then(|n| n.to_str())
             .map(is_split_gguf_name)
             .unwrap_or(false);
-        if is_split {
-            args[model_path_index + 1] = model_path_pb.display().to_string();
-        } else if let Some(short) = get_short_path(&model_path_pb) {
-            args[model_path_index + 1] = short;
+        let long_path = model_path_pb.display().to_string();
+        args[model_path_index + 1] = if is_split || !needs_short_path(&long_path) {
+            long_path
         } else {
-            args[model_path_index + 1] = model_path_pb.display().to_string();
-        }
+            get_short_path(&model_path_pb).unwrap_or(long_path)
+        };
     }
     #[cfg(not(windows))]
     {
@@ -121,12 +120,12 @@ pub fn validate_mmproj_path(args: &mut Vec<String>) -> ServerResult<Option<PathB
 
     #[cfg(windows)]
     {
-        // use short path on Windows
-        if let Some(short) = get_short_path(&mmproj_path_pb) {
-            args[mmproj_path_index + 1] = short;
+        let long_path = mmproj_path_pb.display().to_string();
+        args[mmproj_path_index + 1] = if needs_short_path(&long_path) {
+            get_short_path(&mmproj_path_pb).unwrap_or(long_path)
         } else {
-            args[mmproj_path_index + 1] = mmproj_path_pb.display().to_string();
-        }
+            long_path
+        };
     }
     #[cfg(not(windows))]
     {
@@ -134,6 +133,18 @@ pub fn validate_mmproj_path(args: &mut Vec<String>) -> ServerResult<Option<PathB
     }
 
     Ok(Some(mmproj_path_pb))
+}
+
+/// Whether a Windows path still has to be passed as an 8.3 short path.
+///
+/// Short paths were introduced to reach files under non-ASCII directories,
+/// which llama.cpp cannot open through its ANSI file APIs. They come at a cost:
+/// the conversion mangles the file name (`model.gguf` becomes `MODEL~1.GGU`),
+/// truncating the extension the backend uses to recognise a GGUF. Restrict the
+/// conversion to the paths that actually need it.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn needs_short_path(path: &str) -> bool {
+    !path.is_ascii()
 }
 
 /// Whether a file name follows llama.cpp's split/shard convention
@@ -176,6 +187,17 @@ mod tests {
         assert!(!is_split_gguf_name("model-00001-of-00003.bin")); // wrong ext
         assert!(!is_split_gguf_name("model-00001-of-00003")); // no ext
         assert!(!is_split_gguf_name("model-0000a-of-00003.gguf")); // non-digit
+    }
+
+    #[test]
+    fn test_needs_short_path() {
+        // Plain ASCII paths keep their long form, extension included.
+        assert!(!needs_short_path(
+            r"C:\Users\jan\AppData\Roaming\Atomic Chat\data\models\model.gguf"
+        ));
+        assert!(!needs_short_path(r"\\?\C:\models\model.gguf"));
+        // Non-ASCII paths are unreachable for the backend without 8.3.
+        assert!(needs_short_path(r"C:\Users\Олег\models\model.gguf"));
     }
 
     #[test]

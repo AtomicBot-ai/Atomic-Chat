@@ -2,20 +2,13 @@ import { useEffect, useRef } from 'react'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 
 import { isPlatformTauri } from '@/lib/platform/utils'
+import { createSafeUnlisten } from '@/lib/tauriEvent'
 
 type Options = {
   enabled: boolean
   onDragOver: () => void
   onDragLeave: () => void
   onDrop: (paths: string[]) => void
-}
-
-async function detachListener(unlisten: () => void): Promise<void> {
-  try {
-    await unlisten()
-  } catch (error) {
-    console.warn('Failed to detach Tauri drag-drop listener', error)
-  }
 }
 
 /**
@@ -51,11 +44,11 @@ export const useTauriDragDrop = ({
     if (!enabled || !isPlatformTauri()) return
 
     let cancelled = false
-    let unlisten: (() => void) | null = null
+    let detach: (() => Promise<void>) | null = null
 
     const setup = async () => {
       try {
-        unlisten = await getCurrentWebview().onDragDropEvent((event) => {
+        const unlisten = await getCurrentWebview().onDragDropEvent((event) => {
           const payload = event.payload
           switch (payload.type) {
             case 'enter':
@@ -73,10 +66,8 @@ export const useTauriDragDrop = ({
               break
           }
         })
-        if (cancelled) {
-          if (unlisten) await detachListener(unlisten)
-          unlisten = null
-        }
+        detach = createSafeUnlisten(unlisten)
+        if (cancelled) await detach()
       } catch (e) {
         console.error('Failed to attach Tauri drag-drop listener', e)
       }
@@ -86,9 +77,7 @@ export const useTauriDragDrop = ({
 
     return () => {
       cancelled = true
-      if (unlisten) {
-        void detachListener(unlisten)
-      }
+      void detach?.()
     }
   }, [enabled])
 }

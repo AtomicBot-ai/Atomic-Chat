@@ -1,7 +1,7 @@
 use super::commands::{collect_mcp_server_statuses, is_extension_not_connected_error};
 use super::helpers::{
-    add_server_config, add_server_config_with_path, append_bounded_stderr, extract_command_args,
-    format_mcp_start_error, run_mcp_commands,
+    add_server_config, add_server_config_with_path, append_bounded_stderr, ensure_mcp_config_exists,
+    extract_command_args, format_mcp_start_error, run_mcp_commands,
 };
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::{AppState, SharedMcpServers};
@@ -253,6 +253,32 @@ fn test_add_server_config_missing_config_file() {
         "Expected error when config file doesn't exist"
     );
     assert!(result.unwrap_err().contains("Failed to read config file"));
+}
+
+#[test]
+fn test_ensure_mcp_config_exists_bootstraps_clean_install() {
+    let app = mock_app();
+    let data_root = tempfile::tempdir().expect("Failed to create temp data root");
+    app.manage(crate::test_support::TestDataRoot(
+        data_root.path().to_path_buf(),
+    ));
+
+    let config_path =
+        ensure_mcp_config_exists(app.handle().clone()).expect("Failed to bootstrap MCP config");
+
+    assert!(config_path.exists(), "Default MCP config was not created");
+
+    // The startup migrations run straight after and must not fail with os error 2.
+    let result = add_server_config(
+        app.handle().clone(),
+        "exa".to_string(),
+        serde_json::json!({ "command": "npx", "args": [], "active": false }),
+    );
+
+    assert!(
+        result.is_ok(),
+        "Migration should succeed on a clean install: {result:?}"
+    );
 }
 
 #[cfg(not(target_os = "windows"))]

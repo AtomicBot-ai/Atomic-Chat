@@ -16,8 +16,7 @@ use tauri::{
 use tauri_plugin_store::Store;
 
 use crate::core::app::commands::get_jan_data_folder_path;
-use crate::core::mcp::constants::default_mcp_config;
-use crate::core::mcp::helpers::add_server_config;
+use crate::core::mcp::helpers::{add_server_config, ensure_mcp_config_exists};
 
 use super::{
     extensions::commands::get_jan_extensions_path, mcp::helpers::run_mcp_commands, state::AppState,
@@ -162,6 +161,12 @@ pub fn migrate_mcp_servers(
         .get("mcp_version")
         .and_then(|v| v.as_i64())
         .unwrap_or(0);
+
+    // On a clean install the config file does not exist yet — `setup_mcp` only
+    // creates it later, asynchronously. Without this the migrations below fail
+    // with "os error 2" on every first launch.
+    ensure_mcp_config_exists(app_handle.clone())?;
+
     if mcp_version < 1 {
         log::info!("Migrating MCP schema version 1");
         let result = add_server_config(
@@ -324,13 +329,8 @@ pub fn setup_mcp<R: Runtime>(app: &App<R>) {
     tauri::async_runtime::spawn(async move {
         use crate::core::mcp::lockfile::cleanup_all_stale_locks;
 
-        // Create default mcp_config.json if it doesn't exist
-        let config_path = get_jan_data_folder_path(app_handle.clone()).join("mcp_config.json");
-        if !config_path.exists() {
-            log::info!("mcp_config.json not found, creating default config");
-            if let Err(e) = fs::write(&config_path, default_mcp_config()) {
-                log::error!("Failed to create default MCP config: {e}");
-            }
+        if let Err(e) = ensure_mcp_config_exists(app_handle.clone()) {
+            log::error!("Failed to create default MCP config: {e}");
         }
 
         if let Err(e) = cleanup_all_stale_locks(&app_handle).await {

@@ -23,3 +23,20 @@ pub fn set_telemetry_context(tags: HashMap<String, String>) {
         }
     });
 }
+
+/// Attach the anonymous device id the frontend already uses as its Sentry user.
+/// Without it every Rust crash reports "0 users impacted", which makes the
+/// desktop issue list impossible to prioritise. The id is the PostHog distinct
+/// id — a random, non-identifying value, so the zero-PII doctrine holds.
+#[tauri::command]
+pub fn set_telemetry_user(id: String) {
+    if id.is_empty() {
+        return;
+    }
+    sentry::configure_scope(|scope| {
+        scope.set_user(Some(sentry::User {
+            id: Some(id.clone()),
+            ..Default::default()
+        }));
+    });
+}
