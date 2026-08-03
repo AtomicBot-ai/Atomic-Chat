@@ -8,6 +8,8 @@ permissions = [
     "allow-load-llama-model",
     "allow-unload-llama-model",
     "allow-get-devices",
+    "allow-get-runtime-device",
+    "allow-check-spec-type-support",
     "allow-generate-api-key",
     "allow-is-process-running",
     "allow-get-random-port",

@@ -6,10 +6,9 @@ import { modelSettings } from '@/lib/predefined'
 import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 
 /**
- * Provider id that the Windows build *removed* (the turboquant `llamacpp`
- * extension is excluded from the Windows installer per ADR 2026-05-22).
- * Used here only for the one-time migration / runtime alias logic; outside
- * Windows, both ids continue to coexist and this constant is harmless.
+ * Historical provider id retained for one-time migration logic. The
+ * TurboQuant `llamacpp` provider now ships beside `llamacpp-upstream` on every
+ * desktop platform, so this id must never be aliased away.
  */
 const LEGACY_LLAMACPP_PROVIDER = 'llamacpp'
 
@@ -49,10 +48,8 @@ export const useModelProvider = create<ModelProviderState>()(
   persist(
     (set, get) => ({
       providers: [],
-      // Windows ships only `llamacpp-upstream`; macOS/Linux keep the
-      // turboquant `llamacpp` provider as the default. The migration
-      // below also rewrites this field if a pre-update install had
-      // `'llamacpp'` persisted as the active provider.
+      // Upstream is the fresh-install default on every desktop platform.
+      // TurboQuant remains separately selectable and persisted when chosen.
       selectedProvider: LOCAL_LLAMACPP_PROVIDER,
       selectedModel: null,
       deletedModels: [],

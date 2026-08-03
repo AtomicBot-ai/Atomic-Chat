@@ -12,6 +12,7 @@ const VARIANT_BY_DESCRIPTION_KEY: Record<string, RecommendedModelChipVariant> = 
   'hub:recVisionKnowledge': 'purple',
   'hub:recFinetuningChat': 'blue',
   'hub:recMathReasoning': 'yellow',
+  'hub:recCoding': 'blue',
   'hub:recForMlx': 'orange',
 }
 

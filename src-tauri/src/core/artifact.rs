@@ -30,7 +30,8 @@ pub fn clear_artifact_html(id: String) {
 // `allow-same-origin`, so the document runs in an opaque origin with no access
 // to IPC, app storage or the file system. Serving it with its own CSP stops it
 // inheriting the (intentionally strict) main-window policy.
-const ARTIFACT_CSP: &str = "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https: http:; \
+const ARTIFACT_CSP: &str =
+    "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https: http:; \
 img-src * data: blob:; media-src * data: blob:; font-src * data: blob:; \
 style-src * 'unsafe-inline'; script-src 'unsafe-inline' 'unsafe-eval' blob: data: https: http:; \
 connect-src *;";

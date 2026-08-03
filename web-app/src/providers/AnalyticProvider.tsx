@@ -5,10 +5,16 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { useAnalytic } from '@/hooks/useAnalytic'
 import {
   API_SERVER_REQUEST_EVENT,
+  API_SERVER_SESSION_SUMMARY_EVENT,
   type ApiServerRequestEvent,
+  type ApiServerSessionSummaryEvent,
 } from '@/types/analytics'
 import type { ServiceHub } from '@/services'
-import { cpuAvxLevel, getAnalyticsPlatform, mapGpuVendor } from '@/lib/telemetry'
+import {
+  cpuAvxLevel,
+  getAnalyticsPlatform,
+  mapGpuVendor,
+} from '@/lib/telemetry'
 import {
   setSentryConsent,
   setSentryTags,
@@ -201,7 +207,8 @@ export function AnalyticProvider() {
       return
     }
 
-    let unlistenApiServer: (() => void) | undefined
+    let unlistenApiServerRequest: (() => void) | undefined
+    let unlistenApiServerSummary: (() => void) | undefined
     let cancelled = false
 
     const osPlatform = getAnalyticsPlatform()
@@ -293,24 +300,35 @@ export function AnalyticProvider() {
           if (IS_TAURI) {
             import('@tauri-apps/api/event')
               .then(({ listen }) =>
-                listen<ApiServerRequestEvent>(
-                  API_SERVER_REQUEST_EVENT,
-                  (evt) => {
-                    if (!productAnalytic) return
-                    posthog.capture('api_server_request', evt.payload)
-                  }
-                )
+                Promise.all([
+                  listen<ApiServerRequestEvent>(
+                    API_SERVER_REQUEST_EVENT,
+                    (evt) => {
+                      if (!productAnalytic) return
+                      posthog.capture('api_server_request', evt.payload)
+                    }
+                  ),
+                  listen<ApiServerSessionSummaryEvent>(
+                    API_SERVER_SESSION_SUMMARY_EVENT,
+                    (evt) => {
+                      if (!productAnalytic) return
+                      posthog.capture('api_server_session_summary', evt.payload)
+                    }
+                  ),
+                ])
               )
-              .then((unlisten) => {
+              .then(([unlistenRequest, unlistenSummary]) => {
                 if (cancelled) {
-                  unlisten()
+                  unlistenRequest()
+                  unlistenSummary()
                 } else {
-                  unlistenApiServer = unlisten
+                  unlistenApiServerRequest = unlistenRequest
+                  unlistenApiServerSummary = unlistenSummary
                 }
               })
               .catch((err) => {
                 console.warn(
-                  'Failed to register api_server_request listener:',
+                  'Failed to register API server analytics listeners:',
                   err
                 )
               })
@@ -322,7 +340,8 @@ export function AnalyticProvider() {
 
     return () => {
       cancelled = true
-      unlistenApiServer?.()
+      unlistenApiServerRequest?.()
+      unlistenApiServerSummary?.()
     }
   }, [productAnalytic, serviceHub])
 

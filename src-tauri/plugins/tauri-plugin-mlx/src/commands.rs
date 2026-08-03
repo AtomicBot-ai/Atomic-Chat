@@ -25,6 +25,45 @@ pub struct UnloadResult {
     error: Option<String>,
 }
 
+/// Diagnose why the mlx-server child exited and log a precise, actionable line.
+///
+/// The mlx-server (PyInstaller onefile) has a slow, silent startup. When it
+/// dies before emitting a readiness signal we need to know whether it crashed
+/// *in-process* (it printed something to stderr) or was terminated by an
+/// *external signal* (empty stderr + a signal exit status such as SIGKILL/9).
+/// The latter points at an outside killer — OS OOM, code-signing/Gatekeeper,
+/// or something in the app tearing the process down — not an mlx-vlm bug.
+fn log_mlx_exit(phase: &str, status: std::process::ExitStatus, stderr_output: &str) {
+    #[cfg(unix)]
+    let signal = {
+        use std::os::unix::process::ExitStatusExt;
+        status.signal()
+    };
+    #[cfg(not(unix))]
+    let signal: Option<i32> = None;
+
+    log::error!("MLX server exited ({phase}) with status {status:?}");
+
+    if let Some(sig) = signal {
+        log::error!(
+            "MLX server was terminated by signal {sig} \
+             (e.g. 9 = SIGKILL, 15 = SIGTERM) — an EXTERNAL process killed it, \
+             it did not crash on its own"
+        );
+    }
+
+    if stderr_output.trim().is_empty() {
+        log::error!(
+            "MLX server produced NO stderr before exiting — this is the \
+             signature of an external kill (SIGKILL/OOM/Gatekeeper), not an \
+             in-process crash. Check `log show --predicate 'sender == \"kernel\"'` \
+             for OOM/codesign, and `codesign -dv` on the mlx-server binary."
+        );
+    } else {
+        log::error!("MLX server stderr:\n{stderr_output}");
+    }
+}
+
 /// MLX server configuration passed from the frontend
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MlxConfig {
@@ -55,11 +94,65 @@ pub struct MlxConfig {
     pub kv_quant_scheme: String,
 }
 
+fn normalize_mlx_model_path(path: &str) -> String {
+    let path_buf = PathBuf::from(path);
+    if path_buf.is_file() {
+        path_buf
+            .parent()
+            .map(|parent| parent.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.to_string())
+    } else {
+        path.to_string()
+    }
+}
+
+fn build_mlx_server_args(model_path: &str, port: u16, config: &MlxConfig) -> Vec<String> {
+    let mut args = vec![
+        "--model".to_string(),
+        normalize_mlx_model_path(model_path),
+        "--host".to_string(),
+        "127.0.0.1".to_string(),
+        "--port".to_string(),
+        port.to_string(),
+    ];
+
+    if config.ctx_size > 0 {
+        args.push("--max-kv-size".to_string());
+        args.push(config.ctx_size.to_string());
+    }
+
+    if !config.draft_model_path.is_empty() {
+        args.push("--draft-model".to_string());
+        args.push(normalize_mlx_model_path(&config.draft_model_path));
+        let kind = match config.draft_kind.as_str() {
+            "dflash" | "mtp" | "eagle3" => config.draft_kind.as_str(),
+            _ => "dflash",
+        };
+        args.push("--draft-kind".to_string());
+        args.push(kind.to_string());
+
+        if config.block_size > 0 {
+            args.push("--draft-block-size".to_string());
+            args.push(config.block_size.to_string());
+        }
+    }
+
+    if matches!(config.kv_quant_scheme.as_str(), "uniform" | "turboquant") && config.kv_bits > 0.0 {
+        args.push("--kv-bits".to_string());
+        args.push(config.kv_bits.to_string());
+        args.push("--kv-quant-scheme".to_string());
+        args.push(config.kv_quant_scheme.clone());
+    }
+
+    args
+}
+
 /// Core model-loading logic, decoupled from Tauri AppHandle.
 /// `binary_path` must point to the mlx-server executable.
 /// `process_map_arc` is the shared session map from MlxState.
 pub async fn load_mlx_model_impl(
     process_map_arc: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+    load_operation: Arc<Mutex<()>>,
     binary_path: &Path,
     model_id: String,
     model_path: String,
@@ -69,7 +162,7 @@ pub async fn load_mlx_model_impl(
     is_embedding: bool,
     timeout: u64,
 ) -> ServerResult<SessionInfo> {
-    let mut process_map = process_map_arc.lock().await;
+    let _load_guard = load_operation.lock().await;
 
     log::info!("Attempting to launch MLX server at path: {:?}", binary_path);
     log::info!("Using MLX configuration: {:?}", config);
@@ -96,23 +189,7 @@ pub async fn load_mlx_model_impl(
         .into());
     }
 
-    // mlx-vlm expects `--model` to point at a *directory* containing
-    // `config.json`, `tokenizer.json`, and the safetensors shards
-    // (cf. `mlx_vlm/utils.load_config`). The legacy dflash server
-    // accepted the safetensors file path directly and walked up to its
-    // parent on its own, so historic `model.yml` entries persist as
-    // e.g. `mlx/models/<id>/model.safetensors`. Normalize to the
-    // containing directory here, on the boundary, instead of touching
-    // every TS caller and breaking imported-model metadata.
-    let model_dir_path = if model_path_pb.is_file() {
-        model_path_pb
-            .parent()
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| model_path_pb.clone())
-    } else {
-        model_path_pb.clone()
-    };
-    let model_dir_arg = model_dir_path.to_string_lossy().to_string();
+    let model_dir_arg = normalize_mlx_model_path(&model_path);
     if model_dir_arg != model_path {
         log::info!(
             "Resolving MLX model directory: {} -> {}",
@@ -139,64 +216,7 @@ pub async fn load_mlx_model_impl(
     //     server on its un-quantized default.
     // Keeping the TS-side names stable avoids churning the extension /
     // settings.json schema and the autoIncreaseCtx test suite.
-    let mut args: Vec<String> = vec![
-        "--model".to_string(),
-        model_dir_arg,
-        "--host".to_string(),
-        "127.0.0.1".to_string(),
-        "--port".to_string(),
-        port.to_string(),
-    ];
-
-    if config.ctx_size > 0 {
-        args.push("--max-kv-size".to_string());
-        args.push(config.ctx_size.to_string());
-    }
-
-    if !config.draft_model_path.is_empty() {
-        // Same file-vs-directory normalization as the target model: if the
-        // drafter path points at a safetensors shard, hand mlx-vlm the
-        // containing directory. HF repo IDs (e.g. `z-lab/Qwen3.5-4B-DFlash`)
-        // are not local paths and pass through untouched.
-        let draft_pb = PathBuf::from(&config.draft_model_path);
-        let draft_arg = if draft_pb.is_file() {
-            draft_pb
-                .parent()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| config.draft_model_path.clone())
-        } else {
-            config.draft_model_path.clone()
-        };
-        args.push("--draft-model".to_string());
-        args.push(draft_arg);
-        // Drafter family is selected by the frontend; default to "dflash"
-        // for empty/legacy configs so behavior is unchanged for callers
-        // that don't yet set `draft_kind`.
-        let kind = if config.draft_kind.is_empty() {
-            "dflash"
-        } else {
-            config.draft_kind.as_str()
-        };
-        args.push("--draft-kind".to_string());
-        args.push(kind.to_string());
-    }
-
-    if config.block_size > 0 {
-        args.push("--draft-block-size".to_string());
-        args.push(config.block_size.to_string());
-    }
-
-    // KV-cache quantization (TurboQuant / uniform). Only emitted when a real
-    // scheme is selected together with a positive bit-width; "off" / "" or a
-    // non-positive `kv_bits` leaves mlx-vlm on its full-precision KV default
-    // (the server only sets KV_BITS when `--kv-bits` is passed).
-    let kv_scheme = config.kv_quant_scheme.as_str();
-    if matches!(kv_scheme, "uniform" | "turboquant") && config.kv_bits > 0.0 {
-        args.push("--kv-bits".to_string());
-        args.push(config.kv_bits.to_string());
-        args.push("--kv-quant-scheme".to_string());
-        args.push(kv_scheme.to_string());
-    }
+    let args = build_mlx_server_args(&model_path, port, &config);
 
     log::info!("MLX server arguments: {:?}", args);
 
@@ -212,6 +232,13 @@ pub async fn load_mlx_model_impl(
     command.env("MLX_VLM_SINGLE_MODEL", "1");
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
+    // Kill the spawned mlx-server if this load future is dropped before the
+    // child is handed off to the tracked session map (e.g. a rapid model switch
+    // supersedes/cancels an in-flight load). Without this, tokio leaves the
+    // process running untracked, so cleanup can never reap it and orphaned
+    // mlx-server instances pile up. Once inserted into the map the child is
+    // owned there (not dropped), so healthy sessions keep running normally.
+    command.kill_on_drop(true);
 
     // Spawn the child process
     let mut child = command.spawn().map_err(ServerError::Io)?;
@@ -252,10 +279,7 @@ pub async fn load_mlx_model_impl(
                         || line_lower.contains("ready to accept")
                         || line_lower.contains("server started and listening on")
                     {
-                        log::info!(
-                            "MLX server appears to be ready based on stdout: '{}'",
-                            line
-                        );
+                        log::info!("MLX server appears to be ready based on stdout: '{}'", line);
                         let _ = stdout_ready_tx.send(true).await;
                     }
                 }
@@ -295,10 +319,7 @@ pub async fn load_mlx_model_impl(
                             || line_lower.contains("server listening on")
                             || line_lower.contains("server started and listening on")
                         {
-                            log::info!(
-                                "MLX model appears to be ready based on logs: '{}'",
-                                line
-                            );
+                            log::info!("MLX model appears to be ready based on logs: '{}'", line);
                             let _ = ready_tx.send(true).await;
                         }
                     }
@@ -317,8 +338,7 @@ pub async fn load_mlx_model_impl(
     if let Some(status) = child.try_wait()? {
         if !status.success() {
             let stderr_output = stderr_task.await.unwrap_or_default();
-            log::error!("MLX server failed early with code {:?}", status);
-            log::error!("{}", stderr_output);
+            log_mlx_exit("early startup", status, &stderr_output);
             return Err(MlxError::from_stderr(&stderr_output).into());
         }
     }
@@ -338,10 +358,11 @@ pub async fn load_mlx_model_impl(
                 if let Some(status) = child.try_wait()? {
                     let stderr_output = stderr_task.await.unwrap_or_default();
                     if !status.success() {
-                        log::error!("MLX server exited with error code {:?}", status);
+                        log_mlx_exit("while waiting for ready", status, &stderr_output);
                         return Err(MlxError::from_stderr(&stderr_output).into());
                     } else {
                         log::error!("MLX server exited successfully but without ready signal");
+                        log::error!("MLX server stderr before clean exit:\n{}", stderr_output);
                         return Err(MlxError::from_stderr(&stderr_output).into());
                     }
                 }
@@ -380,12 +401,12 @@ pub async fn load_mlx_model_impl(
         pid,
         port: port.into(),
         model_id,
-        model_path: model_dir_path.display().to_string(),
+        model_path: model_dir_arg,
         is_embedding,
         api_key: String::new(),
     };
 
-    process_map.insert(
+    process_map_arc.lock().await.insert(
         pid,
         MlxBackendSession {
             child,
@@ -422,6 +443,7 @@ pub async fn load_mlx_model<R: Runtime>(
         .join("resources/bin/mlx-server");
     load_mlx_model_impl(
         state.mlx_server_process.clone(),
+        state.load_operation.clone(),
         &binary_path,
         model_id,
         model_path,
@@ -441,9 +463,9 @@ pub async fn unload_mlx_model<R: Runtime>(
     pid: i32,
 ) -> ServerResult<UnloadResult> {
     let state: State<MlxState> = app_handle.state();
-    let mut map = state.mlx_server_process.lock().await;
+    let session = state.mlx_server_process.lock().await.remove(&pid);
 
-    if let Some(session) = map.remove(&pid) {
+    if let Some(session) = session {
         let mut child = session.child;
 
         #[cfg(unix)]
@@ -534,4 +556,247 @@ pub fn get_mlx_server_version<R: Runtime>(
         .to_string();
 
     Ok(MlxServerVersion { version, backend })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base_config() -> MlxConfig {
+        MlxConfig {
+            ctx_size: 0,
+            draft_model_path: String::new(),
+            block_size: 0,
+            draft_kind: String::new(),
+            kv_bits: 0.0,
+            kv_quant_scheme: String::new(),
+        }
+    }
+
+    fn arg_value<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
+        args.iter()
+            .position(|arg| arg == flag)
+            .and_then(|index| args.get(index + 1))
+            .map(String::as_str)
+    }
+
+    #[test]
+    fn mlx_args_bind_loopback_and_translate_context_size() {
+        let config = MlxConfig {
+            ctx_size: 32_768,
+            ..base_config()
+        };
+
+        let args = build_mlx_server_args("/models/target", 19_091, &config);
+
+        assert_eq!(arg_value(&args, "--model"), Some("/models/target"));
+        assert_eq!(arg_value(&args, "--host"), Some("127.0.0.1"));
+        assert_eq!(arg_value(&args, "--port"), Some("19091"));
+        assert_eq!(arg_value(&args, "--max-kv-size"), Some("32768"));
+    }
+
+    #[test]
+    fn mlx_args_normalize_legacy_safetensors_path_to_model_directory() {
+        let root = std::env::temp_dir().join(format!(
+            "atomic-chat-mlx-args-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let shard = root.join("model.safetensors");
+        std::fs::write(&shard, b"fixture").unwrap();
+
+        let args = build_mlx_server_args(shard.to_string_lossy().as_ref(), 19_091, &base_config());
+        let expected_model_dir = root.to_string_lossy();
+
+        assert_eq!(
+            arg_value(&args, "--model"),
+            Some(expected_model_dir.as_ref())
+        );
+
+        std::fs::remove_file(shard).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
+    fn mlx_args_emit_each_supported_drafter_family() {
+        for kind in ["dflash", "mtp", "eagle3"] {
+            let draft_path = format!("repo/{kind}");
+            let config = MlxConfig {
+                draft_model_path: draft_path.clone(),
+                block_size: 8,
+                draft_kind: kind.to_string(),
+                ..base_config()
+            };
+
+            let args = build_mlx_server_args("/models/target", 19_091, &config);
+
+            assert_eq!(arg_value(&args, "--draft-model"), Some(draft_path.as_str()));
+            assert_eq!(arg_value(&args, "--draft-kind"), Some(kind));
+            assert_eq!(arg_value(&args, "--draft-block-size"), Some("8"));
+        }
+    }
+
+    #[test]
+    fn mlx_args_do_not_emit_orphan_draft_flags() {
+        let config = MlxConfig {
+            block_size: 8,
+            draft_kind: "mtp".to_string(),
+            ..base_config()
+        };
+
+        let args = build_mlx_server_args("/models/target", 19_091, &config);
+
+        assert!(!args.iter().any(|arg| arg == "--draft-model"));
+        assert!(!args.iter().any(|arg| arg == "--draft-kind"));
+        assert!(!args.iter().any(|arg| arg == "--draft-block-size"));
+    }
+
+    #[test]
+    fn mlx_args_default_unknown_drafter_to_legacy_dflash() {
+        let config = MlxConfig {
+            draft_model_path: "repo/draft".to_string(),
+            draft_kind: "unknown".to_string(),
+            ..base_config()
+        };
+
+        let args = build_mlx_server_args("/models/target", 19_091, &config);
+
+        assert_eq!(arg_value(&args, "--draft-kind"), Some("dflash"));
+    }
+
+    #[test]
+    fn mlx_args_emit_only_complete_supported_kv_quantization_pairs() {
+        for (scheme, bits, expected) in [
+            ("uniform", 8.0, true),
+            ("turboquant", 3.5, true),
+            ("off", 3.5, false),
+            ("unknown", 3.5, false),
+            ("turboquant", 0.0, false),
+            ("uniform", -1.0, false),
+        ] {
+            let config = MlxConfig {
+                kv_bits: bits,
+                kv_quant_scheme: scheme.to_string(),
+                ..base_config()
+            };
+
+            let args = build_mlx_server_args("/models/target", 19_091, &config);
+
+            assert_eq!(
+                args.iter().any(|arg| arg == "--kv-bits"),
+                expected,
+                "scheme={scheme}, bits={bits}"
+            );
+            assert_eq!(
+                args.iter().any(|arg| arg == "--kv-quant-scheme"),
+                expected,
+                "scheme={scheme}, bits={bits}"
+            );
+            if expected {
+                let expected_bits = bits.to_string();
+                assert_eq!(arg_value(&args, "--kv-quant-scheme"), Some(scheme));
+                assert_eq!(arg_value(&args, "--kv-bits"), Some(expected_bits.as_str()));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn early_load_error_does_not_wait_for_session_map_lock() {
+        let binary_path = std::env::temp_dir().join(format!(
+            "atomic-chat-mlx-existing-binary-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&binary_path, []).unwrap();
+
+        let sessions = Arc::new(Mutex::new(HashMap::new()));
+        let load_operation = Arc::new(Mutex::new(()));
+        let _sessions_guard = sessions.lock().await;
+
+        let result = tokio::time::timeout(
+            Duration::from_millis(100),
+            load_mlx_model_impl(
+                sessions.clone(),
+                load_operation,
+                &binary_path,
+                "test-model".to_string(),
+                "/nonexistent/atomic-chat-mlx-model".to_string(),
+                1337,
+                base_config(),
+                HashMap::new(),
+                false,
+                1,
+            ),
+        )
+        .await;
+
+        std::fs::remove_file(binary_path).unwrap();
+
+        assert!(
+            result.is_ok(),
+            "early validation waited for the session map"
+        );
+        assert!(matches!(
+            result.unwrap(),
+            Err(ServerError::Mlx(MlxError {
+                code: ErrorCode::ModelFileNotFound,
+                ..
+            }))
+        ));
+    }
+
+    #[tokio::test]
+    async fn missing_binary_is_classified_before_waiting_for_session_map() {
+        let model_dir = std::env::temp_dir().join(format!(
+            "atomic-chat-mlx-existing-model-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&model_dir).unwrap();
+
+        let sessions = Arc::new(Mutex::new(HashMap::new()));
+        let load_operation = Arc::new(Mutex::new(()));
+        let _sessions_guard = sessions.lock().await;
+
+        let result = tokio::time::timeout(
+            Duration::from_millis(100),
+            load_mlx_model_impl(
+                sessions.clone(),
+                load_operation,
+                Path::new("/nonexistent/atomic-chat-mlx-server"),
+                "test-model".to_string(),
+                model_dir.display().to_string(),
+                1337,
+                base_config(),
+                HashMap::new(),
+                false,
+                1,
+            ),
+        )
+        .await;
+
+        std::fs::remove_dir_all(model_dir).unwrap();
+
+        assert!(
+            result.is_ok(),
+            "binary validation waited for the session map"
+        );
+        assert!(matches!(
+            result.unwrap(),
+            Err(ServerError::Mlx(MlxError {
+                code: ErrorCode::BinaryNotFound,
+                ..
+            }))
+        ));
+    }
 }

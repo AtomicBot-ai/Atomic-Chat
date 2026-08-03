@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 fn default_parallel() -> i32 {
-     1
- }
+    1
+}
 
 fn default_concurrent_slots() -> i32 {
     8
@@ -72,6 +72,22 @@ pub struct LlamacppConfig {
     /// (head inside the same GGUF), which keeps using the `MTP_MIN_BUILD` gate.
     #[serde(default)]
     pub mtp_draft_path: String,
+    /// Enable DFlash multi-layer draft speculative decoding. Kept for config
+    /// compatibility; the extension probes the installed binary before load.
+    #[serde(default)]
+    pub dflash: bool,
+    /// True only when the installed llama-server advertises
+    /// `--spec-type draft-dflash` in its help output.
+    #[serde(default)]
+    pub dflash_spec_supported: bool,
+    /// Absolute path to a DFlash draft GGUF, resolved+downloaded by the TS
+    /// extension (mirrors `mtp_draft_path`).
+    #[serde(default)]
+    pub dflash_draft_path: String,
+    /// `--spec-draft-n-max` value, computed by TS from the user's block-size
+    /// setting (n_max = block_size - 1). 0 means "use the Rust default".
+    #[serde(default)]
+    pub dflash_n_max: u32,
 }
 
 /// Minimum llama.cpp build number that changed --flash-attn from a boolean
@@ -121,25 +137,53 @@ impl ArgumentBuilder {
         })
     }
 
-    /// Parse the build number from a version string like "b6325".
-    /// Returns `None` if the format doesn't match.
+    /// Parse the upstream llama.cpp build number out of a version string.
+    /// Handles plain upstream tags ("b6325") and the unified TurboQuant tag
+    /// shape ("b10018-1.3.0") a mislabeled backend may carry.
     fn parse_build_number(&self) -> Option<u32> {
-        self.version
-            .strip_prefix('b')
-            .and_then(|s| s.parse::<u32>().ok())
+        let rest = self.version.strip_prefix('b')?;
+        let build = rest.split('-').next()?;
+        build.parse::<u32>().ok()
     }
 
+    /// Whether the installed backend came from the TurboQuant fork's release
+    /// train, in either the legacy (`turboquant-<id>-<sha>`) or unified
+    /// (`b<build>-<fork-semver>`) tag shape.
+    ///
+    /// This gates *argument serialization* only (the fork is always rebased
+    /// past the `--flash-attn` string-argument change). It must never gate a
+    /// capability: `sanitize_cache_type` below deliberately ignores it, so
+    /// fork-only `turbo*` types can never leak into this provider even when a
+    /// fork-tagged backend is installed under it.
     fn is_turboquant(&self) -> bool {
-        self.version.starts_with("turboquant-")
+        let version = &self.version;
+        if version.starts_with("turboquant-") {
+            return true;
+        }
+        let Some(rest) = version.strip_prefix('b') else {
+            return false;
+        };
+        let Some((build, fork_semver)) = rest.split_once('-') else {
+            return false;
+        };
+        let is_number = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+        if !is_number(build) {
+            return false;
+        }
+        let mut parts = fork_semver.split('.');
+        let semver_ok = (0..3).all(|_| parts.next().is_some_and(is_number));
+        semver_ok && parts.next().is_none()
     }
 
-    /// Standard cache types supported by upstream llama.cpp.
-    /// Extended types like `turbo3` are only available in turboquant builds.
-    const STANDARD_CACHE_TYPES: &'static [&'static str] =
-        &["f32", "f16", "bf16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1"];
+    /// Cache types supported by the pinned upstream llama.cpp provider.
+    const STANDARD_CACHE_TYPES: &'static [&'static str] = &[
+        "f32", "f16", "bf16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1",
+    ];
 
     fn sanitize_cache_type(&self, value: &str) -> String {
-        if Self::STANDARD_CACHE_TYPES.contains(&value) || self.is_turboquant() {
+        // Provider capability, not release identity: this provider ships stock
+        // ggml-org builds, so only upstream cache types are ever emitted.
+        if Self::STANDARD_CACHE_TYPES.contains(&value) {
             return value.to_string();
         }
         log::warn!(
@@ -147,6 +191,33 @@ impl ArgumentBuilder {
             value, self.version, self.backend
         );
         "q8_0".to_string()
+    }
+
+    /// Returns true when the backend id indicates a Vulkan build
+    /// (e.g. `linux-vulkan-x64`, `windows-x64-vulkan`, `ubuntu-vulkan-x64`).
+    fn is_vulkan_backend(&self) -> bool {
+        self.backend.contains("vulkan")
+    }
+
+    /// Apply safety overrides for Vulkan backends before any argument is
+    /// emitted.
+    ///
+    /// Flash attention set to "auto" is known to trigger GPU device-lost
+    /// crashes on the first decode batch on some Vulkan driver/model
+    /// combinations (ATO-244). Downgrade "auto" → "off" so the default
+    /// is stable; users who have explicitly set "on" keep their choice.
+    fn apply_vulkan_safety_overrides(&mut self) {
+        if !self.is_vulkan_backend() {
+            return;
+        }
+        if self.config.flash_attn == "auto" {
+            log::info!(
+                "Vulkan backend ({}): overriding flash_attn auto→off for stability (ATO-244). \
+                 Re-enable in Settings → Provider → Flash Attention if needed.",
+                self.backend
+            );
+            self.config.flash_attn = "off".to_string();
+        }
     }
 
     /// Build all arguments based on configuration
@@ -161,6 +232,8 @@ impl ArgumentBuilder {
         // `add_parallel_settings` / `add_boolean_flags` pick up the overridden
         // values without duplicating flag emission logic.
         self.apply_concurrent_mode_overrides();
+        // Apply Vulkan-specific safety defaults (ATO-244: flash_attn auto→off).
+        self.apply_vulkan_safety_overrides();
 
         // Disable llama-server webui for non-ik backends
         if !self.backend.starts_with("ik") {
@@ -213,9 +286,20 @@ impl ArgumentBuilder {
         // Parallel sequences
         self.add_parallel_settings();
 
-        // MTP speculative decoding (must come before embedding/text branch
-        // so the toggle is honored uniformly; method itself skips embedding).
-        self.add_mtp_args();
+        // MTP / DFlash speculative decoding (must come before embedding/text
+        // branch so the toggle is honored uniformly; each method skips
+        // embedding). Mutual exclusivity: the UI enforces a mutex, but as
+        // defense-in-depth we prefer DFlash (the newer, more general
+        // mechanism) and skip MTP when both are somehow enabled.
+        if self.config.dflash && self.config.mtp {
+            log::warn!(
+                "Both MTP and DFlash are enabled; applying DFlash only and skipping MTP (DFlash takes precedence)"
+            );
+            self.add_dflash_args();
+        } else {
+            self.add_mtp_args();
+            self.add_dflash_args();
+        }
 
         // Prometheus /metrics endpoint
         self.add_metrics_flag();
@@ -464,6 +548,45 @@ impl ArgumentBuilder {
         self.args.push("2".to_string());
     }
 
+    /// DFlash is emitted only after the extension probes the installed
+    /// llama-server binary and confirms that `draft-dflash` is accepted.
+    fn add_dflash_args(&mut self) {
+        if !self.config.dflash {
+            return;
+        }
+        if self.is_embedding {
+            return;
+        }
+        if self.config.dflash_draft_path.is_empty() {
+            log::warn!(
+                "DFlash requested but no draft GGUF path is set; skipping --model-draft / --spec-type draft-dflash"
+            );
+            return;
+        }
+        if !self.config.dflash_spec_supported {
+            log::warn!(
+                "DFlash requested for backend {}/{} but this llama.cpp build does not advertise --spec-type draft-dflash; loading without DFlash",
+                self.version,
+                self.backend
+            );
+            return;
+        }
+
+        self.args.push("--model-draft".to_string());
+        self.args.push(self.config.dflash_draft_path.clone());
+        self.args.push("--spec-type".to_string());
+        self.args.push("draft-dflash".to_string());
+        self.args.push("--spec-draft-n-max".to_string());
+        self.args.push(
+            if self.config.dflash_n_max > 0 {
+                self.config.dflash_n_max
+            } else {
+                15
+            }
+            .to_string(),
+        );
+    }
+
     /// Emits `--metrics` when the user explicitly requested Prometheus
     /// metrics (directly or via Concurrent Mode).
     fn add_metrics_flag(&mut self) {
@@ -631,6 +754,10 @@ mod tests {
             expose_metrics: false,
             mtp: false,
             mtp_draft_path: String::new(),
+            dflash: false,
+            dflash_spec_supported: false,
+            dflash_draft_path: String::new(),
+            dflash_n_max: 0,
         }
     }
 
@@ -849,6 +976,105 @@ mod tests {
         let args = builder.build("test", "/path", 8080, None);
 
         assert_no_flag(&args, "--flash-attn");
+    }
+
+    // A fork-tagged backend can end up installed under this provider (manual
+    // copy, migrated folder). Its tag may unlock the modern `--flash-attn`
+    // spelling, but never a fork-only cache type: this provider ships stock
+    // ggml-org builds that cannot parse `turbo*`.
+    #[test]
+    fn test_unified_fork_tag_never_unlocks_fork_cache_types() {
+        let mut config = default_config();
+        config.version_backend = "b10018-1.3.0/win-cuda-13.3-x64".to_string();
+        config.cache_type_k = "turbo3".to_string();
+        config.cache_type_v = "turbo3".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        assert!(builder.is_turboquant());
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--cache-type-k", "q8_0");
+        assert_arg_pair(&args, "--cache-type-v", "q8_0");
+    }
+
+    #[test]
+    fn test_unified_fork_tag_still_yields_the_upstream_build_number() {
+        let mut config = default_config();
+        config.version_backend = "b10018-1.3.0/linux-vulkan-x64".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+
+        assert_eq!(builder.parse_build_number(), Some(10018));
+    }
+
+    // --- Vulkan safety-override tests (ATO-244) ---
+
+    #[test]
+    fn test_vulkan_backend_flash_attn_auto_forced_off() {
+        // flash_attn="auto" on a Vulkan backend must be downgraded to "off"
+        // to prevent GPU device-lost crashes during the first decode batch.
+        let mut config = default_config();
+        config.version_backend = "b9691/linux-vulkan-x64".to_string();
+        config.flash_attn = "auto".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--flash-attn", "off");
+    }
+
+    #[test]
+    fn test_vulkan_backend_flash_attn_explicit_on_preserved() {
+        // An explicit user choice of "on" is NOT overridden.
+        let mut config = default_config();
+        config.version_backend = "b9691/linux-vulkan-x64".to_string();
+        config.flash_attn = "on".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--flash-attn", "on");
+    }
+
+    #[test]
+    fn test_vulkan_backend_flash_attn_explicit_off_preserved() {
+        let mut config = default_config();
+        config.version_backend = "b9691/linux-vulkan-x64".to_string();
+        config.flash_attn = "off".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--flash-attn", "off");
+    }
+
+    #[test]
+    fn test_non_vulkan_backend_flash_attn_auto_unaffected() {
+        // Non-Vulkan backends must NOT get the override.
+        let mut config = default_config();
+        config.version_backend = "b9691/linux-cpu-x64".to_string();
+        config.flash_attn = "auto".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        // auto is sent as-is on non-Vulkan (it's a recognised value for b6325+)
+        assert_arg_pair(&args, "--flash-attn", "auto");
+    }
+
+    #[test]
+    fn test_turboquant_windows_vulkan_backend_flash_attn_auto_forced_off() {
+        // Turboquant-format Windows Vulkan backend: is_turboquant() → true →
+        // supports_string_arg → true → --flash-attn off is emitted.
+        let mut config = default_config();
+        config.version_backend =
+            "turboquant-windows-x64-vulkan-d86eb0b/windows-x64-vulkan".to_string();
+        config.flash_attn = "auto".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--flash-attn", "off");
     }
 
     // Mirror of the turboquant-plugin regression test: even though the
@@ -1123,7 +1349,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cache_type_turbo3_kept_on_turboquant() {
+    fn test_cache_type_turbo3_cannot_leak_through_mislabeled_upstream_version() {
         let mut config = default_config();
         config.version_backend = "turboquant-macos-arm64-abc123/macos-arm64".to_string();
         config.cache_type_k = "turbo3".to_string();
@@ -1131,7 +1357,7 @@ mod tests {
         let builder = ArgumentBuilder::new(config, false).unwrap();
         let args = builder.build("test", "/path", 8080, None);
 
-        assert_arg_pair(&args, "--cache-type-k", "turbo3");
+        assert_arg_pair(&args, "--cache-type-k", "q8_0");
     }
 
     #[test]
@@ -1558,5 +1784,144 @@ mod tests {
 
         assert_no_flag(&args, "--model-draft");
         assert_no_flag(&args, "--spec-type");
+    }
+
+    #[test]
+    fn test_dflash_off_no_spec_flags() {
+        let mut config = default_config();
+        config.version_backend = "b10205/standard".to_string();
+        config.dflash = false;
+        config.dflash_draft_path = "/path/to/dflash-draft.gguf".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("qwen3.6-27b", "/path", 8080, None);
+
+        assert_no_flag(&args, "--model-draft");
+        assert_no_flag(&args, "--spec-type");
+        assert_no_flag(&args, "--spec-draft-n-max");
+    }
+
+    #[test]
+    fn test_dflash_on_skips_unsupported_upstream_spec_type() {
+        let mut config = default_config();
+        config.version_backend = "b10205/standard".to_string();
+        config.dflash = true;
+        config.dflash_draft_path = "/path/to/dflash-draft.gguf".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("qwen3.6-27b", "/path", 8080, None);
+
+        assert_no_flag(&args, "--model-draft");
+        assert_no_flag(&args, "--spec-type");
+        assert_no_flag(&args, "--spec-draft-n-max");
+    }
+
+    #[test]
+    fn test_dflash_on_emits_spec_flags_when_probe_supports_it() {
+        let mut config = default_config();
+        config.version_backend = "b10205/standard".to_string();
+        config.dflash = true;
+        config.dflash_spec_supported = true;
+        config.dflash_draft_path = "/path/to/dflash-draft.gguf".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("qwen3.6-27b", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--model-draft", "/path/to/dflash-draft.gguf");
+        assert_arg_pair(&args, "--spec-type", "draft-dflash");
+        assert_arg_pair(&args, "--spec-draft-n-max", "15");
+    }
+
+    #[test]
+    fn test_dflash_custom_n_max_skipped_with_unsupported_upstream_spec_type() {
+        let mut config = default_config();
+        config.version_backend = "b10205/standard".to_string();
+        config.dflash = true;
+        config.dflash_draft_path = "/path/to/dflash-draft.gguf".to_string();
+        config.dflash_n_max = 7;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("qwen3.6-27b", "/path", 8080, None);
+
+        assert_no_flag(&args, "--model-draft");
+        assert_no_flag(&args, "--spec-type");
+        assert_no_flag(&args, "--spec-draft-n-max");
+    }
+
+    #[test]
+    fn test_dflash_custom_n_max_emits_when_probe_supports_it() {
+        let mut config = default_config();
+        config.version_backend = "b10205/standard".to_string();
+        config.dflash = true;
+        config.dflash_spec_supported = true;
+        config.dflash_draft_path = "/path/to/dflash-draft.gguf".to_string();
+        config.dflash_n_max = 7;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("qwen3.6-27b", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--spec-draft-n-max", "7");
+    }
+
+    #[test]
+    fn test_dflash_skipped_on_all_upstream_builds() {
+        let mut config = default_config();
+        config.version_backend = "b9830/standard".to_string();
+        config.dflash = true;
+        config.dflash_draft_path = "/path/to/dflash-draft.gguf".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("qwen3.6-27b", "/path", 8080, None);
+
+        assert_no_flag(&args, "--model-draft");
+        assert_no_flag(&args, "--spec-type");
+        assert_no_flag(&args, "--spec-draft-n-max");
+    }
+
+    #[test]
+    fn test_dflash_skipped_without_draft_path() {
+        let mut config = default_config();
+        config.version_backend = "b10205/standard".to_string();
+        config.dflash = true;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("qwen3.6-27b", "/path", 8080, None);
+
+        assert_no_flag(&args, "--model-draft");
+        assert_no_flag(&args, "--spec-type");
+        assert_no_flag(&args, "--spec-draft-n-max");
+    }
+
+    #[test]
+    fn test_dflash_skipped_in_embedding_mode() {
+        let mut config = default_config();
+        config.version_backend = "b10205/standard".to_string();
+        config.dflash = true;
+        config.dflash_draft_path = "/path/to/dflash-draft.gguf".to_string();
+
+        let builder = ArgumentBuilder::new(config, true).unwrap();
+        let args = builder.build("qwen3.6-27b", "/path", 8080, None);
+
+        assert_no_flag(&args, "--model-draft");
+        assert_no_flag(&args, "--spec-type");
+    }
+
+    #[test]
+    fn test_dflash_takes_precedence_over_mtp() {
+        // Defense-in-depth: when both toggles are somehow enabled and the
+        // backend supports DFlash, emit only the DFlash speculative path.
+        let mut config = default_config();
+        config.version_backend = "b10205/standard".to_string();
+        config.mtp = true;
+        config.dflash = true;
+        config.dflash_spec_supported = true;
+        config.dflash_draft_path = "/path/to/dflash-draft.gguf".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("qwen3.6-27b", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--model-draft", "/path/to/dflash-draft.gguf");
+        assert_arg_pair(&args, "--spec-type", "draft-dflash");
+        assert_arg_pair(&args, "--spec-draft-n-max", "15");
     }
 }

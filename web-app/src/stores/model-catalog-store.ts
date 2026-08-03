@@ -49,17 +49,6 @@ type ModelCatalogState = {
   refresh: (options?: FetchOptions) => Promise<void>
 }
 
-const seedCatalog = (): CatalogModel[] => {
-  const cached = getCachedCatalog()
-  if (cached) return cached.manifest.models.slice()
-  return BASELINE_MODEL_CATALOG.slice()
-}
-
-const seedIndex = (): CatalogIndexPayload | null => {
-  const cached = getCachedIndex()
-  return cached ? cached.payload : null
-}
-
 const baselineFallback = (message: string): CatalogFetchResult => ({
   manifest: {
     manifest_version: 1,
@@ -81,47 +70,61 @@ const baselineIndex = (message: string): IndexFetchResult => ({
 })
 
 export const useModelCatalogStore = create<ModelCatalogState>()((set) => ({
-  catalog: seedCatalog(),
-  manifestUpdatedAt: getCachedCatalog()?.manifest.updated_at ?? null,
-  source: getCachedCatalog() ? 'cache' : 'baseline',
+  catalog: BASELINE_MODEL_CATALOG.slice(),
+  manifestUpdatedAt: null,
+  source: 'baseline',
   status: 'idle',
-  fetchedAt: getCachedCatalog()?.fetchedAt ?? null,
+  fetchedAt: null,
   error: null,
-  index: seedIndex(),
-  indexSource: getCachedIndex() ? 'cache' : 'baseline',
-  indexFetchedAt: getCachedIndex()?.fetchedAt ?? null,
+  index: null,
+  indexSource: 'baseline',
+  indexFetchedAt: null,
   hasInitialized: false,
   refresh: async (options?: FetchOptions) => {
     const initialState = useModelCatalogStore.getState()
     set({ status: 'loading', error: null })
 
-    // Phase 1: if neither localStorage cache nor a previous successful
-    // refresh has populated the store yet, try the bundled seed snapshot.
-    // It is shipped with the app by `scripts/fetch-seed-catalog.mjs` and
-    // gives the user the full ~2700-model catalog instantly, even on a
-    // brand-new offline machine. We only fire this once per session
-    // (gated on `hasInitialized`) to avoid re-reading the same asset on
-    // every manual refresh.
-    if (
-      !initialState.hasInitialized &&
-      initialState.source === 'baseline'
-    ) {
+    // Phase 1: hydrate from IndexedDB, or use the bundled seed on first run.
+    // We only read the seed once per session to avoid parsing the same large
+    // snapshot on every manual refresh.
+    if (!initialState.hasInitialized && initialState.source === 'baseline') {
       try {
-        const [seedManifest, seedIndex] = await Promise.all([
-          getBundledSeedCatalog(),
-          getBundledSeedIndex(),
+        const [cachedCatalog, cachedIndex] = await Promise.all([
+          getCachedCatalog(),
+          getCachedIndex(),
         ])
-        if (seedManifest && seedManifest.models.length > 0) {
+        if (cachedCatalog) {
           set({
-            catalog: seedManifest.models,
-            manifestUpdatedAt: seedManifest.updated_at,
-            source: 'bundled',
-            fetchedAt: null,
+            catalog: cachedCatalog.manifest.models,
+            manifestUpdatedAt: cachedCatalog.manifest.updated_at,
+            source: 'cache',
+            fetchedAt: cachedCatalog.fetchedAt,
             error: null,
-            index: seedIndex ?? null,
-            indexSource: seedIndex ? 'bundled' : 'baseline',
-            indexFetchedAt: null,
+            index: cachedIndex?.payload ?? null,
+            indexSource: cachedIndex ? 'cache' : 'baseline',
+            indexFetchedAt: cachedIndex?.fetchedAt ?? null,
           })
+        } else {
+          const [seedManifest, seedIndex] = await Promise.all([
+            getBundledSeedCatalog(),
+            getBundledSeedIndex(),
+          ])
+          if (seedManifest && seedManifest.models.length > 0) {
+            set({
+              catalog: seedManifest.models,
+              manifestUpdatedAt: seedManifest.updated_at,
+              source: 'bundled',
+              fetchedAt: null,
+              error: null,
+              index: cachedIndex?.payload ?? seedIndex ?? null,
+              indexSource: cachedIndex
+                ? 'cache'
+                : seedIndex
+                  ? 'bundled'
+                  : 'baseline',
+              indexFetchedAt: cachedIndex?.fetchedAt ?? null,
+            })
+          }
         }
       } catch (error) {
         console.warn(
@@ -159,14 +162,18 @@ export const useModelCatalogStore = create<ModelCatalogState>()((set) => ({
       catalogResult.source === 'baseline' && current.source === 'bundled'
 
     set({
-      catalog: shouldKeepBundled ? current.catalog : catalogResult.manifest.models,
+      catalog: shouldKeepBundled
+        ? current.catalog
+        : catalogResult.manifest.models,
       manifestUpdatedAt: shouldKeepBundled
         ? current.manifestUpdatedAt
         : catalogResult.manifestUpdatedAt,
       source: shouldKeepBundled ? 'bundled' : catalogResult.source,
-      fetchedAt: shouldKeepBundled ? current.fetchedAt : catalogResult.fetchedAt,
+      fetchedAt: shouldKeepBundled
+        ? current.fetchedAt
+        : catalogResult.fetchedAt,
       status: catalogResult.error && !shouldKeepBundled ? 'error' : 'success',
-      error: shouldKeepBundled ? null : catalogResult.error ?? null,
+      error: shouldKeepBundled ? null : (catalogResult.error ?? null),
       index: shouldKeepBundled ? current.index : indexResult.payload,
       indexSource: shouldKeepBundled ? current.indexSource : indexResult.source,
       indexFetchedAt: shouldKeepBundled

@@ -10,10 +10,14 @@ import {
   type Tool,
   type LanguageModelUsage,
   type TextStreamPart,
-  jsonSchema,
 } from 'ai'
 import { repairToolCallArguments } from './repairToolCall'
 import { prepareToolResultImagesForModel } from './toolResultImages'
+import {
+  buildToolsRecord,
+  splitAnthropicSerialToolUse,
+} from './custom-chat-transport-helpers'
+import type { MCPTool } from '@/types/completion'
 
 /// Hugging Face special-token convention (`<|im_end|>`, `<|eot_id|>`,
 /// `<|endoftext|>`, etc.). Some MLX backends — most visibly the DFlash
@@ -58,6 +62,9 @@ import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ttftMark } from '@/lib/ttft-timing'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
+import type { ServiceHub } from '@/services'
+import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
+import { isLocalProvider as isLocalProviderName } from '@/utils/registerRemoteProvider'
 
 /// Local inference backends (mlx, llamacpp, llamacpp-upstream,
 /// foundation-models) get special handling at the `streamText` boundary:
@@ -189,6 +196,61 @@ export function foldSystemIntoFirstUserMessage<
   return copy
 }
 
+export function shouldSuppressToolsForUpstreamDflash(
+  providerId: string,
+  settings: readonly ProviderSetting[] | undefined
+): boolean {
+  return (
+    providerId === 'llamacpp-upstream' &&
+    settings?.some(
+      (setting) =>
+        setting.key === 'dflash' && setting.controller_props.value === true
+    ) === true
+  )
+}
+
+export function withUpstreamDflashSampling(
+  providerId: string,
+  settings: readonly ProviderSetting[] | undefined,
+  params: Record<string, unknown>
+): Record<string, unknown> {
+  if (!shouldSuppressToolsForUpstreamDflash(providerId, settings)) return params
+  return {
+    ...params,
+    temperature: 0,
+    top_k: 1,
+    repeat_penalty: 1,
+    presence_penalty: 0,
+    frequency_penalty: 0,
+  }
+}
+
+export function withUpstreamDflashReasoningOverride(
+  providerId: string,
+  settings: readonly ProviderSetting[] | undefined,
+  override: Record<string, unknown>
+): Record<string, unknown> {
+  if (!shouldSuppressToolsForUpstreamDflash(providerId, settings)) {
+    return override
+  }
+
+  const existingTemplateKwargs =
+    typeof override.chat_template_kwargs === 'object' &&
+    override.chat_template_kwargs !== null &&
+    !Array.isArray(override.chat_template_kwargs)
+      ? (override.chat_template_kwargs as Record<string, unknown>)
+      : {}
+
+  return {
+    ...override,
+    chat_template_kwargs: {
+      ...existingTemplateKwargs,
+      enable_thinking: false,
+    },
+    reasoning_budget: 0,
+  }
+}
+
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
   messageId: string
@@ -204,18 +266,6 @@ export type OnFinishCallback = (params: {
 export type OnToolCallCallback = (params: {
   toolCall: { toolCallId: string; toolName: string; input: unknown }
 }) => void
-export type ServiceHub = {
-  rag(): {
-    getTools(): Promise<
-      Array<{ name: string; description: string; inputSchema: unknown }>
-    >
-  }
-  mcp(): {
-    getTools(): Promise<
-      Array<{ name: string; description: string; inputSchema: unknown }>
-    >
-  }
-}
 
 /**
  * Wraps a UIMessageChunk stream so that when the first `text-start` chunk
@@ -380,12 +430,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       return
     }
 
-    const toolsRecord: Record<string, Tool> = {}
-
-    const isToolDisabled = (serverName: string, toolName: string): boolean => {
-      const toolKey = `${serverName}::${toolName}`
-      return disabledToolKeys.includes(toolKey)
-    }
+    let ragTools: MCPTool[] = []
+    let mcpTools: MCPTool[] = []
 
     if (modelSupportsTools) {
       if (!hasDocuments && this.threadId) {
@@ -419,22 +465,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // Load RAG tools if documents are available
       if (hasDocuments && ragFeatureAvailable) {
         try {
-          const ragTools = await this.serviceHub.rag().getTools()
-          if (Array.isArray(ragTools) && ragTools.length > 0) {
-            // Convert RAG tools to AI SDK format, filtering out disabled tools
-            ragTools.forEach((tool) => {
-              // RAG tools use MCPTool interface with server field
-              const serverName =
-                (tool as { server?: string }).server || 'unknown'
-              if (!isToolDisabled(serverName, tool.name)) {
-                toolsRecord[tool.name] = {
-                  description: tool.description,
-                  inputSchema: jsonSchema(
-                    tool.inputSchema as Record<string, unknown>
-                  ),
-                } as Tool
-              }
-            })
+          const availableRagTools = await this.serviceHub.rag().getTools()
+          if (Array.isArray(availableRagTools)) {
+            ragTools = availableRagTools as MCPTool[]
           }
         } catch (error) {
           console.warn('Failed to load RAG tools:', error)
@@ -446,32 +479,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // cold ~1.8s round-trip into the MCP service on every new thread's
       // first sendMessages call.
       try {
-        const mcpTools = useAppState.getState().tools
-        if (Array.isArray(mcpTools) && mcpTools.length > 0) {
-          // Convert MCP tools to AI SDK format, filtering out disabled tools
-          // MCP tools added after RAG tools, so they take precedence in case of name conflicts
-          mcpTools.forEach((tool) => {
-            // MCP tools use MCPTool interface with server field
-            const serverName = (tool as { server?: string }).server || 'unknown'
-            if (!isToolDisabled(serverName, tool.name)) {
-              toolsRecord[tool.name] = {
-                description: tool.description,
-                inputSchema: jsonSchema(
-                  tool.inputSchema as Record<string, unknown>
-                ),
-              } as Tool
-            }
-          })
+        const availableMcpTools = useAppState.getState().tools
+        if (Array.isArray(availableMcpTools)) {
+          mcpTools = availableMcpTools
         }
       } catch (error) {
         console.warn('Failed to load MCP tools:', error)
       }
     }
 
-    const sortedEntries = Object.entries(toolsRecord).sort(([a], [b]) =>
-      a.localeCompare(b)
-    )
-    this.tools = Object.fromEntries(sortedEntries)
+    this.tools = buildToolsRecord(ragTools, mcpTools, disabledToolKeys)
     this.toolsCacheKey = cacheKey
     this.toolsCacheValid = true
   }
@@ -501,6 +518,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       messageId: string | undefined
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
+    const requestStartedAt = Date.now()
     ttftMark('gammaStart')
     await this.refreshTools()
     ttftMark('gammaEnd')
@@ -524,10 +542,15 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         // top_k 64) is layered on at request time unless the user has tuned
         // sampling themselves — non-destructive, follows the active model.
         const samplingState = useSamplingSettings.getState()
-        const inferenceParams = withRecommendedSampling(
-          modelId,
-          samplingState.getParams(),
-          samplingState.userOverridden
+        const providerSettings = updatedProvider?.settings ?? provider.settings
+        const inferenceParams = withUpstreamDflashSampling(
+          providerId,
+          providerSettings,
+          withRecommendedSampling(
+            modelId,
+            samplingState.getParams(),
+            samplingState.userOverridden
+          )
         )
 
         // Global "Disable reasoning" setting — best-effort: dispatch the
@@ -601,7 +624,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           reasoningOverride.reasoning_budget =
             reasoningBudgetTokens[reasoningBudget]
         }
-        const hasOverride = Object.keys(reasoningOverride).length > 0
+        const effectiveReasoningOverride = withUpstreamDflashReasoningOverride(
+          providerId,
+          providerSettings,
+          reasoningOverride
+        )
+        const hasOverride = Object.keys(effectiveReasoningOverride).length > 0
 
         // Audio attachments (omni/audio-capable models, MLX backend) are
         // injected as `input_audio` at the MLX fetch layer rather than as
@@ -613,11 +641,15 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
             : []
 
         ttftMark('deltaStart')
+        const effectiveProvider = updatedProvider ?? provider
+        if (!isLocalProviderName(effectiveProvider.provider)) {
+          await ensureRemoteProviderReady(effectiveProvider, this.serviceHub)
+        }
         this.model = await ModelFactory.createModel(
           modelId,
-          updatedProvider ?? provider,
+          effectiveProvider,
           inferenceParams ?? {},
-          hasOverride ? reasoningOverride : undefined,
+          hasOverride ? effectiveReasoningOverride : undefined,
           audioInputParts.length > 0 ? audioInputParts : undefined
         )
         ttftMark('deltaEnd')
@@ -636,49 +668,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // split it into separate messages so convertToModelMessages produces the
     // tool_use / tool_result pairing that the Claude API requires.
     // See: https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use#parallel-tool-use
-    const messagesToConvert = (() => {
-      if (effectiveProviderName !== 'anthropic') {
-        return options.messages
-      }
-      return options.messages.flatMap((message) => {
-        if (message.role !== 'assistant') return [message]
-
-        const parts = Array.isArray(message.parts) ? message.parts : []
-        if (parts.length === 0) return [message]
-
-        const isToolPart = (p: (typeof parts)[number]) =>
-          p.type.startsWith('tool-')
-
-        const waves: (typeof parts)[] = []
-        let currentWave: typeof parts = []
-        let seenToolParts = false
-
-        for (const part of parts) {
-          if (isToolPart(part)) {
-            seenToolParts = true
-            currentWave.push(part)
-          } else if (!isToolPart(part) && seenToolParts) {
-            // Any non-tool part (text, reasoning, file, etc.) after tool parts
-            // marks the start of a new wave
-            waves.push(currentWave)
-            currentWave = [part]
-            seenToolParts = false
-          } else {
-            currentWave.push(part)
-          }
-        }
-        if (currentWave.length > 0) waves.push(currentWave)
-
-        // No serial tool calls detected — return original message unchanged
-        if (waves.length <= 1) return [message]
-
-        return waves.map((waveParts, i) => ({
-          ...message,
-          id: `${message.id}_w${i}`,
-          parts: waveParts,
-        }))
-      })
-    })()
+    const messagesToConvert =
+      effectiveProviderName === 'anthropic'
+        ? splitAnthropicSerialToolUse(options.messages)
+        : options.messages
 
     // Convert UI messages to model messages. Audio file parts are stripped
     // first: they are delivered out-of-band as `input_audio` (see
@@ -726,14 +719,18 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // See LOCAL_INFERENCE_PROVIDERS for rationale. Tool inclusion is
     // independent of the reasoning toggle and governed solely by the tools
     // on/off setting (via refreshTools -> useToolAvailable).
-    const isLocalProvider =
-      LOCAL_INFERENCE_PROVIDERS.has(effectiveProviderName)
+    const isLocalProvider = LOCAL_INFERENCE_PROVIDERS.has(effectiveProviderName)
 
     const hasTools = Object.keys(this.tools).length > 0
     const selectedModel = useModelProvider.getState().selectedModel
     const modelSupportsTools =
       selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
-    const shouldEnableTools = hasTools && modelSupportsTools
+    const suppressToolsForDflash = shouldSuppressToolsForUpstreamDflash(
+      effectiveProviderName,
+      provider.settings
+    )
+    const shouldEnableTools =
+      hasTools && modelSupportsTools && !suppressToolsForDflash
 
     const dropSystemForTools =
       isLocalProvider && shouldEnableTools && !!this.systemMessage
@@ -778,6 +775,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     })
 
     let tokensPerSecond = 0
+    let draftTokensTotal: number | null = null
+    let draftTokensAccepted: number | null = null
 
     const uiStream = result.toUIMessageStream({
       messageMetadata: ({ part }) => {
@@ -792,9 +791,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         }
 
         if (part.type === 'finish-step') {
-          tokensPerSecond =
-            (part.providerMetadata?.providerMetadata
-              ?.tokensPerSecond as number) || 0
+          const pm = part.providerMetadata?.providerMetadata as
+            | Record<string, unknown>
+            | undefined
+          tokensPerSecond = (pm?.tokensPerSecond as number) || 0
+          draftTokensTotal = (pm?.draftTokensTotal as number) ?? null
+          draftTokensAccepted = (pm?.draftTokensAccepted as number) ?? null
         }
 
         // Add usage and token speed to metadata on finish
@@ -833,6 +835,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
           return {
             finishReason: finishPart.finishReason,
+            activityDurationMs: Math.max(0, Date.now() - requestStartedAt),
             usage: {
               inputTokens: inputTokens,
               outputTokens: outputTokens,
@@ -843,6 +846,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
               tokenSpeed: Math.round(tokenSpeed * 10) / 10, // Round to 1 decimal
               tokenCount: outputTokens,
               durationMs,
+              ...(draftTokensTotal != null && draftTokensTotal > 0
+                ? {
+                    draftTokensTotal,
+                    draftTokensAccepted: draftTokensAccepted ?? 0,
+                  }
+                : {}),
             },
           }
         }

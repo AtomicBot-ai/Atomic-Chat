@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import { useAppState } from '@/hooks/useAppState'
 import { toNumber } from '@/utils/number'
-import { Gauge } from 'lucide-react'
+import { Gauge, WholeWord } from 'lucide-react'
 
 interface TokenUsage {
   inputTokens?: number
@@ -13,6 +13,9 @@ interface TokenSpeed {
   tokenSpeed: number
   tokenCount?: number
   durationMs?: number
+  // Speculative decoding stats (llama.cpp draft model: n_drafted / n_accepted).
+  draftTokensTotal?: number
+  draftTokensAccepted?: number
 }
 
 interface TokenSpeedIndicatorProps {
@@ -64,16 +67,27 @@ export const TokenSpeedIndicator = memo(
 
     if (!shouldShow) return
 
+    // Speculative-decoding acceptance rate = accepted / total drafted tokens.
+    const spec = metadata?.tokenSpeed as TokenSpeed | undefined
+    const draftTotal = spec?.draftTokensTotal ?? 0
+    const draftAccepted = spec?.draftTokensAccepted ?? 0
+    const acceptanceRate =
+      draftTotal > 0 ? (draftAccepted / draftTotal) * 100 : null
+
     return (
       <div className="flex items-center gap-2 text-muted-foreground text-xs">
         <div className="flex items-center gap-1">
           <Gauge size={16} />
-          <span>{displaySpeed} tokens/sec</span>
+          <span>{displaySpeed} tok/sec</span>
         </div>
         {displayTokenCount > 0 && (
-          <span className="text-muted-foreground">
-            ({displayTokenCount} tokens)
-          </span>
+          <div className="flex items-center gap-1">
+            <WholeWord size={16} />
+            <span>{displayTokenCount} tokens</span>
+          </div>
+        )}
+        {acceptanceRate !== null && (
+          <span>{acceptanceRate.toFixed(1)}% draft tokens accepted</span>
         )}
       </div>
     )

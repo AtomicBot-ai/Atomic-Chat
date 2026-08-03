@@ -44,7 +44,7 @@ type LocalApiServerState = {
 export const useLocalApiServer = create<LocalApiServerState>()(
   persist(
     (set) => ({
-      enableOnStartup: false,
+      enableOnStartup: true,
       setEnableOnStartup: (value) => set({ enableOnStartup: value }),
       defaultModelLocalApiServer: null,
       setDefaultModelLocalApiServer: (model) =>
@@ -80,7 +80,7 @@ export const useLocalApiServer = create<LocalApiServerState>()(
     {
       name: localStorageKey.settingLocalApiServer,
       storage: createJSONStorage(() => localStorage),
-      version: 2,
+      version: 3,
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as Partial<LocalApiServerState>
         if (version < 1) {
@@ -90,6 +90,12 @@ export const useLocalApiServer = create<LocalApiServerState>()(
         if (version < 2) {
           // v1 → v2: add defaultModelLocalApiServer field
           state.defaultModelLocalApiServer = null
+        }
+        if (version < 3) {
+          // v2 → v3: enableOnStartup was a dormant field defaulting to false;
+          // it now drives the Local API Server auto-start toggle and defaults
+          // to on, so opt existing users in to match the new default.
+          state.enableOnStartup = true
         }
         return state
       },

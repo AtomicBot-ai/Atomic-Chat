@@ -183,10 +183,51 @@ make dev
 ## Testing
 
 ```bash
-yarn test                    # All tests
-cd src-tauri && cargo test  # Rust tests
-cd autoqa && python main.py # End-to-end tests
+make test-all   # Exhaustive: artefacts, verify, live registries/sidecars/cloud
+make verify     # Required local gate: lint, guards, coverage floors, all Rust tests
+make verify-fast # Same gate without Rust; also runs from the pre-push hook
+make test-local # Root/extension Vitest and platform-supported Rust suites
+make test-rust  # Rust suites with inert Tauri resource stubs
+yarn test      # Root Vitest projects only
 ```
+
+`make test-all` is the broadest developer command. Live sidecars and cloud
+providers are skipped when their environment variables are absent; pass
+`REQUIRE=1` to fail on missing live prerequisites. Its final summary aggregates
+phase durations and Vitest, Rust, Node TAP, and live check totals.
+
+`verify-fast` is deterministic: it does not download models, contact cloud
+providers, or require API keys. It rejects new false-confidence test patterns
+and regressions below the committed coverage floor for critical production
+files. Existing exceptions live in `tests/test-quality-allowlist.json`; do not
+add one when the test can assert a persisted, rendered, or serialized outcome.
+
+Rust command tests use two layers:
+
+- File-store and domain tests call path-based functions directly with `TempDir`.
+- IPC tests register the real `#[tauri::command]` handlers and invoke them through
+  the shared test harness in `src-tauri/src/test_support.rs`. These tests pin
+  command names, camelCase argument decoding, result/error serialization, and
+  Tauri dispatch behavior.
+
+Keep direct tests for business rules and concurrency. Add or update an IPC test
+when a command name, argument shape, or serialized response changes. The
+`tauri::test` IPC APIs are unstable; access the IPC request/response primitives
+through the shared harness instead of importing them into feature tests.
+
+Frontend Tauri service tests also use two layers:
+
+- UI and hook tests seed the real Zustand service store with explicit test
+  services from `web-app/src/test/service-hub.ts`. Do not install a global
+  `useServiceHub` module mock.
+- IPC-boundary tests execute the real `services/*/tauri.ts` adapter and
+  intercept the resulting call with `@tauri-apps/api/mocks`. Use `mockIPC` for
+  commands, `mockWindows` for window metadata, and `mockConvertFileSrc` for
+  asset URLs. The shared setup clears Tauri mock state after every test.
+
+Do not combine `mockIPC` with a module mock of `@tauri-apps/api/core` in the
+same suite: the module mock bypasses Tauri's IPC machinery and defeats the
+contract test.
 
 ## Code Standards
 

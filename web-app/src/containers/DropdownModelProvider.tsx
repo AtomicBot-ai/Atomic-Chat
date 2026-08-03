@@ -9,11 +9,13 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
 import { highlightFzfMatch } from '@/utils/highlight'
 import Capabilities from './Capabilities'
-import { ModelSourceBadge, MissingModelBadge } from '@/components/ModelSourceBadge'
+import {
+  ModelSourceBadge,
+  MissingModelBadge,
+} from '@/components/ModelSourceBadge'
 import { IconSettings, IconX, IconDownload } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
-import { ModelSetting } from '@/containers/ModelSetting'
 import { SamplerPopover } from '@/containers/SamplerPopover'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { ModelSupportStatus } from '@/containers/ModelSupportStatus'
@@ -26,6 +28,7 @@ import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 import { switchToModel } from '@/utils/switchModel'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ChevronsUpDown } from 'lucide-react'
 
 interface SearchableModel {
@@ -60,7 +63,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     providers,
     getProviderByName,
     selectModelProvider,
-    getModelBy,
     selectedProvider,
     selectedModel,
     updateProvider,
@@ -145,6 +147,32 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   useEffect(() => {
     const initializeModel = async () => {
       if (selectedProvider && selectedModel) {
+        return
+      }
+
+      const { preloadModelOnStartup } = useGeneralSetting.getState()
+      if (!preloadModelOnStartup) {
+        // Preload is disabled: don't pre-select the last used model or
+        // auto-pick the first local model. Only reflect a model that is
+        // already actively running (e.g. started manually earlier in the
+        // session); otherwise leave the selector blank.
+        try {
+          const activeModelIds = await serviceHub.models().getActiveModels()
+          const activeModelId = activeModelIds?.[0]
+          if (activeModelId) {
+            const activeProvider = providers.find(
+              (p) => p.active && p.models.some((m) => m.id === activeModelId)
+            )
+            if (activeProvider) {
+              selectModelProvider(activeProvider.provider, activeModelId)
+              setLastUsedModel(activeProvider.provider, activeModelId)
+              return
+            }
+          }
+        } catch (error) {
+          console.debug('Error checking active models on startup:', error)
+        }
+        selectModelProvider('', '')
         return
       }
 
@@ -473,10 +501,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     ]
   )
 
-  const currentModel = selectedModel?.id
-    ? getModelBy(selectedModel?.id)
-    : undefined
-
   if (!providers.length) return null
 
   const provider = getProviderByName(selectedProvider)
@@ -495,6 +519,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         >
           <button
             type="button"
+            title={selectedModel?.id ?? displayModel}
             className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20 max-w-50"
           >
             {provider && (
@@ -512,18 +537,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
             </span>
             <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
           </button>
-          {currentModel?.settings &&
-            provider &&
-            (provider.provider === 'llamacpp' ||
-              provider.provider === 'llamacpp-upstream' ||
-              provider.provider === 'mlx') && (
-              <div onClick={(e) => e.stopPropagation()}>
-                <ModelSetting
-                  model={currentModel as Model}
-                  provider={provider}
-                />
-              </div>
-            )}
           <ModelSupportStatus
             modelId={selectedModel?.id}
             provider={selectedProvider}
@@ -666,6 +679,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                           <span className="capitalize text-sm font-medium text-muted-foreground">
                             {getProviderTitle(providerInfo.provider)}
                           </span>
+                          {providerInfo.provider === selectedProvider && (
+                            <span className="size-2 rounded-full bg-green-500 shrink-0" />
+                          )}
                         </div>
 
                         <div

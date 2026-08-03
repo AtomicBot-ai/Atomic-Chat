@@ -1,0 +1,17 @@
+{
+  "atomic-chat-conf": {
+    "revision": "40665589ef2820f36cbdec282b23f554b60dd563",
+    "fixtures": [
+      "upstream-manifest.json",
+      "turboquant-manifest.json",
+      "recommended-models.json",
+      "provider-registry.json"
+    ],
+    "note": "Backend and recommendation fixtures are exact. The provider fixture is a deterministic representative slice of the pinned registry."
+  },
+  "atomic-chat-model-catalog": {
+    "revision": "355f4c0f37f4c56eaf241705b10dc862faa9b450",
+    "fixtures": ["catalog.json", "catalog-index.json"],
+    "note": "Reduced deterministic fixtures preserve the pinned output shape without committing the multi-megabyte generated catalog."
+  }
+}

@@ -16,9 +16,8 @@ interface LlamacppMtpUnsupportedDialogProps {
 }
 
 /// Shown when the user flips the upstream-llama `mtp` toggle on while the
-/// active llama.cpp model name does not contain "mtp". Mirrors the MLX
-/// `MtpUnsupportedDialog` UX (the model itself simply can't speculate via
-/// the MTP head — there's nothing for `--spec-type draft-mtp` to attach to).
+/// active GGUF has neither canonical embedded-MTP metadata nor a supported
+/// separate Gemma draft head. Mirrors the MLX `MtpUnsupportedDialog` UX.
 export function LlamacppMtpUnsupportedDialog({
   open,
   onOpenChange,

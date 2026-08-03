@@ -1,9 +1,6 @@
 /**
- * Payload of the `analytics://api_server_request` Tauri event emitted by the
- * Rust Local API Server proxy. The `AnalyticProvider` listens for this event
- * and forwards it to PostHog as `api_server_request`. The chat UI emits
- * `chat_request_sent` with `source: 'chat'` so both paths can be compared in
- * product analytics without any PII.
+ * Immediate bind-failure payload. Normal Local API Server requests are emitted
+ * through the aggregated session-summary event below.
  */
 export type ApiServerRequestEvent = {
   source: 'local_api_server'
@@ -45,3 +42,33 @@ export type ApiServerRequestEvent = {
 }
 
 export const API_SERVER_REQUEST_EVENT = 'analytics://api_server_request'
+
+export type ApiServerSessionSummaryEvent = {
+  source: 'local_api_server'
+  window_started_at_ms: number
+  window_ended_at_ms: number
+  window_duration_ms: number
+  request_count: number
+  success_count: number
+  client_error_count: number
+  server_error_count: number
+  other_status_count: number
+  latency_sum_ms: number
+  latency_avg_ms: number
+  latency_max_ms: number
+  stream_request_count: number
+  anthropic_fallback_count: number
+  oom_count: number
+  ctx_overflow_count: number
+  endpoint_counts: Record<string, number>
+  method_counts: Record<string, number>
+  backend_counts: Record<string, number>
+  provider_counts: Record<string, number>
+  status_counts: Record<string, number>
+  upstream_status_counts: Record<string, number>
+  error_kind_counts: Record<string, number>
+  models_used: string[]
+}
+
+export const API_SERVER_SESSION_SUMMARY_EVENT =
+  'analytics://api_server_session_summary'

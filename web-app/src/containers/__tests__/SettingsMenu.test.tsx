@@ -68,7 +68,6 @@ vi.mock('@/containers/ProvidersAvatar', () => ({
   ),
 }))
 
-
 describe('SettingsMenu', () => {
   const mockNavigate = vi.fn()
   const mockMatches = [
@@ -96,15 +95,19 @@ describe('SettingsMenu', () => {
     render(<SettingsMenu />)
 
     expect(screen.getByText('common:general')).toBeInTheDocument()
+    expect(screen.getByText('common:attachments')).toBeInTheDocument()
     expect(screen.getByText('common:interface')).toBeInTheDocument()
-    expect(screen.getByText('common:privacy')).toBeInTheDocument()
+    expect(screen.getByText('common:assistants')).toBeInTheDocument()
+    expect(screen.queryByText('common:privacy')).not.toBeInTheDocument()
   })
 
   it('renders keyboard shortcuts and other settings', () => {
     render(<SettingsMenu />)
     expect(screen.getByText('common:keyboardShortcuts')).toBeInTheDocument()
     expect(screen.getByText('common:hardware')).toBeInTheDocument()
-    expect(screen.queryByText('common:local_api_server')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('common:local_api_server')
+    ).not.toBeInTheDocument()
     expect(screen.getByText('common:https_proxy')).toBeInTheDocument()
     expect(screen.getByText('common:mcp-servers')).toBeInTheDocument()
   })
@@ -144,7 +147,9 @@ describe('SettingsMenu', () => {
     await user.click(toggleButton)
 
     // After collapsing, anthropic should be hidden
-    expect(screen.queryByTestId('provider-avatar-anthropic')).not.toBeInTheDocument()
+    expect(
+      screen.queryByTestId('provider-avatar-anthropic')
+    ).not.toBeInTheDocument()
   })
 
   it('auto-expands providers when on provider route', () => {
@@ -204,7 +209,9 @@ describe('SettingsMenu', () => {
     expect(screen.getByTestId('provider-avatar-openai')).toBeInTheDocument()
 
     // llama.cpp should have 'hidden' class during setup_remote_provider step
-    const llamaCpp = screen.getByTestId('provider-avatar-llama.cpp').closest('div[class*="cursor-pointer"]')
+    const llamaCpp = screen
+      .getByTestId('provider-avatar-llama.cpp')
+      .closest('div[class*="cursor-pointer"]')
     expect(llamaCpp?.className).toContain('hidden')
   })
 

@@ -21,6 +21,34 @@ export function isLocalProvider(providerName: string | undefined | null): boolea
   return (LOCAL_PROVIDER_NAMES as readonly string[]).includes(providerName)
 }
 
+/** True when `base_url` points at a loopback address. */
+export function isLoopbackUrl(baseUrl: string | undefined | null): boolean {
+  if (!baseUrl) return false
+  try {
+    const host = new URL(baseUrl).hostname.toLowerCase()
+    return (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '0.0.0.0' ||
+      host === '::1'
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
+ * OpenAI-compatible providers served over loopback (Ollama, LM Studio, …) need
+ * no API key. They still travel the remote/proxy path — they are NOT local
+ * engines — so the usual "no key ⇒ skip/block" gates must let them through.
+ */
+export function isKeylessRemoteProvider(
+  provider: { provider?: string; base_url?: string } | null | undefined
+): boolean {
+  if (!provider || isLocalProvider(provider.provider)) return false
+  return isLoopbackUrl(provider.base_url)
+}
+
 /**
  * Idempotently register a remote (cloud) provider with the Tauri backend
  * so the Local API Server proxy can route requests for its models.
@@ -36,7 +64,7 @@ export async function registerRemoteProvider(
     return false
   }
 
-  if (!provider.api_key) {
+  if (!provider.api_key && !isKeylessRemoteProvider(provider)) {
     console.log(
       `[registerRemoteProvider] Provider ${provider.provider} has no API key, skipping registration`
     )
@@ -45,8 +73,8 @@ export async function registerRemoteProvider(
 
   const request: RegisterProviderRequest = {
     provider: provider.provider,
-    api_key: provider.api_key,
-    base_url: provider.base_url,
+    api_key: provider.api_key || undefined,
+    base_url: provider.base_url?.trim(),
     custom_headers: (provider.custom_header || []).map((h) => ({
       header: h.header,
       value: h.value,

@@ -8,5 +8,96 @@
   },
   "sendMessage": "Отправить сообщение",
   "newConversation": "Новый диалог",
-  "clearHistory": "Очистить историю"
+  "clearHistory": "Очистить историю",
+  "activity": {
+    "working": "Выполняется",
+    "reading": "Чтение: {{count}}%",
+    "workedFor": "Выполнено за {{count}} с",
+    "calledTool": "Вызван {{count}} инструмент",
+    "calledTools": "Вызвано инструментов: {{count}}",
+    "reasoned": "Обдумано"
+  },
+  "workspacePreview": {
+    "generating": "Предпросмотр станет доступен после завершения генерации."
+  },
+  "agentMode": {
+    "chat": "Чат",
+    "agent": "Агент",
+    "placeholder": "Опишите задачу для агента...",
+    "providerUnavailable": "Режим агента доступен только с локальной моделью llama.cpp."
+  },
+  "agentApprovals": {
+    "manualSelected": "Вручную",
+    "manual": "Подтверждать вручную",
+    "manualDescription": "Спрашивать перед важными действиями.",
+    "skipSelected": "Пропускать",
+    "skip": "Пропускать подтверждения",
+    "skipDescription": "Выполнять без вопросов."
+  },
+  "agentApproval": {
+    "title": "Требуется подтверждение агента",
+    "description": "{{tool}} ожидает вашего решения.",
+    "reason": "Причина",
+    "preview": "Предпросмотр действия",
+    "resources": "Затронутые ресурсы",
+    "timeoutNotice": "Если вы не ответите, запрос будет автоматически отклонён после таймаута backend.",
+    "deny": "Отклонить",
+    "alwaysAllow": "Всегда разрешать это действие",
+    "approveOnce": "Разрешить один раз",
+    "resolveFailed": "Не удалось отправить решение."
+  },
+  "agentFolderAccess": {
+    "title": "Разрешить доступ к папке",
+    "description": "Инструменту {{tool}} нужен доступ к этой папке.",
+    "canEditNotice": "После разрешения папка появится в External с доступом CAN EDIT для текущего треда агента.",
+    "deny": "Отклонить",
+    "allow": "Разрешить папку",
+    "resolveFailed": "Не удалось отправить решение о доступе к папке."
+  },
+  "agentWorkspace": {
+    "choose": "Выбрать workspace",
+    "change": "Изменить workspace агента",
+    "default": "Workspace по умолчанию",
+    "defaultDescription": "Используется папка agent-workspace внутри папки данных Atomic Chat.",
+    "projectFiles": "Project Files",
+    "external": "External",
+    "canEdit": "CAN EDIT",
+    "viewOnly": "ТОЛЬКО ПРОСМОТР",
+    "addFolder": "Добавить внешнюю папку",
+    "folderOptions": "Настройки папки",
+    "allowEditing": "Можно редактировать",
+    "makeViewOnly": "Только просмотр",
+    "removeFolder": "Убрать из Agent"
+  },
+  "agentErrors": {
+    "audioUnsupported": "Agent-режим не поддерживает аудиовложения.",
+    "invalidAttachment": "Не удалось прикрепить один или несколько файлов. Выберите локальные файлы и повторите попытку.",
+    "visionModelRequired": "Перед отправкой изображений выберите модель с поддержкой vision.",
+    "localLlamacppRequired": "Agent-режиму нужна активная локальная llama.cpp-модель.",
+    "providerUnavailableTitle": "Режим агента недоступен для этого провайдера",
+    "providerUnavailableDescription": "Переключитесь на локальную модель llama.cpp и попробуйте снова.",
+    "unsupportedTools": "Agent-режим пока не поддерживает MCP, RAG и browser tools.",
+    "runFailed": "Не удалось запустить агента.",
+    "cancelFailed": "Не удалось отменить запуск агента.",
+    "saveFailed": "Не удалось сохранить ответ агента."
+  },
+  "agentTasks": {
+    "title": "Идеи для вас",
+    "findLatestNews": {
+      "title": "Найти последние новости",
+      "prompt": "Найди последние новости и кратко изложи самые важные недавние события со ссылками на источники."
+    },
+    "inspectFolder": {
+      "title": "Прибрать мой рабочий стол",
+      "prompt": "Разбери файлы и папки на моём рабочем столе. Не удаляй, не перезаписывай, не заменяй, не переименовывай и не изменяй никакие файлы или папки."
+    },
+    "findLargeFiles": {
+      "title": "Найти крупные файлы",
+      "prompt": "Найди самые крупные файлы в моей папке «Загрузки» и предложи безопасные варианты очистки. Ничего не удаляй."
+    }
+  },
+  "threadType": {
+    "chat": "Чат",
+    "agent": "Тред агента"
+  }
 }

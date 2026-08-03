@@ -74,7 +74,7 @@ function sizeStringToGb(size?: string): number | undefined {
 
   const value = Number(match[1])
   if (!Number.isFinite(value)) return undefined
-  
+
   const gb = match[2].toUpperCase() === 'GB' ? value : value / 1024
   return Math.round(gb * 100) / 100
 }
@@ -217,7 +217,11 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       importedPaths,
     })
 
-    void scanLocalModels({ enabled, extraRoots: localScanFolders, importedPaths })
+    void scanLocalModels({
+      enabled,
+      extraRoots: localScanFolders,
+      importedPaths,
+    })
       .then((found) => {
         console.debug('[SetupScreen] local scan result', {
           total: found.length,
@@ -325,13 +329,10 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   //* MLX: id в реестре провайдера. ВАЖНО: MLX-движок использует свой sanitizer
   //* (сохраняет точки, пробелы → '-'), отличный от @/lib/utils.sanitizeModelId
   //* (который бы схлопнул '.' → '_'). Дублируем логику MlxModelDownloadAction.
-  const getMlxModelId = useCallback(
-    (catalog: CatalogModel) => {
-      const raw = catalog.model_name.split('/').pop() ?? catalog.model_name
-      return raw.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-_./]/g, '')
-    },
-    []
-  )
+  const getMlxModelId = useCallback((catalog: CatalogModel) => {
+    const raw = catalog.model_name.split('/').pop() ?? catalog.model_name
+    return raw.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-_./]/g, '')
+  }, [])
 
   const isMlxDownloaded = useCallback(
     (catalog: CatalogModel) => {
@@ -345,6 +346,52 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     },
     [mlxProvider, getMlxModelId]
   )
+
+  //* Уже установленные рекомендованные модели переезжают в секцию «На вашем
+  //* устройстве» с живой кнопкой запуска; остальные остаются в рекомендациях.
+  const { installedRecommended, pendingRecommended } = useMemo(() => {
+    const installed: Array<{
+      rec: (typeof recommendedItems)[number]['rec']
+      model: CatalogModel
+      startId: string
+      provider: LocalLlamacppProvider | 'mlx'
+      sizeLabel: string | null | undefined
+    }> = []
+    const pending: typeof recommendedItems = []
+
+    for (const item of recommendedItems) {
+      const { model } = item
+      if (!model) {
+        pending.push(item)
+        continue
+      }
+      const isMlx = !!model.is_mlx
+      const variant = !isMlx ? pickPreferredVariant(model) : null
+      const downloaded = isMlx
+        ? isMlxDownloaded(model)
+        : variant
+          ? isVariantDownloaded(model, variant)
+          : false
+
+      if (downloaded) {
+        installed.push({
+          rec: item.rec,
+          model,
+          startId: isMlx ? getMlxModelId(model) : variant!.model_id,
+          provider: (isMlx ? 'mlx' : LOCAL_LLAMACPP_PROVIDER) as
+            | LocalLlamacppProvider
+            | 'mlx',
+          sizeLabel: isMlx
+            ? getMlxTotalFileSize(model)
+            : getTotalDownloadFileSize(model, variant!),
+        })
+      } else {
+        pending.push(item)
+      }
+    }
+
+    return { installedRecommended: installed, pendingRecommended: pending }
+  }, [recommendedItems, isMlxDownloaded, isVariantDownloaded, getMlxModelId])
 
   const startDownload = useCallback(
     (catalog: CatalogModel, variant: ModelQuant) => {
@@ -674,7 +721,13 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       replace: true,
       search: {},
     })
-  }, [navigate, onSkipped, providers, importCandidatesInBackground, localCandidates])
+  }, [
+    navigate,
+    onSkipped,
+    providers,
+    importCandidatesInBackground,
+    localCandidates,
+  ])
 
   // Windows: dedicated llama.cpp backend step runs first. Once the user
   // either downloads or skips it the flag is persisted so subsequent
@@ -728,7 +781,8 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
             </div>
 
             <div className="relative z-50 flex flex-col gap-4">
-              {detectedRunnable.length > 0 && (
+              {(detectedRunnable.length > 0 ||
+                installedRecommended.length > 0) && (
                 <div className="flex flex-col gap-2">
                   <span className="shrink-0 text-left text-xs font-medium text-muted-foreground">
                     {t('setup:localStep.onDeviceTitle')}
@@ -816,214 +870,298 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                           </div>
                         )
                       })}
+                      {installedRecommended.map(
+                        ({ rec, model, startId, provider, sizeLabel }) => {
+                          const brandIconSrc = recommendedSetupModelIconSrc(
+                            rec.modelName
+                          )
+                          const hfAuthor =
+                            model.developer?.trim() ||
+                            rec.modelName.split('/')[0]?.trim() ||
+                            ''
+                          const rowInitials =
+                            (extractModelName(rec.modelName) || rec.modelName)
+                              .replace(/\.(gguf|GGUF)$/i, '')
+                              .replace(/[^a-zA-Z0-9]/g, '')
+                              .slice(0, 2) ||
+                            hfAuthor.slice(0, 2) ||
+                            '?'
+
+                          return (
+                            <div
+                              key={`installed-${rec.modelName}-${rec.descriptionKey}`}
+                              className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
+                            >
+                              <div className="flex min-w-0 flex-1 items-start gap-3">
+                                {brandIconSrc ? (
+                                  <img
+                                    src={brandIconSrc}
+                                    alt=""
+                                    className="size-11 shrink-0 object-contain sm:size-12"
+                                    draggable={false}
+                                    aria-hidden
+                                  />
+                                ) : (
+                                  <HuggingFaceAuthorAvatar
+                                    author={hfAuthor}
+                                    initials={rowInitials}
+                                    className="size-11 shrink-0 sm:size-12"
+                                  />
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  <h2 className="font-semibold text-sm leading-tight sm:text-base sm:whitespace-nowrap">
+                                    {extractModelName(model.model_name)}
+                                    {sizeLabel ? (
+                                      <span className="text-xs font-normal text-muted-foreground">
+                                        {' '}
+                                        · {sizeLabel}
+                                      </span>
+                                    ) : null}
+                                  </h2>
+                                  <RecommendedModelChip
+                                    className="mt-1.5 inline-flex max-w-full sm:max-w-md"
+                                    variant={chipVariantForRecommendedDescriptionKey(
+                                      rec.descriptionKey
+                                    )}
+                                    title={t(rec.descriptionKey)}
+                                  >
+                                    {t(rec.descriptionKey)}
+                                  </RecommendedModelChip>
+                                </div>
+                              </div>
+                              <div className="flex w-full flex-col items-center gap-1 sm:w-auto sm:shrink-0">
+                                <Button
+                                  size="sm"
+                                  disabled={importingLocalId !== null}
+                                  onClick={() => {
+                                    importCandidatesInBackground(
+                                      localCandidates ?? []
+                                    )
+                                    enterChatForDownload(startId, provider)
+                                  }}
+                                  className="w-full shrink-0 rounded-full px-5 font-semibold sm:w-auto"
+                                >
+                                  {t('setup:localStep.run')}
+                                </Button>
+                              </div>
+                            </div>
+                          )
+                        }
+                      )}
                     </div>
                   </div>
                 </div>
               )}
 
               <div className="flex flex-col gap-2">
-                <span className="shrink-0 text-left text-xs font-medium text-muted-foreground">
-                  {t('hub:recTitle')}
-                </span>
-                <div
-                  className={cn(
-                    //* +20% только к внутренним отступам «карточки» (рамка со списком)
-                    'w-full shrink-0 rounded-lg border bg-secondary/50 p-[0.9rem] sm:p-[1.2rem]',
-                    'max-h-[min(70vh,36rem)] overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable]'
-                  )}
-                >
-                  <div className="flex flex-col divide-y divide-border/60">
-                    {recommendedItems.map(({ rec, model }, index) => {
-                      const isMlx = !!model?.is_mlx
-                      const variant =
-                        model && !isMlx ? pickPreferredVariant(model) : null
-                      //* MLX: суммируем все safetensors-шарды; GGUF: quant + mmproj
-                      const downloadSize = isMlx
-                        ? getMlxTotalFileSize(model!)
-                        : model && variant
-                          ? getTotalDownloadFileSize(model, variant)
-                          : variant?.file_size
-                      //* id, по которому опрашиваем downloadStore (GGUF → quant.id, MLX → mlxId)
-                      const rowTrackId = isMlx
-                        ? model
-                          ? getMlxModelId(model)
-                          : null
-                        : variant?.model_id ?? null
-                      const rowDownloading = rowTrackId
-                        ? isVariantDownloading(rowTrackId)
-                        : false
-                      const rowDownloaded = isMlx
-                        ? model
-                          ? isMlxDownloaded(model)
-                          : false
-                        : model && variant
-                          ? isVariantDownloaded(model, variant)
-                          : false
-                      const hfAuthor =
-                        model?.developer?.trim() ||
-                        rec.modelName.split('/')[0]?.trim() ||
-                        ''
-                      const nameForInitials =
-                        extractModelName(rec.modelName) || rec.modelName || '?'
-                      const rowInitials =
-                        nameForInitials
-                          .replace(/\.(gguf|GGUF)$/i, '')
-                          .replace(/[^a-zA-Z0-9]/g, '')
-                          .slice(0, 2) ||
-                        hfAuthor.slice(0, 2) ||
-                        '?'
+                {pendingRecommended.length > 0 && (
+                  <>
+                    <span className="shrink-0 text-left text-xs font-medium text-muted-foreground">
+                      {t('hub:recTitle')}
+                    </span>
+                    <div
+                      className={cn(
+                        //* +20% только к внутренним отступам «карточки» (рамка со списком)
+                        'w-full shrink-0 rounded-lg border bg-secondary/50 p-[0.9rem] sm:p-[1.2rem]',
+                        'max-h-[min(70vh,36rem)] overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable]'
+                      )}
+                    >
+                      <div className="flex flex-col divide-y divide-border/60">
+                        {pendingRecommended.map(({ rec, model }, index) => {
+                          const isMlx = !!model?.is_mlx
+                          const variant =
+                            model && !isMlx ? pickPreferredVariant(model) : null
+                          //* MLX: суммируем все safetensors-шарды; GGUF: quant + mmproj
+                          const downloadSize = isMlx
+                            ? getMlxTotalFileSize(model!)
+                            : model && variant
+                              ? getTotalDownloadFileSize(model, variant)
+                              : variant?.file_size
+                          //* id, по которому опрашиваем downloadStore (GGUF → quant.id, MLX → mlxId)
+                          const rowTrackId = isMlx
+                            ? model
+                              ? getMlxModelId(model)
+                              : null
+                            : (variant?.model_id ?? null)
+                          const rowDownloading = rowTrackId
+                            ? isVariantDownloading(rowTrackId)
+                            : false
+                          const rowDownloaded = isMlx
+                            ? model
+                              ? isMlxDownloaded(model)
+                              : false
+                            : model && variant
+                              ? isVariantDownloaded(model, variant)
+                              : false
+                          const hfAuthor =
+                            model?.developer?.trim() ||
+                            rec.modelName.split('/')[0]?.trim() ||
+                            ''
+                          const nameForInitials =
+                            extractModelName(rec.modelName) ||
+                            rec.modelName ||
+                            '?'
+                          const rowInitials =
+                            nameForInitials
+                              .replace(/\.(gguf|GGUF)$/i, '')
+                              .replace(/[^a-zA-Z0-9]/g, '')
+                              .slice(0, 2) ||
+                            hfAuthor.slice(0, 2) ||
+                            '?'
 
-                      const brandIconSrc = recommendedSetupModelIconSrc(
-                        rec.modelName
-                      )
-                      const rowDownloadProgress = rowTrackId
-                        ? downloadProcesses.find((p) => p.id === rowTrackId)
-                        : undefined
+                          const brandIconSrc = recommendedSetupModelIconSrc(
+                            rec.modelName
+                          )
+                          const rowDownloadProgress = rowTrackId
+                            ? downloadProcesses.find((p) => p.id === rowTrackId)
+                            : undefined
 
-                      return (
-                        <div
-                          key={`${rec.modelName}-${rec.descriptionKey}`}
-                          className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
-                        >
-                          <div className="flex min-w-0 flex-1 items-start gap-3">
-                            {brandIconSrc ? (
-                              <img
-                                src={brandIconSrc}
-                                alt=""
-                                className="size-11 shrink-0 object-contain sm:size-12"
-                                draggable={false}
-                                aria-hidden
-                              />
-                            ) : (
-                              <HuggingFaceAuthorAvatar
-                                author={hfAuthor}
-                                initials={rowInitials}
-                                className="size-11 shrink-0 sm:size-12"
-                              />
-                            )}
-                            <div className="min-w-0 flex-1">
-                              <h2 className="font-semibold text-sm leading-tight sm:text-base sm:whitespace-nowrap">
-                                {model
-                                  ? extractModelName(model.model_name)
-                                  : extractModelName(rec.modelName)}
-                                {downloadSize ? (
-                                  <span className="text-xs font-normal text-muted-foreground">
-                                    {' '}
-                                    · {downloadSize}
-                                  </span>
-                                ) : null}
-                              </h2>
-                              <RecommendedModelChip
-                                className="mt-1.5 inline-flex max-w-full sm:max-w-md"
-                                variant={chipVariantForRecommendedDescriptionKey(
-                                  rec.descriptionKey
-                                )}
-                                title={t(rec.descriptionKey)}
-                              >
-                                {t(rec.descriptionKey)}
-                              </RecommendedModelChip>
-                              {!model && (
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                  {sourcesLoading
-                                    ? t('hub:loadingModels')
-                                    : t('setup:modelUnavailable')}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex w-full flex-col items-center gap-1 sm:w-auto sm:shrink-0">
-                            <Button
-                              size="sm"
-                              disabled={
-                                !model ||
-                                (!isMlx && !variant) ||
-                                rowDownloading ||
-                                rowDownloaded
-                              }
-                              onClick={() => {
-                                if (!model) return
-                                // Detected-on-disk models still land in the
-                                // library even when the user downloads a
-                                // catalog model instead of running them.
-                                importCandidatesInBackground(
-                                  localCandidates ?? []
-                                )
-                                if (isMlx) {
-                                  captureRecommendedClick({
-                                    modelId: getMlxModelId(model),
-                                    format: 'MLX',
-                                    sizeGb: sizeStringToGb(downloadSize),
-                                    position: index,
-                                  })
-                                  void startMlxDownload(model)
-                                  enterChatForDownload(
-                                    getMlxModelId(model),
-                                    'mlx'
-                                  )
-                                } else if (variant) {
-                                  captureRecommendedClick({
-                                    modelId: variant.model_id,
-                                    format: 'GGUF',
-                                    sizeGb: sizeStringToGb(downloadSize),
-                                    position: index,
-                                  })
-                                  startDownload(model, variant)
-                                  enterChatForDownload(
-                                    variant.model_id,
-                                    LOCAL_LLAMACPP_PROVIDER as LocalLlamacppProvider
-                                  )
-                                }
-                              }}
-                              className="w-full shrink-0 rounded-full px-5 font-semibold sm:w-auto"
+                          return (
+                            <div
+                              key={`${rec.modelName}-${rec.descriptionKey}`}
+                              className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
                             >
-                              {/* Reserve width for the widest possible label so the
+                              <div className="flex min-w-0 flex-1 items-start gap-3">
+                                {brandIconSrc ? (
+                                  <img
+                                    src={brandIconSrc}
+                                    alt=""
+                                    className="size-11 shrink-0 object-contain sm:size-12"
+                                    draggable={false}
+                                    aria-hidden
+                                  />
+                                ) : (
+                                  <HuggingFaceAuthorAvatar
+                                    author={hfAuthor}
+                                    initials={rowInitials}
+                                    className="size-11 shrink-0 sm:size-12"
+                                  />
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  <h2 className="font-semibold text-sm leading-tight sm:text-base sm:whitespace-nowrap">
+                                    {model
+                                      ? extractModelName(model.model_name)
+                                      : extractModelName(rec.modelName)}
+                                    {downloadSize ? (
+                                      <span className="text-xs font-normal text-muted-foreground">
+                                        {' '}
+                                        · {downloadSize}
+                                      </span>
+                                    ) : null}
+                                  </h2>
+                                  <RecommendedModelChip
+                                    className="mt-1.5 inline-flex max-w-full sm:max-w-md"
+                                    variant={chipVariantForRecommendedDescriptionKey(
+                                      rec.descriptionKey
+                                    )}
+                                    title={t(rec.descriptionKey)}
+                                  >
+                                    {t(rec.descriptionKey)}
+                                  </RecommendedModelChip>
+                                  {!model && (
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                      {sourcesLoading
+                                        ? t('hub:loadingModels')
+                                        : t('setup:modelUnavailable')}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex w-full flex-col items-center gap-1 sm:w-auto sm:shrink-0">
+                                <Button
+                                  size="sm"
+                                  disabled={
+                                    !model ||
+                                    (!isMlx && !variant) ||
+                                    rowDownloading ||
+                                    rowDownloaded
+                                  }
+                                  onClick={() => {
+                                    if (!model) return
+                                    // Detected-on-disk models still land in the
+                                    // library even when the user downloads a
+                                    // catalog model instead of running them.
+                                    importCandidatesInBackground(
+                                      localCandidates ?? []
+                                    )
+                                    if (isMlx) {
+                                      captureRecommendedClick({
+                                        modelId: getMlxModelId(model),
+                                        format: 'MLX',
+                                        sizeGb: sizeStringToGb(downloadSize),
+                                        position: index,
+                                      })
+                                      void startMlxDownload(model)
+                                      enterChatForDownload(
+                                        getMlxModelId(model),
+                                        'mlx'
+                                      )
+                                    } else if (variant) {
+                                      captureRecommendedClick({
+                                        modelId: variant.model_id,
+                                        format: 'GGUF',
+                                        sizeGb: sizeStringToGb(downloadSize),
+                                        position: index,
+                                      })
+                                      startDownload(model, variant)
+                                      enterChatForDownload(
+                                        variant.model_id,
+                                        LOCAL_LLAMACPP_PROVIDER as LocalLlamacppProvider
+                                      )
+                                    }
+                                  }}
+                                  className="w-full shrink-0 rounded-full px-5 font-semibold sm:w-auto"
+                                >
+                                  {/* Reserve width for the widest possible label so the
                                   button doesn't reflow when its state flips between
                                   Download / Downloading… / Downloaded. */}
-                              <span className="grid">
-                                <span
-                                  aria-hidden="true"
-                                  className="invisible col-start-1 row-start-1"
-                                >
-                                  {t('setup:downloading')}
-                                </span>
-                                <span
-                                  aria-hidden="true"
-                                  className="invisible col-start-1 row-start-1"
-                                >
-                                  {t('hub:downloaded')}
-                                </span>
-                                <span
-                                  aria-hidden="true"
-                                  className="invisible col-start-1 row-start-1"
-                                >
-                                  {t('hub:download')}
-                                </span>
-                                <span className="col-start-1 row-start-1">
-                                  {rowDownloaded
-                                    ? t('hub:downloaded')
-                                    : rowDownloading
-                                      ? t('setup:downloading')
-                                      : t('hub:download')}
-                                </span>
-                              </span>
-                            </Button>
-                            {rowDownloading && rowTrackId ? (
-                              <p
-                                className="w-full text-center text-xs text-muted-foreground tabular-nums sm:w-auto sm:max-w-full"
-                                aria-live="polite"
-                              >
-                                {rowDownloadProgress &&
-                                rowDownloadProgress.total > 0
-                                  ? `${Math.round((rowDownloadProgress.progress ?? 0) * 100)}% · ${formatDownloadGb(rowDownloadProgress.current)} / ${formatDownloadGb(rowDownloadProgress.total)} GB`
-                                  : t('setup:downloadPreparing')}
-                              </p>
-                            ) : null}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
+                                  <span className="grid">
+                                    <span
+                                      aria-hidden="true"
+                                      className="invisible col-start-1 row-start-1"
+                                    >
+                                      {t('setup:downloading')}
+                                    </span>
+                                    <span
+                                      aria-hidden="true"
+                                      className="invisible col-start-1 row-start-1"
+                                    >
+                                      {t('hub:downloaded')}
+                                    </span>
+                                    <span
+                                      aria-hidden="true"
+                                      className="invisible col-start-1 row-start-1"
+                                    >
+                                      {t('hub:download')}
+                                    </span>
+                                    <span className="col-start-1 row-start-1">
+                                      {rowDownloaded
+                                        ? t('hub:downloaded')
+                                        : rowDownloading
+                                          ? t('setup:downloading')
+                                          : t('hub:download')}
+                                    </span>
+                                  </span>
+                                </Button>
+                                {rowDownloading && rowTrackId ? (
+                                  <p
+                                    className="w-full text-center text-xs text-muted-foreground tabular-nums sm:w-auto sm:max-w-full"
+                                    aria-live="polite"
+                                  >
+                                    {rowDownloadProgress &&
+                                    rowDownloadProgress.total > 0
+                                      ? `${Math.round((rowDownloadProgress.progress ?? 0) * 100)}% · ${formatDownloadGb(rowDownloadProgress.current)} / ${formatDownloadGb(rowDownloadProgress.total)} GB`
+                                      : t('setup:downloadPreparing')}
+                                  </p>
+                                ) : null}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 <div className="relative z-60 flex shrink-0 flex-col items-center pt-3">
                   <Button

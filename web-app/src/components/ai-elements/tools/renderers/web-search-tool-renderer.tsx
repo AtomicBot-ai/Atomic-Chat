@@ -28,33 +28,36 @@ export function WebSearchToolRenderer({
         </div>
       )}
 
-      {results.length > 0 &&
-        results.slice(0, 4).map((result, index) => (
-          <div
-            key={`${result.url ?? result.title}-${index}`}
-            className="rounded-lg border border-border/60 bg-background/30 p-3"
-          >
-            <div className="flex items-start gap-2">
-              <WebsiteIcon url={result.url} />
+      {results.length > 0 && (
+        <div className="max-h-80 space-y-3 overflow-y-auto pr-1">
+          {results.map((result, index) => (
+            <div
+              key={`${result.url ?? result.title}-${index}`}
+              className="rounded-lg border border-border/60 bg-background/30 p-3"
+            >
+              <div className="flex items-start gap-2">
+                <WebsiteIcon url={result.url} />
 
-              <div className="min-w-0 flex-1">
-                <div className="font-medium break-words">{result.title}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium break-words">{result.title}</div>
 
-                {result.url && (
-                  <a
-                    href={result.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-1 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground break-all"
-                  >
-                    <ExternalLink className="size-3 shrink-0" />
-                    <span>{getHostname(result.url)}</span>
-                  </a>
-                )}
+                  {result.url && (
+                    <a
+                      href={result.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground break-all"
+                    >
+                      <ExternalLink className="size-3 shrink-0" />
+                      <span>{getHostname(result.url)}</span>
+                    </a>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
+      )}
     </div>
   )
 }

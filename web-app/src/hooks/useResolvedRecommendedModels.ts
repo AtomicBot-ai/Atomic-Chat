@@ -61,8 +61,16 @@ export function useResolvedRecommendedModels(sources: CatalogModel[]) {
   )
 
   useEffect(() => {
-    let cancelled = false
-
+    //! fetchingRef уже гарантирует единственный in-flight запрос на модель
+    //! и переживает StrictMode-перезапуски эффекта (тот же ref-объект).
+    //! Раньше здесь был локальный `cancelled`-флаг замыкания, который
+    //! выставлялся в true на cleanup ЛЮБОГО перезапуска эффекта (не только
+    //! настоящего unmount) — например, когда `sources` донагружался
+    //! асинхронно после монтирования. Из-за этого единственный реальный
+    //! HF-фетч завершался с уже "отменённым" замыканием и результат тихо
+    //! выбрасывался, а повторной попытки уже никто не запускал. setState
+    //! на действительно размонтированном компоненте в React 18+ — безопасный
+    //! no-op, так что отдельный флаг отмены не нужен.
     for (const rec of recommendations) {
       if (findCatalogModelForRecommendedRepo(sources, rec.modelName)) continue
       if (fetched[rec.modelName]) continue
@@ -74,7 +82,7 @@ export function useResolvedRecommendedModels(sources: CatalogModel[]) {
           const repo = await serviceHub
             .models()
             .fetchHuggingFaceRepo(rec.modelName, huggingfaceToken)
-          if (cancelled || !repo) return
+          if (!repo) return
           const catalog = serviceHub.models().convertHfRepoToCatalogModel(repo)
           const processed: CatalogModel = {
             ...catalog,
@@ -82,7 +90,7 @@ export function useResolvedRecommendedModels(sources: CatalogModel[]) {
               ...quant,
               model_id: sanitizeModelId(quant.model_id),
             })),
-            is_mlx: catalog.library_name === 'mlx',
+            is_mlx: catalog.is_mlx ?? catalog.library_name === 'mlx',
           }
           //! Как в useModelSources: MLX только на macOS
           if (!IS_MACOS && processed.is_mlx) return
@@ -95,10 +103,6 @@ export function useResolvedRecommendedModels(sources: CatalogModel[]) {
           fetchingRef.current.delete(rec.modelName)
         }
       })()
-    }
-
-    return () => {
-      cancelled = true
     }
   }, [recommendations, sources, fetched, serviceHub, huggingfaceToken])
 

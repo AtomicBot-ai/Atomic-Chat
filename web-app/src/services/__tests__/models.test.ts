@@ -75,10 +75,10 @@ describe('DefaultModelsService', () => {
   }
 
   beforeEach(() => {
-    modelsService = new DefaultModelsService()
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     ;(EngineManager.instance as any).mockReturnValue(mockEngineManager)
-    mockEvents.emit.mockClear()
+    mockEngineManager.get.mockReturnValue(mockEngine)
+    modelsService = new DefaultModelsService()
   })
 
   describe('fetchModels', () => {
@@ -103,8 +103,8 @@ describe('DefaultModelsService', () => {
     // the bundled baseline and never throws. These tests assert that
     // contract.
 
-    beforeEach(() => {
-      clearCatalogCache()
+    beforeEach(async () => {
+      await clearCatalogCache()
     })
 
     it('should fetch model catalog successfully', async () => {
@@ -205,7 +205,15 @@ describe('DefaultModelsService', () => {
 
       await modelsService.pullModel(id, modelPath)
 
-      expect(mockEngine.import).toHaveBeenCalledWith(id, { modelPath })
+      expect(mockEngine.import).toHaveBeenCalledWith(id, {
+        modelPath,
+        mmprojPath: undefined,
+        modelSha256: undefined,
+        modelSize: undefined,
+        mmprojSha256: undefined,
+        mmprojSize: undefined,
+        resume: false,
+      })
     })
   })
 
@@ -306,15 +314,34 @@ describe('DefaultModelsService', () => {
   describe('stopAllModels', () => {
     it('should stop all active models from all providers', async () => {
       const mockActiveModels = ['model1', 'model2']
-      // The implementation now stops models from both llamacpp and mlx providers
-      mockEngine.getLoadedModels.mockResolvedValue(mockActiveModels)
+      const engines = {
+        llamacpp: {
+          ...mockEngine,
+          getLoadedModels: vi.fn().mockResolvedValue(mockActiveModels),
+          unload: vi.fn(),
+        },
+        'llamacpp-upstream': {
+          ...mockEngine,
+          getLoadedModels: vi.fn().mockResolvedValue(mockActiveModels),
+          unload: vi.fn(),
+        },
+        mlx: {
+          ...mockEngine,
+          getLoadedModels: vi.fn().mockResolvedValue(mockActiveModels),
+          unload: vi.fn(),
+        },
+      }
+      mockEngineManager.get.mockImplementation(
+        (provider: keyof typeof engines) => engines[provider]
+      )
 
       await modelsService.stopAllModels()
 
-      // Called once for llamacpp models (2 models) and once for mlx models (2 models)
-      expect(mockEngine.unload).toHaveBeenCalledTimes(4)
-      expect(mockEngine.unload).toHaveBeenCalledWith('model1')
-      expect(mockEngine.unload).toHaveBeenCalledWith('model2')
+      for (const engine of Object.values(engines)) {
+        expect(engine.unload).toHaveBeenCalledTimes(2)
+        expect(engine.unload).toHaveBeenCalledWith('model1')
+        expect(engine.unload).toHaveBeenCalledWith('model2')
+      }
     })
 
     it('should handle empty active models', async () => {
@@ -453,7 +480,7 @@ describe('DefaultModelsService', () => {
       expect(fetch).toHaveBeenCalledWith(
         'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true&files_metadata=true',
         {
-          headers: {},
+          headers: undefined,
         }
       )
     })
@@ -472,7 +499,7 @@ describe('DefaultModelsService', () => {
       expect(fetch).toHaveBeenCalledWith(
         'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true&files_metadata=true',
         {
-          headers: {},
+          headers: undefined,
         }
       )
 
@@ -483,7 +510,7 @@ describe('DefaultModelsService', () => {
       expect(fetch).toHaveBeenCalledWith(
         'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true&files_metadata=true',
         {
-          headers: {},
+          headers: undefined,
         }
       )
 
@@ -492,7 +519,7 @@ describe('DefaultModelsService', () => {
       expect(fetch).toHaveBeenCalledWith(
         'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true&files_metadata=true',
         {
-          headers: {},
+          headers: undefined,
         }
       )
     })
@@ -556,14 +583,14 @@ describe('DefaultModelsService', () => {
         1,
         'https://huggingface.co/api/models?search=GLM-5.1-GGUF&limit=10',
         {
-          headers: {},
+          headers: undefined,
         }
       )
       expect(fetch).toHaveBeenNthCalledWith(
         2,
         'https://huggingface.co/api/models/unsloth/GLM-5.1-GGUF?blobs=true&files_metadata=true',
         {
-          headers: {},
+          headers: undefined,
         }
       )
     })
@@ -621,14 +648,14 @@ describe('DefaultModelsService', () => {
         1,
         'https://huggingface.co/api/models?search=GLM-5.1%20GGUF&limit=10',
         {
-          headers: {},
+          headers: undefined,
         }
       )
       expect(fetch).toHaveBeenNthCalledWith(
         2,
         'https://huggingface.co/api/models/unsloth/GLM-5.1-GGUF?blobs=true&files_metadata=true',
         {
-          headers: {},
+          headers: undefined,
         }
       )
     })
@@ -664,7 +691,7 @@ describe('DefaultModelsService', () => {
       expect(fetch).toHaveBeenCalledWith(
         'https://huggingface.co/api/models/nonexistent/model?blobs=true&files_metadata=true',
         {
-          headers: {},
+          headers: undefined,
         }
       )
     })

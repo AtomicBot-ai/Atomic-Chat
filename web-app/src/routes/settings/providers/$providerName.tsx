@@ -17,7 +17,10 @@ import {
 } from '@tanstack/react-router'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import Capabilities from '@/containers/Capabilities'
-import { ModelSourceBadge, MissingModelBadge } from '@/components/ModelSourceBadge'
+import {
+  ModelSourceBadge,
+  MissingModelBadge,
+} from '@/components/ModelSourceBadge'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { DialogEditModel } from '@/containers/dialogs/EditModel'
@@ -27,6 +30,11 @@ import { DflashUnsupportedDialog } from '@/containers/dialogs/DflashUnsupportedD
 import { MtpUnsupportedDialog } from '@/containers/dialogs/MtpUnsupportedDialog'
 import { Eagle3UnsupportedDialog } from '@/containers/dialogs/Eagle3UnsupportedDialog'
 import { LlamacppMtpUnsupportedDialog } from '@/containers/dialogs/LlamacppMtpUnsupportedDialog'
+import { LlamacppDflashUnsupportedDialog } from '@/containers/dialogs/LlamacppDflashUnsupportedDialog'
+import {
+  LlamacppDflashDraftDialog,
+  type LlamacppDflashDraftOption,
+} from '@/containers/dialogs/LlamacppDflashDraftDialog'
 import { ModelSetting } from '@/containers/ModelSetting'
 import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
 import { FavoriteModelAction } from '@/containers/FavoriteModelAction'
@@ -41,11 +49,14 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import {
+  isKeylessRemoteProvider,
   isLocalProvider,
+  isLoopbackUrl,
   unregisterRemoteProvider,
 } from '@/utils/registerRemoteProvider'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 import {
+  IconAlertTriangle,
   IconFolderPlus,
   IconLoader,
   IconRefresh,
@@ -53,6 +64,7 @@ import {
   IconSearch,
   IconUpload,
 } from '@tabler/icons-react'
+import { useBackendMismatch } from '@/hooks/useBackendMismatch'
 import { toast } from 'sonner'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -73,6 +85,8 @@ import { useAppState } from '@/hooks/useAppState'
 import { useShallow } from 'zustand/shallow'
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
 import { AppEvent, EngineManager, events } from '@janhq/core'
+import debounce from 'lodash.debounce'
+import { restartLocalModel } from '@/utils/restartLocalModel'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -87,6 +101,7 @@ export const Route = createFileRoute('/settings/providers/$providerName')({
 
 function ProviderDetail() {
   const { t } = useTranslation()
+  const { providerName } = useParams({ from: Route.id })
   const serviceHub = useServiceHub()
   const { setModelLoadError } = useModelLoad()
   const [activeModels, setActiveModels] = useAppState(
@@ -96,28 +111,37 @@ function ProviderDetail() {
   const [refreshingModels, setRefreshingModels] = useState(false)
   const [isInstallingBackend, setIsInstallingBackend] = useState(false)
   const [isRecheckingBackend, setIsRecheckingBackend] = useState(false)
-  /// Mirrors `localStorage.llama_cpp_pending_backend` so the provider
-  /// settings page can surface a "restart to activate" pill next to
-  /// the (still-old) `version_backend` value once a recommended GPU
-  /// backend has finished downloading. Updated reactively via
+  /// localStorage key holding the pending backend of the provider this page
+  /// shows. Each llama provider writes its own key, so reading the upstream
+  /// one on the turboquant page would show a foreign backend as pending.
+  const pendingBackendKey =
+    providerName === 'llamacpp'
+      ? 'turboquant_pending_backend'
+      : 'llama_cpp_pending_backend'
+  /// Mirrors the provider's pending-backend key so the provider settings
+  /// page can surface a "restart to activate" pill next to the (still-old)
+  /// `version_backend` value once a recommended GPU backend has finished
+  /// downloading. Updated reactively via
   /// `AppEvent.onBackendDownloadFinished` so the user gets feedback
   /// without having to refresh.
   const [pendingBackend, setPendingBackend] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null
-    const raw = localStorage.getItem('llama_cpp_pending_backend')
+    const raw = localStorage.getItem(pendingBackendKey)
     return raw ? raw.replace(/\uFEFF/g, '').trim() : null
   })
 
   useEffect(() => {
     const refresh = () => {
-      const raw = localStorage.getItem('llama_cpp_pending_backend')
+      const raw = localStorage.getItem(pendingBackendKey)
       setPendingBackend(raw ? raw.replace(/\uFEFF/g, '').trim() : null)
     }
-    const onFinished = (payload: { status: string }) => {
+    refresh()
+    const onFinished = (payload: { status: string; provider?: string }) => {
+      if ((payload?.provider ?? LOCAL_LLAMACPP_PROVIDER) !== providerName) return
       if (payload?.status === 'completed') refresh()
     }
-    /// Hot-swap path: the extension already cleared
-    /// `llama_cpp_pending_backend` and updated `version_backend` settings.
+    /// Hot-swap path: the extension already cleared its pending key and
+    /// updated `version_backend` settings.
     /// Drop the pill immediately and pull fresh provider settings so the
     /// `version_backend` row reflects the new value without a tab refresh.
     ///
@@ -126,7 +150,9 @@ function ProviderDetail() {
     /// `useModelProvider()` — that destructuring happens later in the
     /// component body, so referencing it here would hit a TDZ
     /// `ReferenceError` on the very first render.
-    const onHotswapped = () => {
+    const onHotswapped = (event: Event) => {
+      const detail = (event as CustomEvent<{ provider?: string }>).detail
+      if ((detail?.provider ?? LOCAL_LLAMACPP_PROVIDER) !== providerName) return
       setPendingBackend(null)
       void serviceHub
         .providers()
@@ -146,7 +172,7 @@ function ProviderDetail() {
       window.removeEventListener('storage', refresh)
       window.removeEventListener('app:backend-hotswapped', onHotswapped)
     }
-  }, [serviceHub])
+  }, [serviceHub, providerName, pendingBackendKey])
 
   const handleRestartForPendingBackend = useCallback(async () => {
     try {
@@ -190,7 +216,15 @@ function ProviderDetail() {
   const [isTogglingLlamacppMtp, setIsTogglingLlamacppMtp] = useState(false)
   const [llamacppMtpUnsupportedModel, setLlamacppMtpUnsupportedModel] =
     useState<string | null>(null)
-  const { providerName } = useParams({ from: Route.id })
+  const [isTogglingLlamacppDflash, setIsTogglingLlamacppDflash] =
+    useState(false)
+  const [llamacppDflashUnsupportedModel, setLlamacppDflashUnsupportedModel] =
+    useState<string | null>(null)
+  const [llamacppDflashDraftSelection, setLlamacppDflashDraftSelection] =
+    useState<{
+      modelId: string
+      options: LlamacppDflashDraftOption[]
+    } | null>(null)
   /// The turboquant provider (`llamacpp`) ships alongside upstream on
   /// Windows/Linux. Each owns its own backend tree + localStorage keys, so
   /// the updater must be configured per-provider to avoid cross-contamination
@@ -216,9 +250,66 @@ function ProviderDetail() {
     recommendationPhase,
     selectManualBackend,
   } = useBackendUpdater(backendUpdaterConfig)
+  /// The last load may have run on a backend other than the one selected here
+  /// (a silent in-memory swap, or a GPU build that fell back to the CPU). Show
+  /// that truth next to the dropdown instead of letting the stale selection
+  /// speak for the running process.
+  const { pending: backendMismatch } = useBackendMismatch()
+  const runningBackendNotice = useMemo(() => {
+    if (!backendMismatch || backendMismatch.provider !== providerName) {
+      return null
+    }
+    const { mismatch } = backendMismatch
+    if (mismatch.kind === 'silent-fallback') {
+      return t('settings:backendMismatch.actuallyRunning', {
+        backend: mismatch.effective,
+      })
+    }
+    if (mismatch.kind === 'runtime-cpu') {
+      return mismatch.total
+        ? t('settings:backendMismatch.actuallyRunningCpuLayers', {
+            offloaded: mismatch.offloaded ?? 0,
+            total: mismatch.total,
+          })
+        : t('settings:backendMismatch.actuallyRunningDevice', {
+            device: mismatch.primaryDevice,
+          })
+    }
+    return null
+  }, [backendMismatch, providerName, t])
   const navigate = useNavigate()
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
   const provider = getProviderByName(providerName)
+  const providerSettingsWriteRef = useRef<Promise<void>>(Promise.resolve())
+  const debouncedRestartLlamacppModel = useMemo(
+    () =>
+      debounce(async (targetProvider: string) => {
+        try {
+          await providerSettingsWriteRef.current
+          const loadedModels = await serviceHub
+            .models()
+            .getActiveModels(targetProvider)
+          const activeModel = loadedModels[0]
+          if (activeModel) {
+            await restartLocalModel(serviceHub, targetProvider, activeModel)
+          }
+        } catch (error) {
+          console.error(
+            'Failed to apply provider settings to the running model:',
+            error
+          )
+        }
+      }, 500),
+    [serviceHub]
+  )
+
+  useEffect(
+    () => () => {
+      debouncedRestartLlamacppModel.cancel()
+    },
+    [debouncedRestartLlamacppModel]
+  )
+
   const hasDownloadedModels =
     (provider?.models.filter((m) => m.id !== EMBEDDING_MODEL_ID).length ?? 0) >
     0
@@ -457,19 +548,20 @@ function ProviderDetail() {
 
     let cancelled = false
     const reconcile = async () => {
-      /// Same capability heuristic as `handleToggleLlamacppMtp` / the load gate:
-      /// a Qwen built-in-MTP GGUF (id carries "mtp") or a Gemma 4 MTP target.
-      const isQwenMtp = modelId.toLowerCase().includes('mtp')
-      let capable = isQwenMtp
-      if (!capable) {
-        try {
-          const engine = EngineManager.instance().get('llamacpp-upstream') as {
-            checkGemmaMtpSupport?: (id: string) => Promise<boolean>
-          } | null
-          capable = (await engine?.checkGemmaMtpSupport?.(modelId)) ?? false
-        } catch {
-          capable = false
-        }
+      /// Match `handleToggleLlamacppMtp` and the load gate: inspect canonical
+      /// GGUF metadata for a built-in Qwen MTP head, then check the separate
+      /// Gemma 4 draft registry.
+      let capable = false
+      try {
+        const engine = EngineManager.instance().get('llamacpp-upstream') as {
+          checkEmbeddedMtpSupport?: (id: string) => Promise<boolean>
+          checkGemmaMtpSupport?: (id: string) => Promise<boolean>
+        } | null
+        capable =
+          ((await engine?.checkEmbeddedMtpSupport?.(modelId)) ?? false) ||
+          ((await engine?.checkGemmaMtpSupport?.(modelId)) ?? false)
+      } catch {
+        capable = false
       }
       if (cancelled || capable) return
 
@@ -524,6 +616,77 @@ function ProviderDetail() {
   // Note: settingsChanged event is now handled globally in GlobalEventHandler
   // This ensures all screens receive the event intermediately
 
+  // Auto-load models for loopback providers (Ollama, LM Studio, custom
+  // self-hosted OpenAI-compatible servers, …). Their catalog is dynamic —
+  // whatever the user runs locally — so we silently probe /v1/models instead
+  // of forcing a manual Refresh. This fires both on entry (built-in Ollama,
+  // whose loopback base_url comes from the registry) AND when the user edits a
+  // custom provider's Base URL to a loopback address. Errors are non-fatal and
+  // the manual Refresh button remains available.
+  const loopbackBaseUrl =
+    provider &&
+    !isLocalProvider(provider.provider) &&
+    provider.base_url &&
+    isLoopbackUrl(provider.base_url)
+      ? provider.base_url
+      : null
+
+  useEffect(() => {
+    if (!loopbackBaseUrl) return
+
+    let cancelled = false
+
+    // Debounce: editing the Base URL field char-by-char must not spam the
+    // endpoint. We fetch only after typing settles (and re-fetch cleanly if
+    // the URL changes again, since the timer is cleared on cleanup).
+    const timer = setTimeout(() => {
+      const prov = useModelProvider.getState().getProviderByName(providerName)
+      if (cancelled || !prov) return
+
+      const load = async () => {
+        setRefreshingModels(true)
+        try {
+          const liveIds = await serviceHub
+            .providers()
+            .fetchModelsFromProvider(prov)
+          if (cancelled) return
+
+          const existing = new Set(prov.models.map((m) => m.id))
+          const newModels = liveIds
+            .filter((id) => !existing.has(id))
+            .map((id) => ({
+              id,
+              model: id,
+              name: id,
+              capabilities: getModelCapabilities(prov.provider, id),
+              version: '1.0',
+            }))
+
+          if (newModels.length > 0) {
+            updateProvider(prov.provider, {
+              ...prov,
+              models: [...prov.models, ...newModels],
+            })
+          }
+        } catch (err) {
+          console.warn(
+            `[providers:${providerName}] auto model load failed (non-fatal):`,
+            err
+          )
+        } finally {
+          if (!cancelled) setRefreshingModels(false)
+        }
+      }
+
+      void load()
+    }, 500)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [providerName, loopbackBaseUrl, serviceHub, updateProvider])
+
   const handleRefreshModels = async () => {
     if (!provider) return
 
@@ -574,7 +737,7 @@ function ProviderDetail() {
       // expose hundreds of junk/internal IDs at /v1/models). When the flag is
       // explicitly false we show the curated registry list only and skip the
       // live probe. Missing/true keeps the hybrid behavior.
-      let finalProviders = fresh
+      let liveNewModels: Model[] = []
       let liveFetchError: Error | null = null
       const registrySupportsListing =
         registryProvider?.supports_model_listing !== false
@@ -594,7 +757,7 @@ function ProviderDetail() {
             ...existingIds,
             ...(registryProvider?.models ?? []).map((m) => m.id),
           ])
-          const liveNewModels = liveModelIds
+          liveNewModels = liveModelIds
             .filter((id) => !afterRegistryIds.has(id))
             .map((id) => ({
               id,
@@ -604,16 +767,7 @@ function ProviderDetail() {
               version: '1.0',
             }))
 
-          if (liveNewModels.length > 0) {
-            newCount += liveNewModels.length
-            // Inject the live-only models into the fresh providers snapshot
-            // so setProviders persists them together with the registry ones.
-            finalProviders = fresh.map((p) =>
-              p.provider === provider.provider
-                ? { ...p, models: [...(p.models ?? []), ...liveNewModels] }
-                : p
-            )
-          }
+          if (liveNewModels.length > 0) newCount += liveNewModels.length
 
           console.info(
             `[providers:${provider.provider}] live /models: ${liveModelIds.length} total, ${liveNewModels.length} new`
@@ -631,10 +785,31 @@ function ProviderDetail() {
         }
       }
 
-      // `setProviders` merges new models into useModelProvider while
-      // preserving API keys, base URLs, and user-tweaked settings on a
-      // per-provider basis. Existing models are NEVER removed.
-      setProviders(finalProviders)
+      // Apply the registry refresh. `setProviders` merges catalog updates while
+      // preserving API keys, base URLs, and user-tweaked settings per provider,
+      // and never removes existing models.
+      setProviders(fresh)
+
+      // Persist the live-discovered models onto THIS provider. We cannot inject
+      // into `fresh` because custom / self-hosted providers (AIML, Cerebras,
+      // LM Studio, vLLM, …) are NOT part of getProviders() output — they live
+      // only in useModelProvider state, so the old `fresh.map()` injection
+      // silently dropped them (toast said "Added N" but the list stayed empty).
+      // updateProvider operates on current state and works for both registry
+      // and custom providers.
+      if (liveNewModels.length > 0) {
+        const current =
+          useModelProvider.getState().getProviderByName(provider.provider) ??
+          provider
+        // Dedupe by id (first-seen wins) so both newly fetched duplicates and
+        // any duplicates already persisted from an earlier refresh collapse to
+        // a single row.
+        const byId = new Map<string, Model>()
+        for (const m of [...current.models, ...liveNewModels]) {
+          if (m.id && !byId.has(m.id)) byId.set(m.id, m)
+        }
+        updateProvider(provider.provider, { models: Array.from(byId.values()) })
+      }
 
       if (newCount > 0) {
         toast.success(t('providers:models'), {
@@ -927,9 +1102,8 @@ function ProviderDetail() {
         return
       }
 
-      const blockSizeRaw = provider.settings.find(
-        (s) => s.key === 'block_size'
-      )?.controller_props?.value
+      const blockSizeRaw = provider.settings.find((s) => s.key === 'block_size')
+        ?.controller_props?.value
       const blockSize = Number(blockSizeRaw) || 16
 
       setLoadingModels((prev) =>
@@ -967,7 +1141,10 @@ function ProviderDetail() {
             s.key === 'dflash_enabled'
               ? {
                   ...s,
-                  controller_props: { ...s.controller_props, value: true as never },
+                  controller_props: {
+                    ...s.controller_props,
+                    value: true as never,
+                  },
                 }
               : s.key === 'mtp_enabled' || s.key === 'eagle3_enabled'
                 ? {
@@ -982,7 +1159,9 @@ function ProviderDetail() {
           serviceHub.providers().updateSettings(providerName, next)
           updateProvider(providerName, { ...provider, settings: next })
           toast.success(
-            t('settings:dflashEnableSuccess', { defaultValue: 'DFlash enabled' })
+            t('settings:dflashEnableSuccess', {
+              defaultValue: 'DFlash enabled',
+            })
           )
         }
       } catch (error) {
@@ -1320,11 +1499,9 @@ function ProviderDetail() {
     ]
   )
 
-  /// Toggle the upstream-llama MTP flag (`--spec-type draft-mtp`). Unlike
-  /// the MLX MTP/DFlash toggles, there is no companion download — the MTP
-  /// head ships inside the same GGUF as the target. Capability is decided
-  /// by a simple substring check on the model id ("...MTP..."), matching
-  /// the ggml-org/Qwen3.6-*-MTP-GGUF naming convention.
+  /// Toggle the upstream-llama MTP flag (`--spec-type draft-mtp`). Qwen
+  /// capability is read from canonical GGUF metadata; Gemma 4 uses a separate
+  /// draft head downloaded by the extension.
   ///
   /// On enable, if a model is already running, we stop it and reload with
   /// the new args so the toggle takes effect immediately (parity with the
@@ -1335,7 +1512,7 @@ function ProviderDetail() {
       if (provider?.provider !== 'llamacpp-upstream' || !provider) return
       if (isTogglingLlamacppMtp) return
 
-      const writeSetting = (key: string, value: unknown) => {
+      const writeSetting = async (key: string, value: unknown) => {
         const next = provider.settings.map((s) =>
           s.key === key
             ? {
@@ -1347,7 +1524,7 @@ function ProviderDetail() {
               }
             : s
         )
-        serviceHub.providers().updateSettings(providerName, next)
+        await serviceHub.providers().updateSettings(providerName, next)
         updateProvider(providerName, { ...provider, settings: next })
       }
 
@@ -1372,14 +1549,15 @@ function ProviderDetail() {
       try {
         if (nextEnabled) {
           /// Capability check. Two MTP shapes are supported:
-          ///  - Qwen built-in MTP: the ggml-org collection always includes
-          ///    "MTP" in the repo / file name (head inside the same GGUF).
+          ///  - Qwen built-in MTP: canonical GGUF metadata reports the embedded
+          ///    NextN layers (head inside the same GGUF).
           ///  - Gemma 4 MTP (31B / 26B-A4B): needs a SEPARATE draft head GGUF
           ///    downloaded next to the model (PR #23398).
           /// If the loaded model id is neither, refuse the toggle and surface
           /// the popup — don't write the setting (the Switch stays off).
           if (activeModel) {
-            const isQwenMtp = activeModel.toLowerCase().includes('mtp')
+            const isQwenMtp =
+              (await engine.checkEmbeddedMtpSupport?.(activeModel)) ?? false
             if (!isQwenMtp) {
               const isGemmaMtp =
                 (await engine.checkGemmaMtpSupport?.(activeModel)) ?? false
@@ -1397,9 +1575,9 @@ function ProviderDetail() {
               await engine.ensureGemmaMtpDraft?.(activeModel)
             }
           }
-          writeSetting('mtp', true)
+          await writeSetting('mtp', true)
         } else {
-          writeSetting('mtp', false)
+          await writeSetting('mtp', false)
         }
 
         /// Auto-restart the live session so the new --spec-type draft-mtp
@@ -1407,12 +1585,7 @@ function ProviderDetail() {
         /// running — the next manual start will pick up the flag.
         if (activeModel) {
           try {
-            await engine.unload?.(activeModel)
-          } catch (e) {
-            console.warn('Failed to unload before MTP restart:', e)
-          }
-          try {
-            await engine.load?.(activeModel)
+            await restartLocalModel(serviceHub, providerName, activeModel)
           } catch (e) {
             console.error('Failed to reload after MTP toggle:', e)
             toast.error(errTitle, {
@@ -1448,6 +1621,148 @@ function ProviderDetail() {
       updateProvider,
       t,
       isTogglingLlamacppMtp,
+    ]
+  )
+
+  const handleToggleLlamacppDflash = useCallback(
+    async (nextEnabled: boolean, draftQuant?: string) => {
+      if (provider?.provider !== 'llamacpp-upstream' || !provider) return
+      if (isTogglingLlamacppDflash) return
+
+      const writeSettings = async (updates: Record<string, unknown>) => {
+        const next = provider.settings.map((s) =>
+          Object.prototype.hasOwnProperty.call(updates, s.key)
+            ? {
+                ...s,
+                controller_props: {
+                  ...s.controller_props,
+                  value: updates[s.key] as never,
+                },
+              }
+            : s
+        )
+        await serviceHub.providers().updateSettings(providerName, next)
+        updateProvider(providerName, { ...provider, settings: next })
+      }
+
+      const errTitle = t('settings:llamacppDflashToggleFailed', {
+        defaultValue: 'Failed to toggle DFlash',
+      })
+
+      const engine: any = EngineManager.instance().get('llamacpp-upstream')
+      if (!engine) {
+        toast.error(errTitle, {
+          description: t('settings:llamacppDflashEngineMissing', {
+            defaultValue: 'Llama.cpp engine is unavailable.',
+          }),
+        })
+        return
+      }
+
+      const loadedModels: string[] = (await engine.getLoadedModels?.()) ?? []
+      const activeModel = loadedModels[0]
+
+      setIsTogglingLlamacppDflash(true)
+      try {
+        if (nextEnabled) {
+          const backendSupportsDflash =
+            (await engine.checkDflashBackendSupport?.()) ?? false
+          if (!backendSupportsDflash) {
+            toast.error(errTitle, {
+              description: t('settings:llamacppDflashBackendUnsupported', {
+                defaultValue:
+                  'The selected Llama.cpp backend does not advertise DFlash support (--spec-type draft-dflash). Update or switch to a compatible backend before enabling DFlash.',
+              }),
+            })
+            return
+          }
+
+          if (!activeModel) {
+            toast.error(errTitle, {
+              description: t('settings:llamacppDflashNoActiveModel', {
+                defaultValue: 'Start a Llama.cpp model before enabling DFlash.',
+              }),
+            })
+            return
+          }
+
+          const isSupported =
+            (await engine.checkDflashSupport?.(activeModel)) ?? false
+          if (!isSupported) {
+            setLlamacppDflashUnsupportedModel(activeModel)
+            return
+          }
+
+          if (!draftQuant) {
+            const options: LlamacppDflashDraftOption[] =
+              (await engine.listDflashDrafts?.(activeModel)) ?? []
+            if (options.length === 0) {
+              throw new Error(
+                `No compatible DFlash draft quantizations found for "${activeModel}".`
+              )
+            }
+            setLlamacppDflashDraftSelection({
+              modelId: activeModel,
+              options,
+            })
+            return
+          }
+
+          toast.info(
+            t('settings:llamacppDflashDownloadingDraft', {
+              defaultValue: 'Downloading {{quant}} DFlash draft model…',
+              quant: draftQuant,
+            })
+          )
+          await engine.ensureDflashDraft?.(activeModel, draftQuant)
+          await writeSettings({ dflash: true, mtp: false })
+        } else {
+          await writeSettings({ dflash: false })
+        }
+
+        if (activeModel) {
+          try {
+            await engine.unload?.(activeModel)
+          } catch (e) {
+            console.warn('Failed to unload before DFlash restart:', e)
+          }
+          try {
+            await serviceHub.models().startModel(provider, activeModel, true)
+          } catch (e) {
+            console.error('Failed to reload after DFlash toggle:', e)
+            toast.error(errTitle, {
+              description:
+                e instanceof Error ? e.message : 'Failed to restart model.',
+            })
+            return
+          }
+        }
+
+        toast.success(
+          nextEnabled
+            ? t('settings:llamacppDflashEnableSuccess', {
+                defaultValue: 'DFlash enabled',
+              })
+            : t('settings:llamacppDflashDisableSuccess', {
+                defaultValue: 'DFlash disabled',
+              })
+        )
+      } catch (error) {
+        console.error('Failed to toggle Llamacpp DFlash:', error)
+        toast.error(errTitle, {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+      } finally {
+        setIsTogglingLlamacppDflash(false)
+      }
+    },
+    [
+      provider,
+      providerName,
+      serviceHub,
+      updateProvider,
+      t,
+      isTogglingLlamacppDflash,
     ]
   )
 
@@ -1655,8 +1970,9 @@ function ProviderDetail() {
                   // block-size row when its master switch is off so the
                   // panel stays uncluttered.
                   const dflashEnabledOn = !!(
-                    provider?.settings.find((s) => s.key === 'dflash_enabled')
-                      ?.controller_props as { value?: boolean } | undefined
+                    provider?.settings.find(
+                      (s) => s.key === 'dflash_enabled' || s.key === 'dflash'
+                    )?.controller_props as { value?: boolean } | undefined
                   )?.value
                   const mtpEnabledOn = !!(
                     provider?.settings.find((s) => s.key === 'mtp_enabled')
@@ -1668,6 +1984,7 @@ function ProviderDetail() {
                   )?.value
                   const isHiddenByDflash =
                     (!dflashEnabledOn && setting.key === 'block_size') ||
+                    (!dflashEnabledOn && setting.key === 'dflash_block_size') ||
                     (!mtpEnabledOn && setting.key === 'mtp_block_size') ||
                     (!eagle3EnabledOn && setting.key === 'eagle3_block_size')
 
@@ -1686,6 +2003,9 @@ function ProviderDetail() {
                   /// defence-in-depth.
                   const isLlamacppMtpToggle =
                     setting.key === 'mtp' &&
+                    provider?.provider === 'llamacpp-upstream'
+                  const isLlamacppDflashToggle =
+                    setting.key === 'dflash' &&
                     provider?.provider === 'llamacpp-upstream'
 
                   // Use the DynamicController component
@@ -1792,6 +2112,30 @@ function ProviderDetail() {
                             />
                           )}
                         </div>
+                      ) : isLlamacppDflashToggle ? (
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={
+                              !!(
+                                setting.controller_props as {
+                                  value?: boolean
+                                }
+                              ).value
+                            }
+                            disabled={
+                              isTogglingLlamacppDflash || isTogglingLlamacppMtp
+                            }
+                            onCheckedChange={(checked) => {
+                              handleToggleLlamacppDflash(checked)
+                            }}
+                          />
+                          {isTogglingLlamacppDflash && (
+                            <IconLoader
+                              size={14}
+                              className="animate-spin text-muted-foreground"
+                            />
+                          )}
+                        </div>
                       ) : isLlamacppMtpToggle ? (
                         <div className="flex items-center gap-2">
                           <Switch
@@ -1802,7 +2146,9 @@ function ProviderDetail() {
                                 }
                               ).value
                             }
-                            disabled={isTogglingLlamacppMtp}
+                            disabled={
+                              isTogglingLlamacppMtp || isTogglingLlamacppDflash
+                            }
                             onCheckedChange={(checked) => {
                               handleToggleLlamacppMtp(checked)
                             }}
@@ -1899,7 +2245,18 @@ function ProviderDetail() {
                                 settingKey === 'base-url' &&
                                 typeof newValue === 'string'
                               ) {
-                                updateObj.base_url = newValue
+                                // Trim so a stray leading/trailing space (common
+                                // on paste) doesn't leak into request URLs as
+                                // `/v1 /models` → 404. Normalise the stored
+                                // setting value too, not just the mirror field.
+                                const trimmedUrl = newValue.trim()
+                                ;(
+                                  newSettings[settingIndex]
+                                    .controller_props as {
+                                    value: string | boolean | number
+                                  }
+                                ).value = trimmedUrl
+                                updateObj.base_url = trimmedUrl
                               }
 
                               // Reset device setting to empty when backend version changes
@@ -1927,17 +2284,42 @@ function ProviderDetail() {
                                 }
                               }
 
+                              updateProvider(providerName, {
+                                ...provider,
+                                ...updateObj,
+                              })
+
+                              if (
+                                settingKey !== 'version_backend' &&
+                                (providerName === 'llamacpp' ||
+                                  providerName === 'llamacpp-upstream')
+                              ) {
+                                providerSettingsWriteRef.current =
+                                  providerSettingsWriteRef.current
+                                    .catch((error) => {
+                                      console.error(
+                                        'Previous provider settings update failed:',
+                                        error
+                                      )
+                                    })
+                                    .then(() =>
+                                      serviceHub
+                                        .providers()
+                                        .updateSettings(
+                                          providerName,
+                                          updateObj.settings ?? []
+                                        )
+                                    )
+                                debouncedRestartLlamacppModel(providerName)
+                                return
+                              }
+
                               serviceHub
                                 .providers()
                                 .updateSettings(
                                   providerName,
                                   updateObj.settings ?? []
                                 )
-                              updateProvider(providerName, {
-                                ...provider,
-                                ...updateObj,
-                              })
-
                               serviceHub.models().stopAllModels()
 
                               // Refresh active models after stopping. Use
@@ -2017,6 +2399,13 @@ function ProviderDetail() {
                               </div>
                             )}
                           {setting.key === 'version_backend' &&
+                            runningBackendNotice && (
+                              <div className="mt-1 flex items-center gap-1.5 text-sm text-amber-600 dark:text-amber-500">
+                                <IconAlertTriangle size={14} />
+                                <span>{runningBackendNotice}</span>
+                              </div>
+                            )}
+                          {setting.key === 'version_backend' &&
                             (provider?.provider === 'llamacpp' ||
                               provider?.provider === 'llamacpp-upstream' ||
                               provider?.provider === 'mlx') && (
@@ -2093,7 +2482,7 @@ function ProviderDetail() {
                             )}
                           {/* Pending-backend banner: appears as soon as
                               the just-downloaded backend is sitting in
-                              `llama_cpp_pending_backend` and waiting
+                              this provider's pending key and waiting
                               for `activatePendingBackend()` on the
                               next launch. The `version_backend`
                               setting itself can't be hot-swapped while
@@ -2102,7 +2491,8 @@ function ProviderDetail() {
                               between "I clicked Find optimal" and "I
                               restarted the app". */}
                           {setting.key === 'version_backend' &&
-                            provider?.provider === 'llamacpp' &&
+                            (provider?.provider === 'llamacpp' ||
+                              provider?.provider === LOCAL_LLAMACPP_PROVIDER) &&
                             pendingBackend && (
                               <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-dashed border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-xs">
                                 <span className="font-medium text-emerald-600 dark:text-emerald-400">
@@ -2218,24 +2608,24 @@ function ProviderDetail() {
                       {provider &&
                         (provider.provider === 'llamacpp' ||
                           provider.provider === 'llamacpp-upstream') && (
-                        <ImportVisionModelDialog
-                          provider={provider}
-                          onSuccess={handleModelImportSuccess}
-                          trigger={
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              className="min-w-[8rem] justify-center"
-                            >
-                              <IconFolderPlus
-                                size={18}
-                                className="text-muted-foreground"
-                              />
-                              <span>{t('providers:import')}</span>
-                            </Button>
-                          }
-                        />
-                      )}
+                          <ImportVisionModelDialog
+                            provider={provider}
+                            onSuccess={handleModelImportSuccess}
+                            trigger={
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                className="min-w-[8rem] justify-center"
+                              >
+                                <IconFolderPlus
+                                  size={18}
+                                  className="text-muted-foreground"
+                                />
+                                <span>{t('providers:import')}</span>
+                              </Button>
+                            }
+                          />
+                        )}
                       {provider && provider.provider === 'mlx' && (
                         <ImportMlxModelDialog
                           provider={provider}
@@ -2342,7 +2732,8 @@ function ProviderDetail() {
                                   // proxy). Local engines don't.
                                   const needsApiKey =
                                     !isLocalProvider(provider.provider) &&
-                                    !provider.api_key
+                                    !provider.api_key &&
+                                    !isKeylessRemoteProvider(provider)
                                   const isActive = activeModels.some(
                                     (activeModel) => activeModel === model.id
                                   )
@@ -2471,6 +2862,24 @@ function ProviderDetail() {
           if (!open) setLlamacppMtpUnsupportedModel(null)
         }}
         modelId={llamacppMtpUnsupportedModel ?? ''}
+      />
+      <LlamacppDflashUnsupportedDialog
+        open={llamacppDflashUnsupportedModel !== null}
+        onOpenChange={(open) => {
+          if (!open) setLlamacppDflashUnsupportedModel(null)
+        }}
+        modelId={llamacppDflashUnsupportedModel ?? ''}
+      />
+      <LlamacppDflashDraftDialog
+        open={llamacppDflashDraftSelection !== null}
+        onOpenChange={(open) => {
+          if (!open) setLlamacppDflashDraftSelection(null)
+        }}
+        modelId={llamacppDflashDraftSelection?.modelId ?? ''}
+        options={llamacppDflashDraftSelection?.options ?? []}
+        onConfirm={(quant) => {
+          void handleToggleLlamacppDflash(true, quant)
+        }}
       />
     </div>
   )

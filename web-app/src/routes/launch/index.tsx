@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { type as osType } from '@tauri-apps/plugin-os'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import posthog from 'posthog-js'
 import { toast } from 'sonner'
@@ -140,6 +141,16 @@ function AgentIcon({ agent }: { agent: IntegrationAgent }) {
           </svg>
         </IconBox>
       )
+    case 'openclaude':
+      return (
+        <IconBox bg="#000000">
+          <img
+            src="/images/integrations/openclaude.png"
+            alt={agent.name}
+            className="size-full object-contain"
+          />
+        </IconBox>
+      )
     case 'zed':
       // Official Zed brand mark (assets/images/zed_logo.svg from zed-industries/zed),
       // rendered light-on-dark to match Zed's app icon.
@@ -225,6 +236,16 @@ function AgentIcon({ agent }: { agent: IntegrationAgent }) {
         <IconBox bg="#ffffff">
           <img
             src="/images/integrations/openhands.svg"
+            alt={agent.name}
+            className="size-full object-contain p-1"
+          />
+        </IconBox>
+      )
+    case 'poolside':
+      return (
+        <IconBox bg="#ffffff">
+          <img
+            src="/images/integrations/poolside.svg"
             alt={agent.name}
             className="size-full object-contain p-1"
           />
@@ -408,6 +429,7 @@ function LaunchPage() {
     corsEnabled,
     verboseLogs,
     proxyTimeout,
+    defaultModelLocalApiServer,
   } = useLocalApiServer()
   const { serverStatus, setServerStatus } = useAppState()
   const serviceHub = useServiceHub()
@@ -480,7 +502,14 @@ function LaunchPage() {
     refreshRunningModels()
   }, [refreshRunningModels, serverStatus])
 
-  const activeModel = runningModels[0] ?? null
+  // Prefer a locally-running engine model; when none is running (e.g. the
+  // user's current selection is a cloud provider like OpenRouter/OpenAI),
+  // fall back to the "Current Model" shown in the Local API Server panel —
+  // it is kept in sync with the globally selected model/provider (see
+  // `syncModelSelection` in `switchModel.ts`) and is exactly what the proxy
+  // at :1337 will actually route, so agents get configured against it too.
+  const activeModel =
+    runningModels[0] ?? defaultModelLocalApiServer?.model ?? null
 
   const ensureServerRunning = useCallback(async () => {
     if (serverStatus === 'running') return
@@ -602,6 +631,9 @@ function LaunchPage() {
         case 'opencode':
           await invoke('configure_opencode', { apiUrl, model, apiKey: key })
           break
+        case 'openclaude':
+          await invoke('configure_openclaude', { apiUrl, model, apiKey: key })
+          break
         case 'cline':
           await invoke('configure_cline', { apiUrl, model, apiKey: key })
           break
@@ -638,6 +670,9 @@ function LaunchPage() {
           break
         case 'kilo':
           await invoke('configure_kilo', { apiUrl, model, apiKey: key })
+          break
+        case 'poolside':
+          await invoke('configure_poolside', { apiUrl, model, apiKey: key })
           break
         case 'openclaw':
           await invoke('configure_openclaw', { apiUrl, model, apiKey: key })
@@ -719,6 +754,20 @@ function LaunchPage() {
             command = 'goose session'
           } else if (agent.id === 'openhands') {
             command = 'openhands --override-with-envs'
+          } else if (agent.id === 'poolside') {
+            const connectHost =
+              serverHost === '0.0.0.0' || (serverHost as string) === '::'
+                ? '127.0.0.1'
+                : serverHost
+            const apiUrl = `http://${connectHost}:${serverPort}${apiPrefix}`
+            const standaloneBase = apiUrl.replace(/\/v1\/?$/, '')
+            const key = apiKey || 'atomic'
+            const modelId = model ?? ''
+            if (osType() === 'windows') {
+              command = `set POOLSIDE_STANDALONE_BASE_URL=${standaloneBase}&& set POOLSIDE_API_KEY=${key}&& set POOLSIDE_STANDALONE_MODEL=${modelId}&& pool`
+            } else {
+              command = `POOLSIDE_STANDALONE_BASE_URL='${standaloneBase}' POOLSIDE_API_KEY='${key}' POOLSIDE_STANDALONE_MODEL='${modelId}' pool`
+            }
           } else {
             command = agent.detectBin
           }
@@ -755,6 +804,10 @@ function LaunchPage() {
       setBusy,
       setSpinning,
       setPhase,
+      serverHost,
+      serverPort,
+      apiPrefix,
+      apiKey,
     ]
   )
 

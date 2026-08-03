@@ -109,6 +109,8 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/moonshot.svg'
     case 'qwen':
       return '/images/model-provider/qwen.svg'
+    case 'ollama':
+      return '/images/model-provider/ollama.svg'
     default:
       return undefined
   }
@@ -116,12 +118,9 @@ export function getProviderLogo(provider: string) {
 
 /**
  * The DEFAULT local llama.cpp provider id for THIS platform.
- *   - Windows: ships only the upstream provider — see ADR 2026-05-22
- *     "Windows ships only `llamacpp-upstream`".
- *   - Linux: ships only the upstream provider — see ADR 2026-05-28
- *     "Linux ships only `llamacpp-upstream` (AppImage, upstream
- *     `ggml-org/llama.cpp`)".
- *   - macOS: the default is now `llamacpp-upstream` too — see ADR
+ *   - Windows and Linux ship upstream plus the optional TurboQuant provider;
+ *     upstream remains the default.
+ *   - macOS defaults to `llamacpp-upstream` too — see ADR
  *     2026-06-09 (ATO-116). The vanilla upstream backend understands the
  *     full Gemma 4 projector set (`gemma4uv`/`gemma4ua`), so the bundled
  *     "Recommended" Gemma 4 vision model loads out of the box. The
@@ -141,13 +140,19 @@ export const LOCAL_LLAMACPP_PROVIDER = 'llamacpp-upstream'
 /**
  * Extension name (`@janhq/...`) that drives the DEFAULT llama.cpp provider
  * on THIS platform. Mirrors `LOCAL_LLAMACPP_PROVIDER` — the extension
- * manager resolves the upstream extension on every platform (Windows /
- * Linux exclude the turboquant extension from the build entirely; macOS
- * ships both but defaults to upstream per ADR 2026-06-09 / ATO-116). The
- * turboquant `@janhq/llamacpp-extension` remains registered on macOS and is
- * reached when the user selects the turboquant provider explicitly.
+ * manager resolves the upstream extension on every platform. The TurboQuant
+ * extension is also packaged on every desktop OS and is reached when the user
+ * selects that provider explicitly.
  */
 export const LOCAL_LLAMACPP_EXTENSION_NAME = '@janhq/llamacpp-upstream-extension'
+
+/**
+ * Returns true for either llamacpp provider id ('llamacpp' = turboquant,
+ * 'llamacpp-upstream' = upstream ggml-org build). Both providers support
+ * client-side token counting via their respective getTokensCount() methods.
+ */
+export const isLlamacppProvider = (provider: string) =>
+  provider === 'llamacpp' || provider === 'llamacpp-upstream'
 
 export const getProviderTitle = (provider: string) => {
   switch (provider) {
@@ -158,7 +163,7 @@ export const getProviderTitle = (provider: string) => {
       // side-by-side with `llamacpp-upstream` (which stays the default),
       // so the `llamacpp` provider carries its real Turboquant name on
       // every platform.
-      return 'Atomic Llama.cpp Turboquant'
+      return 'Llama.cpp Turboquant'
     case 'llamacpp-upstream':
       return 'Llama.cpp'
     case 'mlx':
@@ -181,6 +186,8 @@ export const getProviderTitle = (provider: string) => {
       return 'Moonshot'
     case 'qwen':
       return 'Qwen'
+    case 'ollama':
+      return 'Ollama'
     default:
       return provider.charAt(0).toUpperCase() + provider.slice(1)
   }
@@ -320,4 +327,66 @@ export const extractThinkingContent = (text: string) => {
     .replace(/<\|message\|>/g, '') // remove any remaining message markers
     .replace(/<\|start\|>/g, '') // remove any remaining start markers
     .trim()
+}
+
+/**
+ * Error code attached to the `Error` thrown by `withTimeout` on expiry, so
+ * callers can distinguish "this step took too long" from every other
+ * rejection (ATO-270).
+ */
+export const OPERATION_TIMED_OUT_CODE = 'OPERATION_TIMED_OUT'
+
+/**
+ * Safety-net ceiling for the native `startServer` invoke (bind a listener,
+ * register the routing table). It's a lightweight native call with no
+ * legitimate reason to take more than a few seconds; used to guard the
+ * Local API Server start/auto-start chains against hanging forever if the
+ * IPC bridge or the Rust-side start lock never returns (ATO-270).
+ */
+export const SERVER_START_WATCHDOG_MS = 60 * 1000
+
+/**
+ * Safety-net ceiling for a local model load kicked off as part of starting
+ * the Local API Server (auto-start on launch, or the manual "Start server"
+ * toggle). Set comfortably above the llama.cpp extensions' own 30-minute
+ * model-load-readiness floor so a legitimately slow/large load is never cut
+ * off early — this only guards against a step with NO timeout of its own
+ * (e.g. an un-timeboxed backend-preparation network call) hanging forever
+ * and leaving the "Starting Server" UI stuck indefinitely (ATO-270).
+ */
+export const MODEL_LOAD_WATCHDOG_MS = 35 * 60 * 1000
+
+/**
+ * Resolves `promise`, but rejects with a timeout error after `ms` if it
+ * hasn't settled by then. The underlying `promise` is left to keep running
+ * in the background — a plain JS `Promise` cannot be cancelled — this only
+ * stops the *caller* from waiting on it forever, which is the best
+ * available recovery for a step that has no timeout of its own.
+ *
+ * Used to guard the Local API Server auto-start / manual-start chains
+ * (model load + server bind) against hanging indefinitely on an
+ * un-timeboxed network call somewhere in backend preparation (ATO-270).
+ */
+export function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  message: string
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const err = new Error(message) as Error & { code?: string }
+      err.code = OPERATION_TIMED_OUT_CODE
+      reject(err)
+    }, ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      }
+    )
+  })
 }

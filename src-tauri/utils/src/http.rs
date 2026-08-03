@@ -3,7 +3,11 @@ pub fn extract_host_from_origin(origin: &str) -> String {
     // Origin format: scheme "://" host [ ":" port ]
     if let Some(after_scheme) = origin.split("://").nth(1) {
         // Take everything up to the first '/' (path), if any
-        after_scheme.split('/').next().unwrap_or(after_scheme).to_string()
+        after_scheme
+            .split('/')
+            .next()
+            .unwrap_or(after_scheme)
+            .to_string()
     } else {
         origin.to_string()
     }
@@ -17,7 +21,10 @@ pub fn is_cors_header(header_name: &str) -> bool {
 
 /// Validates if host is in trusted hosts list
 pub fn is_valid_host(host: &str, trusted_hosts: &[Vec<String>]) -> bool {
-    if trusted_hosts.iter().any(|hosts| hosts.contains(&"*".to_string())) {
+    if trusted_hosts
+        .iter()
+        .any(|hosts| hosts.contains(&"*".to_string()))
+    {
         return true;
     }
 

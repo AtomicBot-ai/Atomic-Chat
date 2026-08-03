@@ -12,9 +12,10 @@
         "fullscreen": false,
         "zoomHotkeysEnabled": true,
         "center": true,
+        "visible": false,
         "hiddenTitle": true,
-        "transparent": true,
-        "decorations": false,
+        "transparent": false,
+        "decorations": true,
         "titleBarStyle": "Overlay",
         "windowEffects": {
           "effects": ["fullScreenUI", "mica", "tabbed", "blur", "acrylic"],
@@ -26,7 +27,7 @@
   },
   "bundle": {
     "targets": ["nsis", "msi"],
-    "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/bin/jan-cli.exe", "resources/llamacpp-backend-upstream/**/*", "resources/llamacpp-backend/**/*"],
+    "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/agent-skills/**/*", "resources/bin/jan-cli.exe", "resources/llamacpp-backend-upstream/**/*", "resources/llamacpp-backend/**/*"],
     "externalBin": ["resources/bin/bun", "resources/bin/uv"],
     "windows": {
       "wix": {

@@ -22,9 +22,9 @@ Local AI app and inference engine for agents. Run open-weight LLMs locally — p
 
 <p align="left"><b>Desktop</b></p>
 <p align="left">
-  <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v1.1.119/Atomic.Chat_1.1.119_universal.dmg"><img src="https://img.shields.io/badge/macOS-Universal-000000?style=for-the-badge&logo=apple&logoColor=white" height="46" alt="Download for macOS" /></a>&nbsp;
-  <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v1.1.119/Atomic.Chat_1.1.119_x64-setup.exe"><img src="https://img.shields.io/badge/Windows-x64-0078D4?style=for-the-badge&logo=windows11&logoColor=white" height="46" alt="Download for Windows" /></a>&nbsp;
-  <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v1.1.119/Atomic.Chat_1.1.119_amd64.AppImage"><img src="https://img.shields.io/badge/Linux-AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black" height="46" alt="Download for Linux" /></a>
+  <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v2.0.0/Atomic.Chat_2.0.0_universal.dmg"><img src="https://img.shields.io/badge/macOS-Universal-000000?style=for-the-badge&logo=apple&logoColor=white" height="46" alt="Download for macOS" /></a>&nbsp;
+  <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v2.0.0/Atomic.Chat_2.0.0_x64-setup.exe"><img src="https://img.shields.io/badge/Windows-x64-0078D4?style=for-the-badge&logo=windows11&logoColor=white" height="46" alt="Download for Windows" /></a>&nbsp;
+  <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v2.0.0/Atomic.Chat_2.0.0_amd64.AppImage"><img src="https://img.shields.io/badge/Linux-AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black" height="46" alt="Download for Linux" /></a>
 </p>
 
 <p align="left"><b>Mobile</b></p>
@@ -368,7 +368,7 @@ Atomic Chat is built by a small core team and **140+ contributors** — includin
 ### ⭐ Star History
 
 <a href="https://star-history.com/#AtomicBot-ai/Atomic-Chat&Date">
-  <img src="https://api.star-history.com/svg?repos=AtomicBot-ai/Atomic-Chat&type=Date" width="100%" alt="Star History" />
+  <img src="https://api.star-history.com/svg?repos=AtomicBot-ai/Atomic-Chat&type=Date&cache=1" width="100%" alt="Star History" />
 </a>
 
 ---

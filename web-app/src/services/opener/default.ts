@@ -9,6 +9,10 @@ export class DefaultOpenerService implements OpenerService {
     window.open(target, '_blank')
   }
 
+  async openPath(path: string): Promise<void> {
+    window.open(`file://${path}`, '_blank')
+  }
+
   async revealItemInDir(path: string): Promise<void> {
     console.log('revealItemInDir called with path:', path)
     // No-op - not implemented in default service

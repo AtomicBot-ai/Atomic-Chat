@@ -186,8 +186,11 @@ export const STATIC_DRAFT_MAP: Record<string, DraftRepoManifest> = {
 
 /// Quantization / format suffixes that should be stripped from a model id
 /// before attempting registry lookup. Order matters: longer first.
+/// `qat` (Quantization-Aware Training) and `unquantized` are included so
+/// QAT-quantized targets (e.g. `gemma-4-E4B-it-qat-4bit`) normalize to the
+/// same key as the standard float builds (`gemma-4-e4b`).
 const QUANT_SUFFIX_RE =
-  /-(?:4bit|8bit|6bit|5bit|3bit|2bit|q4_k_m|q4_k_s|q5_k_m|q5_k_s|q6_k|q8_0|fp16|bf16|fp8|mxfp4|mxfp8|mlx)(?:-[a-z0-9]+)?$/i
+  /-(?:4bit|8bit|6bit|5bit|3bit|2bit|q4_k_m|q4_k_s|q5_k_m|q5_k_s|q6_k|q8_0|fp16|bf16|fp8|mxfp4|mxfp8|mlx|qat|unquantized)(?:-[a-z0-9]+)?$/i
 
 /// Trailing dimensionality / dataset hints that occasionally appear in MLX
 /// repo names (e.g. `-128k`, `-it`, `-chat`). Stripped after quant suffixes.

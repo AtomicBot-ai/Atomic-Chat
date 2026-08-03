@@ -33,12 +33,13 @@ import { listen, emit as tauriEmit } from '@tauri-apps/api/event'
 import {
   loadMlxModel,
   unloadMlxModel,
-  MlxConfig,
 } from '@janhq/tauri-plugin-mlx-api'
 import { readGgufMetadata, ModelConfig } from '@janhq/tauri-plugin-llamacpp-api'
 import { resolveDflashDraft, DraftResolution } from './dflashRegistry'
 import { resolveMtpDraft } from './mtpRegistry'
 import { resolveEagle3Draft } from './eagle3Registry'
+import { classifyMlxVisionCapability } from './visionCapability'
+import { buildMlxConfig, selectMlxDraftSettings } from './buildMlxConfig'
 
 /// The three mutually-exclusive speculative-decoding families surfaced by
 /// the MLX extension. Maps 1:1 onto mlx-vlm's `--draft-kind` choices
@@ -385,7 +386,8 @@ export default class mlx_extension extends AIEngine {
       const modelConfig = await invoke<ModelConfig>('read_yaml', { path })
 
       const capabilities: string[] = []
-      if (modelConfig.mmproj_path) {
+      const resolvedPath = await this.resolveModelPath(modelConfig.model_path)
+      if (resolvedPath && (await this.isVisionSupported(resolvedPath))) {
         capabilities.push('vision')
       }
 
@@ -427,7 +429,6 @@ export default class mlx_extension extends AIEngine {
       }
 
       // Broken-link detection: flag a missing weights file/dir so the UI marks it and auto-start skips it.
-      const resolvedPath = await this.resolveModelPath(modelConfig.model_path)
       const missing = resolvedPath
         ? !(await fs.existsSync(resolvedPath).catch(() => true))
         : false
@@ -591,27 +592,11 @@ export default class mlx_extension extends AIEngine {
           `mtp=${mtpOn} eagle3=${eagle3On}); precedence mtp > eagle3 > dflash.`
       )
     }
-    /// `draftKind` is '' only when no family is enabled.
-    const draftKind: DraftKind | '' = mtpOn
-      ? 'mtp'
-      : eagle3On
-        ? 'eagle3'
-        : dflashOn
-          ? 'dflash'
-          : ''
-    const anyDrafterOn = draftKind !== ''
-    let draftPath = anyDrafterOn ? String(cfg.draft_model_path ?? '') : ''
-    /// EAGLE-3 has no fork-tuned default block size — `0` means "let the
-    /// drafter use its own configured depth" (the Rust shim only emits
-    /// `--draft-block-size` when the value is > 0).
-    const blockSize =
-      draftKind === 'mtp'
-        ? Number(cfg.mtp_block_size ?? 4)
-        : draftKind === 'dflash'
-          ? Number(cfg.block_size ?? 16)
-          : draftKind === 'eagle3'
-            ? Number(cfg.eagle3_block_size ?? 0)
-            : 0
+    const selectedDraft = selectMlxDraftSettings(cfg)
+    const draftKind = selectedDraft.draftKind
+    const anyDrafterOn = dflashOn || mtpOn || eagle3On
+    let draftPath = selectedDraft.draftPath
+    const blockSize = selectedDraft.blockSize
 
     /// Cold-start auto-restore: the `*_enabled` flags are persisted by
     /// `registerSettings`, but `draft_model_path` lives only in the
@@ -633,7 +618,7 @@ export default class mlx_extension extends AIEngine {
               : resolveDflashDraft(modelId)
         if (resolution) {
           const restored = await this.ensureDraftDownloaded(
-            draftKind as DraftKind,
+            draftKind,
             resolution.repo,
             resolution.required,
             resolution.optional
@@ -655,35 +640,11 @@ export default class mlx_extension extends AIEngine {
       }
     }
 
-    /// `--draft-block-size` and `--draft-kind` are meaningful only when a
-    /// drafter is actually attached. If the auto-restore above failed to
-    /// produce a path (registry miss, or — for MTP — bf16-only guard
-    /// rejecting a quantized target), drop them so we don't feed the
-    /// mlx-vlm server orphan flags.
-    const effectiveDraftKind = draftPath ? draftKind : ''
-    const effectiveBlockSize = draftPath ? blockSize : 0
-
-    /// KV-cache quantization is a load-time arg, like `ctx_size`: it takes
-    /// effect on the next model load (no mid-session auto-reload). 'off' (or
-    /// unset) leaves the mlx-vlm server on its full-precision KV default;
-    /// 'uniform' / 'turboquant' emit `--kv-quant-scheme` + `--kv-bits` via
-    /// the Rust shim. Normalize 'off' → '' here so the shim's guard
-    /// (scheme ∈ {uniform, turboquant} && bits > 0) is the single source of
-    /// truth and a stale `kv_bits` can't leak when the scheme is off.
-    const kvScheme =
-      cfg.kv_quant_scheme && cfg.kv_quant_scheme !== 'off'
-        ? String(cfg.kv_quant_scheme)
-        : ''
-    const kvBits = kvScheme ? Number(cfg.kv_bits ?? 0) : 0
-
-    const mlxConfig: MlxConfig = {
-      ctx_size: Number(cfg.ctx_size ?? 4096),
-      draft_model_path: draftPath,
-      block_size: effectiveBlockSize,
-      draft_kind: effectiveDraftKind,
-      kv_bits: kvBits,
-      kv_quant_scheme: kvScheme,
-    }
+    const mlxConfig = buildMlxConfig(cfg, {
+      draftKind,
+      draftPath,
+      blockSize,
+    })
 
     logger.info(
       'Loading MLX model:',
@@ -1378,11 +1339,15 @@ export default class mlx_extension extends AIEngine {
   }
 
   private createDownloadTaskId(modelId: string) {
-    // prepend provider to make taksId unique across providers
-    const cleanModelId = modelId.includes('.')
-      ? modelId.slice(0, modelId.indexOf('.'))
-      : modelId
-    return `${this.provider}/${cleanModelId}`
+    // Prepend provider to make taskId unique across providers. Do NOT
+    // truncate at the first '.' - model ids frequently contain a dot early
+    // in the name (e.g. "Qwen3.5-9B-...", "Llama-3.1-8B-..."), and truncating
+    // there collapsed distinct models onto the same taskId, causing one
+    // download's cancellation to silently clobber another's cancel token.
+    // The taskId is embedded in a Tauri event name (`download-${taskId}`),
+    // and Tauri rejects any character outside [A-Za-z0-9_/:-] — so map the
+    // dot (and anything else forbidden) to '_' while keeping the full id.
+    return `${this.provider}/${modelId.replace(/[^A-Za-z0-9_/:-]/g, '_')}`
   }
 
   override async abortImport(modelId: string): Promise<void> {
@@ -1431,13 +1396,15 @@ export default class mlx_extension extends AIEngine {
   }
 
   async isVisionSupported(modelPath: string): Promise<boolean> {
-    // Check if model is a Vision Language Model by examining config.json
-    // modelPath can be a folder path or a file path; resolve to directory
     const stat = await fs.fileStat(modelPath).catch(() => null)
+    const separatorIndex = Math.max(
+      modelPath.lastIndexOf('/'),
+      modelPath.lastIndexOf('\\')
+    )
     const modelDir =
       stat && stat.isDirectory
         ? modelPath
-        : modelPath.substring(0, modelPath.lastIndexOf('/'))
+        : modelPath.substring(0, separatorIndex)
     const configPath = await joinPath([modelDir, 'config.json'])
 
     if (!(await fs.existsSync(configPath))) {
@@ -1449,72 +1416,19 @@ export default class mlx_extension extends AIEngine {
         args: [configPath],
       })
       const config = JSON.parse(configContent)
-
-      // Check architecture for vision models
-      const architectures = config.architectures
-      if (architectures && Array.isArray(architectures)) {
-        const archString = architectures[0]?.toString().toLowerCase() ?? ''
-        // Common VLM architecture suffixes
-        const vlmPatterns = [
-          'vl',
-          'vlm',
-          'vision',
-          'llava',
-          'qwen2vl',
-          'qwen3vl',
-          'idefics',
-          'fuyu',
-          'paligemma',
-          'clip',
-          'siglip',
-        ]
-        if (vlmPatterns.some((pattern) => archString.includes(pattern))) {
-          logger.info(
-            `Vision support detected from config.json: ${architectures[0]}`
-          )
-          return true
-        }
-      }
-
-      // Check for vision-related configuration fields
-      if (config.visual_architectures || config.vision_config) {
-        logger.info(
-          'Vision support detected from visual_architectures/vision_config'
-        )
-        return true
-      }
-
-      // Check for image processor config
-      const imageProcessorPath = await joinPath([
+      const indexPath = await joinPath([
         modelDir,
-        'image_processor_config.json',
+        'model.safetensors.index.json',
       ])
-      if (await fs.existsSync(imageProcessorPath)) {
-        logger.info('Vision support detected from image_processor_config.json')
-        return true
+      let safetensorsIndex: unknown
+      if (await fs.existsSync(indexPath)) {
+        const indexContent = await invoke<string>('read_file_sync', {
+          args: [indexPath],
+        })
+        safetensorsIndex = JSON.parse(indexContent)
       }
 
-      // Check preprocessor config for vision
-      const preprocessorConfigPath = await joinPath([
-        modelDir,
-        'preprocessor_config.json',
-      ])
-      if (await fs.existsSync(preprocessorConfigPath)) {
-        try {
-          const preprocessorConfig = await invoke<string>('read_file_sync', {
-            args: [preprocessorConfigPath],
-          })
-          const pc = JSON.parse(preprocessorConfig)
-          if (pc.do_resize || pc.size || pc.patch_size) {
-            logger.info('Vision support detected from preprocessor_config.json')
-            return true
-          }
-        } catch (e) {
-          // Ignore
-        }
-      }
-
-      return false
+      return classifyMlxVisionCapability(config, safetensorsIndex)
     } catch (e) {
       logger.warn(`Failed to check vision support for ${modelPath}: ${e}`)
       return false

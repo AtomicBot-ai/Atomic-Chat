@@ -1,4 +1,4 @@
-import type { CatalogModel } from '@/services/models/types'
+import type { CatalogModel, ModelQuant } from '@/services/models/types'
 
 /**
  * Helpers for the Hub model card (v12). Hugging Face has no "capabilities"
@@ -15,15 +15,15 @@ export const HARDWARE_FIT: Record<
   { label: string; tip: string }
 > = {
   ok: {
-    label: 'Recommended',
+    label: 'Good fit',
     tip: 'This model is likely to run on your hardware',
   },
   maybe: {
-    label: 'Heavy for your device',
+    label: 'Should run',
     tip: 'This model can probably run on your hardware',
   },
   no: {
-    label: 'Not enough memory',
+    label: 'Too large',
     tip: 'This model is probably too large for your hardware',
   },
 }
@@ -43,6 +43,23 @@ export function parseFileSizeToBytes(fileSize?: string): number | undefined {
   const value = Number(match[1])
   if (!Number.isFinite(value)) return undefined
   return value * SIZE_UNIT_BYTES[match[2].toUpperCase()]
+}
+
+/** Smallest downloadable quant, preserving catalog order for unknown sizes. */
+export function pickSmallestQuant(
+  quants?: readonly ModelQuant[]
+): ModelQuant | undefined {
+  if (!quants?.length) return undefined
+
+  return quants.reduce((smallest, candidate) => {
+    const smallestBytes = parseFileSizeToBytes(smallest.file_size)
+    const candidateBytes = parseFileSizeToBytes(candidate.file_size)
+    if (candidateBytes === undefined) return smallest
+    if (smallestBytes === undefined || candidateBytes < smallestBytes) {
+      return candidate
+    }
+    return smallest
+  })
 }
 
 /** Full download count with thin-space grouping, e.g. 1163988 -> "1 163 988". */

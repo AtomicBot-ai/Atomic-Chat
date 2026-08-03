@@ -1,11 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { PromptProgress } from '../PromptProgress'
 import { useAppState } from '@/hooks/useAppState'
 
 // Mock the useAppState hook
 vi.mock('@/hooks/useAppState', () => ({
   useAppState: vi.fn(),
+}))
+
+vi.mock('@/i18n/react-i18next-compat', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { count?: number }) =>
+      key === 'activity.reading'
+        ? `Reading: ${options?.count}%`
+        : key === 'activity.working'
+          ? 'Working'
+          : key,
+  }),
 }))
 
 const mockUseAppState = useAppState as ReturnType<typeof vi.fn>
@@ -15,7 +27,8 @@ describe('PromptProgress', () => {
     vi.clearAllMocks()
   })
 
-  it('should calculate percentage correctly', () => {
+  it('should calculate percentage correctly', async () => {
+    const user = userEvent.setup()
     const mockProgress = {
       cache: 0,
       processed: 75,
@@ -27,6 +40,7 @@ describe('PromptProgress', () => {
 
     render(<PromptProgress />)
 
+    await user.click(screen.getByRole('button', { name: /working/i }))
     expect(screen.getByText('Reading: 50%')).toBeInTheDocument()
   })
 
@@ -40,11 +54,9 @@ describe('PromptProgress', () => {
 
     mockUseAppState.mockReturnValue(mockProgress)
 
-    const { container } = render(<PromptProgress />)
+    render(<PromptProgress />)
 
-    // Component should render Loader when total is 0
-    const loader = container.querySelector('svg.animate-spin')
-    expect(loader).not.toBeNull()
-    expect(loader?.classList.contains('animate-spin')).toBe(true)
+    expect(screen.getByRole('button', { name: /working/i })).toBeDisabled()
+    expect(screen.queryByText(/reading/i)).not.toBeInTheDocument()
   })
 })

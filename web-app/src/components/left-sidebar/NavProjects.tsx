@@ -1,7 +1,6 @@
 import {
   ChevronRight,
   FolderEditIcon,
-  FolderIcon,
   FolderOpenIcon,
   GripVertical,
   MoreHorizontal,
@@ -50,13 +49,17 @@ import {
   useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { ThreadFolder } from '@/services/projects/types'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { DeleteProjectDialog } from '@/containers/dialogs/DeleteProjectDialog'
 import ThreadList from '@/containers/ThreadList'
 import { cn } from '@/lib/utils'
+import {
+  FoldersIcon,
+  type FoldersIconHandle,
+} from '@/components/animated-icon/folders'
 
 function ProjectItem({
   item,
@@ -76,6 +79,7 @@ function ProjectItem({
   onDelete: (project: ThreadFolder) => void
 }) {
   const navigate = useNavigate()
+  const folderIconRef = useRef<FoldersIconHandle>(null)
   const {
     attributes,
     listeners,
@@ -93,78 +97,97 @@ function ProjectItem({
 
   return (
     <div ref={setNodeRef} style={style} className={cn(isDragging && 'z-10')}>
-      <Collapsible open={isOpen} onOpenChange={onOpenChange} className="group/collapsible">
-      <SidebarMenuItem>
-        <div className="group/project-row relative flex w-full items-center">
-          <button
-            type="button"
-            {...attributes}
-            {...listeners}
-            aria-label="Drag to reorder project"
-            className="text-muted-foreground/50 flex h-6 w-4 shrink-0 cursor-grab touch-none items-center justify-center opacity-0 transition-opacity group-hover/project-row:opacity-100 active:cursor-grabbing"
-          >
-            <GripVertical className="size-3.5" />
-          </button>
-          <CollapsibleTrigger asChild>
+      <Collapsible
+        open={isOpen}
+        onOpenChange={onOpenChange}
+        className="group/collapsible"
+      >
+        <SidebarMenuItem>
+          <div className="group/project-row relative flex w-full items-center">
             <button
               type="button"
-              className="hover:bg-sidebar-foreground/8 flex size-6 shrink-0 items-center justify-center rounded-md transition-colors"
-              aria-label={isOpen ? 'Collapse project' : 'Expand project'}
+              {...attributes}
+              {...listeners}
+              aria-label="Drag to reorder project"
+              className="text-muted-foreground/50 flex h-6 w-4 shrink-0 cursor-grab touch-none items-center justify-center opacity-0 transition-opacity group-hover/project-row:opacity-100 active:cursor-grabbing"
             >
-              <ChevronRight
-                className={cn(
-                  'text-muted-foreground size-4 shrink-0 transition-transform',
-                  isOpen && 'rotate-90'
-                )}
-              />
+              <GripVertical className="size-3.5" />
             </button>
-          </CollapsibleTrigger>
-          <SidebarMenuButton asChild className="min-w-0 flex-1 pr-8">
-            <Link to="/project/$projectId" params={{ projectId: item.id }}>
-              <FolderIcon className="text-foreground/70" size={16} />
-              <span className="truncate">{item.name}</span>
-            </Link>
-          </SidebarMenuButton>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <SidebarMenuAction className="hover:bg-sidebar-foreground/8 transition-opacity group-hover/project-row:opacity-100 group-focus-within/project-row:opacity-100 data-[state=open]:opacity-100 md:opacity-0">
-                <MoreHorizontal />
-                <span className="sr-only">More</span>
-              </SidebarMenuAction>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              className="w-48"
-              side={isMobile ? 'bottom' : 'right'}
-              align={isMobile ? 'end' : 'start'}
-            >
-              <DropdownMenuItem
-                onSelect={() => {
-                  navigate({ to: '/project/$projectId', params: { projectId: item.id } })
-                }}
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className="hover:bg-sidebar-foreground/8 flex size-6 shrink-0 items-center justify-center rounded-md transition-colors"
+                aria-label={isOpen ? 'Collapse project' : 'Expand project'}
               >
-                <FolderOpenIcon className="text-muted-foreground" />
-                <span>View Project</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => onEdit(item)}>
-                <FolderEditIcon className="text-muted-foreground" />
-                <span>Edit Project</span>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" onSelect={() => onDelete(item)}>
-                <Trash2 />
-                <span>Delete Project</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-        <CollapsibleContent>
-          {threads.length > 0 && (
-            <SidebarMenuSub>
-              <ThreadList threads={threads} subItem />
-            </SidebarMenuSub>
-          )}
-        </CollapsibleContent>
-      </SidebarMenuItem>
+                <ChevronRight
+                  className={cn(
+                    'text-muted-foreground size-4 shrink-0 transition-transform',
+                    isOpen && 'rotate-90'
+                  )}
+                />
+              </button>
+            </CollapsibleTrigger>
+            <SidebarMenuButton
+              asChild
+              className="min-w-0 flex-1 pr-8"
+              onMouseEnter={() => folderIconRef.current?.startAnimation()}
+              onMouseLeave={() => folderIconRef.current?.stopAnimation()}
+            >
+              <Link to="/project/$projectId" params={{ projectId: item.id }}>
+                <FoldersIcon
+                  ref={folderIconRef}
+                  className="text-foreground/70"
+                  size={16}
+                />
+                <span className="truncate">{item.name}</span>
+              </Link>
+            </SidebarMenuButton>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <SidebarMenuAction className="hover:bg-sidebar-foreground/8 transition-opacity group-hover/project-row:opacity-100 group-focus-within/project-row:opacity-100 data-[state=open]:opacity-100 md:opacity-0">
+                  <MoreHorizontal />
+                  <span className="sr-only">More</span>
+                </SidebarMenuAction>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                className="w-48"
+                side={isMobile ? 'bottom' : 'right'}
+                align={isMobile ? 'end' : 'start'}
+              >
+                <DropdownMenuItem
+                  onSelect={() => {
+                    navigate({
+                      to: '/project/$projectId',
+                      params: { projectId: item.id },
+                    })
+                  }}
+                >
+                  <FolderOpenIcon className="text-muted-foreground" />
+                  <span>View Project</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => onEdit(item)}>
+                  <FolderEditIcon className="text-muted-foreground" />
+                  <span>Edit Project</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  variant="destructive"
+                  onSelect={() => onDelete(item)}
+                >
+                  <Trash2 />
+                  <span>Delete Project</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          <CollapsibleContent>
+            {threads.length > 0 && (
+              <SidebarMenuSub>
+                <ThreadList threads={threads} subItem />
+              </SidebarMenuSub>
+            )}
+          </CollapsibleContent>
+        </SidebarMenuItem>
       </Collapsible>
     </div>
   )
@@ -181,7 +204,9 @@ export function NavProjects() {
 
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [selectedProject, setSelectedProject] = useState<ThreadFolder | null>(null)
+  const [selectedProject, setSelectedProject] = useState<ThreadFolder | null>(
+    null
+  )
 
   const threadsByProject = useMemo(() => {
     const out: Record<string, Thread[]> = {}

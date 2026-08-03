@@ -4,6 +4,7 @@ import { useServiceHub } from './useServiceHub'
 import { useModelProvider } from './useModelProvider'
 import { usePrompt } from './usePrompt'
 import { removeReasoningContent } from '@/utils/reasoning'
+import { isLlamacppProvider } from '@/lib/utils'
 
 export interface TokenCountData {
   tokenCount: number
@@ -152,7 +153,7 @@ export const useTokensCount = (
 
     if (
       !modelId ||
-      selectedProvider !== 'llamacpp' ||
+      !isLlamacppProvider(selectedProvider) ||
       messagesWithPrompt.length === 0
     ) {
       setTokenData({
@@ -247,7 +248,7 @@ export const useTokensCount = (
     // Only calculate if we have messages or a prompt
     if (
       messagesWithPrompt.length > 0 &&
-      selectedProvider === 'llamacpp' &&
+      isLlamacppProvider(selectedProvider) &&
       selectedModel?.id
     ) {
       debounceTimeoutRef.current = setTimeout(() => {

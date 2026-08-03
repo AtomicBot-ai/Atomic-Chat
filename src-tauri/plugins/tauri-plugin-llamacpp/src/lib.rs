@@ -12,6 +12,7 @@ mod error;
 mod gguf;
 mod path;
 mod process;
+pub mod runtime_device;
 pub mod state;
 pub use args::LlamacppConfig;
 pub use backend::install_bundled_backend;
@@ -29,6 +30,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::load_llama_model,
             commands::unload_llama_model,
             commands::get_devices,
+            commands::get_runtime_device,
             commands::generate_api_key,
             commands::is_process_running,
             commands::get_random_port,
@@ -48,6 +50,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             backend::determine_supported_backends,
             backend::get_supported_features,
             backend::is_cuda_installed,
+            backend::copy_backend_dlls,
             backend::find_latest_version_for_backend,
             backend::prioritize_backends,
             backend::parse_backend_version,

@@ -14,8 +14,11 @@ pub mod commands;
 pub mod constants;
 #[cfg(any(target_os = "android", target_os = "ios"))]
 pub mod db;
+pub mod file_store;
 pub mod helpers;
 pub mod utils;
 
+#[cfg(test)]
+mod ipc_tests;
 #[cfg(test)]
 mod tests;

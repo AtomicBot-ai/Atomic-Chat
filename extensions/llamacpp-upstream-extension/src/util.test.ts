@@ -3,6 +3,8 @@ import {
   getProxyConfig,
   isConcreteVersionBackend,
   matchesMtpLoadFailure,
+  hasEmbeddedMtp,
+  isMtpCapable,
   isCpuBackend,
   cpuHasAvx,
   isUnsupportedNoAvxCpu,
@@ -625,6 +627,93 @@ describe('matchesMtpLoadFailure (ATO-125)', () => {
 
   it('returns false for an empty string', () => {
     expect(matchesMtpLoadFailure('')).toBe(false)
+  })
+})
+
+describe('hasEmbeddedMtp', () => {
+  it('detects embedded MTP in a dense Qwen3.5 GGUF', () => {
+    expect(
+      hasEmbeddedMtp({
+        'general.architecture': 'qwen35',
+        'qwen35.block_count': '33',
+        'qwen35.nextn_predict_layers': '1',
+      })
+    ).toBe(true)
+  })
+
+  it('detects embedded MTP in a Qwen3.5/3.6 MoE GGUF', () => {
+    expect(
+      hasEmbeddedMtp({
+        'general.architecture': 'qwen35moe',
+        'qwen35moe.block_count': '41',
+        'qwen35moe.nextn_predict_layers': '1',
+      })
+    ).toBe(true)
+  })
+
+  it('does not require MTP in a filename or model id', () => {
+    const filename = 'Qwen3.5-4B-Q4_K_M.gguf'
+    expect(filename.toLowerCase()).not.toContain('mtp')
+    expect(
+      hasEmbeddedMtp({
+        'general.architecture': 'qwen35',
+        'qwen35.block_count': '33',
+        'qwen35.nextn_predict_layers': '1',
+      })
+    ).toBe(true)
+  })
+
+  it.each([
+    {
+      'general.architecture': 'qwen35',
+      'qwen35.block_count': '32',
+    },
+    {
+      'general.architecture': 'qwen35',
+      'qwen35.block_count': '32',
+      'qwen35.nextn_predict_layers': '0',
+    },
+    {
+      'general.architecture': 'qwen35',
+      'qwen35.block_count': '32',
+      'qwen35.nextn_predict_layers': 'invalid',
+    },
+    {
+      'general.architecture': 'qwen35',
+      'qwen35.block_count': '1',
+      'qwen35.nextn_predict_layers': '1',
+    },
+    {
+      'qwen35.block_count': '33',
+      'qwen35.nextn_predict_layers': '1',
+    },
+    {
+      'general.architecture': 'gemma4',
+      'gemma4.block_count': '49',
+      'gemma4.nextn_predict_layers': '1',
+    },
+  ])('rejects non-capable metadata %#', (metadata) => {
+    expect(hasEmbeddedMtp(metadata)).toBe(false)
+  })
+})
+
+describe('isMtpCapable', () => {
+  const embeddedMetadata = {
+    'general.architecture': 'qwen35',
+    'qwen35.block_count': '33',
+    'qwen35.nextn_predict_layers': '1',
+  }
+
+  it('keeps MTP enabled for an embedded head with an ordinary filename', () => {
+    expect(isMtpCapable(embeddedMetadata, '')).toBe(true)
+  })
+
+  it('disables MTP when neither metadata nor a draft head is present', () => {
+    expect(isMtpCapable({}, '')).toBe(false)
+  })
+
+  it('keeps the separate Gemma draft-head branch enabled', () => {
+    expect(isMtpCapable({}, '/models/gemma/mtp-draft.gguf')).toBe(true)
   })
 })
 

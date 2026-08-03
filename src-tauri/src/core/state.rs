@@ -1,16 +1,22 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crate::core::{downloads::models::DownloadManagerState, mcp::models::McpSettings};
+use crate::core::{
+    agent::approval_allowlist::ApprovalAllowlist, downloads::models::DownloadManagerState,
+    mcp::models::McpSettings,
+};
 use rmcp::{
     model::{CallToolRequestParam, CallToolResult, InitializeRequestParam, Tool},
-    service::RunningService,
+    service::{Peer, RunningService},
     RoleClient, ServiceError,
 };
 use tokio::sync::{oneshot, Mutex, Notify};
 
-/// Server handle type for managing the proxy server lifecycle
-pub type ServerHandle =
-    tokio::task::JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>;
+/// Handles owned by one Local API Server run.
+pub struct ServerHandle {
+    pub server_task: tokio::task::JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>,
+    pub analytics_task: tokio::task::JoinHandle<()>,
+    pub analytics_shutdown: oneshot::Sender<()>,
+}
 
 /// Provider configuration for remote model providers
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -52,6 +58,20 @@ pub struct AutoIncreaseState {
     pub last_outcome: Arc<Mutex<HashMap<String, AutoIncreaseOutcome>>>,
 }
 
+pub struct PendingAgentApproval {
+    pub run_id: String,
+    pub fingerprint: String,
+    pub can_remember: bool,
+    pub sender: oneshot::Sender<crate::core::agent::types::ApprovalDecision>,
+}
+
+pub struct PendingAgentFolderAccess {
+    pub run_id: String,
+    pub sender: oneshot::Sender<bool>,
+}
+
+pub type AgentSessionLocks = Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>;
+
 pub enum RunningServiceEnum {
     NoInit(RunningService<RoleClient, ()>),
     WithInit(RunningService<RoleClient, InitializeRequestParam>),
@@ -62,15 +82,21 @@ pub type SharedMcpServers = Arc<Mutex<HashMap<String, RunningServiceEnum>>>;
 pub struct AppState {
     pub app_token: Option<String>,
     pub mcp_servers: SharedMcpServers,
+    pub mcp_start_generations: Arc<Mutex<HashMap<String, u64>>>,
+    pub mcp_server_generations: Arc<Mutex<HashMap<String, u64>>>,
+    pub mcp_server_errors: Arc<Mutex<HashMap<String, String>>>,
     pub download_manager: Arc<Mutex<DownloadManagerState>>,
     pub mcp_active_servers: Arc<Mutex<HashMap<String, serde_json::Value>>>,
     pub server_handle: Arc<Mutex<Option<ServerHandle>>>,
     pub tool_call_cancellations: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
+    pub agent_pending_approvals: Arc<Mutex<HashMap<String, PendingAgentApproval>>>,
+    pub agent_pending_folder_access: Arc<Mutex<HashMap<String, PendingAgentFolderAccess>>>,
+    pub agent_approval_allowlist: Arc<Mutex<ApprovalAllowlist>>,
+    pub agent_session_locks: AgentSessionLocks,
     pub mcp_settings: Arc<Mutex<McpSettings>>,
     pub mcp_shutdown_in_progress: Arc<Mutex<bool>>,
-    pub mcp_monitoring_tasks: Arc<Mutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
     pub background_cleanup_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
-    pub mcp_server_pids: Arc<Mutex<HashMap<String, u32>>>,
+    pub mcp_server_pids: Arc<Mutex<HashMap<String, HashMap<u64, u32>>>>,
     /// Remote provider configurations (e.g., Anthropic, OpenAI, etc.)
     pub provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
     /// Coordinator state for the Local API Server auto-increase-ctx flow.
@@ -88,6 +114,18 @@ impl RunningServiceEnum {
         match self {
             Self::NoInit(s) => s.list_all_tools().await,
             Self::WithInit(s) => s.list_all_tools().await,
+        }
+    }
+
+    /// Cloneable client handle for this server. `Peer` is a cheap `Clone`
+    /// (Arc-backed) and exposes the same request methods (`list_all_tools`,
+    /// `call_tool`, …) as the owning `RunningService`. Cloning it lets callers
+    /// release the `mcp_servers` map lock *before* doing slow network round
+    /// trips, so one unresponsive server can't block the whole map (ATO-271).
+    pub fn peer(&self) -> Peer<RoleClient> {
+        match self {
+            Self::NoInit(s) => s.peer().clone(),
+            Self::WithInit(s) => s.peer().clone(),
         }
     }
     pub async fn call_tool(

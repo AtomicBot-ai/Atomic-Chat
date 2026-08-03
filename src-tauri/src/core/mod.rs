@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod app;
 pub mod artifact;
 #[cfg(feature = "cli")]
@@ -9,6 +10,8 @@ pub mod http;
 pub mod mcp;
 #[cfg(target_os = "windows")]
 pub mod notifications;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub mod process_reaper;
 pub mod server;
 pub mod setup;
 pub mod state;

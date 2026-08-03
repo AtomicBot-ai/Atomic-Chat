@@ -256,6 +256,7 @@
       "value": "turbo3",
       "options": [
         { "value": "turbo3", "name": "turbo3" },
+        { "value": "turbo4", "name": "turbo4" },
         { "value": "f32", "name": "f32" },
         { "value": "f16", "name": "f16" },
         { "value": "bf16", "name": "bf16" },
@@ -277,6 +278,7 @@
       "value": "turbo3",
       "options": [
         { "value": "turbo3", "name": "turbo3" },
+        { "value": "turbo4", "name": "turbo4" },
         { "value": "f32", "name": "f32" },
         { "value": "f16", "name": "f16" },
         { "value": "bf16", "name": "bf16" },

@@ -89,51 +89,51 @@ pub fn validate_model_path(args: &mut Vec<String>) -> ServerResult<PathBuf> {
 
 /// Validate mmproj path exists and update args with platform-appropriate path format
 pub fn validate_mmproj_path(args: &mut Vec<String>) -> ServerResult<Option<PathBuf>> {
-   let mmproj_path_index = match args.iter().position(|arg| arg == "--mmproj") {
-       Some(index) => index,
-       None => return Ok(None), // mmproj is optional
-   };
+    let mmproj_path_index = match args.iter().position(|arg| arg == "--mmproj") {
+        Some(index) => index,
+        None => return Ok(None), // mmproj is optional
+    };
 
-   let mmproj_path = args.get(mmproj_path_index + 1).cloned().ok_or_else(|| {
-       LlamacppError::new(
-           ErrorCode::ModelLoadFailed,
-           "Mmproj path was not provided after '--mmproj' flag.".into(),
-           None,
-       )
-   })?;
+    let mmproj_path = args.get(mmproj_path_index + 1).cloned().ok_or_else(|| {
+        LlamacppError::new(
+            ErrorCode::ModelLoadFailed,
+            "Mmproj path was not provided after '--mmproj' flag.".into(),
+            None,
+        )
+    })?;
 
-   let mmproj_path_pb = PathBuf::from(&mmproj_path);
-   if !mmproj_path_pb.exists() {
-       let err_msg = format!(
-           "Invalid or inaccessible mmproj path: {}",
-           mmproj_path_pb.display()
-       );
-       // WS1.2: warn! (not error!) — a missing/moved mmproj file is a recoverable
-       // user condition, not a backend crash, so it must not become a Sentry event.
-       log::warn!("{}", &err_msg);
-       return Err(LlamacppError::new(
-           ErrorCode::ModelFileNotFound,
-           "The specified mmproj file does not exist or is not accessible.".into(),
-           Some(err_msg),
-       )
-       .into());
-   }
+    let mmproj_path_pb = PathBuf::from(&mmproj_path);
+    if !mmproj_path_pb.exists() {
+        let err_msg = format!(
+            "Invalid or inaccessible mmproj path: {}",
+            mmproj_path_pb.display()
+        );
+        // WS1.2: warn! (not error!) — a missing/moved mmproj file is a recoverable
+        // user condition, not a backend crash, so it must not become a Sentry event.
+        log::warn!("{}", &err_msg);
+        return Err(LlamacppError::new(
+            ErrorCode::ModelFileNotFound,
+            "The specified mmproj file does not exist or is not accessible.".into(),
+            Some(err_msg),
+        )
+        .into());
+    }
 
-   #[cfg(windows)]
-   {
-       // use short path on Windows
-       if let Some(short) = get_short_path(&mmproj_path_pb) {
-           args[mmproj_path_index + 1] = short;
-       } else {
-           args[mmproj_path_index + 1] = mmproj_path_pb.display().to_string();
-       }
-   }
-   #[cfg(not(windows))]
-   {
-       args[mmproj_path_index + 1] = mmproj_path_pb.display().to_string();
-   }
+    #[cfg(windows)]
+    {
+        // use short path on Windows
+        if let Some(short) = get_short_path(&mmproj_path_pb) {
+            args[mmproj_path_index + 1] = short;
+        } else {
+            args[mmproj_path_index + 1] = mmproj_path_pb.display().to_string();
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        args[mmproj_path_index + 1] = mmproj_path_pb.display().to_string();
+    }
 
-   Ok(Some(mmproj_path_pb))
+    Ok(Some(mmproj_path_pb))
 }
 
 /// Whether a file name follows llama.cpp's split/shard convention
@@ -182,7 +182,7 @@ mod tests {
     fn test_validate_binary_path_existing() {
         let temp_file = NamedTempFile::new().unwrap();
         let path = temp_file.path().to_str().unwrap();
-        
+
         let result = validate_binary_path(path);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), PathBuf::from(path));
@@ -199,10 +199,10 @@ mod tests {
     fn test_validate_model_path_valid() {
         let temp_file = NamedTempFile::new().unwrap();
         let path = temp_file.path().to_str().unwrap();
-        
+
         let mut args = vec!["-m".to_string(), path.to_string(), "--verbose".to_string()];
         let result = validate_model_path(&mut args);
-        
+
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), PathBuf::from(path));
         // Args should be updated with the path
@@ -244,10 +244,14 @@ mod tests {
     fn test_validate_mmproj_path_valid() {
         let temp_file = NamedTempFile::new().unwrap();
         let path = temp_file.path().to_str().unwrap();
-        
-        let mut args = vec!["--mmproj".to_string(), path.to_string(), "--verbose".to_string()];
+
+        let mut args = vec![
+            "--mmproj".to_string(),
+            path.to_string(),
+            "--verbose".to_string(),
+        ];
         let result = validate_mmproj_path(&mut args);
-        
+
         assert!(result.is_ok());
         assert!(result.unwrap().is_some());
         // Args should be updated with the path
@@ -286,22 +290,21 @@ mod tests {
         assert!(result.is_err());
     }
 
-
     #[test]
     fn test_validate_model_path_multiple_m_flags() {
         let temp_file = NamedTempFile::new().unwrap();
         let path = temp_file.path().to_str().unwrap();
-        
+
         // Multiple -m flags - should use the first one
         let mut args = vec![
-            "-m".to_string(), 
+            "-m".to_string(),
             path.to_string(),
             "--verbose".to_string(),
             "-m".to_string(),
-            "another_path".to_string()
+            "another_path".to_string(),
         ];
         let result = validate_model_path(&mut args);
-        
+
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), PathBuf::from(path));
     }
@@ -310,17 +313,17 @@ mod tests {
     fn test_validate_mmproj_path_multiple_flags() {
         let temp_file = NamedTempFile::new().unwrap();
         let path = temp_file.path().to_str().unwrap();
-        
+
         // Multiple --mmproj flags - should use the first one
         let mut args = vec![
-            "--mmproj".to_string(), 
+            "--mmproj".to_string(),
             path.to_string(),
             "--verbose".to_string(),
             "--mmproj".to_string(),
-            "another_path".to_string()
+            "another_path".to_string(),
         ];
         let result = validate_mmproj_path(&mut args);
-        
+
         assert!(result.is_ok());
         let result_path = result.unwrap();
         assert!(result_path.is_some());

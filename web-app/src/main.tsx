@@ -12,6 +12,8 @@ import { installCodeBlockDownloadHandler } from './lib/codeBlockDownload'
 import { runWindowsLlamacppProviderMigration } from './lib/windowsProviderMigration'
 import { runMacosLlamacppDefaultMigration } from './lib/macosLlamacppDefaultMigration'
 import { initSentryFrontend } from './lib/sentry'
+import { useGeneralSetting } from './hooks/useGeneralSetting'
+import { useModelProvider } from './hooks/useModelProvider'
 import GlobalError from './containers/GlobalError'
 
 // ATO-113: arm Sentry before anything else so the React ErrorBoundary and the
@@ -149,6 +151,18 @@ runWindowsLlamacppProviderMigration()
 // in `DataProvider` resolves the model on `'llamacpp-upstream'`. No-op on
 // Windows / Linux and on second launch.
 runMacosLlamacppDefaultMigration()
+
+// When "Preload model on startup" is disabled, don't let a model selection
+// persisted from a previous session flash into the topbar or trigger
+// `ChatInput`'s local-model auto-start effect before we've confirmed
+// whether that model is actually still running. Both `useModelProvider`
+// and `useGeneralSetting` are synchronous localStorage-backed stores, so
+// they are already rehydrated at this point (well before React mounts).
+// `DropdownModelProvider`'s startup effect re-populates the selection from
+// the live engine state if a model turns out to still be active.
+if (!useGeneralSetting.getState().preloadModelOnStartup) {
+  useModelProvider.setState({ selectedProvider: '', selectedModel: null })
+}
 
 // Tauri webviews ignore the HTML5 `download` attribute, so streamdown's
 // code-block download button needs to go through Tauri's save dialog.

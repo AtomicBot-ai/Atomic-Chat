@@ -1,13 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useThreads } from '../useThreads'
-
-// Mock the services
-vi.mock('@/services/threads', () => ({
-  createThread: vi.fn(),
-  deleteThread: vi.fn(),
-  updateThread: vi.fn(),
-}))
+import type { PathService } from '@/services/path/types'
+import type { ThreadsService } from '@/services/threads/types'
+import { seedServiceHub } from '@/test/service-hub'
 
 // Mock ulid
 vi.mock('ulidx', () => ({
@@ -31,6 +27,16 @@ global.__TAURI_INTERNALS__ = {
 describe('useThreads', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    seedServiceHub({
+      path: {
+        sep: () => '/',
+      } as PathService,
+      threads: {
+        createThread: vi.fn().mockResolvedValue(undefined),
+        deleteThread: vi.fn().mockResolvedValue(undefined),
+        updateThread: vi.fn().mockResolvedValue(undefined),
+      } as unknown as ThreadsService,
+    })
     // Reset Zustand store
     act(() => {
       useThreads.setState({

@@ -1,5 +1,6 @@
 import { IconSettings } from '@tabler/icons-react'
 import debounce from 'lodash.debounce'
+import { useEffect, useMemo } from 'react'
 
 import {
   Sheet,
@@ -15,7 +16,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { cn, getModelDisplayName } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
+import { restartLocalModel } from '@/utils/restartLocalModel'
 
 type ModelSettingProps = {
   provider: ProviderObject
@@ -36,6 +37,18 @@ const LEGACY_SAMPLING_KEYS = new Set<string>([
   'frequency_penalty',
 ])
 
+const RESTART_REQUIRED_SETTINGS = new Set([
+  'ctx_len',
+  'ngl',
+  'chat_template',
+  'offload_mmproj',
+  'batch_size',
+  'cpu_moe',
+  'n_cpu_moe',
+  'override_tensor_buffer_t',
+  'no_kv_offload',
+])
+
 export function ModelSetting({
   model,
   provider,
@@ -44,24 +57,24 @@ export function ModelSetting({
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
 
-  // Create a debounced version that stops and restarts the model with updated settings
-  const debouncedRestartModel = debounce(async (modelId: string, providerName: string) => {
-    try {
-      await serviceHub.models().stopModel(modelId)
+  const debouncedRestartModel = useMemo(
+    () =>
+      debounce(async (modelId: string, providerName: string) => {
+        try {
+          await restartLocalModel(serviceHub, providerName, modelId)
+        } catch (error) {
+          console.error('Failed to restart model after settings change:', error)
+        }
+      }, 500),
+    [serviceHub]
+  )
 
-      const freshProvider = useModelProvider.getState().getProviderByName(providerName)
-      if (freshProvider) {
-        await serviceHub.models().startModel(freshProvider, modelId, true)
-      }
-
-      const models = await serviceHub.models().getActiveModels()
-      // Preserve any active cloud model from the UI state so the restart
-      // of a local model's settings doesn't clear it.
-      syncActiveModelsFromEngines(models || [])
-    } catch (error) {
-      console.error('Failed to restart model after settings change:', error)
-    }
-  }, 500)
+  useEffect(
+    () => () => {
+      debouncedRestartModel.cancel()
+    },
+    [debouncedRestartModel]
+  )
 
   const handleSettingChange = (
     key: string,
@@ -69,15 +82,23 @@ export function ModelSetting({
   ) => {
     if (!provider) return
 
-    // Create a copy of the model with updated settings
+    const freshProvider =
+      useModelProvider.getState().getProviderByName(provider.provider) ??
+      provider
+    const freshModel =
+      freshProvider.models.find((candidate) => candidate.id === model.id) ??
+      model
+
     const updatedModel = {
-      ...model,
+      ...freshModel,
       settings: {
-        ...model.settings,
+        ...freshModel.settings,
         [key]: {
-          ...(model.settings?.[key] != null ? model.settings?.[key] : {}),
+          ...(freshModel.settings?.[key] != null
+            ? freshModel.settings?.[key]
+            : {}),
           controller_props: {
-            ...(model.settings?.[key]?.controller_props ?? {}),
+            ...(freshModel.settings?.[key]?.controller_props ?? {}),
             value: value,
           },
         },
@@ -85,38 +106,28 @@ export function ModelSetting({
     }
 
     // Find the model index in the provider's models array
-    const modelIndex = provider.models.findIndex((m) => m.id === model.id)
+    const modelIndex = freshProvider.models.findIndex((m) => m.id === model.id)
 
     if (modelIndex !== -1) {
       // Create a copy of the provider's models array
-      const updatedModels = [...provider.models]
+      const updatedModels = [...freshProvider.models]
 
       // Update the specific model in the array
       updatedModels[modelIndex] = updatedModel as Model
 
       // Update the provider with the new models array
-      updateProvider(provider.provider, {
+      updateProvider(freshProvider.provider, {
         models: updatedModels,
       })
 
-      // Call debounced stopModel only when updating ctx_len, ngl, chat_template, or offload_mmproj
-      // and only if the model is currently running
-      if (
-        key === 'ctx_len' ||
-        key === 'ngl' ||
-        key === 'chat_template' ||
-        key === 'offload_mmproj' ||
-        key === 'batch_size' ||
-        key === 'cpu_moe' ||
-        key === 'n_cpu_moe'
-      ) {
+      if (RESTART_REQUIRED_SETTINGS.has(key)) {
         // Check if model is running before restarting it with new settings
         serviceHub
           .models()
-          .getActiveModels()
+          .getActiveModels(freshProvider.provider)
           .then((activeModels) => {
             if (activeModels.includes(model.id)) {
-              debouncedRestartModel(model.id, provider.provider)
+              debouncedRestartModel(model.id, freshProvider.provider)
             }
           })
       }

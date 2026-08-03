@@ -54,9 +54,49 @@ pub async fn post_local_http(
     }
     req = req.body(body);
 
-    let response = req.send().await.map_err(|e| format!("Request failed: {e}"))?;
+    let response = req
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
     let status = response.status().as_u16();
-    let text = response.text().await.map_err(|e| format!("Body read failed: {e}"))?;
+    let text = response
+        .text()
+        .await
+        .map_err(|e| format!("Body read failed: {e}"))?;
+
+    if status >= 400 {
+        return Err(format!("HTTP {status}: {text}"));
+    }
+
+    Ok(text)
+}
+
+/// Simple non-streaming HTTP GET that returns the full response body as text.
+/// Bypasses tauri_plugin_http's fetch interception, which has been observed to
+/// hang while reading response bodies from some local servers (e.g. Ollama's
+/// OpenAI-compatible `/v1/models`).
+#[tauri::command]
+pub async fn get_local_http(
+    url: String,
+    headers: HashMap<String, String>,
+    timeout_secs: u64,
+) -> Result<String, String> {
+    let client = shared_post_client(timeout_secs);
+
+    let mut req = client.get(&url);
+    for (k, v) in &headers {
+        req = req.header(k.as_str(), v.as_str());
+    }
+
+    let response = req
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
+    let status = response.status().as_u16();
+    let text = response
+        .text()
+        .await
+        .map_err(|e| format!("Body read failed: {e}"))?;
 
     if status >= 400 {
         return Err(format!("HTTP {status}: {text}"));

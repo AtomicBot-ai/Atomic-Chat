@@ -7,6 +7,7 @@ const COMMANDS: &[&str] = &[
     "find_mlx_session_by_model",
     "get_mlx_loaded_models",
     "get_mlx_all_sessions",
+    "get_mlx_server_version",
 ];
 
 fn main() {

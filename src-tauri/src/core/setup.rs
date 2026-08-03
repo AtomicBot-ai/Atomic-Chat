@@ -392,8 +392,13 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
     //* Model block — a disabled "Model" header above the live model name.
     //  The header is kept static (and disabled, so it renders muted) so the
     //  block reads as a section label, mirroring Pico AI Server's panel.
-    let status_model_label =
-        MenuItem::with_id(app.handle(), "status_model_label", "Model", false, None::<&str>)?;
+    let status_model_label = MenuItem::with_id(
+        app.handle(),
+        "status_model_label",
+        "Model",
+        false,
+        None::<&str>,
+    )?;
     let status_model_value = MenuItem::with_id(
         app.handle(),
         "status_model_value",
@@ -552,10 +557,7 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
                 }
             }
             // Live status rows are non-interactive — clicking them is a no-op.
-            "status_server"
-            | "status_model_label"
-            | "status_model_value"
-            | "status_ram_text"
+            "status_server" | "status_model_label" | "status_model_value" | "status_ram_text"
             | "status_ram_bar" => {}
             other => {
                 log::debug!("tray menu item {other} not handled");

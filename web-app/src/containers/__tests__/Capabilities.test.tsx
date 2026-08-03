@@ -14,7 +14,7 @@ vi.mock('@/components/ui/tooltip', () => ({
 vi.mock('@tabler/icons-react', () => ({
   IconEye: () => <div data-testid="icon-eye">Eye Icon</div>,
   IconTool: () => <div data-testid="icon-tool">Tool Icon</div>,
-  IconAtom: () => <div data-testid="icon-atom">Atom Icon</div>,
+  IconBulb: () => <div data-testid="icon-bulb">Bulb Icon</div>,
   IconWorld: () => <div data-testid="icon-world">World Icon</div>,
   IconCodeCircle2: () => <div data-testid="icon-code">Code Icon</div>,
 }))
@@ -34,11 +34,11 @@ describe('Capabilities', () => {
     expect(toolIcon).toBeInTheDocument()
   })
 
-  it('should render reasoning capability with atom icon', () => {
+  it('should render reasoning capability with bulb icon', () => {
     render(<Capabilities capabilities={['reasoning']} />)
 
-    const atomIcon = screen.getByTestId('icon-atom')
-    expect(atomIcon).toBeInTheDocument()
+    const bulbIcon = screen.getByTestId('icon-bulb')
+    expect(bulbIcon).toBeInTheDocument()
   })
 
   it('should render web_search capability with world icon', () => {
@@ -60,7 +60,7 @@ describe('Capabilities', () => {
 
     expect(screen.getByTestId('icon-tool')).toBeInTheDocument()
     expect(screen.getByTestId('icon-eye')).toBeInTheDocument()
-    expect(screen.getByTestId('icon-atom')).toBeInTheDocument()
+    expect(screen.getByTestId('icon-bulb')).toBeInTheDocument()
   })
 
   it('should render all capabilities in correct order', () => {
@@ -68,7 +68,7 @@ describe('Capabilities', () => {
 
     expect(screen.getByTestId('icon-tool')).toBeInTheDocument()
     expect(screen.getByTestId('icon-eye')).toBeInTheDocument()
-    expect(screen.getByTestId('icon-atom')).toBeInTheDocument()
+    expect(screen.getByTestId('icon-bulb')).toBeInTheDocument()
     expect(screen.getByTestId('icon-world')).toBeInTheDocument()
     expect(screen.getByTestId('icon-code')).toBeInTheDocument()
   })

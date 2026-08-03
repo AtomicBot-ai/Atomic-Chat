@@ -19,7 +19,8 @@ export const useThreadReadStatus = create<ThreadReadState>((set) => ({
       if (!(threadId in state.unreadThreads)) {
         return state
       }
-      const { [threadId]: _, ...rest } = state.unreadThreads
+      const rest = { ...state.unreadThreads }
+      delete rest[threadId]
       return { unreadThreads: rest }
     }),
   removeThread: (threadId) =>
@@ -27,7 +28,8 @@ export const useThreadReadStatus = create<ThreadReadState>((set) => ({
       if (!(threadId in state.unreadThreads)) {
         return state
       }
-      const { [threadId]: _, ...rest } = state.unreadThreads
+      const rest = { ...state.unreadThreads }
+      delete rest[threadId]
       return { unreadThreads: rest }
     }),
   clearAll: () => set({ unreadThreads: {} }),

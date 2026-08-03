@@ -1,6 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
+import type { ServiceHub } from '@/services'
+import { seedServiceHub } from '@/test/service-hub'
+
+const hardwareService = {
+  getHardwareInfo: vi.fn().mockResolvedValue(null),
+  getSystemUsage: vi.fn().mockResolvedValue(null),
+  refreshHardwareInfo: vi.fn().mockResolvedValue(undefined),
+}
 
 // Mock all the dependencies with minimal implementation
 vi.mock('@/containers/SettingsMenu', () => ({
@@ -14,13 +22,25 @@ vi.mock('@/containers/HeaderPage', () => ({
 }))
 
 vi.mock('@/containers/Card', () => ({
-  Card: ({ title, children }: { title?: string; children: React.ReactNode }) => (
+  Card: ({
+    title,
+    children,
+  }: {
+    title?: string
+    children: React.ReactNode
+  }) => (
     <div data-testid="card">
       {title && <div>{title}</div>}
       {children}
     </div>
   ),
-  CardItem: ({ title, actions }: { title?: string; actions?: React.ReactNode }) => (
+  CardItem: ({
+    title,
+    actions,
+  }: {
+    title?: string
+    actions?: React.ReactNode
+  }) => (
     <div data-testid="card-item">
       {title && <div>{title}</div>}
       {actions}
@@ -49,10 +69,16 @@ vi.mock('@/hooks/useHardware', () => ({
     hardwareData: {
       os_type: 'windows',
       os_name: 'Windows 11',
-      cpu: { name: 'Intel i7', arch: 'x64', core_count: 8, extensions: ['SSE'] },
+      cpu: {
+        name: 'Intel i7',
+        arch: 'x64',
+        core_count: 8,
+        extensions: ['SSE'],
+      },
       total_memory: 16384,
+      gpus: [],
     },
-    systemUsage: { cpu: 50, used_memory: 8192 },
+    systemUsage: { cpu: 50, used_memory: 8192, total_memory: 16384, gpus: [] },
     setHardwareData: vi.fn(),
     updateSystemUsage: vi.fn(),
     pollingPaused: false,
@@ -61,7 +87,15 @@ vi.mock('@/hooks/useHardware', () => ({
 
 vi.mock('@/hooks/useLlamacppDevices', () => ({
   useLlamacppDevices: () => ({
-    devices: [{ id: 'gpu0', name: 'RTX 3080', mem: 10240, free: 8192 }],
+    devices: [
+      {
+        id: 'gpu0',
+        name: 'RTX 3080',
+        mem: 10240,
+        free: 8192,
+        activated: true,
+      },
+    ],
     loading: false,
     error: null,
     activatedDevices: new Set(['gpu0']),
@@ -73,8 +107,10 @@ vi.mock('@/hooks/useLlamacppDevices', () => ({
 
 vi.mock('@/hooks/useModelProvider', () => ({
   useModelProvider: () => ({
-    providers: [{ provider: 'llamacpp' }],
-    getProviderByName: vi.fn(() => ({ settings: [{ key: 'device', controller_props: { value: 'gpu0' } }] })),
+    providers: [{ provider: 'llamacpp-upstream' }],
+    getProviderByName: vi.fn(() => ({
+      settings: [{ key: 'device', controller_props: { value: 'gpu0' } }],
+    })),
   }),
 }))
 
@@ -87,19 +123,24 @@ vi.mock('@/services/models', () => ({ stopAllModels: vi.fn() }))
 vi.mock('@/lib/utils', () => ({
   formatMegaBytes: (mb: number) => `${mb} MB`,
   cn: (...classes: any[]) => classes.filter(Boolean).join(' '),
+  LOCAL_LLAMACPP_PROVIDER: 'llamacpp-upstream',
 }))
 vi.mock('@/utils/number', () => ({ toNumber: (n: number) => n }))
 vi.mock('@tauri-apps/api/webviewWindow', () => ({ WebviewWindow: vi.fn() }))
-vi.mock('@/constants/routes', () => ({ 
-  route: { 
-    settings: { 
-      hardware: '/settings/hardware' 
-    }, 
-    systemMonitor: '/monitor' 
-  } 
+vi.mock('@/constants/routes', () => ({
+  route: {
+    settings: {
+      hardware: '/settings/hardware',
+    },
+    systemMonitor: '/monitor',
+  },
 }))
-vi.mock('@/constants/windows', () => ({ windowKey: { systemMonitorWindow: 'monitor' } }))
-vi.mock('@tabler/icons-react', () => ({ IconDeviceDesktopAnalytics: () => <div data-testid="icon" /> }))
+vi.mock('@/constants/windows', () => ({
+  windowKey: { systemMonitorWindow: 'monitor' },
+}))
+vi.mock('@tabler/icons-react', () => ({
+  IconDeviceDesktopAnalytics: () => <div data-testid="icon" />,
+}))
 
 // Mock the route structure properly
 vi.mock('@tanstack/react-router', () => ({
@@ -114,7 +155,9 @@ vi.mock('@/lib/platform/utils', () => ({
 
 // Mock PlatformGuard to always render children
 vi.mock('@/lib/platform/PlatformGuard', () => ({
-  PlatformGuard: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  PlatformGuard: ({ children }: { children: React.ReactNode }) => (
+    <>{children}</>
+  ),
 }))
 
 global.IS_MACOS = false
@@ -125,13 +168,28 @@ import { Route } from '../hardware'
 describe('Hardware Settings', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    seedServiceHub({
+      hardware: hardwareService as ReturnType<ServiceHub['hardware']>,
+      window: {
+        openSystemMonitorWindow: vi.fn().mockResolvedValue(undefined),
+      } as ReturnType<ServiceHub['window']>,
+      models: {
+        stopAllModels: vi.fn().mockResolvedValue(undefined),
+        getActiveModels: vi.fn().mockResolvedValue([]),
+      } as ReturnType<ServiceHub['models']>,
+    })
     global.IS_MACOS = false
   })
 
-  it('renders hardware settings page', () => {
+  it('renders hardware settings page', async () => {
     const Component = Route.component as React.ComponentType
     render(<Component />)
-    
+
+    await waitFor(() => {
+      expect(
+        screen.queryByText('Loading hardware information...')
+      ).not.toBeInTheDocument()
+    })
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
     expect(screen.getByTestId('settings-menu')).toBeInTheDocument()
   })
@@ -139,7 +197,7 @@ describe('Hardware Settings', () => {
   it('displays OS information', async () => {
     const Component = Route.component as React.ComponentType
     render(<Component />)
-    
+
     await waitFor(() => {
       expect(screen.getByText('settings:hardware.os')).toBeInTheDocument()
       expect(screen.getByText('windows')).toBeInTheDocument()
@@ -149,7 +207,7 @@ describe('Hardware Settings', () => {
   it('displays CPU information', async () => {
     const Component = Route.component as React.ComponentType
     render(<Component />)
-    
+
     await waitFor(() => {
       expect(screen.getByText('settings:hardware.cpu')).toBeInTheDocument()
       expect(screen.getByText('Intel i7')).toBeInTheDocument()
@@ -159,7 +217,7 @@ describe('Hardware Settings', () => {
   it('displays memory information', async () => {
     const Component = Route.component as React.ComponentType
     render(<Component />)
-    
+
     await waitFor(() => {
       expect(screen.getByText('settings:hardware.memory')).toBeInTheDocument()
     })
@@ -169,7 +227,7 @@ describe('Hardware Settings', () => {
     global.IS_MACOS = false
     const Component = Route.component as React.ComponentType
     render(<Component />)
-    
+
     await waitFor(() => {
       expect(screen.getByText('GPUs')).toBeInTheDocument()
       expect(screen.getByText('RTX 3080')).toBeInTheDocument()
@@ -180,7 +238,7 @@ describe('Hardware Settings', () => {
     global.IS_MACOS = true
     const Component = Route.component as React.ComponentType
     render(<Component />)
-    
+
     await waitFor(() => {
       expect(screen.queryByText('GPUs')).not.toBeInTheDocument()
     })

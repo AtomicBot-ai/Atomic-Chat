@@ -9,28 +9,26 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Instant;
-use tauri::{AppHandle, Emitter, Listener, Runtime};
+use std::time::{Duration, Instant};
+use tauri::{AppHandle, Emitter, Runtime};
 use tauri_plugin_llamacpp::LLamaBackendSession;
 use tauri_plugin_llamacpp_upstream::LLamaBackendSession as LLamaUpstreamBackendSession;
-use tokio::sync::Mutex;
+use tokio::sync::{oneshot, Mutex};
 
-use crate::core::state::{
-    AutoIncreaseOutcome, AutoIncreaseState, ProviderConfig, ServerHandle,
+use crate::core::server::api_request_analytics::{
+    ApiRequestAggregator, ApiRequestObservation, ApiRequestSummary, API_REQUEST_SUMMARY_CHANNEL,
+    API_REQUEST_SUMMARY_WINDOW_SECS,
 };
-use tokio::sync::Notify;
-use uuid::Uuid;
+use crate::core::server::context_expansion::{
+    is_context_limit_error as shared_is_context_limit_error, request_context_increase,
+};
+use crate::core::state::{AutoIncreaseState, ProviderConfig, ServerHandle};
 
-/// Tauri event channel used to forward Local API Server request metadata to
-/// the web-app analytics listener. The web-app captures it as a PostHog event
-/// (`api_server_request`) with `source: 'local_api_server'`, which is the
-/// counterpart to the `chat_request_sent` event emitted by the chat UI.
+/// Immediate analytics channel retained for bind failures, which happen
+/// before a three-minute request window can exist.
 const ANALYTICS_CHANNEL: &str = "analytics://api_server_request";
 
-/// Mutable state accumulated while handling a proxied request. A single
-/// `ApiRequestEvent` is emitted from the `proxy_request` wrapper after the
-/// inner handler finishes, so every field must be populated by the time the
-/// inner handler returns (defaults are used otherwise).
+/// Mutable metadata accumulated while handling one proxied request.
 #[derive(Default)]
 struct EmitState {
     endpoint: Option<&'static str>,
@@ -43,11 +41,10 @@ struct EmitState {
     skip_emit: bool,
     // ATO-112: error-breakdown fields. `upstream_status` is the model's /
     // provider's own HTTP status (distinct from the status we return to the
-    // client). The three booleans flag specific failure shapes for triage.
+    // client). The booleans flag specific failure shapes for triage.
     upstream_status: Option<u16>,
     oom_detected: bool,
     ctx_overflow_detected: bool,
-    server_bind_failed: bool,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -72,6 +69,12 @@ struct ApiRequestEvent<'a> {
 fn emit_api_request_event<R: Runtime>(app: &AppHandle<R>, event: ApiRequestEvent) {
     if let Err(e) = app.emit(ANALYTICS_CHANNEL, event) {
         log::debug!("Failed to emit api_server_request analytics event: {e}");
+    }
+}
+
+fn emit_api_request_summary<R: Runtime>(app: &AppHandle<R>, summary: ApiRequestSummary) {
+    if let Err(e) = app.emit(API_REQUEST_SUMMARY_CHANNEL, summary) {
+        log::debug!("Failed to emit api_server_session_summary analytics event: {e}");
     }
 }
 
@@ -115,10 +118,7 @@ fn emit_ttft_timing<R: Runtime>(app: &AppHandle<R>, marker: &'static str) {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
-    if let Err(e) = app.emit(
-        TTFT_TIMING_CHANNEL,
-        TtftTimingEvent { marker, ms },
-    ) {
+    if let Err(e) = app.emit(TTFT_TIMING_CHANNEL, TtftTimingEvent { marker, ms }) {
         log::debug!("Failed to emit ttft-timing event: {e}");
     }
 }
@@ -131,7 +131,9 @@ fn log_ttft_prefix_dump(json_body: &serde_json::Value) {
     // Emit only sizes/counts so the diagnostic stays useful for prefix-cache
     // debugging without leaking conversation content into app.log / Sentry.
     if let Some(messages) = json_body.get("messages") {
-        let bytes = serde_json::to_string(messages).map(|s| s.len()).unwrap_or(0);
+        let bytes = serde_json::to_string(messages)
+            .map(|s| s.len())
+            .unwrap_or(0);
         let count = messages.as_array().map(|a| a.len()).unwrap_or(0);
         log::info!("[ttft-prefix] messages: {count} item(s), {bytes}B");
     }
@@ -175,6 +177,20 @@ fn transform_anthropic_to_openai(body: &serde_json::Value) -> Option<serde_json:
     let messages = body.get("messages")?;
 
     let openai_messages = convert_messages(messages, body.get("system"))?;
+
+    // Strict chat templates (e.g. AtomicChat/ornith-9b, Qwen3-family GGUFs)
+    // `raise` "System message must be at the beginning" whenever a request
+    // carries more than one system message or a non-leading one. Claude Code
+    // triggers this by combining its system prompt with developer/system items,
+    // and the failure surfaces during llama.cpp's tool-call parser generation.
+    // Collapse them into a single leading system message — the same fix already
+    // applied on the Codex `/responses` path (see responses_shim).
+    let openai_messages = match openai_messages.as_array() {
+        Some(arr) => {
+            serde_json::Value::Array(super::responses_shim::merge_system_messages(arr.clone()))
+        }
+        None => openai_messages,
+    };
 
     let stream = body
         .get("stream")
@@ -482,7 +498,9 @@ fn extract_tool_result_content(content: Option<&serde_json::Value>) -> String {
 }
 
 /// Transform OpenAI non-streaming response to Anthropic /messages format
-fn transform_openai_response_to_anthropic(response: &serde_json::Value) -> serde_json::Value {
+pub(crate) fn transform_openai_response_to_anthropic(
+    response: &serde_json::Value,
+) -> serde_json::Value {
     let choice = response
         .get("choices")
         .and_then(|c| c.as_array())
@@ -584,9 +602,9 @@ pub fn model_ids_match(a: &str, b: &str) -> bool {
     if a.len() != b.len() {
         return false;
     }
-    a.bytes().zip(b.bytes()).all(|(x, y)| {
-        x == y || matches!((x, y), (b'.', b'_') | (b'_', b'.'))
-    })
+    a.bytes()
+        .zip(b.bytes())
+        .all(|(x, y)| x == y || matches!((x, y), (b'.', b'_') | (b'_', b'.')))
 }
 
 pub fn allowed_methods_for_path(path: &str) -> Option<&'static [&'static str]> {
@@ -608,86 +626,14 @@ pub fn allowed_methods_for_path(path: &str) -> Option<&'static [&'static str]> {
 use tauri_plugin_mlx::state::{MlxBackendSession, SessionInfo};
 
 fn is_local_url(url: &str) -> bool {
-    url.contains("://localhost") || url.contains("://127.0.0.1") || url.contains("://0.0.0.0") || url.contains("://[::1]")
+    url.contains("://localhost")
+        || url.contains("://127.0.0.1")
+        || url.contains("://0.0.0.0")
+        || url.contains("://[::1]")
 }
 
-// ── Auto-increase-ctx: shared detection, events & coordinator ────────────────
-//
-// The UI already increases `ctx_len` when chat replies hit the model's context
-// window (see `handleContextSizeIncrease` in
-// `web-app/src/routes/threads/$threadId.tsx`). External clients using the
-// Local API server used to bypass that logic entirely because this proxy is
-// a pure forwarder. The event channel below lets the proxy delegate the
-// reload to the corresponding TypeScript extension (owner of the model
-// settings in Zustand) and then retry the buffered request transparently.
-
-/// Event emitted from Rust to extensions when a context-limit error is
-/// detected. Both `llamacpp-extension` and `mlx-extension` subscribe and
-/// filter by `backend`.
-const AUTO_INCREASE_EVENT: &str = "local_backend://auto_increase_ctx";
-/// Reply channel. The `request_id` suffix scopes the notification to a
-/// single pending proxy request so parallel retries don't cross-talk.
-const AUTO_INCREASE_DONE_EVENT_PREFIX: &str = "local_backend://auto_increase_ctx_done";
-/// Total time we're willing to wait for extension-side unload + load.
-/// Matches the worst-case behaviour we've observed for GGUF reload with
-/// a 32k → 48k bump; beyond that the user is better served by a clean error.
-const AUTO_INCREASE_TIMEOUT_SECS: u64 = 60;
-
-#[derive(serde::Serialize, Clone)]
-struct AutoIncreaseRequest<'a> {
-    request_id: String,
-    backend: &'a str,
-    model_id: String,
-    /// Where the detection triggered: "error" for upstream error body,
-    /// "finish_length" for `finish_reason=length` in the upstream response.
-    trigger: &'a str,
-}
-
-#[derive(serde::Deserialize, Clone, Debug)]
-struct AutoIncreaseDoneEvent {
-    ok: bool,
-    #[serde(default)]
-    new_ctx_len: Option<i64>,
-    #[serde(default)]
-    reason: Option<String>,
-}
-
-/// Returns `true` if the given upstream response almost certainly failed
-/// because the conversation exceeded the current context window.
-///
-/// Both llama-server and mlx-server are OpenAI-compatible; their error
-/// bodies vary but all reference the word "context" plus a length/size/limit
-/// keyword or use `exceed`/`overflow`. We also accept the UI-facing phrase
-/// from `web-app/src/utils/error.ts` verbatim to stay in lockstep with the
-/// existing in-process detection.
 fn is_context_limit_error(status: StatusCode, body: &str) -> bool {
-    if !matches!(status.as_u16(), 400 | 413 | 500 | 503) {
-        return false;
-    }
-    let b = body.to_lowercase();
-    if b.contains("the request exceeds the available context size") {
-        return true;
-    }
-    // mlx-vlm wraps generation errors as `{"detail":"Generation failed: ..."}`
-    // (see `mlx_vlm.server` HTTPException handler). The inner mlx-lm error may
-    // mention `kv cache`, `max_kv_size`, or token capacity rather than the
-    // word "context", so we also classify those phrasings as overflow.
-    if b.contains("max_kv_size") || b.contains("max-kv-size") || b.contains("max kv size") {
-        return true;
-    }
-    if b.contains("kv cache") && (b.contains("exceed") || b.contains("overflow") || b.contains("too")) {
-        return true;
-    }
-    if !b.contains("context") {
-        return false;
-    }
-    b.contains("size")
-        || b.contains("length")
-        || b.contains("limit")
-        || b.contains("exceed")
-        || b.contains("overflow")
-        || b.contains("too long")
-        || b.contains("too large")
+    shared_is_context_limit_error(status.as_u16(), body)
 }
 
 /// ATO-112: local on-device engines vs remote cloud providers.
@@ -852,10 +798,7 @@ fn extract_client_max_tokens(request_body: Option<&[u8]>) -> Option<u64> {
 ///      equals/exceeds the cap the stop was client-driven and we must
 ///      leave the model alone (otherwise we would auto-grow the ctx on
 ///      every short `max_tokens=16` healthcheck).
-fn is_context_overflow_finish_length(
-    response_body: &[u8],
-    request_body: Option<&[u8]>,
-) -> bool {
+fn is_context_overflow_finish_length(response_body: &[u8], request_body: Option<&[u8]>) -> bool {
     let Ok(json) = serde_json::from_slice::<serde_json::Value>(response_body) else {
         return false;
     };
@@ -896,148 +839,6 @@ fn is_context_overflow_finish_length(
             }
         }
     }
-}
-
-/// Acquire or wait on the per-model reload slot. The first caller gets
-/// `is_leader=true` and must perform the event round-trip; every other
-/// caller waits on the returned `Arc<Notify>` and then reads the cached
-/// outcome with `take_auto_increase_outcome`.
-async fn acquire_auto_increase_slot(
-    state: &AutoIncreaseState,
-    model_id: &str,
-) -> (Arc<Notify>, bool) {
-    let mut pending = state.pending.lock().await;
-    if let Some(n) = pending.get(model_id) {
-        return (n.clone(), false);
-    }
-    let notify = Arc::new(Notify::new());
-    pending.insert(model_id.to_string(), notify.clone());
-    // Drop the last stale outcome so waiters don't accidentally read a
-    // success from a previous cycle.
-    drop(pending);
-    let mut outcomes = state.last_outcome.lock().await;
-    outcomes.remove(model_id);
-    (notify, true)
-}
-
-/// Release the per-model reload slot and wake every waiter. Safe to call
-/// multiple times — the `HashMap::remove` is a no-op on the second call.
-async fn release_auto_increase_slot(
-    state: &AutoIncreaseState,
-    model_id: &str,
-    notify: &Notify,
-) {
-    let mut pending = state.pending.lock().await;
-    pending.remove(model_id);
-    drop(pending);
-    notify.notify_waiters();
-}
-
-async fn store_auto_increase_outcome(
-    state: &AutoIncreaseState,
-    model_id: &str,
-    outcome: AutoIncreaseOutcome,
-) {
-    let mut outcomes = state.last_outcome.lock().await;
-    outcomes.insert(model_id.to_string(), outcome);
-}
-
-async fn read_auto_increase_outcome(
-    state: &AutoIncreaseState,
-    model_id: &str,
-) -> Option<AutoIncreaseOutcome> {
-    let outcomes = state.last_outcome.lock().await;
-    outcomes.get(model_id).cloned()
-}
-
-/// Trigger the TypeScript-side reload for `model_id` on the `llamacpp` or
-/// `mlx` backend and block until the matching `auto_increase_ctx_done` event
-/// arrives (or the timeout fires). Returns the outcome so the caller can
-/// decide whether to retry the upstream request.
-async fn trigger_auto_increase<R: Runtime>(
-    app_handle: &AppHandle<R>,
-    backend: &str,
-    model_id: &str,
-    trigger: &str,
-) -> AutoIncreaseOutcome {
-    let request_id = Uuid::new_v4().to_string();
-    let done_channel = format!("{AUTO_INCREASE_DONE_EVENT_PREFIX}/{request_id}");
-
-    let (tx, rx) = tokio::sync::oneshot::channel::<AutoIncreaseDoneEvent>();
-    // Listener must be registered before we emit the trigger, otherwise a
-    // very fast extension handler could fire `auto_increase_ctx_done` before
-    // we're ready and we'd deadlock on the timeout branch.
-    //
-    // `listen_any` expects a synchronous `Fn`, so we store the oneshot sender
-    // in a `std::sync::Mutex<Option<_>>`. `Option::take` gives us the
-    // single-use semantics; the listener closure can fire more than once if a
-    // stray done-event shows up later, but only the first call will actually
-    // transmit.
-    let tx_slot: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<AutoIncreaseDoneEvent>>>> =
-        Arc::new(std::sync::Mutex::new(Some(tx)));
-    let tx_clone = tx_slot.clone();
-    let unlisten = app_handle.listen_any(done_channel.clone(), move |event| {
-        let payload = event.payload();
-        match serde_json::from_str::<AutoIncreaseDoneEvent>(payload) {
-            Ok(ev) => {
-                if let Ok(mut guard) = tx_clone.lock() {
-                    if let Some(sender) = guard.take() {
-                        let _ = sender.send(ev);
-                    }
-                }
-            }
-            Err(e) => {
-                log::warn!(
-                    "auto_increase_ctx_done payload parse failed: {e}; raw={payload}"
-                );
-            }
-        }
-    });
-
-    let request = AutoIncreaseRequest {
-        request_id: request_id.clone(),
-        backend,
-        model_id: model_id.to_string(),
-        trigger,
-    };
-    if let Err(e) = app_handle.emit(AUTO_INCREASE_EVENT, request) {
-        log::error!("Failed to emit {AUTO_INCREASE_EVENT}: {e}");
-        app_handle.unlisten(unlisten);
-        return AutoIncreaseOutcome {
-            ok: false,
-            new_ctx_len: None,
-            reason: Some(format!("emit_failed: {e}")),
-        };
-    }
-    log::info!(
-        "auto_increase_ctx: emitted trigger backend={backend} model_id={model_id} request_id={request_id} source={trigger}"
-    );
-
-    let outcome = match tokio::time::timeout(
-        std::time::Duration::from_secs(AUTO_INCREASE_TIMEOUT_SECS),
-        rx,
-    )
-    .await
-    {
-        Ok(Ok(ev)) => AutoIncreaseOutcome {
-            ok: ev.ok,
-            new_ctx_len: ev.new_ctx_len,
-            reason: ev.reason,
-        },
-        Ok(Err(_)) => AutoIncreaseOutcome {
-            ok: false,
-            new_ctx_len: None,
-            reason: Some("channel_closed".to_string()),
-        },
-        Err(_) => AutoIncreaseOutcome {
-            ok: false,
-            new_ctx_len: None,
-            reason: Some(format!("timeout_after_{AUTO_INCREASE_TIMEOUT_SECS}s")),
-        },
-    };
-
-    app_handle.unlisten(unlisten);
-    outcome
 }
 
 /// Returns `true` iff the given model is currently served by an
@@ -1169,12 +970,8 @@ fn build_streaming_response(
             builder = builder.header(name, value);
         }
     }
-    builder = add_cors_headers_with_host_and_origin(
-        builder,
-        host_header,
-        origin_header,
-        trusted_hosts,
-    );
+    builder =
+        add_cors_headers_with_host_and_origin(builder, host_header, origin_header, trusted_hosts);
 
     let mut stream = response.bytes_stream();
     let (mut sender, body) = hyper::Body::channel();
@@ -1224,7 +1021,12 @@ async fn handle_responses_request(
 
     let make_err = |status: StatusCode, msg: &str| -> Response<Body> {
         let mut b = Response::builder().status(status);
-        b = add_cors_headers_with_host_and_origin(b, host_header, origin_header, &config.trusted_hosts);
+        b = add_cors_headers_with_host_and_origin(
+            b,
+            host_header,
+            origin_header,
+            &config.trusted_hosts,
+        );
         b.body(Body::from(msg.to_string())).unwrap()
     };
 
@@ -1269,8 +1071,14 @@ async fn handle_responses_request(
     state.model_id = Some(model_id.clone());
 
     enum Target {
-        Passthrough { url: String, api_key: Option<String> },
-        Translate { url: String, api_key: Option<String> },
+        Passthrough {
+            url: String,
+            api_key: Option<String>,
+        },
+        Translate {
+            url: String,
+            api_key: Option<String>,
+        },
     }
 
     // Remote provider takes precedence (same resolution as /chat/completions).
@@ -1370,8 +1178,15 @@ async fn handle_responses_request(
 
     match target {
         Target::Passthrough { url, api_key } => {
-            log::info!("Proxying /responses passthrough to {url} (backend={})", state.backend);
-            let effective_client = if is_local_url(&url) { local_client } else { client };
+            log::info!(
+                "Proxying /responses passthrough to {url} (backend={})",
+                state.backend
+            );
+            let effective_client = if is_local_url(&url) {
+                local_client
+            } else {
+                client
+            };
             let mut req = effective_client
                 .post(&url)
                 .header("Content-Type", "application/json");
@@ -1437,8 +1252,7 @@ async fn handle_responses_request(
                     .unwrap_or_else(|e| format!("Failed to read error body: {e}"));
                 state.oom_detected = body_indicates_oom(&err_body);
                 state.ctx_overflow_detected = is_context_limit_error(status, &err_body);
-                let code =
-                    StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+                let code = StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
                 return Ok(make_err(code, &err_body));
             }
 
@@ -1448,11 +1262,8 @@ async fn handle_responses_request(
                 let bytes = resp.bytes().await.unwrap_or_default();
                 let chat_json: serde_json::Value =
                     serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
-                let responses_obj = responses_shim::chat_response_to_responses(
-                    &chat_json,
-                    &response_id,
-                    &model_id,
-                );
+                let responses_obj =
+                    responses_shim::chat_response_to_responses(&chat_json, &response_id, &model_id);
                 let mut b = Response::builder()
                     .status(StatusCode::OK)
                     .header(hyper::header::CONTENT_TYPE, "application/json");
@@ -1543,9 +1354,8 @@ async fn handle_responses_request(
     }
 }
 
-/// High-level wrapper around `acquire_auto_increase_slot` +
-/// `trigger_auto_increase`. Skips remote providers and embedding sessions
-/// up front; coordinates concurrent waiters through the shared `Notify`.
+/// Requests the shared extension-owned context reload and resolves the
+/// replacement session after the coordinated reload completes.
 #[allow(clippy::too_many_arguments)]
 async fn maybe_auto_increase_and_retry<R: Runtime>(
     app_handle: &AppHandle<R>,
@@ -1567,80 +1377,26 @@ async fn maybe_auto_increase_and_retry<R: Runtime>(
         return None;
     }
 
-    let (notify, is_leader) = acquire_auto_increase_slot(auto_state, model_id).await;
-
-    if !is_leader {
-        // Wait for the leader to finish. We only block on the notify; the
-        // outcome (including `ok=false`) lives in `last_outcome`.
-        let wait = tokio::time::timeout(
-            std::time::Duration::from_secs(AUTO_INCREASE_TIMEOUT_SECS),
-            notify.notified(),
-        )
-        .await;
-        if wait.is_err() {
-            log::warn!(
-                "auto_increase_ctx: follower timed out waiting for leader (model_id={model_id})"
-            );
-            return None;
-        }
-        match read_auto_increase_outcome(auto_state, model_id).await {
-            Some(o) if o.ok => {
-                return resolve_local_session(
-                    backend,
-                    model_id,
-                    sessions,
-                    sessions_upstream,
-                    mlx_sessions,
-                )
-                .await;
-            }
-            _ => return None,
-        }
-    }
-
-    // Leader path.
-    let outcome = trigger_auto_increase(app_handle, backend, model_id, trigger).await;
-    store_auto_increase_outcome(
-        auto_state,
-        model_id,
-        AutoIncreaseOutcome {
-            ok: outcome.ok,
-            new_ctx_len: outcome.new_ctx_len,
-            reason: outcome.reason.clone(),
-        },
-    )
-    .await;
-    release_auto_increase_slot(auto_state, model_id, &notify).await;
-
+    let outcome =
+        request_context_increase(app_handle, auto_state, backend, model_id, trigger, None).await;
     if !outcome.ok {
         log::info!(
-            "auto_increase_ctx: leader outcome ok=false model_id={model_id} reason={:?}",
+            "auto_increase_ctx: outcome ok=false model_id={model_id} reason={:?}",
             outcome.reason
         );
         return None;
     }
     log::info!(
-        "auto_increase_ctx: leader outcome ok=true model_id={model_id} new_ctx_len={:?}",
+        "auto_increase_ctx: outcome ok=true model_id={model_id} new_ctx_len={:?}",
         outcome.new_ctx_len
     );
 
-    resolve_local_session(
-        backend,
-        model_id,
-        sessions,
-        sessions_upstream,
-        mlx_sessions,
-    )
-    .await
+    resolve_local_session(backend, model_id, sessions, sessions_upstream, mlx_sessions).await
 }
 
-/// Wraps `inner_proxy_request` to emit a single analytics event per proxied
-/// request via `ANALYTICS_CHANNEL`. The wrapper measures latency from the
-/// moment the request is received until the inner handler returns a response
-/// (for streaming responses this is TTFB — headers + status — which is
-/// sufficient for the "chat vs local API server" product metric). The inner
-/// handler never sees the `AppHandle`, which structurally guarantees that
-/// analytics events are not emitted per SSE chunk.
+/// Wraps `inner_proxy_request` and records one observation in the current
+/// analytics window for each eligible proxied request. For streaming responses
+/// latency is TTFB (headers + status), matching the previous per-request metric.
 #[allow(clippy::too_many_arguments)]
 async fn proxy_request<R: Runtime>(
     req: Request<Body>,
@@ -1652,6 +1408,7 @@ async fn proxy_request<R: Runtime>(
     mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
     auto_increase_state: Arc<AutoIncreaseState>,
+    api_request_aggregator: Arc<ApiRequestAggregator>,
     app_handle: AppHandle<R>,
 ) -> Result<Response<Body>, hyper::Error> {
     let start = Instant::now();
@@ -1677,35 +1434,29 @@ async fn proxy_request<R: Runtime>(
     .await?;
 
     if !state.skip_emit {
-        emit_api_request_event(
-            &app_handle,
-            ApiRequestEvent {
-                source: "local_api_server",
-                endpoint: state.endpoint.unwrap_or("other"),
-                method: &method_str,
-                model_id: state.model_id.clone(),
-                backend: state.backend,
-                provider: state.provider.clone(),
-                stream: state.stream,
-                status: response.status().as_u16(),
-                latency_ms: start.elapsed().as_millis() as u64,
-                is_anthropic_fallback: state.is_anthropic_fallback,
-                error_kind: state.error_kind,
-                upstream_status: state.upstream_status,
-                oom_detected: state.oom_detected,
-                ctx_overflow_detected: state.ctx_overflow_detected,
-                server_bind_failed: state.server_bind_failed,
-            },
-        );
+        api_request_aggregator.record(ApiRequestObservation {
+            endpoint: state.endpoint.unwrap_or("other"),
+            method: method_str,
+            model_id: state.model_id.clone(),
+            backend: state.backend,
+            provider: state.provider.clone(),
+            stream: state.stream,
+            status: response.status().as_u16(),
+            latency_ms: start.elapsed().as_millis() as u64,
+            is_anthropic_fallback: state.is_anthropic_fallback,
+            error_kind: state.error_kind,
+            upstream_status: state.upstream_status,
+            oom_detected: state.oom_detected,
+            ctx_overflow_detected: state.ctx_overflow_detected,
+        });
     }
 
     Ok(response)
 }
 
 /// Handles the proxy request logic. Populates `state` with request metadata so
-/// the outer `proxy_request` wrapper can emit a single analytics event per
-/// proxied request (see `ANALYTICS_CHANNEL`). Preflight, static docs and other
-/// non-product traffic set `state.skip_emit = true`.
+/// the outer `proxy_request` wrapper can aggregate it. Preflight, static docs
+/// and other non-product traffic set `state.skip_emit = true`.
 #[allow(clippy::too_many_arguments)]
 async fn inner_proxy_request<R: Runtime>(
     state: &mut EmitState,
@@ -1868,7 +1619,9 @@ async fn inner_proxy_request<R: Runtime>(
                     .header("Access-Control-Allow-Origin", origin)
                     .header("Access-Control-Allow-Credentials", "true");
             } else {
-                log::warn!("CORS preflight: Origin '{origin}' is not trusted, not reflecting origin");
+                log::warn!(
+                    "CORS preflight: Origin '{origin}' is not trusted, not reflecting origin"
+                );
             }
         }
 
@@ -2314,10 +2067,9 @@ async fn inner_proxy_request<R: Runtime>(
                                 let mlx_count;
                                 let mlx_guard = mlx_sessions.lock().await;
                                 mlx_count = mlx_guard.len();
-                                if let Some(session) = mlx_guard
-                                    .values()
-                                    .find(|s| model_ids_match(&s.info.model_id, sessions_find_model))
-                                {
+                                if let Some(session) = mlx_guard.values().find(|s| {
+                                    model_ids_match(&s.info.model_id, sessions_find_model)
+                                }) {
                                     // Clone just the SessionInfo since MlxBackendSession is not Clone
                                     mlx_session_info = Some(session.info.clone());
                                 }
@@ -2559,8 +2311,7 @@ async fn inner_proxy_request<R: Runtime>(
                 Some(id) if !id.is_empty() => id,
                 _ => {
                     state.error_kind = Some("bad_request");
-                    let mut error_response =
-                        Response::builder().status(StatusCode::BAD_REQUEST);
+                    let mut error_response = Response::builder().status(StatusCode::BAD_REQUEST);
                     error_response = add_cors_headers_with_host_and_origin(
                         error_response,
                         &host_header,
@@ -2604,8 +2355,7 @@ async fn inner_proxy_request<R: Runtime>(
                     log::warn!(
                         "Metrics requested for unknown or non-llamacpp model '{metrics_model_id}'"
                     );
-                    let mut error_response =
-                        Response::builder().status(StatusCode::NOT_FOUND);
+                    let mut error_response = Response::builder().status(StatusCode::NOT_FOUND);
                     error_response = add_cors_headers_with_host_and_origin(
                         error_response,
                         &host_header,
@@ -2631,8 +2381,10 @@ async fn inner_proxy_request<R: Runtime>(
             // Forward the session key so this proxy route does not fail 401.
             let mut upstream_req = local_client.get(&upstream);
             if !upstream_api_key.is_empty() {
-                upstream_req = upstream_req
-                    .header(hyper::header::AUTHORIZATION, format!("Bearer {upstream_api_key}"));
+                upstream_req = upstream_req.header(
+                    hyper::header::AUTHORIZATION,
+                    format!("Bearer {upstream_api_key}"),
+                );
             }
 
             match upstream_req.send().await {
@@ -2659,11 +2411,8 @@ async fn inner_proxy_request<R: Runtime>(
                 }
                 Err(e) => {
                     state.error_kind = Some(unreachable_error_kind(state.backend));
-                    log::warn!(
-                        "Failed to fetch metrics for model '{metrics_model_id}': {e}"
-                    );
-                    let mut error_response =
-                        Response::builder().status(StatusCode::BAD_GATEWAY);
+                    log::warn!("Failed to fetch metrics for model '{metrics_model_id}': {e}");
+                    let mut error_response = Response::builder().status(StatusCode::BAD_GATEWAY);
                     error_response = add_cors_headers_with_host_and_origin(
                         error_response,
                         &host_header,
@@ -2846,7 +2595,11 @@ async fn inner_proxy_request<R: Runtime>(
         "Proxying request to model server at base URL {upstream_url}, path: {destination_path}"
     );
 
-    let effective_client = if is_local_url(&upstream_url) { &local_client } else { &client };
+    let effective_client = if is_local_url(&upstream_url) {
+        &local_client
+    } else {
+        &client
+    };
     let mut outbound_req = effective_client.request(method.clone(), upstream_url);
 
     for (name, value) in headers.iter() {
@@ -2912,31 +2665,38 @@ async fn inner_proxy_request<R: Runtime>(
                 let fallback_body = buffered_body.clone();
 
                 // Transform body to OpenAI format for fallback
-                if let Some((url, openai_body)) = fallback_url.zip(fallback_body).and_then(|(url, body)| {
-                    let json_body = serde_json::from_slice::<serde_json::Value>(&body).ok()?;
-                    match transform_anthropic_to_openai(&json_body) {
-                        Some(transformed) => Some((url, transformed)),
-                        None => {
-                            // Zero-PII (ATO-113): the request body carries the
-                            // prompt; log only its top-level shape, never content.
-                            let keys: Vec<&str> = json_body
-                                .as_object()
-                                .map(|o| o.keys().map(String::as_str).collect())
-                                .unwrap_or_default();
-                            log::error!(
+                if let Some((url, openai_body)) =
+                    fallback_url.zip(fallback_body).and_then(|(url, body)| {
+                        let json_body = serde_json::from_slice::<serde_json::Value>(&body).ok()?;
+                        match transform_anthropic_to_openai(&json_body) {
+                            Some(transformed) => Some((url, transformed)),
+                            None => {
+                                // Zero-PII (ATO-113): the request body carries the
+                                // prompt; log only its top-level shape, never content.
+                                let keys: Vec<&str> = json_body
+                                    .as_object()
+                                    .map(|o| o.keys().map(String::as_str).collect())
+                                    .unwrap_or_default();
+                                log::error!(
                                 "transform_anthropic_to_openai returned None (body keys: {keys:?})"
                             );
-                            None
+                                None
+                            }
                         }
-                    }
-                }) {
+                    })
+                {
                     let chat_url = format!("{}/chat/completions", url);
                     log::info!("Fallback to chat completions: {chat_url}");
 
                     let fallback_client = if is_local_url(&chat_url) {
-                        Client::builder().no_proxy().build().expect("Failed to create fallback client")
+                        Client::builder()
+                            .no_proxy()
+                            .build()
+                            .expect("Failed to create fallback client")
                     } else {
-                        Client::builder().build().expect("Failed to create fallback client")
+                        Client::builder()
+                            .build()
+                            .expect("Failed to create fallback client")
                     };
 
                     let mut fallback_req = fallback_client.post(&chat_url);
@@ -2956,7 +2716,8 @@ async fn inner_proxy_request<R: Runtime>(
                         }
                     }
                     if let Some(key) = fallback_api_key {
-                        fallback_req = fallback_req.header("Authorization", format!("Bearer {key}"));
+                        fallback_req =
+                            fallback_req.header("Authorization", format!("Bearer {key}"));
                     }
 
                     let fallback_body_str = openai_body.to_string();
@@ -2970,7 +2731,10 @@ async fn inner_proxy_request<R: Runtime>(
                             state.error_kind = Some(upstream_error_kind(state.backend));
                             state.upstream_status = Some(fallback_status.as_u16());
                             // Return fallback error to client
-                            let fallback_error = res.text().await.unwrap_or_else(|e| format!("Failed to read error: {}", e));
+                            let fallback_error = res
+                                .text()
+                                .await
+                                .unwrap_or_else(|e| format!("Failed to read error: {}", e));
                             state.oom_detected = body_indicates_oom(&fallback_error);
                             state.ctx_overflow_detected =
                                 is_context_limit_error(fallback_status, &fallback_error);
@@ -2983,14 +2747,14 @@ async fn inner_proxy_request<R: Runtime>(
                                 &origin_header,
                                 &config.trusted_hosts,
                             );
-                            return Ok(error_response
-                                .body(Body::from(fallback_error))
-                                .unwrap());
+                            return Ok(error_response.body(Body::from(fallback_error)).unwrap());
                         }
 
                         let mut builder = Response::builder().status(fallback_status);
                         for (name, value) in res.headers() {
-                            if !is_cors_header(name.as_str()) && name != hyper::header::CONTENT_LENGTH {
+                            if !is_cors_header(name.as_str())
+                                && name != hyper::header::CONTENT_LENGTH
+                            {
                                 builder = builder.header(name, value);
                             }
                         }
@@ -3015,12 +2779,7 @@ async fn inner_proxy_request<R: Runtime>(
                                 transform_and_forward_stream(stream, sender, &dest_path).await;
                             } else {
                                 let response_body = res.bytes().await;
-                                forward_non_streaming(
-                                    response_body,
-                                    sender,
-                                    &dest_path,
-                                )
-                                .await;
+                                forward_non_streaming(response_body, sender, &dest_path).await;
                             }
                         });
 
@@ -3160,8 +2919,7 @@ async fn inner_proxy_request<R: Runtime>(
                     state.error_kind = Some(upstream_error_kind(state.backend));
                     state.upstream_status = Some(status.as_u16());
                     state.oom_detected = true;
-                    let mut error_response =
-                        Response::builder().status(StatusCode::BAD_REQUEST);
+                    let mut error_response = Response::builder().status(StatusCode::BAD_REQUEST);
                     error_response = add_cors_headers_with_host_and_origin(
                         error_response,
                         &host_header,
@@ -3217,15 +2975,10 @@ async fn inner_proxy_request<R: Runtime>(
                 && buffered_body.is_some();
 
             if can_inspect_finish {
-                let body_bytes = response
-                    .bytes()
-                    .await
-                    .unwrap_or_default();
+                let body_bytes = response.bytes().await.unwrap_or_default();
 
-                let context_overflow = is_context_overflow_finish_length(
-                    &body_bytes,
-                    buffered_body.as_deref(),
-                );
+                let context_overflow =
+                    is_context_overflow_finish_length(&body_bytes, buffered_body.as_deref());
 
                 if context_overflow {
                     let model_id = state.model_id.clone().unwrap();
@@ -3412,7 +3165,10 @@ fn add_cors_headers_with_host_and_origin(
             .header("Access-Control-Allow-Credentials", "true");
     } else if !origin.is_empty() {
         // Non-empty but untrusted origin — a real browser CORS mismatch worth surfacing.
-        log::warn!("CORS: Origin '{}' is not trusted, not reflecting origin", origin);
+        log::warn!(
+            "CORS: Origin '{}' is not trusted, not reflecting origin",
+            origin
+        );
     }
     // Empty origin means no Origin header at all (curl, Python openai client, server-to-server,
     // native apps). CORS is a browser-only mechanism; silently skipping ACAO is correct here.
@@ -3555,6 +3311,8 @@ async fn start_server_internal<R: Runtime>(
         .no_proxy()
         .build()?;
 
+    let api_request_aggregator = Arc::new(ApiRequestAggregator::new());
+    let api_request_aggregator_for_timer = api_request_aggregator.clone();
     let make_svc = make_service_fn(move |_conn| {
         let client = client.clone();
         let local_client = local_client.clone();
@@ -3564,6 +3322,7 @@ async fn start_server_internal<R: Runtime>(
         let mlx_sessions = mlx_sessions.clone();
         let provider_configs = provider_configs.clone();
         let auto_increase_state = auto_increase_state.clone();
+        let api_request_aggregator = api_request_aggregator.clone();
         let app_handle = app_handle.clone();
 
         async move {
@@ -3578,6 +3337,7 @@ async fn start_server_internal<R: Runtime>(
                     mlx_sessions.clone(),
                     provider_configs.clone(),
                     auto_increase_state.clone(),
+                    api_request_aggregator.clone(),
                     app_handle.clone(),
                 )
             }))
@@ -3602,7 +3362,36 @@ async fn start_server_internal<R: Runtime>(
         Ok(())
     });
 
-    *handle_guard = Some(server_task);
+    let (analytics_shutdown, mut analytics_shutdown_rx) = oneshot::channel();
+    let analytics_app_handle = app_handle_for_bind.clone();
+    let analytics_task = tokio::spawn(async move {
+        let mut interval =
+            tokio::time::interval(Duration::from_secs(API_REQUEST_SUMMARY_WINDOW_SECS));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        interval.tick().await;
+
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    if let Some(summary) = api_request_aggregator_for_timer.drain() {
+                        emit_api_request_summary(&analytics_app_handle, summary);
+                    }
+                }
+                _ = &mut analytics_shutdown_rx => {
+                    if let Some(summary) = api_request_aggregator_for_timer.drain() {
+                        emit_api_request_summary(&analytics_app_handle, summary);
+                    }
+                    break;
+                }
+            }
+        }
+    });
+
+    *handle_guard = Some(ServerHandle {
+        server_task,
+        analytics_task,
+        analytics_shutdown,
+    });
     log::info!("Atomic Chat API server started successfully on port {actual_port}");
     Ok(actual_port)
 }
@@ -3610,11 +3399,14 @@ async fn start_server_internal<R: Runtime>(
 pub async fn stop_server(
     server_handle: Arc<Mutex<Option<ServerHandle>>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut handle_guard = server_handle.lock().await;
+    let handle = server_handle.lock().await.take();
 
-    if let Some(handle) = handle_guard.take() {
-        handle.abort();
-        *handle_guard = None;
+    if let Some(handle) = handle {
+        let _ = handle.analytics_shutdown.send(());
+        if let Err(e) = handle.analytics_task.await {
+            log::warn!("Local API Server analytics flush task failed: {e}");
+        }
+        handle.server_task.abort();
         log::info!("Atomic Chat API server stopped");
     } else {
         log::debug!("Server was not running");
@@ -3972,7 +3764,10 @@ mod auto_increase_ctx_tests {
     fn detects_llama_cpp_ctx_overflow_500() {
         // Realistic body from llama-server when the prompt overshoots n_ctx.
         let body = r#"{"error":{"code":500,"message":"the request exceeds the available context size. Try increasing context size or enable context shift","type":"server_error"}}"#;
-        assert!(is_context_limit_error(StatusCode::INTERNAL_SERVER_ERROR, body));
+        assert!(is_context_limit_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            body
+        ));
     }
 
     #[test]
@@ -3986,7 +3781,10 @@ mod auto_increase_ctx_tests {
         // Legacy dflash mlx-server surface: still in the wild on user
         // machines until they upgrade to the new mlx-vlm binary.
         let body = r#"{"detail":"Context size exceeded: requested 9000 tokens but the model only supports 8192."}"#;
-        assert!(is_context_limit_error(StatusCode::INTERNAL_SERVER_ERROR, body));
+        assert!(is_context_limit_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            body
+        ));
     }
 
     #[test]
@@ -3996,33 +3794,48 @@ mod auto_increase_ctx_tests {
         // the word "context"; classify those too so auto-increase-ctx still
         // fires on the new backend.
         let body = r#"{"detail":"Generation failed: kv cache exceeded max_kv_size=8192"}"#;
-        assert!(is_context_limit_error(StatusCode::INTERNAL_SERVER_ERROR, body));
+        assert!(is_context_limit_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            body
+        ));
     }
 
     #[test]
     fn detects_mlxvlm_max_kv_size_500() {
         let body = r#"{"detail":"Generation failed: requested tokens exceed max-kv-size limit"}"#;
-        assert!(is_context_limit_error(StatusCode::INTERNAL_SERVER_ERROR, body));
+        assert!(is_context_limit_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            body
+        ));
     }
 
     #[test]
     fn detects_ui_canonical_phrase() {
         // web-app/src/utils/error.ts OUT_OF_CONTEXT_SIZE
         let body = "the request exceeds the available context size.";
-        assert!(is_context_limit_error(StatusCode::INTERNAL_SERVER_ERROR, body));
+        assert!(is_context_limit_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            body
+        ));
     }
 
     #[test]
     fn detects_503_context_overflow() {
         let body = r#"{"error":"context window overflow"}"#;
-        assert!(is_context_limit_error(StatusCode::SERVICE_UNAVAILABLE, body));
+        assert!(is_context_limit_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            body
+        ));
     }
 
     #[test]
     fn ignores_unrelated_5xx() {
         // "context" alone is not enough — must also mention size/length/etc.
         let body = r#"{"error":"server shutting down: context canceled"}"#;
-        assert!(!is_context_limit_error(StatusCode::INTERNAL_SERVER_ERROR, body));
+        assert!(!is_context_limit_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            body
+        ));
     }
 
     #[test]
@@ -4067,8 +3880,12 @@ mod auto_increase_ctx_tests {
         let body = r#"{"error":{"code":500,"message":"x","type":"server_error"}}"#;
         assert!(is_structured_error_body(body));
         // plaintext / mlx `{"detail":...}` / empty are not structured envelopes
-        assert!(!is_structured_error_body("Failed to read error body: connection reset"));
-        assert!(!is_structured_error_body(r#"{"detail":"Generation failed: ..."}"#));
+        assert!(!is_structured_error_body(
+            "Failed to read error body: connection reset"
+        ));
+        assert!(!is_structured_error_body(
+            r#"{"detail":"Generation failed: ..."}"#
+        ));
         assert!(!is_structured_error_body(""));
     }
 
@@ -4099,7 +3916,10 @@ mod auto_increase_ctx_tests {
         assert_eq!(v["error"]["type"], "invalid_request_error");
         let msg = v["error"]["message"].as_str().unwrap();
         assert!(msg.contains("max_kv_size"));
-        assert!(is_context_limit_error(StatusCode::INTERNAL_SERVER_ERROR, &wrapped));
+        assert!(is_context_limit_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &wrapped
+        ));
     }
 
     #[test]
@@ -4126,7 +3946,10 @@ mod auto_increase_ctx_tests {
     fn detects_metal_compute_error_body() {
         // The exact body llama-server returns on a Metal OOM during prefill.
         let body = r#"{"error":{"code":500,"message":"Compute error","type":"server_error"}}"#;
-        assert!(is_compute_backend_error(StatusCode::INTERNAL_SERVER_ERROR, body));
+        assert!(is_compute_backend_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            body
+        ));
         // Other decode/compute phrasings.
         assert!(is_compute_backend_error(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -4145,7 +3968,10 @@ mod auto_increase_ctx_tests {
     #[test]
     fn ignores_non_compute_errors() {
         // Only 500s are fatal-compute candidates.
-        assert!(!is_compute_backend_error(StatusCode::BAD_REQUEST, "Compute error"));
+        assert!(!is_compute_backend_error(
+            StatusCode::BAD_REQUEST,
+            "Compute error"
+        ));
         assert!(!is_compute_backend_error(StatusCode::OK, "Compute error"));
         // Unrelated 500 bodies must not match.
         assert!(!is_compute_backend_error(
@@ -4256,49 +4082,6 @@ mod auto_increase_ctx_tests {
         assert!(!is_context_overflow_finish_length(resp, Some(req)));
     }
 
-    // --- acquire/release slot --------------------------------------------------
-
-    #[tokio::test]
-    async fn acquire_slot_is_leader_once_per_model() {
-        let state = AutoIncreaseState::default();
-        let (_n1, leader1) = acquire_auto_increase_slot(&state, "llama-7b").await;
-        let (_n2, leader2) = acquire_auto_increase_slot(&state, "llama-7b").await;
-        assert!(leader1, "first caller must be leader");
-        assert!(!leader2, "second caller must wait");
-
-        // Different model should get its own leader slot.
-        let (_n3, leader3) = acquire_auto_increase_slot(&state, "mlx-other").await;
-        assert!(leader3);
-    }
-
-    #[tokio::test]
-    async fn release_slot_wakes_waiters_and_allows_new_leader() {
-        let state = AutoIncreaseState::default();
-        let (notify, _) = acquire_auto_increase_slot(&state, "qwen").await;
-        release_auto_increase_slot(&state, "qwen", &notify).await;
-        // After release the next caller becomes leader again.
-        let (_n2, leader2) = acquire_auto_increase_slot(&state, "qwen").await;
-        assert!(leader2);
-    }
-
-    #[tokio::test]
-    async fn store_and_read_outcome_roundtrip() {
-        let state = AutoIncreaseState::default();
-        store_auto_increase_outcome(
-            &state,
-            "m1",
-            AutoIncreaseOutcome {
-                ok: true,
-                new_ctx_len: Some(16384),
-                reason: None,
-            },
-        )
-        .await;
-        let got = read_auto_increase_outcome(&state, "m1").await.unwrap();
-        assert!(got.ok);
-        assert_eq!(got.new_ctx_len, Some(16384));
-    }
-
     // --- add_cors_headers_with_host_and_origin (ATO-203) -----------------------
 
     /// Non-browser clients (curl, Python openai SDK, …) send no Origin header.
@@ -4311,7 +4094,10 @@ mod auto_increase_ctx_tests {
             .body(hyper::Body::empty())
             .unwrap();
         assert!(
-            response.headers().get("Access-Control-Allow-Origin").is_none(),
+            response
+                .headers()
+                .get("Access-Control-Allow-Origin")
+                .is_none(),
             "ACAO header must not be set when origin is empty"
         );
     }
@@ -4330,7 +4116,10 @@ mod auto_increase_ctx_tests {
         .body(hyper::Body::empty())
         .unwrap();
         assert_eq!(
-            response.headers().get("Access-Control-Allow-Origin").map(|v| v.to_str().unwrap()),
+            response
+                .headers()
+                .get("Access-Control-Allow-Origin")
+                .map(|v| v.to_str().unwrap()),
             Some("http://localhost:3000"),
             "Trusted origin must be reflected in ACAO"
         );
@@ -4349,7 +4138,10 @@ mod auto_increase_ctx_tests {
         .body(hyper::Body::empty())
         .unwrap();
         assert!(
-            response.headers().get("Access-Control-Allow-Origin").is_none(),
+            response
+                .headers()
+                .get("Access-Control-Allow-Origin")
+                .is_none(),
             "Untrusted origin must not be reflected in ACAO"
         );
     }

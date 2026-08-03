@@ -15,9 +15,12 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react'
-import { CodeBlock } from '../code-block'
+import { StickToBottom } from 'use-stick-to-bottom'
+import { CodeBlock, highlightCode } from '../code-block'
+import { guessBlockLanguage, splitToolInput } from '@/lib/toolParamPreview'
 
 type ToolContextValue = {
   isOpen: boolean
@@ -159,16 +162,209 @@ export type ToolInputProps = ComponentProps<'div'> & {
   input: unknown
 }
 
+/// Roughly how many lines fit in the fixed preview height (`h-80` less its
+/// padding, at `text-sm`). Past this the wrapper switches to a definite
+/// height so the scroller inside it is bounded.
+const SCROLL_AFTER_LINES = 12
+
+/// How many trailing lines stay live-highlighted while a tool input streams.
+/// Comfortably more than the box shows, so scrolling back a little during a
+/// write still lands on highlighted content, while keeping each pass a fixed
+/// cost no matter how large the file grows.
+const STREAM_TAIL_LINES = 200
+
+/// Matches the shared `CodeBlock` surface so highlighted tool input looks like
+/// every other code block in the app.
+///
+/// Long lines are wrapped rather than scrolled sideways. Shiki emits
+/// `white-space: pre`, so a single long line (a bundled URL, a minified rule)
+/// overflows horizontally and pops a horizontal scrollbar mid-stream. That
+/// shrinks the viewport height and shifts the scroll maths, which the
+/// stick-to-bottom logic reads as the reader scrolling away — following then
+/// stops dead on that line. Wrapping keeps the container's width stable.
+const HIGHLIGHT_SURFACE =
+  '[&>pre]:m-0 [&>pre]:bg-transparent! [&>pre]:p-4 [&>pre]:text-sm [&>pre]:whitespace-pre-wrap [&>pre]:wrap-break-word [&_code]:font-mono [&_code]:text-sm'
+
+/**
+ * A multiline string parameter (e.g. the `content` of a file write) rendered
+ * as real, syntax-highlighted text instead of one `\n`-escaped JSON line.
+ *
+ * Highlighting is *self-pacing*: a new pass starts only once the previous one
+ * finishes, always against the newest value. Streaming updates arrive far
+ * faster than a highlight completes, and the two obvious approaches both fail
+ * — rendering every queued result replays a growing backlog of stale frames
+ * (the preview visibly lags seconds behind), while dropping any result that is
+ * no longer newest starves every frame and the preview freezes. Skipping the
+ * intermediate values keeps the view current at whatever rate the machine can
+ * actually sustain.
+ *
+ * The raw text renders until the first highlight lands, so the preview is
+ * never blank and stays readable if highlighting fails.
+ *
+ * Scrolling uses the same `use-stick-to-bottom` behaviour as the conversation
+ * itself, so it eases to the tail instead of snapping, handles the height jump
+ * when a new line lands, and releases when the reader scrolls away.
+ */
+const ToolTextBlock = memo(
+  ({
+    name,
+    value,
+    language,
+    streaming,
+  }: {
+    name?: string
+    value: string
+    language: string
+    streaming: boolean
+  }) => {
+    // Highlighting re-tokenises whatever it is given, so feeding it the whole
+    // document makes every pass more expensive as the file grows and the
+    // preview visibly slows down the longer a write runs. While streaming the
+    // view is pinned to the tail, so only the tail can actually be seen:
+    // highlight a bounded window of it and the cost stays flat regardless of
+    // file size. The complete document is rendered once the write finishes.
+    const displayText = useMemo(() => {
+      if (!streaming) return value
+      let seen = 0
+      for (let i = value.length - 1; i >= 0; i--) {
+        if (value[i] === '\n' && ++seen > STREAM_TAIL_LINES) {
+          return value.slice(i + 1)
+        }
+      }
+      return value
+    }, [value, streaming])
+
+    const latestRef = useRef(displayText)
+    latestRef.current = displayText
+    const runningRef = useRef(false)
+    const aliveRef = useRef(true)
+    const [html, setHtml] = useState('')
+    const [darkHtml, setDarkHtml] = useState('')
+
+    // Once the content is taller than the box, the wrapper needs a definite
+    // height (see the note on StickToBottom below). Counted with an early
+    // exit so a large file is not re-split on every streamed frame.
+    const isScrollable = useMemo(() => {
+      let lines = 1
+      for (let i = 0; i < displayText.length; i++) {
+        if (displayText[i] === '\n' && ++lines > SCROLL_AFTER_LINES) return true
+      }
+      return false
+    }, [displayText])
+
+    useEffect(() => {
+      aliveRef.current = true
+      return () => {
+        aliveRef.current = false
+      }
+    }, [])
+
+    useEffect(() => {
+      if (runningRef.current) return
+      runningRef.current = true
+      void (async () => {
+        let rendered: string | null = null
+        while (aliveRef.current && latestRef.current !== rendered) {
+          const target: string = latestRef.current
+          try {
+            const [light, dark] = await highlightCode(target, language as never)
+            if (!aliveRef.current) break
+            setHtml(light)
+            setDarkHtml(dark)
+          } catch {
+            // Keep the last good render rather than blanking the preview.
+          }
+          rendered = target
+        }
+        runningRef.current = false
+      })()
+    }, [displayText, language])
+
+    return (
+      <div className="space-y-1">
+        {name && (
+          <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+            {name}
+          </h4>
+        )}
+        {/* StickToBottom scrolls an inner element it renders with
+            `height: 100%`, so this wrapper needs a *definite* height for the
+            scroller to be bounded — a `max-height` leaves it indefinite, so
+            nothing overflows, nothing scrolls, and the preview just clips
+            while content streams in below the fold. Height is only fixed once
+            there is more content than fits, so short parameters stay compact.
+            Overflow is deliberately not set here: the library assigns
+            `overflow: auto` to its own scroller, and setting it on this
+            wrapper would scroll the wrong element. */}
+        <StickToBottom
+          className={cn('relative rounded-md border', isScrollable && 'h-80')}
+          initial="smooth"
+          resize="smooth"
+        >
+          <StickToBottom.Content>
+            {html ? (
+              <>
+                <div
+                  className={cn('dark:hidden', HIGHLIGHT_SURFACE)}
+                  dangerouslySetInnerHTML={{ __html: html }}
+                />
+                <div
+                  className={cn('hidden dark:block', HIGHLIGHT_SURFACE)}
+                  dangerouslySetInnerHTML={{ __html: darkHtml }}
+                />
+              </>
+            ) : (
+              <pre className="m-0 whitespace-pre-wrap wrap-break-word p-4 font-mono text-sm text-foreground">
+                {displayText}
+              </pre>
+            )}
+          </StickToBottom.Content>
+        </StickToBottom>
+      </div>
+    )
+  }
+)
+
 export const ToolInput = memo(
   ({ className, input, ...props }: ToolInputProps) => {
+    const { state } = useTool()
+    const streaming = state === 'input-streaming'
+    const { compact, blocks } = splitToolInput(input)
+    // Sniff from the block itself when no path-like sibling param exists
+    // (a `content`-only write is common), so it does not fall back to
+    // markdown and render uncoloured.
+    const blockLanguage = guessBlockLanguage(compact, blocks[0]?.value)
+
     return (
       <div className={cn('space-y-2', className)} {...props}>
         <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
           Parameters
         </h4>
-        <div className="rounded-md max-h-40 overflow-auto border ">
-          <CodeBlock code={JSON.stringify(input, null, 2)} language="json" />
-        </div>
+        {blocks.length === 0 ? (
+          <div className="rounded-md max-h-40 overflow-auto border ">
+            <CodeBlock code={JSON.stringify(input, null, 2)} language="json" />
+          </div>
+        ) : (
+          <>
+            {compact && (
+              <div className="rounded-md max-h-40 overflow-auto border">
+                <CodeBlock
+                  code={JSON.stringify(compact, null, 2)}
+                  language="json"
+                />
+              </div>
+            )}
+            {blocks.map((block) => (
+              <ToolTextBlock
+                key={block.key}
+                name={block.key}
+                value={block.value}
+                language={blockLanguage}
+                streaming={streaming}
+              />
+            ))}
+          </>
+        )}
       </div>
     )
   }
@@ -237,9 +433,11 @@ export const ToolOutput = memo(
       // Handle string output
       if (typeof output === 'string') {
         return (
-          <div className="max-h-40 overflow-auto rounded-md border ">
-            <CodeBlock code={output} language="json" />
-          </div>
+          <ToolTextBlock
+            value={output}
+            language={guessBlockLanguage(null, output)}
+            streaming={false}
+          />
         )
       }
 
@@ -266,12 +464,12 @@ export const ToolOutput = memo(
               {textItems.length > 0 && (
                 <div className="space-y-2">
                   {textItems.map((item, index) => (
-                    <div
+                    <ToolTextBlock
                       key={index}
-                      className="rounded-md max-h-40 overflow-auto border "
-                    >
-                      <CodeBlock code={item.text || ''} language="markdown" />
-                    </div>
+                      value={item.text || ''}
+                      language={guessBlockLanguage(null, item.text)}
+                      streaming={false}
+                    />
                   ))}
                 </div>
               )}
@@ -341,6 +539,31 @@ export const ToolOutput = memo(
         }
 
         // Handle regular object
+        const { compact, blocks } = splitToolInput(output)
+        if (blocks.length > 0) {
+          return (
+            <div className="space-y-2">
+              {compact && (
+                <div className="rounded-md max-h-40 overflow-auto border">
+                  <CodeBlock
+                    code={JSON.stringify(compact, null, 2)}
+                    language="json"
+                  />
+                </div>
+              )}
+              {blocks.map((block) => (
+                <ToolTextBlock
+                  key={block.key}
+                  name={block.key}
+                  value={block.value}
+                  language={guessBlockLanguage(compact, block.value)}
+                  streaming={false}
+                />
+              ))}
+            </div>
+          )
+        }
+
         return (
           <div className="rounded-md max-h-40 overflow-auto border ">
             <CodeBlock code={JSON.stringify(output, null, 2)} language="json" />
@@ -362,7 +585,7 @@ export const ToolOutput = memo(
         </h4>
         <div className="rounded-md overflow-hidden">
           {errorText && (
-            <div className="m-2 p-2 bg-destructive/10 text-destructive rounded-md">
+            <div className="m-2 whitespace-pre-wrap p-2 bg-destructive/10 text-destructive rounded-md">
               {errorText}
             </div>
           )}

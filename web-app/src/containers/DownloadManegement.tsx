@@ -708,12 +708,6 @@ export function DownloadManagement() {
           sideOffset={6}
           collisionPadding={8}
           onOpenAutoFocus={(e) => e.preventDefault()}
-          onFocusOutside={(e) => {
-            if (downloadCount > 0) e.preventDefault()
-          }}
-          onInteractOutside={(e) => {
-            if (downloadCount > 0) e.preventDefault()
-          }}
         >
           <div className="flex flex-col">
             {appUpdateState.isDownloading || downloadProcesses.length > 0 ? (

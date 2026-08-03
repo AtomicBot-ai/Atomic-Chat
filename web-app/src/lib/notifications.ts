@@ -1,7 +1,7 @@
+import { invoke } from '@tauri-apps/api/core'
 import {
   isPermissionGranted,
   requestPermission,
-  sendNotification,
 } from '@tauri-apps/plugin-notification'
 
 const LOG_PREFIX = '[notifications]'
@@ -48,9 +48,12 @@ export async function notifyThreadCompleted(
       console.warn(`${LOG_PREFIX} skipped: OS permission not granted`)
       return
     }
-    console.info(`${LOG_PREFIX} sendNotification →`, { title, body })
-    sendNotification({ title, body })
+    console.info(`${LOG_PREFIX} show_desktop_notification →`, { title, body })
+    // Deliberately not the plugin's sendNotification: its async `notify`
+    // command runs blocking D-Bus delivery on a tokio worker and aborts the
+    // app on Linux (nested-runtime panic). Our command uses spawn_blocking.
+    await invoke('show_desktop_notification', { title, body })
   } catch (error) {
-    console.error(`${LOG_PREFIX} sendNotification failed`, error)
+    console.error(`${LOG_PREFIX} show_desktop_notification failed`, error)
   }
 }

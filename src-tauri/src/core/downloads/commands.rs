@@ -1,4 +1,4 @@
-use super::helpers::{_download_files_internal, err_to_string};
+use super::helpers::_download_files_internal;
 use super::models::DownloadItem;
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::AppState;
@@ -52,7 +52,7 @@ pub async fn download_files<R: Runtime>(
         }
     }
 
-    result.map_err(err_to_string)
+    result
 }
 
 #[tauri::command]

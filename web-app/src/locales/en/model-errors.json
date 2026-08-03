@@ -22,5 +22,9 @@
   "osVersionUnsupportedTitle": "macOS version not supported",
   "osVersionUnsupportedDescription": "The local model engine requires a newer version of macOS than the one on this Mac. Please update macOS to run local models here.",
   "cpuNoAvxTitle": "Your CPU is not supported",
-  "cpuNoAvxDescription": "This processor doesn't support the AVX instruction set that the bundled engine requires, so local models can't run on it. A newer CPU (with AVX or AVX2) is needed."
+  "cpuNoAvxDescription": "This processor doesn't support the AVX instruction set that the bundled engine requires, so local models can't run on it. A newer CPU (with AVX or AVX2) is needed.",
+  "generationCrashTitle": "Model crashed during generation",
+  "generationCrashDescription": "The model's backend process exited unexpectedly while generating a response. This can happen with Vulkan backends on some GPU drivers. Try reloading the model, or switch to a CPU backend in Settings → Providers.",
+  "startupTimedOutTitle": "Failed to start server: timed out",
+  "startupTimedOutDescription": "Starting the Local API Server took too long and was aborted. This can happen if the model backend gets stuck preparing or downloading files. Please try again, or check your network connection."
 }

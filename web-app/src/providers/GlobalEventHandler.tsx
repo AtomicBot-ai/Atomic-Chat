@@ -1,9 +1,13 @@
 import { useEffect } from 'react'
-import { events } from '@janhq/core'
+import { AppEvent, events } from '@janhq/core'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useHardware } from '@/hooks/useHardware'
 import { isPlatformTauri } from '@/lib/platform/utils'
+import {
+  useBackendMismatch,
+  type BackendRuntimeEvent,
+} from '@/hooks/useBackendMismatch'
 
 /**
  * GlobalEventHandler handles global events that should be processed across all screens
@@ -13,6 +17,7 @@ export function GlobalEventHandler() {
   const { setProviders } = useModelProvider()
   const serviceHub = useServiceHub()
   const setHardwareData = useHardware((state) => state.setHardwareData)
+  const { report: reportBackendMismatch } = useBackendMismatch()
 
   useEffect(() => {
     if (!isPlatformTauri()) return
@@ -94,6 +99,23 @@ export function GlobalEventHandler() {
       events.off('settingsChanged', handleSettingsChanged)
     }
   }, [setProviders, serviceHub])
+
+  // Verdict on what a finished load actually ran on. A mismatch is only
+  // recorded here — the prompt is raised on the next message send so a load is
+  // never interrupted — and a healthy verdict retires an earlier warning.
+  useEffect(() => {
+    const handleBackendRuntime = (event: BackendRuntimeEvent) => {
+      if (event.mismatch.kind !== 'ok') {
+        console.warn('Backend mismatch detected:', event)
+      }
+      reportBackendMismatch(event)
+    }
+
+    events.on(AppEvent.onBackendRuntimeReported, handleBackendRuntime)
+    return () => {
+      events.off(AppEvent.onBackendRuntimeReported, handleBackendRuntime)
+    }
+  }, [reportBackendMismatch])
 
   // This component doesn't render anything
   return null

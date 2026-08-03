@@ -111,7 +111,10 @@ pub fn responses_request_to_chat(body: &Value) -> Value {
 /// than one system message or places one after the first turn — which Codex
 /// readily does by combining `instructions` with developer/system input items.
 /// Order of the remaining (non-system) messages is preserved.
-fn merge_system_messages(messages: Vec<Value>) -> Vec<Value> {
+///
+/// Also reused by the Anthropic `/messages` proxy path (Claude Code), which can
+/// likewise emit more than one system message after conversion.
+pub(crate) fn merge_system_messages(messages: Vec<Value>) -> Vec<Value> {
     let mut system_parts: Vec<String> = Vec::new();
     let mut rest: Vec<Value> = Vec::with_capacity(messages.len());
 

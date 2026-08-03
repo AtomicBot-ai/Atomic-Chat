@@ -4,6 +4,9 @@ import '@testing-library/jest-dom'
 import DropdownModelProvider from '../DropdownModelProvider'
 import { getModelDisplayName } from '@/lib/utils'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useFavoriteModel } from '@/hooks/useFavoriteModel'
+import type { ModelsService } from '@/services/models/types'
+import { seedServiceHub } from '@/test/service-hub'
 
 // Define basic types to avoid missing declarations
 type ModelProvider = {
@@ -44,15 +47,6 @@ vi.mock('@/hooks/useThreads', () => ({
   })),
 }))
 
-vi.mock('@/hooks/useServiceHub', () => ({
-  useServiceHub: vi.fn(() => ({
-    models: () => ({
-      checkMmprojExists: vi.fn(() => Promise.resolve(false)),
-      checkMmprojExistsAndUpdateOffloadMMprojSetting: vi.fn(() => Promise.resolve()),
-    }),
-  })),
-}))
-
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: vi.fn(() => ({
     t: (key: string) => key,
@@ -79,7 +73,9 @@ vi.mock('@/lib/platform/const', () => ({
 
 // Mock UI components
 vi.mock('@/components/ui/popover', () => ({
-  Popover: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Popover: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
   PopoverTrigger: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="popover-trigger">{children}</div>
   ),
@@ -106,6 +102,10 @@ vi.mock('../ModelSetting', () => ({
 
 vi.mock('../ModelSupportStatus', () => ({
   ModelSupportStatus: () => <div data-testid="model-support-status" />,
+}))
+
+vi.mock('../SamplerPopover', () => ({
+  SamplerPopover: () => <div data-testid="sampler-popover" />,
 }))
 
 describe('DropdownModelProvider - Display Name Integration', () => {
@@ -142,6 +142,21 @@ describe('DropdownModelProvider - Display Name Integration', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(useFavoriteModel).mockReturnValue({
+      favoriteModels: [],
+      addFavorite: vi.fn(),
+      removeFavorite: vi.fn(),
+      isFavorite: vi.fn(),
+      toggleFavorite: vi.fn(),
+    })
+    seedServiceHub({
+      models: {
+        checkMmprojExists: vi.fn().mockResolvedValue(false),
+        checkMmprojExistsAndUpdateOffloadMMprojSetting: vi
+          .fn()
+          .mockResolvedValue(undefined),
+      } as unknown as ModelsService,
+    })
 
     // Reset the mock for each test
     vi.mocked(useModelProvider).mockReturnValue({
@@ -201,6 +216,58 @@ describe('DropdownModelProvider - Display Name Integration', () => {
     expect(screen.getByText('model3.gguf')).toBeInTheDocument() // Only in dropdown
   })
 
+  it('deduplicates favorites by model id and prefers the nicknamed copy', () => {
+    const duplicateProviders: ModelProvider[] = [
+      {
+        provider: 'llamacpp',
+        active: true,
+        models: [
+          {
+            id: 'shared-model.gguf',
+            capabilities: ['completion'],
+          },
+        ],
+        settings: [],
+      },
+      {
+        provider: 'llamacpp-upstream',
+        active: true,
+        models: [
+          {
+            id: 'shared-model.gguf',
+            displayName: 'Shared Model',
+            capabilities: ['completion'],
+          },
+        ],
+        settings: [],
+      },
+    ]
+
+    vi.mocked(useFavoriteModel).mockReturnValue({
+      favoriteModels: [{ id: 'shared-model.gguf' } as Model],
+      addFavorite: vi.fn(),
+      removeFavorite: vi.fn(),
+      isFavorite: vi.fn(),
+      toggleFavorite: vi.fn(),
+    })
+    vi.mocked(useModelProvider).mockReturnValue({
+      providers: duplicateProviders,
+      selectedProvider: 'llamacpp',
+      selectedModel: duplicateProviders[0].models[0],
+      getProviderByName: vi.fn((name: string) =>
+        duplicateProviders.find((provider) => provider.provider === name)
+      ),
+      selectModelProvider: vi.fn(),
+      getModelBy: vi.fn(),
+      updateProvider: vi.fn(),
+    } as MockHookReturn)
+
+    render(<DropdownModelProvider />)
+
+    expect(screen.getAllByText('Shared Model')).toHaveLength(1)
+    expect(screen.getAllByText('shared-model.gguf')).toHaveLength(1)
+  })
+
   it('should use getModelDisplayName utility correctly', () => {
     // Test the utility function directly with different model scenarios
     const modelWithDisplayName = {
@@ -218,8 +285,12 @@ describe('DropdownModelProvider - Display Name Integration', () => {
     } as Model
 
     expect(getModelDisplayName(modelWithDisplayName)).toBe('Short Name')
-    expect(getModelDisplayName(modelWithoutDisplayName)).toBe('model-without-display-name.gguf')
-    expect(getModelDisplayName(modelWithEmptyDisplayName)).toBe('model-with-empty.gguf')
+    expect(getModelDisplayName(modelWithoutDisplayName)).toBe(
+      'model-without-display-name.gguf'
+    )
+    expect(getModelDisplayName(modelWithEmptyDisplayName)).toBe(
+      'model-with-empty.gguf'
+    )
   })
 
   it('should maintain model ID for internal operations while showing display name', () => {
@@ -269,10 +340,14 @@ describe('DropdownModelProvider - Display Name Integration', () => {
     render(<DropdownModelProvider />)
 
     // Check trigger shows Short Name
-    expect(screen.getByRole('button')).toHaveTextContent('Short Name')
+    expect(
+      screen.getByRole('button', { name: /short name/i })
+    ).toHaveTextContent('Short Name')
     // Short Name appears in dropdown (at least 1 occurrence)
     expect(screen.getAllByText('Short Name').length).toBeGreaterThanOrEqual(1)
     // Custom Model 1 is also in the dropdown
-    expect(screen.getAllByText('Custom Model 1').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('Custom Model 1').length).toBeGreaterThanOrEqual(
+      1
+    )
   })
 })

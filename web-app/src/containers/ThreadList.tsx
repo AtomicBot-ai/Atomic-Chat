@@ -180,9 +180,9 @@ const ThreadItem = memo(
               isActive && 'bg-secondary dark:bg-secondary/80'
             )}
           >
-            <span className="flex items-center gap-2 pr-8">
+            <span className="flex items-center gap-2 pr-8 min-w-0">
               {showStatusDot && <ThreadStatusDot pulsing={isBusy} />}
-              <span className="truncate flex-1">{threadTitle}</span>
+              <span className="truncate flex-1 min-w-0">{threadTitle}</span>
             </span>
             {currentProjectId && lastUserMessageText && (
               <div className="text-muted-foreground text-xs mt-1 line-clamp-1 pr-10">
@@ -197,9 +197,9 @@ const ThreadItem = memo(
             className="data-[active=true]:bg-sidebar-foreground/15"
           >
             <Link to="/threads/$threadId" params={{ threadId: thread.id }}>
-              <span className="flex w-full items-center gap-2">
+              <span className="flex w-full items-center gap-2 min-w-0">
                 {showStatusDot && <ThreadStatusDot pulsing={isBusy} />}
-                <span className="truncate flex-1">{threadTitle}</span>
+                <span className="truncate flex-1 min-w-0">{threadTitle}</span>
               </span>
             </Link>
           </MenuButtonWrapper>

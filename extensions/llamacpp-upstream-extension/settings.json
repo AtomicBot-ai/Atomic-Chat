@@ -13,10 +13,31 @@
   {
     "key": "mtp",
     "title": "Enable MTP (Multi-Token Prediction)",
-    "description": "Speculative decoding via an MTP head. Works with built-in-MTP GGUFs (e.g. [ggml-org/Qwen3.6-27B-MTP-GGUF](https://huggingface.co/ggml-org/Qwen3.6-27B-MTP-GGUF), [ggml-org/Qwen3.6-35B-A3B-MTP-GGUF](https://huggingface.co/ggml-org/Qwen3.6-35B-A3B-MTP-GGUF)) and with Gemma 4 31B ([am17an/Gemma4-31B-it-GGUF](https://huggingface.co/am17an/Gemma4-31B-it-GGUF)) / 26B-A4B ([AtomicChat/gemma-4-26B-A4B-it-assistant-GGUF](https://huggingface.co/AtomicChat/gemma-4-26B-A4B-it-assistant-GGUF)) — a separate draft head is downloaded automatically; requires backend build b9553+.",
+    "description": "Speed up generation with a compatible MTP head. Atomic Chat uses a built-in or matching downloaded head when available. Requires an MTP-capable llama.cpp backend and is mutually exclusive with DFlash.",
     "controllerType": "checkbox",
     "controllerProps": {
       "value": false
+    }
+  },
+  {
+    "key": "dflash",
+    "title": "Enable DFlash (multi-layer draft speculative decoding)",
+    "description": "Speed up generation with a compatible DFlash draft model. Atomic Chat offers a matching draft download when available. Requires a DFlash-capable llama.cpp backend and is mutually exclusive with MTP. [Browse Atomic Chat DFlash models](https://huggingface.co/collections/AtomicChat/dflash-speculative-drafts).",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": false
+    }
+  },
+  {
+    "key": "dflash_block_size",
+    "title": "DFlash Block Size",
+    "description": "Draft block size for DFlash. The number of speculative tokens per step (--spec-draft-n-max) is derived as block_size - 1. Default 16.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 16,
+      "placeholder": "16",
+      "type": "number",
+      "textAlign": "right"
     }
   },
   {

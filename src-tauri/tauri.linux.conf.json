@@ -33,6 +33,7 @@
     "resources": [
       "resources/pre-install/**/*",
       "resources/LICENSE",
+      "resources/agent-skills/**/*",
       "resources/bin/jan-cli",
       "resources/bin/sqlite-vec.so",
       "resources/llamacpp-backend-upstream/**/*",

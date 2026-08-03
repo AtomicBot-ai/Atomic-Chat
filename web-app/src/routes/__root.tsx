@@ -3,7 +3,7 @@ import { createRootRoute, Outlet } from '@tanstack/react-router'
 
 import DialogAppUpdater from '@/containers/dialogs/AppUpdater'
 import BackendUpdater from '@/containers/dialogs/BackendUpdater'
-import TurboquantOptimalBackendDialog from '@/containers/dialogs/TurboquantOptimalBackendDialog'
+import SuboptimalBackendDialog from '@/containers/dialogs/SuboptimalBackendDialog'
 import { Fragment } from 'react/jsx-runtime'
 import { ThemeProvider } from '@/providers/ThemeProvider'
 import { InterfaceProvider } from '@/providers/InterfaceProvider'
@@ -20,6 +20,8 @@ import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useTrayStatusSync } from '@/hooks/useTrayStatusSync'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
+import AgentApprovalDialog from '@/containers/dialogs/AgentApprovalDialog'
+import AgentFolderAccessDialog from '@/containers/dialogs/AgentFolderAccessDialog'
 import { TranslationProvider } from '@/i18n/TranslationContext'
 import OutOfContextPromiseModal from '@/containers/dialogs/OutOfContextDialog'
 import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionDialog'
@@ -29,10 +31,10 @@ import { localStorageKey } from '@/constants/localStorage'
 import GlobalError from '@/containers/GlobalError'
 import * as Sentry from '@sentry/react'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
+import { StartupBackendCoordinator } from '@/providers/StartupBackendCoordinator'
 import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { LeftSidebar } from '@/components/left-sidebar'
-import { WindowControls } from '@/components/WindowControls'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -85,8 +87,8 @@ const AppLayout = () => {
     width: sidebarWidth,
     setLeftPanelWidth,
   } = useLeftPanel()
-  // Feeds live server / model / RAM state into the macOS menu-bar tray.
-  // No-op outside macOS Tauri builds (see hook implementation).
+  // Feeds live server / model / RAM state into the desktop system tray.
+  // No-op outside macOS and Windows Tauri builds (see hook implementation).
   useTrayStatusSync()
   const isSetupCompleted = useSetupCompleted()
 
@@ -100,23 +102,12 @@ const AppLayout = () => {
       >
         <AnalyticProvider />
         <KeyboardShortcutsProvider />
-        {/* Fake absolute panel top to enable window drag */}
-        {IS_WINDOWS && <WindowControls />}
-        {/* On Windows we use a fixed overlay for the drag region.
-            On macOS we attach data-tauri-drag-region directly to the
-            SidebarHeader and HeaderPage elements so that the drag area is
-            always the topmost element in those regions (the fixed overlay at
-            z-20 is covered by header content at the same z-level and
-            therefore never receives mousedown events on macOS). */}
-        {IS_WINDOWS && (
-          <div
-            className="fixed w-full h-12 z-20 top-0"
-            data-tauri-drag-region
-          />
-        )}
         <DialogAppUpdater />
         {isSetupCompleted && <BackendUpdater />}
-        {isSetupCompleted && <TurboquantOptimalBackendDialog />}
+        {/* Unlike the recommendation dialogs above, this dialog only opens
+            after ChatInput dispatches a mismatch prompt. Keep it mounted for
+            upgraded/legacy users whose setup-completed flag is absent. */}
+        <SuboptimalBackendDialog />
         <WhatsNewDialog />
         <LeftSidebar />
         <SidebarInset>
@@ -195,10 +186,13 @@ function RootLayout() {
           <ExtensionProvider>
             <DataProvider />
             <GlobalEventHandler />
+            <StartupBackendCoordinator />
             {IS_LOGS_ROUTE ? <LogsLayout /> : <AppLayout />}
           </ExtensionProvider>
           {/* <TanStackRouterDevtools position="bottom-right" /> */}
           <ToolApproval />
+          <AgentApprovalDialog />
+          <AgentFolderAccessDialog />
           <AttachmentIngestionDialog />
           <OutOfContextPromiseModal />
         </TranslationProvider>

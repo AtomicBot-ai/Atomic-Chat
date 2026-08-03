@@ -31,12 +31,16 @@ export const SETUP_SCREEN_QUANTIZATIONS = ['q4_k_m']
  */
 export const BASELINE_RECOMMENDED_MODELS: ReadonlyArray<Recommendation> = [
   {
-    model_name: 'unsloth/gemma-4-E4B-it-GGUF',
+    model_name: 'AtomicChat/gemma4-e4b-it-GGUF',
     description_key: 'hub:recEverydayUse',
   },
   {
-    model_name: 'unsloth/Qwen3.5-9B-GGUF',
-    description_key: 'hub:recVisionKnowledge',
+    model_name: 'AtomicChat/qwen35-4b-GGUF',
+    description_key: 'hub:recEverydayUse',
+  },
+  {
+    model_name: 'AtomicChat/qwen3-coder-30b-a3b-GGUF',
+    description_key: 'hub:recCoding',
   },
   {
     model_name: 'mlx-community/gemma-4-e4b-it-4bit',
@@ -55,8 +59,12 @@ export const BASELINE_RECOMMENDED_MODELS: ReadonlyArray<Recommendation> = [
   },
 ]
 
-const GEMMA4_HF =
-  'https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main'
+const ATOMIC_GEMMA4_E4B_HF =
+  'https://huggingface.co/AtomicChat/gemma4-e4b-it-GGUF/resolve/main'
+const ATOMIC_QWEN35_4B_HF =
+  'https://huggingface.co/AtomicChat/qwen35-4b-GGUF/resolve/main'
+const ATOMIC_QWEN3_CODER_HF =
+  'https://huggingface.co/AtomicChat/qwen3-coder-30b-a3b-GGUF/resolve/main'
 const QWEN_MLX_HF =
   'https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-4bit/resolve/main'
 
@@ -84,144 +92,106 @@ const MLX_QWEN_FALLBACK: CatalogModel = {
 export const RECOMMENDED_MODEL_FALLBACKS: Readonly<
   Record<string, CatalogModel>
 > = {
-  'unsloth/gemma-4-E4B-it-GGUF': {
-    model_name: 'unsloth/gemma-4-E4B-it-GGUF',
-    developer: 'unsloth',
+  'AtomicChat/gemma4-e4b-it-GGUF': {
+    model_name: 'AtomicChat/gemma4-e4b-it-GGUF',
+    developer: 'AtomicChat',
     description:
-      '**Tags**: Image-Text-to-Text, GGUF, gemma4, unsloth, gemma, google, conversational',
+      '**Tags**: Image-Text-to-Text, GGUF, gemma4, atomic-chat, google, imatrix, conversational',
     downloads: 0,
-    num_quants: 22,
+    num_quants: 12,
     quants: [
       {
-        model_id: 'unsloth/gemma-4-E4B-it-BF16',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-BF16.gguf`,
-        file_size: '15.1 GB',
+        model_id: 'AtomicChat/gemma4-e4b-it-Q8_0',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-Q8_0.gguf`,
+        file_size: '8.0 GB',
       },
       {
-        model_id: 'unsloth/gemma-4-E4B-it-Q8_0',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-Q8_0.gguf`,
-        file_size: '8.2 GB',
+        model_id: 'AtomicChat/gemma4-e4b-it-Q6_K',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-Q6_K.gguf`,
+        file_size: '7.0 GB',
       },
       {
-        model_id: 'unsloth/gemma-4-E4B-it-Q6_K',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-Q6_K.gguf`,
-        file_size: '7.1 GB',
-      },
-      {
-        model_id: 'unsloth/gemma-4-E4B-it-Q5_K_M',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-Q5_K_M.gguf`,
+        model_id: 'AtomicChat/gemma4-e4b-it-Q5_K_M',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-Q5_K_M.gguf`,
         file_size: '5.5 GB',
       },
       {
-        model_id: 'unsloth/gemma-4-E4B-it-Q5_K_S',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-Q5_K_S.gguf`,
+        model_id: 'AtomicChat/gemma4-e4b-it-Q5_K_S',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-Q5_K_S.gguf`,
         file_size: '5.4 GB',
       },
       {
-        model_id: 'unsloth/gemma-4-E4B-it-Q4_1',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-Q4_1.gguf`,
+        model_id: 'AtomicChat/gemma4-e4b-it-UD-Q4_K_XL',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-UD-Q4_K_XL.gguf`,
         file_size: '5.1 GB',
       },
       {
-        model_id: 'unsloth/gemma-4-E4B-it-Q4_K_M',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-Q4_K_M.gguf`,
-        file_size: '5.0 GB',
+        model_id: 'AtomicChat/gemma4-e4b-it-Q4_K_M',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-Q4_K_M.gguf`,
+        file_size: '4.9 GB',
       },
       {
-        model_id: 'unsloth/gemma-4-E4B-it-IQ4_NL',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-IQ4_NL.gguf`,
-        file_size: '4.8 GB',
-      },
-      {
-        model_id: 'unsloth/gemma-4-E4B-it-Q4_K_S',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-Q4_K_S.gguf`,
-        file_size: '4.8 GB',
-      },
-      {
-        model_id: 'unsloth/gemma-4-E4B-it-Q4_0',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-Q4_0.gguf`,
-        file_size: '4.8 GB',
-      },
-      {
-        model_id: 'unsloth/gemma-4-E4B-it-IQ4_XS',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-IQ4_XS.gguf`,
+        model_id: 'AtomicChat/gemma4-e4b-it-Q4_K_S',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-Q4_K_S.gguf`,
         file_size: '4.7 GB',
       },
       {
-        model_id: 'unsloth/gemma-4-E4B-it-Q3_K_M',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-Q3_K_M.gguf`,
+        model_id: 'AtomicChat/gemma4-e4b-it-IQ4_XS',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-IQ4_XS.gguf`,
+        file_size: '4.5 GB',
+      },
+      {
+        model_id: 'AtomicChat/gemma4-e4b-it-Q3_K_L',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-Q3_K_L.gguf`,
+        file_size: '4.4 GB',
+      },
+      {
+        model_id: 'AtomicChat/gemma4-e4b-it-Q3_K_M',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-Q3_K_M.gguf`,
         file_size: '4.1 GB',
       },
       {
-        model_id: 'unsloth/gemma-4-E4B-it-Q3_K_S',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-Q3_K_S.gguf`,
-        file_size: '3.9 GB',
+        model_id: 'AtomicChat/gemma4-e4b-it-IQ3_M',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-IQ3_M.gguf`,
+        file_size: '3.8 GB',
       },
       {
-        model_id: 'unsloth/gemma-4-E4B-it-UD-Q8_K_XL',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-UD-Q8_K_XL.gguf`,
-        file_size: '8.7 GB',
-      },
-      {
-        model_id: 'unsloth/gemma-4-E4B-it-UD-Q6_K_XL',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-UD-Q6_K_XL.gguf`,
-        file_size: '7.5 GB',
-      },
-      {
-        model_id: 'unsloth/gemma-4-E4B-it-UD-Q5_K_XL',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-UD-Q5_K_XL.gguf`,
-        file_size: '6.7 GB',
-      },
-      {
-        model_id: 'unsloth/gemma-4-E4B-it-UD-Q4_K_XL',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-UD-Q4_K_XL.gguf`,
-        file_size: '5.1 GB',
-      },
-      {
-        model_id: 'unsloth/gemma-4-E4B-it-UD-Q3_K_XL',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-UD-Q3_K_XL.gguf`,
-        file_size: '4.6 GB',
-      },
-      {
-        model_id: 'unsloth/gemma-4-E4B-it-UD-Q2_K_XL',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-UD-Q2_K_XL.gguf`,
-        file_size: '3.7 GB',
-      },
-      {
-        model_id: 'unsloth/gemma-4-E4B-it-UD-IQ3_XXS',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-UD-IQ3_XXS.gguf`,
-        file_size: '3.7 GB',
-      },
-      {
-        model_id: 'unsloth/gemma-4-E4B-it-UD-IQ2_M',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-UD-IQ2_M.gguf`,
-        file_size: '3.5 GB',
-      },
-      {
-        model_id: 'unsloth/gemma-4-E4B-it-UD-IQ2_XXS',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-UD-IQ2_XXS.gguf`,
+        model_id: 'AtomicChat/gemma4-e4b-it-Q2_K',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-Q2_K.gguf`,
         file_size: '3.3 GB',
       },
     ],
-    num_mmproj: 3,
+    num_mmproj: 1,
     mmproj_models: [
       {
-        model_id: 'mmproj-F16',
-        path: `${GEMMA4_HF}/mmproj-F16.gguf`,
-        file_size: '990.0 MB',
-      },
-      {
-        model_id: 'mmproj-BF16',
-        path: `${GEMMA4_HF}/mmproj-BF16.gguf`,
-        file_size: '992.0 MB',
-      },
-      {
-        model_id: 'mmproj-F32',
-        path: `${GEMMA4_HF}/mmproj-F32.gguf`,
-        file_size: '1.9 GB',
+        model_id: 'mmproj-gemma4-e4b-it-f16',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/mmproj-gemma4-e4b-it-f16.gguf`,
+        file_size: '1.0 GB',
       },
     ],
-    readme: `${GEMMA4_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
+    readme: `${ATOMIC_GEMMA4_E4B_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
+  },
+  'AtomicChat/qwen35-4b-GGUF': {
+    model_name: 'AtomicChat/qwen35-4b-GGUF',
+    developer: 'AtomicChat',
+    description: '**Tags**: text-generation, GGUF, qwen3, atomic-chat, imatrix, conversational',
+    downloads: 0,
+    num_quants: 0,
+    quants: [],
+    num_mmproj: 0,
+    mmproj_models: [],
+    readme: `${ATOMIC_QWEN35_4B_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
+  },
+  'AtomicChat/qwen3-coder-30b-a3b-GGUF': {
+    model_name: 'AtomicChat/qwen3-coder-30b-a3b-GGUF',
+    developer: 'AtomicChat',
+    description: '**Tags**: text-generation, GGUF, qwen3, qwen3-coder, atomic-chat, imatrix, conversational',
+    downloads: 0,
+    num_quants: 0,
+    quants: [],
+    num_mmproj: 0,
+    mmproj_models: [],
+    readme: `${ATOMIC_QWEN3_CODER_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
   },
   ...(IS_MACOS
     ? { 'mlx-community/Qwen3.5-9B-MLX-4bit': MLX_QWEN_FALLBACK }
@@ -242,36 +212,36 @@ export const RECOMMENDED_MODEL_FALLBACKS: Readonly<
  */
 export const BASELINE_MODEL_CATALOG: ReadonlyArray<CatalogModel> = [
   {
-    model_name: 'unsloth/gemma-4-E4B-it-GGUF',
-    developer: 'unsloth',
+    model_name: 'AtomicChat/gemma4-e4b-it-GGUF',
+    developer: 'AtomicChat',
     description:
-      '**Tags**: gguf, gemma4, unsloth, gemma, google, conversational, image-text-to-text',
+      '**Tags**: gguf, gemma4, atomic-chat, google, imatrix, conversational, image-text-to-text',
     downloads: 0,
     num_quants: 1,
     quants: [
       {
-        model_id: 'unsloth/gemma-4-E4B-it-Q4_K_M',
-        path: `${GEMMA4_HF}/gemma-4-E4B-it-Q4_K_M.gguf`,
-        file_size: '5.0 GB',
+        model_id: 'AtomicChat/gemma4-e4b-it-Q4_K_M',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-Q4_K_M.gguf`,
+        file_size: '4.9 GB',
       },
     ],
     num_mmproj: 1,
     mmproj_models: [
       {
-        model_id: 'mmproj-F16',
-        path: `${GEMMA4_HF}/mmproj-F16.gguf`,
-        file_size: '990.0 MB',
+        model_id: 'mmproj-gemma4-e4b-it-f16',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/mmproj-gemma4-e4b-it-f16.gguf`,
+        file_size: '1.0 GB',
       },
     ],
     num_safetensors: 0,
     safetensors_files: [],
     is_mlx: false,
-    readme: `${GEMMA4_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
+    readme: `${ATOMIC_GEMMA4_E4B_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
   },
   {
-    model_name: 'unsloth/Qwen3.5-9B-GGUF',
-    developer: 'unsloth',
-    description: '**Tags**: gguf, qwen3, unsloth, conversational',
+    model_name: 'AtomicChat/qwen35-4b-GGUF',
+    developer: 'AtomicChat',
+    description: '**Tags**: gguf, qwen3, atomic-chat, imatrix, conversational',
     downloads: 0,
     num_quants: 0,
     quants: [],
@@ -280,8 +250,35 @@ export const BASELINE_MODEL_CATALOG: ReadonlyArray<CatalogModel> = [
     num_safetensors: 0,
     safetensors_files: [],
     is_mlx: false,
-    readme:
-      'https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/README.md',
+    readme: `${ATOMIC_QWEN35_4B_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
+  },
+  {
+    model_name: 'AtomicChat/qwen36-27b-GGUF',
+    developer: 'AtomicChat',
+    description: '**Tags**: gguf, qwen3, atomic-chat, imatrix, conversational',
+    downloads: 0,
+    num_quants: 0,
+    quants: [],
+    num_mmproj: 0,
+    mmproj_models: [],
+    num_safetensors: 0,
+    safetensors_files: [],
+    is_mlx: false,
+    readme: 'https://huggingface.co/AtomicChat/qwen36-27b-GGUF/resolve/main/README.md',
+  },
+  {
+    model_name: 'AtomicChat/qwen3-coder-30b-a3b-GGUF',
+    developer: 'AtomicChat',
+    description: '**Tags**: gguf, qwen3, qwen3-coder, atomic-chat, imatrix, conversational',
+    downloads: 0,
+    num_quants: 0,
+    quants: [],
+    num_mmproj: 0,
+    mmproj_models: [],
+    num_safetensors: 0,
+    safetensors_files: [],
+    is_mlx: false,
+    readme: `${ATOMIC_QWEN3_CODER_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
   },
   {
     model_name: 'unsloth/Llama-3.2-3B-Instruct-GGUF',

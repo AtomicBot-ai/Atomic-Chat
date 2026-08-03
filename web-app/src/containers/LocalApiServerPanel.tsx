@@ -21,6 +21,11 @@ import {
   syncActiveModelsFromEngines,
 } from '@/utils/activeModelsSync'
 import {
+  MODEL_LOAD_WATCHDOG_MS,
+  SERVER_START_WATCHDOG_MS,
+  withTimeout,
+} from '@/lib/utils'
+import {
   Popover,
   PopoverTrigger,
   PopoverContent,
@@ -41,6 +46,8 @@ export function LocalApiServerPanel() {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const {
+    enableOnStartup,
+    setEnableOnStartup,
     corsEnabled,
     setCorsEnabled,
     verboseLogs,
@@ -92,12 +99,20 @@ export function LocalApiServerPanel() {
       setShowApiKeyError(false)
       setServerStatus('pending')
 
-      ensureModelForServer({
-        modelsService: serviceHub.models(),
-        modelOverride: defaultModelLocalApiServer,
-        onLoadStart: () => setIsModelLoading(true),
-        onLoadEnd: () => setIsModelLoading(false),
-      })
+      // ATO-270: neither the model load nor the server bind below has a
+      // timeout of its own, so an un-timeboxed network call stuck somewhere
+      // in backend preparation would otherwise leave the button spinning on
+      // "Starting Server" forever, with no error and no way to retry.
+      withTimeout(
+        ensureModelForServer({
+          modelsService: serviceHub.models(),
+          modelOverride: defaultModelLocalApiServer,
+          onLoadStart: () => setIsModelLoading(true),
+          onLoadEnd: () => setIsModelLoading(false),
+        }),
+        MODEL_LOAD_WATCHDOG_MS,
+        'Timed out waiting for the model to finish loading.'
+      )
         .then(async (result) => {
           if (result.status === 'no_model_available') {
             throw new Error('No model available to load')
@@ -119,7 +134,7 @@ export function LocalApiServerPanel() {
           syncActiveModelsFromEngines(models || [])
         })
         .then(() => {
-          return window.core?.api?.startServer({
+          const startServerCall = window.core?.api?.startServer({
             host: serverHost,
             port: serverPort,
             prefix: apiPrefix,
@@ -128,9 +143,16 @@ export function LocalApiServerPanel() {
             isCorsEnabled: corsEnabled,
             isVerboseEnabled: verboseLogs,
             proxyTimeout: proxyTimeout,
-          })
+          }) as Promise<number> | undefined
+          return startServerCall
+            ? withTimeout(
+                startServerCall,
+                SERVER_START_WATCHDOG_MS,
+                'Timed out waiting for the Local API Server to start.'
+              )
+            : undefined
         })
-        .then((actualPort: number) => {
+        .then((actualPort: number | undefined) => {
           if (actualPort && actualPort !== serverPort) {
             setServerPort(actualPort)
           }
@@ -303,6 +325,20 @@ export function LocalApiServerPanel() {
             </h2>
           </div>
           <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium">
+                  {t('settings:localApiServer.autoStart')}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t('settings:localApiServer.autoStartDesc')}
+                </p>
+              </div>
+              <Switch
+                checked={enableOnStartup}
+                onCheckedChange={setEnableOnStartup}
+              />
+            </div>
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <p className="text-sm font-medium">

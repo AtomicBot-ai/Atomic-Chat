@@ -8,12 +8,13 @@ use tauri::{Manager, Runtime};
 /// TurboQuant id) onto the **clean** TurboQuant id scheme used on
 /// Windows/Linux/macOS:
 ///   `windows-x64-cpu`, `windows-x64-cuda-12.4`, `windows-x64-cuda-13.3`,
-///   `windows-x64-vulkan`, `linux-x64-vulkan`, `macos-arm64`, `macos-x64`.
+///   `windows-x64-vulkan`, `linux-x64-cpu`, `linux-x64-cuda-12.4`,
+///   `linux-x64-cuda-13.3`, `linux-x64-rocm`, `linux-x64-vulkan`,
+///   `macos-arm64`, `macos-x64`.
 ///
-/// The TurboQuant releases are scattered (each variant is its own release on
-/// the same SHA), so the manifest in `atomic-chat-conf` is the single source
-/// of "which tag"; here we only normalize the *backend id*. Idempotent: a
-/// clean id maps to itself.
+/// The manifest in `atomic-chat-conf` is the single source of "which tag";
+/// here we only normalize the *backend id*. Idempotent: a clean id maps to
+/// itself.
 #[tauri::command]
 pub fn map_old_backend_to_new(old_backend: String) -> String {
     let b = old_backend.replace('\u{FEFF}', "").trim().to_string();
@@ -24,6 +25,10 @@ pub fn map_old_backend_to_new(old_backend: String) -> String {
         | "windows-x64-cuda-12.4"
         | "windows-x64-cuda-13.3"
         | "windows-x64-vulkan"
+        | "linux-x64-cpu"
+        | "linux-x64-cuda-12.4"
+        | "linux-x64-cuda-13.3"
+        | "linux-x64-rocm"
         | "linux-x64-vulkan"
         | "macos-arm64"
         | "macos-x64" => return b,
@@ -49,8 +54,11 @@ pub fn map_old_backend_to_new(old_backend: String) -> String {
         return "windows-x64-cpu".to_string();
     }
 
-    // Legacy / clean Linux ids → the single `linux-x64-vulkan` build
-    // (serves CPU+GPU via GGML_BACKEND_DL; no TurboQuant CUDA-on-Linux build).
+    // Legacy Linux ids (`linux-avx2-x64`, `ubuntu-vulkan-x64`, …) predate the
+    // fork's Linux GPU tiers, so they all normalize onto `linux-x64-vulkan` —
+    // the build that also carries a portable CPU path via GGML_BACKEND_DL. The
+    // clean CUDA/ROCm/CPU ids returned above are never produced here; they only
+    // ever come from the manifest or from hardware detection.
     if b.starts_with("linux-") {
         // No TurboQuant Linux arm64 build; leave unrecognized arm64 ids as-is.
         if b.contains("arm64") || b.contains("aarch64") {
@@ -91,7 +99,11 @@ pub async fn get_local_installed_backends(
         }
 
         let version_name = match version_path.file_name() {
-            Some(name) => name.to_string_lossy().replace('\u{FEFF}', "").trim().to_string(),
+            Some(name) => name
+                .to_string_lossy()
+                .replace('\u{FEFF}', "")
+                .trim()
+                .to_string(),
             None => continue,
         };
 
@@ -105,7 +117,11 @@ pub async fn get_local_installed_backends(
             let backend_path = backend_entry.path();
 
             let backend_name = match backend_path.file_name() {
-                Some(name) => name.to_string_lossy().replace('\u{FEFF}', "").trim().to_string(),
+                Some(name) => name
+                    .to_string_lossy()
+                    .replace('\u{FEFF}', "")
+                    .trim()
+                    .to_string(),
                 None => continue,
             };
 
@@ -170,6 +186,8 @@ pub struct SystemFeatures {
     cuda12: bool,
     cuda13: bool,
     vulkan: bool,
+    #[serde(default)]
+    rocm: bool,
 }
 
 #[derive(Serialize)]
@@ -188,9 +206,9 @@ pub fn determine_supported_backends(
     let mut supported_backends: Vec<String> = Vec::new();
 
     // Determine supported backends based on system type and features, using
-    // the clean TurboQuant id scheme. Windows ships discrete CPU/CUDA/Vulkan
-    // variants; Linux ships a single `linux-x64-vulkan` build that serves
-    // CPU+GPU (GGML_BACKEND_DL); macOS is arm64-only (bundled).
+    // the clean TurboQuant id scheme. Windows and Linux both ship discrete
+    // CPU/CUDA/Vulkan variants, Linux additionally an AMD ROCm one; macOS is
+    // arm64-only (bundled).
     match sys_type.as_str() {
         "windows-x86_64" => {
             supported_backends.push("windows-x64-cpu".to_string());
@@ -210,7 +228,23 @@ pub fn determine_supported_backends(
             supported_backends.push("windows-arm64".to_string());
         }
         "linux-x86_64" | "linux-x86" => {
-            // Single build serves CPU + GPU; no TurboQuant CUDA-on-Linux build.
+            supported_backends.push("linux-x64-cpu".to_string());
+            // No TurboQuant Linux CUDA-11 build (features.cuda11 ignored here).
+            if features.cuda12 {
+                supported_backends.push("linux-x64-cuda-12.4".to_string());
+            }
+            if features.cuda13 {
+                supported_backends.push("linux-x64-cuda-13.3".to_string());
+            }
+            // ROCm is offered only when the conservative host probe in
+            // `get_supported_features` confirmed both a supported RDNA2–RDNA4
+            // device and a usable ROCm runtime.
+            if features.rocm {
+                supported_backends.push("linux-x64-rocm".to_string());
+            }
+            // Always offered: the Vulkan build also carries a portable CPU path
+            // (GGML_BACKEND_DL) and is the bundled offline fallback, so it must
+            // stay installable even on a host with no Vulkan device.
             supported_backends.push("linux-x64-vulkan".to_string());
         }
         "linux-aarch64" | "linux-arm64" => {
@@ -235,11 +269,50 @@ fn is_windows_backend(backend: &str) -> bool {
     backend.starts_with("win-") || backend.starts_with("windows-")
 }
 
-fn compare_backend_versions_for_sort(left: &BackendInfo, right: &BackendInfo) -> std::cmp::Ordering {
-    // TurboQuant release tags (`turboquant-<id>-<sha>`) are NOT monotonic
-    // numbers, so numeric version comparison yields 0 for both and we fall
-    // through to install `order`. The numeric short-circuit below is kept for
-    // legacy janhq-style Windows ids (`win-*` with `bXXXX` numeric tags).
+/// Ordering key for a unified TurboQuant release tag
+/// (`b<upstream-build>-<fork-major>.<minor>.<patch>`, e.g. `b10018-1.3.0`):
+/// newest upstream build first, then newest fork version. Returns `None` for
+/// legacy per-variant tags (`turboquant-<id>-<sha>`), which carry no monotonic
+/// component at all.
+fn unified_release_rank(version: &str) -> Option<(u32, u32, u32, u32)> {
+    let (build, fork_semver) = version.strip_prefix('b')?.split_once('-')?;
+    let build = build.parse::<u32>().ok()?;
+    let mut parts = fork_semver.split('.');
+    let major = parts.next()?.parse::<u32>().ok()?;
+    let minor = parts.next()?.parse::<u32>().ok()?;
+    let patch = parts.next()?.parse::<u32>().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((build, major, minor, patch))
+}
+
+fn compare_backend_versions_for_sort(
+    left: &BackendInfo,
+    right: &BackendInfo,
+) -> std::cmp::Ordering {
+    // Unified release tags are monotonic, so they decide directly, and any
+    // unified release outranks every legacy tag — moving to the unified train
+    // is always an upgrade.
+    match (
+        unified_release_rank(&left.version),
+        unified_release_rank(&right.version),
+    ) {
+        (Some(left_rank), Some(right_rank)) => {
+            let rank_cmp = right_rank.cmp(&left_rank);
+            if rank_cmp != std::cmp::Ordering::Equal {
+                return rank_cmp;
+            }
+        }
+        (Some(_), None) => return std::cmp::Ordering::Less,
+        (None, Some(_)) => return std::cmp::Ordering::Greater,
+        (None, None) => {}
+    }
+
+    // Legacy TurboQuant release tags (`turboquant-<id>-<sha>`) are NOT
+    // monotonic numbers, so numeric version comparison yields 0 for both and we
+    // fall through to install `order`. The numeric short-circuit below is kept
+    // for legacy janhq-style Windows ids (`win-*` with `bXXXX` numeric tags).
     if is_windows_backend(&left.backend) && is_windows_backend(&right.backend) {
         let left_version = parse_backend_version(left.version.clone());
         let right_version = parse_backend_version(right.version.clone());
@@ -270,7 +343,9 @@ pub async fn list_supported_backends(
     for entry in &remote_backend_versions {
         log::info!(
             "[list_supported_backends] remote: {}/{} order={}",
-            entry.version, entry.backend, entry.order
+            entry.version,
+            entry.backend,
+            entry.order
         );
     }
 
@@ -300,7 +375,9 @@ pub async fn list_supported_backends(
     for entry in &merged {
         log::info!(
             "[list_supported_backends] sorted: {}/{} order={}",
-            entry.version, entry.backend, entry.order
+            entry.version,
+            entry.backend,
+            entry.order
         );
     }
 
@@ -316,11 +393,14 @@ pub struct SupportedFeatures {
     cuda12: bool,
     cuda13: bool,
     vulkan: bool,
+    rocm: bool,
 }
 
 #[derive(Deserialize)]
 pub struct GpuInfo {
     driver_version: String,
+    #[serde(default)]
+    vendor: Option<String>,
     nvidia_info: Option<NvidiaInfo>,
     vulkan_info: Option<VulkanInfo>,
 }
@@ -333,6 +413,103 @@ pub struct NvidiaInfo {
 #[derive(Deserialize)]
 pub struct VulkanInfo {
     api_version: String,
+}
+
+/// GPU architectures the fork's `linux-x64-rocm` archive is compiled for —
+/// RDNA2 through RDNA4, i.e. gfx1030/1100/1101/1102/1151/1200/1201 — expressed
+/// as amdkfd `gfx_target_version` values (major * 10000 + minor * 100 + step).
+/// Older GCN cards are not in the build and must use Vulkan.
+const ROCM_SUPPORTED_GFX_TARGET_VERSIONS: &[u32] =
+    &[100300, 110000, 110100, 110200, 115100, 120000, 120100];
+
+fn is_amd_gpu(gpu: &GpuInfo) -> bool {
+    gpu.vendor
+        .as_deref()
+        .is_some_and(|v| v.eq_ignore_ascii_case("amd"))
+}
+
+/// The ROCm decision, kept free of I/O so the policy itself is testable.
+///
+/// Deliberately conservative: every input must be affirmative. An AMD card we
+/// cannot place in the supported architecture set, or a host without a ROCm
+/// runtime, yields `false` and the caller falls back to Vulkan — a slower but
+/// working GPU path beats an archive that aborts on load.
+fn rocm_supported(has_amd_gpu: bool, gfx_target_versions: &[u32], has_runtime: bool) -> bool {
+    has_amd_gpu
+        && has_runtime
+        && gfx_target_versions
+            .iter()
+            .any(|v| ROCM_SUPPORTED_GFX_TARGET_VERSIONS.contains(v))
+}
+
+/// Read the GPU architectures the amdgpu kernel driver exposes to ROCm, from
+/// `/sys/class/kfd/kfd/topology/nodes/*/properties`. Nodes that are not GPUs
+/// report `gfx_target_version 0` and are skipped. Reading sysfs keeps the probe
+/// free of a HIP link-time or runtime dependency.
+#[cfg(target_os = "linux")]
+fn amdkfd_gfx_target_versions() -> Vec<u32> {
+    let Ok(nodes) = fs::read_dir("/sys/class/kfd/kfd/topology/nodes") else {
+        return Vec::new();
+    };
+    let mut versions = Vec::new();
+    for node in nodes.flatten() {
+        let Ok(properties) = fs::read_to_string(node.path().join("properties")) else {
+            continue;
+        };
+        for line in properties.lines() {
+            let Some(value) = line.strip_prefix("gfx_target_version ") else {
+                continue;
+            };
+            if let Ok(version) = value.trim().parse::<u32>() {
+                if version != 0 {
+                    versions.push(version);
+                }
+            }
+        }
+    }
+    versions
+}
+
+#[cfg(not(target_os = "linux"))]
+fn amdkfd_gfx_target_versions() -> Vec<u32> {
+    Vec::new()
+}
+
+/// Whether a ROCm/HIP runtime is installed on the host. The archive links
+/// against `libamdhip64.so`, so its presence in a ROCm install prefix or on the
+/// default library path is the cheapest honest signal that the build can start.
+#[cfg(target_os = "linux")]
+fn host_has_rocm_runtime() -> bool {
+    const LIBRARY_DIRS: &[&str] = &[
+        "/opt/rocm/lib",
+        "/opt/rocm/lib64",
+        "/usr/lib/x86_64-linux-gnu",
+        "/usr/lib64",
+        "/usr/lib",
+    ];
+    if LIBRARY_DIRS
+        .iter()
+        .any(|dir| PathBuf::from(dir).join("libamdhip64.so").exists())
+    {
+        return true;
+    }
+    // Versioned side-by-side installs, e.g. /opt/rocm-6.2.0/lib.
+    let Ok(entries) = fs::read_dir("/opt") else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with("rocm-")
+            && (entry.path().join("lib/libamdhip64.so").exists()
+                || entry.path().join("lib64/libamdhip64.so").exists())
+    })
+}
+
+#[cfg(not(target_os = "linux"))]
+fn host_has_rocm_runtime() -> bool {
+    false
 }
 
 #[tauri::command]
@@ -349,7 +526,17 @@ pub fn get_supported_features(
         cuda12: false,
         cuda13: false,
         vulkan: false,
+        rocm: false,
     };
+
+    // The fork's ROCm archive is Linux-only.
+    if os_type == "linux" {
+        features.rocm = rocm_supported(
+            gpus.iter().any(is_amd_gpu),
+            &amdkfd_gfx_target_versions(),
+            host_has_rocm_runtime(),
+        );
+    }
 
     // https://docs.nvidia.com/deploy/cuda-compatibility/#cuda-11-and-later-defaults-to-minor-version-compatibility
     // Windows CUDA 13 floor is the NVIDIA-documented CUDA Toolkit 13.1 minimum
@@ -414,6 +601,57 @@ fn compare_versions(v1: &str, v2: &str) -> i32 {
     0
 }
 
+/// Copy Windows CUDA runtime DLLs (`cudart*`, `cublas*`, …) from one
+/// `build/bin` directory into another without removing the source.
+///
+/// Used by the TurboQuant provider to repair CUDA backends that shipped
+/// without their runtime DLLs by copying from an already-installed
+/// `llamacpp-upstream` CUDA bin (or any other donor directory). Prefixes
+/// are matched case-insensitively against the file stem+extension.
+#[tauri::command]
+pub async fn copy_backend_dlls(
+    src_dir: String,
+    dst_dir: String,
+    name_prefixes: Vec<String>,
+) -> Result<u32, String> {
+    use std::path::PathBuf;
+
+    let src = PathBuf::from(&src_dir);
+    let dst = PathBuf::from(&dst_dir);
+    if !src.is_dir() {
+        return Err(format!("source dir does not exist: {src_dir}"));
+    }
+    std::fs::create_dir_all(&dst).map_err(|e| format!("create {dst_dir}: {e}"))?;
+
+    let prefixes_lower: Vec<String> = name_prefixes
+        .iter()
+        .map(|p| p.to_ascii_lowercase())
+        .collect();
+
+    let mut copied = 0u32;
+    for entry in std::fs::read_dir(&src).map_err(|e| format!("read {src_dir}: {e}"))? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let lower = name.to_ascii_lowercase();
+        if !lower.ends_with(".dll") {
+            continue;
+        }
+        if !prefixes_lower.iter().any(|p| lower.starts_with(p.as_str())) {
+            continue;
+        }
+        let dest = dst.join(name);
+        std::fs::copy(&path, &dest).map_err(|e| format!("copy {name}: {e}"))?;
+        copied += 1;
+    }
+    Ok(copied)
+}
+
 #[tauri::command]
 pub async fn is_cuda_installed(
     backend_dir: String,
@@ -421,11 +659,11 @@ pub async fn is_cuda_installed(
     os_type: String,
     jan_data_folder_path: String,
 ) -> Result<bool, String> {
-    // TurboQuant CUDA archives bundle the cudart/cublas DLLs inside the
-    // backend's own `build/bin` (no separate cudart download, no legacy
-    // janhq migration path). We only need to confirm the runtime lib is
-    // present in that dir. `jan_data_folder_path` is unused now but kept in
-    // the command signature for IPC compatibility.
+    // Probe for the CUDA runtime lib in the backend's own `build/bin`.
+    // TurboQuant release zips *should* ship cudart/cublas inline; when they
+    // do not, the extension repairs via copy-from-upstream or a ggml-org
+    // companion download. `jan_data_folder_path` is unused but kept for IPC
+    // compatibility with the upstream plugin signature.
     let _ = jan_data_folder_path;
 
     // Resolve the cudart runtime lib name by CUDA major version. The `version`
@@ -510,6 +748,7 @@ pub async fn prioritize_backends(
             "cuda-cu13.0",
             "cuda-cu12.0",
             "cuda-cu11.7",
+            "rocm",
             "vulkan",
             "common_cpus",
             "avx512",
@@ -531,6 +770,7 @@ pub async fn prioritize_backends(
             "noavx",
             "arm64",
             "x64",
+            "rocm",
             "vulkan",
         ]
     };
@@ -587,6 +827,9 @@ fn get_backend_category(backend_string: &str) -> Option<String> {
     }
     if backend_string.contains("cuda-11") || backend_string.contains("cu11.7") {
         return Some("cuda-cu11.7".to_string());
+    }
+    if backend_string.contains("rocm") {
+        return Some("rocm".to_string());
     }
     if backend_string.contains("vulkan") {
         return Some("vulkan".to_string());
@@ -677,10 +920,7 @@ pub async fn check_backend_for_updates(
             target_backend: Some(target_backend_string),
         })
     } else {
-        log::info!(
-            "Already at latest version: {}",
-            current_backend_string
-        );
+        log::info!("Already at latest version: {}", current_backend_string);
         Ok(UpdateCheckResult {
             update_needed: false,
             new_version: "0".to_string(),
@@ -894,11 +1134,47 @@ fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> Result<(), String> {
             copy_dir_recursive(&src_path, &dst_path)?;
         } else {
             fs::copy(&src_path, &dst_path).map_err(|e| {
-                format!("copy {} → {}: {}", src_path.display(), dst_path.display(), e)
+                format!(
+                    "copy {} → {}: {}",
+                    src_path.display(),
+                    dst_path.display(),
+                    e
+                )
             })?;
         }
     }
     Ok(())
+}
+
+/// Returns true only when every file present under the resource `build/` tree
+/// also exists under the installed `build/` tree. Guards against a partially
+/// installed bundled backend - e.g. a pre-fix victim that has
+/// `build/bin/llama-server.exe` (so `is_backend_installed` reports true) but is
+/// missing sibling DLLs such as `llama-server-impl.dll` that a flat-extract CI
+/// step stranded. Missing destination dir/file => incomplete (false).
+fn bundled_backend_is_complete(resource_build: &PathBuf, target_build: &PathBuf) -> bool {
+    let entries = match fs::read_dir(resource_build) {
+        Ok(e) => e,
+        Err(_) => return false,
+    };
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => return false,
+        };
+        let src_path = entry.path();
+        let dst_path = target_build.join(entry.file_name());
+
+        if src_path.is_dir() {
+            if !bundled_backend_is_complete(&src_path, &dst_path) {
+                return false;
+            }
+        } else if !dst_path.exists() {
+            return false;
+        }
+    }
+    true
 }
 
 #[tauri::command]
@@ -917,8 +1193,15 @@ pub async fn install_bundled_backend<R: Runtime>(
 
     // Try Tauri resource resolution (works in production builds)
     for candidate in &["resources/llamacpp-backend", "llamacpp-backend"] {
-        if let Ok(p) = app.path().resolve(candidate, tauri::path::BaseDirectory::Resource) {
-            log::info!("[install_bundled_backend] Trying resource path '{}' → {}", candidate, p.display());
+        if let Ok(p) = app
+            .path()
+            .resolve(candidate, tauri::path::BaseDirectory::Resource)
+        {
+            log::info!(
+                "[install_bundled_backend] Trying resource path '{}' → {}",
+                candidate,
+                p.display()
+            );
             if p.join("version.txt").exists() {
                 resource_dir = Some(p);
                 break;
@@ -928,9 +1211,12 @@ pub async fn install_bundled_backend<R: Runtime>(
 
     // Dev mode fallback: resources live in src-tauri/resources/ relative to plugin crate
     if resource_dir.is_none() {
-        let dev_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../resources/llamacpp-backend");
-        log::info!("[install_bundled_backend] Trying dev fallback → {}", dev_path.display());
+        let dev_path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../resources/llamacpp-backend");
+        log::info!(
+            "[install_bundled_backend] Trying dev fallback → {}",
+            dev_path.display()
+        );
         if dev_path.join("version.txt").exists() {
             resource_dir = Some(dev_path);
         }
@@ -949,7 +1235,10 @@ pub async fn install_bundled_backend<R: Runtime>(
     let build_dir = resource_dir.join("build");
 
     if !version_file.exists() || !backend_file.exists() || !build_dir.exists() {
-        log::info!("[install_bundled_backend] Missing files at {}", resource_dir.display());
+        log::info!(
+            "[install_bundled_backend] Missing files at {}",
+            resource_dir.display()
+        );
         return not_bundled;
     }
 
@@ -970,12 +1259,26 @@ pub async fn install_bundled_backend<R: Runtime>(
     }
 
     let target_dir = PathBuf::from(&backends_dir).join(&version).join(&backend);
+    let target_build_dir = target_dir.join("build");
 
     if is_backend_installed(&target_dir) {
-        log::info!(
-            "[install_bundled_backend] Bundled backend already installed: {}/{}",
-            version, backend
-        );
+        // The exe is present, but a pre-fix flat-extract CI step may have
+        // stranded sibling DLLs (e.g. llama-server-impl.dll) at the resource
+        // root, leaving this install incomplete. Re-copy the resource build/
+        // tree to backfill the missing files instead of silently skipping.
+        if bundled_backend_is_complete(&build_dir, &target_build_dir) {
+            log::info!(
+                "[install_bundled_backend] Bundled backend already installed: {}/{}",
+                version,
+                backend
+            );
+        } else {
+            log::warn!(
+                "[install_bundled_backend] Bundled backend {}/{} present but incomplete; backfilling missing files",
+                version, backend
+            );
+            copy_dir_recursive(&build_dir, &target_build_dir)?;
+        }
         return Ok(BundledBackendResult {
             installed: true,
             backend_string: Some(format!("{}/{}", version, backend)),
@@ -986,10 +1289,11 @@ pub async fn install_bundled_backend<R: Runtime>(
 
     log::info!(
         "[install_bundled_backend] Installing bundled backend {}/{} from {}",
-        version, backend, resource_dir.display()
+        version,
+        backend,
+        resource_dir.display()
     );
 
-    let target_build_dir = target_dir.join("build");
     copy_dir_recursive(&build_dir, &target_build_dir)?;
 
     #[cfg(unix)]
@@ -1012,7 +1316,8 @@ pub async fn install_bundled_backend<R: Runtime>(
 
     log::info!(
         "[install_bundled_backend] Successfully installed bundled backend: {}/{}",
-        version, backend
+        version,
+        backend
     );
 
     Ok(BundledBackendResult {
@@ -1028,9 +1333,9 @@ pub async fn install_bundled_backend<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use filetime;
     use std::fs::File;
     use std::io::Write;
-    use filetime;
 
     // --- Tests for map_old_backend_to_new ---
 
@@ -1162,6 +1467,7 @@ mod tests {
         // Driver 525.60.13 supports CUDA 12 on Linux
         let gpus = vec![GpuInfo {
             driver_version: "530.00".to_string(),
+            vendor: Some("NVIDIA".to_string()),
             nvidia_info: Some(NvidiaInfo {
                 compute_capability: "8.0".to_string(),
             }),
@@ -1179,6 +1485,7 @@ mod tests {
     fn test_get_supported_features_vulkan() {
         let gpus = vec![GpuInfo {
             driver_version: "0.0".to_string(),
+            vendor: Some("AMD".to_string()),
             nvidia_info: None,
             vulkan_info: Some(VulkanInfo {
                 api_version: "1.3".to_string(),
@@ -1200,6 +1507,7 @@ mod tests {
             cuda12: true,
             cuda13: false,
             vulkan: true,
+            rocm: false,
         };
 
         let result =
@@ -1214,21 +1522,65 @@ mod tests {
     }
 
     #[test]
-    fn test_determine_supported_backends_linux_single_vulkan() {
+    fn test_determine_supported_backends_linux_full_matrix() {
         let features = SystemFeatures {
             cuda11: true,
             cuda12: true,
             cuda13: true,
             vulkan: true,
+            rocm: true,
         };
 
         let result =
             determine_supported_backends("linux".to_string(), "x86_64".to_string(), features)
                 .unwrap();
 
-        // Linux ships a single build that serves CPU+GPU; no CUDA-on-Linux build.
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0], "linux-x64-vulkan");
+        assert!(result.contains(&"linux-x64-cpu".to_string()));
+        assert!(result.contains(&"linux-x64-cuda-12.4".to_string()));
+        assert!(result.contains(&"linux-x64-cuda-13.3".to_string()));
+        assert!(result.contains(&"linux-x64-rocm".to_string()));
+        assert!(result.contains(&"linux-x64-vulkan".to_string()));
+        // The fork publishes no Linux CUDA-11 build.
+        assert!(!result.iter().any(|b| b.contains("cuda-11")));
+    }
+
+    #[test]
+    fn test_determine_supported_backends_linux_cpu_only_keeps_vulkan_fallback() {
+        let features = SystemFeatures {
+            cuda11: false,
+            cuda12: false,
+            cuda13: false,
+            vulkan: false,
+            rocm: false,
+        };
+
+        let result =
+            determine_supported_backends("linux".to_string(), "x86_64".to_string(), features)
+                .unwrap();
+
+        // The Vulkan build carries a portable CPU path and is what the
+        // installer bundles, so it stays offered even with no GPU at all.
+        assert_eq!(result, vec!["linux-x64-cpu", "linux-x64-vulkan"]);
+    }
+
+    #[test]
+    fn test_determine_supported_backends_linux_rocm_absent_without_probe() {
+        // An AMD host whose ROCm probe came back negative gets Vulkan, never a
+        // ROCm archive it cannot load.
+        let features = SystemFeatures {
+            cuda11: false,
+            cuda12: false,
+            cuda13: false,
+            vulkan: true,
+            rocm: false,
+        };
+
+        let result =
+            determine_supported_backends("linux".to_string(), "x86_64".to_string(), features)
+                .unwrap();
+
+        assert!(!result.contains(&"linux-x64-rocm".to_string()));
+        assert!(result.contains(&"linux-x64-vulkan".to_string()));
     }
 
     #[test]
@@ -1238,6 +1590,7 @@ mod tests {
             cuda12: false,
             cuda13: false,
             vulkan: false,
+            rocm: false,
         };
 
         let result =
@@ -1302,6 +1655,58 @@ mod tests {
         // Note: "v1.0.0" would fail to parse as u32 due to dots, returning 0
         assert_eq!(parse_backend_version("v1.0.0".to_string()), 0);
     }
+
+    // --- Tests for bundled_backend_is_complete ---
+
+    #[test]
+    fn test_bundled_backend_is_complete_full() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let resource_build = temp_dir.path().join("resource").join("build");
+        let target_build = temp_dir.path().join("target").join("build");
+
+        // Resource build/ carries exe + sibling DLL.
+        fs::create_dir_all(resource_build.join("bin")).unwrap();
+        File::create(resource_build.join("bin").join("llama-server.exe")).unwrap();
+        File::create(resource_build.join("bin").join("llama-server-impl.dll")).unwrap();
+
+        // Target mirrors it exactly.
+        fs::create_dir_all(target_build.join("bin")).unwrap();
+        File::create(target_build.join("bin").join("llama-server.exe")).unwrap();
+        File::create(target_build.join("bin").join("llama-server-impl.dll")).unwrap();
+
+        assert!(bundled_backend_is_complete(&resource_build, &target_build));
+    }
+
+    #[test]
+    fn test_bundled_backend_is_complete_missing_dll() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let resource_build = temp_dir.path().join("resource").join("build");
+        let target_build = temp_dir.path().join("target").join("build");
+
+        // Resource build/ carries exe + sibling DLL.
+        fs::create_dir_all(resource_build.join("bin")).unwrap();
+        File::create(resource_build.join("bin").join("llama-server.exe")).unwrap();
+        File::create(resource_build.join("bin").join("llama-server-impl.dll")).unwrap();
+
+        // Pre-fix victim: exe present, DLL stranded (missing in target).
+        fs::create_dir_all(target_build.join("bin")).unwrap();
+        File::create(target_build.join("bin").join("llama-server.exe")).unwrap();
+
+        assert!(!bundled_backend_is_complete(&resource_build, &target_build));
+    }
+
+    #[test]
+    fn test_bundled_backend_is_complete_missing_target_dir() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let resource_build = temp_dir.path().join("resource").join("build");
+        let target_build = temp_dir.path().join("target").join("build"); // never created
+
+        fs::create_dir_all(resource_build.join("bin")).unwrap();
+        File::create(resource_build.join("bin").join("llama-server.exe")).unwrap();
+
+        assert!(!bundled_backend_is_complete(&resource_build, &target_build));
+    }
+
     // --- Filesystem Integration Tests ---
 
     #[tokio::test]
@@ -1338,7 +1743,10 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].version, "b7523");
         assert_eq!(result[0].backend, "backend-a");
-        assert!(result[0].order > 0, "order should be set from directory mtime");
+        assert!(
+            result[0].order > 0,
+            "order should be set from directory mtime"
+        );
     }
 
     #[tokio::test]
@@ -1360,11 +1768,8 @@ mod tests {
 
         // Set old mtime (1 second in the past)
         let old_time = std::time::SystemTime::now() - std::time::Duration::from_secs(2);
-        filetime::set_file_mtime(
-            &backend_old,
-            filetime::FileTime::from_system_time(old_time),
-        )
-        .unwrap();
+        filetime::set_file_mtime(&backend_old, filetime::FileTime::from_system_time(old_time))
+            .unwrap();
 
         // Create newer backend
         let v_new = root.join("turboquant-macos-arm64-new");
@@ -1378,13 +1783,20 @@ mod tests {
 
         assert_eq!(result.len(), 2);
 
-        let old_entry = result.iter().find(|b| b.version == "turboquant-macos-arm64-old").unwrap();
-        let new_entry = result.iter().find(|b| b.version == "turboquant-macos-arm64-new").unwrap();
+        let old_entry = result
+            .iter()
+            .find(|b| b.version == "turboquant-macos-arm64-old")
+            .unwrap();
+        let new_entry = result
+            .iter()
+            .find(|b| b.version == "turboquant-macos-arm64-new")
+            .unwrap();
 
         assert!(
             new_entry.order > old_entry.order,
             "Newer backend (order={}) should have higher order than older (order={})",
-            new_entry.order, old_entry.order
+            new_entry.order,
+            old_entry.order
         );
     }
 
@@ -1471,6 +1883,33 @@ mod tests {
         assert!(installed, "12.4 should resolve cudart64_12.dll");
     }
 
+    #[tokio::test]
+    async fn test_copy_backend_dlls_copies_matching_prefixes_only() {
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+        File::create(src.path().join("cudart64_13.dll")).unwrap();
+        File::create(src.path().join("cublas64_13.dll")).unwrap();
+        File::create(src.path().join("cublasLt64_13.dll")).unwrap();
+        File::create(src.path().join("ggml-cuda.dll")).unwrap();
+        File::create(src.path().join("readme.txt")).unwrap();
+
+        let copied = copy_backend_dlls(
+            src.path().to_string_lossy().to_string(),
+            dst.path().to_string_lossy().to_string(),
+            vec!["cudart".into(), "cublas".into()],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(copied, 3);
+        assert!(dst.path().join("cudart64_13.dll").exists());
+        assert!(dst.path().join("cublas64_13.dll").exists());
+        assert!(dst.path().join("cublasLt64_13.dll").exists());
+        assert!(!dst.path().join("ggml-cuda.dll").exists());
+        // Source must remain intact — we copy, never move.
+        assert!(src.path().join("cudart64_13.dll").exists());
+    }
+
     // --- Tests for find_latest_version_for_backend ---
 
     #[test]
@@ -1502,6 +1941,54 @@ mod tests {
         );
     }
 
+    // Unified tags are monotonic, so they must beat install order the way
+    // numeric upstream tags always have — a freshly downloaded older release
+    // must not shadow a newer one.
+    #[test]
+    fn test_find_latest_version_prefers_the_newest_unified_release() {
+        let backends = vec![
+            BackendInfo {
+                version: "b10018-1.3.0".into(),
+                backend: "linux-x64-rocm".into(),
+                order: 1,
+            },
+            BackendInfo {
+                version: "b10018-1.2.9".into(),
+                backend: "linux-x64-rocm".into(),
+                order: 9,
+            },
+            BackendInfo {
+                version: "b9900-1.4.0".into(),
+                backend: "linux-x64-rocm".into(),
+                order: 8,
+            },
+        ];
+
+        let result = find_latest_version_for_backend(backends, "linux-x64-rocm".to_string());
+        assert_eq!(result, Some("b10018-1.3.0/linux-x64-rocm".to_string()));
+    }
+
+    // Legacy per-variant folders survive an upgrade, and moving to the unified
+    // train is always forward.
+    #[test]
+    fn test_find_latest_version_ranks_unified_above_legacy_tags() {
+        let backends = vec![
+            BackendInfo {
+                version: "turboquant-linux-x64-vulkan-bbbb".into(),
+                backend: "linux-x64-vulkan".into(),
+                order: 99,
+            },
+            BackendInfo {
+                version: "b10018-1.3.0".into(),
+                backend: "linux-x64-vulkan".into(),
+                order: 1,
+            },
+        ];
+
+        let result = find_latest_version_for_backend(backends, "linux-x64-vulkan".to_string());
+        assert_eq!(result, Some("b10018-1.3.0/linux-x64-vulkan".to_string()));
+    }
+
     #[test]
     fn test_find_latest_version_for_windows_backend_uses_version_not_order() {
         // Legacy janhq-style Windows ids carry numeric bXXXX tags → numeric sort
@@ -1519,8 +2006,7 @@ mod tests {
             },
         ];
 
-        let result =
-            find_latest_version_for_backend(backends, "windows-x64-cuda-12.4".to_string());
+        let result = find_latest_version_for_backend(backends, "windows-x64-cuda-12.4".to_string());
         assert_eq!(result, Some("b7525/windows-x64-cuda-12.4".to_string()));
     }
 

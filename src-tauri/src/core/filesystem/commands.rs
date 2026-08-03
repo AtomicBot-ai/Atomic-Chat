@@ -12,8 +12,7 @@ pub fn rm<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> Res
         return Err("rm error: Invalid argument".to_string());
     }
 
-    let jan_data_folder =
-        crate::core::app::commands::get_jan_data_folder_path(app_handle.clone());
+    let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app_handle.clone());
     let path = resolve_path(app_handle, &args[0]);
     let canonical_data = jan_data_folder.canonicalize().unwrap_or(jan_data_folder);
     let canonical_path = path.canonicalize().unwrap_or_else(|_| path.clone());
@@ -320,6 +319,109 @@ pub fn decompress<R: Runtime>(
     }
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn normalize_backend_layout<R: Runtime>(
+    app: tauri::AppHandle<R>,
+    output_dir: &str,
+    exe_name: &str,
+) -> Result<(), String> {
+    if output_dir.is_empty() || exe_name.is_empty() {
+        return Err("normalize_backend_layout error: Invalid argument".to_string());
+    }
+
+    let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
+    let output_dir_buf = jan_utils::normalize_path(&jan_data_folder.join(output_dir));
+    if !output_dir_buf.starts_with(&jan_data_folder) {
+        return Err(format!(
+            "Error: output directory {} is not under jan_data_folder {}",
+            output_dir_buf.to_string_lossy(),
+            jan_data_folder.to_string_lossy(),
+        ));
+    }
+
+    let build_bin_dir = output_dir_buf.join("build").join("bin");
+    let expected_bin = build_bin_dir.join(exe_name);
+    if expected_bin.exists() {
+        return Ok(());
+    }
+
+    let move_entry = |src: &std::path::Path, dst_dir: &std::path::Path| -> Result<(), String> {
+        let file_name = src
+            .file_name()
+            .ok_or_else(|| format!("Invalid backend entry path: {}", src.display()))?;
+        let dst = dst_dir.join(file_name);
+        if dst.exists() {
+            if dst.is_dir() {
+                fs::remove_dir_all(&dst).map_err(|e| e.to_string())?;
+            } else {
+                fs::remove_file(&dst).map_err(|e| e.to_string())?;
+            }
+        }
+        fs::rename(src, &dst).map_err(|e| {
+            format!(
+                "Failed to move backend entry {} -> {}: {}",
+                src.display(),
+                dst.display(),
+                e
+            )
+        })
+    };
+
+    let flat_bin = output_dir_buf.join(exe_name);
+    if flat_bin.exists() {
+        fs::create_dir_all(&build_bin_dir).map_err(|e| e.to_string())?;
+        for entry in fs::read_dir(&output_dir_buf).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let path = entry.path();
+            let file_name = path.file_name().and_then(|name| name.to_str());
+            if matches!(file_name, Some("build" | "version.txt" | "backend.txt")) {
+                continue;
+            }
+            move_entry(&path, &build_bin_dir)?;
+        }
+        return Ok(());
+    }
+
+    let nested_dir = fs::read_dir(&output_dir_buf)
+        .map_err(|e| e.to_string())?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.is_dir()
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with("llama-"))
+                && path.join(exe_name).exists()
+        });
+
+    if let Some(nested_dir) = nested_dir {
+        log::info!(
+            "Relocating nested backend layout {}/ into build/bin/",
+            nested_dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("nested")
+        );
+        fs::create_dir_all(&build_bin_dir).map_err(|e| e.to_string())?;
+        for entry in fs::read_dir(&nested_dir).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            move_entry(&entry.path(), &build_bin_dir)?;
+        }
+        fs::remove_dir_all(&nested_dir).map_err(|e| e.to_string())?;
+    }
+
+    if expected_bin.exists() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Backend extracted but {} was not found at expected path {}",
+            exe_name,
+            expected_bin.display()
+        ))
+    }
 }
 
 // rfd native file dialog

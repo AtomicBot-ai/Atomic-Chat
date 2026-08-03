@@ -22,6 +22,7 @@
   "recVisionKnowledge": "Зрение и знания",
   "recFinetuningChat": "Дообучение и чат",
   "recMathReasoning": "Математика и рассуждения",
+  "recCoding": "Программирование",
   "recForMlx": "Для MLX",
   "backToModels": "Назад к моделям"
 }

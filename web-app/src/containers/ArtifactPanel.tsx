@@ -26,8 +26,7 @@ export function ArtifactTrigger({
     update(id, code, streaming)
   }, [id, code, streaming, update])
 
-  // Closing tag marks completion even if the `streaming` flag stays stuck true.
-  const generating = streaming && !/<\/html>/i.test(code)
+  const generating = streaming
 
   // Auto-open once this artifact's first generation settles; skip historical blocks.
   const autoOpenedRef = useRef(false)

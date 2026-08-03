@@ -31,6 +31,9 @@ Object.defineProperty(globalThis, 'window', {
   },
 })
 
+vi.stubGlobal('IS_WINDOWS', false)
+vi.stubGlobal('IS_LINUX', false)
+
 vi.mock('../hardware', () => ({
   getSystemInfo: vi.fn(),
   getSystemUsage: vi.fn(),
@@ -39,6 +42,13 @@ vi.mock('../hardware', () => ({
 // Mock Tauri invoke function
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
+  Channel: vi.fn(),
+}))
+
+vi.mock('@tauri-apps/plugin-log', () => ({
+  info: vi.fn().mockResolvedValue(undefined),
+  warn: vi.fn().mockResolvedValue(undefined),
+  error: vi.fn().mockResolvedValue(undefined),
 }))
 
 // Mock Tauri path API
@@ -69,6 +79,26 @@ vi.mock('@janhq/core', () => ({
   chatCompletionRequest: {},
   events: {
     emit: vi.fn(),
+    on: vi.fn(),
+    off: vi.fn(),
+  },
+  AppEvent: {
+    onModelImported: 'onModelImported',
+    onBackendDownloadStarted: 'onBackendDownloadStarted',
+    onBackendDownloadFinished: 'onBackendDownloadFinished',
+    onBetterBackendDetected: 'onBetterBackendDetected',
+  },
+  DownloadEvent: {
+    onFileDownloadUpdate: 'onFileDownloadUpdate',
+    onFileDownloadError: 'onFileDownloadError',
+    onFileDownloadStopped: 'onFileDownloadStopped',
+    onModelValidationStarted: 'onModelValidationStarted',
+    onModelValidationFailed: 'onModelValidationFailed',
+    onFileDownloadAndVerificationSuccess:
+      'onFileDownloadAndVerificationSuccess',
+  },
+  ModelEvent: {
+    OnAutoIncreasedCtxLen: 'OnAutoIncreasedCtxLen',
   },
   AIEngine: vi.fn(),
 }))

@@ -24,6 +24,7 @@
   "recVisionKnowledge": "비전 및 지식",
   "recFinetuningChat": "파인튜닝 및 채팅",
   "recMathReasoning": "수학 및 추론",
+  "recCoding": "코딩",
   "recForMlx": "MLX용",
   "backToModels": "모델로 돌아가기",
   "fromHuggingFace": "Hugging Face에서",

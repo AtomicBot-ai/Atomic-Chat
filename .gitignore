@@ -44,6 +44,16 @@ Cargo.lock
 # Keep the desktop shell lockfile committed for reproducible CI builds
 !src-tauri/Cargo.lock
 src-tauri/resources/
+!src-tauri/resources/
+src-tauri/resources/*
+!src-tauri/resources/agent-skills/
+!src-tauri/resources/agent-skills/**
+!src-tauri/resources/llamacpp-backend/
+src-tauri/resources/llamacpp-backend/*
+!src-tauri/resources/llamacpp-backend/.gitkeep
+!src-tauri/resources/llamacpp-backend-upstream/
+src-tauri/resources/llamacpp-backend-upstream/*
+!src-tauri/resources/llamacpp-backend-upstream/.gitkeep
 src-tauri/resources/lib
 src-tauri/resources/bin
 src-tauri/icons/*

@@ -127,7 +127,10 @@ const DEFAULT_FILE_BASENAME = 'file'
  */
 const sanitizeFileBaseName = (name: string): string | null => {
   const cleaned = name
-    .replace(/[/\\:*?"<>|\u0000-\u001f]/g, ' ')
+    .split('')
+    .map((character) => (character.charCodeAt(0) <= 31 ? ' ' : character))
+    .join('')
+    .replace(/[/\\:*?"<>|]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
   return cleaned.length > 0 ? cleaned : null

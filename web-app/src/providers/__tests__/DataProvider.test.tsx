@@ -1,105 +1,249 @@
-import { render, screen, waitFor } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DataProvider } from '../DataProvider'
-import { RouterProvider, createRouter, createRootRoute, createMemoryHistory } from '@tanstack/react-router'
+import type { ServiceHub } from '@/services'
+import { seedServiceHub } from '@/test/service-hub'
 
-// Mock Tauri deep link
-vi.mock('@tauri-apps/plugin-deep-link', () => ({
-  onOpenUrl: vi.fn(),
-  getCurrent: vi.fn().mockResolvedValue([]),
+const mocks = vi.hoisted(() => ({
+  checkForUpdate: vi.fn(),
+  initializeWithLastUsed: vi.fn(),
+  navigate: vi.fn(),
+  setAssistants: vi.fn(),
+  setMessages: vi.fn(),
+  setProviders: vi.fn(),
+  setServerStatus: vi.fn(),
+  setServers: vi.fn(),
+  setSettings: vi.fn(),
+  setThreads: vi.fn(),
 }))
 
-// The services are handled by the global ServiceHub mock in test setup
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => mocks.navigate,
+}))
 
-// Mock hooks
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn().mockResolvedValue(vi.fn()),
+}))
+
 vi.mock('@/hooks/useThreads', () => ({
-  useThreads: vi.fn(() => ({
-    setThreads: vi.fn(),
-  })),
+  useThreads: () => ({ setThreads: mocks.setThreads }),
 }))
 
-vi.mock('@/hooks/useModelProvider', () => ({
-  useModelProvider: vi.fn(() => ({
-    setProviders: vi.fn(),
-  })),
-}))
+vi.mock('@/hooks/useModelProvider', () => {
+  const state = {
+    providers: [],
+    selectedModel: null,
+    selectedProvider: 'llamacpp-upstream',
+    getProviderByName: vi.fn(),
+    setProviders: mocks.setProviders,
+    updateProvider: vi.fn(),
+  }
+  const useModelProvider = () => ({ setProviders: mocks.setProviders })
+  useModelProvider.getState = () => state
+  return { useModelProvider }
+})
 
 vi.mock('@/hooks/useAssistant', () => ({
-  useAssistant: vi.fn(() => ({
-    setAssistants: vi.fn(),
-  })),
+  defaultAssistant: {
+    id: 'jan',
+    name: 'Atomic Chat',
+    description: '',
+    avatar: '',
+  },
+  useAssistant: () => ({
+    setAssistants: mocks.setAssistants,
+    initializeWithLastUsed: mocks.initializeWithLastUsed,
+  }),
 }))
 
 vi.mock('@/hooks/useMessages', () => ({
-  useMessages: vi.fn(() => ({
-    setMessages: vi.fn(),
-  })),
+  useMessages: () => ({ setMessages: mocks.setMessages }),
 }))
 
 vi.mock('@/hooks/useAppUpdater', () => ({
-  useAppUpdater: vi.fn(() => ({
-    checkForUpdate: vi.fn(),
-  })),
+  useAppUpdater: () => ({ checkForUpdate: mocks.checkForUpdate }),
 }))
 
 vi.mock('@/hooks/useMCPServers', () => ({
-  useMCPServers: vi.fn(() => ({
-    setServers: vi.fn(),
-    setSettings: vi.fn(),
-  })),
+  DEFAULT_MCP_SETTINGS: {
+    enabled: true,
+  },
+  useMCPServers: () => ({
+    setServers: mocks.setServers,
+    setSettings: mocks.setSettings,
+  }),
 }))
 
-// Mock the DataProvider to render children properly
-vi.mock('../DataProvider', () => ({
-  DataProvider: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="data-provider">{children}</div>
-  ),
+vi.mock('@/hooks/useAppState', () => {
+  const state = {
+    activeModels: [],
+    serverStatus: 'stopped',
+    setActiveModels: vi.fn(),
+    setServerStatus: mocks.setServerStatus,
+  }
+  const useAppState = (selector: (value: typeof state) => unknown) =>
+    selector(state)
+  useAppState.getState = () => state
+  return { useAppState }
+})
+
+vi.mock('@/hooks/useLocalApiServer', () => ({
+  useLocalApiServer: {
+    getState: () => ({
+      enableOnStartup: true,
+      serverHost: '127.0.0.1',
+      serverPort: 1337,
+      apiPrefix: '/v1',
+      apiKey: '',
+      trustedHosts: [],
+      corsEnabled: false,
+      verboseLogs: false,
+      proxyTimeout: 120,
+      setServerPort: vi.fn(),
+    }),
+  },
+}))
+
+vi.mock('@/hooks/useModelLoad', () => ({
+  useModelLoad: {
+    getState: () => ({ onboardingActive: false }),
+  },
+}))
+
+vi.mock('@/utils/registerRemoteProvider', () => ({
+  isKeylessRemoteProvider: () => false,
+  isLocalProvider: (provider: string) =>
+    ['llamacpp', 'llamacpp-upstream', 'mlx', 'foundation-models'].includes(
+      provider
+    ),
+  registerRemoteProvider: vi.fn(),
+  unregisterRemoteProvider: vi.fn(),
+}))
+
+vi.mock('@/utils/activeModelsSync', () => ({
+  hydrateActiveModelsForRunningServer: vi.fn(),
+}))
+
+vi.mock('@janhq/core', () => ({
+  AppEvent: { onModelImported: 'onModelImported' },
+  ModelEvent: { OnAutoIncreasedCtxLen: 'OnAutoIncreasedCtxLen' },
+  events: {
+    on: vi.fn(),
+    off: vi.fn(),
+  },
 }))
 
 describe('DataProvider', () => {
+  const providers = [
+    {
+      provider: 'openai',
+      active: false,
+      models: [],
+      settings: [],
+    },
+  ] as ModelProvider[]
+  const mcpConfig = {
+    mcpServers: { filesystem: { command: 'server' } },
+    mcpSettings: { enabled: false },
+  }
+  const assistants = [
+    {
+      id: 'assistant-1',
+      name: 'Test assistant',
+      description: '',
+      avatar: '',
+    },
+  ] as Assistant[]
+  const threads = [{ id: 'thread-1', title: 'Test thread' }] as Thread[]
+
+  const getProviders = vi.fn()
+  const getMCPConfig = vi.fn()
+  const getAssistants = vi.fn()
+  const getCurrent = vi.fn()
+  const onOpenUrl = vi.fn()
+  const listen = vi.fn()
+  const fetchThreads = vi.fn()
+  const getServerStatus = vi.fn()
+  const getActiveModels = vi.fn()
+
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
+    getProviders.mockResolvedValue(providers)
+    getMCPConfig.mockResolvedValue(mcpConfig)
+    getAssistants.mockResolvedValue(assistants)
+    getCurrent.mockResolvedValue([])
+    onOpenUrl.mockReturnValue(undefined)
+    listen.mockResolvedValue(vi.fn())
+    fetchThreads.mockResolvedValue(threads)
+    getServerStatus.mockResolvedValue(false)
+    getActiveModels.mockResolvedValue([])
+
+    seedServiceHub({
+      providers: {
+        getProviders,
+      } as unknown as ReturnType<ServiceHub['providers']>,
+      mcp: {
+        getMCPConfig,
+      } as unknown as ReturnType<ServiceHub['mcp']>,
+      assistants: {
+        getAssistants,
+      } as unknown as ReturnType<ServiceHub['assistants']>,
+      deeplink: {
+        getCurrent,
+        onOpenUrl,
+      } as unknown as ReturnType<ServiceHub['deeplink']>,
+      events: {
+        listen,
+      } as unknown as ReturnType<ServiceHub['events']>,
+      threads: {
+        fetchThreads,
+      } as unknown as ReturnType<ServiceHub['threads']>,
+      app: {
+        getServerStatus,
+      } as unknown as ReturnType<ServiceHub['app']>,
+      models: {
+        getActiveModels,
+      } as unknown as ReturnType<ServiceHub['models']>,
+    })
   })
 
-  const renderWithRouter = (children: React.ReactNode) => {
-    const rootRoute = createRootRoute({
-      component: () => (
-        <DataProvider>
-          {children}
-        </DataProvider>
-      ),
-    })
+  it('hydrates startup stores from service data while rendering no UI', async () => {
+    const { container, unmount } = render(<DataProvider />)
 
-    const router = createRouter({
-      routeTree: rootRoute,
-      history: createMemoryHistory({
-        initialEntries: ['/'],
-      }),
-    })
-    return render(<RouterProvider router={router} />)
-  }
-
-  it('initializes data on mount and renders without crashing', async () => {
-    // DataProvider initializes and renders children without errors
-    renderWithRouter(<div>Test Child</div>)
-    
+    expect(container).toBeEmptyDOMElement()
     await waitFor(() => {
-      expect(screen.getByText('Test Child')).toBeInTheDocument()
+      expect(mocks.setProviders).toHaveBeenCalledWith(providers)
+      expect(mocks.setServers).toHaveBeenCalledWith(mcpConfig.mcpServers)
+      expect(mocks.setSettings).toHaveBeenCalledWith(mcpConfig.mcpSettings)
+      expect(mocks.setAssistants).toHaveBeenCalledWith(assistants)
+      expect(mocks.initializeWithLastUsed).toHaveBeenCalledOnce()
+      expect(mocks.setThreads).toHaveBeenCalledWith(threads)
+      expect(getServerStatus).toHaveBeenCalledOnce()
+      expect(getActiveModels).toHaveBeenCalledOnce()
     })
+    unmount()
   })
 
-  it('handles multiple children correctly', () => {
-    const TestComponent1 = () => <div>Test Child 1</div>
-    const TestComponent2 = () => <div>Test Child 2</div>
+  it('routes a startup deep link through the production parser', async () => {
+    const navigations: unknown[] = []
+    mocks.navigate.mockImplementation((destination) => {
+      navigations.push(destination)
+    })
+    getCurrent.mockResolvedValue([
+      'atomic-chat://models/huggingface/owner/model-GGUF',
+    ])
+    const { unmount } = render(<DataProvider />)
 
-    render(
-      <DataProvider>
-        <TestComponent1 />
-        <TestComponent2 />
-      </DataProvider>
-    )
-
-    expect(screen.getByText('Test Child 1')).toBeInTheDocument()
-    expect(screen.getByText('Test Child 2')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(navigations).toEqual([
+        {
+          to: '/hub/$modelId',
+          params: { modelId: 'owner/model-GGUF' },
+          search: { repo: 'owner/model-GGUF' },
+        },
+      ])
+    })
+    unmount()
   })
 })

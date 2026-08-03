@@ -1,6 +1,30 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import llamacpp_extension from '../index'
 
+vi.mock('@tauri-apps/plugin-log', () => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}))
+
+vi.mock(
+  '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index',
+  async () => {
+    const actual = await vi.importActual<
+      typeof import('../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index')
+    >('../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index')
+
+    return {
+      ...actual,
+      readGgufMetadata: vi.fn().mockResolvedValue({
+        version: 3,
+        tensor_count: 1,
+        metadata: { 'general.architecture': 'llama' },
+      }),
+    }
+  }
+)
+
 describe('migrateLegacyModels', () => {
   let extension: llamacpp_extension
 
@@ -249,6 +273,9 @@ describe('migrateLegacyModels', () => {
       const migrateSpy = vi
         .spyOn(extension as any, 'migrateLegacyModels')
         .mockResolvedValue(undefined)
+      vi.spyOn(extension as any, 'resolveEmbeddingConfig').mockResolvedValue(
+        false
+      )
 
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockImplementation((paths) =>

@@ -7,6 +7,8 @@ import {
   formatMegaBytes,
   formatDuration,
   getModelDisplayName,
+  withTimeout,
+  OPERATION_TIMED_OUT_CODE,
 } from '../utils'
 
 describe('getProviderLogo', () => {
@@ -30,7 +32,7 @@ describe('getProviderLogo', () => {
 
 describe('getProviderTitle', () => {
   it('returns formatted titles for special providers', () => {
-    expect(getProviderTitle('llamacpp')).toBe('Atomic Llama.cpp Turboquant')
+    expect(getProviderTitle('llamacpp')).toBe('Llama.cpp Turboquant')
     expect(getProviderTitle('openai')).toBe('OpenAI')
     expect(getProviderTitle('openrouter')).toBe('OpenRouter')
     expect(getProviderTitle('gemini')).toBe('Gemini')
@@ -250,5 +252,42 @@ describe('getModelDisplayName', () => {
       displayName: 'Model (Version 2.0) - Fine-tuned',
     } as Model
     expect(getModelDisplayName(model)).toBe('Model (Version 2.0) - Fine-tuned')
+  })
+})
+
+describe('withTimeout', () => {
+  it('resolves with the underlying value when it settles before the deadline', async () => {
+    const result = await withTimeout(
+      Promise.resolve('done'),
+      1000,
+      'should not time out'
+    )
+    expect(result).toBe('done')
+  })
+
+  it('rejects with the underlying error when it settles before the deadline', async () => {
+    await expect(
+      withTimeout(
+        Promise.reject(new Error('boom')),
+        1000,
+        'should not time out'
+      )
+    ).rejects.toThrow('boom')
+  })
+
+  it('rejects with a timeout error carrying OPERATION_TIMED_OUT_CODE when the promise never settles in time', async () => {
+    vi.useFakeTimers()
+    try {
+      const neverSettles = new Promise<never>(() => {})
+      const race = withTimeout(neverSettles, 5000, 'timed out waiting')
+      const assertion = expect(race).rejects.toMatchObject({
+        message: 'timed out waiting',
+        code: OPERATION_TIMED_OUT_CODE,
+      })
+      await vi.advanceTimersByTimeAsync(5000)
+      await assertion
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
