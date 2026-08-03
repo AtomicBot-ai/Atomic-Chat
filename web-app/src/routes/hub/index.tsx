@@ -982,7 +982,7 @@ function HubContent() {
                       return (
                         <div
                           key={key}
-                          className="bg-card rounded-2xl border border-border px-[18px] py-4 shadow-sm"
+                          className="min-h-[90px] bg-card rounded-2xl border border-border px-[18px] py-4 shadow-sm"
                         >
                           <div className="flex items-center gap-2 min-w-0">
                             <h1

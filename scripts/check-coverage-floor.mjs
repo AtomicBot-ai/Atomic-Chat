@@ -48,8 +48,11 @@ function normalizePath(path) {
 
 function collectSummaries() {
   const collected = new Map()
-  for (const path of summaryRoots) {
-    if (!existsSync(path)) continue
+  const existingSummaries = summaryRoots
+    .filter((path) => existsSync(path))
+    .sort((left, right) => statSync(left).mtimeMs - statSync(right).mtimeMs)
+
+  for (const path of existingSummaries) {
     const summary = JSON.parse(readFileSync(path, 'utf8'))
     for (const [sourcePath, metrics] of Object.entries(summary)) {
       if (sourcePath === 'total') continue

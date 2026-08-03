@@ -8,7 +8,15 @@ import {
 } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
-import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  memo,
+} from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -155,6 +163,8 @@ const ChatInput = memo(function ChatInput({
   chatStatus,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const agentSkillTokenRef = useRef<HTMLSpanElement>(null)
+  const [agentSkillTokenWidth, setAgentSkillTokenWidth] = useState(0)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
   const serviceHub = useServiceHub()
@@ -218,6 +228,10 @@ const ChatInput = memo(function ChatInput({
     (state) => state.approvalModes[agentModeKey] ?? 'manual'
   )
   const setApprovalMode = useAgentMode((state) => state.setApprovalMode)
+
+  useLayoutEffect(() => {
+    setAgentSkillTokenWidth(agentSkillTokenRef.current?.offsetWidth ?? 0)
+  }, [selectedAgentSkill])
 
   useEffect(() => {
     if (!isAgentProviderSelected && isAgentMode) {
@@ -2401,14 +2415,15 @@ const ChatInput = memo(function ChatInput({
                   onActiveIndexChange={setAgentSkillActiveIndex}
                 />
               )}
-              <div className="flex w-full items-start gap-2 px-4 pt-3">
+              <div className="relative min-w-0 w-full px-4 pt-3">
                 {selectedAgentSkill && (
-                  <div
-                    className="inline-flex shrink-0 text-sm font-medium leading-6 text-blue-600 dark:text-blue-400"
+                  <span
+                    ref={agentSkillTokenRef}
+                    className="pointer-events-none absolute left-4 top-3 whitespace-nowrap text-sm font-medium leading-6 text-blue-600 dark:text-blue-400"
                     data-testid="agent-skill-inline-token"
                   >
-                    <span>/{selectedAgentSkill.name}</span>
-                  </div>
+                    /{selectedAgentSkill.name}
+                  </span>
                 )}
                 <TextareaAutosize
                   dir="auto"
@@ -2509,8 +2524,13 @@ const ChatInput = memo(function ChatInput({
                   data-gramm={spellCheckChatInput}
                   data-gramm_editor={spellCheckChatInput}
                   data-gramm_grammarly={spellCheckChatInput}
+                  style={{
+                    textIndent: selectedAgentSkill
+                      ? `${agentSkillTokenWidth + 8}px`
+                      : undefined,
+                  }}
                   className={cn(
-                    'min-w-0 flex-1 resize-none border-none bg-transparent p-0 text-sm leading-6 outline-0',
+                    'block min-w-0 w-full resize-none border-none bg-transparent p-0 text-sm leading-6 outline-0 break-words',
                     rows < maxRows && 'scrollbar-hide',
                     className
                   )}
