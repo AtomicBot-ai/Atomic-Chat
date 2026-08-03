@@ -22,6 +22,7 @@ export function hasValidProviders(providers: ProviderLike[]): boolean {
     return Boolean(
       provider.api_key?.length ||
         (provider.provider === 'llamacpp' && provider.models.length) ||
+        (provider.provider === 'llamacpp-upstream' && provider.models.length) ||
         (provider.provider === 'jan' && provider.models.length)
     )
   })

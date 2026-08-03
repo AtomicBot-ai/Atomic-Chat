@@ -56,6 +56,7 @@ import {
 } from '@/utils/registerRemoteProvider'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 import {
+  IconAlertTriangle,
   IconFolderPlus,
   IconLoader,
   IconRefresh,
@@ -63,6 +64,7 @@ import {
   IconSearch,
   IconUpload,
 } from '@tabler/icons-react'
+import { useBackendMismatch } from '@/hooks/useBackendMismatch'
 import { toast } from 'sonner'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -83,6 +85,8 @@ import { useAppState } from '@/hooks/useAppState'
 import { useShallow } from 'zustand/shallow'
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
 import { AppEvent, EngineManager, events } from '@janhq/core'
+import debounce from 'lodash.debounce'
+import { restartLocalModel } from '@/utils/restartLocalModel'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -97,6 +101,7 @@ export const Route = createFileRoute('/settings/providers/$providerName')({
 
 function ProviderDetail() {
   const { t } = useTranslation()
+  const { providerName } = useParams({ from: Route.id })
   const serviceHub = useServiceHub()
   const { setModelLoadError } = useModelLoad()
   const [activeModels, setActiveModels] = useAppState(
@@ -106,28 +111,37 @@ function ProviderDetail() {
   const [refreshingModels, setRefreshingModels] = useState(false)
   const [isInstallingBackend, setIsInstallingBackend] = useState(false)
   const [isRecheckingBackend, setIsRecheckingBackend] = useState(false)
-  /// Mirrors `localStorage.llama_cpp_pending_backend` so the provider
-  /// settings page can surface a "restart to activate" pill next to
-  /// the (still-old) `version_backend` value once a recommended GPU
-  /// backend has finished downloading. Updated reactively via
+  /// localStorage key holding the pending backend of the provider this page
+  /// shows. Each llama provider writes its own key, so reading the upstream
+  /// one on the turboquant page would show a foreign backend as pending.
+  const pendingBackendKey =
+    providerName === 'llamacpp'
+      ? 'turboquant_pending_backend'
+      : 'llama_cpp_pending_backend'
+  /// Mirrors the provider's pending-backend key so the provider settings
+  /// page can surface a "restart to activate" pill next to the (still-old)
+  /// `version_backend` value once a recommended GPU backend has finished
+  /// downloading. Updated reactively via
   /// `AppEvent.onBackendDownloadFinished` so the user gets feedback
   /// without having to refresh.
   const [pendingBackend, setPendingBackend] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null
-    const raw = localStorage.getItem('llama_cpp_pending_backend')
+    const raw = localStorage.getItem(pendingBackendKey)
     return raw ? raw.replace(/\uFEFF/g, '').trim() : null
   })
 
   useEffect(() => {
     const refresh = () => {
-      const raw = localStorage.getItem('llama_cpp_pending_backend')
+      const raw = localStorage.getItem(pendingBackendKey)
       setPendingBackend(raw ? raw.replace(/\uFEFF/g, '').trim() : null)
     }
-    const onFinished = (payload: { status: string }) => {
+    refresh()
+    const onFinished = (payload: { status: string; provider?: string }) => {
+      if ((payload?.provider ?? LOCAL_LLAMACPP_PROVIDER) !== providerName) return
       if (payload?.status === 'completed') refresh()
     }
-    /// Hot-swap path: the extension already cleared
-    /// `llama_cpp_pending_backend` and updated `version_backend` settings.
+    /// Hot-swap path: the extension already cleared its pending key and
+    /// updated `version_backend` settings.
     /// Drop the pill immediately and pull fresh provider settings so the
     /// `version_backend` row reflects the new value without a tab refresh.
     ///
@@ -136,7 +150,9 @@ function ProviderDetail() {
     /// `useModelProvider()` — that destructuring happens later in the
     /// component body, so referencing it here would hit a TDZ
     /// `ReferenceError` on the very first render.
-    const onHotswapped = () => {
+    const onHotswapped = (event: Event) => {
+      const detail = (event as CustomEvent<{ provider?: string }>).detail
+      if ((detail?.provider ?? LOCAL_LLAMACPP_PROVIDER) !== providerName) return
       setPendingBackend(null)
       void serviceHub
         .providers()
@@ -156,7 +172,7 @@ function ProviderDetail() {
       window.removeEventListener('storage', refresh)
       window.removeEventListener('app:backend-hotswapped', onHotswapped)
     }
-  }, [serviceHub])
+  }, [serviceHub, providerName, pendingBackendKey])
 
   const handleRestartForPendingBackend = useCallback(async () => {
     try {
@@ -209,7 +225,6 @@ function ProviderDetail() {
       modelId: string
       options: LlamacppDflashDraftOption[]
     } | null>(null)
-  const { providerName } = useParams({ from: Route.id })
   /// The turboquant provider (`llamacpp`) ships alongside upstream on
   /// Windows/Linux. Each owns its own backend tree + localStorage keys, so
   /// the updater must be configured per-provider to avoid cross-contamination
@@ -235,9 +250,66 @@ function ProviderDetail() {
     recommendationPhase,
     selectManualBackend,
   } = useBackendUpdater(backendUpdaterConfig)
+  /// The last load may have run on a backend other than the one selected here
+  /// (a silent in-memory swap, or a GPU build that fell back to the CPU). Show
+  /// that truth next to the dropdown instead of letting the stale selection
+  /// speak for the running process.
+  const { pending: backendMismatch } = useBackendMismatch()
+  const runningBackendNotice = useMemo(() => {
+    if (!backendMismatch || backendMismatch.provider !== providerName) {
+      return null
+    }
+    const { mismatch } = backendMismatch
+    if (mismatch.kind === 'silent-fallback') {
+      return t('settings:backendMismatch.actuallyRunning', {
+        backend: mismatch.effective,
+      })
+    }
+    if (mismatch.kind === 'runtime-cpu') {
+      return mismatch.total
+        ? t('settings:backendMismatch.actuallyRunningCpuLayers', {
+            offloaded: mismatch.offloaded ?? 0,
+            total: mismatch.total,
+          })
+        : t('settings:backendMismatch.actuallyRunningDevice', {
+            device: mismatch.primaryDevice,
+          })
+    }
+    return null
+  }, [backendMismatch, providerName, t])
   const navigate = useNavigate()
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
   const provider = getProviderByName(providerName)
+  const providerSettingsWriteRef = useRef<Promise<void>>(Promise.resolve())
+  const debouncedRestartLlamacppModel = useMemo(
+    () =>
+      debounce(async (targetProvider: string) => {
+        try {
+          await providerSettingsWriteRef.current
+          const loadedModels = await serviceHub
+            .models()
+            .getActiveModels(targetProvider)
+          const activeModel = loadedModels[0]
+          if (activeModel) {
+            await restartLocalModel(serviceHub, targetProvider, activeModel)
+          }
+        } catch (error) {
+          console.error(
+            'Failed to apply provider settings to the running model:',
+            error
+          )
+        }
+      }, 500),
+    [serviceHub]
+  )
+
+  useEffect(
+    () => () => {
+      debouncedRestartLlamacppModel.cancel()
+    },
+    [debouncedRestartLlamacppModel]
+  )
+
   const hasDownloadedModels =
     (provider?.models.filter((m) => m.id !== EMBEDDING_MODEL_ID).length ?? 0) >
     0
@@ -1440,7 +1512,7 @@ function ProviderDetail() {
       if (provider?.provider !== 'llamacpp-upstream' || !provider) return
       if (isTogglingLlamacppMtp) return
 
-      const writeSetting = (key: string, value: unknown) => {
+      const writeSetting = async (key: string, value: unknown) => {
         const next = provider.settings.map((s) =>
           s.key === key
             ? {
@@ -1452,7 +1524,7 @@ function ProviderDetail() {
               }
             : s
         )
-        serviceHub.providers().updateSettings(providerName, next)
+        await serviceHub.providers().updateSettings(providerName, next)
         updateProvider(providerName, { ...provider, settings: next })
       }
 
@@ -1503,9 +1575,9 @@ function ProviderDetail() {
               await engine.ensureGemmaMtpDraft?.(activeModel)
             }
           }
-          writeSetting('mtp', true)
+          await writeSetting('mtp', true)
         } else {
-          writeSetting('mtp', false)
+          await writeSetting('mtp', false)
         }
 
         /// Auto-restart the live session so the new --spec-type draft-mtp
@@ -1513,12 +1585,7 @@ function ProviderDetail() {
         /// running — the next manual start will pick up the flag.
         if (activeModel) {
           try {
-            await engine.unload?.(activeModel)
-          } catch (e) {
-            console.warn('Failed to unload before MTP restart:', e)
-          }
-          try {
-            await engine.load?.(activeModel)
+            await restartLocalModel(serviceHub, providerName, activeModel)
           } catch (e) {
             console.error('Failed to reload after MTP toggle:', e)
             toast.error(errTitle, {
@@ -2217,17 +2284,42 @@ function ProviderDetail() {
                                 }
                               }
 
+                              updateProvider(providerName, {
+                                ...provider,
+                                ...updateObj,
+                              })
+
+                              if (
+                                settingKey !== 'version_backend' &&
+                                (providerName === 'llamacpp' ||
+                                  providerName === 'llamacpp-upstream')
+                              ) {
+                                providerSettingsWriteRef.current =
+                                  providerSettingsWriteRef.current
+                                    .catch((error) => {
+                                      console.error(
+                                        'Previous provider settings update failed:',
+                                        error
+                                      )
+                                    })
+                                    .then(() =>
+                                      serviceHub
+                                        .providers()
+                                        .updateSettings(
+                                          providerName,
+                                          updateObj.settings ?? []
+                                        )
+                                    )
+                                debouncedRestartLlamacppModel(providerName)
+                                return
+                              }
+
                               serviceHub
                                 .providers()
                                 .updateSettings(
                                   providerName,
                                   updateObj.settings ?? []
                                 )
-                              updateProvider(providerName, {
-                                ...provider,
-                                ...updateObj,
-                              })
-
                               serviceHub.models().stopAllModels()
 
                               // Refresh active models after stopping. Use
@@ -2307,6 +2399,13 @@ function ProviderDetail() {
                               </div>
                             )}
                           {setting.key === 'version_backend' &&
+                            runningBackendNotice && (
+                              <div className="mt-1 flex items-center gap-1.5 text-sm text-amber-600 dark:text-amber-500">
+                                <IconAlertTriangle size={14} />
+                                <span>{runningBackendNotice}</span>
+                              </div>
+                            )}
+                          {setting.key === 'version_backend' &&
                             (provider?.provider === 'llamacpp' ||
                               provider?.provider === 'llamacpp-upstream' ||
                               provider?.provider === 'mlx') && (
@@ -2383,7 +2482,7 @@ function ProviderDetail() {
                             )}
                           {/* Pending-backend banner: appears as soon as
                               the just-downloaded backend is sitting in
-                              `llama_cpp_pending_backend` and waiting
+                              this provider's pending key and waiting
                               for `activatePendingBackend()` on the
                               next launch. The `version_backend`
                               setting itself can't be hot-swapped while
@@ -2392,7 +2491,8 @@ function ProviderDetail() {
                               between "I clicked Find optimal" and "I
                               restarted the app". */}
                           {setting.key === 'version_backend' &&
-                            provider?.provider === 'llamacpp' &&
+                            (provider?.provider === 'llamacpp' ||
+                              provider?.provider === LOCAL_LLAMACPP_PROVIDER) &&
                             pendingBackend && (
                               <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-dashed border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-xs">
                                 <span className="font-medium text-emerald-600 dark:text-emerald-400">

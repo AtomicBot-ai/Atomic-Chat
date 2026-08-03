@@ -110,11 +110,13 @@ function emitModelLoad(
   }
 }
 
-// Local providers whose models are served by on-device engines (llamacpp /
-// llamacpp-upstream / mlx). Foundation Models is deliberately excluded here
-// because it has its own lifecycle plumbing and does not participate in the
-// generic start/stop flow.
-const LOCAL_PROVIDERS = ['llamacpp', 'llamacpp-upstream', 'mlx'] as const
+// Local providers whose models are served by on-device engines.
+const LOCAL_PROVIDERS = [
+  'llamacpp',
+  'llamacpp-upstream',
+  'mlx',
+  'foundation-models',
+] as const
 type LocalProviderName = (typeof LOCAL_PROVIDERS)[number]
 
 function isLocalEngineProvider(providerName: string): boolean {
@@ -252,29 +254,10 @@ function clearModelLoadError() {
 }
 
 /**
- * Window event dispatched after the first successful model launch on the
- * turboquant (`llamacpp`) provider on Windows/Linux. The dialog mounted in
- * `__root.tsx` listens for it to offer a one-time "find optimal backend"
- * prompt. The once-ever guard lives in the dialog (it sets the localStorage
- * flag when shown); this helper only fires when the flag is still unset.
+ * Legacy event name retained for the dormant once-ever Turboquant dialog.
+ * Startup detection now feeds the shared chat mismatch prompt instead.
  */
 export const TURBOQUANT_OPTIMAL_PROMPT_EVENT = 'turboquant:offer-optimal-backend'
-
-function maybePromptTurboquantOptimal(providerName: string) {
-  // Turboquant ships a backend catalog to optimize only on Windows/Linux
-  // (macOS has the single `macos-arm64` build).
-  if (!(IS_WINDOWS || IS_LINUX)) return
-  if (providerName !== 'llamacpp') return
-  if (typeof window === 'undefined') return
-  try {
-    if (localStorage.getItem(localStorageKey.turboquantOptimalPromptShown)) {
-      return
-    }
-  } catch {
-    return
-  }
-  window.dispatchEvent(new CustomEvent(TURBOQUANT_OPTIMAL_PROMPT_EVENT))
-}
 
 function syncModelSelection(providerName: string, modelId: string) {
   const serverState = useLocalApiServer.getState()
@@ -398,7 +381,6 @@ export async function switchToModel(params: {
       clearAutoStartFailure(params.providerName, params.modelId)
       // ATO-63: the model is up — drop any stale "Failed to load" toast.
       clearModelLoadError()
-      maybePromptTurboquantOptimal(params.providerName)
       console.log(
         '[switchToModel] Target already active, skipping restart:',
         params.modelId,
@@ -454,6 +436,40 @@ async function doSwitchToModel(params: {
   // "Starting Server" spinner before snapping back to 'stopped'.
   const shouldStartServer =
     !isLocal || serverState.enableOnStartup || wasServerRunning
+
+  const startLocalApiServer = async (): Promise<void> => {
+    let actualPort: number | undefined
+    try {
+      const startServerCall = window.core?.api?.startServer({
+        host: serverState.serverHost,
+        port: serverState.serverPort,
+        prefix: serverState.apiPrefix,
+        apiKey: serverState.apiKey,
+        trustedHosts: serverState.trustedHosts,
+        isCorsEnabled: serverState.corsEnabled,
+        isVerboseEnabled: serverState.verboseLogs,
+        proxyTimeout: serverState.proxyTimeout,
+      }) as Promise<number> | undefined
+      actualPort = startServerCall
+        ? await taggedWithTimeout(
+            startServerCall,
+            SERVER_START_WATCHDOG_MS,
+            'Timed out waiting for the Local API Server to start.'
+          )
+        : undefined
+    } catch (startErr) {
+      const msg =
+        startErr instanceof Error ? startErr.message : String(startErr)
+      if (!msg.includes('already running')) throw startErr
+    }
+
+    console.log('[switchToModel] Server started on port:', actualPort)
+
+    if (actualPort && actualPort !== serverState.serverPort) {
+      serverState.setServerPort(actualPort)
+    }
+    setServerStatus('running')
+  }
 
   setServerStatus(shouldStartServer ? 'pending' : 'stopped')
   updateLoadingModel(true)
@@ -538,37 +554,7 @@ async function doSwitchToModel(params: {
     //    they start it regardless of the toggle (see `shouldStartServer`
     //    computed up front).
     if (shouldStartServer) {
-      let actualPort: number | undefined
-      try {
-        const startServerCall = window.core?.api?.startServer({
-          host: serverState.serverHost,
-          port: serverState.serverPort,
-          prefix: serverState.apiPrefix,
-          apiKey: serverState.apiKey,
-          trustedHosts: serverState.trustedHosts,
-          isCorsEnabled: serverState.corsEnabled,
-          isVerboseEnabled: serverState.verboseLogs,
-          proxyTimeout: serverState.proxyTimeout,
-        }) as Promise<number> | undefined
-        actualPort = startServerCall
-          ? await taggedWithTimeout(
-              startServerCall,
-              SERVER_START_WATCHDOG_MS,
-              'Timed out waiting for the Local API Server to start.'
-            )
-          : undefined
-      } catch (startErr) {
-        const msg =
-          startErr instanceof Error ? startErr.message : String(startErr)
-        if (!msg.includes('already running')) throw startErr
-      }
-
-      console.log('[switchToModel] Server started on port:', actualPort)
-
-      if (actualPort && actualPort !== serverState.serverPort) {
-        serverState.setServerPort(actualPort)
-      }
-      setServerStatus('running')
+      await startLocalApiServer()
     } else {
       // Local model + auto-start disabled + server wasn't running: keep the
       // Local API Server down. The local engine already serves this chat on
@@ -598,12 +584,25 @@ async function doSwitchToModel(params: {
     // ATO-63: a previous backend may have raised a persistent "Failed to load"
     // toast; this load succeeded, so dismiss it and clear the stored error.
     clearModelLoadError()
-    maybePromptTurboquantOptimal(providerName)
-
     console.log('[switchToModel] Global state synchronised')
   } catch (error) {
     console.error('[switchToModel] Failed to switch model:', error)
-    useAppState.getState().setServerStatus('stopped')
+    if (wasServerRunning) {
+      try {
+        await startLocalApiServer()
+        console.log(
+          '[switchToModel] Restored Local API Server after switch failure'
+        )
+      } catch (restoreError) {
+        console.error(
+          '[switchToModel] Failed to restore Local API Server:',
+          restoreError
+        )
+        useAppState.getState().setServerStatus('stopped')
+      }
+    } else {
+      useAppState.getState().setServerStatus('stopped')
+    }
     // WS2: record the failure so the auto-start effect doesn't re-loop on it —
     // terminal codes (missing model/binary) are never auto-retried; others back
     // off. Explicit user switches bypass `shouldAttemptAutoStart`, so a manual

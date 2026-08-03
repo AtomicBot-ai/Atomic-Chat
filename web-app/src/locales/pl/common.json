@@ -242,7 +242,7 @@
   },
   "projects": {
     "title": "Projekty",
-    "new": "Nowe Projekty",
+    "new": "Nowy Projekt",
     "addProject": "Dodaj Projekt",
     "addToProject": "Dodaj do projektu",
     "removeFromProject": "Usuń z projektu",

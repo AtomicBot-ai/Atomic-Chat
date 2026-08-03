@@ -1,7 +1,27 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import llamacpp_extension from '../index'
+import llamacpp_extension, {
+  BACKEND_DETECTION_FAILED,
+  OPTIMAL_BACKEND_CACHE_KEY,
+} from '../index'
 
-import { normalizeLlamacppConfig } from '@janhq/tauri-plugin-llamacpp-upstream-api'
+import {
+  getSupportedFeaturesFromRust,
+  loadLlamaModel,
+  mapOldBackendToNew,
+  normalizeLlamacppConfig,
+  readGgufMetadata,
+  removeOldBackendVersions,
+  unloadLlamaModel,
+} from '../../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index'
+import {
+  getBackendDir,
+  isBackendInstalled,
+  listSupportedBackends,
+} from '../backend'
+import { getSystemInfo } from '../hardware'
+import { fs, joinPath } from '@janhq/core'
+import { invoke } from '@tauri-apps/api/core'
+import { basename } from '@tauri-apps/api/path'
 
 // Mock fetch globally
 global.fetch = vi.fn()
@@ -20,23 +40,44 @@ vi.mock('../backend', () => ({
   getBackendDir: vi.fn(),
 }))
 
-// Mock tauri-plugin-llamacpp-api (partial mock)
-vi.mock('@janhq/tauri-plugin-llamacpp-upstream-api', async () => {
-  const actual = await vi.importActual<
-    typeof import('@janhq/tauri-plugin-llamacpp-upstream-api')
-  >('@janhq/tauri-plugin-llamacpp-upstream-api')
+vi.mock('../hardware', () => ({
+  getSystemInfo: vi.fn(),
+  getSystemUsage: vi.fn(),
+}))
 
-  return {
-    ...actual,
-    mapOldBackendToNew: vi.fn(),
-    removeOldBackendVersions: vi.fn(),
+// The extension imports the guest bridge by relative path, so mock that exact
+// module rather than the package alias.
+vi.mock(
+  '../../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index',
+  async () => {
+    const actual = await vi.importActual<
+      typeof import('../../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index')
+    >(
+      '../../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index'
+    )
+
+    return {
+      ...actual,
+      getSupportedFeaturesFromRust: vi.fn(),
+      loadLlamaModel: vi.fn(),
+      mapOldBackendToNew: vi.fn(),
+      readGgufMetadata: vi.fn(),
+      removeOldBackendVersions: vi.fn(),
+      unloadLlamaModel: vi.fn(),
+    }
   }
-})
+)
+
 describe('llamacpp_extension', () => {
   let extension: llamacpp_extension
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(readGgufMetadata).mockResolvedValue({
+      version: 3,
+      tensor_count: 1,
+      metadata: { 'general.architecture': 'llama' },
+    } as any)
     extension = new llamacpp_extension()
   })
 
@@ -46,9 +87,330 @@ describe('llamacpp_extension', () => {
 
   describe('constructor', () => {
     it('should initialize with correct default values', () => {
-      expect(extension.provider).toBe('llamacpp')
-      expect(extension.providerId).toBe('llamacpp')
-      expect(extension.autoUnload).toBe(true)
+      expect(extension.provider).toBe('llamacpp-upstream')
+      expect(extension.providerId).toBe('llamacpp-upstream')
+      expect(extension.autoUnload).toBe(false)
+    })
+  })
+
+  describe('installBackend', () => {
+    it('normalizes an upstream macOS tarball before validating it', async () => {
+      const archivePath = '/downloads/llama-b9702-bin-macos-arm64.tar.gz'
+      const backendDir = '/data/llamacpp-upstream/backends/b9702/macos-arm64'
+      const expectedBin = `${backendDir}/build/bin/llama-server`
+
+      vi.mocked(basename).mockResolvedValue(
+        'llama-b9702-bin-macos-arm64.tar.gz'
+      )
+      vi.mocked(getBackendDir).mockResolvedValue(backendDir)
+      vi.mocked(joinPath).mockImplementation(async (parts: string[]) =>
+        parts.join('/')
+      )
+      vi.mocked(fs.existsSync).mockImplementation(
+        (path: string) => path === archivePath || path === expectedBin
+      )
+      vi.mocked(mapOldBackendToNew).mockResolvedValue('macos-arm64')
+      extension['config'] = {} as any
+      extension['configureBackends'] = vi.fn().mockResolvedValue(undefined)
+      extension['setStoredBackendType'] = vi.fn()
+      extension['getSettings'] = vi.fn().mockResolvedValue([])
+      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+
+      await extension.installBackend(archivePath)
+
+      expect(invoke).toHaveBeenNthCalledWith(1, 'decompress', {
+        path: archivePath,
+        outputDir: backendDir,
+      })
+      expect(invoke).toHaveBeenNthCalledWith(2, 'normalize_backend_layout', {
+        outputDir: backendDir,
+        exeName: 'llama-server',
+      })
+      expect(fs.rm).not.toHaveBeenCalled()
+    })
+
+    it('rejects an import when normalization leaves no llama-server binary', async () => {
+      const archivePath = '/downloads/llama-b9702-bin-macos-arm64.tar.gz'
+      const backendDir = '/data/llamacpp-upstream/backends/b9702/macos-arm64'
+
+      vi.mocked(basename).mockResolvedValue(
+        'llama-b9702-bin-macos-arm64.tar.gz'
+      )
+      vi.mocked(getBackendDir).mockResolvedValue(backendDir)
+      vi.mocked(joinPath).mockImplementation(async (parts: string[]) =>
+        parts.join('/')
+      )
+      vi.mocked(fs.existsSync).mockImplementation(
+        (path: string) => path === archivePath
+      )
+
+      await expect(extension.installBackend(archivePath)).rejects.toThrow(
+        'Missing llama-server binary'
+      )
+      expect(fs.rm).toHaveBeenCalledWith(backendDir)
+    })
+  })
+
+  describe('hardware backend recommendation', () => {
+    const discreteGpu = {
+      name: 'Test GPU',
+      total_memory: 12 * 1024,
+      vendor: 'Test',
+      uuid: 'gpu-1',
+      driver_version: '1',
+      vulkan_info: { device_type: 'DiscreteGpu' },
+    }
+
+    it('selects the published CUDA 13 asset on a supported Windows host', async () => {
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'windows',
+        os_name: 'Windows',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [{ ...discreteGpu, nvidia_info: {} }],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: false,
+        cuda12: true,
+        cuda13: true,
+        vulkan: true,
+      })
+      vi.mocked(listSupportedBackends).mockResolvedValue([
+        { version: 'b10205', backend: 'win-cpu-x64', order: 0 },
+        { version: 'b10205', backend: 'win-cuda-12.4-x64', order: 0 },
+        { version: 'b10205', backend: 'win-cuda-13.3-x64', order: 0 },
+        { version: 'b10205', backend: 'win-vulkan-x64', order: 0 },
+      ])
+      vi.spyOn(extension as any, 'tierEnumeratesDevices').mockResolvedValue(
+        'works'
+      )
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'gpu',
+        backend: 'win-cuda-13.3-x64',
+      })
+    })
+
+    it('uses Vulkan for a Linux NVIDIA host and ignores CUDA flags', async () => {
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'linux',
+        os_name: 'Linux',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [{ ...discreteGpu, nvidia_info: {} }],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: true,
+        cuda12: true,
+        cuda13: true,
+        vulkan: true,
+      })
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'gpu',
+        backend: 'linux-vulkan-x64',
+      })
+      expect(listSupportedBackends).not.toHaveBeenCalled()
+    })
+
+    /// Paired with the turboquant test of the same host, which picks
+    /// `linux-x64-rocm`. Upstream publishes no ROCm build, so a positive ROCm
+    /// probe must not pull this provider off Vulkan: the optimal backend
+    /// belongs to a provider's release, not to the GPU.
+    it('stays on Vulkan for a ROCm-capable AMD Linux host', async () => {
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'linux',
+        os_name: 'Linux',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [{ ...discreteGpu, vendor: 'AMD', nvidia_info: undefined }],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: false,
+        cuda12: false,
+        cuda13: false,
+        rocm: true,
+        vulkan: true,
+      } as any)
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'gpu',
+        backend: 'linux-vulkan-x64',
+      })
+      expect(listSupportedBackends).not.toHaveBeenCalled()
+    })
+
+    it('keeps an integrated-only Vulkan host on CPU', async () => {
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'linux',
+        os_name: 'Linux',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [
+          {
+            ...discreteGpu,
+            name: 'Integrated GPU',
+            nvidia_info: undefined,
+            vulkan_info: { device_type: 'IntegratedGpu' },
+          },
+        ],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: false,
+        cuda12: false,
+        cuda13: false,
+        vulkan: true,
+      })
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'cpu-optimal',
+      })
+    })
+
+    /// A modern AMD/Intel iGPU reports its share of system RAM as Vulkan
+    /// DEVICE_LOCAL memory, so it clears the 6 GiB bar that stands in for "a
+    /// real graphics card". Only `device_type` separates it from a discrete GPU,
+    /// and Vulkan on such a host is slower than plain CPU inference.
+    const integratedGpu = (name: string, vendor: string, vramMiB: number) => ({
+      name,
+      vendor,
+      total_memory: vramMiB,
+      uuid: `igpu-${vendor}`,
+      driver_version: 'fixture',
+      nvidia_info: undefined,
+      vulkan_info: { device_type: 'IntegratedGpu' },
+    })
+
+    it.each([
+      { name: 'AMD Radeon 780M', vendor: 'AMD', vram: 16 * 1024 },
+      { name: 'Intel Arc 140V', vendor: 'Intel', vram: 8 * 1024 },
+      { name: 'Intel UHD Graphics 770', vendor: 'Intel', vram: 32 * 1024 },
+    ])(
+      'keeps a Windows host with only a $name on CPU despite its large shared VRAM',
+      async (igpu) => {
+        vi.mocked(getSystemInfo).mockResolvedValue({
+          os_type: 'windows',
+          os_name: 'Windows',
+          total_memory: 64 * 1024,
+          cpu: { arch: 'x86_64', extensions: [] },
+          gpus: [integratedGpu(igpu.name, igpu.vendor, igpu.vram)],
+        } as any)
+        vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+          cuda11: false,
+          cuda12: false,
+          cuda13: false,
+          vulkan: true,
+        })
+        // The Vulkan asset is published, so CPU here is a decision about the
+        // hardware, not a missing release artefact.
+        vi.mocked(listSupportedBackends).mockResolvedValue([
+          { version: 'b10205', backend: 'win-cpu-x64', order: 0 },
+          { version: 'b10205', backend: 'win-vulkan-x64', order: 0 },
+        ])
+        const probe = vi.spyOn(extension as any, 'tierEnumeratesDevices')
+
+        await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+          kind: 'cpu-optimal',
+        })
+        // No tier is worth probing, so no llama-server is spawned.
+        expect(probe).not.toHaveBeenCalled()
+      }
+    )
+
+    it('still recommends CUDA on a hybrid laptop with an iGPU beside the dGPU', async () => {
+      // The integrated-only guard must not fire just because an iGPU is
+      // enumerated first — laptops report both.
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'windows',
+        os_name: 'Windows',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [
+          integratedGpu('Intel Iris Xe', 'Intel', 16 * 1024),
+          { ...discreteGpu, nvidia_info: {} },
+        ],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: false,
+        cuda12: true,
+        cuda13: true,
+        vulkan: true,
+      })
+      vi.mocked(listSupportedBackends).mockResolvedValue([
+        { version: 'b10205', backend: 'win-cpu-x64', order: 0 },
+        { version: 'b10205', backend: 'win-cuda-13.3-x64', order: 0 },
+        { version: 'b10205', backend: 'win-vulkan-x64', order: 0 },
+      ])
+      vi.spyOn(extension as any, 'tierEnumeratesDevices').mockResolvedValue(
+        'works'
+      )
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'gpu',
+        backend: 'win-cuda-13.3-x64',
+      })
+    })
+
+    it('recommends Vulkan for a discrete AMD card with no CUDA tier', async () => {
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'windows',
+        os_name: 'Windows',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [
+          integratedGpu('AMD Radeon 780M', 'AMD', 16 * 1024),
+          {
+            name: 'AMD Radeon RX 7900 XTX',
+            vendor: 'AMD',
+            total_memory: 24 * 1024,
+            uuid: 'dgpu-amd',
+            driver_version: 'fixture',
+            nvidia_info: undefined,
+            vulkan_info: { device_type: 'DiscreteGpu' },
+          },
+        ],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: false,
+        cuda12: false,
+        cuda13: false,
+        vulkan: true,
+      })
+      vi.mocked(listSupportedBackends).mockResolvedValue([
+        { version: 'b10205', backend: 'win-cpu-x64', order: 0 },
+        { version: 'b10205', backend: 'win-vulkan-x64', order: 0 },
+      ])
+      vi.spyOn(extension as any, 'tierEnumeratesDevices').mockResolvedValue(
+        'works'
+      )
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'gpu',
+        backend: 'win-vulkan-x64',
+      })
+    })
+
+    it('reports detection failure when a Windows GPU tier has no release asset', async () => {
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'windows',
+        os_name: 'Windows',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [{ ...discreteGpu, nvidia_info: {} }],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: false,
+        cuda12: true,
+        cuda13: true,
+        vulkan: false,
+      })
+      vi.mocked(listSupportedBackends).mockResolvedValue([
+        { version: 'b10205', backend: 'win-cpu-x64', order: 0 },
+      ])
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'detection-failed',
+      })
     })
   })
 
@@ -146,10 +508,11 @@ describe('llamacpp_extension', () => {
         return Promise.resolve(paths.join('/'))
       })
 
-      vi.mocked(fs.existsSync)
-        .mockResolvedValueOnce(true) // modelsDir exists
-        .mockResolvedValueOnce(false) // model.yml doesn't exist at modelsDir level
-        .mockResolvedValueOnce(true) // model.yml exists in test-model dir
+      vi.mocked(fs.existsSync).mockImplementation(async (path: string) => {
+        if (path === modelsDir) return true
+        if (path === `${modelsDir}/test-model/model.yml`) return true
+        return false
+      })
 
       vi.mocked(fs.readdirSync).mockResolvedValue(['test-model'])
       vi.mocked(fs.fileStat).mockResolvedValue({
@@ -161,22 +524,19 @@ describe('llamacpp_extension', () => {
         model_path: 'test-model/model.gguf',
         name: 'Test Model',
         size_bytes: 1000000,
+        embedding: false,
       })
 
       const result = await extension.list()
 
-      // Note: There's a bug in the original code where it pushes just the child name
-      // instead of the full path, causing the model ID to be empty
-      expect(result).toEqual([
-        {
-          id: '', // This should be 'test-model' but the original code has a bug
-          name: 'Test Model',
-          quant_type: undefined,
-          providerId: 'llamacpp',
-          port: 0,
-          sizeBytes: 1000000,
-        },
-      ])
+      expect(result).toHaveLength(1)
+      expect(result[0]).toMatchObject({
+        id: 'test-model',
+        name: 'Test Model',
+        providerId: 'llamacpp-upstream',
+        sizeBytes: 1000000,
+        embedding: false,
+      })
     })
   })
 
@@ -234,8 +594,7 @@ describe('llamacpp_extension', () => {
 
   describe('load', () => {
     it('should throw error if model is already loaded', async () => {
-      // Mock that model is already loaded
-      extension['activeSessions'].set(123, {
+      extension['findSessionByModel'] = vi.fn().mockResolvedValue({
         model_id: 'test-model',
         pid: 123,
         port: 3000,
@@ -251,11 +610,6 @@ describe('llamacpp_extension', () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
       const { invoke } = await import('@tauri-apps/api/core')
 
-      // Mock system info for getBackendExePath
-      const getSystemInfo = vi.fn().mockResolvedValue({
-        os_type: 'linux',
-      })
-
       // Mock backend functions to avoid download
       const backendModule = await import('../backend')
       vi.mocked(backendModule.isBackendInstalled).mockResolvedValue(true)
@@ -265,6 +619,10 @@ describe('llamacpp_extension', () => {
 
       // Mock fs for backend check
       vi.mocked(fs.existsSync).mockResolvedValue(true)
+      vi.mocked(fs.fileStat).mockResolvedValue({
+        isDirectory: false,
+        size: 1000000,
+      })
 
       // Mock configuration
       extension['config'] = {
@@ -298,6 +656,8 @@ describe('llamacpp_extension', () => {
 
       // Set up providerPath
       extension['providerPath'] = '/path/to/jan/llamacpp'
+      extension['findSessionByModel'] = vi.fn().mockResolvedValue(undefined)
+      extension['getLoadedModels'] = vi.fn().mockResolvedValue([])
 
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockImplementation((paths) =>
@@ -313,13 +673,13 @@ describe('llamacpp_extension', () => {
           size_bytes: 1000000,
         })
         .mockResolvedValueOnce('test-api-key') // generate_api_key
-        .mockResolvedValueOnce({
-          // load_llama_model
-          model_id: 'test-model',
-          pid: 123,
-          port: 3000,
-          api_key: 'test-api-key',
-        })
+
+      vi.mocked(loadLlamaModel).mockResolvedValue({
+        model_id: 'test-model',
+        pid: 123,
+        port: 3000,
+        api_key: 'test-api-key',
+      } as any)
 
       // Mock successful health check
       global.fetch = vi.fn().mockResolvedValue({
@@ -336,7 +696,7 @@ describe('llamacpp_extension', () => {
         api_key: 'test-api-key',
       })
 
-      expect(extension['activeSessions'].get(123)).toEqual({
+      expect(extension['sessionCache'].get('test-model')).toEqual({
         model_id: 'test-model',
         pid: 123,
         port: 3000,
@@ -356,14 +716,14 @@ describe('llamacpp_extension', () => {
       const { invoke } = await import('@tauri-apps/api/core')
 
       // Set up active session
-      extension['activeSessions'].set(123, {
+      extension['sessionCache'].set('test-model', {
         model_id: 'test-model',
         pid: 123,
         port: 3000,
         api_key: 'test-key',
       })
 
-      vi.mocked(invoke).mockResolvedValue({
+      vi.mocked(unloadLlamaModel).mockResolvedValue({
         success: true,
         error: null,
       })
@@ -375,7 +735,7 @@ describe('llamacpp_extension', () => {
         error: null,
       })
 
-      expect(extension['activeSessions'].has(123)).toBe(false)
+      expect(extension['sessionCache'].has('test-model')).toBe(false)
     })
   })
 
@@ -395,7 +755,7 @@ describe('llamacpp_extension', () => {
       const { invoke } = await import('@tauri-apps/api/core')
 
       // Set up active session
-      extension['activeSessions'].set(123, {
+      extension['sessionCache'].set('test-model', {
         model_id: 'test-model',
         pid: 123,
         port: 3000,
@@ -676,19 +1036,8 @@ describe('llamacpp_extension', () => {
 
   describe('getLoadedModels', () => {
     it('should return list of loaded models', async () => {
-      extension['activeSessions'].set(123, {
-        model_id: 'model1',
-        pid: 123,
-        port: 3000,
-        api_key: 'key1',
-      })
-
-      extension['activeSessions'].set(456, {
-        model_id: 'model2',
-        pid: 456,
-        port: 3001,
-        api_key: 'key2',
-      })
+      const { invoke } = await import('@tauri-apps/api/core')
+      vi.mocked(invoke).mockResolvedValue(['model1', 'model2'])
 
       const result = await extension.getLoadedModels()
 
@@ -773,9 +1122,6 @@ describe('llamacpp_extension', () => {
         vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
         vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/backends')
 
-        const { mapOldBackendToNew, removeOldBackendVersions } = await import(
-          '@janhq/tauri-plugin-llamacpp-upstream-api'
-        )
         vi.mocked(mapOldBackendToNew).mockResolvedValue('linux-avx2-x64')
         vi.mocked(removeOldBackendVersions).mockResolvedValue([])
 
@@ -837,9 +1183,6 @@ describe('llamacpp_extension', () => {
         vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
         vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/backends')
 
-        const { mapOldBackendToNew, removeOldBackendVersions } = await import(
-          '@janhq/tauri-plugin-llamacpp-upstream-api'
-        )
         vi.mocked(mapOldBackendToNew).mockResolvedValue('linux-avx2-x64')
         vi.mocked(removeOldBackendVersions).mockResolvedValue([])
 
@@ -866,9 +1209,6 @@ describe('llamacpp_extension', () => {
         vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
         vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/backends')
 
-        const { mapOldBackendToNew, removeOldBackendVersions } = await import(
-          '@janhq/tauri-plugin-llamacpp-upstream-api'
-        )
         vi.mocked(mapOldBackendToNew).mockResolvedValue('linux-avx2-x64')
         vi.mocked(removeOldBackendVersions).mockResolvedValue([])
 
@@ -931,6 +1271,567 @@ describe('llamacpp_extension', () => {
           'llamacpp',
           'backends',
         ])
+      })
+    })
+  })
+
+  describe('backend replacement', () => {
+    const RECOMMENDED = 'b10205/win-cuda-13.3-x64'
+
+    /**
+     * `updateBackend` fans out to the settings store, the stored-type
+     * preference and the guest bridge. Stub all of it so these tests can
+     * assert *what ends up persisted* and *in which order*.
+     */
+    const stubUpdateBackendDeps = async (storedType: string) => {
+      extension['ensureBackendReady'] = vi.fn().mockResolvedValue(undefined)
+      extension['ensureBackendOption'] = vi.fn().mockResolvedValue(undefined)
+      extension['getStoredBackendType'] = vi.fn().mockReturnValue(storedType)
+      extension['setStoredBackendType'] = vi.fn()
+      extension['getSettings'] = vi
+        .fn()
+        .mockResolvedValue([
+          { key: 'version_backend', controllerProps: { value: '' } },
+        ])
+      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+
+      const { getJanDataFolderPath, joinPath } = await import('@janhq/core')
+      vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
+      vi.mocked(joinPath).mockResolvedValue(
+        '/path/to/jan/llamacpp-upstream/backends'
+      )
+      vi.mocked(mapOldBackendToNew).mockImplementation(async (b: string) => b)
+      vi.mocked(removeOldBackendVersions).mockResolvedValue([])
+    }
+
+    const persistedVersionBackend = () => {
+      const calls = vi.mocked(extension['updateSettings']).mock.calls
+      const settings = calls[calls.length - 1]?.[0] as any[] | undefined
+      return settings?.find((s) => s.key === 'version_backend')?.controllerProps
+        .value
+    }
+
+    beforeEach(() => {
+      vi.stubGlobal('IS_MAC', false)
+      vi.stubGlobal('IS_WINDOWS', false)
+      vi.mocked(localStorage.getItem).mockReset()
+      vi.mocked(localStorage.setItem).mockReset()
+      vi.mocked(localStorage.removeItem).mockReset()
+      extension['config'] = {
+        version_backend: 'b9800/win-cpu-x64',
+        device: '',
+      } as any
+    })
+
+    afterEach(() => {
+      delete (window as any).dispatchEvent
+    })
+
+    describe('enforcePinnedBackendVersion', () => {
+      it('moves the selected backend type to the validated release', async () => {
+        extension['config'] = {
+          version_backend: 'b9937/win-cuda-13.3-x64',
+        } as any
+        extension.downloadRecommendedBackend = vi
+          .fn()
+          .mockResolvedValue(undefined)
+
+        await extension['enforcePinnedBackendVersion']()
+
+        expect(extension.downloadRecommendedBackend).toHaveBeenCalledWith(
+          'b10205/win-cuda-13.3-x64'
+        )
+      })
+
+      it('leaves the validated release alone', async () => {
+        extension['config'] = { version_backend: RECOMMENDED } as any
+        extension.downloadRecommendedBackend = vi
+          .fn()
+          .mockResolvedValue(undefined)
+
+        await extension['enforcePinnedBackendVersion']()
+
+        expect(extension.downloadRecommendedBackend).not.toHaveBeenCalled()
+      })
+
+      it('keeps the working backend when the pinned download fails', async () => {
+        const current = 'b9937/win-vulkan-x64'
+        extension['config'] = { version_backend: current } as any
+        extension.downloadRecommendedBackend = vi
+          .fn()
+          .mockRejectedValue(new Error('asset unavailable'))
+
+        await expect(
+          extension['enforcePinnedBackendVersion']()
+        ).resolves.toBeUndefined()
+        expect(extension['config'].version_backend).toBe(current)
+      })
+    })
+
+    describe('version update', () => {
+      it('bumps the version and keeps the backend type', async () => {
+        await stubUpdateBackendDeps('win-cuda-13.3-x64')
+        extension['config'] = {
+          version_backend: 'b9800/win-cuda-13.3-x64',
+          device: '',
+        } as any
+
+        const result = await extension.updateBackend(RECOMMENDED)
+
+        expect(result).toEqual({ wasUpdated: true, newBackend: RECOMMENDED })
+        expect(extension['ensureBackendReady']).toHaveBeenCalledWith(
+          'win-cuda-13.3-x64',
+          'b10205'
+        )
+        expect(persistedVersionBackend()).toBe(RECOMMENDED)
+        expect(extension['config'].version_backend).toBe(RECOMMENDED)
+        // The type is unchanged, so the stored preference must be left alone.
+        expect(extension['setStoredBackendType']).not.toHaveBeenCalled()
+      })
+
+      it('records the new type when the update also switches tier', async () => {
+        await stubUpdateBackendDeps('win-cpu-x64')
+
+        await extension.updateBackend(RECOMMENDED)
+
+        expect(persistedVersionBackend()).toBe(RECOMMENDED)
+        expect(extension['setStoredBackendType']).toHaveBeenCalledWith(
+          'win-cuda-13.3-x64'
+        )
+      })
+
+      it('offers the freshly installed version as a dropdown option', async () => {
+        await stubUpdateBackendDeps('win-cuda-13.3-x64')
+
+        await extension.updateBackend(RECOMMENDED)
+
+        expect(extension['ensureBackendOption']).toHaveBeenCalledWith(
+          RECOMMENDED
+        )
+      })
+    })
+
+    describe('applyBackendLive', () => {
+      it('persists the new backend before unloading any model', async () => {
+        const order: string[] = []
+        extension['getLoadedModels'] = vi.fn().mockResolvedValue(['m1', 'm2'])
+        extension.updateBackend = vi.fn(async () => {
+          order.push('updateBackend')
+          return { wasUpdated: true, newBackend: RECOMMENDED }
+        })
+        extension.unload = vi.fn(async (modelId: string) => {
+          order.push(`unload:${modelId}`)
+          return { success: true } as any
+        })
+        ;(window as any).dispatchEvent = vi.fn()
+
+        await extension['applyBackendLive'](RECOMMENDED)
+
+        // An unload flips the model to stopped, which makes the web app
+        // auto-reload it; the new backend has to be committed by then.
+        expect(order).toEqual(['updateBackend', 'unload:m1', 'unload:m2'])
+        expect(localStorage.removeItem).toHaveBeenCalledWith(
+          'llama_cpp_pending_backend'
+        )
+
+        const event = vi.mocked((window as any).dispatchEvent).mock
+          .calls[0][0] as CustomEvent
+        expect(event.type).toBe('app:backend-hotswapped')
+        // The detail names its provider so the turboquant popup ignores this
+        // swap instead of completing on it.
+        expect(event.detail).toEqual({
+          backend: RECOMMENDED,
+          provider: 'llamacpp-upstream',
+          version: 'b10205',
+          backendId: 'win-cuda-13.3-x64',
+        })
+      })
+
+      it('keeps loaded models alive when the swap cannot be persisted', async () => {
+        extension['getLoadedModels'] = vi.fn().mockResolvedValue(['m1'])
+        extension.updateBackend = vi.fn().mockResolvedValue({
+          wasUpdated: false,
+          newBackend: 'b9800/win-cpu-x64',
+        })
+        extension.unload = vi.fn()
+
+        await expect(
+          extension['applyBackendLive'](RECOMMENDED)
+        ).rejects.toThrow(/wasUpdated=false/)
+
+        expect(extension.unload).not.toHaveBeenCalled()
+        expect(localStorage.removeItem).not.toHaveBeenCalledWith(
+          'llama_cpp_pending_backend'
+        )
+      })
+
+      it('still swaps when the loaded-model probe fails', async () => {
+        extension['getLoadedModels'] = vi
+          .fn()
+          .mockRejectedValue(new Error('server unreachable'))
+        extension.updateBackend = vi
+          .fn()
+          .mockResolvedValue({ wasUpdated: true, newBackend: RECOMMENDED })
+        extension.unload = vi.fn()
+
+        await extension['applyBackendLive'](RECOMMENDED)
+
+        expect(extension.updateBackend).toHaveBeenCalledWith(RECOMMENDED)
+        expect(extension.unload).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('downloadRecommendedBackend', () => {
+      it('marks the backend pending before downloading, then swaps to it', async () => {
+        const order: string[] = []
+        vi.mocked(localStorage.setItem).mockImplementation((key: string) => {
+          order.push(`pending:${key}`)
+        })
+        extension['downloadAndInstallBackend'] = vi.fn(async () => {
+          order.push('download')
+        })
+        extension['applyBackendLive'] = vi.fn(async (backend: string) => {
+          order.push(`apply:${backend}`)
+        })
+
+        await extension.downloadRecommendedBackend(RECOMMENDED)
+
+        expect(order).toEqual([
+          'pending:llama_cpp_pending_backend',
+          'download',
+          `apply:${RECOMMENDED}`,
+        ])
+        expect(localStorage.removeItem).toHaveBeenCalledWith(
+          'llama_cpp_better_backend_recommendation'
+        )
+      })
+
+      it('drops the pending marker when the download fails', async () => {
+        extension['downloadAndInstallBackend'] = vi
+          .fn()
+          .mockRejectedValue(new Error('asset 404'))
+        extension['applyBackendLive'] = vi.fn()
+
+        await expect(
+          extension.downloadRecommendedBackend(RECOMMENDED)
+        ).rejects.toThrow('asset 404')
+
+        expect(localStorage.removeItem).toHaveBeenCalledWith(
+          'llama_cpp_pending_backend'
+        )
+        expect(extension['applyBackendLive']).not.toHaveBeenCalled()
+      })
+
+      it('leaves the pending marker for the next launch when the hot-swap fails', async () => {
+        extension['downloadAndInstallBackend'] = vi
+          .fn()
+          .mockResolvedValue(undefined)
+        extension['applyBackendLive'] = vi
+          .fn()
+          .mockRejectedValue(new Error('model still running'))
+
+        await extension.downloadRecommendedBackend(RECOMMENDED)
+
+        expect(localStorage.removeItem).not.toHaveBeenCalledWith(
+          'llama_cpp_pending_backend'
+        )
+      })
+    })
+
+    describe('activatePendingBackend', () => {
+      beforeEach(() => {
+        vi.mocked(localStorage.getItem).mockImplementation((key: string) =>
+          key === 'llama_cpp_pending_backend' ? RECOMMENDED : null
+        )
+      })
+
+      it('activates a backend downloaded before the last restart', async () => {
+        vi.mocked(isBackendInstalled).mockResolvedValue(true)
+        extension.updateBackend = vi
+          .fn()
+          .mockResolvedValue({ wasUpdated: true, newBackend: RECOMMENDED })
+
+        await extension['activatePendingBackend']()
+
+        expect(extension.updateBackend).toHaveBeenCalledWith(RECOMMENDED)
+        expect(localStorage.removeItem).toHaveBeenCalledWith(
+          'llama_cpp_pending_backend'
+        )
+      })
+
+      it('clears a pending backend that never made it to disk', async () => {
+        vi.mocked(isBackendInstalled).mockResolvedValue(false)
+        extension.updateBackend = vi.fn()
+
+        await extension['activatePendingBackend']()
+
+        expect(extension.updateBackend).not.toHaveBeenCalled()
+        expect(localStorage.removeItem).toHaveBeenCalledWith(
+          'llama_cpp_pending_backend'
+        )
+      })
+    })
+
+    describe('recheckOptimalBackend', () => {
+      // The guest-js bridge is mocked with `importActual`, so its own
+      // `@tauri-apps/api/core` import is the real one — the release lookup has
+      // to be stubbed at the Tauri bridge, as in the ATO-153 test above.
+      const stubLatestLookup = (latest: string | null) => {
+        ;(window as any).__TAURI_INTERNALS__ = {
+          invoke: vi.fn(async (cmd: string) =>
+            cmd.endsWith('find_latest_version_for_backend') ? latest : undefined
+          ),
+        }
+      }
+
+      afterEach(() => {
+        delete (window as any).__TAURI_INTERNALS__
+      })
+
+      it('recommends the newest release of the detected GPU tier', async () => {
+        vi.spyOn(extension as any, 'detectIdealBackendType').mockResolvedValue({
+          kind: 'gpu',
+          backend: 'win-cuda-13.3-x64',
+        })
+        vi.mocked(listSupportedBackends).mockResolvedValue([
+          { version: 'b9800', backend: 'win-cuda-13.3-x64', order: 0 },
+          { version: 'b10205', backend: 'win-cuda-13.3-x64', order: 0 },
+        ])
+        stubLatestLookup(RECOMMENDED)
+
+        const result = await extension.recheckOptimalBackend()
+
+        expect(result).toMatchObject({
+          currentBackend: 'b9800/win-cpu-x64',
+          recommendedBackend: RECOMMENDED,
+        })
+        expect(localStorage.setItem).toHaveBeenCalledWith(
+          'llama_cpp_better_backend_recommendation',
+          JSON.stringify(result)
+        )
+
+        const { events, AppEvent } = await import('@janhq/core')
+        expect(events.emit).toHaveBeenCalledWith(
+          AppEvent.onBetterBackendDetected,
+          result
+        )
+      })
+
+      it('returns nothing and forgets any stale recommendation when already optimal', async () => {
+        extension['config'] = {
+          version_backend: RECOMMENDED,
+          device: '',
+        } as any
+        vi.spyOn(extension as any, 'detectIdealBackendType').mockResolvedValue({
+          kind: 'gpu',
+          backend: 'win-cuda-13.3-x64',
+        })
+
+        await expect(extension.recheckOptimalBackend()).resolves.toBeNull()
+
+        expect(localStorage.removeItem).toHaveBeenCalledWith(
+          'llama_cpp_better_backend_recommendation'
+        )
+        expect(localStorage.setItem).toHaveBeenCalledWith(
+          OPTIMAL_BACKEND_CACHE_KEY,
+          expect.any(String)
+        )
+        expect(localStorage.setItem).not.toHaveBeenCalledWith(
+          'llama_cpp_better_backend_recommendation',
+          expect.anything()
+        )
+      })
+
+      it('returns nothing when CPU genuinely is the best this host can do', async () => {
+        vi.spyOn(extension as any, 'detectIdealBackendType').mockResolvedValue({
+          kind: 'cpu-optimal',
+        })
+
+        await expect(extension.recheckOptimalBackend()).resolves.toBeNull()
+
+        expect(localStorage.setItem).toHaveBeenCalledWith(
+          OPTIMAL_BACKEND_CACHE_KEY,
+          expect.any(String)
+        )
+      })
+
+      it('raises a distinct signal when detection could not complete', async () => {
+        vi.spyOn(extension as any, 'detectIdealBackendType').mockResolvedValue({
+          kind: 'detection-failed',
+        })
+
+        await expect(extension.recheckOptimalBackend()).rejects.toThrow(
+          'BACKEND_DETECTION_FAILED'
+        )
+
+        // The current backend and any earlier recommendation stay untouched.
+        expect(localStorage.setItem).not.toHaveBeenCalled()
+        expect(localStorage.removeItem).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('optimal backend cache', () => {
+      const stubLatestLookup = (latest: string | null) => {
+        ;(window as any).__TAURI_INTERNALS__ = {
+          invoke: vi.fn(async (cmd: string) =>
+            cmd.endsWith('find_latest_version_for_backend') ? latest : undefined
+          ),
+        }
+      }
+
+      afterEach(() => {
+        delete (window as any).__TAURI_INTERNALS__
+      })
+
+      it('caches a resolved GPU result without recommendation side effects', async () => {
+        vi.spyOn(Date, 'now').mockReturnValue(1_777_777_777_777)
+        vi.spyOn(extension as any, 'detectIdealBackendType').mockResolvedValue({
+          kind: 'gpu',
+          backend: 'win-cuda-13.3-x64',
+        })
+        vi.mocked(listSupportedBackends).mockResolvedValue([
+          { version: 'b10205', backend: 'win-cuda-13.3-x64', order: 0 },
+        ])
+        stubLatestLookup(RECOMMENDED)
+
+        const result = await extension.refreshOptimalBackendCache()
+
+        expect(result).toEqual({
+          schemaVersion: 1,
+          provider: 'llamacpp-upstream',
+          detectedAt: 1_777_777_777_777,
+          detectionKind: 'gpu',
+          currentBackend: 'b9800/win-cpu-x64',
+          idealBackendId: 'win-cuda-13.3-x64',
+          recommendedBackend: RECOMMENDED,
+          recommendedCategory: 'CUDA 13',
+        })
+        expect(localStorage.setItem).toHaveBeenCalledTimes(1)
+        expect(localStorage.setItem).toHaveBeenCalledWith(
+          OPTIMAL_BACKEND_CACHE_KEY,
+          JSON.stringify(result)
+        )
+        expect(localStorage.removeItem).not.toHaveBeenCalled()
+
+        const { events, AppEvent } = await import('@janhq/core')
+        expect(events.emit).not.toHaveBeenCalledWith(
+          AppEvent.onBetterBackendDetected,
+          expect.anything()
+        )
+      })
+
+      it('caches a CPU-optimal result', async () => {
+        vi.spyOn(Date, 'now').mockReturnValue(1_888_888_888_888)
+        vi.spyOn(extension as any, 'detectIdealBackendType').mockResolvedValue({
+          kind: 'cpu-optimal',
+        })
+
+        const result = await extension.refreshOptimalBackendCache()
+
+        expect(result).toEqual({
+          schemaVersion: 1,
+          provider: 'llamacpp-upstream',
+          detectedAt: 1_888_888_888_888,
+          detectionKind: 'cpu-optimal',
+          currentBackend: 'b9800/win-cpu-x64',
+          recommendedCategory: 'CPU',
+        })
+        expect(localStorage.setItem).toHaveBeenCalledWith(
+          OPTIMAL_BACKEND_CACHE_KEY,
+          JSON.stringify(result)
+        )
+        expect(listSupportedBackends).not.toHaveBeenCalled()
+      })
+
+      it('uses the confirmed CPU-only fast path without hardware detection', async () => {
+        const detect = vi.spyOn(extension as any, 'detectIdealBackendType')
+
+        const result = await extension.refreshOptimalBackendCache({
+          hardwareHasNoGpu: true,
+        })
+
+        expect(result?.detectionKind).toBe('cpu-optimal')
+        expect(detect).not.toHaveBeenCalled()
+        expect(listSupportedBackends).not.toHaveBeenCalled()
+      })
+
+      it('preserves a successful cache when detection fails', async () => {
+        const previous = {
+          schemaVersion: 1,
+          provider: 'llamacpp-upstream',
+          detectedAt: 1_700_000_000_000,
+          detectionKind: 'cpu-optimal',
+          currentBackend: 'b9800/win-cpu-x64',
+          recommendedCategory: 'CPU',
+        }
+        vi.mocked(localStorage.getItem).mockImplementation((key: string) =>
+          key === OPTIMAL_BACKEND_CACHE_KEY ? JSON.stringify(previous) : null
+        )
+        vi.spyOn(extension as any, 'detectIdealBackendType').mockResolvedValue({
+          kind: 'detection-failed',
+        })
+
+        await expect(extension.refreshOptimalBackendCache()).rejects.toThrow(
+          BACKEND_DETECTION_FAILED
+        )
+
+        expect(localStorage.setItem).not.toHaveBeenCalled()
+        expect(localStorage.removeItem).not.toHaveBeenCalled()
+        expect(extension.getCachedOptimalBackend()).toEqual(previous)
+      })
+
+      it('returns only validated cached records', () => {
+        vi.mocked(localStorage.getItem).mockReturnValue(
+          JSON.stringify({
+            schemaVersion: 1,
+            provider: 'llamacpp-upstream',
+            detectedAt: 1_700_000_000_000,
+            detectionKind: 'gpu',
+            currentBackend: 'b9800/win-cpu-x64',
+            idealBackendId: 'win-cuda-13.3-x64',
+            recommendedBackend: 'latest/win-cuda-13.3-x64',
+            recommendedCategory: 'CUDA 13',
+          })
+        )
+
+        expect(extension.getCachedOptimalBackend()).toBeNull()
+      })
+
+      it('prefers cached GPU idealBackendId then falls back to the legacy key', () => {
+        const cached = {
+          schemaVersion: 1,
+          provider: 'llamacpp-upstream',
+          detectedAt: 1_700_000_000_000,
+          detectionKind: 'gpu',
+          currentBackend: 'b9800/win-cpu-x64',
+          idealBackendId: 'win-cuda-13.3-x64',
+          recommendedBackend: RECOMMENDED,
+          recommendedCategory: 'CUDA 13',
+        }
+        vi.mocked(localStorage.getItem).mockImplementation((key: string) => {
+          if (key === OPTIMAL_BACKEND_CACHE_KEY) return JSON.stringify(cached)
+          if (key === 'llama_cpp_better_backend_recommendation') {
+            return JSON.stringify({
+              recommendedBackend: 'b10205/win-vulkan-x64',
+            })
+          }
+          return null
+        })
+
+        expect(extension['storedRecommendedBackendType']()).toBe(
+          'win-cuda-13.3-x64'
+        )
+
+        vi.mocked(localStorage.getItem).mockImplementation((key: string) =>
+          key === 'llama_cpp_better_backend_recommendation'
+            ? JSON.stringify({
+                recommendedBackend: 'b10205/win-vulkan-x64',
+              })
+            : null
+        )
+        expect(extension['storedRecommendedBackendType']()).toBe(
+          'win-vulkan-x64'
+        )
       })
     })
   })

@@ -10,7 +10,7 @@ use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Listener, Runtime};
+use tauri::{AppHandle, Emitter, Runtime};
 use tauri_plugin_llamacpp::LLamaBackendSession;
 use tauri_plugin_llamacpp_upstream::LLamaBackendSession as LLamaUpstreamBackendSession;
 use tokio::sync::{oneshot, Mutex};
@@ -19,9 +19,10 @@ use crate::core::server::api_request_analytics::{
     ApiRequestAggregator, ApiRequestObservation, ApiRequestSummary, API_REQUEST_SUMMARY_CHANNEL,
     API_REQUEST_SUMMARY_WINDOW_SECS,
 };
-use crate::core::state::{AutoIncreaseOutcome, AutoIncreaseState, ProviderConfig, ServerHandle};
-use tokio::sync::Notify;
-use uuid::Uuid;
+use crate::core::server::context_expansion::{
+    is_context_limit_error as shared_is_context_limit_error, request_context_increase,
+};
+use crate::core::state::{AutoIncreaseState, ProviderConfig, ServerHandle};
 
 /// Immediate analytics channel retained for bind failures, which happen
 /// before a three-minute request window can exist.
@@ -497,7 +498,9 @@ fn extract_tool_result_content(content: Option<&serde_json::Value>) -> String {
 }
 
 /// Transform OpenAI non-streaming response to Anthropic /messages format
-fn transform_openai_response_to_anthropic(response: &serde_json::Value) -> serde_json::Value {
+pub(crate) fn transform_openai_response_to_anthropic(
+    response: &serde_json::Value,
+) -> serde_json::Value {
     let choice = response
         .get("choices")
         .and_then(|c| c.as_array())
@@ -629,85 +632,8 @@ fn is_local_url(url: &str) -> bool {
         || url.contains("://[::1]")
 }
 
-// ── Auto-increase-ctx: shared detection, events & coordinator ────────────────
-//
-// The UI already increases `ctx_len` when chat replies hit the model's context
-// window (see `handleContextSizeIncrease` in
-// `web-app/src/routes/threads/$threadId.tsx`). External clients using the
-// Local API server used to bypass that logic entirely because this proxy is
-// a pure forwarder. The event channel below lets the proxy delegate the
-// reload to the corresponding TypeScript extension (owner of the model
-// settings in Zustand) and then retry the buffered request transparently.
-
-/// Event emitted from Rust to extensions when a context-limit error is
-/// detected. Both `llamacpp-extension` and `mlx-extension` subscribe and
-/// filter by `backend`.
-const AUTO_INCREASE_EVENT: &str = "local_backend://auto_increase_ctx";
-/// Reply channel. The `request_id` suffix scopes the notification to a
-/// single pending proxy request so parallel retries don't cross-talk.
-const AUTO_INCREASE_DONE_EVENT_PREFIX: &str = "local_backend://auto_increase_ctx_done";
-/// Total time we're willing to wait for extension-side unload + load.
-/// Matches the worst-case behaviour we've observed for GGUF reload with
-/// a 32k → 48k bump; beyond that the user is better served by a clean error.
-const AUTO_INCREASE_TIMEOUT_SECS: u64 = 60;
-
-#[derive(serde::Serialize, Clone)]
-struct AutoIncreaseRequest<'a> {
-    request_id: String,
-    backend: &'a str,
-    model_id: String,
-    /// Where the detection triggered: "error" for upstream error body,
-    /// "finish_length" for `finish_reason=length` in the upstream response.
-    trigger: &'a str,
-}
-
-#[derive(serde::Deserialize, Clone, Debug)]
-struct AutoIncreaseDoneEvent {
-    ok: bool,
-    #[serde(default)]
-    new_ctx_len: Option<i64>,
-    #[serde(default)]
-    reason: Option<String>,
-}
-
-/// Returns `true` if the given upstream response almost certainly failed
-/// because the conversation exceeded the current context window.
-///
-/// Both llama-server and mlx-server are OpenAI-compatible; their error
-/// bodies vary but all reference the word "context" plus a length/size/limit
-/// keyword or use `exceed`/`overflow`. We also accept the UI-facing phrase
-/// from `web-app/src/utils/error.ts` verbatim to stay in lockstep with the
-/// existing in-process detection.
 fn is_context_limit_error(status: StatusCode, body: &str) -> bool {
-    if !matches!(status.as_u16(), 400 | 413 | 500 | 503) {
-        return false;
-    }
-    let b = body.to_lowercase();
-    if b.contains("the request exceeds the available context size") {
-        return true;
-    }
-    // mlx-vlm wraps generation errors as `{"detail":"Generation failed: ..."}`
-    // (see `mlx_vlm.server` HTTPException handler). The inner mlx-lm error may
-    // mention `kv cache`, `max_kv_size`, or token capacity rather than the
-    // word "context", so we also classify those phrasings as overflow.
-    if b.contains("max_kv_size") || b.contains("max-kv-size") || b.contains("max kv size") {
-        return true;
-    }
-    if b.contains("kv cache")
-        && (b.contains("exceed") || b.contains("overflow") || b.contains("too"))
-    {
-        return true;
-    }
-    if !b.contains("context") {
-        return false;
-    }
-    b.contains("size")
-        || b.contains("length")
-        || b.contains("limit")
-        || b.contains("exceed")
-        || b.contains("overflow")
-        || b.contains("too long")
-        || b.contains("too large")
+    shared_is_context_limit_error(status.as_u16(), body)
 }
 
 /// ATO-112: local on-device engines vs remote cloud providers.
@@ -913,143 +839,6 @@ fn is_context_overflow_finish_length(response_body: &[u8], request_body: Option<
             }
         }
     }
-}
-
-/// Acquire or wait on the per-model reload slot. The first caller gets
-/// `is_leader=true` and must perform the event round-trip; every other
-/// caller waits on the returned `Arc<Notify>` and then reads the cached
-/// outcome with `take_auto_increase_outcome`.
-async fn acquire_auto_increase_slot(
-    state: &AutoIncreaseState,
-    model_id: &str,
-) -> (Arc<Notify>, bool) {
-    let mut pending = state.pending.lock().await;
-    if let Some(n) = pending.get(model_id) {
-        return (n.clone(), false);
-    }
-    let notify = Arc::new(Notify::new());
-    pending.insert(model_id.to_string(), notify.clone());
-    // Drop the last stale outcome so waiters don't accidentally read a
-    // success from a previous cycle.
-    drop(pending);
-    let mut outcomes = state.last_outcome.lock().await;
-    outcomes.remove(model_id);
-    (notify, true)
-}
-
-/// Release the per-model reload slot and wake every waiter. Safe to call
-/// multiple times — the `HashMap::remove` is a no-op on the second call.
-async fn release_auto_increase_slot(state: &AutoIncreaseState, model_id: &str, notify: &Notify) {
-    let mut pending = state.pending.lock().await;
-    pending.remove(model_id);
-    drop(pending);
-    notify.notify_waiters();
-}
-
-async fn store_auto_increase_outcome(
-    state: &AutoIncreaseState,
-    model_id: &str,
-    outcome: AutoIncreaseOutcome,
-) {
-    let mut outcomes = state.last_outcome.lock().await;
-    outcomes.insert(model_id.to_string(), outcome);
-}
-
-async fn read_auto_increase_outcome(
-    state: &AutoIncreaseState,
-    model_id: &str,
-) -> Option<AutoIncreaseOutcome> {
-    let outcomes = state.last_outcome.lock().await;
-    outcomes.get(model_id).cloned()
-}
-
-/// Trigger the TypeScript-side reload for `model_id` on the `llamacpp` or
-/// `mlx` backend and block until the matching `auto_increase_ctx_done` event
-/// arrives (or the timeout fires). Returns the outcome so the caller can
-/// decide whether to retry the upstream request.
-async fn trigger_auto_increase<R: Runtime>(
-    app_handle: &AppHandle<R>,
-    backend: &str,
-    model_id: &str,
-    trigger: &str,
-) -> AutoIncreaseOutcome {
-    let request_id = Uuid::new_v4().to_string();
-    let done_channel = format!("{AUTO_INCREASE_DONE_EVENT_PREFIX}/{request_id}");
-
-    let (tx, rx) = tokio::sync::oneshot::channel::<AutoIncreaseDoneEvent>();
-    // Listener must be registered before we emit the trigger, otherwise a
-    // very fast extension handler could fire `auto_increase_ctx_done` before
-    // we're ready and we'd deadlock on the timeout branch.
-    //
-    // `listen_any` expects a synchronous `Fn`, so we store the oneshot sender
-    // in a `std::sync::Mutex<Option<_>>`. `Option::take` gives us the
-    // single-use semantics; the listener closure can fire more than once if a
-    // stray done-event shows up later, but only the first call will actually
-    // transmit.
-    let tx_slot: Arc<
-        std::sync::Mutex<Option<tokio::sync::oneshot::Sender<AutoIncreaseDoneEvent>>>,
-    > = Arc::new(std::sync::Mutex::new(Some(tx)));
-    let tx_clone = tx_slot.clone();
-    let unlisten = app_handle.listen_any(done_channel.clone(), move |event| {
-        let payload = event.payload();
-        match serde_json::from_str::<AutoIncreaseDoneEvent>(payload) {
-            Ok(ev) => {
-                if let Ok(mut guard) = tx_clone.lock() {
-                    if let Some(sender) = guard.take() {
-                        let _ = sender.send(ev);
-                    }
-                }
-            }
-            Err(e) => {
-                log::warn!("auto_increase_ctx_done payload parse failed: {e}; raw={payload}");
-            }
-        }
-    });
-
-    let request = AutoIncreaseRequest {
-        request_id: request_id.clone(),
-        backend,
-        model_id: model_id.to_string(),
-        trigger,
-    };
-    if let Err(e) = app_handle.emit(AUTO_INCREASE_EVENT, request) {
-        log::error!("Failed to emit {AUTO_INCREASE_EVENT}: {e}");
-        app_handle.unlisten(unlisten);
-        return AutoIncreaseOutcome {
-            ok: false,
-            new_ctx_len: None,
-            reason: Some(format!("emit_failed: {e}")),
-        };
-    }
-    log::info!(
-        "auto_increase_ctx: emitted trigger backend={backend} model_id={model_id} request_id={request_id} source={trigger}"
-    );
-
-    let outcome = match tokio::time::timeout(
-        std::time::Duration::from_secs(AUTO_INCREASE_TIMEOUT_SECS),
-        rx,
-    )
-    .await
-    {
-        Ok(Ok(ev)) => AutoIncreaseOutcome {
-            ok: ev.ok,
-            new_ctx_len: ev.new_ctx_len,
-            reason: ev.reason,
-        },
-        Ok(Err(_)) => AutoIncreaseOutcome {
-            ok: false,
-            new_ctx_len: None,
-            reason: Some("channel_closed".to_string()),
-        },
-        Err(_) => AutoIncreaseOutcome {
-            ok: false,
-            new_ctx_len: None,
-            reason: Some(format!("timeout_after_{AUTO_INCREASE_TIMEOUT_SECS}s")),
-        },
-    };
-
-    app_handle.unlisten(unlisten);
-    outcome
 }
 
 /// Returns `true` iff the given model is currently served by an
@@ -1565,9 +1354,8 @@ async fn handle_responses_request(
     }
 }
 
-/// High-level wrapper around `acquire_auto_increase_slot` +
-/// `trigger_auto_increase`. Skips remote providers and embedding sessions
-/// up front; coordinates concurrent waiters through the shared `Notify`.
+/// Requests the shared extension-owned context reload and resolves the
+/// replacement session after the coordinated reload completes.
 #[allow(clippy::too_many_arguments)]
 async fn maybe_auto_increase_and_retry<R: Runtime>(
     app_handle: &AppHandle<R>,
@@ -1589,60 +1377,17 @@ async fn maybe_auto_increase_and_retry<R: Runtime>(
         return None;
     }
 
-    let (notify, is_leader) = acquire_auto_increase_slot(auto_state, model_id).await;
-
-    if !is_leader {
-        // Wait for the leader to finish. We only block on the notify; the
-        // outcome (including `ok=false`) lives in `last_outcome`.
-        let wait = tokio::time::timeout(
-            std::time::Duration::from_secs(AUTO_INCREASE_TIMEOUT_SECS),
-            notify.notified(),
-        )
-        .await;
-        if wait.is_err() {
-            log::warn!(
-                "auto_increase_ctx: follower timed out waiting for leader (model_id={model_id})"
-            );
-            return None;
-        }
-        match read_auto_increase_outcome(auto_state, model_id).await {
-            Some(o) if o.ok => {
-                return resolve_local_session(
-                    backend,
-                    model_id,
-                    sessions,
-                    sessions_upstream,
-                    mlx_sessions,
-                )
-                .await;
-            }
-            _ => return None,
-        }
-    }
-
-    // Leader path.
-    let outcome = trigger_auto_increase(app_handle, backend, model_id, trigger).await;
-    store_auto_increase_outcome(
-        auto_state,
-        model_id,
-        AutoIncreaseOutcome {
-            ok: outcome.ok,
-            new_ctx_len: outcome.new_ctx_len,
-            reason: outcome.reason.clone(),
-        },
-    )
-    .await;
-    release_auto_increase_slot(auto_state, model_id, &notify).await;
-
+    let outcome =
+        request_context_increase(app_handle, auto_state, backend, model_id, trigger, None).await;
     if !outcome.ok {
         log::info!(
-            "auto_increase_ctx: leader outcome ok=false model_id={model_id} reason={:?}",
+            "auto_increase_ctx: outcome ok=false model_id={model_id} reason={:?}",
             outcome.reason
         );
         return None;
     }
     log::info!(
-        "auto_increase_ctx: leader outcome ok=true model_id={model_id} new_ctx_len={:?}",
+        "auto_increase_ctx: outcome ok=true model_id={model_id} new_ctx_len={:?}",
         outcome.new_ctx_len
     );
 
@@ -4335,49 +4080,6 @@ mod auto_increase_ctx_tests {
         let resp = br#"{"choices":[{"finish_reason":"length"}]}"#;
         let req = br#"{"max_tokens":16,"messages":[]}"#;
         assert!(!is_context_overflow_finish_length(resp, Some(req)));
-    }
-
-    // --- acquire/release slot --------------------------------------------------
-
-    #[tokio::test]
-    async fn acquire_slot_is_leader_once_per_model() {
-        let state = AutoIncreaseState::default();
-        let (_n1, leader1) = acquire_auto_increase_slot(&state, "llama-7b").await;
-        let (_n2, leader2) = acquire_auto_increase_slot(&state, "llama-7b").await;
-        assert!(leader1, "first caller must be leader");
-        assert!(!leader2, "second caller must wait");
-
-        // Different model should get its own leader slot.
-        let (_n3, leader3) = acquire_auto_increase_slot(&state, "mlx-other").await;
-        assert!(leader3);
-    }
-
-    #[tokio::test]
-    async fn release_slot_wakes_waiters_and_allows_new_leader() {
-        let state = AutoIncreaseState::default();
-        let (notify, _) = acquire_auto_increase_slot(&state, "qwen").await;
-        release_auto_increase_slot(&state, "qwen", &notify).await;
-        // After release the next caller becomes leader again.
-        let (_n2, leader2) = acquire_auto_increase_slot(&state, "qwen").await;
-        assert!(leader2);
-    }
-
-    #[tokio::test]
-    async fn store_and_read_outcome_roundtrip() {
-        let state = AutoIncreaseState::default();
-        store_auto_increase_outcome(
-            &state,
-            "m1",
-            AutoIncreaseOutcome {
-                ok: true,
-                new_ctx_len: Some(16384),
-                reason: None,
-            },
-        )
-        .await;
-        let got = read_auto_increase_outcome(&state, "m1").await.unwrap();
-        assert!(got.ok);
-        assert_eq!(got.new_ctx_len, Some(16384));
     }
 
     // --- add_cors_headers_with_host_and_origin (ATO-203) -----------------------

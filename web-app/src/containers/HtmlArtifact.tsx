@@ -6,12 +6,14 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { CodeBlock } from '@/components/ai-elements/code-block'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { isPlatformTauri } from '@/lib/platform/utils'
 
 interface HtmlArtifactProps {
   code: string
   className?: string
   fill?: boolean
+  showActions?: boolean
   onClose?: () => void
   streaming?: boolean
 }
@@ -80,9 +82,11 @@ function HtmlArtifactComponent({
   code,
   className,
   fill = false,
+  showActions = true,
   onClose,
   streaming = false,
 }: HtmlArtifactProps) {
+  const { t } = useTranslation('chat')
   const [tab, setTab] = useState<ArtifactTab>('preview')
   const [copied, setCopied] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string>('')
@@ -94,21 +98,11 @@ function HtmlArtifactComponent({
   if (!artifactIdRef.current) artifactIdRef.current = createArtifactId()
   const versionRef = useRef(0)
 
-  const [codeIdle, setCodeIdle] = useState(false)
-  useEffect(() => {
-    setCodeIdle(false)
-    const timer = setTimeout(() => setCodeIdle(true), 2000)
-    return () => clearTimeout(timer)
-  }, [code])
+  const generating = streaming
 
-  // Don't trust `streaming` alone; it can stay stuck true after a re-mount.
-  const docComplete = /<\/html>/i.test(code)
-  const generating = streaming && !docComplete && !codeIdle
-
-  // Web: blob preview is handled internally by the browser, so it's safe to
-  // refresh on every debounced change.
+  // Do not hand an incomplete document to the iframe while generation is active.
   useEffect(() => {
-    if (isPlatformTauri()) return
+    if (isPlatformTauri() || generating || !code) return
     const timer = setTimeout(() => {
       const url = URL.createObjectURL(
         new Blob([buildPreviewDocument(code)], { type: 'text/html' })
@@ -119,7 +113,7 @@ function HtmlArtifactComponent({
       })
     }, 250)
     return () => clearTimeout(timer)
-  }, [code])
+  }, [code, generating])
 
   // Tauri: serve through the artifact:// protocol, but navigate the iframe only
   // once the stream has settled. Re-navigating a custom-scheme iframe on every
@@ -261,9 +255,7 @@ function HtmlArtifactComponent({
     <div
       className={cn(
         'overflow-hidden border-border bg-background',
-        fill
-          ? 'flex h-full w-full flex-col'
-          : 'my-4 w-full rounded-xl border',
+        fill ? 'flex h-full w-full flex-col' : 'my-4 w-full rounded-xl border',
         className
       )}
       data-artifact="html"
@@ -304,38 +296,42 @@ function HtmlArtifactComponent({
         </div>
 
         <div className="flex shrink-0 items-center gap-0.5">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 gap-1 px-2 text-xs"
-            onClick={handleCopy}
-            title="Copy code"
-          >
-            <CopyIcon size={14} className="shrink-0" />
-            <span className="hidden @[26rem]:inline">
-              {copied ? 'Copied' : 'Copy'}
-            </span>
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 gap-1 px-2 text-xs"
-            onClick={handleDownload}
-            title="Download as .html"
-          >
-            <Download size={14} className="shrink-0" />
-            <span className="hidden @[26rem]:inline">Download</span>
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 gap-1 px-2 text-xs"
-            onClick={handlePrint}
-            title="Print / Save as PDF"
-          >
-            <Printer size={14} className="shrink-0" />
-            <span className="hidden @[26rem]:inline">Print</span>
-          </Button>
+          {showActions && (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 gap-1 px-2 text-xs"
+                onClick={handleCopy}
+                title="Copy code"
+              >
+                <CopyIcon size={14} className="shrink-0" />
+                <span className="hidden @[26rem]:inline">
+                  {copied ? 'Copied' : 'Copy'}
+                </span>
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 gap-1 px-2 text-xs"
+                onClick={handleDownload}
+                title="Download as .html"
+              >
+                <Download size={14} className="shrink-0" />
+                <span className="hidden @[26rem]:inline">Download</span>
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 gap-1 px-2 text-xs"
+                onClick={handlePrint}
+                title="Print / Save as PDF"
+              >
+                <Printer size={14} className="shrink-0" />
+                <span className="hidden @[26rem]:inline">Print</span>
+              </Button>
+            </>
+          )}
           {onClose && (
             <Button
               size="icon"
@@ -379,7 +375,7 @@ function HtmlArtifactComponent({
             </div>
             <span className="text-sm tabular-nums">
               {generating
-                ? `Generating preview… ${progressPct}%`
+                ? t('workspacePreview.generating')
                 : 'Rendering preview…'}
             </span>
           </div>

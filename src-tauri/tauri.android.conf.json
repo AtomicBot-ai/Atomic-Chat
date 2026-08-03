@@ -16,7 +16,8 @@
     "active": true,
     "resources": [
       "resources/pre-install/**/*",
-      "resources/LICENSE"
+      "resources/LICENSE",
+      "resources/agent-skills/**/*"
     ],
     "externalBin": [],
     "android": {

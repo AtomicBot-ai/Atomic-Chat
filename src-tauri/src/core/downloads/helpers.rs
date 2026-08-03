@@ -480,6 +480,9 @@ pub(super) async fn preflight_file_size(
     item: &DownloadItem,
     cancel_token: &CancellationToken,
 ) -> Result<u64, String> {
+    if cancel_token.is_cancelled() {
+        return Err("Download cancelled".to_string());
+    }
     if let Some(size) = item.size.filter(|size| *size > 0) {
         return Ok(size);
     }
@@ -1041,6 +1044,15 @@ pub(super) async fn download_single_file_for_test(
         progress_tracker: ProgressTracker::new(std::slice::from_ref(item), sizes),
     };
     download_single_file(app, item, save_path, file_id, expected_size, ctx).await
+}
+
+#[cfg(test)]
+pub(super) async fn validate_downloaded_file_for_test(
+    item: &DownloadItem,
+    save_path: &Path,
+    app: &tauri::AppHandle<tauri::test::MockRuntime>,
+) -> Result<(), String> {
+    validate_downloaded_file(item, save_path, app, &CancellationToken::new(), false).await
 }
 
 // ===== HTTP CLIENT HELPER FUNCTIONS =====

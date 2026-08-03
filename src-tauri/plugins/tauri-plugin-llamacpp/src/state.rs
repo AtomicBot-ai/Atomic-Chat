@@ -4,6 +4,8 @@ use std::sync::Arc;
 use tokio::process::Child;
 use tokio::sync::Mutex;
 
+use crate::runtime_device::{RuntimeDeviceInfo, SharedRuntimeDevice};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionInfo {
     pub pid: i32,  // opaque handle for unload/chat
@@ -14,11 +16,19 @@ pub struct SessionInfo {
     pub api_key: String,
     #[serde(default)]
     pub mmproj_path: Option<String>,
+    /// Device the model actually runs on, parsed from the startup log. `None`
+    /// when the log carried no recognisable device lines.
+    #[serde(default)]
+    pub runtime_device: Option<RuntimeDeviceInfo>,
 }
 
 pub struct LLamaBackendSession {
     pub child: Child,
     pub info: SessionInfo,
+    /// Kept alive past readiness so `get_runtime_device` can re-snapshot: the
+    /// `load_tensors` lines normally precede "listening on", but the ordering
+    /// is not guaranteed on slow mmap.
+    pub runtime_device: SharedRuntimeDevice,
 }
 
 /// LlamaCpp plugin state

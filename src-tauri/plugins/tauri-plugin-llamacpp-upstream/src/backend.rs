@@ -172,7 +172,11 @@ pub async fn get_local_installed_backends(
         }
 
         let version_name = match version_path.file_name() {
-            Some(name) => name.to_string_lossy().replace('\u{FEFF}', "").trim().to_string(),
+            Some(name) => name
+                .to_string_lossy()
+                .replace('\u{FEFF}', "")
+                .trim()
+                .to_string(),
             None => continue,
         };
 
@@ -186,7 +190,11 @@ pub async fn get_local_installed_backends(
             let backend_path = backend_entry.path();
 
             let backend_name = match backend_path.file_name() {
-                Some(name) => name.to_string_lossy().replace('\u{FEFF}', "").trim().to_string(),
+                Some(name) => name
+                    .to_string_lossy()
+                    .replace('\u{FEFF}', "")
+                    .trim()
+                    .to_string(),
                 None => continue,
             };
 
@@ -394,7 +402,10 @@ fn is_windows_backend(backend: &str) -> bool {
     backend.starts_with("win-")
 }
 
-fn compare_backend_versions_for_sort(left: &BackendInfo, right: &BackendInfo) -> std::cmp::Ordering {
+fn compare_backend_versions_for_sort(
+    left: &BackendInfo,
+    right: &BackendInfo,
+) -> std::cmp::Ordering {
     if is_windows_backend(&left.backend) && is_windows_backend(&right.backend) {
         let left_version = parse_backend_version(left.version.clone());
         let right_version = parse_backend_version(right.version.clone());
@@ -425,7 +436,9 @@ pub async fn list_supported_backends(
     for entry in &remote_backend_versions {
         log::info!(
             "[list_supported_backends] remote: {}/{} order={}",
-            entry.version, entry.backend, entry.order
+            entry.version,
+            entry.backend,
+            entry.order
         );
     }
 
@@ -455,7 +468,9 @@ pub async fn list_supported_backends(
     for entry in &merged {
         log::info!(
             "[list_supported_backends] sorted: {}/{} order={}",
-            entry.version, entry.backend, entry.order
+            entry.version,
+            entry.backend,
+            entry.order
         );
     }
 
@@ -911,10 +926,7 @@ pub async fn check_backend_for_updates(
             target_backend: Some(target_backend_string),
         })
     } else {
-        log::info!(
-            "Already at latest version: {}",
-            current_backend_string
-        );
+        log::info!("Already at latest version: {}", current_backend_string);
         Ok(UpdateCheckResult {
             update_needed: false,
             new_version: "0".to_string(),
@@ -1128,7 +1140,12 @@ fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> Result<(), String> {
             copy_dir_recursive(&src_path, &dst_path)?;
         } else {
             fs::copy(&src_path, &dst_path).map_err(|e| {
-                format!("copy {} → {}: {}", src_path.display(), dst_path.display(), e)
+                format!(
+                    "copy {} → {}: {}",
+                    src_path.display(),
+                    dst_path.display(),
+                    e
+                )
             })?;
         }
     }
@@ -1194,8 +1211,15 @@ pub async fn install_bundled_backend<R: Runtime>(
         "resources/llamacpp-backend-upstream",
         "llamacpp-backend-upstream",
     ] {
-        if let Ok(p) = app.path().resolve(candidate, tauri::path::BaseDirectory::Resource) {
-            log::info!("[install_bundled_backend] Trying resource path '{}' → {}", candidate, p.display());
+        if let Ok(p) = app
+            .path()
+            .resolve(candidate, tauri::path::BaseDirectory::Resource)
+        {
+            log::info!(
+                "[install_bundled_backend] Trying resource path '{}' → {}",
+                candidate,
+                p.display()
+            );
             if p.join("version.txt").exists() {
                 resource_dir = Some(p);
                 break;
@@ -1207,7 +1231,10 @@ pub async fn install_bundled_backend<R: Runtime>(
     if resource_dir.is_none() {
         let dev_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../resources/llamacpp-backend-upstream");
-        log::info!("[install_bundled_backend] Trying dev fallback → {}", dev_path.display());
+        log::info!(
+            "[install_bundled_backend] Trying dev fallback → {}",
+            dev_path.display()
+        );
         if dev_path.join("version.txt").exists() {
             resource_dir = Some(dev_path);
         }
@@ -1226,7 +1253,10 @@ pub async fn install_bundled_backend<R: Runtime>(
     let build_dir = resource_dir.join("build");
 
     if !version_file.exists() || !backend_file.exists() || !build_dir.exists() {
-        log::info!("[install_bundled_backend] Missing files at {}", resource_dir.display());
+        log::info!(
+            "[install_bundled_backend] Missing files at {}",
+            resource_dir.display()
+        );
         return not_bundled;
     }
 
@@ -1269,7 +1299,8 @@ pub async fn install_bundled_backend<R: Runtime>(
         if backend_binary_matches_version(&target_dir, &version) {
             log::info!(
                 "[install_bundled_backend] Bundled backend already installed: {}/{}",
-                version, backend
+                version,
+                backend
             );
             return Ok(BundledBackendResult {
                 installed: true,
@@ -1291,7 +1322,9 @@ pub async fn install_bundled_backend<R: Runtime>(
 
     log::info!(
         "[install_bundled_backend] Installing bundled backend {}/{} from {}",
-        version, backend, resource_dir.display()
+        version,
+        backend,
+        resource_dir.display()
     );
 
     copy_dir_recursive(&build_dir, &target_build_dir)?;
@@ -1316,7 +1349,8 @@ pub async fn install_bundled_backend<R: Runtime>(
 
     log::info!(
         "[install_bundled_backend] Successfully installed bundled backend: {}/{}",
-        version, backend
+        version,
+        backend
     );
 
     Ok(BundledBackendResult {
@@ -1365,10 +1399,7 @@ pub async fn fetch_manifest_http1(url: String, timeout_ms: u64) -> Result<String
         .map_err(|e| format!("fetch {url}: {e}"))?;
 
     if !resp.status().is_success() {
-        return Err(format!(
-            "fetch {url}: HTTP {}",
-            resp.status().as_u16()
-        ));
+        return Err(format!("fetch {url}: HTTP {}", resp.status().as_u16()));
     }
 
     let body = resp
@@ -1383,7 +1414,9 @@ pub async fn fetch_manifest_http1(url: String, timeout_ms: u64) -> Result<String
 #[tauri::command]
 #[cfg(any(target_os = "android", target_os = "ios"))]
 pub async fn fetch_manifest_http1(url: String, _timeout_ms: u64) -> Result<String, String> {
-    Err(format!("fetch_manifest_http1 not available on mobile (url: {url})"))
+    Err(format!(
+        "fetch_manifest_http1 not available on mobile (url: {url})"
+    ))
 }
 
 // ---------------------------- Tests ------------------------------------------
@@ -1391,9 +1424,9 @@ pub async fn fetch_manifest_http1(url: String, _timeout_ms: u64) -> Result<Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use filetime;
     use std::fs::File;
     use std::io::Write;
-    use filetime;
 
     // --- Tests for map_old_backend_to_new ---
 
@@ -1470,6 +1503,14 @@ mod tests {
         assert_eq!(
             map_old_backend_to_new("linux-vulkan-x64".to_string()),
             "linux-vulkan-x64"
+        );
+        assert_eq!(
+            map_old_backend_to_new("ubuntu-vulkan-x64".to_string()),
+            "linux-vulkan-x64"
+        );
+        assert_eq!(
+            map_old_backend_to_new("ubuntu-vulkan-arm64".to_string()),
+            "linux-vulkan-arm64"
         );
         // Legacy janhq Windows Vulkan → ggml-org Windows Vulkan.
         assert_eq!(
@@ -1621,7 +1662,10 @@ mod tests {
         // path. CUDA 12.4 still enabled (>= 551.61).
         let gpus = vec![windows_nvidia_gpu("581.14")];
         let result = get_supported_features("windows".to_string(), vec![], gpus).unwrap();
-        assert!(result.cuda12, "581.14 must still satisfy CUDA 12.4 (>= 551.61)");
+        assert!(
+            result.cuda12,
+            "581.14 must still satisfy CUDA 12.4 (>= 551.61)"
+        );
         assert!(
             !result.cuda13,
             "581.14 must NOT pass the CUDA 13.1 gate (below documented 581.15 minimum)"
@@ -1836,6 +1880,66 @@ mod tests {
         assert_eq!(result, vec!["linux-cpu-arm64".to_string()]);
     }
 
+    #[tokio::test]
+    async fn test_prioritize_backends_prefers_newest_cuda13_asset() {
+        let available = vec![
+            BackendInfo {
+                version: "b9900".into(),
+                backend: "win-cuda-13.1-x64".into(),
+                order: 10,
+            },
+            BackendInfo {
+                version: "b10205".into(),
+                backend: "win-cuda-13.3-x64".into(),
+                order: 1,
+            },
+            BackendInfo {
+                version: "b10205".into(),
+                backend: "win-cuda-12.4-x64".into(),
+                order: 1,
+            },
+            BackendInfo {
+                version: "b10205".into(),
+                backend: "win-vulkan-x64".into(),
+                order: 1,
+            },
+        ];
+
+        let result = prioritize_backends(available, true).await.unwrap();
+
+        assert_eq!(result.backend_string, "b10205/win-cuda-13.3-x64");
+        assert_eq!(result.backend_type, "win-cuda-13.3-x64");
+    }
+
+    #[tokio::test]
+    async fn test_prioritize_backends_linux_vulkan_requires_enough_gpu_memory() {
+        let available = vec![
+            BackendInfo {
+                version: "b10205".into(),
+                backend: "linux-cpu-x64".into(),
+                order: 1,
+            },
+            BackendInfo {
+                version: "b10205".into(),
+                backend: "linux-vulkan-x64".into(),
+                order: 1,
+            },
+        ];
+
+        let gpu_result = prioritize_backends(available.clone(), true).await.unwrap();
+        let cpu_result = prioritize_backends(available, false).await.unwrap();
+
+        assert_eq!(gpu_result.backend_type, "linux-vulkan-x64");
+        assert_eq!(cpu_result.backend_type, "linux-cpu-x64");
+    }
+
+    #[tokio::test]
+    async fn test_prioritize_backends_rejects_empty_catalog() {
+        let result = prioritize_backends(vec![], true).await;
+
+        assert_eq!(result.unwrap_err(), "No backends available");
+    }
+
     // --- Tests for list_supported_backends ---
 
     #[tokio::test]
@@ -1894,8 +1998,8 @@ mod tests {
     #[test]
     fn test_parse_binary_version() {
         assert_eq!(
-            parse_binary_version("version: 9937 (2021515a1)\nbuilt with AppleClang"),
-            Some(9937)
+            parse_binary_version("version: 10205 (1e2259952)\nbuilt with Clang"),
+            Some(10205)
         );
         assert_eq!(
             parse_binary_version("warning\nversion: 9222 (9a532ae4b)\n"),
@@ -1934,7 +2038,10 @@ mod tests {
 
         assert!(!bundled_backend_is_complete(&resource_build, &target_build));
         assert!(backfill_bundled_backend_if_needed(&resource_build, &target_build).unwrap());
-        assert!(target_build.join("bin").join("llama-server-impl.dll").exists());
+        assert!(target_build
+            .join("bin")
+            .join("llama-server-impl.dll")
+            .exists());
         assert!(bundled_backend_is_complete(&resource_build, &target_build));
         assert!(!backfill_bundled_backend_if_needed(&resource_build, &target_build).unwrap());
     }
@@ -1987,7 +2094,10 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].version, "b7523");
         assert_eq!(result[0].backend, "backend-a");
-        assert!(result[0].order > 0, "order should be set from directory mtime");
+        assert!(
+            result[0].order > 0,
+            "order should be set from directory mtime"
+        );
     }
 
     #[tokio::test]
@@ -2009,11 +2119,8 @@ mod tests {
 
         // Set old mtime (1 second in the past)
         let old_time = std::time::SystemTime::now() - std::time::Duration::from_secs(2);
-        filetime::set_file_mtime(
-            &backend_old,
-            filetime::FileTime::from_system_time(old_time),
-        )
-        .unwrap();
+        filetime::set_file_mtime(&backend_old, filetime::FileTime::from_system_time(old_time))
+            .unwrap();
 
         // Create newer backend
         let v_new = root.join("turboquant-macos-arm64-new");
@@ -2027,13 +2134,20 @@ mod tests {
 
         assert_eq!(result.len(), 2);
 
-        let old_entry = result.iter().find(|b| b.version == "turboquant-macos-arm64-old").unwrap();
-        let new_entry = result.iter().find(|b| b.version == "turboquant-macos-arm64-new").unwrap();
+        let old_entry = result
+            .iter()
+            .find(|b| b.version == "turboquant-macos-arm64-old")
+            .unwrap();
+        let new_entry = result
+            .iter()
+            .find(|b| b.version == "turboquant-macos-arm64-new")
+            .unwrap();
 
         assert!(
             new_entry.order > old_entry.order,
             "Newer backend (order={}) should have higher order than older (order={})",
-            new_entry.order, old_entry.order
+            new_entry.order,
+            old_entry.order
         );
     }
 
@@ -2146,8 +2260,7 @@ mod tests {
             },
         ];
 
-        let result =
-            find_latest_version_for_backend(backends, "win-cuda-12.4-x64".to_string());
+        let result = find_latest_version_for_backend(backends, "win-cuda-12.4-x64".to_string());
         assert_eq!(result, Some("b7525/win-cuda-12.4-x64".to_string()));
     }
 

@@ -34,9 +34,7 @@ impl FoundationModelsError {
     pub fn from_stderr(stderr: &str) -> Self {
         let lower = stderr.to_lowercase();
 
-        if lower.contains("device is not eligible")
-            || lower.contains("devicenoteligible")
-        {
+        if lower.contains("device is not eligible") || lower.contains("devicenoteligible") {
             return Self::new(
                 ErrorCode::FoundationModelsUnavailable,
                 "This device is not eligible for Apple Intelligence.".into(),

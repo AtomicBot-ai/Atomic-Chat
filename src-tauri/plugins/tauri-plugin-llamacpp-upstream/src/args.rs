@@ -137,26 +137,53 @@ impl ArgumentBuilder {
         })
     }
 
-    /// Parse the build number from a version string like "b6325".
-    /// Returns `None` if the format doesn't match.
+    /// Parse the upstream llama.cpp build number out of a version string.
+    /// Handles plain upstream tags ("b6325") and the unified TurboQuant tag
+    /// shape ("b10018-1.3.0") a mislabeled backend may carry.
     fn parse_build_number(&self) -> Option<u32> {
-        self.version
-            .strip_prefix('b')
-            .and_then(|s| s.parse::<u32>().ok())
+        let rest = self.version.strip_prefix('b')?;
+        let build = rest.split('-').next()?;
+        build.parse::<u32>().ok()
     }
 
+    /// Whether the installed backend came from the TurboQuant fork's release
+    /// train, in either the legacy (`turboquant-<id>-<sha>`) or unified
+    /// (`b<build>-<fork-semver>`) tag shape.
+    ///
+    /// This gates *argument serialization* only (the fork is always rebased
+    /// past the `--flash-attn` string-argument change). It must never gate a
+    /// capability: `sanitize_cache_type` below deliberately ignores it, so
+    /// fork-only `turbo*` types can never leak into this provider even when a
+    /// fork-tagged backend is installed under it.
     fn is_turboquant(&self) -> bool {
-        self.version.starts_with("turboquant-")
+        let version = &self.version;
+        if version.starts_with("turboquant-") {
+            return true;
+        }
+        let Some(rest) = version.strip_prefix('b') else {
+            return false;
+        };
+        let Some((build, fork_semver)) = rest.split_once('-') else {
+            return false;
+        };
+        let is_number = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+        if !is_number(build) {
+            return false;
+        }
+        let mut parts = fork_semver.split('.');
+        let semver_ok = (0..3).all(|_| parts.next().is_some_and(is_number));
+        semver_ok && parts.next().is_none()
     }
 
-    /// Standard cache types supported by upstream llama.cpp.
-    /// Extended types like `turbo3` are only available in turboquant builds.
+    /// Cache types supported by the pinned upstream llama.cpp provider.
     const STANDARD_CACHE_TYPES: &'static [&'static str] = &[
         "f32", "f16", "bf16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1",
     ];
 
     fn sanitize_cache_type(&self, value: &str) -> String {
-        if Self::STANDARD_CACHE_TYPES.contains(&value) || self.is_turboquant() {
+        // Provider capability, not release identity: this provider ships stock
+        // ggml-org builds, so only upstream cache types are ever emitted.
+        if Self::STANDARD_CACHE_TYPES.contains(&value) {
             return value.to_string();
         }
         log::warn!(
@@ -951,6 +978,35 @@ mod tests {
         assert_no_flag(&args, "--flash-attn");
     }
 
+    // A fork-tagged backend can end up installed under this provider (manual
+    // copy, migrated folder). Its tag may unlock the modern `--flash-attn`
+    // spelling, but never a fork-only cache type: this provider ships stock
+    // ggml-org builds that cannot parse `turbo*`.
+    #[test]
+    fn test_unified_fork_tag_never_unlocks_fork_cache_types() {
+        let mut config = default_config();
+        config.version_backend = "b10018-1.3.0/win-cuda-13.3-x64".to_string();
+        config.cache_type_k = "turbo3".to_string();
+        config.cache_type_v = "turbo3".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        assert!(builder.is_turboquant());
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--cache-type-k", "q8_0");
+        assert_arg_pair(&args, "--cache-type-v", "q8_0");
+    }
+
+    #[test]
+    fn test_unified_fork_tag_still_yields_the_upstream_build_number() {
+        let mut config = default_config();
+        config.version_backend = "b10018-1.3.0/linux-vulkan-x64".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+
+        assert_eq!(builder.parse_build_number(), Some(10018));
+    }
+
     // --- Vulkan safety-override tests (ATO-244) ---
 
     #[test]
@@ -1293,7 +1349,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cache_type_turbo3_kept_on_turboquant() {
+    fn test_cache_type_turbo3_cannot_leak_through_mislabeled_upstream_version() {
         let mut config = default_config();
         config.version_backend = "turboquant-macos-arm64-abc123/macos-arm64".to_string();
         config.cache_type_k = "turbo3".to_string();
@@ -1301,7 +1357,7 @@ mod tests {
         let builder = ArgumentBuilder::new(config, false).unwrap();
         let args = builder.build("test", "/path", 8080, None);
 
-        assert_arg_pair(&args, "--cache-type-k", "turbo3");
+        assert_arg_pair(&args, "--cache-type-k", "q8_0");
     }
 
     #[test]
@@ -1733,7 +1789,7 @@ mod tests {
     #[test]
     fn test_dflash_off_no_spec_flags() {
         let mut config = default_config();
-        config.version_backend = "b9937/standard".to_string();
+        config.version_backend = "b10205/standard".to_string();
         config.dflash = false;
         config.dflash_draft_path = "/path/to/dflash-draft.gguf".to_string();
 
@@ -1748,7 +1804,7 @@ mod tests {
     #[test]
     fn test_dflash_on_skips_unsupported_upstream_spec_type() {
         let mut config = default_config();
-        config.version_backend = "b9937/standard".to_string();
+        config.version_backend = "b10205/standard".to_string();
         config.dflash = true;
         config.dflash_draft_path = "/path/to/dflash-draft.gguf".to_string();
 
@@ -1763,7 +1819,7 @@ mod tests {
     #[test]
     fn test_dflash_on_emits_spec_flags_when_probe_supports_it() {
         let mut config = default_config();
-        config.version_backend = "b9937/standard".to_string();
+        config.version_backend = "b10205/standard".to_string();
         config.dflash = true;
         config.dflash_spec_supported = true;
         config.dflash_draft_path = "/path/to/dflash-draft.gguf".to_string();
@@ -1779,7 +1835,7 @@ mod tests {
     #[test]
     fn test_dflash_custom_n_max_skipped_with_unsupported_upstream_spec_type() {
         let mut config = default_config();
-        config.version_backend = "b9937/standard".to_string();
+        config.version_backend = "b10205/standard".to_string();
         config.dflash = true;
         config.dflash_draft_path = "/path/to/dflash-draft.gguf".to_string();
         config.dflash_n_max = 7;
@@ -1795,7 +1851,7 @@ mod tests {
     #[test]
     fn test_dflash_custom_n_max_emits_when_probe_supports_it() {
         let mut config = default_config();
-        config.version_backend = "b9937/standard".to_string();
+        config.version_backend = "b10205/standard".to_string();
         config.dflash = true;
         config.dflash_spec_supported = true;
         config.dflash_draft_path = "/path/to/dflash-draft.gguf".to_string();
@@ -1825,7 +1881,7 @@ mod tests {
     #[test]
     fn test_dflash_skipped_without_draft_path() {
         let mut config = default_config();
-        config.version_backend = "b9937/standard".to_string();
+        config.version_backend = "b10205/standard".to_string();
         config.dflash = true;
 
         let builder = ArgumentBuilder::new(config, false).unwrap();
@@ -1839,7 +1895,7 @@ mod tests {
     #[test]
     fn test_dflash_skipped_in_embedding_mode() {
         let mut config = default_config();
-        config.version_backend = "b9937/standard".to_string();
+        config.version_backend = "b10205/standard".to_string();
         config.dflash = true;
         config.dflash_draft_path = "/path/to/dflash-draft.gguf".to_string();
 
@@ -1855,7 +1911,7 @@ mod tests {
         // Defense-in-depth: when both toggles are somehow enabled and the
         // backend supports DFlash, emit only the DFlash speculative path.
         let mut config = default_config();
-        config.version_backend = "b9937/standard".to_string();
+        config.version_backend = "b10205/standard".to_string();
         config.mtp = true;
         config.dflash = true;
         config.dflash_spec_supported = true;

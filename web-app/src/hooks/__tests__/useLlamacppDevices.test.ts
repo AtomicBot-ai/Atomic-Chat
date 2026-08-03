@@ -1,19 +1,12 @@
 import { renderHook, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { useLlamacppDevices } from '../useLlamacppDevices'
+import type { HardwareService } from '@/services/hardware/types'
+import type { ProvidersService } from '@/services/providers/types'
+import { seedServiceHub } from '@/test/service-hub'
 
 // Mock the ServiceHub
 const mockGetLlamacppDevices = vi.fn()
-vi.mock('@/hooks/useServiceHub', () => ({
-  getServiceHub: () => ({
-    hardware: () => ({
-      getLlamacppDevices: mockGetLlamacppDevices,
-    }),
-    providers: () => ({
-      updateSettings: vi.fn().mockResolvedValue(undefined),
-    }),
-  }),
-}))
 
 // Mock useModelProvider
 const mockUpdateProvider = vi.fn()
@@ -44,9 +37,16 @@ Object.defineProperty(window, 'core', {
 })
 
 describe('useLlamacppDevices', () => {
-
   beforeEach(() => {
     vi.clearAllMocks()
+    seedServiceHub({
+      hardware: {
+        getLlamacppDevices: mockGetLlamacppDevices,
+      } as HardwareService,
+      providers: {
+        updateSettings: vi.fn().mockResolvedValue(undefined),
+      } as ProvidersService,
+    })
   })
 
   it('should initialize with default state', () => {
@@ -121,8 +121,20 @@ describe('useLlamacppDevices', () => {
     // Set initial devices with activation status
     act(() => {
       result.current.setDevices([
-        { id: 'CUDA0', name: 'NVIDIA GeForce RTX 4090', mem: 24576, free: 20480, activated: false },
-        { id: 'CUDA1', name: 'NVIDIA GeForce RTX 3080', mem: 10240, free: 8192, activated: false },
+        {
+          id: 'CUDA0',
+          name: 'NVIDIA GeForce RTX 4090',
+          mem: 24576,
+          free: 20480,
+          activated: false,
+        },
+        {
+          id: 'CUDA1',
+          name: 'NVIDIA GeForce RTX 3080',
+          mem: 10240,
+          free: 8192,
+          activated: false,
+        },
       ])
     })
 
@@ -153,5 +165,4 @@ describe('useLlamacppDevices', () => {
     expect(result.current.devices[0].activated).toBe(true)
     expect(result.current.devices[1].activated).toBe(true)
   })
-
-}) 
+})

@@ -29,6 +29,9 @@ export const route = {
   launch: {
     index: '/launch/',
   },
+  skills: {
+    index: '/skills/',
+  },
   localApiServerlogs: '/local-api-server/logs',
   systemMonitor: '/system-monitor',
   threadsDetail: '/threads/$threadId',

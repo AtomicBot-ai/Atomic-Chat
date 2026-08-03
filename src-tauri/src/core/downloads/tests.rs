@@ -159,6 +159,23 @@ async fn preflight_uses_catalog_size_without_a_head_request() {
 }
 
 #[tokio::test]
+async fn preflight_aborts_before_request_when_cancelled() {
+    let (url, request_count, server) = spawn_preflight_head_server(0, StatusCode::OK).await;
+    let item = preflight_test_item(url, None);
+    let client = reqwest::Client::new();
+    let cancel_token = CancellationToken::new();
+    cancel_token.cancel();
+
+    let error = preflight_file_size(&client, &item, &cancel_token)
+        .await
+        .unwrap_err();
+
+    assert_eq!(error, "Download cancelled");
+    assert_eq!(request_count.load(Ordering::SeqCst), 0);
+    server.abort();
+}
+
+#[tokio::test]
 async fn preflight_head_retries_transient_failures() {
     let (url, request_count, server) =
         spawn_preflight_head_server(2, StatusCode::INTERNAL_SERVER_ERROR).await;
@@ -322,7 +339,7 @@ async fn download_succeeds_when_preflight_head_always_fails() {
     assert_eq!(head_count.load(Ordering::SeqCst), 6);
     assert_eq!(get_count.load(Ordering::SeqCst), 1);
     server.abort();
-    let _ = tokio::fs::remove_dir_all(&data_dir).await;
+    let _ = tokio::fs::remove_dir_all(data_dir.join("models/test-ato-302")).await;
 }
 
 #[tokio::test]
@@ -337,6 +354,36 @@ async fn preflight_head_does_not_retry_fatal_status() {
     assert_eq!(size, 0);
     assert_eq!(request_count.load(Ordering::SeqCst), 1);
     server.abort();
+}
+
+async fn spawn_model_contract_server() -> (String, tokio::task::JoinHandle<Result<(), hyper::Error>>)
+{
+    let make_service = make_service_fn(move |_| async move {
+        Ok::<_, Infallible>(service_fn(|request: Request<Body>| async move {
+            let response = if request.uri().path() == "/tiny-model.gguf" {
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header(CONTENT_LENGTH, "6")
+                    .header("content-type", "application/octet-stream")
+                    .body(Body::from("abcdef"))
+                    .unwrap()
+            } else {
+                Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .body(Body::empty())
+                    .unwrap()
+            };
+            Ok::<_, Infallible>(response)
+        }))
+    });
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = Server::from_tcp(listener).unwrap().serve(make_service);
+    (
+        format!("http://{address}/tiny-model.gguf"),
+        tokio::spawn(server),
+    )
 }
 
 fn test_download_path(name: &str) -> std::path::PathBuf {
@@ -684,6 +731,43 @@ async fn restarts_an_interrupted_download_when_content_range_is_mismatched() {
 
     assert_eq!(bytes, b"abcdef");
     assert_eq!(requests, 3);
+    let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
+}
+
+#[tokio::test]
+async fn downloads_model_fixture_and_enforces_size_and_hash_contract() {
+    let (url, server) = spawn_model_contract_server().await;
+    let save_path = test_download_path("tiny-model.gguf");
+    let item = DownloadItem {
+        url,
+        save_path: save_path.to_string_lossy().into_owned(),
+        proxy: None,
+        sha256: Some(
+            "bef57ec7f53a6d40beb640a780a639c83bc29ac8a9816f1fc6c5c6dcd93c4721".to_string(),
+        ),
+        size: Some(6),
+        model_id: Some("fixture/tiny-model".to_string()),
+    };
+    let app = mock_app();
+
+    download_single_file_for_test(app.handle().clone(), &item, &save_path, 6)
+        .await
+        .unwrap();
+    validate_downloaded_file_for_test(&item, &save_path, app.handle())
+        .await
+        .unwrap();
+    assert_eq!(tokio::fs::read(&save_path).await.unwrap(), b"abcdef");
+
+    let mut wrong_contract = item.clone();
+    wrong_contract.sha256 = Some("0".repeat(64));
+    assert!(
+        validate_downloaded_file_for_test(&wrong_contract, &save_path, app.handle())
+            .await
+            .unwrap_err()
+            .contains("Hash verification failed")
+    );
+
+    server.abort();
     let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
 }
 

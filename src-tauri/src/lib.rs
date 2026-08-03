@@ -1,5 +1,8 @@
 pub mod core;
 
+#[cfg(test)]
+pub(crate) mod test_support;
+
 #[cfg(not(feature = "cli"))]
 use core::{
     app::commands::get_jan_data_folder_path,
@@ -13,9 +16,7 @@ use jan_utils::generate_app_token;
 #[cfg(not(feature = "cli"))]
 use std::{collections::HashMap, sync::Arc};
 #[cfg(not(feature = "cli"))]
-use tauri::{Emitter, Manager, RunEvent};
-#[cfg(all(not(feature = "cli"), target_os = "windows"))]
-use tauri_plugin_llamacpp_upstream::install_bundled_backend;
+use tauri::{path::BaseDirectory, Emitter, Manager, RunEvent};
 #[cfg(not(feature = "cli"))]
 use tauri_plugin_store::StoreExt;
 #[cfg(not(feature = "cli"))]
@@ -172,8 +173,27 @@ pub fn run() {
         core::server::remote_provider_commands::list_provider_configs,
         // MCP commands
         core::mcp::commands::get_tools,
+        core::mcp::commands::get_mcp_server_statuses,
         core::mcp::commands::call_tool,
         core::mcp::commands::cancel_tool_call,
+        core::agent::commands::agent_run_turn,
+        core::agent::commands::agent_cancel_turn,
+        core::agent::commands::agent_resolve_approval,
+        core::agent::commands::agent_resolve_folder_access,
+        core::agent::commands::agent_workspace_list,
+        core::agent::commands::agent_workspace_root,
+        core::agent::commands::agent_workspace_stat,
+        core::agent::commands::agent_workspace_resolve_path,
+        core::agent::commands::agent_workspace_read_text,
+        core::agent::skills::commands::agent_list_skills,
+        core::agent::skills::commands::agent_get_skill,
+        core::agent::skills::commands::agent_set_skill_enabled,
+        core::agent::skills::commands::agent_create_skill,
+        core::agent::skills::commands::agent_import_skill,
+        core::agent::skills::commands::agent_update_skill,
+        core::agent::skills::commands::agent_export_skill,
+        core::agent::skills::commands::agent_delete_skill,
+        core::agent::skills::commands::agent_refresh_skills,
         core::mcp::commands::restart_mcp_servers,
         core::mcp::commands::get_connected_servers,
         core::mcp::commands::save_mcp_configs,
@@ -296,8 +316,27 @@ pub fn run() {
         core::server::remote_provider_commands::abort_remote_stream,
         // MCP commands
         core::mcp::commands::get_tools,
+        core::mcp::commands::get_mcp_server_statuses,
         core::mcp::commands::call_tool,
         core::mcp::commands::cancel_tool_call,
+        core::agent::commands::agent_run_turn,
+        core::agent::commands::agent_cancel_turn,
+        core::agent::commands::agent_resolve_approval,
+        core::agent::commands::agent_resolve_folder_access,
+        core::agent::commands::agent_workspace_list,
+        core::agent::commands::agent_workspace_root,
+        core::agent::commands::agent_workspace_stat,
+        core::agent::commands::agent_workspace_resolve_path,
+        core::agent::commands::agent_workspace_read_text,
+        core::agent::skills::commands::agent_list_skills,
+        core::agent::skills::commands::agent_get_skill,
+        core::agent::skills::commands::agent_set_skill_enabled,
+        core::agent::skills::commands::agent_create_skill,
+        core::agent::skills::commands::agent_import_skill,
+        core::agent::skills::commands::agent_update_skill,
+        core::agent::skills::commands::agent_export_skill,
+        core::agent::skills::commands::agent_delete_skill,
+        core::agent::skills::commands::agent_refresh_skills,
         core::mcp::commands::restart_mcp_servers,
         core::mcp::commands::get_connected_servers,
         core::mcp::commands::save_mcp_configs,
@@ -331,13 +370,19 @@ pub fn run() {
         .manage(AppState {
             app_token: Some(generate_app_token()),
             mcp_servers: Arc::new(Mutex::new(HashMap::new())),
+            mcp_start_generations: Arc::new(Mutex::new(HashMap::new())),
+            mcp_server_generations: Arc::new(Mutex::new(HashMap::new())),
+            mcp_server_errors: Arc::new(Mutex::new(HashMap::new())),
             download_manager: Arc::new(Mutex::new(DownloadManagerState::default())),
             mcp_active_servers: Arc::new(Mutex::new(HashMap::new())),
             server_handle: Arc::new(Mutex::new(None)),
             tool_call_cancellations: Arc::new(Mutex::new(HashMap::new())),
+            agent_pending_approvals: Arc::new(Mutex::new(HashMap::new())),
+            agent_pending_folder_access: Arc::new(Mutex::new(HashMap::new())),
+            agent_approval_allowlist: Arc::new(Mutex::new(Default::default())),
+            agent_session_locks: Arc::new(Mutex::new(HashMap::new())),
             mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
             mcp_shutdown_in_progress: Arc::new(Mutex::new(false)),
-            mcp_monitoring_tasks: Arc::new(Mutex::new(HashMap::new())),
             background_cleanup_handle: Arc::new(Mutex::new(None)),
             mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
             provider_configs: Arc::new(Mutex::new(HashMap::new())),
@@ -392,40 +437,6 @@ pub fn run() {
                 }
             }
 
-            #[cfg(target_os = "windows")]
-            {
-                // Windows installs the bundled upstream backend on startup
-                // (turboquant fork is not shipped on Windows — see ADR
-                // 2026-05-22 "Windows ships only `llamacpp-upstream`"). The
-                // upstream extension reads from `llamacpp-upstream/backends/`.
-                let backends_dir = get_jan_data_folder_path(app.handle().clone())
-                    .join("llamacpp-upstream")
-                    .join("backends");
-                // block_on is safe here: the setup closure runs on the main
-                // thread, which is never a tokio runtime worker.
-                match tauri::async_runtime::block_on(install_bundled_backend(
-                    app.handle().clone(),
-                    backends_dir.to_string_lossy().to_string(),
-                )) {
-                    Ok(result) => {
-                        if let Some(backend_string) = result.backend_string {
-                            log::info!(
-                                "Bundled llama.cpp backend ready during startup: {}",
-                                backend_string
-                            );
-                        } else {
-                            log::info!("No bundled llama.cpp backend installed during startup");
-                        }
-                    }
-                    Err(err) => {
-                        log::warn!(
-                            "Failed to install bundled llama.cpp backend during startup: {}",
-                            err
-                        );
-                    }
-                }
-            }
-
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
@@ -452,6 +463,24 @@ pub fn run() {
             // Migrate MCP servers
             if let Err(e) = setup::migrate_mcp_servers(app.handle().clone(), store.clone()) {
                 log::error!("Failed to migrate MCP servers: {e}");
+            }
+
+            let data_folder = get_jan_data_folder_path(app.handle().clone());
+            if let Err(e) = core::agent::workspace::ensure_default_agent_workspace(&data_folder) {
+                log::error!("{e}");
+            }
+            match app.path().resolve(
+                core::agent::skills::BUNDLED_AGENT_SKILLS_RESOURCE_DIR,
+                BaseDirectory::Resource,
+            ) {
+                Ok(bundled_skills) => {
+                    if let Err(error) =
+                        core::agent::skills::initialize_skills(&data_folder, &bundled_skills)
+                    {
+                        log::error!("{error}");
+                    }
+                }
+                Err(error) => log::error!("Failed to resolve bundled Agent skills: {error}"),
             }
 
             // Store the new app version
@@ -497,6 +526,20 @@ pub fn run() {
             #[cfg(desktop)]
             setup::setup_jan_cli(app.handle().clone(), stored_version != app_version);
             setup::setup_theme_listener(app)?;
+
+            // Keep the Windows window hidden until synchronous setup is
+            // complete, then let WebView2 begin navigation. A fully hidden
+            // WebView2 does not load, so the frontend cannot reveal itself from
+            // JavaScript. The window is decorated/non-transparent on Windows to
+            // avoid the softbuffer resize panic that kills the process when the
+            // client area becomes zero (minimise, bad saved state, etc.).
+            #[cfg(target_os = "windows")]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    window.show()?;
+                }
+            }
+
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -514,8 +557,23 @@ pub fn run() {
             }
         }
 
-        if let RunEvent::Exit = event {
-            let app_handle = app.clone();
+        match event {
+            RunEvent::ExitRequested { .. } => {
+                log::info!("Application exit requested");
+            }
+            RunEvent::WindowEvent { label, event: window_event, .. } => {
+                match window_event {
+                    tauri::WindowEvent::CloseRequested { .. } => {
+                        log::info!("Window close requested: {label}");
+                    }
+                    tauri::WindowEvent::Destroyed => {
+                        log::info!("Window destroyed: {label}");
+                    }
+                    _ => {}
+                }
+            }
+            RunEvent::Exit => {
+                let app_handle = app.clone();
 
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             {
@@ -604,5 +662,7 @@ pub fn run() {
                 });
             });
         }
-    });
+        _ => {}
+    }
+});
 }

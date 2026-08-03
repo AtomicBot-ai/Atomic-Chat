@@ -92,6 +92,8 @@ const defaultSystemUsage: SystemUsage = {
 interface HardwareStore {
   // Hardware data
   hardwareData: HardwareData
+  /** Fresh hardware enumeration completed during this app session. */
+  hardwareReady: boolean
   systemUsage: SystemUsage
 
   // Update functions
@@ -123,6 +125,7 @@ export const useHardware = create<HardwareStore>()(
   persist(
     (set) => ({
       hardwareData: defaultHardwareData,
+      hardwareReady: false,
       systemUsage: defaultSystemUsage,
       gpuLoading: {},
       pollingPaused: false,
@@ -170,6 +173,7 @@ export const useHardware = create<HardwareStore>()(
 
       setHardwareData: (data) =>
         set({
+          hardwareReady: true,
           hardwareData: {
             ...data,
             cpu: {
@@ -210,6 +214,13 @@ export const useHardware = create<HardwareStore>()(
     {
       name: localStorageKey.settingHardware,
       storage: createJSONStorage(() => localStorage),
+      // Readiness is session-scoped: persisted hardware is useful for drawing
+      // immediately, but must not drive a new optimal-backend decision until
+      // the hardware plugin has completed a fresh enumeration.
+      partialize: ({ hardwareReady, ...state }) => {
+        void hardwareReady
+        return state
+      },
     }
   )
 )

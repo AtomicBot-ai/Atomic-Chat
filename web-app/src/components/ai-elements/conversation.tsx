@@ -2,33 +2,57 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { IconArrowDown } from '@tabler/icons-react'
 import type { ComponentProps } from 'react'
-import { useCallback, memo } from 'react'
+import { useCallback, useEffect, memo } from 'react'
 import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom'
 
 export type ConversationProps = ComponentProps<typeof StickToBottom>
 
-export const Conversation = memo(({ className, ...props }: ConversationProps) => (
-  <StickToBottom
-    className={cn('relative flex-1 overflow-y-hidden', className)}
-    initial="smooth"
-    resize="smooth"
-    role="log"
-    {...props}
-  />
-))
+export const Conversation = memo(
+  ({ className, ...props }: ConversationProps) => (
+    <StickToBottom
+      className={cn('relative flex-1 overflow-y-hidden', className)}
+      initial="smooth"
+      resize="instant"
+      role="log"
+      {...props}
+    />
+  )
+)
 
 Conversation.displayName = 'Conversation'
 
-export type ConversationContentProps = ComponentProps<typeof StickToBottom.Content>
+export type ConversationContentProps = ComponentProps<
+  typeof StickToBottom.Content
+>
 
-export const ConversationContent = memo(({ className, ...props }: ConversationContentProps) => (
-  <StickToBottom.Content
-    className={cn('flex flex-col gap-x-8 gap-y-2 px-2', className)}
-    {...props}
-  />
-))
+export const ConversationContent = memo(
+  ({ className, ...props }: ConversationContentProps) => (
+    <StickToBottom.Content
+      className={cn('flex flex-col gap-x-8 gap-y-2 px-2', className)}
+      {...props}
+    />
+  )
+)
 
 ConversationContent.displayName = 'ConversationContent'
+
+export type ConversationAutoScrollProps = {
+  trigger?: string
+}
+
+export const ConversationAutoScroll = ({
+  trigger,
+}: ConversationAutoScrollProps) => {
+  const { scrollToBottom } = useStickToBottomContext()
+
+  useEffect(() => {
+    if (trigger) {
+      scrollToBottom()
+    }
+  }, [scrollToBottom, trigger])
+
+  return null
+}
 
 export type ConversationEmptyStateProps = ComponentProps<'div'> & {
   title?: string

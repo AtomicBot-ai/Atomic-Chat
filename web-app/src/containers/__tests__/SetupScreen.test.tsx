@@ -1,171 +1,185 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
-import { RouterProvider, createRouter, createRootRoute, createMemoryHistory } from '@tanstack/react-router'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SetupScreen from '../SetupScreen'
+import { localStorageKey } from '@/constants/localStorage'
+import { seedServiceHub } from '@/test/service-hub'
 
-// Mock the hooks
-vi.mock('@/hooks/useModelProvider', () => ({
-  useModelProvider: vi.fn(() => ({
-    providers: [],
-    selectedProvider: 'llamacpp',
-    setProviders: vi.fn(),
-    addProvider: vi.fn(),
-  })),
+const mocks = vi.hoisted(() => ({
+  fetchSources: vi.fn(),
+  navigate: vi.fn(),
+  onSkipped: vi.fn(),
+  scanLocalModels: vi.fn(),
+  setLeftPanel: vi.fn(),
+  setOnboardingActive: vi.fn(),
 }))
 
-vi.mock('@/hooks/useAppState', () => ({
-  useAppState: (selector: any) => selector({
-    engineReady: true,
-    setEngineReady: vi.fn(),
-  }),
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => mocks.navigate,
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
-  useTranslation: () => ({
-    t: (key: string) => key,
+  useTranslation: () => ({ t: (key: string) => key }),
+}))
+
+vi.mock('@/hooks/useModelProvider', () => {
+  const state = {
+    providers: [],
+    getProviderByName: vi.fn(),
+    selectModelProvider: vi.fn(),
+    setProviders: vi.fn(),
+  }
+  const useModelProvider = () => state
+  useModelProvider.getState = () => state
+  return { useModelProvider }
+})
+
+vi.mock('@/hooks/useDownloadStore', () => ({
+  useDownloadStore: () => ({
+    downloads: {},
+    localDownloadingModels: new Set(),
+    resumableDownloads: new Set(),
+    addLocalDownloadingModel: vi.fn(),
+    removeLocalDownloadingModel: vi.fn(),
+    markResumableDownload: vi.fn(),
+    clearResumableDownload: vi.fn(),
   }),
 }))
 
-// Mock the services
-vi.mock('@/services/models', () => ({
-  fetchModelCatalog: vi.fn(() => Promise.resolve([])),
-  startModel: vi.fn(() => Promise.resolve()),
+vi.mock('@/hooks/useGeneralSetting', () => {
+  const state = {
+    huggingfaceToken: '',
+    scanLocalModels: true,
+    localScanFolders: [],
+  }
+  const useGeneralSetting = (
+    selector: (value: typeof state) => unknown
+  ): unknown => selector(state)
+  useGeneralSetting.getState = () => state
+  return { useGeneralSetting }
+})
+
+vi.mock('@/hooks/useModelSources', () => ({
+  useModelSources: (
+    selector: (state: {
+      sources: never[]
+      fetchSources: typeof mocks.fetchSources
+      loading: boolean
+    }) => unknown
+  ) =>
+    selector({
+      sources: [],
+      fetchSources: mocks.fetchSources,
+      loading: false,
+    }),
 }))
 
-vi.mock('@/services/app', () => ({
-  relaunch: vi.fn(),
-  getSystemInfo: vi.fn(() => Promise.resolve({ platform: 'darwin', arch: 'x64' })),
+vi.mock('@/hooks/useResolvedRecommendedModels', () => ({
+  useResolvedRecommendedModels: () => [],
 }))
 
-// Mock UI components
-vi.mock('@/components/ui/button', () => ({
-  Button: ({ children, onClick, asChild, ...props }: any) => {
-    if (asChild) {
-      return <div onClick={onClick} {...props}>{children}</div>
-    }
-    return <button onClick={onClick} {...props}>{children}</button>
+vi.mock('@/services/models/localScan', () => ({
+  scanLocalModels: mocks.scanLocalModels,
+  collectImportedModelPaths: () => new Set(),
+}))
+
+vi.mock('@/hooks/useModelLoad', () => {
+  const useModelLoad = {
+    getState: () => ({
+      setOnboardingActive: mocks.setOnboardingActive,
+    }),
+  }
+  return { useModelLoad }
+})
+
+vi.mock('@/hooks/useLeftPanel', () => ({
+  useLeftPanel: {
+    getState: () => ({ setLeftPanel: mocks.setLeftPanel }),
   },
 }))
 
-vi.mock('@tanstack/react-router', async () => {
-  const actual = await vi.importActual('@tanstack/react-router')
-  return {
-    ...actual,
-    Link: ({ children, to, ...props }: any) => (
-      <a href={to} {...props}>{children}</a>
-    ),
-  }
-})
+vi.mock('../HeaderPage', () => ({
+  default: () => <header data-testid="setup-header" />,
+}))
 
-// Create a mock component for testing
-const MockSetupScreen = () => (
-  <div data-testid="setup-screen">
-    <h1>setup:welcome</h1>
-    <div>Setup steps content</div>
-    <a role="link" href="/next">Next Step</a>
-    <div>Provider selection content</div>
-    <div>System information content</div>
-  </div>
-)
+vi.mock('posthog-js', () => ({
+  default: { capture: vi.fn() },
+}))
+
+vi.mock('sonner', () => ({
+  toast: {
+    dismiss: vi.fn(),
+    error: vi.fn(),
+  },
+}))
+
+vi.mock('@janhq/core', () => ({
+  AppEvent: { onModelImported: 'onModelImported' },
+  DownloadEvent: {
+    onFileDownloadAndVerificationSuccess:
+      'onFileDownloadAndVerificationSuccess',
+  },
+  EngineManager: { instance: () => ({ get: vi.fn() }) },
+  events: { on: vi.fn(), off: vi.fn() },
+}))
 
 describe('SetupScreen', () => {
-  const createTestRouter = () => {
-    const rootRoute = createRootRoute({
-      component: MockSetupScreen,
-    })
-
-    return createRouter({
-      routeTree: rootRoute,
-      history: createMemoryHistory({
-        initialEntries: ['/'],
-      }),
-    })
-  }
-
-  const renderSetupScreen = () => {
-    return render(<MockSetupScreen />)
-  }
-
-  const renderWithRouter = () => {
-    const router = createTestRouter()
-    return render(<RouterProvider router={router} />)
+  const deferLocalScan = () => {
+    let finish!: () => void
+    mocks.scanLocalModels.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve([])
+        })
+    )
+    return () => act(async () => finish())
   }
 
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
+    seedServiceHub()
   })
 
-  it('renders setup screen', () => {
-    renderSetupScreen()
+  it('renders the production onboarding after local model discovery completes', async () => {
+    const finishLocalScan = deferLocalScan()
+    const { unmount } = render(<SetupScreen />)
 
-    expect(screen.getByText('setup:welcome')).toBeInTheDocument()
+    expect(screen.getByText('common:loading')).toBeInTheDocument()
+    await finishLocalScan()
+    expect(await screen.findByText('Atomic Chat')).toBeInTheDocument()
+    expect(
+      screen.getByText('No rate limits. No subscriptions. No cloud.')
+    ).toBeInTheDocument()
+    expect(mocks.fetchSources).toHaveBeenCalledOnce()
+    expect(mocks.scanLocalModels).toHaveBeenCalledWith({
+      enabled: true,
+      extraRoots: [],
+      importedPaths: new Set(),
+    })
+    unmount()
   })
 
-  it('renders welcome message', () => {
-    renderSetupScreen()
+  it('persists and reports a skipped setup', async () => {
+    const finishLocalScan = deferLocalScan()
+    const completedEvent = vi.fn()
+    window.addEventListener('app:setup-completed', completedEvent)
+    const { unmount } = render(<SetupScreen onSkipped={mocks.onSkipped} />)
 
-    expect(screen.getByText('setup:welcome')).toBeInTheDocument()
-  })
+    await finishLocalScan()
+    fireEvent.click(await screen.findByRole('button', { name: 'setup:skip' }))
 
-  it('renders setup steps', () => {
-    renderSetupScreen()
-
-    // Check for setup step indicators or content
-    const setupContent = screen.getByText('Setup steps content')
-    expect(setupContent).toBeInTheDocument()
-  })
-
-  it('renders provider selection', () => {
-    renderSetupScreen()
-
-    // Look for provider-related content
-    const providerContent = screen.getByText('Provider selection content')
-    expect(providerContent).toBeInTheDocument()
-  })
-
-  it('renders with proper styling', () => {
-    renderSetupScreen()
-
-    const setupContainer = screen.getByTestId('setup-screen')
-    expect(setupContainer).toBeInTheDocument()
-  })
-
-  it('handles setup completion', () => {
-    renderSetupScreen()
-
-    // The component should render without errors
-    expect(screen.getByText('setup:welcome')).toBeInTheDocument()
-  })
-
-  it('renders next step button', () => {
-    renderSetupScreen()
-
-    // Look for links that act as buttons/next steps
-    const links = screen.getAllByRole('link')
-    expect(links.length).toBeGreaterThan(0)
-
-    // Check that the Next Step link is present
-    expect(screen.getByText('Next Step')).toBeInTheDocument()
-  })
-
-  it('handles provider configuration', () => {
-    renderSetupScreen()
-
-    // Component should render provider configuration options
-    expect(screen.getByText('Provider selection content')).toBeInTheDocument()
-  })
-
-  it('displays system information', () => {
-    renderSetupScreen()
-
-    // Component should display system-related information
-    expect(screen.getByText('System information content')).toBeInTheDocument()
-  })
-
-  it('handles model installation', () => {
-    renderSetupScreen()
-
-    // Component should handle model installation process
-    expect(screen.getByTestId('setup-screen')).toBeInTheDocument()
+    expect(localStorage.getItem(localStorageKey.setupCompleted)).toBe('true')
+    expect(mocks.onSkipped).toHaveBeenCalledOnce()
+    expect(mocks.setLeftPanel).toHaveBeenCalledWith(true)
+    expect(completedEvent).toHaveBeenCalledOnce()
+    await waitFor(() => {
+      expect(mocks.navigate).toHaveBeenCalledWith({
+        to: '/',
+        replace: true,
+        search: {},
+      })
+    })
+    unmount()
+    window.removeEventListener('app:setup-completed', completedEvent)
   })
 })

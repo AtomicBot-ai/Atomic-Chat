@@ -49,6 +49,12 @@ vi.mock('@tauri-apps/api/path', () => ({
   resolve: vi.fn(),
 }))
 
+vi.mock('@tauri-apps/plugin-log', () => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}))
+
 // Mock @janhq/core
 vi.mock('@janhq/core', () => ({
   getJanDataFolderPath: vi.fn(),
@@ -67,6 +73,21 @@ vi.mock('@janhq/core', () => ({
   chatCompletionChunk: {},
   ImportOptions: {},
   chatCompletionRequest: {},
+  AppEvent: {
+    onModelImported: 'onModelImported',
+  },
+  DownloadEvent: {
+    onFileDownloadUpdate: 'onFileDownloadUpdate',
+    onFileDownloadError: 'onFileDownloadError',
+    onFileDownloadStopped: 'onFileDownloadStopped',
+    onModelValidationStarted: 'onModelValidationStarted',
+    onModelValidationFailed: 'onModelValidationFailed',
+    onFileDownloadAndVerificationSuccess:
+      'onFileDownloadAndVerificationSuccess',
+  },
+  ModelEvent: {
+    OnAutoIncreasedCtxLen: 'OnAutoIncreasedCtxLen',
+  },
   events: {
     emit: vi.fn(),
   },

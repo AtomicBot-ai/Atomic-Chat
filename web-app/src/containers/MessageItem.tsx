@@ -1,13 +1,14 @@
-import { memo, useState, useCallback } from 'react'
+import {
+  memo,
+  useState,
+  useCallback,
+  type ComponentPropsWithoutRef,
+} from 'react'
 import type { UIMessage, ChatStatus } from 'ai'
 import { RenderMarkdown } from './RenderMarkdown'
 import { cn } from '@/lib/utils'
 import { twMerge } from 'tailwind-merge'
-import {
-  Reasoning,
-  ReasoningContent,
-  ReasoningTrigger,
-} from '@/components/ai-elements/reasoning'
+import { ReasoningContent } from '@/components/ai-elements/reasoning'
 import { Tool } from '@/components/ai-elements/tools/tool'
 import { CopyButton } from './CopyButton'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -21,11 +22,21 @@ import { extractFilesFromPrompt, FileMetadata } from '@/lib/fileMetadata'
 import { AttachmentChip } from '@/containers/AttachmentChip'
 import { useMemo } from 'react'
 import { Button } from '@/components/ui/button'
-import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { buildTraceBlocks } from '@/lib/tools/message-trace-parts'
 import { ToolRenderer } from '@/components/ai-elements/tools/tool-renderer'
 import { TraceBlock } from '@/lib/tools/types'
+import {
+  ActivityDetail,
+  AgentActivity,
+} from '@/components/ai-elements/agent-activity'
+import {
+  agentFilePathFromHref,
+  type AgentFileReference,
+  extractAgentToolPaths,
+  linkAgentFileReferences,
+} from '@/lib/agent-file-links'
+import { useServiceHub } from '@/hooks/useServiceHub'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -35,20 +46,19 @@ const CHAT_STATUS = {
 const CONTENT_TYPE = {
   TEXT: 'text',
   FILE: 'file',
-  REASONING: 'reasoning',
 } as const
 
 type TextTraceBlock = Extract<TraceBlock, { kind: 'text' }>
-type ReasoningTraceBlock = Extract<TraceBlock, { kind: 'reasoning' }>
-type ToolTraceBlock = Extract<TraceBlock, { kind: 'tool' }>
 type FileTraceBlock = Extract<TraceBlock, { kind: 'file' }>
 type AudioTraceBlock = Extract<TraceBlock, { kind: 'audio' }>
+type ActivityTraceBlock = Extract<TraceBlock, { kind: 'activity' }>
 
 export type MessageItemProps = {
   message: UIMessage
   isFirstMessage: boolean
   isLastMessage: boolean
   status: ChatStatus
+  requestActive?: boolean
   reasoningContainerRef?: React.RefObject<HTMLDivElement | null>
   onRegenerate?: (messageId: string) => void
   onEdit?: (messageId: string, newText: string) => void
@@ -57,6 +67,7 @@ export type MessageItemProps = {
   showAssistant?: boolean
   isAnimating?: boolean
   hideActions?: boolean
+  agentAttachmentReferences?: readonly AgentFileReference[]
 }
 
 export const MessageItem = memo(
@@ -64,14 +75,17 @@ export const MessageItem = memo(
     message,
     isLastMessage,
     status,
+    requestActive,
     isAnimating,
     hideActions,
     reasoningContainerRef,
     onRegenerate,
     onEdit,
     onDelete,
+    agentAttachmentReferences = [],
   }: MessageItemProps) => {
-    const { t } = useTranslation()
+    const { t } = useTranslation('chat')
+    const serviceHub = useServiceHub()
     const selectedModel = useModelProvider((state) => state.selectedModel)
     // Global "Disable reasoning" toggle: some providers (e.g. MiniMax) ignore
     // every known API flag and keep streaming chain-of-thought. Hide those
@@ -115,29 +129,64 @@ export const MessageItem = memo(
     }, [message.parts])
 
     const isStreaming = isLastMessage && status === CHAT_STATUS.STREAMING
+    const isRequestActive =
+      isLastMessage &&
+      message.role === 'assistant' &&
+      (requestActive ??
+        (status === CHAT_STATUS.STREAMING || status === CHAT_STATUS.SUBMITTED))
+    const isAgentMessage = Boolean(
+      (message.metadata as { agent_run?: unknown } | undefined)?.agent_run
+    )
+    const agentFileReferences = useMemo(
+      () =>
+        isAgentMessage
+          ? [
+              ...agentAttachmentReferences,
+              ...extractAgentToolPaths(message.parts),
+            ]
+          : [],
+      [agentAttachmentReferences, isAgentMessage, message.parts]
+    )
+    const agentMarkdownComponents = useMemo(
+      () =>
+        isAgentMessage
+          ? {
+              a: ({
+                href,
+                children,
+                ...props
+              }: ComponentPropsWithoutRef<'a'>) => {
+                const filePath = href ? agentFilePathFromHref(href) : null
+                if (!filePath) {
+                  return (
+                    <a href={href} {...props}>
+                      {children}
+                    </a>
+                  )
+                }
 
-    // When a tool call has just completed and the assistant is still
-    // streaming the next part (text or another tool), show a "Working…"
-    // shimmer at the end of the bubble so the UI never feels frozen —
-    // especially when reasoning is disabled and the reasoning panel
-    // (which would otherwise act as the activity indicator) is hidden.
-    const showWorkingShimmer = useMemo(() => {
-      if (!isLastMessage) return false
-      if (message.role !== 'assistant') return false
-      if (status !== CHAT_STATUS.STREAMING) return false
-      const visibleParts = message.parts.filter(
-        (p) => !(p.type === CONTENT_TYPE.REASONING && disableReasoning)
-      )
-      const lastVisible = visibleParts[visibleParts.length - 1]
-      if (!lastVisible || typeof lastVisible.type !== 'string') return false
-      if (!lastVisible.type.startsWith('tool-')) return false
-      const toolState = (lastVisible as { state?: string }).state
-      return (
-        toolState === 'output-available' ||
-        toolState === 'output-error' ||
-        toolState === 'output-denied'
-      )
-    }, [isLastMessage, message.role, message.parts, status, disableReasoning])
+                return (
+                  <a
+                    href={href}
+                    {...props}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      void serviceHub
+                        .opener()
+                        .openPath(filePath)
+                        .catch((error) => {
+                          console.error('Failed to open Agent file:', error)
+                        })
+                    }}
+                  >
+                    {children}
+                  </a>
+                )
+              },
+            }
+          : undefined,
+      [isAgentMessage, serviceHub]
+    )
 
     // Extract file metadata from message text (for user messages with attachments)
     const attachedFiles = useMemo(() => {
@@ -206,7 +255,12 @@ export const MessageItem = memo(
             </div>
           ) : (
             <RenderMarkdown
-              content={block.text}
+              content={
+                isAgentMessage
+                  ? linkAgentFileReferences(block.text, agentFileReferences)
+                  : block.text
+              }
+              components={agentMarkdownComponents}
               isStreaming={isStreaming && isLastBlock}
               messageId={message.id}
               isAnimating={isAnimating}
@@ -214,41 +268,6 @@ export const MessageItem = memo(
             />
           )}
         </div>
-      )
-    }
-
-    const renderReasoningBlock = (
-      block: ReasoningTraceBlock,
-      index: number
-    ) => {
-      const isLastBlock = index === traceBlocks.length - 1
-      const shouldBeOpen = isStreaming && isLastBlock
-
-      return (
-        <Reasoning
-          key={block.key}
-          className="w-full text-muted-foreground"
-          isStreaming={isStreaming && isLastBlock}
-          defaultOpen={shouldBeOpen}
-        >
-          <ReasoningTrigger />
-          <div className="relative">
-            {isStreaming && (
-              <div className="absolute top-0 left-0 right-0 h-8 bg-linear-to-br from-neutral-50 mask-t-from-98% dark:from-background to-transparent pointer-events-none z-10" />
-            )}
-            <div
-              ref={isStreaming ? reasoningContainerRef : null}
-              className={twMerge(
-                'w-full overflow-auto relative',
-                isStreaming
-                  ? 'max-h-32 opacity-70 mt-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
-                  : 'h-auto opacity-100'
-              )}
-            >
-              <ReasoningContent>{block.text}</ReasoningContent>
-            </div>
-          </div>
-        </Reasoning>
       )
     }
 
@@ -297,21 +316,94 @@ export const MessageItem = memo(
       )
     }
 
-    const renderToolBlock = (block: ToolTraceBlock) => {
+    const renderActivityBlock = (block: ActivityTraceBlock) => {
+      const agentStatus = block.agentSummary?.status
+      const active =
+        isRequestActive &&
+        (!agentStatus ||
+          agentStatus === 'running' ||
+          agentStatus === 'awaiting_approval')
+      const summaryToolCount =
+        block.agentSummary?.tools.filter(
+          ({ tool }) => tool !== 'reply' && tool !== 'finish'
+        ).length ?? 0
+      const toolCount = block.tools.length || summaryToolCount
+      const durationSeconds = Number(
+        Math.max(0.1, (block.durationMs ?? 100) / 1000).toFixed(1)
+      )
+
       return (
-        <Tool
+        <AgentActivity
           key={block.key}
-          state={block.state}
-          className="mb-4 rounded-lg border border-border/60 bg-muted/20 px-3 py-2"
+          active={active}
+          workingLabel={t('activity.working')}
+          durationLabel={t('activity.workedFor', {
+            count: durationSeconds,
+          })}
+          hasDetails={toolCount > 0 || block.reasoning.length > 0}
         >
-          <ToolRenderer presentation={block.presentation} state={block.state} />
-        </Tool>
+          {toolCount > 0 && (
+            <ActivityDetail
+              label={t(
+                toolCount === 1
+                  ? 'activity.calledTool'
+                  : 'activity.calledTools',
+                { count: toolCount }
+              )}
+            >
+              {block.tools.map((tool) => (
+                <Tool key={tool.key} state={tool.state} className="py-1">
+                  <ToolRenderer
+                    presentation={tool.presentation}
+                    state={tool.state}
+                  />
+                </Tool>
+              ))}
+            </ActivityDetail>
+          )}
+          {block.reasoning.length > 0 && (
+            <ActivityDetail label={t('activity.reasoned')}>
+              <div
+                ref={active ? reasoningContainerRef : null}
+                className={twMerge(
+                  'relative w-full overflow-auto',
+                  active
+                    ? 'max-h-32 opacity-70 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
+                    : 'h-auto opacity-100'
+                )}
+              >
+                {block.reasoning.map((reasoning) => (
+                  <ReasoningContent key={reasoning.key}>
+                    {reasoning.text}
+                  </ReasoningContent>
+                ))}
+              </div>
+            </ActivityDetail>
+          )}
+          {block.agentSummary?.loops.map((loop, index) => (
+            <div
+              key={`${block.key}-loop-${index}`}
+              className="py-1 text-xs text-muted-foreground"
+            >
+              {loop.message}
+            </div>
+          ))}
+          {block.agentSummary?.error && (
+            <div className="py-1 text-xs text-destructive">
+              {block.agentSummary.error.category}:{' '}
+              {block.agentSummary.error.message}
+            </div>
+          )}
+        </AgentActivity>
       )
     }
 
     const traceBlocks = useMemo(
-      () => buildTraceBlocks(message, disableReasoning),
-      [message, disableReasoning]
+      () =>
+        buildTraceBlocks(message, disableReasoning, {
+          ensureActivity: isRequestActive,
+        }),
+      [message, disableReasoning, isRequestActive]
     )
 
     return (
@@ -321,24 +413,16 @@ export const MessageItem = memo(
           switch (block.kind) {
             case 'text':
               return renderTextBlock(block, index)
-            case 'reasoning':
-              return renderReasoningBlock(block, index)
             case 'file':
               return renderFileBlock(block)
             case 'audio':
               return renderAudioBlock(block)
-            case 'tool':
-              return renderToolBlock(block)
+            case 'activity':
+              return renderActivityBlock(block)
             default:
               return null
           }
         })}
-
-        {showWorkingShimmer && (
-          <div className="flex flex-row items-center gap-2 mt-2">
-            <Shimmer duration={1}>{t('common:working')}</Shimmer>
-          </div>
-        )}
 
         {/* Message actions for user messages */}
         {message.role === 'user' && !hideActions && (
@@ -365,7 +449,7 @@ export const MessageItem = memo(
             <div
               className={cn(
                 'flex items-center gap-1',
-                (isStreaming || hideActions) && 'hidden'
+                (isRequestActive || hideActions) && 'hidden'
               )}
             >
               <CopyButton text={getFullTextContent()} />
@@ -396,10 +480,14 @@ export const MessageItem = memo(
                 )}
             </div>
 
-            <TokenSpeedIndicator
-              streaming={isStreaming}
-              metadata={message.metadata as Record<string, unknown> | undefined}
-            />
+            {!isRequestActive && (
+              <TokenSpeedIndicator
+                streaming={false}
+                metadata={
+                  message.metadata as Record<string, unknown> | undefined
+                }
+              />
+            )}
           </div>
         )}
 
@@ -422,7 +510,11 @@ export const MessageItem = memo(
   },
   (prevProps, nextProps) => {
     // Always re-render if streaming and this is the last message
-    if (nextProps.isLastMessage && nextProps.status === CHAT_STATUS.STREAMING) {
+    if (
+      nextProps.isLastMessage &&
+      (nextProps.status === CHAT_STATUS.STREAMING ||
+        nextProps.status === CHAT_STATUS.SUBMITTED)
+    ) {
       return false
     }
 
@@ -431,8 +523,11 @@ export const MessageItem = memo(
       prevProps.isFirstMessage === nextProps.isFirstMessage &&
       prevProps.isLastMessage === nextProps.isLastMessage &&
       prevProps.status === nextProps.status &&
+      prevProps.requestActive === nextProps.requestActive &&
       prevProps.showAssistant === nextProps.showAssistant &&
-      prevProps.hideActions === nextProps.hideActions
+      prevProps.hideActions === nextProps.hideActions &&
+      prevProps.agentAttachmentReferences ===
+        nextProps.agentAttachmentReferences
     )
   }
 )

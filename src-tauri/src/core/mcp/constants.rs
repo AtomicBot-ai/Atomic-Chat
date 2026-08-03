@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 // Default MCP runtime settings
 pub const DEFAULT_MCP_TOOL_CALL_TIMEOUT_SECS: u64 = 30;
+pub const DEFAULT_MCP_HANDSHAKE_TIMEOUT_SECS: u64 = 30;
 
 /// Short, dedicated ceiling for *listing* tools (`get_tools`), distinct from the
 /// 30s tool-*call* timeout. Listing is a metadata round-trip that a healthy
@@ -11,9 +12,6 @@ pub const DEFAULT_MCP_TOOL_CALL_TIMEOUT_SECS: u64 = 30;
 /// Applied per-server while all servers are listed concurrently, so total
 /// `get_tools` latency is bounded by this value rather than N × 30s (ATO-271).
 pub const DEFAULT_MCP_TOOL_LIST_TIMEOUT_SECS: u64 = 5;
-pub const DEFAULT_MCP_BASE_RESTART_DELAY_MS: u64 = 1000; // Start with 1 second
-pub const DEFAULT_MCP_MAX_RESTART_DELAY_MS: u64 = 30000; // Cap at 30 seconds
-pub const DEFAULT_MCP_BACKOFF_MULTIPLIER: f64 = 2.0; // Double the delay each time
 
 /// Sentinel inside `DEFAULT_MCP_CONFIG_TEMPLATE` that is replaced at runtime
 /// with the per-user sandbox directory exposed to the filesystem MCP server.
@@ -105,10 +103,7 @@ const DEFAULT_MCP_CONFIG_TEMPLATE: &str = r#"{
     }
   },
   "mcpSettings": {
-    "toolCallTimeoutSeconds": 30,
-    "baseRestartDelayMs": 1000,
-    "maxRestartDelayMs": 30000,
-    "backoffMultiplier": 2.0
+    "toolCallTimeoutSeconds": 30
   }
 }"#;
 

@@ -1,0 +1,31 @@
+{
+  "$schema": "./schema.json",
+  "schema_version": 1,
+  "updated_at": "2026-07-13T12:45:09Z",
+  "recommendations": [
+    {
+      "model_name": "AtomicChat/Qwen3.5-4B-GGUF",
+      "description_key": "hub:recEverydayUse"
+    },
+    {
+      "model_name": "AtomicChat/gemma-4-E4B-it-GGUF",
+      "description_key": "hub:recEverydayUse"
+    },
+    {
+      "model_name": "AtomicChat/Qwen3.5-9B-GGUF",
+      "description_key": "hub:recEverydayUse"
+    },
+    {
+      "model_name": "AtomicChat/gemma-4-12b-it-GGUF",
+      "description_key": "hub:recEverydayUse"
+    },
+    {
+      "model_name": "AtomicChat/qwen36-27b-GGUF",
+      "description_key": "hub:recEverydayUse"
+    },
+    {
+      "model_name": "AtomicChat/gemma-4-31B-it-GGUF",
+      "description_key": "hub:recEverydayUse"
+    }
+  ]
+}

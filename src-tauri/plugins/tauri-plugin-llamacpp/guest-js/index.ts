@@ -13,6 +13,7 @@ import {
   UpdateCheckResult,
   SettingUpdateResult,
   BundledBackendResult,
+  RuntimeDeviceInfo,
 } from './types'
 
 // Helpers
@@ -127,6 +128,12 @@ export async function getDevices(
   })
 }
 
+export async function getRuntimeDevice(
+  pid: number
+): Promise<RuntimeDeviceInfo | null> {
+  return await invoke('plugin:llamacpp|get_runtime_device', { pid })
+}
+
 export async function generateApiKey(
   modelId: string,
   apiSecret: string
@@ -228,6 +235,7 @@ export function normalizeFeatures(features: any): BackendFeatures {
     cuda12: features.cuda12 || false,
     cuda13: features.cuda13 || false,
     vulkan: features.vulkan || false,
+    rocm: features.rocm || false,
   }
 }
 
@@ -276,6 +284,19 @@ export async function isCudaInstalledFromRust(
     version,
     osType,
     janDataFolderPath,
+  })
+}
+
+/** Copy DLL files whose names start with any of `namePrefixes` from `srcDir` to `dstDir`. */
+export async function copyBackendDlls(
+  srcDir: string,
+  dstDir: string,
+  namePrefixes: string[]
+): Promise<number> {
+  return invoke<number>('plugin:llamacpp|copy_backend_dlls', {
+    srcDir,
+    dstDir,
+    namePrefixes,
   })
 }
 

@@ -1,7 +1,6 @@
 use tauri::{
     plugin::{Builder, TauriPlugin},
-    Runtime,
-    Manager,
+    Manager, Runtime,
 };
 
 mod commands;

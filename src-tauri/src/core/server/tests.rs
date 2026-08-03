@@ -125,7 +125,10 @@ mod tests {
 
     #[test]
     fn test_model_ids_match_exact() {
-        assert!(proxy::model_ids_match("Qwen3.5-9B-MLX-4bit", "Qwen3.5-9B-MLX-4bit"));
+        assert!(proxy::model_ids_match(
+            "Qwen3.5-9B-MLX-4bit",
+            "Qwen3.5-9B-MLX-4bit"
+        ));
         assert!(proxy::model_ids_match("", ""));
     }
 
@@ -403,10 +406,7 @@ mod tests {
         );
         assert_eq!(msgs[1]["role"], "user");
         assert_eq!(msgs[1]["content"], "hi");
-        let system_count = msgs
-            .iter()
-            .filter(|m| m["role"] == "system")
-            .count();
+        let system_count = msgs.iter().filter(|m| m["role"] == "system").count();
         assert_eq!(system_count, 1);
     }
 
@@ -520,14 +520,19 @@ mod tests {
         let closers = conv.finish(Some(&json!({
             "prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4
         })));
-        let closer_types: Vec<&str> =
-            closers.iter().map(|e| e["type"].as_str().unwrap()).collect();
+        let closer_types: Vec<&str> = closers
+            .iter()
+            .map(|e| e["type"].as_str().unwrap())
+            .collect();
         assert!(closer_types.contains(&"response.output_text.done"));
         assert!(closer_types.contains(&"response.output_item.done"));
         let completed = closers.last().unwrap();
         assert_eq!(completed["type"], "response.completed");
         assert_eq!(completed["response"]["status"], "completed");
-        assert_eq!(completed["response"]["output"][0]["content"][0]["text"], "Hello");
+        assert_eq!(
+            completed["response"]["output"][0]["content"][0]["text"],
+            "Hello"
+        );
         assert_eq!(completed["response"]["usage"]["output_tokens"], 1);
     }
 
@@ -560,5 +565,93 @@ mod tests {
         assert_eq!(item["call_id"], "call_1");
         assert_eq!(item["name"], "shell");
         assert_eq!(item["arguments"], "{\"cmd\":\"ls\"}");
+    }
+
+    fn fixture(name: &str) -> serde_json::Value {
+        let raw = match name {
+            "chat" => include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../tests/fixtures/proxy/openai-chat-completion.json"
+            )),
+            "tool" => include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../tests/fixtures/proxy/openai-tool-completion.json"
+            )),
+            "stream" => include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../tests/fixtures/proxy/openai-chat-stream.json"
+            )),
+            _ => panic!("unknown fixture"),
+        };
+        serde_json::from_str(raw).unwrap()
+    }
+
+    #[test]
+    fn sanitized_chat_fixture_replays_through_response_transforms() {
+        let chat = fixture("chat");
+
+        let responses = chat_response_to_responses(&chat, "resp_fixture", "fallback");
+        assert_eq!(responses["status"], "completed");
+        assert_eq!(responses["model"], "<model>");
+        assert_eq!(responses["output"][0]["content"][0]["text"], "<content>");
+        assert_eq!(responses["usage"]["total_tokens"], 2);
+
+        let anthropic = proxy::transform_openai_response_to_anthropic(&chat);
+        assert_eq!(anthropic["type"], "message");
+        assert_eq!(anthropic["content"][0]["type"], "text");
+        assert_eq!(anthropic["content"][0]["text"], "<content>");
+        assert_eq!(anthropic["stop_reason"], "end_turn");
+    }
+
+    #[test]
+    fn sanitized_tool_fixture_replays_through_response_transforms() {
+        let chat = fixture("tool");
+
+        let responses = chat_response_to_responses(&chat, "resp_fixture", "fallback");
+        let function_call = &responses["output"][0];
+        assert_eq!(function_call["type"], "function_call");
+        assert_eq!(function_call["name"], "get_temperature");
+        assert_eq!(function_call["arguments"], "{\"location\":\"Paris\"}");
+
+        let anthropic = proxy::transform_openai_response_to_anthropic(&chat);
+        assert_eq!(anthropic["content"][0]["type"], "tool_use");
+        assert_eq!(anthropic["content"][0]["name"], "get_temperature");
+        assert_eq!(anthropic["content"][0]["input"]["location"], "Paris");
+        assert_eq!(anthropic["stop_reason"], "tool_use");
+    }
+
+    #[test]
+    fn sanitized_stream_fixture_replays_in_deterministic_order() {
+        let chunks = fixture("stream").as_array().unwrap().clone();
+        let mut conv = ResponsesStreamConverter::new("resp_fixture".into(), "<model>".into());
+        let mut events = vec![conv.created_event()];
+        let mut usage = None;
+
+        for chunk in &chunks {
+            if let Some(value) = chunk.get("usage") {
+                usage = Some(value.clone());
+            }
+            events.extend(conv.on_chunk(chunk));
+        }
+        events.extend(conv.finish(usage.as_ref()));
+
+        let sequence_numbers: Vec<u64> = events
+            .iter()
+            .map(|event| event["sequence_number"].as_u64().unwrap())
+            .collect();
+        assert_eq!(
+            sequence_numbers,
+            (0..sequence_numbers.len() as u64).collect::<Vec<_>>()
+        );
+        assert_eq!(events.first().unwrap()["type"], "response.created");
+        assert_eq!(events.last().unwrap()["type"], "response.completed");
+        assert_eq!(
+            events.last().unwrap()["response"]["output"][0]["content"][0]["text"],
+            "fixture"
+        );
+        assert_eq!(
+            events.last().unwrap()["response"]["usage"]["total_tokens"],
+            2
+        );
     }
 }

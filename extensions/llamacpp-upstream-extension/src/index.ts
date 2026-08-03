@@ -58,6 +58,7 @@ import {
   isCpuBackend,
   isUnsupportedNoAvxCpu,
   CPU_NO_AVX_ERROR_CODE,
+  classifyBackendMismatch,
   type EmbedBatchResult,
 } from './util'
 import {
@@ -103,6 +104,7 @@ import {
   normalizeFeatures,
   isCudaInstalledFromRust,
   checkSpecTypeSupport,
+  getRuntimeDevice,
 } from '../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index'
 
 // Error message constant - matches web-app/src/utils/error.ts
@@ -194,7 +196,7 @@ function modelLoadReadyTimeoutSecs(configuredTimeoutSecs: number): number {
 /// (`LLAMACPP_UPSTREAM_TAG`) and `atomic-chat-conf/backends/manifest.json`
 /// (`tag_name`). Remove (or move to a real settings-driven pin) once the
 /// team is done validating this tag broadly. See `enforcePinnedBackendVersion`.
-const PINNED_BACKEND_TAG = 'b9937'
+const PINNED_BACKEND_TAG = 'b10205'
 
 /**
  * Override the default app.log function to use Jan's logging system.
@@ -248,8 +250,7 @@ function formatLoadError(err: unknown): string {
     if (typeof e.details === 'string' && e.details.trim())
       parts.push(e.details.trim())
     if (parts.length > 0) {
-      const code =
-        typeof e.code === 'string' && e.code ? ` [${e.code}]` : ''
+      const code = typeof e.code === 'string' && e.code ? ` [${e.code}]` : ''
       return `${parts.join('\n')}${code}`
     }
     try {
@@ -288,7 +289,10 @@ function toLoadError(err: unknown): Error {
  * `reportModelLoadError` (switchModel.ts → `toErrorObject`) can classify it
  * into the actionable MODEL_FILE_* toast instead of the opaque generic one.
  */
-function codedLoadError(code: string, message: string): Error & { code: string } {
+function codedLoadError(
+  code: string,
+  message: string
+): Error & { code: string } {
   const e = new Error(message) as Error & { code: string }
   e.code = code
   return e
@@ -315,13 +319,20 @@ function stripBom(s: string): string {
 
 function backendCategoryToLabel(category: string): string {
   switch (category) {
-    case 'cuda-cu13': return 'CUDA 13'
-    case 'cuda-cu13.0': return 'CUDA 13'
-    case 'cuda-cu12.4': return 'CUDA 12'
-    case 'cuda-cu12.0': return 'CUDA 12'
-    case 'cuda-cu11.7': return 'CUDA 11'
-    case 'vulkan': return 'Vulkan'
-    default: return category
+    case 'cuda-cu13':
+      return 'CUDA 13'
+    case 'cuda-cu13.0':
+      return 'CUDA 13'
+    case 'cuda-cu12.4':
+      return 'CUDA 12'
+    case 'cuda-cu12.0':
+      return 'CUDA 12'
+    case 'cuda-cu11.7':
+      return 'CUDA 11'
+    case 'vulkan':
+      return 'Vulkan'
+    default:
+      return category
   }
 }
 
@@ -391,6 +402,27 @@ type IdealBackendResult =
   | { kind: 'cpu-optimal' }
   | { kind: 'detection-failed' }
 
+export const OPTIMAL_BACKEND_CACHE_KEY =
+  'atomic_llamacpp_upstream_optimal_backend_v1'
+
+type OptimalBackendCacheBase = {
+  schemaVersion: 1
+  provider: 'llamacpp-upstream'
+  detectedAt: number
+  currentBackend: string
+  recommendedCategory: string
+}
+
+export type OptimalBackendCacheRecord =
+  | (OptimalBackendCacheBase & {
+      detectionKind: 'gpu'
+      idealBackendId: string
+      recommendedBackend?: string
+    })
+  | (OptimalBackendCacheBase & {
+      detectionKind: 'cpu-optimal'
+    })
+
 /**
  * Sentinel `Error.message` thrown by `recheckOptimalBackend()` when backend
  * detection could not complete (ATO-161). Callers
@@ -431,6 +463,97 @@ export default class llamacpp_upstream_extension extends AIEngine {
   private unlistenValidationStarted?: () => void
   private unlistenAutoIncreaseCtx?: () => void
   private unlistenSessionDied?: () => void
+  /// `<version>/<backend>` the last load actually launched. Diverges from the
+  /// persisted `version_backend` when `resolveBackendFallback` tier 3 degrades
+  /// to an installed backend without persisting the swap — the case where the
+  /// settings dropdown keeps showing a backend that is not running.
+  private effectiveVersionBackend: string | null = null
+
+  /**
+   * Returns the provider-scoped optimal-backend cache when its schema and
+   * required fields are valid. Invalid or stale-shaped values are ignored.
+   */
+  getCachedOptimalBackend(): OptimalBackendCacheRecord | null {
+    try {
+      const raw = localStorage.getItem(OPTIMAL_BACKEND_CACHE_KEY)
+      if (!raw) return null
+
+      const value = JSON.parse(raw) as Record<string, unknown>
+      if (
+        value.schemaVersion !== 1 ||
+        value.provider !== 'llamacpp-upstream' ||
+        !Number.isFinite(value.detectedAt) ||
+        (value.detectedAt as number) < 0 ||
+        typeof value.currentBackend !== 'string' ||
+        typeof value.recommendedCategory !== 'string' ||
+        !value.recommendedCategory
+      ) {
+        return null
+      }
+
+      if (value.detectionKind === 'gpu') {
+        const recommendedType =
+          typeof value.recommendedBackend === 'string'
+            ? stripBom(value.recommendedBackend).split('/')[1]
+            : undefined
+        if (
+          typeof value.idealBackendId !== 'string' ||
+          !value.idealBackendId ||
+          (value.recommendedBackend !== undefined &&
+            (typeof value.recommendedBackend !== 'string' ||
+              !isConcreteVersionBackend(value.recommendedBackend) ||
+              recommendedType !== stripBom(value.idealBackendId)))
+        ) {
+          return null
+        }
+        return value as OptimalBackendCacheRecord
+      }
+      if (value.detectionKind === 'cpu-optimal') {
+        if (
+          value.idealBackendId !== undefined ||
+          value.recommendedBackend !== undefined
+        ) {
+          return null
+        }
+        return value as OptimalBackendCacheRecord
+      }
+      return null
+    } catch {
+      return null
+    }
+  }
+
+  private persistOptimalBackendCache(
+    detection: Exclude<IdealBackendResult, { kind: 'detection-failed' }>,
+    currentBackend: string,
+    recommendedBackend?: string | null
+  ): OptimalBackendCacheRecord {
+    const record: OptimalBackendCacheRecord =
+      detection.kind === 'cpu-optimal'
+        ? {
+            schemaVersion: 1,
+            provider: 'llamacpp-upstream',
+            detectedAt: Date.now(),
+            detectionKind: 'cpu-optimal',
+            currentBackend,
+            recommendedCategory: 'CPU',
+          }
+        : {
+            schemaVersion: 1,
+            provider: 'llamacpp-upstream',
+            detectedAt: Date.now(),
+            detectionKind: 'gpu',
+            currentBackend,
+            idealBackendId: detection.backend,
+            ...(recommendedBackend ? { recommendedBackend } : {}),
+            recommendedCategory: backendCategoryToLabel(
+              get_backend_category(detection.backend)
+            ),
+          }
+
+    localStorage.setItem(OPTIMAL_BACKEND_CACHE_KEY, JSON.stringify(record))
+    return record
+  }
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -608,10 +731,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
         //! Раньше отклонённый промис терялся; без лога сложно понять вечный «loading» в настройках.
         logger.error('configureBackends failed:', err)
       })
-      // Runs after every launch resolves a concrete `version_backend`, to
-      // forcibly reconcile it to `PINNED_BACKEND_TAG`. Chained onto the
-      // same promise so callers awaiting `configureBackendsPromise` also
-      // observe the pin before touching the backend.
+      // Reconcile the selected backend after configureBackends has resolved
+      // legacy/latest values to a concrete version/backend pair.
       .then(() => this.enforcePinnedBackendVersion())
       .finally(() => {
         this.isInitializing = false
@@ -630,10 +751,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
         normalizedLegacyValue &&
         isUpstreamBackendType(normalizedLegacyValue)
       ) {
-        localStorage.setItem(
-          UPSTREAM_BACKEND_TYPE_KEY,
-          normalizedLegacyValue
-        )
+        localStorage.setItem(UPSTREAM_BACKEND_TYPE_KEY, normalizedLegacyValue)
         logger.info(
           `Migrated upstream backend preference from legacy shared key: ${normalizedLegacyValue}`
         )
@@ -802,9 +920,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
     try {
       const installed = await isBackendInstalled(backend, version)
       if (!installed) {
-        logger.warn(
-          `Pending backend ${cleaned} not found on disk, clearing`
-        )
+        logger.warn(`Pending backend ${cleaned} not found on disk, clearing`)
         localStorage.removeItem('llama_cpp_pending_backend')
         return
       }
@@ -961,7 +1077,12 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // manual dropdown. `friendlyBackendLabel` renders these as "CUDA 12.4" /
       // "CUDA 13".
       const staticVariants: string[] = IS_WINDOWS
-        ? ['win-cpu-x64', 'win-cuda-12-x64', 'win-cuda-13-x64', 'win-vulkan-x64']
+        ? [
+            'win-cpu-x64',
+            'win-cuda-12-x64',
+            'win-cuda-13-x64',
+            'win-vulkan-x64',
+          ]
         : IS_LINUX
           ? ['linux-cpu-x64', 'linux-vulkan-x64']
           : []
@@ -1001,7 +1122,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
           earlySetting.controllerProps.value = currentVB || bundledBackendString
         }
         this.registerSettings(earlySettings)
-        logger.info('[configureBackends] Early settings registered with bundled backend')
+        logger.info(
+          '[configureBackends] Early settings registered with bundled backend'
+        )
       }
 
       let version_backends: {
@@ -1398,16 +1521,12 @@ export default class llamacpp_upstream_extension extends AIEngine {
   }
 
   /**
-   * Forcibly reconciles the active backend to `PINNED_BACKEND_TAG`,
-   * preserving the user's current backend *type* (cpu/cuda/vulkan/
-   * macos-arm64) — never their version. Runs once per launch, after
-   * `configureBackends()` has resolved a concrete `version_backend`.
+   * Reconciles the configured upstream backend to the release validated by the
+   * app while preserving the selected backend type.
    *
-   * This is a hard pin: it downgrades a newer manually-installed backend
-   * just as readily as it upgrades an older one. If the pinned tag has no
-   * asset for the user's current type (e.g. a type removed upstream), the
-   * download/hot-swap fails and is logged, leaving the working backend
-   * untouched rather than bricking the install.
+   * If that release does not contain the selected type, the existing backend
+   * remains active because downloadRecommendedBackend only persists after a
+   * successful download.
    */
   private async enforcePinnedBackendVersion(): Promise<void> {
     try {
@@ -1522,7 +1641,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
       if (sysInfo.os_type === 'windows') {
         const availableBackends = await listSupportedBackends()
         const pickBackend = (pattern: RegExp): string | null => {
-          const candidate = availableBackends.find((b) => pattern.test(b.backend))
+          const candidate = availableBackends.find((b) =>
+            pattern.test(b.backend)
+          )
           return candidate?.backend ?? null
         }
 
@@ -1555,7 +1676,12 @@ export default class llamacpp_upstream_extension extends AIEngine {
         const tiers: string[] = []
         if (features.cuda13 && cuda13Backend) tiers.push(cuda13Backend)
         if (features.cuda12 && cuda12Backend) tiers.push(cuda12Backend)
-        if (features.vulkan && hasEnoughVram && vulkanBackend && !integratedGpuOnly)
+        if (
+          features.vulkan &&
+          hasEnoughVram &&
+          vulkanBackend &&
+          !integratedGpuOnly
+        )
           tiers.push(vulkanBackend)
 
         for (const tier of tiers) {
@@ -2063,12 +2189,107 @@ export default class llamacpp_upstream_extension extends AIEngine {
     // available inside the Tauri WebView2 context where this extension
     // runs.
     if (typeof window !== 'undefined' && window.dispatchEvent) {
+      const [swappedVersion, swappedId] = backendString.split('/')
       window.dispatchEvent(
         new CustomEvent('app:backend-hotswapped', {
-          detail: { backend: backendString },
+          detail: {
+            backend: backendString,
+            provider: this.providerId,
+            version: swappedVersion,
+            backendId: swappedId,
+          },
         })
       )
     }
+  }
+
+  private async resolveConcreteOptimalBackend(
+    idealType: string,
+    currentBackend: string,
+    operation: string
+  ): Promise<string | null> {
+    let recommendedBackend: string | null = null
+    try {
+      const versionBackends = await this.withTimeout(
+        listSupportedBackends(),
+        20_000,
+        []
+      )
+      recommendedBackend = await findLatestVersionForBackend(
+        versionBackends,
+        idealType
+      )
+    } catch (err) {
+      logger.warn(
+        `${operation}: failed to resolve latest backend for ${idealType}, falling back to current version: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      )
+    }
+
+    if (!recommendedBackend) {
+      recommendedBackend = await this.withTimeout(
+        this.resolveLatestBackendString(idealType),
+        20_000,
+        null
+      )
+      if (!recommendedBackend) {
+        const fallbackVersion = currentBackend.split('/')[0]
+        if (!fallbackVersion) {
+          logger.warn(
+            `${operation}: could not resolve a concrete tag for ${idealType} and no current backend tag to fall back to`
+          )
+          return null
+        }
+        recommendedBackend = `${fallbackVersion}/${idealType}`
+      }
+    }
+
+    return recommendedBackend
+  }
+
+  /**
+   * Silently refreshes the provider-scoped optimal-backend cache. Unlike
+   * `recheckOptimalBackend`, this never writes the legacy recommendation key
+   * and never emits `onBetterBackendDetected`.
+   */
+  async refreshOptimalBackendCache(options?: {
+    hardwareHasNoGpu?: boolean
+  }): Promise<OptimalBackendCacheRecord | null> {
+    if (IS_MAC) return null
+
+    const detection: IdealBackendResult = options?.hardwareHasNoGpu
+      ? { kind: 'cpu-optimal' }
+      : await this.withTimeout(this.detectIdealBackendType(), 20_000, {
+          kind: 'detection-failed',
+        } as const)
+    if (detection.kind === 'detection-failed') {
+      throw new Error(BACKEND_DETECTION_FAILED)
+    }
+
+    const currentBackend = stripBom(this.config.version_backend || '')
+    if (detection.kind === 'cpu-optimal') {
+      return this.persistOptimalBackendCache(detection, currentBackend)
+    }
+
+    let recommendedBackend: string | null = null
+    try {
+      recommendedBackend = await this.resolveConcreteOptimalBackend(
+        detection.backend,
+        currentBackend,
+        'refreshOptimalBackendCache'
+      )
+    } catch (err) {
+      logger.warn(
+        'refreshOptimalBackendCache: concrete backend resolution failed:',
+        err
+      )
+    }
+    return this.persistOptimalBackendCache(
+      detection,
+      currentBackend,
+      recommendedBackend
+    )
   }
 
   /**
@@ -2092,6 +2313,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
     currentBackend: string
     recommendedBackend: string
     recommendedCategory: string
+    provider: string
+    version: string
+    backendId: string
   } | null> {
     if (IS_MAC) {
       return null
@@ -2127,18 +2351,19 @@ export default class llamacpp_upstream_extension extends AIEngine {
         throw new Error(BACKEND_DETECTION_FAILED)
       }
 
+      const currentBackend = stripBom(this.config.version_backend || '')
       if (detection.kind === 'cpu-optimal') {
         // CPU genuinely is the best this hardware can do.
         logger.info(
           'recheckOptimalBackend: CPU is optimal — no better GPU backend for this hardware'
         )
+        this.persistOptimalBackendCache(detection, currentBackend)
         localStorage.removeItem('llama_cpp_better_backend_recommendation')
         return null
       }
 
       const idealType = detection.backend
       const idealCat = get_backend_category(idealType)
-      const currentBackend = stripBom(this.config.version_backend || '')
       const currentType = currentBackend.split('/')[1] || ''
       const currentCat = get_backend_category(currentType)
       const sameCategory = idealCat === currentCat
@@ -2148,6 +2373,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
         logger.info(
           `recheckOptimalBackend: already on optimal backend ${currentBackend}`
         )
+        this.persistOptimalBackendCache(
+          detection,
+          currentBackend,
+          currentBackend
+        )
         localStorage.removeItem('llama_cpp_better_backend_recommendation')
         return null
       }
@@ -2156,52 +2386,19 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // This handles in-family migrations such as CUDA 13.1 -> CUDA 13.3/13.4
       // when the currently-selected backend is still "optimal category"
       // but no longer the latest downloadable variant.
-      let recommendedBackend: string | null = null
-      try {
-        // ATO-104: cap the supported-backends lookup (it fans out to a
-        // GitHub release fetch) so detection terminates even when the
-        // network stalls past the inner AbortController.
-        const versionBackends = await this.withTimeout(
-          listSupportedBackends(),
-          20_000,
-          []
-        )
-        recommendedBackend = await findLatestVersionForBackend(
-          versionBackends,
-          idealType
-        )
-      } catch (err) {
-        logger.warn(
-          `recheckOptimalBackend: failed to resolve latest backend for ${idealType}, falling back to current version: ${
-            err instanceof Error ? err.message : String(err)
-          }`
-        )
-      }
+      const recommendedBackend = await this.resolveConcreteOptimalBackend(
+        idealType,
+        currentBackend,
+        'recheckOptimalBackend'
+      )
+      this.persistOptimalBackendCache(
+        detection,
+        currentBackend,
+        recommendedBackend
+      )
       if (!recommendedBackend) {
-        // `listSupportedBackends()` / `findLatestVersionForBackend()` came
-        // up empty (e.g. the ggml-org release fetch failed). Resolve a
-        // concrete release tag for the ideal type directly rather than
-        // emitting a `latest/<backend>` sentinel — the literal `latest`
-        // produces a 404 download URL downstream (ATO-95).
-        recommendedBackend = await this.withTimeout(
-          this.resolveLatestBackendString(idealType),
-          20_000,
-          null
-        )
-        if (!recommendedBackend) {
-          // Last resort: reuse the tag of the currently-installed backend,
-          // but only when we actually have one. A bare `latest` tag is never
-          // valid for ggml-org's `/releases/download/<tag>/...` asset path.
-          const fallbackVersion = currentBackend.split('/')[0]
-          if (!fallbackVersion) {
-            logger.warn(
-              `recheckOptimalBackend: could not resolve a concrete tag for ${idealType} and no current backend tag to fall back to — skipping recommendation`
-            )
-            localStorage.removeItem('llama_cpp_better_backend_recommendation')
-            return null
-          }
-          recommendedBackend = `${fallbackVersion}/${idealType}`
-        }
+        localStorage.removeItem('llama_cpp_better_backend_recommendation')
+        return null
       }
       if (recommendedBackend === currentBackend) {
         logger.info(
@@ -2211,10 +2408,14 @@ export default class llamacpp_upstream_extension extends AIEngine {
         return null
       }
 
+      const [recommendedVersion, recommendedId] = recommendedBackend.split('/')
       const payload = {
         currentBackend,
         recommendedBackend,
         recommendedCategory: backendCategoryToLabel(idealCat),
+        provider: this.providerId,
+        version: recommendedVersion,
+        backendId: recommendedId,
       }
       logger.info(
         `recheckOptimalBackend: surfacing recommendation ${recommendedBackend} (${payload.recommendedCategory})`
@@ -2590,6 +2791,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
         currentBackend: current,
         recommendedBackend: dialogKey,
         recommendedCategory: label,
+        provider: this.providerId,
+        backendId,
       })
     }
 
@@ -2651,6 +2854,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
         events.emit(AppEvent.onBackendDownloadFinished, {
           backend: dialogKey,
           status: 'completed',
+          provider: this.providerId,
+          backendId,
         })
       }
 
@@ -2669,6 +2874,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
         events.emit('onManualBackendFailed', {
           backend: dialogKey,
           error: err instanceof Error ? err.message : String(err),
+          provider: this.providerId,
+          backendId,
         })
       }
       throw err
@@ -2676,18 +2883,18 @@ export default class llamacpp_upstream_extension extends AIEngine {
   }
 
   private async generateApiKey(modelId: string, port: string): Promise<string> {
-    const hash = await invoke<string>('plugin:llamacpp-upstream|generate_api_key', {
-      modelId: modelId + port,
-      apiSecret: this.apiSecret,
-    })
+    const hash = await invoke<string>(
+      'plugin:llamacpp-upstream|generate_api_key',
+      {
+        modelId: modelId + port,
+        apiSecret: this.apiSecret,
+      }
+    )
     return hash
   }
 
   override async get(modelId: string): Promise<modelInfo | undefined> {
-    const modelPath = await joinPath([
-      await this.getModelsRootPath(),
-      modelId,
-    ])
+    const modelPath = await joinPath([await this.getModelsRootPath(), modelId])
     const path = await joinPath([modelPath, 'model.yml'])
 
     if (!(await fs.existsSync(path))) return undefined
@@ -2789,20 +2996,23 @@ export default class llamacpp_upstream_extension extends AIEngine {
       const modelConfigPath = await joinPath([currentDir, 'model.yml'])
       if (await fs.existsSync(modelConfigPath)) {
         // Normalize Windows '\' to '/' so the id matches the catalog
-        modelIds.push(currentDir.slice(modelsDir.length + 1).replace(/\\/g, '/'))
+        modelIds.push(
+          currentDir.slice(modelsDir.length + 1).replace(/\\/g, '/')
+        )
         continue
       }
 
       // otherwise, look into subdirectories
       const children = await fs.readdirSync(currentDir)
       for (const child of children) {
+        const childPath = await joinPath([currentDir, child])
         // skip files
-        const dirInfo = await fs.fileStat(child)
+        const dirInfo = await fs.fileStat(childPath)
         if (!dirInfo.isDirectory) {
           continue
         }
 
-        stack.push(child)
+        stack.push(childPath)
       }
     }
 
@@ -2899,7 +3109,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
               const legacyModelPath = legacyModelConfig.files?.[0]
               if (!legacyModelPath) continue
               // Normalize Windows '\' to '/' so the id matches the catalog
-              let modelId = currentDir.slice(modelsDir.length + 1).replace(/\\/g, '/')
+              let modelId = currentDir
+                .slice(modelsDir.length + 1)
+                .replace(/\\/g, '/')
 
               modelId =
                 modelId !== 'imported'
@@ -2962,8 +3174,6 @@ export default class llamacpp_upstream_extension extends AIEngine {
    *
    */
   async installBackend(path: string): Promise<void> {
-    const platformName = IS_WINDOWS ? 'win' : 'linux'
-
     // Match prefix (optional), llama, main (optional), version (b####-hash),
     // optional cudart-llama, bin, backend details
     // Examples:
@@ -3028,17 +3238,23 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
     try {
       await invoke('decompress', { path: path, outputDir: backendDir })
+      await invoke('normalize_backend_layout', {
+        outputDir: backendDir,
+        exeName: IS_WINDOWS ? 'llama-server.exe' : 'llama-server',
+      })
     } catch (e) {
       logger.error(`Failed to install: ${String(e)}`)
-      throw new Error(`Failed to decompress archive: ${String(e)}`)
+      throw new Error(`Failed to extract backend archive: ${String(e)}`)
     }
 
-    const binPath =
-      platformName === 'win'
-        ? await joinPath([backendDir, 'build', 'bin', 'llama-server.exe'])
-        : await joinPath([backendDir, 'build', 'bin', 'llama-server'])
+    const binPath = await joinPath([
+      backendDir,
+      'build',
+      'bin',
+      IS_WINDOWS ? 'llama-server.exe' : 'llama-server',
+    ])
 
-    if (!fs.existsSync(binPath)) {
+    if (!(await fs.existsSync(binPath))) {
       await fs.rm(backendDir)
       throw new Error(
         'Not a supported backend archive! Missing llama-server binary.'
@@ -3499,7 +3715,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
    * the UI can explain backend limitations before downloading a draft.
    */
   async checkDflashBackendSupport(): Promise<boolean> {
-    const [version, backend] = stripBom(this.config.version_backend || '').split('/')
+    const [version, backend] = stripBom(
+      this.config.version_backend || ''
+    ).split('/')
     if (!version || !backend || version === 'latest') return false
     try {
       const backendPath = await getBackendExePath(backend, version)
@@ -3624,10 +3842,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
    */
   private async deleteModelFolder(modelId: string): Promise<void> {
     try {
-      const modelDir = await joinPath([
-        await this.getModelsRootPath(),
-        modelId,
-      ])
+      const modelDir = await joinPath([await this.getModelsRootPath(), modelId])
 
       if (await fs.existsSync(modelDir)) {
         logger.info(`Cleaning up model directory: ${modelDir}`)
@@ -3658,7 +3873,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
    */
   private async getRandomPort(): Promise<number> {
     try {
-      const port = await invoke<number>('plugin:llamacpp-upstream|get_random_port')
+      const port = await invoke<number>(
+        'plugin:llamacpp-upstream|get_random_port'
+      )
       return port
     } catch {
       logger.error('Unable to find a suitable port')
@@ -3755,9 +3972,108 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // on or the request is clamped to the model's training-max). Fire and
       // forget: this must never block or fail the load.
       void this.syncLoadedCtxSize(result, isEmbedding)
+      void this.reportBackendMismatch(
+        result,
+        isEmbedding,
+        overrideSettings?.n_gpu_layers ?? this.config?.n_gpu_layers
+      )
       return result
     } finally {
       this.loadingModels.delete(modelId)
+    }
+  }
+
+  /// Backend the last successful load actually launched, as
+  /// `<version>/<backend>`. Settings read this to show the truth next to the
+  /// persisted selection when the two diverge.
+  getEffectiveBackend(): string | null {
+    return this.effectiveVersionBackend
+  }
+
+  /// Compare the backend the user sees, the one that was launched and the
+  /// device the process reports, and announce any disagreement so the web-app
+  /// can offer a fix.
+  ///
+  /// The "better tier available" input is taken from the recommendation the
+  /// existing detect flows already stored, never from a fresh hardware probe:
+  /// `detectIdealBackendType` spawns `--list-devices` per tier and has no place
+  /// on the load path. Fire and forget — this must never affect a load.
+  private async reportBackendMismatch(
+    sInfo: SessionInfo,
+    isEmbedding: boolean,
+    requestedGpuLayers?: number
+  ): Promise<void> {
+    if (isEmbedding) return
+    try {
+      const configured = stripBom(
+        (await this.getSetting<string>('version_backend', '')) || ''
+      )
+      const effective = this.effectiveVersionBackend ?? configured
+
+      // `load_tensors` normally precedes "listening on", but on a slow mmap the
+      // snapshot taken at readiness can still be empty — re-ask the plugin.
+      let runtimeDevice = sInfo.runtime_device ?? null
+      if (!runtimeDevice) {
+        try {
+          runtimeDevice = await getRuntimeDevice(sInfo.pid)
+        } catch (e) {
+          logger.warn(`reportBackendMismatch: get_runtime_device failed: ${e}`)
+        }
+      }
+
+      const mismatch = classifyBackendMismatch({
+        configuredBackend: configured.split('/')[1] ?? '',
+        effectiveBackend: effective.split('/')[1] ?? '',
+        runtimeDevice,
+        idealBackend: this.storedRecommendedBackendType(),
+        requestedGpuLayers,
+        categoryOf: get_backend_category,
+      })
+
+      const payload = {
+        provider: this.provider,
+        modelId: sInfo.model_id,
+        configuredVersionBackend: configured,
+        effectiveVersionBackend: effective,
+        mismatch,
+      }
+      if (mismatch.kind === 'ok') {
+        logger.info(
+          `reportBackendMismatch: ${sInfo.model_id} running as configured (${effective})`
+        )
+      } else {
+        logger.warn(
+          `reportBackendMismatch: ${mismatch.kind} for ${sInfo.model_id} — configured=${configured} effective=${effective} primaryDevice=${
+            runtimeDevice?.primary_device ?? 'unknown'
+          }`
+        )
+      }
+      // A healthy verdict is reported too: it is what clears a warning the user
+      // has already acted on.
+      if (events && typeof events.emit === 'function') {
+        events.emit(AppEvent.onBackendRuntimeReported, payload)
+      }
+    } catch (e) {
+      logger.warn(`reportBackendMismatch failed for ${sInfo.model_id}: ${e}`)
+    }
+  }
+
+  /// Backend type from the recommendation `recheckOptimalBackend` /
+  /// `configureBackends` last wrote, or `null` when none is pending.
+  private storedRecommendedBackendType(): string | null {
+    const cached = this.getCachedOptimalBackend()
+    if (cached?.detectionKind === 'gpu') {
+      return cached.idealBackendId
+    }
+
+    try {
+      const raw = localStorage.getItem('llama_cpp_better_backend_recommendation')
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { recommendedBackend?: string }
+      const recommended = stripBom(parsed?.recommendedBackend ?? '')
+      return recommended.split('/')[1] || null
+    } catch {
+      return null
     }
   }
 
@@ -3796,8 +4112,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // window a single conversation can use), which is exactly what the chat
       // indicators care about. Fall back to the top-level `n_ctx` for older
       // server builds.
-      const realCtx =
-        props?.default_generation_settings?.n_ctx ?? props?.n_ctx
+      const realCtx = props?.default_generation_settings?.n_ctx ?? props?.n_ctx
       if (
         typeof realCtx !== 'number' ||
         !Number.isFinite(realCtx) ||
@@ -3981,6 +4296,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       version,
       true
     ))
+    this.effectiveVersionBackend = `${version}/${backend}`
 
     const janDataFolderPath = await getJanDataFolderPath()
     const modelConfigPath = await joinPath([
@@ -4057,7 +4373,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
     // makes the single "Enable MTP" toggle robust regardless of which model
     // was active when it was flipped. Qwen-style built-in MTP carries no draft
     // path and is unaffected.
-    if (cfg.mtp && !modelConfig.mtp_draft_path && checkGemmaMtpSupport(modelId)) {
+    if (
+      cfg.mtp &&
+      !modelConfig.mtp_draft_path &&
+      checkGemmaMtpSupport(modelId)
+    ) {
       try {
         await this.ensureGemmaMtpDraft(modelId)
         const refreshed = await invoke<ModelConfig>('read_yaml', {
@@ -4237,10 +4557,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // dropping --mmproj. This keeps the model usable instead of failing the
       // whole load with an opaque error. See issue #44.
       const code = (error as { code?: string } | undefined)?.code
-      if (
-        mmprojPath &&
-        code === ERR_MULTIMODAL_PROJECTOR_LOAD_FAILED
-      ) {
+      if (mmprojPath && code === ERR_MULTIMODAL_PROJECTOR_LOAD_FAILED) {
         logger.warn(
           `Model "${modelId}" has an unsupported multimodal projector for backend "${backend}". Retrying text-only (without --mmproj).`
         )
@@ -4492,7 +4809,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // Expected when the watcher already removed the entry from both the Rust
       // process_map and sessionCache has no entry. Manually clean up.
       this.sessionCache.delete(model_id)
-      logger.warn(`[sessionDied] unload for '${model_id}' was a no-op (already cleaned): ${e}`)
+      logger.warn(
+        `[sessionDied] unload for '${model_id}' was a no-op (already cleaned): ${e}`
+      )
     }
 
     // modelCtxSize is not touched by unload(); clear it here.
@@ -4615,9 +4934,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       try {
         await tauriEmit(AUTO_INCREASE_CTX_NOTIFY, notifyPayload)
       } catch (e) {
-        logger.warn(
-          `Failed to Tauri-emit ${AUTO_INCREASE_CTX_NOTIFY}: ${e}`
-        )
+        logger.warn(`Failed to Tauri-emit ${AUTO_INCREASE_CTX_NOTIFY}: ${e}`)
       }
 
       await sendDone({
@@ -4668,7 +4985,10 @@ export default class llamacpp_upstream_extension extends AIEngine {
     // in the name (e.g. "Qwen3.5-9B-...", "Llama-3.1-8B-..."), and truncating
     // there collapsed distinct models onto the same taskId, causing one
     // download's cancellation to silently clobber another's cancel token.
-    return `${this.provider}/${modelId}`
+    // The taskId is embedded in a Tauri event name (`download-${taskId}`),
+    // and Tauri rejects any character outside [A-Za-z0-9_/:-] — so map the
+    // dot (and anything else forbidden) to '_' while keeping the full id.
+    return `${this.provider}/${modelId.replace(/[^A-Za-z0-9_/:-]/g, '_')}`
   }
 
   /**
@@ -4742,7 +5062,10 @@ export default class llamacpp_upstream_extension extends AIEngine {
       const sameTypeInstalled = await findCompatibleInstalledBackend(backend)
       if (
         sameTypeInstalled &&
-        (await isBackendInstalled(sameTypeInstalled.backend, sameTypeInstalled.version))
+        (await isBackendInstalled(
+          sameTypeInstalled.backend,
+          sameTypeInstalled.version
+        ))
       ) {
         const localKey = `${sameTypeInstalled.version}/${sameTypeInstalled.backend}`
         if (localKey !== backendKey) {
@@ -4751,7 +5074,10 @@ export default class llamacpp_upstream_extension extends AIEngine {
               `${localKey} — using it without a network download (stale manifest tag or CDN 404).`
           )
           await this.persistVersionBackend(localKey)
-          return { version: sameTypeInstalled.version, backend: sameTypeInstalled.backend }
+          return {
+            version: sameTypeInstalled.version,
+            backend: sameTypeInstalled.backend,
+          }
         }
       }
     }
@@ -4833,7 +5159,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
    * notify the UI. Used by the ATO-179 fallback so the corrected backend
    * survives restarts and the provider settings page reflects reality.
    */
-  private async persistVersionBackend(targetBackendString: string): Promise<void> {
+  private async persistVersionBackend(
+    targetBackendString: string
+  ): Promise<void> {
     try {
       const settings = await this.getSettings()
       await this.updateSettings(
@@ -4943,7 +5271,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
         .filter((b) => `${b.version}/${b.backend}` !== failedKey)
       candidates.sort(
         (a, b) =>
-          (parseBuildNumber(b.version) ?? 0) - (parseBuildNumber(a.version) ?? 0)
+          (parseBuildNumber(b.version) ?? 0) -
+          (parseBuildNumber(a.version) ?? 0)
       )
       for (const c of candidates) {
         if (await isBackendInstalled(c.backend, c.version)) {
@@ -4964,9 +5293,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
    * Downloads a backend archive from ggml-org/llama.cpp GitHub releases
    * and extracts it into the local backends directory.
    *
-   * ggml-org publishes Windows and macOS backends as `.zip` archives
-   * (not `.tar.gz`). The Tauri `decompress` command handles both formats,
-   * so the extension change here is transparent to the extraction path.
+   * ggml-org publishes Windows backends as `.zip` archives and macOS/Linux
+   * backends as `.tar.gz`. The Tauri `decompress` command handles both
+   * formats transparently.
    */
   private async downloadAndInstallBackend(
     backendString: string
@@ -5001,7 +5330,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
     // Temp staging shares the upstream root with the rest of the
     // extension's on-disk state (`llamacpp-upstream/tmp`) so partial
     // downloads can't leak into the turboquant provider's tree.
-    const tempDir = await joinPath([janDataFolderPath, 'llamacpp-upstream', 'tmp'])
+    const tempDir = await joinPath([
+      janDataFolderPath,
+      'llamacpp-upstream',
+      'tmp',
+    ])
     if (!(await fs.existsSync(tempDir))) {
       await fs.mkdir(tempDir)
     }
@@ -5042,6 +5375,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
       events.emit(AppEvent.onBackendDownloadStarted, {
         backend: backendString,
         status: 'downloading',
+        provider: this.providerId,
+        version,
+        backendId: backend,
       })
     }
 
@@ -5170,7 +5506,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
                 )
                 const buildBinDir = await joinPath([targetDir, 'build', 'bin'])
                 await fs.mkdir(buildBinDir)
-                const nestedEntries = (await fs.readdirSync(nestedDir)) as string[]
+                const nestedEntries = (await fs.readdirSync(
+                  nestedDir
+                )) as string[]
                 for (const rawNestedEntry of nestedEntries) {
                   const baseName = rawNestedEntry
                     .split(/[/\\]/)
@@ -5202,7 +5540,12 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // (AtomicBot-ai/Atomic-Chat#14).
       if (IS_WINDOWS) {
         try {
-          await this.ensureCudartReady(version, backend, targetDir, backendString)
+          await this.ensureCudartReady(
+            version,
+            backend,
+            targetDir,
+            backendString
+          )
         } catch (cudartErr) {
           // Do not fail the whole install — the backend exe is in place,
           // it's just GPU enumeration that will be missing. Surface a
@@ -5229,13 +5572,14 @@ export default class llamacpp_upstream_extension extends AIEngine {
         events.emit(AppEvent.onBackendDownloadFinished, {
           backend: backendString,
           status: 'completed',
+          provider: this.providerId,
+          version,
+          backendId: backend,
         })
       }
     } catch (downloadErr) {
       const errorMessage =
-        downloadErr instanceof Error
-          ? downloadErr.message
-          : String(downloadErr)
+        downloadErr instanceof Error ? downloadErr.message : String(downloadErr)
       if (events && typeof events.emit === 'function') {
         // Clear the standard download manager row on failure too.
         // Same modelId rule as the success path above.
@@ -5248,6 +5592,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
           backend: backendString,
           status: 'failed',
           error: errorMessage,
+          provider: this.providerId,
+          version,
+          backendId: backend,
         })
       }
       throw downloadErr
@@ -5315,7 +5662,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
       )
     }
 
-    const tempDir = await joinPath([janDataFolderPath, 'llamacpp-upstream', 'tmp'])
+    const tempDir = await joinPath([
+      janDataFolderPath,
+      'llamacpp-upstream',
+      'tmp',
+    ])
     if (!(await fs.existsSync(tempDir))) {
       await fs.mkdir(tempDir)
     }
@@ -5325,9 +5676,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       `cudart-${backend}-${version}`,
     ])
 
-    logger.info(
-      `Downloading cudart for ${backendString} from ${cudartUrl}`
-    )
+    logger.info(`Downloading cudart for ${backendString} from ${cudartUrl}`)
 
     // Same Tauri event-name sanitization as the backend download path —
     // ggml-org CUDA backends carry dots (e.g. `win-cuda-13.3-x64`) which
@@ -5449,9 +5798,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       )
 
       if (copied === 0) {
-        throw new Error(
-          `cudart archive for ${backendString} contained no DLLs`
-        )
+        throw new Error(`cudart archive for ${backendString} contained no DLLs`)
       }
 
       // Clear the cudart row from the top-left download manager UI.
@@ -5665,9 +6012,12 @@ export default class llamacpp_upstream_extension extends AIEngine {
     if (!sessionInfo) {
       throw new Error(`No active session found for model: ${opts.model}`)
     }
-    const result = await invoke<boolean>('plugin:llamacpp-upstream|is_process_running', {
-      pid: sessionInfo.pid,
-    })
+    const result = await invoke<boolean>(
+      'plugin:llamacpp-upstream|is_process_running',
+      {
+        pid: sessionInfo.pid,
+      }
+    )
     if (result) {
       try {
         await globalThis.fetch(`http://localhost:${sessionInfo.port}/health`)
@@ -5727,10 +6077,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
   }
 
   override async delete(modelId: string): Promise<void> {
-    const modelDir = await joinPath([
-      await this.getModelsRootPath(),
-      modelId,
-    ])
+    const modelDir = await joinPath([await this.getModelsRootPath(), modelId])
 
     if (!(await fs.existsSync(await joinPath([modelDir, 'model.yml'])))) {
       throw new Error(`Model ${modelId} does not exist`)
@@ -5802,10 +6149,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
     // set envs
     const envs: Record<string, string> = {}
-    if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
+    if (this.llamacpp_env)
+      this.parseEnvFromString(envs, this.llamacpp_env)
 
-    // Ensure backend is downloaded and ready before proceeding (ATO-179: fall
-    // back to an installed compatible backend if the pinned one is missing).
+      // Ensure backend is downloaded and ready before proceeding (ATO-179: fall
+      // back to an installed compatible backend if the pinned one is missing).
     ;({ version, backend } = await this.ensureBackendReady(
       backend,
       version,
@@ -5815,10 +6163,13 @@ export default class llamacpp_upstream_extension extends AIEngine {
     const backendPath = await getBackendExePath(backend, version)
 
     try {
-      const dList = await invoke<DeviceList[]>('plugin:llamacpp-upstream|get_devices', {
-        backendPath,
-        envs,
-      })
+      const dList = await invoke<DeviceList[]>(
+        'plugin:llamacpp-upstream|get_devices',
+        {
+          backendPath,
+          envs,
+        }
+      )
       // On Linux with AMD GPUs, llama.cpp via Vulkan may report UMA (shared) memory as device-local.
       // For clearer UX, override with dedicated VRAM from the hardware plugin when available.
       try {

@@ -1,6 +1,11 @@
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import TextareaAutosize from 'react-textarea-autosize'
-import { cn, formatBytes, LOCAL_LLAMACPP_PROVIDER, isLlamacppProvider } from '@/lib/utils'
+import {
+  cn,
+  formatBytes,
+  LOCAL_LLAMACPP_PROVIDER,
+  isLlamacppProvider,
+} from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react'
@@ -28,7 +33,6 @@ import {
   IconWorld,
   IconMusic,
 } from '@tabler/icons-react'
-import { BotIcon } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -40,7 +44,10 @@ import type { ChatStatus } from 'ai'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { TEMPORARY_CHAT_ID, TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
-import { useInitialMessage } from '@/hooks/useInitialMessage'
+import {
+  InitialMessageFile,
+  useInitialMessage,
+} from '@/hooks/useInitialMessage'
 import { useOptimisticUserMessage } from '@/hooks/useOptimisticUserMessage'
 import { buildOptimisticUserMessage } from '@/lib/optimisticUserMessage'
 import { localStorageKey } from '@/constants/localStorage'
@@ -50,6 +57,7 @@ import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
+import { ContextSizeControl } from '@/containers/ContextSizeControl'
 import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
 import { McpExtensionToolLoader } from './McpExtensionToolLoader'
@@ -102,16 +110,36 @@ import { useDownloadStore } from '@/hooks/useDownloadStore'
 import ReasoningToggle from '@/containers/ReasoningToggle'
 import { ttftPreBegin } from '@/lib/ttft-timing'
 import { ModelFactory } from '@/lib/model-factory'
+import { canSelectChatAgentMode } from '@/containers/ChatAgentModeSwitch'
+import { AgentApprovalModeSelect } from '@/containers/AgentApprovalModeSelect'
+import { AgentExternalFolderButton } from '@/containers/AgentExternalFolderButton'
+import { AgentSkillSlashMenu } from '@/containers/AgentSkillSlashMenu'
+import {
+  filterAgentSkills,
+  findAvailableAgentSkill,
+  findAgentSkillSlashQuery,
+  moveAgentSkillActiveIndex,
+  removeAgentSkillSlashQuery,
+  type AgentSkillSlashQuery,
+} from '@/containers/agentSkillSlash'
+import { useAgentSkills } from '@/hooks/useAgentSkills'
+import {
+  BACKEND_MISMATCH_PROMPT_EVENT,
+  useBackendMismatch,
+} from '@/hooks/useBackendMismatch'
+import type { AgentSkill } from '@/services/agent/skills'
 
 type ChatInputProps = {
   className?: string
   showSpeedToken?: boolean
   model?: ThreadModel
   initialMessage?: boolean
+  preselectedAgentSkillName?: string
   projectId?: string
   onSubmit?: (
     text: string,
-    files?: Array<{ type: string; mediaType: string; url: string }>
+    files?: InitialMessageFile[],
+    agentSkillName?: string
   ) => void
   onStop?: () => void
   chatStatus?: ChatStatus
@@ -120,6 +148,7 @@ type ChatInputProps = {
 const ChatInput = memo(function ChatInput({
   className,
   initialMessage,
+  preselectedAgentSkillName,
   projectId,
   onSubmit,
   onStop,
@@ -148,25 +177,96 @@ const ChatInput = memo(function ChatInput({
     (state) => state.tokenCounterCompact
   )
   const maxImageSizePx = useGeneralSetting((state) => state.maxImageSizePx)
+  const { shouldPrompt: shouldPromptBackendMismatch } = useBackendMismatch()
   useTools()
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
   const assistants = useAssistant((state) => state.assistants)
   const defaultAssistantId = useAssistant((state) => state.defaultAssistantId)
+  const selectedModel = useModelProvider((state) => state.selectedModel)
+  const selectedProvider = useModelProvider((state) => state.selectedProvider)
+  const selectModelProvider = useModelProvider(
+    (state) => state.selectModelProvider
+  )
+  const updateProvider = useModelProvider((state) => state.updateProvider)
 
-  // Agent mode
-  // Use TEMPORARY_CHAT_ID as fallback key on the home screen (same pattern as attachments)
-  const agentModeKey = currentThreadId ?? TEMPORARY_CHAT_ID
+  const canSelectAgentMode = canSelectChatAgentMode(initialMessage, projectId)
+  const isAgentProviderSelected = isLlamacppProvider(selectedProvider)
+  const agentModeKey = canSelectAgentMode
+    ? TEMPORARY_CHAT_ID
+    : (currentThreadId ?? TEMPORARY_CHAT_ID)
   const isAgentMode = useAgentMode(
     (state) => state.agentThreads[agentModeKey] === true
   )
-  // When projectId is present, treat as normal chat (disable agent mode UI)
-  const effectiveAgentMode = isAgentMode && !projectId
-  const toggleAgentMode = useAgentMode((state) => state.toggleAgentMode)
+  const effectiveAgentMode =
+    isAgentMode && !projectId && isAgentProviderSelected
+  const { skills: agentSkills, loading: agentSkillsLoading } =
+    useAgentSkills(effectiveAgentMode)
+  const [selectedAgentSkill, setSelectedAgentSkill] =
+    useState<AgentSkill | null>(null)
+  const preselectedAgentSkillAppliedRef = useRef<string | null>(null)
+  const [agentSkillSlashQuery, setAgentSkillSlashQuery] =
+    useState<AgentSkillSlashQuery | null>(null)
+  const [agentSkillMenuOpen, setAgentSkillMenuOpen] = useState(false)
+  const [agentSkillActiveIndex, setAgentSkillActiveIndex] = useState(0)
+  const eligibleAgentSkills = useMemo(
+    () => filterAgentSkills(agentSkills, agentSkillSlashQuery?.query ?? ''),
+    [agentSkillSlashQuery?.query, agentSkills]
+  )
+  const setAgentMode = useAgentMode((state) => state.setAgentMode)
+  const approvalMode = useAgentMode(
+    (state) => state.approvalModes[agentModeKey] ?? 'manual'
+  )
+  const setApprovalMode = useAgentMode((state) => state.setApprovalMode)
 
-  const handleAgentToggle = useCallback(() => {
-    toggleAgentMode(agentModeKey)
-  }, [agentModeKey, toggleAgentMode])
+  useEffect(() => {
+    if (!isAgentProviderSelected && isAgentMode) {
+      setAgentMode(agentModeKey, false)
+    }
+  }, [agentModeKey, isAgentProviderSelected, isAgentMode, setAgentMode])
+
+  useEffect(() => {
+    if (effectiveAgentMode) return
+    setSelectedAgentSkill(null)
+    setAgentSkillSlashQuery(null)
+    setAgentSkillMenuOpen(false)
+  }, [effectiveAgentMode])
+
+  useEffect(() => {
+    if (!preselectedAgentSkillName) {
+      preselectedAgentSkillAppliedRef.current = null
+      return
+    }
+    if (
+      !effectiveAgentMode ||
+      agentSkillsLoading ||
+      preselectedAgentSkillAppliedRef.current === preselectedAgentSkillName
+    ) {
+      return
+    }
+    const skill = findAvailableAgentSkill(
+      agentSkills,
+      preselectedAgentSkillName
+    )
+    preselectedAgentSkillAppliedRef.current = preselectedAgentSkillName
+    if (skill) setSelectedAgentSkill(skill)
+  }, [
+    agentSkills,
+    agentSkillsLoading,
+    effectiveAgentMode,
+    preselectedAgentSkillName,
+  ])
+
+  useEffect(() => {
+    setAgentSkillActiveIndex(0)
+  }, [agentSkillSlashQuery?.query])
+
+  const handleApprovalModeChange = useCallback(
+    (mode: 'manual' | 'skip') => {
+      setApprovalMode(agentModeKey, mode)
+    },
+    [agentModeKey, setApprovalMode]
+  )
 
   // Get current thread messages for token counting
   const threadMessages = useMessages(
@@ -178,12 +278,6 @@ const ChatInput = memo(function ChatInput({
   const maxRows = 10
   const ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES = 512 * 1024
 
-  const selectedModel = useModelProvider((state) => state.selectedModel)
-  const selectedProvider = useModelProvider((state) => state.selectedProvider)
-  const selectModelProvider = useModelProvider(
-    (state) => state.selectModelProvider
-  )
-  const updateProvider = useModelProvider((state) => state.updateProvider)
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
@@ -482,6 +576,26 @@ const ChatInput = memo(function ChatInput({
   const mcpExtension = extensionManager.get<MCPExtension>(ExtensionTypeEnum.MCP)
   const MCPToolComponent = mcpExtension?.getToolComponent?.()
 
+  const updateAgentSkillSlashQuery = (value: string, cursor: number | null) => {
+    if (!effectiveAgentMode) return
+    const nextQuery = findAgentSkillSlashQuery(value, cursor)
+    setAgentSkillSlashQuery(nextQuery)
+    setAgentSkillMenuOpen(nextQuery !== null)
+  }
+
+  const handleAgentSkillSelect = (skill: AgentSkill) => {
+    if (!agentSkillSlashQuery) return
+    const next = removeAgentSkillSlashQuery(prompt, agentSkillSlashQuery)
+    setPrompt(next.value)
+    setSelectedAgentSkill(skill)
+    setAgentSkillSlashQuery(null)
+    setAgentSkillMenuOpen(false)
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus()
+      textareaRef.current?.setSelectionRange(next.cursor, next.cursor)
+    })
+  }
+
   const handleSendMessage = async (prompt: string) => {
     if (!selectedModel) {
       setMessage('Please select a model to start chatting.')
@@ -494,27 +608,55 @@ const ChatInput = memo(function ChatInput({
       toast.info('Please wait for attachments to finish processing')
       return
     }
+    if (
+      effectiveAgentMode &&
+      attachments.some((attachment) => attachment.type === 'audio')
+    ) {
+      toast.error(t('chat:agentErrors.audioUnsupported'))
+      return
+    }
+    if (
+      effectiveAgentMode &&
+      !hasMmproj &&
+      attachments.some((attachment) => attachment.type === 'image')
+    ) {
+      toast.error(t('chat:agentErrors.visionModelRequired'))
+      setShowVisionModelPrompt(true)
+      return
+    }
 
     setMessage('')
+
+    // A previous model load found that the running backend is not the one the UI
+    // shows (or that a faster one exists). Raise it here, on the first send after
+    // the load, rather than interrupting the load itself. Never blocks the send.
+    if (shouldPromptBackendMismatch) {
+      window.dispatchEvent(new Event(BACKEND_MISMATCH_PROMPT_EVENT))
+    }
 
     // Use onSubmit prop if available (AI SDK), otherwise create thread and navigate
     if (onSubmit) {
       // Build file parts for AI SDK
       const files = attachments
         .filter(
-          (att) =>
-            (att.type === 'image' || att.type === 'audio') && att.dataUrl
+          (att) => (att.type === 'image' || att.type === 'audio') && att.dataUrl
         )
         .map((att) => ({
           type: 'file',
+          name: att.name,
           mediaType:
             att.mimeType ??
             (att.type === 'audio' ? 'audio/mpeg' : 'image/jpeg'),
           url: att.dataUrl!,
         }))
 
-      onSubmit(prompt, files.length > 0 ? files : undefined)
+      onSubmit(
+        prompt,
+        files.length > 0 ? files : undefined,
+        selectedAgentSkill?.name
+      )
       setPrompt('')
+      setSelectedAgentSkill(null)
       clearAttachmentsForThread(attachmentsKey)
     } else {
       // No onSubmit provided - create a new thread and navigate to it
@@ -526,11 +668,11 @@ const ChatInput = memo(function ChatInput({
       // Build message payload with attachments
       const files = attachments
         .filter(
-          (att) =>
-            (att.type === 'image' || att.type === 'audio') && att.dataUrl
+          (att) => (att.type === 'image' || att.type === 'audio') && att.dataUrl
         )
         .map((att) => ({
           type: 'file',
+          name: att.name,
           mediaType:
             att.mimeType ??
             (att.type === 'audio' ? 'audio/mpeg' : 'image/jpeg'),
@@ -548,6 +690,7 @@ const ChatInput = memo(function ChatInput({
         text: prompt,
         files: files.length > 0 ? files : [],
         documents: docsSnapshot.length > 0 ? docsSnapshot : undefined,
+        agentSkillName: selectedAgentSkill?.name,
       }
 
       // Clear input UI immediately so the chip and text disappear in the
@@ -555,6 +698,7 @@ const ChatInput = memo(function ChatInput({
       // thread's key (transferAttachments runs during await createThread)
       // until processAttachmentsForSend finishes indexing the document.
       setPrompt('')
+      setSelectedAgentSkill(null)
       clearAttachmentsForThread(attachmentsKey)
 
       // #region agent log
@@ -605,8 +749,9 @@ const ChatInput = memo(function ChatInput({
         // navigation with QuotaExceededError.
         useInitialMessage.getState().set(TEMPORARY_CHAT_ID, messagePayload)
         if (isAgentMode && agentModeKey !== TEMPORARY_CHAT_ID) {
-          useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, true)
-          useAgentMode.getState().removeThread(agentModeKey)
+          useAgentMode
+            .getState()
+            .transferAgentMode(agentModeKey, TEMPORARY_CHAT_ID)
         }
         router.navigate({
           to: route.threadsDetail,
@@ -696,11 +841,7 @@ const ChatInput = memo(function ChatInput({
           )
         }
 
-        // Transfer agent mode from home screen to the new thread
-        if (isAgentMode) {
-          useAgentMode.getState().setAgentMode(newThread.id, true)
-          useAgentMode.getState().removeThread(agentModeKey)
-        }
+        useAgentMode.getState().transferAgentMode(agentModeKey, newThread.id)
 
         useInitialMessage.getState().set(newThread.id, messagePayload)
 
@@ -1230,7 +1371,8 @@ const ChatInput = memo(function ChatInput({
     return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
   }
 
-  const IMAGE_MAX_SIZE_BYTES = 10 * 1024 * 1024
+  const IMAGE_MAX_SIZE_MB = 10
+  const IMAGE_MAX_SIZE_BYTES = IMAGE_MAX_SIZE_MB * 1024 * 1024
   const IMAGE_ALLOWED_MIME_TYPES = [
     'image/jpg',
     'image/jpeg',
@@ -1252,10 +1394,6 @@ const ChatInput = memo(function ChatInput({
     const validFiles: File[] = []
 
     for (const file of files) {
-      if (file.size > IMAGE_MAX_SIZE_BYTES) {
-        oversized.push(file.name)
-        continue
-      }
       const detectedType = file.type || getFileTypeFromExtension(file.name)
       const actualType = getFileTypeFromExtension(file.name) || detectedType
       if (!IMAGE_ALLOWED_MIME_TYPES.includes(actualType)) {
@@ -1289,10 +1427,16 @@ const ChatInput = memo(function ChatInput({
         actualType
       )
 
+      const size = downscaled?.size ?? file.size
+      if (size > IMAGE_MAX_SIZE_BYTES) {
+        oversized.push(file.name)
+        continue
+      }
+
       candidates.push(
         createImageAttachment({
           name: file.name,
-          size: downscaled?.size ?? file.size,
+          size,
           mimeType: downscaled?.mimeType ?? actualType,
           base64: downscaled?.base64 ?? dataUrl.split(',')[1] ?? '',
           dataUrl: downscaled?.dataUrl ?? dataUrl,
@@ -1318,10 +1462,6 @@ const ChatInput = memo(function ChatInput({
       }
       try {
         const att = await readImageAttachmentFromPath(p)
-        if (typeof att.size === 'number' && att.size > IMAGE_MAX_SIZE_BYTES) {
-          oversized.push(att.name)
-          continue
-        }
         // Downscale oversized images so they don't flood the model's context.
         if (att.dataUrl) {
           const downscaled = await downscaleImageDataUrl(
@@ -1335,6 +1475,10 @@ const ChatInput = memo(function ChatInput({
             att.mimeType = downscaled.mimeType
             att.size = downscaled.size
           }
+        }
+        if (typeof att.size === 'number' && att.size > IMAGE_MAX_SIZE_BYTES) {
+          oversized.push(att.name)
+          continue
         }
         candidates.push(att)
       } catch (e) {
@@ -1453,7 +1597,14 @@ const ChatInput = memo(function ChatInput({
     const errors: string[] = []
     if (oversized.length > 0) {
       errors.push(
-        `File${oversized.length > 1 ? 's' : ''} too large (max 10MB): ${oversized.join(', ')}`
+        oversized
+          .map((fileName) =>
+            t('common:errors.fileTooLargeDescription', {
+              fileName,
+              maxFileSizeMB: IMAGE_MAX_SIZE_MB,
+            })
+          )
+          .join(', ')
       )
     }
 
@@ -2098,203 +2249,285 @@ const ChatInput = memo(function ChatInput({
   const isStreaming = chatStatus === 'submitted' || chatStatus === 'streaming'
 
   return (
-    <div className="relative">
+    <div className="relative mx-auto w-full max-w-3xl">
       <div className="relative">
         <div
           className={cn(
-            'relative overflow-hidden p-0.5 rounded-3xl',
+            'relative p-0.5 rounded-3xl',
+            effectiveAgentMode ? 'overflow-visible' : 'overflow-hidden',
             isStreaming && 'opacity-70'
           )}
         >
-          <div
-            className={cn(
-              'relative z-20 px-0 pb-10 border rounded-3xl border-input bg-white dark:bg-input/30',
-              isFocused && 'ring-1 ring-ring/50',
-              isDragOver && 'ring-2 ring-ring/50 border-primary'
-            )}
-            data-drop-zone={attachmentsEnabled ? 'true' : undefined}
-            onDragEnter={attachmentsEnabled ? handleDragEnter : undefined}
-            onDragLeave={attachmentsEnabled ? handleDragLeave : undefined}
-            onDragOver={attachmentsEnabled ? handleDragOver : undefined}
-            onDrop={attachmentsEnabled ? handleDrop : undefined}
-          >
-            {attachments.length > 0 && (
-              <div className="flex flex-col gap-2 p-2 pb-0">
-                <div className="flex flex-wrap gap-2 items-center">
-                  {attachments
-                    .map((att, idx) => ({ att, idx }))
-                    .map(({ att, idx }) => {
-                      const isImage = att.type === 'image'
-                      const ext = att.fileType || att.mimeType?.split('/')[1]
-                      const showAttachmentLoader =
-                        (att.processing ||
-                          (att.type === 'document' &&
-                            !att.processed &&
-                            isAttachmentPipelineBusy)) &&
-                        !att.error
+          <div className="relative z-20">
+            <div
+              className={cn(
+                'relative z-20 px-0 pb-10 border rounded-3xl border-input bg-white dark:bg-input/30',
+                isFocused && 'ring-1 ring-ring/50',
+                isDragOver && 'ring-2 ring-ring/50 border-primary'
+              )}
+              data-drop-zone={attachmentsEnabled ? 'true' : undefined}
+              onDragEnter={attachmentsEnabled ? handleDragEnter : undefined}
+              onDragLeave={attachmentsEnabled ? handleDragLeave : undefined}
+              onDragOver={attachmentsEnabled ? handleDragOver : undefined}
+              onDrop={attachmentsEnabled ? handleDrop : undefined}
+            >
+              {attachments.length > 0 && (
+                <div className="flex flex-col gap-2 p-2 pb-0">
+                  <div className="flex flex-wrap gap-2 items-center">
+                    {attachments
+                      .map((att, idx) => ({ att, idx }))
+                      .map(({ att, idx }) => {
+                        const isImage = att.type === 'image'
+                        const ext = att.fileType || att.mimeType?.split('/')[1]
+                        const showAttachmentLoader =
+                          (att.processing ||
+                            (att.type === 'document' &&
+                              !att.processed &&
+                              isAttachmentPipelineBusy)) &&
+                          !att.error
 
-                      if (!isImage) {
+                        if (!isImage) {
+                          return (
+                            <AttachmentChip
+                              key={`${att.type}-${idx}-${att.name}`}
+                              name={att.name}
+                              fileType={att.fileType}
+                              mimeType={att.mimeType}
+                              size={att.size}
+                              error={att.error}
+                              isProcessing={showAttachmentLoader}
+                              onRemove={() => handleRemoveAttachment(idx)}
+                              onRetry={() => handleRetryAttachment(idx)}
+                            />
+                          )
+                        }
+
                         return (
-                          <AttachmentChip
+                          <div
                             key={`${att.type}-${idx}-${att.name}`}
-                            name={att.name}
-                            fileType={att.fileType}
-                            mimeType={att.mimeType}
-                            size={att.size}
-                            error={att.error}
-                            isProcessing={showAttachmentLoader}
-                            onRemove={() => handleRemoveAttachment(idx)}
-                            onRetry={() => handleRetryAttachment(idx)}
-                          />
-                        )
-                      }
-
-                      return (
-                        <div
-                          key={`${att.type}-${idx}-${att.name}`}
-                          className="relative"
-                        >
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div
-                                className={cn(
-                                  'relative border rounded-xl size-14 overflow-hidden',
-                                  'flex items-center justify-center',
-                                  showAttachmentLoader &&
-                                    'ring-1 ring-primary/30 bg-muted/40'
-                                )}
-                              >
-                                {att.dataUrl ? (
-                                  <img
-                                    className="object-cover w-full h-full"
-                                    src={att.dataUrl}
-                                    alt={`${att.name}`}
-                                  />
-                                ) : (
-                                  <div className="flex flex-col items-center justify-center text-muted-foreground">
-                                    <IconPaperclip size={18} />
-                                    {ext && (
-                                      <span className="text-[10px] leading-none mt-0.5 uppercase opacity-70">
-                                        .{ext}
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-                                {showAttachmentLoader && (
-                                  <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-[1px]">
-                                    <IconLoader2
-                                      size={18}
-                                      className="animate-spin text-primary"
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <div className="text-xs">
+                            className="relative"
+                          >
+                            <Tooltip>
+                              <TooltipTrigger asChild>
                                 <div
-                                  className="font-medium truncate max-w-52"
-                                  title={att.name}
+                                  className={cn(
+                                    'relative border rounded-xl size-14 overflow-hidden',
+                                    'flex items-center justify-center',
+                                    showAttachmentLoader &&
+                                      'ring-1 ring-primary/30 bg-muted/40'
+                                  )}
                                 >
-                                  {att.name}
+                                  {att.dataUrl ? (
+                                    <img
+                                      className="object-cover w-full h-full"
+                                      src={att.dataUrl}
+                                      alt={`${att.name}`}
+                                    />
+                                  ) : (
+                                    <div className="flex flex-col items-center justify-center text-muted-foreground">
+                                      <IconPaperclip size={18} />
+                                      {ext && (
+                                        <span className="text-[10px] leading-none mt-0.5 uppercase opacity-70">
+                                          .{ext}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                  {showAttachmentLoader && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-[1px]">
+                                      <IconLoader2
+                                        size={18}
+                                        className="animate-spin text-primary"
+                                      />
+                                    </div>
+                                  )}
                                 </div>
-                                <div className="opacity-70">
-                                  {att.mimeType || 'image'}
-                                  {att.size
-                                    ? ` · ${formatBytes(att.size)}`
-                                    : ''}
-                                </div>
-                                {showAttachmentLoader && (
-                                  <div className="opacity-70 mt-1">
-                                    Preparing attachment...
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <div className="text-xs">
+                                  <div
+                                    className="font-medium truncate max-w-52"
+                                    title={att.name}
+                                  >
+                                    {att.name}
                                   </div>
-                                )}
-                              </div>
-                            </TooltipContent>
-                          </Tooltip>
+                                  <div className="opacity-70">
+                                    {att.mimeType || 'image'}
+                                    {att.size
+                                      ? ` · ${formatBytes(att.size)}`
+                                      : ''}
+                                  </div>
+                                  {showAttachmentLoader && (
+                                    <div className="opacity-70 mt-1">
+                                      Preparing attachment...
+                                    </div>
+                                  )}
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
 
-                          {!showAttachmentLoader && (
-                            <div
-                              className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
-                              onClick={() => handleRemoveAttachment(idx)}
-                            >
-                              <IconX className="text-neutral-200" size={14} />
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
+                            {!showAttachmentLoader && (
+                              <div
+                                className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
+                                onClick={() => handleRemoveAttachment(idx)}
+                              >
+                                <IconX className="text-neutral-200" size={14} />
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                  </div>
+                  {embeddingModelStatusText && (
+                    <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                      <IconLoader2
+                        size={14}
+                        className="animate-spin shrink-0"
+                      />
+                      <span className="truncate">
+                        {embeddingModelStatusText}
+                      </span>
+                    </div>
+                  )}
                 </div>
-                {embeddingModelStatusText && (
-                  <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                    <IconLoader2 size={14} className="animate-spin shrink-0" />
-                    <span className="truncate">{embeddingModelStatusText}</span>
+              )}
+              {effectiveAgentMode && (
+                <AgentSkillSlashMenu
+                  skills={eligibleAgentSkills}
+                  activeIndex={agentSkillActiveIndex}
+                  loading={agentSkillsLoading}
+                  open={agentSkillMenuOpen}
+                  onSelect={handleAgentSkillSelect}
+                  onActiveIndexChange={setAgentSkillActiveIndex}
+                />
+              )}
+              <div className="flex w-full items-start gap-2 px-4 pt-3">
+                {selectedAgentSkill && (
+                  <div
+                    className="inline-flex shrink-0 text-sm font-medium leading-6 text-blue-600 dark:text-blue-400"
+                    data-testid="agent-skill-inline-token"
+                  >
+                    <span>/{selectedAgentSkill.name}</span>
                   </div>
                 )}
-              </div>
-            )}
-            <TextareaAutosize
-              dir="auto"
-              ref={textareaRef}
-              minRows={2}
-              rows={1}
-              maxRows={10}
-              value={prompt}
-              data-testid={'chat-input'}
-              onChange={(e) => {
-                setPrompt(e.target.value)
-                // Count the number of newlines to estimate rows
-                const newRows = (e.target.value.match(/\n/g) || []).length + 1
-                setRows(Math.min(newRows, maxRows))
-              }}
-              onKeyDown={(e) => {
-                // e.keyCode 229 is for IME input with Safari
-                const isComposing =
-                  e.nativeEvent.isComposing || e.keyCode === 229
-                if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
-                  e.preventDefault()
-                  // Submit prompt when the following conditions are met:
-                  // - Enter is pressed without Shift
-                  // - The streaming content has finished
-                  // - Prompt is not empty
-                  if (
-                    !isStreaming &&
-                    prompt.trim() &&
-                    !isAttachmentPipelineBusy &&
-                    !blockSendUntilModelReady
-                  ) {
-                    handleSendMessage(prompt)
+                <TextareaAutosize
+                  dir="auto"
+                  ref={textareaRef}
+                  minRows={2}
+                  rows={1}
+                  maxRows={10}
+                  value={prompt}
+                  data-testid={'chat-input'}
+                  onChange={(e) => {
+                    setPrompt(e.target.value)
+                    updateAgentSkillSlashQuery(
+                      e.target.value,
+                      e.target.selectionStart
+                    )
+                    // Count the number of newlines to estimate rows
+                    const newRows =
+                      (e.target.value.match(/\n/g) || []).length + 1
+                    setRows(Math.min(newRows, maxRows))
+                  }}
+                  onKeyDown={(e) => {
+                    // e.keyCode 229 is for IME input with Safari
+                    const isComposing =
+                      e.nativeEvent.isComposing || e.keyCode === 229
+                    if (
+                      e.key === 'Backspace' &&
+                      selectedAgentSkill &&
+                      prompt.length === 0
+                    ) {
+                      e.preventDefault()
+                      setSelectedAgentSkill(null)
+                      return
+                    }
+                    if (
+                      agentSkillMenuOpen &&
+                      eligibleAgentSkills.length > 0 &&
+                      !isComposing
+                    ) {
+                      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                        e.preventDefault()
+                        const direction = e.key === 'ArrowDown' ? 1 : -1
+                        setAgentSkillActiveIndex((current) =>
+                          moveAgentSkillActiveIndex(
+                            current,
+                            direction,
+                            eligibleAgentSkills.length
+                          )
+                        )
+                        return
+                      }
+                      if (e.key === 'Enter' || e.key === 'Tab') {
+                        e.preventDefault()
+                        handleAgentSkillSelect(
+                          eligibleAgentSkills[agentSkillActiveIndex] ??
+                            eligibleAgentSkills[0]
+                        )
+                        return
+                      }
+                    }
+                    if (agentSkillMenuOpen && e.key === 'Escape') {
+                      e.preventDefault()
+                      setAgentSkillMenuOpen(false)
+                      return
+                    }
+                    if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
+                      e.preventDefault()
+                      // Submit prompt when the following conditions are met:
+                      // - Enter is pressed without Shift
+                      // - The streaming content has finished
+                      // - Prompt is not empty
+                      if (
+                        !isStreaming &&
+                        prompt.trim() &&
+                        !isAttachmentPipelineBusy &&
+                        !blockSendUntilModelReady
+                      ) {
+                        handleSendMessage(prompt)
+                      }
+                      // When Shift+Enter is pressed, a new line is added (default behavior)
+                    }
+                  }}
+                  onClick={(e) =>
+                    updateAgentSkillSlashQuery(
+                      e.currentTarget.value,
+                      e.currentTarget.selectionStart
+                    )
                   }
-                  // When Shift+Enter is pressed, a new line is added (default behavior)
-                }
-              }}
-              onPaste={handlePaste}
-              placeholder={t('common:placeholder.chatInput')}
-              autoFocus
-              spellCheck={spellCheckChatInput}
-              data-gramm={spellCheckChatInput}
-              data-gramm_editor={spellCheckChatInput}
-              data-gramm_grammarly={spellCheckChatInput}
-              className={cn(
-                'bg-transparent pt-4 w-full shrink-0 border-none resize-none outline-0 px-4',
-                rows < maxRows && 'scrollbar-hide',
-                className
-              )}
-            />
+                  onPaste={handlePaste}
+                  placeholder={
+                    selectedAgentSkill
+                      ? ''
+                      : effectiveAgentMode
+                        ? t('chat:agentMode.placeholder')
+                        : t('common:placeholder.chatInput')
+                  }
+                  autoFocus
+                  spellCheck={spellCheckChatInput}
+                  data-gramm={spellCheckChatInput}
+                  data-gramm_editor={spellCheckChatInput}
+                  data-gramm_grammarly={spellCheckChatInput}
+                  className={cn(
+                    'min-w-0 flex-1 resize-none border-none bg-transparent p-0 text-sm leading-6 outline-0',
+                    rows < maxRows && 'scrollbar-hide',
+                    className
+                  )}
+                />
+              </div>
+            </div>
           </div>
-        </div>
 
-        <div className="absolute z-20 bg-transparent bottom-0 w-full p-2 ">
-          <div className="flex justify-between items-center w-full">
-            <div className="px-1 flex items-center gap-1 flex-1 min-w-0">
-              <div
-                className={cn(
-                  'px-1 flex items-center w-full gap-1',
-                  isStreaming && 'opacity-50 pointer-events-none'
-                )}
-              >
-                {/* Dropdown for attachments — hidden in agent mode */}
-                {!effectiveAgentMode && (
+          <div className="absolute z-20 bg-transparent bottom-0 w-full p-2 ">
+            <div className="flex justify-between items-center w-full">
+              <div className="px-1 flex items-center gap-1 flex-1 min-w-0">
+                <div
+                  className={cn(
+                    'px-1 flex items-center w-full gap-1',
+                    isStreaming && 'opacity-50 pointer-events-none'
+                  )}
+                >
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
@@ -2369,8 +2602,31 @@ const ChatInput = memo(function ChatInput({
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
-                )}
-                {/* {model?.provider === 'llamacpp' && loadingModel ? (
+
+                  {effectiveAgentMode && (
+                    <>
+                      <AgentExternalFolderButton workspaceKey={agentModeKey} />
+                      <AgentApprovalModeSelect
+                        mode={approvalMode}
+                        onChange={handleApprovalModeChange}
+                        manualSelectedLabel={t(
+                          'chat:agentApprovals.manualSelected'
+                        )}
+                        manualLabel={t('chat:agentApprovals.manual')}
+                        manualDescription={t(
+                          'chat:agentApprovals.manualDescription'
+                        )}
+                        skipSelectedLabel={t(
+                          'chat:agentApprovals.skipSelected'
+                        )}
+                        skipLabel={t('chat:agentApprovals.skip')}
+                        skipDescription={t(
+                          'chat:agentApprovals.skipDescription'
+                        )}
+                      />
+                    </>
+                  )}
+                  {/* {model?.provider === 'llamacpp' && loadingModel ? (
                   <ModelLoader />
                 ) : (
                   <DropdownModelProvider
@@ -2378,7 +2634,7 @@ const ChatInput = memo(function ChatInput({
                     useLastUsedModel={initialMessage}
                   />
                 )} */}
-                {/* //! Кнопка Browse (Chrome) — временно скрыта
+                  {/* //! Кнопка Browse (Chrome) — временно скрыта
                 {!effectiveAgentMode && hasJanBrowserMCPConfig && modelSupportsBrowser && (
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -2422,190 +2678,151 @@ const ChatInput = memo(function ChatInput({
                 )}
                 */}
 
-                {!effectiveAgentMode &&
-                  selectedModel?.capabilities?.includes('embeddings') && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon-xs">
-                          <IconCodeCircle2
-                            size={18}
-                            className="text-muted-foreground"
-                          />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('embeddings')}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  )}
+                  {!effectiveAgentMode &&
+                    selectedModel?.capabilities?.includes('embeddings') && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button variant="ghost" size="icon-xs">
+                            <IconCodeCircle2
+                              size={18}
+                              className="text-muted-foreground"
+                            />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>{t('embeddings')}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
 
-                {!effectiveAgentMode &&
-                  selectedModel?.capabilities?.includes('tools') &&
-                  hasActiveMCPServers &&
-                  (MCPToolComponent ? (
-                    // Use custom MCP component
-                    <McpExtensionToolLoader
-                      tools={tools}
-                      hasActiveMCPServers={hasActiveMCPServers}
-                      selectedModelHasTools={
-                        selectedModel?.capabilities?.includes('tools') ?? false
-                      }
-                      initialMessage={initialMessage}
-                      MCPToolComponent={MCPToolComponent}
-                    />
-                  ) : (
-                    // Use default tools dropdown
-                    <Tooltip
-                      open={tooltipToolsAvailable}
-                      onOpenChange={setTooltipToolsAvailable}
-                    >
-                      <TooltipTrigger asChild disabled={dropdownToolsAvailable}>
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          onClick={(e) => {
-                            setDropdownToolsAvailable(false)
-                            e.stopPropagation()
-                          }}
+                  {!effectiveAgentMode &&
+                    selectedModel?.capabilities?.includes('tools') &&
+                    hasActiveMCPServers &&
+                    (MCPToolComponent ? (
+                      // Use custom MCP component
+                      <McpExtensionToolLoader
+                        tools={tools}
+                        hasActiveMCPServers={hasActiveMCPServers}
+                        selectedModelHasTools={
+                          selectedModel?.capabilities?.includes('tools') ??
+                          false
+                        }
+                        initialMessage={initialMessage}
+                        MCPToolComponent={MCPToolComponent}
+                      />
+                    ) : (
+                      // Use default tools dropdown
+                      <Tooltip
+                        open={tooltipToolsAvailable}
+                        onOpenChange={setTooltipToolsAvailable}
+                      >
+                        <TooltipTrigger
+                          asChild
+                          disabled={dropdownToolsAvailable}
                         >
-                          <DropdownToolsAvailable
-                            initialMessage={initialMessage}
-                            onOpenChange={(isOpen) => {
-                              setDropdownToolsAvailable(isOpen)
-                              if (isOpen) {
-                                setTooltipToolsAvailable(false)
-                              }
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={(e) => {
+                              setDropdownToolsAvailable(false)
+                              e.stopPropagation()
                             }}
                           >
-                            {() => {
-                              return (
-                                <div
-                                  className={cn(
-                                    'p-1 flex items-center justify-center rounded-sm transition-all duration-200 ease-in-out gap-1 cursor-pointer'
-                                  )}
-                                >
-                                  <IconTool
-                                    size={18}
-                                    className={cn('text-muted-foreground')}
-                                  />
-                                </div>
-                              )
-                            }}
-                          </DropdownToolsAvailable>
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('tools')}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  ))}
+                            <DropdownToolsAvailable
+                              initialMessage={initialMessage}
+                              onOpenChange={(isOpen) => {
+                                setDropdownToolsAvailable(isOpen)
+                                if (isOpen) {
+                                  setTooltipToolsAvailable(false)
+                                }
+                              }}
+                            >
+                              {() => {
+                                return (
+                                  <div
+                                    className={cn(
+                                      'p-1 flex items-center justify-center rounded-sm transition-all duration-200 ease-in-out gap-1 cursor-pointer'
+                                    )}
+                                  >
+                                    <IconTool
+                                      size={18}
+                                      className={cn('text-muted-foreground')}
+                                    />
+                                  </div>
+                                )
+                              }}
+                            </DropdownToolsAvailable>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>{t('tools')}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    ))}
 
-                <ReasoningToggle />
+                  {!effectiveAgentMode && <ReasoningToggle />}
 
-                {/* Agent mode toggle hidden — kept as dead code for future use */}
-                {false && !projectId && isAgentMode && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant={isAgentMode ? 'default' : 'ghost'}
-                        size="icon-xs"
-                        onClick={
-                          currentThreadId ? handleAgentToggle : undefined
-                        }
-                        className={cn(
-                          isAgentMode &&
-                            'text-primary bg-primary/10 hover:bg-primary/10 items-center',
-                          !currentThreadId &&
-                            'cursor-default pointer-events-none'
-                        )}
-                      >
-                        <BotIcon
-                          className={cn(
-                            'text-muted-foreground -mt-0.5',
-                            isAgentMode && 'text-primary'
-                          )}
-                        />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>
-                        {isAgentMode
-                          ? 'Agent mode active'
-                          : 'Enable agent mode'}
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-
-                {!effectiveAgentMode &&
-                  selectedModel?.capabilities?.includes('web_search') && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon-xs">
-                          <IconWorld
-                            size={18}
-                            className="text-muted-foreground"
-                          />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Web Search</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  )}
+                  {!effectiveAgentMode &&
+                    selectedModel?.capabilities?.includes('web_search') && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button variant="ghost" size="icon-xs">
+                            <IconWorld
+                              size={18}
+                              className="text-muted-foreground"
+                            />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Web Search</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                </div>
               </div>
-            </div>
 
-            <div className="flex items-center gap-2">
-              {isLlamacppProvider(selectedProvider) &&
-                tokenCounterCompact &&
-                !effectiveAgentMode &&
-                !initialMessage &&
-                (threadMessages?.length > 0 || prompt.trim().length > 0) && (
-                  <div className="flex-1 flex justify-center">
-                    <TokenCounter
-                      messages={threadMessages || []}
-                      compact={true}
-                      uploadedFiles={attachments
-                        .filter((a) => a.type === 'image' && a.dataUrl)
-                        .map((a) => ({
-                          name: a.name,
-                          type: a.mimeType || getFileTypeFromExtension(a.name),
-                          size: a.size || 0,
-                          base64: a.base64 || '',
-                          dataUrl: a.dataUrl!,
-                        }))}
-                    />
-                  </div>
+              <div className="flex items-center gap-2">
+                <ContextSizeControl
+                  messages={threadMessages || []}
+                  uploadedFiles={attachments
+                    .filter((a) => a.type === 'image' && a.dataUrl)
+                    .map((a) => ({
+                      name: a.name,
+                      type: a.mimeType || getFileTypeFromExtension(a.name),
+                      size: a.size || 0,
+                      base64: a.base64 || '',
+                      dataUrl: a.dataUrl!,
+                    }))}
+                />
+
+                {isStreaming ? (
+                  <Button
+                    variant="destructive"
+                    size="icon-sm"
+                    className="rounded-full mr-1 mb-1"
+                    onClick={() => {
+                      if (currentThreadId) stopStreaming(currentThreadId)
+                    }}
+                  >
+                    <IconPlayerStopFilled />
+                  </Button>
+                ) : (
+                  <Button
+                    variant="default"
+                    size="icon-sm"
+                    disabled={
+                      !prompt.trim() ||
+                      isAttachmentPipelineBusy ||
+                      blockSendUntilModelReady
+                    }
+                    data-test-id="send-message-button"
+                    onClick={() => handleSendMessage(prompt)}
+                    className="rounded-full mr-1 mb-1"
+                  >
+                    <ArrowRight className="text-primary-fg" />
+                  </Button>
                 )}
-
-              {isStreaming ? (
-                <Button
-                  variant="destructive"
-                  size="icon-sm"
-                  className="rounded-full mr-1 mb-1"
-                  onClick={() => {
-                    if (currentThreadId) stopStreaming(currentThreadId)
-                  }}
-                >
-                  <IconPlayerStopFilled />
-                </Button>
-              ) : (
-                <Button
-                  variant="default"
-                  size="icon-sm"
-                  disabled={
-                    !prompt.trim() ||
-                    isAttachmentPipelineBusy ||
-                    blockSendUntilModelReady
-                  }
-                  data-test-id="send-message-button"
-                  onClick={() => handleSendMessage(prompt)}
-                  className="rounded-full mr-1 mb-1"
-                >
-                  <ArrowRight className="text-primary-fg" />
-                </Button>
-              )}
+              </div>
             </div>
           </div>
         </div>
@@ -2631,7 +2848,6 @@ const ChatInput = memo(function ChatInput({
 
       {isLlamacppProvider(selectedProvider) &&
         isModelActive &&
-        !effectiveAgentMode &&
         !tokenCounterCompact &&
         !initialMessage &&
         (threadMessages?.length > 0 || prompt.trim().length > 0) && (

@@ -61,9 +61,12 @@ const REGISTRY: readonly GemmaMtpRegistryEntry[] = [
       id.includes('a4b'),
     repo: 'AtomicChat/gemma-4-26B-A4B-it-assistant-GGUF',
     draftFilename: 'gemma-4-26B-A4B-it-assistant.Q8_0.gguf',
+    // 2026-07-23: assistant repos were regenerated in the post-b10018
+    // gemma4-assistant format (the old heads no longer load on engine
+    // b10018-1.1.1+), so the pin tracks the re-uploaded file.
     draftSha256:
-      '0ff5e851eb69aba552efb7cc5da0b37801b42554b403f8584e0b83b92296f69d',
-    draftSize: 461767072,
+      '918d48b5c219035561e0ff791f2926c939cd367d71ee21b002e99222bdecab8b',
+    draftSize: 461766880,
   },
 ]
 

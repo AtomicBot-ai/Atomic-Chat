@@ -1,10 +1,54 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 use tauri::{AppHandle, Manager, Runtime, State};
 
 use super::{
     constants::CONFIGURATION_FILE_NAME, helpers::copy_dir_recursive, models::AppConfiguration,
 };
 use crate::core::state::AppState;
+
+#[cfg(test)]
+thread_local! {
+    static TEST_DATA_DIR: std::cell::RefCell<Option<tempfile::TempDir>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+fn fallback_test_data_folder() -> PathBuf {
+    TEST_DATA_DIR.with(|dir| {
+        let mut dir = dir.borrow_mut();
+        let temp_dir = dir.get_or_insert_with(|| {
+            tempfile::Builder::new()
+                .prefix("atomic-chat-test-data-")
+                .tempdir()
+                .expect("failed to create temporary Atomic Chat test data directory")
+        });
+        temp_dir.path().to_path_buf()
+    })
+}
+
+fn select_configuration_file_path(current_dir: &Path, legacy_dir: &Path) -> PathBuf {
+    let parent = if legacy_dir.exists() {
+        legacy_dir
+    } else {
+        current_dir
+    };
+    parent.join(CONFIGURATION_FILE_NAME)
+}
+
+fn build_default_data_folder(data_dir: &Path, app_name: &str) -> PathBuf {
+    data_dir.join(app_name).join("data")
+}
+
+fn resolve_data_folder_from_config(config_file: &Path, default_folder: &Path) -> PathBuf {
+    fs::read_to_string(config_file)
+        .ok()
+        .and_then(|content| serde_json::from_str::<AppConfiguration>(&content).ok())
+        .map(|config| PathBuf::from(config.data_folder))
+        .unwrap_or_else(|| default_folder.to_path_buf())
+}
 
 /// Resolve the Jan config file path without an AppHandle (for CLI use).
 /// Mirrors the logic in get_configuration_file_path() using the dirs crate.
@@ -40,24 +84,15 @@ pub fn resolve_config_file_path() -> PathBuf {
 /// Reads AppConfiguration from the config file; falls back to the default location.
 pub fn resolve_jan_data_folder() -> PathBuf {
     let config_file = resolve_config_file_path();
-
-    if config_file.exists() {
-        if let Ok(content) = fs::read_to_string(&config_file) {
-            if let Ok(config) = serde_json::from_str::<AppConfiguration>(&content) {
-                return PathBuf::from(config.data_folder);
-            }
-        }
-    }
-
-    // Default: data_dir/Jan/data  (mirrors default_data_folder_path)
     let app_name = std::env::var("APP_NAME").unwrap_or_else(|_| "Atomic Chat".to_string());
-    if let Some(data_dir) = dirs::data_dir() {
-        return data_dir.join(&app_name).join("data");
-    }
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_default();
-    PathBuf::from(home).join(&app_name).join("data")
+    let data_dir = dirs::data_dir().unwrap_or_else(|| {
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap_or_default();
+        PathBuf::from(home)
+    });
+    let default_folder = build_default_data_folder(&data_dir, &app_name);
+    resolve_data_folder_from_config(&config_file, &default_folder)
 }
 
 #[tauri::command]
@@ -138,31 +173,17 @@ pub fn update_app_configuration<R: Runtime>(
 
 #[tauri::command]
 pub fn get_jan_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> PathBuf {
-    if cfg!(test) {
-        use std::cell::RefCell;
-        thread_local! {
-            static TEST_DATA_DIR: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
-        }
-
-        return TEST_DATA_DIR.with(|dir| {
-            let mut dir = dir.borrow_mut();
-            if dir.is_none() {
-                let unique_id = std::thread::current().id();
-                let timestamp = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_nanos())
-                    .unwrap_or(0);
-                let path = std::env::current_dir()
-                    .unwrap_or_else(|_| PathBuf::from("."))
-                    .join(format!("test-data-{unique_id:?}-{timestamp}"));
-                let _ = fs::create_dir_all(&path);
-                *dir = Some(path);
-            }
-            dir.clone().unwrap()
-        });
+    #[cfg(test)]
+    if let Some(root) = app_handle.try_state::<crate::test_support::TestDataRoot>() {
+        return root.0.clone();
     }
 
+    #[cfg(test)]
+    return fallback_test_data_folder();
+
+    #[cfg(not(test))]
     let app_configurations = get_app_configurations(app_handle);
+    #[cfg(not(test))]
     PathBuf::from(app_configurations.data_folder)
 }
 
@@ -201,11 +222,7 @@ pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) 
         .unwrap_or(&app_path.join("../"))
         .join(package_name);
 
-    if old_data_dir.exists() {
-        old_data_dir.join(CONFIGURATION_FILE_NAME)
-    } else {
-        app_path.join(CONFIGURATION_FILE_NAME)
-    }
+    select_configuration_file_path(&app_path, &old_data_dir)
 }
 
 #[tauri::command]
@@ -223,8 +240,7 @@ pub fn default_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> 
 
     let app_name = std::env::var("APP_NAME")
         .unwrap_or_else(|_| app_handle.config().product_name.clone().unwrap());
-    path.push(app_name);
-    path.push("data");
+    path = build_default_data_folder(&path, &app_name);
 
     let mut path_str = path.to_string_lossy().into_owned();
 
@@ -286,4 +302,103 @@ pub fn change_app_data_folder<R: Runtime>(
 #[tauri::command]
 pub fn app_token(state: State<'_, AppState>) -> Option<String> {
     state.app_token.clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn removes_fallback_test_data_when_its_thread_exits() {
+        let path = std::thread::spawn(fallback_test_data_folder)
+            .join()
+            .unwrap();
+
+        assert!(path.starts_with(std::env::temp_dir()));
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn selects_current_config_for_a_clean_install() {
+        let root = tempdir().unwrap();
+        let current = root.path().join("chat.atomic.app");
+        let legacy = root.path().join("Atomic-Chat");
+
+        assert_eq!(
+            select_configuration_file_path(&current, &legacy),
+            current.join(CONFIGURATION_FILE_NAME)
+        );
+    }
+
+    #[test]
+    fn selects_legacy_config_when_only_legacy_directory_exists() {
+        let root = tempdir().unwrap();
+        let current = root.path().join("chat.atomic.app");
+        let legacy = root.path().join("Atomic-Chat");
+        fs::create_dir_all(&legacy).unwrap();
+
+        assert_eq!(
+            select_configuration_file_path(&current, &legacy),
+            legacy.join(CONFIGURATION_FILE_NAME)
+        );
+    }
+
+    #[test]
+    fn keeps_legacy_precedence_when_both_config_directories_exist() {
+        let root = tempdir().unwrap();
+        let current = root.path().join("chat.atomic.app");
+        let legacy = root.path().join("Atomic-Chat");
+        fs::create_dir_all(&current).unwrap();
+        fs::create_dir_all(&legacy).unwrap();
+
+        assert_eq!(
+            select_configuration_file_path(&current, &legacy),
+            legacy.join(CONFIGURATION_FILE_NAME)
+        );
+    }
+
+    #[test]
+    fn builds_the_active_default_data_folder() {
+        let root = tempdir().unwrap();
+
+        assert_eq!(
+            build_default_data_folder(root.path(), "Atomic Chat"),
+            root.path().join("Atomic Chat").join("data")
+        );
+    }
+
+    #[test]
+    fn resolves_custom_data_folder_from_settings() {
+        let root = tempdir().unwrap();
+        let config_file = root.path().join(CONFIGURATION_FILE_NAME);
+        let custom = root.path().join("custom-model-data");
+        let configuration = AppConfiguration {
+            data_folder: custom.to_string_lossy().into_owned(),
+        };
+        fs::write(&config_file, serde_json::to_vec(&configuration).unwrap()).unwrap();
+
+        assert_eq!(
+            resolve_data_folder_from_config(&config_file, &root.path().join("default")),
+            custom
+        );
+    }
+
+    #[test]
+    fn falls_back_to_default_data_folder_without_valid_settings() {
+        let root = tempdir().unwrap();
+        let config_file = root.path().join(CONFIGURATION_FILE_NAME);
+        let default = root.path().join("Atomic Chat").join("data");
+
+        assert_eq!(
+            resolve_data_folder_from_config(&config_file, &default),
+            default
+        );
+
+        fs::write(&config_file, "{not-json").unwrap();
+        assert_eq!(
+            resolve_data_folder_from_config(&config_file, &default),
+            default
+        );
+    }
 }

@@ -1,4 +1,25 @@
 // Types
+
+/**
+ * Which device the loaded model actually runs on, parsed from the llama-server
+ * startup log. `--list-devices` only reports what a binary can enumerate, so it
+ * cannot tell a healthy GPU load apart from a CUDA/Vulkan build that silently
+ * degraded to CPU (missing cudart, parked dGPU, driver/ABI mismatch).
+ */
+export interface RuntimeDeviceInfo {
+  /** Backend libraries the process loaded: `CUDA`, `Vulkan`, `Metal`, `CPU`, ... */
+  loaded_backends: string[]
+  /** Buffer label holding most of the weights: `CUDA0`, `Vulkan0`, `Metal`, `CPU`. */
+  primary_device: string
+  gpu_layers_offloaded?: number | null
+  total_layers?: number | null
+  gpu_buffer_bytes?: number | null
+  /** The binary needs a CUDA runtime that is not installed on this host. */
+  cuda_runtime_missing?: boolean
+  /** First device-initialisation failure the backend reported, verbatim. */
+  device_init_error?: string | null
+}
+
 export interface SessionInfo {
   pid: number
   port: number
@@ -7,6 +28,7 @@ export interface SessionInfo {
   is_embedding: boolean
   api_key: string
   mmproj_path?: string
+  runtime_device?: RuntimeDeviceInfo | null
 }
 
 export interface UnloadResult {
@@ -141,6 +163,8 @@ export type BackendFeatures = {
   cuda12: boolean
   cuda13: boolean
   vulkan: boolean
+  /** AMD ROCm, Linux only: a supported RDNA2–RDNA4 GPU plus a host runtime. */
+  rocm: boolean
 }
 
 export type SupportedFeatures = {
@@ -151,6 +175,7 @@ export type SupportedFeatures = {
   cuda12: boolean
   cuda13: boolean
   vulkan: boolean
+  rocm: boolean
 }
 export type NvidiaInfo = {
   compute_capability: string

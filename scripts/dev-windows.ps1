@@ -201,9 +201,42 @@ if ($LASTEXITCODE -ne 0) { Write-Host 'download:bin failed' -ForegroundColor Red
 # ── Detect GPU hardware and select best backend ──────────────
 Write-Step 'Detecting GPU hardware'
 
-function Get-NvidiaDriverVersion {
+$llamacppDir = 'src-tauri/resources/llamacpp-backend-upstream'
+$llamaServerExe = "$llamacppDir/build/bin/llama-server.exe"
+$backendTxtPath = "$llamacppDir/backend.txt"
+$existingBackend = $null
+if (Test-Path $backendTxtPath) {
+    $existingBackend = (Get-Content $backendTxtPath -Raw).Trim()
+}
+$reuseExistingBackend = $SkipBackendDownload -and (Test-Path $llamaServerExe)
+
+function Get-VideoControllers {
+    $job = Start-Job {
+        Get-CimInstance -ClassName Win32_VideoController -ErrorAction Stop |
+            Select-Object Name, DriverVersion, AdapterRAM
+    }
+
     try {
-        $gpu = Get-CimInstance -ClassName Win32_VideoController -ErrorAction Stop |
+        if (-not (Wait-Job -Job $job -Timeout 10)) {
+            Write-Host '  WMI GPU detection timed out after 10s; continuing without WMI data.' -ForegroundColor Yellow
+            return @()
+        }
+        return @(Receive-Job -Job $job -ErrorAction Stop)
+    } catch {
+        Write-Host "  WMI GPU detection failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        return @()
+    } finally {
+        if ($job.State -eq 'Running') {
+            Stop-Job -Job $job
+        }
+        Remove-Job -Job $job -Force
+    }
+}
+
+function Get-NvidiaDriverVersion {
+    param([object[]]$VideoControllers)
+    try {
+        $gpu = $VideoControllers |
             Where-Object { $_.Name -match 'NVIDIA' } |
             Select-Object -First 1
         if ($gpu -and $gpu.DriverVersion) {
@@ -317,105 +350,101 @@ function Invoke-BackendManifest {
     return $null
 }
 
-$nvidiaDriver = Get-NvidiaDriverVersion
-$hasVulkan = Test-VulkanSupport
-$cudaTier = $null
-
-if ($nvidiaDriver) {
-    Write-Host "  NVIDIA GPU detected, driver version: $nvidiaDriver" -ForegroundColor Green
-
-    # Thresholds match src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs
-    # (min_cuda13_driver = 581.15, min_cuda12_driver = 551.61). ggml-org
-    # publishes CUDA 12.4 and 13.x Windows builds; CUDA 11 is no longer produced
-    # upstream and is unsupported on Windows after the llamacpp-upstream
-    # consolidation (ADR 2026-05-22). The concrete CUDA-13 minor (13.1 → 13.3 →
-    # …) drifts release to release, so we select a minor-less *family* id here
-    # and resolve the published minor from the release assets below (ATO-174).
-    if ((Compare-VersionStrings $nvidiaDriver '581.15') -ge 0) {
-        $cudaTier = 13
-        Write-Host "  CUDA tier: 13.x (driver >= 581.15)" -ForegroundColor Green
-    } elseif ((Compare-VersionStrings $nvidiaDriver '551.61') -ge 0) {
-        $cudaTier = 12
-        Write-Host "  CUDA tier: 12.4 (driver >= 551.61)" -ForegroundColor Green
-    } else {
-        Write-Host "  NVIDIA driver too old for upstream CUDA ($nvidiaDriver < 551.61)" -ForegroundColor Yellow
-    }
+if ($reuseExistingBackend) {
+    $existingLabel = if ($existingBackend) { $existingBackend } else { '<unknown>' }
+    Write-Host "  -SkipBackendDownload: skipping GPU detection and reusing existing backend ($existingLabel)." -ForegroundColor Yellow
+    $backend = if ($existingBackend) { $existingBackend } else { 'win-cpu-x64' }
 } else {
-    Write-Host '  No NVIDIA GPU detected' -ForegroundColor Yellow
-}
+    $videoControllers = Get-VideoControllers
+    $nvidiaDriver = Get-NvidiaDriverVersion -VideoControllers $videoControllers
+    $hasVulkan = Test-VulkanSupport
+    $cudaTier = $null
 
-if ($hasVulkan) {
-    Write-Host '  Vulkan runtime: available' -ForegroundColor Green
-} else {
-    Write-Host '  Vulkan runtime: not found' -ForegroundColor Yellow
-}
+    if ($nvidiaDriver) {
+        Write-Host "  NVIDIA GPU detected, driver version: $nvidiaDriver" -ForegroundColor Green
 
-# Check GPU VRAM (>= 6 GiB threshold — matches runtime logic in extensions/llamacpp-extension/src/index.ts)
-# Win32_VideoController.AdapterRAM is uint32 and caps at ~4 GiB, so we read
-# the 64-bit qwMemorySize from the registry for accurate results.
-$gpuVramMiB = 0
-try {
-    $regItems = Get-ItemProperty 'HKLM:\SYSTEM\ControlSet001\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0*' `
-        -Name 'HardwareInformation.qwMemorySize' -ErrorAction SilentlyContinue
-    if ($regItems) {
-        $maxBytes = ($regItems | ForEach-Object { $_.'HardwareInformation.qwMemorySize' } |
-            Sort-Object -Descending | Select-Object -First 1)
-        if ($maxBytes -and $maxBytes -gt 0) {
-            $gpuVramMiB = [math]::Floor($maxBytes / 1048576)
+        # Thresholds match src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs
+        # (min_cuda13_driver = 581.15, min_cuda12_driver = 551.61). ggml-org
+        # publishes CUDA 12.4 and 13.x Windows builds; CUDA 11 is no longer produced
+        # upstream and is unsupported on Windows after the llamacpp-upstream
+        # consolidation (ADR 2026-05-22). The concrete CUDA-13 minor (13.1 → 13.3 →
+        # …) drifts release to release, so we select a minor-less *family* id here
+        # and resolve the published minor from the release assets below (ATO-174).
+        if ((Compare-VersionStrings $nvidiaDriver '581.15') -ge 0) {
+            $cudaTier = 13
+            Write-Host "  CUDA tier: 13.x (driver >= 581.15)" -ForegroundColor Green
+        } elseif ((Compare-VersionStrings $nvidiaDriver '551.61') -ge 0) {
+            $cudaTier = 12
+            Write-Host "  CUDA tier: 12.4 (driver >= 551.61)" -ForegroundColor Green
+        } else {
+            Write-Host "  NVIDIA driver too old for upstream CUDA ($nvidiaDriver < 551.61)" -ForegroundColor Yellow
         }
+    } else {
+        Write-Host '  No NVIDIA GPU detected' -ForegroundColor Yellow
     }
-} catch {}
-if ($gpuVramMiB -eq 0) {
+
+    if ($hasVulkan) {
+        Write-Host '  Vulkan runtime: available' -ForegroundColor Green
+    } else {
+        Write-Host '  Vulkan runtime: not found' -ForegroundColor Yellow
+    }
+
+    # Check GPU VRAM (>= 6 GiB threshold — matches runtime logic in extensions/llamacpp-extension/src/index.ts)
+    # Win32_VideoController.AdapterRAM is uint32 and caps at ~4 GiB, so we read
+    # the 64-bit qwMemorySize from the registry for accurate results.
+    $gpuVramMiB = 0
     try {
-        $vramBytes = Get-CimInstance -ClassName Win32_VideoController -ErrorAction Stop |
+        $regItems = Get-ItemProperty 'HKLM:\SYSTEM\ControlSet001\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0*' `
+            -Name 'HardwareInformation.qwMemorySize' -ErrorAction SilentlyContinue
+        if ($regItems) {
+            $maxBytes = ($regItems | ForEach-Object { $_.'HardwareInformation.qwMemorySize' } |
+                Sort-Object -Descending | Select-Object -First 1)
+            if ($maxBytes -and $maxBytes -gt 0) {
+                $gpuVramMiB = [math]::Floor($maxBytes / 1048576)
+            }
+        }
+    } catch {}
+    if ($gpuVramMiB -eq 0) {
+        $vramBytes = $videoControllers |
             ForEach-Object { $_.AdapterRAM } |
             Sort-Object -Descending |
             Select-Object -First 1
         if ($vramBytes -and $vramBytes -gt 0) {
             $gpuVramMiB = [math]::Floor($vramBytes / 1048576)
         }
-    } catch {}
-}
-$hasEnoughVram = $gpuVramMiB -ge 6144
-Write-Host "  GPU VRAM: $gpuVramMiB MiB (enough for GPU inference: $hasEnoughVram)"
+    }
+    $hasEnoughVram = $gpuVramMiB -ge 6144
+    Write-Host "  GPU VRAM: $gpuVramMiB MiB (enough for GPU inference: $hasEnoughVram)"
 
-# Priority order matches prioritize_backends() in
-# src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs:
-#   With enough VRAM: cuda → vulkan → cpu;  without: cuda → cpu → vulkan.
-# CUDA is selected as a minor-less family id (win-cuda-13-x64 / win-cuda-12-x64);
-# Resolve-BackendFromManifest turns it into the highest published concrete minor.
-if ($cudaTier -eq 13) {
-    $backend = 'win-cuda-13-x64'
-} elseif ($cudaTier -eq 12) {
-    $backend = 'win-cuda-12-x64'
-} elseif ($hasVulkan -and $hasEnoughVram) {
-    $backend = 'win-vulkan-x64'
-} else {
-    $backend = 'win-cpu-x64'
-}
+    # Priority order matches prioritize_backends() in
+    # src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs:
+    #   With enough VRAM: cuda → vulkan → cpu;  without: cuda → cpu → vulkan.
+    # CUDA is selected as a minor-less family id (win-cuda-13-x64 / win-cuda-12-x64);
+    # Resolve-BackendFromManifest turns it into the highest published concrete minor.
+    if ($cudaTier -eq 13) {
+        $backend = 'win-cuda-13-x64'
+    } elseif ($cudaTier -eq 12) {
+        $backend = 'win-cuda-12-x64'
+    } elseif ($hasVulkan -and $hasEnoughVram) {
+        $backend = 'win-vulkan-x64'
+    } else {
+        $backend = 'win-cpu-x64'
+    }
 
-# Allow manual override via LLAMACPP_BACKEND env var
-if ($env:LLAMACPP_BACKEND) {
-    Write-Host "  Overriding backend via LLAMACPP_BACKEND env var: $env:LLAMACPP_BACKEND" -ForegroundColor Cyan
-    $backend = $env:LLAMACPP_BACKEND
+    # Allow manual override via LLAMACPP_BACKEND env var
+    if ($env:LLAMACPP_BACKEND) {
+        Write-Host "  Overriding backend via LLAMACPP_BACKEND env var: $env:LLAMACPP_BACKEND" -ForegroundColor Cyan
+        $backend = $env:LLAMACPP_BACKEND
+    }
 }
 
 Write-Host ''
 Write-Host "  Selected backend: $backend" -ForegroundColor Cyan
 
 # ── Download llamacpp backend from ggml-org/llama.cpp ─────────
-# Per ADR 2026-05-22, Windows ships only the upstream provider, so the
-# dev-windows backend resource dir is `llamacpp-backend-upstream/`.
+# Upstream remains the Windows default, so this first download populates
+# `llamacpp-backend-upstream/`; TurboQuant is installed separately below.
 Write-Step "Download upstream llamacpp backend: $backend"
-$llamacppDir = 'src-tauri/resources/llamacpp-backend-upstream'
-$llamaServerExe = "$llamacppDir/build/bin/llama-server.exe"
-$backendTxtPath = "$llamacppDir/backend.txt"
-
-# Re-download if backend type changed (e.g. switched GPU)
-$existingBackend = $null
-if (Test-Path $backendTxtPath) {
-    $existingBackend = (Get-Content $backendTxtPath -Raw).Trim()
-}
 
 $skipDownload = $false
 if ($SkipBackendDownload -and (Test-Path $llamaServerExe)) {
@@ -538,8 +567,9 @@ if ($skipDownload) {
 # `windows-x64-cpu` build into the turboquant resource dir; the
 # llamacpp-extension auto-downloads the optimal CUDA/Vulkan variant at runtime.
 # Index resolved from the static turboquant manifest in atomic-chat-conf
-# (raw.githubusercontent.com — no api.github.com rate limit); each entry
-# carries its OWN tag because the variants live in scattered releases. The
+# (raw.githubusercontent.com — no api.github.com rate limit); every entry of a
+# unified release carries the same `b<build>-<fork-semver>` tag, and the
+# per-entry tag is read verbatim so legacy scattered releases still resolve. The
 # archive itself comes from the AtomicBot-ai releases CDN. This step is
 # NON-FATAL: a failure here only skips the offline fallback (the runtime
 # download path still serves the provider), so it must never abort `make dev`.
@@ -548,31 +578,56 @@ $tqDir = 'src-tauri/resources/llamacpp-backend'
 $tqServerExe = "$tqDir/build/bin/llama-server.exe"
 $tqBackend = 'windows-x64-cpu'
 
-# A bundle counts as a real TurboQuant backend only when its version.txt starts
-# with "turboquant-". A stale/legacy llama-server.exe (e.g. an old janhq "b8892"
-# build left over in this dir) must NOT satisfy the skip-guard, or the app will
-# run a non-TurboQuant binary that silently downgrades turbo3 KV -> q8_0.
+# A bundle counts as a real TurboQuant backend only when its version.txt names a
+# tag from the fork's release train: a legacy per-variant tag ("turboquant-*")
+# or a unified release tag ("b10018-1.3.0"). A stale/legacy llama-server.exe
+# (e.g. an old janhq "b8892" build left over in this dir) carries a plain
+# "b<build>" tag and must NOT satisfy the skip-guard, or the app will run a
+# non-TurboQuant binary that silently downgrades turbo3 KV -> q8_0.
 $tqVersionFile = "$tqDir/version.txt"
-$tqIsTurboquant = (Test-Path $tqServerExe) -and (Test-Path $tqVersionFile) -and `
-    ((Get-Content -Path $tqVersionFile -Raw -ErrorAction SilentlyContinue).Trim().StartsWith('turboquant-'))
+$tqVersionText = if (Test-Path $tqVersionFile) {
+    (Get-Content -Path $tqVersionFile -Raw -ErrorAction SilentlyContinue).Trim()
+} else { '' }
+$tqIsTurboquant = (Test-Path $tqServerExe) -and `
+    ($tqVersionText.StartsWith('turboquant-') -or ($tqVersionText -match '^b\d+-\d+\.\d+\.\d+$'))
 
-if ($SkipBackendDownload -and $tqIsTurboquant) {
-    Write-Host "  -SkipBackendDownload: reusing existing TurboQuant backend ($tqBackend), no fetch." -ForegroundColor Yellow
-} elseif ($tqIsTurboquant) {
-    Write-Host "  TurboQuant backend ($tqBackend) already present, skipping download."
-} else {
-    if (Test-Path $tqServerExe) {
-        Write-Host "  Existing backend in $tqDir is not a TurboQuant build (version.txt missing or != 'turboquant-*'); replacing it." -ForegroundColor Yellow
-        Remove-Item -Path $tqDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    $tqManifestUrl = 'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/turboquant-manifest.json'
+# Resolve the pinned release BEFORE deciding whether to skip. Belonging to the
+# fork's release train is not enough — a bundle from an older fork release is
+# just as stale as a foreign build, and a dev tree that silently keeps it never
+# picks up a release bump. `-SkipBackendDownload` opts out of the fetch entirely
+# so `dev-windows-fast` stays offline-capable, which is its whole point.
+$tqReuseWithoutFetch = $SkipBackendDownload -and $tqIsTurboquant
+$tqEntry = $null
+$tqPinnedTag = ''
+if (-not $tqReuseWithoutFetch) {
+    $tqManifestUrl = 'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/40665589ef2820f36cbdec282b23f554b60dd563/backends/turboquant-manifest.json'
     $tqHeaders = @{ 'User-Agent' = 'atomic-chat-dev' }
 
     Write-Host '  Fetching TurboQuant backend manifest...'
     $tqManifest = Invoke-BackendManifest -Uri $tqManifestUrl -Headers $tqHeaders
-    $tqEntry = $null
     if ($tqManifest -and $tqManifest.backends) {
         $tqEntry = $tqManifest.backends | Where-Object { $_.id -eq $tqBackend } | Select-Object -First 1
+    }
+    if ($tqEntry -and $tqEntry.tag) { $tqPinnedTag = $tqEntry.tag }
+}
+
+# An unreachable manifest yields no pinned tag; keep whatever fork build is on
+# disk rather than wiping a working offline fallback over a network blip.
+$tqIsCurrent = $tqIsTurboquant -and `
+    ((-not $tqPinnedTag) -or ($tqVersionText -eq $tqPinnedTag))
+
+if ($tqReuseWithoutFetch) {
+    Write-Host "  -SkipBackendDownload: reusing existing TurboQuant backend ($tqBackend), no fetch." -ForegroundColor Yellow
+} elseif ($tqIsCurrent) {
+    Write-Host "  TurboQuant backend ($tqBackend, $tqVersionText) already present, skipping download."
+} else {
+    if (Test-Path $tqServerExe) {
+        if ($tqIsTurboquant) {
+            Write-Host "  Existing TurboQuant backend in $tqDir is release '$tqVersionText' but the manifest pins '$tqPinnedTag'; replacing it." -ForegroundColor Yellow
+        } else {
+            Write-Host "  Existing backend in $tqDir is not a TurboQuant build (version.txt missing or not a fork release tag); replacing it." -ForegroundColor Yellow
+        }
+        Remove-Item -Path $tqDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     if ($tqEntry -and $tqEntry.tag -and $tqEntry.asset) {

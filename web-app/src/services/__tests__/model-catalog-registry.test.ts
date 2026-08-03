@@ -37,6 +37,70 @@ const localStorageMock = (() => {
 
 Object.defineProperty(window, 'localStorage', { value: localStorageMock })
 
+const indexedDbMock = (() => {
+  const store = new Map<string, unknown>()
+
+  const transaction = () => {
+    const tx = {
+      oncomplete: null as (() => void) | null,
+      onerror: null as (() => void) | null,
+      onabort: null as (() => void) | null,
+      objectStore: () => ({
+        get: (key: string) => {
+          const request = {
+            result: undefined as unknown,
+            onsuccess: null as (() => void) | null,
+            onerror: null as (() => void) | null,
+          }
+          queueMicrotask(() => {
+            request.result = store.get(key)
+            request.onsuccess?.()
+          })
+          return request
+        },
+        put: (value: unknown, key: string) => {
+          queueMicrotask(() => {
+            store.set(key, value)
+            tx.oncomplete?.()
+          })
+        },
+        clear: () => {
+          queueMicrotask(() => {
+            store.clear()
+            tx.oncomplete?.()
+          })
+        },
+      }),
+    }
+    return tx
+  }
+
+  const db = {
+    objectStoreNames: { contains: () => true },
+    createObjectStore: vi.fn(),
+    transaction,
+  }
+
+  return {
+    clear: () => store.clear(),
+    factory: {
+      open: () => {
+        const request = {
+          result: db,
+          onupgradeneeded: null as (() => void) | null,
+          onsuccess: null as (() => void) | null,
+          onerror: null as (() => void) | null,
+          onblocked: null as (() => void) | null,
+        }
+        queueMicrotask(() => request.onsuccess?.())
+        return request
+      },
+    },
+  }
+})()
+
+vi.stubGlobal('indexedDB', indexedDbMock.factory)
+
 const buildManifest = (
   overrides: Partial<CatalogManifest> = {}
 ): CatalogManifest => ({
@@ -59,6 +123,7 @@ beforeEach(() => {
   vi.resetModules()
   vi.clearAllMocks()
   localStorageMock.clear()
+  indexedDbMock.clear()
 })
 
 afterEach(() => {
@@ -78,7 +143,7 @@ describe('model-catalog-registry', () => {
     const { getCatalogOrFallback, clearCatalogCache } = await import(
       '@/services/model-catalog-registry'
     )
-    clearCatalogCache()
+    await clearCatalogCache()
 
     const result = await getCatalogOrFallback()
     expect(result.source).toBe('remote')
@@ -98,7 +163,7 @@ describe('model-catalog-registry', () => {
     const { getCatalogOrFallback, clearCatalogCache } = await import(
       '@/services/model-catalog-registry'
     )
-    clearCatalogCache()
+    await clearCatalogCache()
 
     const first = await getCatalogOrFallback()
     expect(first.source).toBe('remote')
@@ -108,6 +173,33 @@ describe('model-catalog-registry', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  it('uses IndexedDB when localStorage rejects writes', async () => {
+    localStorageMock.setItem.mockImplementation(() => {
+      throw new DOMException('Quota exceeded', 'QuotaExceededError')
+    })
+    const manifest = buildManifest()
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => manifest,
+    } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { getCatalogOrFallback, clearCatalogCache } = await import(
+      '@/services/model-catalog-registry'
+    )
+    await clearCatalogCache()
+
+    expect((await getCatalogOrFallback()).source).toBe('remote')
+    vi.resetModules()
+    const { getCatalogOrFallback: getCatalogAfterRestart } = await import(
+      '@/services/model-catalog-registry'
+    )
+    expect((await getCatalogAfterRestart()).source).toBe('cache')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(localStorageMock.setItem).not.toHaveBeenCalled()
+  })
+
   it('falls back to baseline when fetch fails and no cache exists', async () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error('boom'))
     vi.stubGlobal('fetch', fetchMock)
@@ -115,7 +207,7 @@ describe('model-catalog-registry', () => {
     const { getCatalogOrFallback, clearCatalogCache } = await import(
       '@/services/model-catalog-registry'
     )
-    clearCatalogCache()
+    await clearCatalogCache()
 
     const result = await getCatalogOrFallback()
     expect(result.source).toBe('baseline')
@@ -138,7 +230,7 @@ describe('model-catalog-registry', () => {
     const { getCatalogOrFallback, clearCatalogCache } = await import(
       '@/services/model-catalog-registry'
     )
-    clearCatalogCache()
+    await clearCatalogCache()
 
     await getCatalogOrFallback()
     const fallback = await getCatalogOrFallback({ force: true })
@@ -159,7 +251,7 @@ describe('model-catalog-registry', () => {
     const { getCatalogOrFallback, clearCatalogCache } = await import(
       '@/services/model-catalog-registry'
     )
-    clearCatalogCache()
+    await clearCatalogCache()
 
     const result = await getCatalogOrFallback()
     expect(result.source).toBe('baseline')
@@ -177,7 +269,7 @@ describe('model-catalog-registry', () => {
     const { getCatalogOrFallback, clearCatalogCache } = await import(
       '@/services/model-catalog-registry'
     )
-    clearCatalogCache()
+    await clearCatalogCache()
 
     const result = await getCatalogOrFallback()
     expect(result.source).toBe('baseline')

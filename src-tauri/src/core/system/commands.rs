@@ -195,12 +195,63 @@ pub async fn factory_reset<R: Runtime>(
     default_config.data_folder = default_data_folder_path(app_handle.clone());
     let _ = update_app_configuration(app_handle.clone(), default_config);
 
-    app_handle.restart()
+    restart_app(&app_handle)
+}
+
+#[cfg(any(target_os = "linux", test))]
+const APPIMAGE_RUNTIME_ENV_VARS: &[&str] = &[
+    "APPDIR",
+    "APPIMAGE",
+    "ARGV0",
+    "OWD",
+    "LD_LIBRARY_PATH",
+    "LD_PRELOAD",
+    "GDK_PIXBUF_MODULE_FILE",
+    "GDK_PIXBUF_MODULEDIR",
+    "GIO_EXTRA_MODULES",
+    "GIO_MODULE_DIR",
+    "GSETTINGS_SCHEMA_DIR",
+    "GST_PLUGIN_SCANNER",
+    "GST_PLUGIN_SYSTEM_PATH",
+    "GST_PLUGIN_SYSTEM_PATH_1_0",
+    "GTK_DATA_PREFIX",
+    "GTK_EXE_PREFIX",
+    "GTK_IM_MODULE_FILE",
+    "GTK_PATH",
+    "PERLLIB",
+    "PYTHONHOME",
+    "PYTHONPATH",
+    "QT_PLUGIN_PATH",
+];
+
+#[cfg(any(target_os = "linux", test))]
+fn sanitized_appimage_restart_command(appimage: &std::ffi::OsStr) -> std::process::Command {
+    let mut command = std::process::Command::new(appimage);
+    command.args(std::env::args_os().skip(1));
+    for variable in APPIMAGE_RUNTIME_ENV_VARS {
+        command.env_remove(variable);
+    }
+    command
+}
+
+/// Restart without leaking AppRun's environment into host launchers.
+fn restart_app<R: Runtime>(app: &AppHandle<R>) -> ! {
+    #[cfg(target_os = "linux")]
+    if let Some(appimage) = std::env::var_os("APPIMAGE") {
+        app.cleanup_before_exit();
+        match sanitized_appimage_restart_command(&appimage).spawn() {
+            Ok(_) => std::process::exit(0),
+            Err(error) => log::error!(
+                "Failed to spawn {appimage:?} for sanitized restart: {error}; falling back"
+            ),
+        }
+    }
+    app.restart()
 }
 
 #[tauri::command]
 pub fn relaunch<R: Runtime>(app: AppHandle<R>) {
-    app.restart()
+    restart_app(&app)
 }
 
 #[tauri::command]
@@ -818,16 +869,15 @@ fn jan_cli_install_dir() -> Result<PathBuf, String> {
             return Ok(usr_local_bin);
         }
     }
-    let home =
-        std::env::var("HOME").map_err(|_| "Cannot determine home directory".to_string())?;
+    let home = std::env::var("HOME").map_err(|_| "Cannot determine home directory".to_string())?;
     Ok(PathBuf::from(home).join(".local").join("bin"))
 }
 
 /// Return the directory containing the bundled CLI binary on Windows.
 #[cfg(windows)]
 fn jan_cli_bin_dir_windows() -> Result<PathBuf, String> {
-    let local_app_data = std::env::var("LOCALAPPDATA")
-        .map_err(|_| "Cannot determine LOCALAPPDATA".to_string())?;
+    let local_app_data =
+        std::env::var("LOCALAPPDATA").map_err(|_| "Cannot determine LOCALAPPDATA".to_string())?;
     Ok(PathBuf::from(local_app_data)
         .join("Programs")
         .join("Atomic Chat")
@@ -1104,7 +1154,11 @@ pub fn configure_hermes_agent(
         let env_content = std::fs::read_to_string(&env_path)
             .map_err(|e| format!("Failed to read .env: {}", e))?;
         if !env_content.contains("NO_PROXY=") && !env_content.contains("no_proxy=") {
-            let separator = if env_content.ends_with('\n') { "" } else { "\n" };
+            let separator = if env_content.ends_with('\n') {
+                ""
+            } else {
+                "\n"
+            };
             let patched = format!(
                 "{}{}\n{}\n{}",
                 env_content, separator, no_proxy_line, no_proxy_lower
@@ -1193,8 +1247,7 @@ pub fn clear_hermes_agent_config() -> Result<(), String> {
         } else {
             format!("{}\n", cleaned)
         };
-        std::fs::write(&env_path, cleaned)
-            .map_err(|e| format!("Failed to write .env: {}", e))?;
+        std::fs::write(&env_path, cleaned).map_err(|e| format!("Failed to write .env: {}", e))?;
     }
 
     log::info!("Hermes Agent config reset to defaults");
@@ -1324,7 +1377,11 @@ fn split_custom_providers(content: &str) -> (Vec<String>, Vec<Vec<String>>, Vec<
                     || t == "custom_providers: []"
                     || t == "custom_providers:[]"
                 {
-                    phase = if t.contains("[]") { Phase::After } else { Phase::InBlock };
+                    phase = if t.contains("[]") {
+                        Phase::After
+                    } else {
+                        Phase::InBlock
+                    };
                 } else {
                     before.push(line.to_string());
                 }
@@ -1377,8 +1434,7 @@ fn entry_is_ours(entry: &[String]) -> bool {
         } else {
             return false;
         };
-        name_val == ATOMIC_PROVIDER_NAME
-            || name_val == format!("\"{}\"", ATOMIC_PROVIDER_NAME)
+        name_val == ATOMIC_PROVIDER_NAME || name_val == format!("\"{}\"", ATOMIC_PROVIDER_NAME)
     })
 }
 
@@ -1409,7 +1465,11 @@ fn rebuild_custom_providers(
     }
 
     let out = result.join("\n");
-    if out.ends_with('\n') { out } else { format!("{}\n", out) }
+    if out.ends_with('\n') {
+        out
+    } else {
+        format!("{}\n", out)
+    }
 }
 
 /// Add or update only the `atomic-chat` entry in `custom_providers`,
@@ -1494,8 +1554,7 @@ fn upsert_provider_request_timeout(content: &str, provider_id: &str, seconds: u3
             }
 
             // Find the provider sub-key at 2-space indent.
-            let prov_idx =
-                (pidx + 1..block_end).find(|&i| lines[i].trim_end() == prov_key_line);
+            let prov_idx = (pidx + 1..block_end).find(|&i| lines[i].trim_end() == prov_key_line);
 
             match prov_idx {
                 None => {
@@ -1518,7 +1577,9 @@ fn upsert_provider_request_timeout(content: &str, provider_id: &str, seconds: u3
                         }
                     }
                     let has_field = (pk + 1..sub_end).any(|i| {
-                        lines[i].trim_start().starts_with("request_timeout_seconds:")
+                        lines[i]
+                            .trim_start()
+                            .starts_with("request_timeout_seconds:")
                     });
                     if !has_field {
                         lines.insert(pk + 1, field_line);
@@ -2448,8 +2509,7 @@ pub fn configure_codex(
 ) -> Result<(), String> {
     let home = agent_home_dir()?;
     let dir = PathBuf::from(&home).join(".codex");
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create ~/.codex: {}", e))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create ~/.codex: {}", e))?;
     let path = dir.join("config.toml");
 
     let existing = std::fs::read_to_string(&path).unwrap_or_default();
@@ -2546,7 +2606,10 @@ pub fn configure_opencode(
         *provider = serde_json::json!({});
     }
 
-    let key_val = api_key.as_deref().filter(|k| !k.is_empty()).unwrap_or("atomic");
+    let key_val = api_key
+        .as_deref()
+        .filter(|k| !k.is_empty())
+        .unwrap_or("atomic");
     let mut models = serde_json::Map::new();
     models.insert(model.clone(), serde_json::json!({ "name": model }));
 
@@ -2678,7 +2741,6 @@ pub fn configure_openclaude(
     Ok(())
 }
 
-
 /// Configure MiMo Code by upserting `provider.atomic` in
 /// `~/.config/mimocode/mimocode.json` (strict JSON, other providers preserved).
 /// MiMo Code is a fork of OpenCode, so its config system is OpenCode's
@@ -2725,7 +2787,10 @@ pub fn configure_mimo(
         *provider = serde_json::json!({});
     }
 
-    let key_val = api_key.as_deref().filter(|k| !k.is_empty()).unwrap_or("atomic");
+    let key_val = api_key
+        .as_deref()
+        .filter(|k| !k.is_empty())
+        .unwrap_or("atomic");
     let mut models = serde_json::Map::new();
     models.insert(model.clone(), serde_json::json!({ "name": model }));
 
@@ -2768,8 +2833,7 @@ pub fn configure_droid(
 
     let home = agent_home_dir()?;
     let dir = PathBuf::from(&home).join(".factory");
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create ~/.factory: {}", e))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create ~/.factory: {}", e))?;
     let path = dir.join("settings.json");
 
     let mut root: serde_json::Value = if path.exists() {
@@ -2880,8 +2944,7 @@ pub fn configure_zed(
     let _ = api_key;
     let home = agent_home_dir()?;
     let dir = PathBuf::from(&home).join(".config").join("zed");
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create ~/.config/zed: {}", e))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create ~/.config/zed: {}", e))?;
     let path = dir.join("settings.json");
 
     let mut root: serde_json::Value = if path.exists() {
@@ -3066,7 +3129,10 @@ pub fn configure_openclaw(
         .ok_or_else(|| "openclaw.json is not a JSON object".to_string())?;
 
     let model_ref = format!("atomic/{}", model);
-    let key_val = api_key.as_deref().filter(|k| !k.is_empty()).unwrap_or("atomic");
+    let key_val = api_key
+        .as_deref()
+        .filter(|k| !k.is_empty())
+        .unwrap_or("atomic");
 
     let models = obj.entry("models").or_insert_with(|| serde_json::json!({}));
     let models_obj = models
@@ -3177,8 +3243,7 @@ pub fn configure_claude_code(
 ) -> Result<(), String> {
     let home = agent_home_dir()?;
     let dir = PathBuf::from(&home).join(".claude");
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create ~/.claude: {}", e))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create ~/.claude: {}", e))?;
     let path = dir.join("settings.json");
 
     let mut root: serde_json::Value = if path.exists() {
@@ -3580,8 +3645,7 @@ pub fn configure_kilo(
 ) -> Result<(), String> {
     let home = agent_home_dir()?;
     let dir = PathBuf::from(&home).join(".config").join("kilo");
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create ~/.config/kilo: {}", e))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create ~/.config/kilo: {}", e))?;
     let path = dir.join("kilo.jsonc");
 
     // kilo.jsonc is JSON5 (comments, unquoted keys, trailing commas), so we must
@@ -3941,8 +4005,16 @@ pub fn launch_editor(editor_id: String) -> Result<(), String> {
         // common ones so any installed JetBrains IDE opens.
         "jetbrains" => (
             &[
-                "idea", "pycharm", "webstorm", "phpstorm", "rubymine", "clion",
-                "goland", "rider", "datagrip", "rustrover",
+                "idea",
+                "pycharm",
+                "webstorm",
+                "phpstorm",
+                "rubymine",
+                "clion",
+                "goland",
+                "rider",
+                "datagrip",
+                "rustrover",
             ],
             Some("IntelliJ IDEA"),
         ),
@@ -4058,5 +4130,28 @@ mod tests {
             .await
             .expect("notification task panicked");
         });
+    }
+
+    #[test]
+    fn appimage_restart_strips_runtime_environment() {
+        let command =
+            sanitized_appimage_restart_command(std::ffi::OsStr::new("/tmp/atomic-chat.AppImage"));
+        let removed: Vec<_> = command
+            .get_envs()
+            .filter_map(|(key, value)| value.is_none().then(|| key.to_os_string()))
+            .collect();
+
+        for variable in APPIMAGE_RUNTIME_ENV_VARS {
+            assert!(
+                removed.iter().any(|key| key == variable),
+                "{variable} must be removed"
+            );
+        }
+        for variable in ["HOME", "PATH", "XDG_DATA_DIRS"] {
+            assert!(
+                !removed.iter().any(|key| key == variable),
+                "{variable} must be preserved"
+            );
+        }
     }
 }

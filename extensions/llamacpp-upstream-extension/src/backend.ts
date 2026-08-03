@@ -30,6 +30,7 @@ const LLAMACPP_BACKEND_MANIFEST_URL =
 const LLAMACPP_DOWNLOAD_BASE =
   'https://github.com/ggml-org/llama.cpp/releases/download'
 const MANIFEST_FETCH_TIMEOUT_MS = 8_000
+export const LLAMACPP_UPSTREAM_PINNED_TAG = 'b10205'
 
 // Bundled baseline manifest — a known-good snapshot that ships with the
 // extension. Parsed by `fetchRemoteBackends` as a last resort when ALL
@@ -39,14 +40,14 @@ const MANIFEST_FETCH_TIMEOUT_MS = 8_000
 // than the live manifest until the network recovers. Update this whenever
 // the atomic-chat-conf manifest is updated.
 const BUNDLED_MANIFEST_BASELINE = {
-  tag_name: 'b9937',
+  tag_name: LLAMACPP_UPSTREAM_PINNED_TAG,
   assets: [
-    { name: 'llama-b9937-bin-win-cpu-x64.zip' },
-    { name: 'llama-b9937-bin-win-cuda-12.4-x64.zip' },
-    { name: 'llama-b9937-bin-win-cuda-13.3-x64.zip' },
-    { name: 'llama-b9937-bin-win-vulkan-x64.zip' },
-    { name: 'llama-b9937-bin-ubuntu-x64.tar.gz' },
-    { name: 'llama-b9937-bin-ubuntu-vulkan-x64.tar.gz' },
+    { name: 'llama-b10205-bin-win-cpu-x64.zip' },
+    { name: 'llama-b10205-bin-win-cuda-12.4-x64.zip' },
+    { name: 'llama-b10205-bin-win-cuda-13.3-x64.zip' },
+    { name: 'llama-b10205-bin-win-vulkan-x64.zip' },
+    { name: 'llama-b10205-bin-ubuntu-x64.tar.gz' },
+    { name: 'llama-b10205-bin-ubuntu-vulkan-x64.tar.gz' },
     { name: 'cudart-llama-bin-win-cuda-12.4-x64.zip' },
     { name: 'cudart-llama-bin-win-cuda-13.3-x64.zip' },
   ],
@@ -91,9 +92,10 @@ const LINUX_UPSTREAM_ASSET_BY_BACKEND: Record<string, string> = {
   'linux-vulkan-x64': 'ubuntu-vulkan-x64',
 }
 
-const LINUX_BACKEND_BY_UPSTREAM_ASSET: Record<string, string> = Object.fromEntries(
-  Object.entries(LINUX_UPSTREAM_ASSET_BY_BACKEND).map(([k, v]) => [v, k])
-)
+const LINUX_BACKEND_BY_UPSTREAM_ASSET: Record<string, string> =
+  Object.fromEntries(
+    Object.entries(LINUX_UPSTREAM_ASSET_BY_BACKEND).map(([k, v]) => [v, k])
+  )
 
 /**
  * Maps the app's stored proxy config (`getProxyConfig`, shaped for the Rust
@@ -138,9 +140,7 @@ function buildHttpProxyOptions(): {
   return { proxy: { all: proxyConfig } }
 }
 
-async function fetchManifestWithTimeout(
-  useProxy: boolean
-): Promise<Response> {
+async function fetchManifestWithTimeout(useProxy: boolean): Promise<Response> {
   // Guard each request with a hard Promise timeout because some
   // `@tauri-apps/plugin-http` code paths may ignore AbortSignal under
   // certain network/proxy failures, which then lets the outer
@@ -180,7 +180,7 @@ async function fetchManifestWithWebFetch(): Promise<Response> {
   // quickly against raw.githubusercontent.com while plugin-http hangs on this
   // host. This is the primary/preferred manifest transport.
   const request = globalThis.fetch(LLAMACPP_BACKEND_MANIFEST_URL, {
-    headers: { Accept: 'application/json', 'User-Agent': 'atomic-chat' },
+    headers: { 'Accept': 'application/json', 'User-Agent': 'atomic-chat' },
     signal: controller.signal,
   })
   const timeout = new Promise<Response>((_, reject) => {
@@ -259,8 +259,14 @@ async function fetchManifestWithFallbacks(): Promise<Response> {
   }> = [
     { label: 'rust-http1 fetch', runner: () => fetchManifestWithRustHttp1() },
     { label: 'webview fetch', runner: () => fetchManifestWithWebFetch() },
-    { label: 'proxy-aware tauri fetch', runner: () => fetchManifestWithTimeout(true) },
-    { label: 'direct tauri fetch', runner: () => fetchManifestWithTimeout(false) },
+    {
+      label: 'proxy-aware tauri fetch',
+      runner: () => fetchManifestWithTimeout(true),
+    },
+    {
+      label: 'direct tauri fetch',
+      runner: () => fetchManifestWithTimeout(false),
+    },
   ]
 
   const wrapped = attempts.map(({ label, runner }) =>
@@ -402,7 +408,11 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
       console.warn(
         `[fetchRemoteBackends] Backend manifest returned ${resp.status}; using bundled baseline (not cached, will retry next call)`
       )
-      return parseManifestForPlatform(BUNDLED_MANIFEST_BASELINE, osType, archSuffix)
+      return parseManifestForPlatform(
+        BUNDLED_MANIFEST_BASELINE,
+        osType,
+        archSuffix
+      )
     }
 
     const release = await resp.json()
@@ -411,7 +421,21 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
       console.warn(
         '[fetchRemoteBackends] Manifest missing tag_name; using bundled baseline (not cached, will retry next call)'
       )
-      return parseManifestForPlatform(BUNDLED_MANIFEST_BASELINE, osType, archSuffix)
+      return parseManifestForPlatform(
+        BUNDLED_MANIFEST_BASELINE,
+        osType,
+        archSuffix
+      )
+    }
+    if (tag !== LLAMACPP_UPSTREAM_PINNED_TAG) {
+      console.warn(
+        `[fetchRemoteBackends] Manifest tag ${tag} is not the verified ${LLAMACPP_UPSTREAM_PINNED_TAG} pin; using bundled baseline until a compatibility update lands`
+      )
+      return parseManifestForPlatform(
+        BUNDLED_MANIFEST_BASELINE,
+        osType,
+        archSuffix
+      )
     }
 
     // Cache ONLY a genuinely successful live manifest for this session. The
@@ -435,7 +459,11 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
       '[fetchRemoteBackends] All manifest fetch transports failed; falling back to bundled baseline (not cached, will retry next call).',
       err instanceof Error ? err.message : String(err)
     )
-    return parseManifestForPlatform(BUNDLED_MANIFEST_BASELINE, osType, archSuffix)
+    return parseManifestForPlatform(
+      BUNDLED_MANIFEST_BASELINE,
+      osType,
+      archSuffix
+    )
   }
 }
 
@@ -443,13 +471,13 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
  * Builds the download URL for a specific backend version from ggml-org/llama.cpp.
  *
  * Asset naming differs by platform:
- *   - macOS: `llama-{tag}-bin-macos-{arm64,x64}.zip`
+ *   - macOS: `llama-{tag}-bin-macos-{arm64,x64}.tar.gz`
  *   - Windows: `llama-{tag}-bin-win-{variant}.zip`
  *   - Linux: `llama-{tag}-bin-ubuntu-{variant}.tar.gz` (note: internal
  *     backend ids are `linux-*` but upstream filenames carry `ubuntu-*`;
  *     `LINUX_UPSTREAM_ASSET_BY_BACKEND` provides the mapping).
  *
- * macOS / Windows use `.zip`, Linux uses `.tar.gz`. The Tauri `decompress`
+ * macOS / Linux use `.tar.gz`, Windows uses `.zip`. The Tauri `decompress`
  * command handles both formats transparently.
  */
 export function getBackendDownloadUrl(
@@ -468,21 +496,22 @@ export function getBackendDownloadUrl(
       `getBackendDownloadUrl: unresolved 'latest' tag for backend '${backend}'. The latest/<backend> sentinel must be resolved to a concrete release tag before download.`
     )
   }
-  const linuxInfix = LINUX_UPSTREAM_ASSET_BY_BACKEND[backend]
-  if (linuxInfix) {
-    return `${LLAMACPP_DOWNLOAD_BASE}/${version}/llama-${version}-bin-${linuxInfix}.tar.gz`
-  }
-  return `${LLAMACPP_DOWNLOAD_BASE}/${version}/llama-${version}-bin-${backend}.zip`
+  const archiveName = getBackendArchiveName(version, backend)
+  return `${LLAMACPP_DOWNLOAD_BASE}/${version}/${archiveName}`
 }
 
-export function getBackendArchiveName(version: string, backend: string): string {
+export function getBackendArchiveName(
+  version: string,
+  backend: string
+): string {
   version = version.replace(/\uFEFF/g, '').trim()
   backend = backend.replace(/\uFEFF/g, '').trim()
   const linuxInfix = LINUX_UPSTREAM_ASSET_BY_BACKEND[backend]
   if (linuxInfix) {
     return `llama-${version}-bin-${linuxInfix}.tar.gz`
   }
-  return `llama-${version}-bin-${backend}.zip`
+  const extension = backend.startsWith('macos-') ? 'tar.gz' : 'zip'
+  return `llama-${version}-bin-${backend}.${extension}`
 }
 
 /**
@@ -517,10 +546,10 @@ export function friendlyBackendLabel(backend: string): string {
  */
 const WINDOWS_CUDA_BACKEND_RE = /^win-cuda-(12\.\d+|13\.\d+)-x64$/
 
-function matchWindowsCudaBackend(
-  backend: string
-): string | null {
-  const match = WINDOWS_CUDA_BACKEND_RE.exec(backend.replace(/\uFEFF/g, '').trim())
+function matchWindowsCudaBackend(backend: string): string | null {
+  const match = WINDOWS_CUDA_BACKEND_RE.exec(
+    backend.replace(/\uFEFF/g, '').trim()
+  )
   if (!match) return null
   return match[1]
 }
@@ -683,7 +712,10 @@ export async function listSupportedBackends(): Promise<BackendVersion[]> {
   // is supported, and the concrete id (e.g. `win-cuda-13.4-x64`) keeps
   // flowing downstream unchanged so the right asset is downloaded.
   const WIN_CUDA13_CONCRETE_RE = /^win-cuda-13\.\d+-(x64|arm64)$/
-  const isSupported = (rawBackend: string, normalizedBackend: string): boolean => {
+  const isSupported = (
+    rawBackend: string,
+    normalizedBackend: string
+  ): boolean => {
     if (supportedSet.has(normalizedBackend)) return true
     const m = WIN_CUDA13_CONCRETE_RE.exec(rawBackend)
     if (m) {
