@@ -196,8 +196,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (10)
+## Packaging, installers, autostart & platform policy (11)
 
+- **2026-08-04** — [Stop auto-enabling launch at startup and guard autostart registration to installed bundles](2026-08-04-stop-auto-enabling-launch-at-startup-and-guard-autostart-registration-to-installed-bundles.md)
 - **2026-08-03** — [Disable WebKit DMABUF rendering on Linux](2026-08-03-disable-webkit-dmabuf-rendering-on-linux.md)
 - **2026-07-31** — [Keep Linux AppImage updates compatible with AppImageLauncher](2026-07-31-keep-linux-appimage-updates-compatible-with-appimagelauncher.md)
 - **2026-07-13** — [Run tray status synchronization on Windows](2026-07-13-run-tray-status-synchronization-on-windows.md)
