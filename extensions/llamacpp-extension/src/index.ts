@@ -2305,15 +2305,6 @@ export default class llamacpp_extension extends AIEngine {
       const path = await joinPath([modelsDir, modelId, 'model.yml'])
       const modelConfig = await invoke<ModelConfig>('read_yaml', { path })
 
-      // The turboquant fork and the upstream engine share this models dir, but
-      // models imported from another app (Ollama / LM Studio / HF cache /
-      // Unsloth) are raw GGUFs not converted for turboquant — loading them here
-      // segfaults. The upstream engine serves them instead, so omit any model
-      // carrying an external `source` from the turboquant provider's list.
-      if ((modelConfig as { source?: string }).source) {
-        continue
-      }
-
       const isEmbedding = await this.resolveEmbeddingConfig(
         modelId,
         modelConfig
