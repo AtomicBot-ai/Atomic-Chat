@@ -600,7 +600,7 @@ $tqReuseWithoutFetch = $SkipBackendDownload -and $tqIsTurboquant
 $tqEntry = $null
 $tqPinnedTag = ''
 if (-not $tqReuseWithoutFetch) {
-    $tqManifestUrl = 'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/40665589ef2820f36cbdec282b23f554b60dd563/backends/turboquant-manifest.json'
+    $tqManifestUrl = 'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/b8fb5951118ec63657b1558b10cfc7597e408aea/backends/turboquant-manifest.json'
     $tqHeaders = @{ 'User-Agent' = 'atomic-chat-dev' }
 
     Write-Host '  Fetching TurboQuant backend manifest...'

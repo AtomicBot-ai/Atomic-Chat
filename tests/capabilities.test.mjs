@@ -15,7 +15,7 @@ const rustLongFlags = (source) =>
 
 const snapshots = {
   turboquant: readJson(
-    './fixtures/capabilities/turboquant-macos-arm64-066cc29.json'
+    './fixtures/capabilities/turboquant-b10269-1.4.0.json'
   ),
   upstream: readJson('./fixtures/capabilities/upstream-b10205.json'),
   mlx: readJson('./fixtures/capabilities/mlx-server.json'),

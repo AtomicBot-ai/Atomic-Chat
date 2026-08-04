@@ -612,7 +612,7 @@ endif
 # CDN. LLAMACPP_TAG stays the explicit developer override.
 # Example:
 #   make download-llamacpp-backend LLAMACPP_TAG=b10018-1.3.0
-ATOMIC_CHAT_CONF_BACKEND_REV ?= 40665589ef2820f36cbdec282b23f554b60dd563
+ATOMIC_CHAT_CONF_BACKEND_REV ?= b8fb5951118ec63657b1558b10cfc7597e408aea
 TURBOQUANT_MANIFEST_URL = https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/$(ATOMIC_CHAT_CONF_BACKEND_REV)/backends/turboquant-manifest.json
 LLAMACPP_TAG ?=
 download-llamacpp-backend:

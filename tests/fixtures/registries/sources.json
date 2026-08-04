@@ -1,6 +1,6 @@
 {
   "atomic-chat-conf": {
-    "revision": "40665589ef2820f36cbdec282b23f554b60dd563",
+    "revision": "b8fb5951118ec63657b1558b10cfc7597e408aea",
     "fixtures": [
       "upstream-manifest.json",
       "turboquant-manifest.json",

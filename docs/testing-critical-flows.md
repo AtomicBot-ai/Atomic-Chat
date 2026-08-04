@@ -74,7 +74,7 @@ Production entrypoints:
 
 Verified local artifacts:
 
-- TurboQuant `turboquant-macos-arm64-066cc29` reports commit `066cc29`. Its
+- TurboQuant `b10269-1.4.0` reports build `10679`, commit `074bf826e`. Its
   cache types include `turbo2`, `turbo3`, and `turbo4`.
 - Upstream `b10205` reports build `10205`, commit `1e2259952`. Its cache types do
   not include TurboQuant values.

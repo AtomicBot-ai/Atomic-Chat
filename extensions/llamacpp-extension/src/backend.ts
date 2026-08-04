@@ -25,7 +25,7 @@ import {
 // The backend *archives* themselves are still downloaded from the GitHub
 // releases CDN via LLAMACPP_DOWNLOAD_BASE.
 export const TURBOQUANT_BACKEND_MANIFEST_REVISION =
-  '40665589ef2820f36cbdec282b23f554b60dd563'
+  'b8fb5951118ec63657b1558b10cfc7597e408aea'
 export const TURBOQUANT_BACKEND_MANIFEST_URL = `https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/${TURBOQUANT_BACKEND_MANIFEST_REVISION}/backends/turboquant-manifest.json`
 const LLAMACPP_DOWNLOAD_BASE =
   'https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download'
