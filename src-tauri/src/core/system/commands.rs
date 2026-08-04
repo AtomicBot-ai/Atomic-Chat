@@ -4096,6 +4096,41 @@ pub fn migrate_macos_autostart_launchagent<R: Runtime>(
     }
 }
 
+/// Returns whether the current application binary is safe to register for OS
+/// autostart.
+///
+/// - `false` in debug/development builds (the current `target/debug` binary is
+///   not the installed app and should not create a dangling autostart entry).
+/// - `false` on macOS when the executable is not inside a bundled `.app`
+///   (e.g. `src-tauri/target/debug/Atomic-Chat`), so dev builds and uninstalled
+///   binaries never register.
+/// - `true` otherwise (release builds on Windows/Linux, and release macOS apps
+///   inside their bundle).
+#[tauri::command]
+pub fn is_autostart_registration_allowed<R: Runtime>(
+    #[allow(unused_variables)] app: AppHandle<R>,
+) -> Result<bool, String> {
+    if cfg!(debug_assertions) {
+        return Ok(false);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let exe = std::env::current_exe()
+            .map_err(|e| format!("Failed to resolve current executable path: {e}"))?;
+        let exe_str = exe.to_string_lossy();
+        if !exe_str.contains(".app/Contents/MacOS") {
+            log::info!(
+                "Autostart registration skipped: executable is not inside a bundled .app: {}",
+                exe_str
+            );
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
