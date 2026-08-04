@@ -246,4 +246,32 @@ describe('DataProvider', () => {
     })
     unmount()
   })
+
+  it("preserves user-edited instructions when migrating the built-in 'jan' assistant", async () => {
+    const janAssistant = {
+      id: 'jan',
+      name: 'Old Atomic Chat',
+      description: 'Old description',
+      avatar: 'old-avatar.png',
+      instructions: 'User custom instructions',
+      created_at: 1234567890,
+    } as Assistant
+    getAssistants.mockResolvedValue([janAssistant])
+
+    const { unmount } = render(<DataProvider />)
+
+    await waitFor(() => {
+      expect(mocks.setAssistants).toHaveBeenCalledWith([
+        expect.objectContaining({
+          id: 'jan',
+          name: 'Atomic Chat',
+          description: '',
+          avatar: '',
+          instructions: 'User custom instructions',
+          created_at: 1234567890,
+        }),
+      ])
+    })
+    unmount()
+  })
 })
