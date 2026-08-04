@@ -209,10 +209,17 @@ export function DataProvider() {
       .getAssistants()
       .then((data) => {
         if (data && Array.isArray(data) && data.length > 0) {
-          //? Миграция: ассистент с id 'jan' всегда подменяем на дефолт Atomic Chat (name/description/avatar)
+          // Migrate the built-in 'jan' assistant: only refresh the locked
+          // identity fields (name/description/avatar) so user edits to
+          // instructions and other properties survive restarts.
           const migrated = (data as unknown as Assistant[]).map((a) =>
             a.id === 'jan'
-              ? { ...defaultAssistant, id: 'jan', created_at: a.created_at }
+              ? {
+                  ...a,
+                  name: defaultAssistant.name,
+                  description: defaultAssistant.description,
+                  avatar: defaultAssistant.avatar,
+                }
               : a
           )
           setAssistants(migrated)
