@@ -113,31 +113,14 @@ export function DataProvider() {
     }
   }, [])
 
-  // Default "Launch at startup" to ON for every user (new and existing). We
-  // seed the OS autostart entry exactly once and record it, so a later manual
-  // disable in Settings → General is never overridden. (Flips the ATO-96
-  // default from OFF to ON; users can still turn it off.)
-  useEffect(() => {
-    if (!IS_TAURI) return
-    if (localStorage.getItem(localStorageKey.autostartSeeded) === 'true') return
-    ;(async () => {
-      try {
-        if (!(await isAutostartEnabled())) {
-          await enableAutostart()
-        }
-        localStorage.setItem(localStorageKey.autostartSeeded, 'true')
-      } catch (error) {
-        console.error('Failed to seed launch-at-startup default:', error)
-      }
-    })()
-  }, [])
-
   // macOS: migrate the autostart mechanism from the legacy LaunchAgent plist to
   // a real AppleScript Login Item (visible in System Settings, reliably started
   // on reboot). Runs once. The Rust side removes the stale plist and reports
   // whether the user had launch-at-startup ON under the old launcher; if so we
   // re-register a Login Item so it keeps working after the switch. A user who
   // had it off has no legacy plist and is left untouched (choice preserved).
+  // In dev/uninstalled builds we do not register the current executable, so we
+  // only enable when the Rust side confirms we are inside a real app bundle.
   useEffect(() => {
     if (!IS_TAURI || !IS_MACOS) return
     if (
@@ -150,7 +133,10 @@ export function DataProvider() {
         const hadLegacyAutostart = await invoke<boolean>(
           'migrate_macos_autostart_launchagent'
         )
-        if (hadLegacyAutostart && !(await isAutostartEnabled())) {
+        const canRegister = await invoke<boolean>(
+          'is_autostart_registration_allowed'
+        )
+        if (hadLegacyAutostart && canRegister && !(await isAutostartEnabled())) {
           await enableAutostart()
         }
         localStorage.setItem(

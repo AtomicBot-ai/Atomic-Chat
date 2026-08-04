@@ -41,9 +41,9 @@ export const localStorageKey = {
   factoryResetPending: 'factory-reset-pending',
   lastSeenVersion: 'last-seen-version',
   threadNotifications: 'thread-notifications',
-  // Marks that we have seeded the default "Launch at startup" state once.
-  // Autostart defaults to ON for all users (new and existing); after this
-  // one-time seed, a user's manual choice in Settings is never overridden.
+  // Retired: previously marked the one-time seed that flipped autostart to ON.
+  // Autostart no longer seeds itself; the key is kept only to avoid reusing
+  // the legacy localStorage slot for a different purpose.
   autostartSeeded: 'autostart-seeded',
   // macOS only: marks the one-time migration of the autostart launcher from the
   // legacy LaunchAgent plist to a real AppleScript Login Item. Preserves prior
