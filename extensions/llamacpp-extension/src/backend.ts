@@ -717,11 +717,13 @@ async function getSupportedBackendIds(): Promise<string[]> {
  * baseline, not the ceiling. Returns `[]` on any failure so the app still works
  * offline with bundled/local backends only.
  */
-export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
+export async function fetchRemoteBackends(
+  options: { force?: boolean } = {}
+): Promise<BackendVersion[]> {
   const supportedSet = new Set(await getSupportedBackendIds())
   if (supportedSet.size === 0) return []
 
-  const catalog = await fetchStableIndex()
+  const catalog = await fetchStableIndex(options)
   const backends: BackendVersion[] = []
   for (const release of catalog.releases) {
     for (const variant of release.variants) {
@@ -859,7 +861,9 @@ export async function findUpstreamCudaBinWithCudart(
   return null
 }
 
-export async function listSupportedBackends(): Promise<BackendVersion[]> {
+export async function listSupportedBackends(
+  options: { force?: boolean } = {}
+): Promise<BackendVersion[]> {
   const sysInfo = await getSystemInfo()
   const osType = sysInfo.os_type
   const arch = sysInfo.cpu.arch
@@ -878,7 +882,7 @@ export async function listSupportedBackends(): Promise<BackendVersion[]> {
 
   const [localBackendVersions, remoteBackendVersions] = await Promise.all([
     getLocalInstalledBackends(),
-    fetchRemoteBackends(),
+    fetchRemoteBackends(options),
   ])
   console.info(
     '[listSupportedBackends] local backends:',

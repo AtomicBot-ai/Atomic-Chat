@@ -2467,16 +2467,16 @@ function ProviderDetail() {
                               provider?.provider === 'llamacpp-upstream' ||
                               provider?.provider === 'mlx') && (
                               <div className="mt-2 flex flex-wrap gap-2">
-                                {/* All buttons in this row share the same
-                                    floor width so they read as one control
-                                    group and none of them resizes when its
-                                    label switches to a busy state. */}
+                                {/* The install and engine-update controls use
+                                    the same fixed width so they read as one
+                                    control group and never resize with their
+                                    labels. */}
                                 <Button
                                   variant="outline"
                                   size="sm"
                                   onClick={handleInstallBackendFromFile}
                                   disabled={isInstallingBackend}
-                                  className="min-w-[12rem]"
+                                  className="w-[16rem]"
                                 >
                                   <IconUpload
                                     size={12}
@@ -2507,7 +2507,7 @@ function ProviderDetail() {
                                       isCheckingEngineUpdate ||
                                       isOptimalBackendBusy
                                     }
-                                    className="min-w-[12rem]"
+                                    className="w-[16rem]"
                                   >
                                     {/* Only the icon reflects progress. A
                                         label that swapped to a longer

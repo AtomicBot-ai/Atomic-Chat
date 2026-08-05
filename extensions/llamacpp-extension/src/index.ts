@@ -2155,7 +2155,9 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  async checkBackendForUpdates(): Promise<{
+  async checkBackendForUpdates(
+    options: { force?: boolean } = {}
+  ): Promise<{
     updateNeeded: boolean
     newVersion: string
     targetBackend?: string
@@ -2166,7 +2168,7 @@ export default class llamacpp_extension extends AIEngine {
         return { updateNeeded: false, newVersion: '0' }
       }
 
-      const version_backends = await listSupportedBackends()
+      const version_backends = await listSupportedBackends(options)
       if (version_backends.length === 0) {
         return { updateNeeded: false, newVersion: '0' }
       }
@@ -2192,8 +2194,9 @@ export default class llamacpp_extension extends AIEngine {
    *
    * The release index is cached and the version list is a snapshot taken at
    * load, so a fork release published mid-session stays invisible until the
-   * next launch. This drops the cache and resolves the newest stable release
-   * of the backend type already in use.
+   * next launch. This forces the catalog read through the complete remote
+   * resolution chain and resolves the newest stable release of the backend
+   * type already in use.
    *
    * Only the decision happens here, and every leg of it is bounded: the
    * catalog lookup goes through the same 20s race as `recheckOptimalBackend`,
@@ -2219,11 +2222,8 @@ export default class llamacpp_extension extends AIEngine {
     const currentType = current.split('/')[1]?.trim()
     if (!current || current === 'none' || !currentType) return noUpdate
 
-    // An explicit user-driven check must see releases published since the
-    // index was last cached.
-    invalidateStableIndexCache()
     const { updateNeeded, targetBackend } = await this.withTimeout(
-      this.checkBackendForUpdates(),
+      this.checkBackendForUpdates({ force: true }),
       20_000,
       { updateNeeded: false, newVersion: '0' }
     )

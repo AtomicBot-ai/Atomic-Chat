@@ -1857,8 +1857,7 @@ describe('llamacpp_extension', () => {
       vi.mocked(mapOldBackendToNew).mockImplementation(async (b: string) => b)
     })
 
-    it('refetches the index and names the release to install', async () => {
-      const { invalidateStableIndexCache } = await import('../backend')
+    it('force-refetches the index and names the release to install', async () => {
       extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
         updateNeeded: true,
         newVersion: 'b10269-1.4.0',
@@ -1867,7 +1866,9 @@ describe('llamacpp_extension', () => {
 
       const result = await extension.checkForEngineUpdate()
 
-      expect(invalidateStableIndexCache).toHaveBeenCalled()
+      expect(extension.checkBackendForUpdates).toHaveBeenCalledWith({
+        force: true,
+      })
       expect(result).toEqual({
         updateAvailable: true,
         targetBackend: TARGET,
