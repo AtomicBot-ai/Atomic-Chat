@@ -117,6 +117,8 @@ export type LlamacppConfig = {
   concurrent_mode: boolean
   concurrent_slots: number
   expose_metrics: boolean
+  reasoning_preserve: boolean
+  extra_args: string
 }
 
 export type ModelPlan = {

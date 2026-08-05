@@ -59,11 +59,20 @@ pub struct LlamacppConfig {
     /// Independent switch; also implicitly enabled by `concurrent_mode`.
     #[serde(default)]
     pub expose_metrics: bool,
+    /// Preserve supported reasoning traces across conversation turns.
+    #[serde(default)]
+    pub reasoning_preserve: bool,
+    /// Additional llama-server arguments entered by the user.
+    #[serde(default)]
+    pub extra_args: String,
 }
 
 /// Minimum llama.cpp build number that changed --flash-attn from a boolean
 /// flag to a string argument accepting auto|on|off (upstream PR #15434).
 const FLASH_ATTN_STRING_ARG_MIN_BUILD: u32 = 6325;
+
+/// First upstream release containing `--reasoning-preserve` (PR #25105).
+const REASONING_PRESERVE_MIN_BUILD: u32 = 9837;
 
 /// True when a version string names a build from the TurboQuant fork's release
 /// train, in either shape the fork has published:
@@ -226,6 +235,9 @@ impl ArgumentBuilder {
         // Prometheus /metrics endpoint
         self.add_metrics_flag();
 
+        // Preserve supported reasoning traces across turns.
+        self.add_reasoning_preserve_flag();
+
         // Embedding vs text generation specific args
         if self.is_embedding {
             self.add_embedding_args();
@@ -237,6 +249,10 @@ impl ArgumentBuilder {
         if !self.backend.starts_with("ik") {
             self.add_fit_settings();
         }
+
+        // User-supplied arguments come last so advanced users can override
+        // an earlier llama-server option when its parser permits it.
+        self.add_extra_args();
 
         self.args
     }
@@ -403,6 +419,94 @@ impl ArgumentBuilder {
         }
     }
 
+    fn add_reasoning_preserve_flag(&mut self) {
+        if !self.config.reasoning_preserve || self.is_embedding {
+            return;
+        }
+
+        if !self
+            .parse_build_number()
+            .is_some_and(|build| build >= REASONING_PRESERVE_MIN_BUILD)
+        {
+            log::warn!(
+                "Reasoning preservation requested but backend build {}/{} does not prove upstream support (b{}+); skipping --reasoning-preserve",
+                self.version,
+                self.backend,
+                REASONING_PRESERVE_MIN_BUILD
+            );
+            return;
+        }
+
+        self.args.push("--reasoning-preserve".to_string());
+    }
+
+    fn parse_extra_args(value: &str) -> Result<Vec<String>, String> {
+        let mut args = Vec::new();
+        let mut current = String::new();
+        let mut chars = value.chars().peekable();
+        let mut quote = None;
+        let mut started = false;
+
+        while let Some(ch) = chars.next() {
+            if let Some(delimiter) = quote {
+                if ch == delimiter {
+                    quote = None;
+                } else if ch == '\\'
+                    && chars
+                        .peek()
+                        .is_some_and(|next| *next == delimiter || *next == '\\')
+                {
+                    current.push(chars.next().expect("peeked character must exist"));
+                } else {
+                    current.push(ch);
+                }
+                continue;
+            }
+
+            match ch {
+                '\'' | '"' => {
+                    quote = Some(ch);
+                    started = true;
+                }
+                '\\' if chars.peek().is_some_and(|next| {
+                    next.is_whitespace() || *next == '\'' || *next == '"' || *next == '\\'
+                }) =>
+                {
+                    current.push(chars.next().expect("peeked character must exist"));
+                    started = true;
+                }
+                ch if ch.is_whitespace() => {
+                    if started {
+                        args.push(std::mem::take(&mut current));
+                        started = false;
+                    }
+                }
+                _ => {
+                    current.push(ch);
+                    started = true;
+                }
+            }
+        }
+
+        if let Some(delimiter) = quote {
+            return Err(format!("unterminated {delimiter} quote"));
+        }
+        if started {
+            args.push(current);
+        }
+        Ok(args)
+    }
+
+    fn add_extra_args(&mut self) {
+        match Self::parse_extra_args(&self.config.extra_args) {
+            Ok(args) => self.args.extend(args),
+            Err(error) => log::warn!(
+                "Ignoring invalid extra llama-server arguments: {}",
+                error
+            ),
+        }
+    }
+
     /// Apply "Concurrent Mode" overrides to `self.config` so the rest of the
     /// argument-emitting pipeline renders the expected multi-slot server
     /// configuration.
@@ -560,6 +664,8 @@ mod tests {
             concurrent_mode: false,
             concurrent_slots: 8,
             expose_metrics: false,
+            reasoning_preserve: false,
+            extra_args: String::new(),
         }
     }
 
@@ -1434,5 +1540,59 @@ mod tests {
         assert_has_flag(&args, "--metrics");
         assert_arg_pair(&args, "--parallel", "1");
         assert_no_flag(&args, "--cont-batching");
+    }
+
+    #[test]
+    fn test_reasoning_preserve_emitted_for_supported_text_backend() {
+        let mut config = default_config();
+        config.version_backend = "b10269-1.4.0/standard".to_string();
+        config.reasoning_preserve = true;
+
+        let args = ArgumentBuilder::new(config, false)
+            .unwrap()
+            .build("test", "/path", 8080, None);
+
+        assert_has_flag(&args, "--reasoning-preserve");
+    }
+
+    #[test]
+    fn test_reasoning_preserve_skipped_without_proven_build_support() {
+        let mut config = default_config();
+        config.version_backend = "turboquant-macos-arm64-abc123/standard".to_string();
+        config.reasoning_preserve = true;
+
+        let args = ArgumentBuilder::new(config, false)
+            .unwrap()
+            .build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--reasoning-preserve");
+    }
+
+    #[test]
+    fn test_extra_args_support_quotes_windows_paths_and_empty_values() {
+        let mut config = default_config();
+        config.extra_args =
+            r#"--reasoning-format "deep analysis" --media-path C:\Models\vision --api-prefix ''"#
+                .to_string();
+
+        let args = ArgumentBuilder::new(config, false)
+            .unwrap()
+            .build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--reasoning-format", "deep analysis");
+        assert_arg_pair(&args, "--media-path", r"C:\Models\vision");
+        assert_arg_pair(&args, "--api-prefix", "");
+    }
+
+    #[test]
+    fn test_invalid_extra_args_are_ignored() {
+        let mut config = default_config();
+        config.extra_args = "--reasoning-format 'unterminated".to_string();
+
+        let args = ArgumentBuilder::new(config, false)
+            .unwrap()
+            .build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--reasoning-format");
     }
 }

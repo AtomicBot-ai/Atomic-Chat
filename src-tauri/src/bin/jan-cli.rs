@@ -1473,5 +1473,7 @@ fn build_llamacpp_config(
         concurrent_mode: false,
         concurrent_slots: 8,
         expose_metrics: false,
+        reasoning_preserve: false,
+        extra_args: String::new(),
     }
 }

@@ -47,8 +47,9 @@ vi.mock('@/hooks/useAssistant', () => ({
   defaultAssistant: {
     id: 'jan',
     name: 'Atomic Chat',
-    description: '',
-    avatar: '',
+    description: 'Built-in description',
+    avatar: '/images/transparent-logo.png',
+    instructions: 'Current date: {{current_date}}',
   },
   useAssistant: () => ({
     setAssistants: mocks.setAssistants,
@@ -221,6 +222,37 @@ describe('DataProvider', () => {
       expect(mocks.setThreads).toHaveBeenCalledWith(threads)
       expect(getServerStatus).toHaveBeenCalledOnce()
       expect(getActiveModels).toHaveBeenCalledOnce()
+    })
+    unmount()
+  })
+
+  it('preserves saved settings when migrating the built-in assistant', async () => {
+    const savedAssistant = {
+      id: 'jan',
+      name: 'Old name',
+      description: 'Old description',
+      avatar: 'old-avatar.png',
+      instructions: 'User instructions',
+      created_at: 123,
+      parameters: { temperature: 0.2 },
+    } as Assistant
+    getAssistants.mockResolvedValue([savedAssistant])
+    let migratedAssistants: Assistant[] | undefined
+    mocks.setAssistants.mockImplementation((value: Assistant[]) => {
+      migratedAssistants = value
+    })
+
+    const { unmount } = render(<DataProvider />)
+
+    await waitFor(() => {
+      expect(migratedAssistants).toEqual([
+        {
+          ...savedAssistant,
+          name: 'Atomic Chat',
+          description: 'Built-in description',
+          avatar: '/images/transparent-logo.png',
+        },
+      ])
     })
     unmount()
   })

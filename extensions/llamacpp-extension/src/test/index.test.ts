@@ -465,7 +465,7 @@ describe('llamacpp_extension', () => {
       expect(result).toEqual([])
     })
 
-    it('should return model list when models exist', async () => {
+    it('should return imported models with their source', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
       const { invoke } = await import('@tauri-apps/api/core')
 
@@ -504,6 +504,7 @@ describe('llamacpp_extension', () => {
         model_path: 'test-model/model.gguf',
         name: 'Test Model',
         size_bytes: 1000000,
+        source: 'lmstudio',
       })
       const { readGgufMetadata } = await import(
         '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
@@ -523,6 +524,7 @@ describe('llamacpp_extension', () => {
           providerId: 'llamacpp',
           sizeBytes: 1000000,
           embedding: false,
+          source: 'lmstudio',
           missing: false,
         },
       ])
@@ -1830,5 +1832,22 @@ describe('normalizeLlamacppConfig', () => {
       const result = normalizeLlamacppConfig({ parallel: 0 })
       expect(result.parallel).toBe(0)
     })
+  })
+
+  it('preserves reasoning and extra argument settings for IPC', () => {
+    const result = normalizeLlamacppConfig({
+      reasoning_preserve: 'true',
+      extra_args: '--reasoning-format deepseek',
+    })
+
+    expect(result.reasoning_preserve).toBe(true)
+    expect(result.extra_args).toBe('--reasoning-format deepseek')
+  })
+
+  it('defaults reasoning preservation and extra arguments safely', () => {
+    const result = normalizeLlamacppConfig({})
+
+    expect(result.reasoning_preserve).toBe(false)
+    expect(result.extra_args).toBe('')
   })
 })

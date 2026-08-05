@@ -104,6 +104,7 @@ function General() {
   const [cliPath, setCliPath] = useState<string | null>(null)
   const [isCliLoading, setIsCliLoading] = useState(false)
   const [autostartEnabled, setAutostartEnabled] = useState<boolean | null>(null)
+  const canManageAutostart = IS_TAURI && !isDev()
 
   useEffect(() => {
     const fetchDataFolder = async () => {
@@ -127,14 +128,15 @@ function General() {
   }, [])
 
   useEffect(() => {
-    if (!IS_TAURI) return
+    if (!canManageAutostart) return
     isAutostartEnabled()
       .then(setAutostartEnabled)
       .catch(() => setAutostartEnabled(false))
-  }, [])
+  }, [canManageAutostart])
 
   const handleToggleAutostart = useCallback(
     async (next: boolean) => {
+      if (!canManageAutostart) return
       try {
         if (next) {
           await enableAutostart()
@@ -148,7 +150,7 @@ function General() {
         setAutostartEnabled(await isAutostartEnabled().catch(() => !next))
       }
     },
-    [t]
+    [canManageAutostart, t]
   )
 
   const handleInstallCli = async () => {
@@ -338,7 +340,7 @@ function General() {
                 title={t('common:language')}
                 actions={<LanguageSwitcher />}
               />
-              {IS_TAURI && (
+              {canManageAutostart && (
                 <CardItem
                   title={t('settings:general.launchAtStartup')}
                   description={t('settings:general.launchAtStartupDesc')}

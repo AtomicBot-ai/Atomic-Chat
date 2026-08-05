@@ -3,7 +3,7 @@ import { formatDate } from '@/utils/formatDate'
 /**
  * Render assistant instructions by replacing supported placeholders.
  * Supported placeholders:
- * - {{current_date}}: Inserts today’s date (UTC, long month), e.g., August 16, 2025.
+ * - {{current_date}}: Inserts today’s local date (long month), e.g., August 16, 2025.
  */
 export function renderInstructions(instructions: string): string
 export function renderInstructions(

@@ -56,11 +56,7 @@ export const defaultAssistant: Assistant = {
   avatar: '/images/transparent-logo.png',
   description:
     "Atomic Chat is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user's behalf.",
-  // Empty by default — local backends (mlx/llamacpp/foundation-models)
-  // already strip the system prompt at the transport boundary, and users
-  // who want custom instructions can fill them in via the assistant
-  // settings dialog.
-  instructions: '',
+  instructions: 'Current date: {{current_date}}',
 }
 
 const getDefaultAssistantIdFromStorage = (): string => {

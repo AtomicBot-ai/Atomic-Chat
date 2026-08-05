@@ -91,6 +91,8 @@ export function normalizeLlamacppConfig(config: any): LlamacppConfig {
     concurrent_mode: asBool(config.concurrent_mode),
     concurrent_slots: asNumber(config.concurrent_slots, 8),
     expose_metrics: asBool(config.expose_metrics),
+    reasoning_preserve: asBool(config.reasoning_preserve),
+    extra_args: asString(config.extra_args),
   }
 }
 

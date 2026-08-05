@@ -1869,4 +1869,21 @@ describe('normalizeLlamacppConfig', () => {
       expect(result.parallel).toBe(0)
     })
   })
+
+  it('preserves reasoning and extra argument settings for IPC', () => {
+    const result = normalizeLlamacppConfig({
+      reasoning_preserve: 'true',
+      extra_args: '--reasoning-format deepseek',
+    })
+
+    expect(result.reasoning_preserve).toBe(true)
+    expect(result.extra_args).toBe('--reasoning-format deepseek')
+  })
+
+  it('defaults reasoning preservation and extra arguments safely', () => {
+    const result = normalizeLlamacppConfig({})
+
+    expect(result.reasoning_preserve).toBe(false)
+    expect(result.extra_args).toBe('')
+  })
 })

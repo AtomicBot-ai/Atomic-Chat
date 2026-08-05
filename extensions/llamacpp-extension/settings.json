@@ -77,6 +77,27 @@
     }
   },
   {
+    "key": "reasoning_preserve",
+    "title": "Preserve Reasoning",
+    "description": "Preserve supported reasoning traces across conversation turns. Requires a compatible chat template and a TurboQuant build based on llama.cpp b9837 or newer.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": false
+    }
+  },
+  {
+    "key": "extra_args",
+    "title": "Additional llama-server Arguments",
+    "description": "Advanced: append arbitrary llama-server arguments. Separate arguments with spaces and quote values containing spaces. Arguments are passed directly without shell expansion.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "",
+      "placeholder": "--reasoning-format deepseek --reasoning-budget 4096",
+      "type": "text",
+      "textAlign": "right"
+    }
+  },
+  {
     "key": "timeout",
     "title": "Timeout for llamacpp",
     "description": "Llamacpp connection and load timeout in seconds",

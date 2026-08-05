@@ -154,7 +154,9 @@ describe('useAssistant', () => {
     expect(result.current.currentAssistant.avatar).toBe(
       '/images/transparent-logo.png'
     )
-    expect(result.current.currentAssistant.instructions).toBe('')
+    expect(result.current.currentAssistant.instructions).toBe(
+      'Current date: {{current_date}}'
+    )
     expect(typeof result.current.currentAssistant.created_at).toBe('number')
     expect(typeof result.current.currentAssistant.parameters).toBe('object')
   })

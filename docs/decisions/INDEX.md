@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-165 records, 2026-05-19 → 2026-07-31.
+167 records, 2026-05-19 → 2026-08-05.
 
 ---
 
@@ -122,8 +122,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 - **2026-05-19** — [Use `AtomicBot-ai/mlx-vlm` as the MLX backend](2026-05-19-use-atomicbot-ai-mlx-vlm-as-the-mlx-backend.md)
 
-## llama.cpp providers & backend selection (39)
+## llama.cpp providers & backend selection (40)
 
+- **2026-08-05** — [Expose version-gated reasoning preservation and direct llama-server arguments](2026-08-05-expose-version-gated-reasoning-preservation-and-direct-llama-server-arguments.md)
 - **2026-07-31** — [Reconcile the TurboQuant release tag automatically on app update](2026-07-31-reconcile-turboquant-release-tag-automatically-on-app-update.md)
 - **2026-07-31** — [Adopt unified TurboQuant release tags and expand the Linux backend matrix to CUDA/ROCm](2026-07-31-adopt-unified-turboquant-releases-and-expand-linux-backends.md)
 - **2026-07-30** — [Cache optimal backends for chat upgrade prompts](2026-07-30-cache-optimal-backends-for-chat-upgrade-prompts.md)
@@ -196,8 +197,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (10)
+## Packaging, installers, autostart & platform policy (11)
 
+- **2026-08-05** — [Keep launch at startup opt-in and ignore development binaries](2026-08-05-keep-launch-at-startup-opt-in-and-ignore-development-binaries.md)
 - **2026-08-03** — [Disable WebKit DMABUF rendering on Linux](2026-08-03-disable-webkit-dmabuf-rendering-on-linux.md)
 - **2026-07-31** — [Keep Linux AppImage updates compatible with AppImageLauncher](2026-07-31-keep-linux-appimage-updates-compatible-with-appimagelauncher.md)
 - **2026-07-13** — [Run tray status synchronization on Windows](2026-07-13-run-tray-status-synchronization-on-windows.md)
