@@ -3,7 +3,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core'
-import { AppConfiguration } from '@janhq/core'
+import { type AppConfiguration, type AutostartPreference } from '@janhq/core'
 import { localStorageKey } from '@/constants/localStorage'
 import type { LogEntry } from './types'
 import { DefaultAppService } from './default'
@@ -67,6 +67,19 @@ export class TauriAppService extends DefaultAppService {
 
   async relocateJanDataFolder(path: string): Promise<void> {
     await window.core?.api?.changeAppDataFolder({ newDataFolder: path })
+  }
+
+  async getAutostartPreference(): Promise<AutostartPreference> {
+    const configuration: AppConfiguration =
+      await window.core?.api?.getAppConfigurations()
+    return configuration.autostart_preference ?? 'unmanaged'
+  }
+
+  async setAutostartPreference(preference: AutostartPreference): Promise<void> {
+    const configuration: AppConfiguration =
+      await window.core?.api?.getAppConfigurations()
+    configuration.autostart_preference = preference
+    await window.core?.api?.updateAppConfiguration({ configuration })
   }
 
   parseLogLine(line: string): LogEntry {

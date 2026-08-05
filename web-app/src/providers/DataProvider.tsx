@@ -41,6 +41,7 @@ import {
 } from '@/utils/registerRemoteProvider'
 import { hydrateActiveModelsForRunningServer } from '@/utils/activeModelsSync'
 import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
+import { reconcileLaunchAtStartup } from '@/lib/launchAtStartup'
 
 const safeRegisterRemoteProvider = async (provider: ModelProvider) => {
   try {
@@ -113,36 +114,37 @@ export function DataProvider() {
     }
   }, [])
 
-  // macOS: migrate the autostart mechanism from the legacy LaunchAgent plist to
-  // a real AppleScript Login Item (visible in System Settings, reliably started
-  // on reboot). Runs once. The Rust side removes the stale plist and reports
-  // whether the user had launch-at-startup ON under the old launcher; if so we
-  // re-register a Login Item so it keeps working after the switch. A user who
-  // had it off has no legacy plist and is left untouched (choice preserved).
   useEffect(() => {
-    if (!IS_TAURI || !IS_MACOS || isDev()) return
-    if (
-      localStorage.getItem(localStorageKey.autostartAppleScriptMigrated) ===
-      'true'
-    )
-      return
+    if (!IS_TAURI || isDev()) return
     ;(async () => {
-      try {
-        const hadLegacyAutostart = await invoke<boolean>(
-          'migrate_macos_autostart_launchagent'
-        )
-        if (hadLegacyAutostart && !(await isAutostartEnabled())) {
-          await enableAutostart()
-        }
-        localStorage.setItem(
-          localStorageKey.autostartAppleScriptMigrated,
+      if (
+        IS_MACOS &&
+        localStorage.getItem(localStorageKey.autostartAppleScriptMigrated) !==
           'true'
-        )
+      ) {
+        try {
+          const hadLegacyAutostart = await invoke<boolean>(
+            'migrate_macos_autostart_launchagent'
+          )
+          if (hadLegacyAutostart && !(await isAutostartEnabled())) {
+            await enableAutostart()
+          }
+          localStorage.setItem(
+            localStorageKey.autostartAppleScriptMigrated,
+            'true'
+          )
+        } catch (error) {
+          console.error('Failed to migrate macOS autostart launcher:', error)
+        }
+      }
+
+      try {
+        await reconcileLaunchAtStartup(serviceHub.app())
       } catch (error) {
-        console.error('Failed to migrate macOS autostart launcher:', error)
+        console.error('Failed to reconcile launch-at-startup state:', error)
       }
     })()
-  }, [])
+  }, [serviceHub])
 
   useEffect(() => {
     console.log('Initializing DataProvider...')

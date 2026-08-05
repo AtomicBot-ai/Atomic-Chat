@@ -102,6 +102,27 @@ describe('TauriAppService', () => {
     })
   })
 
+  it('reads and updates the durable autostart preference', async () => {
+    const configuration = {
+      data_folder: '/path/to/atomic/data',
+      quick_ask: false,
+      autostart_preference: 'disabled' as const,
+    }
+    ipcHandler.mockImplementation((command: string) =>
+      command === 'get_app_configurations' ? configuration : undefined
+    )
+
+    await expect(appService.getAutostartPreference()).resolves.toBe('disabled')
+    await appService.setAutostartPreference('enabled')
+
+    expect(ipcHandler).toHaveBeenCalledWith('update_app_configuration', {
+      configuration: {
+        ...configuration,
+        autostart_preference: 'enabled',
+      },
+    })
+  })
+
   it('performs factory reset through real invoke and preserves backend keys', async () => {
     window.localStorage.setItem('llama_cpp_backend_type', 'cpu')
     window.localStorage.setItem('discard-me', 'value')

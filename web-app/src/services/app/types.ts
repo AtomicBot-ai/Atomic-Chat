@@ -2,6 +2,8 @@
  * App Service Types
  */
 
+import type { AutostartPreference } from '@janhq/core'
+
 export interface LogEntry {
   timestamp: string | number
   level: 'info' | 'warn' | 'error' | 'debug'
@@ -15,6 +17,8 @@ export interface AppService {
   parseLogLine(line: string): LogEntry
   getJanDataFolder(): Promise<string | undefined>
   relocateJanDataFolder(path: string): Promise<void>
+  getAutostartPreference(): Promise<AutostartPreference>
+  setAutostartPreference(preference: AutostartPreference): Promise<void>
   getServerStatus(): Promise<boolean>
   readYaml<T = unknown>(path: string): Promise<T>
   /** Best-effort installer channel of the running build (ATO-111 telemetry). */

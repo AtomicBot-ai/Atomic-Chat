@@ -4,7 +4,8 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tauri_plugin_llamacpp::cleanup_llama_processes;
 
 use crate::core::app::commands::{
-    default_data_folder_path, get_jan_data_folder_path, update_app_configuration,
+    default_data_folder_path, get_app_configurations, get_jan_data_folder_path,
+    update_app_configuration,
 };
 use crate::core::app::constants::{JAN_DATA_FILES, JAN_DATA_SUBDIRS};
 use crate::core::app::models::AppConfiguration;
@@ -115,6 +116,8 @@ pub async fn factory_reset<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    let autostart_preference = get_app_configurations(app_handle.clone()).autostart_preference;
+
     // close window (not available on mobile platforms)
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
@@ -193,6 +196,7 @@ pub async fn factory_reset<R: Runtime>(
     // Reset the configuration
     let mut default_config = AppConfiguration::default();
     default_config.data_folder = default_data_folder_path(app_handle.clone());
+    default_config.autostart_preference = autostart_preference;
     let _ = update_app_configuration(app_handle.clone(), default_config);
 
     restart_app(&app_handle)

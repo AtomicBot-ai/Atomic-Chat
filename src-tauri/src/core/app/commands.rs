@@ -110,6 +110,7 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
     if !configuration_file.exists() {
         log::info!("App config not found, creating default config at {configuration_file:?}");
 
+        app_default_configuration = AppConfiguration::new_install();
         app_default_configuration.data_folder = default_data_folder;
 
         // On a clean install the app-data directory (e.g. on Windows
@@ -375,6 +376,7 @@ mod tests {
         let custom = root.path().join("custom-model-data");
         let configuration = AppConfiguration {
             data_folder: custom.to_string_lossy().into_owned(),
+            ..AppConfiguration::default()
         };
         fs::write(&config_file, serde_json::to_vec(&configuration).unwrap()).unwrap();
 

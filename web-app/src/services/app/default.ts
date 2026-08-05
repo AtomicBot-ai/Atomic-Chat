@@ -3,6 +3,7 @@
  */
 
 import type { AppService, LogEntry } from './types'
+import type { AutostartPreference } from '@janhq/core'
 
 export class DefaultAppService implements AppService {
   async factoryReset(): Promise<void> {
@@ -29,6 +30,16 @@ export class DefaultAppService implements AppService {
   async relocateJanDataFolder(path: string): Promise<void> {
     console.log('relocateJanDataFolder called with path:', path)
     // No-op - not implemented in default service
+  }
+
+  async getAutostartPreference(): Promise<AutostartPreference> {
+    return 'unmanaged'
+  }
+
+  async setAutostartPreference(
+    preference: AutostartPreference
+  ): Promise<void> {
+    void preference
   }
 
   async getServerStatus(): Promise<boolean> {
