@@ -108,6 +108,13 @@ export type OptimalBackendCacheRecord = {
   recommendedCategory?: string
 }
 
+/// Outcome of an explicit engine-update check. The check only decides; the
+/// caller starts the download.
+export type EngineUpdateResult = {
+  updateAvailable: boolean
+  targetBackend: string | null
+}
+
 interface LlamacppExtension {
   getSettings?(): Promise<ExtensionSetting[]>
   checkBackendForUpdates?(): Promise<BackendUpdateInfo>
@@ -118,6 +125,7 @@ interface LlamacppExtension {
   configureBackends?(): Promise<void>
   downloadRecommendedBackend?(backendString: string): Promise<void>
   recheckOptimalBackend?(): Promise<BetterBackendRecommendation | null>
+  checkForEngineUpdate?(): Promise<EngineUpdateResult>
   downloadManualBackend?(selection: string): Promise<void>
   getCachedOptimalBackend?(): OptimalBackendCacheRecord | null
   refreshOptimalBackendCache?(options?: {
@@ -587,6 +595,37 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
     return result ?? null
   }, [extensionName])
 
+  /// Manual engine-update check: refetches the release index and reports the
+  /// newest stable release for the backend type in use. Without it the only
+  /// way to pick up a release published while the app was open is a restart.
+  /// Bounded on the extension side, so it always settles.
+  const checkForEngineUpdate =
+    useCallback(async (): Promise<EngineUpdateResult> => {
+      const extensionToUse =
+        ExtensionManager.getInstance().getByName(extensionName)
+
+      if (!extensionToUse || !('checkForEngineUpdate' in extensionToUse)) {
+        throw new Error('Extension does not support checkForEngineUpdate')
+      }
+
+      const extension = extensionToUse as LlamacppExtension
+      const result = await extension.checkForEngineUpdate?.()
+      if (!result) {
+        throw new Error('checkForEngineUpdate returned no result')
+      }
+      return result
+    }, [extensionName])
+
+  /// Rebuilds the version list from the extension's catalog. An engine update
+  /// can install a release that was not in the list registered at load, and
+  /// the dropdown would then hold a value with no matching option.
+  const refreshBackendCatalog = useCallback(async () => {
+    const extensionToUse =
+      ExtensionManager.getInstance().getByName(extensionName)
+    if (!extensionToUse || !('configureBackends' in extensionToUse)) return
+    await (extensionToUse as LlamacppExtension).configureBackends?.()
+  }, [extensionName])
+
   // Post-upgrade Windows auto-recheck.
   //
   // When `windowsProviderMigration` runs in `main.tsx` and detects
@@ -926,6 +965,8 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
     dismissRecommendation,
     downloadRecommendedBackend,
     recheckOptimalBackend,
+    checkForEngineUpdate,
+    refreshBackendCatalog,
     selectManualBackend,
   }
 }

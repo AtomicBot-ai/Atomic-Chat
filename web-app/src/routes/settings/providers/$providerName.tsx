@@ -111,6 +111,7 @@ function ProviderDetail() {
   const [refreshingModels, setRefreshingModels] = useState(false)
   const [isInstallingBackend, setIsInstallingBackend] = useState(false)
   const [isRecheckingBackend, setIsRecheckingBackend] = useState(false)
+  const [isCheckingEngineUpdate, setIsCheckingEngineUpdate] = useState(false)
   /// localStorage key holding the pending backend of the provider this page
   /// shows. Each llama provider writes its own key, so reading the upstream
   /// one on the turboquant page would show a foreign backend as pending.
@@ -246,6 +247,8 @@ function ProviderDetail() {
   const {
     installBackend,
     recheckOptimalBackend,
+    checkForEngineUpdate,
+    refreshBackendCatalog,
     downloadRecommendedBackend,
     recommendationPhase,
     selectManualBackend,
@@ -1823,6 +1826,60 @@ function ProviderDetail() {
     }
   }, [provider, serviceHub, refreshSettings, t, installBackend])
 
+  /// The version list and the release index are both fetched during the
+  /// extension's `onLoad()`, so a fork release published while the app was
+  /// open stays invisible until a restart. This button refetches the index and
+  /// installs the newest stable release of the backend type in use.
+  ///
+  /// Shaped like `handleFindOptimalBackend`: the awaited part is only the
+  /// bounded check, and the download runs detached. Awaiting the transfer here
+  /// would pin the button in its loading state for the whole archive.
+  const handleCheckEngineUpdate = useCallback(async () => {
+    if (provider?.provider !== 'llamacpp') return
+
+    setIsCheckingEngineUpdate(true)
+    try {
+      const { updateAvailable, targetBackend } = await checkForEngineUpdate()
+      if (!updateAvailable || !targetBackend) {
+        toast.success(t('settings:noBackendUpdateAvailable'))
+        return
+      }
+
+      toast.info(t('settings:backendUpdater.downloadingBackend'), {
+        description: targetBackend,
+      })
+      void downloadRecommendedBackend(targetBackend)
+        .then(async () => {
+          // The freshly installed release may not be among the options
+          // registered at load, so rebuild the list before re-reading it.
+          await refreshBackendCatalog()
+          await refreshSettings()
+          toast.success(t('settings:backendUpdater.updateSuccess'), {
+            description: targetBackend,
+          })
+        })
+        .catch((err) => {
+          console.error('Engine update download failed:', err)
+          toast.error(t('settings:backendUpdater.downloadFailed'))
+        })
+    } catch (error) {
+      console.error('Failed to check for engine updates:', error)
+      toast.error(t('settings:backendUpdateError'), {
+        description:
+          error instanceof Error ? error.message : 'Unknown error occurred',
+      })
+    } finally {
+      setIsCheckingEngineUpdate(false)
+    }
+  }, [
+    provider,
+    checkForEngineUpdate,
+    downloadRecommendedBackend,
+    refreshBackendCatalog,
+    refreshSettings,
+    t,
+  ])
+
   /// Manual replacement for the legacy auto-popup: re-runs hardware
   /// detection on demand and, when a better backend is available,
   /// immediately kicks off the download. The user explicitly asked
@@ -2410,11 +2467,16 @@ function ProviderDetail() {
                               provider?.provider === 'llamacpp-upstream' ||
                               provider?.provider === 'mlx') && (
                               <div className="mt-2 flex flex-wrap gap-2">
+                                {/* The install and engine-update controls use
+                                    the same fixed width so they read as one
+                                    control group and never resize with their
+                                    labels. */}
                                 <Button
                                   variant="outline"
                                   size="sm"
                                   onClick={handleInstallBackendFromFile}
                                   disabled={isInstallingBackend}
+                                  className="w-[16rem]"
                                 >
                                   <IconUpload
                                     size={12}
@@ -2429,6 +2491,46 @@ function ProviderDetail() {
                                       : 'Install Backend from File'}
                                   </span>
                                 </Button>
+                                {/* Engine updates land without an app
+                                    release, but both the version list and
+                                    the release index are snapshots taken at
+                                    extension load. Only the turboquant
+                                    provider resolves its catalog from that
+                                    index, so only it can refetch on
+                                    demand. */}
+                                {provider?.provider === 'llamacpp' && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleCheckEngineUpdate}
+                                    disabled={
+                                      isCheckingEngineUpdate ||
+                                      isOptimalBackendBusy
+                                    }
+                                    className="w-[16rem]"
+                                  >
+                                    {/* Only the icon reflects progress. A
+                                        label that swapped to a longer
+                                        "Checking…" string would resize the
+                                        button mid-click and shift the row,
+                                        and no floor width fixes that for
+                                        every locale. */}
+                                    {isCheckingEngineUpdate ? (
+                                      <IconLoader
+                                        size={12}
+                                        className="animate-spin text-muted-foreground"
+                                      />
+                                    ) : (
+                                      <IconRefresh
+                                        size={12}
+                                        className="text-muted-foreground"
+                                      />
+                                    )}
+                                    <span>
+                                      {t('settings:checkForBackendUpdates')}
+                                    </span>
+                                  </Button>
+                                )}
                                 {/* "Find optimal backend" replaces the
                                     legacy auto-popup nag — it runs the
                                     same hardware detection on demand and
@@ -2462,7 +2564,7 @@ function ProviderDetail() {
                                       size="sm"
                                       onClick={handleFindOptimalBackend}
                                       disabled={isOptimalBackendBusy}
-                                      className="min-w-[12rem] justify-start"
+                                      className="min-w-[12rem]"
                                     >
                                       {isOptimalBackendBusy ? (
                                         <IconLoader

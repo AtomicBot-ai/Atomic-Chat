@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import test from 'node:test'
 
 const fixture = (name) =>
@@ -64,6 +64,107 @@ test('TurboQuant manifest covers the full Linux backend matrix', () => {
   ]) {
     assert.ok(ids.has(id), `manifest must publish ${id}`)
   }
+})
+
+// The release index is what removed every hardcoded tag from the app: it is
+// published as an asset of each fork release and read at runtime, so a new
+// engine reaches users without an Atomic Chat release. The app must be able to
+// tell stable releases from prereleases and to refuse a build that needs a
+// newer app, all from this document alone.
+test('TurboQuant release index describes stable releases the app can install', () => {
+  const index = fixture('turboquant-index')
+  assert.equal(index.schema_version, 1)
+  assert.ok(Date.parse(index.generated_at))
+  unique(
+    index.releases.map(({ tag }) => tag),
+    'release tags must be unique'
+  )
+
+  const stable = index.releases.filter((release) => release.prerelease !== true)
+  assert.ok(stable.length > 0, 'index must carry at least one stable release')
+  assert.equal(index.latest, stable[0].tag)
+  assert.match(index.latest, /^b\d+-\d+\.\d+\.\d+$/)
+
+  for (const release of index.releases) {
+    nonEmpty(release.tag, 'release tag')
+    assert.equal(typeof release.prerelease, 'boolean')
+    // Only the unified scheme is installable; dev-latest and the legacy
+    // per-variant tags must be marked as prereleases so the app skips them.
+    if (release.prerelease !== true) {
+      assert.match(release.tag, /^b\d+-\d+\.\d+\.\d+$/)
+    }
+    if (release.min_app_version !== undefined) {
+      assert.match(release.min_app_version, /^\d+\.\d+\.\d+$/)
+    }
+    assert.ok(release.variants.length > 0)
+    unique(
+      release.variants.map(({ id }) => id),
+      `${release.tag} variant ids must be unique`
+    )
+    for (const variant of release.variants) {
+      nonEmpty(variant.id, 'variant id')
+      nonEmpty(variant.asset, 'variant asset')
+      assert.ok(variant.asset.includes(variant.id))
+      assert.match(
+        variant.asset,
+        variant.id.startsWith('windows-') ? /\.zip$/ : /\.tar\.gz$/
+      )
+      if (variant.sha256 !== undefined) {
+        assert.match(variant.sha256, /^[0-9a-f]{64}$/)
+      }
+    }
+  }
+})
+
+test('release index and legacy manifest agree on the newest stable release', () => {
+  const index = fixture('turboquant-index')
+  const manifest = fixture('turboquant-manifest')
+  const latest = index.releases.find(({ tag }) => tag === index.latest)
+  const indexIds = new Set(latest.variants.map(({ id }) => id))
+  // The conf manifest stays the last-resort fallback, so it must not offer a
+  // narrower matrix than the index it is standing in for.
+  for (const { id, tag } of manifest.backends) {
+    assert.equal(tag, index.latest)
+    assert.ok(indexIds.has(id), `release index must publish ${id}`)
+  }
+})
+
+// The whole point of the release index is that no tag lives in the app. A
+// literal that creeps back in silently re-pins users to one engine build.
+test('the TurboQuant provider hardcodes no release tag', () => {
+  const root = new URL('../extensions/llamacpp-extension/src/', import.meta.url)
+  const offenders = []
+
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const child = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, dir)
+      if (entry.isDirectory()) {
+        if (entry.name !== 'test') walk(child)
+        continue
+      }
+      if (!entry.name.endsWith('.ts')) continue
+
+      const source = readFileSync(child, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .split('\n')
+        .filter((line) => {
+          const trimmed = line.trimStart()
+          return !trimmed.startsWith('//') && !trimmed.startsWith('*')
+        })
+        .join('\n')
+
+      if (/b\d+-\d+\.\d+\.\d+/.test(source)) {
+        offenders.push(entry.name)
+      }
+    }
+  }
+
+  walk(root)
+  assert.deepEqual(
+    offenders,
+    [],
+    `release tags must be resolved at runtime, not written into ${offenders.join(', ')}`
+  )
 })
 
 test('recommended models conform to the loader schema contract', () => {

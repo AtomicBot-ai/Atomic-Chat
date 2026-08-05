@@ -606,15 +606,21 @@ else
 endif
 
 # Download llamacpp turboquant backend for bundling.
-# The backend INDEX comes from the static turboquant manifest in
-# atomic-chat-conf (raw.githubusercontent.com — no api.github.com rate limit, so
-# no GH_TOKEN needed); the archive itself comes from the AtomicBot-ai releases
-# CDN. LLAMACPP_TAG stays the explicit developer override.
+# No release tag is pinned here: scripts/resolve-turboquant-release.sh asks the
+# fork's own releases/latest which stable release is current, so a new fork
+# release lands in the next build without a commit in this repo. The archive
+# itself comes from the AtomicBot-ai releases CDN.
+# TURBOQUANT_TAG pins one explicitly for a reproducible CI build; LLAMACPP_TAG
+# is its older spelling and still honoured.
 # Example:
-#   make download-llamacpp-backend LLAMACPP_TAG=b10018-1.3.0
-ATOMIC_CHAT_CONF_BACKEND_REV ?= b8fb5951118ec63657b1558b10cfc7597e408aea
-TURBOQUANT_MANIFEST_URL = https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/$(ATOMIC_CHAT_CONF_BACKEND_REV)/backends/turboquant-manifest.json
+#   make download-llamacpp-backend TURBOQUANT_TAG=b10018-1.3.0
+TURBOQUANT_RESOLVE = ./scripts/resolve-turboquant-release.sh
+TURBOQUANT_DETECT = ./scripts/detect-turboquant-backend.sh
 LLAMACPP_TAG ?=
+TURBOQUANT_TAG ?= $(LLAMACPP_TAG)
+# Linux only: which variant to fetch. Empty means the bundled Vulkan fallback;
+# `update-llamacpp-backend` fills it with the tier this host would run.
+TURBOQUANT_BACKEND ?=
 download-llamacpp-backend:
 ifeq ($(shell uname -s),Darwin)
 	@mkdir -p src-tauri/resources/llamacpp-backend
@@ -625,31 +631,9 @@ ifeq ($(shell uname -s),Darwin)
 	fi; \
 	BACKEND="macos-arm64"; \
 	echo "Platform: $$BACKEND"; \
-	ASSET="llama-turboquant-$$BACKEND.tar.gz"; \
-	if [ -n "$(LLAMACPP_TAG)" ]; then \
-		TAG="$(LLAMACPP_TAG)"; \
-		echo "Using pinned release: $$TAG"; \
-	else \
-		echo "Resolving TurboQuant backend index from atomic-chat-conf manifest..."; \
-		TMPREL=$$(mktemp /tmp/turboquant-manifest-XXXXXX.json); \
-		if ! curl -sS --retry 5 --retry-delay 3 -H "User-Agent: atomic-chat-ci" -o "$$TMPREL" "$(TURBOQUANT_MANIFEST_URL)"; then \
-			echo "Error: failed to fetch turboquant manifest from $(TURBOQUANT_MANIFEST_URL)"; \
-			rm -f "$$TMPREL"; exit 1; \
-		fi; \
-		if ! jq -e '.backends' "$$TMPREL" >/dev/null 2>&1; then \
-			echo "Error: turboquant manifest did not parse or lacks backends[]:"; \
-			head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
-			rm -f "$$TMPREL"; exit 1; \
-		fi; \
-		TAG=$$(jq -r --arg id "$$BACKEND" '.backends[] | select(.id == $$id) | .tag' "$$TMPREL"); \
-		ASSET=$$(jq -r --arg id "$$BACKEND" '.backends[] | select(.id == $$id) | .asset' "$$TMPREL"); \
-		if [ -z "$$TAG" ] || [ "$$TAG" = "null" ] || [ -z "$$ASSET" ] || [ "$$ASSET" = "null" ]; then \
-			echo "Error: turboquant manifest does not list backend $$BACKEND (update atomic-chat-conf/backends/turboquant-manifest.json):"; \
-			head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
-			rm -f "$$TMPREL"; exit 1; \
-		fi; \
-		rm -f "$$TMPREL"; \
-	fi; \
+	RESOLVED=$$($(TURBOQUANT_RESOLVE) "$$BACKEND" "$(TURBOQUANT_TAG)") || exit 1; \
+	TAG=$${RESOLVED%% *}; \
+	ASSET=$${RESOLVED#* }; \
 	URL="https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/$$TAG/$$ASSET"; \
 	echo "$$TAG" > src-tauri/resources/llamacpp-backend/version.txt; \
 	echo "$$BACKEND" > src-tauri/resources/llamacpp-backend/backend.txt; \
@@ -677,39 +661,23 @@ else ifeq ($(shell uname -s),Linux)
 	@mkdir -p src-tauri/resources/llamacpp-backend
 	@# TurboQuant ships on Linux as the second provider alongside
 	@# llamacpp-upstream. The fork also publishes Linux CPU/CUDA/ROCm builds,
-	@# but linux-x64-vulkan stays the ONLY bundled one: it serves both CPU and
+	@# but linux-x64-vulkan is the one a release bundles: it serves both CPU and
 	@# GPU via GGML_BACKEND_DL, so it is the offline fallback that works on any
-	@# host. The GPU tiers are runtime downloads. The backend index is resolved
+	@# host. The GPU tiers are runtime downloads; TURBOQUANT_BACKEND overrides the
+	@# variant for a dev box only. The backend index is resolved
 	@# from the static turboquant manifest in atomic-chat-conf
 	@# (raw.githubusercontent.com — no api.github.com rate limit); the archive
 	@# download itself comes from the AtomicBot-ai releases CDN.
-	@BACKEND="linux-x64-vulkan"; \
-	echo "Platform: $$BACKEND (turboquant / Linux)"; \
-	if [ -n "$(LLAMACPP_TAG)" ]; then \
-		TAG="$(LLAMACPP_TAG)"; \
-		ASSET="llama-turboquant-$$BACKEND.tar.gz"; \
-		echo "Using pinned release: $$TAG"; \
-	else \
-		echo "Resolving TurboQuant backend index from atomic-chat-conf manifest..."; \
-		TMPREL=$$(mktemp /tmp/turboquant-manifest-XXXXXX.json); \
-		if ! curl -sS --retry 5 --retry-delay 3 -H "User-Agent: atomic-chat-ci" -o "$$TMPREL" "$(TURBOQUANT_MANIFEST_URL)"; then \
-			echo "Error: failed to fetch turboquant manifest from $(TURBOQUANT_MANIFEST_URL)"; \
-			rm -f "$$TMPREL"; exit 1; \
-		fi; \
-		if ! jq -e '.backends' "$$TMPREL" >/dev/null 2>&1; then \
-			echo "Error: turboquant manifest did not parse or lacks backends[]:"; \
-			head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
-			rm -f "$$TMPREL"; exit 1; \
-		fi; \
-		TAG=$$(jq -r --arg id "$$BACKEND" '.backends[] | select(.id == $$id) | .tag' "$$TMPREL"); \
-		ASSET=$$(jq -r --arg id "$$BACKEND" '.backends[] | select(.id == $$id) | .asset' "$$TMPREL"); \
-		if [ -z "$$TAG" ] || [ "$$TAG" = "null" ] || [ -z "$$ASSET" ] || [ "$$ASSET" = "null" ]; then \
-			echo "Error: turboquant manifest does not list backend $$BACKEND (update atomic-chat-conf/backends/turboquant-manifest.json):"; \
-			head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
-			rm -f "$$TMPREL"; exit 1; \
-		fi; \
-		rm -f "$$TMPREL"; \
+	@BACKEND="$(TURBOQUANT_BACKEND)"; \
+	if [ -z "$$BACKEND" ]; then BACKEND="linux-x64-vulkan"; fi; \
+	if [ "$$BACKEND" != "linux-x64-vulkan" ]; then \
+		echo "Warning: bundling $$BACKEND, not the portable linux-x64-vulkan fallback."; \
+		echo "         Run 'make download-llamacpp-backend' before packaging a release."; \
 	fi; \
+	echo "Platform: $$BACKEND (turboquant / Linux)"; \
+	RESOLVED=$$($(TURBOQUANT_RESOLVE) "$$BACKEND" "$(TURBOQUANT_TAG)") || exit 1; \
+	TAG=$${RESOLVED%% *}; \
+	ASSET=$${RESOLVED#* }; \
 	URL="https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/$$TAG/$$ASSET"; \
 	echo "$$TAG" > src-tauri/resources/llamacpp-backend/version.txt; \
 	echo "$$BACKEND" > src-tauri/resources/llamacpp-backend/backend.txt; \
@@ -732,6 +700,38 @@ else ifeq ($(shell uname -s),Linux)
 	echo "Downloaded and extracted turboquant llamacpp backend ($$BACKEND) for Linux successfully"
 else
 	@echo "Skipping llamacpp backend download (unsupported platform)"
+endif
+
+# Refresh the bundled TurboQuant engine only when the fork has published a newer
+# stable release. `download-llamacpp-backend-if-exists` keeps whatever archive is
+# already on disk however old it is; this one compares version.txt/backend.txt
+# against the newest stable release and downloads on a mismatch.
+#
+# On Linux the variant is the one this host would actually run
+# (scripts/detect-turboquant-backend.sh mirrors the runtime probe), so a dev box
+# with an NVIDIA card gets the CUDA build rather than the Vulkan fallback. That
+# also means the resource dir stops holding the portable fallback a release must
+# bundle — run `make download-llamacpp-backend` before packaging one.
+# Examples:
+#   make update-llamacpp-backend
+#   make update-llamacpp-backend TURBOQUANT_BACKEND=linux-x64-rocm
+update-llamacpp-backend:
+ifeq ($(OS),Windows_NT)
+	@echo "update-llamacpp-backend is macOS/Linux only; use download-llamacpp-backend-win-cpu."
+else
+	@BACKEND="$(TURBOQUANT_BACKEND)"; \
+	if [ -z "$$BACKEND" ]; then BACKEND=$$($(TURBOQUANT_DETECT)) || exit 1; fi; \
+	RESOLVED=$$($(TURBOQUANT_RESOLVE) "$$BACKEND" "$(TURBOQUANT_TAG)") || exit 1; \
+	TAG=$${RESOLVED%% *}; \
+	DIR="src-tauri/resources/llamacpp-backend"; \
+	CURRENT_TAG=$$(tr -d ' \r\n' < "$$DIR/version.txt" 2>/dev/null || true); \
+	CURRENT_BACKEND=$$(tr -d ' \r\n' < "$$DIR/backend.txt" 2>/dev/null || true); \
+	if [ -f "$$DIR/build/bin/llama-server" ] && [ "$$CURRENT_TAG" = "$$TAG" ] && [ "$$CURRENT_BACKEND" = "$$BACKEND" ]; then \
+		echo "TurboQuant $$TAG ($$BACKEND) is already the newest stable release, nothing to download."; \
+	else \
+		echo "Updating TurboQuant: $${CURRENT_TAG:-none}/$${CURRENT_BACKEND:-none} -> $$TAG/$$BACKEND"; \
+		$(MAKE) download-llamacpp-backend TURBOQUANT_TAG="$$TAG" TURBOQUANT_BACKEND="$$BACKEND"; \
+	fi
 endif
 
 # Download CPU fallback backend for Windows (pure PowerShell, no bash needed).
@@ -783,23 +783,39 @@ download-llamacpp-upstream-backend-win-cpu:
 # provider alongside llamacpp-upstream; this target bundles the offline-fallback
 # `windows-x64-cpu` build into the turboquant resource dir. The app auto-detects
 # GPU and downloads the optimal CUDA/Vulkan backend at runtime via the
-# llamacpp-extension. Backend index is resolved from the static turboquant
-# manifest in atomic-chat-conf (raw.githubusercontent.com — no api.github.com
-# rate limit); the archive download comes from the AtomicBot-ai releases CDN.
+# llamacpp-extension. No tag is pinned: the newest stable release is resolved
+# from the fork's own index.json, with the legacy atomic-chat-conf manifest as
+# a fallback. Set TURBOQUANT_TAG to pin one. The archive comes from the
+# AtomicBot-ai releases CDN.
 download-llamacpp-backend-win-cpu:
 	powershell -NoProfile -Command " \
 		$$ErrorActionPreference = 'Stop'; \
 		$$dir = 'src-tauri/resources/llamacpp-backend'; \
 		if (Test-Path $$dir) { Remove-Item $$dir -Recurse -Force }; \
 		New-Item -ItemType Directory -Path $$dir -Force | Out-Null; \
-		Write-Host 'Resolving TurboQuant backend index from atomic-chat-conf manifest...'; \
 		$$headers = @{ 'User-Agent' = 'atomic-chat' }; \
 		$$backend = 'windows-x64-cpu'; \
-		$$manifest = Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/$(ATOMIC_CHAT_CONF_BACKEND_REV)/backends/turboquant-manifest.json' -Headers $$headers; \
-		$$entry = $$manifest.backends | Where-Object { $$_.id -eq $$backend } | Select-Object -First 1; \
-		if (-not $$entry) { throw 'atomic-chat-conf turboquant manifest does not list the windows-x64-cpu backend (update backends/turboquant-manifest.json)' }; \
-		$$tag = $$entry.tag; \
-		$$asset = $$entry.asset; \
+		$$tag = '$(TURBOQUANT_TAG)'; \
+		$$asset = \"llama-turboquant-$${backend}.zip\"; \
+		if (-not $$tag) { \
+			Write-Host 'Resolving the newest stable TurboQuant release from the release index...'; \
+			try { \
+				$$index = Invoke-RestMethod -Uri 'https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/latest/download/index.json' -Headers $$headers; \
+				$$release = $$index.releases | Where-Object { $$_.prerelease -ne $$true -and $$_.tag -match '^b[0-9]+-[0-9]+\.[0-9]+\.[0-9]+$$' -and ($$_.variants | Where-Object { $$_.id -eq $$backend }) } | Select-Object -First 1; \
+				if ($$release) { \
+					$$tag = $$release.tag; \
+					$$variant = $$release.variants | Where-Object { $$_.id -eq $$backend } | Select-Object -First 1; \
+					if ($$variant.asset) { $$asset = $$variant.asset }; \
+				} \
+			} catch { Write-Host 'Release index unavailable; falling back to the legacy atomic-chat-conf manifest' }; \
+		}; \
+		if (-not $$tag) { \
+			$$manifest = Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/turboquant-manifest.json' -Headers $$headers; \
+			$$entry = $$manifest.backends | Where-Object { $$_.id -eq $$backend } | Select-Object -First 1; \
+			if (-not $$entry) { throw 'Could not resolve a stable TurboQuant windows-x64-cpu release from the release index or the legacy manifest; pass TURBOQUANT_TAG=<tag> to pin one' }; \
+			$$tag = $$entry.tag; \
+			$$asset = $$entry.asset; \
+		}; \
 		$$url = \"https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/$$tag/$$asset\"; \
 		[System.IO.File]::WriteAllText(\"$$dir/version.txt\", $$tag); \
 		[System.IO.File]::WriteAllText(\"$$dir/backend.txt\", $$backend); \
