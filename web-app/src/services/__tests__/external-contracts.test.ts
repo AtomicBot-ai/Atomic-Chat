@@ -108,6 +108,46 @@ const catalogIndexSchema = z.object({
   minisearch: z.object({ serializationVersion: z.literal(2) }),
 })
 
+/** The only release tag shape the TurboQuant provider will install. */
+const stableReleaseTag = z.string().regex(/^b\d+-\d+\.\d+\.\d+$/)
+
+const releaseIndexSchema = z.object({
+  schema_version: z.literal(1),
+  latest: stableReleaseTag,
+  releases: z
+    .array(
+      z.object({
+        tag: nonEmptyString,
+        prerelease: z.boolean().optional(),
+        min_app_version: z
+          .string()
+          .regex(/^\d+\.\d+\.\d+$/)
+          .optional(),
+        variants: z
+          .array(
+            z.object({
+              id: nonEmptyString,
+              asset: nonEmptyString.optional(),
+              size: z.number().int().positive().optional(),
+              sha256: z
+                .string()
+                .regex(/^[0-9a-f]{64}$/)
+                .optional(),
+            })
+          )
+          .min(1),
+      })
+    )
+    .min(1),
+})
+
+const FORK_RELEASES =
+  'https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases'
+const RELEASE_INDEX_URL = `${FORK_RELEASES}/latest/download/index.json`
+const LATEST_RELEASE_URL = `${FORK_RELEASES}/latest`
+const LEGACY_MANIFEST_URL =
+  'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/turboquant-manifest.json'
+
 const liveContracts = [
   [
     'upstream manifest',
@@ -189,6 +229,70 @@ describe.runIf(process.env.ATOMIC_TEST_LIVE_REGISTRIES === '1')(
         expect(() => schema.parse(payload)).not.toThrow()
       },
       30_000
+    )
+  }
+)
+
+/**
+ * The TurboQuant engine is resolved at runtime, with no tag pinned anywhere in
+ * this repository, so what the app installs tomorrow depends on the fork rather
+ * than on this codebase. These run the app's own resolution rules against the
+ * real endpoints: they fail when the fork changes its release shape, which is
+ * exactly the day the provider would break in the field.
+ */
+describe.runIf(process.env.ATOMIC_TEST_LIVE_REGISTRIES === '1')(
+  'live TurboQuant release resolution',
+  () => {
+    it(
+      'resolves a stable release through the index or the latest redirect',
+      async () => {
+        const index = await fetch(RELEASE_INDEX_URL)
+
+        // index.json is the target state; until the fork publishes it, the
+        // /releases/latest redirect must keep naming a stable tag on its own.
+        if (index.ok) {
+          const payload = releaseIndexSchema.parse(await index.json())
+          const stable = payload.releases.filter(
+            (release) => release.prerelease !== true
+          )
+          expect(stable.length).toBeGreaterThan(0)
+          expect(stable.map((release) => release.tag)).toContain(payload.latest)
+          for (const release of stable) {
+            expect(release.tag).toMatch(/^b\d+-\d+\.\d+\.\d+$/)
+          }
+          return
+        }
+
+        expect(index.status).toBe(404)
+        const latest = await fetch(LATEST_RELEASE_URL)
+        expect(latest.ok).toBe(true)
+        const tag = /\/releases\/tag\/([^/?#]+)/.exec(latest.url)?.[1]
+        expect(tag).toMatch(/^b\d+-\d+\.\d+\.\d+$/)
+      },
+      60_000
+    )
+
+    it(
+      'publishes a downloadable archive for every backend the app offers',
+      async () => {
+        const manifest = turboquantManifestSchema.parse(
+          await (await fetch(LEGACY_MANIFEST_URL)).json()
+        )
+
+        const missing: string[] = []
+        for (const backend of manifest.backends) {
+          const url = `${FORK_RELEASES}/download/${backend.tag}/${backend.asset}`
+          // A ranged GET, because GitHub's asset CDN answers HEAD with a 403.
+          // The single byte is read rather than cancelled: abandoning the body
+          // poisons the pooled connection and the next request dies on it.
+          const response = await fetch(url, { headers: { Range: 'bytes=0-0' } })
+          await response.arrayBuffer()
+          if (!response.ok) missing.push(`${backend.id} -> ${url}`)
+        }
+
+        expect(missing).toEqual([])
+      },
+      120_000
     )
   }
 )

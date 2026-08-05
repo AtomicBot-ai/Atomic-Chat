@@ -566,13 +566,12 @@ if ($skipDownload) {
 # llamacpp-upstream (which stays the default). Bundle the offline-fallback
 # `windows-x64-cpu` build into the turboquant resource dir; the
 # llamacpp-extension auto-downloads the optimal CUDA/Vulkan variant at runtime.
-# Index resolved from the static turboquant manifest in atomic-chat-conf
-# (raw.githubusercontent.com — no api.github.com rate limit); every entry of a
-# unified release carries the same `b<build>-<fork-semver>` tag, and the
-# per-entry tag is read verbatim so legacy scattered releases still resolve. The
-# archive itself comes from the AtomicBot-ai releases CDN. This step is
-# NON-FATAL: a failure here only skips the offline fallback (the runtime
-# download path still serves the provider), so it must never abort `make dev`.
+# No tag is pinned: the newest stable release is resolved from index.json on the
+# fork's own releases/latest, falling back to the legacy atomic-chat-conf
+# manifest. Set $env:TURBOQUANT_TAG to pin one. The archive itself comes from
+# the AtomicBot-ai releases CDN. This step is NON-FATAL: a failure here only
+# skips the offline fallback (the runtime download path still serves the
+# provider), so it must never abort `make dev`.
 Write-Step 'Download TurboQuant llamacpp backend: windows-x64-cpu'
 $tqDir = 'src-tauri/resources/llamacpp-backend'
 $tqServerExe = "$tqDir/build/bin/llama-server.exe"
@@ -600,18 +599,49 @@ $tqReuseWithoutFetch = $SkipBackendDownload -and $tqIsTurboquant
 $tqEntry = $null
 $tqPinnedTag = ''
 if (-not $tqReuseWithoutFetch) {
-    $tqManifestUrl = 'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/b8fb5951118ec63657b1558b10cfc7597e408aea/backends/turboquant-manifest.json'
     $tqHeaders = @{ 'User-Agent' = 'atomic-chat-dev' }
+    $tqOverride = $env:TURBOQUANT_TAG
 
-    Write-Host '  Fetching TurboQuant backend manifest...'
-    $tqManifest = Invoke-BackendManifest -Uri $tqManifestUrl -Headers $tqHeaders
-    if ($tqManifest -and $tqManifest.backends) {
-        $tqEntry = $tqManifest.backends | Where-Object { $_.id -eq $tqBackend } | Select-Object -First 1
+    if ($tqOverride) {
+        Write-Host "  Using pinned TurboQuant release: $tqOverride"
+        $tqEntry = [pscustomobject]@{
+            tag   = $tqOverride
+            asset = "llama-turboquant-$tqBackend.zip"
+        }
+    } else {
+        Write-Host '  Resolving the newest stable TurboQuant release...'
+        $tqIndexUrl = 'https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/latest/download/index.json'
+        $tqIndex = Invoke-BackendManifest -Uri $tqIndexUrl -Headers $tqHeaders
+        if ($tqIndex -and $tqIndex.releases) {
+            $tqRelease = $tqIndex.releases |
+                Where-Object {
+                    $_.prerelease -ne $true -and
+                    $_.tag -match '^b\d+-\d+\.\d+\.\d+$' -and
+                    ($_.variants | Where-Object { $_.id -eq $tqBackend })
+                } | Select-Object -First 1
+            if ($tqRelease) {
+                $tqVariant = $tqRelease.variants | Where-Object { $_.id -eq $tqBackend } | Select-Object -First 1
+                $tqEntry = [pscustomobject]@{
+                    tag   = $tqRelease.tag
+                    asset = if ($tqVariant.asset) { $tqVariant.asset } else { "llama-turboquant-$tqBackend.zip" }
+                }
+            }
+        }
+
+        if (-not $tqEntry) {
+            Write-Host '  Release index unavailable; falling back to the legacy atomic-chat-conf manifest.'
+            $tqManifestUrl = 'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/turboquant-manifest.json'
+            $tqManifest = Invoke-BackendManifest -Uri $tqManifestUrl -Headers $tqHeaders
+            if ($tqManifest -and $tqManifest.backends) {
+                $tqEntry = $tqManifest.backends | Where-Object { $_.id -eq $tqBackend } | Select-Object -First 1
+            }
+        }
     }
+
     if ($tqEntry -and $tqEntry.tag) { $tqPinnedTag = $tqEntry.tag }
 }
 
-# An unreachable manifest yields no pinned tag; keep whatever fork build is on
+# Unreachable sources yield no resolved tag; keep whatever fork build is on
 # disk rather than wiping a working offline fallback over a network blip.
 $tqIsCurrent = $tqIsTurboquant -and `
     ((-not $tqPinnedTag) -or ($tqVersionText -eq $tqPinnedTag))
@@ -623,7 +653,7 @@ if ($tqReuseWithoutFetch) {
 } else {
     if (Test-Path $tqServerExe) {
         if ($tqIsTurboquant) {
-            Write-Host "  Existing TurboQuant backend in $tqDir is release '$tqVersionText' but the manifest pins '$tqPinnedTag'; replacing it." -ForegroundColor Yellow
+            Write-Host "  Existing TurboQuant backend in $tqDir is release '$tqVersionText' but the newest stable is '$tqPinnedTag'; replacing it." -ForegroundColor Yellow
         } else {
             Write-Host "  Existing backend in $tqDir is not a TurboQuant build (version.txt missing or not a fork release tag); replacing it." -ForegroundColor Yellow
         }
@@ -676,7 +706,7 @@ if ($tqReuseWithoutFetch) {
             Write-Host '  WARN: failed to download TurboQuant backend after 5 attempts; skipping offline fallback (runtime download still works).' -ForegroundColor Yellow
         }
     } else {
-        Write-Host '  WARN: TurboQuant manifest unreachable or missing windows-x64-cpu; skipping offline fallback (runtime download still works).' -ForegroundColor Yellow
+        Write-Host '  WARN: could not resolve a stable TurboQuant windows-x64-cpu release; skipping offline fallback (runtime download still works).' -ForegroundColor Yellow
     }
 }
 

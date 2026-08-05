@@ -18,12 +18,25 @@ vi.mock('@tauri-apps/plugin-log', () => ({
 }))
 
 // Mock backend functions
-vi.mock('../backend', () => ({
-  isBackendInstalled: vi.fn(),
-  getBackendExePath: vi.fn(),
-  listSupportedBackends: vi.fn(),
-  getBackendDir: vi.fn(),
-}))
+// Partial mock: the pure predicates (`isStableReleaseTag`,
+// `compareBackendVersions`, ...) stay real so the tests exercise the actual
+// stable-release rules rather than a second copy of them.
+vi.mock('../backend', async () => {
+  const actual = await vi.importActual<typeof import('../backend')>('../backend')
+  return {
+    ...actual,
+    isBackendInstalled: vi.fn(),
+    getBackendExePath: vi.fn(),
+    listSupportedBackends: vi.fn(),
+    getBackendDir: vi.fn(),
+    fetchStableIndex: vi.fn(async () => ({
+      latest: null,
+      releases: [],
+      source: 'none' as const,
+    })),
+    invalidateStableIndexCache: vi.fn(),
+  }
+})
 
 // Mock tauri-plugin-llamacpp-api (partial mock)
 vi.mock(
@@ -36,6 +49,7 @@ vi.mock(
     return {
       ...actual,
       getSupportedFeaturesFromRust: vi.fn(),
+      findLatestVersionForBackend: vi.fn(),
       mapOldBackendToNew: vi.fn(),
       removeOldBackendVersions: vi.fn(),
       readGgufMetadata: vi.fn(),
@@ -1721,13 +1735,36 @@ describe('llamacpp_extension', () => {
       expect(extension['downloadRecommendedBackend']).not.toHaveBeenCalled()
     })
 
-    it('never runs on macOS, where the bundle is the only source', async () => {
+    it('updates the engine on macOS too, without an app release', async () => {
       vi.stubGlobal('IS_MAC', true)
-      extension.checkBackendForUpdates = vi.fn()
+      extension['config'] = {
+        version_backend: 'b9937-1.2.0/macos-arm64',
+      } as any
+      extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
+        updateNeeded: true,
+        newVersion: 'b10018-1.3.0',
+        targetBackend: 'b10018-1.3.0/macos-arm64',
+      })
 
       await extension['reconcileBackendReleaseTag']()
 
-      expect(extension.checkBackendForUpdates).not.toHaveBeenCalled()
+      expect(extension['downloadRecommendedBackend']).toHaveBeenCalledWith(
+        'b10018-1.3.0/macos-arm64'
+      )
+    })
+
+    it('refuses to move onto a legacy prerelease found on disk', async () => {
+      extension['config'] = {
+        version_backend: 'b9937-1.2.0/linux-x64-vulkan',
+      } as any
+      extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
+        updateNeeded: true,
+        newVersion: 'turboquant-linux-x64-vulkan-d86eb0b',
+        targetBackend: 'turboquant-linux-x64-vulkan-d86eb0b/linux-x64-vulkan',
+      })
+
+      await extension['reconcileBackendReleaseTag']()
+
       expect(extension['downloadRecommendedBackend']).not.toHaveBeenCalled()
     })
 
@@ -1797,6 +1834,283 @@ describe('llamacpp_extension', () => {
       ).resolves.toBeUndefined()
       expect(extension['downloadRecommendedBackend']).not.toHaveBeenCalled()
       expect(extension['config'].version_backend).toBe(CURRENT)
+    })
+  })
+
+  /// The version list and the release index are both snapshots taken at load,
+  /// so without an explicit refetch a release published mid-session is
+  /// invisible until the app restarts.
+  describe('checkForEngineUpdate', () => {
+    const CURRENT = 'b9937-1.2.0/macos-arm64'
+    const TARGET = 'b10269-1.4.0/macos-arm64'
+
+    beforeEach(async () => {
+      vi.stubGlobal('IS_MAC', true)
+      extension['config'] = { version_backend: CURRENT } as any
+      extension['configureBackendsPromise'] = null
+      extension['downloadRecommendedBackend'] = vi
+        .fn()
+        .mockResolvedValue(undefined)
+      const { mapOldBackendToNew } = await import(
+        '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
+      )
+      vi.mocked(mapOldBackendToNew).mockImplementation(async (b: string) => b)
+    })
+
+    it('refetches the index and names the release to install', async () => {
+      const { invalidateStableIndexCache } = await import('../backend')
+      extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
+        updateNeeded: true,
+        newVersion: 'b10269-1.4.0',
+        targetBackend: TARGET,
+      })
+
+      const result = await extension.checkForEngineUpdate()
+
+      expect(invalidateStableIndexCache).toHaveBeenCalled()
+      expect(result).toEqual({
+        updateAvailable: true,
+        targetBackend: TARGET,
+      })
+    })
+
+    /// Downloading is the caller's job — awaiting it inside the check is what
+    /// pinned the settings button in its loading state for the whole archive.
+    it('leaves the download to the caller', async () => {
+      extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
+        updateNeeded: true,
+        newVersion: 'b10269-1.4.0',
+        targetBackend: TARGET,
+      })
+
+      await extension.checkForEngineUpdate()
+
+      expect(extension['downloadRecommendedBackend']).not.toHaveBeenCalled()
+    })
+
+    it('reports no update when the newest stable is already running', async () => {
+      extension.checkBackendForUpdates = vi
+        .fn()
+        .mockResolvedValue({ updateNeeded: false, newVersion: '0' })
+
+      await expect(extension.checkForEngineUpdate()).resolves.toEqual({
+        updateAvailable: false,
+        targetBackend: null,
+      })
+    })
+
+    it('refuses a legacy prerelease that only exists on disk', async () => {
+      extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
+        updateNeeded: true,
+        newVersion: 'turboquant-macos-arm64-d86eb0b',
+        targetBackend: 'turboquant-macos-arm64-d86eb0b/macos-arm64',
+      })
+
+      const result = await extension.checkForEngineUpdate()
+
+      expect(result.updateAvailable).toBe(false)
+    })
+
+    it('refuses to cross backend families', async () => {
+      extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
+        updateNeeded: true,
+        newVersion: 'b10269-1.4.0',
+        targetBackend: 'b10269-1.4.0/linux-x64-cuda-13.3',
+      })
+
+      const result = await extension.checkForEngineUpdate()
+
+      expect(result.updateAvailable).toBe(false)
+    })
+
+    /// An unreachable or rate-limited GitHub used to leave the button
+    /// spinning forever, because the catalog lookup had no deadline.
+    it('settles on a deadline when the catalog never answers', async () => {
+      vi.useFakeTimers()
+      try {
+        extension.checkBackendForUpdates = vi
+          .fn()
+          .mockReturnValue(new Promise(() => {}))
+
+        const pending = extension.checkForEngineUpdate()
+        await vi.advanceTimersByTimeAsync(20_000)
+
+        await expect(pending).resolves.toEqual({
+          updateAvailable: false,
+          targetBackend: null,
+        })
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+
+  /// A clean install used to show CUDA in the dropdown while quietly running
+  /// the bundled CPU build forever, unless the user walked through onboarding.
+  describe('adoptOptimalBackendOnFirstRun', () => {
+    const BUNDLED = 'b10018-1.3.0/windows-x64-cpu'
+    const CUDA = 'b10269-1.4.0/windows-x64-cuda-13.3'
+    const CATALOG = [
+      { version: 'b10269-1.4.0', backend: 'windows-x64-cpu' },
+      { version: 'b10269-1.4.0', backend: 'windows-x64-cuda-13.3' },
+    ]
+
+    const adopt = (storedType: string | null, active = BUNDLED) =>
+      extension['adoptOptimalBackendOnFirstRun'](
+        storedType,
+        active,
+        BUNDLED,
+        CATALOG
+      )
+
+    beforeEach(async () => {
+      vi.stubGlobal('IS_MAC', false)
+      extension['downloadRecommendedBackend'] = vi
+        .fn()
+        .mockResolvedValue(undefined)
+      extension['detectOptimalBackend'] = vi.fn().mockResolvedValue({
+        kind: 'gpu-optimal',
+        backend: 'windows-x64-cuda-13.3',
+      })
+      extension['resolveConcreteBackend'] = vi.fn().mockResolvedValue(CUDA)
+
+      const { findLatestVersionForBackend } = await import(
+        '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
+      )
+      vi.mocked(findLatestVersionForBackend).mockImplementation(
+        async (_catalog: any, type: string) =>
+          CATALOG.some((entry) => entry.backend === type)
+            ? `b10269-1.4.0/${type}`
+            : null
+      )
+    })
+
+    it('fetches the CUDA build a discrete NVIDIA host wants', async () => {
+      await adopt(null)
+      await extension['firstRunAdoption']
+
+      expect(extension['downloadRecommendedBackend']).toHaveBeenCalledWith(CUDA)
+    })
+
+    it('leaves a user who already picked a backend untouched', async () => {
+      await adopt('windows-x64-cpu')
+
+      expect(extension['detectOptimalBackend']).not.toHaveBeenCalled()
+      expect(extension['downloadRecommendedBackend']).not.toHaveBeenCalled()
+    })
+
+    it('does not re-detect for someone already off the bundled build', async () => {
+      await adopt(null, CUDA)
+
+      expect(extension['detectOptimalBackend']).not.toHaveBeenCalled()
+      expect(extension['downloadRecommendedBackend']).not.toHaveBeenCalled()
+    })
+
+    // Download interrupted, app reopened: the preference is recorded but the
+    // bundled build is still what runs. Resume it instead of asking hardware.
+    it('finishes an adoption that never landed on disk', async () => {
+      await adopt('windows-x64-cuda-13.3')
+      await extension['firstRunAdoption']
+
+      expect(extension['detectOptimalBackend']).not.toHaveBeenCalled()
+      expect(extension['downloadRecommendedBackend']).toHaveBeenCalledWith(CUDA)
+    })
+
+    it('stays on the bundled build when CPU is genuinely optimal', async () => {
+      extension['detectOptimalBackend'] = vi
+        .fn()
+        .mockResolvedValue({ kind: 'cpu-optimal' })
+
+      await adopt(null)
+
+      expect(extension['downloadRecommendedBackend']).not.toHaveBeenCalled()
+    })
+
+    // Recording CPU here would look like a deliberate user preference forever
+    // after, which ADR 2026-06-15 forbids.
+    it('pins nothing when hardware detection fails', async () => {
+      extension['detectOptimalBackend'] = vi
+        .fn()
+        .mockRejectedValue(new Error('BACKEND_DETECTION_FAILED'))
+
+      await expect(adopt(null)).resolves.toBeUndefined()
+
+      expect(extension['downloadRecommendedBackend']).not.toHaveBeenCalled()
+      expect(extension['firstRunAdoption']).toBeNull()
+    })
+
+    it('pins nothing when the catalog has no build for this hardware', async () => {
+      extension['resolveConcreteBackend'] = vi.fn().mockResolvedValue(undefined)
+
+      await adopt(null)
+
+      expect(extension['downloadRecommendedBackend']).not.toHaveBeenCalled()
+    })
+
+    it('keeps serving the bundled build when the download fails', async () => {
+      extension['downloadRecommendedBackend'] = vi
+        .fn()
+        .mockRejectedValue(new Error('network down'))
+
+      await adopt(null)
+
+      await expect(extension['firstRunAdoption']).resolves.toBeUndefined()
+    })
+
+    it('does not run on macOS, which publishes a single variant', async () => {
+      vi.stubGlobal('IS_MAC', true)
+
+      await extension['adoptOptimalBackendOnFirstRun'](
+        null,
+        'b10018-1.3.0/macos-arm64',
+        'b10018-1.3.0/macos-arm64',
+        [{ version: 'b10269-1.4.0', backend: 'macos-arm64' }]
+      )
+
+      expect(extension['detectOptimalBackend']).not.toHaveBeenCalled()
+    })
+  })
+
+  /// The archive id is an implementation detail of hardware detection; what a
+  /// user chooses between is accelerator family and what the release changed.
+  describe('describeBackendOption', () => {
+    it('names the accelerator family and the release notes, never the archive id', () => {
+      const label = extension['describeBackendOption'](
+        'b10269-1.4.0',
+        'windows-x64-cuda-13.3',
+        {
+          title: 'TurboQuant b10269-1.4.0',
+          highlights: ['DeepSeek V4 Flash support', 'Kimi K3 vision'],
+        },
+        true
+      )
+
+      expect(label).toBe(
+        'NVIDIA CUDA 13 · b10269-1.4.0 (latest stable) — DeepSeek V4 Flash support, Kimi K3 vision'
+      )
+      expect(label).not.toContain('windows-x64')
+    })
+
+    it('marks only the newest stable release as such', () => {
+      expect(
+        extension['describeBackendOption'](
+          'b10018-1.3.0',
+          'linux-x64-rocm',
+          undefined,
+          false
+        )
+      ).toBe('AMD ROCm · b10018-1.3.0')
+    })
+
+    it('falls back to a bare tag when a legacy build has no release notes', () => {
+      expect(
+        extension['describeBackendOption'](
+          'turboquant-linux-x64-vulkan-d86eb0b',
+          'linux-x64-vulkan',
+          { highlights: ['   '] },
+          false
+        )
+      ).toBe('Vulkan · turboquant-linux-x64-vulkan-d86eb0b')
     })
   })
 })

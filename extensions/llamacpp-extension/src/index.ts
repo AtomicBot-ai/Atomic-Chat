@@ -35,11 +35,16 @@ import {
   getBackendDir,
   getLocalInstalledBackends,
   getBackendDownloadUrl,
+  getIndexedAssetName,
   getCudaToolkitVersion,
   getCudartArchiveName,
   getCudartDownloadUrl,
   findUpstreamCudaBinWithCudart,
   isTurboQuantRelease,
+  isStableReleaseTag,
+  compareBackendVersions,
+  fetchStableIndex,
+  invalidateStableIndexCache,
 } from './backend'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import {
@@ -306,6 +311,27 @@ function backendCategoryToLabel(category: string): string {
   }
 }
 
+/**
+ * Broad accelerator family behind a backend id, for display only. The user
+ * picks a release and a family; which microarchitecture the archive was built
+ * for (sm_120, gfx1201, ...) is hardware detection's business, never theirs.
+ *
+ * Deliberately separate from `get_backend_category`, which feeds the
+ * recommendation comparison and must keep its existing token vocabulary.
+ */
+function backendFamilyLabel(backend: string): string {
+  const id = stripBom(backend)
+  if (/cuda-13|cu13/.test(id)) return 'NVIDIA CUDA 13'
+  if (/cuda-12|cu12/.test(id)) return 'NVIDIA CUDA 12'
+  if (/cuda-11|cu11/.test(id)) return 'NVIDIA CUDA 11'
+  if (id.includes('rocm')) return 'AMD ROCm'
+  if (id.includes('vulkan')) return 'Vulkan'
+  if (id === 'macos-arm64') return 'Apple Silicon'
+  if (id === 'macos-x64') return 'Mac Intel'
+  if (/(^|-)cpu($|-)|common_cpus|avx/.test(id)) return 'CPU'
+  return id
+}
+
 function get_backend_category(backend: string): string {
   // Clean turboquant ids first (windows-x64-cuda-13.3, windows-x64-cuda-12.4,
   // windows-x64-vulkan, windows-x64-cpu, linux-x64-vulkan, macos-arm64), then
@@ -398,6 +424,9 @@ export default class llamacpp_extension extends AIEngine {
   private isUpdatingBackend: boolean = false
   private isInitializing: boolean = true
   private configureBackendsPromise: Promise<void> | null = null
+  /// In-flight first-run download of the hardware-optimal backend. Awaited by
+  /// `reconcileBackendReleaseTag` so the two never fetch the same archive.
+  private firstRunAdoption: Promise<void> | null = null
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
   private sessionCache = new Map<string, SessionInfo>()
   /// Tracks the ctx_size a model was last loaded with so the Local API
@@ -986,6 +1015,27 @@ export default class llamacpp_extension extends AIEngine {
         savedVB.includes('/') &&
         (await isBackendInstalled(savedVbBack.trim(), savedVbVer.trim()))
 
+      // Release notes for the dropdown labels. The index is already cached by
+      // the `listSupportedBackends` call above, so this is free; a failure is
+      // non-fatal and only degrades labels back to bare tags.
+      const releaseNotes = new Map<
+        string,
+        { title?: string; highlights?: string[] }
+      >()
+      let latestStableTag: string | null = null
+      try {
+        const catalog = await fetchStableIndex()
+        latestStableTag = catalog.latest
+        for (const release of catalog.releases) {
+          releaseNotes.set(release.tag, {
+            title: release.title,
+            highlights: release.highlights,
+          })
+        }
+      } catch (err) {
+        logger.warn('Failed to read release notes for the backend dropdown:', err)
+      }
+
       let settings = structuredClone(SETTINGS)
       const backendSettingIndex = settings.findIndex(
         (item) => item.key === 'version_backend'
@@ -999,7 +1049,15 @@ export default class llamacpp_extension extends AIEngine {
 
         backendSetting.controllerProps.options = version_backends.map((b) => {
           const key = `${b.version}/${b.backend}`
-          return { value: key, name: key }
+          return {
+            value: key,
+            name: this.describeBackendOption(
+              b.version,
+              b.backend,
+              releaseNotes.get(stripBom(b.version)),
+              stripBom(b.version) === latestStableTag
+            ),
+          }
         })
 
         // Always surface the installed-on-disk saved backend in the dropdown,
@@ -1015,8 +1073,19 @@ export default class llamacpp_extension extends AIEngine {
             }>
           ).some((o) => o.value === savedVB)
         ) {
+          // A legacy prerelease build (`turboquant-<id>-<sha>`) lands here too:
+          // it is never offered for download, but stays selectable as long as
+          // it is the one on disk.
           backendSetting.controllerProps.options = [
-            { value: savedVB, name: savedVB },
+            {
+              value: savedVB,
+              name: `${this.describeBackendOption(
+                savedVbVer!.trim(),
+                savedVbBack!.trim(),
+                releaseNotes.get(stripBom(savedVbVer!)),
+                false
+              )} — installed locally`,
+            },
             ...(backendSetting.controllerProps.options as Array<{
               value: string
               name: string
@@ -1151,35 +1220,38 @@ export default class llamacpp_extension extends AIEngine {
         }
       }
 
-      // Force-switch to the bundled backend in certain scenarios:
+      // Force-switch to the bundled backend in two scenarios:
       //
-      // macOS (turboquant pipeline):
-      //   1. Current backend is not turboquant → migrate to bundled turboquant
-      //   2. Bundled is a newer version of the same backend type → app update
+      //   1. macOS only: the current backend is not a turboquant build at all
+      //      (e.g. one left behind by another provider) → migrate to bundled.
+      //   2. Any platform: the bundled build genuinely supersedes the current
+      //      one of the SAME type — an app update carrying a newer engine.
       //
-      // Windows/Linux (janhq/llama.cpp pipeline):
-      //   Only force-switch when the bundled backend is a newer version of the
-      //   SAME type (e.g. CPU→CPU on app update). Never override a user's
-      //   auto-downloaded GPU backend (e.g. CUDA) with the bundled CPU backend.
+      // Case 2 is a maximum, not "anything that differs": now that every
+      // platform downloads engine releases at runtime, a build fetched after
+      // the app shipped is routinely newer than the bundled one and must not
+      // be rolled back. A user's auto-downloaded GPU backend is never
+      // overridden by the bundled CPU/Vulkan build either — the types differ.
       if (
         bundledBackendString &&
         effectiveBackendString &&
         effectiveBackendString.includes('/')
       ) {
-        const bundledType = bundledBackendString.split('/')[1]
-        const currentType = effectiveBackendString.split('/')[1]
-        const isBundledNewer =
+        const [bundledVersion, bundledType] = bundledBackendString.split('/')
+        const [currentVersion, currentType] = effectiveBackendString.split('/')
+        const bundledSupersedes =
           effectiveBackendString !== bundledBackendString &&
-          bundledType === currentType
+          bundledType === currentType &&
+          compareBackendVersions(bundledVersion, currentVersion) > 0
 
         const shouldForceSwitch = IS_MAC
-          ? !isTurboQuantRelease(effectiveBackendString) || isBundledNewer
-          : isBundledNewer
+          ? !isTurboQuantRelease(effectiveBackendString) || bundledSupersedes
+          : bundledSupersedes
 
         if (shouldForceSwitch) {
           logger.info(
             `Switching backend from '${effectiveBackendString}' to bundled '${bundledBackendString}'` +
-              (isBundledNewer ? ' (app update)' : ' (turboquant migration)')
+              (bundledSupersedes ? ' (app update)' : ' (turboquant migration)')
           )
           effectiveBackendString = bundledBackendString
           bestAvailableBackendString = bundledBackendString
@@ -1237,13 +1309,141 @@ export default class llamacpp_extension extends AIEngine {
         )
       }
 
-      // Late-phase GPU-backend detection has also been removed —
-      // see the comment near the top of this function. Any
-      // recommendation now flows through `recheckOptimalBackend()`,
-      // which is invoked only by user-driven UI surfaces.
+      // Detection still does not run on every launch (see the comment near the
+      // top of this function) — only when the user has never made a choice.
+      await this.adoptOptimalBackendOnFirstRun(
+        storedBackendType,
+        effectiveBackendString,
+        bundledBackendString,
+        version_backends
+      )
     } finally {
       this.isConfiguringBackends = false
     }
+  }
+
+  /**
+   * On a genuinely fresh install, commit the variant this hardware wants and
+   * start fetching it — instead of leaving the user on the bundled CPU build
+   * while the dropdown claims CUDA.
+   *
+   * The bundled backend stays active throughout: the download is not awaited,
+   * so the first model load is never held up behind a multi-hundred-megabyte
+   * archive, and `downloadRecommendedBackend` hot-swaps once it lands. On a
+   * discrete-NVIDIA host that means a CUDA archive starts downloading on first
+   * launch without asking — the price of "the right build, immediately".
+   *
+   * Runs only when the user has never chosen a backend. Anyone with a stored
+   * preference keeps it, and detection does not run on every launch.
+   */
+  private async adoptOptimalBackendOnFirstRun(
+    storedBackendTypeAtStart: string | null,
+    activeBackendString: string,
+    bundledBackendString: string | null,
+    version_backends: { version: string; backend: string }[]
+  ): Promise<void> {
+    // macOS publishes a single variant — there is nothing to optimise, and the
+    // release-tag reconciler already keeps it current.
+    if (IS_MAC) return
+
+    const active = stripBom(activeBackendString || '')
+    const bundled = stripBom(bundledBackendString || '')
+    const onBundledBaseline =
+      !active ||
+      active === 'none' ||
+      !active.includes('/') ||
+      (!!bundled && active === bundled)
+    if (!onBundledBaseline) return
+
+    // Sitting on the bundled baseline while a *different* backend type is
+    // recorded means a previous adoption never finished (download failed, app
+    // closed mid-way). Finish it instead of re-running detection — and never
+    // second-guess a preference that already matches what is installed.
+    const bundledType = bundled.split('/')[1]?.trim()
+    if (storedBackendTypeAtStart && storedBackendTypeAtStart === bundledType) {
+      return
+    }
+
+    let target: string | undefined
+    if (storedBackendTypeAtStart) {
+      target =
+        (await findLatestVersionForBackend(
+          version_backends,
+          storedBackendTypeAtStart
+        )) || undefined
+      if (!target) {
+        logger.info(
+          `adoptOptimalBackendOnFirstRun: '${storedBackendTypeAtStart}' is not in the catalog right now, staying on the bundled build`
+        )
+        return
+      }
+    } else {
+      try {
+        const detection = await this.detectOptimalBackend()
+        if (detection.kind === 'cpu-optimal') {
+          logger.info(
+            'adoptOptimalBackendOnFirstRun: CPU is optimal for this hardware, keeping the bundled build'
+          )
+          return
+        }
+        target = await this.resolveConcreteBackend(detection.backend)
+      } catch (err) {
+        // BACKEND_DETECTION_FAILED, or the catalog never arrived. Pinning
+        // anything here would silently record CPU as a deliberate preference
+        // (ADR 2026-06-15) — stay on the bundled build and retry next launch.
+        logger.warn(
+          'adoptOptimalBackendOnFirstRun: no optimal backend resolved, staying on the bundled build:',
+          err
+        )
+        return
+      }
+    }
+
+    if (!target || target === active) return
+    const targetType = target.split('/')[1]?.trim()
+    if (!targetType || targetType === bundledType) return
+
+    logger.info(
+      `adoptOptimalBackendOnFirstRun: fetching ${target} for this hardware; '${active}' keeps serving until it lands`
+    )
+    // Not awaited on purpose, and the stored preference is left to
+    // `updateBackend` — it is only recorded once the archive is really on disk.
+    this.firstRunAdoption = this.downloadRecommendedBackend(target)
+      .catch((err) => {
+        logger.warn(
+          `adoptOptimalBackendOnFirstRun: failed to install ${target}, staying on '${active}':`,
+          err
+        )
+      })
+      .finally(() => {
+        this.firstRunAdoption = null
+      })
+  }
+
+  /**
+   * Label for one entry of the `version_backend` dropdown, e.g.
+   * `NVIDIA CUDA 13 · b10269-1.4.0 (latest stable) — DeepSeek V4 Flash support,
+   * Kimi K3 with full vision`.
+   *
+   * Shows what the release changed and which accelerator family it drives —
+   * never the archive id, which is picked by hardware detection.
+   */
+  private describeBackendOption(
+    version: string,
+    backend: string,
+    notes: { title?: string; highlights?: string[] } | undefined,
+    isLatestStable: boolean
+  ): string {
+    const tag = stripBom(version)
+    const head = `${backendFamilyLabel(backend)} · ${tag}${
+      isLatestStable ? ' (latest stable)' : ''
+    }`
+    const highlights = (notes?.highlights ?? []).filter(
+      (h) => typeof h === 'string' && h.trim().length > 0
+    )
+    return highlights.length > 0
+      ? `${head} — ${highlights.slice(0, 3).join(', ')}`
+      : head
   }
 
   private async determineBestBackend(
@@ -1869,6 +2069,9 @@ export default class llamacpp_extension extends AIEngine {
     }
     try {
       logger.info('recheckOptimalBackend: detecting ideal backend type')
+      // An explicit user-driven check must see releases published since the
+      // index was last cached, so bypass the TTL here and only here.
+      invalidateStableIndexCache()
       const detection = await this.detectOptimalBackend()
       const currentBackend = stripBom(this.config.version_backend || '')
 
@@ -1984,6 +2187,71 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   /**
+   * Manual counterpart to the startup reconciliation, behind the "check for
+   * engine updates" button.
+   *
+   * The release index is cached and the version list is a snapshot taken at
+   * load, so a fork release published mid-session stays invisible until the
+   * next launch. This drops the cache and resolves the newest stable release
+   * of the backend type already in use.
+   *
+   * Only the decision happens here, and every leg of it is bounded: the
+   * catalog lookup goes through the same 20s race as `recheckOptimalBackend`,
+   * so a slow, unreachable or rate-limited GitHub can never leave the button
+   * spinning. The caller starts the download without awaiting it — a release
+   * archive takes minutes — and the shared `<BackendUpdater />` owns that
+   * progress UI.
+   */
+  async checkForEngineUpdate(): Promise<{
+    updateAvailable: boolean
+    targetBackend: string | null
+  }> {
+    const noUpdate = { updateAvailable: false, targetBackend: null }
+
+    // A configuration pass started at load may still be fetching the catalog.
+    // Its early phase registers a placeholder option list, so acting on
+    // `config` before it finishes would compare against a half-built state.
+    if (this.configureBackendsPromise) {
+      await this.withTimeout(this.configureBackendsPromise, 20_000, undefined)
+    }
+
+    const current = stripBom(this.config.version_backend || '')
+    const currentType = current.split('/')[1]?.trim()
+    if (!current || current === 'none' || !currentType) return noUpdate
+
+    // An explicit user-driven check must see releases published since the
+    // index was last cached.
+    invalidateStableIndexCache()
+    const { updateNeeded, targetBackend } = await this.withTimeout(
+      this.checkBackendForUpdates(),
+      20_000,
+      { updateNeeded: false, newVersion: '0' }
+    )
+    const targetType = targetBackend?.split('/')[1]?.trim()
+    if (!updateNeeded || !targetBackend || !targetType) return noUpdate
+
+    // The same two guards the startup reconciliation applies: never adopt a
+    // legacy prerelease that only exists on disk, never cross backend
+    // families.
+    if (!isStableReleaseTag(targetBackend)) {
+      logger.info(
+        `checkForEngineUpdate: newest candidate '${targetBackend}' is not a stable release`
+      )
+      return noUpdate
+    }
+    const migratedCurrentType = await mapOldBackendToNew(currentType)
+    if (targetType !== currentType && targetType !== migratedCurrentType) {
+      logger.warn(
+        `checkForEngineUpdate: refusing to switch backend type ${currentType} -> ${targetType}`
+      )
+      return noUpdate
+    }
+
+    logger.info(`checkForEngineUpdate: ${current} -> ${targetBackend}`)
+    return { updateAvailable: true, targetBackend }
+  }
+
+  /**
    * Move an existing install onto the newest release tag of the backend type
    * the user already runs.
    *
@@ -1996,17 +2264,22 @@ export default class llamacpp_extension extends AIEngine {
    * CUDA user already counts as optimal and is never prompted.
    *
    * `checkBackendForUpdates()` resolves the newest tag for the current type
-   * across the merged local+manifest catalog. The running backend is itself
+   * across the merged local+release catalog. The running backend is itself
    * part of that catalog, so the resolved target is never older — this cannot
    * downgrade anyone.
    *
-   * macOS is excluded: turboquant is bundled-only there, and the force-switch
-   * in `configureBackends()` already covers every app update.
+   * This is what makes a fork release reach users without an Atomic Chat
+   * release, on every platform including macOS, where the bundled build is now
+   * an offline baseline rather than the only source.
    */
   private async reconcileBackendReleaseTag(): Promise<void> {
-    if (IS_MAC) return
-
     try {
+      // A first-run adoption is already fetching the right archive; racing it
+      // would download the same release twice.
+      if (this.firstRunAdoption) {
+        await this.firstRunAdoption
+      }
+
       const current = stripBom(this.config.version_backend || '')
       const currentType = current.split('/')[1]?.trim()
       if (!current || current === 'none' || !currentType) {
@@ -2019,6 +2292,16 @@ export default class llamacpp_extension extends AIEngine {
       const { updateNeeded, targetBackend } = await this.checkBackendForUpdates()
       const targetType = targetBackend?.split('/')[1]?.trim()
       if (!updateNeeded || !targetBackend || !targetType) return
+
+      // The catalog is merged with what is on disk, so the "newest" candidate
+      // can be a legacy prerelease someone still has installed. Auto-updates
+      // only ever move onto stable releases.
+      if (!isStableReleaseTag(targetBackend)) {
+        logger.info(
+          `reconcileBackendReleaseTag: newest candidate '${targetBackend}' is not a stable release, keeping '${current}'`
+        )
+        return
+      }
 
       // Reconciliation bumps the release tag only; it must never move anyone
       // between backend families. Legacy ids may land on their migrated form,
@@ -3627,21 +3910,20 @@ export default class llamacpp_extension extends AIEngine {
       return
     }
 
-    // Attempt auto-download for TurboQuant Windows/Linux backends (resolved
-    // from the static manifest). macOS turboquant backends are bundled-only.
-    if (!IS_MAC) {
-      logger.info(
-        `Backend ${backendKey} not installed locally, attempting download...`
-      )
-      try {
-        await this.downloadAndInstallBackend(backendKey)
-      } catch (err) {
-        logger.error(`Failed to download backend ${backendKey}:`, err)
-      }
+    // Auto-download from the release stream. Every platform participates —
+    // macOS included, where the bundled build is the offline baseline rather
+    // than the only source.
+    logger.info(
+      `Backend ${backendKey} not installed locally, attempting download...`
+    )
+    try {
+      await this.downloadAndInstallBackend(backendKey)
+    } catch (err) {
+      logger.error(`Failed to download backend ${backendKey}:`, err)
+    }
 
-      if (await isBackendInstalled(backend, version)) {
-        return
-      }
+    if (await isBackendInstalled(backend, version)) {
+      return
     }
 
     // ATO-153 recovery: the upstream provider's auto-upgrade cleanup could
@@ -3952,7 +4234,11 @@ export default class llamacpp_extension extends AIEngine {
       return
     }
 
-    const url = getBackendDownloadUrl(version, backend)
+    const url = getBackendDownloadUrl(
+      version,
+      backend,
+      getIndexedAssetName(version, backend)
+    )
     const janDataFolderPath = await getJanDataFolderPath()
     const tempDir = await joinPath([janDataFolderPath, 'llamacpp', 'tmp'])
     if (!(await fs.existsSync(tempDir))) {
@@ -3960,10 +4246,11 @@ export default class llamacpp_extension extends AIEngine {
     }
     // The local temp file MUST carry the real archive extension: the Rust
     // `decompress` command picks its decoder strictly by suffix (.tar.gz vs
-    // .zip). TurboQuant Windows assets are .zip, Linux/macOS are .tar.gz —
-    // mirror the same choice `getBackendDownloadUrl` makes, or the zip is
-    // fed to the tar reader and fails with "failed to iterate over archive".
-    const archiveExt = IS_WINDOWS ? 'zip' : 'tar.gz'
+    // .zip). Derive it from the URL we are actually about to fetch — the
+    // release index may name an asset whose extension differs from what this
+    // OS would assume, and feeding a zip to the tar reader fails with
+    // "failed to iterate over archive".
+    const archiveExt = url.endsWith('.zip') ? 'zip' : 'tar.gz'
     const archiveName = `llama-${version}-bin-${backend}.${archiveExt}`
     const archivePath = await joinPath([tempDir, archiveName])
     const targetDir = await getBackendDir(backend, version)

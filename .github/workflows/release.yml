@@ -578,29 +578,20 @@ jobs:
           # llamacpp-upstream. Bundle the offline-fallback `windows-x64-cpu`
           # build into the turboquant resource dir; the app auto-downloads the
           # optimal CUDA/Vulkan backend at runtime via the llamacpp-extension.
-          # Backend INDEX is resolved from the static turboquant manifest in
-          # atomic-chat-conf (raw.githubusercontent.com, no api.github.com rate
-          # limit); the per-entry tag is read verbatim, so a unified release
-          # (`b<build>-<fork-semver>`) and a legacy scattered one both resolve.
-          # The archive itself comes from the AtomicBot-ai releases CDN. Inline
-          # bash (not `make ...-win-cpu`) because that make target is a
-          # PowerShell one-liner whose `$(...)` is mangled by make's /usr/bin/sh.
+          # No tag is pinned: scripts/resolve-turboquant-release.sh asks the
+          # fork's own releases/latest which stable release is current, so a
+          # new fork release ships without a commit here. Set TURBOQUANT_TAG to
+          # pin one for a reproducible build. The archive itself comes from the
+          # AtomicBot-ai releases CDN. Inline bash (not `make ...-win-cpu`)
+          # because that make target is a PowerShell one-liner whose `$(...)`
+          # is mangled by make's /usr/bin/sh.
           DIR="src-tauri/resources/llamacpp-backend"
           BACKEND="windows-x64-cpu"
-          MANIFEST_URL="https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/b8fb5951118ec63657b1558b10cfc7597e408aea/backends/turboquant-manifest.json"
           rm -rf "$DIR"
           mkdir -p "$DIR"
-          echo "Resolving TurboQuant backend index from atomic-chat-conf manifest..."
-          TMP="$(mktemp)"
-          curl -fsSL --retry 5 --retry-delay 3 "$MANIFEST_URL" -o "$TMP"
-          TAG="$(jq -r --arg id "$BACKEND" '.backends[]? | select(.id == $id) | .tag' "$TMP")"
-          ASSET="$(jq -r --arg id "$BACKEND" '.backends[]? | select(.id == $id) | .asset' "$TMP")"
-          if [ -z "$TAG" ] || [ "$TAG" = "null" ] || [ -z "$ASSET" ] || [ "$ASSET" = "null" ]; then
-            echo "Error: turboquant manifest does not list the ${BACKEND} backend; update atomic-chat-conf backends/turboquant-manifest.json"
-            head -c 500 "$TMP" 2>/dev/null || true; echo
-            rm -f "$TMP"; exit 1
-          fi
-          rm -f "$TMP"
+          RESOLVED="$(./scripts/resolve-turboquant-release.sh "$BACKEND" "${TURBOQUANT_TAG:-}")"
+          TAG="${RESOLVED%% *}"
+          ASSET="${RESOLVED#* }"
           URL="https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/${TAG}/${ASSET}"
           echo "$TAG" > "$DIR/version.txt"
           echo "$BACKEND" > "$DIR/backend.txt"
