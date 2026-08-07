@@ -203,7 +203,7 @@ pub async fn factory_reset<R: Runtime>(
 }
 
 #[cfg(any(target_os = "linux", test))]
-const APPIMAGE_RUNTIME_ENV_VARS: &[&str] = &[
+pub const APPIMAGE_RUNTIME_ENV_VARS: &[&str] = &[
     "APPDIR",
     "APPIMAGE",
     "ARGV0",
@@ -1759,6 +1759,10 @@ fn agent_install_spec(
             // reading from the console (/dev/tty on Unix) when spawned from the
             // app. Both bootstrap scripts honor the `CONFIGURE` env var, so the
             // Windows path seeds `$env:CONFIGURE='false'` before `iex`.
+            //
+            // On Unix we run through `bash` with `pipefail` so a failed `curl`
+            // (e.g. missing OpenSSL symbols under AppImage) aborts the pipeline
+            // instead of being masked by the trailing `bash` exiting cleanly.
             let (program, args): (String, Vec<String>) = if cfg!(windows) {
                 (
                     "powershell".to_string(),
@@ -1770,10 +1774,10 @@ fn agent_install_spec(
                 )
             } else {
                 (
-                    "sh".to_string(),
+                    "bash".to_string(),
                     vec![
                         "-c".to_string(),
-                        "curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash".to_string(),
+                        "set -o pipefail; curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash".to_string(),
                     ],
                 )
             };
@@ -1787,6 +1791,10 @@ fn agent_install_spec(
             // installer's wizard reads from /dev/tty and hangs forever when we
             // spawn it from the app — we write the agent's config ourselves via
             // `configure_hermes_agent`, so the wizard is redundant here.
+            //
+            // On Unix we run through `bash` with `pipefail` so a failed `curl`
+            // (e.g. missing OpenSSL symbols under AppImage) aborts the pipeline
+            // instead of being masked by the trailing `bash` exiting cleanly.
             let (program, args): (String, Vec<String>) = if cfg!(windows) {
                 (
                     "powershell".to_string(),
@@ -1798,10 +1806,10 @@ fn agent_install_spec(
                 )
             } else {
                 (
-                    "sh".to_string(),
+                    "bash".to_string(),
                     vec![
                         "-c".to_string(),
-                        "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup --non-interactive".to_string(),
+                        "set -o pipefail; curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup --non-interactive".to_string(),
                     ],
                 )
             };
@@ -1836,6 +1844,10 @@ fn agent_install_spec(
             // is unaffected because `$env:` sets the var for the whole session
             // before `iex` runs, and PowerShell's installer defaults UpdatePath
             // to true.
+            //
+            // We still run the Unix pipeline through `bash` with `pipefail` so a
+            // failed `curl` aborts the pipeline instead of being masked by `sh`
+            // exiting cleanly on an empty script.
             let (program, args): (String, Vec<String>) = if cfg!(windows) {
                 (
                     "powershell".to_string(),
@@ -1847,10 +1859,10 @@ fn agent_install_spec(
                 )
             } else {
                 (
-                    "sh".to_string(),
+                    "bash".to_string(),
                     vec![
                         "-c".to_string(),
-                        "curl -fsSL https://downloads.poolside.ai/pool/install.sh | POOL_INSTALL_ACCEPT_EULA=1 POOL_INSTALL_UPDATE_PATH=1 sh".to_string(),
+                        "set -o pipefail; curl -fsSL https://downloads.poolside.ai/pool/install.sh | POOL_INSTALL_ACCEPT_EULA=1 POOL_INSTALL_UPDATE_PATH=1 sh".to_string(),
                     ],
                 )
             };
@@ -1876,11 +1888,14 @@ fn agent_install_spec(
                     "https://zed.dev/docs/windows",
                 ))
             } else {
+                // Run through `bash` with `pipefail` so a failed `curl` aborts
+                // the pipeline instead of being masked by `sh` exiting cleanly on
+                // an empty script.
                 Ok((
-                    "sh".to_string(),
+                    "bash".to_string(),
                     vec![
                         "-c".to_string(),
-                        "curl -fsSL https://zed.dev/install.sh | sh".to_string(),
+                        "set -o pipefail; curl -fsSL https://zed.dev/install.sh | sh".to_string(),
                     ],
                     "curl",
                     "https://zed.dev/docs/getting-started",
@@ -1932,11 +1947,28 @@ fn login_shell_path() -> Option<String> {
         .clone()
 }
 
+/// Remove AppImage runtime variables that leak the bundled libraries into
+/// spawned host executables. AppRun injects `LD_LIBRARY_PATH` etc. so the app
+/// can load its own libs, but child processes (`curl`, `npm`, `node`, MCP
+/// servers) must use the system linker/SSL to work correctly.
+#[cfg(any(target_os = "linux", test))]
+pub fn sanitize_appimage_env(cmd: &mut std::process::Command) {
+    for var in APPIMAGE_RUNTIME_ENV_VARS {
+        cmd.env_remove(var);
+    }
+}
+
+#[cfg(not(any(target_os = "linux", test)))]
+pub fn sanitize_appimage_env(_cmd: &mut std::process::Command) {}
+
 /// Augment a spawned command's PATH with the user's login-shell PATH so GUI
 /// builds can find user-installed tools (`npm`/`node`, agent binaries). No-op
 /// on Windows, where processes inherit the registry (user/system) PATH.
 #[cfg(not(windows))]
 fn apply_login_path(cmd: &mut std::process::Command) {
+    // Prevent the AppImage runtime (LD_LIBRARY_PATH, etc.) from leaking into
+    // spawned host executables so they load the system libraries they expect.
+    sanitize_appimage_env(cmd);
     if let Some(path) = login_shell_path() {
         cmd.env("PATH", path);
     }
@@ -4155,6 +4187,23 @@ mod tests {
             assert!(
                 !removed.iter().any(|key| key == variable),
                 "{variable} must be preserved"
+            );
+        }
+    }
+
+    #[test]
+    fn sanitize_appimage_env_strips_runtime_variables() {
+        let mut cmd = std::process::Command::new("curl");
+        sanitize_appimage_env(&mut cmd);
+        let removed: Vec<_> = cmd
+            .get_envs()
+            .filter_map(|(key, value)| value.is_none().then(|| key.to_os_string()))
+            .collect();
+
+        for variable in APPIMAGE_RUNTIME_ENV_VARS {
+            assert!(
+                removed.iter().any(|key| key == variable),
+                "{variable} must be removed"
             );
         }
     }

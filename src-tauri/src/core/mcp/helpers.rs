@@ -530,6 +530,13 @@ async fn schedule_mcp_start_task<R: Runtime>(
         #[cfg(unix)]
         cmd.process_group(0);
 
+        // Prevent the AppImage runtime (LD_LIBRARY_PATH, etc.) from leaking into
+        // MCP server processes so they use the system libraries they expect.
+        #[cfg(target_os = "linux")]
+        for var in crate::core::system::commands::APPIMAGE_RUNTIME_ENV_VARS {
+            cmd.env_remove(var);
+        }
+
         cmd.kill_on_drop(true);
 
         // ATO-164 (defense-in-depth): launch the stdio server in its configured
