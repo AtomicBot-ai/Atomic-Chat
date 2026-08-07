@@ -36,6 +36,7 @@ export interface CatalogModel {
   library_name?: string
   developer?: string
   downloads: number
+  likes?: number
   num_quants?: number
   quants?: ModelQuant[]
   mmproj_models?: MMProjModel[]
@@ -43,6 +44,7 @@ export interface CatalogModel {
   safetensors_files?: SafetensorsFile[]
   num_safetensors?: number
   created_at?: string
+  last_modified?: string
   readme?: string
   tools?: boolean
   is_mlx?: boolean

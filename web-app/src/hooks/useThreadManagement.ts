@@ -16,7 +16,7 @@ type ThreadManagementState = {
   getProjectById: (id: string) => Promise<ThreadFolder | undefined>
 }
 
-const useThreadManagementStore = create<ThreadManagementState>()((set, get) => ({
+export const useThreadManagementStore = create<ThreadManagementState>()((set, get) => ({
   folders: [],
 
   setFolders: (folders) => {
@@ -113,21 +113,32 @@ const useThreadManagementStore = create<ThreadManagementState>()((set, get) => (
   },
 }))
 
+// Every mutation above re-reads projects from the service, so the initial read
+// only has to happen once per session. Keying it on a module-level promise keeps
+// a sidebar full of consumers (one per thread row) from firing one IPC each.
+let projectsLoad: Promise<void> | null = null
+
+export const ensureProjectsLoaded = (): Promise<void> => {
+  if (projectsLoad) return projectsLoad
+  projectsLoad = (async () => {
+    try {
+      const projectsService = getServiceHub().projects()
+      const projects = await projectsService.getProjects()
+      useThreadManagementStore.setState({ folders: projects })
+    } catch (error) {
+      console.error('Error syncing projects:', error)
+      // Let a later consumer retry a failed load.
+      projectsLoad = null
+    }
+  })()
+  return projectsLoad
+}
+
 export const useThreadManagement = () => {
   const store = useThreadManagementStore()
 
-  // Load projects from service on mount
   useEffect(() => {
-    const syncProjects = async () => {
-      try {
-        const projectsService = getServiceHub().projects()
-        const projects = await projectsService.getProjects()
-        useThreadManagementStore.setState({ folders: projects })
-      } catch (error) {
-        console.error('Error syncing projects:', error)
-      }
-    }
-    syncProjects()
+    void ensureProjectsLoaded()
   }, [])
 
   return store

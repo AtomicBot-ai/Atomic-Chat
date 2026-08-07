@@ -9,8 +9,7 @@ import { cn } from '@/lib/utils'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import SetupScreen from '@/containers/SetupScreen'
 import { route } from '@/constants/routes'
-import { hasValidProviders } from '@/lib/onboarding'
-import { localStorageKey } from '@/constants/localStorage'
+import { isOnboardingPending } from '@/lib/onboarding'
 import { useCallback, useEffect, useState } from 'react'
 import { useThreads } from '@/hooks/useThreads'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
@@ -91,15 +90,12 @@ function Index() {
 
   //* После Skip без перемонтирования роутера — поднимаем флаг, иначе ре-рендер не гарантирован
   const [setupSkippedThisSession, setSetupSkippedThisSession] = useState(false)
-  const setupCompletedOrSkipped =
-    setupSkippedThisSession ||
-    (typeof window !== 'undefined' &&
-      localStorage.getItem(localStorageKey.setupCompleted) === 'true')
 
-  // Conditional to check if there are any valid providers: min 1 api_key or 1
-  // model in llama.cpp / jan, or a custom provider with models. Shared with the
-  // startup auto-start gate so the two can never disagree about onboarding.
-  const validProviders = hasValidProviders(providers)
+  // Shared with the startup auto-start gate so the two can never disagree about
+  // onboarding. Also covers the dev-only FORCE_ONBOARDING flag, which enters
+  // onboarding despite installed models without blocking the way out.
+  const onboardingPending =
+    !setupSkippedThisSession && isOnboardingPending(providers)
 
   useEffect(() => {
     setCurrentThreadId(undefined)
@@ -114,8 +110,7 @@ function Index() {
     setAgentMode(TEMPORARY_CHAT_ID, nextMode === 'agent')
   }, [selectedProvider, setAgentMode, setSidebarMode, sidebarMode])
 
-  //* Dev-флаг FORCE_ONBOARDING — принудительный показ SetupScreen без удаления моделей
-  if (FORCE_ONBOARDING || (!validProviders && !setupCompletedOrSkipped)) {
+  if (onboardingPending) {
     return <SetupScreen onSkipped={() => setSetupSkippedThisSession(true)} />
   }
 

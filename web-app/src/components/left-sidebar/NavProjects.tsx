@@ -49,7 +49,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { ThreadFolder } from '@/services/projects/types'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
@@ -61,7 +61,11 @@ import {
   type FoldersIconHandle,
 } from '@/components/animated-icon/folders'
 
-function ProjectItem({
+// Shared empty list so a project without threads keeps a stable `threads` prop
+// across renders (a fresh `[]` would defeat the memo below).
+const NO_THREADS: Thread[] = []
+
+const ProjectItem = memo(function ProjectItem({
   item,
   isMobile,
   threads,
@@ -74,7 +78,7 @@ function ProjectItem({
   isMobile: boolean
   threads: Thread[]
   isOpen: boolean
-  onOpenChange: (open: boolean) => void
+  onOpenChange: (projectId: string, open: boolean) => void
   onEdit: (project: ThreadFolder) => void
   onDelete: (project: ThreadFolder) => void
 }) {
@@ -99,7 +103,7 @@ function ProjectItem({
     <div ref={setNodeRef} style={style} className={cn(isDragging && 'z-10')}>
       <Collapsible
         open={isOpen}
-        onOpenChange={onOpenChange}
+        onOpenChange={(open) => onOpenChange(item.id, open)}
         className="group/collapsible"
       >
         <SidebarMenuItem>
@@ -191,7 +195,7 @@ function ProjectItem({
       </Collapsible>
     </div>
   )
-}
+})
 
 export function NavProjects() {
   const { t } = useTranslation()
@@ -208,6 +212,11 @@ export function NavProjects() {
     null
   )
 
+  const sortableProjectIds = useMemo(
+    () => folders.map((f) => f.id),
+    [folders]
+  )
+
   const threadsByProject = useMemo(() => {
     const out: Record<string, Thread[]> = {}
     for (const thread of Object.values(threads)) {
@@ -222,15 +231,24 @@ export function NavProjects() {
     return out
   }, [threads])
 
-  const handleEdit = (project: ThreadFolder) => {
+  // Stable handlers keep the memoized rows from re-rendering on every parent
+  // render (threads and selection change constantly).
+  const handleEdit = useCallback((project: ThreadFolder) => {
     setSelectedProject(project)
     setEditDialogOpen(true)
-  }
+  }, [])
 
-  const handleDelete = (project: ThreadFolder) => {
+  const handleDelete = useCallback((project: ThreadFolder) => {
     setSelectedProject(project)
     setDeleteDialogOpen(true)
-  }
+  }, [])
+
+  const handleOpenChange = useCallback(
+    (projectId: string, expanded: boolean) => {
+      setProjectExpanded(projectId, expanded)
+    },
+    [setProjectExpanded]
+  )
 
   const handleSaveEdit = async (name: string, assistantId?: string) => {
     if (selectedProject) {
@@ -285,11 +303,11 @@ export function NavProjects() {
             onDragEnd={handleDragEnd}
           >
             <SortableContext
-              items={folders.map((f) => f.id)}
+              items={sortableProjectIds}
               strategy={verticalListSortingStrategy}
             >
               {folders.map((item) => {
-                const projectThreads = threadsByProject[item.id] ?? []
+                const projectThreads = threadsByProject[item.id] ?? NO_THREADS
                 const open = isProjectOpen(item.id, projectThreads)
                 return (
                   <ProjectItem
@@ -298,9 +316,7 @@ export function NavProjects() {
                     isMobile={isMobile}
                     threads={projectThreads}
                     isOpen={open}
-                    onOpenChange={(expanded) =>
-                      setProjectExpanded(item.id, expanded)
-                    }
+                    onOpenChange={handleOpenChange}
                     onEdit={handleEdit}
                     onDelete={handleDelete}
                   />

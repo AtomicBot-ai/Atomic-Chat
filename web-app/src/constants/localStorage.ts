@@ -35,7 +35,10 @@ export const localStorageKey = {
   threadManagement: 'thread-management',
   modelSupportCache: 'jan_model_support_cache',
   recentSearches: 'recent-searches',
-  janModelPromptDismissed: 'jan-model-prompt-dismissed',
+  // Set when onboarding is left without a model (Skip or the auto-exit
+  // timeout) and cleared once the bottom-right reminder has been acted on or
+  // dismissed. Survives a restart so the offer is not lost with the session.
+  onboardingModelReminder: 'atomic-onboarding-model-reminder',
   agentMode: 'agent-mode',
   agentModeAttentionSeen: 'agent-mode-attention-seen-v1',
   factoryResetPending: 'factory-reset-pending',

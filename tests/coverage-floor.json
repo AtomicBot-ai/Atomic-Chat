@@ -29,6 +29,18 @@
     "functions": 63.63,
     "lines": 49.03
   },
+  "web-app/src/services/staff-picks-registry.ts": {
+    "statements": 93.14,
+    "branches": 82.45,
+    "functions": 100,
+    "lines": 93.14
+  },
+  "web-app/src/lib/hub-filters.ts": {
+    "statements": 98.56,
+    "branches": 83.82,
+    "functions": 100,
+    "lines": 98.56
+  },
   "extensions/llamacpp-extension/src/backend.ts": {
     "statements": 70.09,
     "branches": 79.66,

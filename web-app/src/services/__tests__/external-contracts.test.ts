@@ -61,6 +61,32 @@ const recommendationSchema = z.object({
   ),
 })
 
+/**
+ * Deliberately separate from `recommendationSchema`: `recommended.json` is
+ * frozen for shipped clients, and staff picks must never be validated by
+ * relaxing that contract.
+ */
+const staffPicksSchema = z.object({
+  schema_version: z.literal(1),
+  updated_at: z.iso.datetime(),
+  picks: z
+    .array(
+      z.object({
+        model_name: z.string().regex(/^[^/]+\/[^/]+$/),
+        title: nonEmptyString.optional(),
+        summary: nonEmptyString.optional(),
+        description_key: z.string().startsWith('hub:').optional(),
+        icon: nonEmptyString.optional(),
+        format: z.enum(['gguf', 'mlx']).optional(),
+        categories: z.array(nonEmptyString).optional(),
+        platforms: z.array(z.enum(['macos', 'windows', 'linux'])).optional(),
+        order: z.number().optional(),
+        active: z.boolean().optional(),
+      })
+    )
+    .min(1),
+})
+
 const providerRegistrySchema = z.object({
   schema_version: z.literal(1),
   updated_at: z.iso.datetime(),
@@ -165,6 +191,11 @@ const liveContracts = [
     recommendationSchema,
   ],
   [
+    'staff picks',
+    'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/models/staff-picks.json',
+    staffPicksSchema,
+  ],
+  [
     'provider registry',
     'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/providers/registry.json',
     providerRegistrySchema,
@@ -188,11 +219,48 @@ describe('pinned external registry contracts', () => {
     ['upstream manifest', 'upstream-manifest', upstreamManifestSchema],
     ['TurboQuant manifest', 'turboquant-manifest', turboquantManifestSchema],
     ['recommended models', 'recommended-models', recommendationSchema],
+    ['staff picks', 'staff-picks', staffPicksSchema],
     ['provider registry', 'provider-registry', providerRegistrySchema],
     ['model catalog', 'catalog', catalogSchema],
     ['model catalog index', 'catalog-index', catalogIndexSchema],
   ] as const)('validates the %s fixture', (_label, name, schema) => {
     expect(() => schema.parse(fixture(name))).not.toThrow()
+  })
+
+  /**
+   * Shipped clients read `recommended.json` and reject a manifest whose
+   * `schema_version` they do not know. Staff picks exist precisely so that the
+   * Hub can evolve without touching that file, so the separation is asserted
+   * rather than left to reviewer discipline.
+   */
+  it('keeps the onboarding manifest independent of staff picks', () => {
+    const recommended = recommendationSchema.parse(fixture('recommended-models'))
+    expect(recommended.schema_version).toBe(1)
+    for (const entry of recommended.recommendations) {
+      expect(Object.keys(entry).sort()).toEqual([
+        'description_key',
+        'model_name',
+      ])
+    }
+
+    const setupScreen = readFileSync(
+      resolve(repositoryRoot, 'web-app', 'src', 'containers', 'SetupScreen.tsx'),
+      'utf8'
+    )
+    expect(setupScreen).toContain('useResolvedRecommendedModels')
+    expect(setupScreen).not.toMatch(/staff-?picks/i)
+
+    const recommendedLoader = readFileSync(
+      resolve(
+        repositoryRoot,
+        'web-app',
+        'src',
+        'services',
+        'recommended-models-registry.ts'
+      ),
+      'utf8'
+    )
+    expect(recommendedLoader).not.toMatch(/staff-?picks/i)
   })
 
   it('pins every fixture source to an immutable revision', () => {

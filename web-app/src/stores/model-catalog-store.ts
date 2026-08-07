@@ -29,7 +29,18 @@ import {
   type RegistrySource,
 } from '@/services/model-catalog-registry'
 import { BASELINE_MODEL_CATALOG } from '@/constants/models'
+import { mergeShardedQuants } from '@/lib/models'
 import type { CatalogModel } from '@/services/models/types'
+
+/**
+ * The catalog mirrors each repository's file list, so a quant published as
+ * `-00001-of-000NN` shards arrives as one entry per shard. Folding them back
+ * into one variant belongs here rather than in a consumer: the Hub list, the
+ * search service and `getCatalogSync` all read this store and would each have
+ * to repeat it. Applied on read, so a cached artefact needs no migration.
+ */
+const adopt = (models: ReadonlyArray<CatalogModel>): CatalogModel[] =>
+  models.map(mergeShardedQuants)
 
 export type CatalogStatus = 'idle' | 'loading' | 'success' | 'error'
 
@@ -70,7 +81,7 @@ const baselineIndex = (message: string): IndexFetchResult => ({
 })
 
 export const useModelCatalogStore = create<ModelCatalogState>()((set) => ({
-  catalog: BASELINE_MODEL_CATALOG.slice(),
+  catalog: adopt(BASELINE_MODEL_CATALOG),
   manifestUpdatedAt: null,
   source: 'baseline',
   status: 'idle',
@@ -95,7 +106,7 @@ export const useModelCatalogStore = create<ModelCatalogState>()((set) => ({
         ])
         if (cachedCatalog) {
           set({
-            catalog: cachedCatalog.manifest.models,
+            catalog: adopt(cachedCatalog.manifest.models),
             manifestUpdatedAt: cachedCatalog.manifest.updated_at,
             source: 'cache',
             fetchedAt: cachedCatalog.fetchedAt,
@@ -111,7 +122,7 @@ export const useModelCatalogStore = create<ModelCatalogState>()((set) => ({
           ])
           if (seedManifest && seedManifest.models.length > 0) {
             set({
-              catalog: seedManifest.models,
+              catalog: adopt(seedManifest.models),
               manifestUpdatedAt: seedManifest.updated_at,
               source: 'bundled',
               fetchedAt: null,
@@ -164,7 +175,7 @@ export const useModelCatalogStore = create<ModelCatalogState>()((set) => ({
     set({
       catalog: shouldKeepBundled
         ? current.catalog
-        : catalogResult.manifest.models,
+        : adopt(catalogResult.manifest.models),
       manifestUpdatedAt: shouldKeepBundled
         ? current.manifestUpdatedAt
         : catalogResult.manifestUpdatedAt,

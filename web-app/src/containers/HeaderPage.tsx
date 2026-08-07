@@ -16,7 +16,8 @@ const HeaderPage = memo(function HeaderPage({
   children,
   hideControls,
 }: HeaderPageProps) {
-  const { open, setLeftPanel } = useLeftPanel()
+  const open = useLeftPanel((state) => state.open)
+  const setLeftPanel = useLeftPanel((state) => state.setLeftPanel)
 
   return (
     <div

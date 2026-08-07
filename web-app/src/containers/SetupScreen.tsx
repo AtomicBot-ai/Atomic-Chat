@@ -20,8 +20,10 @@ import {
   getTotalDownloadFileSize,
 } from '@/lib/models'
 import { useResolvedRecommendedModels } from '@/hooks/useResolvedRecommendedModels'
+import { useRecommendedModelsRegistryStore } from '@/stores/recommended-models-registry-store'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelLoad } from '@/hooks/useModelLoad'
+import { useOnboardingModelReminderStore } from '@/hooks/useOnboardingModelReminder'
 import { switchToModel } from '@/utils/switchModel'
 import { markSilentImport } from '@/utils/backgroundImports'
 import HeaderPage from './HeaderPage'
@@ -96,6 +98,11 @@ type SetupScreenProps = {
 ///     at the top with a "Run" button (one-click import, no re-download); the
 ///     recommended catalog models follow below with a "Download" button.
 type OnboardingStep = 'backend' | 'model'
+
+/// Onboarding must never trap the user behind a multi-gigabyte decision: if the
+/// model step is left untouched for this long we enter the chat anyway and hand
+/// the recommendation over to the bottom-right reminder.
+const MODEL_STEP_AUTO_EXIT_MS = 15_000
 
 function getInitialStep(): OnboardingStep {
   if (typeof window === 'undefined') return 'model'
@@ -519,7 +526,8 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         JSON.stringify({ provider: providerName, model: modelId })
       )
 
-      // Onboarding ran with the sidebar collapsed; entering chat opens it.
+      // Idempotent for the model step, which already opened it; still needed
+      // for the collapsed Windows backend step.
       useLeftPanel.getState().setLeftPanel(true)
 
       // Add the rest only now, so they can't flip the route before this pick.
@@ -692,42 +700,96 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     ]
   )
 
-  const handleSkip = useCallback(() => {
-    // Still import every detected model (no launch) before leaving onboarding.
-    importCandidatesInBackground(localCandidates ?? [])
-    try {
-      const hadAnyModel = providers.some(
-        (p) => (p.models?.length ?? 0) > 0 || !!p.api_key
-      )
-      posthog.capture('setup_skipped', {
-        had_any_model: hadAnyModel,
-        platform: getAnalyticsPlatform(),
-        app_version: VERSION,
+  // Shared exit for both ways of leaving onboarding empty-handed: the explicit
+  // Skip link and the auto-exit timeout. Picking a model takes a different
+  // route (handleImportedId / enterChatForDownload) and must not arm the
+  // bottom-right reminder.
+  const leaveWithoutModel = useCallback(
+    (reason: 'skipped' | 'timeout') => {
+      if (hasNavigatedRef.current) return
+      hasNavigatedRef.current = true
+
+      // Still import every detected model (no launch) before leaving onboarding.
+      importCandidatesInBackground(localCandidates ?? [])
+      try {
+        const hadAnyModel = providers.some(
+          (p) => (p.models?.length ?? 0) > 0 || !!p.api_key
+        )
+        posthog.capture('setup_skipped', {
+          had_any_model: hadAnyModel,
+          reason,
+          platform: getAnalyticsPlatform(),
+          app_version: VERSION,
+        })
+      } catch (err) {
+        console.debug('setup_skipped telemetry failed:', err)
+      }
+      localStorage.setItem(localStorageKey.setupCompleted, 'true')
+      // Same-tab signal — see useSetupCompleted in routes/__root.tsx.
+      window.dispatchEvent(new Event('app:setup-completed'))
+      localStorage.removeItem(localStorageKey.lastUsedModel)
+      useOnboardingModelReminderStore.getState().setPending(true)
+      onSkipped?.()
+
+      // Already open for the model step; kept so the main app is never entered
+      // with a collapsed sidebar regardless of how this path is reached.
+      useLeftPanel.getState().setLeftPanel(true)
+
+      void navigate({
+        to: route.home,
+        replace: true,
+        search: {},
       })
-    } catch (err) {
-      console.debug('setup_skipped telemetry failed:', err)
-    }
-    localStorage.setItem(localStorageKey.setupCompleted, 'true')
-    // Same-tab signal — see useSetupCompleted in routes/__root.tsx.
-    window.dispatchEvent(new Event('app:setup-completed'))
-    localStorage.removeItem(localStorageKey.lastUsedModel)
-    onSkipped?.()
+    },
+    [
+      navigate,
+      onSkipped,
+      providers,
+      importCandidatesInBackground,
+      localCandidates,
+    ]
+  )
 
-    // Leaving onboarding for the main app — restore the sidebar.
+  // Read through a ref so the timeout below is armed once per model step
+  // instead of being restarted every time a background import refreshes the
+  // provider list.
+  const leaveWithoutModelRef = useRef(leaveWithoutModel)
+  useEffect(() => {
+    leaveWithoutModelRef.current = leaveWithoutModel
+  }, [leaveWithoutModel])
+
+  // Armed only once the picker is actually on screen, and disarmed while an
+  // import is in flight so a slow local model can't be cut short.
+  useEffect(() => {
+    if (step !== 'model' || localCandidates === null) return
+    if (importingLocalId !== null) return
+
+    const timer = setTimeout(() => {
+      leaveWithoutModelRef.current('timeout')
+    }, MODEL_STEP_AUTO_EXIT_MS)
+
+    return () => clearTimeout(timer)
+  }, [step, localCandidates, importingLocalId])
+
+  // Unlike the previous full-screen onboarding, the model step lives inside the
+  // chat area, so the sidebar is already there when the user lands in chat.
+  useEffect(() => {
+    if (step !== 'model') return
     useLeftPanel.getState().setLeftPanel(true)
+  }, [step])
 
-    void navigate({
-      to: route.home,
-      replace: true,
-      search: {},
-    })
-  }, [
-    navigate,
-    onSkipped,
-    providers,
-    importCandidatesInBackground,
-    localCandidates,
-  ])
+  // The registry's one-hour cache is served without touching the network, which
+  // is fine everywhere except here: onboarding is the one screen whose whole
+  // content is the recommendation list, and showing a list the manifest no
+  // longer contains is worse than a 5s fetch. Fires once per mount; the store
+  // keeps the previous list meanwhile and falls back on its own if the fetch
+  // fails, so there is nothing to await and nothing to unwind.
+  const forcedRegistryRefreshRef = useRef(false)
+  useEffect(() => {
+    if (step !== 'model' || forcedRegistryRefreshRef.current) return
+    forcedRegistryRefreshRef.current = true
+    void useRecommendedModelsRegistryStore.getState().refresh({ force: true })
+  }, [step])
 
   // Windows: dedicated llama.cpp backend step runs first. Once the user
   // either downloads or skips it the flag is persisted so subsequent
@@ -740,8 +802,8 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   // picker on first paint instead of popping in (and shoving the list down).
   if (step === 'model' && localCandidates === null) {
     return (
-      <div className="relative flex h-svh w-full flex-col overflow-hidden">
-        <HeaderPage hideControls />
+      <div className="relative flex h-full w-full flex-col overflow-hidden">
+        <HeaderPage />
         <div className="flex flex-1 items-center justify-center">
           <div className="text-muted-foreground text-sm">
             {t('common:loading')}
@@ -752,9 +814,9 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   }
 
   return (
-    <div className="relative flex h-svh w-full flex-col overflow-hidden">
-      <div className="flex h-svh min-h-0 w-full flex-col">
-        <HeaderPage hideControls />
+    <div className="relative flex h-full w-full flex-col overflow-hidden">
+      <div className="flex h-full min-h-0 w-full flex-col">
+        <HeaderPage />
 
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <div className="pointer-events-auto mx-auto my-auto flex w-full max-w-[840px] flex-col px-6 py-8 sm:px-10 sm:py-10">
@@ -1167,7 +1229,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                   <Button
                     type="button"
                     variant="link"
-                    onClick={handleSkip}
+                    onClick={() => leaveWithoutModel('skipped')}
                     className="text-muted-foreground/60 hover:text-muted-foreground relative z-60 h-auto p-0 text-xs font-normal underline-offset-4"
                   >
                     {t('setup:skip')}

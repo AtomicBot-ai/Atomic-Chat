@@ -37,6 +37,8 @@ const targetPaths = [
   'web-app/src/containers/SetupBackendStep.tsx',
   'web-app/src/utils/getModelToStart.ts',
   'web-app/src/hooks/useModelProvider.ts',
+  'web-app/src/services/staff-picks-registry.ts',
+  'web-app/src/lib/hub-filters.ts',
   'extensions/llamacpp-extension/src/backend.ts',
   'extensions/llamacpp-upstream-extension/src/backend.ts',
 ]

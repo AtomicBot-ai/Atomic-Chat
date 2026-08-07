@@ -3,7 +3,11 @@
  */
 
 import { sanitizeModelId, LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
-import { isMtpCompanionFile } from '@/lib/models'
+import {
+  ggufShardGroupKey,
+  groupGgufShards,
+  isMtpCompanionFile,
+} from '@/lib/models'
 import {
   AIEngine,
   EngineManager,
@@ -325,15 +329,18 @@ export class DefaultModelsService implements ModelsService {
       file.rfilename.toLowerCase().includes('mmproj')
     )
 
-    // Convert regular GGUF files to quants format
-    const quants = regularGgufFiles.map((file) => {
+    // Convert regular GGUF files to quants format. A quant split across shards
+    // is one downloadable variant, quoted at the size of the whole set.
+    const quants = groupGgufShards(regularGgufFiles).map((shards) => {
+      const first = shards[0]
       // Generate model_id from filename (remove .gguf extension, case-insensitive)
-      const modelId = file.rfilename.replace(/\.gguf$/i, '')
+      const modelId = ggufShardGroupKey(first.rfilename).replace(/\.gguf$/i, '')
+      const totalSize = shards.reduce((sum, file) => sum + (file.size ?? 0), 0)
 
       return {
         model_id: `${repo.author}/${sanitizeModelId(modelId)}`,
-        path: `https://huggingface.co/${repo.modelId}/resolve/main/${file.rfilename}`,
-        file_size: formatFileSize(file.size),
+        path: `https://huggingface.co/${repo.modelId}/resolve/main/${first.rfilename}`,
+        file_size: formatFileSize(totalSize),
       }
     })
 
@@ -374,7 +381,9 @@ export class DefaultModelsService implements ModelsService {
       model_name: repo.modelId,
       developer: repo.author,
       downloads: repo.downloads || 0,
+      likes: repo.likes || 0,
       created_at: repo.createdAt,
+      last_modified: repo.last_modified,
       num_quants: quants.length,
       quants: quants,
       num_mmproj: mmprojModels.length,

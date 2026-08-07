@@ -126,6 +126,76 @@ export function isMtpCompanionFile(rfilename: string): boolean {
   return /^mtp[-_.]/.test(base) || /[-_]mtp$/.test(base)
 }
 
+// A quant too large for one file is published as `-00001-of-000NN` shards, and
+// the repo listing carries each shard as a file of its own. Taken at face value
+// they enter the Hub as separate quants: the first shard is a few-megabyte
+// header, so a 156 GB variant advertises itself as a 5 MB "Good fit" and its
+// badge degrades to "00001". Everything a shard set shares -- id, size, quant
+// label -- comes from the name with this suffix removed.
+const GGUF_SHARD_SUFFIX = /-\d{5}-of-\d{5}(?=\.gguf$|$)/i
+
+/** Name a shard set is known by: the filename without its `-NNNNN-of-NNNNN`. */
+export function ggufShardGroupKey(rfilename: string): string {
+  return rfilename.replace(GGUF_SHARD_SUFFIX, '')
+}
+
+/** Group files by the quant they belong to, preserving repository order. */
+export function groupGgufShards<T extends { rfilename: string }>(
+  files: readonly T[]
+): T[][] {
+  const groups = new Map<string, T[]>()
+  for (const file of files) {
+    const key = ggufShardGroupKey(file.rfilename)
+    const group = groups.get(key)
+    if (group) group.push(file)
+    else groups.set(key, [file])
+  }
+  // Repositories list shards in order, but nothing guarantees it, and the first
+  // shard is the one a download has to start from.
+  return [...groups.values()].map((group) =>
+    [...group].sort((left, right) =>
+      left.rfilename.localeCompare(right.rfilename)
+    )
+  )
+}
+
+/**
+ * Fold the shards of a quant back into the single variant they form.
+ *
+ * The curated catalog mirrors the repository file list, so a sharded quant
+ * arrives as one entry per shard — the Hub would otherwise offer `unsloth`
+ * MoE repos as dozens of `00001`-badged variants, most of them 5 MB headers.
+ * The download keeps pointing at the first shard; only the quoted size changes,
+ * to that of the whole set.
+ */
+export function mergeShardedQuants<
+  T extends Pick<CatalogModel, 'quants' | 'num_quants'>,
+>(model: T): T {
+  if (!model.quants?.length) return model
+
+  const groups = groupGgufShards(
+    model.quants.map((quant) => ({
+      rfilename: quant.path || quant.model_id,
+      quant,
+    }))
+  )
+  if (groups.length === model.quants.length) return model
+
+  const quants = groups.map(([first, ...rest]) => {
+    const totalBytes = [first, ...rest].reduce(
+      (sum, entry) => sum + (parseCatalogFileSize(entry.quant.file_size) ?? 0),
+      0
+    )
+    return {
+      ...first.quant,
+      model_id: ggufShardGroupKey(first.quant.model_id),
+      file_size: formatCatalogFileSize(totalBytes) ?? first.quant.file_size,
+    }
+  })
+
+  return { ...model, quants, num_quants: quants.length }
+}
+
 // Drop MTP companion quants from a catalog entry, keying off the file path
 // (the real HF filename) and falling back to the quant id when absent.
 export function stripMtpCompanionQuants<

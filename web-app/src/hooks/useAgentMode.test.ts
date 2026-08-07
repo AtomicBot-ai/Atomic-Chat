@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { localStorageKey } from '@/constants/localStorage'
 import { useAgentMode } from '@/hooks/useAgentMode'
@@ -42,6 +42,29 @@ describe('useAgentMode', () => {
       JSON.parse(localStorage.getItem(localStorageKey.agentMode) ?? '{}').state
         .sidebarMode
     ).toBe('agent')
+  })
+
+  it('does not notify subscribers when the sidebar mode is unchanged', () => {
+    // Opening a thread re-asserts the current mode on every navigation, so an
+    // unchanged value must not wake the whole sidebar tree.
+    const listener = vi.fn()
+    const unsubscribe = useAgentMode.subscribe(listener)
+    const stateBefore = useAgentMode.getState()
+
+    useAgentMode.getState().setSidebarMode('chat')
+    expect(useAgentMode.getState()).toBe(stateBefore)
+    expect(listener).not.toHaveBeenCalled()
+
+    useAgentMode.getState().setSidebarMode('agent')
+    expect(useAgentMode.getState().sidebarMode).toBe('agent')
+    expect(listener).toHaveBeenCalledTimes(1)
+
+    const stateAfterChange = useAgentMode.getState()
+    useAgentMode.getState().setSidebarMode('agent')
+    expect(useAgentMode.getState()).toBe(stateAfterChange)
+    expect(listener).toHaveBeenCalledTimes(1)
+
+    unsubscribe()
   })
 
   it('resets the sidebar mode with the Agent state', () => {

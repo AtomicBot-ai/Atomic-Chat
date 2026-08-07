@@ -208,6 +208,21 @@ function autoStartKey(providerName: string, modelId: string): string {
   return `${providerName}::${modelId}`
 }
 
+// A user-initiated switch (dropdown pick / send) already drives the engines to
+// the requested target, and it changes the selection the moment it starts. The
+// ChatInput auto-start effect reacts to that same change, so without this marker
+// it re-probes every engine and enqueues a second switch for the identical
+// target — which, being enqueued later, supersedes the explicit one and
+// downgrades its error reporting to the silent auto-start path.
+let pendingExplicitSwitch: string | null = null
+
+export function isExplicitSwitchPending(
+  providerName: string,
+  modelId: string
+): boolean {
+  return pendingExplicitSwitch === autoStartKey(providerName, modelId)
+}
+
 function clearAutoStartFailure(providerName: string, modelId: string): void {
   autoStartFailures.delete(autoStartKey(providerName, modelId))
 }
@@ -235,6 +250,7 @@ export function shouldAttemptAutoStart(
   providerName: string,
   modelId: string
 ): boolean {
+  if (isExplicitSwitchPending(providerName, modelId)) return false
   const prev = autoStartFailures.get(autoStartKey(providerName, modelId))
   if (!prev) return true
   if (prev.terminal) return false
@@ -350,6 +366,12 @@ export async function switchToModel(params: {
   const mySeq = ++switchSeq
   const prior = activeSwitchPromise
 
+  const isExplicit = !params.isAutoStart
+  const explicitKey = autoStartKey(params.providerName, params.modelId)
+  if (isExplicit) {
+    pendingExplicitSwitch = explicitKey
+  }
+
   const run = async (): Promise<void> => {
     // Supersession: another switch was requested after this one while we were
     // waiting our turn. That later request is the user's real intent, so drop
@@ -405,6 +427,38 @@ export async function switchToModel(params: {
     if (activeSwitchPromise === chained) {
       activeSwitchPromise = null
     }
+    // A newer explicit switch owns the marker from here on.
+    if (isExplicit && pendingExplicitSwitch === explicitKey) {
+      pendingExplicitSwitch = null
+    }
+  }
+}
+
+// The engine needs a beat to settle before the proxy is pointed at it, but the
+// previous blind 500ms sleep charged the full budget to every single switch.
+// Wait the short floor, then return as soon as the engine reports the model.
+const ENGINE_SETTLE_FLOOR_MS = 100
+const ENGINE_SETTLE_BUDGET_MS = 500
+const ENGINE_SETTLE_POLL_MS = 50
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+async function settleAfterLocalStart(
+  serviceHub: ServiceHub,
+  providerName: string,
+  modelId: string
+): Promise<void> {
+  const deadline = Date.now() + ENGINE_SETTLE_BUDGET_MS
+  await sleep(ENGINE_SETTLE_FLOOR_MS)
+
+  for (;;) {
+    const active = await serviceHub
+      .models()
+      .getActiveModels(providerName)
+      .catch(() => [] as string[])
+    if (active?.includes(modelId)) return
+    if (Date.now() >= deadline) return
+    await sleep(ENGINE_SETTLE_POLL_MS)
   }
 }
 
@@ -521,7 +575,7 @@ async function doSwitchToModel(params: {
         model: modelConfig,
       })
       console.log('[switchToModel] Local model started:', modelId)
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      await settleAfterLocalStart(serviceHub, providerName, modelId)
     } else {
       // 4b. Cloud branch — register the provider so the proxy can route
       //     requests for `modelId` to provider.base_url.

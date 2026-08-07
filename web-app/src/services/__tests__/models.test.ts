@@ -921,6 +921,8 @@ describe('DefaultModelsService', () => {
         num_safetensors: 0,
         is_mlx: true,
         created_at: '2021-01-01T00:00:00Z',
+        likes: 75,
+        last_modified: '2021-12-01T00:00:00Z',
         readme:
           'https://huggingface.co/microsoft/DialoGPT-medium/resolve/main/README.md',
       }

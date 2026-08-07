@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServiceHub } from '@/services'
-import { switchToModel } from './switchModel'
+import {
+  isExplicitSwitchPending,
+  shouldAttemptAutoStart,
+  switchToModel,
+} from './switchModel'
 
 const { appState, localApiState, modelProviderState, startServer, stopServer } =
   vi.hoisted(() => ({
@@ -148,5 +152,94 @@ describe('switchToModel', () => {
     expect(stopServer).toHaveBeenCalledOnce()
     expect(startServer).toHaveBeenCalledOnce()
     expect(appState.setServerStatus).toHaveBeenLastCalledWith('running')
+  })
+
+  it('blocks the auto-start path while an explicit switch for the same target is in flight', async () => {
+    let releaseStart = () => {}
+    const startModel = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseStart = resolve
+        })
+    )
+    const models = {
+      getActiveModels: vi.fn().mockResolvedValue(['ready-model']),
+      stopAllModels: vi.fn().mockResolvedValue(undefined),
+      startModel,
+    }
+    const serviceHub = {
+      app: () => ({
+        getServerStatus: vi.fn().mockResolvedValue(false),
+      }),
+      models: () => models,
+    } as unknown as ServiceHub
+
+    const pending = switchToModel({
+      modelId: 'ready-model',
+      providerName: 'mlx',
+      serviceHub,
+    })
+    await vi.waitFor(() => expect(startModel).toHaveBeenCalled())
+
+    // ChatInput's effect fires on the same selection change that started this
+    // switch; it must not probe the engines and queue a duplicate switch.
+    expect(isExplicitSwitchPending('mlx', 'ready-model')).toBe(true)
+    expect(shouldAttemptAutoStart('mlx', 'ready-model')).toBe(false)
+    // A different target is untouched by the marker.
+    expect(shouldAttemptAutoStart('mlx', 'other-model')).toBe(true)
+
+    releaseStart()
+    await pending
+
+    expect(isExplicitSwitchPending('mlx', 'ready-model')).toBe(false)
+    expect(shouldAttemptAutoStart('mlx', 'ready-model')).toBe(true)
+  })
+
+  it('stops waiting once the engine reports the freshly started model', async () => {
+    const models = {
+      getActiveModels: vi.fn().mockResolvedValue(['ready-model']),
+      stopAllModels: vi.fn().mockResolvedValue(undefined),
+      startModel: vi.fn().mockResolvedValue(undefined),
+    }
+    const serviceHub = {
+      app: () => ({
+        getServerStatus: vi.fn().mockResolvedValue(false),
+      }),
+      models: () => models,
+    } as unknown as ServiceHub
+
+    const startedAt = Date.now()
+    await switchToModel({
+      modelId: 'ready-model',
+      providerName: 'mlx',
+      serviceHub,
+    })
+
+    // Previously every local switch paid a flat 500ms sleep here.
+    expect(Date.now() - startedAt).toBeLessThan(400)
+    expect(appState.setServerStatus).toHaveBeenLastCalledWith('running')
+  })
+
+  it('still waits out the settle budget when the engine has not come up', async () => {
+    const models = {
+      getActiveModels: vi.fn().mockResolvedValue([]),
+      stopAllModels: vi.fn().mockResolvedValue(undefined),
+      startModel: vi.fn().mockResolvedValue(undefined),
+    }
+    const serviceHub = {
+      app: () => ({
+        getServerStatus: vi.fn().mockResolvedValue(false),
+      }),
+      models: () => models,
+    } as unknown as ServiceHub
+
+    const startedAt = Date.now()
+    await switchToModel({
+      modelId: 'slow-model',
+      providerName: 'mlx',
+      serviceHub,
+    })
+
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(450)
   })
 })

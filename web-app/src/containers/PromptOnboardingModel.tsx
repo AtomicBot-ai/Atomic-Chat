@@ -1,17 +1,21 @@
 import { Button } from '@/components/ui/button'
-import { useJanModelPromptDismissed } from '@/hooks/useJanModelPrompt'
-import { useServiceHub } from '@/hooks/useServiceHub'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
+import { useOnboardingModelReminder } from '@/hooks/useOnboardingModelReminder'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CatalogModel } from '@/services/models/types'
 import {
-  NEW_JAN_MODEL_HF_REPO,
+  ONBOARDING_REMINDER_MODEL_HF_REPO,
   SETUP_SCREEN_QUANTIZATIONS,
 } from '@/constants/models'
+import { getPreferredMmprojModel } from '@/lib/models'
 
-export function PromptJanModel() {
-  const { setDismissed } = useJanModelPromptDismissed()
+/// Bottom-right offer shown once onboarding has been left without a model,
+/// either by Skip or by the auto-exit timeout. Repeats the first onboarding
+/// recommendation so the user can still get a local model in one click.
+export function PromptOnboardingModel() {
+  const { setPending } = useOnboardingModelReminder()
   const serviceHub = useServiceHub()
   const {
     downloads,
@@ -22,48 +26,52 @@ export function PromptJanModel() {
   } = useDownloadStore()
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
 
-  const [janNewModel, setJanNewModel] = useState<CatalogModel | null>(null)
+  const [recommendedModel, setRecommendedModel] = useState<CatalogModel | null>(
+    null
+  )
   const [isLoading, setIsLoading] = useState(true)
   const fetchAttempted = useRef(false)
 
-  const fetchJanModel = useCallback(async () => {
+  const fetchRecommendedModel = useCallback(async () => {
     if (fetchAttempted.current) return
     fetchAttempted.current = true
 
     try {
       const repo = await serviceHub
         .models()
-        .fetchHuggingFaceRepo(NEW_JAN_MODEL_HF_REPO, huggingfaceToken)
+        .fetchHuggingFaceRepo(
+          ONBOARDING_REMINDER_MODEL_HF_REPO,
+          huggingfaceToken
+        )
 
       if (repo) {
-        const catalogModel = serviceHub
-          .models()
-          .convertHfRepoToCatalogModel(repo)
-        setJanNewModel(catalogModel)
+        setRecommendedModel(
+          serviceHub.models().convertHfRepoToCatalogModel(repo)
+        )
       }
     } catch (error) {
-      console.error('Error fetching Atomic Bot model:', error)
+      console.error('Error fetching the recommended onboarding model:', error)
     } finally {
       setIsLoading(false)
     }
   }, [serviceHub, huggingfaceToken])
 
   useEffect(() => {
-    fetchJanModel()
-  }, [fetchJanModel])
+    fetchRecommendedModel()
+  }, [fetchRecommendedModel])
 
   const defaultVariant = useMemo(() => {
-    if (!janNewModel) return null
+    if (!recommendedModel) return null
 
     for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
-      const variant = janNewModel.quants?.find((quant) =>
+      const variant = recommendedModel.quants?.find((quant) =>
         quant.model_id.toLowerCase().includes(quantization)
       )
       if (variant) return variant
     }
 
-    return janNewModel.quants?.[0]
-  }, [janNewModel])
+    return recommendedModel.quants?.[0]
+  }, [recommendedModel])
 
   const isDownloading = useMemo(() => {
     if (!defaultVariant) return false
@@ -74,11 +82,11 @@ export function PromptJanModel() {
   }, [defaultVariant, localDownloadingModels, downloads])
 
   const handleDismiss = () => {
-    setDismissed(true)
+    setPending(false)
   }
 
   const handleDownload = () => {
-    if (!defaultVariant || !janNewModel) return
+    if (!defaultVariant || !recommendedModel) return
 
     clearResumableDownload(defaultVariant.model_id)
     addLocalDownloadingModel(defaultVariant.model_id)
@@ -87,16 +95,12 @@ export function PromptJanModel() {
       .pullModelWithMetadata(
         defaultVariant.model_id,
         defaultVariant.path,
-        (
-          janNewModel.mmproj_models?.find(
-            (e) => e.model_id.toLowerCase() === 'mmproj-f16'
-          ) || janNewModel.mmproj_models?.[0]
-        )?.path,
+        getPreferredMmprojModel(recommendedModel)?.path,
         huggingfaceToken,
         true,
         resumableDownloads.has(defaultVariant.model_id)
       )
-    setDismissed(true)
+    setPending(false)
   }
 
   if (isLoading) return null
@@ -106,11 +110,11 @@ export function PromptJanModel() {
       <div className="flex items-center gap-2">
         <img
           src="/images/transparent-logo.png"
-          alt="Atomic Bot"
+          alt="Atomic Chat"
           className="size-5 dark:brightness-0 dark:invert"
         />
         <h2 className="font-medium">
-          Qwen3.5 4B reasoning
+          Qwen3.5 4B
           {defaultVariant && (
             <span className="text-muted-foreground">
               {' '}
@@ -120,8 +124,8 @@ export function PromptJanModel() {
         </h2>
       </div>
       <p className="mt-2 text-sm text-muted-foreground">
-        Get started with Qwen3.5 4B Claude Opus reasoning distill, our
-        recommended local model for your device.
+        Get started with Qwen3.5 4B, our recommended local model for your
+        device.
       </p>
       <div className="mt-4 flex justify-end space-x-2">
         <Button

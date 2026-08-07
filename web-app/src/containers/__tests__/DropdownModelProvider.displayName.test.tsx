@@ -41,6 +41,12 @@ vi.mock('@/hooks/useModelProvider', () => ({
   useModelProvider: vi.fn(),
 }))
 
+// The component subscribes with selectors, so the mock has to apply them.
+const mockModelProvider = (state: MockHookReturn) => {
+  vi.mocked(useModelProvider).mockImplementation(((selector?: any) =>
+    selector ? selector(state) : state) as never)
+}
+
 vi.mock('@/hooks/useThreads', () => ({
   useThreads: vi.fn(() => ({
     updateCurrentThreadModel: vi.fn(),
@@ -159,7 +165,7 @@ describe('DropdownModelProvider - Display Name Integration', () => {
     })
 
     // Reset the mock for each test
-    vi.mocked(useModelProvider).mockReturnValue({
+    mockModelProvider({
       providers: mockProviders,
       selectedProvider: 'llamacpp',
       selectedModel: mockSelectedModel,
@@ -188,7 +194,7 @@ describe('DropdownModelProvider - Display Name Integration', () => {
   })
 
   it('should fall back to model ID when no displayName is set', () => {
-    vi.mocked(useModelProvider).mockReturnValue({
+    mockModelProvider({
       providers: mockProviders,
       selectedProvider: 'llamacpp',
       selectedModel: mockProviders[0].models[2], // model3 without displayName
@@ -250,7 +256,7 @@ describe('DropdownModelProvider - Display Name Integration', () => {
       isFavorite: vi.fn(),
       toggleFavorite: vi.fn(),
     })
-    vi.mocked(useModelProvider).mockReturnValue({
+    mockModelProvider({
       providers: duplicateProviders,
       selectedProvider: 'llamacpp',
       selectedModel: duplicateProviders[0].models[0],
@@ -296,7 +302,7 @@ describe('DropdownModelProvider - Display Name Integration', () => {
   it('should maintain model ID for internal operations while showing display name', () => {
     const mockSelectModelProvider = vi.fn()
 
-    vi.mocked(useModelProvider).mockReturnValue({
+    mockModelProvider({
       providers: mockProviders,
       selectedProvider: 'llamacpp',
       selectedModel: mockSelectedModel,
@@ -322,7 +328,7 @@ describe('DropdownModelProvider - Display Name Integration', () => {
 
   it('should handle updating display model when selection changes', () => {
     // Set up mock for model2 selection
-    vi.mocked(useModelProvider).mockReturnValue({
+    mockModelProvider({
       providers: mockProviders,
       selectedProvider: 'llamacpp',
       selectedModel: mockProviders[0].models[1], // model2 with displayName "Short Name"

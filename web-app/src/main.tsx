@@ -12,6 +12,7 @@ import { installCodeBlockDownloadHandler } from './lib/codeBlockDownload'
 import { runWindowsLlamacppProviderMigration } from './lib/windowsProviderMigration'
 import { runMacosLlamacppDefaultMigration } from './lib/macosLlamacppDefaultMigration'
 import { initSentryFrontend } from './lib/sentry'
+import { resetForcedOnboardingRun } from './lib/onboarding'
 import { useGeneralSetting } from './hooks/useGeneralSetting'
 import { useModelProvider } from './hooks/useModelProvider'
 import GlobalError from './containers/GlobalError'
@@ -151,6 +152,13 @@ runWindowsLlamacppProviderMigration()
 // in `DataProvider` resolves the model on `'llamacpp-upstream'`. No-op on
 // Windows / Linux and on second launch.
 runMacosLlamacppDefaultMigration()
+
+// Dev-only (`make dev-onboarding`): drop the persisted onboarding completion
+// flag so the forced run replays the whole flow — picker, 15s auto-exit, chat
+// handoff, model reminder — on every launch, without a factory reset. Must run
+// before React mounts so the very first render of `routes/index.tsx` sees it.
+// No-op in every shipped build.
+resetForcedOnboardingRun()
 
 // When "Preload model on startup" is disabled, don't let a model selection
 // persisted from a previous session flash into the topbar or trigger

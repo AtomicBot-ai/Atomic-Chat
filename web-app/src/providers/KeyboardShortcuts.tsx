@@ -9,7 +9,8 @@ import { useAgentMode } from '@/hooks/useAgentMode'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 
 export function KeyboardShortcutsProvider() {
-  const { open, setLeftPanel } = useLeftPanel()
+  const open = useLeftPanel((state) => state.open)
+  const setLeftPanel = useLeftPanel((state) => state.setLeftPanel)
   const { setOpen: setSearchOpen } = useSearchDialog()
   const { setOpen: setProjectDialogOpen } = useProjectDialog()
   const router = useRouter()
