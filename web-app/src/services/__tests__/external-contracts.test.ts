@@ -77,6 +77,7 @@ const staffPicksSchema = z.object({
         summary: nonEmptyString.optional(),
         description_key: z.string().startsWith('hub:').optional(),
         icon: nonEmptyString.optional(),
+        format: z.enum(['gguf', 'mlx']).optional(),
         categories: z.array(nonEmptyString).optional(),
         platforms: z.array(z.enum(['macos', 'windows', 'linux'])).optional(),
         order: z.number().optional(),

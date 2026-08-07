@@ -141,8 +141,8 @@ export function ModelDetailPanel({
   }, [readmeUrl, huggingfaceToken])
 
   const caps = useMemo(
-    () => (model ? deriveCapabilities(model) : []),
-    [model]
+    () => (model ? deriveCapabilities(model, pick?.categories) : []),
+    [model, pick?.categories]
   )
 
   if (!model) {

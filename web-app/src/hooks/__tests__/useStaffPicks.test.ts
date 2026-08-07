@@ -105,6 +105,38 @@ describe('useStaffPicks', () => {
     ])
   })
 
+  it('resolves only the requested build format', () => {
+    mocks.picks = [
+      { model_name: 'a/gguf', format: 'gguf', order: 10 },
+      {
+        model_name: 'a/mlx',
+        format: 'mlx',
+        platforms: ['macos'],
+        order: 15,
+      },
+    ]
+
+    const gguf = renderHook(() => useStaffPicks([]))
+    expect(gguf.result.current.map((i) => i.pick.model_name)).toEqual([
+      'a/gguf',
+    ])
+
+    const mlx = renderHook(() => useStaffPicks([], 'mlx'))
+    expect(mlx.result.current.map((i) => i.pick.model_name)).toEqual(['a/mlx'])
+  })
+
+  it('never looks up a pick belonging to the other format', () => {
+    mocks.picks = [
+      { model_name: 'a/mlx', format: 'mlx', platforms: ['macos'], order: 10 },
+    ]
+    mocks.fetchHuggingFaceRepo.mockResolvedValue(null)
+
+    const { result } = renderHook(() => useStaffPicks([]))
+
+    expect(result.current).toEqual([])
+    expect(mocks.fetchHuggingFaceRepo).not.toHaveBeenCalled()
+  })
+
   it('keeps unresolved picks in the list as placeholders', () => {
     mocks.picks = [{ model_name: 'a/unknown' }]
     mocks.fetchHuggingFaceRepo.mockResolvedValue(null)

@@ -32,7 +32,7 @@ import {
 
 export function LeftSidebar() {
   const { t } = useTranslation()
-  const { open: isLeftPanelOpen } = useLeftPanel()
+  const isLeftPanelOpen = useLeftPanel((state) => state.open)
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const sidebarMode = useAgentMode((state) => state.sidebarMode)

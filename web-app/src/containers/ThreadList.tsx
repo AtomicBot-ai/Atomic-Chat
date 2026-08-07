@@ -1,7 +1,7 @@
 import { Folder, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react'
 import { useThreads } from '@/hooks/useThreads'
 import { useMessages } from '@/hooks/useMessages'
-import { useThreadManagement } from '@/hooks/useThreadManagement'
+import { useThreadManagementStore } from '@/hooks/useThreadManagement'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useRef } from 'react'
 
@@ -57,8 +57,10 @@ const ThreadItem = memo(
     const deleteThread = useThreads((state) => state.deleteThread)
     const renameThread = useThreads((state) => state.renameThread)
     const updateThread = useThreads((state) => state.updateThread)
-    const getFolderById = useThreadManagement().getFolderById
-    const { folders } = useThreadManagement()
+    const getFolderById = useThreadManagementStore(
+      (state) => state.getFolderById
+    )
+    const folders = useThreadManagementStore((state) => state.folders)
     const { t } = useTranslation()
     const [renameOpen, setRenameOpen] = useState(false)
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
@@ -67,6 +69,10 @@ const ThreadItem = memo(
     const getMessages = useMessages((state) => state.getMessages)
     const setMessages = useMessages((state) => state.setMessages)
 
+    // Only the project cards render a message preview. History rows are titles,
+    // so hydrating their message history would be N pointless round-trips.
+    const showPreview = Boolean(currentProjectId)
+
     // Use a ref to track if messages have been loaded
     const messagesLoadedRef = useRef(false)
     // Track current messages for comparison
@@ -74,11 +80,13 @@ const ThreadItem = memo(
 
     // Get messages reactively via ref tracking (to avoid infinite re-renders)
     const [messages, setLocalMessages] = useState<ThreadMessage[]>(() =>
-      getMessages(thread.id)
+      showPreview ? getMessages(thread.id) : []
     )
 
     // Fetch messages if not loaded yet
     useEffect(() => {
+      if (!showPreview) return
+
       const currentMessages = getMessages(thread.id)
 
       // Initial load: no messages yet, fetch them
@@ -105,7 +113,7 @@ const ThreadItem = memo(
         setLocalMessages(currentMessages)
         messagesLengthRef.current = currentMessages.length
       }
-    }, [thread.id, serviceHub, getMessages, setMessages])
+    }, [thread.id, serviceHub, getMessages, setMessages, showPreview])
 
     const lastUserMessageText = useMemo(() => {
       const userMessages = messages.filter((m) => m.role === 'user')

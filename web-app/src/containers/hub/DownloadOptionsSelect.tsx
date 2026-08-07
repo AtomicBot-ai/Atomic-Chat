@@ -8,18 +8,19 @@ import {
 } from '@/components/ui/tooltip'
 import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
 import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
+import { FitBadge } from '@/containers/hub/FitBadge'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   estimateFit,
   HARDWARE_FIT,
   parseFileSizeToBytes,
+  pickDownloadQuant,
   quantLabel,
   type HardwareFit,
 } from '@/lib/model-card'
 import { getMlxTotalFileSize, getTotalDownloadFileSize } from '@/lib/models'
 import { cn } from '@/lib/utils'
-import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
-import type { CatalogModel, ModelQuant } from '@/services/models/types'
+import type { CatalogModel } from '@/services/models/types'
 
 const FIT_DOT_CLASS: Record<HardwareFit, string> = {
   ok: 'bg-[#22b264]',
@@ -40,17 +41,6 @@ function FitDot({ fit }: { fit: HardwareFit }) {
         <p>{HARDWARE_FIT[fit].tip}</p>
       </TooltipContent>
     </Tooltip>
-  )
-}
-
-/** The quant we preselect: the first one matching the default preference. */
-function pickDefaultQuant(model: CatalogModel): ModelQuant | undefined {
-  return (
-    model.quants?.find((quant) =>
-      DEFAULT_MODEL_QUANTIZATIONS.some((preferred) =>
-        quant.model_id.toLowerCase().includes(preferred)
-      )
-    ) ?? model.quants?.[0]
   )
 }
 
@@ -75,7 +65,10 @@ export function DownloadOptionsSelect({
   const [expanded, setExpanded] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
-  const defaultQuant = useMemo(() => pickDefaultQuant(model), [model])
+  const defaultQuant = useMemo(
+    () => pickDownloadQuant(model, budgetBytes),
+    [model, budgetBytes]
+  )
   const selected =
     model.quants?.find((quant) => quant.model_id === selectedId) ?? defaultQuant
 
@@ -101,16 +94,7 @@ export function DownloadOptionsSelect({
           </div>
           <MlxModelDownloadAction model={model} />
         </div>
-        {fitKnown && (
-          <p
-            className={cn(
-              'mt-3 text-xs',
-              fit === 'no' ? 'text-destructive' : 'text-muted-foreground'
-            )}
-          >
-            {fit === 'no' ? t('hub:likelyTooLarge') : t('hub:fullGpuOffload')}
-          </p>
-        )}
+        {fitKnown && <FitBadge fit={fit} className="mt-3" />}
       </section>
     )
   }
@@ -162,18 +146,7 @@ export function DownloadOptionsSelect({
         )}
       </div>
 
-      {fitKnown && (
-        <p
-          className={cn(
-            'mt-3 text-xs',
-            selectedFit === 'no' ? 'text-destructive' : 'text-muted-foreground'
-          )}
-        >
-          {selectedFit === 'no'
-            ? t('hub:likelyTooLarge')
-            : t('hub:fullGpuOffload')}
-        </p>
-      )}
+      {fitKnown && <FitBadge fit={selectedFit} className="mt-3" />}
 
       {expanded && (
         <ul className="mt-3 border-t border-border pt-2">

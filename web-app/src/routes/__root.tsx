@@ -14,8 +14,8 @@ import { ExtensionProvider } from '@/providers/ExtensionProvider'
 import { ToasterProvider } from '@/providers/ToasterProvider'
 // import { useAnalytic } from '@/hooks/useAnalytic'
 // import { PromptAnalytic } from '@/containers/analytics/PromptAnalytic'
-import { useJanModelPrompt } from '@/hooks/useJanModelPrompt'
-import { PromptJanModel } from '@/containers/PromptJanModel'
+import { useOnboardingModelReminder } from '@/hooks/useOnboardingModelReminder'
+import { PromptOnboardingModel } from '@/containers/PromptOnboardingModel'
 import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useTrayStatusSync } from '@/hooks/useTrayStatusSync'
@@ -26,8 +26,8 @@ import { TranslationProvider } from '@/i18n/TranslationContext'
 import OutOfContextPromiseModal from '@/containers/dialogs/OutOfContextDialog'
 import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionDialog'
 import WhatsNewDialog from '@/containers/dialogs/WhatsNewDialog'
-import { useEffect, useState } from 'react'
-import { localStorageKey } from '@/constants/localStorage'
+import { useEffect } from 'react'
+import { useSetupCompleted } from '@/hooks/useSetupCompleted'
 import GlobalError from '@/containers/GlobalError'
 import * as Sentry from '@sentry/react'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
@@ -47,46 +47,12 @@ export const Route = createRootRoute({
   },
 })
 
-const SETUP_COMPLETED_EVENT = 'app:setup-completed'
-
-/// Tracks the `setup-completed` localStorage flag so we can defer mounting
-/// `<BackendUpdater />` until after the dedicated onboarding flow finishes.
-/// During onboarding the SetupBackendStep handles backend recommendations
-/// inline; mounting the global dialog before then would surface a duplicate
-/// modal on top of the setup screen.
-function useSetupCompleted(): boolean {
-  const [completed, setCompleted] = useState(() => {
-    if (typeof window === 'undefined') return false
-    return localStorage.getItem(localStorageKey.setupCompleted) === 'true'
-  })
-
-  useEffect(() => {
-    const sync = () => {
-      setCompleted(
-        localStorage.getItem(localStorageKey.setupCompleted) === 'true'
-      )
-    }
-    // Same-tab signal dispatched explicitly by SetupScreen when it persists
-    // the flag (the native 'storage' event only fires across tabs).
-    window.addEventListener(SETUP_COMPLETED_EVENT, sync)
-    window.addEventListener('storage', sync)
-    return () => {
-      window.removeEventListener(SETUP_COMPLETED_EVENT, sync)
-      window.removeEventListener('storage', sync)
-    }
-  }, [])
-
-  return completed
-}
-
 const AppLayout = () => {
-  const { showJanModelPrompt } = useJanModelPrompt()
-  const {
-    open: isLeftPanelOpen,
-    setLeftPanel,
-    width: sidebarWidth,
-    setLeftPanelWidth,
-  } = useLeftPanel()
+  const { showOnboardingModelReminder } = useOnboardingModelReminder()
+  const isLeftPanelOpen = useLeftPanel((state) => state.open)
+  const setLeftPanel = useLeftPanel((state) => state.setLeftPanel)
+  const sidebarWidth = useLeftPanel((state) => state.width)
+  const setLeftPanelWidth = useLeftPanel((state) => state.setLeftPanelWidth)
   // Feeds live server / model / RAM state into the desktop system tray.
   // No-op outside macOS and Windows Tauri builds (see hook implementation).
   useTrayStatusSync()
@@ -118,7 +84,7 @@ const AppLayout = () => {
 
         {/* Попап согласия на аналитику отключён; настройки → Privacy по-прежнему доступны */}
         {/* {productAnalyticPrompt && <PromptAnalytic />} */}
-        {showJanModelPrompt && <PromptJanModel />}
+        {showOnboardingModelReminder && <PromptOnboardingModel />}
       </SidebarProvider>
     </div>
   )

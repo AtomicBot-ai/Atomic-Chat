@@ -7,6 +7,7 @@ import { sanitizeModelId } from '@/lib/utils'
 import {
   filterStaffPicksForPlatform,
   type StaffPick,
+  type StaffPickFormat,
   type StaffPickPlatform,
 } from '@/services/staff-picks-registry'
 import { useStaffPicksStore } from '@/stores/staff-picks-store'
@@ -43,15 +44,23 @@ export const __resetStaffPickResolutionCache = () => {
  * `CatalogModel` (quants, mmproj, file sizes) comes from the curated catalog
  * when the repo is indexed there, and from a single Hugging Face API call
  * otherwise.
+ *
+ * `format` narrows the manifest before any of that work happens: the curated
+ * list carries a GGUF and an MLX entry for most models, and resolving both
+ * would double the Hugging Face round-trips to populate rows the Hub is not
+ * going to show.
  */
-export function useStaffPicks(sources: CatalogModel[]): ResolvedStaffPick[] {
+export function useStaffPicks(
+  sources: CatalogModel[],
+  format: StaffPickFormat = 'gguf'
+): ResolvedStaffPick[] {
   const serviceHub = useServiceHub()
   const huggingfaceToken = useGeneralSetting((s) => s.huggingfaceToken)
   const remotePicks = useStaffPicksStore((s) => s.picks)
 
   const picks = useMemo(
-    () => filterStaffPicksForPlatform(remotePicks, currentOs),
-    [remotePicks]
+    () => filterStaffPicksForPlatform(remotePicks, currentOs, format),
+    [remotePicks, format]
   )
 
   const [fetched, setFetched] = useState<Record<string, CatalogModel>>(() => ({

@@ -7,6 +7,9 @@ import {
   extractModelRepo,
   findCatalogModelForRecommendedRepo,
   getModelCapabilities,
+  ggufShardGroupKey,
+  groupGgufShards,
+  mergeShardedQuants,
 } from '../models'
 import { ModelCapabilities } from '@/types/models'
 import type { CatalogModel } from '@/services/models/types'
@@ -34,6 +37,134 @@ vi.mock('token.js', () => ({
     },
   },
 }))
+
+describe('ggufShardGroupKey', () => {
+  it('strips the shard suffix a split quant carries', () => {
+    expect(
+      ggufShardGroupKey('UD-IQ4_XS/DeepSeek-V4-Flash-UD-IQ4_XS-00002-of-00004.gguf')
+    ).toBe('UD-IQ4_XS/DeepSeek-V4-Flash-UD-IQ4_XS.gguf')
+  })
+
+  it('leaves a single-file quant alone', () => {
+    expect(ggufShardGroupKey('Bonsai-27B-Q1_0.gguf')).toBe('Bonsai-27B-Q1_0.gguf')
+  })
+
+  it('keeps a part count that is not a shard suffix', () => {
+    // Only the trailing `-NNNNN-of-NNNNN` marks a shard.
+    expect(ggufShardGroupKey('model-00001-of-00003-extra.gguf')).toBe(
+      'model-00001-of-00003-extra.gguf'
+    )
+  })
+})
+
+describe('groupGgufShards', () => {
+  it('collects every shard of a quant into one group', () => {
+    const groups = groupGgufShards([
+      { rfilename: 'UD-Q2_K_XL/Kimi-K3-UD-Q2_K_XL-00001-of-00003.gguf' },
+      { rfilename: 'UD-IQ1_M/Kimi-K3-UD-IQ1_M-00001-of-00002.gguf' },
+      { rfilename: 'UD-Q2_K_XL/Kimi-K3-UD-Q2_K_XL-00002-of-00003.gguf' },
+      { rfilename: 'UD-IQ1_M/Kimi-K3-UD-IQ1_M-00002-of-00002.gguf' },
+      { rfilename: 'UD-Q2_K_XL/Kimi-K3-UD-Q2_K_XL-00003-of-00003.gguf' },
+    ])
+
+    expect(groups.map((group) => group.length)).toEqual([3, 2])
+  })
+
+  it('opens each group with the shard a download has to start from', () => {
+    const [group] = groupGgufShards([
+      { rfilename: 'model-00003-of-00003.gguf' },
+      { rfilename: 'model-00001-of-00003.gguf' },
+      { rfilename: 'model-00002-of-00003.gguf' },
+    ])
+
+    expect(group[0].rfilename).toBe('model-00001-of-00003.gguf')
+  })
+
+  it('keeps unsharded files as groups of their own', () => {
+    const groups = groupGgufShards([
+      { rfilename: 'Bonsai-27B-F16.gguf' },
+      { rfilename: 'Bonsai-27B-Q1_0.gguf' },
+    ])
+
+    expect(groups).toEqual([
+      [{ rfilename: 'Bonsai-27B-F16.gguf' }],
+      [{ rfilename: 'Bonsai-27B-Q1_0.gguf' }],
+    ])
+  })
+})
+
+describe('mergeShardedQuants', () => {
+  // Shape taken from the published catalog entry for unsloth/Kimi-K3-GGUF.
+  const shardedEntry = () =>
+    ({
+      num_quants: 4,
+      quants: [
+        {
+          model_id: 'unsloth/UD-IQ1_M/Kimi-K3-UD-IQ1_M-00001-of-00003',
+          path: 'https://huggingface.co/unsloth/Kimi-K3-GGUF/resolve/main/UD-IQ1_M/Kimi-K3-UD-IQ1_M-00001-of-00003.gguf',
+          file_size: '6.6 MB',
+        },
+        {
+          model_id: 'unsloth/UD-IQ1_M/Kimi-K3-UD-IQ1_M-00002-of-00003',
+          path: 'https://huggingface.co/unsloth/Kimi-K3-GGUF/resolve/main/UD-IQ1_M/Kimi-K3-UD-IQ1_M-00002-of-00003.gguf',
+          file_size: '45.0 GB',
+        },
+        {
+          model_id: 'unsloth/UD-IQ1_M/Kimi-K3-UD-IQ1_M-00003-of-00003',
+          path: 'https://huggingface.co/unsloth/Kimi-K3-GGUF/resolve/main/UD-IQ1_M/Kimi-K3-UD-IQ1_M-00003-of-00003.gguf',
+          file_size: '45.0 GB',
+        },
+        {
+          model_id: 'unsloth/UD-TQ1_0/Kimi-K3-UD-TQ1_0',
+          path: 'https://huggingface.co/unsloth/Kimi-K3-GGUF/resolve/main/UD-TQ1_0/Kimi-K3-UD-TQ1_0.gguf',
+          file_size: '12.0 GB',
+        },
+      ],
+    }) as CatalogModel
+
+  it('turns a shard set into a single variant', () => {
+    const merged = mergeShardedQuants(shardedEntry())
+
+    expect(merged.num_quants).toBe(2)
+    expect(merged.quants.map((quant) => quant.model_id)).toEqual([
+      'unsloth/UD-IQ1_M/Kimi-K3-UD-IQ1_M',
+      'unsloth/UD-TQ1_0/Kimi-K3-UD-TQ1_0',
+    ])
+  })
+
+  it('quotes the whole set rather than its header shard', () => {
+    const merged = mergeShardedQuants(shardedEntry())
+
+    expect(merged.quants[0].file_size).toBe('90.0 GB')
+  })
+
+  it('leaves the download pointing at the first shard', () => {
+    const merged = mergeShardedQuants(shardedEntry())
+
+    expect(merged.quants[0].path).toContain('00001-of-00003.gguf')
+  })
+
+  it('returns an unsharded entry untouched', () => {
+    const flat = {
+      num_quants: 1,
+      quants: [
+        {
+          model_id: 'prism-ml/Bonsai-27B-Q1_0',
+          path: 'https://huggingface.co/prism-ml/Bonsai-27B-gguf/resolve/main/Bonsai-27B-Q1_0.gguf',
+          file_size: '3.5 GB',
+        },
+      ],
+    } as CatalogModel
+
+    expect(mergeShardedQuants(flat)).toBe(flat)
+  })
+
+  it('survives an entry with no quants', () => {
+    const empty = { num_quants: 0, quants: [] } as unknown as CatalogModel
+
+    expect(mergeShardedQuants(empty)).toBe(empty)
+  })
+})
 
 describe('defaultModel', () => {
   it('returns first OpenAI model when no provider is given', () => {

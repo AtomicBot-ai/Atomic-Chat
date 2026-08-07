@@ -38,7 +38,10 @@ import { cn, sanitizeModelId } from '@/lib/utils'
 import { getModelSearchService } from '@/services/model-search'
 import { useModelCatalogStore } from '@/stores/model-catalog-store'
 import type { CatalogModel } from '@/services/models/types'
-import type { StaffPick } from '@/services/staff-picks-registry'
+import type {
+  StaffPick,
+  StaffPickFormat,
+} from '@/services/staff-picks-registry'
 import { useShallow } from 'zustand/shallow'
 import { getHubSearchQuery, setHubSearchQuery } from './hub-session'
 
@@ -218,7 +221,14 @@ function HubContent() {
     }
   }, [scanLocalModelsEnabled, serviceHub, setProviders])
 
-  const staffPickItems = useStaffPicks(sources)
+  // The curated list carries a GGUF and an MLX entry per model. Showing both
+  // at once would list every model twice, so MLX picks surface only once the
+  // user narrows the format filter to MLX alone.
+  const picksFormat: StaffPickFormat =
+    filters.formats.length === 1 && filters.formats[0] === 'mlx'
+      ? 'mlx'
+      : 'gguf'
+  const staffPickItems = useStaffPicks(sources, picksFormat)
 
   const isSearchMode = debouncedSearchValue.length > 0 || showOnlyDownloaded
 

@@ -38,8 +38,6 @@
   "downloadOptions": "Možnosti stažení",
   "details": "Podrobnosti",
   "selectModel": "Vyberte model a zobrazte jeho podrobnosti",
-  "fullGpuOffload": "Je možné plné přenesení na GPU",
-  "likelyTooLarge": "Pravděpodobně příliš velký",
   "openOnWeb": "Otevřít na webu",
   "staffPickBadge": "Doporučené",
   "updatedAgo": "Aktualizováno {{ago}}",

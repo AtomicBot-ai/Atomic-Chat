@@ -14,6 +14,7 @@ import { useAssistant, defaultAssistant } from '@/hooks/useAssistant'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
+import { ensureProjectsLoaded } from '@/hooks/useThreadManagement'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
@@ -238,6 +239,12 @@ export function DataProvider() {
         setThreads(threads)
       })
   }, [serviceHub, setThreads])
+
+  // Single owner of the initial projects read. Sidebar consumers used to each
+  // issue their own `getProjects()` on mount.
+  useEffect(() => {
+    void ensureProjectsLoaded()
+  }, [])
 
   // Sync remote providers with backend when providers change
   const providers = useModelProvider.getState().providers

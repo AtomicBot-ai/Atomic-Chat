@@ -28,16 +28,38 @@ export function hasValidProviders(providers: ProviderLike[]): boolean {
   })
 }
 
+function isSetupCompleted(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    localStorage.getItem(localStorageKey.setupCompleted) === 'true'
+  )
+}
+
 /**
  * Whether the onboarding screen will be shown for this launch. Deterministic
  * (derived from providers + the persisted `setupCompleted` flag), so it does
  * NOT depend on whether SetupScreen has mounted yet — unlike a runtime flag,
  * which races against DataProvider's own startup effect.
+ *
+ * `FORCE_ONBOARDING` decides whether onboarding is *entered* despite installed
+ * models; it deliberately does not decide whether it can be *left*, or the
+ * auto-exit, the chat handoff and the model reminder would be unreachable in
+ * the one build made for exercising them. `resetForcedOnboardingRun()` clears
+ * the completion flag once per launch so the forced run still repeats.
  */
 export function isOnboardingPending(providers: ProviderLike[]): boolean {
+  if (isSetupCompleted()) return false
   if (typeof FORCE_ONBOARDING !== 'undefined' && FORCE_ONBOARDING) return true
-  const setupCompleted =
-    typeof window !== 'undefined' &&
-    localStorage.getItem(localStorageKey.setupCompleted) === 'true'
-  return !hasValidProviders(providers) && !setupCompleted
+  return !hasValidProviders(providers)
+}
+
+/**
+ * Dev-only, must run before React mounts: drops the persisted completion flag
+ * so a `FORCE_ONBOARDING` build replays the whole flow on every launch without
+ * a factory reset. No-op in every shipped build.
+ */
+export function resetForcedOnboardingRun(): void {
+  if (typeof FORCE_ONBOARDING === 'undefined' || !FORCE_ONBOARDING) return
+  if (typeof window === 'undefined') return
+  localStorage.removeItem(localStorageKey.setupCompleted)
 }

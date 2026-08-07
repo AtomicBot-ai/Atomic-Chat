@@ -38,8 +38,6 @@
   "downloadOptions": "ダウンロードオプション",
   "details": "詳細",
   "selectModel": "モデルを選択すると詳細が表示されます",
-  "fullGpuOffload": "GPU への完全オフロードが可能",
-  "likelyTooLarge": "サイズが大きすぎる可能性",
   "openOnWeb": "ウェブで開く",
   "staffPickBadge": "おすすめ",
   "updatedAgo": "{{ago}}に更新",

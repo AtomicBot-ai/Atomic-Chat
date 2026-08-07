@@ -10,7 +10,7 @@ import {
   estimateFit,
   modelFormat,
   parseFileSizeToBytes,
-  pickSmallestQuant,
+  pickMedianQuant,
   type ModelFormat,
 } from '@/lib/model-card'
 import { getMlxTotalFileSize, getTotalDownloadFileSize } from '@/lib/models'
@@ -114,14 +114,14 @@ function safeLocalStorage(): Storage | null {
 
 /**
  * Download size of the entry as shown on its row: the whole safetensors set
- * for MLX, the smallest quant plus its mmproj companion for GGUF.
+ * for MLX, the median quant plus its mmproj companion for GGUF.
  */
 export function modelDownloadSizeText(
   model: CatalogModel
 ): string | undefined {
   return model.is_mlx
     ? getMlxTotalFileSize(model)
-    : getTotalDownloadFileSize(model, pickSmallestQuant(model.quants))
+    : getTotalDownloadFileSize(model, pickMedianQuant(model.quants))
 }
 
 /**

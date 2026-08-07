@@ -83,16 +83,23 @@ vi.mock('@/hooks/useThreads', () => ({
     }),
 }))
 
-vi.mock('@/hooks/useMessages', () => ({
-  useMessages: (selector: any) =>
-    selector({
-      getMessages: () => [],
-      setMessages: vi.fn(),
-    }),
-}))
+// Mirror the real store: a stable state object backed by actual storage. Handing
+// out fresh closures per render would retrigger the row's fetch effect.
+vi.mock('@/hooks/useMessages', () => {
+  const byThread = new Map<string, unknown[]>()
+  const state = {
+    getMessages: (threadId: string) => byThread.get(threadId) ?? [],
+    setMessages: (threadId: string, messages: unknown[]) => {
+      byThread.set(threadId, messages)
+    },
+    reset: () => byThread.clear(),
+  }
+  return { useMessages: (selector: any) => selector(state), __messages: state }
+})
 
 vi.mock('@/hooks/useThreadManagement', () => ({
-  useThreadManagement: () => ({ getFolderById: vi.fn(), folders: [] }),
+  useThreadManagementStore: (selector: any) =>
+    selector({ getFolderById: vi.fn(), folders: [] }),
 }))
 
 vi.mock('sonner', () => ({
@@ -106,12 +113,28 @@ const threads: Thread[] = [
   { id: 'thread-2', title: 'Second chat', updated: 1 },
 ]
 
+const PREVIEW_TEXT = 'Which quant fits my GPU?'
+
+const previewMessages = [
+  {
+    role: 'user',
+    content: [{ type: 'text', text: { value: PREVIEW_TEXT } }],
+  },
+]
+
+let fetchMessages: ReturnType<typeof vi.fn>
+
 describe('ThreadList active highlight', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks()
+    const { __messages } = (await import('@/hooks/useMessages')) as unknown as {
+      __messages: { reset: () => void }
+    }
+    __messages.reset()
+    fetchMessages = vi.fn().mockResolvedValue(previewMessages)
     seedServiceHub({
       messages: {
-        fetchMessages: vi.fn().mockResolvedValue([]),
+        fetchMessages,
       } as unknown as MessagesService,
     })
   })
@@ -163,6 +186,30 @@ describe('ThreadList active highlight', () => {
     // `dark:bg-secondary/20` doesn't give a false positive.
     expect(activeCard?.className.split(' ')).toContain('bg-secondary')
     expect(inactiveCard?.className.split(' ')).not.toContain('bg-secondary')
+  })
+
+  it('does not hydrate messages for history rows', async () => {
+    vi.mocked(useParams).mockReturnValue({} as never)
+
+    await act(async () => {
+      render(<ThreadList threads={threads} />)
+    })
+
+    // History rows render a title only, so fetching their message history would
+    // be one pointless round-trip per row.
+    expect(screen.queryByText(PREVIEW_TEXT)).not.toBeInTheDocument()
+    expect(fetchMessages.mock.calls).toEqual([])
+  })
+
+  it('hydrates messages for project cards, which render a preview', async () => {
+    vi.mocked(useParams).mockReturnValue({} as never)
+
+    await act(async () => {
+      render(<ThreadList threads={threads} currentProjectId="project-1" />)
+    })
+
+    expect(screen.getAllByText(PREVIEW_TEXT)).toHaveLength(threads.length)
+    expect(fetchMessages.mock.calls.flat()).toEqual(['thread-1', 'thread-2'])
   })
 
   it('does not render chat type icons', async () => {

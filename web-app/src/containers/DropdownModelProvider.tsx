@@ -56,17 +56,23 @@ interface DropdownModelProviderProps {
   showSampler?: boolean
 }
 
+// Vision detection asks the backend whether an mmproj sidecar exists next to the
+// model file. That answer cannot change while the app runs, so the result is
+// cached per model id: opening the model list must not re-probe the whole
+// llamacpp library every time.
+const visionProbeCache = new Map<string, boolean>()
+
 const DropdownModelProvider = memo(function DropdownModelProvider({
   showSampler = true,
 }: DropdownModelProviderProps) {
-  const {
-    providers,
-    getProviderByName,
-    selectModelProvider,
-    selectedProvider,
-    selectedModel,
-    updateProvider,
-  } = useModelProvider()
+  const providers = useModelProvider((state) => state.providers)
+  const getProviderByName = useModelProvider((state) => state.getProviderByName)
+  const selectModelProvider = useModelProvider(
+    (state) => state.selectModelProvider
+  )
+  const selectedProvider = useModelProvider((state) => state.selectedProvider)
+  const selectedModel = useModelProvider((state) => state.selectedModel)
+  const updateProvider = useModelProvider((state) => state.updateProvider)
   const [displayModel, setDisplayModel] = useState<string>('')
   const navigate = useNavigate()
   const { t } = useTranslation()
@@ -97,50 +103,66 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     return selectedModel.settings.ctx_len.controller_props.value as number
   }, [selectedModel?.settings?.ctx_len?.controller_props?.value])
 
+  const probeVisionCapability = useCallback(
+    async (modelId: string): Promise<boolean> => {
+      const cached = visionProbeCache.get(modelId)
+      if (cached !== undefined) return cached
+      try {
+        const hasVision = await serviceHub.models().checkMmprojExists(modelId)
+        visionProbeCache.set(modelId, hasVision)
+        return hasVision
+      } catch (error) {
+        console.debug('Error checking mmproj for model:', modelId, error)
+        return false
+      }
+    },
+    [serviceHub]
+  )
+
+  // One store write for the whole batch. Writing per model rewrote the entire
+  // `providers` array once per detected model, re-rendering every subscriber
+  // (including the open model list) each time.
+  const applyVisionCapabilities = useCallback(
+    (modelIds: string[]) => {
+      if (modelIds.length === 0) return
+      const provider = getProviderByName('llamacpp')
+      if (!provider) return
+
+      const targets = new Set(modelIds)
+      let changed = false
+      const updatedModels = provider.models.map((model) => {
+        if (!targets.has(model.id)) return model
+        const capabilities = model.capabilities || []
+        // Respect a manually configured capability list.
+        const hasUserConfiguredCapabilities =
+          (model as any)._userConfiguredCapabilities === true
+        if (capabilities.includes('vision') || hasUserConfiguredCapabilities) {
+          return model
+        }
+        changed = true
+        return {
+          ...model,
+          capabilities: [...capabilities, 'vision'],
+          // Mark this as auto-detected, not user-configured
+          _autoDetectedVision: true,
+        } as any
+      })
+
+      if (changed) {
+        updateProvider('llamacpp', { models: updatedModels })
+      }
+    },
+    [getProviderByName, updateProvider]
+  )
+
   // Function to check if a llamacpp model has vision capabilities and update model capabilities
   const checkAndUpdateModelVisionCapability = useCallback(
     async (modelId: string) => {
-      try {
-        const hasVision = await serviceHub.models().checkMmprojExists(modelId)
-        if (hasVision) {
-          // Update the model capabilities to include 'vision'
-          const provider = getProviderByName('llamacpp')
-          if (provider) {
-            const modelIndex = provider.models.findIndex(
-              (m) => m.id === modelId
-            )
-            if (modelIndex !== -1) {
-              const model = provider.models[modelIndex]
-              const capabilities = model.capabilities || []
-
-              // Add 'vision' capability if not already present AND if user hasn't manually configured capabilities
-              // Check if model has a custom capabilities config flag
-
-              const hasUserConfiguredCapabilities =
-                (model as any)._userConfiguredCapabilities === true
-
-              if (
-                !capabilities.includes('vision') &&
-                !hasUserConfiguredCapabilities
-              ) {
-                const updatedModels = [...provider.models]
-                updatedModels[modelIndex] = {
-                  ...model,
-                  capabilities: [...capabilities, 'vision'],
-                  // Mark this as auto-detected, not user-configured
-                  _autoDetectedVision: true,
-                } as any
-
-                updateProvider('llamacpp', { models: updatedModels })
-              }
-            }
-          }
-        }
-      } catch (error) {
-        console.debug('Error checking mmproj for model:', modelId, error)
+      if (await probeVisionCapability(modelId)) {
+        applyVisionCapabilities([modelId])
       }
     },
-    [getProviderByName, updateProvider, serviceHub]
+    [probeVisionCapability, applyVisionCapabilities]
   )
 
   // Initialize model provider on first mount (no model selected yet)
@@ -234,24 +256,52 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     }
   }, [selectedProvider, selectedModel, t])
 
-  // Check vision capabilities for all llamacpp models
-  useEffect(() => {
-    const checkAllLlamacppModelsForVision = async () => {
-      const llamacppProvider = providers.find(
-        (p) => p.provider === 'llamacpp' && p.active
+  // The sweep only cares about llamacpp models whose vision support is still
+  // unknown. Keying the effect on that id list rather than on `providers` also
+  // stops a detected capability from writing back and re-triggering the sweep.
+  const visionSweepIdsKey = useMemo(() => {
+    const llamacppProvider = providers.find(
+      (p) => p.provider === 'llamacpp' && p.active
+    )
+    if (!llamacppProvider) return ''
+    return llamacppProvider.models
+      .filter(
+        (model) =>
+          !(model.capabilities || []).includes('vision') &&
+          (model as any)._userConfiguredCapabilities !== true
       )
-      if (llamacppProvider) {
-        const checkPromises = llamacppProvider.models.map((model) =>
-          checkAndUpdateModelVisionCapability(model.id)
+      .map((model) => model.id)
+      .join('\n')
+  }, [providers])
+
+  // Check vision capabilities for llamacpp models that have not been probed yet
+  useEffect(() => {
+    if (!open || !visionSweepIdsKey) return
+
+    let cancelled = false
+    const checkLlamacppModelsForVision = async () => {
+      const unprobed = visionSweepIdsKey
+        .split('\n')
+        .filter((id) => !visionProbeCache.has(id))
+      if (unprobed.length === 0) return
+
+      const probed = await Promise.all(
+        unprobed.map(
+          async (id) => [id, await probeVisionCapability(id)] as const
         )
-        await Promise.allSettled(checkPromises)
-      }
+      )
+      if (cancelled) return
+
+      applyVisionCapabilities(
+        probed.filter(([, hasVision]) => hasVision).map(([id]) => id)
+      )
     }
 
-    if (open) {
-      checkAllLlamacppModelsForVision()
+    void checkLlamacppModelsForVision()
+    return () => {
+      cancelled = true
     }
-  }, [open, providers, checkAndUpdateModelVisionCapability])
+  }, [open, visionSweepIdsKey, probeVisionCapability, applyVisionCapabilities])
 
   // Reset search value when dropdown closes
   const onOpenChange = useCallback((open: boolean) => {

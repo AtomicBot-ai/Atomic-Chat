@@ -18,6 +18,32 @@ describe('iconKeyLogoSrc', () => {
     expect(iconKeyLogoSrc('QWEN')).toBe('/svg/qwen-color.svg')
   })
 
+  it('covers every brand the curated list ships with', () => {
+    const keys = [
+      'deepseek',
+      'poolside',
+      'prism',
+      'gemma',
+      'nvidia',
+      'qwen',
+      'minimax',
+      'lfm',
+      'glm',
+      'mistral',
+      'essentialai',
+      'allenai',
+      'ibm',
+      'nous',
+      'openai',
+      'microsoft',
+      'llama',
+      'bytedance',
+    ]
+    for (const key of keys) {
+      expect(iconKeyLogoSrc(key), `missing logo for "${key}"`).toBeTruthy()
+    }
+  })
+
   it('returns null for an unknown or missing key', () => {
     expect(iconKeyLogoSrc('not-a-brand')).toBeNull()
     expect(iconKeyLogoSrc('')).toBeNull()
@@ -46,6 +72,33 @@ describe('modelFamilyLogoSrc', () => {
     )
   })
 
+  it('recognizes the families added with the curated list', () => {
+    expect(modelFamilyLogoSrc('unsloth/Nemotron-3-Nano-30B-A3B-GGUF')).toBe(
+      '/images/model-provider/nvidia.svg'
+    )
+    expect(modelFamilyLogoSrc('unsloth/gpt-oss-20b-GGUF')).toBe(
+      '/images/model-provider/openai.svg'
+    )
+    expect(modelFamilyLogoSrc('ibm-granite/granite-4.0-h-tiny-GGUF')).toBe(
+      '/svg/ibm.svg'
+    )
+    expect(modelFamilyLogoSrc('unsloth/Olmo-3-32B-Think-GGUF')).toBe(
+      '/svg/ai2-color.svg'
+    )
+    expect(modelFamilyLogoSrc('prism-ml/Bonsai-27B-gguf')).toBe(
+      '/images/model-provider/prism-ml.webp'
+    )
+    expect(modelFamilyLogoSrc('microsoft/phi-4-gguf')).toBe(
+      '/svg/microsoft-color.svg'
+    )
+  })
+
+  it('keeps Bonsai on its own mark rather than the Qwen base it was built from', () => {
+    expect(modelFamilyLogoSrc('prism-ml/Ternary-Bonsai-27B-gguf')).not.toBe(
+      '/svg/qwen-color.svg'
+    )
+  })
+
   it('returns null for an unknown family or missing name', () => {
     expect(modelFamilyLogoSrc('someone/entirely-unknown')).toBeNull()
     expect(modelFamilyLogoSrc(undefined)).toBeNull()
@@ -55,6 +108,9 @@ describe('modelFamilyLogoSrc', () => {
 describe('isMonochromeFamilyLogo', () => {
   it('flags marks that must be tinted through a CSS mask', () => {
     expect(isMonochromeFamilyLogo('/svg/liquid.svg')).toBe(true)
+    expect(isMonochromeFamilyLogo('/svg/ibm.svg')).toBe(true)
+    expect(isMonochromeFamilyLogo('/svg/nousresearch.svg')).toBe(true)
     expect(isMonochromeFamilyLogo('/svg/qwen-color.svg')).toBe(false)
+    expect(isMonochromeFamilyLogo('/svg/ai2-color.svg')).toBe(false)
   })
 })

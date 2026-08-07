@@ -327,6 +327,16 @@ const ChatInput = memo(function ChatInput({
 
     const ensureLocalModelRunning = async () => {
       try {
+        const { switchToModel, shouldAttemptAutoStart, isExplicitSwitchPending } =
+          await import('@/utils/switchModel')
+        if (cancelled) return
+
+        // An explicit pick (dropdown / send) is already driving this exact
+        // target. It changes the selection first, so this effect fires while
+        // that switch is in flight — probing the engines here only duplicates
+        // its work and enqueues a redundant switch behind it.
+        if (isExplicitSwitchPending(selectedProvider, selectedModel.id)) return
+
         const [actualActive, activeAcrossProviders] = await Promise.all([
           serviceHub.models().getActiveModels(selectedProvider),
           serviceHub.models().getActiveModels(),
@@ -347,10 +357,6 @@ const ChatInput = memo(function ChatInput({
           return
         }
 
-        const { switchToModel, shouldAttemptAutoStart } = await import(
-          '@/utils/switchModel'
-        )
-        if (cancelled) return
         // WS2: don't auto-retry a model that just failed terminally (missing
         // file/binary) or is still within its backoff window — this is what
         // turned a failed load into a tight restart loop. Explicit user

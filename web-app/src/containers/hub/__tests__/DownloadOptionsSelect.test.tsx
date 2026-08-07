@@ -47,12 +47,42 @@ const ggufModel = (): CatalogModel =>
     ],
   }) as CatalogModel
 
+const exoticQuantModel = (): CatalogModel =>
+  ({
+    model_name: 'prism-ml/Bonsai-27B-gguf',
+    developer: 'prism-ml',
+    num_quants: 4,
+    quants: [
+      { model_id: 'Bonsai-27B-F16', path: 'f16.gguf', file_size: '51.00 GB' },
+      { model_id: 'Bonsai-27B-Q1_0', path: 'q1.gguf', file_size: '4.40 GB' },
+      { model_id: 'Bonsai-27B-Q4_1', path: 'q4-1.gguf', file_size: '2.60 GB' },
+      { model_id: 'Bonsai-27B-BF16', path: 'bf16.gguf', file_size: '7.70 GB' },
+    ],
+  }) as CatalogModel
+
 describe('DownloadOptionsSelect', () => {
   it('preselects the default quantization rather than the first one', () => {
     render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={16 * GB} />)
 
     expect(screen.getByText('Q4_K_M')).toBeInTheDocument()
     expect(screen.getByText('download Qwen3.5-4B-Q4_K_M')).toBeInTheDocument()
+  })
+
+  it('opens a repo without the house quant on a variant the device can run', () => {
+    render(
+      <DownloadOptionsSelect model={exoticQuantModel()} budgetBytes={24 * GB} />
+    )
+
+    expect(screen.getByText('download Bonsai-27B-Q1_0')).toBeInTheDocument()
+    expect(screen.getByText('Good fit')).toBeInTheDocument()
+    expect(screen.queryByText('Too large')).not.toBeInTheDocument()
+  })
+
+  it('steps down from a default the device cannot hold', () => {
+    // Q4_K_M is the house default at 2.50 GB, out of reach on a 2 GB device.
+    render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={2 * GB} />)
+
+    expect(screen.getByText('download Qwen3.5-4B-Q2_K')).toBeInTheDocument()
   })
 
   it('lists every quant with its size once expanded', async () => {
@@ -91,21 +121,29 @@ describe('DownloadOptionsSelect', () => {
     await user.click(screen.getByText('Q8_0'))
 
     expect(screen.getByRole('button', { name: 'hub:download' })).toBeDisabled()
-    expect(screen.getByText('hub:likelyTooLarge')).toBeInTheDocument()
+    expect(screen.getByText('Too large')).toBeInTheDocument()
     expect(screen.queryByText(/^download /)).not.toBeInTheDocument()
   })
 
-  it('promises a full GPU offload for a quant that fits', () => {
+  it('badges a comfortably small quant as a good fit', () => {
     render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={16 * GB} />)
 
-    expect(screen.getByText('hub:fullGpuOffload')).toBeInTheDocument()
+    expect(screen.getByText('Good fit')).toBeInTheDocument()
+  })
+
+  it('badges a quant that only just fits as merely likely to run', () => {
+    // 2.50 GB against a 3 GB budget is past the 70% comfort threshold.
+    render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={3 * GB} />)
+
+    expect(screen.getByText('Should run')).toBeInTheDocument()
   })
 
   it('hides the fit verdict while the memory budget is unknown', () => {
     render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={0} />)
 
-    expect(screen.queryByText('hub:fullGpuOffload')).not.toBeInTheDocument()
-    expect(screen.queryByText('hub:likelyTooLarge')).not.toBeInTheDocument()
+    expect(screen.queryByText('Good fit')).not.toBeInTheDocument()
+    expect(screen.queryByText('Should run')).not.toBeInTheDocument()
+    expect(screen.queryByText('Too large')).not.toBeInTheDocument()
   })
 
   it('sends an MLX repo straight to the MLX download action', () => {
@@ -128,6 +166,6 @@ describe('DownloadOptionsSelect', () => {
     expect(screen.getByText('MLX')).toBeInTheDocument()
     // Sharded safetensors are summed, not reported one shard at a time.
     expect(screen.getByText('5.0 GB')).toBeInTheDocument()
-    expect(screen.getByText('hub:fullGpuOffload')).toBeInTheDocument()
+    expect(screen.getByText('Good fit')).toBeInTheDocument()
   })
 })

@@ -142,7 +142,11 @@ export const useAgentMode = create<AgentModeState>()(
       },
 
       setSidebarMode: (mode) => {
-        set({ sidebarMode: mode })
+        // Opening a thread always re-asserts the mode. Without this guard every
+        // navigation notifies the whole sidebar tree for an unchanged value.
+        set((state) =>
+          state.sidebarMode === mode ? state : { sidebarMode: mode }
+        )
       },
 
       toggleAgentMode: (threadId) => {

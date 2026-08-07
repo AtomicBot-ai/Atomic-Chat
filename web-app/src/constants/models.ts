@@ -7,8 +7,13 @@ import type { Recommendation } from '@/services/recommended-models-registry'
 
 export const EMBEDDING_MODEL_ID = 'sentence-transformer-mini'
 
-export const NEW_JAN_MODEL_HF_REPO =
-  'Jackrong/Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-GGUF'
+/**
+ * Model offered by the bottom-right reminder that appears when onboarding is
+ * left without picking anything. Must stay in sync with the first entry of the
+ * onboarding manifest (`atomic-chat-conf/models/recommended.json`) so the
+ * reminder repeats the same recommendation the setup screen showed.
+ */
+export const ONBOARDING_REMINDER_MODEL_HF_REPO = 'AtomicChat/Qwen3.5-4B-GGUF'
 export const JAN_CODE_HF_REPO = 'janhq/Jan-Code-4b-Gguf'
 export const DEFAULT_MODEL_QUANTIZATIONS = ['iq4_xs', 'q4_k_m']
 
@@ -31,31 +36,12 @@ export const SETUP_SCREEN_QUANTIZATIONS = ['q4_k_m']
  */
 export const BASELINE_RECOMMENDED_MODELS: ReadonlyArray<Recommendation> = [
   {
-    model_name: 'AtomicChat/gemma4-e4b-it-GGUF',
+    model_name: 'AtomicChat/Qwen3.5-4B-GGUF',
     description_key: 'hub:recEverydayUse',
   },
   {
-    model_name: 'AtomicChat/qwen35-4b-GGUF',
+    model_name: 'unsloth/gemma-4-E2B-it-GGUF',
     description_key: 'hub:recEverydayUse',
-  },
-  {
-    model_name: 'AtomicChat/qwen3-coder-30b-a3b-GGUF',
-    description_key: 'hub:recCoding',
-  },
-  {
-    model_name: 'mlx-community/gemma-4-e4b-it-4bit',
-    description_key: 'hub:recForMlx',
-    platforms: ['macos'],
-  },
-  {
-    model_name: 'mlx-community/Qwen3.5-9B-MLX-4bit',
-    description_key: 'hub:recForMlx',
-    platforms: ['macos'],
-  },
-  {
-    model_name: 'unsloth/Llama-3.2-3B-Instruct-GGUF',
-    description_key: 'hub:recFinetuningChat',
-    platforms: ['windows', 'linux'],
   },
 ]
 

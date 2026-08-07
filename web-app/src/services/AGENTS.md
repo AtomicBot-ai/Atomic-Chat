@@ -83,15 +83,14 @@ flowchart LR
 
 ### Consumer files migrated to `isKnownProvider`
 
-These five files used to import `predefinedProviders` to test "is this
-provider system-defined?". They now ask the registry store via
-`isKnownProvider(name)`:
+These files used to import `predefinedProviders` to test "is this provider
+system-defined?". They now ask the registry store via `isKnownProvider(name)`:
 
-- [../routes/index.tsx](../routes/index.tsx)
 - [../routes/settings/providers/$providerName.tsx](../routes/settings/providers/$providerName.tsx)
 - [../containers/DropdownModelProvider.tsx](../containers/DropdownModelProvider.tsx)
 - [../containers/dialogs/DeleteProvider.tsx](../containers/dialogs/DeleteProvider.tsx)
-- [../hooks/useJanModelPrompt.ts](../hooks/useJanModelPrompt.ts)
+- [../lib/onboarding.ts](../lib/onboarding.ts) — shared by the home route and
+  the startup backend coordinator
 
 ## Schema versioning
 

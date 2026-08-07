@@ -40,8 +40,6 @@
   "downloadOptions": "Варианты загрузки",
   "details": "Подробности",
   "selectModel": "Выберите модель, чтобы увидеть подробности",
-  "fullGpuOffload": "Возможна полная выгрузка на GPU",
-  "likelyTooLarge": "Скорее всего, слишком большая",
   "openOnWeb": "Открыть в браузере",
   "staffPickBadge": "Рекомендуем",
   "updatedAgo": "Обновлено {{ago}}",

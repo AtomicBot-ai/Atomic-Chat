@@ -95,7 +95,10 @@ describe('ModelListRow', () => {
     expect(onSelect).toHaveBeenCalledOnce()
   })
 
-  it('shows at most two capability pills', () => {
+  // Capabilities are read in the detail panel, where the whole set is shown.
+  // A row that drew the first two of four was a second, differently truncated
+  // copy of the same answer.
+  it('draws no capability pills', () => {
     render(
       <ModelListRow
         model={model({
@@ -104,14 +107,17 @@ describe('ModelListRow', () => {
           vision: true,
           reasoning: true,
         })}
+        pick={{
+          model_name: 'org/model-vision-tools-reasoning',
+          categories: ['vision', 'tools', 'reasoning', 'audio'],
+        }}
         onSelect={vi.fn()}
       />
     )
 
-    const pills = ['Vision', 'Tool Use', 'Reasoning'].filter((label) =>
-      screen.queryByText(label)
-    )
-    expect(pills).toEqual(['Vision', 'Tool Use'])
+    for (const label of ['Vision', 'Tool Use', 'Reasoning', 'Audio']) {
+      expect(screen.queryByText(label), label).not.toBeInTheDocument()
+    }
   })
 
   it('draws the Hugging Face mark instead of a letter for long-tail hits', () => {

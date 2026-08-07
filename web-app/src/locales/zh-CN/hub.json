@@ -38,8 +38,6 @@
   "downloadOptions": "下载选项",
   "details": "详情",
   "selectModel": "选择一个模型以查看详情",
-  "fullGpuOffload": "可完全卸载到 GPU",
-  "likelyTooLarge": "可能过大",
   "openOnWeb": "在网页中打开",
   "staffPickBadge": "推荐",
   "updatedAgo": "更新于 {{ago}}",

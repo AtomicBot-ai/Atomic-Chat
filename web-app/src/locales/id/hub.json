@@ -38,8 +38,6 @@
   "downloadOptions": "Opsi unduhan",
   "details": "Detail",
   "selectModel": "Pilih model untuk melihat detailnya",
-  "fullGpuOffload": "Offload GPU penuh dimungkinkan",
-  "likelyTooLarge": "Kemungkinan terlalu besar",
   "openOnWeb": "Buka di web",
   "staffPickBadge": "Rekomendasi",
   "updatedAgo": "Diperbarui {{ago}}",

@@ -39,8 +39,6 @@
   "downloadOptions": "Download-Optionen",
   "details": "Details",
   "selectModel": "Wähle ein Modell, um Details zu sehen",
-  "fullGpuOffload": "Vollständiges GPU-Offload möglich",
-  "likelyTooLarge": "Wahrscheinlich zu groß",
   "openOnWeb": "Im Web öffnen",
   "staffPickBadge": "Empfohlen",
   "updatedAgo": "Aktualisiert {{ago}}",

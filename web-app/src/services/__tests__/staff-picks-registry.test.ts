@@ -31,6 +31,7 @@ import {
   type StaffPick,
 } from '../staff-picks-registry'
 import { BASELINE_STAFF_PICKS } from '@/constants/staff-picks'
+import { iconKeyLogoSrc } from '@/lib/model-logo'
 
 const REMOTE_URL = 'https://example.test/staff-picks.json'
 
@@ -276,6 +277,104 @@ describe('staff-picks-registry loader', () => {
   })
 })
 
+describe('BASELINE_STAFF_PICKS', () => {
+  it('survives the sanitizer unchanged, field for field', () => {
+    for (const pick of BASELINE_STAFF_PICKS) {
+      expect(sanitizePick(pick), pick.model_name).toEqual(pick)
+    }
+  })
+
+  it('gives every model an MLX twin that is macOS-only', () => {
+    const mlx = BASELINE_STAFF_PICKS.filter((p) => p.format === 'mlx')
+    expect(mlx.length).toBeGreaterThan(0)
+    for (const pick of mlx) {
+      expect(pick.platforms, pick.model_name).toEqual(['macos'])
+      expect(pick.description_key, pick.model_name).toBe('hub:recForMlx')
+    }
+  })
+
+  it('never lists the same repo or the same order twice', () => {
+    const names = BASELINE_STAFF_PICKS.map((p) => p.model_name)
+    expect(new Set(names).size).toBe(names.length)
+    const orders = BASELINE_STAFF_PICKS.map((p) => p.order)
+    expect(new Set(orders).size).toBe(orders.length)
+  })
+
+  //* Категории Recommended — источник capability-байджей, поэтому конверсии
+  //* одной модели не должны обещать разные возможности.
+  it('declares the same capabilities on a GGUF pick and its MLX twin', () => {
+    const CAPABILITIES = ['vision', 'audio', 'reasoning', 'tools'] as const
+    const capsOf = (pick: StaffPick) =>
+      CAPABILITIES.filter((cap) => pick.categories?.includes(cap))
+
+    const byModel = new Map<string, Map<string, string[]>>()
+    for (const pick of BASELINE_STAFF_PICKS) {
+      const model = (pick.title ?? pick.model_name).replace(/ \(MLX\)$/, '')
+      if (!byModel.has(model)) byModel.set(model, new Map())
+      byModel.get(model)!.set(pick.model_name, capsOf(pick))
+    }
+
+    const pairs = [...byModel].filter(([, builds]) => builds.size > 1)
+    expect(pairs.length).toBeGreaterThan(0)
+    for (const [model, builds] of pairs) {
+      const [reference, ...rest] = [...builds.values()]
+      for (const caps of rest) expect(caps, model).toEqual(reference)
+    }
+  })
+
+  it('references only icon keys that resolve to a bundled asset', () => {
+    for (const pick of BASELINE_STAFF_PICKS) {
+      if (!pick.icon) continue
+      expect(iconKeyLogoSrc(pick.icon), pick.icon).toBeTruthy()
+    }
+  })
+
+  //* Порядок групп курируется вручную и легко ломается при правке манифеста.
+  describe('family grouping', () => {
+    const TIERS = ['qwen', 'gemma', 'lfm']
+
+    const tierOf = (icon?: string) => {
+      const index = TIERS.indexOf(icon ?? '')
+      return index === -1 ? TIERS.length : index
+    }
+
+    // Both format lists are curated as one sequence, so each is checked in the
+    // order the Hub renders it.
+    const listed = (format: 'gguf' | 'mlx') =>
+      filterStaffPicksForPlatform(BASELINE_STAFF_PICKS, 'macos', format)
+
+    it.each(['gguf', 'mlx'] as const)(
+      'opens the %s list with Qwen, then Gemma, then LFM',
+      (format) => {
+        const tiers = listed(format).map((pick) => tierOf(pick.icon))
+        expect(tiers.slice(0, 13)).toEqual([0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2])
+      }
+    )
+
+    it.each(['gguf', 'mlx'] as const)(
+      'never drops a %s pick of a promoted family below an unrelated one',
+      (format) => {
+        const tiers = listed(format).map((pick) => tierOf(pick.icon))
+        expect(tiers).toEqual([...tiers].sort((a, b) => a - b))
+      }
+    )
+
+    // A model without an MLX build is allowed; one whose twin sits somewhere
+    // else in the list is not, because the two lists would then disagree on
+    // what "top of the recommendations" means.
+    it('walks the MLX list in the same model order as the GGUF one', () => {
+      const ggufTitles = listed('gguf').map((p) => p.title)
+      const mlxTitles = listed('mlx').map((p) => p.title?.replace(/ \(MLX\)$/, ''))
+
+      expect(mlxTitles.length).toBeGreaterThan(0)
+      for (const title of mlxTitles) expect(ggufTitles).toContain(title)
+      expect(mlxTitles).toEqual(
+        ggufTitles.filter((title) => mlxTitles.includes(title))
+      )
+    })
+  })
+})
+
 describe('sanitizePick', () => {
   it('rejects non-objects and entries without a model name', () => {
     expect(sanitizePick(null)).toBeNull()
@@ -303,6 +402,25 @@ describe('sanitizePick', () => {
       order: 5,
       active: false,
     })
+  })
+
+  it('keeps a declared build format and drops an unknown one', () => {
+    expect(sanitizePick({ model_name: 'a/b', format: 'mlx' })).toEqual({
+      model_name: 'a/b',
+      format: 'mlx',
+    })
+    expect(sanitizePick({ model_name: 'a/b', format: 'onnx' })).toEqual({
+      model_name: 'a/b',
+    })
+  })
+
+  it('keeps every capability category, audio included', () => {
+    expect(
+      sanitizePick({
+        model_name: 'a/b',
+        categories: ['general', 'vision', 'audio', 'reasoning', 'tools'],
+      })!.categories
+    ).toEqual(['general', 'vision', 'audio', 'reasoning', 'tools'])
   })
 
   it('drops empty strings and non-finite orders', () => {
@@ -372,5 +490,46 @@ describe('filterStaffPicksForPlatform', () => {
     expect(
       filterStaffPicksForPlatform(tied, 'linux').map((p) => p.model_name)
     ).toEqual(['second/one', 'first/one'])
+  })
+
+  describe('format', () => {
+    const byFormat: StaffPick[] = [
+      { model_name: 'org/model-GGUF', format: 'gguf', order: 10 },
+      {
+        model_name: 'mlx-community/model-4bit',
+        format: 'mlx',
+        platforms: ['macos'],
+        order: 15,
+      },
+      { model_name: 'legacy/no-format-field', order: 20 },
+    ]
+
+    it('returns only GGUF entries by default', () => {
+      expect(
+        filterStaffPicksForPlatform(byFormat, 'macos').map((p) => p.model_name)
+      ).toEqual(['org/model-GGUF', 'legacy/no-format-field'])
+    })
+
+    it('returns only MLX entries when MLX is requested', () => {
+      expect(
+        filterStaffPicksForPlatform(byFormat, 'macos', 'mlx').map(
+          (p) => p.model_name
+        )
+      ).toEqual(['mlx-community/model-4bit'])
+    })
+
+    it('treats a missing format as GGUF so older manifests keep working', () => {
+      expect(
+        filterStaffPicksForPlatform(byFormat, 'linux', 'gguf').map(
+          (p) => p.model_name
+        )
+      ).toContain('legacy/no-format-field')
+    })
+
+    it('still hides macOS-only MLX entries on other platforms', () => {
+      expect(filterStaffPicksForPlatform(byFormat, 'windows', 'mlx')).toEqual(
+        []
+      )
+    })
   })
 })

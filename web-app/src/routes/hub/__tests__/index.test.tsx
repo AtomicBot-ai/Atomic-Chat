@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   search: {} as Record<string, unknown>,
   staffPicks: [] as ResolvedStaffPick[],
+  mlxStaffPicks: [] as ResolvedStaffPick[],
+  requestedPickFormats: [] as string[],
   sources: [] as CatalogModel[],
   search_: vi.fn(() => [] as CatalogModel[]),
   fetchHuggingFaceRepo: vi.fn(async () => null),
@@ -64,7 +66,10 @@ vi.mock('@/containers/hub/HubFilters', () => ({
 }))
 
 vi.mock('@/hooks/useStaffPicks', () => ({
-  useStaffPicks: () => mocks.staffPicks,
+  useStaffPicks: (_sources: CatalogModel[], format = 'gguf') => {
+    mocks.requestedPickFormats.push(format)
+    return format === 'mlx' ? mocks.mlxStaffPicks : mocks.staffPicks
+  },
 }))
 
 vi.mock('@/hooks/useModelSources', () => ({
@@ -132,6 +137,10 @@ vi.mock('@/stores/model-catalog-store', () => ({
 }))
 
 import { Route } from '../index'
+import {
+  HUB_FILTERS_STORAGE_KEY,
+  serializeHubFilters,
+} from '@/lib/hub-filters'
 import { setHubSearchQuery } from '../hub-session'
 
 const model = (name: string, extra: Partial<CatalogModel> = {}): CatalogModel =>
@@ -169,6 +178,21 @@ describe('/hub route', () => {
         model: model('google/gemma-4-12b-GGUF'),
       },
     ]
+    mocks.mlxStaffPicks = [
+      {
+        pick: {
+          model_name: 'mlx-community/Qwen3.5-4B-4bit',
+          title: 'Qwen3.5 4B (MLX)',
+          format: 'mlx',
+        },
+        model: model('mlx-community/Qwen3.5-4B-4bit', {
+          is_mlx: true,
+          quants: undefined,
+          safetensors_files: [{ rfilename: 'model.safetensors', size: 2e9 }],
+        } as Partial<CatalogModel>),
+      },
+    ]
+    mocks.requestedPickFormats = []
     mocks.search_.mockReturnValue([])
   })
 
@@ -268,6 +292,31 @@ describe('/hub route', () => {
       'hub:selectModel'
     )
     expect(mocks.navigate).not.toHaveBeenCalled()
+  })
+
+  it('asks for GGUF picks while both formats are selected', () => {
+    render(<HubPage />)
+
+    expect(mocks.requestedPickFormats).not.toContain('mlx')
+    expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
+    expect(screen.queryByText('Qwen3.5 4B (MLX)')).not.toBeInTheDocument()
+  })
+
+  it('swaps to the MLX picks when the filter is narrowed to MLX alone', () => {
+    localStorage.setItem(
+      HUB_FILTERS_STORAGE_KEY,
+      serializeHubFilters({
+        formats: ['mlx'],
+        sort: 'recommended',
+        onlyFitting: false,
+      })
+    )
+
+    render(<HubPage />)
+
+    expect(mocks.requestedPickFormats).toContain('mlx')
+    expect(screen.getByText('Qwen3.5 4B (MLX)')).toBeInTheDocument()
+    expect(screen.queryByText('Qwen3.5 4B')).not.toBeInTheDocument()
   })
 
   it('resolves a deep link the catalog does not carry from Hugging Face', async () => {

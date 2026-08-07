@@ -21,14 +21,24 @@ import { BASELINE_STAFF_PICKS } from '@/constants/staff-picks'
 
 export type StaffPickPlatform = 'macos' | 'windows' | 'linux'
 
+/**
+ * `vision`, `audio`, `reasoning` and `tools` double as the authoritative source
+ * of the Hub capability badges for a pick (see `deriveCapabilities`); the rest
+ * are descriptive only. Adding a member is a backwards-compatible change:
+ * older clients drop what they do not know in {@link sanitizePick}, so the
+ * manifest stays on `schema_version` 1.
+ */
 export type StaffPickCategory =
   | 'general'
   | 'reasoning'
   | 'coding'
   | 'vision'
+  | 'audio'
   | 'tools'
   | 'compact'
   | 'multilingual'
+
+export type StaffPickFormat = 'gguf' | 'mlx'
 
 export type StaffPick = {
   model_name: string
@@ -36,6 +46,13 @@ export type StaffPick = {
   summary?: string
   description_key?: string
   icon?: string
+  /**
+   * Declared build format. Lets the Hub decide which picks belong on screen
+   * before any of them is resolved, so an MLX entry costs no catalog lookup
+   * and no Hugging Face round-trip while the GGUF list is showing. Absent
+   * means GGUF.
+   */
+  format?: StaffPickFormat
   categories?: StaffPickCategory[]
   platforms?: StaffPickPlatform[]
   order?: number
@@ -74,6 +91,7 @@ const ALLOWED_CATEGORIES: ReadonlySet<StaffPickCategory> = new Set([
   'reasoning',
   'coding',
   'vision',
+  'audio',
   'tools',
   'compact',
   'multilingual',
@@ -129,12 +147,18 @@ export const sanitizePick = (raw: unknown): StaffPick | null => {
       ) as StaffPickCategory[])
     : undefined
 
+  const format =
+    r.format === 'gguf' || r.format === 'mlx'
+      ? (r.format as StaffPickFormat)
+      : undefined
+
   return {
     model_name: r.model_name,
     ...(optionalString(r.title) ? { title: r.title as string } : {}),
     ...(optionalString(r.summary) ? { summary: r.summary as string } : {}),
     ...(descriptionKey ? { description_key: descriptionKey } : {}),
     ...(optionalString(r.icon) ? { icon: r.icon as string } : {}),
+    ...(format ? { format } : {}),
     ...(categories && categories.length > 0 ? { categories } : {}),
     ...(platforms && platforms.length > 0 ? { platforms } : {}),
     ...(typeof r.order === 'number' && Number.isFinite(r.order)
@@ -390,19 +414,30 @@ export const getStaffPicksOrFallback = async (
   }
 }
 
+/** Absent `format` means GGUF: the manifest predates the field. */
+export const staffPickFormat = (pick: StaffPick): StaffPickFormat =>
+  pick.format ?? 'gguf'
+
 /**
  * Pure helper used by both the store selector and tests.
  *
- * An entry is visible when it is not explicitly disabled and either has no
- * `platforms` field (universal) or lists the current OS. Entries carrying an
- * `order` sort first, ascending; the rest keep manifest order behind them.
+ * An entry is visible when it is not explicitly disabled, matches the
+ * requested build format, and either has no `platforms` field (universal) or
+ * lists the current OS. Entries carrying an `order` sort first, ascending; the
+ * rest keep manifest order behind them.
  */
 export const filterStaffPicksForPlatform = (
   picks: ReadonlyArray<StaffPick>,
-  os: StaffPickPlatform
+  os: StaffPickPlatform,
+  format: StaffPickFormat = 'gguf'
 ): StaffPick[] =>
   picks
-    .filter((p) => p.active !== false && (!p.platforms || p.platforms.includes(os)))
+    .filter(
+      (p) =>
+        p.active !== false &&
+        staffPickFormat(p) === format &&
+        (!p.platforms || p.platforms.includes(os))
+    )
     .map((pick, index) => ({ pick, index }))
     .sort((left, right) => {
       const leftOrder = left.pick.order ?? Number.POSITIVE_INFINITY

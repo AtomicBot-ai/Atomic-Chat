@@ -1,13 +1,8 @@
-import { useMemo } from 'react'
 import { IconDownload } from '@tabler/icons-react'
 import { ModelLogo } from '@/containers/ModelLogo'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { modelDownloadSizeText } from '@/lib/hub-filters'
-import {
-  deriveCapabilities,
-  formatDownloads,
-  modelFormat,
-} from '@/lib/model-card'
+import { formatDownloads, modelFormat } from '@/lib/model-card'
 import { extractModelName } from '@/lib/models'
 import { cn } from '@/lib/utils'
 import type { CatalogModel } from '@/services/models/types'
@@ -38,7 +33,6 @@ export function ModelListRow({
   onSelect,
 }: ModelListRowProps) {
   const { t } = useTranslation()
-  const caps = useMemo(() => deriveCapabilities(model), [model])
   const name =
     pick?.title || extractModelName(model.model_name) || model.model_name
   const summary =
@@ -88,17 +82,6 @@ export function ModelListRow({
               {formatDownloads(model.downloads)}
             </span>
           )}
-          {caps.slice(0, 2).map((cap) => (
-            <span
-              key={cap.label}
-              className={cn(
-                'shrink-0 rounded-[5px] px-1.5 py-px text-[10px] font-semibold',
-                cap.className
-              )}
-            >
-              {cap.label}
-            </span>
-          ))}
         </span>
       </span>
     </button>

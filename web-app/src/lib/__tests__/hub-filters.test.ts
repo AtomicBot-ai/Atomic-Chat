@@ -126,6 +126,24 @@ describe('hub filter persistence', () => {
     })
   })
 
+  it('treats a browser that denies storage access as no storage', () => {
+    // Safari private browsing throws on touching localStorage at all, so the
+    // guard has to hold before any getItem/setItem call.
+    const denied = vi
+      .spyOn(window, 'localStorage', 'get')
+      .mockImplementation(() => {
+        throw new Error('storage disabled')
+      })
+
+    expect(readHubFilters()).toEqual(DEFAULT_HUB_FILTERS)
+    expect(() =>
+      writeHubFilters({ formats: ['gguf'], sort: 'likes', onlyFitting: false })
+    ).not.toThrow()
+
+    denied.mockRestore()
+    expect(window.localStorage.getItem(HUB_FILTERS_STORAGE_KEY)).toBeNull()
+  })
+
   it('survives a storage that throws on write', () => {
     const throwingStorage = {
       getItem: () => null,
@@ -178,6 +196,28 @@ describe('filterByFormats', () => {
 })
 
 describe('modelDownloadSizeText and modelFitsBudget', () => {
+  const multiQuant = (name: string, sizes: string[]): CatalogModel => ({
+    ...gguf(name, sizes[0]),
+    quants: sizes.map((file_size, index) => ({
+      model_id: `${name}-q${index}`,
+      path: `https://huggingface.co/${name}/resolve/main/q${index}.gguf`,
+      file_size,
+    })),
+  })
+
+  it('quotes the median quant, not the smallest one', () => {
+    expect(
+      modelDownloadSizeText(multiQuant('a/spread', ['2 GB', '6 GB', '30 GB']))
+    ).toBe('6.0 GB')
+  })
+
+  it('judges the fit on the median quant', () => {
+    // The 2 GB rounding would sail through a 8 GB budget; the median does not.
+    const model = multiQuant('a/spread', ['2 GB', '20 GB', '30 GB'])
+    expect(modelFitsBudget(model, 8 * GB)).toBe(false)
+    expect(modelFitsBudget(model, 32 * GB)).toBe(true)
+  })
+
   it('sums the mmproj companion into the GGUF download size', () => {
     const withMmproj = gguf('a/vision', '4.0 GB', {
       mmproj_models: [
@@ -270,6 +310,19 @@ describe('sortModels', () => {
     expect(
       sortModels(withCreatedAt, 'last-modified').map((m) => m.model_name)
     ).toEqual(['a/created-only', 'a/fresh', 'a/mid', 'a/top'])
+  })
+
+  it('sinks entries with a missing or unparseable date to the bottom', () => {
+    // Date.parse returns NaN for garbage, and a NaN comparator result would
+    // leave the whole order undefined rather than just those two entries.
+    const withBadDates = [
+      gguf('a/garbage', '1 GB', { last_modified: 'last tuesday' }),
+      gguf('a/undated', '1 GB'),
+      ...models,
+    ]
+    expect(
+      sortModels(withBadDates, 'last-modified').map((m) => m.model_name)
+    ).toEqual(['a/fresh', 'a/mid', 'a/top', 'a/garbage', 'a/undated'])
   })
 
   it('does not mutate the input array', () => {
