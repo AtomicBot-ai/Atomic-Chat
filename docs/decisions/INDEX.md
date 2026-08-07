@@ -165,6 +165,7 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-19** — [Windows uses upstream `ggml-org/llama.cpp`, not the TurboQuant fork](2026-05-19-windows-uses-upstream-ggml-org-llama-cpp-not-the-turboquant-fork.md)
 - **2026-05-19** — [Use `AtomicBot-ai/atomic-llama-cpp-turboquant` as the LLM backend](2026-05-19-use-atomicbot-ai-atomic-llama-cpp-turboquant-as-the-llm-backend.md)
 - **2026-05-19** — [Ship upstream `ggml-org/llama.cpp` as a second macOS provider, no fork](2026-05-19-ship-upstream-ggml-org-llama-cpp-as-a-second-macos-provider-no.md)
+- **2026-08-07** — [Guard ternary quantization types on Metal and report the real cause (ATO-415)](2026-08-07-guard-ternary-quants-on-metal.md)
 
 ## Models, Hub & downloads (18)
 
