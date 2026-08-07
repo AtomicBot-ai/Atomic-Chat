@@ -14,6 +14,7 @@ pub enum ErrorCode {
     DraftModelLoadFailed,
     MultimodalProjectorLoadFailed,
     ModelArchNotSupported,
+    ModelQuantizationNotSupported,
     ModelLoadTimedOut,
     LlamaCppProcessError,
 
@@ -39,6 +40,86 @@ pub struct LlamacppError {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<String>,
+}
+
+/// Human-readable names for ggml tensor types that are known to be CPU-only
+/// on some GPU backends (e.g., Metal has no matmul kernel for TQ1_0/TQ2_0).
+fn ggml_quant_type_name(type_id: u32) -> Option<&'static str> {
+    match type_id {
+        34 => Some("TQ1_0"),
+        35 => Some("TQ2_0"),
+        _ => None,
+    }
+}
+
+/// Format a tensor type id for an error message, e.g. "TQ2_0 (type 35)".
+fn format_quantization_type(type_id: Option<u32>) -> String {
+    match type_id {
+        Some(id) => ggml_quant_type_name(id)
+            .map(|name| format!("{} (type {})", name, id))
+            .unwrap_or_else(|| format!("type {}", id)),
+        None => "an unsupported".to_string(),
+    }
+}
+
+/// Detect the deliberate `ggml_abort` that happens when a GPU backend has no
+/// kernel for one of the model's quantization types. The log usually contains
+/// either "Asserting on type 35" (stderr) or "ggml-<backend>.cpp:NNN: not
+/// implemented" (stdout).
+fn detect_unsupported_quantization(output: &str) -> Option<LlamacppError> {
+    let lower = output.to_lowercase();
+    let backend_known = lower.contains("ggml-metal")
+        || lower.contains("ggml-cuda")
+        || lower.contains("ggml-vulkan")
+        || lower.contains("ggml-hip");
+    let backend_not_impl = lower.contains("not implemented") && backend_known;
+    let asserting_type = lower.contains("asserting on type");
+
+    if !backend_not_impl && !(asserting_type && backend_known) {
+        return None;
+    }
+
+    // Try to extract a "type <n>" token from the abort line.
+    let type_id = lower
+        .split("asserting on type")
+        .nth(1)
+        .and_then(|s| s.trim().split_whitespace().next())
+        .and_then(|n| n.parse::<u32>().ok())
+        .or_else(|| {
+            // Fallback for lines like "...Asserting on type 35..." elsewhere.
+            lower.split("type ").nth(1).and_then(|s| {
+                s.split(|c: char| !c.is_ascii_digit())
+                    .next()
+                    .and_then(|n| n.parse::<u32>().ok())
+            })
+        });
+
+    let backend = if lower.contains("ggml-metal") {
+        "Metal"
+    } else if lower.contains("ggml-cuda") {
+        "CUDA"
+    } else if lower.contains("ggml-vulkan") {
+        "Vulkan"
+    } else if lower.contains("ggml-hip") {
+        "HIP"
+    } else {
+        "this GPU"
+    };
+
+    let message = format!(
+        "The model uses quantization type {} that is not supported by the {} backend. \
+         This is a deliberate engine abort, not a segfault or an unsupported \
+         speculative-decoding (MTP) configuration. To load this model, set GPU layers to 0 \
+         or move the offending tensor to CPU with --override-tensor.",
+        format_quantization_type(type_id),
+        backend
+    );
+
+    Some(LlamacppError::new(
+        ErrorCode::ModelQuantizationNotSupported,
+        message,
+        Some(output.into()),
+    ))
 }
 
 impl LlamacppError {
@@ -127,6 +208,13 @@ impl LlamacppError {
             );
         }
 
+        // A deliberate `ggml_abort` because the GPU backend has no kernel for
+        // one of the model's quantization types (e.g. TQ2_0 on Metal). This is
+        // not a segfault or an MTP misconfiguration.
+        if let Some(err) = detect_unsupported_quantization(stderr) {
+            return err;
+        }
+
         // A truncated or corrupt GGUF (interrupted download, bad disk write).
         // llama.cpp's loader emits these when tensor data runs past the file
         // bounds, the header magic is wrong, or the tensor count mismatches.
@@ -187,6 +275,15 @@ speculative-decoding (MTP) configuration is unsupported here."
         let base = Self::from_exit_status(status, stderr);
         if !matches!(base.code, ErrorCode::LlamaCppProcessError) {
             return base;
+        }
+
+        // For deliberate GPU-backend aborts, the type id often appears in stderr
+        // while the backend name (e.g. "ggml-metal") appears in stdout. Combine
+        // both streams so we can produce a single, specific message.
+        if is_crash_exit(status) {
+            if let Some(err) = detect_unsupported_quantization(&format!("{}\n{}", stderr, stdout)) {
+                return err;
+            }
         }
 
         let from_stdout = Self::from_stderr(stdout);
@@ -311,5 +408,30 @@ mod tests {
         );
 
         assert!(matches!(error.code, ErrorCode::OutOfMemory));
+    }
+
+    fn signal_exit(signal: i32) -> std::process::ExitStatus {
+        std::process::ExitStatus::from_raw(signal)
+    }
+
+    #[test]
+    fn classifies_metal_tq2_0_abort_from_stderr() {
+        let stderr = "0.00.769.844 E Asserting on type 35\n";
+        let stdout = "cmd_child_to_router:error:/Users/runner/work/llama.cpp/llama.cpp/ggml/src/ggml-metal/ggml-metal-device.cpp:988: not implemented\n";
+        let error = LlamacppError::from_process_output(&signal_exit(6), stderr, stdout);
+
+        assert!(matches!(error.code, ErrorCode::ModelQuantizationNotSupported));
+        assert!(error.message.contains("TQ2_0"));
+        assert!(error.message.contains("Metal"));
+        assert!(error.message.contains("not a segfault"));
+    }
+
+    #[test]
+    fn classifies_metal_tq2_0_abort_from_stdout_only() {
+        let stdout = "ggml/src/ggml-metal/ggml-metal-device.cpp:988: not implemented\nAsserting on type 35\n";
+        let error = LlamacppError::from_process_output(&signal_exit(6), "", stdout);
+
+        assert!(matches!(error.code, ErrorCode::ModelQuantizationNotSupported));
+        assert!(error.message.contains("TQ2_0"));
     }
 }

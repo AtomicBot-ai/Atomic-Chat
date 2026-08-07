@@ -108,6 +108,18 @@ pub async fn load_llama_model_impl(
         &mmproj_path_string.as_ref().unwrap_or(&"None".to_string())
     );
 
+    // Pre-flight check on macOS Metal: ternary quantization types (TQ1_0/TQ2_0)
+    // have no Metal matmul kernel, so loading them with GPU layers > 0 will
+    // abort during warmup. Reject before spawning llama-server.
+    #[cfg(target_os = "macos")]
+    {
+        if config.n_gpu_layers > 0 && config.override_tensor_buffer_t.trim().is_empty() {
+            crate::gguf::helpers::check_metal_quantization_support(
+                &model_path_pb.display().to_string(),
+            )?;
+        }
+    }
+
     let api_key: String = envs
         .get("LLAMA_API_KEY")
         .map(|s| s.to_string())
