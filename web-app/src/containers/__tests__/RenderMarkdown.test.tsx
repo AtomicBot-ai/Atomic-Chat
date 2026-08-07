@@ -301,6 +301,31 @@ describe('RenderMarkdown', () => {
     expect(codeBlock).toBeTruthy()
   })
 
+  it('updates a fenced code block as the streaming content grows', async () => {
+    const { container, rerender, findByText } = render(
+      <RenderMarkdown
+        content="```bash\npip\n```"
+        components={{}}
+        enableHtmlPreview
+        isStreaming
+      />
+    )
+    await findByText('pip', { exact: false })
+
+    rerender(
+      <RenderMarkdown
+        content="```bash\npip install -r requirements.txt\n```"
+        components={{}}
+        enableHtmlPreview
+        isStreaming
+      />
+    )
+
+    await findByText('pip install -r requirements.txt', { exact: false })
+    const text = container.textContent || ''
+    expect(text).toContain('pip install -r requirements.txt')
+  })
+
   describe('LaTeX normalization - display math', () => {
     it('converts \\[...\\] to $$ display math', () => {
       const content = 'Here is math:\n\\[\nx^2 + y^2\n\\]\nDone'

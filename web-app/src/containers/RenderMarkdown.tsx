@@ -268,7 +268,14 @@ function RenderMarkdownComponent({
       // Delegate every other code block (incl. mermaid) to streamdown.
       const fence = makeFence(codeText)
       const reconstructed = `${fence}${match?.[1] ?? ''}\n${codeText}\n${fence}`
-      return <Streamdown {...delegateProps}>{reconstructed}</Streamdown>
+      // Force a remount when the code content changes so that streamdown's
+      // async Shiki highlighter cannot leave a stale, truncated render behind
+      // from an earlier streaming chunk.
+      return (
+        <Streamdown key={codeText} {...delegateProps}>
+          {reconstructed}
+        </Streamdown>
+      )
     }
 
     return { code: CodeRenderer, ...(components ?? {}) }
