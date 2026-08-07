@@ -563,13 +563,17 @@ function LaunchPage() {
           agentId: agent.id,
           proxy: buildProxyPayload(),
         })
-        toast.success(t('launch:toast.installSuccess', { name: agent.name }), {
-          description: t('launch:toast.installSuccessDesc', {
-            name: agent.name,
-          }),
-        })
-        await detect(agent)
-        return true
+        const isInstalled = await detect(agent)
+        if (isInstalled) {
+          toast.success(t('launch:toast.installSuccess', { name: agent.name }), {
+            description: t('launch:toast.installSuccessDesc', {
+              name: agent.name,
+            }),
+          })
+        } else {
+          toast.error(t('launch:toast.installFailed', { name: agent.name }))
+        }
+        return isInstalled
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         // Surface a localized, actionable hint for network/DNS failures
