@@ -10,6 +10,12 @@ export type ReasoningBudgetLevel =
   | 'unlimited'
 
 /**
+ * Controls how much of the settings surface is exposed. `base` keeps the
+ * consumer-facing essentials; `advanced` reveals the power-user sections.
+ */
+export type SettingsMode = 'base' | 'advanced'
+
+/**
  * Longest-edge cap (in pixels) applied to images before they are sent to the
  * model. Large images otherwise flood the context window. `0` disables
  * downscaling. Default keeps quality high while taming 4K photos/screenshots.
@@ -18,6 +24,7 @@ export const DEFAULT_MAX_IMAGE_SIZE_PX = 2048
 
 type GeneralSettingState = {
   currentLanguage: Language
+  settingsMode: SettingsMode
   spellCheckChatInput: boolean
   tokenCounterCompact: boolean
   disableReasoning: boolean
@@ -38,6 +45,7 @@ type GeneralSettingState = {
   setPreloadModelOnStartup: (value: boolean) => void
   setMaxImageSizePx: (value: number) => void
   setCurrentLanguage: (value: Language) => void
+  setSettingsMode: (value: SettingsMode) => void
   setScanLocalModels: (value: boolean) => void
   addLocalScanFolder: (folder: string) => void
   removeLocalScanFolder: (folder: string) => void
@@ -47,6 +55,7 @@ export const useGeneralSetting = create<GeneralSettingState>()(
   persist(
     (set) => ({
       currentLanguage: 'en',
+      settingsMode: 'base',
       spellCheckChatInput: true,
       tokenCounterCompact: true,
       disableReasoning: true,
@@ -65,10 +74,14 @@ export const useGeneralSetting = create<GeneralSettingState>()(
       setTokenCounterCompact: (value) => set({ tokenCounterCompact: value }),
       setDisableReasoning: (value) => set({ disableReasoning: value }),
       setReasoningBudget: (value) => set({ reasoningBudget: value }),
-      setPreloadModelOnStartup: (value) => set({ preloadModelOnStartup: value }),
+      setPreloadModelOnStartup: (value) =>
+        set({ preloadModelOnStartup: value }),
       setMaxImageSizePx: (value) =>
-        set({ maxImageSizePx: Number.isFinite(value) && value > 0 ? value : 0 }),
+        set({
+          maxImageSizePx: Number.isFinite(value) && value > 0 ? value : 0,
+        }),
       setCurrentLanguage: (value) => set({ currentLanguage: value }),
+      setSettingsMode: (value) => set({ settingsMode: value }),
       setScanLocalModels: (value) => set({ scanLocalModels: value }),
       addLocalScanFolder: (folder) =>
         set((state) => {

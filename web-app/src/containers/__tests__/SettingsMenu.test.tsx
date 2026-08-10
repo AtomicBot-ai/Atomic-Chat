@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import SettingsMenu from '../SettingsMenu'
 import { useNavigate, useMatches } from '@tanstack/react-router'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 
 // Mock global platform constants - simulate desktop (Tauri) environment
 Object.defineProperty(global, 'IS_IOS', { value: false, writable: true })
@@ -28,7 +29,7 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 }))
 
 vi.mock('@/hooks/useGeneralSetting', () => ({
-  useGeneralSetting: vi.fn(() => ({})),
+  useGeneralSetting: vi.fn(() => ({ settingsMode: 'base' })),
 }))
 
 vi.mock('@/hooks/useModelProvider', () => ({
@@ -82,6 +83,7 @@ describe('SettingsMenu', () => {
 
     vi.mocked(useNavigate).mockReturnValue(mockNavigate)
     vi.mocked(useMatches).mockReturnValue(mockMatches)
+    vi.mocked(useGeneralSetting).mockReturnValue({ settingsMode: 'base' })
     vi.mocked(useModelProvider).mockReturnValue({
       providers: [
         { provider: 'openai', active: true, models: [] },
@@ -91,25 +93,42 @@ describe('SettingsMenu', () => {
     })
   })
 
-  it('renders all menu items', () => {
+  it('renders only the consumer-facing menu items in base mode', () => {
     render(<SettingsMenu />)
 
     expect(screen.getByText('common:general')).toBeInTheDocument()
-    expect(screen.getByText('common:attachments')).toBeInTheDocument()
-    expect(screen.getByText('common:interface')).toBeInTheDocument()
     expect(screen.getByText('common:assistants')).toBeInTheDocument()
-    expect(screen.queryByText('common:privacy')).not.toBeInTheDocument()
+    expect(screen.getByText('common:mcp-servers')).toBeInTheDocument()
+
+    expect(screen.queryByText('common:attachments')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('common:keyboardShortcuts')
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText('common:hardware')).not.toBeInTheDocument()
+    expect(screen.queryByText('common:https_proxy')).not.toBeInTheDocument()
   })
 
-  it('renders keyboard shortcuts and other settings', () => {
+  it('renders the advanced menu items in advanced mode', () => {
+    vi.mocked(useGeneralSetting).mockReturnValue({ settingsMode: 'advanced' })
+
     render(<SettingsMenu />)
+
+    expect(screen.getByText('common:attachments')).toBeInTheDocument()
     expect(screen.getByText('common:keyboardShortcuts')).toBeInTheDocument()
     expect(screen.getByText('common:hardware')).toBeInTheDocument()
+    expect(screen.getByText('common:https_proxy')).toBeInTheDocument()
+  })
+
+  it('never renders removed or hidden menu items', () => {
+    vi.mocked(useGeneralSetting).mockReturnValue({ settingsMode: 'advanced' })
+
+    render(<SettingsMenu />)
+
+    expect(screen.queryByText('common:interface')).not.toBeInTheDocument()
+    expect(screen.queryByText('common:privacy')).not.toBeInTheDocument()
     expect(
       screen.queryByText('common:local_api_server')
     ).not.toBeInTheDocument()
-    expect(screen.getByText('common:https_proxy')).toBeInTheDocument()
-    expect(screen.getByText('common:mcp-servers')).toBeInTheDocument()
   })
 
   it('shows provider expansion chevron when providers are active', () => {

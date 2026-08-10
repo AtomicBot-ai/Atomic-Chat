@@ -11,6 +11,7 @@ import { useMatches, useNavigate } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { getProviderTitle } from '@/lib/utils'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { AddProviderDialog } from '@/containers/dialogs'
@@ -27,6 +28,8 @@ const SettingsMenu = () => {
   const navigate = useNavigate()
 
   const { providers, addProvider } = useModelProvider()
+  const { settingsMode } = useGeneralSetting()
+  const isAdvanced = settingsMode === 'advanced'
 
   const createProvider = useCallback(
     (name: string) => {
@@ -102,13 +105,7 @@ const SettingsMenu = () => {
       title: 'common:attachments',
       route: route.settings.attachments,
       hasSubMenu: false,
-      isEnabled: true,
-    },
-    {
-      title: 'common:interface',
-      route: route.settings.interface,
-      hasSubMenu: false,
-      isEnabled: true,
+      isEnabled: isAdvanced,
     },
     // Privacy — вкладка скрыта
     // {
@@ -127,13 +124,13 @@ const SettingsMenu = () => {
       title: 'common:keyboardShortcuts',
       route: route.settings.shortcuts,
       hasSubMenu: false,
-      isEnabled: true,
+      isEnabled: isAdvanced,
     },
     {
       title: 'common:hardware',
       route: route.settings.hardware,
       hasSubMenu: false,
-      isEnabled: true,
+      isEnabled: isAdvanced,
     },
     {
       title: 'common:mcp-servers',
@@ -145,7 +142,7 @@ const SettingsMenu = () => {
       title: 'common:https_proxy',
       route: route.settings.https_proxy,
       hasSubMenu: false,
-      isEnabled: true,
+      isEnabled: isAdvanced,
     },
   ]
 

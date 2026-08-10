@@ -32,6 +32,10 @@ import { SystemEvent } from '@/types/events'
 import { Input } from '@/components/ui/input'
 import { useHardware } from '@/hooks/useHardware'
 import LanguageSwitcher from '@/containers/LanguageSwitcher'
+import SettingsModeSwitcher from '@/containers/SettingsModeSwitcher'
+import { ThemeSwitcher } from '@/containers/ThemeSwitcher'
+import { FontSizeSwitcher } from '@/containers/FontSizeSwitcher'
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { isRootDir } from '@/utils/path'
 import { useAnalytic } from '@/hooks/useAnalytic'
 import posthog from 'posthog-js'
@@ -64,7 +68,10 @@ function General() {
     setPreloadModelOnStartup,
     reasoningBudget,
     setReasoningBudget,
+    settingsMode,
   } = useGeneralSetting()
+  const isAdvanced = settingsMode === 'advanced'
+  const { resetInterface } = useInterfaceSettings()
   const allowAllMCPPermissions = useToolApproval(
     (state) => state.allowAllMCPPermissions
   )
@@ -155,7 +162,9 @@ function General() {
       setCliPath(s.path)
       toast.success(
         t('settings:general.atomicBotCliInstalledToast', {
-          path: s.path ? formatAtomicCliDisplayPath(s.path) : ATOMIC_CLI_COMMAND,
+          path: s.path
+            ? formatAtomicCliDisplayPath(s.path)
+            : ATOMIC_CLI_COMMAND,
         })
       )
     } catch (e) {
@@ -332,6 +341,10 @@ function General() {
                 title={t('common:language')}
                 actions={<LanguageSwitcher />}
               />
+              <CardItem
+                title={t('settings:general.settingsMode')}
+                actions={<SettingsModeSwitcher />}
+              />
               {canManageAutostart && (
                 <CardItem
                   title={t('settings:general.launchAtStartup')}
@@ -345,6 +358,44 @@ function General() {
                   }
                 />
               )}
+            </Card>
+
+            {/* Interface */}
+            <Card title={t('settings:interface.title')}>
+              <CardItem
+                title={t('settings:interface.theme')}
+                description={t('settings:interface.themeDesc')}
+                actions={<ThemeSwitcher />}
+              />
+              <CardItem
+                title={t('settings:interface.fontSize')}
+                description={t('settings:interface.fontSizeDesc')}
+                actions={<FontSizeSwitcher />}
+              />
+              <CardItem
+                title={t('settings:interface.resetToDefault')}
+                description={t('settings:interface.resetToDefaultDesc')}
+                actions={
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => {
+                      resetInterface()
+                      toast.success(
+                        t('settings:interface.resetInterfaceSuccess'),
+                        {
+                          id: 'reset-interface',
+                          description: t(
+                            'settings:interface.resetInterfaceSuccessDesc'
+                          ),
+                        }
+                      )
+                    }}
+                  >
+                    {t('common:reset')}
+                  </Button>
+                }
+              />
             </Card>
 
             <Card title="Contact Us">
@@ -399,6 +450,26 @@ function General() {
                     className="text-foreground font-medium hover:underline"
                   >
                     AtomicBot-ai/Atomic-Chat
+                  </a>
+                }
+              />
+              <CardItem
+                title="Discord"
+                description="Join the Atomic Chat community on Discord."
+                actions={
+                  <a
+                    href="https://discord.com/invite/8wGSsvmg4V"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(event) => {
+                      event.preventDefault()
+                      void handleOpenContactLink(
+                        'https://discord.com/invite/8wGSsvmg4V'
+                      )
+                    }}
+                    className="text-foreground font-medium hover:underline"
+                  >
+                    discord.com/invite/8wGSsvmg4V
                   </a>
                 }
               />
@@ -462,90 +533,95 @@ function General() {
 
             {/* Data folder - Desktop only */}
             <Card title={t('common:dataFolder')}>
-              <CardItem
-                title={t('settings:dataFolder.appData', {
-                  ns: 'settings',
-                })}
-                align="start"
-                className="items-start flex-row gap-2"
-                description={
-                  <>
-                    <span>
-                      {t('settings:dataFolder.appDataDesc', {
-                        ns: 'settings',
-                      })}
-                      &nbsp;
-                    </span>
-                    <div className="flex items-center gap-2 mt-1 ">
-                      <div className="truncate">
-                        <span
-                          title={janDataFolder}
-                          className="bg-secondary text-xs p-1 rounded-sm"
-                        >
-                          {janDataFolder}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() =>
-                          janDataFolder && copyToClipboard(janDataFolder)
-                        }
-                        className="cursor-pointer flex items-center justify-center rounded-sm bg-secondary transition-all duration-200 ease-in-out p-1"
-                        title={
-                          isCopied
-                            ? t('settings:general.copied')
-                            : t('settings:general.copyPath')
-                        }
-                      >
-                        {isCopied ? (
-                          <div className="flex items-center gap-1">
-                            <IconCopyCheck
-                              size={14}
-                              className="text-green-500 dark:text-green-600"
-                            />
-                            <span className="text-xs leading-0">
-                              {t('settings:general.copied')}
-                            </span>
-                          </div>
-                        ) : (
-                          <IconCopy
-                            size={14}
-                            className="text-muted-foreground"
-                          />
-                        )}
-                      </button>
-                    </div>
-                  </>
-                }
-                actions={
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      title={t('settings:dataFolder.appData')}
-                      onClick={handleDataFolderChange}
-                    >
-                      <IconFolder size={12} className="text-muted-foreground" />
-                      <span>{t('settings:general.changeLocation')}</span>
-                    </Button>
-                    {selectedNewPath && (
-                      <ChangeDataFolderLocation
-                        currentPath={janDataFolder || ''}
-                        newPath={selectedNewPath}
-                        onConfirm={confirmDataFolderChange}
-                        open={isDialogOpen}
-                        onOpenChange={(open) => {
-                          setIsDialogOpen(open)
-                          if (!open) {
-                            setSelectedNewPath(null)
+              {isAdvanced && (
+                <CardItem
+                  title={t('settings:dataFolder.appData', {
+                    ns: 'settings',
+                  })}
+                  align="start"
+                  className="items-start flex-row gap-2"
+                  description={
+                    <>
+                      <span>
+                        {t('settings:dataFolder.appDataDesc', {
+                          ns: 'settings',
+                        })}
+                        &nbsp;
+                      </span>
+                      <div className="flex items-center gap-2 mt-1 ">
+                        <div className="truncate">
+                          <span
+                            title={janDataFolder}
+                            className="bg-secondary text-xs p-1 rounded-sm"
+                          >
+                            {janDataFolder}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() =>
+                            janDataFolder && copyToClipboard(janDataFolder)
                           }
-                        }}
+                          className="cursor-pointer flex items-center justify-center rounded-sm bg-secondary transition-all duration-200 ease-in-out p-1"
+                          title={
+                            isCopied
+                              ? t('settings:general.copied')
+                              : t('settings:general.copyPath')
+                          }
+                        >
+                          {isCopied ? (
+                            <div className="flex items-center gap-1">
+                              <IconCopyCheck
+                                size={14}
+                                className="text-green-500 dark:text-green-600"
+                              />
+                              <span className="text-xs leading-0">
+                                {t('settings:general.copied')}
+                              </span>
+                            </div>
+                          ) : (
+                            <IconCopy
+                              size={14}
+                              className="text-muted-foreground"
+                            />
+                          )}
+                        </button>
+                      </div>
+                    </>
+                  }
+                  actions={
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        title={t('settings:dataFolder.appData')}
+                        onClick={handleDataFolderChange}
                       >
-                        <div />
-                      </ChangeDataFolderLocation>
-                    )}
-                  </>
-                }
-              />
+                        <IconFolder
+                          size={12}
+                          className="text-muted-foreground"
+                        />
+                        <span>{t('settings:general.changeLocation')}</span>
+                      </Button>
+                      {selectedNewPath && (
+                        <ChangeDataFolderLocation
+                          currentPath={janDataFolder || ''}
+                          newPath={selectedNewPath}
+                          onConfirm={confirmDataFolderChange}
+                          open={isDialogOpen}
+                          onOpenChange={(open) => {
+                            setIsDialogOpen(open)
+                            if (!open) {
+                              setSelectedNewPath(null)
+                            }
+                          }}
+                        >
+                          <div />
+                        </ChangeDataFolderLocation>
+                      )}
+                    </>
+                  }
+                />
+              )}
               <CardItem
                 title={t('settings:dataFolder.appLogs', {
                   ns: 'settings',
@@ -591,59 +667,61 @@ function General() {
             </Card>
 
             {/* Detected model locations / scan folders - Desktop only */}
-            {IS_TAURI && <LocalModelLocationsCard />}
+            {isAdvanced && IS_TAURI && <LocalModelLocationsCard />}
 
             {/* Advanced - Desktop only */}
-            <Card title="Advanced">
-              {IS_TAURI && (
+            {isAdvanced && (
+              <Card title="Advanced">
+                {IS_TAURI && (
+                  <CardItem
+                    title={t('settings:general.atomicBotCliTitle')}
+                    description={
+                      cliInstalled && cliPath
+                        ? t('settings:general.atomicBotCliInstalled', {
+                            path: formatAtomicCliDisplayPath(cliPath),
+                          })
+                        : t('settings:general.atomicBotCliNotInstalled')
+                    }
+                    actions={
+                      cliInstalled ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleUninstallCli}
+                          disabled={isCliLoading || cliInstalled === null}
+                        >
+                          {isCliLoading ? 'Uninstalling…' : 'Uninstall'}
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={handleInstallCli}
+                          disabled={isCliLoading || cliInstalled === null}
+                        >
+                          {isCliLoading ? 'Installing…' : 'Install'}
+                        </Button>
+                      )
+                    }
+                  />
+                )}
                 <CardItem
-                  title={t('settings:general.atomicBotCliTitle')}
-                  description={
-                    cliInstalled && cliPath
-                      ? t('settings:general.atomicBotCliInstalled', {
-                          path: formatAtomicCliDisplayPath(cliPath),
-                        })
-                      : t('settings:general.atomicBotCliNotInstalled')
-                  }
+                  title={t('settings:others.resetFactory', {
+                    ns: 'settings',
+                  })}
+                  description={t('settings:others.resetFactoryDesc', {
+                    ns: 'settings',
+                  })}
                   actions={
-                    cliInstalled ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleUninstallCli}
-                        disabled={isCliLoading || cliInstalled === null}
-                      >
-                        {isCliLoading ? 'Uninstalling…' : 'Uninstall'}
+                    <FactoryResetDialog onReset={resetApp}>
+                      <Button variant="destructive" size="sm">
+                        {t('common:reset')}
                       </Button>
-                    ) : (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={handleInstallCli}
-                        disabled={isCliLoading || cliInstalled === null}
-                      >
-                        {isCliLoading ? 'Installing…' : 'Install'}
-                      </Button>
-                    )
+                    </FactoryResetDialog>
                   }
                 />
-              )}
-              <CardItem
-                title={t('settings:others.resetFactory', {
-                  ns: 'settings',
-                })}
-                description={t('settings:others.resetFactoryDesc', {
-                  ns: 'settings',
-                })}
-                actions={
-                  <FactoryResetDialog onReset={resetApp}>
-                    <Button variant="destructive" size="sm">
-                      {t('common:reset')}
-                    </Button>
-                  </FactoryResetDialog>
-                }
-              />
-            </Card>
+              </Card>
+            )}
 
             {/* Other */}
             <Card title={t('common:others')}>
@@ -661,116 +739,120 @@ function General() {
                   />
                 }
               />
-              <CardItem
-                title="Preload last used model on startup"
-                description="Start the local inference server with your last model when the app opens."
-                actions={
-                  <Switch
-                    checked={preloadModelOnStartup}
-                    onCheckedChange={setPreloadModelOnStartup}
-                  />
-                }
-              />
-              <CardItem
-                title="Reasoning budget (local models)"
-                description="Limits thinking tokens for llama.cpp / MLX. Off disables reasoning entirely."
-                actions={
-                  <select
-                    className="border-input bg-background rounded-md border px-2 py-1 text-sm"
-                    value={reasoningBudget}
-                    onChange={(e) =>
-                      setReasoningBudget(
-                        e.target.value as typeof reasoningBudget
-                      )
+              {isAdvanced && (
+                <>
+                  <CardItem
+                    title="Preload last used model on startup"
+                    description="Start the local inference server with your last model when the app opens."
+                    actions={
+                      <Switch
+                        checked={preloadModelOnStartup}
+                        onCheckedChange={setPreloadModelOnStartup}
+                      />
                     }
-                  >
-                    <option value="off">Off</option>
-                    <option value="low">Low (256)</option>
-                    <option value="medium">Medium (1024)</option>
-                    <option value="high">High (4096)</option>
-                    <option value="unlimited">Unlimited</option>
-                  </select>
-                }
-              />
-              <CardItem
-                title={t('settings:general.huggingfaceToken', {
-                  ns: 'settings',
-                })}
-                description={t('settings:general.huggingfaceTokenDesc', {
-                  ns: 'settings',
-                })}
-                actions={
-                  <div className="flex items-center gap-2">
-                    <Input
-                      id="hf-token"
-                      value={huggingfaceToken || ''}
-                      onChange={(e) => setHuggingfaceToken(e.target.value)}
-                      placeholder={'hf_xxx_xxx'}
-                      required
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={isValidatingToken}
-                      onClick={async () => {
-                        const token = (huggingfaceToken || '').trim()
-                        if (!token) {
-                          toast.error(
-                            'Please enter a Hugging Face token to validate'
+                  />
+                  <CardItem
+                    title="Reasoning budget (local models)"
+                    description="Limits thinking tokens for llama.cpp / MLX. Off disables reasoning entirely."
+                    actions={
+                      <select
+                        className="border-input bg-background rounded-md border px-2 py-1 text-sm"
+                        value={reasoningBudget}
+                        onChange={(e) =>
+                          setReasoningBudget(
+                            e.target.value as typeof reasoningBudget
                           )
-                          return
                         }
-                        setIsValidatingToken(true)
-                        const controller = new AbortController()
-                        const timeoutId = setTimeout(
-                          () => controller.abort(),
-                          TOKEN_VALIDATION_TIMEOUT_MS
-                        )
-                        try {
-                          const resp = await fetch(
-                            'https://huggingface.co/api/whoami-v2',
-                            {
-                              headers: { Authorization: `Bearer ${token}` },
-                              signal: controller.signal,
+                      >
+                        <option value="off">Off</option>
+                        <option value="low">Low (256)</option>
+                        <option value="medium">Medium (1024)</option>
+                        <option value="high">High (4096)</option>
+                        <option value="unlimited">Unlimited</option>
+                      </select>
+                    }
+                  />
+                  <CardItem
+                    title={t('settings:general.huggingfaceToken', {
+                      ns: 'settings',
+                    })}
+                    description={t('settings:general.huggingfaceTokenDesc', {
+                      ns: 'settings',
+                    })}
+                    actions={
+                      <div className="flex items-center gap-2">
+                        <Input
+                          id="hf-token"
+                          value={huggingfaceToken || ''}
+                          onChange={(e) => setHuggingfaceToken(e.target.value)}
+                          placeholder={'hf_xxx_xxx'}
+                          required
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={isValidatingToken}
+                          onClick={async () => {
+                            const token = (huggingfaceToken || '').trim()
+                            if (!token) {
+                              toast.error(
+                                'Please enter a Hugging Face token to validate'
+                              )
+                              return
                             }
-                          )
-                          if (resp.ok) {
-                            const data = await resp.json()
-                            toast.success('Token is valid', {
-                              description: data?.name
-                                ? `Signed in as ${data.name}`
-                                : 'Your Hugging Face token is valid.',
-                            })
-                          } else {
-                            toast.error('Token invalid', {
-                              description:
-                                'The provided Hugging Face token is invalid. Please check your token and try again.',
-                            })
-                          }
-                        } catch (e) {
-                          const name = (e as { name?: string })?.name
-                          if (name === 'AbortError') {
-                            toast.error('Validation timed out', {
-                              description:
-                                'The validation request timed out. Please check your network connection and try again.',
-                            })
-                          } else {
-                            toast.error('Validation failed', {
-                              description:
-                                'A network error occurred while validating the token. Please check your internet connection.',
-                            })
-                          }
-                        } finally {
-                          clearTimeout(timeoutId)
-                          setIsValidatingToken(false)
-                        }
-                      }}
-                    >
-                      Verify
-                    </Button>
-                  </div>
-                }
-              />
+                            setIsValidatingToken(true)
+                            const controller = new AbortController()
+                            const timeoutId = setTimeout(
+                              () => controller.abort(),
+                              TOKEN_VALIDATION_TIMEOUT_MS
+                            )
+                            try {
+                              const resp = await fetch(
+                                'https://huggingface.co/api/whoami-v2',
+                                {
+                                  headers: { Authorization: `Bearer ${token}` },
+                                  signal: controller.signal,
+                                }
+                              )
+                              if (resp.ok) {
+                                const data = await resp.json()
+                                toast.success('Token is valid', {
+                                  description: data?.name
+                                    ? `Signed in as ${data.name}`
+                                    : 'Your Hugging Face token is valid.',
+                                })
+                              } else {
+                                toast.error('Token invalid', {
+                                  description:
+                                    'The provided Hugging Face token is invalid. Please check your token and try again.',
+                                })
+                              }
+                            } catch (e) {
+                              const name = (e as { name?: string })?.name
+                              if (name === 'AbortError') {
+                                toast.error('Validation timed out', {
+                                  description:
+                                    'The validation request timed out. Please check your network connection and try again.',
+                                })
+                              } else {
+                                toast.error('Validation failed', {
+                                  description:
+                                    'A network error occurred while validating the token. Please check your internet connection.',
+                                })
+                              }
+                            } finally {
+                              clearTimeout(timeoutId)
+                              setIsValidatingToken(false)
+                            }
+                          }}
+                        >
+                          Verify
+                        </Button>
+                      </div>
+                    }
+                  />
+                </>
+              )}
             </Card>
 
             {/* Resources — закомментировано */}
