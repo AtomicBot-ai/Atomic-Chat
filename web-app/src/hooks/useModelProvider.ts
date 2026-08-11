@@ -4,6 +4,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { modelSettings } from '@/lib/predefined'
 import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
+import { isLocalProvider, isLoopbackUrl } from '@/utils/registerRemoteProvider'
 
 /**
  * Historical provider id retained for one-time migration logic. The
@@ -168,7 +169,12 @@ export const useModelProvider = create<ModelProviderState>()(
               }),
               api_key: existingProvider?.api_key || provider.api_key,
               base_url: existingProvider?.base_url || provider.base_url,
-              active: existingProvider ? existingProvider?.active : true,
+              // A cloud provider only enters Settings → Model Providers once
+              // the user connects it from the catalog, so registry entries
+              // must not arrive pre-enabled. Local engines stay on by default.
+              active: existingProvider
+                ? existingProvider?.active
+                : isLocalProvider(provider.provider),
             }
           })
           const nextProviders = [
@@ -674,9 +680,25 @@ export const useModelProvider = create<ModelProviderState>()(
           state.selectedProvider = LOCAL_LLAMACPP_PROVIDER
         }
 
+        // v15 — `active` now means "the user added this cloud provider".
+        // Every registry entry used to arrive with `active: true`, so Settings
+        // listed a dozen clouds nobody configured. Retire the ones that were
+        // never set up; anything carrying a key (or served over loopback, i.e.
+        // Ollama / LM Studio, which need none) stays exactly where it is.
+        // Deliberately name-based rather than registry-based: the registry
+        // store may not have resolved yet when zustand rehydrates.
+        if (version <= 14 && state?.providers) {
+          state.providers.forEach((provider) => {
+            if (isLocalProvider(provider.provider)) return
+            if (provider.api_key?.trim()) return
+            if (isLoopbackUrl(provider.base_url)) return
+            provider.active = false
+          })
+        }
+
         return state
       },
-      version: 14,
+      version: 15,
     }
   )
 )

@@ -9,12 +9,18 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useNavigate } from '@tanstack/react-router'
 import {
   IconCirclePlus,
+  IconCloud,
+  IconDeviceLaptop,
   IconRefresh,
   IconSettings,
 } from '@tabler/icons-react'
 import { cn, getProviderTitle } from '@/lib/utils'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
-import { AddProviderDialog } from '@/containers/dialogs'
+import { AddCloudProviderDialog } from '@/containers/dialogs'
+import {
+  hasProviderCredentials,
+  isLocalProvider,
+} from '@/utils/registerRemoteProvider'
 import { Switch } from '@/components/ui/switch'
 import { useCallback, useMemo } from 'react'
 import { openAIProviderSettings } from '@/constants/providers'
@@ -102,7 +108,12 @@ function ModelProviders() {
     })()
   }, [refreshRegistry, serviceHub, setProviders, t])
 
-  const sortedProviders = useMemo(() => {
+  const visibleProviders = useMemo(
+    () => providers.filter((provider) => IS_MACOS || provider.provider !== 'mlx'),
+    [providers]
+  )
+
+  const localProviders = useMemo(() => {
     const providerPriority: Record<string, number> = {
       'jan': 0,
       'llamacpp': 1,
@@ -110,8 +121,8 @@ function ModelProviders() {
       'foundation-models': 3,
     }
 
-    return providers
-      .filter((provider) => IS_MACOS || provider.provider !== 'mlx')
+    return visibleProviders
+      .filter((provider) => isLocalProvider(provider.provider))
       .slice()
       .sort((a, b) => {
         const aPriority =
@@ -127,7 +138,25 @@ function ModelProviders() {
           getProviderTitle(b.provider)
         )
       })
-  }, [providers])
+  }, [visibleProviders])
+
+  // Only connected clouds are listed. Everything else in the registry lives in
+  // the "Add provider" catalog, so this card reflects the user's own setup
+  // instead of the whole catalogue.
+  const cloudProviders = useMemo(
+    () =>
+      visibleProviders
+        .filter(
+          (provider) => !isLocalProvider(provider.provider) && provider.active
+        )
+        .slice()
+        .sort((a, b) =>
+          getProviderTitle(a.provider).localeCompare(
+            getProviderTitle(b.provider)
+          )
+        ),
+    [visibleProviders]
+  )
 
   const createProvider = useCallback(
     (name: string) => {
@@ -157,6 +186,64 @@ function ModelProviders() {
     },
     [providers, addProvider, t, navigate]
   )
+
+  const renderProviderRow = (provider: ProviderObject) => {
+    const needsApiKey =
+      !isLocalProvider(provider.provider) && !hasProviderCredentials(provider)
+
+    return (
+      <CardItem
+        key={provider.provider}
+        title={
+          <div className="flex items-center gap-3">
+            <ProvidersAvatar provider={provider} />
+            <div>
+              <h3 className="font-medium">
+                {getProviderTitle(provider.provider)}
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                {needsApiKey
+                  ? t('provider:needsApiKey')
+                  : `${provider.models.length} Models`}
+              </p>
+            </div>
+          </div>
+        }
+        actions={
+          <div className="flex items-center gap-2">
+            {provider.active && (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => {
+                  navigate({
+                    to: route.settings.providers,
+                    params: {
+                      providerName: provider.provider,
+                    },
+                  })
+                }}
+              >
+                <IconSettings className="text-muted-foreground" size={16} />
+              </Button>
+            )}
+            <Switch
+              checked={provider.active}
+              onCheckedChange={async (e) => {
+                if (!e && provider.provider.toLowerCase() === 'llamacpp') {
+                  await serviceHub.models().stopAllModels()
+                }
+                updateProvider(provider.provider, {
+                  ...provider,
+                  active: e,
+                })
+              }}
+            />
+          </div>
+        }
+      />
+    )
+  }
 
   return (
     <div className="flex flex-col h-svh w-full">
@@ -193,16 +280,6 @@ function ModelProviders() {
                     })}
               </span>
             </Button>
-            <AddProviderDialog onCreateProvider={createProvider}>
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex items-center gap-2 relative z-20"
-              >
-                <IconCirclePlus size={16} />
-                <span>{t('provider:addProvider')}</span>
-              </Button>
-            </AddProviderDialog>
           </div>
         </div>
       </HeaderPage>
@@ -210,72 +287,53 @@ function ModelProviders() {
         <SettingsMenu />
         <div className="p-4 pt-0 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
-            {/* Model Providers */}
             <Card
               header={
-                <div className="flex items-center justify-between w-full mb-6">
+                <div className="flex items-center gap-2 w-full mb-6">
+                  <IconDeviceLaptop
+                    size={18}
+                    className="text-muted-foreground"
+                  />
                   <span className="font-medium text-base font-studio text-foreground">
-                    {t('common:modelProviders')}
+                    {t('provider:localProviders')}
                   </span>
                 </div>
               }
             >
-              {sortedProviders.map((provider, index) => (
-                <CardItem
-                  key={index}
-                  title={
-                    <div className="flex items-center gap-3">
-                      <ProvidersAvatar provider={provider} />
-                      <div>
-                        <h3 className="font-medium">
-                          {getProviderTitle(provider.provider)}
-                        </h3>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {provider.models.length} Models
-                        </p>
-                      </div>
-                    </div>
-                  }
-                  actions={
-                    <div className="flex items-center gap-2">
-                      {provider.active && (
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          onClick={() => {
-                            navigate({
-                              to: route.settings.providers,
-                              params: {
-                                providerName: provider.provider,
-                              },
-                            })
-                          }}
-                        >
-                          <IconSettings
-                            className="text-muted-foreground"
-                            size={16}
-                          />
-                        </Button>
-                      )}
-                      <Switch
-                        checked={provider.active}
-                        onCheckedChange={async (e) => {
-                          if (
-                            !e &&
-                            provider.provider.toLowerCase() === 'llamacpp'
-                          ) {
-                            await serviceHub.models().stopAllModels()
-                          }
-                          updateProvider(provider.provider, {
-                            ...provider,
-                            active: e,
-                          })
-                        }}
-                      />
-                    </div>
-                  }
-                />
-              ))}
+              {localProviders.map((provider) => renderProviderRow(provider))}
+            </Card>
+
+            <Card
+              header={
+                <div className="flex items-center justify-between w-full mb-6">
+                  <div className="flex items-center gap-2">
+                    <IconCloud size={18} className="text-muted-foreground" />
+                    <span className="font-medium text-base font-studio text-foreground">
+                      {t('provider:cloudProviders')}
+                    </span>
+                  </div>
+                  <AddCloudProviderDialog
+                    onCreateCustomProvider={createProvider}
+                  >
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex items-center gap-2"
+                    >
+                      <IconCirclePlus size={16} />
+                      <span>{t('provider:addProvider')}</span>
+                    </Button>
+                  </AddCloudProviderDialog>
+                </div>
+              }
+            >
+              {cloudProviders.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  {t('provider:noCloudProviders')}
+                </p>
+              ) : (
+                cloudProviders.map((provider) => renderProviderRow(provider))
+              )}
             </Card>
           </div>
         </div>

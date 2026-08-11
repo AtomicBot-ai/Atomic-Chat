@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-173 records, 2026-05-19 → 2026-08-07.
+174 records, 2026-05-19 → 2026-08-11.
 
 ---
 
@@ -216,8 +216,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (10)
+## UI / UX (11)
 
+- **2026-08-11** — [Split local and cloud providers in Settings; `active` means the cloud provider was added](2026-08-11-split-local-and-cloud-providers-in-settings.md)
 - **2026-08-07** — [Keep sidebar and model-picker interactions off the I/O path](2026-08-07-keep-sidebar-and-model-picker-interactions-off-the-io-path.md)
 - **2026-07-31** — [Disable the transparent Windows window to stop the softbuffer fatal panic](2026-07-31-disable-transparent-windows-window-to-stop-softbuffer-panic.md)
 - **2026-07-30** — [Reveal the Windows window after native setup](2026-07-30-reveal-windows-after-first-frontend-frame.md)

@@ -1,5 +1,25 @@
 {
   "addProvider": "Add Provider",
   "addOpenAIProvider": "Add OpenAI Provider",
-  "enterNameForProvider": "Enter name for provider"
+  "enterNameForProvider": "Enter name for provider",
+  "local": "Local",
+  "cloud": "Cloud",
+  "localProviders": "Local Providers",
+  "cloudProviders": "Cloud Providers",
+  "addProviderTitle": "Add provider",
+  "addProviderDescription": "Choose an AI provider to connect with your own API key.",
+  "modelsAvailable": "Models available",
+  "keyConnectionOnly": "Key connection only",
+  "keySaved": "Key saved",
+  "needsApiKey": "Needs API key",
+  "allProvidersAdded": "All available providers are already added.",
+  "noCloudProviders": "No cloud providers yet. Add one to use models from OpenAI, Anthropic, OpenRouter and others.",
+  "custom": "Custom",
+  "customDescription": "Any OpenAI-compatible endpoint",
+  "addKeyTitle": "Add {{provider}} key",
+  "addKeyDescription": "Paste your API key to connect this provider.",
+  "supportsModelListing": "Supports model listing",
+  "apiKey": "API key",
+  "saveKey": "Save key",
+  "keyProtected": "Your key is protected and will never be exposed."
 }

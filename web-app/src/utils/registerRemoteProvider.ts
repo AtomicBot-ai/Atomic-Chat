@@ -50,6 +50,18 @@ export function isKeylessRemoteProvider(
 }
 
 /**
+ * Whether a cloud provider can actually serve requests: it either carries an
+ * API key or is a keyless loopback server. Settings uses this to tell an
+ * already set-up provider from one the user still has to connect.
+ */
+export function hasProviderCredentials(
+  provider: { provider?: string; api_key?: string; base_url?: string } | null | undefined
+): boolean {
+  if (!provider) return false
+  return Boolean(provider.api_key?.trim()) || isKeylessRemoteProvider(provider)
+}
+
+/**
  * Idempotently register a remote (cloud) provider with the Tauri backend
  * so the Local API Server proxy can route requests for its models.
  *

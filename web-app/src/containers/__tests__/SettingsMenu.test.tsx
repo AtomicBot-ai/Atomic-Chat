@@ -51,7 +51,7 @@ vi.mock('@/hooks/useModelProvider', () => ({
 }))
 
 vi.mock('@/containers/dialogs', () => ({
-  AddProviderDialog: ({ children }: { children: React.ReactNode }) => (
+  AddCloudProviderDialog: ({ children }: { children: React.ReactNode }) => (
     <>{children}</>
   ),
 }))
@@ -146,29 +146,23 @@ describe('SettingsMenu', () => {
     expect(screen.getByTestId('provider-avatar-openai')).toBeInTheDocument()
   })
 
-  it('collapses disabled providers section when toggle is clicked', async () => {
+  it('splits the provider list into a local and a cloud section', () => {
     vi.mocked(useModelProvider).mockReturnValue({
       providers: [
+        { provider: 'llamacpp-upstream', active: true, models: [] },
         { provider: 'openai', active: true, models: [] },
-        { provider: 'anthropic', active: false, models: [] },
       ],
       addProvider: vi.fn(),
     })
 
-    const user = userEvent.setup()
     render(<SettingsMenu />)
 
-    // Disabled section is expanded by default — anthropic is visible
-    expect(screen.getByTestId('provider-avatar-anthropic')).toBeInTheDocument()
-
-    // Click the toggle to collapse the disabled section
-    const toggleButton = screen.getByText('common:hiddenProviders')
-    await user.click(toggleButton)
-
-    // After collapsing, anthropic should be hidden
+    expect(screen.getByText('provider:local')).toBeInTheDocument()
+    expect(screen.getByText('provider:cloud')).toBeInTheDocument()
     expect(
-      screen.queryByTestId('provider-avatar-anthropic')
-    ).not.toBeInTheDocument()
+      screen.getByTestId('provider-avatar-llamacpp-upstream')
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('provider-avatar-openai')).toBeInTheDocument()
   })
 
   it('auto-expands providers when on provider route', () => {
@@ -234,9 +228,10 @@ describe('SettingsMenu', () => {
     expect(llamaCpp?.className).toContain('hidden')
   })
 
-  it('shows inactive providers in disabled section', () => {
+  it('keeps disabled local engines listed but hides unadded clouds', () => {
     vi.mocked(useModelProvider).mockReturnValue({
       providers: [
+        { provider: 'llamacpp-upstream', active: false, models: [] },
         { provider: 'openai', active: true, models: [] },
         { provider: 'anthropic', active: false, models: [] },
       ],
@@ -245,11 +240,15 @@ describe('SettingsMenu', () => {
 
     render(<SettingsMenu />)
 
-    // Active provider shown normally
+    // A local engine stays on the menu even when switched off, so it can be
+    // switched back on.
+    expect(
+      screen.getByTestId('provider-avatar-llamacpp-upstream')
+    ).toBeInTheDocument()
     expect(screen.getByTestId('provider-avatar-openai')).toBeInTheDocument()
-    // Inactive provider shown in the disabled section (expanded by default)
-    expect(screen.getByTestId('provider-avatar-anthropic')).toBeInTheDocument()
-    // Disabled section label is shown
-    expect(screen.getByText('common:hiddenProviders')).toBeInTheDocument()
+    // An unconnected cloud provider lives in the "Add provider" catalog.
+    expect(
+      screen.queryByTestId('provider-avatar-anthropic')
+    ).not.toBeInTheDocument()
   })
 })

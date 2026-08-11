@@ -1,10 +1,12 @@
 import { Link } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   IconChevronDown,
   IconChevronRight,
+  IconCloud,
+  IconDeviceLaptop,
   IconPlus,
 } from '@tabler/icons-react'
 import { useMatches, useNavigate } from '@tanstack/react-router'
@@ -14,7 +16,8 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { getProviderTitle } from '@/lib/utils'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
-import { AddProviderDialog } from '@/containers/dialogs'
+import { AddCloudProviderDialog } from '@/containers/dialogs'
+import { isLocalProvider } from '@/utils/registerRemoteProvider'
 import { openAIProviderSettings } from '@/constants/providers'
 import cloneDeep from 'lodash/cloneDeep'
 import { toast } from 'sonner'
@@ -58,17 +61,35 @@ const SettingsMenu = () => {
     [providers, addProvider, t, navigate]
   )
 
-  const activeProviders = providers.filter((provider) => {
-    if (!provider.active) return false
-    if (!IS_MACOS && provider.provider === 'mlx') return false
-    return true
-  })
+  const visibleProviders = useMemo(
+    () =>
+      providers.filter(
+        (provider) => IS_MACOS || provider.provider !== 'mlx'
+      ),
+    [providers]
+  )
 
-  const hiddenProviders = providers.filter((provider) => {
-    if (provider.active) return false
-    if (!IS_MACOS && provider.provider === 'mlx') return false
-    return true
-  })
+  // Local engines are always listed — their switch only enables/disables them,
+  // it never takes them off the menu. Cloud providers are the opposite: they
+  // only appear once the user has connected them from the catalog, so the menu
+  // stays short instead of listing every entry in the registry.
+  const localProviders = useMemo(
+    () => visibleProviders.filter((provider) => isLocalProvider(provider.provider)),
+    [visibleProviders]
+  )
+
+  const cloudProviders = useMemo(
+    () =>
+      visibleProviders.filter(
+        (provider) => !isLocalProvider(provider.provider) && provider.active
+      ),
+    [visibleProviders]
+  )
+
+  const activeProviders = useMemo(
+    () => visibleProviders.filter((provider) => provider.active),
+    [visibleProviders]
+  )
 
   // Check if current route has a providerName parameter and expand providers submenu
   useEffect(() => {
@@ -148,6 +169,42 @@ const SettingsMenu = () => {
 
   const toggleProvidersExpansion = () => {
     setExpandedProviders(!expandedProviders)
+  }
+
+  const renderProviderItem = (provider: ProviderObject, muted = false) => {
+    const isRouteActive = matches.some(
+      (match) =>
+        match.routeId === '/settings/providers/$providerName' &&
+        'providerName' in match.params &&
+        match.params.providerName === provider.provider
+    )
+    return (
+      <div
+        key={provider.provider}
+        className={cn(
+          'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm',
+          muted ? 'text-muted-foreground' : 'text-foreground',
+          isRouteActive && 'bg-foreground/20',
+          provider.provider === 'llama.cpp' &&
+            stepSetupRemoteProvider &&
+            'hidden'
+        )}
+        onClick={() =>
+          navigate({
+            to: route.settings.providers,
+            params: { providerName: provider.provider },
+            ...(stepSetupRemoteProvider
+              ? { search: { step: 'setup_remote_provider' } }
+              : {}),
+          })
+        }
+      >
+        <ProvidersAvatar provider={provider} />
+        <div className="truncate flex-1">
+          <span>{getProviderTitle(provider.provider)}</span>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -241,101 +298,39 @@ const SettingsMenu = () => {
 
           {/* Model Providers section */}
           <div className="mt-4">
-            <div className="flex items-center justify-between pl-2">
+            <div className="pl-2">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {t('common:modelProviders')}
               </span>
-              <AddProviderDialog onCreateProvider={createProvider}>
+            </div>
+
+            <div className="mt-2 flex items-center gap-1.5 pl-2 text-muted-foreground">
+              <IconDeviceLaptop size={13} />
+              <span className="text-xs font-semibold uppercase tracking-wider">
+                {t('provider:local')}
+              </span>
+            </div>
+            <div className="mt-1 flex flex-col gap-0.5">
+              {localProviders.map((provider) =>
+                renderProviderItem(provider, !provider.active)
+              )}
+            </div>
+
+            <div className="mt-3 flex items-center justify-between pl-2">
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <IconCloud size={13} />
+                <span className="text-xs font-semibold uppercase tracking-wider">
+                  {t('provider:cloud')}
+                </span>
+              </div>
+              <AddCloudProviderDialog onCreateCustomProvider={createProvider}>
                 <Button variant="ghost" size="icon-xs">
                   <IconPlus size={12} />
                 </Button>
-              </AddProviderDialog>
+              </AddCloudProviderDialog>
             </div>
             <div className="mt-1 flex flex-col gap-0.5">
-              {activeProviders.map((provider) => {
-                const isRouteActive = matches.some(
-                  (match) =>
-                    match.routeId === '/settings/providers/$providerName' &&
-                    'providerName' in match.params &&
-                    match.params.providerName === provider.provider
-                )
-                return (
-                  <div
-                    key={provider.provider}
-                    className={cn(
-                      'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm text-foreground',
-                      isRouteActive && 'bg-foreground/20',
-                      provider.provider === 'llama.cpp' &&
-                        stepSetupRemoteProvider &&
-                        'hidden'
-                    )}
-                    onClick={() =>
-                      navigate({
-                        to: route.settings.providers,
-                        params: { providerName: provider.provider },
-                        ...(stepSetupRemoteProvider
-                          ? { search: { step: 'setup_remote_provider' } }
-                          : {}),
-                      })
-                    }
-                  >
-                    <ProvidersAvatar provider={provider} />
-                    <div className="truncate flex-1">
-                      <span>{getProviderTitle(provider.provider)}</span>
-                    </div>
-                  </div>
-                )
-              })}
-
-              {hiddenProviders.length > 0 && (
-                <>
-                  <button
-                    className="flex items-center justify-between px-2 py-1 w-full rounded-sm text-muted-foreground hover:bg-secondary/60"
-                    onClick={() => setExpandedProviders(!expandedProviders)}
-                  >
-                    <span className="text-sm">
-                      {t('common:hiddenProviders', {
-                        count: hiddenProviders.length,
-                      })}
-                    </span>
-                    {expandedProviders ? (
-                      <IconChevronDown size={14} />
-                    ) : (
-                      <IconChevronRight size={14} />
-                    )}
-                  </button>
-                  {expandedProviders &&
-                    hiddenProviders.map((provider) => {
-                      const isRouteActive = matches.some(
-                        (match) =>
-                          match.routeId ===
-                            '/settings/providers/$providerName' &&
-                          'providerName' in match.params &&
-                          match.params.providerName === provider.provider
-                      )
-                      return (
-                        <div
-                          key={provider.provider}
-                          className={cn(
-                            'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm text-muted-foreground',
-                            isRouteActive && 'bg-foreground/20'
-                          )}
-                          onClick={() =>
-                            navigate({
-                              to: route.settings.providers,
-                              params: { providerName: provider.provider },
-                            })
-                          }
-                        >
-                          <ProvidersAvatar provider={provider} />
-                          <div className="truncate flex-1">
-                            <span>{getProviderTitle(provider.provider)}</span>
-                          </div>
-                        </div>
-                      )
-                    })}
-                </>
-              )}
+              {cloudProviders.map((provider) => renderProviderItem(provider))}
             </div>
             <div className="m-3" />
           </div>
