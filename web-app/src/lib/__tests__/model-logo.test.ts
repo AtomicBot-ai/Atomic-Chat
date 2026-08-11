@@ -12,6 +12,8 @@ describe('iconKeyLogoSrc', () => {
     expect(iconKeyLogoSrc('gemma')).toBe('/svg/google-color.svg')
     expect(iconKeyLogoSrc('google')).toBe('/svg/google-color.svg')
     expect(iconKeyLogoSrc('llama')).toBe('/svg/meta-color.svg')
+    expect(iconKeyLogoSrc('glm')).toBe('/svg/zai.svg')
+    expect(iconKeyLogoSrc('minimax')).toBe('/svg/minimax.svg')
   })
 
   it('is case-insensitive', () => {
@@ -91,6 +93,10 @@ describe('modelFamilyLogoSrc', () => {
     expect(modelFamilyLogoSrc('microsoft/phi-4-gguf')).toBe(
       '/svg/microsoft-color.svg'
     )
+    expect(modelFamilyLogoSrc('z-ai/GLM-4.7-Flash-GGUF')).toBe('/svg/zai.svg')
+    expect(modelFamilyLogoSrc('unsloth/MiniMax-M2.7-GGUF')).toBe(
+      '/svg/minimax.svg'
+    )
   })
 
   it('keeps Bonsai on its own mark rather than the Qwen base it was built from', () => {
@@ -110,6 +116,8 @@ describe('isMonochromeFamilyLogo', () => {
     expect(isMonochromeFamilyLogo('/svg/liquid.svg')).toBe(true)
     expect(isMonochromeFamilyLogo('/svg/ibm.svg')).toBe(true)
     expect(isMonochromeFamilyLogo('/svg/nousresearch.svg')).toBe(true)
+    expect(isMonochromeFamilyLogo('/svg/zai.svg')).toBe(true)
+    expect(isMonochromeFamilyLogo('/svg/minimax.svg')).toBe(true)
     expect(isMonochromeFamilyLogo('/svg/qwen-color.svg')).toBe(false)
     expect(isMonochromeFamilyLogo('/svg/ai2-color.svg')).toBe(false)
   })

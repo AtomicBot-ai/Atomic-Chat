@@ -65,6 +65,9 @@ describe('DownloadOptionsSelect', () => {
     render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={16 * GB} />)
 
     expect(screen.getByText('Q4_K_M')).toBeInTheDocument()
+    expect(screen.getByRole('button', { expanded: false })).toHaveClass(
+      'bg-muted/40'
+    )
     expect(screen.getByText('download Qwen3.5-4B-Q4_K_M')).toBeInTheDocument()
   })
 
@@ -87,7 +90,9 @@ describe('DownloadOptionsSelect', () => {
 
   it('lists every quant with its size once expanded', async () => {
     const user = userEvent.setup()
-    render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={16 * GB} />)
+    const model = ggufModel()
+    model.quants = [...model.quants!].reverse()
+    render(<DownloadOptionsSelect model={model} budgetBytes={16 * GB} />)
 
     const disclosure = screen.getByRole('button', { expanded: false })
     await user.click(disclosure)
@@ -98,6 +103,12 @@ describe('DownloadOptionsSelect', () => {
     // Sizes are re-derived from bytes, so they come back normalized.
     expect(screen.getByText('1.2 GB')).toBeInTheDocument()
     expect(screen.getByText('400.0 GB')).toBeInTheDocument()
+    expect(
+      screen
+        .getAllByRole('button')
+        .filter((button) => button.closest('li'))
+        .map((button) => button.textContent)
+    ).toEqual(['Q2_K1.2 GB', 'Q4_K_M2.5 GB', 'Q8_0400.0 GB'])
   })
 
   it('switches the download action to the quant the user picks', async () => {

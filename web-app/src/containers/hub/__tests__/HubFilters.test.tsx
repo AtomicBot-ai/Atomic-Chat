@@ -150,6 +150,52 @@ describe('HubFilters', () => {
     ).not.toBeChecked()
   })
 
+  it('carries the downloaded filter inside the sort menu', async () => {
+    const user = userEvent.setup()
+    const onShowOnlyDownloadedChange = vi.fn()
+    const { onChange } = renderFilters(
+      {},
+      { showOnlyDownloaded: false, onShowOnlyDownloadedChange }
+    )
+
+    await openSortMenu(user)
+    const item = screen.getByRole('menuitemcheckbox', {
+      name: 'hub:installedOnDevice',
+    })
+    expect(item).not.toBeChecked()
+    expect(item).toHaveClass(
+      'data-[state=checked]:[&>span:first-child]:bg-primary'
+    )
+
+    await user.click(item)
+
+    expect(onShowOnlyDownloadedChange).toHaveBeenCalledWith(true)
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ onlyFitting: false })
+    )
+    expect(
+      screen.getByRole('menuitemcheckbox', { name: 'hub:onlyFitting' })
+    ).toBeInTheDocument()
+  })
+
+  it('turns off the downloaded filter when device fit is selected', async () => {
+    const user = userEvent.setup()
+    const onShowOnlyDownloadedChange = vi.fn()
+    renderFilters(
+      { onlyFitting: false },
+      { showOnlyDownloaded: true, onShowOnlyDownloadedChange }
+    )
+
+    await openSortMenu(user)
+    const fitItem = screen.getByRole('menuitemcheckbox', {
+      name: 'hub:onlyFitting',
+    })
+    await user.click(fitItem)
+
+    expect(fitItem).toBeChecked()
+    expect(onShowOnlyDownloadedChange).toHaveBeenCalledWith(false)
+  })
+
   it('hides the device filter until hardware detection resolves', async () => {
     hardware.state.hardwareData = {
       cpu: { name: '' },

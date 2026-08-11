@@ -42,7 +42,7 @@
   "staffPickBadge": "Doporučené",
   "updatedAgo": "Aktualizováno {{ago}}",
   "parameters": "Parametry",
-  "architecture": "Architektura",
+  "context": "Kontext",
   "capabilities": "Schopnosti",
   "readme": "README",
   "readmeUnavailable": "Pro tento model není README k dispozici."

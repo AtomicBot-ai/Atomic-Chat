@@ -51,7 +51,7 @@
   "staffPickBadge": "추천",
   "updatedAgo": "{{ago}} 업데이트됨",
   "parameters": "파라미터",
-  "architecture": "아키텍처",
+  "context": "컨텍스트",
   "capabilities": "기능",
   "readme": "README",
   "readmeUnavailable": "이 모델에는 README가 없습니다."

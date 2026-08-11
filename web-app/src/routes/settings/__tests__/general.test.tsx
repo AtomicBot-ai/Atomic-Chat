@@ -5,10 +5,6 @@ import type { ServiceHub } from '@/services'
 import { seedServiceHub } from '@/test/service-hub'
 
 // Mock all the dependencies
-vi.mock('@/containers/SettingsMenu', () => ({
-  default: () => <div data-testid="settings-menu">Settings Menu</div>,
-}))
-
 vi.mock('@/containers/HeaderPage', () => ({
   default: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="header-page">{children}</div>
@@ -343,7 +339,6 @@ describe('General Settings Route', () => {
     })
 
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
-    expect(screen.getByTestId('settings-menu')).toBeInTheDocument()
     expect(screen.getByText('common:settings')).toBeInTheDocument()
   })
 
@@ -505,7 +500,9 @@ describe('General Settings Route', () => {
 
     // Test that component renders without errors
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
-    expect(screen.getByTestId('settings-menu')).toBeInTheDocument()
+    expect(screen.getByTestId('header-page').nextElementSibling).toHaveClass(
+      'overflow-y-auto'
+    )
   })
 
   it('should handle copy to clipboard', async () => {
@@ -516,7 +513,9 @@ describe('General Settings Route', () => {
 
     // Test that component renders without errors
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
-    expect(screen.getByTestId('settings-menu')).toBeInTheDocument()
+    expect(screen.getByTestId('header-page').nextElementSibling).toHaveClass(
+      'overflow-y-auto'
+    )
   })
 
   it('should handle factory reset dialog', async () => {

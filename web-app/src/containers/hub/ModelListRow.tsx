@@ -1,8 +1,5 @@
-import { IconDownload } from '@tabler/icons-react'
 import { ModelLogo } from '@/containers/ModelLogo'
-import { useTranslation } from '@/i18n/react-i18next-compat'
-import { modelDownloadSizeText } from '@/lib/hub-filters'
-import { formatDownloads, modelFormat } from '@/lib/model-card'
+import { modelFormat } from '@/lib/model-card'
 import { extractModelName } from '@/lib/models'
 import { cn } from '@/lib/utils'
 import type { CatalogModel } from '@/services/models/types'
@@ -32,15 +29,9 @@ export function ModelListRow({
   fromHuggingFace = false,
   onSelect,
 }: ModelListRowProps) {
-  const { t } = useTranslation()
   const name =
     pick?.title || extractModelName(model.model_name) || model.model_name
-  const summary =
-    (pick?.description_key ? t(pick.description_key) : undefined) ||
-    pick?.summary ||
-    model.developer ||
-    ''
-  const sizeText = modelDownloadSizeText(model)
+  const summary = pick?.summary || model.developer || ''
   const format = modelFormat(model)
 
   return (
@@ -49,7 +40,7 @@ export function ModelListRow({
       onClick={onSelect}
       aria-current={selected ? 'true' : undefined}
       className={cn(
-        'flex w-full items-center gap-3 rounded-lg border border-transparent p-2 text-left transition-colors hover:bg-accent',
+        'flex w-full items-center gap-3 rounded-lg border border-transparent px-2 py-3 text-left transition-colors hover:bg-accent',
         selected && 'border-border bg-accent'
       )}
     >
@@ -74,15 +65,6 @@ export function ModelListRow({
             {summary}
           </span>
         )}
-        <span className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
-          {sizeText && <span className="whitespace-nowrap">{sizeText}</span>}
-          {!!model.downloads && model.downloads > 0 && (
-            <span className="inline-flex items-center gap-1 whitespace-nowrap">
-              <IconDownload size={11} />
-              {formatDownloads(model.downloads)}
-            </span>
-          )}
-        </span>
       </span>
     </button>
   )

@@ -7,6 +7,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -29,6 +31,9 @@ const SORT_LABEL_KEYS: Record<HubSortKey, string> = {
   'last-modified': 'hub:sortLastModified',
 }
 
+const FILTER_CHECKBOX_CLASS =
+  'items-start whitespace-normal [&>span:first-child]:size-4 [&>span:first-child]:rounded-[5px] [&>span:first-child]:border [&>span:first-child]:border-input data-[state=checked]:[&>span:first-child]:border-primary data-[state=checked]:[&>span:first-child]:bg-primary data-[state=checked]:[&>span:first-child]:text-primary-foreground'
+
 export type HubFiltersProps = {
   state: HubFilterState
   onChange: (next: HubFilterState) => void
@@ -36,6 +41,8 @@ export type HubFiltersProps = {
   showLikesSort?: boolean
   /** The device filter only makes sense for the curated list. */
   showFitFilter?: boolean
+  showOnlyDownloaded?: boolean
+  onShowOnlyDownloadedChange?: (checked: boolean) => void
   className?: string
 }
 
@@ -44,6 +51,8 @@ export function HubFilters({
   onChange,
   showLikesSort = false,
   showFitFilter = true,
+  showOnlyDownloaded = false,
+  onShowOnlyDownloadedChange,
   className,
 }: HubFiltersProps) {
   const { t } = useTranslation()
@@ -72,17 +81,7 @@ export function HubFilters({
   // caption would read "Based on : ".
   const canFilterByFit = showFitFilter && budgetBytes > 0
 
-  const toggleFormat = (format: ModelFormat) => {
-    const next = state.formats.includes(format)
-      ? state.formats.filter((f) => f !== format)
-      : [...state.formats, format]
-    onChange({ ...state, formats: next })
-  }
-
-  const formatsLabel =
-    state.formats.length === 0 || state.formats.length >= availableFormats.length
-      ? t('hub:allFormats')
-      : state.formats.map((f) => f.toUpperCase()).join(', ')
+  const selectedFormat = state.formats[0] ?? 'gguf'
 
   return (
     <div className={cn('flex items-center gap-2', className)}>
@@ -90,20 +89,23 @@ export function HubFilters({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" aria-label={t('hub:formats')}>
-              {formatsLabel}
+              {selectedFormat.toUpperCase()}
               <ChevronsUpDown className="ml-2 size-4 shrink-0 text-muted-foreground" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="bottom" align="start">
-            {availableFormats.map((format) => (
-              <DropdownMenuCheckboxItem
-                key={format}
-                checked={state.formats.includes(format)}
-                onCheckedChange={() => toggleFormat(format)}
-              >
-                {format.toUpperCase()}
-              </DropdownMenuCheckboxItem>
-            ))}
+            <DropdownMenuRadioGroup
+              value={selectedFormat}
+              onValueChange={(format) =>
+                onChange({ ...state, formats: [format as ModelFormat] })
+              }
+            >
+              {availableFormats.map((format) => (
+                <DropdownMenuRadioItem key={format} value={format}>
+                  {format.toUpperCase()}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
           </DropdownMenuContent>
         </DropdownMenu>
       )}
@@ -132,22 +134,41 @@ export function HubFilters({
             </DropdownMenuItem>
           ))}
 
+          <DropdownMenuSeparator />
+          <DropdownMenuCheckboxItem
+            checked={showOnlyDownloaded}
+            onSelect={(event) => event.preventDefault()}
+            onCheckedChange={(checked) => {
+              const next = checked === true
+              onShowOnlyDownloadedChange?.(next)
+              if (next) {
+                onChange({ ...state, onlyFitting: false })
+              }
+            }}
+            className={FILTER_CHECKBOX_CLASS}
+          >
+            {t('hub:installedOnDevice')}
+          </DropdownMenuCheckboxItem>
+
           {canFilterByFit && (
             <>
-              <DropdownMenuSeparator />
               <DropdownMenuCheckboxItem
                 checked={state.onlyFitting}
                 // Toggling a filter is not "picking one option and moving on":
                 // keep the menu open so the effect on the list is visible.
                 onSelect={(event) => event.preventDefault()}
-                onCheckedChange={(checked) =>
-                  onChange({ ...state, onlyFitting: checked === true })
-                }
-                className="items-start whitespace-normal"
+                onCheckedChange={(checked) => {
+                  const next = checked === true
+                  onChange({ ...state, onlyFitting: next })
+                  if (next) {
+                    onShowOnlyDownloadedChange?.(false)
+                  }
+                }}
+                className={FILTER_CHECKBOX_CLASS}
               >
                 {t('hub:onlyFitting')}
               </DropdownMenuCheckboxItem>
-              <p className="px-2 pb-1 pl-8 text-xs text-muted-foreground">
+              <p className="px-2 pb-1 text-xs text-muted-foreground">
                 {t('hub:basedOnDevice', {
                   device: deviceName,
                   memory: formatMemoryBudget(budgetBytes),

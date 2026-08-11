@@ -42,7 +42,7 @@
   "staffPickBadge": "おすすめ",
   "updatedAgo": "{{ago}}に更新",
   "parameters": "パラメータ",
-  "architecture": "アーキテクチャ",
+  "context": "コンテキスト",
   "capabilities": "機能",
   "readme": "README",
   "readmeUnavailable": "このモデルには README がありません。"

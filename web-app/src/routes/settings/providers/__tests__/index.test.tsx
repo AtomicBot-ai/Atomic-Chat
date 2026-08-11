@@ -9,10 +9,6 @@ let mockProviders: any[] = []
 const mockUpdateProvider = vi.fn()
 
 // Mock dependencies
-vi.mock('@/containers/SettingsMenu', () => ({
-  default: () => <div data-testid="settings-menu">Settings Menu</div>,
-}))
-
 vi.mock('@/containers/HeaderPage', () => ({
   default: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="header-page">{children}</div>
@@ -168,7 +164,6 @@ describe('Providers Settings Route', () => {
     renderRoute()
 
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
-    expect(screen.getByTestId('settings-menu')).toBeInTheDocument()
     expect(screen.getByText('common:settings')).toBeInTheDocument()
   })
 

@@ -1,7 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { SettingsPageHeader } from '@/containers/SettingsPageHeader'
 import { route } from '@/constants/routes'
-import SettingsMenu from '@/containers/SettingsMenu'
-import HeaderPage from '@/containers/HeaderPage'
 import { Button } from '@/components/ui/button'
 import { Card, CardItem } from '@/containers/Card'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -246,8 +245,8 @@ function ModelProviders() {
   }
 
   return (
-    <div className="flex flex-col h-svh w-full">
-      <HeaderPage>
+    <>
+      <SettingsPageHeader>
         <div
           className={cn(
             'flex items-center justify-between w-full mr-2 pr-3',
@@ -282,62 +281,59 @@ function ModelProviders() {
             </Button>
           </div>
         </div>
-      </HeaderPage>
-      <div className="flex h-[calc(100%-60px)]">
-        <SettingsMenu />
-        <div className="p-4 pt-0 w-full h-[calc(100%-32px)] overflow-y-auto">
-          <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
-            <Card
-              header={
-                <div className="flex items-center gap-2 w-full mb-6">
-                  <IconDeviceLaptop
-                    size={18}
-                    className="text-muted-foreground"
-                  />
+      </SettingsPageHeader>
+      <div className="p-4 pt-0 w-full h-[calc(100%-32px)] overflow-y-auto">
+        <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
+          <Card
+            header={
+              <div className="flex items-center gap-2 w-full mb-6">
+                <IconDeviceLaptop
+                  size={18}
+                  className="text-muted-foreground"
+                />
+                <span className="font-medium text-base font-studio text-foreground">
+                  {t('provider:localProviders')}
+                </span>
+              </div>
+            }
+          >
+            {localProviders.map((provider) => renderProviderRow(provider))}
+          </Card>
+
+          <Card
+            header={
+              <div className="flex items-center justify-between w-full mb-6">
+                <div className="flex items-center gap-2">
+                  <IconCloud size={18} className="text-muted-foreground" />
                   <span className="font-medium text-base font-studio text-foreground">
-                    {t('provider:localProviders')}
+                    {t('provider:cloudProviders')}
                   </span>
                 </div>
-              }
-            >
-              {localProviders.map((provider) => renderProviderRow(provider))}
-            </Card>
-
-            <Card
-              header={
-                <div className="flex items-center justify-between w-full mb-6">
-                  <div className="flex items-center gap-2">
-                    <IconCloud size={18} className="text-muted-foreground" />
-                    <span className="font-medium text-base font-studio text-foreground">
-                      {t('provider:cloudProviders')}
-                    </span>
-                  </div>
-                  <AddCloudProviderDialog
-                    onCreateCustomProvider={createProvider}
+                <AddCloudProviderDialog
+                  onCreateCustomProvider={createProvider}
+                >
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex items-center gap-2"
                   >
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex items-center gap-2"
-                    >
-                      <IconCirclePlus size={16} />
-                      <span>{t('provider:addProvider')}</span>
-                    </Button>
-                  </AddCloudProviderDialog>
-                </div>
-              }
-            >
-              {cloudProviders.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  {t('provider:noCloudProviders')}
-                </p>
-              ) : (
-                cloudProviders.map((provider) => renderProviderRow(provider))
-              )}
-            </Card>
-          </div>
+                    <IconCirclePlus size={16} />
+                    <span>{t('provider:addProvider')}</span>
+                  </Button>
+                </AddCloudProviderDialog>
+              </div>
+            }
+          >
+            {cloudProviders.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                {t('provider:noCloudProviders')}
+              </p>
+            ) : (
+              cloudProviders.map((provider) => renderProviderRow(provider))
+            )}
+          </Card>
         </div>
       </div>
-    </div>
+    </>
   )
 }

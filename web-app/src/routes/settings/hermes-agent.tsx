@@ -1,7 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { SettingsPageHeader } from '@/containers/SettingsPageHeader'
 import { route } from '@/constants/routes'
-import HeaderPage from '@/containers/HeaderPage'
-import SettingsMenu from '@/containers/SettingsMenu'
 import { Card, CardItem } from '@/containers/Card'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -250,100 +249,97 @@ function HermesAgentIntegration() {
   }
 
   return (
-    <div className="flex flex-col h-svh w-full">
-      <HeaderPage>
+    <>
+      <SettingsPageHeader>
         <div className="flex items-center gap-2 w-full">
           <span className="font-medium text-base font-studio">
             {t('common:settings')}
           </span>
         </div>
-      </HeaderPage>
-      <div className="flex h-[calc(100%-60px)]">
-        <SettingsMenu />
-        <div className="p-4 pt-0 w-full overflow-y-auto">
-          <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
-            <Card
-              header={
-                <div className="mb-3 flex w-full items-center gap-3">
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="shrink-0"
-                  >
-                    <path
-                      d="M12 2C12 2 9 6 9 9C9 10.1 9.4 11.1 10 11.8L7 20H9L10.5 16H13.5L15 20H17L14 11.8C14.6 11.1 15 10.1 15 9C15 6 12 2 12 2Z"
-                      fill="currentColor"
-                      className="text-emerald-500"
-                    />
-                    <path
-                      d="M8 9C6.5 9 5 10 5 12L7 11M16 9C17.5 9 19 10 19 12L17 11"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      className="text-emerald-500"
-                    />
-                  </svg>
-                  <h1 className="text-foreground font-studio font-medium text-base">
-                    Hermes Agent integration
-                  </h1>
-                </div>
-              }
-            >
-              <CardItem
-                title="Model"
-                description="The model Hermes Agent will use for inference"
-                actions={
-                  <ModelSelector
-                    providers={providers}
-                    selectedModel={config.model}
-                    onSelect={(model) => setModel(model)}
-                    placeholder="Select a model"
+      </SettingsPageHeader>
+      <div className="p-4 pt-0 w-full overflow-y-auto">
+        <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
+          <Card
+            header={
+              <div className="mb-3 flex w-full items-center gap-3">
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="shrink-0"
+                >
+                  <path
+                    d="M12 2C12 2 9 6 9 9C9 10.1 9.4 11.1 10 11.8L7 20H9L10.5 16H13.5L15 20H17L14 11.8C14.6 11.1 15 10.1 15 9C15 6 12 2 12 2Z"
+                    fill="currentColor"
+                    className="text-emerald-500"
                   />
-                }
-              />
-
-              <div className="flex mt-2 justify-end gap-2 border-t pt-4">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={async () => {
-                    clearModel()
-                    setConfiguredValues(null)
-                    try {
-                      await invoke('clear_hermes_agent_config')
-                      toast.success('Hermes Agent settings cleared')
-                    } catch (e) {
-                      toast.error(`Failed to clear config: ${e}`)
-                    }
-                  }}
-                >
-                  Reset
-                </Button>
-
-                <Button
-                  size="sm"
-                  onClick={handleSaveEnable}
-                  disabled={isModelLoading}
-                >
-                  {isModelLoading ? 'Loading model...' : 'Save & Enable'}
-                </Button>
+                  <path
+                    d="M8 9C6.5 9 5 10 5 12L7 11M16 9C17.5 9 19 10 19 12L17 11"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    className="text-emerald-500"
+                  />
+                </svg>
+                <h1 className="text-foreground font-studio font-medium text-base">
+                  Hermes Agent integration
+                </h1>
               </div>
-            </Card>
+            }
+          >
+            <CardItem
+              title="Model"
+              description="The model Hermes Agent will use for inference"
+              actions={
+                <ModelSelector
+                  providers={providers}
+                  selectedModel={config.model}
+                  onSelect={(model) => setModel(model)}
+                  placeholder="Select a model"
+                />
+              }
+            />
 
-            {configuredValues && (
-              <ManualConfigPanel
-                model={configuredValues.model}
-                apiUrl={configuredValues.apiUrl}
-                contextLength={configuredValues.contextLength}
-              />
-            )}
-          </div>
+            <div className="flex mt-2 justify-end gap-2 border-t pt-4">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  clearModel()
+                  setConfiguredValues(null)
+                  try {
+                    await invoke('clear_hermes_agent_config')
+                    toast.success('Hermes Agent settings cleared')
+                  } catch (e) {
+                    toast.error(`Failed to clear config: ${e}`)
+                  }
+                }}
+              >
+                Reset
+              </Button>
+
+              <Button
+                size="sm"
+                onClick={handleSaveEnable}
+                disabled={isModelLoading}
+              >
+                {isModelLoading ? 'Loading model...' : 'Save & Enable'}
+              </Button>
+            </div>
+          </Card>
+
+          {configuredValues && (
+            <ManualConfigPanel
+              model={configuredValues.model}
+              apiUrl={configuredValues.apiUrl}
+              contextLength={configuredValues.contextLength}
+            />
+          )}
         </div>
       </div>
-    </div>
+    </>
   )
 }
 

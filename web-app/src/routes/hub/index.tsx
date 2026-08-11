@@ -11,7 +11,6 @@ import {
 } from 'react'
 import { IconSearch } from '@tabler/icons-react'
 import { Loader } from 'lucide-react'
-import { Switch } from '@/components/ui/switch'
 import HeaderPage from '@/containers/HeaderPage'
 import { HubFilters } from '@/containers/hub/HubFilters'
 import { ModelDetailPanel } from '@/containers/hub/ModelDetailPanel'
@@ -642,33 +641,20 @@ function HubContent() {
 
       <div className="col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col border-r border-border">
         <div className="flex flex-col gap-2 border-b border-border p-3">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-medium text-muted-foreground">
-              {isSearchMode ? t('hub:searchResults') : t('hub:staffPicks')}
-            </h2>
-            <label className="flex cursor-pointer items-center gap-2">
-              <Switch
-                checked={showOnlyDownloaded}
-                aria-label={t('hub:downloaded')}
-                onCheckedChange={(checked) => {
-                  setShowOnlyDownloaded(checked)
-                  if (checked) {
-                    setHuggingFaceRepo(null)
-                  } else {
-                    fetchExactRepo(searchValue)
-                  }
-                }}
-              />
-              <span className="whitespace-nowrap text-xs font-medium text-foreground">
-                {t('hub:downloaded')}
-              </span>
-            </label>
-          </div>
           <HubFilters
             state={filters}
             onChange={updateFilters}
             showLikesSort={showLikesSort}
-            showFitFilter={!isSearchMode}
+            showFitFilter={debouncedSearchValue.length === 0}
+            showOnlyDownloaded={showOnlyDownloaded}
+            onShowOnlyDownloadedChange={(checked) => {
+              setShowOnlyDownloaded(checked)
+              if (checked) {
+                setHuggingFaceRepo(null)
+              } else {
+                fetchExactRepo(searchValue)
+              }
+            }}
           />
         </div>
 

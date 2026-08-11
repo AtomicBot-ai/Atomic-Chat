@@ -1,6 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import SettingsMenu from '@/containers/SettingsMenu'
-import HeaderPage from '@/containers/HeaderPage'
+import { SettingsPageHeader } from '@/containers/SettingsPageHeader'
 import { Card, CardItem } from '@/containers/Card'
 import { useAttachments } from '@/hooks/useAttachments'
 import type { SettingComponentProps } from '@janhq/core'
@@ -183,127 +182,124 @@ function AttachmentsSettings() {
   )
 
   return (
-    <div className="flex flex-col h-svh w-full">
-      <HeaderPage>
+    <>
+      <SettingsPageHeader>
         <div className="flex items-center gap-2 w-full">
           <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
         </div>
-      </HeaderPage>
-      <div className="flex h-[calc(100%-60px)]">
-        <SettingsMenu />
-        <div className="p-4 pt-0 w-full overflow-y-auto">
-          <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
-            <Card title={t('common:attachments') || 'Attachments'}>
-              {defs.map((d) => {
-                // Use local value if typing, else use store value
-                const storeValue = (() => {
-                  switch (d.key) {
-                    case 'enabled':
-                      return sel.enabled
-                    case 'max_file_size_mb':
-                      return sel.maxFileSizeMB
-                    case 'retrieval_limit':
-                      return sel.retrievalLimit
-                    case 'retrieval_threshold':
-                      return sel.retrievalThreshold
-                    case 'chunk_size_chars':
-                      return sel.chunkSizeChars
-                    case 'overlap_chars':
-                      return sel.overlapChars
-                    case 'search_mode':
-                      return sel.searchMode
-                    case 'parse_mode':
-                      return sel.parseMode
-                    case 'auto_inline_context_ratio':
-                      return sel.autoInlineContextRatio
-                    default:
-                      return d?.controllerProps?.value
-                  }
-                })()
-
-                const currentValue =
-                  localValues[d.key] !== undefined
-                    ? localValues[d.key]
-                    : storeValue
-
-                // Convert to DynamicControllerSetting compatible props
-                const baseProps = d.controllerProps
-                const normalizedValue: string | number | boolean = (() => {
-                  if (Array.isArray(currentValue)) {
-                    return currentValue.join(',')
-                  }
-                  return currentValue as string | number | boolean
-                })()
-
-                const props = {
-                  value: normalizedValue,
-                  placeholder:
-                    'placeholder' in baseProps
-                      ? baseProps.placeholder
-                      : undefined,
-                  type: 'type' in baseProps ? baseProps.type : undefined,
-                  options:
-                    'options' in baseProps ? baseProps.options : undefined,
-                  input_actions:
-                    'inputActions' in baseProps
-                      ? baseProps.inputActions
-                      : undefined,
-                  rows: undefined,
-                  min: 'min' in baseProps ? baseProps.min : undefined,
-                  max: 'max' in baseProps ? baseProps.max : undefined,
-                  step: 'step' in baseProps ? baseProps.step : undefined,
-                  recommended:
-                    'recommended' in baseProps
-                      ? baseProps.recommended
-                      : undefined,
+      </SettingsPageHeader>
+      <div className="p-4 pt-0 w-full overflow-y-auto">
+        <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
+          <Card title={t('common:attachments') || 'Attachments'}>
+            {defs.map((d) => {
+              // Use local value if typing, else use store value
+              const storeValue = (() => {
+                switch (d.key) {
+                  case 'enabled':
+                    return sel.enabled
+                  case 'max_file_size_mb':
+                    return sel.maxFileSizeMB
+                  case 'retrieval_limit':
+                    return sel.retrievalLimit
+                  case 'retrieval_threshold':
+                    return sel.retrievalThreshold
+                  case 'chunk_size_chars':
+                    return sel.chunkSizeChars
+                  case 'overlap_chars':
+                    return sel.overlapChars
+                  case 'search_mode':
+                    return sel.searchMode
+                  case 'parse_mode':
+                    return sel.parseMode
+                  case 'auto_inline_context_ratio':
+                    return sel.autoInlineContextRatio
+                  default:
+                    return d?.controllerProps?.value
                 }
+              })()
 
-                const title = d.titleKey ? t(d.titleKey) : d.title
-                const description = d.descriptionKey
-                  ? t(d.descriptionKey)
-                  : d.description
+              const currentValue =
+                localValues[d.key] !== undefined
+                  ? localValues[d.key]
+                  : storeValue
 
-                return (
-                  <CardItem
-                    key={d.key}
-                    title={title}
-                    description={description}
-                    actions={
-                      <DynamicControllerSetting
-                        controllerType={d.controllerType}
-                        controllerProps={props}
-                        onChange={(val) => debouncedSet(d.key, val, d)}
-                      />
-                    }
-                  />
-                )
-              })}
-            </Card>
-
-            <Card title={t('settings:attachments.images')}>
-              <CardItem
-                title={t('settings:attachments.maxImageSize')}
-                description={t('settings:attachments.maxImageSizeDesc')}
-                actions={
-                  <select
-                    className="border-input bg-background rounded-md border px-2 py-1 text-sm"
-                    value={maxImageSizePx}
-                    onChange={(e) => setMaxImageSizePx(Number(e.target.value))}
-                  >
-                    {IMAGE_SIZE_PRESETS.map((px) => (
-                      <option key={px} value={px}>
-                        {px === 0
-                          ? t('settings:attachments.original')
-                          : `${px} px`}
-                      </option>
-                    ))}
-                  </select>
+              // Convert to DynamicControllerSetting compatible props
+              const baseProps = d.controllerProps
+              const normalizedValue: string | number | boolean = (() => {
+                if (Array.isArray(currentValue)) {
+                  return currentValue.join(',')
                 }
-              />
-            </Card>
-          </div>
+                return currentValue as string | number | boolean
+              })()
+
+              const props = {
+                value: normalizedValue,
+                placeholder:
+                  'placeholder' in baseProps
+                    ? baseProps.placeholder
+                    : undefined,
+                type: 'type' in baseProps ? baseProps.type : undefined,
+                options:
+                  'options' in baseProps ? baseProps.options : undefined,
+                input_actions:
+                  'inputActions' in baseProps
+                    ? baseProps.inputActions
+                    : undefined,
+                rows: undefined,
+                min: 'min' in baseProps ? baseProps.min : undefined,
+                max: 'max' in baseProps ? baseProps.max : undefined,
+                step: 'step' in baseProps ? baseProps.step : undefined,
+                recommended:
+                  'recommended' in baseProps
+                    ? baseProps.recommended
+                    : undefined,
+              }
+
+              const title = d.titleKey ? t(d.titleKey) : d.title
+              const description = d.descriptionKey
+                ? t(d.descriptionKey)
+                : d.description
+
+              return (
+                <CardItem
+                  key={d.key}
+                  title={title}
+                  description={description}
+                  actions={
+                    <DynamicControllerSetting
+                      controllerType={d.controllerType}
+                      controllerProps={props}
+                      onChange={(val) => debouncedSet(d.key, val, d)}
+                    />
+                  }
+                />
+              )
+            })}
+          </Card>
+
+          <Card title={t('settings:attachments.images')}>
+            <CardItem
+              title={t('settings:attachments.maxImageSize')}
+              description={t('settings:attachments.maxImageSizeDesc')}
+              actions={
+                <select
+                  className="border-input bg-background rounded-md border px-2 py-1 text-sm"
+                  value={maxImageSizePx}
+                  onChange={(e) => setMaxImageSizePx(Number(e.target.value))}
+                >
+                  {IMAGE_SIZE_PRESETS.map((px) => (
+                    <option key={px} value={px}>
+                      {px === 0
+                        ? t('settings:attachments.original')
+                        : `${px} px`}
+                    </option>
+                  ))}
+                </select>
+              }
+            />
+          </Card>
         </div>
       </div>
-    </div>
+    </>
   )
 }

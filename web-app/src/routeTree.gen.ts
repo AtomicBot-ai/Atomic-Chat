@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SystemMonitorRouteImport } from './routes/system-monitor'
 import { Route as LogsRouteImport } from './routes/logs'
+import { Route as SettingsRouteRouteImport } from './routes/settings/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SkillsIndexRouteImport } from './routes/skills/index'
 import { Route as LaunchIndexRouteImport } from './routes/launch/index'
@@ -44,6 +45,11 @@ const LogsRoute = LogsRouteImport.update({
   path: '/logs',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsRouteRoute = SettingsRouteRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -70,64 +76,64 @@ const ThreadsThreadIdRoute = ThreadsThreadIdRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsShortcutsRoute = SettingsShortcutsRouteImport.update({
-  id: '/settings/shortcuts',
-  path: '/settings/shortcuts',
-  getParentRoute: () => rootRouteImport,
+  id: '/shortcuts',
+  path: '/shortcuts',
+  getParentRoute: () => SettingsRouteRoute,
 } as any)
 const SettingsPrivacyRoute = SettingsPrivacyRouteImport.update({
-  id: '/settings/privacy',
-  path: '/settings/privacy',
-  getParentRoute: () => rootRouteImport,
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => SettingsRouteRoute,
 } as any)
 const SettingsMcpServersRoute = SettingsMcpServersRouteImport.update({
-  id: '/settings/mcp-servers',
-  path: '/settings/mcp-servers',
-  getParentRoute: () => rootRouteImport,
+  id: '/mcp-servers',
+  path: '/mcp-servers',
+  getParentRoute: () => SettingsRouteRoute,
 } as any)
 const SettingsLocalApiServerRoute = SettingsLocalApiServerRouteImport.update({
-  id: '/settings/local-api-server',
-  path: '/settings/local-api-server',
-  getParentRoute: () => rootRouteImport,
+  id: '/local-api-server',
+  path: '/local-api-server',
+  getParentRoute: () => SettingsRouteRoute,
 } as any)
 const SettingsHttpsProxyRoute = SettingsHttpsProxyRouteImport.update({
-  id: '/settings/https-proxy',
-  path: '/settings/https-proxy',
-  getParentRoute: () => rootRouteImport,
+  id: '/https-proxy',
+  path: '/https-proxy',
+  getParentRoute: () => SettingsRouteRoute,
 } as any)
 const SettingsHermesAgentRoute = SettingsHermesAgentRouteImport.update({
-  id: '/settings/hermes-agent',
-  path: '/settings/hermes-agent',
-  getParentRoute: () => rootRouteImport,
+  id: '/hermes-agent',
+  path: '/hermes-agent',
+  getParentRoute: () => SettingsRouteRoute,
 } as any)
 const SettingsHardwareRoute = SettingsHardwareRouteImport.update({
-  id: '/settings/hardware',
-  path: '/settings/hardware',
-  getParentRoute: () => rootRouteImport,
+  id: '/hardware',
+  path: '/hardware',
+  getParentRoute: () => SettingsRouteRoute,
 } as any)
 const SettingsGeneralRoute = SettingsGeneralRouteImport.update({
-  id: '/settings/general',
-  path: '/settings/general',
-  getParentRoute: () => rootRouteImport,
+  id: '/general',
+  path: '/general',
+  getParentRoute: () => SettingsRouteRoute,
 } as any)
 const SettingsExtensionsRoute = SettingsExtensionsRouteImport.update({
-  id: '/settings/extensions',
-  path: '/settings/extensions',
-  getParentRoute: () => rootRouteImport,
+  id: '/extensions',
+  path: '/extensions',
+  getParentRoute: () => SettingsRouteRoute,
 } as any)
 const SettingsClaudeCodeRoute = SettingsClaudeCodeRouteImport.update({
-  id: '/settings/claude-code',
-  path: '/settings/claude-code',
-  getParentRoute: () => rootRouteImport,
+  id: '/claude-code',
+  path: '/claude-code',
+  getParentRoute: () => SettingsRouteRoute,
 } as any)
 const SettingsAttachmentsRoute = SettingsAttachmentsRouteImport.update({
-  id: '/settings/attachments',
-  path: '/settings/attachments',
-  getParentRoute: () => rootRouteImport,
+  id: '/attachments',
+  path: '/attachments',
+  getParentRoute: () => SettingsRouteRoute,
 } as any)
 const SettingsAssistantRoute = SettingsAssistantRouteImport.update({
-  id: '/settings/assistant',
-  path: '/settings/assistant',
-  getParentRoute: () => rootRouteImport,
+  id: '/assistant',
+  path: '/assistant',
+  getParentRoute: () => SettingsRouteRoute,
 } as any)
 const ProjectProjectIdRoute = ProjectProjectIdRouteImport.update({
   id: '/project/$projectId',
@@ -145,19 +151,20 @@ const HubModelIdRoute = HubModelIdRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsProvidersIndexRoute = SettingsProvidersIndexRouteImport.update({
-  id: '/settings/providers/',
-  path: '/settings/providers/',
-  getParentRoute: () => rootRouteImport,
+  id: '/providers/',
+  path: '/providers/',
+  getParentRoute: () => SettingsRouteRoute,
 } as any)
 const SettingsProvidersProviderNameRoute =
   SettingsProvidersProviderNameRouteImport.update({
-    id: '/settings/providers/$providerName',
-    path: '/settings/providers/$providerName',
-    getParentRoute: () => rootRouteImport,
+    id: '/providers/$providerName',
+    path: '/providers/$providerName',
+    getParentRoute: () => SettingsRouteRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/settings': typeof SettingsRouteRouteWithChildren
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/hub/$modelId': typeof HubModelIdRoute
@@ -184,6 +191,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/settings': typeof SettingsRouteRouteWithChildren
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/hub/$modelId': typeof HubModelIdRoute
@@ -211,6 +219,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/settings': typeof SettingsRouteRouteWithChildren
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/hub/$modelId': typeof HubModelIdRoute
@@ -239,6 +248,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/settings'
     | '/logs'
     | '/system-monitor'
     | '/hub/$modelId'
@@ -265,6 +275,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/settings'
     | '/logs'
     | '/system-monitor'
     | '/hub/$modelId'
@@ -291,6 +302,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/settings'
     | '/logs'
     | '/system-monitor'
     | '/hub/$modelId'
@@ -318,29 +330,16 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  SettingsRouteRoute: typeof SettingsRouteRouteWithChildren
   LogsRoute: typeof LogsRoute
   SystemMonitorRoute: typeof SystemMonitorRoute
   HubModelIdRoute: typeof HubModelIdRoute
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRoute
-  SettingsAssistantRoute: typeof SettingsAssistantRoute
-  SettingsAttachmentsRoute: typeof SettingsAttachmentsRoute
-  SettingsClaudeCodeRoute: typeof SettingsClaudeCodeRoute
-  SettingsExtensionsRoute: typeof SettingsExtensionsRoute
-  SettingsGeneralRoute: typeof SettingsGeneralRoute
-  SettingsHardwareRoute: typeof SettingsHardwareRoute
-  SettingsHermesAgentRoute: typeof SettingsHermesAgentRoute
-  SettingsHttpsProxyRoute: typeof SettingsHttpsProxyRoute
-  SettingsLocalApiServerRoute: typeof SettingsLocalApiServerRoute
-  SettingsMcpServersRoute: typeof SettingsMcpServersRoute
-  SettingsPrivacyRoute: typeof SettingsPrivacyRoute
-  SettingsShortcutsRoute: typeof SettingsShortcutsRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
   HubIndexRoute: typeof HubIndexRoute
   LaunchIndexRoute: typeof LaunchIndexRoute
   SkillsIndexRoute: typeof SkillsIndexRoute
-  SettingsProvidersProviderNameRoute: typeof SettingsProvidersProviderNameRoute
-  SettingsProvidersIndexRoute: typeof SettingsProvidersIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -357,6 +356,13 @@ declare module '@tanstack/react-router' {
       path: '/logs'
       fullPath: '/logs'
       preLoaderRoute: typeof LogsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -396,87 +402,87 @@ declare module '@tanstack/react-router' {
     }
     '/settings/shortcuts': {
       id: '/settings/shortcuts'
-      path: '/settings/shortcuts'
+      path: '/shortcuts'
       fullPath: '/settings/shortcuts'
       preLoaderRoute: typeof SettingsShortcutsRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof SettingsRouteRoute
     }
     '/settings/privacy': {
       id: '/settings/privacy'
-      path: '/settings/privacy'
+      path: '/privacy'
       fullPath: '/settings/privacy'
       preLoaderRoute: typeof SettingsPrivacyRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof SettingsRouteRoute
     }
     '/settings/mcp-servers': {
       id: '/settings/mcp-servers'
-      path: '/settings/mcp-servers'
+      path: '/mcp-servers'
       fullPath: '/settings/mcp-servers'
       preLoaderRoute: typeof SettingsMcpServersRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof SettingsRouteRoute
     }
     '/settings/local-api-server': {
       id: '/settings/local-api-server'
-      path: '/settings/local-api-server'
+      path: '/local-api-server'
       fullPath: '/settings/local-api-server'
       preLoaderRoute: typeof SettingsLocalApiServerRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof SettingsRouteRoute
     }
     '/settings/https-proxy': {
       id: '/settings/https-proxy'
-      path: '/settings/https-proxy'
+      path: '/https-proxy'
       fullPath: '/settings/https-proxy'
       preLoaderRoute: typeof SettingsHttpsProxyRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof SettingsRouteRoute
     }
     '/settings/hermes-agent': {
       id: '/settings/hermes-agent'
-      path: '/settings/hermes-agent'
+      path: '/hermes-agent'
       fullPath: '/settings/hermes-agent'
       preLoaderRoute: typeof SettingsHermesAgentRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof SettingsRouteRoute
     }
     '/settings/hardware': {
       id: '/settings/hardware'
-      path: '/settings/hardware'
+      path: '/hardware'
       fullPath: '/settings/hardware'
       preLoaderRoute: typeof SettingsHardwareRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof SettingsRouteRoute
     }
     '/settings/general': {
       id: '/settings/general'
-      path: '/settings/general'
+      path: '/general'
       fullPath: '/settings/general'
       preLoaderRoute: typeof SettingsGeneralRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof SettingsRouteRoute
     }
     '/settings/extensions': {
       id: '/settings/extensions'
-      path: '/settings/extensions'
+      path: '/extensions'
       fullPath: '/settings/extensions'
       preLoaderRoute: typeof SettingsExtensionsRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof SettingsRouteRoute
     }
     '/settings/claude-code': {
       id: '/settings/claude-code'
-      path: '/settings/claude-code'
+      path: '/claude-code'
       fullPath: '/settings/claude-code'
       preLoaderRoute: typeof SettingsClaudeCodeRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof SettingsRouteRoute
     }
     '/settings/attachments': {
       id: '/settings/attachments'
-      path: '/settings/attachments'
+      path: '/attachments'
       fullPath: '/settings/attachments'
       preLoaderRoute: typeof SettingsAttachmentsRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof SettingsRouteRoute
     }
     '/settings/assistant': {
       id: '/settings/assistant'
-      path: '/settings/assistant'
+      path: '/assistant'
       fullPath: '/settings/assistant'
       preLoaderRoute: typeof SettingsAssistantRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof SettingsRouteRoute
     }
     '/project/$projectId': {
       id: '/project/$projectId'
@@ -501,28 +507,39 @@ declare module '@tanstack/react-router' {
     }
     '/settings/providers/': {
       id: '/settings/providers/'
-      path: '/settings/providers'
+      path: '/providers'
       fullPath: '/settings/providers/'
       preLoaderRoute: typeof SettingsProvidersIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof SettingsRouteRoute
     }
     '/settings/providers/$providerName': {
       id: '/settings/providers/$providerName'
-      path: '/settings/providers/$providerName'
+      path: '/providers/$providerName'
       fullPath: '/settings/providers/$providerName'
       preLoaderRoute: typeof SettingsProvidersProviderNameRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof SettingsRouteRoute
     }
   }
 }
 
-const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
-  LogsRoute: LogsRoute,
-  SystemMonitorRoute: SystemMonitorRoute,
-  HubModelIdRoute: HubModelIdRoute,
-  LocalApiServerLogsRoute: LocalApiServerLogsRoute,
-  ProjectProjectIdRoute: ProjectProjectIdRoute,
+interface SettingsRouteRouteChildren {
+  SettingsAssistantRoute: typeof SettingsAssistantRoute
+  SettingsAttachmentsRoute: typeof SettingsAttachmentsRoute
+  SettingsClaudeCodeRoute: typeof SettingsClaudeCodeRoute
+  SettingsExtensionsRoute: typeof SettingsExtensionsRoute
+  SettingsGeneralRoute: typeof SettingsGeneralRoute
+  SettingsHardwareRoute: typeof SettingsHardwareRoute
+  SettingsHermesAgentRoute: typeof SettingsHermesAgentRoute
+  SettingsHttpsProxyRoute: typeof SettingsHttpsProxyRoute
+  SettingsLocalApiServerRoute: typeof SettingsLocalApiServerRoute
+  SettingsMcpServersRoute: typeof SettingsMcpServersRoute
+  SettingsPrivacyRoute: typeof SettingsPrivacyRoute
+  SettingsShortcutsRoute: typeof SettingsShortcutsRoute
+  SettingsProvidersProviderNameRoute: typeof SettingsProvidersProviderNameRoute
+  SettingsProvidersIndexRoute: typeof SettingsProvidersIndexRoute
+}
+
+const SettingsRouteRouteChildren: SettingsRouteRouteChildren = {
   SettingsAssistantRoute: SettingsAssistantRoute,
   SettingsAttachmentsRoute: SettingsAttachmentsRoute,
   SettingsClaudeCodeRoute: SettingsClaudeCodeRoute,
@@ -535,12 +552,26 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsMcpServersRoute: SettingsMcpServersRoute,
   SettingsPrivacyRoute: SettingsPrivacyRoute,
   SettingsShortcutsRoute: SettingsShortcutsRoute,
+  SettingsProvidersProviderNameRoute: SettingsProvidersProviderNameRoute,
+  SettingsProvidersIndexRoute: SettingsProvidersIndexRoute,
+}
+
+const SettingsRouteRouteWithChildren = SettingsRouteRoute._addFileChildren(
+  SettingsRouteRouteChildren,
+)
+
+const rootRouteChildren: RootRouteChildren = {
+  IndexRoute: IndexRoute,
+  SettingsRouteRoute: SettingsRouteRouteWithChildren,
+  LogsRoute: LogsRoute,
+  SystemMonitorRoute: SystemMonitorRoute,
+  HubModelIdRoute: HubModelIdRoute,
+  LocalApiServerLogsRoute: LocalApiServerLogsRoute,
+  ProjectProjectIdRoute: ProjectProjectIdRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
   HubIndexRoute: HubIndexRoute,
   LaunchIndexRoute: LaunchIndexRoute,
   SkillsIndexRoute: SkillsIndexRoute,
-  SettingsProvidersProviderNameRoute: SettingsProvidersProviderNameRoute,
-  SettingsProvidersIndexRoute: SettingsProvidersIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

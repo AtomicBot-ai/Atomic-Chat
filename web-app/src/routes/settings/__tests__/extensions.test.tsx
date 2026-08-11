@@ -3,10 +3,6 @@ import { render, screen } from '@testing-library/react'
 import { Route as ExtensionsRoute } from '../extensions'
 
 // Mock dependencies
-vi.mock('@/containers/SettingsMenu', () => ({
-  default: () => <div data-testid="settings-menu">Settings Menu</div>,
-}))
-
 vi.mock('@/containers/HeaderPage', () => ({
   default: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="header-page">{children}</div>
@@ -92,7 +88,6 @@ describe('Extensions Settings Route', () => {
     render(<Component />)
 
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
-    expect(screen.getByTestId('settings-menu')).toBeInTheDocument()
     expect(screen.getByText('common:settings')).toBeInTheDocument()
   })
 
@@ -168,11 +163,11 @@ describe('Extensions Settings Route', () => {
     const Component = ExtensionsRoute.component as React.ComponentType
     render(<Component />)
 
+    // The sidebar lives in the `/settings` layout route now, so the page only
+    // owns its header and content pane.
     const headerPage = screen.getByTestId('header-page')
     expect(headerPage).toBeInTheDocument()
-    
-    const settingsMenu = screen.getByTestId('settings-menu')
-    expect(settingsMenu).toBeInTheDocument()
+    expect(headerPage.nextElementSibling).toHaveClass('overflow-y-auto')
   })
 
   it('should render card items with proper structure', () => {
@@ -223,7 +218,7 @@ describe('Extensions Settings Route', () => {
     const Component = ExtensionsRoute.component as React.ComponentType
     render(<Component />)
 
-    const settingsContent = screen.getByTestId('settings-menu').nextElementSibling
+    const settingsContent = screen.getByTestId('header-page').nextElementSibling
     expect(settingsContent).toHaveClass('p-4', 'pt-0', 'w-full', 'overflow-y-auto')
   })
 })

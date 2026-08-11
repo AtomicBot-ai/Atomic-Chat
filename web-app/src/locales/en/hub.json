@@ -4,6 +4,7 @@
   "newChat": "New chat",
   "download": "Download",
   "downloaded": "Downloaded",
+  "installedOnDevice": "Installed on this device",
   "loadingModels": "Loading models...",
   "noModels": "No models found",
   "by": "By",
@@ -51,7 +52,7 @@
   "staffPickBadge": "Recommended",
   "updatedAgo": "Updated {{ago}}",
   "parameters": "Parameters",
-  "architecture": "Architecture",
+  "context": "Context",
   "capabilities": "Capabilities",
   "readme": "README",
   "readmeUnavailable": "README is not available for this model."

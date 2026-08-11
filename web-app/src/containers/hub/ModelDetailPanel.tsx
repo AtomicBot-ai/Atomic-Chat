@@ -179,28 +179,8 @@ export function ModelDetailPanel({
             <h1 className="min-w-0 truncate text-xl font-semibold" title={name}>
               {name}
             </h1>
-            {pick && (
-              <span className="shrink-0 rounded-[6px] border border-border bg-secondary px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                {t('hub:staffPickBadge')}
-              </span>
-            )}
           </div>
           <p className="truncate text-xs text-muted-foreground">{repoId}</p>
-          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-            {!!model.downloads && model.downloads > 0 && (
-              <span className="inline-flex items-center gap-1">
-                <IconDownload size={13} />
-                {formatDownloads(model.downloads)}
-              </span>
-            )}
-            {!!model.likes && model.likes > 0 && (
-              <span className="inline-flex items-center gap-1">
-                <IconHeart size={13} />
-                {formatDownloads(model.likes)}
-              </span>
-            )}
-            {updated && <span>{t('hub:updatedAgo', { ago: updated })}</span>}
-          </div>
         </div>
         <a
           href={`https://huggingface.co/${repoId}`}
@@ -215,38 +195,32 @@ export function ModelDetailPanel({
         </a>
       </header>
 
-      {pick?.summary && (
-        <p className="text-sm text-muted-foreground">{pick.summary}</p>
-      )}
-
-      <DownloadOptionsSelect model={model} budgetBytes={budgetBytes} />
-
       <section className="rounded-lg border border-border bg-card p-4">
         <h2 className="mb-3 text-sm font-medium">{t('hub:details')}</h2>
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
-          <div>
+        <dl className="grid grid-cols-2 gap-2 text-xs">
+          <div className="rounded-md bg-muted/40 p-3">
             <dt className="text-muted-foreground">{t('hub:parameters')}</dt>
-            <dd className="mt-0.5 font-medium text-foreground">
+            <dd className="mt-1 text-sm font-semibold text-foreground">
               {params ?? '—'}
             </dd>
           </div>
-          <div>
-            <dt className="text-muted-foreground">{t('hub:architecture')}</dt>
-            <dd className="mt-0.5 font-medium text-foreground">
-              {context ? `${context} context` : (model.developer ?? '—')}
+          <div className="rounded-md bg-muted/40 p-3">
+            <dt className="text-muted-foreground">{t('hub:context')}</dt>
+            <dd className="mt-1 text-sm font-semibold text-foreground">
+              {context ?? '—'}
             </dd>
           </div>
-          <div>
+          <div className="rounded-md bg-muted/40 p-3">
             <dt className="text-muted-foreground">{t('hub:formats')}</dt>
-            <dd className="mt-0.5 font-medium uppercase text-foreground">
+            <dd className="mt-1 text-sm font-semibold uppercase text-foreground">
               {modelFormat(model)}
             </dd>
           </div>
-          <div>
+          <div className="rounded-md bg-muted/40 p-3">
             <dt className="text-muted-foreground">{t('hub:capabilities')}</dt>
-            <dd className="mt-1 flex flex-wrap gap-1.5">
+            <dd className="mt-1.5 flex flex-wrap gap-1.5">
               {caps.length === 0 ? (
-                <span className="font-medium text-foreground">—</span>
+                <span className="text-sm font-semibold text-foreground">—</span>
               ) : (
                 caps.map((cap) => (
                   <span
@@ -263,7 +237,26 @@ export function ModelDetailPanel({
             </dd>
           </div>
         </dl>
+        {(!!model.downloads || !!model.likes || updated) && (
+          <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-border pt-3 text-xs text-muted-foreground">
+            {!!model.downloads && model.downloads > 0 && (
+              <span className="inline-flex items-center gap-1">
+                <IconDownload size={13} />
+                {formatDownloads(model.downloads)}
+              </span>
+            )}
+            {!!model.likes && model.likes > 0 && (
+              <span className="inline-flex items-center gap-1">
+                <IconHeart size={13} />
+                {formatDownloads(model.likes)}
+              </span>
+            )}
+            {updated && <span>{t('hub:updatedAgo', { ago: updated })}</span>}
+          </div>
+        )}
       </section>
+
+      <DownloadOptionsSelect model={model} budgetBytes={budgetBytes} />
 
       <section className="rounded-lg border border-border bg-card p-4">
         <h2 className="mb-3 text-sm font-medium">{t('hub:readme')}</h2>

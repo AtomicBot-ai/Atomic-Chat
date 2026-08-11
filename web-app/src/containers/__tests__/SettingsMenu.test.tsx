@@ -207,6 +207,46 @@ describe('SettingsMenu', () => {
     expect(mockNavigate).toHaveBeenCalled()
   })
 
+  it('highlights the clicked provider before the route match catches up', async () => {
+    const user = userEvent.setup()
+    render(<SettingsMenu />)
+
+    const row = (provider: string) =>
+      screen
+        .getByTestId(`provider-avatar-${provider}`)
+        .closest('div[class*="cursor-pointer"]')!
+
+    expect(row('openai').className).not.toContain('bg-foreground/20')
+
+    // `useMatches` keeps reporting the old route, standing in for a navigation
+    // transition that has not committed yet.
+    await user.click(row('openai'))
+
+    expect(row('openai').className).toContain('bg-foreground/20')
+    expect(row('llama.cpp').className).not.toContain('bg-foreground/20')
+  })
+
+  it('drops the optimistic highlight once the route resolves elsewhere', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(<SettingsMenu />)
+
+    const row = (provider: string) =>
+      screen
+        .getByTestId(`provider-avatar-${provider}`)
+        .closest('div[class*="cursor-pointer"]')!
+
+    await user.click(row('openai'))
+    expect(row('openai').className).toContain('bg-foreground/20')
+
+    vi.mocked(useMatches).mockReturnValue([
+      { routeId: '/settings/providers/$providerName', params: { providerName: 'llama.cpp' } },
+    ])
+    rerender(<SettingsMenu />)
+
+    expect(row('openai').className).not.toContain('bg-foreground/20')
+    expect(row('llama.cpp').className).toContain('bg-foreground/20')
+  })
+
   it('hides llama.cpp during setup remote provider step', () => {
     vi.mocked(useMatches).mockReturnValue([
       {

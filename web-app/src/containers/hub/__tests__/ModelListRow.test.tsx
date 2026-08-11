@@ -26,16 +26,14 @@ const model = (overrides: Partial<CatalogModel> = {}): CatalogModel =>
   }) as CatalogModel
 
 describe('ModelListRow', () => {
-  it('renders the repo name, format and download count', () => {
+  it('renders the repo name and format without size or download count', () => {
     render(<ModelListRow model={model()} onSelect={vi.fn()} />)
 
     expect(screen.getByText('Qwen3.5-4B-GGUF')).toBeInTheDocument()
     // Uppercased by CSS, so the node still carries the raw format token.
     expect(screen.getByText('gguf')).toBeInTheDocument()
-    // Thousands are separated by a narrow no-break space that RTL's default
-    // normalizer folds into a plain one.
-    expect(screen.getByText(/^12.345$/)).toBeInTheDocument()
-    expect(screen.getByText('2.5 GB')).toBeInTheDocument()
+    expect(screen.queryByText(/^12.345$/)).not.toBeInTheDocument()
+    expect(screen.queryByText('2.5 GB')).not.toBeInTheDocument()
   })
 
   it('prefers the curated title and summary over catalog values', () => {
@@ -56,7 +54,7 @@ describe('ModelListRow', () => {
     expect(screen.queryByText('Qwen3.5-4B-GGUF')).not.toBeInTheDocument()
   })
 
-  it('resolves description_key ahead of the plain summary', () => {
+  it('uses the model summary instead of its category label', () => {
     render(
       <ModelListRow
         model={model()}
@@ -69,8 +67,23 @@ describe('ModelListRow', () => {
       />
     )
 
-    expect(screen.getByText('hub:recEverydayUse')).toBeInTheDocument()
-    expect(screen.queryByText('Compact all-rounder.')).not.toBeInTheDocument()
+    expect(screen.getByText('Compact all-rounder.')).toBeInTheDocument()
+    expect(screen.queryByText('hub:recEverydayUse')).not.toBeInTheDocument()
+  })
+
+  it('falls back to the organization when no curated summary exists', () => {
+    render(
+      <ModelListRow
+        model={model({
+          developer: 'Qwen',
+          description: '**Tags**: transformers, gguf, image-to-text',
+        })}
+        onSelect={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Qwen')).toBeInTheDocument()
+    expect(screen.queryByText(/\*\*Tags\*\*/)).not.toBeInTheDocument()
   })
 
   it('marks the selected row for assistive tech', () => {

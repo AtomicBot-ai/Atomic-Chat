@@ -64,14 +64,14 @@ describe('normalizeHubFilters', () => {
     expect(normalizeHubFilters(42)).toEqual(DEFAULT_HUB_FILTERS)
   })
 
-  it('drops unknown formats and de-duplicates the rest', () => {
+  it('keeps only the first valid format', () => {
     expect(
-      normalizeHubFilters({ formats: ['gguf', 'gguf', 'onnx', 7] }).formats
+      normalizeHubFilters({ formats: ['gguf', 'mlx', 'onnx', 7] }).formats
     ).toEqual(['gguf'])
   })
 
-  it('keeps an explicitly empty format selection', () => {
-    expect(normalizeHubFilters({ formats: [] }).formats).toEqual([])
+  it('falls back to GGUF when no valid format is selected', () => {
+    expect(normalizeHubFilters({ formats: [] }).formats).toEqual(['gguf'])
   })
 
   it('falls back to defaults for an unknown sort key or non-boolean flag', () => {

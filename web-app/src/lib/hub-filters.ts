@@ -30,7 +30,7 @@ export const HUB_SORT_KEYS: readonly HubSortKey[] = [
 ]
 
 export type HubFilterState = {
-  /** Empty set is treated as "no format filter", i.e. everything passes. */
+  /** The UI keeps exactly one active model format. */
   formats: ModelFormat[]
   sort: HubSortKey
   /** Hide entries that cannot fit the detected memory budget. */
@@ -38,7 +38,7 @@ export type HubFilterState = {
 }
 
 export const DEFAULT_HUB_FILTERS: HubFilterState = {
-  formats: ['gguf', 'mlx'],
+  formats: ['gguf'],
   sort: 'recommended',
   onlyFitting: true,
 }
@@ -56,9 +56,10 @@ export function normalizeHubFilters(raw: unknown): HubFilterState {
   if (typeof raw !== 'object' || raw === null) return { ...DEFAULT_HUB_FILTERS }
   const value = raw as Record<string, unknown>
 
-  const formats = Array.isArray(value.formats)
-    ? Array.from(new Set(value.formats.filter(isFormat)))
-    : [...DEFAULT_HUB_FILTERS.formats]
+  const selectedFormat = Array.isArray(value.formats)
+    ? value.formats.find(isFormat)
+    : undefined
+  const formats = [selectedFormat ?? DEFAULT_HUB_FILTERS.formats[0]]
 
   return {
     formats,

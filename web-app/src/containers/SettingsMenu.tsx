@@ -91,6 +91,29 @@ const SettingsMenu = () => {
     [visibleProviders]
   )
 
+  const routeProviderName = useMemo(() => {
+    const match = matches.find(
+      (match) =>
+        match.routeId === '/settings/providers/$providerName' &&
+        'providerName' in match.params
+    )
+    return match
+      ? ((match.params as { providerName: string }).providerName ?? null)
+      : null
+  }, [matches])
+
+  // TanStack runs navigation inside `React.startTransition`, and the provider
+  // page it renders is large enough that the transition commits well after the
+  // click. Since the selected row is derived from the committed match, the
+  // highlight used to arrive with the whole page. Recording the clicked
+  // provider in local state is an urgent update, so the row paints on the next
+  // frame and the transition catches up behind it.
+  const [pendingProvider, setPendingProvider] = useState<string | null>(null)
+  useEffect(() => {
+    setPendingProvider(null)
+  }, [routeProviderName])
+  const selectedProvider = pendingProvider ?? routeProviderName
+
   // Check if current route has a providerName parameter and expand providers submenu
   useEffect(() => {
     const hasProviderName = matches.some(
@@ -113,6 +136,20 @@ const SettingsMenu = () => {
       typeof match.search === 'object' &&
       'step' in match.search &&
       match.search.step === 'setup_remote_provider'
+  )
+
+  const selectProvider = useCallback(
+    (providerName: string) => {
+      setPendingProvider(providerName)
+      navigate({
+        to: route.settings.providers,
+        params: { providerName },
+        ...(stepSetupRemoteProvider
+          ? { search: { step: 'setup_remote_provider' } }
+          : {}),
+      })
+    },
+    [navigate, stepSetupRemoteProvider]
   )
 
   const menuSettings = [
@@ -172,32 +209,18 @@ const SettingsMenu = () => {
   }
 
   const renderProviderItem = (provider: ProviderObject, muted = false) => {
-    const isRouteActive = matches.some(
-      (match) =>
-        match.routeId === '/settings/providers/$providerName' &&
-        'providerName' in match.params &&
-        match.params.providerName === provider.provider
-    )
     return (
       <div
         key={provider.provider}
         className={cn(
           'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm',
           muted ? 'text-muted-foreground' : 'text-foreground',
-          isRouteActive && 'bg-foreground/20',
+          selectedProvider === provider.provider && 'bg-foreground/20',
           provider.provider === 'llama.cpp' &&
             stepSetupRemoteProvider &&
             'hidden'
         )}
-        onClick={() =>
-          navigate({
-            to: route.settings.providers,
-            params: { providerName: provider.provider },
-            ...(stepSetupRemoteProvider
-              ? { search: { step: 'setup_remote_provider' } }
-              : {}),
-          })
-        }
+        onClick={() => selectProvider(provider.provider)}
       >
         <ProvidersAvatar provider={provider} />
         <div className="truncate flex-1">
@@ -249,38 +272,19 @@ const SettingsMenu = () => {
                 {menu.hasSubMenu && expandedProviders && (
                   <div className="ml-2 mt-1 space-y-1">
                     {activeProviders.map((provider) => {
-                      const isActive = matches.some(
-                        (match) =>
-                          match.routeId ===
-                            '/settings/providers/$providerName' &&
-                          'providerName' in match.params &&
-                          match.params.providerName === provider.provider
-                      )
-
                       return (
                         <div key={provider.provider}>
                           <div
                             className={cn(
                               'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm text-foreground',
-                              isActive && 'bg-foreground/20',
+                              selectedProvider === provider.provider &&
+                                'bg-foreground/20',
                               // hidden for llama.cpp provider for setup remote provider
                               provider.provider === 'llama.cpp' &&
                                 stepSetupRemoteProvider &&
                                 'hidden'
                             )}
-                            onClick={() =>
-                              navigate({
-                                to: route.settings.providers,
-                                params: {
-                                  providerName: provider.provider,
-                                },
-                                ...(stepSetupRemoteProvider
-                                  ? {
-                                      search: { step: 'setup_remote_provider' },
-                                    }
-                                  : {}),
-                              })
-                            }
+                            onClick={() => selectProvider(provider.provider)}
                           >
                             <ProvidersAvatar provider={provider} />
                             <div className="truncate">

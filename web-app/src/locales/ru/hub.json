@@ -4,6 +4,7 @@
   "newChat": "Новый чат",
   "download": "Загрузить",
   "downloaded": "Загруженные",
+  "installedOnDevice": "Установленные на этом устройстве",
   "loadingModels": "Загрузка моделей…",
   "noModels": "Модели не найдены",
   "by": "От",
@@ -44,7 +45,7 @@
   "staffPickBadge": "Рекомендуем",
   "updatedAgo": "Обновлено {{ago}}",
   "parameters": "Параметры",
-  "architecture": "Архитектура",
+  "context": "Контекст",
   "capabilities": "Возможности",
   "readme": "README",
   "readmeUnavailable": "README недоступен для этой модели."
