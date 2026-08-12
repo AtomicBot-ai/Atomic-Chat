@@ -109,7 +109,7 @@ describe('ModelDetailPanel', () => {
       name: 'hub:downloadOptions',
     }).parentElement!
     expect(
-      details.compareDocumentPosition(downloadOptions) &
+      downloadOptions.compareDocumentPosition(details) &
         Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
     expect(within(details).getByText(/^4.200$/)).toBeInTheDocument()

@@ -3,7 +3,7 @@ import type { UIMessage } from 'ai'
 import { buildTraceBlocks } from './message-trace-parts'
 
 describe('buildTraceBlocks activity projection', () => {
-  it('groups reasoning and tool calls into one compact activity block', () => {
+  it('renders reasoning above the compact activity block', () => {
     const message = {
       id: 'assistant-1',
       role: 'assistant',
@@ -23,14 +23,45 @@ describe('buildTraceBlocks activity projection', () => {
 
     const blocks = buildTraceBlocks(message, false)
 
-    expect(blocks).toHaveLength(2)
+    expect(blocks).toHaveLength(3)
     expect(blocks[0]).toMatchObject({
+      kind: 'reasoning',
+      streaming: false,
+      items: [{ text: 'Inspect the workspace.' }],
+    })
+    expect(blocks[1]).toMatchObject({
       kind: 'activity',
       durationMs: 2_400,
-      reasoning: [{ text: 'Inspect the workspace.' }],
       tools: [{ toolName: 'mcp.search', state: 'output-available' }],
     })
-    expect(blocks[1]).toMatchObject({ kind: 'text', text: 'Done.' })
+    expect(blocks[2]).toMatchObject({ kind: 'text', text: 'Done.' })
+  })
+
+  it('keeps reasoning streaming until the answer text starts', () => {
+    const message = {
+      id: 'assistant-thinking',
+      role: 'assistant',
+      parts: [{ type: 'reasoning', text: 'Still weighing options.' }],
+    } as UIMessage
+
+    expect(buildTraceBlocks(message, false)).toEqual([
+      expect.objectContaining({ kind: 'reasoning', streaming: true }),
+    ])
+  })
+
+  it('drops reasoning entirely when the global toggle disables it', () => {
+    const message = {
+      id: 'assistant-no-reasoning',
+      role: 'assistant',
+      parts: [
+        { type: 'reasoning', text: 'Hidden thought.' },
+        { type: 'text', text: 'Answer.' },
+      ],
+    } as UIMessage
+
+    expect(buildTraceBlocks(message, true)).toEqual([
+      expect.objectContaining({ kind: 'text', text: 'Answer.' }),
+    ])
   })
 
   it('keeps an agent activity block when the run has no tool yet', () => {
@@ -66,7 +97,6 @@ describe('buildTraceBlocks activity projection', () => {
     expect(buildTraceBlocks(message, false, { ensureActivity: true })).toEqual([
       expect.objectContaining({
         kind: 'activity',
-        reasoning: [],
         tools: [],
       }),
     ])

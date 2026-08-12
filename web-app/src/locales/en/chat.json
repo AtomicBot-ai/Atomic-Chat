@@ -15,7 +15,9 @@
     "workedFor": "Worked for {{count}}s",
     "calledTool": "Called {{count}} tool",
     "calledTools": "Called {{count}} tools",
-    "reasoned": "Reasoned"
+    "reasoned": "Reasoned",
+    "thinking": "Thinking...",
+    "thoughtFor": "Thought for {{count}}s"
   },
   "workspacePreview": {
     "generating": "Preview will be available after generation finishes."

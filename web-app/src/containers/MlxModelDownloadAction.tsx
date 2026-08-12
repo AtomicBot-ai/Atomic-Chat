@@ -246,7 +246,7 @@ export const MlxModelDownloadAction = memo(
             size="sm"
             onClick={handleDownloadMlxModel}
             className={cn(
-              'bg-foreground text-background hover:bg-foreground/90',
+              'bg-foreground text-background hover:bg-foreground/80 hover:text-background',
               isDownloading && 'hidden'
             )}
           >

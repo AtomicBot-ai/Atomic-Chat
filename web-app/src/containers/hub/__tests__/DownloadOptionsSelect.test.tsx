@@ -1,7 +1,21 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { CatalogModel } from '@/services/models/types'
+
+class MockResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+beforeAll(() => {
+  vi.stubGlobal('ResizeObserver', MockResizeObserver)
+})
+
+afterAll(() => {
+  vi.unstubAllGlobals()
+})
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -77,7 +91,8 @@ describe('DownloadOptionsSelect', () => {
     )
 
     expect(screen.getByText('download Bonsai-27B-Q1_0')).toBeInTheDocument()
-    expect(screen.getByText('Good fit')).toBeInTheDocument()
+    expect(screen.getByLabelText('Good fit')).toBeInTheDocument()
+    expect(screen.queryByText('Good fit')).not.toBeInTheDocument()
     expect(screen.queryByText('Too large')).not.toBeInTheDocument()
   })
 
@@ -131,30 +146,37 @@ describe('DownloadOptionsSelect', () => {
     await user.click(screen.getByRole('button', { expanded: false }))
     await user.click(screen.getByText('Q8_0'))
 
-    expect(screen.getByRole('button', { name: 'hub:download' })).toBeDisabled()
-    expect(screen.getByText('Too large')).toBeInTheDocument()
+    const download = screen.getByRole('button', { name: 'hub:download' })
+    expect(download).toBeDisabled()
+    expect(screen.getByLabelText('Too large')).toBeInTheDocument()
+    await user.hover(download.parentElement!)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'This model is probably too large for your hardware'
+    )
     expect(screen.queryByText(/^download /)).not.toBeInTheDocument()
   })
 
-  it('badges a comfortably small quant as a good fit', () => {
+  it('shows only the fit dot for a comfortably small quant', () => {
     render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={16 * GB} />)
 
-    expect(screen.getByText('Good fit')).toBeInTheDocument()
+    expect(screen.getByLabelText('Good fit')).toBeInTheDocument()
+    expect(screen.queryByText('Good fit')).not.toBeInTheDocument()
   })
 
-  it('badges a quant that only just fits as merely likely to run', () => {
+  it('shows only the fit dot for a quant that should run', () => {
     // 2.50 GB against a 3 GB budget is past the 70% comfort threshold.
     render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={3 * GB} />)
 
-    expect(screen.getByText('Should run')).toBeInTheDocument()
+    expect(screen.getByLabelText('Should run')).toBeInTheDocument()
+    expect(screen.queryByText('Should run')).not.toBeInTheDocument()
   })
 
   it('hides the fit verdict while the memory budget is unknown', () => {
     render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={0} />)
 
-    expect(screen.queryByText('Good fit')).not.toBeInTheDocument()
-    expect(screen.queryByText('Should run')).not.toBeInTheDocument()
-    expect(screen.queryByText('Too large')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Good fit')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Should run')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Too large')).not.toBeInTheDocument()
   })
 
   it('sends an MLX repo straight to the MLX download action', () => {
@@ -177,6 +199,7 @@ describe('DownloadOptionsSelect', () => {
     expect(screen.getByText('MLX')).toBeInTheDocument()
     // Sharded safetensors are summed, not reported one shard at a time.
     expect(screen.getByText('5.0 GB')).toBeInTheDocument()
-    expect(screen.getByText('Good fit')).toBeInTheDocument()
+    expect(screen.getByLabelText('Good fit')).toBeInTheDocument()
+    expect(screen.queryByText('Good fit')).not.toBeInTheDocument()
   })
 })

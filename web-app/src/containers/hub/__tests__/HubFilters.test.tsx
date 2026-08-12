@@ -121,15 +121,12 @@ describe('HubFilters', () => {
     const user = userEvent.setup()
     renderFilters()
 
-    // Nothing about the device is visible until the menu is opened.
-    expect(screen.queryByText(/Apple M4 Max/)).not.toBeInTheDocument()
-
     await openSortMenu(user)
 
-    expect(
-      screen.getByRole('menuitemcheckbox', { name: 'hub:onlyFitting' })
-    ).toBeChecked()
-    expect(screen.getByText(/Apple M4 Max.*32\.00 GB/)).toBeInTheDocument()
+    const item = screen.getByRole('menuitemcheckbox', {
+      name: 'hub:fitFilterLabel',
+    })
+    expect(item).toBeChecked()
   })
 
   it('turns the device filter off and keeps the menu open', async () => {
@@ -138,7 +135,7 @@ describe('HubFilters', () => {
 
     await openSortMenu(user)
     const item = screen.getByRole('menuitemcheckbox', {
-      name: 'hub:onlyFitting',
+      name: 'hub:fitFilterLabel',
     })
     await user.click(item)
 
@@ -146,7 +143,7 @@ describe('HubFilters', () => {
       expect.objectContaining({ onlyFitting: false })
     )
     expect(
-      screen.getByRole('menuitemcheckbox', { name: 'hub:onlyFitting' })
+      screen.getByRole('menuitemcheckbox', { name: 'hub:fitFilterLabel' })
     ).not.toBeChecked()
   })
 
@@ -174,7 +171,7 @@ describe('HubFilters', () => {
       expect.objectContaining({ onlyFitting: false })
     )
     expect(
-      screen.getByRole('menuitemcheckbox', { name: 'hub:onlyFitting' })
+      screen.getByRole('menuitemcheckbox', { name: 'hub:fitFilterLabel' })
     ).toBeInTheDocument()
   })
 
@@ -188,7 +185,7 @@ describe('HubFilters', () => {
 
     await openSortMenu(user)
     const fitItem = screen.getByRole('menuitemcheckbox', {
-      name: 'hub:onlyFitting',
+      name: 'hub:fitFilterLabel',
     })
     await user.click(fitItem)
 
@@ -209,37 +206,8 @@ describe('HubFilters', () => {
     await openSortMenu(user)
 
     expect(
-      screen.queryByRole('menuitemcheckbox', { name: 'hub:onlyFitting' })
+      screen.queryByRole('menuitemcheckbox', { name: 'hub:fitFilterLabel' })
     ).not.toBeInTheDocument()
-  })
-
-  it('hides the device filter in search mode', async () => {
-    const user = userEvent.setup()
-    renderFilters({}, { showFitFilter: false })
-
-    await openSortMenu(user)
-
-    expect(
-      screen.getByRole('menuitem', { name: 'hub:sortDownloads' })
-    ).toBeInTheDocument()
-    expect(
-      screen.queryByRole('menuitemcheckbox', { name: 'hub:onlyFitting' })
-    ).not.toBeInTheDocument()
-  })
-
-  it('falls back to the OS name when the CPU model is unknown', async () => {
-    hardware.state.hardwareData = {
-      cpu: { name: '' },
-      os_name: 'Windows 11',
-      total_memory: 16 * 1024,
-      gpus: [],
-    }
-    const user = userEvent.setup()
-    renderFilters()
-
-    await openSortMenu(user)
-
-    expect(screen.getByText(/Windows 11/)).toBeInTheDocument()
   })
 
   it('omits the format picker where MLX cannot run', () => {

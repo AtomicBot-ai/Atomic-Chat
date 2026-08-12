@@ -15,7 +15,9 @@
     "workedFor": "Выполнено за {{count}} с",
     "calledTool": "Вызван {{count}} инструмент",
     "calledTools": "Вызвано инструментов: {{count}}",
-    "reasoned": "Обдумано"
+    "reasoned": "Обдумано",
+    "thinking": "Думаю...",
+    "thoughtFor": "Обдумано за {{count}} с"
   },
   "workspacePreview": {
     "generating": "Предпросмотр станет доступен после завершения генерации."

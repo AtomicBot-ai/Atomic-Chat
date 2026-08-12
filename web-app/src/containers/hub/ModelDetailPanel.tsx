@@ -195,6 +195,8 @@ export function ModelDetailPanel({
         </a>
       </header>
 
+      <DownloadOptionsSelect model={model} budgetBytes={budgetBytes} />
+
       <section className="rounded-lg border border-border bg-card p-4">
         <h2 className="mb-3 text-sm font-medium">{t('hub:details')}</h2>
         <dl className="grid grid-cols-2 gap-2 text-xs">
@@ -255,8 +257,6 @@ export function ModelDetailPanel({
           </div>
         )}
       </section>
-
-      <DownloadOptionsSelect model={model} budgetBytes={budgetBytes} />
 
       <section className="rounded-lg border border-border bg-card p-4">
         <h2 className="mb-3 text-sm font-medium">{t('hub:readme')}</h2>

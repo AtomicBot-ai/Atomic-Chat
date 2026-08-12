@@ -66,6 +66,26 @@ const tokenizeText = (text: string): string[] =>
 const processTerm = (term: string): string | null =>
   term.length < 2 ? null : term.toLowerCase()
 
+/**
+ * Fuzziness is only earned by terms long enough for an edit to read as a typo
+ * rather than as a different word. MiniSearch derives its edit budget from
+ * `round(term.length * fuzzy)`, so a flat 0.2 still grants distance 1 to a
+ * three-letter term: `jan` reached the `ja` / `jpn` / `jav` language codes in
+ * `tags_normalized` and buried `Jan-nano` under 260 unrelated repos. Short
+ * terms are answered by prefix matching alone, which is exact enough.
+ */
+const FUZZY_MIN_TERM_LENGTH = 4
+
+const fuzzyForTerm = (term: string): number | false =>
+  term.length >= FUZZY_MIN_TERM_LENGTH ? 0.2 : false
+
+const SEARCH_OPTIONS = {
+  boost: SEARCH_BOOSTS,
+  fuzzy: fuzzyForTerm,
+  prefix: true,
+  combineWith: 'AND',
+} as const
+
 const RECENCY_HALF_LIFE_DAYS = 180
 
 const ORG_BOOST: Record<string, number> = {
@@ -150,12 +170,7 @@ const newMiniSearch = (): MiniSearch<IndexableDocument> =>
     idField: 'id',
     fields: [...SEARCH_INDEX_FIELDS],
     storeFields: [...SEARCH_STORE_FIELDS],
-    searchOptions: {
-      boost: SEARCH_BOOSTS,
-      fuzzy: 0.2,
-      prefix: true,
-      combineWith: 'AND',
-    },
+    searchOptions: { ...SEARCH_OPTIONS },
     tokenize: tokenizeText,
     processTerm,
   })
@@ -206,12 +221,7 @@ export class ModelSearchService {
         idField: 'id',
         fields: [...SEARCH_INDEX_FIELDS],
         storeFields: [...SEARCH_STORE_FIELDS],
-        searchOptions: {
-          boost: SEARCH_BOOSTS,
-          fuzzy: 0.2,
-          prefix: true,
-          combineWith: 'AND',
-        },
+        searchOptions: { ...SEARCH_OPTIONS },
         tokenize: tokenizeText,
         processTerm,
       }
@@ -293,12 +303,7 @@ export class ModelSearchService {
 
     let hits: SearchResult[]
     try {
-      hits = this.miniSearch.search(query, {
-        fuzzy: 0.2,
-        prefix: true,
-        combineWith: 'AND',
-        boost: SEARCH_BOOSTS,
-      })
+      hits = this.miniSearch.search(query, { ...SEARCH_OPTIONS })
     } catch (error) {
       console.warn(
         '[model-search] MiniSearch.search threw, falling back to substring scan:',

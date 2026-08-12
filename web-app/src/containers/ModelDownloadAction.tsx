@@ -244,7 +244,7 @@ export const ModelDownloadAction = ({
         size="sm"
         onClick={handleDownloadModel}
         title={t('hub:downloadModel')}
-        className="bg-foreground font-semibold text-background hover:bg-foreground/90"
+        className="bg-foreground font-semibold text-background hover:bg-foreground/80 hover:text-background"
       >
         {t('hub:download')}
       </Button>

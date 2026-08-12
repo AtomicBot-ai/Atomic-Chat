@@ -192,7 +192,7 @@ export function hasLikeData(models: readonly CatalogModel[]): boolean {
 export type ApplyHubFiltersOptions = {
   /** Memory budget in bytes; 0 disables the fit filter. */
   budgetBytes?: number
-  /** The fit filter only applies to the curated list, never to search hits. */
+  /** Allows callers without reliable size data to bypass the fit filter. */
   applyFitFilter?: boolean
 }
 

@@ -8,7 +8,6 @@ import {
 } from '@/components/ui/tooltip'
 import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
 import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
-import { FitBadge } from '@/containers/hub/FitBadge'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   estimateFit,
@@ -111,7 +110,6 @@ export function DownloadOptionsSelect({
           </div>
           <MlxModelDownloadAction model={model} />
         </div>
-        {fitKnown && <FitBadge fit={fit} className="mt-3" />}
       </section>
     )
   }
@@ -155,20 +153,27 @@ export function DownloadOptionsSelect({
         </button>
 
         {selectedFit === 'no' ? (
-          <Button
-            variant="default"
-            size="sm"
-            disabled
-            className="bg-foreground font-semibold text-background"
-          >
-            {t('hub:download')}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="shrink-0 cursor-not-allowed">
+                <Button
+                  variant="default"
+                  size="sm"
+                  disabled
+                  className="pointer-events-none bg-foreground font-semibold text-background"
+                >
+                  {t('hub:download')}
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{HARDWARE_FIT.no.tip}</p>
+            </TooltipContent>
+          </Tooltip>
         ) : (
           <ModelDownloadAction variant={selected} model={model} asButton />
         )}
       </div>
-
-      {fitKnown && <FitBadge fit={selectedFit} className="mt-3" />}
 
       {expanded && (
         <ul className="mt-3 border-t border-border pt-2">

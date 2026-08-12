@@ -224,6 +224,33 @@ describe('/hub route', () => {
     expect(screen.queryByText('Qwen3.5 4B')).not.toBeInTheDocument()
   })
 
+  it('keeps the device fit filter active while searching', async () => {
+    const user = userEvent.setup()
+    const small = model('test/small-GGUF')
+    const huge = model('test/huge-GGUF', {
+      quants: [
+        {
+          model_id: 'huge-Q4_K_M.gguf',
+          path: 'huge-Q4_K_M.gguf',
+          file_size: '80.00 GB',
+        },
+      ],
+    })
+    mocks.sources = [small, huge]
+    mocks.search_.mockReturnValue([small, huge])
+    render(<HubPage />)
+
+    await user.type(
+      screen.getByRole('textbox', { name: 'hub:searchPlaceholder' }),
+      'test'
+    )
+
+    await waitFor(() =>
+      expect(screen.getByText('small-GGUF')).toBeInTheDocument()
+    )
+    expect(screen.queryByText('huge-GGUF')).not.toBeInTheDocument()
+  })
+
   it('returns to staff picks when the query is cleared', async () => {
     const user = userEvent.setup()
     render(<HubPage />)

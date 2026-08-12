@@ -15,6 +15,9 @@ export function buildTraceBlocks(
   const agentRun = metadata?.agent_run
   const reasoning: Array<{ key: string; text: string }> = []
   const tools: Extract<TraceBlock, { kind: 'activity' }>['tools'] = []
+  let reasoningIndex = -1
+  let reasoningState: 'streaming' | 'done' | undefined
+  let answeredAfterReasoning = false
   let activityIndex =
     agentRun ||
     metadata?.activityDurationMs !== undefined ||
@@ -27,6 +30,7 @@ export function buildTraceBlocks(
 
     if (part.type === 'text') {
       if (part.text?.trim()) {
+        if (reasoning.length > 0) answeredAfterReasoning = true
         blocks.push({
           kind: 'text',
           key: `${message.id}-${i}`,
@@ -38,7 +42,9 @@ export function buildTraceBlocks(
 
     if (part.type === 'reasoning') {
       if (!disableReasoning && part.text?.trim()) {
-        if (activityIndex < 0) activityIndex = blocks.length
+        if (reasoningIndex < 0) reasoningIndex = blocks.length
+        reasoningState = part.state
+        answeredAfterReasoning = false
         reasoning.push({
           key: `${message.id}-${i}`,
           text: part.text,
@@ -108,9 +114,22 @@ export function buildTraceBlocks(
       kind: 'activity',
       key: `${message.id}-activity`,
       durationMs: agentRun?.duration_ms ?? metadata?.activityDurationMs,
-      reasoning,
       tools,
       agentSummary: agentRun,
+    })
+  }
+
+  if (reasoning.length > 0) {
+    // Reasoning sits above the activity block so the thinking stream reads as
+    // its own step rather than a detail nested inside "Working".
+    const index = activityIndex >= 0 ? activityIndex : reasoningIndex
+    blocks.splice(index, 0, {
+      kind: 'reasoning',
+      key: `${message.id}-reasoning`,
+      streaming:
+        reasoningState === 'streaming' ||
+        (reasoningState !== 'done' && !answeredAfterReasoning),
+      items: reasoning,
     })
   }
 

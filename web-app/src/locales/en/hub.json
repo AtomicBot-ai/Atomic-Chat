@@ -43,6 +43,7 @@
   "sortDownloads": "Downloads",
   "sortLastModified": "Last modified",
   "onlyFitting": "Only include recommended models that fit on this device",
+  "fitFilterLabel": "Only show models that fit",
   "basedOnDevice": "Based on {{device}}: {{memory}}",
   "noFittingPicks": "No recommended models fit this device. Turn off the device filter to see them all.",
   "downloadOptions": "Download Options",

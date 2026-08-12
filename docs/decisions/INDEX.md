@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-175 records, 2026-05-19 → 2026-08-11.
+178 records, 2026-05-19 → 2026-08-12.
 
 ---
 
@@ -166,8 +166,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-19** — [Use `AtomicBot-ai/atomic-llama-cpp-turboquant` as the LLM backend](2026-05-19-use-atomicbot-ai-atomic-llama-cpp-turboquant-as-the-llm-backend.md)
 - **2026-05-19** — [Ship upstream `ggml-org/llama.cpp` as a second macOS provider, no fork](2026-05-19-ship-upstream-ggml-org-llama-cpp-as-a-second-macos-provider-no.md)
 
-## Models, Hub & downloads (18)
+## Models, Hub & downloads (19)
 
+- **2026-08-12** — [Gate Hub fuzzy search by term length and drop the Jan name filter](2026-08-12-gate-hub-fuzzy-search-by-term-length-and-drop-the-jan-name-filter.md)
 - **2026-08-07** — [Take Recommended capability badges from the staff-picks manifest](2026-08-07-take-recommended-capability-badges-from-the-staff-picks-manifest.md)
 - **2026-08-07** — [Let onboarding time out into the chat and recommend two GGUF models](2026-08-07-let-onboarding-time-out-into-the-chat-and-recommend-two-gguf.md)
 - **2026-08-06** — [Serve Hub staff picks from a separate manifest and rebuild /hub as a split view](2026-08-06-serve-hub-staff-picks-from-a-separate-manifest-and-split-view.md)
@@ -216,8 +217,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (12)
+## UI / UX (14)
 
+- **2026-08-12** — [Auto-start a model found on disk instead of showing the onboarding picker](2026-08-12-auto-start-a-model-found-on-disk-instead-of-showing-the-picker.md)
+- **2026-08-12** — [Render reasoning as its own block outside the activity block](2026-08-12-render-reasoning-as-its-own-block-outside-the-activity-block.md)
 - **2026-08-11** — [Own the settings chrome in a layout route and highlight the clicked provider optimistically](2026-08-11-own-the-settings-chrome-in-a-layout-route.md)
 - **2026-08-11** — [Split local and cloud providers in Settings; `active` means the cloud provider was added](2026-08-11-split-local-and-cloud-providers-in-settings.md)
 - **2026-08-07** — [Keep sidebar and model-picker interactions off the I/O path](2026-08-07-keep-sidebar-and-model-picker-interactions-off-the-io-path.md)

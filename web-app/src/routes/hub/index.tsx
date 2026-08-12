@@ -59,20 +59,6 @@ type HubListItem = {
   fromHuggingFace?: boolean
 }
 
-function isJanCatalogModel(model: CatalogModel) {
-  const normalizedName = model.model_name.toLowerCase()
-  const normalizedDeveloper = model.developer?.toLowerCase() ?? ''
-  const normalizedRepoName =
-    extractModelName(model.model_name)?.toLowerCase() ?? ''
-
-  return (
-    normalizedDeveloper.includes('janhq') ||
-    normalizedName.includes('/jan') ||
-    normalizedName.includes('jan-') ||
-    normalizedRepoName.startsWith('jan')
-  )
-}
-
 // Base (non-instruction-tuned) Gemma 4 MLX builds (e.g.
 // `mlx-community/gemma-4-12B-4bit`, converted from `google/gemma-4-12B`)
 // ship no chat template and behave as raw text-completion models when used
@@ -316,11 +302,7 @@ function HubContent() {
   }, [searchMatches, showOnlyDownloaded, providers])
 
   const catalogResults = useMemo(
-    () =>
-      downloadedMatches.filter(
-        (model) =>
-          !isJanCatalogModel(model) && !isUnsupportedBaseGemmaMlx(model)
-      ),
+    () => downloadedMatches.filter((model) => !isUnsupportedBaseGemmaMlx(model)),
     [downloadedMatches]
   )
 
@@ -430,12 +412,10 @@ function HubContent() {
       ...tail.map((m) => m.model_name),
     ])
 
-    // The fit filter is a curation aid for Staff Picks; a search is an
-    // explicit request for a specific model and must never hide it.
     const filtered = applyHubFilters(
       [...head, ...catalogResults, ...tail],
       filters,
-      { applyFitFilter: false }
+      { budgetBytes, applyFitFilter: true }
     )
 
     return filtered.map((model) => ({
@@ -645,7 +625,6 @@ function HubContent() {
             state={filters}
             onChange={updateFilters}
             showLikesSort={showLikesSort}
-            showFitFilter={debouncedSearchValue.length === 0}
             showOnlyDownloaded={showOnlyDownloaded}
             onShowOnlyDownloadedChange={(checked) => {
               setShowOnlyDownloaded(checked)
