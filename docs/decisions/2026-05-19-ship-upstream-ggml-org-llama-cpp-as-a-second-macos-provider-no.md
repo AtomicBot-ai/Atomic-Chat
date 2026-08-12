@@ -67,6 +67,8 @@ title: "Ship upstream `ggml-org/llama.cpp` as a second macOS provider, no fork"
    simultaneously on different ports — fine, both processes mmap the
    same GGUF read-only.
  - **Upstream backend updates ship only with Atomic Chat releases.**
+   *(This clause was superseded on 2026-08-12 — see the note at the end of
+   this record.)*
    `extensions/llamacpp-upstream-extension/src/backend.ts::fetchRemoteBackends`
    returns `[]` unconditionally, mirroring the turboquant extension's
    macOS behavior. The Atomic Chat installer ships exactly one
@@ -83,3 +85,13 @@ title: "Ship upstream `ggml-org/llama.cpp` as a second macOS provider, no fork"
  `src-tauri/plugins/tauri-plugin-llamacpp-upstream/`,
  `extensions/llamacpp-upstream-extension/`,
  [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp).
+
+<!--
+Superseded in part by 2026-08-12-update-upstream-llama-cpp-at-runtime-on-macos-too.md:
+only the "Upstream backend updates ship only with Atomic Chat releases" clause.
+macOS reads the atomic-chat-conf manifest at runtime, and a downloaded build is
+gated on a `llama-server --version` smoke test. The bundled build is still
+re-codesigned with our Developer ID, which notarization requires; it now resolves
+its tag from the manifest rather than the GitHub API. Everything else here stands.
+-->
+

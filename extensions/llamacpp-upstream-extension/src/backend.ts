@@ -30,6 +30,9 @@ const LLAMACPP_BACKEND_MANIFEST_URL =
 const LLAMACPP_DOWNLOAD_BASE =
   'https://github.com/ggml-org/llama.cpp/releases/download'
 const MANIFEST_FETCH_TIMEOUT_MS = 8_000
+// Tag of the bundled offline baseline below. It is NOT a pin: a live manifest
+// carrying a newer tag is followed as-is, which is what lets an upstream
+// engine update reach users without an app release.
 export const LLAMACPP_UPSTREAM_PINNED_TAG = 'b10205'
 
 // Bundled baseline manifest — a known-good snapshot that ships with the
@@ -48,6 +51,7 @@ const BUNDLED_MANIFEST_BASELINE = {
     { name: 'llama-b10205-bin-win-vulkan-x64.zip' },
     { name: 'llama-b10205-bin-ubuntu-x64.tar.gz' },
     { name: 'llama-b10205-bin-ubuntu-vulkan-x64.tar.gz' },
+    { name: 'llama-b10205-bin-macos-arm64.tar.gz' },
     { name: 'cudart-llama-bin-win-cuda-12.4-x64.zip' },
     { name: 'cudart-llama-bin-win-cuda-13.3-x64.zip' },
   ],
@@ -74,6 +78,132 @@ export async function getLocalInstalledBackends(): Promise<BackendVersion[]> {
 }
 // folder structure
 // <Jan's data folder>/llamacpp-upstream/backends/<backend_version>/<backend_type>
+
+export interface InstalledBackendPack {
+  version: string
+  backend: string
+  path: string
+  active: boolean
+}
+
+const clean = (value: string) => value.replace(/\uFEFF/g, '').trim()
+
+export interface BackendOption {
+  value: string
+  name: string
+}
+
+/**
+ * Flattens the version-dropdown tiers into one list.
+ *
+ * The tiers are passed most-preferred first and the first spelling of a
+ * `version/backend` wins, so a build that appears in several tiers keeps its
+ * richest label. `recommended` is forced into the list because a
+ * recommendation the dropdown cannot offer is a dead end: the UI would mark a
+ * version the user has no way to select.
+ */
+export function mergeBackendOptions(
+  tiers: BackendOption[][],
+  recommended?: BackendOption
+): BackendOption[] {
+  const merged: BackendOption[] = []
+  const seen = new Set<string>()
+
+  for (const tier of tiers) {
+    for (const option of tier) {
+      const value = clean(option.value)
+      if (!value || seen.has(value)) continue
+      seen.add(value)
+      merged.push({ value, name: option.name })
+    }
+  }
+
+  const recommendedValue = recommended ? clean(recommended.value) : ''
+  if (recommendedValue && !seen.has(recommendedValue)) {
+    merged.unshift({ value: recommendedValue, name: recommended!.name })
+  }
+
+  return merged
+}
+
+/**
+ * Every backend build sitting in this provider's tree, with the absolute path
+ * of each so the UI can reveal it in the file manager, and a flag marking the
+ * one currently selected (which must not be deletable).
+ */
+export async function listInstalledBackendPacks(
+  providerId: string,
+  currentVersionBackend: string
+): Promise<InstalledBackendPack[]> {
+  const janDataFolderPath = await getJanDataFolderPath()
+  const backendsRoot = await joinPath([
+    janDataFolderPath,
+    providerId,
+    'backends',
+  ])
+  const current = clean(currentVersionBackend)
+  const installed = await getLocalInstalledBackends()
+
+  return Promise.all(
+    installed.map(async (entry) => {
+      const version = clean(entry.version)
+      const backend = clean(entry.backend)
+      return {
+        version,
+        backend,
+        path: await joinPath([backendsRoot, version, backend]),
+        active: `${version}/${backend}` === current,
+      }
+    })
+  )
+}
+
+/**
+ * Removes one installed backend build. The selected build is refused rather
+ * than silently skipped: deleting it would leave `version_backend` pointing at
+ * a directory that no longer exists and the next model load would fail with a
+ * missing-binary error instead of anything actionable.
+ */
+export async function deleteBackendPack(
+  providerId: string,
+  currentVersionBackend: string,
+  version: string,
+  backend: string
+): Promise<void> {
+  const cleanVersion = clean(version)
+  const cleanBackend = clean(backend)
+  if (!cleanVersion || !cleanBackend) {
+    throw new Error(`Invalid backend pack: '${version}/${backend}'`)
+  }
+  if (/[/\\]/.test(cleanVersion) || /[/\\]/.test(cleanBackend)) {
+    throw new Error(`Invalid backend pack: '${version}/${backend}'`)
+  }
+  if (`${cleanVersion}/${cleanBackend}` === clean(currentVersionBackend)) {
+    throw new Error('Cannot remove the backend that is currently selected')
+  }
+
+  const janDataFolderPath = await getJanDataFolderPath()
+  const versionDir = await joinPath([
+    janDataFolderPath,
+    providerId,
+    'backends',
+    cleanVersion,
+  ])
+  const backendDir = await joinPath([versionDir, cleanBackend])
+
+  if (await fs.existsSync(backendDir)) {
+    await fs.rm(backendDir)
+  }
+
+  // A version dir holding no builds is an empty husk that would keep showing
+  // up in the packs list.
+  const remaining: string[] = (await fs.existsSync(versionDir))
+    ? await fs.readdirSync(versionDir)
+    : []
+  if (remaining.length === 0 && (await fs.existsSync(versionDir))) {
+    await fs.rm(versionDir)
+  }
+}
 
 /**
  * Mapping from internal Linux backend id → ggml-org upstream asset name
@@ -346,6 +476,25 @@ function parseManifestForPlatform(
     return backends
   }
 
+  if (osType === 'macos') {
+    // ggml-org publishes both architectures, but the manifest carries only
+    // `macos-arm64`: runtime updates on macOS are Apple Silicon only, and an
+    // Intel host stays on its bundled build. macOS has no GPU tiers to choose
+    // from, so `listSupportedBackends` passes this list through unfiltered —
+    // the arch filter has to happen here, or an Intel host would be offered
+    // the arm64 build the moment the manifest lists one.
+    const re = new RegExp(`^llama-${escapedTag}-bin-(macos-.+)\\.tar\\.gz$`)
+    const backends: BackendVersion[] = []
+    for (const asset of assets) {
+      const match = re.exec(asset.name)
+      if (!match) continue
+      const backendName = match[1]
+      if (backendName !== `macos-${archSuffix}`) continue
+      backends.push({ version: tag, backend: backendName, order: 0 })
+    }
+    return backends
+  }
+
   return []
 }
 
@@ -353,10 +502,12 @@ function parseManifestForPlatform(
  * Fetches the list of available backend builds from ggml-org/llama.cpp
  * GitHub releases for the current platform/arch.
  *
- * macOS: returns `[]` deliberately — see the ADR "Ship upstream
- * `ggml-org/llama.cpp` as a second macOS provider, no fork". macOS users
- * only get the bundled (re-codesigned) build that ships with each Atomic
- * Chat release.
+ * macOS: returns the `macos-arm64` asset on Apple Silicon, so a new engine
+ * build reaches those users without an app release, and nothing on Intel,
+ * which stays on its bundled build. The bundled build is also the offline
+ * baseline everywhere. See the 2026-08-12 ADR *Update upstream llama.cpp at
+ * runtime on macOS too*, which supersedes the bundle-only clause of the
+ * 2026-05-19 macOS ADR.
  *
  * Windows: returns the ggml-org Windows assets (CPU / CUDA 12.x / CUDA 13.x
  * / Vulkan) so the runtime update flow can fetch fresh builds without
@@ -369,19 +520,14 @@ function parseManifestForPlatform(
  * Returns `[]` on network failure so the app can still work offline with
  * only bundled/local backends.
  */
-export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
+export async function fetchRemoteBackends(options?: {
+  force?: boolean
+}): Promise<BackendVersion[]> {
   const sysInfo = await getSystemInfo()
   const osType = sysInfo.os_type
   const arch = sysInfo.cpu.arch
 
-  // macOS: bundled-only by design (see backend ADR). The upstream macOS
-  // tarball is hand-picked + re-codesigned at build time; we deliberately
-  // don't pull from ggml-org at runtime.
-  if (osType === 'macos') {
-    return []
-  }
-
-  if (osType !== 'windows' && osType !== 'linux') {
+  if (osType !== 'windows' && osType !== 'linux' && osType !== 'macos') {
     return []
   }
 
@@ -394,7 +540,12 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
   // live fetches land here (see assignment below); the bundled baseline is
   // never cached, so a transient failure does not pin subsequent calls to a
   // stale snapshot once the network recovers.
-  if (_cachedManifest) {
+  // `force` is the explicit "check for engine updates" path: a release
+  // published while the app was open is invisible to a session-cached
+  // manifest, which is exactly what the button exists to defeat.
+  if (options?.force) {
+    _cachedManifest = null
+  } else if (_cachedManifest) {
     console.info('[fetchRemoteBackends] Using in-memory manifest cache')
     return parseManifestForPlatform(_cachedManifest, osType, archSuffix)
   }
@@ -427,14 +578,14 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
         archSuffix
       )
     }
+    // The manifest tag is authoritative. `atomic-chat-conf` is ours and the
+    // tag only moves once a build has been verified there, so requiring it to
+    // equal the compiled-in pin would mean no upstream engine update can ever
+    // reach a user without an app release — the opposite of what the
+    // "check for engine updates" button promises.
     if (tag !== LLAMACPP_UPSTREAM_PINNED_TAG) {
-      console.warn(
-        `[fetchRemoteBackends] Manifest tag ${tag} is not the verified ${LLAMACPP_UPSTREAM_PINNED_TAG} pin; using bundled baseline until a compatibility update lands`
-      )
-      return parseManifestForPlatform(
-        BUNDLED_MANIFEST_BASELINE,
-        osType,
-        archSuffix
+      console.info(
+        `[fetchRemoteBackends] Manifest tag ${tag} differs from the bundled baseline ${LLAMACPP_UPSTREAM_PINNED_TAG}; following the manifest`
       )
     }
 
@@ -525,6 +676,8 @@ export function friendlyBackendLabel(backend: string): string {
   if (id.includes('cuda-13')) return 'CUDA 13'
   if (id.includes('cuda-12')) return 'CUDA 12'
   if (id.includes('vulkan')) return 'Vulkan'
+  if (id === 'macos-arm64') return 'Apple Silicon'
+  if (id === 'macos-x64') return 'Intel'
   return id
 }
 
@@ -656,7 +809,9 @@ export function resolveCudaFamilyConcrete(
   return best ? `${best.version}/${best.backend}` : null
 }
 
-export async function listSupportedBackends(): Promise<BackendVersion[]> {
+export async function listSupportedBackends(options?: {
+  force?: boolean
+}): Promise<BackendVersion[]> {
   const sysInfo = await getSystemInfo()
   const osType = sysInfo.os_type
   const arch = sysInfo.cpu.arch
@@ -675,7 +830,7 @@ export async function listSupportedBackends(): Promise<BackendVersion[]> {
 
   const [localBackendVersions, remoteBackendVersions] = await Promise.all([
     getLocalInstalledBackends(),
-    fetchRemoteBackends(),
+    fetchRemoteBackends(options),
   ])
   console.info(
     '[listSupportedBackends] local backends:',

@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { Route as ProvidersRoute } from '../index'
 import type { ModelsService } from '@/services/models/types'
 import type { ProvidersService } from '@/services/providers/types'
 import { seedServiceHub } from '@/test/service-hub'
 
 let mockProviders: any[] = []
+let mockSearch: Record<string, unknown> = {}
 const mockUpdateProvider = vi.fn()
 
 // Mock dependencies
@@ -102,6 +103,13 @@ vi.mock('@tanstack/react-router', () => ({
     component: config.component,
   }),
   useNavigate: () => vi.fn(),
+  useSearch: () => mockSearch,
+}))
+
+// The Local tab is a container with its own extension-backed hooks and its own
+// test; here we only care that the tabs route between the two panels.
+vi.mock('@/containers/providers/LocalRuntimePanel', () => ({
+  LocalRuntimePanel: () => <div data-testid="local-runtime-panel" />,
 }))
 
 vi.mock('@/components/ui/switch', () => ({
@@ -146,10 +154,17 @@ const renderRoute = () => {
   return render(<Component />)
 }
 
+const renderCloudTab = () => {
+  const result = renderRoute()
+  fireEvent.click(screen.getByText('provider:cloud'))
+  return result
+}
+
 describe('Providers Settings Route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockProviders = []
+    mockSearch = {}
     seedServiceHub({
       providers: {
         getProviders: vi.fn().mockResolvedValue([]),
@@ -167,12 +182,21 @@ describe('Providers Settings Route', () => {
     expect(screen.getByText('common:settings')).toBeInTheDocument()
   })
 
-  it('renders a separate card for local and cloud providers', () => {
+  it('opens on the Local tab, showing the runtimes panel', () => {
     renderRoute()
 
-    expect(screen.getAllByTestId('card')).toHaveLength(2)
-    expect(screen.getByText('provider:localProviders')).toBeInTheDocument()
-    expect(screen.getByText('provider:cloudProviders')).toBeInTheDocument()
+    expect(screen.getByTestId('local-runtime-panel')).toBeInTheDocument()
+    // Cloud-only header actions must not sit above the runtimes panel.
+    expect(screen.queryByText('provider:addProvider')).not.toBeInTheDocument()
+  })
+
+  it('switches to the cloud tab', () => {
+    renderCloudTab()
+
+    expect(
+      screen.queryByTestId('local-runtime-panel')
+    ).not.toBeInTheDocument()
+    expect(screen.getByText('provider:addProvider')).toBeInTheDocument()
   })
 
   it('shows the empty state when no cloud provider is connected', () => {
@@ -185,10 +209,10 @@ describe('Providers Settings Route', () => {
         settings: [],
       },
     ]
-    renderRoute()
+    renderCloudTab()
 
     expect(screen.getByText('provider:noCloudProviders')).toBeInTheDocument()
-    expect(screen.getAllByTestId('card-item')).toHaveLength(1)
+    expect(screen.queryAllByTestId('card-item')).toHaveLength(0)
   })
 
   it('lists only cloud providers the user has added', () => {
@@ -217,13 +241,14 @@ describe('Providers Settings Route', () => {
         settings: [],
       },
     ]
-    renderRoute()
+    renderCloudTab()
 
     const avatars = screen
       .getAllByTestId('providers-avatar')
       .map((node) => node.getAttribute('data-provider'))
 
-    expect(avatars).toContain('llamacpp-upstream')
+    // Local engines live on the Local tab now, not in the cloud list.
+    expect(avatars).not.toContain('llamacpp-upstream')
     expect(avatars).toContain('openai')
     expect(avatars).not.toContain('anthropic')
   })
@@ -239,13 +264,23 @@ describe('Providers Settings Route', () => {
         settings: [],
       },
     ]
-    renderRoute()
+    renderCloudTab()
 
     expect(screen.getByText('provider:needsApiKey')).toBeInTheDocument()
   })
 
-  it('renders the add provider catalog trigger', () => {
+  it('opens on the cloud tab when returning from a provider page', () => {
+    mockSearch = { tab: 'cloud' }
     renderRoute()
+
+    expect(
+      screen.queryByTestId('local-runtime-panel')
+    ).not.toBeInTheDocument()
+    expect(screen.getByText('provider:addProvider')).toBeInTheDocument()
+  })
+
+  it('renders the add provider catalog trigger on the cloud tab', () => {
+    renderCloudTab()
 
     expect(screen.getByText('provider:addProvider')).toBeInTheDocument()
   })

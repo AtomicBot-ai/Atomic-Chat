@@ -8,10 +8,14 @@ import {
   getBackendDownloadUrl,
   LLAMACPP_UPSTREAM_PINNED_TAG,
   resolveCudaFamilyConcrete,
+  listInstalledBackendPacks,
+  deleteBackendPack,
+  mergeBackendOptions,
 } from '../backend'
 import { getSystemInfo } from '../hardware'
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 import { fs, getJanDataFolderPath } from '@janhq/core'
+import { getLocalInstalledBackendsInternal } from '../../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index'
 
 // Mock constants: Hardcode path string directly inside the mock to avoid hoisting issues
 const MOCK_JAN_PATH_STRING = '/path/to/jan'
@@ -38,6 +42,22 @@ vi.mock('@tauri-apps/plugin-http', () => ({
 vi.mock('../util', () => ({
   getProxyConfig: vi.fn(() => undefined),
 }))
+// Only the Rust-backed directory scan is stubbed; the pure helpers around it
+// stay real.
+vi.mock(
+  '../../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index',
+  async () => {
+    const actual = await vi.importActual<
+      typeof import('../../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index')
+    >(
+      '../../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index'
+    )
+    return {
+      ...actual,
+      getLocalInstalledBackendsInternal: vi.fn().mockResolvedValue([]),
+    }
+  }
+)
 
 vi.stubGlobal('IS_WINDOWS', false)
 
@@ -203,6 +223,7 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
       { name: 'llama-b10205-bin-win-vulkan-x64.zip' },
       { name: 'llama-b10205-bin-ubuntu-x64.tar.gz' },
       { name: 'llama-b10205-bin-ubuntu-vulkan-x64.tar.gz' },
+      { name: 'llama-b10205-bin-macos-arm64.tar.gz' },
       { name: 'cudart-llama-bin-win-cuda-12.4-x64.zip' },
       { name: 'cudart-llama-bin-win-cuda-13.3-x64.zip' },
     ],
@@ -255,7 +276,7 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
     ])
   })
 
-  it('rejects a moving manifest tag until compatibility is updated', async () => {
+  it('follows a manifest tag newer than the bundled baseline', async () => {
     vi.mocked(getSystemInfo).mockResolvedValue({
       os_type: 'windows',
       cpu: { arch: 'x86_64', extensions: [] },
@@ -264,16 +285,17 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
     vi.mocked(tauriFetch).mockResolvedValue(
       okResponse({
         ...MANIFEST,
-        tag_name: 'b10000',
-        assets: [{ name: 'llama-b10000-bin-win-cpu-x64.zip' }],
+        tag_name: 'b10344',
+        assets: [{ name: 'llama-b10344-bin-win-cpu-x64.zip' }],
       })
     )
 
-    const backends = await fetchRemoteBackends()
+    const backends = await fetchRemoteBackends({ force: true })
 
     expect(new Set(backends.map((backend) => backend.version))).toEqual(
-      new Set([LLAMACPP_UPSTREAM_PINNED_TAG])
+      new Set(['b10344'])
     )
+    expect(LLAMACPP_UPSTREAM_PINNED_TAG).not.toBe('b10344')
   })
 
   it('resolves the manifest from raw atomic-chat-conf, not api.github.com', async () => {
@@ -283,7 +305,7 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
       gpus: [],
     } as any)
 
-    await fetchRemoteBackends()
+    await fetchRemoteBackends({ force: true })
 
     expect(tauriFetch).toHaveBeenCalledTimes(2)
     for (const [calledUrl] of vi.mocked(tauriFetch).mock.calls) {
@@ -327,16 +349,234 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
     backends.forEach((b) => expect(b.version).toBe('b10205'))
   })
 
-  it('returns [] on macOS without any network call to the manifest', async () => {
+  it('returns the arm64 build on an Apple Silicon Mac', async () => {
     vi.mocked(getSystemInfo).mockResolvedValue({
       os_type: 'macos',
       cpu: { arch: 'arm64', extensions: [] },
       gpus: [],
     } as any)
 
-    const backends = await fetchRemoteBackends()
+    const backends = await fetchRemoteBackends({ force: true })
 
+    expect(backends).toEqual([
+      { version: 'b10205', backend: 'macos-arm64', order: 0 },
+    ])
+    expect(tauriFetch).toHaveBeenCalled()
+  })
+
+  it('offers nothing to an Intel Mac, even if the manifest grows an arm64-only tag', async () => {
+    vi.mocked(getSystemInfo).mockResolvedValue({
+      os_type: 'macos',
+      cpu: { arch: 'x86_64', extensions: [] },
+      gpus: [],
+    } as any)
+
+    const backends = await fetchRemoteBackends({ force: true })
+
+    // macOS keeps the merged list unfiltered downstream, so an unfiltered
+    // parser would hand an Intel host an arm64 build it cannot run. Runtime
+    // updates on macOS are Apple Silicon only; Intel stays on its bundle.
     expect(backends).toEqual([])
-    expect(tauriFetch).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the bundled baseline on macOS when every transport fails', async () => {
+    vi.mocked(getSystemInfo).mockResolvedValue({
+      os_type: 'macos',
+      cpu: { arch: 'arm64', extensions: [] },
+      gpus: [],
+    } as any)
+    vi.mocked(tauriFetch).mockResolvedValue({
+      ok: false,
+      status: 503,
+      headers: { get: () => null },
+      json: async () => ({}),
+    } as unknown as Response)
+    vi.mocked(globalThis.fetch).mockRejectedValue(new Error('offline'))
+
+    const backends = await fetchRemoteBackends({ force: true })
+
+    expect(backends).toEqual([
+      {
+        version: LLAMACPP_UPSTREAM_PINNED_TAG,
+        backend: 'macos-arm64',
+        order: 0,
+      },
+    ])
+  })
+})
+
+describe('installed engine packs', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(getJanDataFolderPath).mockResolvedValue(MOCK_JAN_PATH_STRING)
+    vi.mocked(getLocalInstalledBackendsInternal).mockResolvedValue([
+      { version: 'b10205', backend: 'win-cpu-x64' },
+      { version: 'b10344', backend: 'win-cpu-x64' },
+    ])
+    vi.mocked(fs.existsSync).mockResolvedValue(true)
+    vi.mocked(fs.readdirSync).mockResolvedValue([])
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('resolves each pack path and marks the selected build', async () => {
+    const packs = await listInstalledBackendPacks(
+      'llamacpp-upstream',
+      'b10344/win-cpu-x64'
+    )
+
+    expect(packs).toEqual([
+      {
+        version: 'b10205',
+        backend: 'win-cpu-x64',
+        path: `${MOCK_JAN_PATH_STRING}/llamacpp-upstream/backends/b10205/win-cpu-x64`,
+        active: false,
+      },
+      {
+        version: 'b10344',
+        backend: 'win-cpu-x64',
+        path: `${MOCK_JAN_PATH_STRING}/llamacpp-upstream/backends/b10344/win-cpu-x64`,
+        active: true,
+      },
+    ])
+  })
+
+  it('removes the build directory and the version dir it emptied', async () => {
+    await deleteBackendPack(
+      'llamacpp-upstream',
+      'b10344/win-cpu-x64',
+      'b10205',
+      'win-cpu-x64'
+    )
+
+    expect(vi.mocked(fs.rm).mock.calls.map(([path]) => path)).toEqual([
+      `${MOCK_JAN_PATH_STRING}/llamacpp-upstream/backends/b10205/win-cpu-x64`,
+      `${MOCK_JAN_PATH_STRING}/llamacpp-upstream/backends/b10205`,
+    ])
+  })
+
+  it('keeps a version dir that still holds another build', async () => {
+    vi.mocked(fs.readdirSync).mockResolvedValue(['win-vulkan-x64'])
+
+    await deleteBackendPack(
+      'llamacpp-upstream',
+      'b10344/win-cpu-x64',
+      'b10205',
+      'win-cpu-x64'
+    )
+
+    expect(vi.mocked(fs.rm).mock.calls.map(([path]) => path)).toEqual([
+      `${MOCK_JAN_PATH_STRING}/llamacpp-upstream/backends/b10205/win-cpu-x64`,
+    ])
+  })
+
+  // Deleting the selected build would leave `version_backend` pointing at a
+  // directory that no longer exists, so the next model load would fail with a
+  // missing-binary error instead of anything the user can act on.
+  it('refuses to remove the build currently in use', async () => {
+    await expect(
+      deleteBackendPack(
+        'llamacpp-upstream',
+        'b10344/win-cpu-x64',
+        'b10344',
+        'win-cpu-x64'
+      )
+    ).rejects.toThrow(/currently selected/)
+    expect(vi.mocked(fs.rm).mock.calls).toHaveLength(0)
+  })
+
+  it('rejects a pack id carrying a path separator', async () => {
+    await expect(
+      deleteBackendPack(
+        'llamacpp-upstream',
+        'b10344/win-cpu-x64',
+        '../../models',
+        'win-cpu-x64'
+      )
+    ).rejects.toThrow(/Invalid backend pack/)
+    expect(vi.mocked(fs.rm).mock.calls).toHaveLength(0)
+  })
+})
+
+describe('mergeBackendOptions', () => {
+  const latest = [{ value: 'latest/win-cpu-x64', name: 'Latest (CPU)' }]
+  const catalog = [
+    { value: 'b10344/win-cpu-x64', name: 'b10344/win-cpu-x64' },
+    { value: 'b10205/win-cpu-x64', name: 'b10205/win-cpu-x64' },
+  ]
+
+  it('keeps every tier so a downloadable release is selectable next to the installed one', () => {
+    const installed = [
+      { value: 'b10205/win-cpu-x64', name: 'b10205/win-cpu-x64' },
+    ]
+
+    expect(
+      mergeBackendOptions([latest, catalog, installed]).map((o) => o.value)
+    ).toEqual([
+      'latest/win-cpu-x64',
+      'b10344/win-cpu-x64',
+      'b10205/win-cpu-x64',
+    ])
+  })
+
+  // A build that dropped out of the manifest still runs, so hiding it would
+  // mean the dropdown lists fewer versions than the packs dialog does.
+  it('keeps a side-loaded build that the catalog no longer offers', () => {
+    const installed = [
+      { value: 'b9222/win-cpu-x64', name: 'b9222/win-cpu-x64' },
+    ]
+
+    expect(
+      mergeBackendOptions([catalog, installed]).map((o) => o.value)
+    ).toContain('b9222/win-cpu-x64')
+  })
+
+  it('prefers the label of the earliest tier for a duplicated build', () => {
+    const installed = [
+      { value: 'b10344/win-cpu-x64', name: 'raw fallback label' },
+    ]
+
+    const merged = mergeBackendOptions([catalog, installed])
+    expect(merged.filter((o) => o.value === 'b10344/win-cpu-x64')).toEqual([
+      { value: 'b10344/win-cpu-x64', name: 'b10344/win-cpu-x64' },
+    ])
+  })
+
+  it('forces a recommendation the tiers missed into the list', () => {
+    const merged = mergeBackendOptions([catalog], {
+      value: 'b10400/win-cuda-13-x64',
+      name: 'b10400/win-cuda-13-x64',
+    })
+
+    expect(merged[0]).toEqual({
+      value: 'b10400/win-cuda-13-x64',
+      name: 'b10400/win-cuda-13-x64',
+    })
+  })
+
+  it('does not duplicate a recommendation the tiers already carry', () => {
+    const merged = mergeBackendOptions([catalog], {
+      value: 'b10344/win-cpu-x64',
+      name: 'duplicate',
+    })
+
+    expect(merged.map((o) => o.value)).toEqual([
+      'b10344/win-cpu-x64',
+      'b10205/win-cpu-x64',
+    ])
+  })
+
+  it('drops blank ids and the BOM a manifest read can leave behind', () => {
+    const merged = mergeBackendOptions([
+      [
+        { value: '   ', name: 'blank' },
+        { value: '\uFEFFb10344/win-cpu-x64', name: 'bom' },
+        { value: 'b10344/win-cpu-x64', name: 'clean' },
+      ],
+    ])
+
+    expect(merged).toEqual([{ value: 'b10344/win-cpu-x64', name: 'bom' }])
   })
 })

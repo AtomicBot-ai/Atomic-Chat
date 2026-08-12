@@ -22,6 +22,7 @@ import {
   fetchStableIndex,
   invalidateStableIndexCache,
   listSupportedBackends,
+  mergeBackendOptions,
 } from '../backend'
 import { getSystemInfo } from '../hardware'
 import { getVersion } from '@tauri-apps/api/app'
@@ -268,10 +269,7 @@ describe('Backend functions', () => {
 
     it('resolves to the AtomicBot-ai releases CDN, never api.github.com', () => {
       vi.stubGlobal('IS_WINDOWS', true)
-      const url = getBackendDownloadUrl(
-        'b10018-1.3.0',
-        'windows-x64-cuda-12.4'
-      )
+      const url = getBackendDownloadUrl('b10018-1.3.0', 'windows-x64-cuda-12.4')
       expect(url).not.toContain('api.github.com')
       expect(url).toContain(
         'github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download'
@@ -401,9 +399,9 @@ describe('TurboQuant cudart helpers', () => {
       '/path/to/jan/llamacpp-upstream/backends/b10205',
     ] as any)
 
-    await expect(
-      findUpstreamCudaBinWithCudart(jan, '13.3')
-    ).resolves.toBe(donorBin)
+    await expect(findUpstreamCudaBinWithCudart(jan, '13.3')).resolves.toBe(
+      donorBin
+    )
   })
 
   it('knows the CUDA 11 cudart soname', async () => {
@@ -458,7 +456,9 @@ describe('stable release tags', () => {
   })
 
   it('rejects prereleases, including the legacy per-variant tags', () => {
-    expect(isStableReleaseTag('turboquant-linux-x64-vulkan-d86eb0b')).toBe(false)
+    expect(isStableReleaseTag('turboquant-linux-x64-vulkan-d86eb0b')).toBe(
+      false
+    )
     expect(isStableReleaseTag('dev-latest')).toBe(false)
     expect(isStableReleaseTag('b10205')).toBe(false)
     expect(isStableReleaseTag('')).toBe(false)
@@ -474,8 +474,12 @@ describe('stable release tags', () => {
 
   it('orders releases by build then fork semver, stable over legacy', () => {
     // b9937 < b10018 numerically, which string ordering gets backwards.
-    expect(compareBackendVersions('b10018-1.3.0', 'b9937-1.2.0')).toBeGreaterThan(0)
-    expect(compareBackendVersions('b10269-1.4.0', 'b10269-1.3.9')).toBeGreaterThan(0)
+    expect(
+      compareBackendVersions('b10018-1.3.0', 'b9937-1.2.0')
+    ).toBeGreaterThan(0)
+    expect(
+      compareBackendVersions('b10269-1.4.0', 'b10269-1.3.9')
+    ).toBeGreaterThan(0)
     expect(compareBackendVersions('b10018-1.3.0', 'b10018-1.3.0')).toBe(0)
     expect(
       compareBackendVersions('b10018-1.3.0', 'turboquant-macos-arm64-e3dad20')
@@ -928,7 +932,11 @@ describe('listSupportedBackends', () => {
   const merged = [
     { version: 'b10018-1.3.0', backend: 'linux-x64-rocm', order: 0 },
     { version: 'b10018-1.3.0', backend: 'linux-x64-vulkan', order: 0 },
-    { version: 'turboquant-linux-x64-vulkan-d86eb0b', backend: 'linux', order: 1 },
+    {
+      version: 'turboquant-linux-x64-vulkan-d86eb0b',
+      backend: 'linux',
+      order: 1,
+    },
   ]
 
   beforeEach(() => {
@@ -1006,5 +1014,70 @@ describe('listSupportedBackends', () => {
     vi.mocked(determineSupportedBackends).mockResolvedValue(['macos-arm64'])
 
     await expect(listSupportedBackends()).resolves.toEqual([macMerged[0]])
+  })
+})
+
+describe('mergeBackendOptions', () => {
+  const catalog = [
+    { value: 'b10269-1.5.1/macos-arm64', name: 'Apple Silicon · 1.5.1' },
+    { value: 'b10269-1.5.0/macos-arm64', name: 'Apple Silicon · 1.5.0' },
+  ]
+
+  // A prerelease build that left the stable index still runs, so hiding it
+  // would mean the dropdown lists fewer versions than the packs dialog does.
+  it('keeps an installed build the release index no longer carries', () => {
+    const installed = [
+      {
+        value: 'turboquant-macos-arm64-d785414/macos-arm64',
+        name: 'Apple Silicon · d785414 — installed locally',
+      },
+    ]
+
+    expect(
+      mergeBackendOptions([catalog, installed]).map((o) => o.value)
+    ).toEqual([
+      'b10269-1.5.1/macos-arm64',
+      'b10269-1.5.0/macos-arm64',
+      'turboquant-macos-arm64-d785414/macos-arm64',
+    ])
+  })
+
+  it('keeps the catalog label when a build is also installed', () => {
+    const installed = [
+      {
+        value: 'b10269-1.5.1/macos-arm64',
+        name: 'Apple Silicon · 1.5.1 — installed locally',
+      },
+    ]
+
+    const merged = mergeBackendOptions([catalog, installed])
+    expect(merged.map((o) => o.name)).toEqual([
+      'Apple Silicon · 1.5.1',
+      'Apple Silicon · 1.5.0',
+    ])
+  })
+
+  it('forces a recommendation the tiers missed into the list', () => {
+    const merged = mergeBackendOptions([catalog], {
+      value: 'b10300-1.6.0/macos-arm64',
+      name: 'Apple Silicon · 1.6.0',
+    })
+
+    expect(merged[0]).toEqual({
+      value: 'b10300-1.6.0/macos-arm64',
+      name: 'Apple Silicon · 1.6.0',
+    })
+  })
+
+  it('drops blank ids and the BOM a manifest read can leave behind', () => {
+    const merged = mergeBackendOptions([
+      [
+        { value: '  ', name: 'blank' },
+        { value: '\uFEFFb10269-1.5.1/macos-arm64', name: 'bom' },
+        { value: 'b10269-1.5.1/macos-arm64', name: 'clean' },
+      ],
+    ])
+
+    expect(merged).toEqual([{ value: 'b10269-1.5.1/macos-arm64', name: 'bom' }])
   })
 })

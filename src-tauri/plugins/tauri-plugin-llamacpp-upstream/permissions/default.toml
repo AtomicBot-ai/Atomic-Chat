@@ -41,5 +41,6 @@ permissions = [
     "allow-should-migrate-backend",
     "allow-handle-setting-update",
     "allow-install-bundled-backend",
+    "allow-verify-backend-binary",
     "allow-fetch-manifest-http1"
 ]

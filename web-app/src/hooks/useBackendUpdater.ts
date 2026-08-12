@@ -115,6 +115,16 @@ export type EngineUpdateResult = {
   targetBackend: string | null
 }
 
+/// One backend build present in a provider's own `backends/` tree.
+export type InstalledBackendPack = {
+  version: string
+  backend: string
+  /// Absolute path of the build, so the UI can reveal it in the file manager.
+  path: string
+  /// The build `version_backend` currently points at. Not deletable.
+  active: boolean
+}
+
 interface LlamacppExtension {
   getSettings?(): Promise<ExtensionSetting[]>
   checkBackendForUpdates?(): Promise<BackendUpdateInfo>
@@ -126,6 +136,8 @@ interface LlamacppExtension {
   downloadRecommendedBackend?(backendString: string): Promise<void>
   recheckOptimalBackend?(): Promise<BetterBackendRecommendation | null>
   checkForEngineUpdate?(): Promise<EngineUpdateResult>
+  listInstalledBackends?(): Promise<InstalledBackendPack[]>
+  deleteBackend?(version: string, backend: string): Promise<void>
   downloadManualBackend?(selection: string): Promise<void>
   getCachedOptimalBackend?(): OptimalBackendCacheRecord | null
   refreshOptimalBackendCache?(options?: {
@@ -173,7 +185,8 @@ export type RecommendationPhase =
 export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
   const extensionName = config.extensionName ?? LOCAL_LLAMACPP_EXTENSION_NAME
   const providerId = config.providerId ?? LOCAL_LLAMACPP_PROVIDER
-  const recommendationKey = config.recommendationKey ?? DEFAULT_RECOMMENDATION_KEY
+  const recommendationKey =
+    config.recommendationKey ?? DEFAULT_RECOMMENDATION_KEY
   const postUpgradeRecheckEnabled = config.postUpgradeRecheckEnabled ?? true
 
   const [updateState, setUpdateState] = useState<BackendUpdateState>({
@@ -190,8 +203,10 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
     status: 'idle',
   })
 
-  const [recommendation, setRecommendation] = useState<BetterBackendRecommendation | null>(null)
-  const [recommendationPhase, setRecommendationPhase] = useState<RecommendationPhase>('idle')
+  const [recommendation, setRecommendation] =
+    useState<BetterBackendRecommendation | null>(null)
+  const [recommendationPhase, setRecommendationPhase] =
+    useState<RecommendationPhase>('idle')
 
   /// Tracks pending hot-swap fallback timer so it can be cancelled when the
   /// `app:backend-hotswapped` window event arrives in time.
@@ -243,7 +258,10 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
       if (stored) {
         const payload: BetterBackendRecommendation = JSON.parse(stored)
         if (payload.recommendedBackend && payload.recommendedCategory) {
-          console.log('Better backend recommendation restored from localStorage:', payload)
+          console.log(
+            'Better backend recommendation restored from localStorage:',
+            payload
+          )
           setRecommendation(payload)
           setRecommendationPhase('recommend')
         }
@@ -267,7 +285,9 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
 
   // Listen for the better-backend detection event from the extension
   useEffect(() => {
-    const handleBetterBackendDetected = (payload: BetterBackendRecommendation) => {
+    const handleBetterBackendDetected = (
+      payload: BetterBackendRecommendation
+    ) => {
       if (!isOurEvent(payload)) return
       console.log('Better backend detected (event):', payload)
       setRecommendation(payload)
@@ -329,7 +349,8 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
       })
 
       const targetsRecommendation =
-        !!recommendation && payload.backend === recommendation.recommendedBackend
+        !!recommendation &&
+        payload.backend === recommendation.recommendedBackend
 
       if (payload.status === 'completed') {
         if (recommendationPhase === 'downloading' || targetsRecommendation) {
@@ -458,7 +479,8 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
   /// (frequently `null`) and bail via the early return.
   const downloadRecommendedBackend = useCallback(
     async (overrideBackend?: string) => {
-      const targetBackend = overrideBackend ?? recommendation?.recommendedBackend
+      const targetBackend =
+        overrideBackend ?? recommendation?.recommendedBackend
       if (!targetBackend) return
 
       setRecommendationPhase('downloading')
@@ -512,34 +534,35 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
   ///
   /// Throws when the target can be neither resolved online nor satisfied
   /// from a local install, so the caller can toast.
-  const selectManualBackend = useCallback(async (selection: string) => {
-    const allExtensions = ExtensionManager.getInstance().listExtensions()
-    const primary = ExtensionManager.getInstance().getByName(
-      extensionName
-    )
+  const selectManualBackend = useCallback(
+    async (selection: string) => {
+      const allExtensions = ExtensionManager.getInstance().listExtensions()
+      const primary = ExtensionManager.getInstance().getByName(extensionName)
 
-    let extensionToUse = primary
+      let extensionToUse = primary
 
-    if (!primary) {
-      const possibleExtension = allExtensions.find(
-        (ext) =>
-          ext.constructor.name.toLowerCase().includes('llamacpp') ||
-          (ext.type &&
-            ext.type()?.toString().toLowerCase().includes('inference'))
-      )
-      if (!possibleExtension) {
-        throw new Error('LlamaCpp extension not found')
+      if (!primary) {
+        const possibleExtension = allExtensions.find(
+          (ext) =>
+            ext.constructor.name.toLowerCase().includes('llamacpp') ||
+            (ext.type &&
+              ext.type()?.toString().toLowerCase().includes('inference'))
+        )
+        if (!possibleExtension) {
+          throw new Error('LlamaCpp extension not found')
+        }
+        extensionToUse = possibleExtension
       }
-      extensionToUse = possibleExtension
-    }
 
-    if (!extensionToUse || !('downloadManualBackend' in extensionToUse)) {
-      throw new Error('Extension does not support downloadManualBackend')
-    }
+      if (!extensionToUse || !('downloadManualBackend' in extensionToUse)) {
+        throw new Error('Extension does not support downloadManualBackend')
+      }
 
-    const extension = extensionToUse as LlamacppExtension
-    await extension.downloadManualBackend?.(selection)
-  }, [extensionName])
+      const extension = extensionToUse as LlamacppExtension
+      await extension.downloadManualBackend?.(selection)
+    },
+    [extensionName]
+  )
 
   /// Tracks whether the post-upgrade auto-recheck has been attempted this
   /// session. Used as a process-local guard on top of the
@@ -558,9 +581,7 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
     // providers can be present on every desktop platform. The fallback
     // class-name scan catches bundled tarballs registered under their JS class
     // name instead of the npm package id.
-    const primary = ExtensionManager.getInstance().getByName(
-      extensionName
-    )
+    const primary = ExtensionManager.getInstance().getByName(extensionName)
 
     let extensionToUse = primary
 
@@ -589,7 +610,9 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
       // completes (avoids a perceptible UI lag on the Settings button).
       setRecommendation(result)
       setRecommendationPhase((prev) =>
-        prev === 'downloading' || prev === 'restart-required' ? prev : 'recommend'
+        prev === 'downloading' || prev === 'restart-required'
+          ? prev
+          : 'recommend'
       )
     }
     return result ?? null
@@ -615,6 +638,36 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
       }
       return result
     }, [extensionName])
+
+  /// Every backend build installed in this provider's tree. Returns `[]` for
+  /// an engine that has no downloadable backends at all (MLX ships its server
+  /// as a bundled sidecar), so callers can render one uniform list.
+  const listInstalledBackends = useCallback(async (): Promise<
+    InstalledBackendPack[]
+  > => {
+    const extensionToUse =
+      ExtensionManager.getInstance().getByName(extensionName)
+    if (!extensionToUse || !('listInstalledBackends' in extensionToUse)) {
+      return []
+    }
+    const extension = extensionToUse as LlamacppExtension
+    return (await extension.listInstalledBackends?.()) ?? []
+  }, [extensionName])
+
+  /// Removes one installed backend build. The extension refuses the build in
+  /// use, so the rejection is surfaced rather than swallowed.
+  const deleteBackend = useCallback(
+    async (version: string, backend: string) => {
+      const extensionToUse =
+        ExtensionManager.getInstance().getByName(extensionName)
+      if (!extensionToUse || !('deleteBackend' in extensionToUse)) {
+        throw new Error('Extension does not support deleteBackend')
+      }
+      const extension = extensionToUse as LlamacppExtension
+      await extension.deleteBackend?.(version, backend)
+    },
+    [extensionName]
+  )
 
   /// Rebuilds the version list from the extension's catalog. An engine update
   /// can install a release that was not in the list registered at load, and
@@ -671,9 +724,7 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
         // can take a noticeable moment on a cold WebView2 boot.
         const start = Date.now()
         while (!cancelled && Date.now() - start < 10_000) {
-          const ext = ExtensionManager.getInstance().getByName(
-            extensionName
-          )
+          const ext = ExtensionManager.getInstance().getByName(extensionName)
           if (ext && 'recheckOptimalBackend' in ext) break
           await new Promise((resolve) => setTimeout(resolve, 500))
         }
@@ -916,42 +967,45 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
     extensionName,
   ])
 
-  const installBackend = useCallback(async (filePath: string) => {
-    try {
-      const allExtensions = ExtensionManager.getInstance().listExtensions()
-      const llamacppExtension =
-        ExtensionManager.getInstance().getByName(extensionName)
+  const installBackend = useCallback(
+    async (filePath: string) => {
+      try {
+        const allExtensions = ExtensionManager.getInstance().listExtensions()
+        const llamacppExtension =
+          ExtensionManager.getInstance().getByName(extensionName)
 
-      let extensionToUse = llamacppExtension
+        let extensionToUse = llamacppExtension
 
-      if (!llamacppExtension) {
-        const possibleExtension = allExtensions.find(
-          (ext) =>
-            ext.constructor.name.toLowerCase().includes('llamacpp') ||
-            (ext.type &&
-              ext.type()?.toString().toLowerCase().includes('inference'))
-        )
+        if (!llamacppExtension) {
+          const possibleExtension = allExtensions.find(
+            (ext) =>
+              ext.constructor.name.toLowerCase().includes('llamacpp') ||
+              (ext.type &&
+                ext.type()?.toString().toLowerCase().includes('inference'))
+          )
 
-        if (!possibleExtension) {
-          throw new Error('LlamaCpp extension not found')
+          if (!possibleExtension) {
+            throw new Error('LlamaCpp extension not found')
+          }
+
+          extensionToUse = possibleExtension
         }
 
-        extensionToUse = possibleExtension
+        if (!extensionToUse || !('installBackend' in extensionToUse)) {
+          throw new Error('Extension does not support backend installation')
+        }
+
+        const extension = extensionToUse as LlamacppExtension
+        await extension.installBackend?.(filePath)
+
+        await extension.configureBackends?.()
+      } catch (error) {
+        console.error('Error installing backend:', error)
+        throw error
       }
-
-      if (!extensionToUse || !('installBackend' in extensionToUse)) {
-        throw new Error('Extension does not support backend installation')
-      }
-
-      const extension = extensionToUse as LlamacppExtension
-      await extension.installBackend?.(filePath)
-
-      await extension.configureBackends?.()
-    } catch (error) {
-      console.error('Error installing backend:', error)
-      throw error
-    }
-  }, [extensionName])
+    },
+    [extensionName]
+  )
 
   return {
     updateState,
@@ -966,6 +1020,8 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
     downloadRecommendedBackend,
     recheckOptimalBackend,
     checkForEngineUpdate,
+    listInstalledBackends,
+    deleteBackend,
     refreshBackendCatalog,
     selectManualBackend,
   }

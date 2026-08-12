@@ -1,9 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import userEvent from '@testing-library/user-event'
 import SettingsMenu from '../SettingsMenu'
-import { useNavigate, useMatches } from '@tanstack/react-router'
-import { useModelProvider } from '@/hooks/useModelProvider'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 
 // Mock global platform constants - simulate desktop (Tauri) environment
@@ -18,8 +15,6 @@ vi.mock('@tanstack/react-router', () => ({
       {children}
     </a>
   ),
-  useMatches: vi.fn(),
-  useNavigate: vi.fn(),
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -32,65 +27,10 @@ vi.mock('@/hooks/useGeneralSetting', () => ({
   useGeneralSetting: vi.fn(() => ({ settingsMode: 'base' })),
 }))
 
-vi.mock('@/hooks/useModelProvider', () => ({
-  useModelProvider: vi.fn(() => ({
-    providers: [
-      {
-        provider: 'openai',
-        active: true,
-        models: [],
-      },
-      {
-        provider: 'llama.cpp',
-        active: true,
-        models: [],
-      },
-    ],
-    addProvider: vi.fn(),
-  })),
-}))
-
-vi.mock('@/containers/dialogs', () => ({
-  AddCloudProviderDialog: ({ children }: { children: React.ReactNode }) => (
-    <>{children}</>
-  ),
-}))
-
-vi.mock('@/lib/utils', () => ({
-  cn: (...args: any[]) => args.filter(Boolean).join(' '),
-  getProviderTitle: (provider: string) => provider,
-}))
-
-vi.mock('@/containers/ProvidersAvatar', () => ({
-  default: ({ provider }: { provider: any }) => (
-    <div data-testid={`provider-avatar-${provider.provider}`}>
-      {provider.provider}
-    </div>
-  ),
-}))
-
 describe('SettingsMenu', () => {
-  const mockNavigate = vi.fn()
-  const mockMatches = [
-    {
-      routeId: '/settings/general',
-      params: {},
-    },
-  ]
-
   beforeEach(() => {
     vi.clearAllMocks()
-
-    vi.mocked(useNavigate).mockReturnValue(mockNavigate)
-    vi.mocked(useMatches).mockReturnValue(mockMatches)
     vi.mocked(useGeneralSetting).mockReturnValue({ settingsMode: 'base' })
-    vi.mocked(useModelProvider).mockReturnValue({
-      providers: [
-        { provider: 'openai', active: true, models: [] },
-        { provider: 'llama.cpp', active: true, models: [] },
-      ],
-      addProvider: vi.fn(),
-    })
   })
 
   it('renders only the consumer-facing menu items in base mode', () => {
@@ -131,164 +71,24 @@ describe('SettingsMenu', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('shows provider expansion chevron when providers are active', () => {
+  // Providers used to be enumerated here, one row per engine and per connected
+  // cloud. They now live behind the Local/Cloud tabs of the Model Providers
+  // page, so the menu is a flat list and never depends on the provider store.
+  it('links Model Providers as a single entry right after MCP Servers', () => {
     render(<SettingsMenu />)
 
-    // There should be at least one button (the chevron)
-    const chevronButtons = screen.getAllByRole('button')
-    expect(chevronButtons.length).toBeGreaterThan(0)
-  })
+    const entry = screen.getByText('common:modelProviders')
+    expect(entry.closest('a')).toHaveAttribute('href', '/settings/providers')
 
-  it('shows expanded providers by default', () => {
-    render(<SettingsMenu />)
-
-    // Providers ARE expanded by default (expandedProviders starts as true)
-    expect(screen.getByTestId('provider-avatar-openai')).toBeInTheDocument()
-  })
-
-  it('splits the provider list into a local and a cloud section', () => {
-    vi.mocked(useModelProvider).mockReturnValue({
-      providers: [
-        { provider: 'llamacpp-upstream', active: true, models: [] },
-        { provider: 'openai', active: true, models: [] },
-      ],
-      addProvider: vi.fn(),
-    })
-
-    render(<SettingsMenu />)
-
-    expect(screen.getByText('provider:local')).toBeInTheDocument()
-    expect(screen.getByText('provider:cloud')).toBeInTheDocument()
-    expect(
-      screen.getByTestId('provider-avatar-llamacpp-upstream')
-    ).toBeInTheDocument()
-    expect(screen.getByTestId('provider-avatar-openai')).toBeInTheDocument()
-  })
-
-  it('auto-expands providers when on provider route', () => {
-    vi.mocked(useMatches).mockReturnValue([
-      {
-        routeId: '/settings/providers/$providerName',
-        params: { providerName: 'openai' },
-      },
+    const labels = screen
+      .getAllByRole('link')
+      .map((link) => link.textContent?.trim())
+    expect(labels.slice(-2)).toEqual([
+      'common:mcp-servers',
+      'common:modelProviders',
     ])
 
-    render(<SettingsMenu />)
-
-    expect(screen.getByTestId('provider-avatar-openai')).toBeInTheDocument()
-  })
-
-  it('highlights active provider in submenu', () => {
-    vi.mocked(useMatches).mockReturnValue([
-      {
-        routeId: '/settings/providers/$providerName',
-        params: { providerName: 'openai' },
-      },
-    ])
-
-    render(<SettingsMenu />)
-
-    const openaiProvider = screen
-      .getByTestId('provider-avatar-openai')
-      .closest('div')
-    expect(openaiProvider).toBeInTheDocument()
-  })
-
-  it('navigates to provider when provider is clicked', async () => {
-    const user = userEvent.setup()
-    render(<SettingsMenu />)
-
-    // Providers are expanded by default, click directly on a provider
-    const openaiProvider = screen
-      .getByTestId('provider-avatar-openai')
-      .closest('div[class*="cursor-pointer"]')
-    await user.click(openaiProvider!)
-
-    expect(mockNavigate).toHaveBeenCalled()
-  })
-
-  it('highlights the clicked provider before the route match catches up', async () => {
-    const user = userEvent.setup()
-    render(<SettingsMenu />)
-
-    const row = (provider: string) =>
-      screen
-        .getByTestId(`provider-avatar-${provider}`)
-        .closest('div[class*="cursor-pointer"]')!
-
-    expect(row('openai').className).not.toContain('bg-foreground/20')
-
-    // `useMatches` keeps reporting the old route, standing in for a navigation
-    // transition that has not committed yet.
-    await user.click(row('openai'))
-
-    expect(row('openai').className).toContain('bg-foreground/20')
-    expect(row('llama.cpp').className).not.toContain('bg-foreground/20')
-  })
-
-  it('drops the optimistic highlight once the route resolves elsewhere', async () => {
-    const user = userEvent.setup()
-    const { rerender } = render(<SettingsMenu />)
-
-    const row = (provider: string) =>
-      screen
-        .getByTestId(`provider-avatar-${provider}`)
-        .closest('div[class*="cursor-pointer"]')!
-
-    await user.click(row('openai'))
-    expect(row('openai').className).toContain('bg-foreground/20')
-
-    vi.mocked(useMatches).mockReturnValue([
-      { routeId: '/settings/providers/$providerName', params: { providerName: 'llama.cpp' } },
-    ])
-    rerender(<SettingsMenu />)
-
-    expect(row('openai').className).not.toContain('bg-foreground/20')
-    expect(row('llama.cpp').className).toContain('bg-foreground/20')
-  })
-
-  it('hides llama.cpp during setup remote provider step', () => {
-    vi.mocked(useMatches).mockReturnValue([
-      {
-        routeId: '/settings/providers/',
-        params: {},
-        search: { step: 'setup_remote_provider' },
-      },
-    ])
-
-    render(<SettingsMenu />)
-
-    // openai should be visible during remote provider setup
-    expect(screen.getByTestId('provider-avatar-openai')).toBeInTheDocument()
-
-    // llama.cpp should have 'hidden' class during setup_remote_provider step
-    const llamaCpp = screen
-      .getByTestId('provider-avatar-llama.cpp')
-      .closest('div[class*="cursor-pointer"]')
-    expect(llamaCpp?.className).toContain('hidden')
-  })
-
-  it('keeps disabled local engines listed but hides unadded clouds', () => {
-    vi.mocked(useModelProvider).mockReturnValue({
-      providers: [
-        { provider: 'llamacpp-upstream', active: false, models: [] },
-        { provider: 'openai', active: true, models: [] },
-        { provider: 'anthropic', active: false, models: [] },
-      ],
-      addProvider: vi.fn(),
-    })
-
-    render(<SettingsMenu />)
-
-    // A local engine stays on the menu even when switched off, so it can be
-    // switched back on.
-    expect(
-      screen.getByTestId('provider-avatar-llamacpp-upstream')
-    ).toBeInTheDocument()
-    expect(screen.getByTestId('provider-avatar-openai')).toBeInTheDocument()
-    // An unconnected cloud provider lives in the "Add provider" catalog.
-    expect(
-      screen.queryByTestId('provider-avatar-anthropic')
-    ).not.toBeInTheDocument()
+    expect(screen.queryByText('provider:local')).not.toBeInTheDocument()
+    expect(screen.queryByText('provider:cloud')).not.toBeInTheDocument()
   })
 })

@@ -45,6 +45,10 @@ import {
   compareBackendVersions,
   fetchStableIndex,
   invalidateStableIndexCache,
+  listInstalledBackendPacks,
+  deleteBackendPack,
+  mergeBackendOptions,
+  type InstalledBackendPack,
 } from './backend'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import {
@@ -169,8 +173,7 @@ const logger = {
   },
 }
 
-const TURBOQUANT_BACKEND_TYPE_KEY =
-  'atomic_llamacpp_turboquant_backend_type'
+const TURBOQUANT_BACKEND_TYPE_KEY = 'atomic_llamacpp_turboquant_backend_type'
 const LEGACY_SHARED_BACKEND_TYPE_KEY = 'llama_cpp_backend_type'
 
 function isTurboquantBackendType(value: string): boolean {
@@ -202,8 +205,7 @@ function formatLoadError(err: unknown): string {
     if (typeof e.details === 'string' && e.details.trim())
       parts.push(e.details.trim())
     if (parts.length > 0) {
-      const code =
-        typeof e.code === 'string' && e.code ? ` [${e.code}]` : ''
+      const code = typeof e.code === 'string' && e.code ? ` [${e.code}]` : ''
       return `${parts.join('\n')}${code}`
     }
     try {
@@ -242,7 +244,10 @@ function toLoadError(err: unknown): Error {
  * `reportModelLoadError` (switchModel.ts → `toErrorObject`) can classify it
  * into the actionable MODEL_FILE_* toast instead of the opaque generic one.
  */
-function codedLoadError(code: string, message: string): Error & { code: string } {
+function codedLoadError(
+  code: string,
+  message: string
+): Error & { code: string } {
   const e = new Error(message) as Error & { code: string }
   e.code = code
   return e
@@ -303,11 +308,16 @@ function stripBom(s: string): string {
 
 function backendCategoryToLabel(category: string): string {
   switch (category) {
-    case 'cuda-cu13.0': return 'CUDA 13'
-    case 'cuda-cu12.0': return 'CUDA 12'
-    case 'cuda-cu11.7': return 'CUDA 11'
-    case 'vulkan': return 'Vulkan'
-    default: return category
+    case 'cuda-cu13.0':
+      return 'CUDA 13'
+    case 'cuda-cu12.0':
+      return 'CUDA 12'
+    case 'cuda-cu11.7':
+      return 'CUDA 11'
+    case 'vulkan':
+      return 'Vulkan'
+    default:
+      return category
   }
 }
 
@@ -599,10 +609,7 @@ export default class llamacpp_extension extends AIEngine {
         normalizedLegacyValue &&
         isTurboquantBackendType(normalizedLegacyValue)
       ) {
-        localStorage.setItem(
-          TURBOQUANT_BACKEND_TYPE_KEY,
-          normalizedLegacyValue
-        )
+        localStorage.setItem(TURBOQUANT_BACKEND_TYPE_KEY, normalizedLegacyValue)
         logger.info(
           `Migrated TurboQuant backend preference from legacy shared key: ${normalizedLegacyValue}`
         )
@@ -736,9 +743,7 @@ export default class llamacpp_extension extends AIEngine {
     try {
       const installed = await isBackendInstalled(backend, version)
       if (!installed) {
-        logger.warn(
-          `Pending backend ${cleaned} not found on disk, clearing`
-        )
+        logger.warn(`Pending backend ${cleaned} not found on disk, clearing`)
         localStorage.removeItem(TURBOQUANT_PENDING_KEY)
         return
       }
@@ -898,7 +903,9 @@ export default class llamacpp_extension extends AIEngine {
           earlySetting.controllerProps.value = currentVB || bundledBackendString
         }
         this.registerSettings(earlySettings)
-        logger.info('[configureBackends] Early settings registered with bundled backend')
+        logger.info(
+          '[configureBackends] Early settings registered with bundled backend'
+        )
       }
 
       let version_backends: {
@@ -1033,7 +1040,10 @@ export default class llamacpp_extension extends AIEngine {
           })
         }
       } catch (err) {
-        logger.warn('Failed to read release notes for the backend dropdown:', err)
+        logger.warn(
+          'Failed to read release notes for the backend dropdown:',
+          err
+        )
       }
 
       let settings = structuredClone(SETTINGS)
@@ -1047,18 +1057,51 @@ export default class llamacpp_extension extends AIEngine {
         originalDefaultBackendValue = backendSetting.controllerProps
           .value as string
 
-        backendSetting.controllerProps.options = version_backends.map((b) => {
-          const key = `${b.version}/${b.backend}`
-          return {
-            value: key,
-            name: this.describeBackendOption(
-              b.version,
-              b.backend,
-              releaseNotes.get(stripBom(b.version)),
-              stripBom(b.version) === latestStableTag
-            ),
-          }
-        })
+        const describe = (version: string, backend: string) =>
+          this.describeBackendOption(
+            version,
+            backend,
+            releaseNotes.get(stripBom(version)),
+            stripBom(version) === latestStableTag
+          )
+
+        const catalogEntries = version_backends.map((b) => ({
+          value: `${b.version}/${b.backend}`,
+          name: describe(b.version, b.backend),
+        }))
+
+        // The catalog above is what we *offer*; the disk is what the user
+        // *has*. A build that dropped out of the release index (or was
+        // side-loaded through "Manage installed packs") is still runnable, so
+        // it has to stay switchable — otherwise the dropdown silently lists
+        // fewer versions than the packs dialog does.
+        let installedEntries: Array<{ value: string; name: string }> = []
+        try {
+          installedEntries = (await getLocalInstalledBackends()).map((b) => {
+            const version = stripBom(b.version).trim()
+            const backend = stripBom(b.backend).trim()
+            return {
+              value: `${version}/${backend}`,
+              name: `${describe(version, backend)} — installed locally`,
+            }
+          })
+        } catch (err) {
+          logger.warn(
+            'Failed to merge installed backends into the dropdown:',
+            err
+          )
+        }
+
+        const [recVer, recBack] = bestAvailableBackendString.split('/')
+        backendSetting.controllerProps.options = mergeBackendOptions(
+          [catalogEntries, installedEntries],
+          recVer && recBack
+            ? {
+                value: bestAvailableBackendString,
+                name: describe(recVer, recBack),
+              }
+            : undefined
+        )
 
         // Always surface the installed-on-disk saved backend in the dropdown,
         // even when the remote list (e.g. GitHub) didn't return it. Without
@@ -1097,6 +1140,7 @@ export default class llamacpp_extension extends AIEngine {
         }
 
         // Set the recommended backend based on bestAvailableBackendString
+        // (already forced into the options list by `mergeBackendOptions`).
         if (bestAvailableBackendString) {
           backendSetting.controllerProps.recommended =
             bestAvailableBackendString
@@ -1164,6 +1208,20 @@ export default class llamacpp_extension extends AIEngine {
       }
 
       this.registerSettings(settings)
+
+      // First complete option list of the session: the early registration above
+      // knows only the bundled build, and the UI reads its provider snapshot
+      // while this method is still resolving the release index. Nothing else
+      // announces the swap, so without this the dropdown keeps offering the
+      // short list until some unrelated change refreshes the providers.
+      if (events && typeof events.emit === 'function') {
+        events.emit('settingsChanged', {
+          key: 'version_backend',
+          value: String(
+            settings[backendSettingIndex].controllerProps.value ?? ''
+          ),
+        })
+      }
 
       let effectiveBackendString = stripBom(this.config.version_backend || '')
 
@@ -2155,9 +2213,7 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  async checkBackendForUpdates(
-    options: { force?: boolean } = {}
-  ): Promise<{
+  async checkBackendForUpdates(options: { force?: boolean } = {}): Promise<{
     updateNeeded: boolean
     newVersion: string
     targetBackend?: string
@@ -2251,6 +2307,22 @@ export default class llamacpp_extension extends AIEngine {
     return { updateAvailable: true, targetBackend }
   }
 
+  async listInstalledBackends(): Promise<InstalledBackendPack[]> {
+    return listInstalledBackendPacks(
+      this.providerId,
+      stripBom(this.config.version_backend || '')
+    )
+  }
+
+  async deleteBackend(version: string, backend: string): Promise<void> {
+    await deleteBackendPack(
+      this.providerId,
+      stripBom(this.config.version_backend || ''),
+      version,
+      backend
+    )
+  }
+
   /**
    * Move an existing install onto the newest release tag of the backend type
    * the user already runs.
@@ -2289,7 +2361,8 @@ export default class llamacpp_extension extends AIEngine {
         return
       }
 
-      const { updateNeeded, targetBackend } = await this.checkBackendForUpdates()
+      const { updateNeeded, targetBackend } =
+        await this.checkBackendForUpdates()
       const targetType = targetBackend?.split('/')[1]?.trim()
       if (!updateNeeded || !targetBackend || !targetType) return
 
@@ -2563,7 +2636,9 @@ export default class llamacpp_extension extends AIEngine {
       const modelConfigPath = await joinPath([currentDir, 'model.yml'])
       if (await fs.existsSync(modelConfigPath)) {
         // Normalize Windows '\' to '/' so the id matches the catalog
-        modelIds.push(currentDir.slice(modelsDir.length + 1).replace(/\\/g, '/'))
+        modelIds.push(
+          currentDir.slice(modelsDir.length + 1).replace(/\\/g, '/')
+        )
         continue
       }
 
@@ -2675,7 +2750,9 @@ export default class llamacpp_extension extends AIEngine {
               const legacyModelPath = legacyModelConfig.files?.[0]
               if (!legacyModelPath) continue
               // Normalize Windows '\' to '/' so the id matches the catalog
-              let modelId = currentDir.slice(modelsDir.length + 1).replace(/\\/g, '/')
+              let modelId = currentDir
+                .slice(modelsDir.length + 1)
+                .replace(/\\/g, '/')
 
               modelId =
                 modelId !== 'imported'
@@ -3317,7 +3394,9 @@ export default class llamacpp_extension extends AIEngine {
 
   private cachedGpuIdealBackendType(): string | null {
     const cached = this.getCachedOptimalBackend()
-    return cached?.detectionKind === 'gpu' ? cached.idealBackendId ?? null : null
+    return cached?.detectionKind === 'gpu'
+      ? (cached.idealBackendId ?? null)
+      : null
   }
 
   /// Backend type from the recommendation `recheckOptimalBackend` /
@@ -3355,8 +3434,7 @@ export default class llamacpp_extension extends AIEngine {
         n_ctx?: number
       }
 
-      const realCtx =
-        props?.default_generation_settings?.n_ctx ?? props?.n_ctx
+      const realCtx = props?.default_generation_settings?.n_ctx ?? props?.n_ctx
       if (
         typeof realCtx !== 'number' ||
         !Number.isFinite(realCtx) ||
@@ -3828,9 +3906,7 @@ export default class llamacpp_extension extends AIEngine {
       try {
         await tauriEmit(AUTO_INCREASE_CTX_NOTIFY, notifyPayload)
       } catch (e) {
-        logger.warn(
-          `Failed to Tauri-emit ${AUTO_INCREASE_CTX_NOTIFY}: ${e}`
-        )
+        logger.warn(`Failed to Tauri-emit ${AUTO_INCREASE_CTX_NOTIFY}: ${e}`)
       }
 
       await sendDone({
@@ -4159,9 +4235,7 @@ export default class llamacpp_extension extends AIEngine {
       )
 
       if (copied === 0) {
-        throw new Error(
-          `cudart archive for ${backendString} contained no DLLs`
-        )
+        throw new Error(`cudart archive for ${backendString} contained no DLLs`)
       }
 
       if (events && typeof events.emit === 'function') {
@@ -4419,9 +4493,7 @@ export default class llamacpp_extension extends AIEngine {
       }
     } catch (downloadErr) {
       const errorMessage =
-        downloadErr instanceof Error
-          ? downloadErr.message
-          : String(downloadErr)
+        downloadErr instanceof Error ? downloadErr.message : String(downloadErr)
       if (events && typeof events.emit === 'function') {
         // Clear the standard download manager row on failure too, keyed
         // by the same sanitized taskId used for progress.

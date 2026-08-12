@@ -37,6 +37,7 @@ Default permissions for the llamacpp plugin
 - `allow-should-migrate-backend`
 - `allow-handle-setting-update`
 - `allow-install-bundled-backend`
+- `allow-verify-backend-binary`
 - `allow-fetch-manifest-http1`
 
 ## Permission Table
@@ -928,6 +929,32 @@ Enables the validate_backend_string command without any pre-configured scope.
 <td>
 
 Denies the validate_backend_string command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp-upstream:allow-verify-backend-binary`
+
+</td>
+<td>
+
+Enables the verify_backend_binary command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp-upstream:deny-verify-backend-binary`
+
+</td>
+<td>
+
+Denies the verify_backend_binary command without any pre-configured scope.
 
 </td>
 </tr>

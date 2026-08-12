@@ -389,6 +389,21 @@ export async function installBundledBackend(
 }
 
 /**
+ * Make the binaries under `<backendDir>/build/bin/` executable and run
+ * `llama-server --version`, resolving to whether the build it reports matches
+ * `version`. Throws when there is no binary to run at all.
+ */
+export async function verifyBackendBinary(
+  backendDir: string,
+  version: string
+): Promise<boolean> {
+  return invoke('plugin:llamacpp-upstream|verify_backend_binary', {
+    backendDir,
+    version,
+  })
+}
+
+/**
  * Fetch the backend-index manifest JSON over an HTTP/1.1-only reqwest
  * connection. Used as a fallback transport on Linux where reqwest's HTTP/2
  * negotiation against the Fastly CDN (raw.githubusercontent.com) stalls

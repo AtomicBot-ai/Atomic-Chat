@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri::{Manager, Runtime};
 
@@ -268,6 +268,59 @@ fn parse_binary_version(output: &str) -> Option<u32> {
     })
 }
 
+/// Give every file in `<build>/bin/` the executable bit. The bundled build
+/// gets this because it is copied file by file; a downloaded one relies on
+/// the archive's own mode bits, which is one unlucky upstream packaging
+/// change away from an un-launchable backend.
+#[cfg(unix)]
+fn ensure_executable_bits(build_dir: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let bin_dir = build_dir.join("bin");
+    if !bin_dir.exists() {
+        return Ok(());
+    }
+
+    for entry in fs::read_dir(&bin_dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        if entry.file_type().map_err(|e| e.to_string())?.is_file() {
+            let mut perms = fs::metadata(entry.path())
+                .map_err(|e| e.to_string())?
+                .permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(entry.path(), perms).map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn ensure_executable_bits(_build_dir: &Path) -> Result<(), String> {
+    Ok(())
+}
+
+/// Launch gate for a freshly downloaded backend: make the binaries
+/// executable, then run `llama-server --version` and report whether the build
+/// it prints is the one that was asked for.
+///
+/// A downloaded build has never been executed by anyone when this runs, and
+/// the caller is about to unload the running model to swap onto it. Finding
+/// out that it cannot start belongs here, while the previous build is still
+/// in place, rather than at the next model load.
+#[tauri::command]
+pub async fn verify_backend_binary(backend_dir: String, version: String) -> Result<bool, String> {
+    let backend_path = PathBuf::from(&backend_dir);
+
+    ensure_executable_bits(&backend_path.join("build"))?;
+
+    if !is_backend_installed(&backend_path) {
+        return Err(format!("No llama-server binary under {}", backend_dir));
+    }
+
+    Ok(backend_binary_matches_version(&backend_path, &version))
+}
+
 fn backend_binary_matches_version(backend_dir: &PathBuf, expected_version: &str) -> bool {
     let expected = parse_backend_version(expected_version.to_string());
     if expected == 0 {
@@ -402,10 +455,39 @@ fn is_windows_backend(backend: &str) -> bool {
     backend.starts_with("win-")
 }
 
+/// Ordering key for a ggml-org release tag (`bNNNNN`). The build number is
+/// monotonic on every platform, so it decides directly. Returns `None` for a
+/// folder name that is not a release tag (a hand-placed or side-loaded
+/// backend directory), which then falls through to install `order`.
+fn release_tag_rank(version: &str) -> Option<u32> {
+    version.strip_prefix('b')?.parse::<u32>().ok()
+}
+
 fn compare_backend_versions_for_sort(
     left: &BackendInfo,
     right: &BackendInfo,
 ) -> std::cmp::Ordering {
+    // Rank by release tag first, on every platform. `order` carries the
+    // install mtime for a backend found on disk and 0 for one that only
+    // exists in the manifest, so ranking by `order` first would make an
+    // installed build outrank every newer remote build and no update would
+    // ever be offered outside Windows. Numeric parsing also keeps b9xxx
+    // below b10xxx, which a string comparison gets backwards.
+    match (
+        release_tag_rank(&left.version),
+        release_tag_rank(&right.version),
+    ) {
+        (Some(left_rank), Some(right_rank)) => {
+            let rank_cmp = right_rank.cmp(&left_rank);
+            if rank_cmp != std::cmp::Ordering::Equal {
+                return rank_cmp;
+            }
+        }
+        (Some(_), None) => return std::cmp::Ordering::Less,
+        (None, Some(_)) => return std::cmp::Ordering::Greater,
+        (None, None) => {}
+    }
+
     if is_windows_backend(&left.backend) && is_windows_backend(&right.backend) {
         let left_version = parse_backend_version(left.version.clone());
         let right_version = parse_backend_version(right.version.clone());
@@ -1329,23 +1411,7 @@ pub async fn install_bundled_backend<R: Runtime>(
 
     copy_dir_recursive(&build_dir, &target_build_dir)?;
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let bin_dir = target_build_dir.join("bin");
-        if bin_dir.exists() {
-            for entry in fs::read_dir(&bin_dir).map_err(|e| e.to_string())? {
-                let entry = entry.map_err(|e| e.to_string())?;
-                if entry.file_type().map_err(|e| e.to_string())?.is_file() {
-                    let mut perms = fs::metadata(entry.path())
-                        .map_err(|e| e.to_string())?
-                        .permissions();
-                    perms.set_mode(0o755);
-                    fs::set_permissions(entry.path(), perms).map_err(|e| e.to_string())?;
-                }
-            }
-        }
-    }
+    ensure_executable_bits(&target_build_dir)?;
 
     log::info!(
         "[install_bundled_backend] Successfully installed bundled backend: {}/{}",
@@ -1974,7 +2040,8 @@ mod tests {
 
         assert_eq!(result.len(), 3);
 
-        // Sorted by order desc: b7524(order=2), then b7523 entries (order=1) by backend asc
+        // Sorted by release tag desc: b7524, then the two b7523 entries,
+        // which tie on tag and order and fall through to backend name asc.
         assert_eq!(result[0].version, "b7524");
         assert_eq!(result[1].version, "b7523");
         assert_eq!(result[2].version, "b7523");
@@ -2240,6 +2307,97 @@ mod tests {
 
         let result = find_latest_version_for_backend(backends, "linux-cpu-x64".to_string());
         assert_eq!(result, Some("b7524/linux-cpu-x64".to_string()));
+    }
+
+    #[test]
+    fn test_find_latest_version_prefers_newer_tag_over_install_time() {
+        // A backend found on disk carries its mtime as `order`, one that only
+        // exists in the manifest carries 0. Ranking by `order` first would
+        // mean the installed build always wins and macOS/Linux would never be
+        // offered an update.
+        let backends = vec![
+            BackendInfo {
+                version: "b10205".into(),
+                backend: "macos-arm64".into(),
+                order: 1_800_000_000,
+            },
+            BackendInfo {
+                version: "b10344".into(),
+                backend: "macos-arm64".into(),
+                order: 0,
+            },
+        ];
+
+        let result = find_latest_version_for_backend(backends, "macos-arm64".to_string());
+        assert_eq!(result, Some("b10344/macos-arm64".to_string()));
+    }
+
+    #[test]
+    fn test_find_latest_version_orders_tags_numerically_not_lexically() {
+        // "b9999" sorts above "b10344" as a string; as a build number it does
+        // not. The five-digit rollover already happened upstream.
+        let backends = vec![
+            BackendInfo {
+                version: "b9999".into(),
+                backend: "linux-vulkan-x64".into(),
+                order: 0,
+            },
+            BackendInfo {
+                version: "b10344".into(),
+                backend: "linux-vulkan-x64".into(),
+                order: 0,
+            },
+        ];
+
+        let result = find_latest_version_for_backend(backends, "linux-vulkan-x64".to_string());
+        assert_eq!(result, Some("b10344/linux-vulkan-x64".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_check_backend_for_updates_offers_a_newer_macos_tag() {
+        let current = "b10205/macos-arm64".to_string();
+        let available = vec![
+            BackendInfo {
+                version: "b10205".into(),
+                backend: "macos-arm64".into(),
+                order: 1_800_000_000,
+            },
+            BackendInfo {
+                version: "b10344".into(),
+                backend: "macos-arm64".into(),
+                order: 0,
+            },
+        ];
+
+        let result = check_backend_for_updates(current, available).await.unwrap();
+
+        assert!(result.update_needed);
+        assert_eq!(result.new_version, "b10344");
+        assert_eq!(
+            result.target_backend,
+            Some("b10344/macos-arm64".to_string())
+        );
+    }
+
+    #[test]
+    fn test_find_latest_version_falls_back_to_order_for_non_release_tags() {
+        // A hand-placed directory has no build number to rank by, so install
+        // order still decides between two of them.
+        let backends = vec![
+            BackendInfo {
+                version: "custom-build".into(),
+                backend: "macos-arm64".into(),
+                order: 1,
+            },
+            BackendInfo {
+                version: "another-build".into(),
+                backend: "macos-arm64".into(),
+                order: 2,
+            },
+        ];
+
+        let result = find_latest_version_for_backend(backends, "macos-arm64".to_string());
+        assert_eq!(result, Some("another-build/macos-arm64".to_string()));
     }
 
     #[test]

@@ -35,6 +35,7 @@ const COMMANDS: &[&str] = &[
     "should_migrate_backend",
     "handle_setting_update",
     "install_bundled_backend",
+    "verify_backend_binary",
     "fetch_manifest_http1",
 ];
 

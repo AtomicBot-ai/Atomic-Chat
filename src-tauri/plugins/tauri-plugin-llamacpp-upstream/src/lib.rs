@@ -60,6 +60,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             backend::should_migrate_backend,
             backend::handle_setting_update,
             backend::install_bundled_backend,
+            backend::verify_backend_binary,
             backend::fetch_manifest_http1
         ])
         .setup(|app, _api| {
