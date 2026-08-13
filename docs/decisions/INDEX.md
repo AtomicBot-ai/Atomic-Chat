@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-182 records, 2026-05-19 → 2026-08-12.
+183 records, 2026-05-19 → 2026-08-13.
 
 ---
 
@@ -220,8 +220,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (15)
+## UI / UX (16)
 
+- **2026-08-13** — [Revert the Settings and Model Providers UI rework; keep runtime engine updates](2026-08-13-revert-the-settings-and-model-providers-ui-rework-keep-runtime.md)
 - **2026-08-12** — [Split Model Providers into Local/Cloud tabs and hide engine settings](2026-08-12-split-model-providers-into-local-and-cloud-tabs-and-hide-engine-settings.md)
 - **2026-08-12** — [Auto-start a model found on disk instead of showing the onboarding picker](2026-08-12-auto-start-a-model-found-on-disk-instead-of-showing-the-picker.md)
 - **2026-08-12** — [Render reasoning as its own block outside the activity block](2026-08-12-render-reasoning-as-its-own-block-outside-the-activity-block.md)
