@@ -9,6 +9,7 @@ import { ExtensionManager } from '@/lib/extension'
 import { isOnboardingPending } from '@/lib/onboarding'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import {
+  applyStartupBackendUpgrade,
   buildLateBackendMismatch,
   refreshStartupBackendCaches,
 } from '@/lib/startupBackendRecommendations'
@@ -20,6 +21,11 @@ let startupRefreshPromise:
       >
     >
   | null = null
+
+/// The effect below can re-run (hardware/provider state settles in steps) and
+/// `startupRefreshPromise` is cached, so its `.then` fires again each time. The
+/// tier upgrade must be attempted once per process.
+let startupUpgradeStarted = false
 
 /**
  * Warms provider-specific optimal-backend knowledge without opening startup UI.
@@ -51,7 +57,14 @@ export function StartupBackendCoordinator() {
 
     let cancelled = false
     void startupRefreshPromise.then((result) => {
-      if (!cancelled) setRecords(result)
+      if (cancelled) return
+      setRecords(result)
+      if (startupUpgradeStarted) return
+      startupUpgradeStarted = true
+      /// Detection already knows which build this host should run; apply it
+      /// instead of only using the record for the in-chat hint. Guarded and
+      /// scoped to the upstream provider inside the helper.
+      void applyStartupBackendUpgrade(ExtensionManager.getInstance(), result)
     })
     return () => {
       cancelled = true

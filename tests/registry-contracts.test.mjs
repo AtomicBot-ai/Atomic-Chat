@@ -29,6 +29,52 @@ test('upstream manifest preserves the pinned release asset contract', () => {
   }
 })
 
+// `download_base` is what points the app at our signed mirror instead of the
+// ggml-org CDN, and the per-asset hash is what makes the mirrored archive
+// verifiable. The two travel together: a mirrored tag must carry both, and a tag
+// we have not mirrored must carry neither, so the app's fallback to ggml-org
+// stays the only unhashed path.
+test('upstream manifest ties the mirror base to per-asset integrity data', () => {
+  const manifest = fixture('upstream-manifest')
+  const mirrored = manifest.download_base !== undefined
+
+  if (mirrored) {
+    const base = new URL(manifest.download_base)
+    assert.equal(base.protocol, 'https:')
+    assert.equal(
+      base.pathname.endsWith('/'),
+      false,
+      'download_base must not end in a slash — the app joins with one'
+    )
+  }
+
+  for (const asset of manifest.assets) {
+    // The cudart companions are NVIDIA's own DLLs, already signed by NVIDIA and
+    // deliberately left on the upstream CDN, so they carry no hash even in a
+    // mirrored tag. Everything the mirror actually hosts is named `llama-*`.
+    const hosted = mirrored && asset.name.startsWith('llama-')
+
+    if (!hosted) {
+      assert.equal(
+        asset.sha256,
+        undefined,
+        `${asset.name} carries a hash without a mirror to serve it from`
+      )
+      continue
+    }
+    assert.match(
+      asset.sha256 ?? '',
+      /^[0-9a-f]{64}$/,
+      `${asset.name} must carry a sha256`
+    )
+    assert.equal(
+      Number.isInteger(asset.size) && asset.size > 0,
+      true,
+      `${asset.name} must carry a positive size`
+    )
+  }
+})
+
 test('TurboQuant manifest ships one unified release for every backend', () => {
   const manifest = fixture('turboquant-manifest')
   assert.match(manifest.commit, /^[0-9a-f]{7,40}$/)

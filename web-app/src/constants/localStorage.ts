@@ -20,10 +20,13 @@ export const localStorageKey = {
   lastUsedModel: 'last-used-model',
   lastUsedAssistant: 'last-used-assistant',
   defaultAssistantId: 'default-assistant-id',
-  // Global sampling parameters (temperature/top_p/top_k/min_p/penalties).
-  // Sampling is no longer per-assistant; this single bag is injected into
-  // every local-backend chat request via custom-chat-transport.
+  // Former app-wide sampling bag (temperature/top_p/top_k/min_p/penalties).
+  // Sampling is per-assistant again; this entry is only read once by the
+  // migration below and then kept for rollback.
   samplingSettings: 'sampling-settings',
+  // Marks that the app-wide sampling bag has been moved onto the assistants
+  // that had none of their own. Set even when there was nothing to migrate.
+  samplingMigratedPerAssistant: 'sampling-migrated-per-assistant',
   favoriteModels: 'favorite-models',
   setupCompleted: 'setup-completed',
   // Marks that the user has completed (either Skip or Download) the dedicated
@@ -62,6 +65,10 @@ export const localStorageKey = {
   // be reminded about again. Suppression is per pair, not global, so a later
   // hardware or backend change still surfaces a fresh mismatch.
   backendMismatchSuppressed: 'backend-mismatch-suppressed',
+  // Last startup attempt to silently upgrade the upstream llama.cpp backend to
+  // the tier detection picked for this host. Written before the download starts
+  // so a crash or a failure mid-download cannot retry on every launch.
+  startupBackendUpgradeAttempt: 'startup-backend-upgrade-attempt',
 }
 
 export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24

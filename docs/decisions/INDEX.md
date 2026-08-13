@@ -9,12 +9,14 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-173 records, 2026-05-19 → 2026-08-07.
+192 records, 2026-05-19 → 2026-08-13.
 
 ---
 
 ## Load-bearing — read before touching platform / provider / agent code
 
+- **2026-08-13** — [Mirror and sign upstream llama.cpp releases in atomic-chat-conf](2026-08-13-mirror-and-sign-upstream-llama-cpp-in-atomic-chat-conf.md)
+- **2026-08-13** — [Add Windows ROCm to the upstream backend matrix](2026-08-13-add-windows-rocm-to-the-upstream-backend-matrix.md)
 - **2026-07-28** — [Ship dual llama providers on Windows and Linux](2026-07-28-ship-dual-llama-providers-on-windows-and-linux.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 - **2026-05-22** — [Windows ships only `llamacpp-upstream`, sourced from `ggml-org/llama.cpp`](2026-05-22-windows-ships-only-llamacpp-upstream-sourced-from-ggml-org.md)
@@ -122,8 +124,15 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 - **2026-05-19** — [Use `AtomicBot-ai/mlx-vlm` as the MLX backend](2026-05-19-use-atomicbot-ai-mlx-vlm-as-the-mlx-backend.md)
 
-## llama.cpp providers & backend selection (41)
+## llama.cpp providers & backend selection (48)
 
+- **2026-08-13** — [Mirror and sign upstream llama.cpp releases in atomic-chat-conf](2026-08-13-mirror-and-sign-upstream-llama-cpp-in-atomic-chat-conf.md)
+- **2026-08-13** — [Add Windows ROCm to the upstream backend matrix](2026-08-13-add-windows-rocm-to-the-upstream-backend-matrix.md)
+- **2026-08-13** — [Apply the detected backend tier at startup for `llamacpp-upstream`](2026-08-13-apply-the-detected-backend-tier-at-startup-for-upstream.md)
+- **2026-08-13** — [Generate the upstream offline baseline from the manifest](2026-08-13-generate-the-upstream-offline-baseline-from-the-manifest.md)
+- **2026-08-12** — [Update upstream llama.cpp at runtime on macOS too](2026-08-12-update-upstream-llama-cpp-at-runtime-on-macos-too.md)
+- **2026-08-12** — [List every runnable build in the engine version dropdown](2026-08-12-list-every-runnable-build-in-the-engine-version-dropdown.md)
+- **2026-08-12** — [Follow the atomic-chat-conf manifest tag for upstream llama.cpp](2026-08-12-follow-the-atomic-chat-conf-manifest-tag-for-upstream-llama-cpp.md)
 - **2026-08-05** — [Resolve TurboQuant engines from a dynamic stable-release index instead of a pinned conf revision](2026-08-05-resolve-turboquant-engines-from-a-dynamic-stable-release-index.md)
 - **2026-08-05** — [Expose version-gated reasoning preservation and direct llama-server arguments](2026-08-05-expose-version-gated-reasoning-preservation-and-direct-llama-server-arguments.md)
 - **2026-07-31** — [Reconcile the TurboQuant release tag automatically on app update](2026-07-31-reconcile-turboquant-release-tag-automatically-on-app-update.md)
@@ -166,8 +175,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-19** — [Use `AtomicBot-ai/atomic-llama-cpp-turboquant` as the LLM backend](2026-05-19-use-atomicbot-ai-atomic-llama-cpp-turboquant-as-the-llm-backend.md)
 - **2026-05-19** — [Ship upstream `ggml-org/llama.cpp` as a second macOS provider, no fork](2026-05-19-ship-upstream-ggml-org-llama-cpp-as-a-second-macos-provider-no.md)
 
-## Models, Hub & downloads (18)
+## Models, Hub & downloads (19)
 
+- **2026-08-12** — [Gate Hub fuzzy search by term length and drop the Jan name filter](2026-08-12-gate-hub-fuzzy-search-by-term-length-and-drop-the-jan-name-filter.md)
 - **2026-08-07** — [Take Recommended capability badges from the staff-picks manifest](2026-08-07-take-recommended-capability-badges-from-the-staff-picks-manifest.md)
 - **2026-08-07** — [Let onboarding time out into the chat and recommend two GGUF models](2026-08-07-let-onboarding-time-out-into-the-chat-and-recommend-two-gguf.md)
 - **2026-08-06** — [Serve Hub staff picks from a separate manifest and rebuild /hub as a split view](2026-08-06-serve-hub-staff-picks-from-a-separate-manifest-and-split-view.md)
@@ -216,8 +226,15 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (10)
+## UI / UX (17)
 
+- **2026-08-13** — [Move sampling back onto each assistant (per-assistant sampler, popover stays the only editor)](2026-08-13-move-sampling-back-onto-each-assistant.md)
+- **2026-08-13** — [Revert the Settings and Model Providers UI rework; keep runtime engine updates](2026-08-13-revert-the-settings-and-model-providers-ui-rework-keep-runtime.md)
+- **2026-08-12** — [Split Model Providers into Local/Cloud tabs and hide engine settings](2026-08-12-split-model-providers-into-local-and-cloud-tabs-and-hide-engine-settings.md)
+- **2026-08-12** — [Auto-start a model found on disk instead of showing the onboarding picker](2026-08-12-auto-start-a-model-found-on-disk-instead-of-showing-the-picker.md)
+- **2026-08-12** — [Render reasoning as its own block outside the activity block](2026-08-12-render-reasoning-as-its-own-block-outside-the-activity-block.md)
+- **2026-08-11** — [Own the settings chrome in a layout route and highlight the clicked provider optimistically](2026-08-11-own-the-settings-chrome-in-a-layout-route.md)
+- **2026-08-11** — [Split local and cloud providers in Settings; `active` means the cloud provider was added](2026-08-11-split-local-and-cloud-providers-in-settings.md)
 - **2026-08-07** — [Keep sidebar and model-picker interactions off the I/O path](2026-08-07-keep-sidebar-and-model-picker-interactions-off-the-io-path.md)
 - **2026-07-31** — [Disable the transparent Windows window to stop the softbuffer fatal panic](2026-07-31-disable-transparent-windows-window-to-stop-softbuffer-panic.md)
 - **2026-07-30** — [Reveal the Windows window after native setup](2026-07-30-reveal-windows-after-first-frontend-frame.md)

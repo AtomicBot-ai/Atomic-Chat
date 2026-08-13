@@ -52,7 +52,7 @@ import { useServiceStore } from '@/hooks/useServiceHub'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { useSamplingSettings } from '@/hooks/useSamplingSettings'
+import { getSamplingParamsForThread } from '@/lib/samplingParams'
 import { withRecommendedSampling } from '@/lib/predefinedParams'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useThreads } from '@/hooks/useThreads'
@@ -536,20 +536,20 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           .getState()
           .getProviderByName(providerId)
 
-        // Global sampling parameters (no longer per-assistant). Injected
+        // Sampling parameters of the assistant this chat is bound to, injected
         // verbatim into local-backend request bodies by ModelFactory. For
         // Gemma 4 QAT, Google's recommended sampler (temp 1.0 / top_p 0.95 /
         // top_k 64) is layered on at request time unless the user has tuned
-        // sampling themselves — non-destructive, follows the active model.
-        const samplingState = useSamplingSettings.getState()
+        // that assistant's sampling — non-destructive, follows the active model.
+        const sampling = getSamplingParamsForThread(this.threadId)
         const providerSettings = updatedProvider?.settings ?? provider.settings
         const inferenceParams = withUpstreamDflashSampling(
           providerId,
           providerSettings,
           withRecommendedSampling(
             modelId,
-            samplingState.getParams(),
-            samplingState.userOverridden
+            sampling.params,
+            sampling.overridden
           )
         )
 
@@ -754,7 +754,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // displayed tokens/sec.
     let streamStartTime: number | undefined
 
-    const maxOutputTokens = useSamplingSettings.getState().getParams()
+    const maxOutputTokens = getSamplingParamsForThread(this.threadId).params
       ?.max_output_tokens as number | undefined
 
     const result = streamText({

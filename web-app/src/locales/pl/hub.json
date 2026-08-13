@@ -42,7 +42,7 @@
   "staffPickBadge": "Polecane",
   "updatedAgo": "Zaktualizowano {{ago}}",
   "parameters": "Parametry",
-  "architecture": "Architektura",
+  "context": "Kontekst",
   "capabilities": "Możliwości",
   "readme": "README",
   "readmeUnavailable": "Dla tego modelu nie ma pliku README."

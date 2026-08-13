@@ -1835,7 +1835,11 @@ function ProviderDetail() {
   /// bounded check, and the download runs detached. Awaiting the transfer here
   /// would pin the button in its loading state for the whole archive.
   const handleCheckEngineUpdate = useCallback(async () => {
-    if (provider?.provider !== 'llamacpp') return
+    if (
+      provider?.provider !== 'llamacpp' &&
+      provider?.provider !== LOCAL_LLAMACPP_PROVIDER
+    )
+      return
 
     setIsCheckingEngineUpdate(true)
     try {
@@ -2494,11 +2498,16 @@ function ProviderDetail() {
                                 {/* Engine updates land without an app
                                     release, but both the version list and
                                     the release index are snapshots taken at
-                                    extension load. Only the turboquant
-                                    provider resolves its catalog from that
-                                    index, so only it can refetch on
-                                    demand. */}
-                                {provider?.provider === 'llamacpp' && (
+                                    extension load, so a release published
+                                    while the app was open stays invisible
+                                    until this button refetches. Both local
+                                    providers resolve their catalog from an
+                                    index they can refetch: turboquant from
+                                    the fork's release index, upstream from
+                                    the atomic-chat-conf manifest. */}
+                                {(provider?.provider === 'llamacpp' ||
+                                  provider?.provider ===
+                                    LOCAL_LLAMACPP_PROVIDER) && (
                                   <Button
                                     variant="outline"
                                     size="sm"

@@ -525,38 +525,36 @@ jobs:
         run: |
           set -euo pipefail
           # Upstream remains the Windows default provider. Per ATO-199 its
-          # backend INDEX is resolved from the static
-          # atomic-chat-conf manifest (raw.githubusercontent.com, no
-          # api.github.com rate limit). The archive itself still comes from the
-          # ggml-org CDN. Inline bash (not `make ...-win-cpu`) because that
-          # make target is a PowerShell one-liner whose `$(...)` is mangled by
-          # make's /usr/bin/sh under `shell: bash`.
+          # backend INDEX is resolved from the static atomic-chat-conf manifest
+          # (raw.githubusercontent.com, no api.github.com rate limit), and the
+          # archive comes from our signed mirror when that tag was mirrored.
+          # scripts/resolve-upstream-backend.mjs owns both decisions and is
+          # shared with the Makefile — do not re-derive them here.
+          # Inline bash (not `make ...-win-cpu`) because that make target is a
+          # PowerShell one-liner whose `$(...)` is mangled by make's
+          # /usr/bin/sh under `shell: bash`.
           DIR="src-tauri/resources/llamacpp-backend-upstream"
-          BACKEND="win-cpu-x64"
-          MANIFEST_URL="https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/manifest.json"
           rm -rf "$DIR"
           mkdir -p "$DIR"
-          echo "Resolving backend index from atomic-chat-conf manifest (ATO-199)..."
-          TMP="$(mktemp)"
-          curl -fsSL --retry 5 --retry-delay 3 "$MANIFEST_URL" -o "$TMP"
-          TAG="$(jq -r '.tag_name // empty' "$TMP")"
-          if [ -z "$TAG" ]; then
-            echo "Error: atomic-chat-conf manifest has no tag_name"
-            head -c 500 "$TMP" 2>/dev/null || true; echo
-            rm -f "$TMP"; exit 1
-          fi
-          WANT="llama-${TAG}-bin-${BACKEND}.zip"
-          if [ "$(jq -r --arg w "$WANT" '[.assets[]? | select(.name == $w)] | length' "$TMP")" -lt 1 ]; then
-            echo "Error: manifest does not list the ${BACKEND} asset (${WANT}); update atomic-chat-conf backends/manifest.json"
-            rm -f "$TMP"; exit 1
-          fi
-          rm -f "$TMP"
-          URL="https://github.com/ggml-org/llama.cpp/releases/download/${TAG}/${WANT}"
+          # Two steps, not eval "$(...)": under `set -e` a failing command
+          # substitution inside eval does not abort the step.
+          RESOLVED="$(node scripts/resolve-upstream-backend.mjs --backend win-cpu-x64)"
+          eval "$RESOLVED"
           echo "$TAG" > "$DIR/version.txt"
           echo "$BACKEND" > "$DIR/backend.txt"
           echo "Release: $TAG  Backend: $BACKEND"
           echo "Downloading: $URL"
           curl -fSL --retry 5 --retry-delay 3 "$URL" -o /tmp/llamacpp-upstream-backend.zip
+          if [ -n "$SHA256" ]; then
+            ACTUAL="$(sha256sum /tmp/llamacpp-upstream-backend.zip | cut -d' ' -f1)"
+            if [ "$ACTUAL" != "$SHA256" ]; then
+              echo "Error: sha256 mismatch for $ASSET (expected $SHA256, got $ACTUAL)"
+              exit 1
+            fi
+            echo "sha256 verified: $ASSET"
+          else
+            echo "No sha256 published for $ASSET; skipping integrity check"
+          fi
           unzip -o /tmp/llamacpp-upstream-backend.zip -d "$DIR"
           rm -f /tmp/llamacpp-upstream-backend.zip
           if [ ! -f "$DIR/build/bin/llama-server.exe" ] && [ -f "$DIR/llama-server.exe" ]; then

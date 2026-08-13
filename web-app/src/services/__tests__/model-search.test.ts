@@ -141,6 +141,28 @@ describe('ModelSearchService', () => {
     }
   })
 
+  it('does not let a short query fuzzy-match unrelated language tags', () => {
+    const svc = new ModelSearchService()
+    svc.setCatalog([
+      make({
+        model_name: 'unsloth/Jan-nano-GGUF',
+        developer: 'unsloth',
+        description: '**Tags**: gguf, jan',
+        tags_normalized: ['gguf', 'jan'],
+      }),
+      make({
+        model_name: 'mradermacher/Japanese-Merge-i1-GGUF',
+        developer: 'mradermacher',
+        description: '**Tags**: gguf, ja, jpn, jav',
+        tags_normalized: ['gguf', 'ja', 'jpn', 'jav'],
+      }),
+    ])
+    svc.rebuild()
+
+    const hits = svc.search('jan')
+    expect(hits.map((h) => h.model_name)).toEqual(['unsloth/Jan-nano-GGUF'])
+  })
+
   it('uses default ranking for empty queries — popularity + recency + boost', () => {
     const hits = svc.defaultRanking()
     expect(hits.length).toBe(corpus.length)

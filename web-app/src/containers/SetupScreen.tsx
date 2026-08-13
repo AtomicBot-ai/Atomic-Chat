@@ -84,6 +84,26 @@ function sizeStringToGb(size?: string): number | undefined {
 //* Иконка бренда по id репозитория HF (см. modelFamilyLogoSrc)
 const recommendedSetupModelIconSrc = modelFamilyLogoSrc
 
+// Auto-start picks the smallest runnable candidate: it loads fastest, so the
+// first launch feels instant. Candidates without a known size sort last, so a
+// measured model always wins over an unmeasured one.
+function pickAutoRunCandidate(
+  cands: LocalModelCandidate[]
+): LocalModelCandidate | null {
+  let best: LocalModelCandidate | null = null
+  for (const cand of cands) {
+    if (!cand.runnable) continue
+    if (!best) {
+      best = cand
+      continue
+    }
+    const size = cand.sizeBytes ?? Number.POSITIVE_INFINITY
+    const bestSize = best.sizeBytes ?? Number.POSITIVE_INFINITY
+    if (size < bestSize) best = cand
+  }
+  return best
+}
+
 type SetupScreenProps = {
   onSkipped?: () => void
 }
@@ -187,6 +207,14 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   >(null)
   const [importingLocalId, setImportingLocalId] = useState<string | null>(null)
 
+  // A model already on disk from another app means onboarding never has to
+  // offer a download: it launches that model straight away. 'failed' falls back
+  // to the manual picker, and the ref keeps a failed launch from retrying.
+  const [autoRunState, setAutoRunState] = useState<
+    'idle' | 'running' | 'failed'
+  >('idle')
+  const autoRunFiredRef = useRef(false)
+
   useEffect(() => {
     fetchSources()
   }, [fetchSources])
@@ -262,11 +290,19 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     [localCandidates]
   )
 
+  const autoRunTarget = useMemo(
+    () => pickAutoRunCandidate(detectedRunnable),
+    [detectedRunnable]
+  )
+
   //* P0 онбординг-аналитика: фиксируем показ экрана выбора модели один раз,
   //* дождавшись резолва списка рекомендаций (иначе recommended_count = 0).
   const setupShownFiredRef = useRef(false)
   useEffect(() => {
     if (step !== 'model' || setupShownFiredRef.current) return
+    if (localCandidates === null) return
+    // A pending auto-start means the picker is never rendered.
+    if (autoRunTarget && autoRunState !== 'failed') return
     if (recommendedItems.length === 0 && sourcesLoading) return
     setupShownFiredRef.current = true
     try {
@@ -278,7 +314,14 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     } catch (err) {
       console.debug('setup_screen_shown telemetry failed:', err)
     }
-  }, [step, recommendedItems.length, sourcesLoading])
+  }, [
+    step,
+    localCandidates,
+    autoRunTarget,
+    autoRunState,
+    recommendedItems.length,
+    sourcesLoading,
+  ])
 
   //* P0: клик «Download» на рекомендованной карточке (до старта загрузки).
   const captureRecommendedClick = useCallback(
@@ -652,16 +695,19 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
 
   // Import the picked model (no download) and launch it; the rest are imported
   // in the background so every detected model lands in the library.
+  // Resolves false when the model could not be imported, which lets the
+  // auto-start path fall back to the picker instead of hanging on a launch
+  // that will never navigate.
   const onRunLocalModel = useCallback(
-    async (cand: LocalModelCandidate) => {
-      if (!cand.runnable || importingLocalId) return
+    async (cand: LocalModelCandidate): Promise<boolean> => {
+      if (!cand.runnable || importingLocalId) return false
       const providerName = providerForCandidate(cand)
       const engine = EngineManager.instance().get(providerName)
       if (!engine) {
         toast.error(t('setup:localStep.importFailed'), {
           description: `Engine ${providerName} not available`,
         })
-        return
+        return false
       }
 
       setImportingLocalId(cand.id)
@@ -679,6 +725,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
           mmprojPath: cand.mmprojPath,
           source: cand.source,
         })
+        return true
       } catch (error) {
         trackedImportIdsRef.current.delete(cand.id)
         setImportingLocalId(null)
@@ -689,6 +736,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         toast.error(t('setup:localStep.importFailed'), {
           description: error instanceof Error ? error.message : 'Unknown error',
         })
+        return false
       }
     },
     [
@@ -699,6 +747,41 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       t,
     ]
   )
+
+  // Onboarding never offers a download when another app already left a model on
+  // disk: the smallest one is imported and launched immediately, and the picker
+  // is only rendered if that fails.
+  useEffect(() => {
+    if (step !== 'model' || localCandidates === null) return
+    if (!autoRunTarget || autoRunFiredRef.current) return
+
+    autoRunFiredRef.current = true
+    setAutoRunState('running')
+    try {
+      posthog.capture('setup_local_model_autostarted', {
+        source: autoRunTarget.source,
+        format: autoRunTarget.format,
+        size_gb: autoRunTarget.sizeBytes
+          ? Math.round((autoRunTarget.sizeBytes / 1024 ** 3) * 100) / 100
+          : null,
+        detected_count: detectedRunnable.length,
+        platform: getAnalyticsPlatform(),
+        app_version: VERSION,
+      })
+    } catch (err) {
+      console.debug('setup_local_model_autostarted telemetry failed:', err)
+    }
+
+    void onRunLocalModel(autoRunTarget).then((started) => {
+      if (!started) setAutoRunState('failed')
+    })
+  }, [
+    step,
+    localCandidates,
+    autoRunTarget,
+    detectedRunnable.length,
+    onRunLocalModel,
+  ])
 
   // Shared exit for both ways of leaving onboarding empty-handed: the explicit
   // Skip link and the auto-exit timeout. Picking a model takes a different
@@ -798,16 +881,24 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     return <SetupBackendStep onDone={handleBackendStepDone} />
   }
 
-  // Brief scanning state so detected models can appear at the top of the
-  // picker on first paint instead of popping in (and shoving the list down).
-  if (step === 'model' && localCandidates === null) {
+  // Two states that replace the picker entirely: the brief scan (so detected
+  // models don't pop in and shove the list down) and the auto-start of a model
+  // found on disk, which needs feedback rather than a decision.
+  const statusMessage =
+    localCandidates === null
+      ? t('common:loading')
+      : autoRunState === 'running' && autoRunTarget
+        ? t('setup:localStep.autoStarting', {
+            name: autoRunTarget.displayName,
+          })
+        : null
+
+  if (statusMessage) {
     return (
       <div className="relative flex h-full w-full flex-col overflow-hidden">
         <HeaderPage />
         <div className="flex flex-1 items-center justify-center">
-          <div className="text-muted-foreground text-sm">
-            {t('common:loading')}
-          </div>
+          <div className="text-muted-foreground text-sm">{statusMessage}</div>
         </div>
       </div>
     )
@@ -819,27 +910,24 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         <HeaderPage />
 
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <div className="pointer-events-auto mx-auto my-auto flex w-full max-w-[840px] flex-col px-6 py-8 sm:px-10 sm:py-10">
-            <div className="mb-4 shrink-0 text-center sm:mb-5">
-              <div className="mb-5 flex items-center justify-center gap-3 font-studio text-5xl font-semibold leading-none tracking-tight sm:text-6xl">
-                <div className="flex h-[1em] w-[1em] shrink-0 items-center justify-center rounded-lg bg-neutral-950 p-[3px] shadow-sm dark:bg-white dark:shadow-none">
-                  <img
-                    src="/images/transparent-logo.png"
-                    alt=""
-                    className="size-full min-h-0 min-w-0 object-contain invert dark:invert-0"
-                    draggable={false}
-                  />
-                </div>
-                <span>Atomic Chat</span>
+          <div className="pointer-events-auto mx-auto my-auto flex w-full max-w-[600px] flex-col px-6 py-8 sm:py-10">
+            <div className="mb-5 flex shrink-0 flex-col items-center gap-3 text-center">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-neutral-950 p-1 shadow-sm dark:bg-white dark:shadow-none">
+                <img
+                  src="/images/transparent-logo.png"
+                  alt=""
+                  className="size-full min-h-0 min-w-0 object-contain invert dark:invert-0"
+                  draggable={false}
+                />
               </div>
-              <div className="mb-3 min-w-0">
-                <span className="inline-block text-lg font-bold leading-snug sm:text-xl md:text-2xl">
-                  No rate limits. No subscriptions. No cloud.
-                </span>
+              <div>
+                <h1 className="text-xl font-semibold leading-snug tracking-tight">
+                  {t('setup:welcomeTitle')}
+                </h1>
+                <p className="text-muted-foreground mt-1 text-sm">
+                  {t('setup:welcomeSubtitle')}
+                </p>
               </div>
-              <p className="text-muted-foreground mx-auto max-w-full whitespace-nowrap text-sm leading-relaxed sm:text-base">
-                {t('setup:turboQuantTagline')}
-              </p>
             </div>
 
             <div className="relative z-50 flex flex-col gap-4">
@@ -851,7 +939,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                   </span>
                   <div
                     className={cn(
-                      'w-full shrink-0 rounded-lg border bg-secondary/50 p-[0.9rem] sm:p-[1.2rem]',
+                      'w-full shrink-0 rounded-lg border bg-secondary/50 px-3 py-2',
                       'max-h-[min(40vh,22rem)] overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable]'
                     )}
                   >
@@ -871,14 +959,14 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                         return (
                           <div
                             key={cand.id}
-                            className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
+                            className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
                           >
-                            <div className="flex min-w-0 flex-1 items-start gap-3">
+                            <div className="flex min-w-0 flex-1 items-center gap-3">
                               {brandIconSrc ? (
                                 <img
                                   src={brandIconSrc}
                                   alt=""
-                                  className="size-11 shrink-0 object-contain sm:size-12"
+                                  className="size-8 shrink-0 object-contain"
                                   draggable={false}
                                   aria-hidden
                                 />
@@ -886,12 +974,12 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                 <HuggingFaceAuthorAvatar
                                   author=""
                                   initials={rowInitials}
-                                  className="size-11 shrink-0 sm:size-12"
+                                  className="size-8 shrink-0"
                                 />
                               )}
                               <div className="min-w-0 flex-1">
                                 <h2
-                                  className="font-semibold text-sm leading-tight sm:text-base sm:whitespace-nowrap"
+                                  className="truncate text-sm font-medium leading-tight"
                                   title={cand.path}
                                 >
                                   {cand.displayName}
@@ -902,17 +990,17 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                     </span>
                                   ) : null}
                                 </h2>
-                                <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
+                                <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
                                   <ModelSourceBadge source={cand.source} />
                                 </div>
                               </div>
                             </div>
-                            <div className="flex w-full flex-col items-center gap-1 sm:w-auto sm:shrink-0">
+                            <div className="flex shrink-0 flex-col items-end gap-1">
                               <Button
                                 size="sm"
                                 disabled={importingLocalId !== null}
-                                onClick={() => onRunLocalModel(cand)}
-                                className="w-full shrink-0 rounded-full px-5 font-semibold sm:w-auto"
+                                onClick={() => void onRunLocalModel(cand)}
+                                className="shrink-0 rounded-full px-4"
                               >
                                 <span className="grid">
                                   <span
@@ -952,14 +1040,14 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                           return (
                             <div
                               key={`installed-${rec.modelName}-${rec.descriptionKey}`}
-                              className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
+                              className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
                             >
-                              <div className="flex min-w-0 flex-1 items-start gap-3">
+                              <div className="flex min-w-0 flex-1 items-center gap-3">
                                 {brandIconSrc ? (
                                   <img
                                     src={brandIconSrc}
                                     alt=""
-                                    className="size-11 shrink-0 object-contain sm:size-12"
+                                    className="size-8 shrink-0 object-contain"
                                     draggable={false}
                                     aria-hidden
                                   />
@@ -967,11 +1055,11 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                   <HuggingFaceAuthorAvatar
                                     author={hfAuthor}
                                     initials={rowInitials}
-                                    className="size-11 shrink-0 sm:size-12"
+                                    className="size-8 shrink-0"
                                   />
                                 )}
                                 <div className="min-w-0 flex-1">
-                                  <h2 className="font-semibold text-sm leading-tight sm:text-base sm:whitespace-nowrap">
+                                  <h2 className="truncate text-sm font-medium leading-tight">
                                     {extractModelName(model.model_name)}
                                     {sizeLabel ? (
                                       <span className="text-xs font-normal text-muted-foreground">
@@ -981,7 +1069,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                     ) : null}
                                   </h2>
                                   <RecommendedModelChip
-                                    className="mt-1.5 inline-flex max-w-full sm:max-w-md"
+                                    className="mt-1 inline-flex max-w-full"
                                     variant={chipVariantForRecommendedDescriptionKey(
                                       rec.descriptionKey
                                     )}
@@ -991,7 +1079,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                   </RecommendedModelChip>
                                 </div>
                               </div>
-                              <div className="flex w-full flex-col items-center gap-1 sm:w-auto sm:shrink-0">
+                              <div className="flex shrink-0 flex-col items-end gap-1">
                                 <Button
                                   size="sm"
                                   disabled={importingLocalId !== null}
@@ -1001,7 +1089,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                     )
                                     enterChatForDownload(startId, provider)
                                   }}
-                                  className="w-full shrink-0 rounded-full px-5 font-semibold sm:w-auto"
+                                  className="shrink-0 rounded-full px-4"
                                 >
                                   {t('setup:localStep.run')}
                                 </Button>
@@ -1023,8 +1111,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                     </span>
                     <div
                       className={cn(
-                        //* +20% только к внутренним отступам «карточки» (рамка со списком)
-                        'w-full shrink-0 rounded-lg border bg-secondary/50 p-[0.9rem] sm:p-[1.2rem]',
+                        'w-full shrink-0 rounded-lg border bg-secondary/50 px-3 py-2',
                         'max-h-[min(70vh,36rem)] overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable]'
                       )}
                     >
@@ -1081,14 +1168,14 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                           return (
                             <div
                               key={`${rec.modelName}-${rec.descriptionKey}`}
-                              className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
+                              className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
                             >
-                              <div className="flex min-w-0 flex-1 items-start gap-3">
+                              <div className="flex min-w-0 flex-1 items-center gap-3">
                                 {brandIconSrc ? (
                                   <img
                                     src={brandIconSrc}
                                     alt=""
-                                    className="size-11 shrink-0 object-contain sm:size-12"
+                                    className="size-8 shrink-0 object-contain"
                                     draggable={false}
                                     aria-hidden
                                   />
@@ -1096,11 +1183,11 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                   <HuggingFaceAuthorAvatar
                                     author={hfAuthor}
                                     initials={rowInitials}
-                                    className="size-11 shrink-0 sm:size-12"
+                                    className="size-8 shrink-0"
                                   />
                                 )}
                                 <div className="min-w-0 flex-1">
-                                  <h2 className="font-semibold text-sm leading-tight sm:text-base sm:whitespace-nowrap">
+                                  <h2 className="truncate text-sm font-medium leading-tight">
                                     {model
                                       ? extractModelName(model.model_name)
                                       : extractModelName(rec.modelName)}
@@ -1112,7 +1199,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                     ) : null}
                                   </h2>
                                   <RecommendedModelChip
-                                    className="mt-1.5 inline-flex max-w-full sm:max-w-md"
+                                    className="mt-1 inline-flex max-w-full"
                                     variant={chipVariantForRecommendedDescriptionKey(
                                       rec.descriptionKey
                                     )}
@@ -1129,7 +1216,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                   )}
                                 </div>
                               </div>
-                              <div className="flex w-full flex-col items-center gap-1 sm:w-auto sm:shrink-0">
+                              <div className="flex shrink-0 flex-col items-end gap-1">
                                 <Button
                                   size="sm"
                                   disabled={
@@ -1172,7 +1259,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                       )
                                     }
                                   }}
-                                  className="w-full shrink-0 rounded-full px-5 font-semibold sm:w-auto"
+                                  className="shrink-0 rounded-full px-4"
                                 >
                                   {/* Reserve width for the widest possible label so the
                                   button doesn't reflow when its state flips between
@@ -1207,7 +1294,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                 </Button>
                                 {rowDownloading && rowTrackId ? (
                                   <p
-                                    className="w-full text-center text-xs text-muted-foreground tabular-nums sm:w-auto sm:max-w-full"
+                                    className="text-right text-xs text-muted-foreground tabular-nums"
                                     aria-live="polite"
                                   >
                                     {rowDownloadProgress &&

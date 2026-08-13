@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CatalogModel } from '@/services/models/types'
 
@@ -88,7 +88,11 @@ describe('ModelDetailPanel', () => {
   })
 
   it('renders the header, stats and details grid', () => {
-    render(<ModelDetailPanel model={model()} />)
+    render(
+      <ModelDetailPanel
+        model={model({ last_modified: '2026-08-01T00:00:00Z' })}
+      />
+    )
 
     expect(
       screen.getByRole('heading', { name: 'Qwen3.5-4B-GGUF' })
@@ -98,13 +102,26 @@ describe('ModelDetailPanel', () => {
     expect(screen.getByText('77')).toBeInTheDocument()
     expect(screen.getByText('4B')).toBeInTheDocument()
     expect(screen.getByText('gguf')).toBeInTheDocument()
+    expect(screen.getByText('hub:context')).toBeInTheDocument()
+    const details = screen.getByRole('heading', { name: 'hub:details' })
+      .parentElement!
+    const downloadOptions = screen.getByRole('heading', {
+      name: 'hub:downloadOptions',
+    }).parentElement!
+    expect(
+      downloadOptions.compareDocumentPosition(details) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    expect(within(details).getByText(/^4.200$/)).toBeInTheDocument()
+    expect(within(details).getByText('77')).toBeInTheDocument()
+    expect(within(details).getByText('hub:updatedAgo')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /hub:openOnWeb/ })).toHaveAttribute(
       'href',
       'https://huggingface.co/Qwen/Qwen3.5-4B-GGUF'
     )
   })
 
-  it('marks a staff pick and shows its curated copy', () => {
+  it('uses a staff pick title without its badge or summary', () => {
     render(
       <ModelDetailPanel
         model={model()}
@@ -119,8 +136,8 @@ describe('ModelDetailPanel', () => {
     expect(
       screen.getByRole('heading', { name: 'Qwen3.5 4B' })
     ).toBeInTheDocument()
-    expect(screen.getByText('hub:staffPickBadge')).toBeInTheDocument()
-    expect(screen.getByText('Compact all-rounder.')).toBeInTheDocument()
+    expect(screen.queryByText('hub:staffPickBadge')).not.toBeInTheDocument()
+    expect(screen.queryByText('Compact all-rounder.')).not.toBeInTheDocument()
   })
 
   it('says so when the repo ships no README', () => {

@@ -12,6 +12,8 @@
   "localModel": "Set up local model",
   "remoteProvider": "Set up remote provider",
   "turboQuantTagline": "Local AI models on your device — blazing fast on average hardware.",
+  "welcomeTitle": "Hey, welcome to Atomic Chat!",
+  "welcomeSubtitle": "Atomic Chat needs a model to begin. Let's set it up.",
   "skip": "Skip",
   "modelUnavailable": "Not in catalog yet — open Hub after connection.",
   "localStep": {
@@ -22,6 +24,7 @@
     "descriptionOther": "These are already downloaded by other apps. Run them here instantly — no re-download.",
     "run": "Run",
     "running": "Importing…",
+    "autoStarting": "Starting {{name}}…",
     "requiresBaseModel": "Requires base model",
     "browseInstead": "Browse the catalog instead",
     "importFailed": "Couldn't import model"

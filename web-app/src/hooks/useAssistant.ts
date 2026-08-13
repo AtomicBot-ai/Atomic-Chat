@@ -16,6 +16,12 @@ interface AssistantState {
   setPendingAssistant: (assistant: Assistant | undefined) => void
   addAssistant: (assistant: Assistant) => void
   updateAssistant: (assistant: Assistant) => void
+  /**
+   * Set a single sampling parameter on one assistant. Applied to the store
+   * immediately (sliders stay responsive) and written to disk on a debounce,
+   * since a slider drag emits a change per frame.
+   */
+  updateAssistantParam: (id: string, key: string, value: unknown) => void
   deleteAssistant: (id: string) => void
   setCurrentAssistant: (assistant: Assistant, saveToStorage?: boolean) => void
   setDefaultAssistant: (id: string) => void
@@ -92,6 +98,31 @@ const getInitialAssistantState = () => {
   }
 }
 
+const PARAM_PERSIST_DEBOUNCE_MS = 300
+const paramPersistTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+const schedulePersistParams = (
+  id: string,
+  resolve: () => Assistant | undefined
+) => {
+  const scheduled = paramPersistTimers.get(id)
+  if (scheduled) clearTimeout(scheduled)
+  paramPersistTimers.set(
+    id,
+    setTimeout(() => {
+      paramPersistTimers.delete(id)
+      const assistant = resolve()
+      if (!assistant) return
+      getServiceHub()
+        .assistants()
+        .createAssistant(assistant as unknown as CoreAssistant)
+        .catch((error) => {
+          console.error('Failed to persist assistant sampling:', error)
+        })
+    }, PARAM_PERSIST_DEBOUNCE_MS)
+  )
+}
+
 export const useAssistant = create<AssistantState>((set, get) => ({
   ...getInitialAssistantState(),
   pendingAssistant: undefined,
@@ -116,6 +147,10 @@ export const useAssistant = create<AssistantState>((set, get) => ({
         state.currentAssistant?.id === assistant.id
           ? assistant
           : state.currentAssistant,
+      pendingAssistant:
+        state.pendingAssistant?.id === assistant.id
+          ? assistant
+          : state.pendingAssistant,
     })
     // Create assistant already cover update logic
     getServiceHub()
@@ -124,6 +159,27 @@ export const useAssistant = create<AssistantState>((set, get) => ({
       .catch((error) => {
         console.error('Failed to update assistant:', error)
       })
+  },
+  updateAssistantParam: (id, key, value) => {
+    const state = get()
+    const target = state.assistants.find((a) => a.id === id)
+    if (!target) return
+
+    const updated: Assistant = {
+      ...target,
+      parameters: { ...target.parameters, [key]: value },
+      sampling_overridden: true,
+    }
+    set({
+      assistants: state.assistants.map((a) => (a.id === id ? updated : a)),
+      currentAssistant:
+        state.currentAssistant?.id === id ? updated : state.currentAssistant,
+      pendingAssistant:
+        state.pendingAssistant?.id === id ? updated : state.pendingAssistant,
+    })
+    schedulePersistParams(id, () =>
+      get().assistants.find((a) => a.id === id)
+    )
   },
   deleteAssistant: (id) => {
     const state = get()

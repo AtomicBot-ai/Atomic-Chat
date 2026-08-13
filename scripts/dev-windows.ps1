@@ -291,10 +291,16 @@ function Test-BackendSatisfiedBy {
 
 function Resolve-BackendFromManifest {
     # Given the parsed backend manifest object from atomic-chat-conf and a
-    # selected backend id, resolve to @{ Backend; Tag }. Minor-less CUDA family
-    # ids (win-cuda-13-x64 / win-cuda-12-x64) are resolved to the highest
-    # concrete minor listed in manifest assets. Mirrors the runtime resolver in
+    # selected backend id, resolve to @{ Backend; Tag; Asset; Url; Sha256; Size }.
+    # Minor-less CUDA family ids (win-cuda-13-x64 / win-cuda-12-x64) are
+    # resolved to the highest concrete minor listed in manifest assets. Mirrors
+    # the runtime resolver in
     # extensions/llamacpp-upstream-extension/src/backend.ts.
+    #
+    # Deliberately NOT delegating to scripts/resolve-upstream-backend.mjs like
+    # the Makefile does: that script exits non-zero when an asset is missing,
+    # while this one must return $null so the caller keeps a working backend on
+    # disk instead of deleting it over a bad manifest (ATO-174 follow-up).
     param([object]$Manifest, [string]$Backend)
     if (-not $Manifest -or -not $Manifest.tag_name -or -not $Manifest.assets) {
         return $null
@@ -313,17 +319,42 @@ function Resolve-BackendFromManifest {
                 }
             }
         }
-        if ($best) {
-            return [pscustomobject]@{ Backend = $best; Tag = $Manifest.tag_name }
-        }
-        return $null
+        if (-not $best) { return $null }
+        return New-BackendSource -Manifest $Manifest -Backend $best
     }
 
     $want = "llama-$($Manifest.tag_name)-bin-$Backend.zip"
     if ($Manifest.assets | Where-Object { $_.name -eq $want }) {
-        return [pscustomobject]@{ Backend = $Backend; Tag = $Manifest.tag_name }
+        return New-BackendSource -Manifest $Manifest -Backend $Backend
     }
     return $null
+}
+
+function New-BackendSource {
+    # Where the archive comes from and what it must hash to. Our own signed
+    # mirror is used only when the manifest names a download_base and lists this
+    # asset with a hash; a tag we never mirrored falls back to the ggml-org CDN
+    # unverified, exactly as this script did before the mirror existed.
+    param([object]$Manifest, [string]$Backend)
+    $tag = $Manifest.tag_name
+    $asset = "llama-$tag-bin-$Backend.zip"
+    $entry = $Manifest.assets | Where-Object { $_.name -eq $asset } | Select-Object -First 1
+    $base = 'https://github.com/ggml-org/llama.cpp/releases/download'
+    $sha = $null
+    $size = $null
+    if ($Manifest.download_base -and $entry -and $entry.sha256 -and $entry.size) {
+        $base = $Manifest.download_base
+        $sha = $entry.sha256
+        $size = $entry.size
+    }
+    return [pscustomobject]@{
+        Backend = $Backend
+        Tag     = $tag
+        Asset   = $asset
+        Url     = "$base/$tag/$asset"
+        Sha256  = $sha
+        Size    = $size
+    }
 }
 
 function Invoke-BackendManifest {
@@ -491,9 +522,9 @@ if ($skipDownload) {
             New-Item -ItemType Directory -Path $llamacppDir -Force | Out-Null
         }
 
-        # ggml-org publishes Windows binaries as .zip (not .tar.gz like the
-        # legacy janhq mirror), so use Expand-Archive instead of tar.
-        $archiveUrl = "https://github.com/ggml-org/llama.cpp/releases/download/$tag/llama-$tag-bin-$backend.zip"
+        # Windows binaries ship as .zip (not .tar.gz like the legacy janhq
+        # mirror), so use Expand-Archive instead of tar.
+        $archiveUrl = $resolved.Url
         $archivePath = Join-Path $env:TEMP 'llamacpp-upstream-backend.zip'
 
         Write-Host "  Release: $tag  Backend: $backend"
@@ -513,6 +544,18 @@ if ($skipDownload) {
         if (-not $downloaded) {
             Write-Host "[FATAL] Failed to download $archiveUrl after 5 attempts" -ForegroundColor Red
             exit 1
+        }
+
+        if ($resolved.Sha256) {
+            $actual = (Get-FileHash -Path $archivePath -Algorithm SHA256).Hash.ToLower()
+            if ($actual -ne $resolved.Sha256) {
+                Remove-Item $archivePath -Force -ErrorAction SilentlyContinue
+                Write-Host "[FATAL] sha256 mismatch for $($resolved.Asset): expected $($resolved.Sha256), got $actual" -ForegroundColor Red
+                exit 1
+            }
+            Write-Host "  sha256 verified: $($resolved.Asset)"
+        } else {
+            Write-Host "  No sha256 published for $($resolved.Asset); skipping integrity check" -ForegroundColor Yellow
         }
 
         Set-Content -Path "$llamacppDir/version.txt" -Value $tag -NoNewline

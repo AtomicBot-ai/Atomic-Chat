@@ -140,10 +140,18 @@ export abstract class BaseExtension implements ExtensionType {
             }
           }
           if ('recommended' in setting.controllerProps) {
-            const oldRecommended = oldSettings.find((e: any) => e.key === setting.key)
-              ?.controllerProps?.recommended
-            if (oldRecommended !== undefined && oldRecommended !== '') {
-              setting.controllerProps.recommended = oldRecommended
+            // Only the extension that owns the setting can compute a
+            // recommendation, so a registration carrying one is newer than
+            // whatever is stored. The stored value survives a registration
+            // without one — the settings schema ships none, and erasing a
+            // live recommendation on every cold start would lose it.
+            const incoming = setting.controllerProps.recommended
+            if (incoming === undefined || incoming === '') {
+              const oldRecommended = oldSettings.find((e: any) => e.key === setting.key)
+                ?.controllerProps?.recommended
+              if (oldRecommended !== undefined && oldRecommended !== '') {
+                setting.controllerProps.recommended = oldRecommended
+              }
             }
           }
         })

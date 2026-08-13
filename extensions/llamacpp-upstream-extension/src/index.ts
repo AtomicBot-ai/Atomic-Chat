@@ -40,11 +40,17 @@ import {
   friendlyBackendLabel,
   getBackendArchiveName,
   getBackendDownloadUrl,
+  resolveBackendArchiveSource,
   getCudartDownloadUrl,
   getCudartArchiveName,
   getCudaToolkitVersion,
-  isConcreteOfCudaFamily,
-  resolveCudaFamilyConcrete,
+  isConcreteOfGpuFamily,
+  resolveGpuFamilyConcrete,
+  requiredDiskSpaceForBackend,
+  listInstalledBackendPacks,
+  deleteBackendPack,
+  mergeBackendOptions,
+  type InstalledBackendPack,
 } from './backend'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import {
@@ -99,12 +105,14 @@ import {
   shouldMigrateBackend,
   handleSettingUpdate,
   installBundledBackend,
+  verifyBackendBinary,
   checkBackendForUpdates as checkBackendForUpdatesFromRust,
   getSupportedFeaturesFromRust,
   normalizeFeatures,
   isCudaInstalledFromRust,
   checkSpecTypeSupport,
   getRuntimeDevice,
+  availableDiskSpace,
 } from '../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index'
 
 // Error message constant - matches web-app/src/utils/error.ts
@@ -162,6 +170,10 @@ const ERR_MODEL_FILE_CORRUPT = 'MODEL_FILE_CORRUPT'
 /// concrete release tag. The download is refused and the caller falls back to
 /// an installed backend, so this is a routing defect to fix, not a crash.
 const ERR_BACKEND_TAG_UNRESOLVED = 'BACKEND_TAG_UNRESOLVED'
+/// The volume holding the backends directory cannot fit the archive plus its
+/// unpacked tree. Raised before the transfer starts so the user is not told
+/// "extraction failed" after waiting for a several-hundred-megabyte download.
+const ERR_BACKEND_INSUFFICIENT_DISK_SPACE = 'BACKEND_INSUFFICIENT_DISK_SPACE'
 /// Broadcast channel emitted after a model that crashed on an unsupported
 /// multimodal projector is successfully reloaded in text-only mode. The
 /// web-app shows a one-shot, non-fatal toast so the user knows vision/audio
@@ -191,16 +203,6 @@ function modelLoadReadyTimeoutSecs(configuredTimeoutSecs: number): number {
   const base = Number.isFinite(configured) && configured > 0 ? configured : 600
   return Math.max(base, MODEL_LOAD_READY_TIMEOUT_FLOOR_SECS)
 }
-
-/// Temporary hard pin: every launch forcibly reconciles `version_backend`
-/// to this exact ggml-org tag, preserving the user's backend *type*
-/// (cpu/cuda/vulkan/macos-arm64) but never their *version* — this WILL
-/// downgrade a newer manually-installed backend just as readily as it
-/// upgrades an older one. Mirrors the CI/build pins in `Makefile`
-/// (`LLAMACPP_UPSTREAM_TAG`) and `atomic-chat-conf/backends/manifest.json`
-/// (`tag_name`). Remove (or move to a real settings-driven pin) once the
-/// team is done validating this tag broadly. See `enforcePinnedBackendVersion`.
-const PINNED_BACKEND_TAG = 'b10205'
 
 /**
  * Override the default app.log function to use Jan's logging system.
@@ -598,7 +600,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
     let settings = structuredClone(SETTINGS) // Clone to modify settings definition before registration
 
-    // Preserve persisted `version_backend` across sessions on Windows/Linux.
+    // Preserve persisted `version_backend` across sessions.
     //
     // `registerSettings()` (in core extension.ts) keeps the persisted value
     // ONLY if the new `options` list contains it; otherwise it silently
@@ -612,38 +614,34 @@ export default class llamacpp_upstream_extension extends AIEngine {
     // with empty options), inject the persisted value into the new options
     // list so the deduplication check passes and the value survives.
     //
-    // Limited to non-macOS to keep turboquant/MLX flow on macOS untouched
-    // (per design decision).
-    if (!IS_MAC) {
-      try {
-        const persistedSettings = await this.getSettings()
-        const persistedVbRaw = persistedSettings.find(
-          (s) => s.key === 'version_backend'
-        )?.controllerProps?.value
-        const persistedVb =
-          typeof persistedVbRaw === 'string' ? stripBom(persistedVbRaw) : ''
-        if (
-          persistedVb &&
-          persistedVb !== 'none' &&
-          persistedVb.includes('/')
-        ) {
-          const vbSetting = settings.find((s) => s.key === 'version_backend')
-          if (vbSetting && 'options' in vbSetting.controllerProps) {
-            vbSetting.controllerProps.options = [
-              { value: persistedVb, name: persistedVb },
-            ]
-            vbSetting.controllerProps.value = persistedVb
-            logger.info(
-              `[onLoad] Preserving persisted version_backend across registerSettings: ${persistedVb}`
-            )
-          }
+    // This used to skip macOS, where the provider only ever had the single
+    // bundled build and there was nothing to lose. Now that macOS resolves
+    // its builds from the manifest, a downloaded tag is exactly as losable
+    // there as a CUDA build is on Windows.
+    try {
+      const persistedSettings = await this.getSettings()
+      const persistedVbRaw = persistedSettings.find(
+        (s) => s.key === 'version_backend'
+      )?.controllerProps?.value
+      const persistedVb =
+        typeof persistedVbRaw === 'string' ? stripBom(persistedVbRaw) : ''
+      if (persistedVb && persistedVb !== 'none' && persistedVb.includes('/')) {
+        const vbSetting = settings.find((s) => s.key === 'version_backend')
+        if (vbSetting && 'options' in vbSetting.controllerProps) {
+          vbSetting.controllerProps.options = [
+            { value: persistedVb, name: persistedVb },
+          ]
+          vbSetting.controllerProps.value = persistedVb
+          logger.info(
+            `[onLoad] Preserving persisted version_backend across registerSettings: ${persistedVb}`
+          )
         }
-      } catch (err) {
-        logger.warn(
-          '[onLoad] Failed to read persisted settings for version_backend preservation:',
-          err
-        )
       }
+    } catch (err) {
+      logger.warn(
+        '[onLoad] Failed to read persisted settings for version_backend preservation:',
+        err
+      )
     }
 
     // This makes the settings (including the backend options and initial value) available to the Jan UI.
@@ -771,7 +769,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       })
       // Reconcile the selected backend after configureBackends has resolved
       // legacy/latest values to a concrete version/backend pair.
-      .then(() => this.enforcePinnedBackendVersion())
+      .then(() => this.reconcileBackendReleaseTag())
       .finally(() => {
         this.isInitializing = false
         this.configureBackendsPromise = null
@@ -1034,13 +1032,14 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // the user would lose their previously selected backend on every restart.
       //
       // Recovery: scan installed backends on disk and pick the best one. This
-      // is intentionally limited to non-macOS to keep the existing
-      // turboquant/MLX flow on macOS untouched (per design decision).
+      // used to skip macOS, where the only build on disk was the bundled one
+      // the next branch would apply anyway; with manifest-driven builds a
+      // downloaded tag can now be sitting there instead.
       const currentVB = this.config.version_backend || ''
       const persistedMissing =
         !currentVB || currentVB === 'none' || !currentVB.includes('/')
 
-      if (persistedMissing && !IS_MAC) {
+      if (persistedMissing) {
         try {
           const localInstalled = await getLocalInstalledBackends()
           if (localInstalled.length > 0) {
@@ -1078,24 +1077,26 @@ export default class llamacpp_upstream_extension extends AIEngine {
         }
       }
 
-      // GPU-backend detection deliberately does NOT run here anymore.
+      // GPU-backend detection does not run *here*, inside
+      // `configureBackends()`. It used to, on every launch and again after the
+      // remote release fetch, which read in the logs as a periodic "we're
+      // trying to install a better backend" pass that never installed anything
+      // unless the user clicked through a dialog.
       //
-      // Previously this method ran `detectIdealBackendType()` on every
-      // app launch (and again after the remote release fetch), which
-      // showed up in the logs as a periodic "we're trying to install a
-      // better backend" pass — even though no install ever happened
-      // unless the user clicked through the dialog. The user found
-      // this opaque and asked for it to be turned off entirely.
+      // Detection is now driven from outside the extension:
+      //   1. `StartupBackendCoordinator` calls `refreshOptimalBackendCache()`
+      //      once per launch (cached for 24h) and applies the resulting tier
+      //      through `downloadRecommendedBackend()`. ROCm is excluded from that
+      //      silent path because of its size.
+      //   2. `SetupBackendStep` on first-launch onboarding and the manual
+      //      "Find optimal backend" button, both via
+      //      `recheckOptimalBackend()`.
       //
-      // Detection now happens only at the two explicit user-facing
-      // entry points, both of which call `recheckOptimalBackend()`:
-      //   1. `SetupBackendStep` on first-launch onboarding.
-      //   2. The manual "Find optimal backend" button in provider
-      //      settings.
-      //
-      // `configureBackends()` keeps its other responsibilities:
-      // bundled-backend extraction, settings registration, and
-      // version auto-upgrade for the same backend family.
+      // Keeping it out of `configureBackends()` is what makes the coordinator's
+      // once-per-launch budget hold: this method also runs on settings changes
+      // and recovery paths. Its own responsibilities stay bundled-backend
+      // extraction, settings registration, and version auto-upgrade within the
+      // same backend family.
 
       // Static "Latest <variant>" dropdown entries for every variant the
       // upstream release stream ships on this OS. Built from the compile-time
@@ -1113,17 +1114,31 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // by `resolveLatestBackendString` (now family-aware), so a future
       // ggml-org minor bump (13.3 → 13.4) no longer silently dead-ends the
       // manual dropdown. `friendlyBackendLabel` renders these as "CUDA 12.4" /
-      // "CUDA 13".
+      // "CUDA 13". `win-rocm-x64` is version-less for the same reason and is
+      // offered here even on NVIDIA hosts, since the set is a manual override.
+      // macOS has no GPU tiers, and only `macos-arm64` is published to the
+      // manifest, so that is the one sentinel worth offering. The
+      // architecture is read off the bundled build rather than probed: the
+      // installer ships the matching arch by construction. An Intel host gets
+      // no sentinel — `latest/macos-x64` would resolve to nothing.
+      const macHostVariant = IS_MAC
+        ? (bundledBackendString ?? stripBom(this.config.version_backend || ''))
+            .split('/')[1]
+            ?.trim()
+        : undefined
       const staticVariants: string[] = IS_WINDOWS
         ? [
             'win-cpu-x64',
             'win-cuda-12-x64',
             'win-cuda-13-x64',
+            'win-rocm-x64',
             'win-vulkan-x64',
           ]
         : IS_LINUX
           ? ['linux-cpu-x64', 'linux-vulkan-x64']
-          : []
+          : macHostVariant === 'macos-arm64'
+            ? [macHostVariant]
+            : []
       const latestEntries = staticVariants.map((backend) => ({
         value: `latest/${backend}`,
         name: `Latest ${friendlyBackendLabel(backend)}`,
@@ -1244,19 +1259,15 @@ export default class llamacpp_upstream_extension extends AIEngine {
           logger.info(
             `Using stored backend preference: ${bestAvailableBackendString}`
           )
-        } else if (IS_MAC) {
-          // macOS turboquant flow expects stale storedType to be cleared so
-          // the bundled backend can take over via the force-switch block.
-          logger.warn(
-            `Stored backend type '${effectiveStoredBackendType}' not available, falling back to best backend`
-          )
-          this.clearStoredBackendType()
         } else {
-          // Windows/Linux: GitHub may be temporarily unreachable / rate-
-          // limited, so the user's preference may simply not be visible in
-          // version_backends right now. Keep the stored preference; the
-          // installed-on-disk guards below ensure we don't downgrade to
-          // bundled CPU when the saved backend is still on the filesystem.
+          // The manifest may be temporarily unreachable, so the user's
+          // preference may simply not be visible in version_backends right
+          // now. Keep the stored preference; the installed-on-disk guards
+          // below ensure we don't downgrade to the bundled build when the
+          // saved backend is still on the filesystem. macOS used to clear the
+          // preference here so the bundled build could take over, which with
+          // a manifest-driven catalog would mean one offline launch is enough
+          // to forget the downloaded build.
           logger.warn(
             `Stored backend type '${effectiveStoredBackendType}' not in remote/local list right now; keeping preference (network may be unstable)`
           )
@@ -1290,10 +1301,21 @@ export default class llamacpp_upstream_extension extends AIEngine {
         originalDefaultBackendValue = backendSetting.controllerProps
           .value as string
 
-        // Build the dropdown option-litany in two tiers:
+        // Build the dropdown option-litany in three tiers:
         //   1. The STATIC "Latest <variant>" entries computed near the top of
         //      this method (also used by the early registration above).
-        //   2. The versions already installed on disk, shown raw below.
+        //   2. The catalog for this host — the `atomic-chat-conf` manifest
+        //      merged with the disk and gated by hardware. Without this tier
+        //      macOS has no "Latest" sentinel and no manifest entries either,
+        //      so the list can only ever contain what is already installed and
+        //      the user has no way to pick a newer build.
+        //   3. Whatever else is on disk, so a side-loaded or de-listed build
+        //      stays switchable instead of showing up only in the packs dialog.
+        const catalogEntries = version_backends.map((b) => {
+          const key = `${b.version}/${b.backend}`
+          return { value: key, name: key }
+        })
+
         let installedEntries: Array<{ value: string; name: string }> = []
         try {
           installedEntries = (await getLocalInstalledBackends()).map((b) => {
@@ -1308,22 +1330,15 @@ export default class llamacpp_upstream_extension extends AIEngine {
           )
         }
 
-        let backendOptions: Array<{ value: string; name: string }> = [
-          ...latestEntries,
-          ...installedEntries,
-        ]
-
-        // Last-resort fallback: if we somehow produced no options at all
-        // (e.g. unsupported OS and nothing installed), fall back to the
-        // hardware-gated merged list so the dropdown is never empty.
-        if (backendOptions.length === 0) {
-          backendOptions = version_backends.map((b) => {
-            const key = `${b.version}/${b.backend}`
-            return { value: key, name: key }
-          })
-        }
-
-        backendSetting.controllerProps.options = backendOptions
+        backendSetting.controllerProps.options = mergeBackendOptions(
+          [latestEntries, catalogEntries, installedEntries],
+          bestAvailableBackendString
+            ? {
+                value: bestAvailableBackendString,
+                name: bestAvailableBackendString,
+              }
+            : undefined
+        )
 
         // Always surface the installed-on-disk saved backend in the dropdown,
         // even when the remote list (e.g. GitHub) didn't return it. Without
@@ -1351,6 +1366,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
         }
 
         // Set the recommended backend based on bestAvailableBackendString
+        // (already forced into the options list by `mergeBackendOptions`).
         if (bestAvailableBackendString) {
           backendSetting.controllerProps.recommended =
             bestAvailableBackendString
@@ -1419,6 +1435,20 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
       this.registerSettings(settings)
 
+      // First complete option list of the session: the early registration above
+      // knows only the bundled build, and the UI reads its provider snapshot
+      // while this method is still resolving the manifest. Nothing else
+      // announces the swap, so without this the dropdown keeps offering the
+      // short list until some unrelated change refreshes the providers.
+      if (events && typeof events.emit === 'function') {
+        events.emit('settingsChanged', {
+          key: 'version_backend',
+          value: String(
+            settings[backendSettingIndex].controllerProps.value ?? ''
+          ),
+        })
+      }
+
       let effectiveBackendString = stripBom(this.config.version_backend || '')
 
       // Auto-upgrade to the latest downloaded version of the same backend type
@@ -1476,18 +1506,26 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
       // Force-switch to the bundled backend when it is a newer version of the
       // SAME backend type (e.g. macos-arm64 → macos-arm64 on app update).
-      // The upstream extension is macOS-only; there is no turboquant
-      // migration step here — that pipeline lives in the sibling extension.
+      //
+      // "Newer" has to be compared, not assumed: the bundled build is
+      // reported on every launch, not only when an app update installed it,
+      // so switching on "the strings differ" would drag a user who updated
+      // the engine at runtime back down to the tag the installer shipped.
       if (
         bundledBackendString &&
         effectiveBackendString &&
         effectiveBackendString.includes('/')
       ) {
-        const bundledType = bundledBackendString.split('/')[1]
-        const currentType = effectiveBackendString.split('/')[1]
+        const [bundledVersion, bundledType] = bundledBackendString.split('/')
+        const [currentVersion, currentType] = effectiveBackendString.split('/')
+        const bundledBuild = parseBuildNumber(stripBom(bundledVersion ?? ''))
+        const currentBuild = parseBuildNumber(stripBom(currentVersion ?? ''))
         const isBundledNewer =
           effectiveBackendString !== bundledBackendString &&
-          bundledType === currentType
+          bundledType === currentType &&
+          bundledBuild !== null &&
+          currentBuild !== null &&
+          bundledBuild > currentBuild
 
         if (isBundledNewer) {
           logger.info(
@@ -1559,42 +1597,62 @@ export default class llamacpp_upstream_extension extends AIEngine {
   }
 
   /**
-   * Reconciles the configured upstream backend to the release validated by the
-   * app while preserving the selected backend type.
+   * Reconciles the configured upstream backend to the newest release the
+   * `atomic-chat-conf` manifest offers, while preserving the selected backend
+   * type.
    *
-   * If that release does not contain the selected type, the existing backend
-   * remains active because downloadRecommendedBackend only persists after a
-   * successful download.
+   * The target used to be the compiled-in `PINNED_BACKEND_TAG`, which meant a
+   * manifest bump could never reach anyone and — worse — would drag a user who
+   * had just updated by hand back down to the app's tag on the next launch.
+   * The manifest is ours and only moves once a build is verified, so it is the
+   * authority; the compiled-in tag survives as the offline baseline inside
+   * `fetchRemoteBackends`.
+   *
+   * If the newest release does not contain the selected type, the existing
+   * backend remains active because `downloadRecommendedBackend` only persists
+   * after a successful download.
    */
-  private async enforcePinnedBackendVersion(): Promise<void> {
+  private async reconcileBackendReleaseTag(): Promise<void> {
     try {
       const current = stripBom(this.config.version_backend || '')
       if (!isConcreteVersionBackend(current)) {
         logger.info(
-          'enforcePinnedBackendVersion: no concrete backend configured yet, skipping'
+          'reconcileBackendReleaseTag: no concrete backend configured yet, skipping'
         )
         return
       }
 
-      const slashIdx = current.indexOf('/')
-      const currentTag = current.slice(0, slashIdx)
-      const currentType = current.slice(slashIdx + 1)
+      const currentType = current.slice(current.indexOf('/') + 1)
 
-      if (currentTag === PINNED_BACKEND_TAG) {
+      const { updateNeeded, targetBackend } =
+        await this.checkBackendForUpdates()
+      const targetType = targetBackend?.split('/')[1]?.trim()
+      if (!updateNeeded || !targetBackend || !targetType) return
+
+      // A tag bump must never move anyone between backend families.
+      const migratedCurrentType = await mapOldBackendToNew(currentType)
+      const sameFamily =
+        targetType === currentType ||
+        targetType === migratedCurrentType ||
+        isConcreteOfGpuFamily(currentType, targetType) ||
+        isConcreteOfGpuFamily(migratedCurrentType, targetType)
+      if (!sameFamily) {
+        logger.warn(
+          `reconcileBackendReleaseTag: refusing to switch backend type ${currentType} -> ${targetType}`
+        )
         return
       }
 
-      const target = `${PINNED_BACKEND_TAG}/${currentType}`
       logger.info(
-        `enforcePinnedBackendVersion: pinning backend '${current}' -> '${target}'`
+        `reconcileBackendReleaseTag: moving '${current}' -> '${targetBackend}'`
       )
-      await this.downloadRecommendedBackend(target)
+      await this.downloadRecommendedBackend(targetBackend)
       logger.info(
-        `enforcePinnedBackendVersion: backend pinned to '${target}'`
+        `reconcileBackendReleaseTag: reconciled to '${targetBackend}'`
       )
     } catch (err) {
       logger.error(
-        'enforcePinnedBackendVersion: failed to pin backend version (keeping current backend):',
+        'reconcileBackendReleaseTag: failed to reconcile the release tag (keeping current backend):',
         err
       )
     }
@@ -1691,6 +1749,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
         const cuda12Backend = pickBackend(
           new RegExp(`^win-cuda-12\\.\\d+-${archSuffix}$`)
         )
+        const rocmBackend = pickBackend(
+          new RegExp(`^win-rocm-\\d+\\.\\d+-${archSuffix}$`)
+        )
         const vulkanBackend = pickBackend(
           new RegExp(`^win-vulkan-${archSuffix}$`)
         )
@@ -1714,6 +1775,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
         const tiers: string[] = []
         if (features.cuda13 && cuda13Backend) tiers.push(cuda13Backend)
         if (features.cuda12 && cuda12Backend) tiers.push(cuda12Backend)
+        // ROCm outranks Vulkan on the AMD cards it covers, and `features.rocm`
+        // is already gated on the generated PCI-id table, so reaching this
+        // point means the archive is compiled for this gfx target.
+        if (features.rocm && hasEnoughVram && rocmBackend)
+          tiers.push(rocmBackend)
         if (
           features.vulkan &&
           hasEnoughVram &&
@@ -1740,9 +1806,10 @@ export default class llamacpp_upstream_extension extends AIEngine {
         const gpuCapable =
           features.cuda13 ||
           features.cuda12 ||
+          (features.rocm && hasEnoughVram) ||
           (features.vulkan && hasEnoughVram && !integratedGpuOnly)
         const anyGpuBackendAvailable = availableBackends.some((b) =>
-          /-(cuda-\d|vulkan)-/.test(b.backend)
+          /-(cuda-\d|rocm-\d|vulkan)-/.test(b.backend)
         )
         if (gpuCapable && !anyGpuBackendAvailable) {
           logger.warn(
@@ -2479,7 +2546,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
   }
 
-  async checkBackendForUpdates(): Promise<{
+  async checkBackendForUpdates(options?: { force?: boolean }): Promise<{
     updateNeeded: boolean
     newVersion: string
     targetBackend?: string
@@ -2490,7 +2557,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
         return { updateNeeded: false, newVersion: '0' }
       }
 
-      const version_backends = await listSupportedBackends()
+      const version_backends = await listSupportedBackends(options)
       if (version_backends.length === 0) {
         return { updateNeeded: false, newVersion: '0' }
       }
@@ -2508,6 +2575,82 @@ export default class llamacpp_upstream_extension extends AIEngine {
       logger.warn('checkBackendForUpdates failed:', err)
       return { updateNeeded: false, newVersion: '0' }
     }
+  }
+
+  /**
+   * Manual engine-update check behind the "check for engine updates" button,
+   * mirroring the turboquant extension's method of the same name.
+   *
+   * The manifest is cached for the session and the version list is a snapshot
+   * taken at load, so a ggml-org build published to `atomic-chat-conf` while
+   * the app was open stays invisible until the next launch. Forcing the
+   * manifest refetch is the whole point of the button.
+   *
+   * Only the decision happens here, and every leg of it is bounded, so a slow
+   * or unreachable raw.githubusercontent.com can never leave the button
+   * spinning. The caller starts the download without awaiting it — a release
+   * archive takes minutes — and the shared `<BackendUpdater />` owns that
+   * progress UI.
+   */
+  async checkForEngineUpdate(): Promise<{
+    updateAvailable: boolean
+    targetBackend: string | null
+  }> {
+    const noUpdate = { updateAvailable: false, targetBackend: null }
+
+    // A configuration pass started at load may still be fetching the catalog.
+    // Its early phase registers a placeholder option list, so acting on
+    // `config` before it finishes would compare against a half-built state.
+    if (this.configureBackendsPromise) {
+      await this.withTimeout(this.configureBackendsPromise, 20_000, undefined)
+    }
+
+    const current = stripBom(this.config.version_backend || '')
+    const currentType = current.split('/')[1]?.trim()
+    if (!current || current === 'none' || !currentType) return noUpdate
+
+    const { updateNeeded, targetBackend } = await this.withTimeout(
+      this.checkBackendForUpdates({ force: true }),
+      20_000,
+      { updateNeeded: false, newVersion: '0' }
+    )
+    const targetType = targetBackend?.split('/')[1]?.trim()
+    if (!updateNeeded || !targetBackend || !targetType) return noUpdate
+
+    // A tag bump must never move anyone between backend families. Legacy ids
+    // may land on their migrated form, which is what Rust resolves them to;
+    // a CUDA minor bump within the same major is a family match, not a switch.
+    const migratedCurrentType = await mapOldBackendToNew(currentType)
+    const sameFamily =
+      targetType === currentType ||
+      targetType === migratedCurrentType ||
+      isConcreteOfGpuFamily(currentType, targetType) ||
+      isConcreteOfGpuFamily(migratedCurrentType, targetType)
+    if (!sameFamily) {
+      logger.warn(
+        `checkForEngineUpdate: refusing to switch backend type ${currentType} -> ${targetType}`
+      )
+      return noUpdate
+    }
+
+    logger.info(`checkForEngineUpdate: ${current} -> ${targetBackend}`)
+    return { updateAvailable: true, targetBackend }
+  }
+
+  async listInstalledBackends(): Promise<InstalledBackendPack[]> {
+    return listInstalledBackendPacks(
+      this.providerId,
+      stripBom(this.config.version_backend || '')
+    )
+  }
+
+  async deleteBackend(version: string, backend: string): Promise<void> {
+    await deleteBackendPack(
+      this.providerId,
+      stripBom(this.config.version_backend || ''),
+      version,
+      backend
+    )
   }
 
   private async ensureFinalBackendInstallation(
@@ -2701,10 +2844,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // concrete published asset (`win-cuda-13.3-x64`). Resolve it to the
       // newest concrete asset of that major so the manual dropdown's
       // `latest/win-cuda-13-x64` sentinel keeps resolving across minor bumps.
-      const familyConcrete = resolveCudaFamilyConcrete(backend, remote)
+      // `latest/win-rocm-x64` -> `win-rocm-7.14-x64` works the same way.
+      const familyConcrete = resolveGpuFamilyConcrete(backend, remote)
       if (familyConcrete) {
         logger.info(
-          `[resolveLatestBackendString] resolved CUDA family '${backend}' -> ${familyConcrete}`
+          `[resolveLatestBackendString] resolved GPU family '${backend}' -> ${familyConcrete}`
         )
         return familyConcrete
       }
@@ -2760,7 +2904,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // exact match.
       const sameFamily = installed.filter((b) => {
         const bn = stripBom(b.backend)
-        return bn === backendId || isConcreteOfCudaFamily(backendId, bn)
+        return bn === backendId || isConcreteOfGpuFamily(backendId, bn)
       })
       if (sameFamily.length === 0) return null
       const buildNumber = (v: string): number => {
@@ -4105,7 +4249,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
 
     try {
-      const raw = localStorage.getItem('llama_cpp_better_backend_recommendation')
+      const raw = localStorage.getItem(
+        'llama_cpp_better_backend_recommendation'
+      )
       if (!raw) return null
       const parsed = JSON.parse(raw) as { recommendedBackend?: string }
       const recommended = stripBom(parsed?.recommendedBackend ?? '')
@@ -5147,7 +5293,10 @@ export default class llamacpp_upstream_extension extends AIEngine {
       await this.downloadAndInstallBackend(backendKey)
     } catch (err) {
       const context = `Failed to download backend ${backendKey}:`
-      if ((err as { code?: string } | undefined)?.code === ERR_BACKEND_TAG_UNRESOLVED) {
+      if (
+        (err as { code?: string } | undefined)?.code ===
+        ERR_BACKEND_TAG_UNRESOLVED
+      ) {
         logger.warn(`${context}\n${formatLoadError(err)}`)
       } else {
         logger.error(context, err)
@@ -5330,6 +5479,44 @@ export default class llamacpp_upstream_extension extends AIEngine {
   }
 
   /**
+   * Refuses the download when the volume cannot hold the archive plus its
+   * unpacked tree. Only the Windows HIP build is large enough to warrant this
+   * (~196 MB compressed, ~980 MB unpacked); `requiredDiskSpaceForBackend`
+   * returns `null` for everything else and this becomes a no-op.
+   *
+   * A failure to *measure* free space is not a failure to install: the check is
+   * skipped with a warning so a platform quirk in the disk enumeration cannot
+   * block an otherwise fine download.
+   */
+  private async ensureDiskSpaceForBackend(
+    backend: string,
+    archiveBytes: number | undefined,
+    stagingDir: string
+  ): Promise<void> {
+    const required = requiredDiskSpaceForBackend(backend, archiveBytes)
+    if (required === null) return
+
+    let free: number
+    try {
+      free = await availableDiskSpace(stagingDir)
+    } catch (err) {
+      logger.warn(
+        `ensureDiskSpaceForBackend: could not measure free space for ${stagingDir}, continuing:`,
+        err
+      )
+      return
+    }
+
+    if (free >= required) return
+
+    const toGiB = (bytes: number) => (bytes / 1024 ** 3).toFixed(1)
+    throw codedLoadError(
+      ERR_BACKEND_INSUFFICIENT_DISK_SPACE,
+      `Not enough free disk space to install ${backend}: ${toGiB(required)} GB needed, ${toGiB(free)} GB free.`
+    )
+  }
+
+  /**
    * Downloads a backend archive from ggml-org/llama.cpp GitHub releases
    * and extracts it into the local backends directory.
    *
@@ -5366,7 +5553,12 @@ export default class llamacpp_upstream_extension extends AIEngine {
       return
     }
 
-    const url = getBackendDownloadUrl(version, backend)
+    // Prefers our signed mirror and carries the hash to verify; falls back to
+    // the ggml-org CDN (without a hash) for tags that were never mirrored.
+    const { url, sha256, size } = await resolveBackendArchiveSource(
+      version,
+      backend
+    )
     const janDataFolderPath = await getJanDataFolderPath()
     // Temp staging shares the upstream root with the rest of the
     // extension's on-disk state (`llamacpp-upstream/tmp`) so partial
@@ -5382,6 +5574,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
     const archiveName = getBackendArchiveName(version, backend)
     const archivePath = await joinPath([tempDir, archiveName])
     const targetDir = await getBackendDir(backend, version)
+
+    await this.ensureDiskSpaceForBackend(backend, size, tempDir)
 
     // Route the file transfer through `download-extension` so the
     // standard top-left download manager picks it up via the same
@@ -5453,9 +5647,19 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // 10060) because the backend archive request bypasses the proxy.
       const proxy = getProxyConfig() ?? undefined
 
+      // `sha256`/`size` are only set for mirrored archives; the Rust side
+      // checks the size first and the hash second, and skips both when absent.
+      const downloadItem: DownloadItem = {
+        url,
+        save_path: archivePath,
+        proxy,
+        ...(sha256 ? { sha256 } : {}),
+        ...(size ? { size } : {}),
+      }
+
       if (downloadManager?.downloadFiles) {
         await downloadManager.downloadFiles(
-          [{ url, save_path: archivePath, proxy }],
+          [downloadItem],
           taskId,
           onProgress,
           false
@@ -5468,7 +5672,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
           'download-extension not available, falling back to raw download_files invoke'
         )
         await invoke<void>('download_files', {
-          items: [{ url, save_path: archivePath, proxy }],
+          items: [downloadItem],
           taskId,
           headers: {},
           resume: false,
@@ -5573,6 +5777,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
         )
       }
 
+      await this.gateDownloadedBackendOnLaunch(version, backend, targetDir)
+
       // Windows CUDA backends ship without the CUDA Toolkit runtime DLLs;
       // those live in a sibling `cudart-llama-bin-win-cuda-{X.Y}-x64.zip`
       // archive on the same ggml-org release. Merge them into build/bin/
@@ -5648,6 +5854,63 @@ export default class llamacpp_upstream_extension extends AIEngine {
         // best-effort cleanup
       }
     }
+  }
+
+  /**
+   * Runs a freshly downloaded macOS build once, before anything depends on
+   * it, and refuses the install if it does not come up as the build that was
+   * asked for.
+   *
+   * Nothing has executed this binary before now: it carries only the ad-hoc
+   * signature Apple's linker embeds, it was never bundled into the signed
+   * `.app`, and the caller is about to unload the running model to swap onto
+   * it. Catching a build that cannot start belongs here, while the previous
+   * one is still installed and selected. The Rust side also gives
+   * `build/bin/` its executable bits on the way in, which the bundled install
+   * path sets explicitly and a downloaded archive only carries by convention.
+   *
+   * macOS only. A Windows CUDA build legitimately fails to start until the
+   * cudart companion is merged further down this method, so gating there
+   * would throw away a perfectly good backend.
+   */
+  private async gateDownloadedBackendOnLaunch(
+    version: string,
+    backend: string,
+    targetDir: string
+  ): Promise<void> {
+    if (!IS_MAC) return
+
+    const refuse = async (reason: string): Promise<never> => {
+      // Leave nothing half-installed behind: `downloadAndInstallBackend`
+      // short-circuits on an already-installed target, so a rejected build
+      // left on disk would be adopted unchecked by the next attempt.
+      try {
+        await fs.rm(targetDir)
+      } catch (rmErr) {
+        logger.warn(
+          `[gateDownloadedBackendOnLaunch] Failed to remove ${targetDir}:`,
+          rmErr
+        )
+      }
+      throw new Error(
+        `The downloaded ${version}/${backend} backend failed its launch check (${reason}). Keeping the current backend.`
+      )
+    }
+
+    let reportsExpectedBuild: boolean
+    try {
+      reportsExpectedBuild = await verifyBackendBinary(targetDir, version)
+    } catch (err) {
+      return await refuse(err instanceof Error ? err.message : String(err))
+    }
+
+    if (!reportsExpectedBuild) {
+      return await refuse(`it did not report build ${version}`)
+    }
+
+    logger.info(
+      `[gateDownloadedBackendOnLaunch] ${version}/${backend} launched and reported the expected build`
+    )
   }
 
   /**

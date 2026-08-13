@@ -42,7 +42,7 @@
   "staffPickBadge": "推荐",
   "updatedAgo": "更新于 {{ago}}",
   "parameters": "参数量",
-  "architecture": "架构",
+  "context": "上下文",
   "capabilities": "能力",
   "readme": "README",
   "readmeUnavailable": "该模型没有可用的 README。"

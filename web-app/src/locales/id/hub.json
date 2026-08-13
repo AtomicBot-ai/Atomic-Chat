@@ -42,7 +42,7 @@
   "staffPickBadge": "Rekomendasi",
   "updatedAgo": "Diperbarui {{ago}}",
   "parameters": "Parameter",
-  "architecture": "Arsitektur",
+  "context": "Konteks",
   "capabilities": "Kemampuan",
   "readme": "README",
   "readmeUnavailable": "README tidak tersedia untuk model ini."

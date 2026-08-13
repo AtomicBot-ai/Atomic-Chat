@@ -199,7 +199,7 @@ describe('/hub route', () => {
   it('opens on staff picks with an empty query', () => {
     render(<HubPage />)
 
-    expect(screen.getByText('hub:staffPicks')).toBeInTheDocument()
+    expect(screen.queryByText('hub:staffPicks')).not.toBeInTheDocument()
     expect(screen.queryByText('hub:searchResults')).not.toBeInTheDocument()
     expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
     expect(screen.getByText('Gemma 4 12B')).toBeInTheDocument()
@@ -217,11 +217,38 @@ describe('/hub route', () => {
     )
 
     await waitFor(() =>
-      expect(screen.getByText('hub:searchResults')).toBeInTheDocument()
+      expect(screen.getByText('Llama-4-8B-GGUF')).toBeInTheDocument()
     )
+    expect(screen.queryByText('hub:searchResults')).not.toBeInTheDocument()
     expect(mocks.search_).toHaveBeenCalledWith('llama', { limit: 500 })
-    expect(screen.getByText('Llama-4-8B-GGUF')).toBeInTheDocument()
     expect(screen.queryByText('Qwen3.5 4B')).not.toBeInTheDocument()
+  })
+
+  it('keeps the device fit filter active while searching', async () => {
+    const user = userEvent.setup()
+    const small = model('test/small-GGUF')
+    const huge = model('test/huge-GGUF', {
+      quants: [
+        {
+          model_id: 'huge-Q4_K_M.gguf',
+          path: 'huge-Q4_K_M.gguf',
+          file_size: '80.00 GB',
+        },
+      ],
+    })
+    mocks.sources = [small, huge]
+    mocks.search_.mockReturnValue([small, huge])
+    render(<HubPage />)
+
+    await user.type(
+      screen.getByRole('textbox', { name: 'hub:searchPlaceholder' }),
+      'test'
+    )
+
+    await waitFor(() =>
+      expect(screen.getByText('small-GGUF')).toBeInTheDocument()
+    )
+    expect(screen.queryByText('huge-GGUF')).not.toBeInTheDocument()
   })
 
   it('returns to staff picks when the query is cleared', async () => {
@@ -231,15 +258,14 @@ describe('/hub route', () => {
 
     await user.type(input, 'llama')
     await waitFor(() =>
-      expect(screen.getByText('hub:searchResults')).toBeInTheDocument()
+      expect(screen.queryByText('Qwen3.5 4B')).not.toBeInTheDocument()
     )
 
     await user.clear(input)
 
     await waitFor(() =>
-      expect(screen.getByText('hub:staffPicks')).toBeInTheDocument()
+      expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
     )
-    expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
   })
 
   it('writes the picked repo into the URL', async () => {
@@ -294,7 +320,7 @@ describe('/hub route', () => {
     expect(mocks.navigate).not.toHaveBeenCalled()
   })
 
-  it('asks for GGUF picks while both formats are selected', () => {
+  it('asks for GGUF picks by default', () => {
     render(<HubPage />)
 
     expect(mocks.requestedPickFormats).not.toContain('mlx')

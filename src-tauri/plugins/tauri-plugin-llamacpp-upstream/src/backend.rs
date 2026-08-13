@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri::{Manager, Runtime};
 
@@ -60,11 +60,13 @@ pub fn map_old_backend_to_new(old_backend: String) -> String {
     // `determine_supported_backends` (see ATO-105) — it must pass through
     // untouched, otherwise the `cuda-13` folding below would rewrite it to
     // a concrete minor that may not exist in the current release stream.
+    // `win-rocm-x64` is the same kind of minor-less family id for HIP.
     if is_windows
         && (old_backend == "win-cpu-x64"
             || old_backend == "win-cuda-13-x64"
             || old_backend.contains("cuda-12.4")
             || old_backend.contains("cuda-13.3")
+            || old_backend.contains("rocm")
             || old_backend == "win-vulkan-x64")
     {
         return old_backend;
@@ -259,13 +261,84 @@ fn backend_executable_path(backend_dir: &PathBuf) -> PathBuf {
     }
 }
 
+/// Reads the build number out of `llama-server --version`. Upstream prints it
+/// two ways: `version: 10344 (a1b2c3d)` and, from b10405 on,
+/// `version: 0.1.0-dev (build 10405, commit a1b2c3d)`. Understanding only the
+/// first shape rejects a perfectly good build at the launch gate.
 fn parse_binary_version(output: &str) -> Option<u32> {
     output.lines().find_map(|line| {
-        line.trim()
-            .strip_prefix("version:")
-            .and_then(|value| value.split_whitespace().next())
-            .and_then(|value| value.parse::<u32>().ok())
+        let tokens: Vec<&str> = line
+            .trim()
+            .strip_prefix("version:")?
+            .split_whitespace()
+            .collect();
+
+        if let Some(build) = tokens.first().and_then(|token| token.parse::<u32>().ok()) {
+            return Some(build);
+        }
+
+        let build = tokens
+            .iter()
+            .position(|token| token.trim_start_matches('(') == "build")
+            .and_then(|index| tokens.get(index + 1))?;
+        build
+            .trim_end_matches(|c: char| !c.is_ascii_digit())
+            .parse()
+            .ok()
     })
+}
+
+/// Give every file in `<build>/bin/` the executable bit. The bundled build
+/// gets this because it is copied file by file; a downloaded one relies on
+/// the archive's own mode bits, which is one unlucky upstream packaging
+/// change away from an un-launchable backend.
+#[cfg(unix)]
+fn ensure_executable_bits(build_dir: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let bin_dir = build_dir.join("bin");
+    if !bin_dir.exists() {
+        return Ok(());
+    }
+
+    for entry in fs::read_dir(&bin_dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        if entry.file_type().map_err(|e| e.to_string())?.is_file() {
+            let mut perms = fs::metadata(entry.path())
+                .map_err(|e| e.to_string())?
+                .permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(entry.path(), perms).map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn ensure_executable_bits(_build_dir: &Path) -> Result<(), String> {
+    Ok(())
+}
+
+/// Launch gate for a freshly downloaded backend: make the binaries
+/// executable, then run `llama-server --version` and report whether the build
+/// it prints is the one that was asked for.
+///
+/// A downloaded build has never been executed by anyone when this runs, and
+/// the caller is about to unload the running model to swap onto it. Finding
+/// out that it cannot start belongs here, while the previous build is still
+/// in place, rather than at the next model load.
+#[tauri::command]
+pub async fn verify_backend_binary(backend_dir: String, version: String) -> Result<bool, String> {
+    let backend_path = PathBuf::from(&backend_dir);
+
+    ensure_executable_bits(&backend_path.join("build"))?;
+
+    if !is_backend_installed(&backend_path) {
+        return Err(format!("No llama-server binary under {}", backend_dir));
+    }
+
+    Ok(backend_binary_matches_version(&backend_path, &version))
 }
 
 fn backend_binary_matches_version(backend_dir: &PathBuf, expected_version: &str) -> bool {
@@ -322,6 +395,8 @@ pub struct SystemFeatures {
     cuda12: bool,
     cuda13: bool,
     vulkan: bool,
+    #[serde(default)]
+    rocm: bool,
 }
 
 #[derive(Serialize)]
@@ -356,6 +431,12 @@ pub fn determine_supported_backends(
                 // and matched family-wise in the TS `listSupportedBackends`
                 // filter, so we must NOT hardcode a minor here.
                 supported_backends.push("win-cuda-13-x64".to_string());
+            }
+            if features.rocm {
+                // Minor-less family id for the same reason as CUDA above:
+                // upstream ships `win-rocm-7.14-x64` today and will bump that
+                // minor, so the concrete asset is resolved from the manifest.
+                supported_backends.push("win-rocm-x64".to_string());
             }
             if features.vulkan {
                 supported_backends.push("win-vulkan-x64".to_string());
@@ -402,10 +483,39 @@ fn is_windows_backend(backend: &str) -> bool {
     backend.starts_with("win-")
 }
 
+/// Ordering key for a ggml-org release tag (`bNNNNN`). The build number is
+/// monotonic on every platform, so it decides directly. Returns `None` for a
+/// folder name that is not a release tag (a hand-placed or side-loaded
+/// backend directory), which then falls through to install `order`.
+fn release_tag_rank(version: &str) -> Option<u32> {
+    version.strip_prefix('b')?.parse::<u32>().ok()
+}
+
 fn compare_backend_versions_for_sort(
     left: &BackendInfo,
     right: &BackendInfo,
 ) -> std::cmp::Ordering {
+    // Rank by release tag first, on every platform. `order` carries the
+    // install mtime for a backend found on disk and 0 for one that only
+    // exists in the manifest, so ranking by `order` first would make an
+    // installed build outrank every newer remote build and no update would
+    // ever be offered outside Windows. Numeric parsing also keeps b9xxx
+    // below b10xxx, which a string comparison gets backwards.
+    match (
+        release_tag_rank(&left.version),
+        release_tag_rank(&right.version),
+    ) {
+        (Some(left_rank), Some(right_rank)) => {
+            let rank_cmp = right_rank.cmp(&left_rank);
+            if rank_cmp != std::cmp::Ordering::Equal {
+                return rank_cmp;
+            }
+        }
+        (Some(_), None) => return std::cmp::Ordering::Less,
+        (None, Some(_)) => return std::cmp::Ordering::Greater,
+        (None, None) => {}
+    }
+
     if is_windows_backend(&left.backend) && is_windows_backend(&right.backend) {
         let left_version = parse_backend_version(left.version.clone());
         let right_version = parse_backend_version(right.version.clone());
@@ -486,11 +596,14 @@ pub struct SupportedFeatures {
     cuda12: bool,
     cuda13: bool,
     vulkan: bool,
+    rocm: bool,
 }
 
 #[derive(Deserialize)]
 pub struct GpuInfo {
     driver_version: String,
+    #[serde(default)]
+    vendor: Option<String>,
     nvidia_info: Option<NvidiaInfo>,
     vulkan_info: Option<VulkanInfo>,
 }
@@ -503,6 +616,36 @@ pub struct NvidiaInfo {
 #[derive(Deserialize)]
 pub struct VulkanInfo {
     api_version: String,
+    /// PCI device id, the only gfx signal available on Windows (there is no
+    /// `/sys/class/kfd` to read `gfx_target_version` from).
+    #[serde(default)]
+    device_id: Option<u32>,
+}
+
+fn is_amd_gpu(gpu: &GpuInfo) -> bool {
+    gpu.vendor
+        .as_deref()
+        .is_some_and(|vendor| vendor.eq_ignore_ascii_case("amd"))
+}
+
+/// The Windows ROCm decision, kept free of I/O so the policy itself is testable.
+///
+/// Unlike the Linux path in the turboquant plugin there is nothing to probe for
+/// a host runtime: the upstream archive statically carries HIP inside
+/// `ggml-hip.dll`, so an AMD driver is enough. What must be checked is the
+/// architecture, and the PCI device id is the only pre-launch signal for it.
+///
+/// Deliberately conservative. An AMD card we cannot place in the generated
+/// table yields `false` and the caller falls back to Vulkan: 34.6 MB that works
+/// beats ~980 MB that may not, and the manual backend picker is still there for
+/// a card the table has not caught up with.
+fn rocm_supported_windows(has_amd_gpu: bool, device_ids: &[u32]) -> bool {
+    has_amd_gpu
+        && device_ids.iter().any(|id| {
+            crate::amd_rocm_pci_ids::AMD_ROCM_WINDOWS_PCI_IDS
+                .iter()
+                .any(|(supported, _gfx)| supported == id)
+        })
 }
 
 #[tauri::command]
@@ -519,6 +662,7 @@ pub fn get_supported_features(
         cuda12: false,
         cuda13: false,
         vulkan: false,
+        rocm: false,
     };
 
     // https://docs.nvidia.com/deploy/cuda-compatibility/
@@ -552,8 +696,17 @@ pub fn get_supported_features(
     };
 
     // Check GPU features
+    let mut amd_device_ids: Vec<u32> = Vec::new();
+    let mut has_amd_gpu = false;
     for gpu_info in gpus {
         let driver_version = &gpu_info.driver_version;
+
+        if is_amd_gpu(&gpu_info) {
+            has_amd_gpu = true;
+            if let Some(device_id) = gpu_info.vulkan_info.as_ref().and_then(|v| v.device_id) {
+                amd_device_ids.push(device_id);
+            }
+        }
 
         // Check CUDA support
         if gpu_info.nvidia_info.is_some() {
@@ -572,6 +725,12 @@ pub fn get_supported_features(
         if gpu_info.vulkan_info.is_some() {
             features.vulkan = true;
         }
+    }
+
+    // ROCm artifacts exist only for Windows upstream; Linux upstream is
+    // Vulkan-only because ggml-org publishes no Linux HIP archive.
+    if os_type == "windows" {
+        features.rocm = rocm_supported_windows(has_amd_gpu, &amd_device_ids);
     }
 
     Ok(features)
@@ -737,6 +896,7 @@ pub async fn prioritize_backends(
             "cuda-cu12.4",
             "cuda-cu12.0",
             "cuda-cu11.7",
+            "rocm",
             "vulkan",
             "common_cpus",
             "cpu",
@@ -762,6 +922,7 @@ pub async fn prioritize_backends(
             "noavx",
             "arm64",
             "x64",
+            "rocm",
             "vulkan",
         ]
     };
@@ -828,6 +989,11 @@ fn get_backend_category(backend_string: &str) -> Option<String> {
     }
     if backend_string.contains("cuda-11-common_cpus") || backend_string.contains("cu11.7") {
         return Some("cuda-cu11.7".to_string());
+    }
+    // ggml-org Windows HIP archives, `win-rocm-7.14-x64` today. Matched
+    // before `vulkan` so a machine holding both keeps the ROCm tier.
+    if backend_string.contains("rocm") || backend_string.contains("hip") {
+        return Some("rocm".to_string());
     }
     if backend_string.contains("vulkan") {
         return Some("vulkan".to_string());
@@ -1329,23 +1495,7 @@ pub async fn install_bundled_backend<R: Runtime>(
 
     copy_dir_recursive(&build_dir, &target_build_dir)?;
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let bin_dir = target_build_dir.join("bin");
-        if bin_dir.exists() {
-            for entry in fs::read_dir(&bin_dir).map_err(|e| e.to_string())? {
-                let entry = entry.map_err(|e| e.to_string())?;
-                if entry.file_type().map_err(|e| e.to_string())?.is_file() {
-                    let mut perms = fs::metadata(entry.path())
-                        .map_err(|e| e.to_string())?
-                        .permissions();
-                    perms.set_mode(0o755);
-                    fs::set_permissions(entry.path(), perms).map_err(|e| e.to_string())?;
-                }
-            }
-        }
-    }
+    ensure_executable_bits(&target_build_dir)?;
 
     log::info!(
         "[install_bundled_backend] Successfully installed bundled backend: {}/{}",
@@ -1417,6 +1567,37 @@ pub async fn fetch_manifest_http1(url: String, _timeout_ms: u64) -> Result<Strin
     Err(format!(
         "fetch_manifest_http1 not available on mobile (url: {url})"
     ))
+}
+
+/// Free bytes on the filesystem holding `path`, for the backend-download
+/// precondition. The Windows HIP archive unpacks to roughly 980 MB (a single
+/// `ggml-hip.dll` is 924 MB of it), so an out-of-space failure would otherwise
+/// only surface after a ~196 MB download and a long extraction.
+///
+/// `path` need not exist yet: the deepest existing ancestor is used, which is
+/// the staging directory's parent on a first-ever download.
+#[tauri::command]
+pub fn available_disk_space(path: String) -> Result<u64, String> {
+    let mut probe = PathBuf::from(&path);
+    while !probe.exists() {
+        if !probe.pop() {
+            return Err(format!("no existing ancestor for path {path}"));
+        }
+    }
+    let probe = probe
+        .canonicalize()
+        .map_err(|e| format!("canonicalize {}: {}", probe.display(), e))?;
+
+    let disks = sysinfo::Disks::new_with_refreshed_list();
+    let best = disks
+        .list()
+        .iter()
+        .filter(|disk| probe.starts_with(disk.mount_point()))
+        // Nested mounts both match; the longest mount point is the real one.
+        .max_by_key(|disk| disk.mount_point().as_os_str().len())
+        .ok_or_else(|| format!("no mounted filesystem contains {}", probe.display()))?;
+
+    Ok(best.available_space())
 }
 
 // ---------------------------- Tests ------------------------------------------
@@ -1615,6 +1796,7 @@ mod tests {
         // Driver 525.60.13 supports CUDA 12 on Linux
         let gpus = vec![GpuInfo {
             driver_version: "530.00".to_string(),
+            vendor: None,
             nvidia_info: Some(NvidiaInfo {
                 compute_capability: "8.0".to_string(),
             }),
@@ -1632,9 +1814,11 @@ mod tests {
     fn test_get_supported_features_vulkan() {
         let gpus = vec![GpuInfo {
             driver_version: "0.0".to_string(),
+            vendor: None,
             nvidia_info: None,
             vulkan_info: Some(VulkanInfo {
                 api_version: "1.3".to_string(),
+                device_id: None,
             }),
         }];
 
@@ -1647,6 +1831,7 @@ mod tests {
     fn windows_nvidia_gpu(driver_version: &str) -> GpuInfo {
         GpuInfo {
             driver_version: driver_version.to_string(),
+            vendor: None,
             nvidia_info: Some(NvidiaInfo {
                 compute_capability: "8.9".to_string(),
             }),
@@ -1729,6 +1914,7 @@ mod tests {
             cuda12: true,
             cuda13: false,
             vulkan: true,
+            rocm: false,
         };
 
         let result =
@@ -1752,6 +1938,7 @@ mod tests {
             cuda12: true,
             cuda13: true,
             vulkan: false,
+            rocm: false,
         };
 
         let result =
@@ -1764,12 +1951,104 @@ mod tests {
     }
 
     #[test]
+    fn test_determine_supported_backends_windows_rocm_family_id() {
+        // Same rule as CUDA 13: the ROCm entry is the version-less family id,
+        // because upstream moves the HIP version (7.14 today) with its own
+        // cadence and the concrete asset comes from the manifest.
+        let features = SystemFeatures {
+            cuda11: false,
+            cuda12: false,
+            cuda13: false,
+            vulkan: true,
+            rocm: true,
+        };
+
+        let result =
+            determine_supported_backends("windows".to_string(), "x86_64".to_string(), features)
+                .unwrap();
+
+        assert!(result.contains(&"win-rocm-x64".to_string()));
+        assert!(!result.iter().any(|b| b.contains("rocm-7.")));
+        // ROCm never displaces Vulkan from the installable set; it only
+        // outranks it when a tier is auto-picked.
+        assert!(result.contains(&"win-vulkan-x64".to_string()));
+    }
+
+    #[test]
+    fn test_determine_supported_backends_linux_rocm_flag_ignored() {
+        // ggml-org publishes no Linux HIP archive, so an AMD Linux host stays
+        // on Vulkan even if the feature probe ever reports ROCm.
+        let features = SystemFeatures {
+            cuda11: false,
+            cuda12: false,
+            cuda13: false,
+            vulkan: true,
+            rocm: true,
+        };
+
+        let result =
+            determine_supported_backends("linux".to_string(), "x86_64".to_string(), features)
+                .unwrap();
+
+        assert_eq!(
+            result,
+            vec!["linux-cpu-x64".to_string(), "linux-vulkan-x64".to_string()]
+        );
+    }
+
+    // --- Windows ROCm gating by PCI device id ---
+
+    #[test]
+    fn test_rocm_windows_requires_an_amd_card_from_the_table() {
+        let supported_id = crate::amd_rocm_pci_ids::AMD_ROCM_WINDOWS_PCI_IDS[0].0;
+
+        assert!(rocm_supported_windows(true, &[supported_id]));
+        // Same id, non-AMD vendor: a coincidental device id on another
+        // vendor's card must not enable HIP.
+        assert!(!rocm_supported_windows(false, &[supported_id]));
+        // AMD card the generated table does not cover (Vega 0x687f) — falls
+        // back to Vulkan rather than downloading ~980 MB that may not run.
+        assert!(!rocm_supported_windows(true, &[0x687f]));
+        // No device id at all (Vulkan loader missing, so nothing to match).
+        assert!(!rocm_supported_windows(true, &[]));
+    }
+
+    #[test]
+    fn test_rocm_windows_matches_any_of_several_gpus() {
+        let supported_id = crate::amd_rocm_pci_ids::AMD_ROCM_WINDOWS_PCI_IDS[0].0;
+        assert!(rocm_supported_windows(true, &[0x687f, supported_id]));
+    }
+
+    #[test]
+    fn test_get_supported_features_rocm_windows_only() {
+        let supported_id = crate::amd_rocm_pci_ids::AMD_ROCM_WINDOWS_PCI_IDS[0].0;
+        let amd_gpu = || GpuInfo {
+            driver_version: "0.0".to_string(),
+            vendor: Some("AMD".to_string()),
+            nvidia_info: None,
+            vulkan_info: Some(VulkanInfo {
+                api_version: "1.3".to_string(),
+                device_id: Some(supported_id),
+            }),
+        };
+
+        let windows =
+            get_supported_features("windows".to_string(), vec![], vec![amd_gpu()]).unwrap();
+        assert!(windows.rocm);
+        assert!(windows.vulkan);
+
+        let linux = get_supported_features("linux".to_string(), vec![], vec![amd_gpu()]).unwrap();
+        assert!(!linux.rocm, "no Linux HIP archive exists upstream");
+    }
+
+    #[test]
     fn test_determine_supported_backends_mac_arm() {
         let features = SystemFeatures {
             cuda11: false,
             cuda12: false,
             cuda13: false,
             vulkan: false,
+            rocm: false,
         };
 
         let result =
@@ -1790,6 +2069,7 @@ mod tests {
             cuda12: false,
             cuda13: false,
             vulkan: false,
+            rocm: false,
         };
 
         let result =
@@ -1807,6 +2087,7 @@ mod tests {
             cuda12: false,
             cuda13: false,
             vulkan: true,
+            rocm: false,
         };
 
         let result =
@@ -1829,6 +2110,7 @@ mod tests {
             cuda12: true,
             cuda13: true,
             vulkan: false,
+            rocm: false,
         };
 
         let result =
@@ -1849,6 +2131,7 @@ mod tests {
             cuda12: true,
             cuda13: false,
             vulkan: true,
+            rocm: false,
         };
 
         let result =
@@ -1871,6 +2154,7 @@ mod tests {
             cuda12: false,
             cuda13: false,
             vulkan: false,
+            rocm: false,
         };
 
         let result =
@@ -1934,6 +2218,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_prioritize_backends_prefers_rocm_over_vulkan() {
+        let available = vec![
+            BackendInfo {
+                version: "b10405".into(),
+                backend: "win-vulkan-x64".into(),
+                order: 1,
+            },
+            BackendInfo {
+                version: "b10405".into(),
+                backend: "win-rocm-7.14-x64".into(),
+                order: 1,
+            },
+            BackendInfo {
+                version: "b10405".into(),
+                backend: "win-cpu-x64".into(),
+                order: 1,
+            },
+        ];
+
+        let gpu_result = prioritize_backends(available.clone(), true).await.unwrap();
+        // Under the low-VRAM policy both GPU tiers rank below CPU, exactly as
+        // Vulkan alone already does.
+        let cpu_result = prioritize_backends(available, false).await.unwrap();
+
+        assert_eq!(gpu_result.backend_type, "win-rocm-7.14-x64");
+        assert_eq!(cpu_result.backend_type, "win-cpu-x64");
+    }
+
+    #[test]
+    fn test_get_backend_category_rocm() {
+        assert_eq!(
+            get_backend_category("win-rocm-7.14-x64").as_deref(),
+            Some("rocm")
+        );
+        // A CUDA id must not be swallowed by the HIP branch.
+        assert_eq!(
+            get_backend_category("win-cuda-13.3-x64").as_deref(),
+            Some("cuda-cu13")
+        );
+    }
+
+    #[tokio::test]
     async fn test_prioritize_backends_rejects_empty_catalog() {
         let result = prioritize_backends(vec![], true).await;
 
@@ -1974,7 +2300,8 @@ mod tests {
 
         assert_eq!(result.len(), 3);
 
-        // Sorted by order desc: b7524(order=2), then b7523 entries (order=1) by backend asc
+        // Sorted by release tag desc: b7524, then the two b7523 entries,
+        // which tie on tag and order and fall through to backend name asc.
         assert_eq!(result[0].version, "b7524");
         assert_eq!(result[1].version, "b7523");
         assert_eq!(result[2].version, "b7523");
@@ -2005,7 +2332,16 @@ mod tests {
             parse_binary_version("warning\nversion: 9222 (9a532ae4b)\n"),
             Some(9222)
         );
+        // The shape upstream prints from b10405 on: a semver first, the build
+        // number inside the parenthesised sentence.
+        assert_eq!(
+            parse_binary_version(
+                "version: 0.1.0-dev (build 10405, commit e79e4bf66)\nbuilt with Apple clang"
+            ),
+            Some(10405)
+        );
         assert_eq!(parse_binary_version("unknown version"), None);
+        assert_eq!(parse_binary_version("version: 0.1.0-dev (commit abc)"), None);
     }
 
     #[test]
@@ -2240,6 +2576,97 @@ mod tests {
 
         let result = find_latest_version_for_backend(backends, "linux-cpu-x64".to_string());
         assert_eq!(result, Some("b7524/linux-cpu-x64".to_string()));
+    }
+
+    #[test]
+    fn test_find_latest_version_prefers_newer_tag_over_install_time() {
+        // A backend found on disk carries its mtime as `order`, one that only
+        // exists in the manifest carries 0. Ranking by `order` first would
+        // mean the installed build always wins and macOS/Linux would never be
+        // offered an update.
+        let backends = vec![
+            BackendInfo {
+                version: "b10205".into(),
+                backend: "macos-arm64".into(),
+                order: 1_800_000_000,
+            },
+            BackendInfo {
+                version: "b10344".into(),
+                backend: "macos-arm64".into(),
+                order: 0,
+            },
+        ];
+
+        let result = find_latest_version_for_backend(backends, "macos-arm64".to_string());
+        assert_eq!(result, Some("b10344/macos-arm64".to_string()));
+    }
+
+    #[test]
+    fn test_find_latest_version_orders_tags_numerically_not_lexically() {
+        // "b9999" sorts above "b10344" as a string; as a build number it does
+        // not. The five-digit rollover already happened upstream.
+        let backends = vec![
+            BackendInfo {
+                version: "b9999".into(),
+                backend: "linux-vulkan-x64".into(),
+                order: 0,
+            },
+            BackendInfo {
+                version: "b10344".into(),
+                backend: "linux-vulkan-x64".into(),
+                order: 0,
+            },
+        ];
+
+        let result = find_latest_version_for_backend(backends, "linux-vulkan-x64".to_string());
+        assert_eq!(result, Some("b10344/linux-vulkan-x64".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_check_backend_for_updates_offers_a_newer_macos_tag() {
+        let current = "b10205/macos-arm64".to_string();
+        let available = vec![
+            BackendInfo {
+                version: "b10205".into(),
+                backend: "macos-arm64".into(),
+                order: 1_800_000_000,
+            },
+            BackendInfo {
+                version: "b10344".into(),
+                backend: "macos-arm64".into(),
+                order: 0,
+            },
+        ];
+
+        let result = check_backend_for_updates(current, available).await.unwrap();
+
+        assert!(result.update_needed);
+        assert_eq!(result.new_version, "b10344");
+        assert_eq!(
+            result.target_backend,
+            Some("b10344/macos-arm64".to_string())
+        );
+    }
+
+    #[test]
+    fn test_find_latest_version_falls_back_to_order_for_non_release_tags() {
+        // A hand-placed directory has no build number to rank by, so install
+        // order still decides between two of them.
+        let backends = vec![
+            BackendInfo {
+                version: "custom-build".into(),
+                backend: "macos-arm64".into(),
+                order: 1,
+            },
+            BackendInfo {
+                version: "another-build".into(),
+                backend: "macos-arm64".into(),
+                order: 2,
+            },
+        ];
+
+        let result = find_latest_version_for_backend(backends, "macos-arm64".to_string());
+        assert_eq!(result, Some("another-build/macos-arm64".to_string()));
     }
 
     #[test]

@@ -3,6 +3,7 @@ use tauri::{
     Manager, Runtime,
 };
 
+mod amd_rocm_pci_ids;
 mod args;
 mod backend;
 pub mod cleanup;
@@ -60,7 +61,9 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             backend::should_migrate_backend,
             backend::handle_setting_update,
             backend::install_bundled_backend,
-            backend::fetch_manifest_http1
+            backend::verify_backend_binary,
+            backend::fetch_manifest_http1,
+            backend::available_disk_space
         ])
         .setup(|app, _api| {
             // Initialize and manage the plugin state

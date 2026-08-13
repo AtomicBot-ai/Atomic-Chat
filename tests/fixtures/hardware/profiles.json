@@ -35,6 +35,86 @@
     }
   },
   {
+    "name": "windows-x64-amd-rdna3-rocm",
+    "system_info": {
+      "os_type": "windows",
+      "os_name": "Windows",
+      "total_memory": 32768,
+      "cpu": {
+        "name": "x64 test CPU",
+        "core_count": 16,
+        "arch": "x86_64",
+        "extensions": []
+      },
+      "gpus": [
+        {
+          "name": "AMD Radeon RX 7900 XTX",
+          "total_memory": 24576,
+          "vendor": "AMD",
+          "uuid": "fixture-amd-navi31",
+          "driver_version": "fixture",
+          "nvidia_info": null,
+          "vulkan_info": {
+            "device_type": "DiscreteGpu",
+            "device_id": 30284
+          }
+        }
+      ]
+    },
+    "comment": "device_id 30284 == 0x744c (Navi 31, gfx1100) from the generated ROCm PCI table",
+    "features": {
+      "cuda11": false,
+      "cuda12": false,
+      "cuda13": false,
+      "vulkan": true,
+      "rocm": true
+    },
+    "expected": {
+      "turboquant": "windows-x64-vulkan",
+      "upstream": "win-rocm-7.14-x64"
+    }
+  },
+  {
+    "name": "windows-x64-amd-vega-vulkan",
+    "system_info": {
+      "os_type": "windows",
+      "os_name": "Windows",
+      "total_memory": 32768,
+      "cpu": {
+        "name": "x64 test CPU",
+        "core_count": 16,
+        "arch": "x86_64",
+        "extensions": []
+      },
+      "gpus": [
+        {
+          "name": "AMD Radeon RX Vega 64",
+          "total_memory": 8192,
+          "vendor": "AMD",
+          "uuid": "fixture-amd-vega10",
+          "driver_version": "fixture",
+          "nvidia_info": null,
+          "vulkan_info": {
+            "device_type": "DiscreteGpu",
+            "device_id": 26751
+          }
+        }
+      ]
+    },
+    "comment": "device_id 26751 == 0x687f (Vega 10); GCN is absent from the ROCm table, so Vulkan it is",
+    "features": {
+      "cuda11": false,
+      "cuda12": false,
+      "cuda13": false,
+      "vulkan": true,
+      "rocm": false
+    },
+    "expected": {
+      "turboquant": "windows-x64-vulkan",
+      "upstream": "win-vulkan-x64"
+    }
+  },
+  {
     "name": "linux-x64-nvidia-vulkan",
     "system_info": {
       "os_type": "linux",

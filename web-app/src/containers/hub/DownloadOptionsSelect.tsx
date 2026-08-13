@@ -8,7 +8,6 @@ import {
 } from '@/components/ui/tooltip'
 import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
 import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
-import { FitBadge } from '@/containers/hub/FitBadge'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   estimateFit,
@@ -69,6 +68,23 @@ export function DownloadOptionsSelect({
     () => pickDownloadQuant(model, budgetBytes),
     [model, budgetBytes]
   )
+  const sortedQuants = useMemo(
+    () =>
+      [...(model.quants ?? [])].sort((left, right) => {
+        const leftSize = parseFileSizeToBytes(
+          getTotalDownloadFileSize(model, left)
+        )
+        const rightSize = parseFileSizeToBytes(
+          getTotalDownloadFileSize(model, right)
+        )
+
+        if (leftSize === undefined && rightSize === undefined) return 0
+        if (leftSize === undefined) return 1
+        if (rightSize === undefined) return -1
+        return leftSize - rightSize
+      }),
+    [model]
+  )
   const selected =
     model.quants?.find((quant) => quant.model_id === selectedId) ?? defaultQuant
 
@@ -94,7 +110,6 @@ export function DownloadOptionsSelect({
           </div>
           <MlxModelDownloadAction model={model} />
         </div>
-        {fitKnown && <FitBadge fit={fit} className="mt-3" />}
       </section>
     )
   }
@@ -116,7 +131,7 @@ export function DownloadOptionsSelect({
           type="button"
           onClick={() => setExpanded((prev) => !prev)}
           aria-expanded={expanded}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left hover:bg-muted/40"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-md bg-muted/40 px-2 py-2 text-left hover:bg-muted/60"
         >
           {fitKnown && <FitDot fit={selectedFit} />}
           <span className="shrink-0 rounded-[5px] bg-secondary px-[7px] py-0.5 font-mono text-[11px] font-semibold text-muted-foreground">
@@ -138,19 +153,31 @@ export function DownloadOptionsSelect({
         </button>
 
         {selectedFit === 'no' ? (
-          <Button variant="outline" size="sm" disabled className="font-semibold">
-            {t('hub:download')}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="shrink-0 cursor-not-allowed">
+                <Button
+                  variant="default"
+                  size="sm"
+                  disabled
+                  className="pointer-events-none bg-foreground font-semibold text-background"
+                >
+                  {t('hub:download')}
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{HARDWARE_FIT.no.tip}</p>
+            </TooltipContent>
+          </Tooltip>
         ) : (
           <ModelDownloadAction variant={selected} model={model} asButton />
         )}
       </div>
 
-      {fitKnown && <FitBadge fit={selectedFit} className="mt-3" />}
-
       {expanded && (
         <ul className="mt-3 border-t border-border pt-2">
-          {model.quants.map((quant) => {
+          {sortedQuants.map((quant) => {
             const sizeText = getTotalDownloadFileSize(model, quant)
             const fit = estimateFit(parseFileSizeToBytes(sizeText), budgetBytes)
             return (

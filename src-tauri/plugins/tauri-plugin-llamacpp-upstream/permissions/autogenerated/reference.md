@@ -37,7 +37,9 @@ Default permissions for the llamacpp plugin
 - `allow-should-migrate-backend`
 - `allow-handle-setting-update`
 - `allow-install-bundled-backend`
+- `allow-verify-backend-binary`
 - `allow-fetch-manifest-http1`
+- `allow-available-disk-space`
 
 ## Permission Table
 
@@ -47,6 +49,32 @@ Default permissions for the llamacpp plugin
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`llamacpp-upstream:allow-available-disk-space`
+
+</td>
+<td>
+
+Enables the available_disk_space command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp-upstream:deny-available-disk-space`
+
+</td>
+<td>
+
+Denies the available_disk_space command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>
@@ -928,6 +956,32 @@ Enables the validate_backend_string command without any pre-configured scope.
 <td>
 
 Denies the validate_backend_string command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp-upstream:allow-verify-backend-binary`
+
+</td>
+<td>
+
+Enables the verify_backend_binary command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp-upstream:deny-verify-backend-binary`
+
+</td>
+<td>
+
+Denies the verify_backend_binary command without any pre-configured scope.
 
 </td>
 </tr>

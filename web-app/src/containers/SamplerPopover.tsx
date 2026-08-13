@@ -26,7 +26,6 @@ import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { ParametersSection } from '@/containers/ParametersSection'
 import { paramGroups } from '@/lib/predefinedParams'
 import { useAssistant } from '@/hooks/useAssistant'
-import { useSamplingSettings } from '@/hooks/useSamplingSettings'
 import { useThreads } from '@/hooks/useThreads'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
@@ -43,8 +42,9 @@ export function SamplerPopover({ disabled }: SamplerPopoverProps) {
   const selectedAssistant = useAssistant((state) => state.pendingAssistant)
   const onSelectAssistant = useAssistant((state) => state.setPendingAssistant)
 
-  const samplingParams = useSamplingSettings((state) => state.params)
-  const setParam = useSamplingSettings((state) => state.setParam)
+  const updateAssistantParam = useAssistant(
+    (state) => state.updateAssistantParam
+  )
 
   const currentThreadId = useThreads((state) => state.currentThreadId)
   const threads = useThreads((state) => state.threads)
@@ -53,23 +53,27 @@ export function SamplerPopover({ disabled }: SamplerPopoverProps) {
   )
 
   const currentThread = currentThreadId ? threads[currentThreadId] : undefined
-  const threadAssistant = currentThread?.assistants?.[0]
+  const threadAssistantId = currentThread?.assistants?.[0]?.id
 
-  // The assistant shown/selected in the switcher (persona only — no sampling).
-  // Priority: explicit unsaved-chat selection -> thread-bound -> default -> first.
+  // The assistant whose persona and sampling this chat uses. Always the live
+  // store record, so edits made here are what the next request sends.
+  // Priority mirrors `resolveAssistantForThread`: thread-bound ->
+  // unsaved-chat selection -> default -> first.
   const effectiveAssistant = useMemo<Assistant | undefined>(() => {
     return (
-      selectedAssistant ??
-      threadAssistant ??
+      assistants.find((a) => a.id === threadAssistantId) ??
+      assistants.find((a) => a.id === selectedAssistant?.id) ??
       assistants.find((a) => a.id === defaultAssistantId) ??
       assistants[0]
     )
-  }, [selectedAssistant, threadAssistant, assistants, defaultAssistantId])
+  }, [selectedAssistant, threadAssistantId, assistants, defaultAssistantId])
 
   const activeAssistant = effectiveAssistant
+  const samplingParams = activeAssistant?.parameters ?? {}
 
   const handleSamplingChange = (key: string, value: number | boolean) => {
-    setParam(key, value)
+    if (!activeAssistant) return
+    updateAssistantParam(activeAssistant.id, key, value)
   }
 
   const handleSelectAssistant = (assistant: Assistant | undefined) => {
@@ -187,12 +191,15 @@ export function SamplerPopover({ disabled }: SamplerPopoverProps) {
             </DropdownMenu>
           </div>
 
-          {/* Body: global sampling parameters */}
+          {/* Body: sampling parameters of the active assistant */}
           <ParametersSection
             parameters={samplingParams}
             onChange={handleSamplingChange}
             paramKeys={popoverParamKeys}
-            className={cn(disabled && 'pointer-events-none opacity-50')}
+            className={cn(
+              (disabled || !activeAssistant) &&
+                'pointer-events-none opacity-50'
+            )}
           />
         </div>
       </PopoverContent>

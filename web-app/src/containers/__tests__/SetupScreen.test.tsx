@@ -160,6 +160,25 @@ const detectedModel = {
   sizeBytes: 4 * 1024 ** 3,
 }
 
+const biggerDetectedModel = {
+  id: 'lmstudio/gemma-4-12b',
+  displayName: 'gemma-4-12b.gguf',
+  path: '/models/gemma-4-12b.gguf',
+  source: 'lmstudio',
+  format: 'gguf',
+  runnable: true,
+  sizeBytes: 12 * 1024 ** 3,
+}
+
+const expectedImport = (model: typeof detectedModel) => [
+  model.id,
+  {
+    modelPath: model.path,
+    mmprojPath: undefined,
+    source: model.source,
+  },
+]
+
 describe('SetupScreen', () => {
   const deferLocalScan = (found: unknown[] = []) => {
     let finish!: () => void
@@ -189,10 +208,8 @@ describe('SetupScreen', () => {
 
     expect(screen.getByText('common:loading')).toBeInTheDocument()
     await finishLocalScan()
-    expect(await screen.findByText('Atomic Chat')).toBeInTheDocument()
-    expect(
-      screen.getByText('No rate limits. No subscriptions. No cloud.')
-    ).toBeInTheDocument()
+    expect(await screen.findByText('setup:welcomeTitle')).toBeInTheDocument()
+    expect(screen.getByText('setup:welcomeSubtitle')).toBeInTheDocument()
     expect(mocks.fetchSources).toHaveBeenCalledOnce()
     expect(mocks.scanLocalModels).toHaveBeenCalledWith({
       enabled: true,
@@ -208,7 +225,7 @@ describe('SetupScreen', () => {
 
     await finishLocalScan()
 
-    expect(await screen.findByText('Atomic Chat')).toBeInTheDocument()
+    expect(await screen.findByText('setup:welcomeTitle')).toBeInTheDocument()
     expect(mocks.leftPanel.open).toBe(true)
     unmount()
   })
@@ -218,13 +235,50 @@ describe('SetupScreen', () => {
     const { unmount } = render(<SetupScreen />)
 
     await finishLocalScan()
-    expect(await screen.findByText('Atomic Chat')).toBeInTheDocument()
+    expect(await screen.findByText('setup:welcomeTitle')).toBeInTheDocument()
 
     // `force` is the whole point: a cache written before the manifest changed
     // is served without any network call, so onboarding would offer models the
     // manifest no longer lists.
     expect(mocks.refreshRegistry.mock.calls).toEqual([[{ force: true }]])
     unmount()
+  })
+
+  describe('auto-start of a model found on disk', () => {
+    it('launches the smallest candidate instead of offering a download', async () => {
+      const finishLocalScan = deferLocalScan([
+        biggerDetectedModel,
+        detectedModel,
+      ])
+      const { unmount } = render(<SetupScreen />)
+
+      await finishLocalScan()
+
+      expect(
+        await screen.findByText('setup:localStep.autoStarting')
+      ).toBeInTheDocument()
+      // The picker (and with it every Download button) is never rendered.
+      expect(screen.queryByText('setup:welcomeTitle')).not.toBeInTheDocument()
+      // Only the chosen model is imported here; the rest follow once it lands.
+      expect(mocks.engine.import.mock.calls).toEqual([
+        expectedImport(detectedModel),
+      ])
+      unmount()
+    })
+
+    it('falls back to the picker when the auto-started import fails', async () => {
+      mocks.engine.import.mockRejectedValueOnce(new Error('unsupported'))
+      const finishLocalScan = deferLocalScan([detectedModel])
+      const { unmount } = render(<SetupScreen />)
+
+      await finishLocalScan()
+
+      expect(await screen.findByText('setup:welcomeTitle')).toBeInTheDocument()
+      expect(
+        screen.getByRole('button', { name: /setup:localStep\.run/ })
+      ).toBeInTheDocument()
+      unmount()
+    })
   })
 
   it('persists and reports a skipped setup', async () => {
@@ -305,24 +359,15 @@ describe('SetupScreen', () => {
     })
 
     it('never cuts an in-flight local import short', async () => {
+      // A detected model auto-starts, so the import is already in flight here.
       const { unmount } = await renderPastLocalScan([detectedModel])
 
-      fireEvent.click(
-        screen.getByRole('button', { name: /setup:localStep\.run/ })
-      )
       await act(async () => {
         vi.advanceTimersByTime(30_000)
       })
 
       expect(mocks.engine.import.mock.calls).toEqual([
-        [
-          detectedModel.id,
-          {
-            modelPath: detectedModel.path,
-            mmprojPath: undefined,
-            source: detectedModel.source,
-          },
-        ],
+        expectedImport(detectedModel),
       ])
       // Still on onboarding: the timeout must not have completed setup behind
       // the import, and the reminder must not be armed for a chosen model.

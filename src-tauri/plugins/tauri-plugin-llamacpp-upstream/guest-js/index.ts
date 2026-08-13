@@ -255,6 +255,7 @@ export function normalizeFeatures(features: any): BackendFeatures {
     cuda12: features.cuda12 || false,
     cuda13: features.cuda13 || false,
     vulkan: features.vulkan || false,
+    rocm: features.rocm || false,
   }
 }
 
@@ -389,6 +390,21 @@ export async function installBundledBackend(
 }
 
 /**
+ * Make the binaries under `<backendDir>/build/bin/` executable and run
+ * `llama-server --version`, resolving to whether the build it reports matches
+ * `version`. Throws when there is no binary to run at all.
+ */
+export async function verifyBackendBinary(
+  backendDir: string,
+  version: string
+): Promise<boolean> {
+  return invoke('plugin:llamacpp-upstream|verify_backend_binary', {
+    backendDir,
+    version,
+  })
+}
+
+/**
  * Fetch the backend-index manifest JSON over an HTTP/1.1-only reqwest
  * connection. Used as a fallback transport on Linux where reqwest's HTTP/2
  * negotiation against the Fastly CDN (raw.githubusercontent.com) stalls
@@ -400,6 +416,14 @@ export async function fetchManifestHttp1(
   timeoutMs: number
 ): Promise<string> {
   return invoke('plugin:llamacpp-upstream|fetch_manifest_http1', { url, timeoutMs })
+}
+
+/**
+ * Free bytes on the filesystem holding `path`. `path` may not exist yet — the
+ * deepest existing ancestor is measured instead.
+ */
+export async function availableDiskSpace(path: string): Promise<number> {
+  return invoke('plugin:llamacpp-upstream|available_disk_space', { path })
 }
 
 export * from './types'

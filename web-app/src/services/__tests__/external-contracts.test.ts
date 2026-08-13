@@ -28,10 +28,18 @@ const immutableRevision = z.string().regex(/^[0-9a-f]{40}$/)
 const upstreamManifestSchema = z.object({
   tag_name: z.string().regex(/^b\d+$/),
   updated_at: z.iso.datetime(),
+  /// Points at our signed mirror. Absent for a tag we have not mirrored, which
+  /// is what makes the app fall back to the ggml-org CDN.
+  download_base: z.url().startsWith('https://').optional(),
   assets: z
     .array(
       z.object({
         name: z.string().regex(/\.(zip|tar\.gz)$/),
+        sha256: z
+          .string()
+          .regex(/^[0-9a-f]{64}$/)
+          .optional(),
+        size: z.number().int().positive().optional(),
       })
     )
     .min(1),
@@ -356,6 +364,71 @@ describe.runIf(process.env.ATOMIC_TEST_LIVE_REGISTRIES === '1')(
           const response = await fetch(url, { headers: { Range: 'bytes=0-0' } })
           await response.arrayBuffer()
           if (!response.ok) missing.push(`${backend.id} -> ${url}`)
+        }
+
+        expect(missing).toEqual([])
+      },
+      120_000
+    )
+  }
+)
+
+/**
+ * The upstream provider's offline baseline is generated from the live manifest
+ * (`make sync-upstream-baseline`), and the extension's own test asserts that the
+ * generated module and this fixture stay byte-identical — so comparing the
+ * fixture against the live manifest is comparing the shipped baseline against
+ * it. A stale baseline is not a user-visible outage (the live manifest wins
+ * whenever the network is up), which is why this is opt-in rather than part of
+ * `verify-fast`: it is a reminder to regenerate, not a release blocker.
+ */
+describe.runIf(process.env.ATOMIC_TEST_LIVE_REGISTRIES === '1')(
+  'live upstream baseline freshness',
+  () => {
+    it(
+      'ships an offline baseline that still matches the live manifest',
+      async () => {
+        const live = upstreamManifestSchema.parse(
+          await (
+            await fetch(
+              'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/manifest.json'
+            )
+          ).json()
+        )
+        const baseline = upstreamManifestSchema.parse(
+          fixture('upstream-manifest')
+        )
+
+        expect(baseline.tag_name).toBe(live.tag_name)
+        expect(baseline.assets.map(({ name }) => name).sort()).toEqual(
+          live.assets.map(({ name }) => name).sort()
+        )
+      },
+      30_000
+    )
+
+    it(
+      'serves every mirrored archive it advertises',
+      async () => {
+        const live = upstreamManifestSchema.parse(
+          await (
+            await fetch(
+              'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/manifest.json'
+            )
+          ).json()
+        )
+        // Nothing mirrored yet means nothing to check: the app is on the
+        // ggml-org fallback, which the resolver contract covers.
+        if (!live.download_base) return
+
+        const missing: string[] = []
+        for (const asset of live.assets) {
+          if (!asset.sha256) continue
+          const url = `${live.download_base}/${live.tag_name}/${asset.name}`
+          // Ranged GET for the same reason as the TurboQuant check above.
+          const response = await fetch(url, { headers: { Range: 'bytes=0-0' } })
+          await response.arrayBuffer()
+          if (!response.ok) missing.push(`${asset.name} -> ${url}`)
         }
 
         expect(missing).toEqual([])

@@ -47,7 +47,10 @@ const GGML_ORG_CUDART_DOWNLOAD_BASE =
   'https://github.com/ggml-org/llama.cpp/releases/download'
 /**
  * Pinned ggml-org tag that ships `cudart-llama-bin-win-cuda-{12.4,13.3}-x64.zip`.
- * Keep in sync with `LLAMACPP_UPSTREAM_PINNED_TAG` in the upstream extension.
+ * A real pin, unlike the upstream extension's `BUNDLED_BASELINE_TAG`, which is
+ * generated from the manifest: the cudart companions are not mirrored and this
+ * driver has no manifest field to follow. Known debt, tracked in the mirroring
+ * ADR.
  */
 export const GGML_ORG_CUDART_PINNED_TAG = 'b10205'
 const MANIFEST_FETCH_TIMEOUT_MS = 8_000
@@ -87,7 +90,10 @@ export function isTurboQuantRelease(versionOrPair: string): boolean {
  * as ours by `isTurboQuantRelease` and keeps running.
  */
 export function isStableReleaseTag(versionOrPair: string): boolean {
-  const version = (versionOrPair ?? '').replace(/\uFEFF/g, '').trim().split('/')[0]
+  const version = (versionOrPair ?? '')
+    .replace(/\uFEFF/g, '')
+    .trim()
+    .split('/')[0]
   return TQ_UNIFIED_TAG_RE.test(version)
 }
 
@@ -173,6 +179,132 @@ export async function getLocalInstalledBackends(): Promise<BackendVersion[]> {
 // folder structure
 // <Jan's data folder>/llamacpp/backends/<backend_version>/<backend_type>
 
+export interface InstalledBackendPack {
+  version: string
+  backend: string
+  path: string
+  active: boolean
+}
+
+const clean = (value: string) => value.replace(/\uFEFF/g, '').trim()
+
+export interface BackendOption {
+  value: string
+  name: string
+}
+
+/**
+ * Flattens the version-dropdown tiers into one list.
+ *
+ * The tiers are passed most-preferred first and the first spelling of a
+ * `version/backend` wins, so a build that appears in several tiers keeps its
+ * richest label. `recommended` is forced into the list because a
+ * recommendation the dropdown cannot offer is a dead end: the UI would mark a
+ * version the user has no way to select.
+ */
+export function mergeBackendOptions(
+  tiers: BackendOption[][],
+  recommended?: BackendOption
+): BackendOption[] {
+  const merged: BackendOption[] = []
+  const seen = new Set<string>()
+
+  for (const tier of tiers) {
+    for (const option of tier) {
+      const value = clean(option.value)
+      if (!value || seen.has(value)) continue
+      seen.add(value)
+      merged.push({ value, name: option.name })
+    }
+  }
+
+  const recommendedValue = recommended ? clean(recommended.value) : ''
+  if (recommendedValue && !seen.has(recommendedValue)) {
+    merged.unshift({ value: recommendedValue, name: recommended!.name })
+  }
+
+  return merged
+}
+
+/**
+ * Every backend build sitting in this provider's tree, with the absolute path
+ * of each so the UI can reveal it in the file manager, and a flag marking the
+ * one currently selected (which must not be deletable).
+ */
+export async function listInstalledBackendPacks(
+  providerId: string,
+  currentVersionBackend: string
+): Promise<InstalledBackendPack[]> {
+  const janDataFolderPath = await getJanDataFolderPath()
+  const backendsRoot = await joinPath([
+    janDataFolderPath,
+    providerId,
+    'backends',
+  ])
+  const current = clean(currentVersionBackend)
+  const installed = await getLocalInstalledBackends()
+
+  return Promise.all(
+    installed.map(async (entry) => {
+      const version = clean(entry.version)
+      const backend = clean(entry.backend)
+      return {
+        version,
+        backend,
+        path: await joinPath([backendsRoot, version, backend]),
+        active: `${version}/${backend}` === current,
+      }
+    })
+  )
+}
+
+/**
+ * Removes one installed backend build. The selected build is refused rather
+ * than silently skipped: deleting it would leave `version_backend` pointing at
+ * a directory that no longer exists and the next model load would fail with a
+ * missing-binary error instead of anything actionable.
+ */
+export async function deleteBackendPack(
+  providerId: string,
+  currentVersionBackend: string,
+  version: string,
+  backend: string
+): Promise<void> {
+  const cleanVersion = clean(version)
+  const cleanBackend = clean(backend)
+  if (!cleanVersion || !cleanBackend) {
+    throw new Error(`Invalid backend pack: '${version}/${backend}'`)
+  }
+  if (/[/\\]/.test(cleanVersion) || /[/\\]/.test(cleanBackend)) {
+    throw new Error(`Invalid backend pack: '${version}/${backend}'`)
+  }
+  if (`${cleanVersion}/${cleanBackend}` === clean(currentVersionBackend)) {
+    throw new Error('Cannot remove the backend that is currently selected')
+  }
+
+  const janDataFolderPath = await getJanDataFolderPath()
+  const versionDir = await joinPath([
+    janDataFolderPath,
+    providerId,
+    'backends',
+    cleanVersion,
+  ])
+  const backendDir = await joinPath([versionDir, cleanBackend])
+
+  if (await fs.existsSync(backendDir)) {
+    await fs.rm(backendDir)
+  }
+
+  // A version dir holding no builds is an empty husk that would keep showing
+  // up in the packs list.
+  const remaining: string[] = (await fs.existsSync(versionDir))
+    ? await fs.readdirSync(versionDir)
+    : []
+  if (remaining.length === 0 && (await fs.existsSync(versionDir))) {
+    await fs.rm(versionDir)
+  }
+}
+
 /**
  * Maps the app's stored proxy config (`getProxyConfig`, shaped for the Rust
  * `download_files` command) onto the option shape `@tauri-apps/plugin-http`'s
@@ -232,7 +364,9 @@ async function fetchManifestWithTimeout(
   const timeout = new Promise<Response>((_, reject) => {
     timeoutHandle = setTimeout(() => {
       reject(
-        new Error(`Manifest fetch timed out after ${MANIFEST_FETCH_TIMEOUT_MS}ms`)
+        new Error(
+          `Manifest fetch timed out after ${MANIFEST_FETCH_TIMEOUT_MS}ms`
+        )
       )
     }, MANIFEST_FETCH_TIMEOUT_MS)
   })
@@ -255,7 +389,7 @@ async function fetchManifestWithWebFetch(
   // plugin-http too. `globalThis.fetch` is the real WebView fetch, which the
   // registry loaders prove resolves reliably against the GitHub CDNs.
   const request = globalThis.fetch(url, {
-    headers: { Accept: accept, 'User-Agent': 'atomic-chat' },
+    headers: { 'Accept': accept, 'User-Agent': 'atomic-chat' },
     signal: controller.signal,
   })
   const timeout = new Promise<Response>((_, reject) => {
@@ -283,7 +417,10 @@ async function fetchManifestWithFallbacks(
   // variants are fallbacks for air-gapped/corporate-proxy setups where the
   // WebView fetch is intercepted but the Rust HTTP client is allowed through.
   const attempts: Array<{ label: string; runner: () => Promise<Response> }> = [
-    { label: 'webview fetch', runner: () => fetchManifestWithWebFetch(url, accept) },
+    {
+      label: 'webview fetch',
+      runner: () => fetchManifestWithWebFetch(url, accept),
+    },
     {
       label: 'proxy-aware tauri fetch',
       runner: () => fetchManifestWithTimeout(url, true),
@@ -418,7 +555,9 @@ function parseReleaseIndex(
     releases.push({
       tag,
       published_at:
-        typeof entry?.published_at === 'string' ? entry.published_at : undefined,
+        typeof entry?.published_at === 'string'
+          ? entry.published_at
+          : undefined,
       commit: typeof entry?.commit === 'string' ? entry.commit : undefined,
       prerelease: false,
       min_app_version:
@@ -586,7 +725,8 @@ async function fetchFromLegacyManifest(): Promise<TurboquantCatalog | null> {
     [...byTag.entries()].map(([tag, variants]) => ({
       tag,
       prerelease: false,
-      commit: typeof manifest?.commit === 'string' ? manifest.commit : undefined,
+      commit:
+        typeof manifest?.commit === 'string' ? manifest.commit : undefined,
       variants,
     }))
   )
@@ -758,7 +898,8 @@ export function getBackendDownloadUrl(
 ): string {
   version = version.replace(/\uFEFF/g, '').trim()
   backend = backend.replace(/\uFEFF/g, '').trim()
-  const asset = assetName?.replace(/\uFEFF/g, '').trim() || defaultAssetName(backend)
+  const asset =
+    assetName?.replace(/\uFEFF/g, '').trim() || defaultAssetName(backend)
   return `${LLAMACPP_DOWNLOAD_BASE}/${version}/${asset}`
 }
 

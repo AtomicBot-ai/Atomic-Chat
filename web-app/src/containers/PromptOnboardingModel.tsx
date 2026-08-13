@@ -10,6 +10,12 @@ import {
   SETUP_SCREEN_QUANTIZATIONS,
 } from '@/constants/models'
 import { getPreferredMmprojModel } from '@/lib/models'
+import { HUGGINGFACE_LOGO_SRC, modelFamilyLogoSrc } from '@/lib/model-logo'
+
+// The offer is about the model, not the app, so it carries the model's brand
+// mark. Derived from the repo id so it follows the recommendation.
+const reminderModelLogoSrc =
+  modelFamilyLogoSrc(ONBOARDING_REMINDER_MODEL_HF_REPO) ?? HUGGINGFACE_LOGO_SRC
 
 /// Bottom-right offer shown once onboarding has been left without a model,
 /// either by Skip or by the auto-exit timeout. Repeats the first onboarding
@@ -109,9 +115,10 @@ export function PromptOnboardingModel() {
     <div className="fixed bottom-4 right-4 z-50 p-4 shadow-lg bg-background w-4/5 md:w-100 border rounded-lg">
       <div className="flex items-center gap-2">
         <img
-          src="/images/transparent-logo.png"
-          alt="Atomic Chat"
-          className="size-5 dark:brightness-0 dark:invert"
+          src={reminderModelLogoSrc}
+          alt=""
+          className="size-5 shrink-0 object-contain"
+          aria-hidden
         />
         <h2 className="font-medium">
           Qwen3.5 4B

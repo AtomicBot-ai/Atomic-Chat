@@ -42,7 +42,7 @@
   "staffPickBadge": "Đề xuất",
   "updatedAgo": "Cập nhật {{ago}}",
   "parameters": "Tham số",
-  "architecture": "Kiến trúc",
+  "context": "Ngữ cảnh",
   "capabilities": "Khả năng",
   "readme": "README",
   "readmeUnavailable": "Mô hình này không có README."

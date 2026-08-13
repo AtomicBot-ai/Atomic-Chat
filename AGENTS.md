@@ -60,7 +60,7 @@ Our own upstream repos, checked out next to this one under `/Users/misha/Work/At
 | Platform | Provider(s) | Default / GPU policy |
 | -------- | ----------- | -------------------- |
 | macOS | `llamacpp` (our fork) **+** `llamacpp-upstream` | upstream is the default; MLX is separate on Apple Silicon |
-| Windows | `llamacpp-upstream` **+** optional `llamacpp` | upstream is the default; CUDA/Vulkan tiers are provider-specific |
+| Windows | `llamacpp-upstream` **+** optional `llamacpp` | upstream is the default; CUDA/ROCm/Vulkan tiers are provider-specific |
 | Linux | `llamacpp-upstream` **+** optional `llamacpp` | upstream is the default; upstream GPU = Vulkan only, `llamacpp` adds CUDA/ROCm |
 
 Consequences you must respect:
@@ -78,7 +78,12 @@ Consequences you must respect:
   of the GPU. On Linux `llamacpp` picks CUDA 13.3 → CUDA 12.4 → ROCm → Vulkan →
   CPU, while `llamacpp-upstream` stays Vulkan → CPU on the same hardware,
   because ggml-org publishes no Linux CUDA/ROCm artifact. Never widen one
-  provider's matrix from the other's hardware probe.
+  provider's matrix from the other's hardware probe. Upstream ROCm exists on
+  Windows only, gated on a generated AMD PCI-id table.
+- `llamacpp-upstream` artefacts come from the signed `atomic-chat-conf` mirror,
+  with ggml-org as the fallback for an unmirrored tag. Resolve tag, asset, URL
+  and `sha256` through `scripts/resolve-upstream-backend.mjs` — never hardcode a
+  download base.
 
 **MLX** (Apple Silicon): production downloads the AtomicBot-ai `mlx-vlm`
 PyInstaller sidecar; `mlx-server/Sources/` is legacy Swift source. It is driven

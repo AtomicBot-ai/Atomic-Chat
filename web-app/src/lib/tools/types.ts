@@ -62,10 +62,15 @@ export type TraceBlock =
       filename?: string
     }
   | {
+      kind: 'reasoning'
+      key: string
+      streaming: boolean
+      items: Array<{ key: string; text: string }>
+    }
+  | {
       kind: 'activity'
       key: string
       durationMs?: number
-      reasoning: Array<{ key: string; text: string }>
       tools: Array<{
         key: string
         toolName: string

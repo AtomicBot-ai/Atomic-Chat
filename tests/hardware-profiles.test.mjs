@@ -46,6 +46,31 @@ test('backend expectation table encodes provider-specific platform policy', () =
   assert.equal(integrated.expected.upstream, 'cpu-optimal')
 })
 
+// Windows is the one platform where upstream publishes a HIP archive, and the
+// card decides: an RDNA3 board is in the generated PCI table and gets ROCm,
+// while GCN (Vega) is not and stays on Vulkan. TurboQuant ships no Windows
+// ROCm build at all, so it stays on Vulkan for both.
+test('AMD Windows hosts are split by the generated ROCm PCI table', () => {
+  const rdna3 = profiles.find(
+    ({ name }) => name === 'windows-x64-amd-rdna3-rocm'
+  )
+  assert.equal(rdna3.features.rocm, true)
+  assert.match(rdna3.expected.upstream, /^win-rocm-\d+\.\d+-x64$/)
+  assert.equal(rdna3.expected.turboquant, 'windows-x64-vulkan')
+
+  const vega = profiles.find(({ name }) => name === 'windows-x64-amd-vega-vulkan')
+  assert.equal(vega.features.rocm, false)
+  assert.equal(vega.expected.upstream, 'win-vulkan-x64')
+  assert.equal(vega.expected.turboquant, 'windows-x64-vulkan')
+
+  // The gate reads the PCI device id, so every AMD profile must carry one.
+  for (const profile of [rdna3, vega]) {
+    const [gpu] = profile.system_info.gpus
+    assert.equal(gpu.vendor, 'AMD', profile.name)
+    assert.ok(Number.isInteger(gpu.vulkan_info.device_id), profile.name)
+  }
+})
+
 test('capture script emits a serializable profile without network access', () => {
   const captured = captureHardwareProfile()
   assert.equal(captured.schema_version, 1)
