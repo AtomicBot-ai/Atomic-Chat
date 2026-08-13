@@ -49,7 +49,12 @@ test('upstream manifest ties the mirror base to per-asset integrity data', () =>
   }
 
   for (const asset of manifest.assets) {
-    if (!mirrored) {
+    // The cudart companions are NVIDIA's own DLLs, already signed by NVIDIA and
+    // deliberately left on the upstream CDN, so they carry no hash even in a
+    // mirrored tag. Everything the mirror actually hosts is named `llama-*`.
+    const hosted = mirrored && asset.name.startsWith('llama-')
+
+    if (!hosted) {
       assert.equal(
         asset.sha256,
         undefined,

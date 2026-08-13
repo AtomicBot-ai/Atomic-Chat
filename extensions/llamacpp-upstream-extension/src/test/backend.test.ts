@@ -334,10 +334,13 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
     } as unknown as Response)
     vi.mocked(globalThis.fetch).mockRejectedValue(new Error('offline'))
 
+    // How many Windows variants the baseline carries changes with every synced
+    // tag, so assert the tag rather than the count.
     const backends = await fetchRemoteBackends()
-    expect(backends.map((backend) => backend.version)).toEqual(
-      Array(4).fill(BUNDLED_BASELINE_TAG)
-    )
+    expect(backends.length).toBeGreaterThan(0)
+    expect(
+      backends.every((backend) => backend.version === BUNDLED_BASELINE_TAG)
+    ).toBe(true)
   })
 
   it('follows a manifest tag newer than the bundled baseline', async () => {
