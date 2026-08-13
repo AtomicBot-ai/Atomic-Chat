@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Card, CardItem } from '@/containers/Card'
-import { SettingsPageHeader } from '@/containers/SettingsPageHeader'
+import HeaderPage from '@/containers/HeaderPage'
+import SettingsMenu from '@/containers/SettingsMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import {
   cn,
@@ -56,7 +57,6 @@ import {
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 import {
   IconAlertTriangle,
-  IconArrowLeft,
   IconFolderPlus,
   IconLoader,
   IconRefresh,
@@ -138,8 +138,7 @@ function ProviderDetail() {
     }
     refresh()
     const onFinished = (payload: { status: string; provider?: string }) => {
-      if ((payload?.provider ?? LOCAL_LLAMACPP_PROVIDER) !== providerName)
-        return
+      if ((payload?.provider ?? LOCAL_LLAMACPP_PROVIDER) !== providerName) return
       if (payload?.status === 'completed') refresh()
     }
     /// Hot-swap path: the extension already cleared its pending key and
@@ -1959,17 +1958,6 @@ function ProviderDetail() {
     recommendationPhase === 'downloading' ||
     recommendationPhase === 'hotswapping'
 
-  /// Engine tuning — backend version, speculative decoding, KV cache, extra
-  /// args — is owned by the Local tab of `/settings/providers`. For a local
-  /// engine this page is left with the one job the Hub cannot do: the model
-  /// list, with import from disk, per-model settings and deletion.
-  const hidesEngineSettings = !!provider && isLocalProvider(provider.provider)
-
-  /// The providers list defaults to its Local tab, so the back button carries
-  /// the tab this page was opened from. Keyed off the route param so it holds
-  /// even before the provider itself is resolved.
-  const backTab = isLocalProvider(providerName) ? 'local' : 'cloud'
-
   const optimalBackendLabel = isRecheckingBackend
     ? t('settings:backendUpdater.findOptimalChecking')
     : recommendationPhase === 'downloading'
@@ -1979,56 +1967,41 @@ function ProviderDetail() {
         : t('settings:backendUpdater.findOptimalAction')
 
   return (
-    <>
-      <SettingsPageHeader>
+    <div className="flex flex-col h-svh w-full">
+      <HeaderPage>
         <div className="flex items-center gap-2 w-full">
           <span className="font-medium text-base font-studio">
             {t('common:settings')}
           </span>
         </div>
-      </SettingsPageHeader>
-      <div className="p-4 pt-0 w-full overflow-y-auto">
-        <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="-ml-2 flex items-center gap-1 px-2 text-muted-foreground"
-                onClick={() =>
-                  navigate({
-                    to: route.settings.model_providers,
-                    search: { tab: backTab },
-                  })
-                }
-              >
-                <IconArrowLeft size={16} />
-                <span>{t('common:back')}</span>
-              </Button>
+      </HeaderPage>
+      <div className="flex h-[calc(100%-60px)]">
+        <SettingsMenu />
+        <div className="p-4 pt-0 w-full overflow-y-auto">
+          <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
+            <div className="flex items-center justify-between">
               <h1 className="font-medium text-base">
                 {getProviderTitle(providerName)}
               </h1>
+              <Switch
+                checked={provider?.active ?? false}
+                onCheckedChange={(checked) =>
+                  provider && updateProvider(providerName, { active: checked })
+                }
+              />
             </div>
-            <Switch
-              checked={provider?.active ?? false}
-              onCheckedChange={(checked) =>
-                provider && updateProvider(providerName, { active: checked })
-              }
-            />
-          </div>
 
-          <div
-            className={cn(
-              'flex flex-col gap-3',
-              provider &&
-                (provider.provider === 'llamacpp' ||
-                  provider.provider === 'llamacpp-upstream' ||
-                  provider.provider === 'mlx') &&
-                'flex-col-reverse'
-            )}
-          >
-            {/* Settings */}
-            {!hidesEngineSettings && (
+            <div
+              className={cn(
+                'flex flex-col gap-3',
+                provider &&
+                  (provider.provider === 'llamacpp' ||
+                    provider.provider === 'llamacpp-upstream' ||
+                    provider.provider === 'mlx') &&
+                  'flex-col-reverse'
+              )}
+            >
+              {/* Settings */}
               <Card>
                 {provider?.settings.map((setting, settingIndex) => {
                   // Concurrent Mode acts as a master toggle over `parallel`,
@@ -2112,8 +2085,8 @@ function ProviderDetail() {
                               ).value
                             }
                             /* Cross-disable while ANY speculative toggle
-                             is busy — prevents racy double-flips that
-                             would leave both flags true. */
+                               is busy — prevents racy double-flips that
+                               would leave both flags true. */
                             disabled={
                               isTogglingDflash ||
                               isDflashDownloading ||
@@ -2127,10 +2100,10 @@ function ProviderDetail() {
                             }}
                           />
                           {/* Inline spinner is intentionally hidden while a
-                            HF download is in flight — the left-panel
-                            DownloadManagement widget owns that progress
-                            UX. The spinner only covers the short MLX
-                            reload window after the download. */}
+                              HF download is in flight — the left-panel
+                              DownloadManagement widget owns that progress
+                              UX. The spinner only covers the short MLX
+                              reload window after the download. */}
                           {isTogglingDflash && (
                             <IconLoader
                               size={14}
@@ -2495,9 +2468,9 @@ function ProviderDetail() {
                               provider?.provider === 'mlx') && (
                               <div className="mt-2 flex flex-wrap gap-2">
                                 {/* The install and engine-update controls use
-                                  the same fixed width so they read as one
-                                  control group and never resize with their
-                                  labels. */}
+                                    the same fixed width so they read as one
+                                    control group and never resize with their
+                                    labels. */}
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -2519,12 +2492,12 @@ function ProviderDetail() {
                                   </span>
                                 </Button>
                                 {/* Engine updates land without an app
-                                  release, but both the version list and
-                                  the release index are snapshots taken at
-                                  extension load. Only the turboquant
-                                  provider resolves its catalog from that
-                                  index, so only it can refetch on
-                                  demand. */}
+                                    release, but both the version list and
+                                    the release index are snapshots taken at
+                                    extension load. Only the turboquant
+                                    provider resolves its catalog from that
+                                    index, so only it can refetch on
+                                    demand. */}
                                 {provider?.provider === 'llamacpp' && (
                                   <Button
                                     variant="outline"
@@ -2537,11 +2510,11 @@ function ProviderDetail() {
                                     className="w-[16rem]"
                                   >
                                     {/* Only the icon reflects progress. A
-                                      label that swapped to a longer
-                                      "Checking…" string would resize the
-                                      button mid-click and shift the row,
-                                      and no floor width fixes that for
-                                      every locale. */}
+                                        label that swapped to a longer
+                                        "Checking…" string would resize the
+                                        button mid-click and shift the row,
+                                        and no floor width fixes that for
+                                        every locale. */}
                                     {isCheckingEngineUpdate ? (
                                       <IconLoader
                                         size={12}
@@ -2559,29 +2532,29 @@ function ProviderDetail() {
                                   </Button>
                                 )}
                                 {/* "Find optimal backend" replaces the
-                                  legacy auto-popup nag — it runs the
-                                  same hardware detection on demand and
-                                  immediately starts the download when
-                                  a better backend is available. The
-                                  explicit min-width keeps layout
-                                  stable when the label flips between
-                                  "Find optimal backend" and the
-                                  shorter "Checking…" loading state.
-                                  Hidden on macOS because that platform
-                                  uses the separate turboquant
-                                  pipeline with no alternate backend
-                                  matrix. */}
+                                    legacy auto-popup nag — it runs the
+                                    same hardware detection on demand and
+                                    immediately starts the download when
+                                    a better backend is available. The
+                                    explicit min-width keeps layout
+                                    stable when the label flips between
+                                    "Find optimal backend" and the
+                                    shorter "Checking…" loading state.
+                                    Hidden on macOS because that platform
+                                    uses the separate turboquant
+                                    pipeline with no alternate backend
+                                    matrix. */}
                                 {/* Windows and Linux ship two local
-                                  llama.cpp providers side-by-side: the
-                                  default upstream `ggml-org/llama.cpp`
-                                  (`LOCAL_LLAMACPP_PROVIDER`) and the
-                                  turboquant fork (`llamacpp`) — see the
-                                  2026-06-23 ADR. Both resolve their own
-                                  backend catalog, so the button is shown
-                                  for either. The `useBackendUpdater`
-                                  instance was configured per-provider
-                                  above so the recommendation routes to
-                                  the right extension. */}
+                                    llama.cpp providers side-by-side: the
+                                    default upstream `ggml-org/llama.cpp`
+                                    (`LOCAL_LLAMACPP_PROVIDER`) and the
+                                    turboquant fork (`llamacpp`) — see the
+                                    2026-06-23 ADR. Both resolve their own
+                                    backend catalog, so the button is shown
+                                    for either. The `useBackendUpdater`
+                                    instance was configured per-provider
+                                    above so the recommendation routes to
+                                    the right extension. */}
                                 {(IS_WINDOWS || IS_LINUX) &&
                                   (provider?.provider ===
                                     LOCAL_LLAMACPP_PROVIDER ||
@@ -2610,15 +2583,15 @@ function ProviderDetail() {
                               </div>
                             )}
                           {/* Pending-backend banner: appears as soon as
-                            the just-downloaded backend is sitting in
-                            this provider's pending key and waiting
-                            for `activatePendingBackend()` on the
-                            next launch. The `version_backend`
-                            setting itself can't be hot-swapped while
-                            the llama-server is running, so without
-                            this pill the user sees no change
-                            between "I clicked Find optimal" and "I
-                            restarted the app". */}
+                              the just-downloaded backend is sitting in
+                              this provider's pending key and waiting
+                              for `activatePendingBackend()` on the
+                              next launch. The `version_backend`
+                              setting itself can't be hot-swapped while
+                              the llama-server is running, so without
+                              this pill the user sees no change
+                              between "I clicked Find optimal" and "I
+                              restarted the app". */}
                           {setting.key === 'version_backend' &&
                             (provider?.provider === 'llamacpp' ||
                               provider?.provider === LOCAL_LLAMACPP_PROVIDER) &&
@@ -2674,69 +2647,89 @@ function ProviderDetail() {
 
                 <DeleteProvider provider={provider} />
               </Card>
-            )}
 
-            {/* Models */}
-            <Card
-              header={
-                <div className="flex items-center justify-between mb-4">
-                  <h1 className="text-foreground font-medium text-base">
-                    {t('providers:models')}
-                  </h1>
-                  <div className="flex items-center gap-2">
-                    {provider &&
-                      provider.provider !== 'llamacpp' &&
-                      provider.provider !== 'llamacpp-upstream' &&
-                      provider.provider !== 'mlx' && (
-                        <>
+              {/* Models */}
+              <Card
+                header={
+                  <div className="flex items-center justify-between mb-4">
+                    <h1 className="text-foreground font-medium text-base">
+                      {t('providers:models')}
+                    </h1>
+                    <div className="flex items-center gap-2">
+                      {provider &&
+                        provider.provider !== 'llamacpp' &&
+                        provider.provider !== 'llamacpp-upstream' &&
+                        provider.provider !== 'mlx' && (
+                          <>
+                            <Button
+                              variant="secondary"
+                              size="icon-xs"
+                              onClick={handleRefreshModels}
+                              disabled={refreshingModels}
+                            >
+                              {refreshingModels ? (
+                                <IconLoader
+                                  size={18}
+                                  className="text-muted-foreground animate-spin"
+                                />
+                              ) : (
+                                <IconRefresh
+                                  size={18}
+                                  className="text-muted-foreground"
+                                />
+                              )}
+                            </Button>
+                            <DialogAddModel provider={provider} />
+                          </>
+                        )}
+                      {provider &&
+                        (provider.provider === 'llamacpp' ||
+                          provider.provider === 'llamacpp-upstream' ||
+                          provider.provider === 'mlx') &&
+                        !hasDownloadedModels && (
                           <Button
-                            variant="secondary"
-                            size="icon-xs"
-                            onClick={handleRefreshModels}
-                            disabled={refreshingModels}
+                            variant="default"
+                            size="sm"
+                            className="min-w-[8rem] justify-center"
+                            onClick={() =>
+                              navigate({
+                                to: route.hub.index,
+                                search: {
+                                  engine:
+                                    provider.provider === 'mlx'
+                                      ? 'mlx'
+                                      : 'gguf',
+                                },
+                              })
+                            }
                           >
-                            {refreshingModels ? (
-                              <IconLoader
-                                size={18}
-                                className="text-muted-foreground animate-spin"
-                              />
-                            ) : (
-                              <IconRefresh
-                                size={18}
-                                className="text-muted-foreground"
-                              />
-                            )}
+                            <IconSearch size={18} />
+                            <span>{t('providers:findModel')}</span>
                           </Button>
-                          <DialogAddModel provider={provider} />
-                        </>
-                      )}
-                    {provider &&
-                      (provider.provider === 'llamacpp' ||
-                        provider.provider === 'llamacpp-upstream' ||
-                        provider.provider === 'mlx') &&
-                      !hasDownloadedModels && (
-                        <Button
-                          variant="default"
-                          size="sm"
-                          className="min-w-[8rem] justify-center"
-                          onClick={() =>
-                            navigate({
-                              to: route.hub.index,
-                              search: {
-                                engine:
-                                  provider.provider === 'mlx' ? 'mlx' : 'gguf',
-                              },
-                            })
-                          }
-                        >
-                          <IconSearch size={18} />
-                          <span>{t('providers:findModel')}</span>
-                        </Button>
-                      )}
-                    {provider &&
-                      (provider.provider === 'llamacpp' ||
-                        provider.provider === 'llamacpp-upstream') && (
-                        <ImportVisionModelDialog
+                        )}
+                      {provider &&
+                        (provider.provider === 'llamacpp' ||
+                          provider.provider === 'llamacpp-upstream') && (
+                          <ImportVisionModelDialog
+                            provider={provider}
+                            onSuccess={handleModelImportSuccess}
+                            trigger={
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                className="min-w-[8rem] justify-center"
+                              >
+                                <IconFolderPlus
+                                  size={18}
+                                  className="text-muted-foreground"
+                                />
+                                <span>{t('providers:import')}</span>
+                              </Button>
+                            }
+                          />
+                        )}
+                      {provider && provider.provider === 'mlx' && (
+                        <ImportMlxModelDialog
                           provider={provider}
                           onSuccess={handleModelImportSuccess}
                           trigger={
@@ -2754,207 +2747,192 @@ function ProviderDetail() {
                           }
                         />
                       )}
-                    {provider && provider.provider === 'mlx' && (
-                      <ImportMlxModelDialog
-                        provider={provider}
-                        onSuccess={handleModelImportSuccess}
-                        trigger={
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            className="min-w-[8rem] justify-center"
-                          >
-                            <IconFolderPlus
-                              size={18}
-                              className="text-muted-foreground"
-                            />
-                            <span>{t('providers:import')}</span>
-                          </Button>
-                        }
-                      />
-                    )}
+                    </div>
                   </div>
-                </div>
-              }
-            >
-              {provider?.models.filter((m) => m.id !== EMBEDDING_MODEL_ID)
-                .length ? (
-                provider?.models
-                  .filter((m) => m.id !== EMBEDDING_MODEL_ID)
-                  .map((model, modelIndex) => {
-                    const capabilities = model.capabilities || []
-                    return (
-                      <CardItem
-                        key={modelIndex}
-                        title={
-                          <div className="flex items-center gap-2">
-                            <h1
-                              className="font-medium line-clamp-1 max-w-[16rem] lg:max-w-[24rem] xl:max-w-none"
-                              title={model.id}
-                            >
-                              {getModelDisplayName(model)}
-                            </h1>
-                            {model.source && (
-                              <ModelSourceBadge source={model.source} />
-                            )}
-                            {model.missing && (
-                              <MissingModelBadge source={model.source} />
-                            )}
-                            <Capabilities capabilities={capabilities} />
-                          </div>
-                        }
-                        actions={
-                          <div className="flex items-center gap-0.5">
-                            {(() => {
-                              // Favorite star sits on the far left of the
-                              // action row, before the edit icon. The slot
-                              // is always reserved so that toggling
-                              // visibility (e.g. after entering an API key
-                              // for a predefined cloud provider) doesn't
-                              // shift the surrounding icons. For custom
-                              // providers the star is always visible; for
-                              // predefined providers it's only visible once
-                              // an API key has been set.
-                              if (!provider) return null
-                              const isPredefined = isKnownProvider(
-                                provider.provider
-                              )
-                              const showFavorite =
-                                !isPredefined ||
-                                Boolean(provider.api_key?.length)
-                              return (
-                                <div
-                                  aria-hidden={!showFavorite}
-                                  className={
-                                    showFavorite
-                                      ? undefined
-                                      : 'invisible pointer-events-none'
-                                  }
-                                >
-                                  <FavoriteModelAction model={model} />
-                                </div>
-                              )
-                            })()}
-                            <DialogEditModel
-                              provider={provider}
-                              modelId={model.id}
-                            />
-                            {model.settings && (
-                              <ModelSetting provider={provider} model={model} />
-                            )}
-                            <DialogDeleteModel
-                              provider={provider}
-                              modelId={model.id}
-                            />
-                            {provider &&
-                              (() => {
-                                const isLocalEngine =
-                                  provider.provider === 'llamacpp' ||
-                                  provider.provider === 'llamacpp-upstream' ||
-                                  provider.provider === 'mlx'
-                                // Cloud providers need an API key before
-                                // they can be "started" (registered with the
-                                // proxy). Local engines don't.
-                                const needsApiKey =
-                                  !isLocalProvider(provider.provider) &&
-                                  !provider.api_key &&
-                                  !isKeylessRemoteProvider(provider)
-                                const isActive = activeModels.some(
-                                  (activeModel) => activeModel === model.id
+                }
+              >
+                {provider?.models.filter((m) => m.id !== EMBEDDING_MODEL_ID)
+                  .length ? (
+                  provider?.models
+                    .filter((m) => m.id !== EMBEDDING_MODEL_ID)
+                    .map((model, modelIndex) => {
+                      const capabilities = model.capabilities || []
+                      return (
+                        <CardItem
+                          key={modelIndex}
+                          title={
+                            <div className="flex items-center gap-2">
+                              <h1
+                                className="font-medium line-clamp-1 max-w-[16rem] lg:max-w-[24rem] xl:max-w-none"
+                                title={model.id}
+                              >
+                                {getModelDisplayName(model)}
+                              </h1>
+                              {model.source && (
+                                <ModelSourceBadge source={model.source} />
+                              )}
+                              {model.missing && (
+                                <MissingModelBadge source={model.source} />
+                              )}
+                              <Capabilities capabilities={capabilities} />
+                            </div>
+                          }
+                          actions={
+                            <div className="flex items-center gap-0.5">
+                              {(() => {
+                                // Favorite star sits on the far left of the
+                                // action row, before the edit icon. The slot
+                                // is always reserved so that toggling
+                                // visibility (e.g. after entering an API key
+                                // for a predefined cloud provider) doesn't
+                                // shift the surrounding icons. For custom
+                                // providers the star is always visible; for
+                                // predefined providers it's only visible once
+                                // an API key has been set.
+                                if (!provider) return null
+                                const isPredefined = isKnownProvider(
+                                  provider.provider
                                 )
-                                const isLoading = loadingModels.includes(
-                                  model.id
-                                )
-
-                                if (isActive) {
-                                  return (
-                                    <div className="ml-2">
-                                      <Button
-                                        size="sm"
-                                        variant="destructive"
-                                        onClick={() => handleStopModel()}
-                                      >
-                                        {t('providers:stop')}
-                                      </Button>
-                                    </div>
-                                  )
-                                }
-
-                                const startButton = (
-                                  <Button
-                                    size="sm"
-                                    disabled={isLoading || needsApiKey}
-                                    onClick={() => handleStartModel(model.id)}
-                                  >
-                                    {isLoading ? (
-                                      <div className="flex items-center gap-2">
-                                        <IconLoader
-                                          size={16}
-                                          className="animate-spin"
-                                        />
-                                      </div>
-                                    ) : (
-                                      t('providers:start')
-                                    )}
-                                  </Button>
-                                )
-
+                                const showFavorite =
+                                  !isPredefined ||
+                                  Boolean(provider.api_key?.length)
                                 return (
-                                  <div className="ml-2">
-                                    {needsApiKey && !isLocalEngine ? (
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <span>{startButton}</span>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                          Add API key first
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    ) : (
-                                      startButton
-                                    )}
+                                  <div
+                                    aria-hidden={!showFavorite}
+                                    className={
+                                      showFavorite
+                                        ? undefined
+                                        : 'invisible pointer-events-none'
+                                    }
+                                  >
+                                    <FavoriteModelAction model={model} />
                                   </div>
                                 )
                               })()}
-                          </div>
-                        }
-                      />
-                    )
-                  })
-              ) : (
-                <div className="-mt-2">
-                  <div className="flex items-center gap-2">
-                    <h6 className="font-medium text-base">
-                      {t('providers:noModelFound')}
-                    </h6>
-                  </div>
-                  <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
-                    {t('providers:noModelFoundDesc')}
-                    &nbsp;
-                    <Link to={route.hub.index}>{t('common:hub')}</Link>
-                  </p>
-                </div>
-              )}
-              {/* Show importing skeleton first if there's one */}
-              {importingModel && (
-                <CardItem
-                  key="importing-skeleton"
-                  title={
+                              <DialogEditModel
+                                provider={provider}
+                                modelId={model.id}
+                              />
+                              {model.settings && (
+                                <ModelSetting
+                                  provider={provider}
+                                  model={model}
+                                />
+                              )}
+                              <DialogDeleteModel
+                                provider={provider}
+                                modelId={model.id}
+                              />
+                              {provider &&
+                                (() => {
+                                  const isLocalEngine =
+                                    provider.provider === 'llamacpp' ||
+                                    provider.provider === 'llamacpp-upstream' ||
+                                    provider.provider === 'mlx'
+                                  // Cloud providers need an API key before
+                                  // they can be "started" (registered with the
+                                  // proxy). Local engines don't.
+                                  const needsApiKey =
+                                    !isLocalProvider(provider.provider) &&
+                                    !provider.api_key &&
+                                    !isKeylessRemoteProvider(provider)
+                                  const isActive = activeModels.some(
+                                    (activeModel) => activeModel === model.id
+                                  )
+                                  const isLoading = loadingModels.includes(
+                                    model.id
+                                  )
+
+                                  if (isActive) {
+                                    return (
+                                      <div className="ml-2">
+                                        <Button
+                                          size="sm"
+                                          variant="destructive"
+                                          onClick={() => handleStopModel()}
+                                        >
+                                          {t('providers:stop')}
+                                        </Button>
+                                      </div>
+                                    )
+                                  }
+
+                                  const startButton = (
+                                    <Button
+                                      size="sm"
+                                      disabled={isLoading || needsApiKey}
+                                      onClick={() => handleStartModel(model.id)}
+                                    >
+                                      {isLoading ? (
+                                        <div className="flex items-center gap-2">
+                                          <IconLoader
+                                            size={16}
+                                            className="animate-spin"
+                                          />
+                                        </div>
+                                      ) : (
+                                        t('providers:start')
+                                      )}
+                                    </Button>
+                                  )
+
+                                  return (
+                                    <div className="ml-2">
+                                      {needsApiKey && !isLocalEngine ? (
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <span>{startButton}</span>
+                                          </TooltipTrigger>
+                                          <TooltipContent>
+                                            Add API key first
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      ) : (
+                                        startButton
+                                      )}
+                                    </div>
+                                  )
+                                })()}
+                            </div>
+                          }
+                        />
+                      )
+                    })
+                ) : (
+                  <div className="-mt-2">
                     <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-2 animate-pulse">
-                        <div className="flex gap-2 px-2 py-1 rounded-full text-xs">
-                          <IconLoader size={16} className="animate-spin" />
-                          Importing...
-                        </div>
-                        <h1 className="font-medium line-clamp-1">
-                          {importingModel}
-                        </h1>
-                      </div>
+                      <h6 className="font-medium text-base">
+                        {t('providers:noModelFound')}
+                      </h6>
                     </div>
-                  }
-                />
-              )}
-            </Card>
+                    <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
+                      {t('providers:noModelFoundDesc')}
+                      &nbsp;
+                      <Link to={route.hub.index}>{t('common:hub')}</Link>
+                    </p>
+                  </div>
+                )}
+                {/* Show importing skeleton first if there's one */}
+                {importingModel && (
+                  <CardItem
+                    key="importing-skeleton"
+                    title={
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 animate-pulse">
+                          <div className="flex gap-2 px-2 py-1 rounded-full text-xs">
+                            <IconLoader size={16} className="animate-spin" />
+                            Importing...
+                          </div>
+                          <h1 className="font-medium line-clamp-1">
+                            {importingModel}
+                          </h1>
+                        </div>
+                      </div>
+                    }
+                  />
+                )}
+              </Card>
+            </div>
           </div>
         </div>
       </div>
@@ -3005,6 +2983,6 @@ function ProviderDetail() {
           void handleToggleLlamacppDflash(true, quant)
         }}
       />
-    </>
+    </div>
   )
 }

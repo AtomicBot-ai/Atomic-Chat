@@ -3,6 +3,10 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { Route as PrivacyRoute } from '../privacy'
 
 // Mock dependencies
+vi.mock('@/containers/SettingsMenu', () => ({
+  default: () => <div data-testid="settings-menu">Settings Menu</div>,
+}))
+
 vi.mock('@/containers/HeaderPage', () => ({
   default: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="header-page">{children}</div>
@@ -81,6 +85,7 @@ describe('Privacy Settings Route', () => {
     render(<Component />)
 
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
+    expect(screen.getByTestId('settings-menu')).toBeInTheDocument()
     expect(screen.getByText('common:settings')).toBeInTheDocument()
   })
 
@@ -130,11 +135,11 @@ describe('Privacy Settings Route', () => {
     const Component = PrivacyRoute.component as React.ComponentType
     render(<Component />)
 
-    // The sidebar lives in the `/settings` layout route now, so the page only
-    // owns its header and content pane.
     const headerPage = screen.getByTestId('header-page')
     expect(headerPage).toBeInTheDocument()
-    expect(headerPage.nextElementSibling).toHaveClass('overflow-y-auto')
+    
+    const settingsMenu = screen.getByTestId('settings-menu')
+    expect(settingsMenu).toBeInTheDocument()
   })
 
   it('should render switch in correct checked state based on productAnalytic', () => {

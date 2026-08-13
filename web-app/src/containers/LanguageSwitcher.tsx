@@ -39,17 +39,15 @@ export default function LanguageSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="w-36 justify-between">
-          <span className="truncate">
-            {LANGUAGES.find(
-              (lang: { value: string; label: string }) =>
-                lang.value === currentLanguage
-            )?.label || t('common:english')}
-          </span>
+        <Button variant="outline" size="sm" className="w-full justify-between">
+          {LANGUAGES.find(
+            (lang: { value: string; label: string }) =>
+              lang.value === currentLanguage
+          )?.label || t('common:english')}
           <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground ml-2" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-48">
+      <DropdownMenuContent align="end" className="w-40">
         {LANGUAGES.map((lang) => (
           <DropdownMenuItem
             key={lang.value}

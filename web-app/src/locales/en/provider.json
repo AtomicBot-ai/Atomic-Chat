@@ -1,56 +1,5 @@
 {
   "addProvider": "Add Provider",
   "addOpenAIProvider": "Add OpenAI Provider",
-  "enterNameForProvider": "Enter name for provider",
-  "local": "Local",
-  "cloud": "Cloud",
-  "localProviders": "Local Providers",
-  "cloudProviders": "Cloud Providers",
-  "addProviderTitle": "Add provider",
-  "addProviderDescription": "Choose an AI provider to connect with your own API key.",
-  "modelsAvailable": "Models available",
-  "keyConnectionOnly": "Key connection only",
-  "keySaved": "Key saved",
-  "needsApiKey": "Needs API key",
-  "allProvidersAdded": "All available providers are already added.",
-  "noCloudProviders": "No cloud providers yet.",
-  "noCloudProvidersHint": "Add one to use models from OpenAI, Anthropic, OpenRouter and others.",
-  "custom": "Custom",
-  "customDescription": "Any OpenAI-compatible endpoint",
-  "addKeyTitle": "Add {{provider}} key",
-  "addKeyDescription": "Paste your API key to connect this provider.",
-  "supportsModelListing": "Supports model listing",
-  "apiKey": "API key",
-  "saveKey": "Save key",
-  "keyProtected": "Your key is protected and will never be exposed.",
-  "runtime": {
-    "title": "Runtimes",
-    "description": "Engines that run models on this machine.",
-    "empty": "No local engine is available on this platform.",
-    "models": "Models",
-    "configuring": "Setting up…",
-    "bundled": "Bundled with app",
-    "blurb": {
-      "llamacpp": "Our llama.cpp fork with TurboQuant KV cache.",
-      "llamacpp-upstream": "Official ggml-org llama.cpp builds.",
-      "mlx": "Apple Silicon engine, bundled with the app."
-    }
-  },
-  "packs": {
-    "manage": "Manage installed packs",
-    "title": "Installed engine packs",
-    "description": "Every engine build on this machine. Install your own, or remove ones you no longer need.",
-    "loading": "Reading installed packs…",
-    "empty": "No pack installed for this engine yet.",
-    "installedCount": "{{count}} installed",
-    "installFromFile": "Install from file",
-    "installing": "Installing…",
-    "reveal": "Reveal",
-    "revealFailed": "Could not open the pack folder",
-    "delete": "Delete",
-    "deleted": "Pack removed",
-    "deleteFailed": "Could not remove the pack",
-    "inUse": "in use",
-    "inUseHint": "Switch to another version before removing this one."
-  }
+  "enterNameForProvider": "Enter name for provider"
 }

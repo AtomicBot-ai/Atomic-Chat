@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { SettingsPageHeader } from '@/containers/SettingsPageHeader'
 import { route } from '@/constants/routes'
+import HeaderPage from '@/containers/HeaderPage'
+import SettingsMenu from '@/containers/SettingsMenu'
 import { Card, CardItem } from '@/containers/Card'
 import {
   IconPencil,
@@ -395,337 +396,342 @@ function MCPServersDesktop() {
 
   return (
     <Fragment>
-      <SettingsPageHeader>
-        <div
-          className={cn(
-            'flex items-center justify-between w-full mr-2 pr-3',
-            !IS_MACOS && 'pr-30'
-          )}
-        >
-          <span className="font-medium text-base font-studio">
-            {t('common:settings')}
-          </span>
-          {activeTab === 'servers' && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleOpenDialog()}
-              className="relative z-50"
-            >
-              <IconPlus size={18} className="text-muted-foreground" />
-              {t('mcp-servers:addServer')}
-            </Button>
-          )}
-        </div>
-      </SettingsPageHeader>
-      <div className="p-4 pt-0 w-full overflow-y-auto flex flex-col">
-        <div className="flex gap-1 p-1 bg-secondary/50 rounded-lg mb-4 mt-4 sticky top-0 z-10">
-          <button
-            type="button"
-            onClick={() => setActiveTab('servers')}
+      <div className="flex flex-col h-svh w-full">
+        <HeaderPage>
+          <div
             className={cn(
-              'flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors flex-1 justify-center',
-              activeTab === 'servers'
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
+              'flex items-center justify-between w-full mr-2 pr-3',
+              !IS_MACOS && 'pr-30'
             )}
           >
-            {t('mcp-servers:tabs.servers')}
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('logs')}
-            className={cn(
-              'flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors flex-1 justify-center',
-              activeTab === 'logs'
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
+            <span className="font-medium text-base font-studio">
+              {t('common:settings')}
+            </span>
+            {activeTab === 'servers' && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleOpenDialog()}
+                className="relative z-50"
+              >
+                <IconPlus size={18} className="text-muted-foreground" />
+                {t('mcp-servers:addServer')}
+              </Button>
             )}
-          >
-            {t('mcp-servers:tabs.logs')}
-          </button>
-        </div>
-        {activeTab === 'servers' && (
-        <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
-          <Card
-            header={
-              <div className="flex flex-col mb-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <h1 className="text-foreground font-medium text-base font-studio">
-                      {t('mcp-servers:title')}
-                    </h1>
-                    <div className="text-xs bg-secondary border text-muted-foreground rounded-full py-0.5 px-2">
-                      <span>{t('mcp-servers:experimental')}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-0.5">
-                    <Button
-                      onClick={() => handleOpenJsonEditor()}
-                      title={t('mcp-servers:editAllJson')}
-                      size="icon-xs"
-                      variant="ghost"
-                    >
-                      <IconCodeCircle
-                        size={18}
-                        className="text-muted-foreground"
-                      />
-                    </Button>
-                  </div>
-                </div>
-                <p className="text-sm mt-1">
-                  {t('mcp-servers:findMore')}{' '}
-                  <a
-                    href="https://mcp.so/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:underline"
-                  >
-                    mcp.so
-                  </a>
-                </p>
-              </div>
-            }
-          >
-            <CardItem
-              title={t('mcp-servers:allowPermissions')}
-              description={t('mcp-servers:allowPermissionsDesc')}
-              actions={
-                <div className="shrink-0 ml-4">
-                  <Switch
-                    checked={allowAllMCPPermissions}
-                    onCheckedChange={setAllowAllMCPPermissions}
-                  />
-                </div>
-              }
-            />
-            <CardItem
-              title={t('mcp-servers:runtimeSettings.toolCallTimeout')}
-              description={t(
-                'mcp-servers:runtimeSettings.toolCallTimeoutDesc'
-              )}
-              actions={
-                <Input
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={settings.toolCallTimeoutSeconds}
-                  onChange={(event) =>
-                    updateToolCallTimeout(event.target.value)
-                  }
-                  onBlur={() => {
-                    void syncServers()
-                  }}
-                  className="w-28"
-                />
-              }
-            />
-          </Card>
-
-          {visibleMcpServerEntries.length === 0 ? (
-            <div className="py-4 text-center font-medium text-muted-foreground">
-              {t('mcp-servers:noServers')}
+          </div>
+        </HeaderPage>
+        <div className="flex h-[calc(100%-60px)]">
+          <SettingsMenu />
+          <div className="p-4 pt-0 w-full overflow-y-auto flex flex-col">
+            <div className="flex gap-1 p-1 bg-secondary/50 rounded-lg mb-4 mt-4 sticky top-0 z-10">
+              <button
+                type="button"
+                onClick={() => setActiveTab('servers')}
+                className={cn(
+                  'flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors flex-1 justify-center',
+                  activeTab === 'servers'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {t('mcp-servers:tabs.servers')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('logs')}
+                className={cn(
+                  'flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors flex-1 justify-center',
+                  activeTab === 'logs'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {t('mcp-servers:tabs.logs')}
+              </button>
             </div>
-          ) : (
-            visibleMcpServerEntries.map(([key, config], index) => (
-              <Card key={`${key}-${index}`}>
-                <CardItem
-                  align="start"
-                  title={
-                    <div className="flex items-center gap-x-2">
-                      <div
-                        title={serverStatusByName.get(key)?.error}
-                        aria-label={
-                          serverStatusByName.get(key)?.status === 'error'
-                            ? `MCP server error: ${serverStatusByName.get(key)?.error}`
-                            : undefined
-                        }
-                        className={twMerge(
-                          'size-2 rounded-full',
-                          serverStatusByName.get(key)?.status === 'connected'
-                            ? 'bg-green-600 dark:bg-green-600'
-                            : serverStatusByName.get(key)?.status === 'error'
-                              ? 'bg-red-600 dark:bg-red-600'
-                              : 'bg-secondary'
-                        )}
-                      />
-                      <h1 className="text-foreground text-base capitalize font-studio">
-                        {key}
-                      </h1>
-                      {config.official && (
-                        <div className="flex items-center gap-1.5 px-2 py-0.5 text-xs bg-secondary border rounded-sm">
-                          <img
-                            src="/images/transparent-logo.png"
-                            alt="Atomic Bot"
-                            className="w-3 h-3 object-contain"
-                          />
-                          <span>Official</span>
+            {activeTab === 'servers' && (
+            <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
+              <Card
+                header={
+                  <div className="flex flex-col mb-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <h1 className="text-foreground font-medium text-base font-studio">
+                          {t('mcp-servers:title')}
+                        </h1>
+                        <div className="text-xs bg-secondary border text-muted-foreground rounded-full py-0.5 px-2">
+                          <span>{t('mcp-servers:experimental')}</span>
                         </div>
-                      )}
-                    </div>
-                  }
-                  descriptionOutside={
-                    <div className="text-sm text-muted-foreground">
-                      <div className="mb-1">
-                        Transport:{' '}
-                        <span className="uppercase">
-                          {config.type || 'stdio'}
-                        </span>
                       </div>
-                      {serverStatusByName.get(key)?.status === 'error' && (
-                        <div
-                          className="mb-2 text-destructive break-words"
-                          title={serverStatusByName.get(key)?.error}
-                        >
-                          {serverStatusByName.get(key)?.error}
-                        </div>
-                      )}
 
-                      {config.type === 'stdio' || !config.type ? (
-                        <>
-                          <div>
-                            {t('mcp-servers:command')}: {config.command}
-                          </div>
-                          <div className="my-1 break-all">
-                            {t('mcp-servers:args')}:{' '}
-                            {config?.args?.join(', ')}
-                          </div>
-                          {config.env &&
-                            Object.keys(config.env).length > 0 && (
-                              <div className="break-all">
-                                {t('mcp-servers:env')}:{' '}
-                                {Object.entries(config.env)
-                                  .map(([key]) => `${key}=******`)
-                                  .join(', ')}
-                              </div>
-                            )}
-                          {config.official && (
-                            <div className="mt-2 text-xs text-muted-foreground pt-2">
-                              <p className="mb-1">
-                                Requires the Atomic Bot browser extension to
-                                be installed in your Chrome-based browser.
-                              </p>
-                              <a
-                                href="https://chromewebstore.google.com/detail/jan-browser-mcp/mkciifcjehgnpaigoiaakdgabbpfppal"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-500 hover:underline"
-                              >
-                                Install Extension →
-                              </a>
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <>
-                          <div className="break-all">
-                            URL: {maskSensitiveUrl(config.url || '')}
-                          </div>
-                          {config.headers &&
-                            Object.keys(config.headers).length > 0 && (
-                              <div className="my-1 break-all">
-                                Headers:{' '}
-                                {Object.entries(config.headers)
-                                  .map(([key]) => `${key}=******`)
-                                  .join(', ')}
-                              </div>
-                            )}
-                          {config.timeout && (
-                            <div>Timeout: {config.timeout}s</div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  }
-                  actions={
-                    <div className="flex items-center gap-0.5">
-                      <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        onClick={() => handleOpenJsonEditor(key)}
-                        title={t('mcp-servers:editJson.title', {
-                          serverName: key,
-                        })}
-                      >
-                        <IconCodeCircle
-                          size={18}
-                          className="text-muted-foreground"
-                        />
-                      </Button>
-                      <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        onClick={() => handleEdit(key)}
-                        title={t('mcp-servers:editServer')}
-                      >
-                        <IconPencil
-                          size={18}
-                          className="text-muted-foreground"
-                        />
-                      </Button>
-                      <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        onClick={() => handleDeleteClick(key)}
-                        title={t('mcp-servers:deleteServer.title')}
-                      >
-                        <IconTrash
-                          size={18}
-                          className="text-muted-foreground"
-                        />
-                      </Button>
-                      <div className="ml-2">
-                        <Switch
-                          checked={config.active}
-                          loading={!!loadingServers[key]}
-                          onCheckedChange={(checked) =>
-                            toggleServer(key, checked)
-                          }
-                        />
+                      <div className="flex items-center gap-0.5">
+                        <Button
+                          onClick={() => handleOpenJsonEditor()}
+                          title={t('mcp-servers:editAllJson')}
+                          size="icon-xs"
+                          variant="ghost"
+                        >
+                          <IconCodeCircle
+                            size={18}
+                            className="text-muted-foreground"
+                          />
+                        </Button>
                       </div>
                     </div>
+                    <p className="text-sm mt-1">
+                      {t('mcp-servers:findMore')}{' '}
+                      <a
+                        href="https://mcp.so/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        mcp.so
+                      </a>
+                    </p>
+                  </div>
+                }
+              >
+                <CardItem
+                  title={t('mcp-servers:allowPermissions')}
+                  description={t('mcp-servers:allowPermissionsDesc')}
+                  actions={
+                    <div className="shrink-0 ml-4">
+                      <Switch
+                        checked={allowAllMCPPermissions}
+                        onCheckedChange={setAllowAllMCPPermissions}
+                      />
+                    </div>
+                  }
+                />
+                <CardItem
+                  title={t('mcp-servers:runtimeSettings.toolCallTimeout')}
+                  description={t(
+                    'mcp-servers:runtimeSettings.toolCallTimeoutDesc'
+                  )}
+                  actions={
+                    <Input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={settings.toolCallTimeoutSeconds}
+                      onChange={(event) =>
+                        updateToolCallTimeout(event.target.value)
+                      }
+                      onBlur={() => {
+                        void syncServers()
+                      }}
+                      className="w-28"
+                    />
                   }
                 />
               </Card>
-            ))
-          )}
-        </div>
-        )}
-        {activeTab === 'logs' && (
-          <div className="flex flex-col gap-3 w-full flex-1 min-h-0">
-            <Card>
-              <CardItem
-                title={t('mcp-servers:logs.serverFilterLabel')}
-                actions={
-                  <select
-                    value={selectedLogServer ?? ''}
-                    onChange={(event) =>
-                      setSelectedLogServer(
-                        event.target.value === ''
-                          ? undefined
-                          : event.target.value
-                      )
-                    }
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                  >
-                    <option value="">
-                      {t('mcp-servers:logs.allServers')}
-                    </option>
-                    {visibleMcpServerEntries.map(([key]) => (
-                      <option key={key} value={key}>
-                        {key}
-                      </option>
-                    ))}
-                  </select>
-                }
-              />
-            </Card>
-            <div className="flex-1 min-h-[300px]">
-              <MCPLogViewer serverName={selectedLogServer} />
+
+              {visibleMcpServerEntries.length === 0 ? (
+                <div className="py-4 text-center font-medium text-muted-foreground">
+                  {t('mcp-servers:noServers')}
+                </div>
+              ) : (
+                visibleMcpServerEntries.map(([key, config], index) => (
+                  <Card key={`${key}-${index}`}>
+                    <CardItem
+                      align="start"
+                      title={
+                        <div className="flex items-center gap-x-2">
+                          <div
+                            title={serverStatusByName.get(key)?.error}
+                            aria-label={
+                              serverStatusByName.get(key)?.status === 'error'
+                                ? `MCP server error: ${serverStatusByName.get(key)?.error}`
+                                : undefined
+                            }
+                            className={twMerge(
+                              'size-2 rounded-full',
+                              serverStatusByName.get(key)?.status === 'connected'
+                                ? 'bg-green-600 dark:bg-green-600'
+                                : serverStatusByName.get(key)?.status === 'error'
+                                  ? 'bg-red-600 dark:bg-red-600'
+                                  : 'bg-secondary'
+                            )}
+                          />
+                          <h1 className="text-foreground text-base capitalize font-studio">
+                            {key}
+                          </h1>
+                          {config.official && (
+                            <div className="flex items-center gap-1.5 px-2 py-0.5 text-xs bg-secondary border rounded-sm">
+                              <img
+                                src="/images/transparent-logo.png"
+                                alt="Atomic Bot"
+                                className="w-3 h-3 object-contain"
+                              />
+                              <span>Official</span>
+                            </div>
+                          )}
+                        </div>
+                      }
+                      descriptionOutside={
+                        <div className="text-sm text-muted-foreground">
+                          <div className="mb-1">
+                            Transport:{' '}
+                            <span className="uppercase">
+                              {config.type || 'stdio'}
+                            </span>
+                          </div>
+                          {serverStatusByName.get(key)?.status === 'error' && (
+                            <div
+                              className="mb-2 text-destructive break-words"
+                              title={serverStatusByName.get(key)?.error}
+                            >
+                              {serverStatusByName.get(key)?.error}
+                            </div>
+                          )}
+
+                          {config.type === 'stdio' || !config.type ? (
+                            <>
+                              <div>
+                                {t('mcp-servers:command')}: {config.command}
+                              </div>
+                              <div className="my-1 break-all">
+                                {t('mcp-servers:args')}:{' '}
+                                {config?.args?.join(', ')}
+                              </div>
+                              {config.env &&
+                                Object.keys(config.env).length > 0 && (
+                                  <div className="break-all">
+                                    {t('mcp-servers:env')}:{' '}
+                                    {Object.entries(config.env)
+                                      .map(([key]) => `${key}=******`)
+                                      .join(', ')}
+                                  </div>
+                                )}
+                              {config.official && (
+                                <div className="mt-2 text-xs text-muted-foreground pt-2">
+                                  <p className="mb-1">
+                                    Requires the Atomic Bot browser extension to
+                                    be installed in your Chrome-based browser.
+                                  </p>
+                                  <a
+                                    href="https://chromewebstore.google.com/detail/jan-browser-mcp/mkciifcjehgnpaigoiaakdgabbpfppal"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-500 hover:underline"
+                                  >
+                                    Install Extension →
+                                  </a>
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <div className="break-all">
+                                URL: {maskSensitiveUrl(config.url || '')}
+                              </div>
+                              {config.headers &&
+                                Object.keys(config.headers).length > 0 && (
+                                  <div className="my-1 break-all">
+                                    Headers:{' '}
+                                    {Object.entries(config.headers)
+                                      .map(([key]) => `${key}=******`)
+                                      .join(', ')}
+                                  </div>
+                                )}
+                              {config.timeout && (
+                                <div>Timeout: {config.timeout}s</div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      }
+                      actions={
+                        <div className="flex items-center gap-0.5">
+                          <Button
+                            size="icon-xs"
+                            variant="ghost"
+                            onClick={() => handleOpenJsonEditor(key)}
+                            title={t('mcp-servers:editJson.title', {
+                              serverName: key,
+                            })}
+                          >
+                            <IconCodeCircle
+                              size={18}
+                              className="text-muted-foreground"
+                            />
+                          </Button>
+                          <Button
+                            size="icon-xs"
+                            variant="ghost"
+                            onClick={() => handleEdit(key)}
+                            title={t('mcp-servers:editServer')}
+                          >
+                            <IconPencil
+                              size={18}
+                              className="text-muted-foreground"
+                            />
+                          </Button>
+                          <Button
+                            size="icon-xs"
+                            variant="ghost"
+                            onClick={() => handleDeleteClick(key)}
+                            title={t('mcp-servers:deleteServer.title')}
+                          >
+                            <IconTrash
+                              size={18}
+                              className="text-muted-foreground"
+                            />
+                          </Button>
+                          <div className="ml-2">
+                            <Switch
+                              checked={config.active}
+                              loading={!!loadingServers[key]}
+                              onCheckedChange={(checked) =>
+                                toggleServer(key, checked)
+                              }
+                            />
+                          </div>
+                        </div>
+                      }
+                    />
+                  </Card>
+                ))
+              )}
             </div>
+            )}
+            {activeTab === 'logs' && (
+              <div className="flex flex-col gap-3 w-full flex-1 min-h-0">
+                <Card>
+                  <CardItem
+                    title={t('mcp-servers:logs.serverFilterLabel')}
+                    actions={
+                      <select
+                        value={selectedLogServer ?? ''}
+                        onChange={(event) =>
+                          setSelectedLogServer(
+                            event.target.value === ''
+                              ? undefined
+                              : event.target.value
+                          )
+                        }
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                      >
+                        <option value="">
+                          {t('mcp-servers:logs.allServers')}
+                        </option>
+                        {visibleMcpServerEntries.map(([key]) => (
+                          <option key={key} value={key}>
+                            {key}
+                          </option>
+                        ))}
+                      </select>
+                    }
+                  />
+                </Card>
+                <div className="flex-1 min-h-[300px]">
+                  <MCPLogViewer serverName={selectedLogServer} />
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {/* Use the AddEditMCPServer component */}

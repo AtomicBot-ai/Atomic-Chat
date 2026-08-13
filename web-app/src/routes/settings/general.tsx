@@ -1,8 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { SettingsPageHeader } from '@/containers/SettingsPageHeader'
 import { invoke } from '@tauri-apps/api/core'
 import { isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart'
 import { route } from '@/constants/routes'
+import SettingsMenu from '@/containers/SettingsMenu'
+import HeaderPage from '@/containers/HeaderPage'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Card, CardItem } from '@/containers/Card'
@@ -31,10 +32,6 @@ import { SystemEvent } from '@/types/events'
 import { Input } from '@/components/ui/input'
 import { useHardware } from '@/hooks/useHardware'
 import LanguageSwitcher from '@/containers/LanguageSwitcher'
-import SettingsModeSwitcher from '@/containers/SettingsModeSwitcher'
-import { ThemeSwitcher } from '@/containers/ThemeSwitcher'
-import { FontSizeSwitcher } from '@/containers/FontSizeSwitcher'
-import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { isRootDir } from '@/utils/path'
 import { useAnalytic } from '@/hooks/useAnalytic'
 import posthog from 'posthog-js'
@@ -67,10 +64,7 @@ function General() {
     setPreloadModelOnStartup,
     reasoningBudget,
     setReasoningBudget,
-    settingsMode,
   } = useGeneralSetting()
-  const isAdvanced = settingsMode === 'advanced'
-  const { resetInterface } = useInterfaceSettings()
   const allowAllMCPPermissions = useToolApproval(
     (state) => state.allowAllMCPPermissions
   )
@@ -161,9 +155,7 @@ function General() {
       setCliPath(s.path)
       toast.success(
         t('settings:general.atomicBotCliInstalledToast', {
-          path: s.path
-            ? formatAtomicCliDisplayPath(s.path)
-            : ATOMIC_CLI_COMMAND,
+          path: s.path ? formatAtomicCliDisplayPath(s.path) : ATOMIC_CLI_COMMAND,
         })
       )
     } catch (e) {
@@ -295,242 +287,181 @@ function General() {
   )
 
   return (
-    <>
-      <SettingsPageHeader>
+    <div className="flex flex-col h-svh w-full">
+      <HeaderPage>
         <div className="flex items-center gap-2 w-full">
           <span className="font-medium text-base font-studio">
             {t('common:settings')}
           </span>
         </div>
-      </SettingsPageHeader>
-      <div className="p-4 pt-0 w-full overflow-y-auto">
-        <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
-          {/* General */}
-          <Card title={t('common:general')}>
-            <CardItem
-              title={t('settings:general.appVersion')}
-              actions={
-                <span className="text-foreground font-medium">
-                  v{VERSION}
-                </span>
-              }
-            />
-            {!AUTO_UPDATER_DISABLED && (
+      </HeaderPage>
+      <div className="flex h-[calc(100%-60px)]">
+        <SettingsMenu />
+        <div className="p-4 pt-0 w-full overflow-y-auto">
+          <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
+            {/* General */}
+            <Card title={t('common:general')}>
               <CardItem
-                title={t('settings:general.checkForUpdates')}
-                description={t('settings:general.checkForUpdatesDesc')}
-                className="items-center flex-row gap-y-2"
+                title={t('settings:general.appVersion')}
                 actions={
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleCheckForUpdate}
-                    disabled={isCheckingUpdate}
-                  >
-                    {isCheckingUpdate
-                      ? t('settings:general.checkingForUpdates')
-                      : t('settings:general.checkForUpdates')}
-                  </Button>
+                  <span className="text-foreground font-medium">
+                    v{VERSION}
+                  </span>
                 }
               />
-            )}
-            <CardItem
-              title={t('common:language')}
-              actions={<LanguageSwitcher />}
-            />
-            <CardItem
-              title={t('settings:general.settingsMode')}
-              actions={<SettingsModeSwitcher />}
-            />
-            {canManageAutostart && (
-              <CardItem
-                title={t('settings:general.launchAtStartup')}
-                description={t('settings:general.launchAtStartupDesc')}
-                actions={
-                  <Switch
-                    checked={autostartEnabled ?? false}
-                    disabled={autostartEnabled === null}
-                    onCheckedChange={handleToggleAutostart}
-                  />
-                }
-              />
-            )}
-          </Card>
-
-          {/* Interface */}
-          <Card title={t('settings:interface.title')}>
-            <CardItem
-              title={t('settings:interface.theme')}
-              description={t('settings:interface.themeDesc')}
-              actions={<ThemeSwitcher />}
-            />
-            <CardItem
-              title={t('settings:interface.fontSize')}
-              description={t('settings:interface.fontSizeDesc')}
-              actions={<FontSizeSwitcher />}
-            />
-            <CardItem
-              title={t('settings:interface.resetToDefault')}
-              description={t('settings:interface.resetToDefaultDesc')}
-              actions={
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => {
-                    resetInterface()
-                    toast.success(
-                      t('settings:interface.resetInterfaceSuccess'),
-                      {
-                        id: 'reset-interface',
-                        description: t(
-                          'settings:interface.resetInterfaceSuccessDesc'
-                        ),
-                      }
-                    )
-                  }}
-                >
-                  {t('common:reset')}
-                </Button>
-              }
-            />
-          </Card>
-
-          <Card title="Contact Us">
-            <CardItem
-              title="Email"
-              description="Reach Atomic Chat support by email."
-              actions={
-                <a
-                  href="mailto:support@atomic.chat"
-                  onClick={(event) => {
-                    event.preventDefault()
-                    void handleOpenContactLink('mailto:support@atomic.chat')
-                  }}
-                  className="text-foreground font-medium hover:underline"
-                >
-                  support@atomic.chat
-                </a>
-              }
-            />
-            <CardItem
-              title="X"
-              description="Follow Atomic Chat on X."
-              actions={
-                <a
-                  href="https://x.com/atomic_chat_hq"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(event) => {
-                    event.preventDefault()
-                    void handleOpenContactLink('https://x.com/atomic_chat_hq')
-                  }}
-                  className="text-foreground font-medium hover:underline"
-                >
-                  @atomic_chat_hq
-                </a>
-              }
-            />
-            <CardItem
-              title="GitHub"
-              description="View the Atomic Chat repository on GitHub."
-              actions={
-                <a
-                  href="https://github.com/AtomicBot-ai/Atomic-Chat"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(event) => {
-                    event.preventDefault()
-                    void handleOpenContactLink(
-                      'https://github.com/AtomicBot-ai/Atomic-Chat'
-                    )
-                  }}
-                  className="text-foreground font-medium hover:underline"
-                >
-                  AtomicBot-ai/Atomic-Chat
-                </a>
-              }
-            />
-            <CardItem
-              title="Discord"
-              description="Join the Atomic Chat community on Discord."
-              actions={
-                <a
-                  href="https://discord.com/invite/8wGSsvmg4V"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(event) => {
-                    event.preventDefault()
-                    void handleOpenContactLink(
-                      'https://discord.com/invite/8wGSsvmg4V'
-                    )
-                  }}
-                  className="text-foreground font-medium hover:underline"
-                >
-                  discord.com/invite/8wGSsvmg4V
-                </a>
-              }
-            />
-          </Card>
-
-          {/* Chat behavior */}
-          <Card title={t('settings:chatBehavior.title')}>
-            <CardItem
-              title={t('settings:chatBehavior.autoApproveTools')}
-              description={t('settings:chatBehavior.autoApproveToolsDesc')}
-              actions={
-                <Switch
-                  checked={allowAllMCPPermissions}
-                  onCheckedChange={setAllowAllMCPPermissions}
+              {!AUTO_UPDATER_DISABLED && (
+                <CardItem
+                  title={t('settings:general.checkForUpdates')}
+                  description={t('settings:general.checkForUpdatesDesc')}
+                  className="items-center flex-row gap-y-2"
+                  actions={
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleCheckForUpdate}
+                      disabled={isCheckingUpdate}
+                    >
+                      {isCheckingUpdate
+                        ? t('settings:general.checkingForUpdates')
+                        : t('settings:general.checkForUpdates')}
+                    </Button>
+                  }
                 />
-              }
-            />
-            <CardItem
-              title={t('settings:chatBehavior.desktopNotifications')}
-              description={t(
-                'settings:chatBehavior.desktopNotificationsDesc'
               )}
-              actions={
-                <Switch
-                  checked={notificationsGloballyEnabled}
-                  onCheckedChange={setNotificationsGloballyEnabled}
+              <CardItem
+                title={t('common:language')}
+                actions={<LanguageSwitcher />}
+              />
+              {canManageAutostart && (
+                <CardItem
+                  title={t('settings:general.launchAtStartup')}
+                  description={t('settings:general.launchAtStartupDesc')}
+                  actions={
+                    <Switch
+                      checked={autostartEnabled ?? false}
+                      disabled={autostartEnabled === null}
+                      onCheckedChange={handleToggleAutostart}
+                    />
+                  }
                 />
-              }
-            />
-          </Card>
+              )}
+            </Card>
 
-          {/* Privacy / Analytics */}
-          <Card
-            header={
-              <div className="flex items-center justify-between mb-4">
-                <h1 className="font-medium text-foreground text-base">
-                  {t('settings:privacy.analytics')}
-                </h1>
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={productAnalytic}
-                    onCheckedChange={(state) => {
-                      if (state) {
-                        posthog.opt_in_capturing()
-                      } else {
-                        posthog.opt_out_capturing()
-                      }
-                      setProductAnalytic(state)
+            <Card title="Contact Us">
+              <CardItem
+                title="Email"
+                description="Reach Atomic Chat support by email."
+                actions={
+                  <a
+                    href="mailto:support@atomic.chat"
+                    onClick={(event) => {
+                      event.preventDefault()
+                      void handleOpenContactLink('mailto:support@atomic.chat')
                     }}
-                  />
-                </div>
-              </div>
-            }
-          >
-            <CardItem
-              title={t('settings:privacy.helpUsImprove')}
-              description={<p>{t('settings:privacy.helpUsImproveDesc')}</p>}
-              align="start"
-            />
-          </Card>
+                    className="text-foreground font-medium hover:underline"
+                  >
+                    support@atomic.chat
+                  </a>
+                }
+              />
+              <CardItem
+                title="X"
+                description="Follow Atomic Chat on X."
+                actions={
+                  <a
+                    href="https://x.com/atomic_chat_hq"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(event) => {
+                      event.preventDefault()
+                      void handleOpenContactLink('https://x.com/atomic_chat_hq')
+                    }}
+                    className="text-foreground font-medium hover:underline"
+                  >
+                    @atomic_chat_hq
+                  </a>
+                }
+              />
+              <CardItem
+                title="GitHub"
+                description="View the Atomic Chat repository on GitHub."
+                actions={
+                  <a
+                    href="https://github.com/AtomicBot-ai/Atomic-Chat"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(event) => {
+                      event.preventDefault()
+                      void handleOpenContactLink(
+                        'https://github.com/AtomicBot-ai/Atomic-Chat'
+                      )
+                    }}
+                    className="text-foreground font-medium hover:underline"
+                  >
+                    AtomicBot-ai/Atomic-Chat
+                  </a>
+                }
+              />
+            </Card>
 
-          {/* Data folder - Desktop only */}
-          <Card title={t('common:dataFolder')}>
-            {isAdvanced && (
+            {/* Chat behavior */}
+            <Card title={t('settings:chatBehavior.title')}>
+              <CardItem
+                title={t('settings:chatBehavior.autoApproveTools')}
+                description={t('settings:chatBehavior.autoApproveToolsDesc')}
+                actions={
+                  <Switch
+                    checked={allowAllMCPPermissions}
+                    onCheckedChange={setAllowAllMCPPermissions}
+                  />
+                }
+              />
+              <CardItem
+                title={t('settings:chatBehavior.desktopNotifications')}
+                description={t(
+                  'settings:chatBehavior.desktopNotificationsDesc'
+                )}
+                actions={
+                  <Switch
+                    checked={notificationsGloballyEnabled}
+                    onCheckedChange={setNotificationsGloballyEnabled}
+                  />
+                }
+              />
+            </Card>
+
+            {/* Privacy / Analytics */}
+            <Card
+              header={
+                <div className="flex items-center justify-between mb-4">
+                  <h1 className="font-medium text-foreground text-base">
+                    {t('settings:privacy.analytics')}
+                  </h1>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={productAnalytic}
+                      onCheckedChange={(state) => {
+                        if (state) {
+                          posthog.opt_in_capturing()
+                        } else {
+                          posthog.opt_out_capturing()
+                        }
+                        setProductAnalytic(state)
+                      }}
+                    />
+                  </div>
+                </div>
+              }
+            >
+              <CardItem
+                title={t('settings:privacy.helpUsImprove')}
+                description={<p>{t('settings:privacy.helpUsImproveDesc')}</p>}
+                align="start"
+              />
+            </Card>
+
+            {/* Data folder - Desktop only */}
+            <Card title={t('common:dataFolder')}>
               <CardItem
                 title={t('settings:dataFolder.appData', {
                   ns: 'settings',
@@ -593,10 +524,7 @@ function General() {
                       title={t('settings:dataFolder.appData')}
                       onClick={handleDataFolderChange}
                     >
-                      <IconFolder
-                        size={12}
-                        className="text-muted-foreground"
-                      />
+                      <IconFolder size={12} className="text-muted-foreground" />
                       <span>{t('settings:general.changeLocation')}</span>
                     </Button>
                     {selectedNewPath && (
@@ -618,56 +546,54 @@ function General() {
                   </>
                 }
               />
-            )}
-            <CardItem
-              title={t('settings:dataFolder.appLogs', {
-                ns: 'settings',
-              })}
-              description={t('settings:dataFolder.appLogsDesc')}
-              className="items-start flex-row gap-y-2"
-              actions={
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="p-0"
-                    onClick={async () => {
-                      if (janDataFolder) {
-                        try {
-                          const logsPath = `${janDataFolder}/logs`
-                          await serviceHub.opener().revealItemInDir(logsPath)
-                        } catch (error) {
-                          console.error(
-                            'Failed to reveal logs folder:',
-                            error
-                          )
+              <CardItem
+                title={t('settings:dataFolder.appLogs', {
+                  ns: 'settings',
+                })}
+                description={t('settings:dataFolder.appLogsDesc')}
+                className="items-start flex-row gap-y-2"
+                actions={
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="p-0"
+                      onClick={async () => {
+                        if (janDataFolder) {
+                          try {
+                            const logsPath = `${janDataFolder}/logs`
+                            await serviceHub.opener().revealItemInDir(logsPath)
+                          } catch (error) {
+                            console.error(
+                              'Failed to reveal logs folder:',
+                              error
+                            )
+                          }
                         }
-                      }
-                    }}
-                    title={t('settings:general.revealLogs')}
-                  >
-                    <IconFolder size={12} className="text-muted-foreground" />
-                    <span>{openFileTitle()}</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleOpenLogs}
-                    title={t('settings:dataFolder.appLogs')}
-                  >
-                    <IconLogs size={12} className="text-muted-foreground" />
-                    <span>{t('settings:general.openLogs')}</span>
-                  </Button>
-                </div>
-              }
-            />
-          </Card>
+                      }}
+                      title={t('settings:general.revealLogs')}
+                    >
+                      <IconFolder size={12} className="text-muted-foreground" />
+                      <span>{openFileTitle()}</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleOpenLogs}
+                      title={t('settings:dataFolder.appLogs')}
+                    >
+                      <IconLogs size={12} className="text-muted-foreground" />
+                      <span>{t('settings:general.openLogs')}</span>
+                    </Button>
+                  </div>
+                }
+              />
+            </Card>
 
-          {/* Detected model locations / scan folders - Desktop only */}
-          {isAdvanced && IS_TAURI && <LocalModelLocationsCard />}
+            {/* Detected model locations / scan folders - Desktop only */}
+            {IS_TAURI && <LocalModelLocationsCard />}
 
-          {/* Advanced - Desktop only */}
-          {isAdvanced && (
+            {/* Advanced - Desktop only */}
             <Card title="Advanced">
               {IS_TAURI && (
                 <CardItem
@@ -718,255 +644,251 @@ function General() {
                 }
               />
             </Card>
-          )}
 
-          {/* Other */}
-          <Card title={t('common:others')}>
-            <CardItem
-              title={t('settings:others.spellCheck', {
-                ns: 'settings',
-              })}
-              description={t('settings:others.spellCheckDesc', {
-                ns: 'settings',
-              })}
-              actions={
-                <Switch
-                  checked={spellCheckChatInput}
-                  onCheckedChange={(e) => setSpellCheckChatInput(e)}
-                />
-              }
-            />
-            {isAdvanced && (
-              <>
-                <CardItem
-                  title="Preload last used model on startup"
-                  description="Start the local inference server with your last model when the app opens."
-                  actions={
-                    <Switch
-                      checked={preloadModelOnStartup}
-                      onCheckedChange={setPreloadModelOnStartup}
+            {/* Other */}
+            <Card title={t('common:others')}>
+              <CardItem
+                title={t('settings:others.spellCheck', {
+                  ns: 'settings',
+                })}
+                description={t('settings:others.spellCheckDesc', {
+                  ns: 'settings',
+                })}
+                actions={
+                  <Switch
+                    checked={spellCheckChatInput}
+                    onCheckedChange={(e) => setSpellCheckChatInput(e)}
+                  />
+                }
+              />
+              <CardItem
+                title="Preload last used model on startup"
+                description="Start the local inference server with your last model when the app opens."
+                actions={
+                  <Switch
+                    checked={preloadModelOnStartup}
+                    onCheckedChange={setPreloadModelOnStartup}
+                  />
+                }
+              />
+              <CardItem
+                title="Reasoning budget (local models)"
+                description="Limits thinking tokens for llama.cpp / MLX. Off disables reasoning entirely."
+                actions={
+                  <select
+                    className="border-input bg-background rounded-md border px-2 py-1 text-sm"
+                    value={reasoningBudget}
+                    onChange={(e) =>
+                      setReasoningBudget(
+                        e.target.value as typeof reasoningBudget
+                      )
+                    }
+                  >
+                    <option value="off">Off</option>
+                    <option value="low">Low (256)</option>
+                    <option value="medium">Medium (1024)</option>
+                    <option value="high">High (4096)</option>
+                    <option value="unlimited">Unlimited</option>
+                  </select>
+                }
+              />
+              <CardItem
+                title={t('settings:general.huggingfaceToken', {
+                  ns: 'settings',
+                })}
+                description={t('settings:general.huggingfaceTokenDesc', {
+                  ns: 'settings',
+                })}
+                actions={
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="hf-token"
+                      value={huggingfaceToken || ''}
+                      onChange={(e) => setHuggingfaceToken(e.target.value)}
+                      placeholder={'hf_xxx_xxx'}
+                      required
                     />
-                  }
-                />
-                <CardItem
-                  title="Reasoning budget (local models)"
-                  description="Limits thinking tokens for llama.cpp / MLX. Off disables reasoning entirely."
-                  actions={
-                    <select
-                      className="border-input bg-background rounded-md border px-2 py-1 text-sm"
-                      value={reasoningBudget}
-                      onChange={(e) =>
-                        setReasoningBudget(
-                          e.target.value as typeof reasoningBudget
-                        )
-                      }
-                    >
-                      <option value="off">Off</option>
-                      <option value="low">Low (256)</option>
-                      <option value="medium">Medium (1024)</option>
-                      <option value="high">High (4096)</option>
-                      <option value="unlimited">Unlimited</option>
-                    </select>
-                  }
-                />
-                <CardItem
-                  title={t('settings:general.huggingfaceToken', {
-                    ns: 'settings',
-                  })}
-                  description={t('settings:general.huggingfaceTokenDesc', {
-                    ns: 'settings',
-                  })}
-                  actions={
-                    <div className="flex items-center gap-2">
-                      <Input
-                        id="hf-token"
-                        value={huggingfaceToken || ''}
-                        onChange={(e) => setHuggingfaceToken(e.target.value)}
-                        placeholder={'hf_xxx_xxx'}
-                        required
-                      />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={isValidatingToken}
-                        onClick={async () => {
-                          const token = (huggingfaceToken || '').trim()
-                          if (!token) {
-                            toast.error(
-                              'Please enter a Hugging Face token to validate'
-                            )
-                            return
-                          }
-                          setIsValidatingToken(true)
-                          const controller = new AbortController()
-                          const timeoutId = setTimeout(
-                            () => controller.abort(),
-                            TOKEN_VALIDATION_TIMEOUT_MS
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={isValidatingToken}
+                      onClick={async () => {
+                        const token = (huggingfaceToken || '').trim()
+                        if (!token) {
+                          toast.error(
+                            'Please enter a Hugging Face token to validate'
                           )
-                          try {
-                            const resp = await fetch(
-                              'https://huggingface.co/api/whoami-v2',
-                              {
-                                headers: { Authorization: `Bearer ${token}` },
-                                signal: controller.signal,
-                              }
-                            )
-                            if (resp.ok) {
-                              const data = await resp.json()
-                              toast.success('Token is valid', {
-                                description: data?.name
-                                  ? `Signed in as ${data.name}`
-                                  : 'Your Hugging Face token is valid.',
-                              })
-                            } else {
-                              toast.error('Token invalid', {
-                                description:
-                                  'The provided Hugging Face token is invalid. Please check your token and try again.',
-                              })
+                          return
+                        }
+                        setIsValidatingToken(true)
+                        const controller = new AbortController()
+                        const timeoutId = setTimeout(
+                          () => controller.abort(),
+                          TOKEN_VALIDATION_TIMEOUT_MS
+                        )
+                        try {
+                          const resp = await fetch(
+                            'https://huggingface.co/api/whoami-v2',
+                            {
+                              headers: { Authorization: `Bearer ${token}` },
+                              signal: controller.signal,
                             }
-                          } catch (e) {
-                            const name = (e as { name?: string })?.name
-                            if (name === 'AbortError') {
-                              toast.error('Validation timed out', {
-                                description:
-                                  'The validation request timed out. Please check your network connection and try again.',
-                              })
-                            } else {
-                              toast.error('Validation failed', {
-                                description:
-                                  'A network error occurred while validating the token. Please check your internet connection.',
-                              })
-                            }
-                          } finally {
-                            clearTimeout(timeoutId)
-                            setIsValidatingToken(false)
+                          )
+                          if (resp.ok) {
+                            const data = await resp.json()
+                            toast.success('Token is valid', {
+                              description: data?.name
+                                ? `Signed in as ${data.name}`
+                                : 'Your Hugging Face token is valid.',
+                            })
+                          } else {
+                            toast.error('Token invalid', {
+                              description:
+                                'The provided Hugging Face token is invalid. Please check your token and try again.',
+                            })
                           }
-                        }}
-                      >
-                        Verify
-                      </Button>
-                    </div>
-                  }
-                />
-              </>
-            )}
-          </Card>
-
-          {/* Resources — закомментировано */}
-          {false && (
-            <Card title={t('settings:general.resources')}>
-              <CardItem
-                title={t('settings:general.documentation')}
-                description={t('settings:general.documentationDesc')}
-                actions={
-                  <a
-                    href="https://jan.ai/docs"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <div className="flex items-center gap-1">
-                      <span>{t('settings:general.viewDocs')}</span>
-                      <IconExternalLink size={14} />
-                    </div>
-                  </a>
-                }
-              />
-              <CardItem
-                title={t('settings:general.releaseNotes')}
-                description={t('settings:general.releaseNotesDesc')}
-                actions={
-                  <a
-                    href="https://github.com/AtomicBot-ai/Atomic-Chat/releases"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <div className="flex items-center gap-1">
-                      <span>{t('settings:general.viewReleases')}</span>
-                      <IconExternalLink size={14} />
-                    </div>
-                  </a>
-                }
-              />
-            </Card>
-          )}
-
-          {/* Community — закомментировано */}
-          {false && (
-            <Card title={t('settings:general.community')}>
-              <CardItem
-                title={t('settings:general.github')}
-                description={t('settings:general.githubDesc')}
-                actions={
-                  <a
-                    href="https://github.com/AtomicBot-ai/Atomic-Chat"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <IconBrandGithub
-                      size={18}
-                      className="text-muted-foreground"
-                    />
-                  </a>
-                }
-              />
-              <CardItem
-                title={t('settings:general.discord')}
-                description={t('settings:general.discordDesc')}
-                actions={
-                  <a
-                    href="https://discord.com/invite/FTk2MvZwJH"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <IconBrandDiscord
-                      size={18}
-                      className="text-muted-foreground"
-                    />
-                  </a>
-                }
-              />
-            </Card>
-          )}
-
-          {/* Support — закомментировано */}
-          {false && (
-            <Card title={t('settings:general.support')}>
-              <CardItem
-                title={t('settings:general.reportAnIssue')}
-                description={t('settings:general.reportAnIssueDesc')}
-                actions={
-                  <a
-                    href="https://github.com/AtomicBot-ai/Atomic-Chat/issues/new"
-                    target="_blank"
-                  >
-                    <div className="flex items-center gap-1">
-                      <span>{t('settings:general.reportIssue')}</span>
-                      <IconExternalLink size={14} />
-                    </div>
-                  </a>
-                }
-              />
-            </Card>
-          )}
-
-          {/* Credits — закомментировано */}
-          {false && (
-            <Card title={t('settings:general.credits')}>
-              <CardItem
-                align="start"
-                description={
-                  <div className="text-muted-foreground -mt-2">
-                    <p>{t('settings:general.creditsDesc1')}</p>
-                    <p className="mt-2">
-                      {t('settings:general.creditsDesc2')}
-                    </p>
+                        } catch (e) {
+                          const name = (e as { name?: string })?.name
+                          if (name === 'AbortError') {
+                            toast.error('Validation timed out', {
+                              description:
+                                'The validation request timed out. Please check your network connection and try again.',
+                            })
+                          } else {
+                            toast.error('Validation failed', {
+                              description:
+                                'A network error occurred while validating the token. Please check your internet connection.',
+                            })
+                          }
+                        } finally {
+                          clearTimeout(timeoutId)
+                          setIsValidatingToken(false)
+                        }
+                      }}
+                    >
+                      Verify
+                    </Button>
                   </div>
                 }
               />
             </Card>
-          )}
+
+            {/* Resources — закомментировано */}
+            {false && (
+              <Card title={t('settings:general.resources')}>
+                <CardItem
+                  title={t('settings:general.documentation')}
+                  description={t('settings:general.documentationDesc')}
+                  actions={
+                    <a
+                      href="https://jan.ai/docs"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>{t('settings:general.viewDocs')}</span>
+                        <IconExternalLink size={14} />
+                      </div>
+                    </a>
+                  }
+                />
+                <CardItem
+                  title={t('settings:general.releaseNotes')}
+                  description={t('settings:general.releaseNotesDesc')}
+                  actions={
+                    <a
+                      href="https://github.com/AtomicBot-ai/Atomic-Chat/releases"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>{t('settings:general.viewReleases')}</span>
+                        <IconExternalLink size={14} />
+                      </div>
+                    </a>
+                  }
+                />
+              </Card>
+            )}
+
+            {/* Community — закомментировано */}
+            {false && (
+              <Card title={t('settings:general.community')}>
+                <CardItem
+                  title={t('settings:general.github')}
+                  description={t('settings:general.githubDesc')}
+                  actions={
+                    <a
+                      href="https://github.com/AtomicBot-ai/Atomic-Chat"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <IconBrandGithub
+                        size={18}
+                        className="text-muted-foreground"
+                      />
+                    </a>
+                  }
+                />
+                <CardItem
+                  title={t('settings:general.discord')}
+                  description={t('settings:general.discordDesc')}
+                  actions={
+                    <a
+                      href="https://discord.com/invite/FTk2MvZwJH"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <IconBrandDiscord
+                        size={18}
+                        className="text-muted-foreground"
+                      />
+                    </a>
+                  }
+                />
+              </Card>
+            )}
+
+            {/* Support — закомментировано */}
+            {false && (
+              <Card title={t('settings:general.support')}>
+                <CardItem
+                  title={t('settings:general.reportAnIssue')}
+                  description={t('settings:general.reportAnIssueDesc')}
+                  actions={
+                    <a
+                      href="https://github.com/AtomicBot-ai/Atomic-Chat/issues/new"
+                      target="_blank"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>{t('settings:general.reportIssue')}</span>
+                        <IconExternalLink size={14} />
+                      </div>
+                    </a>
+                  }
+                />
+              </Card>
+            )}
+
+            {/* Credits — закомментировано */}
+            {false && (
+              <Card title={t('settings:general.credits')}>
+                <CardItem
+                  align="start"
+                  description={
+                    <div className="text-muted-foreground -mt-2">
+                      <p>{t('settings:general.creditsDesc1')}</p>
+                      <p className="mt-2">
+                        {t('settings:general.creditsDesc2')}
+                      </p>
+                    </div>
+                  }
+                />
+              </Card>
+            )}
+          </div>
         </div>
       </div>
-    </>
+    </div>
   )
 }

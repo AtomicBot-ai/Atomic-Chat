@@ -3,6 +3,10 @@ import { render, screen } from '@testing-library/react'
 import { Route as ShortcutsRoute } from '../shortcuts'
 
 // Mock dependencies
+vi.mock('@/containers/SettingsMenu', () => ({
+  default: () => <div data-testid="settings-menu">Settings Menu</div>,
+}))
+
 vi.mock('@/containers/HeaderPage', () => ({
   default: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="header-page">{children}</div>
@@ -83,6 +87,7 @@ describe('Shortcuts Settings Route', () => {
     render(<Component />)
 
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
+    expect(screen.getByTestId('settings-menu')).toBeInTheDocument()
     expect(screen.getByText('common:settings')).toBeInTheDocument()
   })
 
@@ -99,11 +104,11 @@ describe('Shortcuts Settings Route', () => {
     const Component = ShortcutsRoute.component as React.ComponentType
     render(<Component />)
 
-    // The page contributes a header and a content pane; the sidebar and the
-    // page frame around them belong to the `/settings` layout route.
     const container = screen.getByTestId('header-page')
     expect(container).toBeInTheDocument()
-    expect(container.nextElementSibling).toHaveClass('overflow-y-auto')
+    
+    const settingsMenu = screen.getByTestId('settings-menu')
+    expect(settingsMenu).toBeInTheDocument()
   })
 
   it('should call translation function with correct keys', () => {
@@ -117,8 +122,8 @@ describe('Shortcuts Settings Route', () => {
     const Component = ShortcutsRoute.component as React.ComponentType
     render(<Component />)
 
-    const settingsContent = screen.getByTestId('header-page').nextElementSibling
-    expect(settingsContent).toHaveClass('p-4', 'pt-0', 'w-full', 'overflow-y-auto')
+    const settingsContent = screen.getByTestId('settings-menu')
+    expect(settingsContent).toBeInTheDocument()
   })
 
   it('should render main content area', () => {
@@ -147,6 +152,15 @@ describe('Shortcuts Settings Route', () => {
     }).not.toThrow()
   })
 
+  it('should have settings menu navigation', () => {
+    const Component = ShortcutsRoute.component as React.ComponentType
+    render(<Component />)
+
+    const settingsMenu = screen.getByTestId('settings-menu')
+    expect(settingsMenu).toBeInTheDocument()
+    expect(settingsMenu).toHaveTextContent('Settings Menu')
+  })
+
   it('should have header with settings title', () => {
     const Component = ShortcutsRoute.component as React.ComponentType
     render(<Component />)
@@ -162,8 +176,11 @@ describe('Shortcuts Settings Route', () => {
 
     // Check the main container structure
     const container = screen.getByTestId('header-page')
-    expect(container).toHaveTextContent('common:settings')
-    expect(container.nextElementSibling).toHaveClass('p-4')
+    expect(container).toBeInTheDocument()
+    
+    // Check the settings layout
+    const settingsMenu = screen.getByTestId('settings-menu')
+    expect(settingsMenu).toBeInTheDocument()
   })
 
   it('should render content in scrollable area', () => {

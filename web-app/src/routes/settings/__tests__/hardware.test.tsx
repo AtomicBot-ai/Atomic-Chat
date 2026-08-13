@@ -11,6 +11,10 @@ const hardwareService = {
 }
 
 // Mock all the dependencies with minimal implementation
+vi.mock('@/containers/SettingsMenu', () => ({
+  default: () => <div data-testid="settings-menu">Settings Menu</div>,
+}))
+
 vi.mock('@/containers/HeaderPage', () => ({
   default: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="header-page">{children}</div>
@@ -187,9 +191,7 @@ describe('Hardware Settings', () => {
       ).not.toBeInTheDocument()
     })
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
-    expect(screen.getByTestId('header-page').nextElementSibling).toHaveClass(
-      'overflow-y-auto'
-    )
+    expect(screen.getByTestId('settings-menu')).toBeInTheDocument()
   })
 
   it('displays OS information', async () => {

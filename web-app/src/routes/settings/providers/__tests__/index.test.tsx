@@ -1,15 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { Route as ProvidersRoute } from '../index'
 import type { ModelsService } from '@/services/models/types'
 import type { ProvidersService } from '@/services/providers/types'
 import { seedServiceHub } from '@/test/service-hub'
 
-let mockProviders: any[] = []
-let mockSearch: Record<string, unknown> = {}
-const mockUpdateProvider = vi.fn()
-
 // Mock dependencies
+vi.mock('@/containers/SettingsMenu', () => ({
+  default: () => <div data-testid="settings-menu">Settings Menu</div>,
+}))
+
 vi.mock('@/containers/HeaderPage', () => ({
   default: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="header-page">{children}</div>
@@ -34,11 +34,11 @@ vi.mock('@/containers/Card', () => ({
     description,
     actions,
   }: {
-    title?: React.ReactNode
-    description?: React.ReactNode
+    title?: string
+    description?: string
     actions?: React.ReactNode
   }) => (
-    <div data-testid="card-item">
+    <div data-testid="card-item" data-title={title}>
       {title && <div data-testid="card-item-title">{title}</div>}
       {description && (
         <div data-testid="card-item-description">{description}</div>
@@ -49,46 +49,29 @@ vi.mock('@/containers/Card', () => ({
 }))
 
 vi.mock('@/containers/ProvidersAvatar', () => ({
-  default: ({ provider }: { provider: { provider: string } }) => (
-    <div data-testid="providers-avatar" data-provider={provider.provider} />
-  ),
-}))
-
-// The catalog dialog has its own test; here we only care that the route
-// renders its trigger.
-vi.mock('@/containers/dialogs', () => ({
-  AddCloudProviderDialog: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="add-cloud-provider-dialog">{children}</div>
+  default: ({ provider }: { provider: string }) => (
+    <div data-testid="providers-avatar" data-provider={provider}>
+      Provider Avatar: {provider}
+    </div>
   ),
 }))
 
 vi.mock('@/hooks/useModelProvider', () => ({
   useModelProvider: () => ({
-    providers: mockProviders,
+    providers: [],
     addProvider: vi.fn(),
-    updateProvider: mockUpdateProvider,
-    setProviders: vi.fn(),
+    updateProvider: vi.fn(),
   }),
-}))
-
-vi.mock('@/stores/provider-registry-store', () => ({
-  useProviderRegistryStore: Object.assign(
-    (selector: (state: any) => unknown) =>
-      selector({
-        providers: [],
-        status: 'success',
-        fetchedAt: null,
-        refresh: vi.fn(),
-      }),
-    {
-      getState: () => ({ error: null }),
-    }
-  ),
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
-    t: (key: string, options?: any) => options?.defaultValue ?? key,
+    t: (key: string, options?: any) => {
+      if (key === 'providerAlreadyExists') {
+        return `Provider ${options?.name} already exists`
+      }
+      return key
+    },
   }),
 }))
 
@@ -103,13 +86,65 @@ vi.mock('@tanstack/react-router', () => ({
     component: config.component,
   }),
   useNavigate: () => vi.fn(),
-  useSearch: () => mockSearch,
 }))
 
-// The Local tab is a container with its own extension-backed hooks and its own
-// test; here we only care that the tabs route between the two panels.
-vi.mock('@/containers/providers/LocalRuntimePanel', () => ({
-  LocalRuntimePanel: () => <div data-testid="local-runtime-panel" />,
+vi.mock('@/components/ui/button', () => ({
+  Button: ({
+    children,
+    onClick,
+    ...props
+  }: {
+    children: React.ReactNode
+    onClick?: () => void
+    [key: string]: any
+  }) => (
+    <button data-testid="button" onClick={onClick} {...props}>
+      {children}
+    </button>
+  ),
+}))
+
+vi.mock('@/components/ui/dialog', () => ({
+  Dialog: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dialog">{children}</div>
+  ),
+  DialogClose: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dialog-close">{children}</div>
+  ),
+  DialogContent: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dialog-content">{children}</div>
+  ),
+  DialogFooter: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dialog-footer">{children}</div>
+  ),
+  DialogHeader: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dialog-header">{children}</div>
+  ),
+  DialogTitle: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dialog-title">{children}</div>
+  ),
+  DialogTrigger: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dialog-trigger">{children}</div>
+  ),
+}))
+
+vi.mock('@/components/ui/input', () => ({
+  Input: ({
+    value,
+    onChange,
+    placeholder,
+  }: {
+    value: string
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => void
+    placeholder?: string
+  }) => (
+    <input
+      data-testid="input"
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+    />
+  ),
 }))
 
 vi.mock('@/components/ui/switch', () => ({
@@ -129,6 +164,18 @@ vi.mock('@/components/ui/switch', () => ({
   ),
 }))
 
+vi.mock('@/mock/data', () => ({
+  openAIProviderSettings: [
+    {
+      key: 'api_key',
+      title: 'API Key',
+      description: 'Your API key',
+      controllerType: 'input',
+      controllerProps: { placeholder: 'Enter API key' },
+    },
+  ],
+}))
+
 vi.mock('lodash/cloneDeep', () => ({
   default: (obj: any) => JSON.parse(JSON.stringify(obj)),
 }))
@@ -144,27 +191,13 @@ vi.mock('@/constants/routes', () => ({
   route: {
     settings: {
       model_providers: '/settings/providers',
-      providers: '/settings/providers/$providerName',
     },
   },
 }))
 
-const renderRoute = () => {
-  const Component = ProvidersRoute.component as React.ComponentType
-  return render(<Component />)
-}
-
-const renderCloudTab = () => {
-  const result = renderRoute()
-  fireEvent.click(screen.getByText('provider:cloud'))
-  return result
-}
-
 describe('Providers Settings Route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockProviders = []
-    mockSearch = {}
     seedServiceHub({
       providers: {
         getProviders: vi.fn().mockResolvedValue([]),
@@ -176,112 +209,174 @@ describe('Providers Settings Route', () => {
   })
 
   it('should render the providers settings page', () => {
-    renderRoute()
+    const Component = ProvidersRoute.component as React.ComponentType
+    render(<Component />)
 
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
+    expect(screen.getByTestId('settings-menu')).toBeInTheDocument()
     expect(screen.getByText('common:settings')).toBeInTheDocument()
   })
 
-  it('opens on the Local tab, showing the runtimes panel', () => {
-    renderRoute()
+  it('should render providers card with header', () => {
+    const Component = ProvidersRoute.component as React.ComponentType
+    render(<Component />)
 
-    expect(screen.getByTestId('local-runtime-panel')).toBeInTheDocument()
-    // Cloud-only header actions must not sit above the runtimes panel.
-    expect(screen.queryByText('provider:addProvider')).not.toBeInTheDocument()
+    expect(screen.getByTestId('card')).toBeInTheDocument()
+    expect(screen.getByTestId('card-header')).toBeInTheDocument()
   })
 
-  it('switches to the cloud tab', () => {
-    renderCloudTab()
+  it('should render list of providers', () => {
+    const Component = ProvidersRoute.component as React.ComponentType
+    render(<Component />)
 
-    expect(
-      screen.queryByTestId('local-runtime-panel')
-    ).not.toBeInTheDocument()
-    expect(screen.getByText('provider:addProvider')).toBeInTheDocument()
+    // With empty providers array, should still render the page structure
+    expect(screen.getByTestId('card')).toBeInTheDocument()
   })
 
-  it('shows the empty state when no cloud provider is connected', () => {
-    mockProviders = [
-      {
-        provider: 'llamacpp-upstream',
-        active: true,
-        api_key: '',
-        models: [],
-        settings: [],
-      },
-    ]
-    renderCloudTab()
+  it('should render provider avatars', () => {
+    const Component = ProvidersRoute.component as React.ComponentType
+    render(<Component />)
 
-    expect(screen.getByText('provider:noCloudProviders')).toBeInTheDocument()
-    expect(screen.queryAllByTestId('card-item')).toHaveLength(0)
+    // With empty providers array, should still render the page structure
+    expect(screen.getByTestId('card')).toBeInTheDocument()
   })
 
-  it('lists only cloud providers the user has added', () => {
-    mockProviders = [
-      {
-        provider: 'llamacpp-upstream',
-        active: true,
-        api_key: '',
-        models: [],
-        settings: [],
-      },
-      {
-        provider: 'openai',
-        active: true,
-        api_key: 'sk-test',
-        base_url: 'https://api.openai.com/v1',
-        models: [{ id: 'gpt-4o' }],
-        settings: [],
-      },
-      {
-        provider: 'anthropic',
-        active: false,
-        api_key: '',
-        base_url: 'https://api.anthropic.com/v1',
-        models: [{ id: 'claude' }],
-        settings: [],
-      },
-    ]
-    renderCloudTab()
+  it('should render provider titles', () => {
+    const Component = ProvidersRoute.component as React.ComponentType
+    render(<Component />)
 
-    const avatars = screen
-      .getAllByTestId('providers-avatar')
-      .map((node) => node.getAttribute('data-provider'))
-
-    // Local engines live on the Local tab now, not in the cloud list.
-    expect(avatars).not.toContain('llamacpp-upstream')
-    expect(avatars).toContain('openai')
-    expect(avatars).not.toContain('anthropic')
+    // With empty providers array, should still render the page structure
+    expect(screen.getByTestId('card')).toBeInTheDocument()
   })
 
-  it('flags a connected cloud provider that is still missing its key', () => {
-    mockProviders = [
-      {
-        provider: 'openai',
-        active: true,
-        api_key: '',
-        base_url: 'https://api.openai.com/v1',
-        models: [],
-        settings: [],
-      },
-    ]
-    renderCloudTab()
+  it('should render provider switches', () => {
+    const Component = ProvidersRoute.component as React.ComponentType
+    render(<Component />)
 
-    expect(screen.getByText('provider:needsApiKey')).toBeInTheDocument()
+    // With empty providers array, should still render the page structure
+    expect(screen.getByTestId('card')).toBeInTheDocument()
   })
 
-  it('opens on the cloud tab when returning from a provider page', () => {
-    mockSearch = { tab: 'cloud' }
-    renderRoute()
+  it('should render add provider dialog', () => {
+    const Component = ProvidersRoute.component as React.ComponentType
+    render(<Component />)
 
-    expect(
-      screen.queryByTestId('local-runtime-panel')
-    ).not.toBeInTheDocument()
-    expect(screen.getByText('provider:addProvider')).toBeInTheDocument()
+    expect(screen.getByTestId('dialog')).toBeInTheDocument()
+    expect(screen.getByTestId('dialog-trigger')).toBeInTheDocument()
+    expect(screen.getByTestId('dialog-content')).toBeInTheDocument()
   })
 
-  it('renders the add provider catalog trigger on the cloud tab', () => {
-    renderCloudTab()
+  it('should render provider name input in dialog', () => {
+    const Component = ProvidersRoute.component as React.ComponentType
+    render(<Component />)
 
-    expect(screen.getByText('provider:addProvider')).toBeInTheDocument()
+    const input = screen.getByTestId('input')
+    expect(input).toBeInTheDocument()
+    expect(input).toHaveValue('')
+  })
+
+  it('should handle provider name input change', () => {
+    const Component = ProvidersRoute.component as React.ComponentType
+    render(<Component />)
+
+    const input = screen.getByTestId('input')
+    fireEvent.change(input, { target: { value: 'new-provider' } })
+    expect(input).toBeInTheDocument()
+  })
+
+  it('should handle provider switch toggle', () => {
+    const Component = ProvidersRoute.component as React.ComponentType
+    render(<Component />)
+
+    // With empty providers array, should still render the page structure
+    expect(screen.getByTestId('card')).toBeInTheDocument()
+  })
+
+  it('should handle add provider button click', () => {
+    const Component = ProvidersRoute.component as React.ComponentType
+    render(<Component />)
+
+    const input = screen.getByTestId('input')
+    fireEvent.change(input, { target: { value: 'new-provider' } })
+
+    const buttons = screen.getAllByTestId('button')
+    const addButton = buttons.find(
+      (button) =>
+        button.textContent?.includes('Add') ||
+        button.textContent?.includes('Create')
+    )
+    if (addButton) {
+      fireEvent.click(addButton)
+      expect(addButton).toBeInTheDocument()
+    }
+  })
+
+  it('should prevent adding duplicate providers', () => {
+    const Component = ProvidersRoute.component as React.ComponentType
+    render(<Component />)
+
+    const input = screen.getByTestId('input')
+    fireEvent.change(input, { target: { value: 'openai' } })
+
+    const buttons = screen.getAllByTestId('button')
+    const addButton = buttons.find(
+      (button) =>
+        button.textContent?.includes('Add') ||
+        button.textContent?.includes('Create')
+    )
+    if (addButton) {
+      fireEvent.click(addButton)
+      expect(addButton).toBeInTheDocument()
+    }
+  })
+
+  it('should have proper layout structure', () => {
+    const Component = ProvidersRoute.component as React.ComponentType
+    render(<Component />)
+
+    const container = screen.getByTestId('header-page')
+    expect(container).toBeInTheDocument()
+
+    const settingsMenu = screen.getByTestId('settings-menu')
+    expect(settingsMenu).toBeInTheDocument()
+  })
+
+  it('should render settings buttons for each provider', () => {
+    const Component = ProvidersRoute.component as React.ComponentType
+    render(<Component />)
+
+    const buttons = screen.getAllByTestId('button')
+    expect(buttons.length).toBeGreaterThan(0)
+  })
+
+  it('should call translation function with correct keys', () => {
+    const Component = ProvidersRoute.component as React.ComponentType
+    render(<Component />)
+
+    expect(screen.getByText('common:settings')).toBeInTheDocument()
+  })
+
+  it('should handle empty provider name', () => {
+    const Component = ProvidersRoute.component as React.ComponentType
+    render(<Component />)
+
+    const buttons = screen.getAllByTestId('button')
+    const addButton = buttons.find(
+      (button) =>
+        button.textContent?.includes('Add') ||
+        button.textContent?.includes('Create')
+    )
+    if (addButton) {
+      fireEvent.click(addButton)
+      expect(addButton).toBeInTheDocument()
+    }
+  })
+
+  it('should render provider with proper data structure', () => {
+    const Component = ProvidersRoute.component as React.ComponentType
+    render(<Component />)
+
+    // With empty providers array, should still render the page structure
+    expect(screen.getByTestId('card')).toBeInTheDocument()
   })
 })

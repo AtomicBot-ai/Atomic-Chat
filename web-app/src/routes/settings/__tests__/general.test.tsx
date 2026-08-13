@@ -5,6 +5,10 @@ import type { ServiceHub } from '@/services'
 import { seedServiceHub } from '@/test/service-hub'
 
 // Mock all the dependencies
+vi.mock('@/containers/SettingsMenu', () => ({
+  default: () => <div data-testid="settings-menu">Settings Menu</div>,
+}))
+
 vi.mock('@/containers/HeaderPage', () => ({
   default: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="header-page">{children}</div>
@@ -49,36 +53,10 @@ vi.mock('@/containers/LanguageSwitcher', () => ({
   default: () => <div data-testid="language-switcher">Language Switcher</div>,
 }))
 
-vi.mock('@/containers/SettingsModeSwitcher', () => ({
-  default: () => (
-    <div data-testid="settings-mode-switcher">Settings Mode Switcher</div>
-  ),
-}))
-
-vi.mock('@/containers/ThemeSwitcher', () => ({
-  ThemeSwitcher: () => <div data-testid="theme-switcher">Theme Switcher</div>,
-}))
-
-vi.mock('@/containers/FontSizeSwitcher', () => ({
-  FontSizeSwitcher: () => (
-    <div data-testid="font-size-switcher">Font Size Switcher</div>
-  ),
-}))
-
-vi.mock('@/hooks/useInterfaceSettings', () => ({
-  useInterfaceSettings: () => ({
-    resetInterface: vi.fn(),
-  }),
-}))
-
 vi.mock('@/containers/dialogs/ChangeDataFolderLocation', () => ({
   default: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="change-data-folder-dialog">{children}</div>
   ),
-}))
-
-const generalSettingMock = vi.hoisted(() => ({
-  settingsMode: 'advanced' as 'base' | 'advanced',
 }))
 
 vi.mock('@/hooks/useGeneralSetting', () => ({
@@ -87,7 +65,6 @@ vi.mock('@/hooks/useGeneralSetting', () => ({
     setSpellCheckChatInput: vi.fn(),
     huggingfaceToken: 'test-token',
     setHuggingfaceToken: vi.fn(),
-    settingsMode: generalSettingMock.settingsMode,
   }),
 }))
 
@@ -302,7 +279,6 @@ Object.assign(navigator, {
 describe('General Settings Route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    generalSettingMock.settingsMode = 'advanced'
     seedServiceHub({
       app: {
         factoryReset: vi.fn(),
@@ -339,76 +315,8 @@ describe('General Settings Route', () => {
     })
 
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
+    expect(screen.getByTestId('settings-menu')).toBeInTheDocument()
     expect(screen.getByText('common:settings')).toBeInTheDocument()
-  })
-
-  it('should render the interface card in both modes', async () => {
-    const Component = GeneralRoute.component as React.ComponentType
-
-    generalSettingMock.settingsMode = 'base'
-    const { unmount } = await act(async () => render(<Component />))
-    expect(screen.getByTestId('theme-switcher')).toBeInTheDocument()
-    expect(screen.getByTestId('font-size-switcher')).toBeInTheDocument()
-    unmount()
-
-    generalSettingMock.settingsMode = 'advanced'
-    await act(async () => {
-      render(<Component />)
-    })
-    expect(screen.getByTestId('theme-switcher')).toBeInTheDocument()
-  })
-
-  it('should hide advanced sections in base mode', async () => {
-    generalSettingMock.settingsMode = 'base'
-
-    const Component = GeneralRoute.component as React.ComponentType
-    await act(async () => {
-      render(<Component />)
-    })
-
-    // App Data, Advanced card and the power-user options are gone
-    expect(
-      screen.queryByText('settings:dataFolder.appData')
-    ).not.toBeInTheDocument()
-    expect(screen.queryByText('Advanced')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('input')).not.toBeInTheDocument()
-    expect(
-      screen.queryByText('Preload last used model on startup')
-    ).not.toBeInTheDocument()
-
-    // App Logs and spell check stay available
-    expect(screen.getByText('settings:dataFolder.appLogs')).toBeInTheDocument()
-    expect(screen.getByText('settings:others.spellCheck')).toBeInTheDocument()
-  })
-
-  it('should show advanced sections in advanced mode', async () => {
-    const Component = GeneralRoute.component as React.ComponentType
-    await act(async () => {
-      render(<Component />)
-    })
-
-    expect(screen.getByText('settings:dataFolder.appData')).toBeInTheDocument()
-    expect(screen.getByText('Advanced')).toBeInTheDocument()
-    expect(screen.getByTestId('input')).toBeInTheDocument()
-  })
-
-  it('should open the discord invite through opener service', async () => {
-    const Component = GeneralRoute.component as React.ComponentType
-    await act(async () => {
-      render(<Component />)
-    })
-
-    const discordLink = screen.getByRole('link', {
-      name: 'discord.com/invite/8wGSsvmg4V',
-    })
-
-    await act(async () => {
-      fireEvent.click(discordLink)
-    })
-
-    expect(mockOpenerOpen).toHaveBeenCalledWith(
-      'https://discord.com/invite/8wGSsvmg4V'
-    )
   })
 
   it('should render app version', async () => {
@@ -500,9 +408,7 @@ describe('General Settings Route', () => {
 
     // Test that component renders without errors
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
-    expect(screen.getByTestId('header-page').nextElementSibling).toHaveClass(
-      'overflow-y-auto'
-    )
+    expect(screen.getByTestId('settings-menu')).toBeInTheDocument()
   })
 
   it('should handle copy to clipboard', async () => {
@@ -513,9 +419,7 @@ describe('General Settings Route', () => {
 
     // Test that component renders without errors
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
-    expect(screen.getByTestId('header-page').nextElementSibling).toHaveClass(
-      'overflow-y-auto'
-    )
+    expect(screen.getByTestId('settings-menu')).toBeInTheDocument()
   })
 
   it('should handle factory reset dialog', async () => {
