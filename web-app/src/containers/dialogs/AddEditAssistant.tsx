@@ -14,6 +14,7 @@ import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react'
 import { Textarea } from '@/components/ui/textarea'
 
 import { useTheme } from '@/hooks/useTheme'
+import { defaultAssistant } from '@/hooks/useAssistant'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
@@ -110,10 +111,11 @@ export default function AddEditAssistant({
       created_at: initialData?.created_at || Date.now(),
       description,
       instructions,
-      // Sampling moved to the global Sampling popover; assistants are
-      // persona-only now. Preserve any existing on-disk parameters
-      // untouched (vestigial), default to empty for new assistants.
-      parameters: initialData?.parameters ?? {},
+      // Sampling is edited in the model-bar Sampling popover, not here:
+      // keep this assistant's own values untouched, seed a new one with the
+      // built-in defaults so the popover opens on sane values.
+      parameters: initialData?.parameters ?? { ...defaultAssistant.parameters },
+      sampling_overridden: initialData?.sampling_overridden,
       // tool_steps: isNaN(parsedToolSteps) ? 20 : parsedToolSteps,
     }
     onSave(assistant)

@@ -350,7 +350,7 @@
     "downloadingBackend": "Загрузка оптимального GPU-бэкенда...",
     "downloadingBackendDesc": "Обнаружен лучший бэкенд для вашего оборудования. Установка выполняется в фоновом режиме.",
     "downloadComplete": "Бэкенд {{backend}} успешно установлен!",
-    "downloadFailed": "Не удалось загрузить GPU-бэкенд",
+    "downloadFailed": "Не удалось установить бэкенд движка",
     "betterBackendTitle": "Доступен более быстрый бэкенд",
     "betterBackendDesc": "Используйте {{backend}} для более быстрых ответов.",
     "notNow": "Отмена",

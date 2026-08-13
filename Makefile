@@ -274,7 +274,7 @@ lint: install-and-build
 .PHONY: test test-all test-local test-web test-extensions test-rust stub-resources \
 	verify-fast verify test-quality test-hardening-contracts \
 	test-coverage-critical capture-capabilities capture-hw-profile \
-	test-live test-live-cloud mutants
+	sync-upstream-baseline gen-amd-rocm-pci-ids test-live test-live-cloud mutants
 
 test-web:
 	yarn test
@@ -355,7 +355,8 @@ test-quality:
 test-hardening-contracts:
 	node --test tests/capabilities.test.mjs \
 		tests/registry-contracts.test.mjs \
-		tests/hardware-profiles.test.mjs
+		tests/hardware-profiles.test.mjs \
+		tests/upstream-backend-resolver.test.mjs
 
 test-coverage-critical:
 	yarn test:coverage
@@ -384,6 +385,16 @@ capture-capabilities:
 capture-hw-profile:
 	@test -n "$(OUTPUT)" || (echo "OUTPUT is required" && exit 2)
 	node scripts/capture-hw-profile.mjs "$(OUTPUT)"
+
+# Regenerate the offline backend baseline (and its fixture) from the live
+# atomic-chat-conf manifest. Live network, so it is not part of verify.
+sync-upstream-baseline:
+	node scripts/sync-upstream-baseline.mjs $(if $(REVISION),--revision $(REVISION),)
+
+# Regenerate the AMD PCI device id -> gfx table that gates the Windows ROCm
+# backend, from AMD's HIP SDK support matrix and pci.ids. Live network.
+gen-amd-rocm-pci-ids:
+	node scripts/gen-amd-rocm-pci-ids.mjs
 
 # Opt-in acceptance against live local binaries and moving external registries.
 # Missing sidecar env vars are reported as skips; use REQUIRE=1 to make them
@@ -746,15 +757,12 @@ download-llamacpp-upstream-backend-win-cpu:
 		$$dir = 'src-tauri/resources/llamacpp-backend-upstream'; \
 		if (Test-Path $$dir) { Remove-Item $$dir -Recurse -Force }; \
 		New-Item -ItemType Directory -Path $$dir -Force | Out-Null; \
-		Write-Host 'Resolving backend index from atomic-chat-conf manifest (ATO-199)...'; \
-		$$headers = @{ 'User-Agent' = 'atomic-chat' }; \
-		$$backend = 'win-cpu-x64'; \
-		$$manifest = Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/manifest.json' -Headers $$headers; \
-		$$tag = ''; \
-		$$want = \"llama-$$($$manifest.tag_name)-bin-$${backend}.zip\"; \
-		if ($$manifest.assets | Where-Object { $$_.name -eq $$want }) { $$tag = $$manifest.tag_name }; \
-		if (-not $$tag) { throw 'atomic-chat-conf backend manifest does not list the win-cpu-x64 asset (update backends/manifest.json)' }; \
-		$$url = \"https://github.com/ggml-org/llama.cpp/releases/download/$$tag/llama-$${tag}-bin-$${backend}.zip\"; \
+		$$resolved = & node scripts/resolve-upstream-backend.mjs --backend win-cpu-x64; \
+		if ($$LASTEXITCODE -ne 0) { throw 'scripts/resolve-upstream-backend.mjs failed' }; \
+		$$r = @{}; \
+		foreach ($$line in $$resolved) { $$kv = $$line -split '=', 2; if ($$kv.Length -eq 2) { $$r[$$kv[0]] = $$kv[1] } }; \
+		$$tag = $$r['TAG']; $$backend = $$r['BACKEND']; $$url = $$r['URL']; $$sha = $$r['SHA256']; \
+		if (-not $$tag -or -not $$url) { throw 'resolver returned no TAG/URL' }; \
 		[System.IO.File]::WriteAllText(\"$$dir/version.txt\", $$tag); \
 		[System.IO.File]::WriteAllText(\"$$dir/backend.txt\", $$backend); \
 		Write-Host \"Release: $$tag  Backend: $$backend\"; \
@@ -766,6 +774,11 @@ download-llamacpp-upstream-backend-win-cpu:
 			catch { Write-Host \"Download attempt $$i/5 failed: $$($$_.Exception.Message); retrying...\"; Start-Sleep -Seconds 3 } \
 		}; \
 		if (-not $$ok) { throw \"Failed to download $$url after 5 attempts\" }; \
+		if ($$sha) { \
+			$$actual = (Get-FileHash -Path $$tmp -Algorithm SHA256).Hash.ToLower(); \
+			if ($$actual -ne $$sha) { Remove-Item $$tmp -Force -EA SilentlyContinue; throw \"sha256 mismatch: expected $$sha, got $$actual\" }; \
+			Write-Host \"sha256 verified: $$($$r['ASSET'])\"; \
+		} else { Write-Host \"No sha256 published for $$($$r['ASSET']); skipping integrity check\" }; \
 		Expand-Archive -Path $$tmp -DestinationPath $$dir -Force; \
 		Remove-Item $$tmp -Force -ErrorAction SilentlyContinue; \
 		if (-not (Test-Path \"$$dir/build/bin/llama-server.exe\")) { \
@@ -853,16 +866,15 @@ endif
 # Download upstream ggml-org/llama.cpp backend for bundling alongside the
 # turboquant fork on macOS. We ship BOTH backends in the DMG so users can pick
 # the "Llama.cpp" provider (vanilla upstream) or the "llama.cpp" provider
-# (TurboQuant fork) at runtime. The upstream binary is NOT a fork — we just
-# re-codesign the official release with our Developer ID so it survives
-# notarization. See ADR in AGENTS.md §7.
+# (TurboQuant fork) at runtime.
 #
-# Backend-index source (ATO-199): every branch resolves the release tag +
-# asset names from the static manifest in atomic-chat-conf
-# (raw.githubusercontent.com — no per-IP rate limit), mirroring the runtime
-# `fetchRemoteBackends()` source. The archive downloads themselves still come
-# from the ggml-org CDN (LLAMACPP_DOWNLOAD_BASE). This target no longer needs
-# GH_TOKEN on any platform.
+# Backend-index source (ATO-199): every branch asks
+# scripts/resolve-upstream-backend.mjs for the tag, asset name, URL and hash.
+# That script reads the static manifest in atomic-chat-conf
+# (raw.githubusercontent.com — no per-IP rate limit), the same source the
+# runtime `fetchRemoteBackends()` uses, and prefers our signed mirror over the
+# ggml-org CDN. Do not re-derive any of this inline: it used to be five
+# copy-pasted jq blocks, each with its own hardcoded download base.
 # The manifest is the gate: a tag lands there only after the release has been
 # verified, so bundling whatever it names keeps the installer and the runtime
 # catalog on the same build instead of drifting apart. That replaces the
@@ -870,6 +882,25 @@ endif
 # to bundle a different release, e.g.:
 #   make download-llamacpp-upstream-backend LLAMACPP_UPSTREAM_TAG=b9222
 LLAMACPP_UPSTREAM_TAG ?=
+UPSTREAM_TAG_ARG = $(if $(LLAMACPP_UPSTREAM_TAG),--tag $(LLAMACPP_UPSTREAM_TAG),)
+
+# Verifies a downloaded archive against the hash the resolver reported. An
+# unmirrored tag reports none, in which case there is nothing to check and the
+# build says so rather than pretending it verified something.
+define verify-upstream-sha256
+	if [ -n "$$SHA256" ]; then \
+		ACTUAL=$$(shasum -a 256 "$(1)" | cut -d" " -f1); \
+		if [ "$$ACTUAL" != "$$SHA256" ]; then \
+			echo "Error: sha256 mismatch for $$ASSET"; \
+			echo "  expected $$SHA256"; \
+			echo "  actual   $$ACTUAL"; \
+			rm -f "$(1)"; exit 1; \
+		fi; \
+		echo "sha256 verified: $$ASSET"; \
+	else \
+		echo "No sha256 published for $$ASSET; skipping integrity check"; \
+	fi;
+endef
 download-llamacpp-upstream-backend:
 ifeq ($(shell uname -s),Darwin)
 	@rm -rf src-tauri/resources/llamacpp-backend-upstream
@@ -877,36 +908,14 @@ ifeq ($(shell uname -s),Darwin)
 	@ARCH=$$(uname -m); \
 	if [ "$$ARCH" = "arm64" ]; then BACKEND="macos-arm64"; else BACKEND="macos-x64"; fi; \
 	echo "Platform: $$BACKEND (upstream)"; \
-	if [ -n "$(LLAMACPP_UPSTREAM_TAG)" ]; then \
-		TAG="$(LLAMACPP_UPSTREAM_TAG)"; \
-		echo "Using pinned upstream release: $$TAG"; \
-	else \
-		echo "Resolving backend index from atomic-chat-conf manifest (ATO-199)..."; \
-		TMPREL=$$(mktemp /tmp/llamacpp-upstream-XXXXXX.json); \
-		MANIFEST_URL="https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/manifest.json"; \
-		if ! curl -sS --retry 5 --retry-delay 3 -H "User-Agent: atomic-chat-ci" -o "$$TMPREL" "$$MANIFEST_URL"; then \
-			echo "Error: failed to fetch backend manifest from $$MANIFEST_URL"; \
-			rm -f "$$TMPREL"; exit 1; \
-		fi; \
-		if ! jq -e '.tag_name' "$$TMPREL" >/dev/null 2>&1; then \
-			echo "Error: backend manifest did not parse or lacks tag_name:"; \
-			head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
-			rm -f "$$TMPREL"; exit 1; \
-		fi; \
-		TAG=$$(jq -r --arg suf "-bin-$$BACKEND.tar.gz" '. as $$r | if (($$r.assets // []) | any(.name == ("llama-" + $$r.tag_name + $$suf))) then $$r.tag_name else empty end' "$$TMPREL"); \
-		if [ -z "$$TAG" ] || [ "$$TAG" = "null" ]; then \
-			echo "Error: backend manifest does not list asset llama-<tag>-bin-$$BACKEND.tar.gz (update atomic-chat-conf/backends/manifest.json):"; \
-			head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
-			rm -f "$$TMPREL"; exit 1; \
-		fi; \
-		rm -f "$$TMPREL"; \
-	fi; \
-	URL="https://github.com/ggml-org/llama.cpp/releases/download/$$TAG/llama-$$TAG-bin-$$BACKEND.tar.gz"; \
+	RESOLVED=$$(node scripts/resolve-upstream-backend.mjs --backend "$$BACKEND" $(UPSTREAM_TAG_ARG)) || exit 1; \
+	eval "$$RESOLVED"; \
 	echo "$$TAG" > src-tauri/resources/llamacpp-backend-upstream/version.txt; \
 	echo "$$BACKEND" > src-tauri/resources/llamacpp-backend-upstream/backend.txt; \
 	echo "Release: $$TAG  Backend: $$BACKEND"; \
 	echo "Downloading: $$URL"; \
 	curl -fSL --retry 5 --retry-delay 3 "$$URL" -o /tmp/llamacpp-upstream-backend.tar.gz; \
+	$(call verify-upstream-sha256,/tmp/llamacpp-upstream-backend.tar.gz) \
 	tar -xzf /tmp/llamacpp-upstream-backend.tar.gz -C src-tauri/resources/llamacpp-backend-upstream/; \
 	rm -f /tmp/llamacpp-upstream-backend.tar.gz; \
 	if [ ! -f "src-tauri/resources/llamacpp-backend-upstream/build/bin/llama-server" ]; then \
@@ -930,17 +939,27 @@ ifeq ($(shell uname -s),Darwin)
 		fi; \
 	fi; \
 	echo "Downloaded and extracted upstream llamacpp backend successfully"
+	@# An archive from our mirror is already Developer ID signed, so re-signing
+	@# it would only burn a notary timestamp round-trip per binary. The
+	@# ggml-org fallback for an unmirrored tag still arrives ad-hoc signed and
+	@# must be re-signed, so the loop stays — behind a check.
 	@SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
-	if [ -n "$$SIGNING_IDENTITY" ]; then \
-		echo "Signing upstream llamacpp backend binaries..."; \
-		for bin in src-tauri/resources/llamacpp-backend-upstream/build/bin/*; do \
-			if [ -f "$$bin" ] && file "$$bin" | grep -q "Mach-O"; then \
-				codesign --force --options runtime --timestamp --entitlements src-tauri/Entitlements.plist --sign "$$SIGNING_IDENTITY" "$$bin"; \
-			fi; \
-		done; \
-		echo "Code signing completed"; \
-	else \
+	if [ -z "$$SIGNING_IDENTITY" ]; then \
 		echo "Warning: No Developer ID Application identity found. Skipping code signing."; \
+	else \
+		TEAM_ID=$$(echo "$$SIGNING_IDENTITY" | sed -E 's/.*\(([A-Z0-9]+)\)$$/\1/'); \
+		SERVER="src-tauri/resources/llamacpp-backend-upstream/build/bin/llama-server"; \
+		if [ -f "$$SERVER" ] && codesign -dv "$$SERVER" 2>&1 | grep -q "TeamIdentifier=$$TEAM_ID"; then \
+			echo "Backend is already signed by team $$TEAM_ID (mirrored build); skipping re-signing"; \
+		else \
+			echo "Signing upstream llamacpp backend binaries..."; \
+			for bin in src-tauri/resources/llamacpp-backend-upstream/build/bin/*; do \
+				if [ -f "$$bin" ] && file "$$bin" | grep -q "Mach-O"; then \
+					codesign --force --options runtime --timestamp --entitlements src-tauri/Entitlements.plist --sign "$$SIGNING_IDENTITY" "$$bin"; \
+				fi; \
+			done; \
+			echo "Code signing completed"; \
+		fi; \
 	fi
 else ifeq ($(OS),Windows_NT)
 	@mkdir -p src-tauri/resources/llamacpp-backend-upstream
@@ -972,38 +991,14 @@ else ifeq ($(OS),Windows_NT)
 		fi; \
 		echo "Auto-selected backend: $$BACKEND"; \
 	fi; \
-	echo "Resolving backend index from atomic-chat-conf manifest (ATO-199)..."; \
-	TMPREL=$$(mktemp /tmp/llamacpp-upstream-XXXXXX.json); \
-	MANIFEST_URL="https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/manifest.json"; \
-	if ! curl -sS --retry 5 --retry-delay 3 -H "User-Agent: atomic-chat-ci" -o "$$TMPREL" "$$MANIFEST_URL"; then \
-		echo "Error: failed to fetch backend manifest from $$MANIFEST_URL"; \
-		rm -f "$$TMPREL"; exit 1; \
-	fi; \
-	if ! jq -e '.tag_name' "$$TMPREL" >/dev/null 2>&1; then \
-		echo "Error: backend manifest did not parse or lacks tag_name:"; \
-		head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
-		rm -f "$$TMPREL"; exit 1; \
-	fi; \
-	if echo "$$BACKEND" | grep -Eq '^win-cuda-[0-9]+-x64$$'; then \
-		CUDA_MAJOR=$$(echo "$$BACKEND" | sed -E 's/^win-cuda-([0-9]+)-x64$$/\1/'); \
-		RESOLVED=$$(jq -r --arg major "$$CUDA_MAJOR" '. as $$r | { tag: $$r.tag_name, minors: [ ($$r.assets // [])[].name | select(test("-bin-win-cuda-" + $$major + "\\.[0-9]+-x64\\.zip$$")) | capture("-bin-win-cuda-" + $$major + "\\.(?<m>[0-9]+)-x64\\.zip$$") | .m | tonumber ] } | select((.minors | length) > 0) | "\(.tag) win-cuda-\($$major).\(.minors | max)-x64"' "$$TMPREL"); \
-		TAG=$$(echo "$$RESOLVED" | cut -d" " -f1); \
-		BACKEND=$$(echo "$$RESOLVED" | cut -d" " -f2); \
-	else \
-		TAG=$$(jq -r --arg suf "-bin-$$BACKEND.zip" '. as $$r | if (($$r.assets // []) | any(.name == ("llama-" + $$r.tag_name + $$suf))) then $$r.tag_name else empty end' "$$TMPREL"); \
-	fi; \
-	if [ -z "$$TAG" ] || [ "$$TAG" = "null" ] || [ -z "$$BACKEND" ]; then \
-		echo "Error: backend manifest does not list an asset for backend $$BACKEND (update atomic-chat-conf/backends/manifest.json):"; \
-		head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
-		rm -f "$$TMPREL"; exit 1; \
-	fi; \
-	rm -f "$$TMPREL"; \
-	URL="https://github.com/ggml-org/llama.cpp/releases/download/$$TAG/llama-$$TAG-bin-$$BACKEND.zip"; \
+	RESOLVED=$$(node scripts/resolve-upstream-backend.mjs --backend "$$BACKEND") || exit 1; \
+	eval "$$RESOLVED"; \
 	echo "$$TAG" > src-tauri/resources/llamacpp-backend-upstream/version.txt; \
 	echo "$$BACKEND" > src-tauri/resources/llamacpp-backend-upstream/backend.txt; \
 	echo "Release: $$TAG  Backend: $$BACKEND"; \
 	echo "Downloading: $$URL"; \
 	curl -fSL --retry 5 --retry-delay 3 "$$URL" -o /tmp/llamacpp-upstream-backend.zip; \
+	$(call verify-upstream-sha256,/tmp/llamacpp-upstream-backend.zip) \
 	unzip -o /tmp/llamacpp-upstream-backend.zip -d src-tauri/resources/llamacpp-backend-upstream/; \
 	rm -f /tmp/llamacpp-upstream-backend.zip; \
 	if [ ! -f "src-tauri/resources/llamacpp-backend-upstream/build/bin/llama-server.exe" ]; then \
@@ -1027,38 +1022,15 @@ else ifeq ($(shell uname -s),Linux)
 	@# time, since the bundled artefact is meant to be the offline
 	@# fallback that works on any host.
 	@BACKEND="linux-cpu-x64"; \
-	UPSTREAM_INFIX="ubuntu-x64"; \
-	echo "Platform: $$BACKEND (upstream / Linux, asset infix: $$UPSTREAM_INFIX)"; \
-	if [ -n "$(LLAMACPP_UPSTREAM_TAG)" ]; then \
-		TAG="$(LLAMACPP_UPSTREAM_TAG)"; \
-		echo "Using pinned upstream release: $$TAG"; \
-	else \
-		echo "Resolving backend index from atomic-chat-conf manifest (ATO-199)..."; \
-		TMPREL=$$(mktemp /tmp/llamacpp-upstream-XXXXXX.json); \
-		MANIFEST_URL="https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/manifest.json"; \
-		if ! curl -sS --retry 5 --retry-delay 3 -H "User-Agent: atomic-chat-ci" -o "$$TMPREL" "$$MANIFEST_URL"; then \
-			echo "Error: failed to fetch backend manifest from $$MANIFEST_URL"; \
-			rm -f "$$TMPREL"; exit 1; \
-		fi; \
-		if ! jq -e '.tag_name' "$$TMPREL" >/dev/null 2>&1; then \
-			echo "Error: backend manifest did not parse or lacks tag_name:"; \
-			head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
-			rm -f "$$TMPREL"; exit 1; \
-		fi; \
-		TAG=$$(jq -r --arg suf "-bin-$$UPSTREAM_INFIX.tar.gz" '. as $$r | if (($$r.assets // []) | any(.name == ("llama-" + $$r.tag_name + $$suf))) then $$r.tag_name else empty end' "$$TMPREL"); \
-		if [ -z "$$TAG" ] || [ "$$TAG" = "null" ]; then \
-			echo "Error: backend manifest does not list asset llama-<tag>-bin-$$UPSTREAM_INFIX.tar.gz (update atomic-chat-conf/backends/manifest.json):"; \
-			head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
-			rm -f "$$TMPREL"; exit 1; \
-		fi; \
-		rm -f "$$TMPREL"; \
-	fi; \
-	URL="https://github.com/ggml-org/llama.cpp/releases/download/$$TAG/llama-$$TAG-bin-$$UPSTREAM_INFIX.tar.gz"; \
+	echo "Platform: $$BACKEND (upstream / Linux)"; \
+	RESOLVED=$$(node scripts/resolve-upstream-backend.mjs --backend "$$BACKEND" $(UPSTREAM_TAG_ARG)) || exit 1; \
+	eval "$$RESOLVED"; \
 	echo "$$TAG" > src-tauri/resources/llamacpp-backend-upstream/version.txt; \
 	echo "$$BACKEND" > src-tauri/resources/llamacpp-backend-upstream/backend.txt; \
 	echo "Release: $$TAG  Backend: $$BACKEND"; \
 	echo "Downloading: $$URL"; \
 	curl -fSL --retry 5 --retry-delay 3 "$$URL" -o /tmp/llamacpp-upstream-backend.tar.gz; \
+	$(call verify-upstream-sha256,/tmp/llamacpp-upstream-backend.tar.gz) \
 	tar -xzf /tmp/llamacpp-upstream-backend.tar.gz -C src-tauri/resources/llamacpp-backend-upstream/; \
 	rm -f /tmp/llamacpp-upstream-backend.tar.gz; \
 	if [ ! -f "src-tauri/resources/llamacpp-backend-upstream/build/bin/llama-server" ]; then \

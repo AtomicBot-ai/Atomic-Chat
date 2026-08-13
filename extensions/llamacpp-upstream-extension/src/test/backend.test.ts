@@ -6,12 +6,17 @@ import {
   fetchRemoteBackends,
   getBackendArchiveName,
   getBackendDownloadUrl,
-  LLAMACPP_UPSTREAM_PINNED_TAG,
-  resolveCudaFamilyConcrete,
+  BUNDLED_BASELINE_TAG,
+  resolveGpuFamilyConcrete,
+  isConcreteOfGpuFamily,
+  friendlyBackendLabel,
+  requiredDiskSpaceForBackend,
   listInstalledBackendPacks,
   deleteBackendPack,
   mergeBackendOptions,
 } from '../backend'
+import { BUNDLED_MANIFEST_BASELINE } from '../bundledManifestBaseline'
+import UPSTREAM_MANIFEST_FIXTURE from '../../../../tests/fixtures/registries/upstream-manifest.json'
 import { getSystemInfo } from '../hardware'
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 import { fs, getJanDataFolderPath } from '@janhq/core'
@@ -126,12 +131,74 @@ describe('Backend functions', () => {
 
     it('resolves the CUDA 13 family to the newest published minor', () => {
       expect(
-        resolveCudaFamilyConcrete('win-cuda-13-x64', [
+        resolveGpuFamilyConcrete('win-cuda-13-x64', [
           { version: 'b9900', backend: 'win-cuda-13.1-x64', order: 0 },
           { version: 'b10205', backend: 'win-cuda-13.3-x64', order: 0 },
           { version: 'b10205', backend: 'win-cuda-12.4-x64', order: 0 },
         ])
       ).toBe('b10205/win-cuda-13.3-x64')
+    })
+
+    it('resolves the version-less ROCm family to the published HIP asset', () => {
+      const remote = [
+        { version: 'b10405', backend: 'win-rocm-7.14-x64', order: 0 },
+        { version: 'b10405', backend: 'win-vulkan-x64', order: 0 },
+      ]
+
+      expect(resolveGpuFamilyConcrete('win-rocm-x64', remote)).toBe(
+        'b10405/win-rocm-7.14-x64'
+      )
+      expect(isConcreteOfGpuFamily('win-rocm-x64', 'win-rocm-7.14-x64')).toBe(
+        true
+      )
+      // ROCm and CUDA families must not bleed into each other.
+      expect(isConcreteOfGpuFamily('win-rocm-x64', 'win-cuda-13.3-x64')).toBe(
+        false
+      )
+      expect(isConcreteOfGpuFamily('win-cuda-13-x64', 'win-rocm-7.14-x64')).toBe(
+        false
+      )
+    })
+
+    it('picks the highest HIP version when several are published', () => {
+      expect(
+        resolveGpuFamilyConcrete('win-rocm-x64', [
+          { version: 'b10405', backend: 'win-rocm-7.9-x64', order: 0 },
+          { version: 'b10405', backend: 'win-rocm-7.14-x64', order: 0 },
+        ])
+      ).toBe('b10405/win-rocm-7.14-x64')
+    })
+
+    it('labels the ROCm variants with their weight', () => {
+      expect(friendlyBackendLabel('win-rocm-7.14-x64')).toBe(
+        'ROCm 7.14 (~1 GB)'
+      )
+      expect(friendlyBackendLabel('win-rocm-x64')).toBe('ROCm (~1 GB)')
+      expect(friendlyBackendLabel('win-vulkan-x64')).toBe('Vulkan')
+    })
+  })
+
+  describe('requiredDiskSpaceForBackend', () => {
+    it('demands room for the archive plus the ~980 MB unpacked HIP tree', () => {
+      const archive = 196 * 1024 * 1024
+      const required = requiredDiskSpaceForBackend('win-rocm-7.14-x64', archive)
+
+      expect(required).not.toBeNull()
+      expect(required!).toBeGreaterThan(archive + 980 * 1024 * 1024)
+      // Still under 1.5 GB, so the check does not turn into a de-facto ban.
+      expect(required!).toBeLessThan(1.5 * 1024 ** 3)
+    })
+
+    it('falls back to a measured archive size for an unmirrored tag', () => {
+      expect(requiredDiskSpaceForBackend('win-rocm-7.14-x64')).toBe(
+        requiredDiskSpaceForBackend('win-rocm-7.14-x64', 200 * 1024 * 1024)
+      )
+    })
+
+    it('imposes no precondition on the backends that unpack small', () => {
+      expect(requiredDiskSpaceForBackend('win-cuda-13.3-x64', 1)).toBeNull()
+      expect(requiredDiskSpaceForBackend('win-vulkan-x64', 1)).toBeNull()
+      expect(requiredDiskSpaceForBackend('macos-arm64', 1)).toBeNull()
     })
   })
 
@@ -268,15 +335,15 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
     vi.mocked(globalThis.fetch).mockRejectedValue(new Error('offline'))
 
     const backends = await fetchRemoteBackends()
-    expect(backends.map((backend) => backend.version)).toEqual([
-      'b10205',
-      'b10205',
-      'b10205',
-      'b10205',
-    ])
+    expect(backends.map((backend) => backend.version)).toEqual(
+      Array(4).fill(BUNDLED_BASELINE_TAG)
+    )
   })
 
   it('follows a manifest tag newer than the bundled baseline', async () => {
+    // Derived from the baseline instead of written out: a literal here would
+    // silently stop testing "newer" the moment the baseline caught up to it.
+    const newerTag = `b${Number(BUNDLED_BASELINE_TAG.slice(1)) + 1}`
     vi.mocked(getSystemInfo).mockResolvedValue({
       os_type: 'windows',
       cpu: { arch: 'x86_64', extensions: [] },
@@ -285,17 +352,28 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
     vi.mocked(tauriFetch).mockResolvedValue(
       okResponse({
         ...MANIFEST,
-        tag_name: 'b10344',
-        assets: [{ name: 'llama-b10344-bin-win-cpu-x64.zip' }],
+        tag_name: newerTag,
+        assets: [{ name: `llama-${newerTag}-bin-win-cpu-x64.zip` }],
       })
     )
 
     const backends = await fetchRemoteBackends({ force: true })
 
     expect(new Set(backends.map((backend) => backend.version))).toEqual(
-      new Set(['b10344'])
+      new Set([newerTag])
     )
-    expect(LLAMACPP_UPSTREAM_PINNED_TAG).not.toBe('b10344')
+  })
+
+  it('ships a baseline generated from the committed manifest fixture', () => {
+    expect(BUNDLED_MANIFEST_BASELINE.tag_name).toBe(
+      UPSTREAM_MANIFEST_FIXTURE.tag_name
+    )
+    expect(BUNDLED_MANIFEST_BASELINE.assets).toEqual(
+      UPSTREAM_MANIFEST_FIXTURE.assets
+    )
+    expect(BUNDLED_MANIFEST_BASELINE.download_base).toBe(
+      (UPSTREAM_MANIFEST_FIXTURE as { download_base?: string }).download_base
+    )
   })
 
   it('resolves the manifest from raw atomic-chat-conf, not api.github.com', async () => {
@@ -397,7 +475,7 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
 
     expect(backends).toEqual([
       {
-        version: LLAMACPP_UPSTREAM_PINNED_TAG,
+        version: BUNDLED_BASELINE_TAG,
         backend: 'macos-arm64',
         order: 0,
       },

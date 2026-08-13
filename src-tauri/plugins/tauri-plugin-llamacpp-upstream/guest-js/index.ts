@@ -255,6 +255,7 @@ export function normalizeFeatures(features: any): BackendFeatures {
     cuda12: features.cuda12 || false,
     cuda13: features.cuda13 || false,
     vulkan: features.vulkan || false,
+    rocm: features.rocm || false,
   }
 }
 
@@ -415,6 +416,14 @@ export async function fetchManifestHttp1(
   timeoutMs: number
 ): Promise<string> {
   return invoke('plugin:llamacpp-upstream|fetch_manifest_http1', { url, timeoutMs })
+}
+
+/**
+ * Free bytes on the filesystem holding `path`. `path` may not exist yet — the
+ * deepest existing ancestor is measured instead.
+ */
+export async function availableDiskSpace(path: string): Promise<number> {
+  return invoke('plugin:llamacpp-upstream|available_disk_space', { path })
 }
 
 export * from './types'

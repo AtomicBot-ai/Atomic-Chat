@@ -40,11 +40,13 @@ import {
   friendlyBackendLabel,
   getBackendArchiveName,
   getBackendDownloadUrl,
+  resolveBackendArchiveSource,
   getCudartDownloadUrl,
   getCudartArchiveName,
   getCudaToolkitVersion,
-  isConcreteOfCudaFamily,
-  resolveCudaFamilyConcrete,
+  isConcreteOfGpuFamily,
+  resolveGpuFamilyConcrete,
+  requiredDiskSpaceForBackend,
   listInstalledBackendPacks,
   deleteBackendPack,
   mergeBackendOptions,
@@ -110,6 +112,7 @@ import {
   isCudaInstalledFromRust,
   checkSpecTypeSupport,
   getRuntimeDevice,
+  availableDiskSpace,
 } from '../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index'
 
 // Error message constant - matches web-app/src/utils/error.ts
@@ -167,6 +170,10 @@ const ERR_MODEL_FILE_CORRUPT = 'MODEL_FILE_CORRUPT'
 /// concrete release tag. The download is refused and the caller falls back to
 /// an installed backend, so this is a routing defect to fix, not a crash.
 const ERR_BACKEND_TAG_UNRESOLVED = 'BACKEND_TAG_UNRESOLVED'
+/// The volume holding the backends directory cannot fit the archive plus its
+/// unpacked tree. Raised before the transfer starts so the user is not told
+/// "extraction failed" after waiting for a several-hundred-megabyte download.
+const ERR_BACKEND_INSUFFICIENT_DISK_SPACE = 'BACKEND_INSUFFICIENT_DISK_SPACE'
 /// Broadcast channel emitted after a model that crashed on an unsupported
 /// multimodal projector is successfully reloaded in text-only mode. The
 /// web-app shows a one-shot, non-fatal toast so the user knows vision/audio
@@ -1070,24 +1077,26 @@ export default class llamacpp_upstream_extension extends AIEngine {
         }
       }
 
-      // GPU-backend detection deliberately does NOT run here anymore.
+      // GPU-backend detection does not run *here*, inside
+      // `configureBackends()`. It used to, on every launch and again after the
+      // remote release fetch, which read in the logs as a periodic "we're
+      // trying to install a better backend" pass that never installed anything
+      // unless the user clicked through a dialog.
       //
-      // Previously this method ran `detectIdealBackendType()` on every
-      // app launch (and again after the remote release fetch), which
-      // showed up in the logs as a periodic "we're trying to install a
-      // better backend" pass — even though no install ever happened
-      // unless the user clicked through the dialog. The user found
-      // this opaque and asked for it to be turned off entirely.
+      // Detection is now driven from outside the extension:
+      //   1. `StartupBackendCoordinator` calls `refreshOptimalBackendCache()`
+      //      once per launch (cached for 24h) and applies the resulting tier
+      //      through `downloadRecommendedBackend()`. ROCm is excluded from that
+      //      silent path because of its size.
+      //   2. `SetupBackendStep` on first-launch onboarding and the manual
+      //      "Find optimal backend" button, both via
+      //      `recheckOptimalBackend()`.
       //
-      // Detection now happens only at the two explicit user-facing
-      // entry points, both of which call `recheckOptimalBackend()`:
-      //   1. `SetupBackendStep` on first-launch onboarding.
-      //   2. The manual "Find optimal backend" button in provider
-      //      settings.
-      //
-      // `configureBackends()` keeps its other responsibilities:
-      // bundled-backend extraction, settings registration, and
-      // version auto-upgrade for the same backend family.
+      // Keeping it out of `configureBackends()` is what makes the coordinator's
+      // once-per-launch budget hold: this method also runs on settings changes
+      // and recovery paths. Its own responsibilities stay bundled-backend
+      // extraction, settings registration, and version auto-upgrade within the
+      // same backend family.
 
       // Static "Latest <variant>" dropdown entries for every variant the
       // upstream release stream ships on this OS. Built from the compile-time
@@ -1105,7 +1114,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // by `resolveLatestBackendString` (now family-aware), so a future
       // ggml-org minor bump (13.3 → 13.4) no longer silently dead-ends the
       // manual dropdown. `friendlyBackendLabel` renders these as "CUDA 12.4" /
-      // "CUDA 13".
+      // "CUDA 13". `win-rocm-x64` is version-less for the same reason and is
+      // offered here even on NVIDIA hosts, since the set is a manual override.
       // macOS has no GPU tiers, and only `macos-arm64` is published to the
       // manifest, so that is the one sentinel worth offering. The
       // architecture is read off the bundled build rather than probed: the
@@ -1121,6 +1131,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
             'win-cpu-x64',
             'win-cuda-12-x64',
             'win-cuda-13-x64',
+            'win-rocm-x64',
             'win-vulkan-x64',
           ]
         : IS_LINUX
@@ -1623,8 +1634,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
       const sameFamily =
         targetType === currentType ||
         targetType === migratedCurrentType ||
-        isConcreteOfCudaFamily(currentType, targetType) ||
-        isConcreteOfCudaFamily(migratedCurrentType, targetType)
+        isConcreteOfGpuFamily(currentType, targetType) ||
+        isConcreteOfGpuFamily(migratedCurrentType, targetType)
       if (!sameFamily) {
         logger.warn(
           `reconcileBackendReleaseTag: refusing to switch backend type ${currentType} -> ${targetType}`
@@ -1738,6 +1749,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
         const cuda12Backend = pickBackend(
           new RegExp(`^win-cuda-12\\.\\d+-${archSuffix}$`)
         )
+        const rocmBackend = pickBackend(
+          new RegExp(`^win-rocm-\\d+\\.\\d+-${archSuffix}$`)
+        )
         const vulkanBackend = pickBackend(
           new RegExp(`^win-vulkan-${archSuffix}$`)
         )
@@ -1761,6 +1775,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
         const tiers: string[] = []
         if (features.cuda13 && cuda13Backend) tiers.push(cuda13Backend)
         if (features.cuda12 && cuda12Backend) tiers.push(cuda12Backend)
+        // ROCm outranks Vulkan on the AMD cards it covers, and `features.rocm`
+        // is already gated on the generated PCI-id table, so reaching this
+        // point means the archive is compiled for this gfx target.
+        if (features.rocm && hasEnoughVram && rocmBackend)
+          tiers.push(rocmBackend)
         if (
           features.vulkan &&
           hasEnoughVram &&
@@ -1787,9 +1806,10 @@ export default class llamacpp_upstream_extension extends AIEngine {
         const gpuCapable =
           features.cuda13 ||
           features.cuda12 ||
+          (features.rocm && hasEnoughVram) ||
           (features.vulkan && hasEnoughVram && !integratedGpuOnly)
         const anyGpuBackendAvailable = availableBackends.some((b) =>
-          /-(cuda-\d|vulkan)-/.test(b.backend)
+          /-(cuda-\d|rocm-\d|vulkan)-/.test(b.backend)
         )
         if (gpuCapable && !anyGpuBackendAvailable) {
           logger.warn(
@@ -2604,8 +2624,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
     const sameFamily =
       targetType === currentType ||
       targetType === migratedCurrentType ||
-      isConcreteOfCudaFamily(currentType, targetType) ||
-      isConcreteOfCudaFamily(migratedCurrentType, targetType)
+      isConcreteOfGpuFamily(currentType, targetType) ||
+      isConcreteOfGpuFamily(migratedCurrentType, targetType)
     if (!sameFamily) {
       logger.warn(
         `checkForEngineUpdate: refusing to switch backend type ${currentType} -> ${targetType}`
@@ -2824,10 +2844,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // concrete published asset (`win-cuda-13.3-x64`). Resolve it to the
       // newest concrete asset of that major so the manual dropdown's
       // `latest/win-cuda-13-x64` sentinel keeps resolving across minor bumps.
-      const familyConcrete = resolveCudaFamilyConcrete(backend, remote)
+      // `latest/win-rocm-x64` -> `win-rocm-7.14-x64` works the same way.
+      const familyConcrete = resolveGpuFamilyConcrete(backend, remote)
       if (familyConcrete) {
         logger.info(
-          `[resolveLatestBackendString] resolved CUDA family '${backend}' -> ${familyConcrete}`
+          `[resolveLatestBackendString] resolved GPU family '${backend}' -> ${familyConcrete}`
         )
         return familyConcrete
       }
@@ -2883,7 +2904,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // exact match.
       const sameFamily = installed.filter((b) => {
         const bn = stripBom(b.backend)
-        return bn === backendId || isConcreteOfCudaFamily(backendId, bn)
+        return bn === backendId || isConcreteOfGpuFamily(backendId, bn)
       })
       if (sameFamily.length === 0) return null
       const buildNumber = (v: string): number => {
@@ -5458,6 +5479,44 @@ export default class llamacpp_upstream_extension extends AIEngine {
   }
 
   /**
+   * Refuses the download when the volume cannot hold the archive plus its
+   * unpacked tree. Only the Windows HIP build is large enough to warrant this
+   * (~196 MB compressed, ~980 MB unpacked); `requiredDiskSpaceForBackend`
+   * returns `null` for everything else and this becomes a no-op.
+   *
+   * A failure to *measure* free space is not a failure to install: the check is
+   * skipped with a warning so a platform quirk in the disk enumeration cannot
+   * block an otherwise fine download.
+   */
+  private async ensureDiskSpaceForBackend(
+    backend: string,
+    archiveBytes: number | undefined,
+    stagingDir: string
+  ): Promise<void> {
+    const required = requiredDiskSpaceForBackend(backend, archiveBytes)
+    if (required === null) return
+
+    let free: number
+    try {
+      free = await availableDiskSpace(stagingDir)
+    } catch (err) {
+      logger.warn(
+        `ensureDiskSpaceForBackend: could not measure free space for ${stagingDir}, continuing:`,
+        err
+      )
+      return
+    }
+
+    if (free >= required) return
+
+    const toGiB = (bytes: number) => (bytes / 1024 ** 3).toFixed(1)
+    throw codedLoadError(
+      ERR_BACKEND_INSUFFICIENT_DISK_SPACE,
+      `Not enough free disk space to install ${backend}: ${toGiB(required)} GB needed, ${toGiB(free)} GB free.`
+    )
+  }
+
+  /**
    * Downloads a backend archive from ggml-org/llama.cpp GitHub releases
    * and extracts it into the local backends directory.
    *
@@ -5494,7 +5553,12 @@ export default class llamacpp_upstream_extension extends AIEngine {
       return
     }
 
-    const url = getBackendDownloadUrl(version, backend)
+    // Prefers our signed mirror and carries the hash to verify; falls back to
+    // the ggml-org CDN (without a hash) for tags that were never mirrored.
+    const { url, sha256, size } = await resolveBackendArchiveSource(
+      version,
+      backend
+    )
     const janDataFolderPath = await getJanDataFolderPath()
     // Temp staging shares the upstream root with the rest of the
     // extension's on-disk state (`llamacpp-upstream/tmp`) so partial
@@ -5510,6 +5574,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
     const archiveName = getBackendArchiveName(version, backend)
     const archivePath = await joinPath([tempDir, archiveName])
     const targetDir = await getBackendDir(backend, version)
+
+    await this.ensureDiskSpaceForBackend(backend, size, tempDir)
 
     // Route the file transfer through `download-extension` so the
     // standard top-left download manager picks it up via the same
@@ -5581,9 +5647,19 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // 10060) because the backend archive request bypasses the proxy.
       const proxy = getProxyConfig() ?? undefined
 
+      // `sha256`/`size` are only set for mirrored archives; the Rust side
+      // checks the size first and the hash second, and skips both when absent.
+      const downloadItem: DownloadItem = {
+        url,
+        save_path: archivePath,
+        proxy,
+        ...(sha256 ? { sha256 } : {}),
+        ...(size ? { size } : {}),
+      }
+
       if (downloadManager?.downloadFiles) {
         await downloadManager.downloadFiles(
-          [{ url, save_path: archivePath, proxy }],
+          [downloadItem],
           taskId,
           onProgress,
           false
@@ -5596,7 +5672,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
           'download-extension not available, falling back to raw download_files invoke'
         )
         await invoke<void>('download_files', {
-          items: [{ url, save_path: archivePath, proxy }],
+          items: [downloadItem],
           taskId,
           headers: {},
           resume: false,

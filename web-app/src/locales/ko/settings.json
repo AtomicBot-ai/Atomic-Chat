@@ -348,7 +348,7 @@
     "downloadingBackend": "백엔드 다운로드 중…",
     "downloadingBackendDesc": "권장 백엔드를 다운로드하는 중입니다. 잠시 기다려 주세요 — 몇 분 정도 걸릴 수 있습니다.",
     "downloadComplete": "백엔드 {{backend}}이(가) 성공적으로 설치되었습니다!",
-    "downloadFailed": "GPU 백엔드 다운로드에 실패했습니다",
+    "downloadFailed": "엔진 백엔드를 설치하지 못했습니다",
     "betterBackendTitle": "더 나은 구성 사용 가능",
     "betterBackendDesc": "GPU에 더 빠른 llama.cpp 백엔드({{backend}})를 사용할 수 있습니다. 더 나은 성능을 위해 다운로드하세요.",
     "downloadNow": "다운로드",

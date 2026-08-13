@@ -180,38 +180,28 @@ $backend = 'win-cpu-x64'
 if (Test-Path $llamacppDir) { Remove-Item $llamacppDir -Recurse -Force }
 New-Item -ItemType Directory -Path $llamacppDir -Force | Out-Null
 
-# ATO-199: resolve backend index from atomic-chat-conf static manifest.
-$manifestUrl = 'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/manifest.json'
-$headers = @{ 'User-Agent' = 'atomic-chat-build' }
-
-Write-Host '  Fetching backend manifest...'
-$manifest = $null
-for ($i = 1; $i -le 5; $i++) {
-    try {
-        $manifest = Invoke-RestMethod -Uri $manifestUrl -Headers $headers -UseBasicParsing
-        break
-    } catch {
-        Write-Host "  Manifest fetch attempt $i/5 failed: $($_.Exception.Message)" -ForegroundColor Yellow
-        Start-Sleep -Seconds ($i * 2)
-    }
-}
-if (-not $manifest -or -not $manifest.tag_name -or -not $manifest.assets) {
-    Write-Host "[FATAL] Could not read backend manifest from $manifestUrl" -ForegroundColor Red
+# ATO-199: the tag, the asset and the download base all come from the shared
+# resolver, which reads the atomic-chat-conf manifest and prefers our signed
+# mirror over the ggml-org CDN.
+$resolved = @{}
+$resolverOut = & node scripts/resolve-upstream-backend.mjs --backend $backend
+if ($LASTEXITCODE -ne 0) {
+    Write-Host '[FATAL] scripts/resolve-upstream-backend.mjs failed' -ForegroundColor Red
     exit 1
 }
-$tag = ''
-$want = "llama-$($manifest.tag_name)-bin-$backend.zip"
-if ($manifest.assets | Where-Object { $_.name -eq $want }) {
-    $tag = $manifest.tag_name
+foreach ($line in $resolverOut) {
+    $kv = $line -split '=', 2
+    if ($kv.Length -eq 2) { $resolved[$kv[0]] = $kv[1] }
 }
-if (-not $tag) {
-    Write-Host "[FATAL] Backend manifest does not list asset llama-<tag>-bin-$backend.zip. Update atomic-chat-conf/backends/manifest.json." -ForegroundColor Red
+$tag = $resolved['TAG']
+$backend = $resolved['BACKEND']
+if (-not $tag -or -not $resolved['URL']) {
+    Write-Host '[FATAL] resolver returned no TAG/URL' -ForegroundColor Red
     exit 1
 }
 
-# ggml-org publishes Windows binaries as .zip (not .tar.gz like the
-# legacy janhq mirror).
-$archiveUrl = "https://github.com/ggml-org/llama.cpp/releases/download/$tag/llama-$tag-bin-$backend.zip"
+# Windows binaries ship as .zip (not .tar.gz like the legacy janhq mirror).
+$archiveUrl = $resolved['URL']
 $archivePath = Join-Path $env:TEMP 'llamacpp-upstream-backend.zip'
 
 Write-Host "  Release: $tag  Backend: $backend"
@@ -231,6 +221,18 @@ for ($i = 1; $i -le 5; $i++) {
 if (-not $downloaded) {
     Write-Host "[FATAL] Failed to download $archiveUrl after 5 attempts" -ForegroundColor Red
     exit 1
+}
+
+if ($resolved['SHA256']) {
+    $actual = (Get-FileHash -Path $archivePath -Algorithm SHA256).Hash.ToLower()
+    if ($actual -ne $resolved['SHA256']) {
+        Remove-Item $archivePath -Force -ErrorAction SilentlyContinue
+        Write-Host "[FATAL] sha256 mismatch for $($resolved['ASSET']): expected $($resolved['SHA256']), got $actual" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "  sha256 verified: $($resolved['ASSET'])"
+} else {
+    Write-Host "  No sha256 published for $($resolved['ASSET']); skipping integrity check" -ForegroundColor Yellow
 }
 
 Set-Content -Path "$llamacppDir/version.txt" -Value $tag -NoNewline

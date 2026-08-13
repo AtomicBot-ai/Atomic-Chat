@@ -61,7 +61,14 @@ type Assistant = {
   created_at: number
   description?: string
   instructions: string
+  /** Sampling bag injected verbatim into local-backend chat requests. */
   parameters: Record<string, unknown>
+  /**
+   * True once the user has tuned this assistant's sampling. Gates the
+   * model-family recommended sampler (see `withRecommendedSampling`), so it
+   * must stay outside `parameters` — that bag reaches the request body as is.
+   */
+  sampling_overridden?: boolean
   // tool_steps?: number
 }
 

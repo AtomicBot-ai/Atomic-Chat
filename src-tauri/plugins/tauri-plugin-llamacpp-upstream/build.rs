@@ -37,6 +37,7 @@ const COMMANDS: &[&str] = &[
     "install_bundled_backend",
     "verify_backend_binary",
     "fetch_manifest_http1",
+    "available_disk_space",
 ];
 
 fn main() {

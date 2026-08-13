@@ -60,11 +60,13 @@ pub fn map_old_backend_to_new(old_backend: String) -> String {
     // `determine_supported_backends` (see ATO-105) — it must pass through
     // untouched, otherwise the `cuda-13` folding below would rewrite it to
     // a concrete minor that may not exist in the current release stream.
+    // `win-rocm-x64` is the same kind of minor-less family id for HIP.
     if is_windows
         && (old_backend == "win-cpu-x64"
             || old_backend == "win-cuda-13-x64"
             || old_backend.contains("cuda-12.4")
             || old_backend.contains("cuda-13.3")
+            || old_backend.contains("rocm")
             || old_backend == "win-vulkan-x64")
     {
         return old_backend;
@@ -259,12 +261,30 @@ fn backend_executable_path(backend_dir: &PathBuf) -> PathBuf {
     }
 }
 
+/// Reads the build number out of `llama-server --version`. Upstream prints it
+/// two ways: `version: 10344 (a1b2c3d)` and, from b10405 on,
+/// `version: 0.1.0-dev (build 10405, commit a1b2c3d)`. Understanding only the
+/// first shape rejects a perfectly good build at the launch gate.
 fn parse_binary_version(output: &str) -> Option<u32> {
     output.lines().find_map(|line| {
-        line.trim()
-            .strip_prefix("version:")
-            .and_then(|value| value.split_whitespace().next())
-            .and_then(|value| value.parse::<u32>().ok())
+        let tokens: Vec<&str> = line
+            .trim()
+            .strip_prefix("version:")?
+            .split_whitespace()
+            .collect();
+
+        if let Some(build) = tokens.first().and_then(|token| token.parse::<u32>().ok()) {
+            return Some(build);
+        }
+
+        let build = tokens
+            .iter()
+            .position(|token| token.trim_start_matches('(') == "build")
+            .and_then(|index| tokens.get(index + 1))?;
+        build
+            .trim_end_matches(|c: char| !c.is_ascii_digit())
+            .parse()
+            .ok()
     })
 }
 
@@ -375,6 +395,8 @@ pub struct SystemFeatures {
     cuda12: bool,
     cuda13: bool,
     vulkan: bool,
+    #[serde(default)]
+    rocm: bool,
 }
 
 #[derive(Serialize)]
@@ -409,6 +431,12 @@ pub fn determine_supported_backends(
                 // and matched family-wise in the TS `listSupportedBackends`
                 // filter, so we must NOT hardcode a minor here.
                 supported_backends.push("win-cuda-13-x64".to_string());
+            }
+            if features.rocm {
+                // Minor-less family id for the same reason as CUDA above:
+                // upstream ships `win-rocm-7.14-x64` today and will bump that
+                // minor, so the concrete asset is resolved from the manifest.
+                supported_backends.push("win-rocm-x64".to_string());
             }
             if features.vulkan {
                 supported_backends.push("win-vulkan-x64".to_string());
@@ -568,11 +596,14 @@ pub struct SupportedFeatures {
     cuda12: bool,
     cuda13: bool,
     vulkan: bool,
+    rocm: bool,
 }
 
 #[derive(Deserialize)]
 pub struct GpuInfo {
     driver_version: String,
+    #[serde(default)]
+    vendor: Option<String>,
     nvidia_info: Option<NvidiaInfo>,
     vulkan_info: Option<VulkanInfo>,
 }
@@ -585,6 +616,36 @@ pub struct NvidiaInfo {
 #[derive(Deserialize)]
 pub struct VulkanInfo {
     api_version: String,
+    /// PCI device id, the only gfx signal available on Windows (there is no
+    /// `/sys/class/kfd` to read `gfx_target_version` from).
+    #[serde(default)]
+    device_id: Option<u32>,
+}
+
+fn is_amd_gpu(gpu: &GpuInfo) -> bool {
+    gpu.vendor
+        .as_deref()
+        .is_some_and(|vendor| vendor.eq_ignore_ascii_case("amd"))
+}
+
+/// The Windows ROCm decision, kept free of I/O so the policy itself is testable.
+///
+/// Unlike the Linux path in the turboquant plugin there is nothing to probe for
+/// a host runtime: the upstream archive statically carries HIP inside
+/// `ggml-hip.dll`, so an AMD driver is enough. What must be checked is the
+/// architecture, and the PCI device id is the only pre-launch signal for it.
+///
+/// Deliberately conservative. An AMD card we cannot place in the generated
+/// table yields `false` and the caller falls back to Vulkan: 34.6 MB that works
+/// beats ~980 MB that may not, and the manual backend picker is still there for
+/// a card the table has not caught up with.
+fn rocm_supported_windows(has_amd_gpu: bool, device_ids: &[u32]) -> bool {
+    has_amd_gpu
+        && device_ids.iter().any(|id| {
+            crate::amd_rocm_pci_ids::AMD_ROCM_WINDOWS_PCI_IDS
+                .iter()
+                .any(|(supported, _gfx)| supported == id)
+        })
 }
 
 #[tauri::command]
@@ -601,6 +662,7 @@ pub fn get_supported_features(
         cuda12: false,
         cuda13: false,
         vulkan: false,
+        rocm: false,
     };
 
     // https://docs.nvidia.com/deploy/cuda-compatibility/
@@ -634,8 +696,17 @@ pub fn get_supported_features(
     };
 
     // Check GPU features
+    let mut amd_device_ids: Vec<u32> = Vec::new();
+    let mut has_amd_gpu = false;
     for gpu_info in gpus {
         let driver_version = &gpu_info.driver_version;
+
+        if is_amd_gpu(&gpu_info) {
+            has_amd_gpu = true;
+            if let Some(device_id) = gpu_info.vulkan_info.as_ref().and_then(|v| v.device_id) {
+                amd_device_ids.push(device_id);
+            }
+        }
 
         // Check CUDA support
         if gpu_info.nvidia_info.is_some() {
@@ -654,6 +725,12 @@ pub fn get_supported_features(
         if gpu_info.vulkan_info.is_some() {
             features.vulkan = true;
         }
+    }
+
+    // ROCm artifacts exist only for Windows upstream; Linux upstream is
+    // Vulkan-only because ggml-org publishes no Linux HIP archive.
+    if os_type == "windows" {
+        features.rocm = rocm_supported_windows(has_amd_gpu, &amd_device_ids);
     }
 
     Ok(features)
@@ -819,6 +896,7 @@ pub async fn prioritize_backends(
             "cuda-cu12.4",
             "cuda-cu12.0",
             "cuda-cu11.7",
+            "rocm",
             "vulkan",
             "common_cpus",
             "cpu",
@@ -844,6 +922,7 @@ pub async fn prioritize_backends(
             "noavx",
             "arm64",
             "x64",
+            "rocm",
             "vulkan",
         ]
     };
@@ -910,6 +989,11 @@ fn get_backend_category(backend_string: &str) -> Option<String> {
     }
     if backend_string.contains("cuda-11-common_cpus") || backend_string.contains("cu11.7") {
         return Some("cuda-cu11.7".to_string());
+    }
+    // ggml-org Windows HIP archives, `win-rocm-7.14-x64` today. Matched
+    // before `vulkan` so a machine holding both keeps the ROCm tier.
+    if backend_string.contains("rocm") || backend_string.contains("hip") {
+        return Some("rocm".to_string());
     }
     if backend_string.contains("vulkan") {
         return Some("vulkan".to_string());
@@ -1485,6 +1569,37 @@ pub async fn fetch_manifest_http1(url: String, _timeout_ms: u64) -> Result<Strin
     ))
 }
 
+/// Free bytes on the filesystem holding `path`, for the backend-download
+/// precondition. The Windows HIP archive unpacks to roughly 980 MB (a single
+/// `ggml-hip.dll` is 924 MB of it), so an out-of-space failure would otherwise
+/// only surface after a ~196 MB download and a long extraction.
+///
+/// `path` need not exist yet: the deepest existing ancestor is used, which is
+/// the staging directory's parent on a first-ever download.
+#[tauri::command]
+pub fn available_disk_space(path: String) -> Result<u64, String> {
+    let mut probe = PathBuf::from(&path);
+    while !probe.exists() {
+        if !probe.pop() {
+            return Err(format!("no existing ancestor for path {path}"));
+        }
+    }
+    let probe = probe
+        .canonicalize()
+        .map_err(|e| format!("canonicalize {}: {}", probe.display(), e))?;
+
+    let disks = sysinfo::Disks::new_with_refreshed_list();
+    let best = disks
+        .list()
+        .iter()
+        .filter(|disk| probe.starts_with(disk.mount_point()))
+        // Nested mounts both match; the longest mount point is the real one.
+        .max_by_key(|disk| disk.mount_point().as_os_str().len())
+        .ok_or_else(|| format!("no mounted filesystem contains {}", probe.display()))?;
+
+    Ok(best.available_space())
+}
+
 // ---------------------------- Tests ------------------------------------------
 
 #[cfg(test)]
@@ -1681,6 +1796,7 @@ mod tests {
         // Driver 525.60.13 supports CUDA 12 on Linux
         let gpus = vec![GpuInfo {
             driver_version: "530.00".to_string(),
+            vendor: None,
             nvidia_info: Some(NvidiaInfo {
                 compute_capability: "8.0".to_string(),
             }),
@@ -1698,9 +1814,11 @@ mod tests {
     fn test_get_supported_features_vulkan() {
         let gpus = vec![GpuInfo {
             driver_version: "0.0".to_string(),
+            vendor: None,
             nvidia_info: None,
             vulkan_info: Some(VulkanInfo {
                 api_version: "1.3".to_string(),
+                device_id: None,
             }),
         }];
 
@@ -1713,6 +1831,7 @@ mod tests {
     fn windows_nvidia_gpu(driver_version: &str) -> GpuInfo {
         GpuInfo {
             driver_version: driver_version.to_string(),
+            vendor: None,
             nvidia_info: Some(NvidiaInfo {
                 compute_capability: "8.9".to_string(),
             }),
@@ -1795,6 +1914,7 @@ mod tests {
             cuda12: true,
             cuda13: false,
             vulkan: true,
+            rocm: false,
         };
 
         let result =
@@ -1818,6 +1938,7 @@ mod tests {
             cuda12: true,
             cuda13: true,
             vulkan: false,
+            rocm: false,
         };
 
         let result =
@@ -1830,12 +1951,104 @@ mod tests {
     }
 
     #[test]
+    fn test_determine_supported_backends_windows_rocm_family_id() {
+        // Same rule as CUDA 13: the ROCm entry is the version-less family id,
+        // because upstream moves the HIP version (7.14 today) with its own
+        // cadence and the concrete asset comes from the manifest.
+        let features = SystemFeatures {
+            cuda11: false,
+            cuda12: false,
+            cuda13: false,
+            vulkan: true,
+            rocm: true,
+        };
+
+        let result =
+            determine_supported_backends("windows".to_string(), "x86_64".to_string(), features)
+                .unwrap();
+
+        assert!(result.contains(&"win-rocm-x64".to_string()));
+        assert!(!result.iter().any(|b| b.contains("rocm-7.")));
+        // ROCm never displaces Vulkan from the installable set; it only
+        // outranks it when a tier is auto-picked.
+        assert!(result.contains(&"win-vulkan-x64".to_string()));
+    }
+
+    #[test]
+    fn test_determine_supported_backends_linux_rocm_flag_ignored() {
+        // ggml-org publishes no Linux HIP archive, so an AMD Linux host stays
+        // on Vulkan even if the feature probe ever reports ROCm.
+        let features = SystemFeatures {
+            cuda11: false,
+            cuda12: false,
+            cuda13: false,
+            vulkan: true,
+            rocm: true,
+        };
+
+        let result =
+            determine_supported_backends("linux".to_string(), "x86_64".to_string(), features)
+                .unwrap();
+
+        assert_eq!(
+            result,
+            vec!["linux-cpu-x64".to_string(), "linux-vulkan-x64".to_string()]
+        );
+    }
+
+    // --- Windows ROCm gating by PCI device id ---
+
+    #[test]
+    fn test_rocm_windows_requires_an_amd_card_from_the_table() {
+        let supported_id = crate::amd_rocm_pci_ids::AMD_ROCM_WINDOWS_PCI_IDS[0].0;
+
+        assert!(rocm_supported_windows(true, &[supported_id]));
+        // Same id, non-AMD vendor: a coincidental device id on another
+        // vendor's card must not enable HIP.
+        assert!(!rocm_supported_windows(false, &[supported_id]));
+        // AMD card the generated table does not cover (Vega 0x687f) — falls
+        // back to Vulkan rather than downloading ~980 MB that may not run.
+        assert!(!rocm_supported_windows(true, &[0x687f]));
+        // No device id at all (Vulkan loader missing, so nothing to match).
+        assert!(!rocm_supported_windows(true, &[]));
+    }
+
+    #[test]
+    fn test_rocm_windows_matches_any_of_several_gpus() {
+        let supported_id = crate::amd_rocm_pci_ids::AMD_ROCM_WINDOWS_PCI_IDS[0].0;
+        assert!(rocm_supported_windows(true, &[0x687f, supported_id]));
+    }
+
+    #[test]
+    fn test_get_supported_features_rocm_windows_only() {
+        let supported_id = crate::amd_rocm_pci_ids::AMD_ROCM_WINDOWS_PCI_IDS[0].0;
+        let amd_gpu = || GpuInfo {
+            driver_version: "0.0".to_string(),
+            vendor: Some("AMD".to_string()),
+            nvidia_info: None,
+            vulkan_info: Some(VulkanInfo {
+                api_version: "1.3".to_string(),
+                device_id: Some(supported_id),
+            }),
+        };
+
+        let windows =
+            get_supported_features("windows".to_string(), vec![], vec![amd_gpu()]).unwrap();
+        assert!(windows.rocm);
+        assert!(windows.vulkan);
+
+        let linux = get_supported_features("linux".to_string(), vec![], vec![amd_gpu()]).unwrap();
+        assert!(!linux.rocm, "no Linux HIP archive exists upstream");
+    }
+
+    #[test]
     fn test_determine_supported_backends_mac_arm() {
         let features = SystemFeatures {
             cuda11: false,
             cuda12: false,
             cuda13: false,
             vulkan: false,
+            rocm: false,
         };
 
         let result =
@@ -1856,6 +2069,7 @@ mod tests {
             cuda12: false,
             cuda13: false,
             vulkan: false,
+            rocm: false,
         };
 
         let result =
@@ -1873,6 +2087,7 @@ mod tests {
             cuda12: false,
             cuda13: false,
             vulkan: true,
+            rocm: false,
         };
 
         let result =
@@ -1895,6 +2110,7 @@ mod tests {
             cuda12: true,
             cuda13: true,
             vulkan: false,
+            rocm: false,
         };
 
         let result =
@@ -1915,6 +2131,7 @@ mod tests {
             cuda12: true,
             cuda13: false,
             vulkan: true,
+            rocm: false,
         };
 
         let result =
@@ -1937,6 +2154,7 @@ mod tests {
             cuda12: false,
             cuda13: false,
             vulkan: false,
+            rocm: false,
         };
 
         let result =
@@ -1997,6 +2215,48 @@ mod tests {
 
         assert_eq!(gpu_result.backend_type, "linux-vulkan-x64");
         assert_eq!(cpu_result.backend_type, "linux-cpu-x64");
+    }
+
+    #[tokio::test]
+    async fn test_prioritize_backends_prefers_rocm_over_vulkan() {
+        let available = vec![
+            BackendInfo {
+                version: "b10405".into(),
+                backend: "win-vulkan-x64".into(),
+                order: 1,
+            },
+            BackendInfo {
+                version: "b10405".into(),
+                backend: "win-rocm-7.14-x64".into(),
+                order: 1,
+            },
+            BackendInfo {
+                version: "b10405".into(),
+                backend: "win-cpu-x64".into(),
+                order: 1,
+            },
+        ];
+
+        let gpu_result = prioritize_backends(available.clone(), true).await.unwrap();
+        // Under the low-VRAM policy both GPU tiers rank below CPU, exactly as
+        // Vulkan alone already does.
+        let cpu_result = prioritize_backends(available, false).await.unwrap();
+
+        assert_eq!(gpu_result.backend_type, "win-rocm-7.14-x64");
+        assert_eq!(cpu_result.backend_type, "win-cpu-x64");
+    }
+
+    #[test]
+    fn test_get_backend_category_rocm() {
+        assert_eq!(
+            get_backend_category("win-rocm-7.14-x64").as_deref(),
+            Some("rocm")
+        );
+        // A CUDA id must not be swallowed by the HIP branch.
+        assert_eq!(
+            get_backend_category("win-cuda-13.3-x64").as_deref(),
+            Some("cuda-cu13")
+        );
     }
 
     #[tokio::test]
@@ -2072,7 +2332,16 @@ mod tests {
             parse_binary_version("warning\nversion: 9222 (9a532ae4b)\n"),
             Some(9222)
         );
+        // The shape upstream prints from b10405 on: a semver first, the build
+        // number inside the parenthesised sentence.
+        assert_eq!(
+            parse_binary_version(
+                "version: 0.1.0-dev (build 10405, commit e79e4bf66)\nbuilt with Apple clang"
+            ),
+            Some(10405)
+        );
         assert_eq!(parse_binary_version("unknown version"), None);
+        assert_eq!(parse_binary_version("version: 0.1.0-dev (commit abc)"), None);
     }
 
     #[test]

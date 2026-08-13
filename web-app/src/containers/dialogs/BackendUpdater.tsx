@@ -25,10 +25,10 @@ import { toast } from 'sonner'
 import { getProviderTitle, LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 
 /// Progress-only view onto the turboquant provider. The recommendation modal
-/// and the version toast stay upstream-owned so two providers can never argue
-/// over the same dialog, but `reconcileBackendReleaseTag()` starts a download
-/// on its own after an app update — sometimes several hundred megabytes — and
-/// that must not happen invisibly.
+/// stays upstream-owned so two providers can never argue over the same dialog,
+/// but `reconcileBackendReleaseTag()` starts a download on its own after an app
+/// update — sometimes several hundred megabytes — and that must not happen
+/// invisibly.
 const TURBOQUANT_PROGRESS_CONFIG: UseBackendUpdaterConfig = {
   extensionName: '@janhq/llamacpp-extension',
   providerId: 'llamacpp',
@@ -39,13 +39,9 @@ const TURBOQUANT_PROGRESS_CONFIG: UseBackendUpdaterConfig = {
 const BackendUpdater = () => {
   const { t } = useTranslation()
   const {
-    updateState,
     downloadState,
     recommendation,
     recommendationPhase,
-    updateBackend,
-    checkForUpdate,
-    setRemindMeLater,
     dismissRecommendation,
     downloadRecommendedBackend,
   } = useBackendUpdater()
@@ -53,10 +49,6 @@ const BackendUpdater = () => {
   const { downloadState: turboquantDownload } = useBackendUpdater(
     TURBOQUANT_PROGRESS_CONFIG
   )
-
-  useEffect(() => {
-    checkForUpdate()
-  }, [checkForUpdate])
 
   const handleRestart = async () => {
     try {
@@ -72,17 +64,6 @@ const BackendUpdater = () => {
     } catch (error) {
       console.error('Recommended backend download failed:', error)
       toast.error(t('settings:backendUpdater.downloadFailed'))
-    }
-  }
-
-  const handleVersionUpdate = async () => {
-    try {
-      await updateBackend()
-      setRemindMeLater(true)
-      toast.success(t('settings:backendUpdater.updateSuccess'))
-    } catch (error) {
-      console.error('Backend update failed:', error)
-      toast.error(t('settings:backendUpdater.updateError'))
     }
   }
 
@@ -143,19 +124,23 @@ const BackendUpdater = () => {
     recommendationPhase === 'hotswapping' ||
     recommendationPhase === 'restart-required'
 
-  const showTurboquantProgress =
-    !showRecommendationDialog && turboquantDownload.isDownloading
+  /// Both providers download without being asked: each reconciles its release
+  /// tag after an app update, and upstream additionally applies the tier that
+  /// startup detection picked for this host. Anything the user started himself
+  /// is already on screen in the dialog above, so this banner is the only thing
+  /// that tells him the rest is moving.
+  const backgroundDownload = showRecommendationDialog
+    ? null
+    : downloadState.isDownloading
+      ? downloadState
+      : turboquantDownload.isDownloading
+        ? turboquantDownload
+        : null
 
-  const turboquantBackendLabel =
-    turboquantDownload.backendName?.split('/').pop() ??
-    turboquantDownload.backendName ??
+  const backgroundBackendLabel =
+    backgroundDownload?.backendName?.split('/').pop() ??
+    backgroundDownload?.backendName ??
     ''
-
-  const showVersionUpdateToast =
-    !showRecommendationDialog &&
-    !showTurboquantProgress &&
-    updateState.isUpdateAvailable &&
-    !updateState.remindMeLater
 
   return (
     <>
@@ -279,8 +264,8 @@ const BackendUpdater = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Unattended turboquant release-tag reconcile — non-blocking progress */}
-      {showTurboquantProgress && (
+      {/* Unattended backend download — non-blocking progress */}
+      {backgroundDownload && (
         <div className="fixed z-50 bottom-3 right-3 bg-background flex items-start gap-2 border rounded-lg shadow-md px-4 py-3 max-w-[22rem]">
           <IconLoader2
             size={18}
@@ -292,61 +277,13 @@ const BackendUpdater = () => {
             </div>
             <div className="mt-0.5 text-xs text-muted-foreground">
               {t('settings:backendUpdater.backgroundUpdateDesc', {
-                backend: turboquantBackendLabel,
+                backend: backgroundBackendLabel,
               })}
             </div>
           </div>
         </div>
       )}
 
-      {/* Version update toast (existing flow, separate from GPU recommendation) */}
-      {showVersionUpdateToast && (
-        <div className="fixed z-50 bottom-3 right-3 bg-background flex items-center border rounded-lg shadow-md">
-          <div className="px-2 py-4">
-            <div className="px-4">
-              <div className="flex items-start gap-2">
-                <IconDownload
-                  size={20}
-                  className="shrink-0 text-muted-foreground mt-1"
-                />
-                <div>
-                  <div className="text-base font-medium">
-                    {t('settings:backendUpdater.newBackendVersion', {
-                      version: updateState.updateInfo?.newVersion,
-                    })}
-                  </div>
-                  <div className="mt-1 text-muted-foreground font-normal mb-2">
-                    {t('settings:backendUpdater.backendUpdateAvailable')}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-3 px-4">
-              <div className="flex gap-x-4 w-full items-center justify-end">
-                <div className="flex gap-x-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setRemindMeLater(true)}
-                  >
-                    {t('settings:backendUpdater.remindMeLater')}
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={handleVersionUpdate}
-                    disabled={updateState.isUpdating}
-                  >
-                    {updateState.isUpdating
-                      ? t('settings:backendUpdater.updating')
-                      : t('settings:backendUpdater.updateNow')}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   )
 }

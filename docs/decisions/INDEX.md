@@ -9,12 +9,14 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-183 records, 2026-05-19 → 2026-08-13.
+192 records, 2026-05-19 → 2026-08-13.
 
 ---
 
 ## Load-bearing — read before touching platform / provider / agent code
 
+- **2026-08-13** — [Mirror and sign upstream llama.cpp releases in atomic-chat-conf](2026-08-13-mirror-and-sign-upstream-llama-cpp-in-atomic-chat-conf.md)
+- **2026-08-13** — [Add Windows ROCm to the upstream backend matrix](2026-08-13-add-windows-rocm-to-the-upstream-backend-matrix.md)
 - **2026-07-28** — [Ship dual llama providers on Windows and Linux](2026-07-28-ship-dual-llama-providers-on-windows-and-linux.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 - **2026-05-22** — [Windows ships only `llamacpp-upstream`, sourced from `ggml-org/llama.cpp`](2026-05-22-windows-ships-only-llamacpp-upstream-sourced-from-ggml-org.md)
@@ -122,8 +124,12 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 - **2026-05-19** — [Use `AtomicBot-ai/mlx-vlm` as the MLX backend](2026-05-19-use-atomicbot-ai-mlx-vlm-as-the-mlx-backend.md)
 
-## llama.cpp providers & backend selection (44)
+## llama.cpp providers & backend selection (48)
 
+- **2026-08-13** — [Mirror and sign upstream llama.cpp releases in atomic-chat-conf](2026-08-13-mirror-and-sign-upstream-llama-cpp-in-atomic-chat-conf.md)
+- **2026-08-13** — [Add Windows ROCm to the upstream backend matrix](2026-08-13-add-windows-rocm-to-the-upstream-backend-matrix.md)
+- **2026-08-13** — [Apply the detected backend tier at startup for `llamacpp-upstream`](2026-08-13-apply-the-detected-backend-tier-at-startup-for-upstream.md)
+- **2026-08-13** — [Generate the upstream offline baseline from the manifest](2026-08-13-generate-the-upstream-offline-baseline-from-the-manifest.md)
 - **2026-08-12** — [Update upstream llama.cpp at runtime on macOS too](2026-08-12-update-upstream-llama-cpp-at-runtime-on-macos-too.md)
 - **2026-08-12** — [List every runnable build in the engine version dropdown](2026-08-12-list-every-runnable-build-in-the-engine-version-dropdown.md)
 - **2026-08-12** — [Follow the atomic-chat-conf manifest tag for upstream llama.cpp](2026-08-12-follow-the-atomic-chat-conf-manifest-tag-for-upstream-llama-cpp.md)
@@ -220,8 +226,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (16)
+## UI / UX (17)
 
+- **2026-08-13** — [Move sampling back onto each assistant (per-assistant sampler, popover stays the only editor)](2026-08-13-move-sampling-back-onto-each-assistant.md)
 - **2026-08-13** — [Revert the Settings and Model Providers UI rework; keep runtime engine updates](2026-08-13-revert-the-settings-and-model-providers-ui-rework-keep-runtime.md)
 - **2026-08-12** — [Split Model Providers into Local/Cloud tabs and hide engine settings](2026-08-12-split-model-providers-into-local-and-cloud-tabs-and-hide-engine-settings.md)
 - **2026-08-12** — [Auto-start a model found on disk instead of showing the onboarding picker](2026-08-12-auto-start-a-model-found-on-disk-instead-of-showing-the-picker.md)

@@ -204,6 +204,7 @@ export type BackendFeatures = {
   cuda12: boolean
   cuda13: boolean
   vulkan: boolean
+  rocm: boolean
 }
 
 export type SupportedFeatures = {
@@ -214,6 +215,7 @@ export type SupportedFeatures = {
   cuda12: boolean
   cuda13: boolean
   vulkan: boolean
+  rocm: boolean
 }
 export type NvidiaInfo = {
   compute_capability: string
@@ -221,10 +223,13 @@ export type NvidiaInfo = {
 
 export type VulkanInfo = {
   api_version: string
+  /// PCI device id, the only pre-launch gfx signal on Windows.
+  device_id?: number
 }
 
 export type GpuInfo = {
   driver_version: string
+  vendor?: string
   nvidia_info?: NvidiaInfo | null
   vulkan_info?: VulkanInfo | null
 }

@@ -35,10 +35,10 @@ vi.mock('@tauri-apps/plugin-log', () => ({
 
 // Mock backend functions
 vi.mock('../backend', async () => {
-  // `isConcreteOfCudaFamily` is a pure string predicate the release-tag
+  // `isConcreteOfGpuFamily` is a pure string predicate the release-tag
   // reconciliation depends on; stubbing it would make those tests assert
   // against a mock rather than the real family rule.
-  const { isConcreteOfCudaFamily } =
+  const { isConcreteOfGpuFamily } =
     await vi.importActual<typeof import('../backend')>('../backend')
 
   return {
@@ -46,7 +46,7 @@ vi.mock('../backend', async () => {
     getBackendExePath: vi.fn(),
     listSupportedBackends: vi.fn(),
     getBackendDir: vi.fn(),
-    isConcreteOfCudaFamily,
+    isConcreteOfGpuFamily,
   }
 })
 
@@ -249,6 +249,71 @@ describe('llamacpp_extension', () => {
         backend: 'linux-vulkan-x64',
       })
       expect(listSupportedBackends).not.toHaveBeenCalled()
+    })
+
+    /// The Windows counterpart of the Linux case above: here ggml-org *does*
+    /// publish a HIP archive, so a ROCm-capable AMD card outranks Vulkan.
+    it('prefers ROCm over Vulkan on a ROCm-capable AMD Windows host', async () => {
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'windows',
+        os_name: 'Windows',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [{ ...discreteGpu, vendor: 'AMD', nvidia_info: undefined }],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: false,
+        cuda12: false,
+        cuda13: false,
+        rocm: true,
+        vulkan: true,
+      } as any)
+      vi.mocked(listSupportedBackends).mockResolvedValue([
+        { version: 'b10405', backend: 'win-cpu-x64', order: 0 },
+        { version: 'b10405', backend: 'win-rocm-7.14-x64', order: 0 },
+        { version: 'b10405', backend: 'win-vulkan-x64', order: 0 },
+      ])
+      vi.spyOn(extension as any, 'tierEnumeratesDevices').mockResolvedValue(
+        'works'
+      )
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'gpu',
+        backend: 'win-rocm-7.14-x64',
+      })
+    })
+
+    /// An AMD card the generated PCI table does not cover: the Rust gate
+    /// reports `rocm: false` and the host must land on Vulkan, not on a HIP
+    /// build compiled for a different gfx target.
+    it('falls back to Vulkan when the AMD card is outside the ROCm table', async () => {
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'windows',
+        os_name: 'Windows',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [{ ...discreteGpu, vendor: 'AMD', nvidia_info: undefined }],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: false,
+        cuda12: false,
+        cuda13: false,
+        rocm: false,
+        vulkan: true,
+      } as any)
+      vi.mocked(listSupportedBackends).mockResolvedValue([
+        { version: 'b10405', backend: 'win-cpu-x64', order: 0 },
+        { version: 'b10405', backend: 'win-rocm-7.14-x64', order: 0 },
+        { version: 'b10405', backend: 'win-vulkan-x64', order: 0 },
+      ])
+      vi.spyOn(extension as any, 'tierEnumeratesDevices').mockResolvedValue(
+        'works'
+      )
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'gpu',
+        backend: 'win-vulkan-x64',
+      })
     })
 
     it('keeps an integrated-only Vulkan host on CPU', async () => {

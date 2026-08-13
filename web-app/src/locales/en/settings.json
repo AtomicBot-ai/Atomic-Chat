@@ -364,7 +364,7 @@
     "downloadingBackend": "Downloading Backend…",
     "downloadingBackendDesc": "The recommended backend is being downloaded. Please wait — this may take a few minutes.",
     "downloadComplete": "Backend {{backend}} installed successfully!",
-    "downloadFailed": "Failed to download GPU backend",
+    "downloadFailed": "Failed to install the engine backend",
     "betterBackendTitle": "Faster Backend Available",
     "betterBackendDesc": "Use {{backend}} for faster responses on this GPU.",
     "betterBackendProviderContext": "{{provider}} · {{backend}}",

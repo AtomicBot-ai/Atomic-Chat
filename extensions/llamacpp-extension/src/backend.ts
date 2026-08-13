@@ -47,7 +47,10 @@ const GGML_ORG_CUDART_DOWNLOAD_BASE =
   'https://github.com/ggml-org/llama.cpp/releases/download'
 /**
  * Pinned ggml-org tag that ships `cudart-llama-bin-win-cuda-{12.4,13.3}-x64.zip`.
- * Keep in sync with `LLAMACPP_UPSTREAM_PINNED_TAG` in the upstream extension.
+ * A real pin, unlike the upstream extension's `BUNDLED_BASELINE_TAG`, which is
+ * generated from the manifest: the cudart companions are not mirrored and this
+ * driver has no manifest field to follow. Known debt, tracked in the mirroring
+ * ADR.
  */
 export const GGML_ORG_CUDART_PINNED_TAG = 'b10205'
 const MANIFEST_FETCH_TIMEOUT_MS = 8_000
