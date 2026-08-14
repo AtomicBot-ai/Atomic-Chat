@@ -60,6 +60,7 @@ const ReasoningToggle = memo(function ReasoningToggle({
       ? undefined
       : resolveReasoningLevel(reasoningBudget, levels)
   const levelLabel = level ? t(`common:reasoningEffort.${level}`) : undefined
+  const isMax = level === 'max'
 
   return (
     <>
@@ -118,7 +119,9 @@ const ReasoningToggle = memo(function ReasoningToggle({
               <span className="text-muted-foreground">
                 {t('common:reasoningEffort.title')}
               </span>
-              <span className="font-medium">{levelLabel}</span>
+              <span className={cn('font-medium', isMax && 'text-blue-500')}>
+                {levelLabel}
+              </span>
             </div>
             {levels.length > 1 && (
               <>
@@ -135,7 +138,11 @@ const ReasoningToggle = memo(function ReasoningToggle({
                   onValueChange={([next]) => setReasoningBudget(levels[next])}
                 >
                   <SliderPrimitive.Track className="bg-muted relative h-6 w-full grow rounded-full">
-                    <SliderPrimitive.Range className="bg-muted-foreground/10 absolute h-full rounded-full" />
+                    {isMax ? (
+                      <div className="absolute inset-0 rounded-full bg-linear-to-r from-blue-500/10 via-blue-500/55 to-blue-500" />
+                    ) : (
+                      <SliderPrimitive.Range className="bg-muted-foreground/10 absolute h-full rounded-full" />
+                    )}
                     {/* Stops line up with where the thumb can actually sit:
                         inset by half the thumb (12px) minus half a dot (2px). */}
                     <div className="pointer-events-none absolute inset-0 flex items-center justify-between px-[10px]">

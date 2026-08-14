@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import type { ReasoningControls } from '@janhq/core'
 
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -147,6 +147,22 @@ describe('ReasoningToggle', () => {
     expect(slider).toHaveAttribute(
       'aria-valuetext',
       'common:reasoningEffort.medium'
+    )
+  })
+
+  it('accents the top tier in the heading', () => {
+    selectedModel.current = BUDGET_MODEL
+    useGeneralSetting.setState({ reasoningBudget: 'max' })
+
+    render(<ReasoningToggle />)
+    fireEvent.click(
+      screen.getByRole('button', { name: /reasoningEffort\.ariaLabel/ })
+    )
+
+    const heading = screen.getByText('common:reasoningEffort.title')
+      .parentElement as HTMLElement
+    expect(within(heading).getByText('common:reasoningEffort.max')).toHaveClass(
+      'text-blue-500'
     )
   })
 
