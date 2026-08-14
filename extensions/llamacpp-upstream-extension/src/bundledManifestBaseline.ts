@@ -10,17 +10,17 @@
 import type { UpstreamManifest } from './backend'
 
 export const BUNDLED_MANIFEST_BASELINE: UpstreamManifest = {
-  tag_name: 'b10405',
+  tag_name: 'b10431',
   download_base: 'https://github.com/AtomicBot-ai/atomic-chat-conf/releases/download',
   assets: [
-    { name: 'llama-b10405-bin-macos-arm64.tar.gz', sha256: '88813d5288ed1f322542ad89a752a52acd695aeac57dba1f4acca2f742bf9f29', size: 11190840 },
-    { name: 'llama-b10405-bin-ubuntu-vulkan-x64.tar.gz', sha256: '2754d1dd5e26124410677aa43159fe6b512bc2ef30450dd02ad50e07dd47d927', size: 32987533 },
-    { name: 'llama-b10405-bin-ubuntu-x64.tar.gz', sha256: 'b691deda2b4f099e6b406f031322767efc695e7cd811d4b0b9579c116f27a578', size: 16604224 },
-    { name: 'llama-b10405-bin-win-cpu-x64.zip', sha256: '35478daddf64d6cb5fd1bbca36cd52b790a740799532e87552e5b650045c0cdc', size: 18858645 },
-    { name: 'llama-b10405-bin-win-cuda-12.4-x64.zip', sha256: 'a20c402361dd111d2afbf5d6d22e3d825202ac4d1fdda8b146f88db234aa7d99', size: 250638295 },
-    { name: 'llama-b10405-bin-win-cuda-13.3-x64.zip', sha256: '7be9f0dca6878a8b2c504f715a18c6e4dc54ff9c73ef34812337976f0092dac9', size: 146604593 },
-    { name: 'llama-b10405-bin-win-rocm-7.14-x64.zip', sha256: 'bd29ca2f79d8f10d3c04a3408c7a1a5a790cb6052cdb36911d3a3a1d01b83af7', size: 196771228 },
-    { name: 'llama-b10405-bin-win-vulkan-x64.zip', sha256: '9d5d0d71f06a5d92558ec5930327fe6aefe8c5b04ca2de63b8bab5e823c7b2db', size: 34447817 },
+    { name: 'llama-b10431-bin-macos-arm64.tar.gz', sha256: 'a57fcf1808a3e05f34faa97cb6e77fce966af1140c8ebf6d65583a3f735f2507', size: 11193229 },
+    { name: 'llama-b10431-bin-ubuntu-vulkan-x64.tar.gz', sha256: 'c953ae06ddf8305b20d754402c1ec07522b578500aad1935537005bcaacb80c9', size: 33004188 },
+    { name: 'llama-b10431-bin-ubuntu-x64.tar.gz', sha256: '876757d3699f3332becb9cd76988b176a7de9531075c2fac58f242e014cf389f', size: 16618545 },
+    { name: 'llama-b10431-bin-win-cpu-x64.zip', sha256: '631c8f7b237ca901e2b7b07680791a27c4fc23104f1640409e6c0e7c55f57fcf', size: 18853706 },
+    { name: 'llama-b10431-bin-win-cuda-12.4-x64.zip', sha256: '394e12e9151080efe588ba2e6f3609cdfefd5f2f28b7382d784bbceaf32382c9', size: 250659321 },
+    { name: 'llama-b10431-bin-win-cuda-13.3-x64.zip', sha256: 'b35f71eeb25c3891ae1ea6d28c6a474b1f79a7071785ee974addfd9c2f77fabc', size: 146578939 },
+    { name: 'llama-b10431-bin-win-rocm-7.14-x64.zip', sha256: '7442913fa74b98c96f9fb54dcbee2e1cbe4e26ebcdc6bf3518bb8ec7832fa9cb', size: 196791416 },
+    { name: 'llama-b10431-bin-win-vulkan-x64.zip', sha256: '17b7e5042b1da3e870963b7495c1fadb877e79892be2cc9a6b1e3c431639c4c0', size: 34442382 },
     { name: 'cudart-llama-bin-win-cuda-12.4-x64.zip' },
     { name: 'cudart-llama-bin-win-cuda-13.3-x64.zip' },
   ],

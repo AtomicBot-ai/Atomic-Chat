@@ -7,13 +7,12 @@ title: "Open the Hub recommendations with a promoted head ahead of the family gr
 
 - **Context:** The curated Hub list is ordered by model family — Qwen, then Gemma, then
   LFM, then everything else — and `staff-picks-registry.test.ts` pins that sequence, so
-  the first thirteen rows are fixed by family regardless of what shipped this week. Five
+  the first thirteen rows are fixed by family regardless of what shipped this week. Four
   new GGUF repos had to be the first thing a user sees in `/hub`:
   `AtomicChat/Muse-Glimmer-30B-GGUF`, `AtomicChat/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF`,
-  `owao/Nanbeige4.2-3B-GGUF`, `LiquidAI/LFM2.5-2.6B-GGUF` and
-  `AtomicChat/Ling-3.0-flash-GGUF`. Only the LFM one belongs to a promoted family, and even
-  it would have landed behind the LFM models already listed, so under the old invariant
-  none of them could open the list.
+  `LiquidAI/LFM2.5-2.6B-GGUF` and `AtomicChat/Ling-3.0-flash-GGUF`. Only the LFM one belongs
+  to a promoted family, and even it would have landed behind the LFM models already listed,
+  so under the old invariant none of them could open the list.
 
 - **Decision:** Keep the family grouping, but let a small hand-picked head sit in front of
   it. Picks with `order` below `10` — the order of the first family entry — are that head;
@@ -26,7 +25,8 @@ title: "Open the Hub recommendations with a promoted head ahead of the family gr
   - The head is not itself ordered by any rule, so it must stay short: it is the one part
     of the list where "why is this first" has no answer beyond curation. Anything that
     outlives its release moment should move into its family group.
-  - `owao/Nanbeige4.2-3B-GGUF` sits outside the scraped catalog orgs, so it resolves
+  - `owao/Nanbeige4.2-3B-GGUF` is listed in the family region (`order: 167`, right below
+    Bonsai) rather than the head, and sits outside the scraped catalog orgs, so it resolves
     through the single Hugging Face call in `useStaffPicks` rather than from
     `catalog.json`. That path already exists for long-tail picks; the cost is one request
     on first open of the Hub.
@@ -43,9 +43,10 @@ title: "Open the Hub recommendations with a promoted head ahead of the family gr
   - Muse Glimmer carries no bundled brand mark of its own and is published from Meta's
     weights, so it reuses the `meta` icon key. Ling and Nanbeige come from labs with no mark
     in the `@lobehub/icons-static-svg` set, so they follow the `prism-ml` precedent and
-    bundle the publisher's Hugging Face avatar (`inclusionai`, `owao`) as a 200x200 WebP in
-    `public/images/model-provider/`. A letter avatar was the alternative; two 3 KB files buy
-    a row that reads as a real model.
+    bundle the Hugging Face avatar of the lab that trained the model — `inclusionai`,
+    `nanbeige` — as a 200x200 WebP in `public/images/model-provider/`. The mark follows the
+    model's origin, not the account that published the quants, so a repo re-quantized by
+    someone else keeps the same row art.
 
 - **Owner:** `team`
 - **Links:**

@@ -36,16 +36,6 @@ export const BASELINE_STAFF_PICKS: ReadonlyArray<StaffPick> = [
     order: 2,
   },
   {
-    model_name: 'owao/Nanbeige4.2-3B-GGUF',
-    title: 'Nanbeige4.2 3B',
-    summary: 'Compact agentic 3B built for tool use and multi-step tasks.',
-    description_key: 'hub:recEverydayUse',
-    icon: 'owao',
-    format: 'gguf',
-    categories: ['general', 'compact', 'reasoning', 'tools'],
-    order: 3,
-  },
-  {
     model_name: 'LiquidAI/LFM2.5-2.6B-GGUF',
     title: 'LFM2.5 2.6B',
     summary: 'On-device agent that always thinks before it answers.',
@@ -414,6 +404,16 @@ export const BASELINE_STAFF_PICKS: ReadonlyArray<StaffPick> = [
     categories: ['general', 'vision', 'reasoning', 'tools'],
     platforms: ['macos'],
     order: 165,
+  },
+  {
+    model_name: 'owao/Nanbeige4.2-3B-GGUF',
+    title: 'Nanbeige4.2 3B',
+    summary: 'Compact agentic 3B built for tool use and multi-step tasks.',
+    description_key: 'hub:recEverydayUse',
+    icon: 'nanbeige',
+    format: 'gguf',
+    categories: ['general', 'compact', 'reasoning', 'tools'],
+    order: 167,
   },
   {
     model_name: 'unsloth/NVIDIA-Nemotron-3-Nano-Omni-30B-A3B-Reasoning-GGUF',
