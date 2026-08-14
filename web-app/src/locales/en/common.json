@@ -159,6 +159,17 @@
   "reasoning": "Reasoning",
   "reasoningToggleEnabled": "Reasoning enabled",
   "reasoningToggleDisabled": "Reasoning disabled",
+  "reasoningEffort": {
+    "title": "Effort",
+    "ariaLabel": "Thinking effort: {{level}}",
+    "faster": "Faster",
+    "smarter": "Smarter",
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "xhigh": "Extra High",
+    "max": "Max"
+  },
   "proactive": "Proactive",
   "selectAModel": "Select a model",
   "downloadModel": "Download a model",

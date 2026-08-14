@@ -54,6 +54,7 @@ import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getSamplingParamsForThread } from '@/lib/samplingParams'
 import { withRecommendedSampling } from '@/lib/predefinedParams'
+import { buildReasoningRequestFields } from '@/lib/reasoning-effort'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
@@ -247,7 +248,7 @@ export function withUpstreamDflashReasoningOverride(
       ...existingTemplateKwargs,
       enable_thinking: false,
     },
-    reasoning_budget: 0,
+    reasoning_budget_tokens: 0,
   }
 }
 
@@ -564,26 +565,27 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         const { disableReasoning, reasoningBudget } =
           useGeneralSetting.getState()
         const reasoningOverride: Record<string, unknown> = {}
-        const reasoningBudgetTokens: Record<
-          typeof reasoningBudget,
-          number | undefined
-        > = {
-          off: 0,
-          low: 256,
-          medium: 1024,
-          high: 4096,
-          unlimited: undefined,
-        }
+        const reasoningControls =
+          useModelProvider.getState().selectedModel?.reasoning
         if (disableReasoning || reasoningBudget === 'off') {
           switch (effectiveProviderName) {
             case 'llamacpp':
             case 'llamacpp-upstream':
-            case 'mlx':
+            case 'mlx': {
+              // Some templates (e.g. Hunyuan 3) have no `enable_thinking` and
+              // skip thinking only through their own effort value.
+              const offValue = reasoningControls?.offValue
               reasoningOverride.chat_template_kwargs = {
                 enable_thinking: false,
+                ...(offValue ? { reasoning_effort: offValue } : {}),
               }
-              reasoningOverride.reasoning_budget = 0
+              if (offValue && effectiveProviderName === 'mlx') {
+                // mlx-vlm forwards only a top-level `reasoning_effort` to the
+                // template; its `chat_template_kwargs` reader ignores the key.
+                reasoningOverride.reasoning_effort = offValue
+              }
               break
+            }
             case 'anthropic':
               reasoningOverride.thinking = { type: 'disabled' }
               break
@@ -616,13 +618,18 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
               }
           }
         } else if (
-          (effectiveProviderName === 'llamacpp' ||
-            effectiveProviderName === 'llamacpp-upstream' ||
-            effectiveProviderName === 'mlx') &&
-          reasoningBudgetTokens[reasoningBudget] !== undefined
+          effectiveProviderName === 'llamacpp' ||
+          effectiveProviderName === 'llamacpp-upstream' ||
+          effectiveProviderName === 'mlx'
         ) {
-          reasoningOverride.reasoning_budget =
-            reasoningBudgetTokens[reasoningBudget]
+          Object.assign(
+            reasoningOverride,
+            buildReasoningRequestFields(
+              reasoningBudget,
+              effectiveProviderName,
+              reasoningControls
+            )
+          )
         }
         const effectiveReasoningOverride = withUpstreamDflashReasoningOverride(
           providerId,

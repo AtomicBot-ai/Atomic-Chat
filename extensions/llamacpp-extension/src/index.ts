@@ -23,6 +23,8 @@ import {
   DownloadEvent,
   chatCompletionRequestMessage,
   computeNextCtxLen,
+  detectReasoningControls,
+  ReasoningControls,
   ModelEvent,
 } from '@janhq/core'
 
@@ -5029,6 +5031,37 @@ export default class llamacpp_extension extends AIEngine {
     return (await readGgufMetadata(modelPath)).metadata?.[
       'tokenizer.chat_template'
     ]?.includes('tools')
+  }
+
+  /**
+   * Report the reasoning controls declared by the model's GGUF chat template.
+   * @param modelId
+   * @returns
+   */
+  async getReasoningControls(modelId: string): Promise<ReasoningControls> {
+    try {
+      const janDataFolderPath = await getJanDataFolderPath()
+      const modelConfigPath = await joinPath([
+        this.providerPath,
+        'models',
+        modelId,
+        'model.yml',
+      ])
+      const modelConfig = await invoke<ModelConfig>('read_yaml', {
+        path: modelConfigPath,
+      })
+      const modelPath = await joinPath([
+        janDataFolderPath,
+        modelConfig.model_path,
+      ])
+      const metadata = await readGgufMetadata(modelPath)
+      return detectReasoningControls(
+        metadata.metadata?.['tokenizer.chat_template']
+      )
+    } catch (e) {
+      logger.warn(`Failed to detect reasoning controls for ${modelId}: ${e}`)
+      return { supportsThinking: false }
+    }
   }
 
   /**

@@ -2,12 +2,18 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { ExtensionManager } from '@/lib/extension'
+/**
+ * Thinking effort scale shared by the chat-input pill and Settings → General.
+ * `max` means the model's own strongest effort value, or no thinking-token cap
+ * for models that only take a budget.
+ */
 export type ReasoningBudgetLevel =
   | 'off'
   | 'low'
   | 'medium'
   | 'high'
-  | 'unlimited'
+  | 'xhigh'
+  | 'max'
 
 /**
  * Longest-edge cap (in pixels) applied to images before they are sent to the
@@ -103,6 +109,15 @@ export const useGeneralSetting = create<GeneralSettingState>()(
     {
       name: localStorageKey.settingGeneral,
       storage: createJSONStorage(() => localStorage),
+      version: 1,
+      migrate: (persistedState: unknown, version: number) => {
+        const state = (persistedState ?? {}) as Partial<GeneralSettingState>
+        if (version < 1 && (state.reasoningBudget as string) === 'unlimited') {
+          // v0 → v1: the uncapped level joined the effort scale as `max`.
+          state.reasoningBudget = 'max'
+        }
+        return state as GeneralSettingState
+      },
     }
   )
 )

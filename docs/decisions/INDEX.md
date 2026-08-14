@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-192 records, 2026-05-19 → 2026-08-13.
+193 records, 2026-05-19 → 2026-08-14.
 
 ---
 
@@ -226,8 +226,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (17)
+## UI / UX (18)
 
+- **2026-08-14** — [Offer a thinking level only where the chat template declares one](2026-08-14-offer-a-thinking-level-only-where-the-chat-template-declares-one.md)
 - **2026-08-13** — [Move sampling back onto each assistant (per-assistant sampler, popover stays the only editor)](2026-08-13-move-sampling-back-onto-each-assistant.md)
 - **2026-08-13** — [Revert the Settings and Model Providers UI rework; keep runtime engine updates](2026-08-13-revert-the-settings-and-model-providers-ui-rework-keep-runtime.md)
 - **2026-08-12** — [Split Model Providers into Local/Cloud tabs and hide engine settings](2026-08-12-split-model-providers-into-local-and-cloud-tabs-and-hide-engine-settings.md)

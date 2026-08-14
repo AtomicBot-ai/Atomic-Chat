@@ -92,7 +92,7 @@ describe('withUpstreamDflashReasoningOverride', () => {
   it('disables thinking for upstream DFlash requests', () => {
     const override = {
       chat_template_kwargs: { custom_flag: true, enable_thinking: true },
-      reasoning_budget: 4096,
+      reasoning_budget_tokens: 4096,
     }
 
     expect(
@@ -106,16 +106,16 @@ describe('withUpstreamDflashReasoningOverride', () => {
         custom_flag: true,
         enable_thinking: false,
       },
-      reasoning_budget: 0,
+      reasoning_budget_tokens: 0,
     })
     expect(override).toEqual({
       chat_template_kwargs: { custom_flag: true, enable_thinking: true },
-      reasoning_budget: 4096,
+      reasoning_budget_tokens: 4096,
     })
   })
 
   it('preserves reasoning settings when DFlash is disabled', () => {
-    const override = { reasoning_budget: 4096 }
+    const override = { reasoning_budget_tokens: 4096 }
 
     expect(
       withUpstreamDflashReasoningOverride(

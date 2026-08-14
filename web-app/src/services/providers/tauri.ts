@@ -4,7 +4,11 @@
 
 import { ensureRegistryLoaded } from '@/stores/provider-registry-store'
 import { providerModels } from '@/constants/models'
-import { EngineManager, SettingComponentProps } from '@janhq/core'
+import {
+  EngineManager,
+  ReasoningControls,
+  SettingComponentProps,
+} from '@janhq/core'
 import { ModelCapabilities } from '@/types/models'
 import { modelSettings } from '@/lib/predefined'
 import { ExtensionManager } from '@/lib/extension'
@@ -187,12 +191,28 @@ export class TauriProvidersService extends DefaultProvidersService {
                 capabilities = [...capabilities, ModelCapabilities.EMBEDDINGS]
               }
 
+              // Which reasoning knobs the model's chat template understands.
+              // Drives the effort selector in the chat input.
+              let reasoning: ReasoningControls | undefined
+              if (!model.embedding) {
+                try {
+                  reasoning = await value.getReasoningControls(model.id)
+                } catch (error) {
+                  console.warn(
+                    `Failed to detect reasoning controls for model ${model.id}:`,
+                    error
+                  )
+                  // Continue without an effort selector if detection fails
+                }
+              }
+
               return {
                 id: model.id,
                 model: model.id,
                 name: model.name,
                 description: model.description,
                 capabilities,
+                reasoning,
                 embedding: model.embedding, // Preserve embedding flag for filtering in UI
                 // Origin of an imported model, for the UI badge.
                 source: (model as { source?: Model['source'] }).source,

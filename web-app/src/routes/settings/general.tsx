@@ -672,8 +672,8 @@ function General() {
                 }
               />
               <CardItem
-                title="Reasoning budget (local models)"
-                description="Limits thinking tokens for llama.cpp / MLX. Off disables reasoning entirely."
+                title="Thinking effort (local models)"
+                description="Default effort for llama.cpp / MLX, also shown next to the chat input. Models with their own effort setting receive that; the rest get a thinking-token budget. Off disables thinking entirely."
                 actions={
                   <select
                     className="border-input bg-background rounded-md border px-2 py-1 text-sm"
@@ -685,10 +685,11 @@ function General() {
                     }
                   >
                     <option value="off">Off</option>
-                    <option value="low">Low (256)</option>
-                    <option value="medium">Medium (1024)</option>
-                    <option value="high">High (4096)</option>
-                    <option value="unlimited">Unlimited</option>
+                    <option value="low">Low (256 tokens)</option>
+                    <option value="medium">Medium (1024 tokens)</option>
+                    <option value="high">High (4096 tokens)</option>
+                    <option value="xhigh">Extra High (8192 tokens)</option>
+                    <option value="max">Max (no limit)</option>
                   </select>
                 }
               />

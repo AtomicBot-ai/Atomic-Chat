@@ -147,6 +147,17 @@
   "reasoning": "Рассуждение",
   "reasoningToggleEnabled": "Ризонинг включён",
   "reasoningToggleDisabled": "Ризонинг выключен",
+  "reasoningEffort": {
+    "title": "Усилие",
+    "ariaLabel": "Уровень мышления: {{level}}",
+    "faster": "Быстрее",
+    "smarter": "Умнее",
+    "low": "Низкое",
+    "medium": "Среднее",
+    "high": "Высокое",
+    "xhigh": "Очень высокое",
+    "max": "Максимум"
+  },
   "proactive": "Проактивность",
   "selectAModel": "Выберите модель",
   "downloadModel": "Скачать модель",
