@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-192 records, 2026-05-19 → 2026-08-13.
+196 records, 2026-05-19 → 2026-08-14.
 
 ---
 
@@ -124,8 +124,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 - **2026-05-19** — [Use `AtomicBot-ai/mlx-vlm` as the MLX backend](2026-05-19-use-atomicbot-ai-mlx-vlm-as-the-mlx-backend.md)
 
-## llama.cpp providers & backend selection (48)
+## llama.cpp providers & backend selection (49)
 
+- **2026-08-14** — [Keep the engine version out of the `latest/` sentinel trap](2026-08-14-keep-the-engine-version-out-of-the-latest-sentinel-trap.md)
 - **2026-08-13** — [Mirror and sign upstream llama.cpp releases in atomic-chat-conf](2026-08-13-mirror-and-sign-upstream-llama-cpp-in-atomic-chat-conf.md)
 - **2026-08-13** — [Add Windows ROCm to the upstream backend matrix](2026-08-13-add-windows-rocm-to-the-upstream-backend-matrix.md)
 - **2026-08-13** — [Apply the detected backend tier at startup for `llamacpp-upstream`](2026-08-13-apply-the-detected-backend-tier-at-startup-for-upstream.md)
@@ -175,8 +176,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-19** — [Use `AtomicBot-ai/atomic-llama-cpp-turboquant` as the LLM backend](2026-05-19-use-atomicbot-ai-atomic-llama-cpp-turboquant-as-the-llm-backend.md)
 - **2026-05-19** — [Ship upstream `ggml-org/llama.cpp` as a second macOS provider, no fork](2026-05-19-ship-upstream-ggml-org-llama-cpp-as-a-second-macos-provider-no.md)
 
-## Models, Hub & downloads (19)
+## Models, Hub & downloads (21)
 
+- **2026-08-14** — [Open the Hub recommendations with a promoted head ahead of the family grouping](2026-08-14-open-the-hub-recommendations-with-a-promoted-head.md)
+- **2026-08-14** — [Restrict the local-model scan to text-generation models](2026-08-14-restrict-the-local-model-scan-to-text-generation-models.md)
 - **2026-08-12** — [Gate Hub fuzzy search by term length and drop the Jan name filter](2026-08-12-gate-hub-fuzzy-search-by-term-length-and-drop-the-jan-name-filter.md)
 - **2026-08-07** — [Take Recommended capability badges from the staff-picks manifest](2026-08-07-take-recommended-capability-badges-from-the-staff-picks-manifest.md)
 - **2026-08-07** — [Let onboarding time out into the chat and recommend two GGUF models](2026-08-07-let-onboarding-time-out-into-the-chat-and-recommend-two-gguf.md)
@@ -226,8 +229,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (17)
+## UI / UX (19)
 
+- **2026-08-14** — [Show the streaming code while an HTML artifact generates](2026-08-14-show-the-streaming-code-while-an-html-artifact-generates.md)
+- **2026-08-14** — [Collapse the engine log behind a toggle in the model-load toast](2026-08-14-collapse-the-engine-log-behind-a-toggle-in-the-model-load-toast.md)
 - **2026-08-13** — [Move sampling back onto each assistant (per-assistant sampler, popover stays the only editor)](2026-08-13-move-sampling-back-onto-each-assistant.md)
 - **2026-08-13** — [Revert the Settings and Model Providers UI rework; keep runtime engine updates](2026-08-13-revert-the-settings-and-model-providers-ui-rework-keep-runtime.md)
 - **2026-08-12** — [Split Model Providers into Local/Cloud tabs and hide engine settings](2026-08-12-split-model-providers-into-local-and-cloud-tabs-and-hide-engine-settings.md)

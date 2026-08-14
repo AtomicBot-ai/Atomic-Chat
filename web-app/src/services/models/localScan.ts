@@ -7,6 +7,8 @@
  *
  * Scope: LM Studio, HF cache, Unsloth (exports/ runnable + outputs/ marked),
  * and Ollama (manifest → blob, exposed as a `.gguf` symlink without copying).
+ * Only text-generation models are returned — embedding/reranker weights live in
+ * the same caches but crash `llama-server` when loaded as a chat model.
  *
  * All filesystem access goes through the existing unscoped Tauri commands
  * (`readdir_sync` / `read_file_sync` / `exists_sync` / `file_stat`) which accept
@@ -541,6 +543,163 @@ async function scanOllama(home: string): Promise<LocalModelCandidate[]> {
   return out
 }
 
+// --- Model kind -----------------------------------------------------------
+
+/**
+ * llama.cpp architectures that cannot generate text: encoder-only embedding
+ * backbones and the projector/audio side-models. Loading one as a chat model
+ * trips a GGML assert and kills the server process, so they must never reach
+ * onboarding.
+ */
+const NON_TEXT_GGUF_ARCHITECTURES = new Set([
+  'bert',
+  'modern-bert',
+  'nomic-bert',
+  'nomic-bert-moe',
+  'neo-bert',
+  'jina-bert-v2',
+  'jina-bert-v3',
+  'eurobert',
+  'gemma-embedding',
+  'llama-embed',
+  't5encoder',
+  'clip',
+  'wavtokenizer-dec',
+])
+
+/** Transformers heads that are classifiers, not decoders. */
+const NON_TEXT_HF_ARCHITECTURE_SUFFIXES = [
+  'formaskedlm',
+  'forsequenceclassification',
+  'fortokenclassification',
+]
+
+/** `config.json` `model_type` values of encoder-only / non-LLM families. */
+const NON_TEXT_HF_MODEL_TYPES = new Set([
+  'bert',
+  'roberta',
+  'xlm-roberta',
+  'xlm_roberta',
+  'distilbert',
+  'albert',
+  'electra',
+  'camembert',
+  'deberta',
+  'deberta-v2',
+  'mpnet',
+  'modernbert',
+  'nomic_bert',
+  'jina_bert',
+  'clip',
+  'siglip',
+  'whisper',
+])
+
+/**
+ * Decide from GGUF metadata whether a file is a text generator. Unknown
+ * architectures pass: hiding a usable model is worse than listing an exotic one.
+ */
+export function isTextGenerationGguf(
+  metadata: Record<string, string>
+): boolean {
+  const arch = metadata['general.architecture']?.trim().toLowerCase()
+  if (!arch) return true
+  if (NON_TEXT_GGUF_ARCHITECTURES.has(arch)) return false
+
+  // Embedding/reranker conversions of a generative architecture (Qwen3-Embedding
+  // and friends) keep the arch name but carry a pooling type or a classifier
+  // head. Pooling type 0 is NONE, i.e. a plain decoder.
+  const pooling = metadata[`${arch}.pooling_type`]?.trim()
+  if (pooling !== undefined && pooling !== '' && pooling !== '0') return false
+  return metadata[`${arch}.classifier.output_labels`] === undefined
+}
+
+/** Same decision for a safetensors/MLX folder, from its `config.json`. */
+export function isTextGenerationHfConfig(rawConfig: string | null): boolean {
+  if (!rawConfig) return true
+  let parsed: { architectures?: unknown; model_type?: unknown }
+  try {
+    parsed = JSON.parse(rawConfig)
+  } catch {
+    return true
+  }
+
+  const architectures = (
+    Array.isArray(parsed.architectures) ? parsed.architectures : []
+  )
+    .filter((a): a is string => typeof a === 'string')
+    .map((a) => a.toLowerCase())
+  if (
+    architectures.some((a) =>
+      NON_TEXT_HF_ARCHITECTURE_SUFFIXES.some((suffix) => a.endsWith(suffix))
+    )
+  ) {
+    return false
+  }
+
+  const modelType =
+    typeof parsed.model_type === 'string'
+      ? parsed.model_type.trim().toLowerCase()
+      : ''
+  return !(modelType && NON_TEXT_HF_MODEL_TYPES.has(modelType))
+}
+
+/** GGUF key/value header of a local file (null when it can't be parsed). */
+async function readGgufMetadata(
+  path: string
+): Promise<Record<string, string> | null> {
+  try {
+    const result = await core().invoke<{ metadata?: Record<string, string> }>(
+      'plugin:llamacpp|read_gguf_metadata',
+      { path }
+    )
+    return result?.metadata ?? null
+  } catch {
+    return null
+  }
+}
+
+async function isTextGenerationCandidate(
+  cand: LocalModelCandidate
+): Promise<boolean> {
+  if (cand.format === 'gguf') {
+    const metadata = await readGgufMetadata(cand.path)
+    return metadata ? isTextGenerationGguf(metadata) : true
+  }
+  if (cand.format === 'mlx') {
+    return isTextGenerationHfConfig(
+      await readText(joinPath(cand.path, 'config.json'))
+    )
+  }
+  return true
+}
+
+// Each probe reads a file header; a handful in flight keeps the scan snappy on
+// a cache with dozens of models without hammering a spinning disk.
+const KIND_PROBE_CONCURRENCY = 4
+
+async function keepTextGenerationOnly(
+  cands: LocalModelCandidate[]
+): Promise<LocalModelCandidate[]> {
+  const keep = new Array<boolean>(cands.length).fill(true)
+  let next = 0
+
+  const worker = async () => {
+    while (next < cands.length) {
+      const index = next++
+      keep[index] = await isTextGenerationCandidate(cands[index])
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(KIND_PROBE_CONCURRENCY, cands.length) }, () =>
+      worker()
+    )
+  )
+
+  return cands.filter((_, index) => keep[index])
+}
+
 export interface ScanLocalModelsOptions {
   // When false, scanning is disabled and an empty list is returned.
   enabled?: boolean
@@ -555,7 +714,8 @@ function normalizePathKey(path: string): string {
   return path.replace(/[\\/]+$/g, '').replace(/[\\/]+/g, SEP)
 }
 
-// Scan every source and return de-duplicated candidates, minus already-imported ones.
+// Scan every source and return de-duplicated text-generation candidates, minus
+// already-imported ones.
 export async function scanLocalModels(
   options: ScanLocalModelsOptions = {}
 ): Promise<LocalModelCandidate[]> {
@@ -607,7 +767,7 @@ export async function scanLocalModels(
     result.push({ ...cand, id })
   }
 
-  return result
+  return keepTextGenerationOnly(result)
 }
 
 // Absolute weights paths of locally-imported models, for deduping scan candidates.

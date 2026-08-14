@@ -3,6 +3,7 @@ import type { ServiceHub } from '@/services'
 import {
   isExplicitSwitchPending,
   shouldAttemptAutoStart,
+  splitModelLoadError,
   switchToModel,
 } from './switchModel'
 
@@ -241,5 +242,50 @@ describe('switchToModel', () => {
     })
 
     expect(Date.now() - startedAt).toBeGreaterThanOrEqual(450)
+  })
+})
+
+describe('splitModelLoadError', () => {
+  it('separates the engine reason from the log it dumped after it', () => {
+    const { summary, details } = splitModelLoadError({
+      code: 'LLAMA_CPP_PROCESS_ERROR',
+      message:
+        'The model process crashed unexpectedly (access violation / segfault).\n' +
+        'GGML_ASSERT(n_outputs_max <= cparams.n_outputs_max) failed\n' +
+        'libggml-base.0.dylib 0x0000000105c13f0 [LLAMA_CPP_PROCESS_ERROR]',
+    })
+
+    expect(summary).toBe(
+      'The model process crashed unexpectedly (access violation / segfault).'
+    )
+    expect(details).toContain('GGML_ASSERT')
+    expect(details).not.toContain('[LLAMA_CPP_PROCESS_ERROR]')
+  })
+
+  it('prefers the structured details field over the flattened message', () => {
+    const { summary, details } = splitModelLoadError({
+      message: 'Model architecture is not supported.\nignored copy',
+      details: 'load_hparams: unknown model architecture',
+    })
+
+    expect(summary).toBe('Model architecture is not supported.')
+    expect(details).toBe('load_hparams: unknown model architecture')
+  })
+
+  it('demotes a one-line wall of text to the details pane', () => {
+    const wall = `Something broke ${'and kept going '.repeat(40)}`
+
+    const { summary, details } = splitModelLoadError({ message: wall })
+
+    expect(summary.length).toBeLessThanOrEqual(201)
+    expect(summary.endsWith('…')).toBe(true)
+    expect(details).toBe(wall.trim())
+  })
+
+  it('leaves a short reason without a details pane', () => {
+    expect(splitModelLoadError({ message: 'Model file not found.' })).toEqual({
+      summary: 'Model file not found.',
+      details: undefined,
+    })
   })
 })

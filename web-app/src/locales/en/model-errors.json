@@ -8,6 +8,8 @@
   "outOfMemoryDescription": "The model requires more RAM or VRAM than is currently available. Try closing other applications, picking a smaller / more quantized model, or reducing the context size.",
   "modelLoadFailedTitle": "Failed to load the model",
   "modelLoadFailedDescription": "The model could not be started. {{message}}",
+  "showDetails": "Show details",
+  "hideDetails": "Hide details",
   "currentBackendFallback": "the current backend",
   "multimodalUnsupportedTitle": "Vision/audio not supported by this backend",
   "multimodalUnsupportedDescription": "This model isn't supported by the current backend ({{backend}}). Try switching to {{alternative}} in Settings → Model Providers, or update the app.",

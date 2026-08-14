@@ -94,11 +94,67 @@ function HtmlArtifactComponent({
   const [progress, setProgress] = useState(0)
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const previewWrapRef = useRef<HTMLDivElement>(null)
+  const codeScrollRef = useRef<HTMLDivElement>(null)
+  const codeContentRef = useRef<HTMLDivElement>(null)
+  const followCodeRef = useRef(true)
   const artifactIdRef = useRef<string>('')
   if (!artifactIdRef.current) artifactIdRef.current = createArtifactId()
   const versionRef = useRef(0)
 
   const generating = streaming
+
+  // The iframe cannot show a half-written document, so surface the live code
+  // instead while it streams in, then hand the viewer back to the preview.
+  const wasGeneratingRef = useRef(false)
+  useEffect(() => {
+    if (generating) {
+      wasGeneratingRef.current = true
+      setTab('code')
+      return
+    }
+    if (wasGeneratingRef.current) {
+      wasGeneratingRef.current = false
+      setTab('preview')
+    }
+  }, [generating])
+
+  const followCodeTail = useCallback(() => {
+    const scroller = codeScrollRef.current
+    if (!scroller || !followCodeRef.current) return
+    scroller.scrollTop = scroller.scrollHeight
+  }, [])
+
+  useEffect(() => {
+    if (!generating) return
+    const scroller = codeScrollRef.current
+    if (!scroller) return
+
+    followCodeRef.current = true
+    followCodeTail()
+
+    const onScroll = () => {
+      followCodeRef.current =
+        scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 48
+    }
+    scroller.addEventListener('scroll', onScroll)
+
+    // Shiki re-highlights asynchronously, so the pane grows a frame or two
+    // after `code` changes; follow the resize rather than the prop.
+    const content = codeContentRef.current
+    if (!content || typeof ResizeObserver === 'undefined') {
+      return () => scroller.removeEventListener('scroll', onScroll)
+    }
+    const observer = new ResizeObserver(followCodeTail)
+    observer.observe(content)
+    return () => {
+      observer.disconnect()
+      scroller.removeEventListener('scroll', onScroll)
+    }
+  }, [generating, followCodeTail])
+
+  useEffect(() => {
+    if (generating) followCodeTail()
+  }, [code, generating, followCodeTail])
 
   // Do not hand an incomplete document to the iframe while generation is active.
   useEffect(() => {
@@ -348,6 +404,7 @@ function HtmlArtifactComponent({
 
       <div
         ref={previewWrapRef}
+        data-artifact-pane="preview"
         className={cn(
           'relative',
           fill && 'min-h-0 flex-1',
@@ -383,23 +440,36 @@ function HtmlArtifactComponent({
       </div>
 
       <div
+        data-artifact-pane="code"
         className={cn(
+          'flex-col',
           fill && 'min-h-0 flex-1',
-          tab === 'code' ? 'block' : 'hidden'
+          tab === 'code' ? 'flex' : 'hidden'
         )}
       >
+        {generating && (
+          <div className="flex shrink-0 items-center gap-3 border-border border-b bg-muted/40 px-3 py-1.5 text-muted-foreground text-xs">
+            <span className="truncate">{t('workspacePreview.generating')}</span>
+            <span className="ml-auto shrink-0 tabular-nums">
+              {progressPct}%
+            </span>
+          </div>
+        )}
         <div
+          ref={codeScrollRef}
           className={cn(
             'overflow-y-auto overflow-x-hidden',
-            fill ? 'h-full' : 'max-h-[440px]'
+            fill ? 'min-h-0 flex-1' : 'max-h-[440px]'
           )}
         >
-          <CodeBlock
-            code={code}
-            language="html"
-            showLineNumbers
-            className="[&_code]:whitespace-normal [&_.line]:block [&_.line]:whitespace-pre-wrap [&_.line]:pl-14 [&_.line]:-indent-14 [&_.line]:[overflow-wrap:anywhere]"
-          />
+          <div ref={codeContentRef}>
+            <CodeBlock
+              code={code}
+              language="html"
+              showLineNumbers
+              className="[&_code]:whitespace-normal [&_.line]:block [&_.line]:whitespace-pre-wrap [&_.line]:pl-14 [&_.line]:-indent-14 [&_.line]:[overflow-wrap:anywhere]"
+            />
+          </div>
         </div>
       </div>
     </div>

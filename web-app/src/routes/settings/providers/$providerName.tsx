@@ -1854,13 +1854,26 @@ function ProviderDetail() {
       })
       void downloadRecommendedBackend(targetBackend)
         .then(async () => {
-          // The freshly installed release may not be among the options
-          // registered at load, so rebuild the list before re-reading it.
-          await refreshBackendCatalog()
+          // Report the outcome off the extension's own state. A successful
+          // hot-swap has already appended the new option and announced the new
+          // value, so re-reading the provider is all this needs — rebuilding the
+          // whole catalog first (a full `configureBackends()`: manifest refetch
+          // plus a device probe) used to hold the confirmation back by about
+          // ten seconds after the transfer had finished, which read as "it
+          // downloaded but did not switch".
           await refreshSettings()
           toast.success(t('settings:backendUpdater.updateSuccess'), {
             description: targetBackend,
           })
+
+          // Still rebuild the catalog, just not on the critical path: when the
+          // hot-swap fell back to the pending-restart flow, this is what makes
+          // the freshly installed release selectable in the dropdown.
+          void refreshBackendCatalog()
+            .then(() => refreshSettings())
+            .catch((err) => {
+              console.warn('Backend catalog refresh failed:', err)
+            })
         })
         .catch((err) => {
           console.error('Engine update download failed:', err)

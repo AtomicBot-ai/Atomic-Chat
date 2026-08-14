@@ -1103,12 +1103,17 @@ export default class llamacpp_extension extends AIEngine {
             : undefined
         )
 
-        // Always surface the installed-on-disk saved backend in the dropdown,
-        // even when the remote list (e.g. GitHub) didn't return it. Without
-        // this the user sees an empty/incomplete options list after a
-        // restart with no network.
+        // Always surface the saved backend in the dropdown, even when neither
+        // the remote list nor the disk carries it. Beyond the offline case this
+        // is what stops a silent downgrade: `registerSettings()` in core resets
+        // the stored value to `options[0]` whenever the stored value is missing
+        // from the incoming options, and `options[0]` is an arbitrary older
+        // release. A saved tag lives in the list through its copy on disk, and
+        // that copy is what `removeOldBackendVersions` prunes after an update,
+        // so the pin cannot be gated on the build still being installed.
         if (
-          savedVbIsInstalled &&
+          !!savedVbVer?.trim() &&
+          !!savedVbBack?.trim() &&
           !(
             backendSetting.controllerProps.options as Array<{
               value: string
@@ -1127,7 +1132,7 @@ export default class llamacpp_extension extends AIEngine {
                 savedVbBack!.trim(),
                 releaseNotes.get(stripBom(savedVbVer!)),
                 false
-              )} — installed locally`,
+              )}${savedVbIsInstalled ? ' — installed locally' : ''}`,
             },
             ...(backendSetting.controllerProps.options as Array<{
               value: string
@@ -1135,7 +1140,7 @@ export default class llamacpp_extension extends AIEngine {
             }>),
           ]
           logger.info(
-            `Saved backend ${savedVB} not present in version_backends list — pinning it into options (installed locally)`
+            `Saved backend ${savedVB} not present in version_backends list — pinning it into options (installed locally: ${savedVbIsInstalled})`
           )
         }
 

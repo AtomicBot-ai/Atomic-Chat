@@ -40,6 +40,8 @@ describe('iconKeyLogoSrc', () => {
       'microsoft',
       'llama',
       'bytedance',
+      'inclusionai',
+      'owao',
     ]
     for (const key of keys) {
       expect(iconKeyLogoSrc(key), `missing logo for "${key}"`).toBeTruthy()

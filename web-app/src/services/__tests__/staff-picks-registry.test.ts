@@ -338,10 +338,17 @@ describe('BASELINE_STAFF_PICKS', () => {
       return index === -1 ? TIERS.length : index
     }
 
+    // Picks ordered ahead of the first family entry are a promoted head that is
+    // curated per release and is not part of the family sequence.
+    const FAMILY_SEQUENCE_START = 10
+
     // Both format lists are curated as one sequence, so each is checked in the
     // order the Hub renders it.
     const listed = (format: 'gguf' | 'mlx') =>
-      filterStaffPicksForPlatform(BASELINE_STAFF_PICKS, 'macos', format)
+      filterStaffPicksForPlatform(BASELINE_STAFF_PICKS, 'macos', format).filter(
+        (pick) =>
+          (pick.order ?? Number.POSITIVE_INFINITY) >= FAMILY_SEQUENCE_START
+      )
 
     it.each(['gguf', 'mlx'] as const)(
       'opens the %s list with Qwen, then Gemma, then LFM',

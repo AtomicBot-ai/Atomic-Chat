@@ -1340,12 +1340,18 @@ export default class llamacpp_upstream_extension extends AIEngine {
             : undefined
         )
 
-        // Always surface the installed-on-disk saved backend in the dropdown,
-        // even when the remote list (e.g. GitHub) didn't return it. Without
-        // this the user sees an empty/incomplete options list after a
-        // restart with no network.
+        // Always surface the saved backend, even when neither the manifest nor
+        // the disk lists it. Dropping it hands the value to core's
+        // `registerSettings()`, which replaces anything missing from the options
+        // with `options[0]` — here the `latest/<variant>` sentinel, which
+        // `reconcileBackendReleaseTag` can only recover from by downloading. The
+        // manifest carries the newest tag alone, so an older saved tag survives
+        // in the list purely through its copy on disk, and that copy is what
+        // `removeOldBackendVersions` prunes after an update: gating this pin on
+        // installed-ness is what let one launch in that window park the provider
+        // on the sentinel while the UI read "Latest <variant>".
         if (
-          savedVbIsInstalled &&
+          isConcreteVersionBackend(savedVB) &&
           !(
             backendSetting.controllerProps.options as Array<{
               value: string
@@ -1361,7 +1367,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
             }>),
           ]
           logger.info(
-            `Saved backend ${savedVB} not present in version_backends list — pinning it into options (installed locally)`
+            `Saved backend ${savedVB} not present in version_backends list — pinning it into options (installed locally: ${savedVbIsInstalled})`
           )
         }
 
@@ -1615,6 +1621,21 @@ export default class llamacpp_upstream_extension extends AIEngine {
   private async reconcileBackendReleaseTag(): Promise<void> {
     try {
       const current = stripBom(this.config.version_backend || '')
+
+      // A parked `latest/<variant>` is not a fresh install waiting to be
+      // configured: it is what core's `registerSettings()` leaves behind when
+      // the stored concrete value falls out of the options list, and treating it
+      // as unconfigured used to disable engine updates for good. Resolving it
+      // costs nothing when that release is already on disk, and persists a
+      // concrete tag this method can reconcile normally from then on.
+      if (current.startsWith('latest/')) {
+        logger.info(
+          `reconcileBackendReleaseTag: resolving parked sentinel '${current}'`
+        )
+        await this.downloadRecommendedBackend(current)
+        return
+      }
+
       if (!isConcreteVersionBackend(current)) {
         logger.info(
           'reconcileBackendReleaseTag: no concrete backend configured yet, skipping'
