@@ -7,6 +7,7 @@ import {
   formatMegaBytes,
   formatDuration,
   getModelDisplayName,
+  basenameNoExt,
   withTimeout,
   OPERATION_TIMED_OUT_CODE,
 } from '../utils'
@@ -252,6 +253,31 @@ describe('getModelDisplayName', () => {
       displayName: 'Model (Version 2.0) - Fine-tuned',
     } as Model
     expect(getModelDisplayName(model)).toBe('Model (Version 2.0) - Fine-tuned')
+  })
+})
+
+describe('basenameNoExt', () => {
+  it('removes a single extension', () => {
+    expect(basenameNoExt('model.gguf')).toBe('model')
+  })
+
+  it('removes compound extensions like .tar.gz', () => {
+    expect(basenameNoExt('backend.tar.gz')).toBe('backend')
+    expect(basenameNoExt('backend.TAR.GZ')).toBe('backend')
+  })
+
+  it('removes .zip extension', () => {
+    expect(basenameNoExt('backend.zip')).toBe('backend')
+  })
+
+  it('returns the name unchanged for files without an extension', () => {
+    expect(basenameNoExt('README')).toBe('README')
+    expect(basenameNoExt('Makefile')).toBe('Makefile')
+  })
+
+  it('handles paths with directory components', () => {
+    expect(basenameNoExt('/path/to/model.gguf')).toBe('model')
+    expect(basenameNoExt('/path/to/README')).toBe('README')
   })
 })
 
