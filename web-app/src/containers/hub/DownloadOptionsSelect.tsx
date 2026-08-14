@@ -157,10 +157,10 @@ export function DownloadOptionsSelect({
             <TooltipTrigger asChild>
               <span className="shrink-0 cursor-not-allowed">
                 <Button
-                  variant="default"
+                  variant="outline"
                   size="sm"
                   disabled
-                  className="pointer-events-none bg-foreground font-semibold text-background"
+                  className="pointer-events-none font-semibold"
                 >
                   {t('hub:download')}
                 </Button>

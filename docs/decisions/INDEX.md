@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-196 records, 2026-05-19 → 2026-08-14.
+198 records, 2026-05-19 → 2026-08-14.
 
 ---
 
@@ -176,8 +176,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-19** — [Use `AtomicBot-ai/atomic-llama-cpp-turboquant` as the LLM backend](2026-05-19-use-atomicbot-ai-atomic-llama-cpp-turboquant-as-the-llm-backend.md)
 - **2026-05-19** — [Ship upstream `ggml-org/llama.cpp` as a second macOS provider, no fork](2026-05-19-ship-upstream-ggml-org-llama-cpp-as-a-second-macos-provider-no.md)
 
-## Models, Hub & downloads (21)
+## Models, Hub & downloads (23)
 
+- **2026-08-14** — [Build the Hub "Installed on this device" list from the provider registry](2026-08-14-build-the-hub-installed-filter-from-the-provider-registry.md)
+- **2026-08-14** — [Recommend our own Gemma 4 E2B build in onboarding](2026-08-14-recommend-our-own-gemma-4-e2b-build-in-onboarding.md)
 - **2026-08-14** — [Open the Hub recommendations with a promoted head ahead of the family grouping](2026-08-14-open-the-hub-recommendations-with-a-promoted-head.md)
 - **2026-08-14** — [Restrict the local-model scan to text-generation models](2026-08-14-restrict-the-local-model-scan-to-text-generation-models.md)
 - **2026-08-12** — [Gate Hub fuzzy search by term length and drop the Jan name filter](2026-08-12-gate-hub-fuzzy-search-by-term-length-and-drop-the-jan-name-filter.md)

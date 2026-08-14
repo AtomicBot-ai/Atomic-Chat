@@ -726,7 +726,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                       <div className="flex items-center justify-between px-2 py-1">
                         <div className="flex items-center gap-1.5">
                           <ProvidersAvatar provider={providerInfo} />
-                          <span className="capitalize text-sm font-medium text-muted-foreground">
+                          <span className="text-sm font-medium text-muted-foreground">
                             {getProviderTitle(providerInfo.provider)}
                           </span>
                           {providerInfo.provider === selectedProvider && (

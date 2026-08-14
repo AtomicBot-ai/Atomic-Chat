@@ -28,12 +28,17 @@ import {
   applyHubFilters,
   hasLikeData,
   readHubFilters,
+  sortModels,
   writeHubFilters,
   type HubFilterState,
 } from '@/lib/hub-filters'
+import {
+  collectInstalledModels,
+  filterInstalledBySearch,
+} from '@/lib/hub-installed'
 import { getMemoryBudgetBytes } from '@/lib/model-card'
 import { extractModelName } from '@/lib/models'
-import { cn, sanitizeModelId } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { getModelSearchService } from '@/services/model-search'
 import { useModelCatalogStore } from '@/stores/model-catalog-store'
 import type { CatalogModel } from '@/services/models/types'
@@ -254,56 +259,25 @@ function HubContent() {
     return ordered
   }, [debouncedSearchValue, searchService, sources])
 
-  const downloadedMatches = useMemo(() => {
-    if (!showOnlyDownloaded) return searchMatches
-    const modelsOf = (name: string) =>
-      providers.find((p) => p.provider === name)?.models ?? []
-    // Merge models from BOTH local llama.cpp providers — the turboquant
-    // `llamacpp` fork AND the vanilla `llamacpp-upstream` build. On
-    // Windows/Linux a downloaded model is registered under
-    // `llamacpp-upstream` (the default), so consulting only `llamacpp` hid
-    // downloaded models from this filter.
-    const llamacppModels = [
-      ...modelsOf('llamacpp'),
-      ...modelsOf('llamacpp-upstream'),
-    ]
-    const mlxModels = modelsOf('mlx')
+  // Every locally installed model, not the catalog narrowed down to the ones it
+  // happens to carry: a model imported by hand or found by the local scan has
+  // no catalog entry to filter to.
+  //
+  // Reading `providers` reactively (rather than via `getState()`) is what makes
+  // a downloaded/deleted model appear or vanish immediately (ATO-180).
+  const installedModels = useMemo(
+    () => (showOnlyDownloaded ? collectInstalledModels(sources, providers) : []),
+    [showOnlyDownloaded, sources, providers]
+  )
 
-    // MlxModelDownloadAction uses its own sanitize that preserves dots,
-    // unlike the utils version which replaces dots with underscores.
-    const sanitizeMlxId = (id: string) =>
-      id.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-_./]/g, '')
-
-    return searchMatches.filter((model) => {
-      if (model.is_mlx) {
-        const shortName = model.model_name.split('/').pop() ?? model.model_name
-        const mlxModelId = sanitizeMlxId(shortName)
-        return mlxModels.some(
-          (m: { id: string }) =>
-            m.id === mlxModelId || m.id === `${model.developer}/${mlxModelId}`
-        )
-      }
-      return !!model.quants?.some((variant) => {
-        const prefixed = `${model.developer}/${sanitizeModelId(variant.model_id)}`
-        return (
-          llamacppModels.some(
-            (m: { id: string }) =>
-              m.id === variant.model_id || m.id === prefixed
-          ) ||
-          mlxModels.some(
-            (m: { id: string }) =>
-              m.id === variant.model_id || m.id === prefixed
-          )
-        )
-      })
-    })
-    // Reading `providers` reactively (rather than via `getState()`) is what
-    // makes a downloaded/deleted model appear or vanish immediately (ATO-180).
-  }, [searchMatches, showOnlyDownloaded, providers])
+  const installedResults = useMemo(
+    () => filterInstalledBySearch(installedModels, debouncedSearchValue),
+    [installedModels, debouncedSearchValue]
+  )
 
   const catalogResults = useMemo(
-    () => downloadedMatches.filter((model) => !isUnsupportedBaseGemmaMlx(model)),
-    [downloadedMatches]
+    () => searchMatches.filter((model) => !isUnsupportedBaseGemmaMlx(model)),
+    [searchMatches]
   )
 
   // Exact-repo lookup: the user pasted a full `owner/name`.
@@ -383,6 +357,15 @@ function HubContent() {
   // ---- Unified list -----------------------------------------------------
 
   const listItems = useMemo<HubListItem[]>(() => {
+    if (showOnlyDownloaded) {
+      // The format and fit filters describe what to look for in the catalog;
+      // applied here they would hide models the user already has on disk.
+      return sortModels(installedResults, filters.sort).map((model) => ({
+        model,
+        pick: pickByRepo.get(model.model_name),
+      }))
+    }
+
     if (!isSearchMode) {
       const filtered = applyHubFilters(staffPickModels, filters, {
         budgetBytes,
@@ -424,6 +407,8 @@ function HubContent() {
     }))
   }, [
     isSearchMode,
+    showOnlyDownloaded,
+    installedResults,
     staffPickModels,
     pickByRepo,
     catalogResults,
