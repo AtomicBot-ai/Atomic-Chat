@@ -243,6 +243,14 @@
     },
     "messageMetadata": {
       "title": "メッセージメタデータ"
+    },
+    "deleteAllAgentThreads": {
+      "title": "すべてのエージェントチャットを削除",
+      "description": "すべてのエージェントチャットが削除されます。この操作は元に戻せません。"
+    },
+    "deleteAllThreadsInProject": {
+      "title": "すべての会話を削除",
+      "description": "「{{projectName}}」内の {{count}} 件の会話が削除されます。この操作は元に戻せません。"
     }
   },
   "projects": {
@@ -268,7 +276,12 @@
       "successWithName": "プロジェクト「{{projectName}}」を正常に削除しました",
       "successWithoutName": "プロジェクトを正常に削除しました",
       "error": "プロジェクトの削除に失敗しました。もう一度お試しください。",
-      "ariaLabel": "{{projectName}}を削除"
+      "ariaLabel": "{{projectName}}を削除",
+      "permanentDelete": "これによりすべてのスレッドが完全に削除されます。",
+      "permanentDeleteWarning": "この操作により、プロジェクト内のすべてのスレッドが完全に削除されます！",
+      "deleteEmptyProject": "プロジェクト「{{projectName}}」を削除します。",
+      "saveThreadsAdvice": "スレッドを保存するには、削除する前にスレッドリストまたは別のプロジェクトに移動してください。",
+      "starredWarning": "プロジェクト内にスター付きのスレッドが残っています。"
     },
     "addProjectDialog": {
       "createTitle": "新しいプロジェクトを作成",
@@ -279,7 +292,12 @@
       "updateButton": "更新",
       "alreadyExists": "プロジェクト「{{projectName}}」はすでに存在します",
       "createSuccess": "プロジェクト「{{projectName}}」を正常に作成しました",
-      "renameSuccess": "プロジェクト名を「{{oldName}}」から「{{newName}}」に正常に変更しました"
+      "renameSuccess": "プロジェクト名を「{{oldName}}」から「{{newName}}」に正常に変更しました",
+      "assistant": "アシスタント",
+      "selectAssistant": "アシスタントを選択（任意）",
+      "noAssistant": "アシスタントなし",
+      "addAssistant": "アシスタントを追加",
+      "updateSuccess": "プロジェクト「{{projectName}}」を正常に更新しました"
     },
     "noConversationsIn": "{{projectName}}には会話がありません",
     "startNewConversation": "以下で{{projectName}}との新しい会話を開始します",
@@ -290,7 +308,21 @@
     "updated": "更新日時:",
     "collapseThreads": "スレッドを折りたたむ",
     "expandThreads": "スレッドを展開する",
-    "update": "更新"
+    "update": "更新",
+    "selectAssistant": "アシスタントを選択",
+    "noAssistantAssigned": "このプロジェクトに割り当てられたアシスタントはありません",
+    "files": "ファイル",
+    "filesDescription": "このプロジェクトで参照する PDF、ドキュメント、テキストを追加します。",
+    "conversation": "会話",
+    "instructions": "指示",
+    "setup": "セットアップ",
+    "instructionsDescription": "応答のトーンやスタイルをカスタマイズ",
+    "manageInstructions": "指示を管理",
+    "collapseProject": "プロジェクトを折りたたむ",
+    "expandProject": "プロジェクトを展開",
+    "searchProjects": "プロジェクトを検索...",
+    "noProjectsFound": "プロジェクトが見つかりません",
+    "tryDifferentSearch": "別の検索キーワードをお試しください"
   },
   "toast": {
     "allThreadsUnfavorited": {
@@ -372,6 +404,127 @@
     "threadRemovedFromProject": {
       "title": "スレッドが削除されました",
       "description": "スレッドは「{{projectName}}」から正常に削除されました"
+    },
+    "deleteAllAgentThreads": {
+      "title": "すべてのエージェントチャットを削除",
+      "description": "すべてのエージェントチャットが完全に削除されました。"
+    },
+    "fileUploaded": {
+      "title": "ファイルをアップロードしました",
+      "description": "ファイルがアップロードされ、正常にインデックスされました"
+    },
+    "uploadFailed": {
+      "title": "アップロード失敗",
+      "description": "ファイルのアップロードに失敗しました"
+    },
+    "fileDeleted": {
+      "title": "ファイルを削除しました",
+      "description": "プロジェクトからファイルが削除されました"
+    },
+    "deleteFailed": {
+      "title": "削除失敗",
+      "description": "ファイルの削除に失敗しました"
+    },
+    "fileAlreadyExists": {
+      "title": "ファイルが既に存在します",
+      "description": "このファイルはすでにプロジェクトに添付されています"
+    },
+    "attachmentsDisabledInfo": {
+      "title": "添付ファイル機能が無効です",
+      "description": "設定で添付ファイル機能が無効になっています"
     }
+  },
+  "remote_access": "リモートアクセス",
+  "integrations": "外部連携",
+  "claude_code": "Claude Code",
+  "hermes_agent": "Hermes Agent",
+  "hideProvider": "プロバイダーを非表示",
+  "showProvider": "プロバイダーを表示",
+  "newTask": "新しいタスク",
+  "newBadge": "新機能",
+  "agentChats": "エージェントチャット",
+  "searchChats": "チャットを検索",
+  "searchAgentChats": "エージェントチャットを検索",
+  "launch": "外部連携",
+  "skills": "スキル",
+  "agentSkill": {
+    "selected": "スキル: {{name}}",
+    "remove": "選択したスキルを解除",
+    "loading": "スキルを読み込み中…",
+    "noMatches": "一致する有効なスキルがありません"
+  },
+  "skillsEmpty": "インストールされているスキルはありません。",
+  "selectSkill": "スキルを選択して指示内容を表示します。",
+  "enableSkill": "スキルを有効化",
+  "skillEnabled": "有効",
+  "skillDisabled": "無効",
+  "bundled": "同梱",
+  "incompatible": "非互換",
+  "dangerous": "機密処理",
+  "scriptsCount": "{{count}} 個のスクリプト",
+  "scriptsCount_other": "{{count}} 個のスクリプト",
+  "refresh": "更新",
+  "createNewSkill": "新規作成",
+  "writeSkillInstructions": "スキルの指示を記述",
+  "uploadASkill": "スキルをアップロード",
+  "uploadSkill": "スキルをアップロード",
+  "uploadSkillDescription": "スキルの定義ファイルをアップロードします。",
+  "dropSkillToUpload": "ドラッグ＆ドロップまたはクリックしてアップロード",
+  "uploadingSkill": "スキルをアップロード中…",
+  "uploadOneSkill": "一度に1つのスキルをアップロードしてください",
+  "skillFiles": "スキルファイル",
+  "skillFileRequirements": "ファイルの要件",
+  "skillMarkdownRequirement": ".md ファイルには YAML 形式でスキルの名前と説明が含まれている必要があります",
+  "skillArchiveRequirement": ".zip または .skill ファイルには SKILL.md ファイルが含まれている必要があります",
+  "createSkillDescription": "エージェントモード用の再利用可能なワークフローを作成します。",
+  "skillName": "スキル名",
+  "skillNamePlaceholder": "weekly-status-report",
+  "description": "説明",
+  "skillDescriptionPlaceholder": "最近の作業から週報を作成します。進捗要約を求められたときに使用します。",
+  "instructions": "指示",
+  "skillInstructionsPlaceholder": "最近の成果、課題、次のステップの3つのセクションで最近の作業を要約してください。丁寧かつ簡潔なトーンで記述してください…",
+  "skillActions": "スキル操作",
+  "downloadSkill": "ダウンロード",
+  "skillExported": "スキルをエクスポートしました",
+  "tryInChat": "チャットで試す",
+  "editSkill": "スキルを編集",
+  "editSkillDescription": "説明と指示を更新します。スキル名は変更できません。",
+  "uninstallSkill": "アンインストール",
+  "skillUnavailable": "利用不可",
+  "skillError": "スキルエラー",
+  "skillInstructions": "指示",
+  "deleteSkill": "スキルを削除",
+  "deleteSkillDescription": "カスタムスキル「{{name}}」を削除しますか？この操作は元に戻せません。",
+  "searchThreads": "スレッドを検索...",
+  "toNavigate": "で移動",
+  "toSelect": "で選択",
+  "toClose": "で閉じる",
+  "clearRecent": "消去",
+  "pauseDownload": "ダウンロードを一時停止",
+  "resumeDownload": "ダウンロードを再開",
+  "reasoningToggleEnabled": "推論有効",
+  "reasoningToggleDisabled": "推論無効",
+  "proactive": "プロアクティブ",
+  "downloadModel": "モデルをダウンロード",
+  "failedToLoadModelsTimeout": "モデルを読み込めませんでした（タイムアウト）",
+  "retry": "再試行",
+  "ok": "OK",
+  "continueAiResponse": "AI の応答を続行",
+  "attachmentsIngestion": {
+    "title": "添付ファイルの取り込み方法を選択",
+    "description": "これらのファイルをチャットに直接含めるか、埋め込みベクトルとしてインデックスするかを選択してください。",
+    "inline": "チャットに直接挿入",
+    "embeddings": "埋め込み（RAG）を使用"
+  },
+  "attachmentInjectedIndicator": "チャットに直接挿入済み",
+  "attachmentEmbeddedIndicator": "RAG用に埋め込み済み",
+  "viewInjectedContent": "挿入された内容を表示",
+  "injectedContentTitle": "挿入されたファイルの内容",
+  "errors": {
+    "fileTooLarge": "ファイルサイズが大きすぎます",
+    "fileTooLargeDescription": "{{fileName}} は制限の {{maxFileSizeMB}}MB を超えています"
+  },
+  "files": {
+    "chunksCount": "{{count}} チャンク"
   }
 }
