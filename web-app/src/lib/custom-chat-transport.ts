@@ -843,6 +843,17 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           return {
             finishReason: finishPart.finishReason,
             activityDurationMs: Math.max(0, Date.now() - requestStartedAt),
+            // Provider-agnostic time to first token: `streamStartTime` is the
+            // first generated delta, set above. The α→θ stage breakdown in
+            // `ttft-timing` only spans the Tauri/proxy path, so this is the
+            // value that is comparable across local and cloud providers.
+            ttftMs: streamStartTime
+              ? Math.max(0, streamStartTime - requestStartedAt)
+              : null,
+            // The model/provider a message was produced by was previously not
+            // recorded anywhere, so a finished turn could not be attributed.
+            modelId,
+            providerId,
             usage: {
               inputTokens: inputTokens,
               outputTokens: outputTokens,

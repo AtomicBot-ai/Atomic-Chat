@@ -42,26 +42,34 @@ fn log_mlx_exit(phase: &str, status: std::process::ExitStatus, stderr_output: &s
     #[cfg(not(unix))]
     let signal: Option<i32> = None;
 
-    log::error!("MLX server exited ({phase}) with status {status:?}");
-
-    if let Some(sig) = signal {
-        log::error!(
-            "MLX server was terminated by signal {sig} \
-             (e.g. 9 = SIGKILL, 15 = SIGTERM) — an EXTERNAL process killed it, \
-             it did not crash on its own"
-        );
-    }
-
-    if stderr_output.trim().is_empty() {
-        log::error!(
-            "MLX server produced NO stderr before exiting — this is the \
-             signature of an external kill (SIGKILL/OOM/Gatekeeper), not an \
-             in-process crash. Check `log show --predicate 'sender == \"kernel\"'` \
-             for OOM/codesign, and `codesign -dv` on the mlx-server binary."
-        );
+    // One failure, one report. These used to be three separate `error!` calls,
+    // which the Sentry log bridge filed as three issues for the same exit — and
+    // because the raw `ExitStatus` was in the headline, each distinct status
+    // code split off yet another group. The diagnosis is the same event, so it
+    // is logged as one, with a stable headline and the details in the body.
+    let diagnosis = if let Some(sig) = signal {
+        format!(
+            "terminated by signal {sig} (9 = SIGKILL, 15 = SIGTERM) — an EXTERNAL \
+             process killed it, it did not crash on its own"
+        )
+    } else if stderr_output.trim().is_empty() {
+        "produced NO stderr before exiting — the signature of an external kill \
+         (SIGKILL/OOM/Gatekeeper), not an in-process crash. Check \
+         `log show --predicate 'sender == \"kernel\"'` for OOM/codesign, and \
+         `codesign -dv` on the mlx-server binary."
+            .to_string()
     } else {
-        log::error!("MLX server stderr:\n{stderr_output}");
-    }
+        "exited on its own".to_string()
+    };
+
+    log::error!(
+        "MLX server exited during {phase}: {diagnosis}\nstatus: {status:?}\nstderr:\n{}",
+        if stderr_output.trim().is_empty() {
+            "<empty>"
+        } else {
+            stderr_output
+        }
+    );
 }
 
 /// MLX server configuration passed from the frontend
@@ -361,8 +369,11 @@ pub async fn load_mlx_model_impl(
                         log_mlx_exit("while waiting for ready", status, &stderr_output);
                         return Err(MlxError::from_stderr(&stderr_output).into());
                     } else {
-                        log::error!("MLX server exited successfully but without ready signal");
-                        log::error!("MLX server stderr before clean exit:\n{}", stderr_output);
+                        // One event, not two: see `log_mlx_exit`.
+                        log::error!(
+                            "MLX server exited successfully but without ready signal\nstderr:\n{}",
+                            stderr_output
+                        );
                         return Err(MlxError::from_stderr(&stderr_output).into());
                     }
                 }

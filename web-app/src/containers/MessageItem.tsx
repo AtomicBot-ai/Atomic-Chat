@@ -280,7 +280,10 @@ export const MessageItem = memo(
                   : block.text
               }
               components={agentMarkdownComponents}
-              isStreaming={isStreaming && isLastBlock}
+              // The thread page reports `submitted` for the whole request, so
+              // `status === 'streaming'` alone would leave HTML artifacts
+              // thinking they are complete and re-render the iframe per token.
+              isStreaming={(isStreaming || isRequestActive) && isLastBlock}
               messageId={message.id}
               isAnimating={isAnimating}
               enableHtmlPreview

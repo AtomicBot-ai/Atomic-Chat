@@ -242,13 +242,10 @@ export const MlxModelDownloadAction = memo(
         ) : (
           <Button
             data-test-id={`hub-model-${modelId}`}
-            variant="default"
+            variant="outline"
             size="sm"
             onClick={handleDownloadMlxModel}
-            className={cn(
-              'bg-foreground text-background hover:bg-foreground/80 hover:text-background',
-              isDownloading && 'hidden'
-            )}
+            className={cn('font-semibold', isDownloading && 'hidden')}
           >
             {t('hub:download')}
           </Button>

@@ -16,6 +16,7 @@ import {
 } from '../../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index'
 import {
   getBackendDir,
+  getLocalInstalledBackends,
   isBackendInstalled,
   listSupportedBackends,
 } from '../backend'
@@ -35,10 +36,11 @@ vi.mock('@tauri-apps/plugin-log', () => ({
 
 // Mock backend functions
 vi.mock('../backend', async () => {
-  // `isConcreteOfGpuFamily` is a pure string predicate the release-tag
-  // reconciliation depends on; stubbing it would make those tests assert
-  // against a mock rather than the real family rule.
-  const { isConcreteOfGpuFamily } =
+  // Pure helpers the tested logic reasons *with* rather than *about*: the
+  // family predicate the release-tag reconciliation depends on, and the option
+  // assembly `configureBackends` builds its dropdown from. Stubbing these would
+  // make the tests assert against a mock instead of the real rules.
+  const { isConcreteOfGpuFamily, friendlyBackendLabel, mergeBackendOptions } =
     await vi.importActual<typeof import('../backend')>('../backend')
 
   return {
@@ -46,7 +48,10 @@ vi.mock('../backend', async () => {
     getBackendExePath: vi.fn(),
     listSupportedBackends: vi.fn(),
     getBackendDir: vi.fn(),
+    getLocalInstalledBackends: vi.fn(),
     isConcreteOfGpuFamily,
+    friendlyBackendLabel,
+    mergeBackendOptions,
   }
 })
 
@@ -617,6 +622,59 @@ describe('llamacpp_extension', () => {
   })
 
   describe('import', () => {
+    it('downloads every shard of a multi-part model, under its published name', async () => {
+      const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
+      const { invoke } = await import('@tauri-apps/api/core')
+
+      const mockDownloadManager = {
+        downloadFiles: vi.fn().mockResolvedValue(undefined),
+      }
+      window.core.extensionManager.getByName = vi
+        .fn()
+        .mockReturnValue(mockDownloadManager)
+
+      vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
+      vi.mocked(joinPath).mockImplementation((paths) =>
+        Promise.resolve(paths.join('/'))
+      )
+      vi.mocked(fs.existsSync).mockResolvedValue(false)
+      vi.mocked(fs.fileStat).mockResolvedValue({ size: 1000000 })
+      vi.mocked(fs.mkdir).mockResolvedValue(undefined)
+      vi.mocked(invoke).mockResolvedValue(undefined)
+      // The catalog folds a sharded quant into one entry pointing at shard 1;
+      // fetching only that file leaves a model that can never load.
+      await extension.import('sharded-model', {
+        modelPath:
+          'https://huggingface.co/unsloth/M-GGUF/resolve/main/BF16/M-BF16-00001-of-00003.gguf',
+      })
+
+      const [items] = mockDownloadManager.downloadFiles.mock.calls[0]
+      expect(items.map((i: { url: string }) => i.url)).toEqual([
+        'https://huggingface.co/unsloth/M-GGUF/resolve/main/BF16/M-BF16-00001-of-00003.gguf',
+        'https://huggingface.co/unsloth/M-GGUF/resolve/main/BF16/M-BF16-00002-of-00003.gguf',
+        'https://huggingface.co/unsloth/M-GGUF/resolve/main/BF16/M-BF16-00003-of-00003.gguf',
+      ])
+      // Saved under the published names so llama.cpp finds the siblings.
+      expect(items.map((i: { save_path: string }) => i.save_path)).toEqual([
+        'llamacpp/models/sharded-model/M-BF16-00001-of-00003.gguf',
+        'llamacpp/models/sharded-model/M-BF16-00002-of-00003.gguf',
+        'llamacpp/models/sharded-model/M-BF16-00003-of-00003.gguf',
+      ])
+
+      const written = vi
+        .mocked(invoke)
+        .mock.calls.find(([cmd]) => cmd === 'write_yaml')?.[1] as {
+        data: Record<string, unknown>
+      }
+      expect(written.data.model_path).toBe(
+        'llamacpp/models/sharded-model/M-BF16-00001-of-00003.gguf'
+      )
+      // Whole set, not the header-sized first shard.
+      expect(written.data.size_bytes).toBe(3000000)
+      // Per-file expectations would describe the download, not shard 1.
+      expect(written.data.model_size_bytes).toBeUndefined()
+    })
+
     it('should throw error for invalid modelId', async () => {
       await expect(
         extension.import('invalid/model/../id', { modelPath: '/path/to/model' })
@@ -1351,6 +1409,75 @@ describe('llamacpp_extension', () => {
     })
   })
 
+  describe('configureBackends', () => {
+    // Mirrors `settings.json`: `version_backend` ships with an empty options
+    // list, so the list this method assembles is the only thing standing
+    // between the stored value and core's `options[0]` fallback.
+    const settingsSchema = [
+      {
+        key: 'version_backend',
+        title: 'Version & Backend',
+        controllerType: 'dropdown',
+        controllerProps: { value: 'none', options: [], recommended: '' },
+      },
+    ]
+
+    // The guest-js bridge is mocked with `importActual`, so the release lookup
+    // and the migration probe reach the real `@tauri-apps/api/core` and have to
+    // be stubbed at the Tauri bridge.
+    afterEach(() => {
+      delete (window as any).__TAURI_INTERNALS__
+    })
+
+    it('offers the saved release even when neither the manifest nor the disk has it', async () => {
+      ;(window as any).__TAURI_INTERNALS__ = {
+        invoke: vi.fn().mockResolvedValue(null),
+      }
+      vi.stubGlobal('IS_MAC', true)
+      vi.stubGlobal('IS_WINDOWS', false)
+      vi.stubGlobal('IS_LINUX', false)
+      vi.stubGlobal('SETTINGS', settingsSchema)
+
+      const saved = 'b10344/macos-arm64'
+      extension['config'] = { version_backend: saved } as any
+      extension['tryInstallBundledBackend'] = vi.fn().mockResolvedValue(null)
+      // The manifest advertises the newest tag only, and the saved build's
+      // directory is gone — pruned by the update that installed b10405.
+      vi.mocked(listSupportedBackends).mockResolvedValue([
+        { version: 'b10405', backend: 'macos-arm64' },
+      ] as any)
+      vi.mocked(getLocalInstalledBackends).mockResolvedValue([])
+      vi.mocked(isBackendInstalled).mockResolvedValue(false)
+      vi.mocked(mapOldBackendToNew).mockImplementation(async (b: string) => b)
+      extension['determineBestBackend'] = vi
+        .fn()
+        .mockResolvedValue('b10405/macos-arm64')
+      extension['getStoredBackendType'] = vi.fn().mockReturnValue('macos-arm64')
+      extension['setStoredBackendType'] = vi.fn()
+      extension['getSetting'] = vi.fn().mockResolvedValue(saved)
+      extension['getSettings'] = vi.fn().mockResolvedValue([])
+      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+      const registerSettings = vi.fn()
+      extension['registerSettings'] = registerSettings
+
+      await extension.configureBackends()
+
+      const registered = (
+        registerSettings.mock.calls.at(-1)?.[0] as any[]
+      )?.find((s) => s.key === 'version_backend')
+      const offered = registered.controllerProps.options.map(
+        (o: any) => o.value
+      )
+
+      // Dropping the saved value from the list hands it to core's fallback,
+      // which replaces it with `options[0]` — the `latest/` sentinel that
+      // `reconcileBackendReleaseTag` cannot act on, leaving the provider with
+      // no version check at all.
+      expect(offered).toContain(saved)
+      expect(offered).toContain('latest/macos-arm64')
+    })
+  })
+
   describe('backend replacement', () => {
     const RECOMMENDED = 'b10205/win-cuda-13.3-x64'
 
@@ -1478,6 +1605,27 @@ describe('llamacpp_extension', () => {
         expect(extension.downloadRecommendedBackend).toHaveBeenCalledWith(
           'b10344/macos-arm64'
         )
+      })
+
+      it('resolves a sentinel parked in the config instead of skipping it', async () => {
+        // A `latest/<variant>` value here is not a fresh install: it is what
+        // core's `registerSettings()` leaves behind when the stored concrete
+        // tag falls out of the options list. Skipping it used to switch off
+        // automatic engine updates for the rest of the installation's life.
+        extension['config'] = {
+          version_backend: 'latest/macos-arm64',
+        } as any
+        extension.checkBackendForUpdates = vi.fn()
+        extension.downloadRecommendedBackend = vi
+          .fn()
+          .mockResolvedValue(undefined)
+
+        await extension['reconcileBackendReleaseTag']()
+
+        expect(extension.downloadRecommendedBackend).toHaveBeenCalledWith(
+          'latest/macos-arm64'
+        )
+        expect(extension.checkBackendForUpdates).not.toHaveBeenCalled()
       })
 
       it('keeps the working backend when the download fails', async () => {

@@ -40,7 +40,7 @@ export const BASELINE_RECOMMENDED_MODELS: ReadonlyArray<Recommendation> = [
     description_key: 'hub:recEverydayUse',
   },
   {
-    model_name: 'unsloth/gemma-4-E2B-it-GGUF',
+    model_name: 'AtomicChat/gemma-4-E2B-it-GGUF',
     description_key: 'hub:recEverydayUse',
   },
 ]

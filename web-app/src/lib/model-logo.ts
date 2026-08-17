@@ -62,6 +62,8 @@ const ICON_KEY_LOGOS: Readonly<Record<string, string>> = {
   essentialai: '/svg/essentialai-color.svg',
   microsoft: '/svg/microsoft-color.svg',
   prism: '/images/model-provider/prism-ml.webp',
+  inclusionai: '/images/model-provider/inclusionai.webp',
+  nanbeige: '/images/model-provider/nanbeige.webp',
   huggingface: '/images/model-provider/huggingface.svg',
 }
 

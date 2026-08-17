@@ -102,7 +102,7 @@ export function getProviderLogo(provider: string) {
     case 'xai':
       return '/images/model-provider/xai.svg'
     case 'minimax':
-      return '/images/model-provider/minimax.svg'
+      return '/svg/minimax.svg'
     case 'nvidia':
       return '/images/model-provider/nvidia.svg'
     case 'moonshot':
@@ -163,9 +163,9 @@ export const getProviderTitle = (provider: string) => {
       // side-by-side with `llamacpp-upstream` (which stays the default),
       // so the `llamacpp` provider carries its real Turboquant name on
       // every platform.
-      return 'Llama.cpp Turboquant'
+      return 'llama.cpp turboquant'
     case 'llamacpp-upstream':
-      return 'Llama.cpp'
+      return 'llama.cpp'
     case 'mlx':
       return 'MLX'
     case 'openai':

@@ -190,10 +190,13 @@ function RenderMarkdownComponent({
   }, [messageId])
 
   useEffect(() => {
-    if (content.length > 0 && !thetaMarked.current && ttftEnabled()) {
+    // The mark is unconditional so `ttft_render_ms` (how long the UI lags
+    // behind the first token) reaches analytics in shipped builds; only the
+    // developer console table stays behind the dev gate.
+    if (content.length > 0 && !thetaMarked.current) {
       thetaMarked.current = true
       ttftMark('thetaFirstRender')
-      ttftReport('first-visible-render')
+      if (ttftEnabled()) ttftReport('first-visible-render')
     }
   }, [content, messageId])
 

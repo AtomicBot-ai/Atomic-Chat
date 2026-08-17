@@ -14,7 +14,7 @@ import {
 } from 'ai'
 import { useEffect, useMemo, useRef, useCallback } from 'react'
 import { listen } from '@tauri-apps/api/event'
-import { ttftEnabled, ttftMarkFromRust } from '@/lib/ttft-timing'
+import { ttftMarkFromRust } from '@/lib/ttft-timing'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useAppState } from '@/hooks/useAppState'
 
@@ -132,8 +132,9 @@ export function useChat(
     }
   }, [mcpToolNames, ragToolNames])
 
+  // The Rust proxy emits these unconditionally; collecting them is what makes
+  // the proxy/backend split of TTFT visible in `chat_response_received`.
   useEffect(() => {
-    if (!ttftEnabled()) return
     const unlisten = listen<{ marker: string; ms: number }>(
       'ttft-timing',
       (event) => {

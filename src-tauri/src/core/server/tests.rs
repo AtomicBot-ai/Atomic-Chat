@@ -2,6 +2,67 @@
 mod tests {
     use crate::core::server::proxy;
 
+    /// A streamed answer must not be cut off just because it is long — only
+    /// because it stopped producing data. See `STREAM_IDLE_TIMEOUT`.
+    mod stream_idle {
+        use crate::core::server::proxy::{next_stream_chunk, StreamStep};
+        use std::time::Duration;
+
+        #[tokio::test]
+        async fn a_chunk_that_arrives_in_time_is_forwarded() {
+            let mut stream = futures_util::stream::iter(vec![1, 2, 3]);
+
+            assert_eq!(
+                next_stream_chunk(&mut stream, Duration::from_secs(30)).await,
+                StreamStep::Chunk(1)
+            );
+        }
+
+        #[tokio::test]
+        async fn an_exhausted_stream_reports_done() {
+            let mut stream = futures_util::stream::iter(Vec::<u8>::new());
+
+            assert_eq!(
+                next_stream_chunk(&mut stream, Duration::from_secs(30)).await,
+                StreamStep::Done
+            );
+        }
+
+        #[tokio::test]
+        async fn a_silent_stream_gives_up_after_the_idle_window() {
+            // Never yields: stands in for a backend that stopped responding.
+            let mut stream = futures_util::stream::pending::<u8>();
+
+            assert_eq!(
+                next_stream_chunk(&mut stream, Duration::from_millis(20)).await,
+                StreamStep::Idle
+            );
+        }
+
+        #[tokio::test]
+        async fn a_slow_but_live_stream_keeps_going() {
+            // The regression being fixed: a generation slower than the old
+            // whole-request deadline used to be killed mid-flight. Here each
+            // chunk lands within the idle window, so the stream survives well
+            // past the window's total length.
+            let idle = Duration::from_millis(60);
+            let mut stream = Box::pin(futures_util::stream::unfold(0u8, |n| async move {
+                if n >= 5 {
+                    return None;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                Some((n, n + 1))
+            }));
+
+            let mut received = 0;
+            while let StreamStep::Chunk(_) = next_stream_chunk(&mut stream, idle).await {
+                received += 1;
+            }
+
+            assert_eq!(received, 5);
+        }
+    }
+
     #[test]
     fn test_get_destination_path_basic() {
         let result = proxy::get_destination_path("/v1/messages", "/v1");

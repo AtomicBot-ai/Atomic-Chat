@@ -201,7 +201,7 @@ export const ModelDownloadAction = ({
     return (
       <Button
         type="button"
-        variant="default"
+        variant="outline"
         size="sm"
         onClick={handleCancelDownload}
         title={t('common:cancelDownload')}
@@ -244,7 +244,7 @@ export const ModelDownloadAction = ({
         size="sm"
         onClick={handleDownloadModel}
         title={t('hub:downloadModel')}
-        className="bg-foreground font-semibold text-background hover:bg-foreground/80 hover:text-background"
+        className="font-semibold"
       >
         {t('hub:download')}
       </Button>

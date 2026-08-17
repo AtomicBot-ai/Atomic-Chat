@@ -36,6 +36,15 @@ const TURBOQUANT_PROGRESS_CONFIG: UseBackendUpdaterConfig = {
   postUpgradeRecheckEnabled: false,
 }
 
+/// Renders a `<tag>/<backend-id>` pair for humans. The id alone (`macos-arm64`,
+/// `win-cuda-13.3-x64`) says nothing about which release is landing, and the
+/// release tag is the whole point of an unattended engine update.
+const backendLabel = (backendName: string | null | undefined): string => {
+  if (!backendName) return ''
+  const [version, backendId] = backendName.split('/')
+  return backendId ? `${backendId} (${version})` : backendName
+}
+
 const BackendUpdater = () => {
   const { t } = useTranslation()
   const {
@@ -79,10 +88,10 @@ const BackendUpdater = () => {
       recommendationPhase !== 'hotswapping' &&
       recommendationPhase !== 'completed'
     ) {
-      const backendType =
-        downloadState.backendName.split('/').pop() || downloadState.backendName
       toast.success(
-        t('settings:backendUpdater.downloadComplete', { backend: backendType })
+        t('settings:backendUpdater.downloadComplete', {
+          backend: backendLabel(downloadState.backendName),
+        })
       )
     } else if (
       downloadState.status === 'failed' &&
@@ -107,11 +116,10 @@ const BackendUpdater = () => {
   /// reaches the user through these toasts.
   useEffect(() => {
     if (turboquantDownload.status === 'completed' && turboquantDownload.backendName) {
-      const backendType =
-        turboquantDownload.backendName.split('/').pop() ||
-        turboquantDownload.backendName
       toast.success(
-        t('settings:backendUpdater.downloadComplete', { backend: backendType })
+        t('settings:backendUpdater.downloadComplete', {
+          backend: backendLabel(turboquantDownload.backendName),
+        })
       )
     } else if (turboquantDownload.status === 'failed') {
       toast.error(t('settings:backendUpdater.downloadFailed'))
@@ -137,10 +145,7 @@ const BackendUpdater = () => {
         ? turboquantDownload
         : null
 
-  const backgroundBackendLabel =
-    backgroundDownload?.backendName?.split('/').pop() ??
-    backgroundDownload?.backendName ??
-    ''
+  const backgroundBackendLabel = backendLabel(backgroundDownload?.backendName)
 
   return (
     <>

@@ -6,6 +6,17 @@
  * paths, no usernames, no HF/API tokens, no GPU serials/UUIDs.
  */
 
+import {
+  AUDIO_EXTENSIONS,
+  DOCUMENT_EXTENSIONS,
+  IMAGE_EXTENSIONS,
+} from '@/containers/chatInput/classifyDroppedPaths'
+import {
+  isContextLimitError,
+  isModelAccessError,
+  isOutOfMemoryError,
+} from '@/utils/error'
+
 export function getAnalyticsPlatform(): string {
   if (IS_MACOS) return 'macos'
   if (IS_WINDOWS) return 'windows'
@@ -348,6 +359,9 @@ const RECOVERABLE_MODEL_LOAD_CODES = new Set<string>([
   // A partial / incomplete download (ATO-187) is a recoverable user condition
   // fixed by re-downloading — not a backend crash.
   'MODEL_FILE_CORRUPT',
+  // A multi-part GGUF missing some of its shards. Fixed by re-downloading the
+  // model, so it belongs with the incomplete-download conditions above.
+  'MODEL_SHARDS_INCOMPLETE',
   'BINARY_NOT_FOUND',
   'MULTIMODAL_PROJECTOR_LOAD_FAILED',
   // A model whose architecture/format this engine build can't parse (e.g. a
@@ -366,4 +380,247 @@ export function isRecoverableModelLoadCode(
   code: string | null | undefined
 ): boolean {
   return code != null && RECOVERABLE_MODEL_LOAD_CODES.has(code)
+}
+
+/* -------------------------------------------------------------------------
+ * Chat-turn telemetry (ATO-2xx: `chat_response_received`).
+ *
+ * Same PII contract as the rest of this module. Text is only ever reported as
+ * a coarse `*_bucket`; attachment *names* never leave the device (only an
+ * allow-listed extension); tool names coming from user-configured MCP servers
+ * are hashed, because a server name can itself describe the user's internal
+ * systems.
+ * ---------------------------------------------------------------------- */
+
+export type LengthBucket =
+  | 'unknown'
+  | 'empty'
+  | 'lt_100'
+  | '100_500'
+  | '500_2k'
+  | '2k_10k'
+  | 'gt_10k'
+
+/** Coarse text-length bucket. Never report an exact character count. */
+export function lengthBucket(chars?: number | null): LengthBucket {
+  if (chars == null || chars < 0) return 'unknown'
+  if (chars === 0) return 'empty'
+  if (chars < 100) return 'lt_100'
+  if (chars < 500) return '100_500'
+  if (chars < 2000) return '500_2k'
+  if (chars < 10000) return '2k_10k'
+  return 'gt_10k'
+}
+
+export type CtxUsedBucket =
+  | 'unknown'
+  | 'lt_25'
+  | '25_50'
+  | '50_75'
+  | '75_90'
+  | '90_100'
+  | 'gt_100'
+
+/** How full the context window was, as a bucket over percent-used. */
+export function ctxUsedBucket(pct?: number | null): CtxUsedBucket {
+  if (pct == null || Number.isNaN(pct) || pct < 0) return 'unknown'
+  if (pct < 25) return 'lt_25'
+  if (pct < 50) return '25_50'
+  if (pct < 75) return '50_75'
+  if (pct < 90) return '75_90'
+  if (pct <= 100) return '90_100'
+  return 'gt_100'
+}
+
+/** Percent-used from a token count + context length, or null if unknowable. */
+export function ctxUsedPercent(
+  tokens?: number | null,
+  ctxLen?: number | null
+): number | null {
+  if (tokens == null || ctxLen == null || ctxLen <= 0) return null
+  return (tokens / ctxLen) * 100
+}
+
+/**
+ * The file extension of an attachment, but only when it is one this app
+ * actually accepts. Anything else collapses to `'other'` so an unusual
+ * extension can never carry part of a filename off the device. The name
+ * itself is never returned.
+ */
+export function attachmentExt(nameOrPath?: string | null): string {
+  if (!nameOrPath) return 'other'
+  const base = nameOrPath.split(/[\\/]/).pop() ?? ''
+  if (!base.includes('.')) return 'other'
+  const ext = (base.split('.').pop() || '').toLowerCase()
+  if (
+    IMAGE_EXTENSIONS.has(ext) ||
+    AUDIO_EXTENSIONS.has(ext) ||
+    DOCUMENT_EXTENSIONS.has(ext)
+  )
+    return ext
+  return 'other'
+}
+
+/** FNV-1a. Synchronous by necessity — `crypto.subtle` is async and these run
+ * inside `posthog.capture` argument construction. Not a security primitive;
+ * it only needs to be stable and non-reversible enough to group by. */
+function fnv1a(input: string): string {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0')
+}
+
+/**
+ * Sanitize a tool name for analytics. Tools we ship (RAG retrieval, stock
+ * skills) are reported verbatim so feature usage is legible; anything from a
+ * user-configured MCP server becomes `mcp_<hash8>` — stable across sessions
+ * and devices, so cohorts still work, but not readable.
+ */
+export function toolNameForAnalytics(
+  name: string,
+  builtinNames?: ReadonlySet<string> | null
+): string {
+  if (!name) return 'unknown'
+  if (builtinNames?.has(name)) return name
+  return `mcp_${fnv1a(name)}`
+}
+
+export type ChatFailureKind =
+  | 'aborted'
+  | 'context_overflow'
+  | 'oom'
+  | 'model_access'
+  | 'model_unreachable'
+  | 'model_load_failed'
+  | 'auth'
+  | 'rate_limit'
+  | 'content_filter'
+  | 'bad_request'
+  | 'server_error'
+  | 'network'
+  | 'timeout'
+  | 'unknown'
+
+/** Normalize the many error shapes the AI SDK / transport can surface. */
+function errorText(error: unknown): string {
+  if (!error) return ''
+  if (typeof error === 'string') return error
+  if (error instanceof Error) return error.message
+  if (typeof error === 'object' && 'message' in error)
+    return String((error as { message?: unknown }).message ?? '')
+  return ''
+}
+
+/**
+ * Best-effort HTTP status out of a stringly-typed chat error. Broader than
+ * `parseHttpStatus` (which only knows the download layer's `HTTP status NNN`
+ * wording) because provider SDKs phrase it a dozen different ways.
+ */
+export function chatHttpStatus(error: unknown): number | null {
+  const raw = errorText(error)
+  if (!raw) return null
+  const viaDownloadFormat = parseHttpStatus(raw)
+  if (viaDownloadFormat != null) return viaDownloadFormat
+  const match = raw.match(
+    /\b(?:status(?:\s*code)?|http|code)\b\D{0,10}?([1-5]\d{2})\b/i
+  )
+  return match ? parseInt(match[1], 10) : null
+}
+
+/**
+ * Classify a failed chat turn into a stable enum. Reuses the matchers the UI
+ * already trusts (`utils/error.ts`, which mirror the Rust proxy's matchers) so
+ * telemetry and the error banner can never disagree about what went wrong.
+ * `rate_limit` and `content_filter` have no client-side handling today — they
+ * are classified here so the gap becomes measurable.
+ */
+export function classifyChatFailure(error: unknown): ChatFailureKind {
+  const raw = errorText(error)
+  if (!raw) return 'unknown'
+  const e = raw.toLowerCase()
+
+  if (/\b(abort|aborted|cancel|cancelled|canceled|user stopped)\b/.test(e))
+    return 'aborted'
+  if (
+    e.includes('content filter') ||
+    e.includes('content_filter') ||
+    e.includes('content policy') ||
+    e.includes('safety filter')
+  )
+    return 'content_filter'
+  if (isContextLimitError(raw)) return 'context_overflow'
+  if (isOutOfMemoryError(raw)) return 'oom'
+  if (isModelAccessError(raw)) return 'model_access'
+
+  const status = chatHttpStatus(raw)
+  if (status === 401 || status === 403) return 'auth'
+  if (status === 429) return 'rate_limit'
+
+  if (
+    e.includes('econnrefused') ||
+    e.includes('connection refused') ||
+    e.includes('failed to fetch') ||
+    e.includes('load failed') ||
+    status === 502 ||
+    status === 503
+  )
+    return 'model_unreachable'
+  if (
+    e.includes('failed to load model') ||
+    e.includes('model_load') ||
+    e.includes('no model loaded')
+  )
+    return 'model_load_failed'
+  if (e.includes('timed out') || e.includes('timeout')) return 'timeout'
+  if (status != null && status >= 500) return 'server_error'
+  if (status != null && status >= 400) return 'bad_request'
+  if (
+    e.includes('network') ||
+    e.includes('connection') ||
+    e.includes('dns') ||
+    e.includes('socket')
+  )
+    return 'network'
+  return 'unknown'
+}
+
+const finalizedChatTurns = new Set<string>()
+
+/**
+ * Guard so a chat turn emits exactly one `chat_response_received`. `onFinish`
+ * fires more than once per message (see the dedup comment in the thread
+ * route), and the error path can race the finish path. Returns true only the
+ * first time for a given turn id.
+ */
+export function finalizeChatTurnOnce(turnId: string): boolean {
+  if (!turnId) return false
+  if (finalizedChatTurns.has(turnId)) return false
+  finalizedChatTurns.add(turnId)
+  if (finalizedChatTurns.size > 500) finalizedChatTurns.clear()
+  return true
+}
+
+const chatFailureThrottle = new Map<string, number>()
+
+/**
+ * Same rationale as `shouldEmitModelLoadFailure`: a backend stuck failing
+ * every request would otherwise emit one event per retry and dominate
+ * event-weighted metrics. Successes are never throttled — only call this on
+ * failure paths.
+ */
+export function shouldEmitChatFailure(
+  modelId: string | null | undefined,
+  errorKind: ChatFailureKind
+): boolean {
+  const key = `${modelId ?? 'unknown'}::${errorKind}`
+  const now = Date.now()
+  const last = chatFailureThrottle.get(key)
+  if (last !== undefined && now - last < MODEL_LOAD_FAILURE_THROTTLE_MS)
+    return false
+  chatFailureThrottle.set(key, now)
+  if (chatFailureThrottle.size > 500) chatFailureThrottle.clear()
+  return true
 }

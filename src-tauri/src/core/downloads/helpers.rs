@@ -1,7 +1,7 @@
 use super::models::{DownloadEvent, DownloadItem, ProgressTracker, ProxyConfig};
 use crate::core::app::commands::get_jan_data_folder_path;
 use futures_util::StreamExt;
-use jan_utils::normalize_path;
+use jan_utils::{canonicalize_existing_prefix, normalize_path};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, CONTENT_RANGE, RANGE};
 use std::collections::HashMap;
 use std::path::Path;
@@ -552,7 +552,14 @@ pub async fn _download_files_internal(
         let save_path = jan_data_folder.join(&item.save_path);
         let save_path = normalize_path(&save_path);
 
-        if !save_path.starts_with(&jan_data_folder) {
+        // Compare the paths as the filesystem sees them, not as they were
+        // spelled. On atomic Fedora variants `/home` is a symlink to
+        // `/var/home`, so a target inside the data folder reached under the
+        // other name looked like an escape attempt and blocked the download.
+        let resolved_save_path = canonicalize_existing_prefix(&save_path);
+        let resolved_data_folder = canonicalize_existing_prefix(&jan_data_folder);
+
+        if !resolved_save_path.starts_with(&resolved_data_folder) {
             return Err(format!(
                 "Path {} is outside of Jan data folder {}",
                 save_path.display(),

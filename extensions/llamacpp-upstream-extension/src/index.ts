@@ -67,6 +67,10 @@ import {
   isUnsupportedNoAvxCpu,
   CPU_NO_AVX_ERROR_CODE,
   classifyBackendMismatch,
+  effectiveCtxSize,
+  ggufShardSetPaths,
+  isEmbeddingGguf,
+  parseGgufShard,
   type EmbedBatchResult,
 } from './util'
 import {
@@ -168,6 +172,12 @@ const ERR_MODEL_FILE_NOT_FOUND = 'MODEL_FILE_NOT_FOUND'
 /// Rust `ModelFileCorrupt` code; the web-app maps it to a "delete and
 /// re-download" message.
 const ERR_MODEL_FILE_CORRUPT = 'MODEL_FILE_CORRUPT'
+/// A multi-part GGUF whose set is not complete on disk. Loading any shard
+/// requires every shard to be present next to the first one, so a set missing
+/// members can only be fixed by re-downloading the model — not by retrying the
+/// load, which is what users did when llama.cpp answered with the opaque
+/// "The model process encountered an unexpected error".
+const ERR_MODEL_SHARDS_INCOMPLETE = 'MODEL_SHARDS_INCOMPLETE'
 /// The caller asked to download the `latest/<backend>` sentinel instead of a
 /// concrete release tag. The download is refused and the caller falls back to
 /// an installed backend, so this is a routing defect to fix, not a crash.
@@ -318,6 +328,7 @@ function codedLoadError(
 const RECOVERABLE_LOAD_ERROR_CODES = new Set<string>([
   ERR_MODEL_FILE_NOT_FOUND,
   ERR_MODEL_FILE_CORRUPT,
+  ERR_MODEL_SHARDS_INCOMPLETE,
   ERR_MULTIMODAL_PROJECTOR_LOAD_FAILED,
   'BINARY_NOT_FOUND',
   'MODEL_ARCH_NOT_SUPPORTED',
@@ -1342,12 +1353,18 @@ export default class llamacpp_upstream_extension extends AIEngine {
             : undefined
         )
 
-        // Always surface the installed-on-disk saved backend in the dropdown,
-        // even when the remote list (e.g. GitHub) didn't return it. Without
-        // this the user sees an empty/incomplete options list after a
-        // restart with no network.
+        // Always surface the saved backend, even when neither the manifest nor
+        // the disk lists it. Dropping it hands the value to core's
+        // `registerSettings()`, which replaces anything missing from the options
+        // with `options[0]` — here the `latest/<variant>` sentinel, which
+        // `reconcileBackendReleaseTag` can only recover from by downloading. The
+        // manifest carries the newest tag alone, so an older saved tag survives
+        // in the list purely through its copy on disk, and that copy is what
+        // `removeOldBackendVersions` prunes after an update: gating this pin on
+        // installed-ness is what let one launch in that window park the provider
+        // on the sentinel while the UI read "Latest <variant>".
         if (
-          savedVbIsInstalled &&
+          isConcreteVersionBackend(savedVB) &&
           !(
             backendSetting.controllerProps.options as Array<{
               value: string
@@ -1363,7 +1380,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
             }>),
           ]
           logger.info(
-            `Saved backend ${savedVB} not present in version_backends list — pinning it into options (installed locally)`
+            `Saved backend ${savedVB} not present in version_backends list — pinning it into options (installed locally: ${savedVbIsInstalled})`
           )
         }
 
@@ -1617,6 +1634,21 @@ export default class llamacpp_upstream_extension extends AIEngine {
   private async reconcileBackendReleaseTag(): Promise<void> {
     try {
       const current = stripBom(this.config.version_backend || '')
+
+      // A parked `latest/<variant>` is not a fresh install waiting to be
+      // configured: it is what core's `registerSettings()` leaves behind when
+      // the stored concrete value falls out of the options list, and treating it
+      // as unconfigured used to disable engine updates for good. Resolving it
+      // costs nothing when that release is already on disk, and persists a
+      // concrete tag this method can reconcile normally from then on.
+      if (current.startsWith('latest/')) {
+        logger.info(
+          `reconcileBackendReleaseTag: resolving parked sentinel '${current}'`
+        )
+        await this.downloadRecommendedBackend(current)
+        return
+      }
+
       if (!isConcreteVersionBackend(current)) {
         logger.info(
           'reconcileBackendReleaseTag: no concrete backend configured yet, skipping'
@@ -3124,12 +3156,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
       if (await fs.existsSync(fullModelPath)) {
         const metadata = await readGgufMetadata(fullModelPath)
-        // Check for BERT-based architectures usually used for embeddings
-        // You can expand this list (e.g., 'nomic-bert', 'xlm-roberta')
-        const arch = metadata.metadata['general.architecture']
-        if (arch === 'bert' || arch === 'nomic-bert') {
-          isEmbedding = true
-        }
+        isEmbedding = isEmbeddingGguf(metadata.metadata)
       }
     } catch (e) {
       // If GGUF read fails, default to false but log it
@@ -3581,7 +3608,43 @@ export default class llamacpp_upstream_extension extends AIEngine {
       return path
     }
 
-    let modelPath = await maybeDownload(opts.modelPath, 'model.gguf')
+    /**
+     * A multi-part GGUF is only usable as a complete set: llama.cpp opens the
+     * first shard and finds the rest by their published file names. Fetching
+     * the one file the catalog entry points at left the user with a model that
+     * could never load, so pull the whole set, under those names.
+     *
+     * Per-file hash/size from `opts` describe the single file that was picked
+     * and say nothing about its siblings — they are left off, and completeness
+     * is enforced at load time against the shard set itself.
+     */
+    const shardUrls = opts.modelPath.startsWith('https://')
+      ? ggufShardSetPaths(opts.modelPath)
+      : [opts.modelPath]
+    const isSharded = shardUrls.length > 1
+
+    let modelPath: string
+    if (isSharded) {
+      logger.info(
+        `Model ${modelId} is published in ${shardUrls.length} parts; downloading the full set.`
+      )
+      const shardPaths: string[] = []
+      for (const url of shardUrls) {
+        const saveName = url.split('/').pop() ?? 'model.gguf'
+        const localPath = `${modelDir}/${saveName}`
+        downloadItems.push({
+          url,
+          save_path: localPath,
+          proxy: getProxyConfig(),
+          model_id: modelId,
+        })
+        shardPaths.push(localPath)
+      }
+      modelPath = shardPaths[0]
+    } else {
+      modelPath = await maybeDownload(opts.modelPath, 'model.gguf')
+    }
+
     let mmprojPath = opts.mmprojPath
       ? await maybeDownload(opts.mmprojPath, 'mmproj.gguf')
       : undefined
@@ -3616,7 +3679,6 @@ export default class llamacpp_upstream_extension extends AIEngine {
         })
       } catch (error) {
         const errorMessage = formatLoadError(error)
-        logger.error('Error downloading model:', modelId, errorMessage)
 
         // Check if this is a cancellation
         const isCancellationError =
@@ -3631,6 +3693,14 @@ export default class llamacpp_upstream_extension extends AIEngine {
           errorMessage.includes('Hash verification failed') ||
           errorMessage.includes('Size verification failed') ||
           errorMessage.includes('Failed to verify file')
+
+        // Classify before logging: the extension logger writes through to the
+        // Rust logger, where an `error` becomes a Sentry event. Logging first
+        // meant every user who pressed Cancel filed a crash report — and since
+        // the model id is part of the message, a separate issue per model.
+        if (!isCancellationError) {
+          logger.error('Error downloading model:', modelId, errorMessage)
+        }
 
         if (isCancellationError) {
           logger.info('Download cancelled for model:', modelId)
@@ -3687,11 +3757,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
         `Model GGUF validation successful: version ${modelMetadata.version}, tensors: ${modelMetadata.tensor_count}`
       )
 
-      // check if the model is an embedding model
-      const architecture = modelMetadata.metadata['general.architecture']
-      if (architecture === 'bert' || architecture === 'nomic-bert') {
-        isEmbedding = true
-      }
+      // Embedding weights are usable, but only in embedding mode: handed to
+      // the chat path they abort llama.cpp on an assertion.
+      isEmbedding = isEmbeddingGguf(modelMetadata.metadata)
 
       // Validate mmproj file if present
       if (mmprojPath) {
@@ -3710,8 +3778,12 @@ export default class llamacpp_upstream_extension extends AIEngine {
       )
     }
 
-    // Calculate file sizes
-    let size_bytes = (await fs.fileStat(fullModelPath)).size
+    // Calculate file sizes. A sharded model is the sum of its parts; quoting
+    // only the first shard would advertise a 150 GB model as a few megabytes.
+    let size_bytes = 0
+    for (const shard of ggufShardSetPaths(fullModelPath)) {
+      size_bytes += (await fs.fileStat(shard)).size
+    }
     if (mmprojPath) {
       size_bytes += (
         await fs.fileStat(await joinPath([janDataFolderPath, mmprojPath]))
@@ -3725,8 +3797,16 @@ export default class llamacpp_upstream_extension extends AIEngine {
       mmproj_path: mmprojPath,
       name: modelId,
       size_bytes,
-      model_sha256: opts.modelSha256,
-      model_size_bytes: opts.modelSize,
+      // `model_sha256` / `model_size_bytes` are per-file expectations checked
+      // against `model_path` at load. For a shard set they would describe the
+      // whole download, not the first shard, and every load would report a
+      // "truncated file" — so they are only recorded for single-file models.
+      ...(isSharded
+        ? {}
+        : {
+            model_sha256: opts.modelSha256,
+            model_size_bytes: opts.modelSize,
+          }),
       mmproj_sha256: opts.mmprojSha256,
       mmproj_size_bytes: opts.mmprojSize,
       embedding: isEmbedding,
@@ -4503,11 +4583,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
     // Set user envs
     if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
 
-    // Resolve model path
-    const modelPath = await joinPath([
-      janDataFolderPath,
-      modelConfig.model_path,
-    ])
+    // Resolve model path. A multi-part GGUF has to enter llama.cpp by its first
+    // shard whichever one the model entry records.
+    const modelPath = await this.resolveShardedModelPath(
+      await joinPath([janDataFolderPath, modelConfig.model_path])
+    )
 
     // Resolve mmproj path if present
     let mmprojPath: string | undefined = undefined
@@ -4711,6 +4791,21 @@ export default class llamacpp_upstream_extension extends AIEngine {
       }
     }
 
+    // Never ask for a longer context than the model was trained on: llama.cpp
+    // does not clamp, it aborts on an assertion and takes the server process
+    // down. The UI applies the same ceiling, but only for models whose
+    // `model.yml` it can read — this covers every load.
+    const clampedCtx = effectiveCtxSize(
+      cfg.ctx_size,
+      this.modelMaxCtxTrain.get(modelId)
+    )
+    if (clampedCtx !== cfg.ctx_size) {
+      logger.warn(
+        `[performLoad] Requested ctx_size ${cfg.ctx_size} exceeds the model's trained context; clamping to ${clampedCtx}.`
+      )
+      cfg.ctx_size = clampedCtx
+    }
+
     // Migrate old env vars
     if (typeof cfg.fit === 'string') cfg.fit = true
 
@@ -4836,6 +4931,44 @@ export default class llamacpp_upstream_extension extends AIEngine {
    *    fails deep inside the loader with a confusing error; here we classify
    *    it as MODEL_FILE_CORRUPT so the UI guides the user to re-download.
    */
+  /**
+   * The path llama.cpp can actually open for a multi-part GGUF.
+   *
+   * A quant too large for one file ships as `-00001-of-000NN` shards, and both
+   * the model catalog and a local-folder scan can end up pointing a model entry
+   * at a shard other than the first. llama.cpp refuses those outright ("illegal
+   * split file idx: N ... model must be loaded with the first split") and the
+   * failure reached users as an unexplained load error they could only retry.
+   *
+   * Handed any shard, resolve to the first one — llama.cpp pulls in the rest by
+   * name. A set with missing members cannot be loaded at all, so say that
+   * instead, with the code the UI turns into a re-download prompt.
+   */
+  private async resolveShardedModelPath(modelPath: string): Promise<string> {
+    const shard = parseGgufShard(modelPath)
+    if (!shard) return modelPath
+
+    const setPaths = ggufShardSetPaths(modelPath)
+    const missing: string[] = []
+    for (const path of setPaths) {
+      if (!(await fs.existsSync(path))) missing.push(path)
+    }
+    if (missing.length) {
+      throw codedLoadError(
+        ERR_MODEL_SHARDS_INCOMPLETE,
+        `This model is split into ${shard.total} parts and ${missing.length} of them are missing on disk. Re-download the model to get the complete set.`
+      )
+    }
+
+    const first = setPaths[0]
+    if (first !== modelPath) {
+      logger.info(
+        `[performLoad] Model is shard ${shard.index}/${shard.total}; loading the first shard so llama.cpp can assemble the set.`
+      )
+    }
+    return first
+  }
+
   private async validateModelArtifacts(
     modelConfig: ModelConfig,
     modelPath: string,
