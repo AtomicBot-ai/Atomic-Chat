@@ -107,6 +107,45 @@ fn emit_server_bind_failed<R: Runtime>(app: &AppHandle<R>) {
 
 const TTFT_TIMING_CHANNEL: &str = "ttft-timing";
 
+/// How long a streaming response may go without producing a single byte before
+/// we treat it as hung.
+///
+/// This replaces a whole-exchange deadline. reqwest 0.11's client timeout
+/// covers reading the body too, so a generation that was streaming along fine
+/// was cut off the moment it ran past the limit — the "Stream error: request or
+/// response body error: operation timed out" users hit on long answers. What we
+/// actually want to catch is a stalled backend, and an idle window does that
+/// without punishing a long but healthy answer.
+///
+/// Kept at the previous whole-request default: a cold, large-context prefill
+/// can legitimately produce nothing for minutes before the first token.
+const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// Outcome of waiting for the next chunk of a streamed response.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum StreamStep<T> {
+    Chunk(T),
+    /// Nothing arrived within the idle window.
+    Idle,
+    /// The stream ended.
+    Done,
+}
+
+/// Await the next chunk, giving up if the stream goes silent for `idle_timeout`.
+pub(crate) async fn next_stream_chunk<S, T>(
+    stream: &mut S,
+    idle_timeout: Duration,
+) -> StreamStep<T>
+where
+    S: futures_util::Stream<Item = T> + Unpin,
+{
+    match tokio::time::timeout(idle_timeout, stream.next()).await {
+        Ok(Some(item)) => StreamStep::Chunk(item),
+        Ok(None) => StreamStep::Done,
+        Err(_) => StreamStep::Idle,
+    }
+}
+
 #[derive(serde::Serialize, Clone)]
 struct TtftTimingEvent {
     marker: &'static str,
@@ -976,7 +1015,18 @@ fn build_streaming_response(
     let mut stream = response.bytes_stream();
     let (mut sender, body) = hyper::Body::channel();
     tokio::spawn(async move {
-        while let Some(chunk_result) = stream.next().await {
+        loop {
+            let chunk_result = match next_stream_chunk(&mut stream, STREAM_IDLE_TIMEOUT).await {
+                StreamStep::Chunk(chunk_result) => chunk_result,
+                StreamStep::Idle => {
+                    log::warn!(
+                        "Retry stream produced no data for {}s; giving up on the response",
+                        STREAM_IDLE_TIMEOUT.as_secs()
+                    );
+                    break;
+                }
+                StreamStep::Done => break,
+            };
             match chunk_result {
                 Ok(chunk) => {
                     if sender.send_data(chunk).await.is_err() {
@@ -3074,7 +3124,18 @@ async fn inner_proxy_request<R: Runtime>(
             tokio::spawn(async move {
                 // Regular passthrough - when /messages succeeds directly,
                 // the response is already in the correct format
-                while let Some(chunk_result) = stream.next().await {
+                loop {
+                    let chunk_result = match next_stream_chunk(&mut stream, STREAM_IDLE_TIMEOUT).await {
+                        StreamStep::Chunk(chunk_result) => chunk_result,
+                        StreamStep::Idle => {
+                            log::warn!(
+                                "Stream produced no data for {}s; giving up on the response",
+                                STREAM_IDLE_TIMEOUT.as_secs()
+                            );
+                            break;
+                        }
+                        StreamStep::Done => break,
+                    };
                     match chunk_result {
                         Ok(chunk) => {
                             if !eta_emitted && sse_chunk_has_visible_content(&chunk) {
@@ -3298,14 +3359,21 @@ async fn start_server_internal<R: Runtime>(
         port: actual_port,
     };
 
+    // `proxy_timeout` used to be a whole-exchange deadline, which counted the
+    // time spent streaming the answer back and so killed long generations
+    // mid-flight. It now bounds getting *connected*; a response that has
+    // started arriving is policed by `STREAM_IDLE_TIMEOUT` instead, which ends
+    // a stalled stream without cutting off a slow-but-live one.
+    let connect_timeout = std::time::Duration::from_secs(proxy_timeout);
+
     let client = Client::builder()
-        .timeout(std::time::Duration::from_secs(proxy_timeout))
+        .connect_timeout(connect_timeout)
         .pool_max_idle_per_host(10)
         .pool_idle_timeout(std::time::Duration::from_secs(30))
         .build()?;
 
     let local_client = Client::builder()
-        .timeout(std::time::Duration::from_secs(proxy_timeout))
+        .connect_timeout(connect_timeout)
         .pool_max_idle_per_host(10)
         .pool_idle_timeout(std::time::Duration::from_secs(30))
         .no_proxy()
@@ -3441,7 +3509,18 @@ async fn transform_and_forward_stream<S>(
     let mut tool_blocks: HashMap<usize, usize> = HashMap::new(); // OAI tool index -> Anthropic block index
     let mut next_block_index: usize = 0;
 
-    while let Some(chunk_result) = stream.next().await {
+    loop {
+        let chunk_result = match next_stream_chunk(&mut stream, STREAM_IDLE_TIMEOUT).await {
+            StreamStep::Chunk(chunk_result) => chunk_result,
+            StreamStep::Idle => {
+                log::warn!(
+                    "Stream produced no data for {}s; giving up on the response",
+                    STREAM_IDLE_TIMEOUT.as_secs()
+                );
+                break;
+            }
+            StreamStep::Done => break,
+        };
         match chunk_result {
             Ok(chunk) => {
                 let chunk_str = String::from_utf8_lossy(&chunk);

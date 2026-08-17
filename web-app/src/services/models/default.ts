@@ -506,7 +506,10 @@ export class DefaultModelsService implements ModelsService {
     try {
       markDownloadStart(id)
       posthog.capture('model_download', {
-        status: 'started',
+        // NOT `status` — globally typed numeric in PostHog by
+        // `api_server_request.status`, which silently nulls string values.
+        // Must stay in sync with the terminal event in DownloadManagement.
+        download_status: 'started',
         download_kind: 'model',
         model_id: id,
         quant: quantFromModelId(id),

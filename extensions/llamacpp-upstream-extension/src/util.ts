@@ -498,3 +498,161 @@ export function mergeEmbedResponses(
 
   return aggregated
 }
+
+/**
+ * A GGUF quant too large for one file is published as `-00001-of-000NN` shards.
+ * llama.cpp only accepts the *first* shard on `-m`: handed any other one it
+ * bails with "illegal split file idx: N ... model must be loaded with the first
+ * split", which reached users as an opaque "The model process encountered an
+ * unexpected error".
+ *
+ * The marker shows up in two shapes, and both have to be recognised:
+ *   - in the file name, as published:  `.../Model-00002-of-00003.gguf`
+ *   - in the directory name, as this app stores a downloaded shard:
+ *     `.../models/author/Model-00002-of-00003/model.gguf`
+ */
+const GGUF_SHARD_RE = /-(\d{5})-of-(\d{5})(?=\.gguf$|\/|$)/gi
+
+export interface GgufShardRef {
+  /** Position of this shard in the set, 1-based. */
+  index: number
+  /** How many shards the complete set has. */
+  total: number
+}
+
+/** Locate the shard marker, or `null` when the path is not part of a set. */
+function matchGgufShard(
+  path: string
+): (GgufShardRef & { start: number; end: number }) | null {
+  // Reset: the regex is global, so `lastIndex` survives between calls.
+  GGUF_SHARD_RE.lastIndex = 0
+  let last: RegExpExecArray | null = null
+  for (
+    let match = GGUF_SHARD_RE.exec(path);
+    match;
+    match = GGUF_SHARD_RE.exec(path)
+  ) {
+    // A repo name may itself carry a `-00001-of-00002`-shaped token; the marker
+    // that decides which file llama.cpp gets is the last one.
+    last = match
+  }
+  if (!last) return null
+
+  const index = Number(last[1])
+  const total = Number(last[2])
+  // `-00000-of-00003` is not a shard set anyone can load; treat it as a plain name.
+  if (!index || !total || index > total) return null
+
+  return { index, total, start: last.index, end: last.index + last[0].length }
+}
+
+/** Shard position of `path`, or `null` when it is a standalone model. */
+export function parseGgufShard(path: string): GgufShardRef | null {
+  const match = matchGgufShard(path)
+  return match ? { index: match.index, total: match.total } : null
+}
+
+/**
+ * The same path with its shard marker pointed at `index`. Returns `path`
+ * untouched when it carries no marker.
+ */
+export function ggufShardPath(path: string, index: number): string {
+  const match = matchGgufShard(path)
+  if (!match) return path
+  const marker = `-${String(index).padStart(5, '0')}-of-${String(
+    match.total
+  ).padStart(5, '0')}`
+  return path.slice(0, match.start) + marker + path.slice(match.end)
+}
+
+/**
+ * Every path in the shard set `path` belongs to, first shard first. A
+ * standalone model yields just itself, so callers need no special case.
+ */
+export function ggufShardSetPaths(path: string): string[] {
+  const match = matchGgufShard(path)
+  if (!match) return [path]
+  return Array.from({ length: match.total }, (_, i) =>
+    ggufShardPath(path, i + 1)
+  )
+}
+
+/**
+ * The path llama.cpp has to be handed for this model: the first shard of the
+ * set, or the path itself when it is not sharded.
+ */
+export function firstGgufShardPath(path: string): string {
+  return ggufShardPath(path, 1)
+}
+
+/**
+ * llama.cpp architectures that cannot generate text: encoder-only embedding
+ * backbones and projector / audio side-models. Started as a chat model one
+ * trips a GGML assertion and takes the server process down with it — the crash
+ * users saw as "The model process crashed unexpectedly (access violation /
+ * segfault)". Mirrors `NON_TEXT_GGUF_ARCHITECTURES` in the web-app's local
+ * model scanner, which keeps the same weights out of onboarding.
+ */
+const NON_TEXT_GGUF_ARCHITECTURES = new Set([
+  'bert',
+  'modern-bert',
+  'nomic-bert',
+  'nomic-bert-moe',
+  'neo-bert',
+  'jina-bert-v2',
+  'jina-bert-v3',
+  'eurobert',
+  'gemma-embedding',
+  'llama-embed',
+  't5encoder',
+])
+
+/**
+ * Whether GGUF metadata describes weights that produce embeddings rather than
+ * text. Such a model is still usable — it just has to be loaded in embedding
+ * mode instead of being handed to the chat path.
+ */
+export function isEmbeddingGguf(
+  metadata: Record<string, unknown> | undefined | null
+): boolean {
+  const raw = metadata?.['general.architecture']
+  const arch = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
+  if (!arch) return false
+  if (NON_TEXT_GGUF_ARCHITECTURES.has(arch)) return true
+
+  // Embedding / reranker conversions of a generative architecture (the
+  // Qwen3-Embedding family and friends) keep the arch name and are only
+  // distinguishable by a pooling type or a classifier head. Pooling type 0 is
+  // NONE, i.e. a plain decoder.
+  const pooling = metadata?.[`${arch}.pooling_type`]
+  const poolingStr = pooling == null ? '' : String(pooling).trim()
+  if (poolingStr !== '' && poolingStr !== '0') return true
+
+  return metadata?.[`${arch}.classifier.output_labels`] !== undefined
+}
+
+/**
+ * The context length to actually request, given what the user/config asked for
+ * and what the model was trained on.
+ *
+ * llama.cpp does not clamp this itself: asked for more than `n_ctx_train` it
+ * warns and then aborts on an assertion, killing the server process. Small
+ * models are the ones that get hit, because the app's default (16384) is far
+ * past the 512–2048 such models train at.
+ *
+ * Returns the request unchanged when the trained maximum is unknown — guessing
+ * a smaller window would silently degrade models we simply have no metadata for.
+ */
+export function effectiveCtxSize(
+  requested: number | undefined,
+  maxCtxTrain: number | undefined
+): number | undefined {
+  if (typeof requested !== 'number' || !Number.isFinite(requested)) {
+    return requested
+  }
+  if (typeof maxCtxTrain !== 'number' || !Number.isFinite(maxCtxTrain)) {
+    return requested
+  }
+  if (maxCtxTrain <= 0) return requested
+  return Math.min(requested, maxCtxTrain)
+}

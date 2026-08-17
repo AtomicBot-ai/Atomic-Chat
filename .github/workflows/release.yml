@@ -277,6 +277,12 @@ jobs:
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
           # ATO-113: bake the Rust desktop DSN (option_env!) + matching release.
           SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
+          # `tauri build` re-runs `beforeBuildCommand` (`yarn build:web`), which
+          # rebuilds the bundle produced by the earlier web step. Without the
+          # frontend DSN here that rebuild silently overwrites it with a build
+          # where `initSentryFrontend()` bails on an empty DSN — which is why
+          # the frontend project saw no production events at all.
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SENTRY_ENVIRONMENT: production
           SENTRY_RELEASE: ${{ github.sha }}
         run: |
@@ -650,6 +656,12 @@ jobs:
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
           # ATO-113: bake the Rust desktop DSN (option_env!) + matching release.
           SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
+          # `tauri build` re-runs `beforeBuildCommand` (`yarn build:web`), which
+          # rebuilds the bundle produced by the earlier web step. Without the
+          # frontend DSN here that rebuild silently overwrites it with a build
+          # where `initSentryFrontend()` bails on an empty DSN — which is why
+          # the frontend project saw no production events at all.
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SENTRY_ENVIRONMENT: production
           SENTRY_RELEASE: ${{ github.sha }}
         run: yarn tauri build
@@ -959,6 +971,12 @@ jobs:
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
           # ATO-113: bake the Rust desktop DSN (option_env!) + matching release.
           SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
+          # `tauri build` re-runs `beforeBuildCommand` (`yarn build:web`), which
+          # rebuilds the bundle produced by the earlier web step. Without the
+          # frontend DSN here that rebuild silently overwrites it with a build
+          # where `initSentryFrontend()` bails on an empty DSN — which is why
+          # the frontend project saw no production events at all.
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SENTRY_ENVIRONMENT: production
           SENTRY_RELEASE: ${{ github.sha }}
           # NO_STRIP=1 keeps `linuxdeploy` from stripping symbols that

@@ -17,6 +17,7 @@
  * yields no candidates rather than throwing.
  */
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { groupGgufShards } from '@/lib/models'
 
 export type LocalScanFormat = 'gguf' | 'mlx' | 'adapter'
 
@@ -202,6 +203,37 @@ async function isAdapterDir(dir: string): Promise<boolean> {
   return false
 }
 
+/**
+ * Collapse multi-part GGUFs to the one file that can actually be loaded.
+ *
+ * A cache holding `M-00001-of-00003.gguf` … `M-00003-of-00003.gguf` describes a
+ * single model, but taken file by file it offered three, two of which llama.cpp
+ * refuses outright ("model must be loaded with the first split"). Each set
+ * yields its first shard, sized as the whole set rather than as the few-megabyte
+ * header the first shard usually is.
+ */
+async function foldGgufShardSets(
+  files: string[]
+): Promise<Array<{ path: string; sizeBytes?: number }>> {
+  const out: Array<{ path: string; sizeBytes?: number }> = []
+  for (const group of groupGgufShards(files.map((rfilename) => ({ rfilename })))) {
+    let total = 0
+    let sized = false
+    for (const { rfilename } of group) {
+      const st = await statOf(rfilename)
+      if (typeof st?.size === 'number') {
+        total += st.size
+        sized = true
+      }
+    }
+    out.push({
+      path: group[0].rfilename,
+      sizeBytes: sized ? total : undefined,
+    })
+  }
+  return out
+}
+
 function ggufCandidate(
   file: string,
   source: LocalModelSource,
@@ -254,10 +286,9 @@ async function scanGenericRoot(
   const { models, mmprojs } = await collectGgufFiles(root)
   const mmprojByDir = new Map<string, string>()
   for (const m of mmprojs) mmprojByDir.set(dirOf(m), m)
-  for (const file of models) {
-    const st = await statOf(file)
+  for (const { path, sizeBytes } of await foldGgufShardSets(models)) {
     out.push(
-      ggufCandidate(file, source, mmprojByDir.get(dirOf(file)), st?.size)
+      ggufCandidate(path, source, mmprojByDir.get(dirOf(path)), sizeBytes)
     )
   }
 
@@ -357,15 +388,14 @@ async function scanHfCacheRoot(
     const { models, mmprojs } = await collectGgufFiles(snapshot)
     const mmprojByDir = new Map<string, string>()
     for (const m of mmprojs) mmprojByDir.set(dirOf(m), m)
-    for (const file of models) {
-      const fst = await statOf(file)
+    for (const { path, sizeBytes } of await foldGgufShardSets(models)) {
       const cand = ggufCandidate(
-        file,
+        path,
         source,
-        mmprojByDir.get(dirOf(file)),
-        fst?.size
+        mmprojByDir.get(dirOf(path)),
+        sizeBytes
       )
-      cand.id = sanitizeGgufId(`${repoId}/${basename(file)}`)
+      cand.id = sanitizeGgufId(`${repoId}/${basename(path)}`)
       out.push(cand)
     }
 

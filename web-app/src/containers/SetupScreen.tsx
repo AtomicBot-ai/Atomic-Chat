@@ -42,6 +42,11 @@ import { chipVariantForRecommendedDescriptionKey } from '@/constants/recommended
 import { modelFamilyLogoSrc } from '@/lib/model-logo'
 import posthog from 'posthog-js'
 import { getAnalyticsPlatform } from '@/lib/telemetry'
+import {
+  captureOnboardingCompleted,
+  captureSetupLocalModelRun,
+  captureSetupScreenShown,
+} from '@/lib/onboarding-telemetry'
 
 //* Вариант загрузки: приоритет квантов как в Hub
 function pickPreferredVariant(model: CatalogModel): ModelQuant | null {
@@ -193,6 +198,9 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     Map<string, LocalLlamacppProvider | 'mlx'>
   >(new Map())
   const hasNavigatedRef = useRef(false)
+  // Wall clock for `onboarding_completed.duration_ms` — how long the user spent
+  // in the flow before whichever exit they took.
+  const onboardingStartedAtRef = useRef(Date.now())
   // Imported only after the chosen model is handled (see handleImportedId), so
   // their fast imports can't flip the route before a large pick finishes.
   const pendingBackgroundImportsRef = useRef<LocalModelCandidate[]>([])
@@ -301,19 +309,16 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   useEffect(() => {
     if (step !== 'model' || setupShownFiredRef.current) return
     if (localCandidates === null) return
-    // A pending auto-start means the picker is never rendered.
-    if (autoRunTarget && autoRunState !== 'failed') return
-    if (recommendedItems.length === 0 && sourcesLoading) return
+    // A pending auto-start means the picker is never rendered. It used to
+    // suppress the event entirely, which dropped those sessions out of the
+    // funnel; now it is reported with `rendered: false`.
+    const rendered = !(autoRunTarget && autoRunState !== 'failed')
+    if (rendered && recommendedItems.length === 0 && sourcesLoading) return
     setupShownFiredRef.current = true
-    try {
-      posthog.capture('setup_screen_shown', {
-        recommended_count: recommendedItems.length,
-        platform: getAnalyticsPlatform(),
-        app_version: VERSION,
-      })
-    } catch (err) {
-      console.debug('setup_screen_shown telemetry failed:', err)
-    }
+    captureSetupScreenShown({
+      recommendedCount: recommendedItems.length,
+      rendered,
+    })
   }, [
     step,
     localCandidates,
@@ -543,6 +548,12 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     ) => {
       if (hasNavigatedRef.current) return
       hasNavigatedRef.current = true
+      captureOnboardingCompleted({
+        exitPath: 'imported',
+        hadAnyModel: true,
+        stepReached: 'model',
+        startedAtMs: onboardingStartedAtRef.current,
+      })
       trackedImportIdsRef.current.delete(importedId)
 
       const providers = await serviceHub.providers().getProviders()
@@ -628,6 +639,12 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       if (hasNavigatedRef.current) return
 
       hasNavigatedRef.current = true
+      captureOnboardingCompleted({
+        exitPath: 'download_started',
+        hadAnyModel: true,
+        stepReached: 'model',
+        startedAtMs: onboardingStartedAtRef.current,
+      })
       localStorage.setItem(localStorageKey.setupCompleted, 'true')
       window.dispatchEvent(new Event('app:setup-completed'))
       localStorage.setItem(
@@ -803,6 +820,12 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
           reason,
           platform: getAnalyticsPlatform(),
           app_version: VERSION,
+        })
+        captureOnboardingCompleted({
+          exitPath: reason,
+          hadAnyModel,
+          stepReached: 'model',
+          startedAtMs: onboardingStartedAtRef.current,
         })
       } catch (err) {
         console.debug('setup_skipped telemetry failed:', err)
@@ -999,7 +1022,16 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                               <Button
                                 size="sm"
                                 disabled={importingLocalId !== null}
-                                onClick={() => void onRunLocalModel(cand)}
+                                onClick={() => {
+                                  captureSetupLocalModelRun({
+                                    trigger: 'manual',
+                                    source: cand.source,
+                                    format: cand.format,
+                                    sizeBytes: cand.sizeBytes,
+                                    detectedCount: detectedRunnable.length,
+                                  })
+                                  void onRunLocalModel(cand)
+                                }}
                                 className="shrink-0 rounded-full px-4"
                               >
                                 <span className="grid">
@@ -1084,6 +1116,11 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                   size="sm"
                                   disabled={importingLocalId !== null}
                                   onClick={() => {
+                                    captureSetupLocalModelRun({
+                                      trigger: 'installed_recommended',
+                                      source: provider,
+                                      format: rec.format,
+                                    })
                                     importCandidatesInBackground(
                                       localCandidates ?? []
                                     )

@@ -40,10 +40,18 @@ export interface TtftTimings {
   thetaFirstRender?: number
 }
 
-const TTFT_ENABLED =
+/**
+ * Gates the developer `console.table` report only. Marker *collection* is
+ * unconditional: each mark is a single `Date.now()`, and the deltas are the
+ * only way to tell — on a user's real hardware — whether a slow first token is
+ * the client, the proxy or the engine. `ttftSnapshot()` feeds them into
+ * `chat_response_received`.
+ */
+const TTFT_REPORT_ENABLED =
   import.meta.env.DEV || import.meta.env.VITE_TTFT_TIMING === 'true'
 
 let active: TtftTimings | null = null
+let reported = false
 
 // #region agent log
 function ttftDebugLog(
@@ -65,8 +73,10 @@ export function ttftPreBegin(label: string, data?: Record<string, unknown>): voi
 }
 // #endregion
 
+/** Whether the developer `console.table` breakdown is printed. Marker
+ * collection happens regardless — see `TTFT_REPORT_ENABLED`. */
 export function ttftEnabled(): boolean {
-  return TTFT_ENABLED
+  return TTFT_REPORT_ENABLED
 }
 
 export function ttftBegin(): void {
@@ -75,8 +85,8 @@ export function ttftBegin(): void {
     wallMs: Date.now(),
   })
   // #endregion
-  if (!TTFT_ENABLED) return
   active = { alpha: Date.now() }
+  reported = false
 }
 
 export function ttftMark(marker: TtftMarker): void {
@@ -87,7 +97,7 @@ export function ttftMark(marker: TtftMarker): void {
       active?.alpha !== undefined ? Date.now() - active.alpha : null,
   })
   // #endregion
-  if (!TTFT_ENABLED || !active) return
+  if (!active) return
   active[marker] = Date.now()
 }
 
@@ -103,7 +113,7 @@ export function ttftMarkFromRust(
       active?.alpha !== undefined ? epochMs - active.alpha : null,
   })
   // #endregion
-  if (!TTFT_ENABLED || !active) return
+  if (!active) return
   active[marker] = epochMs
 }
 
@@ -112,8 +122,51 @@ function delta(from?: number, to?: number): number | undefined {
   return Math.round(to - from)
 }
 
+/**
+ * The stage breakdown for the current turn, ready to attach to
+ * `chat_response_received`. Pure numbers in milliseconds — no PII. Fields are
+ * omitted when either endpoint of a stage is missing (e.g. a provider that
+ * never reaches the Rust proxy), so a partial breakdown is still useful.
+ *
+ * Does not clear the active timings: the analytics event is built at stream
+ * finish, which is after `ttftReport` has already printed the dev table.
+ */
+export type TtftSnapshot = {
+  /** Send click → first token. Wider than the transport's `ttft_ms`, which
+   * starts at request construction: this one also covers attachment
+   * processing and thread persistence, i.e. what the user actually waits. */
+  ttft_e2e_ms?: number
+  ttft_attachments_ms?: number
+  ttft_tools_ms?: number
+  ttft_create_model_ms?: number
+  ttft_ipc_ms?: number
+  ttft_proxy_ms?: number
+  ttft_backend_ms?: number
+  ttft_render_ms?: number
+}
+
+export function ttftSnapshot(): TtftSnapshot | null {
+  if (!active) return null
+  const t = active
+  const firstToken = t.etaFirstToken ?? t.epsilonFirstChunk
+  const snapshot: TtftSnapshot = {
+    ttft_e2e_ms: delta(t.alpha, firstToken),
+    ttft_attachments_ms: delta(t.alpha, t.beta),
+    ttft_tools_ms: delta(t.beta ?? t.alpha, t.gammaEnd),
+    ttft_create_model_ms: delta(t.gammaEnd, t.deltaEnd),
+    ttft_ipc_ms: delta(t.deltaEnd, t.epsilonFirstChunk),
+    ttft_proxy_ms: delta(t.epsilonFirstChunk, t.zetaUpstreamHeaders),
+    ttft_backend_ms: delta(t.zetaUpstreamHeaders, t.etaFirstToken),
+    ttft_render_ms: delta(firstToken, t.thetaFirstRender),
+  }
+  for (const key of Object.keys(snapshot) as (keyof TtftSnapshot)[]) {
+    if (snapshot[key] === undefined) delete snapshot[key]
+  }
+  return snapshot
+}
+
 export function ttftReport(reason: string): void {
-  if (!TTFT_ENABLED || !active) return
+  if (!TTFT_REPORT_ENABLED || !active || reported) return
   const t = active
   const rows: Record<string, number | string> = {
     reason,
@@ -133,5 +186,8 @@ export function ttftReport(reason: string): void {
     rawMarkers: t as unknown as Record<string, unknown>,
   })
   // #endregion
-  active = null
+  // Deliberately keeps `active` alive: `ttftSnapshot()` is read later, at
+  // stream finish, to build the analytics event. `ttftBegin` resets it for the
+  // next turn; `reported` keeps the table to one print per turn.
+  reported = true
 }

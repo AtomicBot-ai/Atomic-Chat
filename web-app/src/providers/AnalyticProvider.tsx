@@ -15,6 +15,7 @@ import {
   getAnalyticsPlatform,
   mapGpuVendor,
 } from '@/lib/telemetry'
+import { isFirstLaunch } from '@/lib/onboarding-telemetry'
 import {
   setSentryConsent,
   setSentryTags,
@@ -285,6 +286,10 @@ export function AnalyticProvider() {
           posthog.capture('app_opened', {
             platform: osPlatform,
             app_version: VERSION,
+            // Lets the onboarding funnel be filtered to genuine first sessions.
+            // Derived from persisted state rather than a counter so it stays
+            // correct for users who upgraded from a build without it.
+            is_first_launch: isFirstLaunch(),
           })
 
           // Detached: the device-list probe spawns the backend and can be slow,

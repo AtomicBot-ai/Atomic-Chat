@@ -63,6 +63,41 @@ pub fn normalize_path(path: &Path) -> PathBuf {
     ret
 }
 
+/// Resolve symlinks in `path` as far as it actually exists, keeping any
+/// not-yet-created tail as-is.
+///
+/// [`normalize_path`] only rewrites a path lexically, so two names for the same
+/// directory stay different strings. On atomic Fedora variants (Silverblue and
+/// friends) `/home` is a symlink to `/var/home`, so a download target resolved
+/// through one name failed a containment check written against the other, and
+/// the backend update was refused with "is outside of Jan data folder".
+///
+/// [`std::fs::canonicalize`] would answer that, but it requires the whole path
+/// to exist — and the file being checked is usually the one about to be
+/// created. So canonicalize the deepest existing ancestor and re-attach the
+/// rest. A path that resolves to nothing existing is returned unchanged.
+pub fn canonicalize_existing_prefix(path: &Path) -> PathBuf {
+    let mut tail: Vec<&std::ffi::OsStr> = Vec::new();
+    let mut cursor = path;
+
+    loop {
+        if let Ok(resolved) = cursor.canonicalize() {
+            let mut out = resolved;
+            for part in tail.iter().rev() {
+                out.push(part);
+            }
+            return out;
+        }
+        match (cursor.file_name(), cursor.parent()) {
+            (Some(name), Some(parent)) => {
+                tail.push(name);
+                cursor = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
+}
+
 /// Removes file:/ and file:\ prefixes from file paths
 pub fn normalize_file_path(path: &str) -> String {
     path.replace("file:/", "").replace("file:\\", "")
@@ -105,6 +140,63 @@ pub fn get_short_path<P: AsRef<std::path::Path>>(path: P) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Reproduces the atomic-Fedora layout: `/home` -> `/var/home`.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_parent_resolves_to_the_same_place() {
+        let tmp = std::env::temp_dir().join(format!(
+            "jan-path-test-{}-{}",
+            std::process::id(),
+            line!()
+        ));
+        let real = tmp.join("var/home/user");
+        let link = tmp.join("home");
+        std::fs::create_dir_all(&real).unwrap();
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(tmp.join("var/home"), &link).unwrap();
+
+        let via_link = canonicalize_existing_prefix(&link.join("user"));
+        let via_real = canonicalize_existing_prefix(&real);
+
+        assert_eq!(
+            via_link, via_real,
+            "the same directory reached by two names must compare equal"
+        );
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// The file being checked usually does not exist yet — that must not stop
+    /// the parent from being resolved.
+    #[cfg(unix)]
+    #[test]
+    fn a_missing_tail_keeps_its_name_while_the_parent_resolves() {
+        let tmp = std::env::temp_dir().join(format!(
+            "jan-path-test-{}-{}",
+            std::process::id(),
+            line!()
+        ));
+        let real = tmp.join("var/data");
+        let link = tmp.join("data");
+        std::fs::create_dir_all(&real).unwrap();
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        let target = link.join("models/not-downloaded-yet.gguf");
+        let resolved = canonicalize_existing_prefix(&target);
+
+        assert!(resolved.starts_with(canonicalize_existing_prefix(&real)));
+        assert!(resolved.ends_with("models/not-downloaded-yet.gguf"));
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn a_path_with_nothing_existing_is_returned_unchanged() {
+        let path = Path::new("/definitely/not/here/at/all.gguf");
+        assert_eq!(canonicalize_existing_prefix(path), path.to_path_buf());
+    }
 
     #[cfg(windows)]
     #[test]

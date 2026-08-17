@@ -132,11 +132,29 @@ export function isMtpCompanionFile(rfilename: string): boolean {
 // header, so a 156 GB variant advertises itself as a 5 MB "Good fit" and its
 // badge degrades to "00001". Everything a shard set shares -- id, size, quant
 // label -- comes from the name with this suffix removed.
-const GGUF_SHARD_SUFFIX = /-\d{5}-of-\d{5}(?=\.gguf$|$)/i
+// The marker also has to be recognised mid-path, because a shard downloaded by
+// this app lands in a directory named after it (`.../M-00002-of-00003/model.gguf`).
+const GGUF_SHARD_SUFFIX = /-\d{5}-of-\d{5}(?=\.gguf$|\/|$)/i
 
 /** Name a shard set is known by: the filename without its `-NNNNN-of-NNNNN`. */
 export function ggufShardGroupKey(rfilename: string): string {
   return rfilename.replace(GGUF_SHARD_SUFFIX, '')
+}
+
+/** Whether this path is one part of a multi-part GGUF. */
+export function isGgufShard(rfilename: string): boolean {
+  return GGUF_SHARD_SUFFIX.test(rfilename)
+}
+
+/**
+ * The shard llama.cpp has to be handed for this set — the first one. Any other
+ * shard is refused outright ("model must be loaded with the first split"), so
+ * this is what a model entry must point at. Unsharded paths pass through.
+ */
+export function firstGgufShardPath(rfilename: string): string {
+  return rfilename.replace(GGUF_SHARD_SUFFIX, (marker) =>
+    marker.replace(/^-\d{5}/, '-00001')
+  )
 }
 
 /** Group files by the quant they belong to, preserving repository order. */

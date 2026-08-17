@@ -19,6 +19,40 @@ pub struct UnloadResult {
     pub error: Option<String>,
 }
 
+/// Severity a line written to the server's stderr actually carries.
+///
+/// The Foundation Models server logs through swift-log, which sends *every*
+/// level to stderr — including the "Server started and listening" notice it
+/// prints on a healthy launch. Logging the stream wholesale at `error!` turned
+/// each of those into a Sentry event, so a successful startup was the single
+/// most reported "crash" in the desktop project.
+///
+/// Lines whose level we cannot read are treated as warnings rather than errors:
+/// output on stderr is not by itself a failure, and a real one is still caught
+/// by the process exit status.
+fn stderr_line_level(line: &str) -> log::Level {
+    // `2026-08-17T12:36:50+1000 info Hummingbird: [HummingbirdCore] Server started…`
+    // The level is the token right after the timestamp, but scan the first few
+    // words rather than fixing a position, since not every line is stamped.
+    for token in line.split_whitespace().take(3) {
+        match token.trim_matches(|c: char| !c.is_ascii_alphabetic()) {
+            t if t.eq_ignore_ascii_case("critical") => return log::Level::Error,
+            t if t.eq_ignore_ascii_case("error") => return log::Level::Error,
+            t if t.eq_ignore_ascii_case("warning") || t.eq_ignore_ascii_case("warn") => {
+                return log::Level::Warn
+            }
+            t if t.eq_ignore_ascii_case("notice") || t.eq_ignore_ascii_case("info") => {
+                return log::Level::Info
+            }
+            t if t.eq_ignore_ascii_case("debug") || t.eq_ignore_ascii_case("trace") => {
+                return log::Level::Debug
+            }
+            _ => {}
+        }
+    }
+    log::Level::Warn
+}
+
 /// Start the Foundation Models server binary.
 ///
 /// The binary is located at `binary_path` and is started with
@@ -73,7 +107,11 @@ pub async fn load_foundation_models_server_impl(
     tokio::spawn(async move {
         let mut reader = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = reader.next_line().await {
-            log::error!("[foundation-models stderr] {}", line);
+            log::log!(
+                stderr_line_level(&line),
+                "[foundation-models stderr] {}",
+                line
+            );
             let _ = stderr_tx.send(line).await;
         }
     });
@@ -317,4 +355,59 @@ pub async fn check_foundation_models_availability<R: Runtime>(
     }
 
     Ok(resolved)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stderr_line_level;
+    use log::Level;
+
+    #[test]
+    fn a_healthy_startup_notice_is_not_an_error() {
+        // The single noisiest "crash" reported by the desktop project.
+        assert_eq!(
+            stderr_line_level(
+                "2026-08-17T12:36:50+1000 info Hummingbird: [HummingbirdCore] \
+                 Server started and listening on 127.0.0.1:3188"
+            ),
+            Level::Info
+        );
+    }
+
+    #[test]
+    fn real_failures_still_reach_the_error_channel() {
+        assert_eq!(
+            stderr_line_level("2026-08-17T12:36:50+1000 error Hummingbird: bind failed"),
+            Level::Error
+        );
+        assert_eq!(
+            stderr_line_level("2026-08-17T12:36:50+1000 critical Hummingbird: aborting"),
+            Level::Error
+        );
+    }
+
+    #[test]
+    fn levels_are_matched_regardless_of_case_or_punctuation() {
+        assert_eq!(stderr_line_level("[INFO] starting up"), Level::Info);
+        assert_eq!(stderr_line_level("WARNING: slow disk"), Level::Warn);
+    }
+
+    #[test]
+    fn an_unlabelled_line_is_a_warning_not_a_crash() {
+        // stderr output on its own is not a failure; the exit status decides.
+        assert_eq!(
+            stderr_line_level("Traceback follows, see below"),
+            Level::Warn
+        );
+        assert_eq!(stderr_line_level(""), Level::Warn);
+    }
+
+    #[test]
+    fn a_level_word_deep_in_the_message_does_not_win() {
+        // "error" appearing in prose must not re-escalate an info line.
+        assert_eq!(
+            stderr_line_level("2026-08-17T12:36:50+1000 info Hummingbird: no error occurred"),
+            Level::Info
+        );
+    }
 }

@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getProxyConfig } from './util'
+import {
+  effectiveCtxSize,
+  firstGgufShardPath,
+  getProxyConfig,
+  isEmbeddingGguf,
+  ggufShardSetPaths,
+  parseGgufShard,
+} from './util'
 
 // Mock console.log and console.error to avoid noise in tests
 const mockConsole = {
@@ -522,5 +529,139 @@ describe('getProxyConfig', () => {
       verify_peer_ssl: true,
       verify_host_ssl: true,
     })
+  })
+})
+
+describe('GGUF shard paths', () => {
+  it('reads the shard marker from a published file name', () => {
+    expect(parseGgufShard('Qwen3-BF16-00002-of-00003.gguf')).toEqual({
+      index: 2,
+      total: 3,
+    })
+  })
+
+  it('reads the shard marker from the containing directory', () => {
+    // How a downloaded shard is laid out on disk: the marker is in the folder,
+    // the file itself is always `model.gguf`.
+    expect(
+      parseGgufShard('models/unsloth/BF16/Qwen3-BF16-00002-of-00002/model.gguf')
+    ).toEqual({ index: 2, total: 2 })
+  })
+
+  it('treats an unsharded model as standalone', () => {
+    expect(parseGgufShard('models/author/Model-Q4_K_M/model.gguf')).toBeNull()
+    expect(ggufShardSetPaths('models/author/Model-Q4_K_M/model.gguf')).toEqual([
+      'models/author/Model-Q4_K_M/model.gguf',
+    ])
+    expect(firstGgufShardPath('models/author/Model-Q4_K_M/model.gguf')).toBe(
+      'models/author/Model-Q4_K_M/model.gguf'
+    )
+  })
+
+  it('rewrites any shard to the first one llama.cpp accepts', () => {
+    expect(firstGgufShardPath('Hermes-4-405B-UD-Q2_K_XL-00004-of-00004.gguf')).toBe(
+      'Hermes-4-405B-UD-Q2_K_XL-00001-of-00004.gguf'
+    )
+    expect(
+      firstGgufShardPath(
+        'models/unsloth/BF16/Qwen3-BF16-00002-of-00002/model.gguf'
+      )
+    ).toBe('models/unsloth/BF16/Qwen3-BF16-00001-of-00002/model.gguf')
+  })
+
+  it('leaves a first shard alone', () => {
+    const path = 'Model-00001-of-00003.gguf'
+    expect(firstGgufShardPath(path)).toBe(path)
+  })
+
+  it('expands a shard into the whole set, first shard first', () => {
+    expect(
+      ggufShardSetPaths(
+        'https://huggingface.co/unsloth/M-GGUF/resolve/main/BF16/M-BF16-00003-of-00003.gguf'
+      )
+    ).toEqual([
+      'https://huggingface.co/unsloth/M-GGUF/resolve/main/BF16/M-BF16-00001-of-00003.gguf',
+      'https://huggingface.co/unsloth/M-GGUF/resolve/main/BF16/M-BF16-00002-of-00003.gguf',
+      'https://huggingface.co/unsloth/M-GGUF/resolve/main/BF16/M-BF16-00003-of-00003.gguf',
+    ])
+  })
+
+  it('keys off the last marker when the repo name carries one too', () => {
+    expect(
+      parseGgufShard('repo-00001-of-00002/weights-00002-of-00005.gguf')
+    ).toEqual({ index: 2, total: 5 })
+  })
+
+  it('ignores a malformed marker', () => {
+    expect(parseGgufShard('Model-00000-of-00003.gguf')).toBeNull()
+    expect(parseGgufShard('Model-00004-of-00003.gguf')).toBeNull()
+  })
+})
+
+describe('isEmbeddingGguf', () => {
+  it('flags encoder-only embedding backbones', () => {
+    expect(isEmbeddingGguf({ 'general.architecture': 'bert' })).toBe(true)
+    expect(isEmbeddingGguf({ 'general.architecture': 'nomic-bert' })).toBe(true)
+    expect(isEmbeddingGguf({ 'general.architecture': 'jina-bert-v3' })).toBe(
+      true
+    )
+  })
+
+  it('flags an embedding conversion of a generative architecture', () => {
+    // Qwen3-Embedding keeps `qwen3` as its arch and is only distinguishable
+    // by the pooling type.
+    expect(
+      isEmbeddingGguf({
+        'general.architecture': 'qwen3',
+        'qwen3.pooling_type': '2',
+      })
+    ).toBe(true)
+  })
+
+  it('flags a reranker by its classifier head', () => {
+    expect(
+      isEmbeddingGguf({
+        'general.architecture': 'qwen3',
+        'qwen3.classifier.output_labels': ['yes', 'no'],
+      })
+    ).toBe(true)
+  })
+
+  it('leaves plain decoders alone', () => {
+    expect(isEmbeddingGguf({ 'general.architecture': 'llama' })).toBe(false)
+    // Pooling type 0 is NONE.
+    expect(
+      isEmbeddingGguf({
+        'general.architecture': 'qwen3',
+        'qwen3.pooling_type': '0',
+      })
+    ).toBe(false)
+  })
+
+  it('does not guess without metadata', () => {
+    expect(isEmbeddingGguf(undefined)).toBe(false)
+    expect(isEmbeddingGguf({})).toBe(false)
+  })
+})
+
+describe('effectiveCtxSize', () => {
+  it('clamps a request past the trained context', () => {
+    // bge-small trains at 512; the app default is 16384.
+    expect(effectiveCtxSize(16384, 512)).toBe(512)
+  })
+
+  it('leaves a request within the trained context alone', () => {
+    expect(effectiveCtxSize(4096, 32768)).toBe(4096)
+    expect(effectiveCtxSize(512, 512)).toBe(512)
+  })
+
+  it('does not guess when the trained context is unknown', () => {
+    expect(effectiveCtxSize(16384, undefined)).toBe(16384)
+    expect(effectiveCtxSize(16384, NaN)).toBe(16384)
+    expect(effectiveCtxSize(16384, 0)).toBe(16384)
+  })
+
+  it('passes through an unset request', () => {
+    expect(effectiveCtxSize(undefined, 512)).toBeUndefined()
   })
 })

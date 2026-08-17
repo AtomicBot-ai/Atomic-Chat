@@ -1,7 +1,7 @@
 use super::commands::{collect_mcp_server_statuses, is_extension_not_connected_error};
 use super::helpers::{
     add_server_config, add_server_config_with_path, append_bounded_stderr, ensure_mcp_config_exists,
-    extract_command_args, format_mcp_start_error, run_mcp_commands,
+    extract_command_args, format_mcp_start_error, is_process_already_gone, run_mcp_commands,
 };
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::{AppState, SharedMcpServers};
@@ -491,4 +491,28 @@ fn test_extension_connected_response_detection() {
             "Should NOT detect as disconnected: {msg}"
         );
     }
+}
+
+/// The MCP shutdown sweep runs after the servers have already been stopped, so
+/// most PIDs it revisits are gone. Windows' `taskkill` calls that an error, and
+/// reporting it as one filed a crash per PID on every app exit (the noisiest
+/// pair of issues in the desktop project).
+#[test]
+fn taskkill_saying_the_process_is_gone_is_not_a_failure() {
+    assert!(is_process_already_gone(
+        "ERROR: The process \"6188\" not found."
+    ));
+    assert!(is_process_already_gone(
+        "ERROR: The process with PID 7060 could not be terminated.\r\n\
+         Reason: There is no running instance of the task."
+    ));
+}
+
+#[test]
+fn a_real_taskkill_failure_is_still_reported() {
+    assert!(!is_process_already_gone(
+        "ERROR: The process with PID 4242 could not be terminated.\r\n\
+         Reason: Access is denied."
+    ));
+    assert!(!is_process_already_gone(""));
 }

@@ -622,6 +622,59 @@ describe('llamacpp_extension', () => {
   })
 
   describe('import', () => {
+    it('downloads every shard of a multi-part model, under its published name', async () => {
+      const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
+      const { invoke } = await import('@tauri-apps/api/core')
+
+      const mockDownloadManager = {
+        downloadFiles: vi.fn().mockResolvedValue(undefined),
+      }
+      window.core.extensionManager.getByName = vi
+        .fn()
+        .mockReturnValue(mockDownloadManager)
+
+      vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
+      vi.mocked(joinPath).mockImplementation((paths) =>
+        Promise.resolve(paths.join('/'))
+      )
+      vi.mocked(fs.existsSync).mockResolvedValue(false)
+      vi.mocked(fs.fileStat).mockResolvedValue({ size: 1000000 })
+      vi.mocked(fs.mkdir).mockResolvedValue(undefined)
+      vi.mocked(invoke).mockResolvedValue(undefined)
+      // The catalog folds a sharded quant into one entry pointing at shard 1;
+      // fetching only that file leaves a model that can never load.
+      await extension.import('sharded-model', {
+        modelPath:
+          'https://huggingface.co/unsloth/M-GGUF/resolve/main/BF16/M-BF16-00001-of-00003.gguf',
+      })
+
+      const [items] = mockDownloadManager.downloadFiles.mock.calls[0]
+      expect(items.map((i: { url: string }) => i.url)).toEqual([
+        'https://huggingface.co/unsloth/M-GGUF/resolve/main/BF16/M-BF16-00001-of-00003.gguf',
+        'https://huggingface.co/unsloth/M-GGUF/resolve/main/BF16/M-BF16-00002-of-00003.gguf',
+        'https://huggingface.co/unsloth/M-GGUF/resolve/main/BF16/M-BF16-00003-of-00003.gguf',
+      ])
+      // Saved under the published names so llama.cpp finds the siblings.
+      expect(items.map((i: { save_path: string }) => i.save_path)).toEqual([
+        'llamacpp/models/sharded-model/M-BF16-00001-of-00003.gguf',
+        'llamacpp/models/sharded-model/M-BF16-00002-of-00003.gguf',
+        'llamacpp/models/sharded-model/M-BF16-00003-of-00003.gguf',
+      ])
+
+      const written = vi
+        .mocked(invoke)
+        .mock.calls.find(([cmd]) => cmd === 'write_yaml')?.[1] as {
+        data: Record<string, unknown>
+      }
+      expect(written.data.model_path).toBe(
+        'llamacpp/models/sharded-model/M-BF16-00001-of-00003.gguf'
+      )
+      // Whole set, not the header-sized first shard.
+      expect(written.data.size_bytes).toBe(3000000)
+      // Per-file expectations would describe the download, not shard 1.
+      expect(written.data.model_size_bytes).toBeUndefined()
+    })
+
     it('should throw error for invalid modelId', async () => {
       await expect(
         extension.import('invalid/model/../id', { modelPath: '/path/to/model' })

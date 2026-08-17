@@ -17,6 +17,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useBackendUpdater } from '@/hooks/useBackendUpdater'
 import { cn, LOCAL_LLAMACPP_EXTENSION_NAME } from '@/lib/utils'
 import { getAnalyticsPlatform } from '@/lib/telemetry'
+import { captureBackendStepShown } from '@/lib/onboarding-telemetry'
 
 /// Outcome of the Windows-only GPU-backend onboarding step, reported to
 /// PostHog so the onboarding funnel covers this fork too.
@@ -102,13 +103,22 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
   /// don't want to silently regress the UI.
   const downloadAttemptedRef = useRef(false)
 
+  /// Entry counterpart to `backend_step_resolved`: without it, users who quit
+  /// during GPU detection never appeared in the funnel at all.
+  useEffect(() => {
+    captureBackendStepShown()
+  }, [])
+
   const finish = useCallback(
     (status: 'downloaded' | 'skipped', resolved?: BackendStepStatus) => {
       if (finishedRef.current) return
       finishedRef.current = true
       try {
         posthog.capture('backend_step_resolved', {
-          status:
+          // NOT `status` — globally typed numeric in PostHog by
+          // `api_server_request.status`, which is why this tile read empty and
+          // was written off as an instrumentation bug for six weeks.
+          step_status:
             resolved ?? (status === 'downloaded' ? 'downloaded' : 'skipped'),
           recommended_backend: recommendation?.recommendedBackend ?? null,
           recommended_category: recommendation?.recommendedCategory ?? null,

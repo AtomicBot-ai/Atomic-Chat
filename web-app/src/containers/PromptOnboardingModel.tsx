@@ -11,6 +11,7 @@ import {
 } from '@/constants/models'
 import { getPreferredMmprojModel } from '@/lib/models'
 import { HUGGINGFACE_LOGO_SRC, modelFamilyLogoSrc } from '@/lib/model-logo'
+import { captureOnboardingModelReminder } from '@/lib/onboarding-telemetry'
 
 // The offer is about the model, not the app, so it carries the model's brand
 // mark. Derived from the repo id so it follows the recommendation.
@@ -87,12 +88,23 @@ export function PromptOnboardingModel() {
     )
   }, [defaultVariant, localDownloadingModels, downloads])
 
+  // Impression, fired once the card is actually on screen. The ref guard keeps
+  // StrictMode's double-mount from counting it twice.
+  const shownFiredRef = useRef(false)
+  useEffect(() => {
+    if (isLoading || shownFiredRef.current) return
+    shownFiredRef.current = true
+    captureOnboardingModelReminder('shown')
+  }, [isLoading])
+
   const handleDismiss = () => {
+    captureOnboardingModelReminder('later')
     setPending(false)
   }
 
   const handleDownload = () => {
     if (!defaultVariant || !recommendedModel) return
+    captureOnboardingModelReminder('download')
 
     clearResumableDownload(defaultVariant.model_id)
     addLocalDownloadingModel(defaultVariant.model_id)

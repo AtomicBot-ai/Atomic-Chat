@@ -130,9 +130,13 @@ pub async fn run_mcp_commands<R: Runtime>(
             )
             .await;
 
-            // If initial startup failed, we still want to continue with other servers
+            // If initial startup failed, we still want to continue with other
+            // servers. Reported at `warn`: the failure is already logged with
+            // its captured stderr where it happened, and the Sentry log bridge
+            // turns every `error!` into an event — re-reporting the same string
+            // at three levels filed one failure as four separate issues.
             if let Err(e) = &result {
-                log::error!("Initial startup failed for MCP server {name_clone}: {e}");
+                log::warn!("Initial startup failed for MCP server {name_clone}: {e}");
             }
 
             (name_clone, result)
@@ -153,7 +157,8 @@ pub async fn run_mcp_commands<R: Runtime>(
                     successful_count += 1;
                 }
                 Err(e) => {
-                    log::error!("MCP server {name} failed to initialize: {e}");
+                    // Same failure as above, counted here — see the note there.
+                    log::warn!("MCP server {name} failed to initialize: {e}");
                     failed_count += 1;
                 }
             },
@@ -230,7 +235,9 @@ pub async fn start_mcp_server<R: Runtime>(
                 .await
                 .insert(name.clone(), e.clone());
             drop(start_generations);
-            log::error!("Failed to start MCP server {name} on first attempt: {e}");
+            // Already reported with its stderr by the start task; this is the
+            // same failure travelling back up.
+            log::warn!("Failed to start MCP server {name} on first attempt: {e}");
             emit_mcp_status_update_event(&app, &name);
             Err(e)
         }
@@ -326,6 +333,17 @@ fn build_remote_http_client(
         .connect_timeout(connect_timeout)
         .build()
         .map_err(|e| format!("Failed to build MCP HTTP client: {e}"))
+}
+
+/// Whether a `taskkill` failure just means the process had already exited.
+///
+/// Windows reports "the process ... not found" as an error; on unix the same
+/// condition (`ESRCH`) is already treated as success. Kept platform-independent
+/// so it can be tested anywhere.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn is_process_already_gone(stderr: &str) -> bool {
+    let lower = stderr.to_ascii_lowercase();
+    lower.contains("not found") || lower.contains("no running instance")
 }
 
 pub(crate) fn append_bounded_stderr(captured: &mut VecDeque<u8>, chunk: &[u8]) {
@@ -943,11 +961,22 @@ async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        // "There is no running instance of the task" / "process not found" is
+        // the outcome we were asking for: the process is already gone. The unix
+        // path treats the same condition (ESRCH) as success; Windows reported
+        // it as a failure, and the shutdown sweep — which runs after servers
+        // have already stopped — filed one crash per PID on every exit.
+        if is_process_already_gone(&stderr) {
+            log::debug!("taskkill: PID {pid} was already gone");
+            return Ok(());
+        }
         return Err(format!("taskkill failed: {}", stderr));
     }
 
     Ok(())
 }
+
+
 
 #[cfg(unix)]
 pub(crate) async fn kill_process_tree_by_pid(pid: u32) -> Result<(), String> {
@@ -1158,7 +1187,10 @@ pub async fn stop_mcp_servers_with_context<R: Runtime>(
         for pid in server_pids.values().copied() {
             log::trace!("Ensuring MCP server {server_name} PID {pid} is stopped");
             if let Err(e) = kill_process_tree_by_pid(pid).await {
-                log::error!("Failed to stop MCP process tree PID {}: {}", pid, e);
+                // Best-effort sweep after the servers have already been asked to
+                // stop; a straggler we could not reap is worth noting, not
+                // worth filing as a crash.
+                log::warn!("Failed to stop MCP process tree PID {}: {}", pid, e);
             }
         }
     }

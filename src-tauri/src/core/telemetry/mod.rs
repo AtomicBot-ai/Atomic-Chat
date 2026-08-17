@@ -197,9 +197,63 @@ fn is_transient_network_failure(event: &Event<'static>) -> bool {
         .any(|marker| message.contains(marker))
 }
 
+/// Model-load failures all arrive under the same headline ("Error in load
+/// command:") with a whole llama.cpp log pasted after it. Sentry groups on that
+/// text, so unrelated defects — a shard set opened at the wrong file, a model
+/// too big for the machine, a context longer than the model was trained on —
+/// landed in one issue, while incidental differences in the log split the same
+/// defect across several.
+///
+/// The engine already classifies the cause and stamps it into the message as a
+/// bracketed code. When one is present, group by it.
+const LOAD_ERROR_HEADLINE: &str = "Error in load command";
+
+/// Extract the `[SCREAMING_SNAKE_CASE]` code the engine appends to a load
+/// failure, if any.
+fn load_error_code(message: &str) -> Option<String> {
+    let open = message.rfind('[')?;
+    let close = message[open..].find(']')? + open;
+    let code = &message[open + 1..close];
+    if code.is_empty()
+        || !code
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+    {
+        return None;
+    }
+    Some(code.to_string())
+}
+
+/// Group a model-load failure by its cause rather than by the log text that
+/// happens to follow it. Returns `None` for everything else, leaving Sentry's
+/// default grouping alone.
+fn load_failure_fingerprint(event: &Event<'static>) -> Option<Vec<String>> {
+    let mut message = String::new();
+    if let Some(msg) = &event.message {
+        message.push_str(msg);
+    }
+    if let Some(logentry) = &event.logentry {
+        message.push_str(&logentry.message);
+    }
+    if !message.contains(LOAD_ERROR_HEADLINE) {
+        return None;
+    }
+
+    let code = load_error_code(&message).unwrap_or_else(|| "UNCLASSIFIED".to_string());
+    Some(vec!["model-load-failure".to_string(), code])
+}
+
 /// Strip machine name + IP, scrub every free-text field, and attach a scrubbed
 /// `app.log` tail.
 fn scrub_event(mut event: Event<'static>) -> Event<'static> {
+    if let Some(fingerprint) = load_failure_fingerprint(&event) {
+        event.fingerprint = fingerprint
+            .into_iter()
+            .map(std::borrow::Cow::Owned)
+            .collect::<Vec<_>>()
+            .into();
+    }
+
     // Machine/host name and any IP are forbidden by the zero-PII doctrine.
     event.server_name = None;
     if let Some(user) = event.user.as_mut() {
@@ -284,6 +338,83 @@ mod tests {
             message: Some(message.to_string()),
             ..Default::default()
         }
+    }
+
+    /// Real messages seen in the desktop project, trimmed.
+    const SPLIT_SHARD_FAILURE: &str = "Error in load command:\n\
+        The model process encountered an unexpected error.\n\
+        error loading model: illegal split file idx: 1 (file: /home/x/model.gguf), \
+        model must be loaded with the first split [LLAMA_CPP_PROCESS_ERROR]";
+    const OOM_FAILURE: &str = "Error in load command:\n\
+        Out of memory. The model requires more RAM or VRAM than available.\n\
+        failed to allocate CPU_REPACK buffer of size 2167603200 [OUT_OF_MEMORY]";
+
+    #[test]
+    fn load_failures_group_by_cause_not_by_log_text() {
+        let split = load_failure_fingerprint(&event("webview:error", SPLIT_SHARD_FAILURE));
+        let oom = load_failure_fingerprint(&event("webview:error", OOM_FAILURE));
+
+        assert_eq!(
+            split,
+            Some(vec![
+                "model-load-failure".to_string(),
+                "LLAMA_CPP_PROCESS_ERROR".to_string()
+            ])
+        );
+        assert_ne!(split, oom, "distinct causes must not share an issue");
+    }
+
+    #[test]
+    fn the_same_cause_groups_across_differing_logs() {
+        // Same defect, different user, different model, different timings.
+        let a = load_failure_fingerprint(&event("webview:error", SPLIT_SHARD_FAILURE));
+        let b = load_failure_fingerprint(&event(
+            "webview:error",
+            "Error in load command:\n\
+             The model process encountered an unexpected error.\n\
+             0.00.253.774 I cmn common_param: verbosity = 3\n\
+             error loading model: illegal split file idx: 3 (file: /Users/y/other.gguf), \
+             model must be loaded with the first split [LLAMA_CPP_PROCESS_ERROR]",
+        ));
+
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn an_unclassified_load_failure_still_gets_its_own_bucket() {
+        let fingerprint = load_failure_fingerprint(&event(
+            "webview:error",
+            "Error in load command:\nsomething we do not classify yet",
+        ));
+
+        assert_eq!(
+            fingerprint,
+            Some(vec![
+                "model-load-failure".to_string(),
+                "UNCLASSIFIED".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn other_events_keep_default_grouping() {
+        assert_eq!(
+            load_failure_fingerprint(&event("app_lib::core::mcp", "Failed to start MCP server")),
+            None
+        );
+    }
+
+    #[test]
+    fn a_bracketed_non_code_is_not_mistaken_for_one() {
+        // Log lines are full of brackets; only a SCREAMING_SNAKE_CASE token counts.
+        assert_eq!(
+            load_error_code("Error in load command: [HummingbirdCore] failed"),
+            None
+        );
+        assert_eq!(
+            load_error_code("Error in load command: boom [OUT_OF_MEMORY]"),
+            Some("OUT_OF_MEMORY".to_string())
+        );
     }
 
     #[test]

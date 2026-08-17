@@ -78,7 +78,13 @@ function emitModelLoad(
   try {
     const settings = args.model?.settings
     const props: Record<string, unknown> = {
-      status,
+      // NOT `status`. PostHog types a property globally by its observed values,
+      // and `api_server_request.status` (an HTTP code) already claimed that
+      // name as numeric — so these strings silently read back as null. That is
+      // why the "model_load.status is currently empty" note has been sitting on
+      // the Models & Errors dashboard: ~42k events of success/failed were
+      // unreadable. Keep this name event-specific.
+      load_status: status,
       model_id: args.modelId,
       backend: loadBackendFromProvider(args.providerName),
       model_source: modelLoadSource(args.modelId),
@@ -196,6 +202,9 @@ const TERMINAL_LOAD_CODES = new Set([
   // A partial / corrupt download (ATO-187) won't fix itself on auto-retry —
   // only a manual re-download resolves it, so don't loop the auto-start.
   'MODEL_FILE_CORRUPT',
+  // A multi-part GGUF missing shards is the same situation: only fetching the
+  // rest of the set fixes it.
+  'MODEL_SHARDS_INCOMPLETE',
   'BINARY_NOT_FOUND',
   // The engine build can't parse this model's architecture/format (e.g. a
   // newer qwen3vl GGUF). Retrying loads the same unsupported file — never auto-retry.
@@ -903,7 +912,10 @@ function reportModelLoadError(
     })
     return
   }
-  if (err.code === 'MODEL_FILE_CORRUPT') {
+  // A shard set missing members is an incomplete download by another name, and
+  // the remedy the corrupt-file copy already gives — delete and download again —
+  // is exactly right for it.
+  if (err.code === 'MODEL_FILE_CORRUPT' || err.code === 'MODEL_SHARDS_INCOMPLETE') {
     toast.error(t('model-errors:modelFileCorruptTitle'), {
       id: 'model-load-error',
       description: t('model-errors:modelFileCorruptDescription'),

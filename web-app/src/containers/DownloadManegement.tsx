@@ -63,7 +63,10 @@ function captureDownloadTerminal(
 
   try {
     posthog.capture('model_download', {
-      status,
+      // NOT `status` — that name is globally typed numeric in PostHog by
+      // `api_server_request.status` (an HTTP code), so string values read back
+      // as null. See the same note in `switchModel.ts`.
+      download_status: status,
       download_kind: kind,
       model_id: id,
       quant: quantFromModelId(id),
