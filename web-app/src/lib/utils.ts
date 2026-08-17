@@ -102,7 +102,7 @@ export function getProviderLogo(provider: string) {
     case 'xai':
       return '/images/model-provider/xai.svg'
     case 'minimax':
-      return '/images/model-provider/minimax.svg'
+      return '/svg/minimax.svg'
     case 'nvidia':
       return '/images/model-provider/nvidia.svg'
     case 'moonshot':
