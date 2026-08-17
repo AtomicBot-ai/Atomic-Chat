@@ -460,7 +460,7 @@
   "skillDisabled": "無効",
   "bundled": "同梱",
   "incompatible": "非互換",
-  "dangerous": "機密処理",
+  "dangerous": "注意が必要",
   "scriptsCount": "{{count}} 個のスクリプト",
   "scriptsCount_other": "{{count}} 個のスクリプト",
   "refresh": "更新",
