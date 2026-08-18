@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tauri_plugin_llamacpp::cleanup_llama_processes;
 
@@ -1728,6 +1728,15 @@ fn agent_install_spec(
         "pi" => {
             let (p, a) = npm("@earendil-works/pi-coding-agent");
             Ok((p, a, "npm", "https://github.com/earendil-works/pi"))
+        }
+        "dsh" => {
+            let (p, a) = npm("@deepseek-ai/dsh");
+            Ok((
+                p,
+                a,
+                "npm",
+                "https://github.com/deepseek-ai/deepseek-harness",
+            ))
         }
         "kilo" => {
             let (p, a) = npm("@kilocode/cli");
@@ -3510,6 +3519,432 @@ pub fn configure_pi(api_url: String, model: String, api_key: Option<String>) -> 
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// DeepSeek Harness (`dsh`)
+// ---------------------------------------------------------------------------
+
+/// The harness plugin namespace that owns hand-declared provider routes. It is
+/// mounted dormant by the shipped base bundle — zero routes until a `llm-pi-ai:`
+/// section supplies profiles, at which point they register live with no
+/// restart, so writing the file is the whole integration.
+const DSH_SECTION: &str = "llm-pi-ai";
+/// Our route id. It doubles as the stem of the credential reference below, and
+/// as the settings key the harness' own Models page addresses, so it must stay
+/// a lowercase-leading POSIX-identifier-safe word.
+const DSH_ROUTE_ID: &str = "atomic";
+/// Credential *reference* (an env var name, never the secret). The harness'
+/// Models page derives `<ROUTE>_API_KEY` for routes it creates, so matching
+/// that derivation keeps our route editable — and deletable — from inside dsh.
+const DSH_KEY_ENV: &str = "ATOMIC_API_KEY";
+/// A route the pi-ai catalog does not ship falls back to `defaultContextWindow`
+/// 262144 / `defaultMaxTokens` 32768, a wild over-claim for a local model that
+/// surfaces as a mid-turn provider rejection. Declare something sane instead.
+const DSH_CONTEXT_WINDOW: u64 = 65536;
+const DSH_MAX_TOKENS: u64 = 8192;
+
+fn ykey(s: &str) -> serde_yaml::Value {
+    serde_yaml::Value::String(s.to_string())
+}
+
+/// Borrow `parent[key]` as a mapping, creating it when absent.
+///
+/// A bare `llm-pi-ai:` (or `providers:`) with nothing under it parses to
+/// `Value::Null`, which is a hole to fill rather than data to protect — those
+/// are healed. Anything else non-mapping is real user content and errors out.
+/// The JSON siblings clobber in this position (`if !x.is_object() { *x = {} }`);
+/// we deliberately do not, because `settings.yaml` is shared with every other
+/// harness plugin and a silent overwrite would delete config we do not own.
+fn dsh_child_mapping<'a>(
+    parent: &'a mut serde_yaml::Mapping,
+    key: &str,
+    label: &str,
+) -> Result<&'a mut serde_yaml::Mapping, String> {
+    let k = ykey(key);
+    let vacant = match parent.get(&k) {
+        None => true,
+        Some(v) => v.is_null(),
+    };
+    if vacant {
+        parent.insert(
+            k.clone(),
+            serde_yaml::Value::Mapping(serde_yaml::Mapping::new()),
+        );
+    }
+    parent
+        .get_mut(&k)
+        .and_then(|v| v.as_mapping_mut())
+        .ok_or_else(|| {
+            format!(
+                "`{}` in {} is not a mapping. Fix or remove it and try again.",
+                label, "settings.yaml"
+            )
+        })
+}
+
+/// Build the `llm-pi-ai.providers.atomic` route node.
+///
+/// dsh refuses a hand-declared route unless `api`, `baseURL` and a NON-EMPTY
+/// `models` list are all present, and it refuses the *whole* section when one
+/// route is invalid — which is why the caller validates before we get here.
+///
+/// `apiKeyEnv` names an env var; it is never the secret. dsh fails requests with
+/// MISSING_CREDENTIAL when the field is present but resolves to nothing, so the
+/// keyless path omits the field rather than writing an empty string, leaving a
+/// plainly unauthenticated route.
+fn dsh_route_node(api_url: &str, model: &str, with_key: bool) -> serde_yaml::Value {
+    use serde_yaml::{Mapping, Value};
+
+    let mut model_entry = Mapping::new();
+    model_entry.insert(ykey("id"), Value::String(model.to_string()));
+    model_entry.insert(ykey("contextWindow"), Value::from(DSH_CONTEXT_WINDOW));
+    model_entry.insert(ykey("maxTokens"), Value::from(DSH_MAX_TOKENS));
+
+    let mut route = Mapping::new();
+    route.insert(
+        ykey("displayName"),
+        Value::String("Atomic Chat".to_string()),
+    );
+    route.insert(ykey("api"), Value::String("openai-completions".to_string()));
+    route.insert(ykey("baseURL"), Value::String(api_url.to_string()));
+    if with_key {
+        route.insert(ykey("apiKeyEnv"), Value::String(DSH_KEY_ENV.to_string()));
+    }
+    route.insert(
+        ykey("models"),
+        Value::Sequence(vec![Value::Mapping(model_entry)]),
+    );
+    Value::Mapping(route)
+}
+
+/// Upsert our route into an already-parsed `settings.yaml` tree. Pure: no IO,
+/// no environment.
+///
+/// Everything outside `llm-pi-ai.providers.atomic` is preserved — other plugin
+/// sections, other keys inside the section, other provider routes — including
+/// relative order, since `serde_yaml::Mapping` is insertion-ordered and
+/// `insert` on an existing key keeps its position.
+///
+/// The route is replaced WHOLESALE, never deep-merged: a merge would let a
+/// stale `apiKeyEnv` from an earlier keyed run survive into a keyless run and
+/// break every request with MISSING_CREDENTIAL.
+fn apply_dsh_provider(
+    root: &mut serde_yaml::Value,
+    api_url: &str,
+    model: &str,
+    with_key: bool,
+) -> Result<(), String> {
+    use serde_yaml::{Mapping, Value};
+
+    // An invalid route does not merely fail to help: dsh rejects the entire
+    // `llm-pi-ai` section, taking the user's other providers down with it. So
+    // refuse to write one, before touching the tree.
+    if api_url.trim().is_empty() {
+        return Err("No local server URL. Start the local API server and try again.".to_string());
+    }
+    if model.trim().is_empty() {
+        return Err(
+            "No model selected. DeepSeek Harness rejects a provider with an empty model \
+             list, which would also disable any other provider configured in that section."
+                .to_string(),
+        );
+    }
+
+    // An empty, whitespace-only, or comment-only document parses to Null rather
+    // than erroring (unlike serde_json, which rejects ""), so one heal covers
+    // all three.
+    if root.is_null() {
+        *root = Value::Mapping(Mapping::new());
+    }
+    let root_map = root
+        .as_mapping_mut()
+        .ok_or_else(|| "settings.yaml top level is not a YAML mapping".to_string())?;
+
+    let section = dsh_child_mapping(root_map, DSH_SECTION, DSH_SECTION)?;
+    let providers = dsh_child_mapping(section, "providers", &format!("{}.providers", DSH_SECTION))?;
+    providers.insert(ykey(DSH_ROUTE_ID), dsh_route_node(api_url, model, with_key));
+    Ok(())
+}
+
+/// Resolve dsh's home from a `DSH_HOME` value and the user's home directory.
+/// Pure half of {@link dsh_home_dir}.
+fn dsh_home_from(dsh_home_env: Option<&str>, user_home: &Path) -> PathBuf {
+    match dsh_home_env.map(str::trim).filter(|v| !v.is_empty()) {
+        // A `DSH_HOME="~/dev/dsh"` written with quotes in an rc file is never
+        // tilde-expanded by the shell, so a literal `~` can reach us.
+        Some("~") => user_home.to_path_buf(),
+        Some(v) if v.starts_with("~/") || v.starts_with("~\\") => user_home.join(&v[2..]),
+        Some(v) => PathBuf::from(v),
+        None => user_home.join(".dsh"),
+    }
+}
+
+/// Read `DSH_HOME` from the user's login shell.
+///
+/// An `export DSH_HOME=...` in `~/.zshrc` is invisible to a Finder/Dock-launched
+/// app (which inherits launchd's environment) but very visible to the `dsh` we
+/// spawn through a terminal. Without this probe we would cheerfully write
+/// `~/.dsh/settings.yaml` while dsh reads somewhere else entirely. Same problem
+/// and same fix as {@link login_shell_path}, including the cache — the probe
+/// spawns an interactive login shell and is far too slow to repeat.
+#[cfg(not(windows))]
+fn login_shell_dsh_home() -> Option<String> {
+    use std::sync::OnceLock;
+    static CACHE: OnceLock<Option<String>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+            let out = std::process::Command::new(shell)
+                .args(["-lic", "printf '__DSHHOME__%s__DSHEND__' \"$DSH_HOME\""])
+                .output()
+                .ok()?;
+            if !out.status.success() {
+                return None;
+            }
+            let s = String::from_utf8_lossy(&out.stdout);
+            let start = s.find("__DSHHOME__")? + "__DSHHOME__".len();
+            let end = s[start..].find("__DSHEND__")? + start;
+            let value = s[start..end].trim().to_string();
+            if value.is_empty() {
+                None
+            } else {
+                Some(value)
+            }
+        })
+        .clone()
+}
+
+#[cfg(windows)]
+fn login_shell_dsh_home() -> Option<String> {
+    None
+}
+
+/// Resolve dsh's home directory: `$DSH_HOME` when set, else `~/.dsh`.
+fn dsh_home_dir() -> Result<PathBuf, String> {
+    let from_env = std::env::var("DSH_HOME")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .or_else(login_shell_dsh_home);
+    let home = agent_home_dir()?;
+    Ok(dsh_home_from(from_env.as_deref(), Path::new(&home)))
+}
+
+/// Write `bytes` to `path` via a temp sibling and a rename, so a crash or a full
+/// disk cannot leave a truncated file behind.
+///
+/// The existing `configure_*` commands use a plain `std::fs::write`, which is
+/// tolerable for a config file we are the sole author of. `settings.yaml` is
+/// shared with every other harness plugin, so a half-written file destroys
+/// configuration we do not own. Symlinks are resolved first: renaming onto a
+/// link would replace it with a regular file and silently detach a dotfile
+/// managed by stow/chezmoi.
+fn dsh_write_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+
+    let target = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let stem = target
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("atomic");
+    let tmp = target.with_file_name(format!(".{}.atomic-tmp-{}", stem, std::process::id()));
+
+    let result = (|| -> Result<(), String> {
+        let mut file = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
+        file.write_all(bytes).map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| e.to_string())?;
+        std::fs::rename(&tmp, &target).map_err(|e| e.to_string())
+    })();
+
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result.map_err(|e| format!("Failed to write {}: {}", target.display(), e))
+}
+
+/// Restrict a credential-bearing file to its owner. Best-effort: a permissions
+/// failure must not fail the configure.
+#[cfg(unix)]
+fn dsh_restrict_to_owner(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+}
+
+#[cfg(not(unix))]
+fn dsh_restrict_to_owner(_path: &Path) {}
+
+/// Reject a value no dotenv line can carry.
+///
+/// An unquoted dotenv value ends at whitespace or `#`; a newline would inject a
+/// second assignment outright. The message names the variable and never the
+/// value, so a rejected key cannot leak through an error toast or the log.
+fn dsh_validate_env_value(name: &str, value: &str) -> Result<(), String> {
+    if value.contains(['\n', '\r', '#', '"', '\'']) || value.chars().any(char::is_whitespace) {
+        return Err(format!(
+            "{} contains characters that cannot be stored in a .env file",
+            name
+        ));
+    }
+    Ok(())
+}
+
+/// Upsert — or, with an empty `vars`, remove — an Atomic-Chat-managed block in a
+/// dotenv file, preserving every line outside it. `#` starts a comment in dotenv
+/// too, so the markers are inert to any reader.
+///
+/// Deliberately not `write_marked_env_to_shell`: that one emits shell
+/// `export K='V'` syntax, uses a different single-line marker scheme, and always
+/// appends a fresh block — it cannot express "remove the block and write
+/// nothing", which is exactly what the keyless path needs.
+fn dsh_write_managed_env(path: &Path, vars: &[(&str, &str)]) -> Result<(), String> {
+    for (name, value) in vars {
+        dsh_validate_env_value(name, value)?;
+    }
+
+    let existing = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if vars.is_empty() {
+                // Nothing to clear; do not create the file just to leave it empty.
+                return Ok(());
+            }
+            String::new()
+        }
+        Err(e) => return Err(format!("Failed to read {}: {}", path.display(), e)),
+    };
+
+    // The shared stripper removes every block we ever wrote, so reruns cannot
+    // accumulate duplicates.
+    let kept = strip_atomic_managed_block(&existing);
+    let kept = kept.trim_end();
+
+    let out = if vars.is_empty() {
+        if kept.is_empty() {
+            String::new()
+        } else {
+            format!("{}\n", kept)
+        }
+    } else {
+        let body: String = vars
+            .iter()
+            .map(|(name, value)| format!("{}={}\n", name, value))
+            .collect();
+        let block = format!("{}\n{}{}\n", ATOMIC_MANAGED_BEGIN, body, ATOMIC_MANAGED_END);
+        if kept.is_empty() {
+            block
+        } else {
+            format!("{}\n\n{}", kept, block)
+        }
+    };
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create {}: {}", parent.display(), e))?;
+    }
+    dsh_write_atomically(path, out.as_bytes())?;
+    dsh_restrict_to_owner(path);
+    Ok(())
+}
+
+/// Filesystem half of {@link configure_dsh}, taking an explicit dsh home so it
+/// is testable.
+fn configure_dsh_at(
+    home: &Path,
+    api_url: &str,
+    model: &str,
+    api_key: Option<&str>,
+) -> Result<(), String> {
+    let key = api_key.map(str::trim).filter(|k| !k.is_empty());
+
+    // Validate the credential before writing settings.yaml, so an unusable key
+    // cannot leave a route pointing at a reference we then failed to store.
+    if let Some(k) = key {
+        dsh_validate_env_value(DSH_KEY_ENV, k)?;
+    }
+
+    let settings_path = home.join("settings.yaml");
+
+    // Parse before creating anything, so a malformed file leaves no debris.
+    let text = match std::fs::read_to_string(&settings_path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+            return Err(format!(
+                "{} is not valid UTF-8. Fix or remove the file and try again.",
+                settings_path.display()
+            ))
+        }
+        Err(e) => return Err(format!("Failed to read {}: {}", settings_path.display(), e)),
+    };
+    let mut root: serde_yaml::Value = serde_yaml::from_str(&text).map_err(|e| {
+        format!(
+            "Could not parse {}: {}. Fix or remove the file and try again.",
+            settings_path.display(),
+            e
+        )
+    })?;
+
+    apply_dsh_provider(&mut root, api_url, model, key.is_some())?;
+
+    let mut serialized = serde_yaml::to_string(&root)
+        .map_err(|e| format!("Failed to serialize {}: {}", settings_path.display(), e))?;
+    if !serialized.ends_with('\n') {
+        serialized.push('\n');
+    }
+
+    std::fs::create_dir_all(home)
+        .map_err(|e| format!("Failed to create {}: {}", home.display(), e))?;
+
+    // The round trip below drops comments and expands anchors, so keep one copy
+    // of whatever the user had before we first touched it. Only ever written
+    // once, so a later run cannot overwrite the true pre-Atomic state.
+    if !text.is_empty() {
+        let backup = home.join("settings.yaml.atomic-backup");
+        if !backup.exists() {
+            let _ = std::fs::write(&backup, &text);
+        }
+    }
+
+    dsh_write_atomically(&settings_path, serialized.as_bytes())?;
+
+    // The secret itself never enters settings.yaml. dsh resolves the reference
+    // from, in order: the inherited environment, `$DSH_HOME/.credentials.yaml`,
+    // the invoking directory's `.env`, then `$DSH_HOME/.env` — we write the
+    // last, lowest-precedence layer, so anything the user sets deliberately
+    // (including through dsh's own Models page) still wins.
+    let env_path = home.join(".env");
+    match key {
+        Some(k) => dsh_write_managed_env(&env_path, &[(DSH_KEY_ENV, k)])?,
+        // Keyless: the route carries no `apiKeyEnv`, so a leftover value would
+        // be a secret outliving its use. Clear it.
+        None => dsh_write_managed_env(&env_path, &[])?,
+    }
+
+    log::info!(
+        "DeepSeek Harness configured: baseURL={}, model={}, home={}, key={}",
+        api_url,
+        model,
+        home.display(),
+        if key.is_some() { "yes" } else { "no" }
+    );
+    Ok(())
+}
+
+/// Point DeepSeek Harness (`dsh`) at the local Atomic Chat server by upserting
+/// the `llm-pi-ai.providers.atomic` route in `$DSH_HOME/settings.yaml`
+/// (default `~/.dsh`). dsh re-reads that document live, so no restart is needed.
+///
+/// NOTE: the parse/re-serialize round trip drops YAML comments and expands
+/// anchors and aliases — the same trade `configure_zed` makes for JSONC, which
+/// is why the previous contents are backed up alongside on the first write.
+#[tauri::command]
+pub fn configure_dsh(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let home = dsh_home_dir()?;
+    configure_dsh_at(&home, &api_url, &model, api_key.as_deref())
+}
+
 /// Configure Goose via its BYOK environment variables. Goose has no provider
 /// config file we patch here — it reads `GOOSE_PROVIDER` / `GOOSE_MODEL` plus
 /// the OpenAI host vars from the environment — so we persist them to the user's
@@ -4156,6 +4591,248 @@ mod tests {
                 !removed.iter().any(|key| key == variable),
                 "{variable} must be preserved"
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod dsh_tests {
+    use super::*;
+
+    const URL: &str = "http://127.0.0.1:1337/v1";
+
+    fn parse(text: &str) -> serde_yaml::Value {
+        serde_yaml::from_str(text).expect("fixture must be valid YAML")
+    }
+
+    /// `llm-pi-ai.providers.atomic` as a mapping, or panic.
+    fn route(root: &serde_yaml::Value) -> &serde_yaml::Mapping {
+        root.get(DSH_SECTION)
+            .and_then(|s| s.get("providers"))
+            .and_then(|p| p.get(DSH_ROUTE_ID))
+            .and_then(|r| r.as_mapping())
+            .expect("the atomic route must exist")
+    }
+
+    #[test]
+    fn empty_document_becomes_a_complete_section() {
+        let mut root = parse("");
+        apply_dsh_provider(&mut root, URL, "qwen3-4b", false).unwrap();
+
+        let r = route(&root);
+        assert_eq!(r.get("api").unwrap().as_str(), Some("openai-completions"));
+        assert_eq!(r.get("baseURL").unwrap().as_str(), Some(URL));
+        assert_eq!(r.get("displayName").unwrap().as_str(), Some("Atomic Chat"));
+
+        // A hand-declared route is refused by dsh without a non-empty model list.
+        let models = r.get("models").unwrap().as_sequence().unwrap();
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].get("id").unwrap().as_str(), Some("qwen3-4b"));
+        assert_eq!(
+            models[0].get("contextWindow").unwrap().as_u64(),
+            Some(DSH_CONTEXT_WINDOW)
+        );
+        assert_eq!(
+            models[0].get("maxTokens").unwrap().as_u64(),
+            Some(DSH_MAX_TOKENS)
+        );
+    }
+
+    #[test]
+    fn preserves_other_plugin_sections() {
+        let mut root =
+            parse("web-app:\n  port: 3080\nsession-persistence-jsonl:\n  root: /tmp/x\n");
+        apply_dsh_provider(&mut root, URL, "m", false).unwrap();
+
+        assert_eq!(
+            root.get("web-app").unwrap().get("port").unwrap().as_u64(),
+            Some(3080)
+        );
+        assert_eq!(
+            root.get("session-persistence-jsonl")
+                .unwrap()
+                .get("root")
+                .unwrap()
+                .as_str(),
+            Some("/tmp/x")
+        );
+    }
+
+    #[test]
+    fn preserves_sibling_routes_and_other_section_keys() {
+        let mut root = parse(
+            "llm-pi-ai:\n  \
+             defaultInput: [text]\n  \
+             providers:\n    \
+             openai:\n      apiKeyEnv: OPENAI_API_KEY\n    \
+             mygateway:\n      baseURL: https://gw.example/v1\n",
+        );
+        apply_dsh_provider(&mut root, URL, "m", false).unwrap();
+
+        let providers = root.get(DSH_SECTION).unwrap().get("providers").unwrap();
+        assert_eq!(
+            providers
+                .get("openai")
+                .unwrap()
+                .get("apiKeyEnv")
+                .unwrap()
+                .as_str(),
+            Some("OPENAI_API_KEY")
+        );
+        assert_eq!(
+            providers
+                .get("mygateway")
+                .unwrap()
+                .get("baseURL")
+                .unwrap()
+                .as_str(),
+            Some("https://gw.example/v1")
+        );
+        // A key beside `providers` inside our own section survives too.
+        assert!(root.get(DSH_SECTION).unwrap().get("defaultInput").is_some());
+    }
+
+    /// The headline regression: the route is replaced wholesale, never merged.
+    /// A surviving `apiKeyEnv` would point at a variable the keyless path never
+    /// sets, and dsh fails every request with MISSING_CREDENTIAL rather than
+    /// falling back to an unauthenticated call.
+    #[test]
+    fn rewrites_the_route_wholesale_dropping_stale_fields() {
+        let mut root = parse(
+            "llm-pi-ai:\n  providers:\n    atomic:\n      \
+             apiKeyEnv: ATOMIC_API_KEY\n      \
+             baseURL: http://127.0.0.1:9999/v1\n      \
+             leftoverJunk: true\n",
+        );
+        apply_dsh_provider(&mut root, URL, "m", false).unwrap();
+
+        let r = route(&root);
+        assert!(
+            r.get("apiKeyEnv").is_none(),
+            "stale credential reference must be gone"
+        );
+        assert!(r.get("leftoverJunk").is_none(), "stale fields must be gone");
+        assert_eq!(r.get("baseURL").unwrap().as_str(), Some(URL));
+    }
+
+    #[test]
+    fn api_key_env_tracks_whether_a_key_exists() {
+        let mut keyed = parse("");
+        apply_dsh_provider(&mut keyed, URL, "m", true).unwrap();
+        assert_eq!(
+            route(&keyed).get("apiKeyEnv").unwrap().as_str(),
+            Some(DSH_KEY_ENV)
+        );
+
+        let mut keyless = parse("");
+        apply_dsh_provider(&mut keyless, URL, "m", false).unwrap();
+        assert!(route(&keyless).get("apiKeyEnv").is_none());
+    }
+
+    #[test]
+    fn bare_section_and_providers_keys_are_healed() {
+        // Both parse to Null, which is a hole to fill rather than data to protect.
+        for fixture in ["llm-pi-ai:\n", "llm-pi-ai:\n  providers:\n"] {
+            let mut root = parse(fixture);
+            apply_dsh_provider(&mut root, URL, "m", false).unwrap();
+            assert_eq!(route(&root).get("baseURL").unwrap().as_str(), Some(URL));
+        }
+    }
+
+    #[test]
+    fn refuses_to_overwrite_a_non_mapping_section() {
+        for fixture in [
+            "llm-pi-ai: some-scalar\n",
+            "llm-pi-ai:\n  providers: [a, b]\n",
+        ] {
+            let mut root = parse(fixture);
+            let before = root.clone();
+            assert!(apply_dsh_provider(&mut root, URL, "m", false).is_err());
+            assert_eq!(root, before, "a refused write must not mutate the tree");
+        }
+    }
+
+    #[test]
+    fn refuses_a_non_mapping_root() {
+        let mut root = parse("- a\n- b\n");
+        assert!(apply_dsh_provider(&mut root, URL, "m", false).is_err());
+    }
+
+    /// An invalid route makes dsh reject the whole `llm-pi-ai` section, so this
+    /// must fail loudly instead of writing something the user's other providers
+    /// would go down with.
+    #[test]
+    fn refuses_an_empty_model_or_url() {
+        let mut root = parse("");
+        let before = root.clone();
+        assert!(apply_dsh_provider(&mut root, URL, "   ", false).is_err());
+        assert!(apply_dsh_provider(&mut root, "", "m", false).is_err());
+        assert_eq!(root, before);
+    }
+
+    /// Model ids are quoted by serde_yaml rather than concatenated in, so an id
+    /// that looks like another YAML type still round-trips as a string.
+    #[test]
+    fn model_ids_that_look_like_other_types_round_trip() {
+        for id in ["yes", "no", "7", "1.0", "null", "on"] {
+            let mut root = parse("");
+            apply_dsh_provider(&mut root, URL, id, false).unwrap();
+            let reparsed = parse(&serde_yaml::to_string(&root).unwrap());
+            let models = route(&reparsed)
+                .get("models")
+                .unwrap()
+                .as_sequence()
+                .unwrap();
+            assert_eq!(models[0].get("id").unwrap().as_str(), Some(id));
+        }
+    }
+
+    #[test]
+    fn is_idempotent() {
+        let fixture = "other:\n  a: 1\nllm-pi-ai:\n  providers:\n    openai: {}\n";
+        let mut once = parse(fixture);
+        apply_dsh_provider(&mut once, URL, "m", true).unwrap();
+        let mut twice = once.clone();
+        apply_dsh_provider(&mut twice, URL, "m", true).unwrap();
+        assert_eq!(
+            serde_yaml::to_string(&once).unwrap(),
+            serde_yaml::to_string(&twice).unwrap()
+        );
+    }
+
+    #[test]
+    fn dsh_home_falls_back_and_expands_tilde() {
+        let home = Path::new("/Users/tester");
+        assert_eq!(
+            dsh_home_from(None, home),
+            PathBuf::from("/Users/tester/.dsh")
+        );
+        assert_eq!(
+            dsh_home_from(Some("   "), home),
+            PathBuf::from("/Users/tester/.dsh")
+        );
+        assert_eq!(
+            dsh_home_from(Some("/opt/dsh"), home),
+            PathBuf::from("/opt/dsh")
+        );
+        // A quoted `DSH_HOME="~/dev/dsh"` in an rc file reaches us unexpanded.
+        assert_eq!(
+            dsh_home_from(Some("~/dev/dsh"), home),
+            PathBuf::from("/Users/tester/dev/dsh")
+        );
+        assert_eq!(
+            dsh_home_from(Some("~"), home),
+            PathBuf::from("/Users/tester")
+        );
+    }
+
+    #[test]
+    fn rejects_credentials_a_dotenv_line_cannot_carry() {
+        assert!(dsh_validate_env_value(DSH_KEY_ENV, "sk-plain-value").is_ok());
+        for bad in ["has space", "two\nlines", "hash#comment", "quo'te"] {
+            let err = dsh_validate_env_value(DSH_KEY_ENV, bad).unwrap_err();
+            assert!(err.contains(DSH_KEY_ENV));
+            assert!(!err.contains(bad), "the error must never echo the value");
         }
     }
 }

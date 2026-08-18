@@ -17,8 +17,10 @@ import { sanitizeModelId } from '@/lib/utils'
 import type { CatalogModel } from '@/services/models/types'
 
 /** Both llama.cpp providers register downloads: the fork and the upstream build. */
-const LLAMACPP_PROVIDERS = ['llamacpp', 'llamacpp-upstream'] as const
-const MLX_PROVIDER = 'mlx'
+export const LLAMACPP_PROVIDERS = ['llamacpp', 'llamacpp-upstream'] as const
+export const MLX_PROVIDER = 'mlx'
+/** Every provider that keeps model files on this device. */
+export const LOCAL_PROVIDERS = [...LLAMACPP_PROVIDERS, MLX_PROVIDER] as const
 
 /**
  * The MLX engine sanitizes ids with its own rules (dots survive, spaces become
@@ -60,23 +62,61 @@ function collectLocalModels(
 }
 
 /**
- * Provider model ids a catalog entry would produce once downloaded. Downloads
- * register either the bare id or a developer-prefixed one, so both spellings
- * count as a match.
+ * Provider model ids one GGUF quant would register under once downloaded.
+ * Downloads register either the bare id or a developer-prefixed one, so both
+ * spellings count as a match.
+ */
+export function quantModelIds(
+  entry: CatalogModel,
+  quantModelId: string
+): string[] {
+  const prefix = entry.developer ? `${entry.developer}/` : ''
+  return [quantModelId, `${prefix}${sanitizeModelId(quantModelId)}`]
+}
+
+/** Provider model ids an MLX repo would register under once downloaded. */
+export function mlxModelIds(entry: CatalogModel): string[] {
+  const prefix = entry.developer ? `${entry.developer}/` : ''
+  const shortName = entry.model_name.split('/').pop() ?? entry.model_name
+  const id = sanitizeMlxId(shortName)
+  return [id, `${prefix}${id}`]
+}
+
+/**
+ * Provider model ids a catalog entry would produce once downloaded.
  */
 function candidateIds(entry: CatalogModel): string[] {
-  const prefix = entry.developer ? `${entry.developer}/` : ''
+  if (entry.is_mlx) return mlxModelIds(entry)
 
-  if (entry.is_mlx) {
-    const shortName = entry.model_name.split('/').pop() ?? entry.model_name
-    const id = sanitizeMlxId(shortName)
-    return [id, `${prefix}${id}`]
+  return (entry.quants ?? []).flatMap((quant) =>
+    quantModelIds(entry, quant.model_id)
+  )
+}
+
+/** Where an installed model actually lives: the id and the provider owning it. */
+export type InstalledModelLocation = { modelId: string; provider: string }
+
+/**
+ * The first local provider that carries any of `ids`, together with the id it
+ * registered. Deleting a model needs both: `models().deleteModel` dispatches on
+ * the provider, and the id the engine knows is not always the catalog's
+ * spelling of it.
+ *
+ * `llamacpp` and `llamacpp-upstream` share one models directory, so a file
+ * registered by both is removed once regardless of which one answers here.
+ */
+export function findInstalledLocalModel(
+  providers: readonly ModelProvider[],
+  ids: readonly string[],
+  providerNames: readonly string[] = LOCAL_PROVIDERS
+): InstalledModelLocation | null {
+  for (const name of providerNames) {
+    const provider = providers.find((entry) => entry.provider === name)
+    if (!provider) continue
+    const match = provider.models.find((model) => ids.includes(model.id))
+    if (match) return { modelId: match.id, provider: name }
   }
-
-  return (entry.quants ?? []).flatMap((quant) => [
-    quant.model_id,
-    `${prefix}${sanitizeModelId(quant.model_id)}`,
-  ])
+  return null
 }
 
 /**

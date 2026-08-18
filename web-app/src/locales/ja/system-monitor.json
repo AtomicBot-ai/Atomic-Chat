@@ -17,6 +17,7 @@
   "stop": "停止",
   "activeGpus": "アクティブなGPU",
   "noGpus": "GPUが検出されませんでした",
+  "liveStatsUnavailable": "システム列挙により GPU が検出されました。このカードのリアルタイム VRAM 統計は利用できません（選択された llama.cpp バックエンドからデバイス一覧が返されませんでしたが、GPU は推論に使用可能です）。",
   "noActiveGpus": "アクティブなGPUはありません。すべてのGPUは現在無効になっています。",
   "vramUsage": "VRAM使用率",
   "driverVersion": "ドライバーバージョン:",
@@ -24,5 +25,10 @@
   "active": "アクティブ",
   "performance": "パフォーマンス",
   "resources": "リソース",
-  "refresh": "更新"
+  "refresh": "更新",
+  "driverOutdated": {
+    "title": "NVIDIA ドライバーが古いため GPU アクセラレーションが利用できません",
+    "description": "ドライバー {{driver}} の {{gpu}} が検出されました。CUDA アクセラレーションにはドライバー {{minDriver}}+ が必要です。更新するまでモデルは CPU で動作します。",
+    "updateAction": "NVIDIA ドライバーを更新"
+  }
 }

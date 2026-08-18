@@ -4,6 +4,10 @@ import type { CatalogModel } from '@/services/models/types'
 import {
   collectInstalledModels,
   filterInstalledBySearch,
+  findInstalledLocalModel,
+  LLAMACPP_PROVIDERS,
+  mlxModelIds,
+  quantModelIds,
 } from '../hub-installed'
 
 const gguf = (
@@ -24,7 +28,10 @@ const gguf = (
   ...extra,
 })
 
-const mlx = (name: string, extra: Partial<CatalogModel> = {}): CatalogModel => ({
+const mlx = (
+  name: string,
+  extra: Partial<CatalogModel> = {}
+): CatalogModel => ({
   model_name: name,
   description: '',
   downloads: 0,
@@ -171,5 +178,59 @@ describe('filterInstalledBySearch', () => {
     expect(
       filterInstalledBySearch(rows, 'unsloth').map((row) => row.model_name)
     ).toEqual(['unsloth/Qwen3-4B-GGUF'])
+  })
+})
+
+describe('findInstalledLocalModel', () => {
+  const entry = gguf('unsloth/Qwen3-4B-GGUF', ['Qwen3-4B-Q4_K_M'])
+
+  it('reports the provider that registered the quant', () => {
+    expect(
+      findInstalledLocalModel(
+        [provider('llamacpp-upstream', ['Qwen3-4B-Q4_K_M'])],
+        quantModelIds(entry, 'Qwen3-4B-Q4_K_M')
+      )
+    ).toEqual({ modelId: 'Qwen3-4B-Q4_K_M', provider: 'llamacpp-upstream' })
+  })
+
+  it('reports the id the engine actually registered, not the catalog spelling', () => {
+    expect(
+      findInstalledLocalModel(
+        [provider('llamacpp', ['unsloth/Qwen3-4B-Q4_K_M'])],
+        quantModelIds(entry, 'Qwen3-4B-Q4_K_M')
+      )
+    ).toEqual({ modelId: 'unsloth/Qwen3-4B-Q4_K_M', provider: 'llamacpp' })
+  })
+
+  it('returns null when no local provider carries the id', () => {
+    expect(
+      findInstalledLocalModel(
+        [provider('llamacpp', ['Qwen3-4B-Q8_0'])],
+        quantModelIds(entry, 'Qwen3-4B-Q4_K_M')
+      )
+    ).toBeNull()
+  })
+
+  it('honours the provider whitelist so a GGUF row never matches an MLX id', () => {
+    const providers = [provider('mlx', ['Qwen3-4B-Q4_K_M'])]
+    expect(
+      findInstalledLocalModel(
+        providers,
+        quantModelIds(entry, 'Qwen3-4B-Q4_K_M'),
+        LLAMACPP_PROVIDERS
+      )
+    ).toBeNull()
+  })
+
+  it('finds an MLX repo under the engine-specific id', () => {
+    expect(
+      findInstalledLocalModel(
+        [provider('mlx', ['mlx-community/Qwen3-4B-4bit'])],
+        mlxModelIds(mlx('mlx-community/Qwen3-4B-4bit'))
+      )
+    ).toEqual({
+      modelId: 'mlx-community/Qwen3-4B-4bit',
+      provider: 'mlx',
+    })
   })
 })

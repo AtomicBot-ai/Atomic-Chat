@@ -5,7 +5,13 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
+import { DeleteModelAction } from '@/containers/hub/DeleteModelAction'
 import { markDownloadCancellationRequested } from '@/lib/downloadCancellation'
+import {
+  findInstalledLocalModel,
+  LLAMACPP_PROVIDERS,
+  quantModelIds,
+} from '@/lib/hub-installed'
 import { CatalogModel } from '@/services/models/types'
 import { switchToModel } from '@/utils/switchModel'
 import { IconDownload, IconX } from '@tabler/icons-react'
@@ -17,12 +23,16 @@ export const ModelDownloadAction = ({
   variant,
   model,
   asButton = false,
+  deletable = false,
 }: {
   variant: { model_id: string; path: string }
   model: CatalogModel
   // Render the idle state as a labelled outline "Download" button (Hub v12
   // variant rows) instead of the compact icon used elsewhere (SetupScreen).
   asButton?: boolean
+  // Offer a trash button next to "New chat" once the variant is on disk. Opt-in
+  // so the onboarding screens keep a single, unambiguous action.
+  deletable?: boolean
 }) => {
   const serviceHub = useServiceHub()
 
@@ -139,7 +149,10 @@ export const ModelDownloadAction = ({
       // If pull rejects before any DownloadEvent fires, the global listener in
       // DownloadManegement.tsx never clears localDownloadingModels and the row
       // is stuck in a permanent "downloading" state. Clear it ourselves.
-      console.error('[ModelDownloadAction] pullModelWithMetadata failed:', error)
+      console.error(
+        '[ModelDownloadAction] pullModelWithMetadata failed:',
+        error
+      )
       removeLocalDownloadingModel(variant.model_id)
       clearDownloadOrigin(variant.model_id)
       markResumableDownload(variant.model_id)
@@ -186,16 +199,17 @@ export const ModelDownloadAction = ({
   // model is registered under `llamacpp-upstream` (the default), so checking
   // only `llamacpp` left the button stuck on "Download" (mirrors handleUseModel
   // and hub/$modelId.tsx, which already consult both).
-  const isDownloaded = useModelProvider((state) =>
-    state.providers
-      .filter(
-        (p) =>
-          p.provider === 'llamacpp' || p.provider === 'llamacpp-upstream'
-      )
-      .some((p) =>
-        p.models.some((m: { id: string }) => m.id === variant.model_id)
-      )
+  const providers = useModelProvider((state) => state.providers)
+  const installed = useMemo(
+    () =>
+      findInstalledLocalModel(
+        providers,
+        quantModelIds(model, variant.model_id),
+        LLAMACPP_PROVIDERS
+      ),
+    [providers, model, variant.model_id]
   )
+  const isDownloaded = installed !== null
 
   if (isDownloading) {
     return (
@@ -223,16 +237,24 @@ export const ModelDownloadAction = ({
     )
   }
 
-  if (isDownloaded) {
+  if (isDownloaded && installed) {
     return (
-      <Button
-        variant="default"
-        size="sm"
-        onClick={() => handleUseModel(variant.model_id)}
-        title={t('hub:useModel')}
-      >
-        {t('hub:newChat')}
-      </Button>
+      <div className="flex shrink-0 items-center gap-1">
+        <Button
+          variant="default"
+          size="sm"
+          onClick={() => handleUseModel(installed.modelId)}
+          title={t('hub:useModel')}
+        >
+          {t('hub:newChat')}
+        </Button>
+        {deletable && (
+          <DeleteModelAction
+            modelId={installed.modelId}
+            provider={installed.provider}
+          />
+        )}
+      </div>
     )
   }
 

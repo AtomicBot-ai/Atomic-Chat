@@ -23,7 +23,11 @@ export function basenameNoExt(filePath: string): string {
   }
 
   // fallback: remove only the last extension
-  return base.slice(0, -path.extname(base).length)
+  const ext = path.extname(base)
+  if (ext) {
+    return base.slice(0, -ext.length)
+  }
+  return base
 }
 
 /**
