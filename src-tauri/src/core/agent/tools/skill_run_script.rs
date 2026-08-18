@@ -506,13 +506,23 @@ mod tests {
     #[tokio::test]
     async fn reports_script_timeout() {
         let temp = TempDir::new().unwrap();
+        // On Windows `bash` resolves to the System32 WSL stub, which exits
+        // immediately when no distribution is installed — use cmd.exe there.
+        let (program, arguments) = if cfg!(windows) {
+            (
+                "cmd.exe".to_string(),
+                vec!["/C".into(), "ping -n 30 127.0.0.1 >nul".into()],
+            )
+        } else {
+            ("bash".to_string(), vec!["-c".into(), "sleep 2".into()])
+        };
         let invocation = SkillScriptInvocation {
             skill_name: "test-skill".into(),
             script_name: "slow.sh".into(),
             skill_root: temp.path().to_path_buf(),
             script_path: temp.path().join("slow.sh"),
-            program: "bash".into(),
-            arguments: vec!["-c".into(), "sleep 2".into()],
+            program,
+            arguments,
             timeout_ms: 1_000,
         };
         let error = run_invocation(&invocation, &CancellationToken::new())
@@ -548,16 +558,33 @@ mod tests {
     #[tokio::test]
     async fn terminates_scripts_that_exceed_the_output_limit() {
         let temp = TempDir::new().unwrap();
+        // Same WSL-stub problem as `reports_script_timeout`: spell the
+        // infinite-output loop in cmd.exe on Windows.
+        let (program, arguments) = if cfg!(windows) {
+            (
+                "cmd.exe".to_string(),
+                vec![
+                    "/C".into(),
+                    "for /L %i in (0,0,1) do @echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                        .into(),
+                ],
+            )
+        } else {
+            (
+                "bash".to_string(),
+                vec![
+                    "-c".into(),
+                    "while true; do printf xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx; done".into(),
+                ],
+            )
+        };
         let invocation = SkillScriptInvocation {
             skill_name: "test-skill".into(),
             script_name: "noisy.sh".into(),
             skill_root: temp.path().to_path_buf(),
             script_path: temp.path().join("noisy.sh"),
-            program: "bash".into(),
-            arguments: vec![
-                "-c".into(),
-                "while true; do printf xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx; done".into(),
-            ],
+            program,
+            arguments,
             timeout_ms: 5_000,
         };
 
