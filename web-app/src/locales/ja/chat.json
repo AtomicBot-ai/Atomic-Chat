@@ -8,5 +8,98 @@
   },
   "sendMessage": "メッセージを送信",
   "newConversation": "新しい会話",
-  "clearHistory": "履歴を消去"
+  "clearHistory": "履歴を消去",
+  "activity": {
+    "working": "処理中...",
+    "reading": "読み込み中: {{count}}%",
+    "workedFor": "{{count}}秒間処理しました",
+    "calledTool": "{{count}}個のツールを実行しました",
+    "calledTools": "{{count}}個のツールを実行しました",
+    "reasoned": "推論完了",
+    "thinking": "思考中...",
+    "thoughtFor": "{{count}}秒間考えました"
+  },
+  "workspacePreview": {
+    "generating": "プレビューは生成完了後に利用可能になります。"
+  },
+  "agentMode": {
+    "chat": "チャット",
+    "agent": "エージェント",
+    "placeholder": "エージェントへのタスクを入力してください...",
+    "providerUnavailable": "エージェントモードはローカルの llama.cpp モデルでのみ利用できます。"
+  },
+  "agentApprovals": {
+    "manualSelected": "手動",
+    "manual": "手動で承認",
+    "manualDescription": "機密性の高いアクションの前に一時停止します。",
+    "skipSelected": "スキップ",
+    "skip": "すべての承認をスキップ",
+    "skipDescription": "確認なしで実行します。"
+  },
+  "agentApproval": {
+    "title": "エージェントの承認が必要です",
+    "description": "{{tool}} が判断を待っています。",
+    "reason": "理由",
+    "preview": "アクションのプレビュー",
+    "resources": "影響を受けるリソース",
+    "timeoutNotice": "応答しない場合、バックエンドのタイムアウト後にこのリクエストは自動的に拒否されます。",
+    "deny": "拒否",
+    "alwaysAllow": "このアクションを常に許可",
+    "approveOnce": "1回のみ承認",
+    "resolveFailed": "承認決定の送信に失敗しました。"
+  },
+  "agentFolderAccess": {
+    "title": "フォルダへのアクセスを許可",
+    "description": "{{tool}} にはこのフォルダへのアクセスが必要です。",
+    "canEditNotice": "許可すると、このフォルダがこのエージェントスレッドの「編集可能」な外部フォルダとして追加されます。",
+    "deny": "拒否",
+    "allow": "フォルダを許可",
+    "resolveFailed": "フォルダアクセスの決定の送信に失敗しました。"
+  },
+  "agentWorkspace": {
+    "choose": "ワークスペースを選択",
+    "change": "エージェントのワークスペースを変更",
+    "default": "デフォルト",
+    "defaultDescription": "Atomic Chat データフォルダ内の agent-workspace フォルダを使用します。",
+    "projectFiles": "プロジェクトファイル",
+    "external": "外部",
+    "canEdit": "編集可能",
+    "viewOnly": "閲覧のみ",
+    "addFolder": "外部フォルダを追加",
+    "folderOptions": "フォルダのオプション",
+    "allowEditing": "編集を許可",
+    "makeViewOnly": "閲覧のみにする",
+    "removeFolder": "エージェントから削除"
+  },
+  "agentErrors": {
+    "audioUnsupported": "エージェントモードは音声添付に対応していません。",
+    "invalidAttachment": "1つ以上のファイルを添付できませんでした。ローカルファイルを選択して再試行してください。",
+    "visionModelRequired": "画像を送信する前に、Vision（視覚）対応モデルを選択してください。",
+    "localLlamacppRequired": "エージェントモードにはアクティブなローカル llama.cpp モデルが必要です。",
+    "providerUnavailableTitle": "このプロバイダーではエージェントモードを利用できません",
+    "providerUnavailableDescription": "ローカルの llama.cpp モデルに切り替えて再試行してください。",
+    "unsupportedTools": "エージェントモードは現在、MCP、RAG、ブラウザツールに対応していません。",
+    "runFailed": "エージェントの実行開始に失敗しました。",
+    "cancelFailed": "エージェントの実行をキャンセルできませんでした。",
+    "saveFailed": "エージェントの返答を保存できませんでした。"
+  },
+  "agentTasks": {
+    "title": "タスクの提案",
+    "findLatestNews": {
+      "title": "最新ニュースを検索",
+      "prompt": "最新のニュースを検索し、出典リンク付きで最も重要な最近の動向を要約してください。"
+    },
+    "inspectFolder": {
+      "title": "デスクトップを整理",
+      "prompt": "デスクトップのファイルやフォルダを確認してください。ファイルやフォルダの削除、上書き、置換、名前変更、変更は行わないでください。"
+    },
+    "findLargeFiles": {
+      "title": "大きなファイルを検索",
+      "prompt": "ダウンロードフォルダ内の最も大きなファイルを検索し、安全にクリーンアップできる候補を提案してください。ファイルは何も削除しないでください。"
+    }
+  },
+  "threadType": {
+    "chat": "チャットスレッド",
+    "agent": "エージェントスレッド"
+  }
 }
