@@ -16,7 +16,7 @@ use super::session::AgentSessionState;
 use super::test_support::{
     collect_event, RecordingApproval, RecordingDesktop, RecordingFolderAccess, TestWorkspace,
 };
-use super::types::{AgentEvent, ToolStatus};
+use super::types::{AgentEvent, AgentReasoning, ToolStatus};
 
 const REQUIRED_MODEL_ID: &str = "unsloth/Qwen3_5-9B-GGUF-Qwen3_5-9B-IQ4_XS";
 
@@ -168,6 +168,7 @@ impl LiveHarness {
                     external_read_only_roots: &[],
                     trusted_read_roots: &[],
                     max_steps,
+                    reasoning: AgentReasoning::default(),
                     client: &self.client,
                     approval,
                     folder_access: &folder_access,

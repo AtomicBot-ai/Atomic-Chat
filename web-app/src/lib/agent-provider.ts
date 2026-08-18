@@ -24,10 +24,8 @@ export type AgentLocalProvider = (typeof AGENT_LOCAL_PROVIDERS)[number]
 
 /** Why Agent mode is unavailable. `null` from the helpers below means it is. */
 export type AgentProviderBlockReason =
-  | 'no-model'
   | 'unsupported-provider'
   | 'missing-api-key'
-  | 'no-tool-support'
 
 export function isAgentLocalProvider(
   provider: string | undefined | null
@@ -37,40 +35,50 @@ export function isAgentLocalProvider(
 }
 
 /**
- * Whether Agent mode can run with this provider/model pair.
+ * Whether Agent mode can run on this provider.
  *
- * Cloud models go through the Local API Server proxy, exactly as cloud chat
- * does. That is not checked here: `ensureRemoteProviderReady` starts the server
- * on demand before the run, so a stopped server is not a reason to grey out the
- * toggle — the backend still fails closed with `AGENT_LOCAL_SERVER_REQUIRED` if
- * the start does not take.
+ * Deliberately a *provider*-level question, not a model-level one:
+ *
+ *  - The `tools` capability is not required. It means "supports native OpenAI
+ *    function calling", which the agent never uses — the tool contract is a
+ *    text JSON array carried by the prompt (plus a JSON schema where the target
+ *    accepts one). Gating on it would also block every model missing from the
+ *    static `getModelCapabilities` table, including custom providers.
+ *  - Whether a model is selected and loaded is checked at run time, so the
+ *    sidebar toggle is not greyed out before the user has picked one.
+ *  - Keyless loopback providers (Ollama, LM Studio) are allowed. They travel
+ *    the same proxy path as cloud providers — `DataProvider` registers them on
+ *    exactly the condition used here — and the proxy needs no upstream key for
+ *    them.
+ *
+ * Cloud models route through the Local API Server proxy, which is started on
+ * demand by `ensureRemoteProviderReady`; a stopped server is therefore not a
+ * reason to block either. The backend still fails closed with
+ * `AGENT_LOCAL_SERVER_REQUIRED` if the start does not take.
  *
  * Returns `null` when nothing blocks the run.
  */
 export function agentProviderBlockReason(
-  provider: ModelProvider | undefined | null,
-  model: Model | undefined | null
+  provider: ModelProvider | undefined | null
 ): AgentProviderBlockReason | null {
   if (!provider) return 'unsupported-provider'
-  if (isAgentLocalProvider(provider.provider)) {
-    return model ? null : 'no-model'
-  }
+  if (isAgentLocalProvider(provider.provider)) return null
   // Any other local engine (today: foundation-models) has no transport.
   if (isLocalProvider(provider.provider)) return 'unsupported-provider'
-  // Keyless loopback providers (Ollama, LM Studio) are out of scope for now.
-  if (isKeylessRemoteProvider(provider)) return 'unsupported-provider'
-
-  if (!model) return 'no-model'
-  if (!provider.api_key?.trim()) return 'missing-api-key'
-  if (!model.capabilities?.includes('tools')) return 'no-tool-support'
+  // Mirrors the registration condition in `DataProvider`: a remote provider is
+  // usable when it has a key, or when it is a keyless loopback server that
+  // needs none. Without either the proxy cannot authenticate upstream and the
+  // run is certain to fail, so it is worth blocking up front.
+  if (!provider.api_key?.trim() && !isKeylessRemoteProvider(provider)) {
+    return 'missing-api-key'
+  }
   return null
 }
 
 export function isAgentCapableProvider(
-  provider: ModelProvider | undefined | null,
-  model: Model | undefined | null
+  provider: ModelProvider | undefined | null
 ): boolean {
-  return agentProviderBlockReason(provider, model) === null
+  return agentProviderBlockReason(provider) === null
 }
 
 /**

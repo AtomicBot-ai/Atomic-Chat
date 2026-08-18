@@ -11,10 +11,10 @@ use std::{
 use tokio_util::sync::CancellationToken;
 
 use super::batch_executor::{execute_batch, PlannedCall};
-use super::grammar::tool_call_grammar_for_profile;
+use super::grammar::{tool_call_grammar_for_profile, GENERIC_THINK_CLOSE, GENERIC_THINK_OPEN};
 use super::llm_client::{
-    parse_tool_calls_for_profile, AgentLlmClient, AgentPrompt, CompletionRequest, LlmClientError,
-    ParsedToolCalls,
+    parse_tool_calls_for_profile, AgentLlmClient, AgentPrompt, CompletionReasoning,
+    CompletionRequest, LlmClientError, ParsedToolCalls, ReasoningTags,
 };
 use super::loop_guard::{
     format_forced_loop_reply, format_repeat_notice, format_veto_instruction,
@@ -29,14 +29,14 @@ use super::prompt::{
 use super::resource_class::{is_batchable, resource_class_for, ResourceClass};
 use super::session::AgentSessionState;
 use super::skills::{loaded::LoadedSkills, SkillRegistry};
-use super::tool_schema::tool_call_response_format;
 use super::token_budget::{
     compute_effective_conversation_cap, estimate_tokens, COMPLETION_MAX_TOKENS,
     CONFIGURED_CONVERSATION_CAP,
 };
+use super::tool_schema::tool_call_response_format;
 use super::tools::{self, ApprovalHook, DesktopServices, FolderAccessHook, ToolContext};
 use super::types::{
-    AgentEvent, LoopLevel, ToolCallPayload, ToolExecution, ToolOutcome, ToolStatus,
+    AgentEvent, AgentReasoning, LoopLevel, ToolCallPayload, ToolExecution, ToolOutcome, ToolStatus,
 };
 
 pub const MAX_STEPS: u32 = 25;
@@ -60,6 +60,9 @@ pub struct RunTurnInput<'a> {
     pub external_read_only_roots: &'a [PathBuf],
     pub trusted_read_roots: &'a [PathBuf],
     pub max_steps: u32,
+    /// Thinking intent for this turn. Drives the GBNF prelude and, on
+    /// llama.cpp, the reasoning-budget sampler.
+    pub reasoning: AgentReasoning,
     pub client: &'a dyn AgentLlmClient,
     pub approval: &'a dyn ApprovalHook,
     pub folder_access: &'a dyn FolderAccessHook,
@@ -105,9 +108,21 @@ pub async fn run_turn(
     // tool-call shape with GBNF, chat transports fall back to the prompt
     // contract plus the repair step. Build only what this client can honour.
     let capabilities = input.client.capabilities();
-    let tool_grammar = capabilities
-        .grammar
-        .then(|| tool_call_grammar_for_profile(input.skill_registry, input.model_profile));
+    let thinking = input.reasoning.is_on();
+    let tool_grammar = capabilities.grammar.then(|| {
+        tool_call_grammar_for_profile(input.skill_registry, input.model_profile, thinking)
+    });
+    // The repair completion asks for corrected JSON only, and its budget is a
+    // tenth of a normal step's — a mandatory think block could swallow it whole.
+    // Gemma keeps its prelude: there it is native turn framing, not an effort
+    // choice, and the framing must survive the retry.
+    let repair_grammar = match (&tool_grammar, input.model_profile.reasoning_open_tag()) {
+        (None, _) | (Some(_), Some(_)) => tool_grammar.clone(),
+        (Some(_), None) => capabilities.grammar.then(|| {
+            tool_call_grammar_for_profile(input.skill_registry, input.model_profile, false)
+        }),
+    };
+    let completion_reasoning = completion_reasoning(&input.reasoning, input.model_profile);
     let response_schema = capabilities
         .json_schema
         .then(|| Arc::new(tool_call_response_format(input.skill_registry)));
@@ -167,12 +182,15 @@ pub async fn run_turn(
             input.model_profile,
         );
         notice = None;
-        let request = CompletionRequest::tool_call_parts(
-            AgentPrompt::parts(prompt.system, prompt.tail),
-            tool_grammar.clone(),
-            response_schema.clone(),
-            AGENT_SLOT_ID,
-        );
+        let request = CompletionRequest {
+            reasoning: completion_reasoning.clone(),
+            ..CompletionRequest::tool_call_parts(
+                AgentPrompt::parts(prompt.system, prompt.tail),
+                tool_grammar.clone(),
+                response_schema.clone(),
+                AGENT_SLOT_ID,
+            )
+        };
         let completion = complete_with_deadline(input.client, &request, input.cancellation).await;
         let mut previous_output = String::new();
         let mut parsed = match completion {
@@ -194,6 +212,7 @@ pub async fn run_turn(
                         match repair_tool_calls(
                             input.client,
                             &request,
+                            repair_grammar.as_deref(),
                             &completion.content,
                             &error.to_string(),
                             input.cancellation,
@@ -233,6 +252,7 @@ pub async fn run_turn(
                 match repair_tool_calls(
                     input.client,
                     &request,
+                    repair_grammar.as_deref(),
                     "",
                     "Tool-step completion exceeded the 600-second deadline",
                     input.cancellation,
@@ -304,6 +324,7 @@ pub async fn run_turn(
                 match repair_tool_calls(
                     input.client,
                     &request,
+                    repair_grammar.as_deref(),
                     &previous_output,
                     &error.to_string(),
                     input.cancellation,
@@ -624,9 +645,40 @@ fn parse_and_validate(
     Ok(parsed)
 }
 
+/// The transport-facing form of the turn's thinking intent.
+///
+/// The tags are whatever the grammar will emit — the profile's native channel
+/// when it has one, the generic `<think>` pair otherwise. They must match, or
+/// llama.cpp's budget sampler never arms.
+fn completion_reasoning(
+    reasoning: &AgentReasoning,
+    profile: AgentModelProfile,
+) -> CompletionReasoning {
+    match reasoning {
+        AgentReasoning::Unset => CompletionReasoning::Unset,
+        AgentReasoning::Off => CompletionReasoning::Off,
+        AgentReasoning::On {
+            budget_tokens,
+            effort_value,
+        } => CompletionReasoning::On {
+            tags: match (profile.reasoning_open_tag(), profile.reasoning_close_tag()) {
+                (Some(open), Some(close)) => ReasoningTags { open, close },
+                _ => ReasoningTags {
+                    open: GENERIC_THINK_OPEN,
+                    close: GENERIC_THINK_CLOSE,
+                },
+            },
+            budget_tokens: *budget_tokens,
+            effort_value: effort_value.clone(),
+        },
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn repair_tool_calls(
     client: &dyn AgentLlmClient,
     original_request: &CompletionRequest,
+    repair_grammar: Option<&str>,
     invalid_output: &str,
     reason: &str,
     cancellation: &CancellationToken,
@@ -664,6 +716,11 @@ async fn repair_tool_calls(
     let mut request = original_request.clone();
     request.prompt.body = repair_body;
     request.max_tokens = REPAIR_MAX_TOKENS;
+    request.grammar = repair_grammar.map(str::to_owned);
+    // No prelude on this grammar means no thinking block to budget.
+    if request.grammar.as_deref() != original_request.grammar.as_deref() {
+        request.reasoning = CompletionReasoning::Unset;
+    }
     let completion = complete_with_deadline(client, &request, cancellation).await?;
     parse_and_validate(&completion.content, profile)
         .map_err(|error| LlmClientError::InvalidResponse(format!("Repair failed: {error}")))

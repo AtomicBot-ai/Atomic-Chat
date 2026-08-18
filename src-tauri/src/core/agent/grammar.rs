@@ -271,12 +271,22 @@ pub const GRAMMAR_TOOL_NAMES: &[&str] = &[
 /// Build the tool-call grammar from the fixed tool catalog and the enabled,
 /// compatible skill registry visible to this turn.
 pub fn tool_call_grammar(skill_registry: &SkillRegistry) -> String {
-    tool_call_grammar_for_profile(skill_registry, AgentModelProfile::Plain)
+    tool_call_grammar_for_profile(skill_registry, AgentModelProfile::Plain, false)
 }
 
+/// Tags a generic thinking block is delimited by, for models whose profile has
+/// no native reasoning channel of its own. The pair is also what the llama.cpp
+/// reasoning-budget sampler is armed with, so the two must stay identical.
+pub const GENERIC_THINK_OPEN: &str = "<think>";
+pub const GENERIC_THINK_CLOSE: &str = "</think>";
+
+/// `thinking` asks for a reasoning prelude ahead of the tool-call array. It is
+/// ignored for `Gemma4Think`, whose channel prelude is native turn framing
+/// rather than an effort choice and is therefore always present.
 pub fn tool_call_grammar_for_profile(
     skill_registry: &SkillRegistry,
     profile: AgentModelProfile,
+    thinking: bool,
 ) -> String {
     let skill_names = skill_registry
         .enabled()
@@ -291,10 +301,16 @@ pub fn tool_call_grammar_for_profile(
         call_rules.insert(2, "skill-run-script-call".into());
     }
 
-    let root = if profile == AgentModelProfile::Gemma4Think {
-        "channel-prelude tool-call-array"
-    } else {
-        "tool-call-array"
+    // At most one prelude: emitting two would duplicate `prelude-trail-ws` and
+    // make the grammar unparseable.
+    let prelude = match (profile.reasoning_open_tag(), profile.reasoning_close_tag()) {
+        (Some(open), Some(close)) => Some(("channel", open, close)),
+        _ if thinking => Some(("think", GENERIC_THINK_OPEN, GENERIC_THINK_CLOSE)),
+        _ => None,
+    };
+    let root = match prelude {
+        Some((stem, _, _)) => format!("{stem}-prelude tool-call-array"),
+        None => "tool-call-array".to_string(),
     };
     let mut grammar = format!(
         "root ::= {root}\ntool-call ::= {}\n",
@@ -344,9 +360,8 @@ pub fn tool_call_grammar_for_profile(
     )
     .expect("writing rare tool grammar to String cannot fail");
     grammar.push_str(JSON_RULES);
-    if let (Some(open), Some(close)) = (profile.reasoning_open_tag(), profile.reasoning_close_tag())
-    {
-        write_reasoning_prelude(&mut grammar, "channel", open, close);
+    if let Some((stem, open, close)) = prelude {
+        write_reasoning_prelude(&mut grammar, stem, open, close);
     }
     grammar
 }
@@ -431,13 +446,71 @@ mod tests {
         let root = temp.path().join("skills");
         fs::create_dir_all(&root).unwrap();
         let registry = SkillRegistry::load(&root, &BTreeSet::new(), &BTreeSet::new()).unwrap();
-        let grammar = tool_call_grammar_for_profile(&registry, AgentModelProfile::Gemma4Think);
+        let grammar =
+            tool_call_grammar_for_profile(&registry, AgentModelProfile::Gemma4Think, false);
 
         assert!(grammar.starts_with("root ::= channel-prelude tool-call-array\n"));
         assert!(grammar.contains(
             "channel-prelude ::= \"<|channel>thought\\n\" channel-body \"<channel|>\" prelude-trail-ws"
         ));
         assert!(grammar.contains("prelude-trail-ws ::= ( [ \\t\\n\\r] ){0,8}"));
+    }
+
+    fn empty_registry(temp: &TempDir) -> SkillRegistry {
+        let root = temp.path().join("skills");
+        fs::create_dir_all(&root).unwrap();
+        SkillRegistry::load(&root, &BTreeSet::new(), &BTreeSet::new()).unwrap()
+    }
+
+    #[test]
+    fn plain_grammar_gets_a_think_prelude_when_thinking_is_on() {
+        let temp = TempDir::new().unwrap();
+        let registry = empty_registry(&temp);
+        let grammar = tool_call_grammar_for_profile(&registry, AgentModelProfile::Plain, true);
+
+        assert!(grammar.starts_with("root ::= think-prelude tool-call-array\n"));
+        assert!(grammar
+            .contains("think-prelude ::= \"<think>\" think-body \"</think>\" prelude-trail-ws"));
+        // The close tag is peeled one character at a time so the body can never
+        // swallow it.
+        assert!(grammar.contains("think-fragment ::= [^<]+ | \"<\" [^/]"));
+        assert!(grammar.contains("\"</think\" [^>]"));
+    }
+
+    #[test]
+    fn plain_grammar_stays_array_only_when_thinking_is_off() {
+        let temp = TempDir::new().unwrap();
+        let registry = empty_registry(&temp);
+        let grammar = tool_call_grammar_for_profile(&registry, AgentModelProfile::Plain, false);
+
+        assert!(grammar.starts_with("root ::= tool-call-array\n"));
+        assert!(!grammar.contains("think-prelude"));
+        assert!(!grammar.contains("prelude-trail-ws"));
+    }
+
+    #[test]
+    fn gemma4_keeps_its_channel_prelude_whatever_the_thinking_flag_says() {
+        let temp = TempDir::new().unwrap();
+        let registry = empty_registry(&temp);
+        let off = tool_call_grammar_for_profile(&registry, AgentModelProfile::Gemma4Think, false);
+        let on = tool_call_grammar_for_profile(&registry, AgentModelProfile::Gemma4Think, true);
+
+        // The channel prelude is native turn framing, not an effort choice.
+        assert_eq!(off, on);
+        assert!(!on.contains("think-prelude"));
+    }
+
+    #[test]
+    fn at_most_one_prelude_is_ever_emitted() {
+        let temp = TempDir::new().unwrap();
+        let registry = empty_registry(&temp);
+        for profile in [AgentModelProfile::Plain, AgentModelProfile::Gemma4Think] {
+            for thinking in [false, true] {
+                let grammar = tool_call_grammar_for_profile(&registry, profile, thinking);
+                // A duplicate rule definition would make the GBNF unparseable.
+                assert!(grammar.matches("prelude-trail-ws ::=").count() <= 1);
+            }
+        }
     }
 
     #[test]

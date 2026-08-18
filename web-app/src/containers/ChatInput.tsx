@@ -7,6 +7,7 @@ import {
   isLlamacppProvider,
 } from '@/lib/utils'
 import { isAgentCapableProvider } from '@/lib/agent-provider'
+import { useAgentProvider } from '@/hooks/useAgentProvider'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
 import {
@@ -203,10 +204,7 @@ const ChatInput = memo(function ChatInput({
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
 
   const canSelectAgentMode = canSelectChatAgentMode(initialMessage, projectId)
-  const isAgentProviderSelected = isAgentCapableProvider(
-    getProviderByName(selectedProvider),
-    selectedModel
-  )
+  const isAgentProviderSelected = isAgentCapableProvider(useAgentProvider())
   const agentModeKey = canSelectAgentMode
     ? TEMPORARY_CHAT_ID
     : (currentThreadId ?? TEMPORARY_CHAT_ID)
@@ -2793,7 +2791,7 @@ const ChatInput = memo(function ChatInput({
                       </Tooltip>
                     ))}
 
-                  {!effectiveAgentMode && <ReasoningToggle />}
+                  <ReasoningToggle />
 
                   {!effectiveAgentMode &&
                     selectedModel?.capabilities?.includes('web_search') && (

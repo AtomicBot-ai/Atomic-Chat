@@ -10,15 +10,13 @@
   "newConversation": "Neue Konversation",
   "clearHistory": "Verlauf löschen",
   "agentMode": {
-    "providerUnavailable": "Der Agentenmodus benötigt ein lokales Modell oder ein Cloud-Modell mit Tool-Unterstützung.",
-    "providerKeyMissing": "Fügen Sie in den Einstellungen einen API-Schlüssel für diesen Anbieter hinzu.",
-    "toolsUnsupported": "Dieses Modell unterstützt keine Tool-Aufrufe."
+    "providerUnavailable": "Der Agentenmodus benötigt ein lokales Modell oder einen Cloud-Anbieter mit API-Schlüssel.",
+    "providerKeyMissing": "Fügen Sie in den Einstellungen einen API-Schlüssel für diesen Anbieter hinzu."
   },
   "agentErrors": {
     "localModelRequired": "Laden Sie dieses Modell, bevor Sie einen Agentenlauf starten.",
-    "providerUnavailableDescription": "Wählen Sie ein lokales Modell oder ein Cloud-Modell mit Tool-Unterstützung und API-Schlüssel.",
+    "providerUnavailableDescription": "Wählen Sie ein lokales Modell oder einen Cloud-Anbieter mit API-Schlüssel.",
     "providerKeyMissing": "Fügen Sie in den Einstellungen einen API-Schlüssel für diesen Anbieter hinzu und versuchen Sie es erneut.",
-    "toolsUnsupported": "Dieses Modell unterstützt keine Tool-Aufrufe. Wählen Sie ein passendes Modell.",
     "localServerRequired": "Der Agentenmodus mit einem Cloud-Modell benötigt den lokalen API-Server. Starten Sie ihn in den Einstellungen."
   }
 }

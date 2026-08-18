@@ -10,15 +10,13 @@
   "temporaryChat": "Tymczasowy Czat",
   "temporaryChatDescription": "Rozpocznij tymczasową rozmowę, która nie zostanie zapisana w historii czatów.",
   "agentMode": {
-    "providerUnavailable": "Tryb agenta wymaga modelu lokalnego lub modelu w chmurze obsługującego narzędzia.",
-    "providerKeyMissing": "Dodaj klucz API tego dostawcy w Ustawieniach, aby korzystać z trybu agenta.",
-    "toolsUnsupported": "Ten model nie obsługuje wywoływania narzędzi."
+    "providerUnavailable": "Tryb agenta wymaga modelu lokalnego lub dostawcy w chmurze z kluczem API.",
+    "providerKeyMissing": "Dodaj klucz API tego dostawcy w Ustawieniach, aby korzystać z trybu agenta."
   },
   "agentErrors": {
     "localModelRequired": "Załaduj ten model przed uruchomieniem agenta.",
-    "providerUnavailableDescription": "Wybierz model lokalny albo model w chmurze z obsługą narzędzi i kluczem API.",
+    "providerUnavailableDescription": "Wybierz model lokalny albo dostawcę w chmurze z kluczem API.",
     "providerKeyMissing": "Dodaj klucz API tego dostawcy w Ustawieniach i spróbuj ponownie.",
-    "toolsUnsupported": "Ten model nie obsługuje wywoływania narzędzi. Wybierz inny model.",
     "localServerRequired": "Tryb agenta z modelem w chmurze wymaga lokalnego serwera API. Uruchom go w Ustawieniach."
   }
 }

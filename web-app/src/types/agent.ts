@@ -1,3 +1,5 @@
+import type { AgentReasoningRequest } from '@/lib/reasoning-effort'
+
 export type AgentToolStatus = 'ok' | 'error' | 'denied' | 'cancelled'
 
 export type AgentLoopLevel = 'warn' | 'critical' | 'breaker'
@@ -43,6 +45,12 @@ export type AgentTurnRequest = {
   external_roots?: Array<{ path: string; can_edit: boolean }>
   max_steps?: number
   auto_approve: boolean
+  /**
+   * Thinking intent for this turn, resolved from the global reasoning
+   * setting and the model's declared controls. Omitting it leaves the
+   * backend's default, which is to request no thinking.
+   */
+  reasoning?: AgentReasoningRequest
 }
 
 export type AgentWorkspaceRequest = {

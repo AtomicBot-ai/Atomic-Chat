@@ -10,15 +10,13 @@
   "newConversation": "Nueva conversación",
   "clearHistory": "Borrar historial",
   "agentMode": {
-    "providerUnavailable": "El modo agente necesita un modelo local o un modelo en la nube compatible con herramientas.",
-    "providerKeyMissing": "Añade una clave de API para este proveedor en Ajustes para usar el modo agente.",
-    "toolsUnsupported": "Este modelo no admite llamadas a herramientas."
+    "providerUnavailable": "El modo agente necesita un modelo local o un proveedor en la nube con clave de API.",
+    "providerKeyMissing": "Añade una clave de API para este proveedor en Ajustes para usar el modo agente."
   },
   "agentErrors": {
     "localModelRequired": "Carga este modelo antes de iniciar una ejecución del agente.",
-    "providerUnavailableDescription": "Elige un modelo local o un modelo en la nube con soporte de herramientas y clave de API.",
+    "providerUnavailableDescription": "Elige un modelo local o un proveedor en la nube con clave de API.",
     "providerKeyMissing": "Añade una clave de API para este proveedor en Ajustes e inténtalo de nuevo.",
-    "toolsUnsupported": "Este modelo no admite llamadas a herramientas. Elige uno que sí lo haga.",
     "localServerRequired": "El modo agente con un modelo en la nube necesita el servidor API local. Inícialo en Ajustes."
   }
 }

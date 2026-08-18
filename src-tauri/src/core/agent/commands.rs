@@ -33,7 +33,7 @@ use super::session::{load_session, save_session, validate_session_id};
 use super::skills::load_registry;
 use super::tools::DesktopServices;
 use super::types::{
-    AgentApprovalDecision, AgentEvent, AgentFolderAccessDecision, AgentTurnRequest,
+    AgentApprovalDecision, AgentEvent, AgentFolderAccessDecision, AgentReasoning, AgentTurnRequest,
     ApprovalDecision,
 };
 use super::workspace::default_agent_workspace;
@@ -517,6 +517,7 @@ pub async fn agent_run_turn<R: Runtime>(
         })
         .collect::<Vec<_>>();
     let model_profile = client.probe_model_profile(&cancellation).await;
+    let reasoning = AgentReasoning::from_request(request.reasoning.as_ref());
     let stable_prefix = build_stable_prefix_for_profile(
         ITERATION_ONE_TOOLS,
         &skill_descriptors,
@@ -524,6 +525,7 @@ pub async fn agent_run_turn<R: Runtime>(
         DEFAULT_MAX_PARALLEL_TOOL_CALLS,
         None,
         model_profile,
+        reasoning.is_on(),
     );
     let approval_events = on_event.clone();
     let approval = ApprovalGate::new(
@@ -570,6 +572,7 @@ pub async fn agent_run_turn<R: Runtime>(
                         external_read_only_roots: &trusted_read_roots[..external_read_only_count],
                         trusted_read_roots: &trusted_read_roots,
                         max_steps: request.max_steps.unwrap_or(MAX_STEPS),
+                        reasoning: reasoning.clone(),
                         client: client.as_ref(),
                         approval: &approval,
                         folder_access: &folder_access,

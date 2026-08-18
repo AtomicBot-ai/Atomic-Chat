@@ -30,7 +30,8 @@ use crate::core::server::context_expansion::is_context_limit_error;
 
 use super::llm_client::{
     extract_error_detail, model_ids_match, AgentClientCapabilities, AgentLlmClient, AgentPrompt,
-    AuthErrorSource, CompletionRequest, CompletionResult, CompletionTiming, LlmClientError,
+    AuthErrorSource, CompletionReasoning, CompletionRequest, CompletionResult, CompletionTiming,
+    LlmClientError,
 };
 use super::model_profile::AgentModelProfile;
 
@@ -91,6 +92,9 @@ pub struct OpenAiCompatibleClient {
     /// Set once a target rejects `max_tokens` in favour of
     /// `max_completion_tokens` (newer OpenAI reasoning models).
     use_max_completion_tokens: AtomicBool,
+    /// Set once a target rejects a reasoning field, so the run drops them
+    /// rather than burning one failed request per step.
+    reasoning_disabled: AtomicBool,
 }
 
 impl OpenAiCompatibleClient {
@@ -108,6 +112,7 @@ impl OpenAiCompatibleClient {
             session_reload: None,
             schema_disabled: AtomicBool::new(false),
             use_max_completion_tokens: AtomicBool::new(false),
+            reasoning_disabled: AtomicBool::new(false),
         })
     }
 
@@ -203,6 +208,20 @@ impl OpenAiCompatibleClient {
                 parse_chat_response(&value)
             }
             Err(LlmClientError::Http { status, detail })
+                if status == 400
+                    && mentions_reasoning_rejection(&detail)
+                    && !self.reasoning_disabled.load(Ordering::SeqCst) =>
+            {
+                log::info!(
+                    "Dropping the reasoning fields for this run: the model server rejected \
+                     them ({detail})"
+                );
+                self.reasoning_disabled.store(true, Ordering::SeqCst);
+                let retry = self.chat_payload(target, request);
+                let value = self.post_chat(target, &retry, cancellation).await?;
+                parse_chat_response(&value)
+            }
+            Err(LlmClientError::Http { status, detail })
                 if status == 400 && mentions_max_tokens_rename(&detail) =>
             {
                 self.use_max_completion_tokens.store(true, Ordering::SeqCst);
@@ -246,8 +265,67 @@ impl OpenAiCompatibleClient {
                 body.insert("response_format".into(), schema.clone());
             }
         }
+        if !self.reasoning_disabled.load(Ordering::SeqCst) {
+            insert_reasoning_fields(&mut body, target, &request.reasoning);
+        }
         Value::Object(body)
     }
+}
+
+/// Turns the resolved intent into request fields.
+///
+/// mlx-vlm reads a top-level `reasoning_effort` / `thinking_budget` and hands
+/// them to the chat template. Cloud targets get nothing when thinking is on —
+/// they think by default and we have no template to tell us which values are
+/// legal — and only a suppression hint when it is off, which is what the chat
+/// transport does for the same providers.
+fn insert_reasoning_fields(
+    body: &mut Map<String, Value>,
+    target: &OpenAiTarget,
+    reasoning: &CompletionReasoning,
+) {
+    let is_mlx = target.kind == OpenAiTargetKind::LocalMlx;
+    match reasoning {
+        CompletionReasoning::Unset => {}
+        CompletionReasoning::Off => {
+            if is_mlx {
+                body.insert(
+                    "chat_template_kwargs".into(),
+                    json!({"enable_thinking": false}),
+                );
+                body.insert("enable_thinking".into(), json!(false));
+            }
+        }
+        CompletionReasoning::On {
+            budget_tokens,
+            effort_value,
+            ..
+        } => {
+            if !is_mlx {
+                return;
+            }
+            body.insert("enable_thinking".into(), json!(true));
+            if let Some(effort) = effort_value {
+                body.insert("reasoning_effort".into(), json!(effort));
+            } else if let Some(tokens) = budget_tokens {
+                body.insert("thinking_budget".into(), json!(tokens));
+            }
+        }
+    }
+}
+
+/// Whether a 400 blames one of the reasoning fields we added. Checked only
+/// after [`mentions_schema_rejection`], which names a more specific cause.
+fn mentions_reasoning_rejection(detail: &str) -> bool {
+    let detail = detail.to_ascii_lowercase();
+    [
+        "reasoning_effort",
+        "thinking_budget",
+        "enable_thinking",
+        "chat_template_kwargs",
+    ]
+    .iter()
+    .any(|field| detail.contains(field))
 }
 
 #[async_trait]
@@ -443,7 +521,10 @@ pub(crate) fn parse_chat_response(value: &Value) -> Result<CompletionResult, Llm
             .unwrap_or(0.0),
         // No slot pinning on this transport.
         slot_id: -1,
-        model_id: value.get("model").and_then(Value::as_str).map(str::to_owned),
+        model_id: value
+            .get("model")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
     })
 }
 
@@ -528,7 +609,7 @@ async fn sleep_or_cancel(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::agent::llm_client::CompletionRequest;
+    use crate::core::agent::llm_client::{CompletionRequest, ReasoningTags};
 
     fn target(kind: OpenAiTargetKind, json_schema: bool) -> OpenAiTarget {
         OpenAiTarget {
@@ -618,11 +699,150 @@ mod tests {
         assert!(payload.get("response_format").is_none());
     }
 
+    fn request_with_reasoning(reasoning: CompletionReasoning) -> CompletionRequest {
+        CompletionRequest {
+            reasoning,
+            ..CompletionRequest::tool_call_parts(
+                AgentPrompt::parts("STABLE", "### conversation\nuser: hi"),
+                None,
+                None,
+                0,
+            )
+        }
+    }
+
+    #[test]
+    fn mlx_gets_the_declared_effort_value_when_thinking_is_on() {
+        let client =
+            OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalMlx, false)).unwrap();
+        let payload = client.chat_payload(
+            &client.target(),
+            &request_with_reasoning(CompletionReasoning::On {
+                tags: ReasoningTags {
+                    open: "<think>",
+                    close: "</think>",
+                },
+                budget_tokens: Some(4_096),
+                effort_value: Some("high".into()),
+            }),
+        );
+
+        assert_eq!(payload["enable_thinking"], json!(true));
+        assert_eq!(payload["reasoning_effort"], json!("high"));
+        // A model driven by a named effort takes no token budget.
+        assert!(payload.get("thinking_budget").is_none());
+    }
+
+    #[test]
+    fn mlx_falls_back_to_a_token_budget_without_a_declared_effort() {
+        let client =
+            OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalMlx, false)).unwrap();
+        let payload = client.chat_payload(
+            &client.target(),
+            &request_with_reasoning(CompletionReasoning::On {
+                tags: ReasoningTags {
+                    open: "<think>",
+                    close: "</think>",
+                },
+                budget_tokens: Some(1_024),
+                effort_value: None,
+            }),
+        );
+
+        assert_eq!(payload["thinking_budget"], json!(1_024));
+        assert!(payload.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn mlx_suppression_disables_thinking_both_ways() {
+        let client =
+            OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalMlx, false)).unwrap();
+        let payload = client.chat_payload(
+            &client.target(),
+            &request_with_reasoning(CompletionReasoning::Off),
+        );
+
+        // mlx-vlm reads the top-level field; the kwargs bag is what older
+        // builds and the templates themselves look at.
+        assert_eq!(payload["enable_thinking"], json!(false));
+        assert_eq!(
+            payload["chat_template_kwargs"],
+            json!({"enable_thinking": false})
+        );
+    }
+
+    #[test]
+    fn cloud_targets_get_no_reasoning_fields() {
+        let client =
+            OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalApiServer, false)).unwrap();
+        for reasoning in [
+            CompletionReasoning::Off,
+            CompletionReasoning::On {
+                tags: ReasoningTags {
+                    open: "<think>",
+                    close: "</think>",
+                },
+                budget_tokens: Some(1_024),
+                effort_value: Some("high".into()),
+            },
+        ] {
+            let payload = client.chat_payload(&client.target(), &request_with_reasoning(reasoning));
+
+            // We have no chat template for a cloud model, so any value we could
+            // send would be a guess — and strict schemas 400 on a wrong one.
+            for field in [
+                "reasoning_effort",
+                "thinking_budget",
+                "enable_thinking",
+                "chat_template_kwargs",
+            ] {
+                assert!(payload.get(field).is_none(), "unexpected {field}");
+            }
+        }
+    }
+
+    #[test]
+    fn reasoning_fields_are_dropped_once_a_target_rejects_them() {
+        let client =
+            OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalMlx, false)).unwrap();
+        let request = request_with_reasoning(CompletionReasoning::On {
+            tags: ReasoningTags {
+                open: "<think>",
+                close: "</think>",
+            },
+            budget_tokens: None,
+            effort_value: Some("high".into()),
+        });
+        assert!(client
+            .chat_payload(&client.target(), &request)
+            .get("reasoning_effort")
+            .is_some());
+
+        client.reasoning_disabled.store(true, Ordering::SeqCst);
+
+        assert!(client
+            .chat_payload(&client.target(), &request)
+            .get("reasoning_effort")
+            .is_none());
+    }
+
+    #[test]
+    fn a_schema_rejection_wins_over_the_reasoning_arm() {
+        // Both matchers fire on this one; the schema cause is the specific one
+        // and its ladder rung is checked first.
+        let detail = "response_format.json_schema is not supported with reasoning_effort";
+        assert!(mentions_schema_rejection(detail));
+        assert!(mentions_reasoning_rejection(detail));
+        assert!(!mentions_reasoning_rejection("context window exceeded"));
+    }
+
     #[test]
     fn max_tokens_key_switches_after_a_rename_rejection() {
         let client =
             OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalApiServer, false)).unwrap();
-        client.use_max_completion_tokens.store(true, Ordering::SeqCst);
+        client
+            .use_max_completion_tokens
+            .store(true, Ordering::SeqCst);
         let payload = client.chat_payload(&client.target(), &request_with_schema());
 
         assert!(payload.get("max_tokens").is_none());
@@ -768,11 +988,12 @@ mod tests {
     fn vision_payload_only_sends_mlx_knobs_to_mlx() {
         let images = vec![("image/png".to_string(), "AAAA".to_string())];
 
-        let mlx = vision_payload(&target(OpenAiTargetKind::LocalMlx, true), "describe", &images);
-        assert_eq!(
-            mlx["chat_template_kwargs"]["enable_thinking"],
-            json!(false)
+        let mlx = vision_payload(
+            &target(OpenAiTargetKind::LocalMlx, true),
+            "describe",
+            &images,
         );
+        assert_eq!(mlx["chat_template_kwargs"]["enable_thinking"], json!(false));
         assert!(mlx.get("reasoning_format").is_none());
         assert_eq!(
             mlx["messages"][0]["content"][0]["image_url"]["url"],

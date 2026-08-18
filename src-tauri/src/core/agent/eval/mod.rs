@@ -29,7 +29,7 @@ use super::prompt::{
 use super::runner::{run_turn, RunTurnInput};
 use super::session::AgentSessionState;
 use super::skills::{available_tool_names, SkillRegistry};
-use super::types::{AgentEvent, ToolStatus};
+use super::types::{AgentEvent, AgentReasoning, ToolStatus};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -247,6 +247,7 @@ async fn run_task(
         DEFAULT_MAX_PARALLEL_TOOL_CALLS,
         None,
         model_profile,
+        false,
     );
     let attachment_instruction = attachment
         .as_ref()
@@ -272,6 +273,7 @@ async fn run_task(
             external_read_only_roots: &[],
             trusted_read_roots: &[],
             max_steps,
+            reasoning: AgentReasoning::default(),
             client,
             approval: &approval,
             folder_access: &DenyFolderAccess,

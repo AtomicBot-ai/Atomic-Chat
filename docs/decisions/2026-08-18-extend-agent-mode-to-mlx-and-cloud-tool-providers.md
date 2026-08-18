@@ -32,8 +32,15 @@ title: "Extend Agent mode to MLX and cloud tool providers"
   shape. Native OpenAI `tools`/`tool_calls` is explicitly out of scope.
 - **Consequences:**
   - Agent runs work on MLX with no Local API Server dependency, and on any
-    registered cloud provider whose selected model advertises `tools`. Anthropic
-    works without a dedicated client because the proxy already translates it.
+    registered cloud provider that has an API key. Anthropic works without a
+    dedicated client because the proxy already translates it.
+  - Agent availability is a **provider**-level question, not a model-level one.
+    The `tools` capability is deliberately *not* required: it means "supports
+    native OpenAI function calling", which this agent never uses, and it is
+    derived from a static table (`getModelCapabilities`) that omits newer and
+    custom models. Requiring it would block models that work fine under the
+    text-array contract. Whether a model is selected and loaded is checked at
+    run time, so the sidebar toggle is not greyed out before the user picks one.
   - No provider credential reaches the agent backend; it only ever holds the
     Local API Server's own key.
   - The prompt is now built as `PromptParts { system, tail }`. llama.cpp still
@@ -53,9 +60,12 @@ title: "Extend Agent mode to MLX and cloud tool providers"
     Settings will truncate long agent steps.
   - Agent traffic on cloud models now appears in Local API Server logs and
     analytics.
-  - `foundation-models` and keyless loopback providers (Ollama, LM Studio) stay
-    excluded; both fail closed with `AGENT_PROVIDER_UNSUPPORTED` /
-    `AGENT_PROVIDER_NOT_CONFIGURED`-style errors rather than silently degrading.
+  - Keyless loopback providers (Ollama, LM Studio) are included: they travel the
+    same proxy path as cloud providers, and `DataProvider` already registers
+    them on exactly the condition the agent gate now uses
+    (`api_key || isKeylessRemoteProvider`). `foundation-models` stays excluded
+    and fails closed with `AGENT_PROVIDER_UNSUPPORTED` rather than silently
+    degrading.
   - Streaming remains out of scope: `run_turn` consumes whole completions and
     never emits `AssistantDelta` from the transport.
 - **Owner:** team.

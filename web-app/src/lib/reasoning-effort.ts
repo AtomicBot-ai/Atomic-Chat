@@ -155,3 +155,65 @@ export const buildReasoningRequestFields = (
     ? { thinking_budget: tokens }
     : { reasoning_budget_tokens: tokens }
 }
+
+/**
+ * Reasoning intent for one Agent turn, resolved on this side so the Rust
+ * backend never has to parse a chat template. Mirrored by
+ * `AgentReasoningRequest` in `src-tauri/src/core/agent/types.rs`.
+ */
+export type AgentReasoningRequest = {
+  /** `false` means: actively suppress the thinking phase for this turn. */
+  enabled: boolean
+  /** Resolved level, clamped to what this model declares. Absent when off. */
+  effort?: ReasoningEffortLevel
+  /**
+   * Thinking-token budget for the backend's budget sampler. Absent means no
+   * cap — either `max`, or a model driven by a native effort value instead.
+   */
+  budget_tokens?: number
+  /** Template-native effort value. Only ever one the template declared. */
+  effort_value?: string
+  /** Whether the model's chat template declares a thinking phase at all. */
+  supports_thinking: boolean
+}
+
+/**
+ * The reasoning intent to send with an Agent turn.
+ *
+ * Unlike the chat transport, which dispatches per provider at request time, the
+ * Agent backend gets one resolved decision and picks the wire shape its
+ * transport understands. A model with no thinking phase is always `enabled:
+ * false` — there is nothing to control, and the llama.cpp grammar must stay
+ * array-only for it.
+ */
+export const buildAgentReasoningRequest = (
+  level: ReasoningBudgetLevel,
+  disableReasoning: boolean,
+  controls?: ReasoningControls
+): AgentReasoningRequest => {
+  const supportsThinking = controls?.supportsThinking === true
+  const off: AgentReasoningRequest = {
+    enabled: false,
+    supports_thinking: supportsThinking,
+  }
+  if (disableReasoning || level === 'off' || !supportsThinking) return off
+
+  const resolved = resolveReasoningLevel(level, availableReasoningLevels(controls))
+  if (!resolved) return off
+
+  const request: AgentReasoningRequest = {
+    enabled: true,
+    effort: resolved,
+    supports_thinking: true,
+  }
+  if (usesNativeEffort(controls)) {
+    const value = modelEffortValue(resolved, controls.effortValues)
+    if (value) request.effort_value = value
+    return request
+  }
+  // `max` is "no cap", so it deliberately carries no budget.
+  if (resolved !== 'max') {
+    request.budget_tokens = REASONING_LEVEL_TOKENS[resolved]
+  }
+  return request
+}

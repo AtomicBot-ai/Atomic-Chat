@@ -143,6 +143,70 @@ pub struct AgentTurnRequest {
     /// actions wait for an explicit approval decision.
     #[serde(default)]
     pub auto_approve: bool,
+    /// Thinking intent for this turn. Absent leaves every transport default.
+    #[serde(default)]
+    pub reasoning: Option<AgentReasoningRequest>,
+}
+
+/// Thinking intent for one turn, as the frontend resolved it.
+///
+/// The chat-template parsing that decides which knob a model understands lives
+/// in `core/src/browser/models/reasoning.ts`; shipping the resolved decision
+/// keeps this side free of template heuristics, exactly as `capabilities` and
+/// `context_window` already do.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AgentReasoningRequest {
+    /// Ask the model to think before it emits tool calls.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Thinking-token budget. `None` means no cap.
+    #[serde(default)]
+    pub budget_tokens: Option<u32>,
+    /// Template-native effort value, only ever one the template declared.
+    #[serde(default)]
+    pub effort_value: Option<String>,
+    /// Whether the model's chat template declares a thinking phase at all.
+    /// `false` means we know nothing about this model (every cloud model, for
+    /// one) and must leave the transport's own default alone.
+    #[serde(default)]
+    pub supports_thinking: bool,
+}
+
+/// The resolved intent the run loop and the transports act on.
+///
+/// `Unset` and `Off` are deliberately distinct: `Off` actively suppresses a
+/// thinking phase we know the model has, while `Unset` sends nothing at all.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum AgentReasoning {
+    #[default]
+    Unset,
+    Off,
+    On {
+        budget_tokens: Option<u32>,
+        effort_value: Option<String>,
+    },
+}
+
+impl AgentReasoning {
+    pub fn from_request(request: Option<&AgentReasoningRequest>) -> Self {
+        let Some(request) = request else {
+            return Self::Unset;
+        };
+        if !request.supports_thinking {
+            return Self::Unset;
+        }
+        if !request.enabled {
+            return Self::Off;
+        }
+        Self::On {
+            budget_tokens: request.budget_tokens,
+            effort_value: request.effort_value.clone(),
+        }
+    }
+
+    pub fn is_on(&self) -> bool {
+        matches!(self, Self::On { .. })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

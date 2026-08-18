@@ -3,6 +3,7 @@ import type { ReasoningControls } from '@janhq/core'
 
 import {
   availableReasoningLevels,
+  buildAgentReasoningRequest,
   buildReasoningRequestFields,
   modelEffortValue,
   resolveReasoningLevel,
@@ -158,6 +159,77 @@ describe('buildReasoningRequestFields', () => {
   it('renders a template-native thinking budget into the prompt', () => {
     expect(buildReasoningRequestFields('medium', 'llamacpp', SEED_OSS)).toEqual({
       chat_template_kwargs: { thinking_budget: 1024 },
+    })
+  })
+})
+
+describe('buildAgentReasoningRequest', () => {
+  it('maps a level onto a thinking-token budget for a budget-only model', () => {
+    expect(buildAgentReasoningRequest('medium', false, BUDGET_ONLY)).toEqual({
+      enabled: true,
+      effort: 'medium',
+      budget_tokens: 1024,
+      supports_thinking: true,
+    })
+  })
+
+  it('leaves max uncapped', () => {
+    expect(buildAgentReasoningRequest('max', false, BUDGET_ONLY)).toEqual({
+      enabled: true,
+      effort: 'max',
+      supports_thinking: true,
+    })
+  })
+
+  it('sends a declared effort value instead of a budget', () => {
+    expect(buildAgentReasoningRequest('high', false, GPT_OSS)).toEqual({
+      enabled: true,
+      effort: 'high',
+      effort_value: 'high',
+      supports_thinking: true,
+    })
+  })
+
+  it('clamps a level the model does not declare', () => {
+    // Hunyuan 3 has no `medium`; ties go to the weaker declared level.
+    expect(buildAgentReasoningRequest('medium', false, HY3)).toMatchObject({
+      enabled: true,
+      effort: 'low',
+      effort_value: 'low',
+    })
+  })
+
+  it('reports a model with no thinking phase as unknown rather than off', () => {
+    // `supports_thinking: false` is what tells the backend to leave the
+    // transport's own default alone — every cloud model lands here.
+    expect(buildAgentReasoningRequest('high', false, NON_THINKING)).toEqual({
+      enabled: false,
+      supports_thinking: false,
+    })
+    expect(buildAgentReasoningRequest('high', false, undefined)).toEqual({
+      enabled: false,
+      supports_thinking: false,
+    })
+  })
+
+  it('suppresses thinking when the bulb is off or the level is off', () => {
+    const suppressed = { enabled: false, supports_thinking: true }
+    expect(buildAgentReasoningRequest('high', true, BUDGET_ONLY)).toEqual(
+      suppressed
+    )
+    expect(buildAgentReasoningRequest('off', false, BUDGET_ONLY)).toEqual(
+      suppressed
+    )
+    // The bulb wins over any stored level.
+    expect(buildAgentReasoningRequest('max', true, INKLING)).toEqual(suppressed)
+  })
+
+  it('treats a template-rendered budget model as a budget model', () => {
+    expect(buildAgentReasoningRequest('low', false, SEED_OSS)).toEqual({
+      enabled: true,
+      effort: 'low',
+      budget_tokens: 256,
+      supports_thinking: true,
     })
   })
 })

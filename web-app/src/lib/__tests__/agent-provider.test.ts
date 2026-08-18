@@ -20,10 +20,6 @@ function provider(overrides: Partial<ModelProvider> = {}): ModelProvider {
   } as ModelProvider
 }
 
-function model(capabilities: string[] = ['tools']): Model {
-  return { id: 'test-model', capabilities } as Model
-}
-
 describe('isAgentLocalProvider', () => {
   it('covers the three engines the backend can reach directly', () => {
     expect(isAgentLocalProvider('llamacpp')).toBe(true)
@@ -43,74 +39,58 @@ describe('agentProviderBlockReason', () => {
   const cases: Array<{
     name: string
     provider: ModelProvider | undefined
-    model: Model | undefined
     expected: AgentProviderBlockReason | null
   }> = [
     {
-      name: 'llamacpp with a model',
+      name: 'llamacpp',
       provider: provider({ provider: 'llamacpp', api_key: '' }),
-      model: model([]),
       expected: null,
     },
     {
-      name: 'llamacpp-upstream with a model',
+      name: 'llamacpp-upstream',
       provider: provider({ provider: 'llamacpp-upstream', api_key: '' }),
-      model: model([]),
       expected: null,
     },
     {
-      // Local engines need neither a key nor a declared `tools` capability:
-      // the backend drives them with its own constrained-decoding contract.
-      name: 'mlx with a model and no key',
+      // Local engines need no key: the backend drives their sessions directly.
+      name: 'mlx with no key',
       provider: provider({ provider: 'mlx', api_key: '' }),
-      model: model([]),
       expected: null,
-    },
-    {
-      name: 'local provider with no model selected',
-      provider: provider({ provider: 'mlx', api_key: '' }),
-      model: undefined,
-      expected: 'no-model',
     },
     {
       name: 'foundation-models has no drivable endpoint',
       provider: provider({ provider: 'foundation-models', api_key: '' }),
-      model: model(),
       expected: 'unsupported-provider',
     },
     {
-      name: 'keyless loopback provider (Ollama) is out of scope',
+      // Registered with the proxy on exactly this condition by DataProvider,
+      // and the proxy needs no upstream key for it.
+      name: 'keyless loopback provider (Ollama) needs no key',
       provider: provider({
         provider: 'ollama',
         api_key: '',
         base_url: 'http://localhost:11434/v1',
       }),
-      model: model(),
-      expected: 'unsupported-provider',
+      expected: null,
     },
     {
-      name: 'cloud provider with a key and tool support',
+      name: 'non-loopback provider still needs a key',
+      provider: provider({
+        provider: 'openrouter',
+        api_key: '',
+        base_url: 'https://openrouter.ai/api/v1',
+      }),
+      expected: 'missing-api-key',
+    },
+    {
+      name: 'cloud provider with a key',
       provider: provider(),
-      model: model(['tools', 'vision']),
       expected: null,
     },
     {
       name: 'cloud provider missing a key',
       provider: provider({ api_key: '   ' }),
-      model: model(),
       expected: 'missing-api-key',
-    },
-    {
-      name: 'cloud model without tool support',
-      provider: provider(),
-      model: model(['vision']),
-      expected: 'no-tool-support',
-    },
-    {
-      name: 'cloud model with no capabilities reported',
-      provider: provider(),
-      model: { id: 'test-model' } as Model,
-      expected: 'no-tool-support',
     },
     {
       name: 'unknown custom provider behaves like any cloud provider',
@@ -118,20 +98,37 @@ describe('agentProviderBlockReason', () => {
         provider: 'my-gateway',
         base_url: 'https://gateway.example.com/v1',
       }),
-      model: model(),
       expected: null,
     },
     {
       name: 'no provider at all',
       provider: undefined,
-      model: model(),
       expected: 'unsupported-provider',
     },
   ]
 
-  it.each(cases)('$name', ({ provider, model, expected }) => {
-    expect(agentProviderBlockReason(provider, model)).toBe(expected)
-    expect(isAgentCapableProvider(provider, model)).toBe(expected === null)
+  it.each(cases)('$name', ({ provider, expected }) => {
+    expect(agentProviderBlockReason(provider)).toBe(expected)
+    expect(isAgentCapableProvider(provider)).toBe(expected === null)
+  })
+
+  /**
+   * Agent mode never uses native OpenAI function calling — the tool contract is
+   * a text JSON array carried by the prompt. Gating on the `tools` capability
+   * would block every model missing from the static capability table.
+   */
+  it('does not require the tools capability', () => {
+    expect(agentProviderBlockReason(provider())).toBeNull()
+  })
+
+  /**
+   * The sidebar toggle asks this before a model is necessarily selected; the
+   * model is validated at run time instead.
+   */
+  it('does not depend on a selected model', () => {
+    expect(
+      agentProviderBlockReason(provider({ provider: 'mlx', api_key: '' }))
+    ).toBeNull()
   })
 })
 

@@ -64,6 +64,12 @@ MCP tools, window control, and filesystem watchers are deferred.
   optional loop notice, and the response marker.
 - Tool output is constrained by an array-only GBNF root. One tool call is a
   one-element array; a step may contain up to eight calls at runtime.
+- When the turn asks for thinking, the root gains one reasoning prelude ahead of
+  the array: the profile's native channel where it has one, a generic
+  `<think>...</think>` pair otherwise. The same tags arm llama.cpp's
+  reasoning-budget sampler and are sent as `preserved_tokens`, so the three must
+  stay identical. The repair completion drops the generic prelude — its budget is
+  a tenth of a step's — but keeps a native channel, which is turn framing.
 - On OpenAI-compatible transports there is no GBNF. `tool_schema.rs` renders the
   same catalog as a JSON Schema for `response_format`, pinning the array shape
   and the tool-name enum but leaving `args` open — the prompt and

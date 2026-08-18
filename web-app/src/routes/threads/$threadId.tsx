@@ -6,6 +6,7 @@ import {
   agentProviderBlockReason,
   isAgentLocalProvider,
 } from '@/lib/agent-provider'
+import { buildAgentReasoningRequest } from '@/lib/reasoning-effort'
 import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
 
 import HeaderPage from '@/containers/HeaderPage'
@@ -824,15 +825,13 @@ function ThreadDetail() {
       source: ChatTurnSource = 'agent'
     ) => {
       const agentProvider = getProviderByName(selectedProvider)
-      const blockReason = agentProviderBlockReason(agentProvider, selectedModel)
+      const blockReason = agentProviderBlockReason(agentProvider)
       if (blockReason) {
         toast.error(t('chat:agentErrors.providerUnavailableTitle'), {
           description: t(
             blockReason === 'missing-api-key'
               ? 'chat:agentErrors.providerKeyMissing'
-              : blockReason === 'no-tool-support'
-                ? 'chat:agentErrors.toolsUnsupported'
-                : 'chat:agentErrors.providerUnavailableDescription'
+              : 'chat:agentErrors.providerUnavailableDescription'
           ),
         })
         return
@@ -971,6 +970,15 @@ function ThreadDetail() {
         agent_skill: agentSkillName ?? null,
       })
 
+      // The Agent backend has no chat-template parser of its own, so the
+      // thinking level is resolved here and shipped as a decision.
+      const { disableReasoning, reasoningBudget } = useGeneralSetting.getState()
+      const reasoning = buildAgentReasoningRequest(
+        reasoningBudget,
+        disableReasoning,
+        selectedModel.reasoning
+      )
+
       try {
         await runAgentTurn(
           {
@@ -980,6 +988,7 @@ function ThreadDetail() {
             provider: selectedProvider,
             capabilities: selectedModel.capabilities ?? [],
             context_window: agentContextWindow(selectedModel),
+            reasoning,
             user_message: text,
             selected_skill: agentSkillName,
             attachments: ipcAttachments,

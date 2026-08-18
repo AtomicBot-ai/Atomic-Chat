@@ -484,6 +484,7 @@ pub fn build_stable_prefix(
         max_parallel_tool_calls,
         system_persona,
         crate::core::agent::model_profile::AgentModelProfile::Plain,
+        false,
     )
 }
 
@@ -494,6 +495,7 @@ pub fn build_stable_prefix_for_profile(
     max_parallel_tool_calls: usize,
     system_persona: Option<&str>,
     profile: crate::core::agent::model_profile::AgentModelProfile,
+    thinking: bool,
 ) -> String {
     let persona = system_persona
         .map(str::to_string)
@@ -520,7 +522,11 @@ pub fn build_stable_prefix_for_profile(
             "- Every response is a JSON array of tool calls: [{\"tool\": ..., \"args\": {...}}, ...].",
             "- A solo step is a length-1 array. Emit multiple calls only when they are independent.",
             "- Batch only independent calls. Approval-gated tools and dependent calls must use a length-1 array. A terminal verb (reply/finish) may appear only once and only as the LAST element.",
-            "- Never emit prose outside the JSON array. Never invent tool names or arguments.",
+            if thinking {
+                "- Think inside a single <think>...</think> block, then emit the JSON array. Never emit prose outside that block and the array. Never invent tool names or arguments."
+            } else {
+                "- Never emit prose outside the JSON array. Never invent tool names or arguments."
+            },
             "- Call `reply` to answer the user; call `finish` only to end the whole session.",
         ]
         .join("\n"),
@@ -939,8 +945,15 @@ mod tests {
     fn gemma4_prompt_uses_native_turn_and_channel_framing() {
         let caps = test_caps("linux");
         let profile = crate::core::agent::model_profile::AgentModelProfile::Gemma4Think;
-        let prefix =
-            build_stable_prefix_for_profile(ITERATION_ONE_TOOLS, &[], &caps, 8, None, profile);
+        let prefix = build_stable_prefix_for_profile(
+            ITERATION_ONE_TOOLS,
+            &[],
+            &caps,
+            8,
+            None,
+            profile,
+            false,
+        );
         let full = build_prompt_for_profile(&prefix, &[], &[], "USER: hello", None, profile);
 
         assert!(prefix.starts_with("<|turn>system\n<|think|>\n### system"));

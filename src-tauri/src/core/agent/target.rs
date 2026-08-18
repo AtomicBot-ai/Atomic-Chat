@@ -197,6 +197,7 @@ mod tests {
             external_roots: Vec::new(),
             max_steps: None,
             auto_approve: false,
+            reasoning: None,
         }
     }
 

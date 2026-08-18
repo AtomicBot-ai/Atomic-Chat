@@ -11,7 +11,7 @@ use super::test_support::{
     collect_event, RecordingApproval, RecordingDesktop, RecordingFolderAccess, ScriptedChatServer,
     ScriptedCompletionServer, ScriptedResponse, TestWorkspace,
 };
-use super::types::{AgentEvent, LoopLevel, ToolStatus};
+use super::types::{AgentEvent, AgentReasoning, LoopLevel, ToolStatus};
 
 struct TestRun {
     result: Result<(), String>,
@@ -66,6 +66,25 @@ async fn run_script_with_client(
     cancellation: &CancellationToken,
     max_steps: u32,
 ) -> TestRun {
+    run_script_with_reasoning(
+        workspace,
+        client,
+        approval,
+        cancellation,
+        max_steps,
+        AgentReasoning::default(),
+    )
+    .await
+}
+
+async fn run_script_with_reasoning(
+    workspace: &TestWorkspace,
+    client: &dyn AgentLlmClient,
+    approval: &RecordingApproval,
+    cancellation: &CancellationToken,
+    max_steps: u32,
+    reasoning: AgentReasoning,
+) -> TestRun {
     let desktop = RecordingDesktop::default();
     let mut events = Vec::new();
     let mut session = AgentSessionState::new("test-session");
@@ -85,6 +104,7 @@ async fn run_script_with_client(
             external_read_only_roots: &[],
             trusted_read_roots: &[],
             max_steps,
+            reasoning,
             client,
             approval,
             folder_access: &folder_access,
@@ -217,6 +237,7 @@ async fn gemma4_turn_uses_native_framing_and_parses_channel_reasoning() {
             external_read_only_roots: &[],
             trusted_read_roots: &[],
             max_steps: 1,
+            reasoning: AgentReasoning::default(),
             client: &client,
             approval: &approval,
             folder_access: &folder_access,
@@ -346,6 +367,7 @@ async fn sequential_runs_share_the_session_transcript() {
                 external_read_only_roots: &[],
                 trusted_read_roots: &[],
                 max_steps: 3,
+                reasoning: AgentReasoning::default(),
                 client: &client,
                 approval: &approval,
                 folder_access: &folder_access,
@@ -735,6 +757,7 @@ async fn cancellation_interrupts_an_in_flight_completion() {
             external_read_only_roots: &[],
             trusted_read_roots: &[],
             max_steps: 2,
+            reasoning: AgentReasoning::default(),
             client: &client,
             approval: &approval,
             folder_access: &folder_access,
@@ -994,6 +1017,7 @@ async fn skill_view_loads_the_body_and_restores_it_on_the_next_turn() {
             external_read_only_roots: &[],
             trusted_read_roots: &[],
             max_steps: 2,
+            reasoning: AgentReasoning::default(),
             client: &client,
             approval: &approval,
             folder_access: &folder_access,
@@ -1051,6 +1075,7 @@ async fn selected_skill_is_loaded_into_the_first_prompt_without_skill_view() {
             external_read_only_roots: &[],
             trusted_read_roots: &[],
             max_steps: 2,
+            reasoning: AgentReasoning::default(),
             client: &client,
             approval: &approval,
             folder_access: &folder_access,
@@ -1109,6 +1134,7 @@ async fn unknown_selected_skill_fails_before_completion() {
             external_read_only_roots: &[],
             trusted_read_roots: &[],
             max_steps: 2,
+            reasoning: AgentReasoning::default(),
             client: &client,
             approval: &approval,
             folder_access: &folder_access,
@@ -1213,9 +1239,11 @@ async fn chat_transport_sends_response_format_when_supported() {
     assert_eq!(schema["type"], "json_schema");
     assert_eq!(schema["json_schema"]["name"], "atomic_agent_tool_calls");
     assert_eq!(schema["json_schema"]["schema"]["type"], "array");
-    assert!(schema["json_schema"]["schema"]["items"]["properties"]["tool"]["enum"]
-        .as_array()
-        .is_some_and(|names| names.iter().any(|name| name == "reply")));
+    assert!(
+        schema["json_schema"]["schema"]["items"]["properties"]["tool"]["enum"]
+            .as_array()
+            .is_some_and(|names| names.iter().any(|name| name == "reply"))
+    );
 }
 
 #[tokio::test]
@@ -1359,6 +1387,166 @@ async fn chat_transport_degrades_on_speculative_decoding_conflict() {
     assert!(run.result.is_ok());
     assert_eq!(run.requests.len(), 2);
     assert!(run.requests[1].get("response_format").is_none());
+}
+
+async fn run_thinking_script(
+    workspace: &TestWorkspace,
+    responses: Vec<ScriptedResponse>,
+    approval: &RecordingApproval,
+    cancellation: &CancellationToken,
+    max_steps: u32,
+    reasoning: AgentReasoning,
+) -> TestRun {
+    let server = ScriptedCompletionServer::start(responses).await;
+    let client = server.client();
+    let run = run_script_with_reasoning(
+        workspace,
+        &client,
+        approval,
+        cancellation,
+        max_steps,
+        reasoning,
+    )
+    .await;
+    TestRun {
+        requests: server.requests(),
+        ..run
+    }
+}
+
+#[tokio::test]
+async fn thinking_turn_arms_the_reasoning_budget_sampler() {
+    let workspace = TestWorkspace::new();
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let run = run_thinking_script(
+        &workspace,
+        vec![ScriptedResponse::completion(
+            "<think>weighing the options</think>\
+             [{\"tool\":\"reply\",\"args\":{\"text\":\"done\"}}]",
+        )],
+        &approval,
+        &cancellation,
+        1,
+        AgentReasoning::On {
+            budget_tokens: Some(1024),
+            effort_value: None,
+        },
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    let request = &run.requests[0];
+    assert_eq!(request["reasoning_budget_tokens"], 1024);
+    assert_eq!(request["reasoning_budget_start_tag"], "<think>");
+    assert_eq!(request["reasoning_budget_end_tag"], "</think>");
+    // Without a forced message the server builds the sampler but never closes
+    // the block, so the budget would be inert.
+    assert_eq!(request["reasoning_budget_message"], "");
+    // A control-token `<think>` is stripped from `content` unless preserved,
+    // which would hide the whole block from the parser.
+    assert_eq!(
+        request["preserved_tokens"],
+        serde_json::json!(["<think>", "</think>"])
+    );
+    assert!(request["grammar"]
+        .as_str()
+        .is_some_and(|grammar| grammar.starts_with("root ::= think-prelude tool-call-array")));
+    // The thinking text reaches the trace and never the tool-call parser.
+    assert!(run.events.iter().any(|event| matches!(
+        event,
+        AgentEvent::ReasoningDelta { text, .. } if text == "weighing the options"
+    )));
+    assert_eq!(finished_reason(&run.events), Some(("reply", 1)));
+}
+
+#[tokio::test]
+async fn an_uncapped_level_still_arms_the_sampler_with_no_budget() {
+    let workspace = TestWorkspace::new();
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let run = run_thinking_script(
+        &workspace,
+        vec![ScriptedResponse::completion(
+            "<think>brief</think>[{\"tool\":\"reply\",\"args\":{\"text\":\"done\"}}]",
+        )],
+        &approval,
+        &cancellation,
+        1,
+        AgentReasoning::On {
+            budget_tokens: None,
+            effort_value: None,
+        },
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    // -1 is the server's "no cap"; the grammar close tag still ends the block.
+    assert_eq!(run.requests[0]["reasoning_budget_tokens"], -1);
+}
+
+#[tokio::test]
+async fn a_non_thinking_turn_sends_no_reasoning_fields() {
+    let workspace = TestWorkspace::new();
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let run = run_script(
+        &workspace,
+        vec![ScriptedResponse::completion(
+            r#"[{"tool":"reply","args":{"text":"done"}}]"#,
+        )],
+        &approval,
+        &cancellation,
+        1,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    let request = &run.requests[0];
+    for field in [
+        "reasoning_budget_tokens",
+        "reasoning_budget_start_tag",
+        "reasoning_budget_end_tag",
+        "reasoning_budget_message",
+        "preserved_tokens",
+    ] {
+        assert!(request.get(field).is_none(), "unexpected {field}");
+    }
+    assert!(request["grammar"]
+        .as_str()
+        .is_some_and(|grammar| grammar.starts_with("root ::= tool-call-array")));
+}
+
+#[tokio::test]
+async fn the_repair_completion_drops_the_think_prelude() {
+    let workspace = TestWorkspace::new();
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let run = run_thinking_script(
+        &workspace,
+        vec![
+            ScriptedResponse::completion("<think>hmm</think>not json at all"),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"done"}}]"#),
+        ],
+        &approval,
+        &cancellation,
+        1,
+        AgentReasoning::On {
+            budget_tokens: Some(256),
+            effort_value: None,
+        },
+    )
+    .await;
+
+    assert_eq!(run.requests.len(), 2);
+    let repair = &run.requests[1];
+    // The repair budget is a tenth of a step's; a mandatory think block could
+    // swallow it whole before the array is reached.
+    assert!(repair["grammar"]
+        .as_str()
+        .is_some_and(|grammar| grammar.starts_with("root ::= tool-call-array")));
+    assert!(repair.get("reasoning_budget_tokens").is_none());
+    assert!(repair.get("preserved_tokens").is_none());
 }
 
 #[tokio::test]

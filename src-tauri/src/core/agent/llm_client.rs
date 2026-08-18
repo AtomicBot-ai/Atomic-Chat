@@ -175,6 +175,31 @@ pub struct CompletionRequest {
     /// llama.cpp only.
     pub repeat_last_n: i32,
     pub stop: Vec<String>,
+    /// Thinking intent for this completion. llama.cpp arms its reasoning-budget
+    /// sampler from it; chat transports turn it into request fields.
+    pub reasoning: CompletionReasoning,
+}
+
+/// Tags the thinking block is delimited by. These must be byte-identical to the
+/// literals the GBNF prelude emits, or the budget sampler never arms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReasoningTags {
+    pub open: &'static str,
+    pub close: &'static str,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum CompletionReasoning {
+    /// Say nothing about thinking; leave the transport's default alone.
+    #[default]
+    Unset,
+    /// Actively suppress the thinking phase.
+    Off,
+    On {
+        tags: ReasoningTags,
+        budget_tokens: Option<u32>,
+        effort_value: Option<String>,
+    },
 }
 
 impl CompletionRequest {
@@ -216,6 +241,7 @@ impl CompletionRequest {
             repeat_penalty: 1.1,
             repeat_last_n: 256,
             stop: Vec::new(),
+            reasoning: CompletionReasoning::Unset,
         }
     }
 }
@@ -321,6 +347,21 @@ struct CompletionPayload<'a> {
     slot_id: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     id_slot: Option<i32>,
+    /// Reasoning-budget sampler. The server only builds it when both tags are
+    /// present, and `reasoning_budget_message` is what it force-emits at the
+    /// cap — omitting it leaves the budget inert.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_budget_tokens: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_budget_start_tag: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_budget_end_tag: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_budget_message: Option<&'a str>,
+    /// Keeps a control-token `<think>` in `content` instead of having it
+    /// stripped as a special token, which is what the parser looks for.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    preserved_tokens: Option<[&'a str; 2]>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -650,6 +691,17 @@ impl LlamaServerClient {
         cancellation: &CancellationToken,
     ) -> Result<reqwest::Response, LlmClientError> {
         let rendered_prompt = request.prompt.rendered();
+        // `/completion` takes a raw prompt, so there is no chat template and
+        // `chat_template_kwargs` would be ignored; the budget sampler is the
+        // only reasoning knob this endpoint has.
+        let thinking = match &request.reasoning {
+            CompletionReasoning::On {
+                tags,
+                budget_tokens,
+                ..
+            } => Some((*tags, *budget_tokens)),
+            _ => None,
+        };
         let payload = CompletionPayload {
             prompt: &rendered_prompt,
             stream,
@@ -664,6 +716,15 @@ impl LlamaServerClient {
             stop: (!request.stop.is_empty()).then_some(request.stop.as_slice()),
             slot_id: request.slot_id,
             id_slot: request.slot_id,
+            reasoning_budget_tokens: thinking.map(|(_, budget)| {
+                // -1 is the server's "uncapped"; the grammar's close tag still
+                // terminates the block.
+                budget.map_or(-1, |tokens| tokens.min(i32::MAX as u32) as i32)
+            }),
+            reasoning_budget_start_tag: thinking.map(|(tags, _)| tags.open),
+            reasoning_budget_end_tag: thinking.map(|(tags, _)| tags.close),
+            reasoning_budget_message: thinking.map(|_| ""),
+            preserved_tokens: thinking.map(|(tags, _)| [tags.open, tags.close]),
         };
         let mut builder = self
             .client

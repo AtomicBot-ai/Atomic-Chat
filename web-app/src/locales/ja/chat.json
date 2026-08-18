@@ -26,9 +26,8 @@
     "chat": "チャット",
     "agent": "エージェント",
     "placeholder": "エージェントへのタスクを入力してください...",
-    "providerUnavailable": "エージェントモードには、ローカルモデルまたはツール対応のクラウドモデルが必要です。",
-    "providerKeyMissing": "エージェントモードを使うには、設定でこのプロバイダーの API キーを追加してください。",
-    "toolsUnsupported": "このモデルはツール呼び出しに対応していません。"
+    "providerUnavailable": "エージェントモードには、ローカルモデルまたは API キーを設定したクラウドプロバイダーが必要です。",
+    "providerKeyMissing": "エージェントモードを使うには、設定でこのプロバイダーの API キーを追加してください。"
   },
   "agentApprovals": {
     "manualSelected": "手動",
@@ -78,14 +77,13 @@
     "invalidAttachment": "1つ以上のファイルを添付できませんでした。ローカルファイルを選択して再試行してください。",
     "visionModelRequired": "画像を送信する前に、Vision（視覚）対応モデルを選択してください。",
     "providerUnavailableTitle": "このプロバイダーではエージェントモードを利用できません",
-    "providerUnavailableDescription": "ローカルモデル、またはツール対応で API キーのあるクラウドモデルを選んでください。",
+    "providerUnavailableDescription": "ローカルモデル、または API キーを設定したクラウドプロバイダーを選んでください。",
     "unsupportedTools": "エージェントモードは現在、MCP、RAG、ブラウザツールに対応していません。",
     "runFailed": "エージェントの実行開始に失敗しました。",
     "cancelFailed": "エージェントの実行をキャンセルできませんでした。",
     "saveFailed": "エージェントの返答を保存できませんでした。",
     "localModelRequired": "エージェントを実行する前にモデルを読み込んでください。",
     "providerKeyMissing": "設定でこのプロバイダーの API キーを追加して、もう一度お試しください。",
-    "toolsUnsupported": "このモデルはツール呼び出しに対応していません。対応するモデルを選んでください。",
     "localServerRequired": "クラウドモデルでのエージェントモードにはローカル API サーバーが必要です。設定から起動してください。"
   },
   "agentTasks": {
