@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-198 records, 2026-05-19 → 2026-08-14.
+199 records, 2026-05-19 → 2026-08-18.
 
 ---
 
@@ -33,8 +33,9 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Launch page & external coding agents (14)
+## Launch page & external coding agents (15)
 
+- **2026-08-18** — [Add DeepSeek Harness (`dsh`) as a one-click Launch-page coding agent, configured by merging a hand-declared `llm-pi-ai` route into `$DSH_HOME/settings.yaml`](2026-08-18-add-deepseek-harness-as-a-launch-page-coding-agent.md)
 - **2026-07-07** — [Fall back to the Local API Server's "Current Model" when configuring Launch-page agents against a cloud-provider selection](2026-07-07-fall-back-to-the-local-api-server-s-current-model-when.md)
 - **2026-07-01** — [Fix Hermes Agent config on Windows writing to the wrong file (`%USERPROFILE%\.hermes` vs the installer's real `HERMES_HOME`), plus a stale-registry-env guard](2026-07-01-fix-hermes-agent-config-on-windows-writing-to-the-wrong-file.md)
 - **2026-06-29** — [Refresh PATH (+ npm global prefix) for the Launch-page interactive agent terminal so npm-installed agent shims resolve on Windows from the packaged app](2026-06-29-refresh-path-npm-global-prefix-for-the-launch-page-interactive.md)
@@ -176,8 +177,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-19** — [Use `AtomicBot-ai/atomic-llama-cpp-turboquant` as the LLM backend](2026-05-19-use-atomicbot-ai-atomic-llama-cpp-turboquant-as-the-llm-backend.md)
 - **2026-05-19** — [Ship upstream `ggml-org/llama.cpp` as a second macOS provider, no fork](2026-05-19-ship-upstream-ggml-org-llama-cpp-as-a-second-macos-provider-no.md)
 
-## Models, Hub & downloads (23)
+## Models, Hub & downloads (24)
 
+- **2026-08-18** — [Delete an installed model from the Hub download panel](2026-08-18-delete-an-installed-model-from-the-hub-download-panel.md)
 - **2026-08-14** — [Build the Hub "Installed on this device" list from the provider registry](2026-08-14-build-the-hub-installed-filter-from-the-provider-registry.md)
 - **2026-08-14** — [Recommend our own Gemma 4 E2B build in onboarding](2026-08-14-recommend-our-own-gemma-4-e2b-build-in-onboarding.md)
 - **2026-08-14** — [Open the Hub recommendations with a promoted head ahead of the family grouping](2026-08-14-open-the-hub-recommendations-with-a-promoted-head.md)

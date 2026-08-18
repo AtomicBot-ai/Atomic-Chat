@@ -242,6 +242,14 @@ describe('DefaultModelsService', () => {
 
       expect(mockEngine.delete).toHaveBeenCalledWith(id)
     })
+
+    it('rejects instead of reporting success when the provider has no engine', async () => {
+      mockEngineManager.get.mockReturnValueOnce(undefined)
+
+      await expect(
+        modelsService.deleteModel('model1', 'llamacpp-upstream')
+      ).rejects.toThrow('llamacpp-upstream')
+    })
   })
 
   describe('getActiveModels', () => {
@@ -315,7 +323,7 @@ describe('DefaultModelsService', () => {
     it('should stop all active models from all providers', async () => {
       const mockActiveModels = ['model1', 'model2']
       const engines = {
-        llamacpp: {
+        'llamacpp': {
           ...mockEngine,
           getLoadedModels: vi.fn().mockResolvedValue(mockActiveModels),
           unload: vi.fn(),
@@ -325,7 +333,7 @@ describe('DefaultModelsService', () => {
           getLoadedModels: vi.fn().mockResolvedValue(mockActiveModels),
           unload: vi.fn(),
         },
-        mlx: {
+        'mlx': {
           ...mockEngine,
           getLoadedModels: vi.fn().mockResolvedValue(mockActiveModels),
           unload: vi.fn(),

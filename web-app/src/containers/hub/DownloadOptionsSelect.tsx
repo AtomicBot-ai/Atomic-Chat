@@ -8,7 +8,13 @@ import {
 } from '@/components/ui/tooltip'
 import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
 import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
+import { useModelProvider } from '@/hooks/useModelProvider'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import {
+  findInstalledLocalModel,
+  LLAMACPP_PROVIDERS,
+  quantModelIds,
+} from '@/lib/hub-installed'
 import {
   estimateFit,
   HARDWARE_FIT,
@@ -68,6 +74,21 @@ export function DownloadOptionsSelect({
     () => pickDownloadQuant(model, budgetBytes),
     [model, budgetBytes]
   )
+  // A repo whose Q8 is on disk should open on that quant, not on the one the
+  // device would download — otherwise "New chat" and the delete button hide
+  // behind the disclosure.
+  const providers = useModelProvider((state) => state.providers)
+  const installedQuant = useMemo(
+    () =>
+      (model.quants ?? []).find((quant) =>
+        findInstalledLocalModel(
+          providers,
+          quantModelIds(model, quant.model_id),
+          LLAMACPP_PROVIDERS
+        )
+      ),
+    [model, providers]
+  )
   const sortedQuants = useMemo(
     () =>
       [...(model.quants ?? [])].sort((left, right) => {
@@ -86,7 +107,9 @@ export function DownloadOptionsSelect({
     [model]
   )
   const selected =
-    model.quants?.find((quant) => quant.model_id === selectedId) ?? defaultQuant
+    model.quants?.find((quant) => quant.model_id === selectedId) ??
+    installedQuant ??
+    defaultQuant
 
   const fitKnown = budgetBytes > 0
 
@@ -108,7 +131,7 @@ export function DownloadOptionsSelect({
               </span>
             )}
           </div>
-          <MlxModelDownloadAction model={model} />
+          <MlxModelDownloadAction model={model} deletable />
         </div>
       </section>
     )
@@ -143,7 +166,10 @@ export function DownloadOptionsSelect({
             </span>
           )}
           {expanded ? (
-            <IconChevronUp size={15} className="ml-auto text-muted-foreground" />
+            <IconChevronUp
+              size={15}
+              className="ml-auto text-muted-foreground"
+            />
           ) : (
             <IconChevronDown
               size={15}
@@ -152,7 +178,8 @@ export function DownloadOptionsSelect({
           )}
         </button>
 
-        {selectedFit === 'no' ? (
+        {selectedFit === 'no' &&
+        selected.model_id !== installedQuant?.model_id ? (
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="shrink-0 cursor-not-allowed">
@@ -171,7 +198,12 @@ export function DownloadOptionsSelect({
             </TooltipContent>
           </Tooltip>
         ) : (
-          <ModelDownloadAction variant={selected} model={model} asButton />
+          <ModelDownloadAction
+            variant={selected}
+            model={model}
+            asButton
+            deletable
+          />
         )}
       </div>
 

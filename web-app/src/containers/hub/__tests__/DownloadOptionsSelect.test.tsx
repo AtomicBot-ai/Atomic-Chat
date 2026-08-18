@@ -1,6 +1,14 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
 import type { CatalogModel } from '@/services/models/types'
 
 class MockResizeObserver {
@@ -24,15 +32,22 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 vi.mock('@/containers/ModelDownloadAction', () => ({
   ModelDownloadAction: ({
     variant,
+    deletable,
   }: {
     variant: { model_id: string }
-  }) => <button type="button">download {variant.model_id}</button>,
+    deletable?: boolean
+  }) => (
+    <button type="button" data-deletable={deletable ? 'true' : 'false'}>
+      download {variant.model_id}
+    </button>
+  ),
 }))
 
 vi.mock('@/containers/MlxModelDownloadAction', () => ({
   MlxModelDownloadAction: () => <button type="button">download mlx</button>,
 }))
 
+import { useModelProvider } from '@/hooks/useModelProvider'
 import { DownloadOptionsSelect } from '../DownloadOptionsSelect'
 
 const GB = 1024 ** 3
@@ -74,7 +89,23 @@ const exoticQuantModel = (): CatalogModel =>
     ],
   }) as CatalogModel
 
+const installQuant = (modelId: string) =>
+  useModelProvider.setState({
+    providers: [
+      {
+        active: true,
+        provider: 'llamacpp',
+        settings: [],
+        models: [{ id: modelId }],
+      } as ModelProvider,
+    ],
+  })
+
 describe('DownloadOptionsSelect', () => {
+  beforeEach(() => {
+    useModelProvider.setState({ providers: [] })
+  })
+
   it('preselects the default quantization rather than the first one', () => {
     render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={16 * GB} />)
 
@@ -201,5 +232,28 @@ describe('DownloadOptionsSelect', () => {
     expect(screen.getByText('5.0 GB')).toBeInTheDocument()
     expect(screen.getByLabelText('Good fit')).toBeInTheDocument()
     expect(screen.queryByText('Good fit')).not.toBeInTheDocument()
+  })
+})
+
+describe('DownloadOptionsSelect with an installed quant', () => {
+  it('opens on the quant that is already on disk, not on the recommended one', () => {
+    installQuant('Qwen3.5-4B-Q2_K')
+    render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={16 * GB} />)
+
+    expect(screen.getByText('Q2_K')).toBeInTheDocument()
+    expect(screen.getByText('download Qwen3.5-4B-Q2_K')).toHaveAttribute(
+      'data-deletable',
+      'true'
+    )
+  })
+
+  it('still offers the action for an installed quant this device cannot run', () => {
+    installQuant('Qwen3.5-4B-Q8_0')
+    render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={16 * GB} />)
+
+    expect(screen.getByText('download Qwen3.5-4B-Q8_0')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'hub:download' })
+    ).not.toBeInTheDocument()
   })
 })
