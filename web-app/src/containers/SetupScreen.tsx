@@ -1119,7 +1119,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                     captureSetupLocalModelRun({
                                       trigger: 'installed_recommended',
                                       source: provider,
-                                      format: rec.format,
+                                      format: model.is_mlx ? 'mlx' : 'gguf',
                                     })
                                     importCandidatesInBackground(
                                       localCandidates ?? []
