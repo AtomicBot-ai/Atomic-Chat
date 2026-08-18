@@ -6,6 +6,7 @@ import {
   LOCAL_LLAMACPP_PROVIDER,
   isLlamacppProvider,
 } from '@/lib/utils'
+import { isAgentCapableProvider } from '@/lib/agent-provider'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
 import {
@@ -199,9 +200,13 @@ const ChatInput = memo(function ChatInput({
     (state) => state.selectModelProvider
   )
   const updateProvider = useModelProvider((state) => state.updateProvider)
+  const getProviderByName = useModelProvider((state) => state.getProviderByName)
 
   const canSelectAgentMode = canSelectChatAgentMode(initialMessage, projectId)
-  const isAgentProviderSelected = isLlamacppProvider(selectedProvider)
+  const isAgentProviderSelected = isAgentCapableProvider(
+    getProviderByName(selectedProvider),
+    selectedModel
+  )
   const agentModeKey = canSelectAgentMode
     ? TEMPORARY_CHAT_ID
     : (currentThreadId ?? TEMPORARY_CHAT_ID)
@@ -327,8 +332,11 @@ const ChatInput = memo(function ChatInput({
 
     const ensureLocalModelRunning = async () => {
       try {
-        const { switchToModel, shouldAttemptAutoStart, isExplicitSwitchPending } =
-          await import('@/utils/switchModel')
+        const {
+          switchToModel,
+          shouldAttemptAutoStart,
+          isExplicitSwitchPending,
+        } = await import('@/utils/switchModel')
         if (cancelled) return
 
         // An explicit pick (dropdown / send) is already driving this exact
@@ -481,7 +489,6 @@ const ChatInput = memo(function ChatInput({
   const transferAttachments = useChatAttachments(
     (state) => state.transferAttachments
   )
-  const getProviderByName = useModelProvider((state) => state.getProviderByName)
   const { downloads, localDownloadingModels } = useDownloadStore(
     useShallow((state) => ({
       downloads: state.downloads,

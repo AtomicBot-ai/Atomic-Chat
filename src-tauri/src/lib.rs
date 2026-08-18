@@ -377,6 +377,7 @@ pub fn run() {
             download_manager: Arc::new(Mutex::new(DownloadManagerState::default())),
             mcp_active_servers: Arc::new(Mutex::new(HashMap::new())),
             server_handle: Arc::new(Mutex::new(None)),
+            local_server_endpoint: Arc::new(Mutex::new(None)),
             tool_call_cancellations: Arc::new(Mutex::new(HashMap::new())),
             agent_pending_approvals: Arc::new(Mutex::new(HashMap::new())),
             agent_pending_folder_access: Arc::new(Mutex::new(HashMap::new())),

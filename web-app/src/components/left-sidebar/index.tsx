@@ -3,7 +3,8 @@ import { NavChats } from './NavChats'
 import { NavMain } from './NavMain'
 import { NavProjects } from './NavProjects'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
-import { cn, isLlamacppProvider } from '@/lib/utils'
+import { cn } from '@/lib/utils'
+import { agentProviderBlockReason } from '@/lib/agent-provider'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAgentMode, type SidebarMode } from '@/hooks/useAgentMode'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -38,7 +39,13 @@ export function LeftSidebar() {
   const sidebarMode = useAgentMode((state) => state.sidebarMode)
   const setSidebarMode = useAgentMode((state) => state.setSidebarMode)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
-  const isAgentProviderSelected = isLlamacppProvider(selectedProvider)
+  const selectedModel = useModelProvider((state) => state.selectedModel)
+  const getProviderByName = useModelProvider((state) => state.getProviderByName)
+  const agentBlockReason = agentProviderBlockReason(
+    getProviderByName(selectedProvider),
+    selectedModel
+  )
+  const isAgentProviderSelected = agentBlockReason === null
   const settingsIconRef = useRef<SettingsIconHandle>(null)
   const [showAgentAttention, setShowAgentAttention] = useState(
     () =>
@@ -190,7 +197,13 @@ export function LeftSidebar() {
               chatLabel={t('chat:agentMode.chat')}
               agentLabel={t('chat:agentMode.agent')}
               agentDisabled={!isAgentProviderSelected}
-              agentDisabledTooltip={t('chat:agentMode.providerUnavailable')}
+              agentDisabledTooltip={t(
+                agentBlockReason === 'missing-api-key'
+                  ? 'chat:agentMode.providerKeyMissing'
+                  : agentBlockReason === 'no-tool-support'
+                    ? 'chat:agentMode.toolsUnsupported'
+                    : 'chat:agentMode.providerUnavailable'
+              )}
               showAgentAttention={showAgentAttention}
             />
           </div>

@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-203 records, 2026-05-19 → 2026-08-17.
+204 records, 2026-05-19 → 2026-08-18.
 
 ---
 
@@ -50,8 +50,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Add a `/v1/responses` translation shim to the local proxy so Codex CLI works on llama.cpp models](2026-06-02-add-a-v1-responses-translation-shim-to-the-local-proxy-so-codex.md)
 - **2026-06-01** — [Add a "Launch" page to install + configure external coding agents / assistants against the local OpenAI-compatible API](2026-06-01-add-a-launch-page-to-install-configure-external-coding-agents.md)
 
-## Agent mode — autonomous loop, tools, skills, workspace (40)
+## Agent mode — autonomous loop, tools, skills, workspace (41)
 
+- **2026-08-18** — [Extend Agent mode to MLX and cloud tool providers](2026-08-18-extend-agent-mode-to-mlx-and-cloud-tool-providers.md)
 - **2026-07-31** — [Raise the Agent tool-step completion deadline to 600 seconds](2026-07-31-raise-agent-tool-step-completion-deadline-to-600-seconds.md)
 - **2026-07-27** — [Run Windows GAIA evaluation on the selected upstream GPU backend](2026-07-27-run-windows-gaia-evaluation-on-the-selected-upstream-gpu-backend.md)
 - **2026-07-27** — [Keep the GAIA evaluator out of desktop bundles](2026-07-27-keep-the-gaia-evaluator-out-of-desktop-bundles.md)

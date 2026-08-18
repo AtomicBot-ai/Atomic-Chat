@@ -19,7 +19,7 @@ use self::report::{
 };
 use self::scoring::score_answer;
 use self::server::{DedicatedLlamaServer, LlamaServerConfig};
-use super::llm_client::{LlamaBackend, LlamaServerClient, LlamaSessionTarget};
+use super::llm_client::{AgentLlmClient, LlamaBackend, LlamaServerClient, LlamaSessionTarget};
 use super::model_profile::{detect_model_profile, AgentModelProfile};
 use super::path_policy::EditableRoots;
 use super::prompt::{
@@ -178,7 +178,7 @@ async fn run_task(
     task: &GaiaTask,
     dataset: &GaiaDatasetClient,
     run_dir: &Path,
-    client: &LlamaServerClient,
+    client: &dyn AgentLlmClient,
     model_profile: AgentModelProfile,
     skill_registry: &SkillRegistry,
     max_steps: u32,

@@ -4,6 +4,7 @@
 
 use std::{
     path::{Path, PathBuf},
+    sync::Arc,
     time::Duration,
 };
 
@@ -12,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 use super::batch_executor::{execute_batch, PlannedCall};
 use super::grammar::tool_call_grammar_for_profile;
 use super::llm_client::{
-    parse_tool_calls_for_profile, CompletionRequest, LlamaClientError, LlamaServerClient,
+    parse_tool_calls_for_profile, AgentLlmClient, AgentPrompt, CompletionRequest, LlmClientError,
     ParsedToolCalls,
 };
 use super::loop_guard::{
@@ -21,10 +22,14 @@ use super::loop_guard::{
 };
 use super::model_profile::AgentModelProfile;
 use super::path_policy::EditableRoots;
-use super::prompt::{build_prompt_with_workspace_for_profile, format_workspace};
+use super::prompt::{
+    build_prompt_parts_with_workspace_for_profile, build_prompt_with_workspace_for_profile,
+    format_workspace,
+};
 use super::resource_class::{is_batchable, resource_class_for, ResourceClass};
 use super::session::AgentSessionState;
 use super::skills::{loaded::LoadedSkills, SkillRegistry};
+use super::tool_schema::tool_call_response_format;
 use super::token_budget::{
     compute_effective_conversation_cap, estimate_tokens, COMPLETION_MAX_TOKENS,
     CONFIGURED_CONVERSATION_CAP,
@@ -55,7 +60,7 @@ pub struct RunTurnInput<'a> {
     pub external_read_only_roots: &'a [PathBuf],
     pub trusted_read_roots: &'a [PathBuf],
     pub max_steps: u32,
-    pub client: &'a LlamaServerClient,
+    pub client: &'a dyn AgentLlmClient,
     pub approval: &'a dyn ApprovalHook,
     pub folder_access: &'a dyn FolderAccessHook,
     pub desktop: &'a dyn DesktopServices,
@@ -96,7 +101,16 @@ pub async fn run_turn(
         }
     }
     input.session.push_user(input.user_message);
-    let tool_grammar = tool_call_grammar_for_profile(input.skill_registry, input.model_profile);
+    // Constrained decoding is transport-specific: llama.cpp enforces the
+    // tool-call shape with GBNF, chat transports fall back to the prompt
+    // contract plus the repair step. Build only what this client can honour.
+    let capabilities = input.client.capabilities();
+    let tool_grammar = capabilities
+        .grammar
+        .then(|| tool_call_grammar_for_profile(input.skill_registry, input.model_profile));
+    let response_schema = capabilities
+        .json_schema
+        .then(|| Arc::new(tool_call_response_format(input.skill_registry)));
 
     for step_index in 0..max_steps {
         if input.cancellation.is_cancelled() {
@@ -127,7 +141,7 @@ pub async fn run_turn(
         );
         let context_window = match input.client.fetch_context_window(input.cancellation).await {
             Ok(value) => value,
-            Err(LlamaClientError::Cancelled) => {
+            Err(LlmClientError::Cancelled) => {
                 finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
                 return finish_cancelled(step_index, &mut emit);
             }
@@ -143,7 +157,7 @@ pub async fn run_turn(
             COMPLETION_MAX_TOKENS,
         );
         let conversation = input.session.render_conversation(conversation_cap);
-        let prompt = build_prompt_with_workspace_for_profile(
+        let prompt = build_prompt_parts_with_workspace_for_profile(
             input.stable_prefix,
             &loaded_tool_names,
             &loaded_skill_entries,
@@ -153,7 +167,12 @@ pub async fn run_turn(
             input.model_profile,
         );
         notice = None;
-        let request = CompletionRequest::tool_call(prompt, tool_grammar.clone(), AGENT_SLOT_ID);
+        let request = CompletionRequest::tool_call_parts(
+            AgentPrompt::parts(prompt.system, prompt.tail),
+            tool_grammar.clone(),
+            response_schema.clone(),
+            AGENT_SLOT_ID,
+        );
         let completion = complete_with_deadline(input.client, &request, input.cancellation).await;
         let mut previous_output = String::new();
         let mut parsed = match completion {
@@ -183,7 +202,7 @@ pub async fn run_turn(
                         .await
                         {
                             Ok(parsed) => parsed,
-                            Err(LlamaClientError::Cancelled) => {
+                            Err(LlmClientError::Cancelled) => {
                                 finish_session(input.session, &loaded_tools, &loaded_skills, None)
                                     .await;
                                 return finish_cancelled(step_index, &mut emit);
@@ -206,7 +225,7 @@ pub async fn run_turn(
                     }
                 }
             }
-            Err(LlamaClientError::TimedOut) => {
+            Err(LlmClientError::TimedOut) => {
                 emit(AgentEvent::ParseRetry {
                     step_index,
                     reason: "Tool-step completion exceeded the 600-second deadline".into(),
@@ -222,7 +241,7 @@ pub async fn run_turn(
                 .await
                 {
                     Ok(parsed) => parsed,
-                    Err(LlamaClientError::Cancelled) => {
+                    Err(LlmClientError::Cancelled) => {
                         finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
                         return finish_cancelled(step_index, &mut emit);
                     }
@@ -241,14 +260,14 @@ pub async fn run_turn(
                     }
                 }
             }
-            Err(LlamaClientError::Cancelled) => {
+            Err(LlmClientError::Cancelled) => {
                 finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
                 return finish_cancelled(step_index, &mut emit);
             }
             Err(error) => {
                 emit(AgentEvent::StepError {
                     message: error.to_string(),
-                    category: "llm".into(),
+                    category: completion_error_category(&error).into(),
                 })?;
                 emit(AgentEvent::TurnFinished {
                     reason: "failed".into(),
@@ -293,7 +312,7 @@ pub async fn run_turn(
                 .await
                 {
                     Ok(repaired) => parsed = repaired,
-                    Err(LlamaClientError::Cancelled) => {
+                    Err(LlmClientError::Cancelled) => {
                         finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
                         return finish_cancelled(step_index, &mut emit);
                     }
@@ -606,13 +625,13 @@ fn parse_and_validate(
 }
 
 async fn repair_tool_calls(
-    client: &LlamaServerClient,
+    client: &dyn AgentLlmClient,
     original_request: &CompletionRequest,
     invalid_output: &str,
     reason: &str,
     cancellation: &CancellationToken,
     profile: AgentModelProfile,
-) -> Result<ParsedToolCalls, LlamaClientError> {
+) -> Result<ParsedToolCalls, LlmClientError> {
     let invalid_output = invalid_output.chars().take(4_000).collect::<String>();
     let repair_instruction = format!(
         "### tool-call-repair\nThe previous tool-call output was invalid: {reason}\n\
@@ -620,56 +639,76 @@ async fn repair_tool_calls(
          as a length-1 array. A terminal call may appear only once and only last.\n\
          Previous output:\n{invalid_output}"
     );
-    let repair_prompt = if let Some(framing) = profile.turn_framing() {
+    // The repair block belongs to the variable tail: the stable prefix must
+    // stay byte-identical so the prompt cache (llama.cpp slots, provider-side
+    // prefix caches) still hits on the retry.
+    let original_body = original_request.prompt.body.as_str();
+    let repair_body = if let Some(framing) = profile.turn_framing() {
         let suffix = format!(
             "{}\n{}",
             framing.turn_close.trim_end(),
             framing.assistant_open.trim_end()
         );
-        let base = original_request
-            .prompt
+        let base = original_body
             .trim_end()
             .strip_suffix(&suffix)
-            .unwrap_or(original_request.prompt.trim_end())
+            .unwrap_or(original_body.trim_end())
             .trim_end();
         format!(
             "{base}\n\n{repair_instruction}\n\n{}{}",
             framing.turn_close, framing.assistant_open
         )
     } else {
-        format!("{}\n\n{repair_instruction}", original_request.prompt)
+        format!("{original_body}\n\n{repair_instruction}")
     };
     let mut request = original_request.clone();
-    request.prompt = repair_prompt;
+    request.prompt.body = repair_body;
     request.max_tokens = REPAIR_MAX_TOKENS;
     let completion = complete_with_deadline(client, &request, cancellation).await?;
     parse_and_validate(&completion.content, profile)
-        .map_err(|error| LlamaClientError::InvalidResponse(format!("Repair failed: {error}")))
+        .map_err(|error| LlmClientError::InvalidResponse(format!("Repair failed: {error}")))
 }
 
 async fn complete_with_deadline(
-    client: &LlamaServerClient,
+    client: &dyn AgentLlmClient,
     request: &CompletionRequest,
     cancellation: &CancellationToken,
-) -> Result<super::llm_client::CompletionResult, LlamaClientError> {
+) -> Result<super::llm_client::CompletionResult, LlmClientError> {
     tokio::select! {
         biased;
-        _ = cancellation.cancelled() => Err(LlamaClientError::Cancelled),
+        _ = cancellation.cancelled() => Err(LlmClientError::Cancelled),
         result = tokio::time::timeout(
             TOOL_STEP_COMPLETION_DEADLINE,
             client.complete(request, cancellation),
         ) => match result {
             Ok(result) => result,
-            Err(_) => Err(LlamaClientError::TimedOut),
+            Err(_) => Err(LlmClientError::TimedOut),
         },
     }
 }
 
-fn repair_error_category(error: &LlamaClientError) -> &'static str {
+/// Category for a failed completion, before any repair was attempted.
+///
+/// Only the transport-level conditions the UI can act on are broken out;
+/// everything else stays `llm` so existing consumers keep their behaviour.
+fn completion_error_category(error: &LlmClientError) -> &'static str {
     match error {
-        LlamaClientError::InvalidResponse(_) => "grammar",
-        LlamaClientError::Cancelled => "cancelled",
-        LlamaClientError::TimedOut => "timeout",
+        LlmClientError::Unauthorized { .. } | LlmClientError::RateLimited { .. } => "auth",
+        LlmClientError::ContextOverflow(_) => "context",
+        LlmClientError::LocalServerUnavailable => "server",
+        LlmClientError::SessionNotFound(_) => "session",
+        _ => "llm",
+    }
+}
+
+fn repair_error_category(error: &LlmClientError) -> &'static str {
+    match error {
+        LlmClientError::InvalidResponse(_) => "grammar",
+        LlmClientError::Cancelled => "cancelled",
+        LlmClientError::TimedOut => "timeout",
+        LlmClientError::Unauthorized { .. } | LlmClientError::RateLimited { .. } => "auth",
+        LlmClientError::ContextOverflow(_) => "context",
+        LlmClientError::LocalServerUnavailable => "server",
         _ => "llm",
     }
 }

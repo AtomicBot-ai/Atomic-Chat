@@ -23,6 +23,19 @@ export type AgentTurnRequest = {
   run_id: string
   session_id: string
   model_id: string
+  /**
+   * Selected provider. Omitting it keeps the legacy behaviour of scanning both
+   * llama.cpp session maps.
+   */
+  provider?: string
+  /**
+   * Model capabilities (`tools`, `vision`, …). The backend has no `mmproj` to
+   * inspect for MLX or cloud models, so this is where vision support comes
+   * from.
+   */
+  capabilities?: string[]
+  /** Context window, when known. Falls back to the configured cap. */
+  context_window?: number
   user_message: string
   selected_skill?: string
   attachments?: AgentAttachment[]

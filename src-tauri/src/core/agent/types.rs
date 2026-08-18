@@ -107,8 +107,21 @@ pub struct AgentTurnRequest {
     pub run_id: String,
     /// Durable session id. The frontend binds this to the owning thread id.
     pub session_id: String,
-    /// The `model_id` whose `llama-server` session the agent should target.
+    /// The `model_id` the agent should target.
     pub model_id: String,
+    /// Provider the frontend selected. `None` keeps the legacy behaviour of
+    /// scanning both llama.cpp session maps.
+    #[serde(default)]
+    pub provider: Option<String>,
+    /// The selected model's capabilities (`"tools"`, `"vision"`, …). This is
+    /// where `has_vision` comes from for every non-llama.cpp target, which has
+    /// no `mmproj` to inspect.
+    #[serde(default)]
+    pub capabilities: Vec<String>,
+    /// Context window as known to the frontend. `None` falls back to the
+    /// configured conversation cap.
+    #[serde(default)]
+    pub context_window: Option<usize>,
     /// The user's message for this turn.
     pub user_message: String,
     /// Optional enabled skill that must be loaded before the first inference.

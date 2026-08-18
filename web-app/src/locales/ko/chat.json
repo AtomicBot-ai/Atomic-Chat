@@ -8,5 +8,17 @@
   },
   "sendMessage": "메시지 보내기",
   "newConversation": "새 대화",
-  "clearHistory": "기록 지우기"
+  "clearHistory": "기록 지우기",
+  "agentMode": {
+    "providerUnavailable": "에이전트 모드에는 로컬 모델 또는 도구를 지원하는 클라우드 모델이 필요합니다.",
+    "providerKeyMissing": "에이전트 모드를 사용하려면 설정에서 이 제공자의 API 키를 추가하세요.",
+    "toolsUnsupported": "이 모델은 도구 호출을 지원하지 않습니다."
+  },
+  "agentErrors": {
+    "localModelRequired": "에이전트를 실행하기 전에 이 모델을 불러오세요.",
+    "providerUnavailableDescription": "로컬 모델이나 도구를 지원하고 API 키가 있는 클라우드 모델을 선택하세요.",
+    "providerKeyMissing": "설정에서 이 제공자의 API 키를 추가한 뒤 다시 시도하세요.",
+    "toolsUnsupported": "이 모델은 도구 호출을 지원하지 않습니다. 지원하는 모델을 선택하세요.",
+    "localServerRequired": "클라우드 모델로 에이전트 모드를 사용하려면 로컬 API 서버가 필요합니다. 설정에서 시작하세요."
+  }
 }

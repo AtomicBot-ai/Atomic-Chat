@@ -1,17 +1,27 @@
-//! Autonomous agent mode (backend core, iteration 1).
+//! Autonomous agent mode (backend core).
 //!
 //! Fully isolated from the regular chat flow (the Vercel AI SDK loop is
 //! untouched). This module ports the core of the TypeScript `atomic-agent`
 //! runtime to Rust: the stable-prefix system prompt, a static GBNF grammar
-//! for grammar-constrained tool calls, a direct HTTP client to the local
-//! `llama-server`, the `prompt -> decide -> run -> observe` loop, the
-//! `ToolLoopTracker` guard, the resource-class taxonomy, and the OS core
-//! tools.
+//! for grammar-constrained tool calls, the LLM transports, the
+//! `prompt -> decide -> run -> observe` loop, the `ToolLoopTracker` guard, the
+//! resource-class taxonomy, and the OS core tools.
 //!
-//! Transport: the agent talks **directly** to `llama-server` on
-//! `127.0.0.1:{port}` (native `/completion` with `grammar` / `cache_prompt`
-//! / `slot_id`), bypassing the `:1337` proxy. Port and api key are read from
-//! the `tauri-plugin-llamacpp` session map.
+//! Transport is selected per provider by [`target::resolve_agent_target`],
+//! following the same conventions as the regular chat path:
+//!
+//! - `llamacpp` / `llamacpp-upstream`: **directly** to `llama-server` on
+//!   `127.0.0.1:{port}` (native `/completion` with `grammar` / `cache_prompt` /
+//!   `slot_id`), bypassing the `:1337` proxy. Port and api key come from the
+//!   `tauri-plugin-llamacpp` session map.
+//! - `mlx`: **directly** to the `mlx-server` session's OpenAI-compatible
+//!   `/v1/chat/completions`, so a fully local run needs no proxy.
+//! - cloud providers: through the Local API Server on `:1337`, which resolves
+//!   the provider by model id, substitutes its key and headers, and translates
+//!   Anthropic `/messages`. No provider credential enters this module.
+//!
+//! Every transport implements [`llm_client::AgentLlmClient`]; the loop itself
+//! never branches on which one is in use.
 
 pub mod approval;
 pub mod approval_allowlist;
@@ -26,6 +36,7 @@ pub mod grammar;
 pub mod llm_client;
 pub mod loop_guard;
 pub mod model_profile;
+pub mod openai_client;
 pub mod path_policy;
 pub mod prompt;
 pub mod resource_class;
@@ -34,7 +45,9 @@ pub mod runner;
 pub mod session;
 pub mod shell_guard;
 pub mod skills;
+pub mod target;
 pub mod token_budget;
+pub mod tool_schema;
 pub mod tools;
 pub mod types;
 pub mod workspace;

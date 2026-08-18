@@ -26,7 +26,9 @@
     "chat": "Chat",
     "agent": "Agent",
     "placeholder": "Describe a task for the agent...",
-    "providerUnavailable": "Agent mode is available only with a local llama.cpp model."
+    "providerUnavailable": "Agent mode needs a local model, or a cloud model that supports tools.",
+    "providerKeyMissing": "Add an API key for this provider in Settings to use Agent mode.",
+    "toolsUnsupported": "This model does not support tool calling."
   },
   "agentApprovals": {
     "manualSelected": "Manually",
@@ -75,13 +77,16 @@
     "audioUnsupported": "Agent mode does not support audio attachments.",
     "invalidAttachment": "One or more files could not be attached. Choose local files and try again.",
     "visionModelRequired": "Select a vision-capable model before sending images.",
-    "localLlamacppRequired": "Agent mode requires an active local llama.cpp model.",
     "providerUnavailableTitle": "Agent mode is unavailable for this provider",
-    "providerUnavailableDescription": "Switch to a local llama.cpp model and try again.",
+    "providerUnavailableDescription": "Pick a local model, or a cloud model with tool support and an API key.",
     "unsupportedTools": "Agent mode does not support MCP, RAG, or browser tools yet.",
     "runFailed": "The agent run failed to start.",
     "cancelFailed": "The agent run could not be cancelled.",
-    "saveFailed": "The agent reply could not be saved."
+    "saveFailed": "The agent reply could not be saved.",
+    "localModelRequired": "Load this model before starting an agent run.",
+    "providerKeyMissing": "Add an API key for this provider in Settings and try again.",
+    "toolsUnsupported": "This model does not support tool calling. Pick a model that does.",
+    "localServerRequired": "Agent mode on a cloud model needs the Local API Server. Start it in Settings and try again."
   },
   "agentTasks": {
     "title": "Ideas for you",

@@ -8,5 +8,17 @@
   },
   "sendMessage": "Kirim Pesan",
   "newConversation": "Percakapan Baru",
-  "clearHistory": "Hapus Riwayat"
+  "clearHistory": "Hapus Riwayat",
+  "agentMode": {
+    "providerUnavailable": "Mode agen memerlukan model lokal atau model cloud yang mendukung tool.",
+    "providerKeyMissing": "Tambahkan kunci API untuk penyedia ini di Pengaturan untuk memakai mode agen.",
+    "toolsUnsupported": "Model ini tidak mendukung pemanggilan tool."
+  },
+  "agentErrors": {
+    "localModelRequired": "Muat model ini sebelum menjalankan agen.",
+    "providerUnavailableDescription": "Pilih model lokal, atau model cloud dengan dukungan tool dan kunci API.",
+    "providerKeyMissing": "Tambahkan kunci API untuk penyedia ini di Pengaturan lalu coba lagi.",
+    "toolsUnsupported": "Model ini tidak mendukung pemanggilan tool. Pilih model lain.",
+    "localServerRequired": "Mode agen dengan model cloud memerlukan Local API Server. Jalankan dari Pengaturan."
+  }
 }

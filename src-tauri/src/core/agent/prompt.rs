@@ -615,6 +615,27 @@ pub fn build_prompt_for_profile(
     )
 }
 
+/// The two halves of a rendered prompt.
+///
+/// `system` is byte-stable across the steps of a session; `tail` carries
+/// everything that changes. llama.cpp's `/completion` takes the concatenation
+/// (see [`build_prompt_with_workspace_for_profile`]); chat transports send them
+/// as separate system and user messages so provider-side prefix caches can key
+/// on the stable half.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromptParts {
+    pub system: String,
+    pub tail: String,
+}
+
+impl PromptParts {
+    /// The flat form. Must stay byte-identical to what llama.cpp received
+    /// before the split existed.
+    pub fn rendered(&self) -> String {
+        format!("{}\n{}", self.system, self.tail)
+    }
+}
+
 pub fn build_prompt_with_workspace_for_profile(
     stable_prefix: &str,
     loaded_tool_names: &[String],
@@ -624,6 +645,27 @@ pub fn build_prompt_with_workspace_for_profile(
     notice: Option<&str>,
     profile: crate::core::agent::model_profile::AgentModelProfile,
 ) -> String {
+    build_prompt_parts_with_workspace_for_profile(
+        stable_prefix,
+        loaded_tool_names,
+        loaded_skills,
+        workspace,
+        conversation,
+        notice,
+        profile,
+    )
+    .rendered()
+}
+
+pub fn build_prompt_parts_with_workspace_for_profile(
+    stable_prefix: &str,
+    loaded_tool_names: &[String],
+    loaded_skills: &[crate::core::agent::skills::loaded::LoadedSkillState],
+    workspace: Option<&str>,
+    conversation: &str,
+    notice: Option<&str>,
+    profile: crate::core::agent::model_profile::AgentModelProfile,
+) -> PromptParts {
     let mut tail: Vec<String> = Vec::new();
 
     if let Some(loaded_tools) = render_loaded_tools(loaded_tool_names) {
@@ -665,7 +707,10 @@ pub fn build_prompt_with_workspace_for_profile(
         tail.push(String::new());
     }
 
-    format!("{stable_prefix}\n{}", tail.join("\n"))
+    PromptParts {
+        system: stable_prefix.to_string(),
+        tail: tail.join("\n"),
+    }
 }
 
 pub fn format_workspace(
@@ -781,6 +826,55 @@ mod tests {
         assert!(skills < tools);
         assert!(tools < caps_idx);
         assert!(caps_idx < instructions);
+    }
+
+    /// The split exists only so chat transports can address the two halves
+    /// separately. llama.cpp must keep receiving the exact same bytes, or its
+    /// prompt cache stops hitting.
+    #[test]
+    fn prompt_parts_concatenate_to_the_legacy_prompt() {
+        use crate::core::agent::model_profile::AgentModelProfile;
+
+        let caps = test_caps("darwin");
+        let stable_prefix = build_stable_prefix(
+            ITERATION_ONE_TOOLS,
+            &[],
+            &caps,
+            DEFAULT_MAX_PARALLEL_TOOL_CALLS,
+            None,
+        );
+        let loaded = vec!["os.fs.patch".to_string()];
+
+        for profile in [AgentModelProfile::Plain, AgentModelProfile::Gemma4Think] {
+            for (workspace, notice) in [
+                (None, None),
+                (Some("primary: /tmp/work"), None),
+                (Some("primary: /tmp/work"), Some("repeated tool call")),
+            ] {
+                let parts = build_prompt_parts_with_workspace_for_profile(
+                    &stable_prefix,
+                    &loaded,
+                    &[],
+                    workspace,
+                    "user: hello",
+                    notice,
+                    profile,
+                );
+                let flat = build_prompt_with_workspace_for_profile(
+                    &stable_prefix,
+                    &loaded,
+                    &[],
+                    workspace,
+                    "user: hello",
+                    notice,
+                    profile,
+                );
+                assert_eq!(parts.rendered(), flat);
+                assert_eq!(parts.system, stable_prefix);
+                assert!(parts.tail.contains("### conversation"));
+                assert!(!parts.tail.contains("### system"));
+            }
+        }
     }
 
     #[test]

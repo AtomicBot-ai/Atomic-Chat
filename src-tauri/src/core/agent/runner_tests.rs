@@ -3,11 +3,12 @@ use std::time::Duration;
 use hyper::StatusCode;
 use tokio_util::sync::CancellationToken;
 
+use super::llm_client::AgentLlmClient;
 use super::path_policy::EditableRoots;
 use super::runner::{run_turn, RunTurnInput};
 use super::session::AgentSessionState;
 use super::test_support::{
-    collect_event, RecordingApproval, RecordingDesktop, RecordingFolderAccess,
+    collect_event, RecordingApproval, RecordingDesktop, RecordingFolderAccess, ScriptedChatServer,
     ScriptedCompletionServer, ScriptedResponse, TestWorkspace,
 };
 use super::types::{AgentEvent, LoopLevel, ToolStatus};
@@ -28,6 +29,43 @@ async fn run_script(
 ) -> TestRun {
     let server = ScriptedCompletionServer::start(responses).await;
     let client = server.client();
+    let run = run_script_with_client(workspace, &client, approval, cancellation, max_steps).await;
+    TestRun {
+        requests: server.requests(),
+        ..run
+    }
+}
+
+/// Chat-transport twin of [`run_script`]. Same loop, same assertions helpers —
+/// only the transport differs.
+async fn run_chat_script(
+    workspace: &TestWorkspace,
+    responses: Vec<ScriptedResponse>,
+    approval: &RecordingApproval,
+    cancellation: &CancellationToken,
+    max_steps: u32,
+    with_schema: bool,
+) -> TestRun {
+    let server = ScriptedChatServer::start(responses).await;
+    let client = if with_schema {
+        server.client()
+    } else {
+        server.client_without_schema()
+    };
+    let run = run_script_with_client(workspace, &client, approval, cancellation, max_steps).await;
+    TestRun {
+        requests: server.requests(),
+        ..run
+    }
+}
+
+async fn run_script_with_client(
+    workspace: &TestWorkspace,
+    client: &dyn AgentLlmClient,
+    approval: &RecordingApproval,
+    cancellation: &CancellationToken,
+    max_steps: u32,
+) -> TestRun {
     let desktop = RecordingDesktop::default();
     let mut events = Vec::new();
     let mut session = AgentSessionState::new("test-session");
@@ -47,7 +85,7 @@ async fn run_script(
             external_read_only_roots: &[],
             trusted_read_roots: &[],
             max_steps,
-            client: &client,
+            client,
             approval,
             folder_access: &folder_access,
             desktop: &desktop,
@@ -62,7 +100,7 @@ async fn run_script(
     TestRun {
         result,
         events,
-        requests: server.requests(),
+        requests: Vec::new(),
         session,
     }
 }
@@ -1089,4 +1127,367 @@ async fn unknown_selected_skill_fails_before_completion() {
     assert!(server.requests().is_empty());
     assert!(session.turns.is_empty());
     assert_eq!(finished_reason(&events), Some(("failed", 0)));
+}
+
+// ---------------------------------------------------------------------------
+// Chat transport (MLX and the Local API Server proxy)
+//
+// Same loop, same events, same terminal reasons — only the wire format
+// differs. The llama.cpp assertions above must keep passing unchanged; these
+// pin the chat-shaped equivalent.
+// ---------------------------------------------------------------------------
+
+fn chat_messages(request: &serde_json::Value) -> &Vec<serde_json::Value> {
+    request["messages"].as_array().expect("messages array")
+}
+
+#[tokio::test]
+async fn chat_transport_sends_system_and_user_messages() {
+    let workspace = TestWorkspace::new();
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let run = run_chat_script(
+        &workspace,
+        vec![ScriptedResponse::chat_completion(
+            r#"[{"tool":"reply","args":{"text":"done"}}]"#,
+        )],
+        &approval,
+        &cancellation,
+        3,
+        true,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(finished_reason(&run.events), Some(("reply", 1)));
+    assert_eq!(run.requests.len(), 1);
+
+    let request = &run.requests[0];
+    let messages = chat_messages(request);
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[0]["role"], "system");
+    assert_eq!(messages[0]["content"], "TEST_STABLE_PREFIX");
+    assert_eq!(messages[1]["role"], "user");
+    assert!(messages[1]["content"]
+        .as_str()
+        .is_some_and(|value| value.contains("### conversation\nUSER: perform the fixture task")));
+    assert_eq!(request["stream"], false);
+
+    // llama.cpp-only fields must not leak onto an OpenAI-compatible endpoint.
+    for absent in [
+        "prompt",
+        "grammar",
+        "cache_prompt",
+        "slot_id",
+        "id_slot",
+        "n_predict",
+        "top_k",
+        "repeat_penalty",
+        "repeat_last_n",
+    ] {
+        assert!(
+            request.get(absent).is_none(),
+            "chat request must not carry `{absent}`"
+        );
+    }
+}
+
+#[tokio::test]
+async fn chat_transport_sends_response_format_when_supported() {
+    let workspace = TestWorkspace::new();
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let run = run_chat_script(
+        &workspace,
+        vec![ScriptedResponse::chat_completion(
+            r#"[{"tool":"reply","args":{"text":"done"}}]"#,
+        )],
+        &approval,
+        &cancellation,
+        3,
+        true,
+    )
+    .await;
+
+    let schema = &run.requests[0]["response_format"];
+    assert_eq!(schema["type"], "json_schema");
+    assert_eq!(schema["json_schema"]["name"], "atomic_agent_tool_calls");
+    assert_eq!(schema["json_schema"]["schema"]["type"], "array");
+    assert!(schema["json_schema"]["schema"]["items"]["properties"]["tool"]["enum"]
+        .as_array()
+        .is_some_and(|names| names.iter().any(|name| name == "reply")));
+}
+
+#[tokio::test]
+async fn chat_transport_omits_response_format_when_unsupported() {
+    let workspace = TestWorkspace::new();
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let run = run_chat_script(
+        &workspace,
+        vec![ScriptedResponse::chat_completion(
+            r#"[{"tool":"reply","args":{"text":"done"}}]"#,
+        )],
+        &approval,
+        &cancellation,
+        3,
+        false,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert!(run.requests[0].get("response_format").is_none());
+}
+
+/// The chat-transport analogue of the llama.cpp KV-cache invariant: without
+/// `cache_prompt`/`slot_id`, prefix reuse depends entirely on the system
+/// message staying byte-identical across steps.
+#[tokio::test]
+async fn chat_transport_system_message_is_stable_across_steps() {
+    let workspace = TestWorkspace::new();
+    workspace.write("notes.txt", "hello");
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let run = run_chat_script(
+        &workspace,
+        vec![
+            ScriptedResponse::chat_completion(r#"[{"tool":"os.fs.list","args":{}}]"#),
+            ScriptedResponse::chat_completion(
+                r#"[{"tool":"os.fs.read","args":{"path":"notes.txt"}}]"#,
+            ),
+            ScriptedResponse::chat_completion(r#"[{"tool":"reply","args":{"text":"done"}}]"#),
+        ],
+        &approval,
+        &cancellation,
+        5,
+        true,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(run.requests.len(), 3);
+    let first_system = &chat_messages(&run.requests[0])[0];
+    for request in &run.requests[1..] {
+        assert_eq!(&chat_messages(request)[0], first_system);
+    }
+    // The user half does grow — that is where the conversation lives.
+    assert_ne!(
+        chat_messages(&run.requests[0])[1],
+        chat_messages(&run.requests[2])[1]
+    );
+}
+
+#[tokio::test]
+async fn chat_transport_repair_appends_to_the_user_message() {
+    let workspace = TestWorkspace::new();
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let run = run_chat_script(
+        &workspace,
+        vec![
+            ScriptedResponse::chat_completion("not a tool call at all"),
+            ScriptedResponse::chat_completion(r#"[{"tool":"reply","args":{"text":"done"}}]"#),
+        ],
+        &approval,
+        &cancellation,
+        3,
+        true,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(run.requests.len(), 2);
+
+    let repair = &run.requests[1];
+    let messages = chat_messages(repair);
+    assert_eq!(messages[0], chat_messages(&run.requests[0])[0]);
+    assert!(messages[1]["content"]
+        .as_str()
+        .is_some_and(|value| value.contains("### tool-call-repair")));
+    assert_eq!(repair["max_tokens"], 1024);
+}
+
+#[tokio::test]
+async fn chat_transport_degrades_on_response_format_rejection() {
+    let workspace = TestWorkspace::new();
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let run = run_chat_script(
+        &workspace,
+        vec![
+            ScriptedResponse::http_error(
+                StatusCode::BAD_REQUEST,
+                "Invalid schema for response_format 'atomic_agent_tool_calls'",
+            ),
+            ScriptedResponse::chat_completion(r#"[{"tool":"reply","args":{"text":"done"}}]"#),
+        ],
+        &approval,
+        &cancellation,
+        3,
+        true,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(finished_reason(&run.events), Some(("reply", 1)));
+    assert_eq!(run.requests.len(), 2);
+    assert!(run.requests[0].get("response_format").is_some());
+    assert!(run.requests[1].get("response_format").is_none());
+}
+
+#[tokio::test]
+async fn chat_transport_degrades_on_speculative_decoding_conflict() {
+    let workspace = TestWorkspace::new();
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let run = run_chat_script(
+        &workspace,
+        vec![
+            ScriptedResponse::http_error(
+                StatusCode::BAD_REQUEST,
+                "structured outputs and speculative decoding are mutually exclusive",
+            ),
+            ScriptedResponse::chat_completion(r#"[{"tool":"reply","args":{"text":"done"}}]"#),
+        ],
+        &approval,
+        &cancellation,
+        3,
+        true,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(run.requests.len(), 2);
+    assert!(run.requests[1].get("response_format").is_none());
+}
+
+#[tokio::test]
+async fn chat_transport_lifts_reasoning_content() {
+    let workspace = TestWorkspace::new();
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let run = run_chat_script(
+        &workspace,
+        vec![ScriptedResponse::chat_completion_with_reasoning(
+            r#"[{"tool":"reply","args":{"text":"done"}}]"#,
+            "weighing the options",
+        )],
+        &approval,
+        &cancellation,
+        3,
+        true,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert!(run.events.iter().any(|event| matches!(
+        event,
+        AgentEvent::ReasoningDelta { text, .. } if text == "weighing the options"
+    )));
+}
+
+#[tokio::test]
+async fn chat_transport_reply_preserves_event_order() {
+    let workspace = TestWorkspace::new();
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let run = run_chat_script(
+        &workspace,
+        vec![ScriptedResponse::chat_completion(
+            r#"[{"tool":"reply","args":{"text":"done"}}]"#,
+        )],
+        &approval,
+        &cancellation,
+        3,
+        true,
+    )
+    .await;
+
+    assert_eq!(
+        run.events.iter().map(event_kind).collect::<Vec<_>>(),
+        [
+            "turn_started",
+            "step_started",
+            "tool_call_parsed",
+            "tool_call_executed",
+            "assistant_delta",
+            "assistant_reply",
+            "turn_finished"
+        ]
+    );
+}
+
+#[tokio::test]
+async fn chat_transport_maps_proxy_auth_failure_to_the_auth_category() {
+    let workspace = TestWorkspace::new();
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let run = run_chat_script(
+        &workspace,
+        vec![ScriptedResponse::text_error(
+            StatusCode::UNAUTHORIZED,
+            "Invalid or missing authorization token",
+        )],
+        &approval,
+        &cancellation,
+        3,
+        true,
+    )
+    .await;
+
+    assert!(run.result.is_err());
+    assert!(run.events.iter().any(|event| matches!(
+        event,
+        AgentEvent::StepError { category, message }
+            if category == "auth" && message.contains("Local API Server")
+    )));
+    assert_eq!(finished_reason(&run.events), Some(("failed", 0)));
+}
+
+#[tokio::test]
+async fn chat_transport_maps_missing_session_to_a_step_error() {
+    let workspace = TestWorkspace::new();
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let run = run_chat_script(
+        &workspace,
+        vec![ScriptedResponse::http_error(
+            StatusCode::NOT_FOUND,
+            "No running session found for model 'scripted-test-model'",
+        )],
+        &approval,
+        &cancellation,
+        3,
+        true,
+    )
+    .await;
+
+    assert!(run
+        .result
+        .as_ref()
+        .is_err_and(|error| error.contains("no active session")));
+    assert_eq!(finished_reason(&run.events), Some(("failed", 0)));
+}
+
+#[tokio::test]
+async fn chat_transport_retries_once_on_rate_limit() {
+    let workspace = TestWorkspace::new();
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let run = run_chat_script(
+        &workspace,
+        vec![
+            ScriptedResponse::http_error(StatusCode::TOO_MANY_REQUESTS, "slow down"),
+            ScriptedResponse::chat_completion(r#"[{"tool":"reply","args":{"text":"done"}}]"#),
+        ],
+        &approval,
+        &cancellation,
+        3,
+        true,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(run.requests.len(), 2);
+    assert_eq!(finished_reason(&run.events), Some(("reply", 1)));
 }

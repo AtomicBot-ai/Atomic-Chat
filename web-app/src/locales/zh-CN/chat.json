@@ -8,5 +8,17 @@
   "newConversation": "新对话",
   "clearHistory": "清除历史记录",
   "temporaryChat": "临时聊天",
-  "temporaryChatDescription": "开始一个临时对话，不会保存到您的聊天历史记录中。"
+  "temporaryChatDescription": "开始一个临时对话，不会保存到您的聊天历史记录中。",
+  "agentMode": {
+    "providerUnavailable": "智能体模式需要本地模型，或支持工具调用的云端模型。",
+    "providerKeyMissing": "请在设置中为该提供商添加 API 密钥后使用智能体模式。",
+    "toolsUnsupported": "该模型不支持工具调用。"
+  },
+  "agentErrors": {
+    "localModelRequired": "请先加载该模型，再运行智能体。",
+    "providerUnavailableDescription": "请选择本地模型，或选择支持工具调用且已配置 API 密钥的云端模型。",
+    "providerKeyMissing": "请在设置中为该提供商添加 API 密钥后重试。",
+    "toolsUnsupported": "该模型不支持工具调用，请另选模型。",
+    "localServerRequired": "使用云端模型运行智能体需要本地 API 服务器，请在设置中启动。"
+  }
 }

@@ -8,5 +8,17 @@
   },
   "sendMessage": "Gửi tin nhắn",
   "newConversation": "Cuộc trò chuyện mới",
-  "clearHistory": "Xóa lịch sử"
+  "clearHistory": "Xóa lịch sử",
+  "agentMode": {
+    "providerUnavailable": "Chế độ agent cần một mô hình cục bộ hoặc mô hình đám mây hỗ trợ công cụ.",
+    "providerKeyMissing": "Thêm khóa API cho nhà cung cấp này trong Cài đặt để dùng chế độ agent.",
+    "toolsUnsupported": "Mô hình này không hỗ trợ gọi công cụ."
+  },
+  "agentErrors": {
+    "localModelRequired": "Hãy tải mô hình này trước khi chạy agent.",
+    "providerUnavailableDescription": "Chọn mô hình cục bộ, hoặc mô hình đám mây có hỗ trợ công cụ và khóa API.",
+    "providerKeyMissing": "Thêm khóa API cho nhà cung cấp này trong Cài đặt rồi thử lại.",
+    "toolsUnsupported": "Mô hình này không hỗ trợ gọi công cụ. Hãy chọn mô hình khác.",
+    "localServerRequired": "Chế độ agent với mô hình đám mây cần Local API Server. Hãy khởi động trong Cài đặt."
+  }
 }

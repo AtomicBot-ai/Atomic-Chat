@@ -27,7 +27,7 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use super::approval_allowlist::fingerprint_prepared_action;
-use super::llm_client::LlamaServerClient;
+use super::llm_client::AgentLlmClient;
 use super::path_policy::{prepare_call_paths, EditableRoots};
 use super::resource_class::{resource_class_for, ResourceClass};
 use super::shell_guard::{evaluate_shell_command, join_command_stream, ShellGuardVerdict};
@@ -60,7 +60,7 @@ pub struct ToolContext<'a> {
     pub working_dir: &'a Path,
     pub editable_roots: &'a EditableRoots,
     pub trusted_read_roots: &'a [PathBuf],
-    pub client: Option<&'a LlamaServerClient>,
+    pub client: Option<&'a dyn AgentLlmClient>,
     pub approval: &'a dyn ApprovalHook,
     pub folder_access: &'a dyn FolderAccessHook,
     pub cancellation: &'a CancellationToken,

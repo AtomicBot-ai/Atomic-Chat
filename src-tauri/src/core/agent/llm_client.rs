@@ -1,4 +1,10 @@
-//! Direct HTTP client to the local `llama-server` `/completion` endpoint.
+//! Transport layer between the agent loop and an LLM.
+//!
+//! [`AgentLlmClient`] is the seam: the loop only ever needs a model profile, a
+//! context window, one completion, and image description. [`LlamaServerClient`]
+//! implements it against the local `llama-server` `/completion` endpoint
+//! (GBNF `grammar`, `cache_prompt`, pinned `slot_id`); the OpenAI-compatible
+//! sibling lives in [`super::openai_client`].
 
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -15,12 +21,103 @@ use tokio_util::sync::CancellationToken;
 
 use crate::core::server::context_expansion::is_context_limit_error;
 
-use super::model_profile::AgentModelProfile;
+use super::model_profile::{detect_model_profile, AgentModelProfile};
 use super::token_budget::COMPLETION_MAX_TOKENS;
 use super::types::ToolCallPayload;
 
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
 const ERROR_DETAIL_MAX_LEN: usize = 300;
+
+/// What a transport can honour in a [`CompletionRequest`]. The runner reads
+/// this once per turn and only builds the artefacts the transport can use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AgentClientCapabilities {
+    /// GBNF `grammar` is enforced during sampling (llama.cpp `/completion`).
+    pub grammar: bool,
+    /// OpenAI `response_format: {"type": "json_schema"}` is honoured.
+    pub json_schema: bool,
+    /// `cache_prompt` + a pinned `slot_id` reuse the KV prefix across steps.
+    pub prompt_cache_slots: bool,
+}
+
+/// The two halves of a rendered agent prompt.
+///
+/// llama.cpp's `/completion` takes one flat string, so it sends
+/// [`AgentPrompt::rendered`]. Chat transports send `system` as a system message
+/// and `body` as a user message, which keeps the byte-stable prefix in its own
+/// message where provider-side prefix caches can key on it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AgentPrompt {
+    /// Stable prefix: persona, rules, skills, tool catalog, capabilities,
+    /// instructions. `None` when the caller only has one flat string.
+    pub system: Option<String>,
+    /// Variable tail: loaded tools/skills, workspace, conversation, notice,
+    /// the respond anchor, and any profile turn-framing close.
+    pub body: String,
+}
+
+impl AgentPrompt {
+    pub fn single(text: impl Into<String>) -> Self {
+        Self {
+            system: None,
+            body: text.into(),
+        }
+    }
+
+    pub fn parts(system: impl Into<String>, body: impl Into<String>) -> Self {
+        Self {
+            system: Some(system.into()),
+            body: body.into(),
+        }
+    }
+
+    /// Flat rendering. Byte-identical to what
+    /// `prompt::build_prompt_with_workspace_for_profile` returns.
+    pub fn rendered(&self) -> String {
+        match &self.system {
+            Some(system) => format!("{system}\n{}", self.body),
+            None => self.body.clone(),
+        }
+    }
+}
+
+/// Everything the agent loop needs from an LLM.
+///
+/// `complete_stream` and `with_context_expansion` deliberately stay inherent on
+/// [`LlamaServerClient`]: the former is generic (not object safe) and the
+/// latter is a builder.
+#[async_trait]
+pub trait AgentLlmClient: Send + Sync {
+    fn capabilities(&self) -> AgentClientCapabilities;
+
+    fn model_id(&self) -> String;
+
+    /// Whether images may be sent to this target. Preflighted before staging.
+    fn has_vision(&self) -> bool;
+
+    /// Prompt-framing profile. llama.cpp probes `/props`; chat transports pin
+    /// [`AgentModelProfile::Plain`] because the server applies the model's own
+    /// chat template and hand-emitted turn framing would double-apply it.
+    async fn probe_model_profile(&self, cancellation: &CancellationToken) -> AgentModelProfile;
+
+    async fn fetch_context_window(
+        &self,
+        cancellation: &CancellationToken,
+    ) -> Result<Option<usize>, LlmClientError>;
+
+    async fn complete(
+        &self,
+        request: &CompletionRequest,
+        cancellation: &CancellationToken,
+    ) -> Result<CompletionResult, LlmClientError>;
+
+    async fn describe_images(
+        &self,
+        prompt: &str,
+        images: &[(String, String)],
+        cancellation: &CancellationToken,
+    ) -> Result<String, LlmClientError>;
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LlamaBackend {
@@ -55,16 +152,27 @@ pub trait ContextExpansionHook: Send + Sync {
     ) -> Result<LlamaSessionTarget, String>;
 }
 
+/// A superset request: every transport reads the fields it can honour and
+/// ignores the rest. Keeping it flat is what lets the runner stay free of any
+/// `match` on the transport.
 #[derive(Debug, Clone)]
 pub struct CompletionRequest {
-    pub prompt: String,
+    pub prompt: AgentPrompt,
+    /// llama.cpp `/completion` only.
     pub grammar: Option<String>,
+    /// OpenAI-compatible `response_format` payload. Ignored by llama.cpp.
+    pub response_schema: Option<Arc<Value>>,
+    /// llama.cpp slot pinning. Ignored by chat transports.
     pub slot_id: Option<i32>,
     pub max_tokens: u32,
     pub temperature: f32,
     pub top_p: f32,
+    /// llama.cpp-only sampler; chat transports drop it (OpenAI and Groq return
+    /// 400 on unknown parameters).
     pub top_k: i32,
+    /// llama.cpp only.
     pub repeat_penalty: f32,
+    /// llama.cpp only.
     pub repeat_last_n: i32,
     pub stop: Vec<String>,
 }
@@ -72,9 +180,35 @@ pub struct CompletionRequest {
 impl CompletionRequest {
     pub fn tool_call(prompt: impl Into<String>, grammar: impl Into<String>, slot_id: i32) -> Self {
         Self {
-            prompt: prompt.into(),
             grammar: Some(grammar.into()),
             slot_id: Some(slot_id),
+            ..Self::base(AgentPrompt::single(prompt))
+        }
+    }
+
+    /// Split-prompt constructor used by the runner. `grammar` and
+    /// `response_schema` are supplied only when the target's capabilities say
+    /// the transport honours them.
+    pub fn tool_call_parts(
+        prompt: AgentPrompt,
+        grammar: Option<String>,
+        response_schema: Option<Arc<Value>>,
+        slot_id: i32,
+    ) -> Self {
+        Self {
+            grammar,
+            response_schema,
+            slot_id: Some(slot_id),
+            ..Self::base(prompt)
+        }
+    }
+
+    fn base(prompt: AgentPrompt) -> Self {
+        Self {
+            prompt,
+            grammar: None,
+            response_schema: None,
+            slot_id: None,
             max_tokens: COMPLETION_MAX_TOKENS,
             temperature: 0.2,
             top_p: 0.95,
@@ -119,19 +253,48 @@ pub struct ParsedToolCalls {
     pub reasoning: Option<String>,
 }
 
+/// Which side of the hop rejected the credentials. The Local API Server proxy
+/// answers with a flat text body; an upstream provider answers with JSON.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthErrorSource {
+    /// The Local API Server's own `api_key` gate.
+    LocalServer,
+    /// The provider behind the proxy, or the model server itself.
+    Upstream,
+}
+
+impl AuthErrorSource {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::LocalServer => "the Local API Server",
+            Self::Upstream => "the model provider",
+        }
+    }
+}
+
 #[derive(Debug, Error)]
-pub enum LlamaClientError {
-    #[error("no active llama.cpp session for model '{0}'")]
+pub enum LlmClientError {
+    #[error("no active session for model '{0}'")]
     SessionNotFound(String),
-    #[error("llama-server request was cancelled")]
+    #[error("completion request was cancelled")]
     Cancelled,
-    #[error("llama-server completion exceeded the 600-second deadline")]
+    #[error("completion exceeded the 600-second deadline")]
     TimedOut,
-    #[error("llama-server returned HTTP {status}: {detail}")]
+    // NB: the field is `origin`, not `source` — thiserror reserves `source`
+    // for the error-chain accessor and would demand `std::error::Error`.
+    #[error("{} rejected the API key", .origin.as_str())]
+    Unauthorized { origin: AuthErrorSource },
+    #[error("rate limit exceeded")]
+    RateLimited { retry_after_secs: Option<u64> },
+    #[error("model context window exceeded: {0}")]
+    ContextOverflow(String),
+    #[error("the Local API Server is not running")]
+    LocalServerUnavailable,
+    #[error("model server returned HTTP {status}: {detail}")]
     Http { status: u16, detail: String },
-    #[error("llama-server transport error: {0}")]
+    #[error("transport error: {0}")]
     Transport(String),
-    #[error("invalid llama-server response: {0}")]
+    #[error("invalid model server response: {0}")]
     InvalidResponse(String),
     #[error("invalid tool-call completion: {0}")]
     ToolCallParse(String),
@@ -193,11 +356,11 @@ pub struct LlamaServerClient {
 }
 
 impl LlamaServerClient {
-    pub fn new(target: &LlamaSessionTarget) -> Result<Self, LlamaClientError> {
+    pub fn new(target: &LlamaSessionTarget) -> Result<Self, LlmClientError> {
         let client = reqwest::Client::builder()
             .timeout(DEFAULT_REQUEST_TIMEOUT)
             .build()
-            .map_err(|error| LlamaClientError::Transport(error.to_string()))?;
+            .map_err(|error| LlmClientError::Transport(error.to_string()))?;
         Ok(Self {
             client,
             target: RwLock::new(target.clone()),
@@ -224,7 +387,7 @@ impl LlamaServerClient {
     pub async fn fetch_context_window(
         &self,
         cancellation: &CancellationToken,
-    ) -> Result<Option<usize>, LlamaClientError> {
+    ) -> Result<Option<usize>, LlmClientError> {
         let props = self.fetch_props(cancellation).await?;
         Ok(read_context_window(&props))
     }
@@ -232,7 +395,7 @@ impl LlamaServerClient {
     pub async fn fetch_props(
         &self,
         cancellation: &CancellationToken,
-    ) -> Result<Value, LlamaClientError> {
+    ) -> Result<Value, LlmClientError> {
         let target = self.target();
         let mut request = self
             .client
@@ -241,24 +404,24 @@ impl LlamaServerClient {
             request = request.header(AUTHORIZATION, format!("Bearer {}", target.api_key));
         }
         let response = tokio::select! {
-            _ = cancellation.cancelled() => return Err(LlamaClientError::Cancelled),
+            _ = cancellation.cancelled() => return Err(LlmClientError::Cancelled),
             result = request.send() => {
-                result.map_err(|error| LlamaClientError::Transport(error.to_string()))?
+                result.map_err(|error| LlmClientError::Transport(error.to_string()))?
             }
         };
         let status = response.status();
         let bytes = response
             .bytes()
             .await
-            .map_err(|error| LlamaClientError::Transport(error.to_string()))?;
+            .map_err(|error| LlmClientError::Transport(error.to_string()))?;
         if !status.is_success() {
-            return Err(LlamaClientError::Http {
+            return Err(LlmClientError::Http {
                 status: status.as_u16(),
                 detail: extract_error_detail(&String::from_utf8_lossy(&bytes)),
             });
         }
         serde_json::from_slice(&bytes)
-            .map_err(|error| LlamaClientError::InvalidResponse(error.to_string()))
+            .map_err(|error| LlmClientError::InvalidResponse(error.to_string()))
     }
 
     pub async fn describe_images(
@@ -266,10 +429,10 @@ impl LlamaServerClient {
         prompt: &str,
         images: &[(String, String)],
         cancellation: &CancellationToken,
-    ) -> Result<String, LlamaClientError> {
+    ) -> Result<String, LlmClientError> {
         let target = self.target();
         if !target.has_vision {
-            return Err(LlamaClientError::InvalidResponse(
+            return Err(LlmClientError::InvalidResponse(
                 "active llama.cpp session is not vision-capable".into(),
             ));
         }
@@ -287,33 +450,33 @@ impl LlamaServerClient {
             request = request.header(AUTHORIZATION, format!("Bearer {}", target.api_key));
         }
         let response = tokio::select! {
-            _ = cancellation.cancelled() => return Err(LlamaClientError::Cancelled),
+            _ = cancellation.cancelled() => return Err(LlmClientError::Cancelled),
             result = request.send() => {
-                result.map_err(|error| LlamaClientError::Transport(error.to_string()))?
+                result.map_err(|error| LlmClientError::Transport(error.to_string()))?
             }
         };
         let status = response.status();
         let bytes = tokio::select! {
-            _ = cancellation.cancelled() => return Err(LlamaClientError::Cancelled),
+            _ = cancellation.cancelled() => return Err(LlmClientError::Cancelled),
             result = response.bytes() => {
-                result.map_err(|error| LlamaClientError::Transport(error.to_string()))?
+                result.map_err(|error| LlmClientError::Transport(error.to_string()))?
             }
         };
         if !status.is_success() {
-            return Err(LlamaClientError::Http {
+            return Err(LlmClientError::Http {
                 status: status.as_u16(),
                 detail: extract_error_detail(&String::from_utf8_lossy(&bytes)),
             });
         }
         let value: Value = serde_json::from_slice(&bytes)
-            .map_err(|error| LlamaClientError::InvalidResponse(error.to_string()))?;
+            .map_err(|error| LlmClientError::InvalidResponse(error.to_string()))?;
         value
             .pointer("/choices/0/message/content")
             .and_then(Value::as_str)
             .filter(|value| !value.trim().is_empty())
             .map(str::to_owned)
             .ok_or_else(|| {
-                LlamaClientError::InvalidResponse(
+                LlmClientError::InvalidResponse(
                     "vision response did not contain message content".into(),
                 )
             })
@@ -323,12 +486,12 @@ impl LlamaServerClient {
         &self,
         request: &CompletionRequest,
         cancellation: &CancellationToken,
-    ) -> Result<CompletionResult, LlamaClientError> {
+    ) -> Result<CompletionResult, LlmClientError> {
         let response = self.send(request, false, cancellation).await?;
         let payload = tokio::select! {
-            _ = cancellation.cancelled() => return Err(LlamaClientError::Cancelled),
+            _ = cancellation.cancelled() => return Err(LlmClientError::Cancelled),
             result = response.json::<CompletionEnvelope>() => {
-                result.map_err(|error| LlamaClientError::InvalidResponse(error.to_string()))?
+                result.map_err(|error| LlmClientError::InvalidResponse(error.to_string()))?
             }
         };
         Ok(normalize_completion(payload))
@@ -339,7 +502,7 @@ impl LlamaServerClient {
         request: &CompletionRequest,
         cancellation: &CancellationToken,
         mut on_chunk: F,
-    ) -> Result<CompletionResult, LlamaClientError>
+    ) -> Result<CompletionResult, LlmClientError>
     where
         F: FnMut(StreamChunk) -> Result<(), String>,
     {
@@ -356,13 +519,13 @@ impl LlamaServerClient {
 
         loop {
             let next = tokio::select! {
-                _ = cancellation.cancelled() => return Err(LlamaClientError::Cancelled),
+                _ = cancellation.cancelled() => return Err(LlmClientError::Cancelled),
                 item = stream.next() => item,
             };
             let Some(bytes) = next else {
                 break;
             };
-            let bytes = bytes.map_err(|error| LlamaClientError::Transport(error.to_string()))?;
+            let bytes = bytes.map_err(|error| LlmClientError::Transport(error.to_string()))?;
             pending_utf8.extend_from_slice(&bytes);
             match std::str::from_utf8(&pending_utf8) {
                 Ok(text) => {
@@ -371,7 +534,7 @@ impl LlamaServerClient {
                 }
                 Err(error) if error.error_len().is_none() => continue,
                 Err(error) => {
-                    return Err(LlamaClientError::InvalidResponse(error.to_string()));
+                    return Err(LlmClientError::InvalidResponse(error.to_string()));
                 }
             }
 
@@ -397,11 +560,11 @@ impl LlamaServerClient {
                         reasoning_delta,
                         done: false,
                     })
-                    .map_err(LlamaClientError::StreamConsumer)?;
+                    .map_err(LlmClientError::StreamConsumer)?;
                 }
                 if payload.get("stop").and_then(Value::as_bool) == Some(true) {
                     let envelope: CompletionEnvelope = serde_json::from_value(payload)
-                        .map_err(|error| LlamaClientError::InvalidResponse(error.to_string()))?;
+                        .map_err(|error| LlmClientError::InvalidResponse(error.to_string()))?;
                     final_result = normalize_completion(envelope);
                     if final_result.content.is_empty() {
                         final_result.content.clone_from(&content);
@@ -414,12 +577,12 @@ impl LlamaServerClient {
                         reasoning_delta: String::new(),
                         done: true,
                     })
-                    .map_err(LlamaClientError::StreamConsumer)?;
+                    .map_err(LlmClientError::StreamConsumer)?;
                 }
             }
         }
         if !pending_utf8.is_empty() {
-            return Err(LlamaClientError::InvalidResponse(
+            return Err(LlmClientError::InvalidResponse(
                 "stream ended inside a UTF-8 code point".into(),
             ));
         }
@@ -438,34 +601,34 @@ impl LlamaServerClient {
         request: &CompletionRequest,
         stream: bool,
         cancellation: &CancellationToken,
-    ) -> Result<reqwest::Response, LlamaClientError> {
+    ) -> Result<reqwest::Response, LlmClientError> {
         let target = self.target();
         match self
             .send_to_target(&target, request, stream, cancellation)
             .await
         {
-            Err(LlamaClientError::Http { status, detail })
+            Err(LlmClientError::Http { status, detail })
                 if is_context_limit_error(status, &detail) && self.context_expansion.is_some() =>
             {
                 let hook = self.context_expansion.as_ref().unwrap();
                 let replacement = match hook.expand(&target, cancellation).await {
                     Ok(replacement) => replacement,
                     Err(_) if cancellation.is_cancelled() => {
-                        return Err(LlamaClientError::Cancelled);
+                        return Err(LlmClientError::Cancelled);
                     }
-                    Err(error) => return Err(LlamaClientError::Transport(error)),
+                    Err(error) => return Err(LlmClientError::Transport(error)),
                 };
                 if replacement.backend != target.backend
                     || !model_ids_match(&replacement.model_id, &target.model_id)
                 {
-                    return Err(LlamaClientError::Transport(
+                    return Err(LlmClientError::Transport(
                         "Context expansion returned a different model or backend".into(),
                     ));
                 }
                 self.retarget(&replacement);
                 match self.fetch_context_window(cancellation).await {
-                    Err(LlamaClientError::Cancelled) => {
-                        return Err(LlamaClientError::Cancelled);
+                    Err(LlmClientError::Cancelled) => {
+                        return Err(LlmClientError::Cancelled);
                     }
                     Err(error) => {
                         log::warn!("Agent context profile refresh failed after expansion: {error}");
@@ -485,9 +648,10 @@ impl LlamaServerClient {
         request: &CompletionRequest,
         stream: bool,
         cancellation: &CancellationToken,
-    ) -> Result<reqwest::Response, LlamaClientError> {
+    ) -> Result<reqwest::Response, LlmClientError> {
+        let rendered_prompt = request.prompt.rendered();
         let payload = CompletionPayload {
-            prompt: &request.prompt,
+            prompt: &rendered_prompt,
             stream,
             cache_prompt: true,
             temperature: request.temperature,
@@ -518,9 +682,9 @@ impl LlamaServerClient {
             builder = builder.header(AUTHORIZATION, format!("Bearer {}", target.api_key));
         }
         let response = tokio::select! {
-            _ = cancellation.cancelled() => return Err(LlamaClientError::Cancelled),
+            _ = cancellation.cancelled() => return Err(LlmClientError::Cancelled),
             result = builder.send() => {
-                result.map_err(|error| LlamaClientError::Transport(error.to_string()))?
+                result.map_err(|error| LlmClientError::Transport(error.to_string()))?
             }
         };
         if response.status().is_success() {
@@ -528,10 +692,64 @@ impl LlamaServerClient {
         }
         let status = response.status().as_u16();
         let body = response.text().await.unwrap_or_default();
-        Err(LlamaClientError::Http {
+        Err(LlmClientError::Http {
             status,
             detail: extract_error_detail(&body),
         })
+    }
+}
+
+#[async_trait]
+impl AgentLlmClient for LlamaServerClient {
+    fn capabilities(&self) -> AgentClientCapabilities {
+        AgentClientCapabilities {
+            grammar: true,
+            json_schema: false,
+            prompt_cache_slots: true,
+        }
+    }
+
+    fn model_id(&self) -> String {
+        self.target().model_id
+    }
+
+    fn has_vision(&self) -> bool {
+        self.target().has_vision
+    }
+
+    async fn probe_model_profile(&self, cancellation: &CancellationToken) -> AgentModelProfile {
+        match self.fetch_props(cancellation).await {
+            Ok(props) => detect_model_profile(&props),
+            Err(LlmClientError::Cancelled) => AgentModelProfile::Plain,
+            Err(error) => {
+                log::warn!("Agent model-profile probe failed; using plain profile: {error}");
+                AgentModelProfile::Plain
+            }
+        }
+    }
+
+    async fn fetch_context_window(
+        &self,
+        cancellation: &CancellationToken,
+    ) -> Result<Option<usize>, LlmClientError> {
+        LlamaServerClient::fetch_context_window(self, cancellation).await
+    }
+
+    async fn complete(
+        &self,
+        request: &CompletionRequest,
+        cancellation: &CancellationToken,
+    ) -> Result<CompletionResult, LlmClientError> {
+        LlamaServerClient::complete(self, request, cancellation).await
+    }
+
+    async fn describe_images(
+        &self,
+        prompt: &str,
+        images: &[(String, String)],
+        cancellation: &CancellationToken,
+    ) -> Result<String, LlmClientError> {
+        LlamaServerClient::describe_images(self, prompt, images, cancellation).await
     }
 }
 
@@ -563,7 +781,7 @@ pub async fn find_session_by_model_id(
     model_id: &str,
     llamacpp: &LlamacppState,
     upstream: &LlamacppUpstreamState,
-) -> Result<LlamaSessionTarget, LlamaClientError> {
+) -> Result<LlamaSessionTarget, LlmClientError> {
     {
         let sessions = llamacpp.llama_server_process.lock().await;
         if let Some(session) = sessions
@@ -590,7 +808,7 @@ pub async fn find_session_by_model_id(
             has_vision: session.info.mmproj_path.is_some(),
             backend: LlamaBackend::LlamacppUpstream,
         })
-        .ok_or_else(|| LlamaClientError::SessionNotFound(model_id.to_owned()))
+        .ok_or_else(|| LlmClientError::SessionNotFound(model_id.to_owned()))
 }
 
 pub async fn find_session_by_model_and_backend(
@@ -598,7 +816,7 @@ pub async fn find_session_by_model_and_backend(
     backend: LlamaBackend,
     llamacpp: &LlamacppState,
     upstream: &LlamacppUpstreamState,
-) -> Result<LlamaSessionTarget, LlamaClientError> {
+) -> Result<LlamaSessionTarget, LlmClientError> {
     match backend {
         LlamaBackend::Llamacpp => {
             let sessions = llamacpp.llama_server_process.lock().await;
@@ -627,7 +845,7 @@ pub async fn find_session_by_model_and_backend(
                 })
         }
     }
-    .ok_or_else(|| LlamaClientError::SessionNotFound(model_id.to_owned()))
+    .ok_or_else(|| LlmClientError::SessionNotFound(model_id.to_owned()))
 }
 
 fn read_context_window(props: &Value) -> Option<usize> {
@@ -643,26 +861,26 @@ fn read_context_window(props: &Value) -> Option<usize> {
         .filter(|value| *value > 0)
 }
 
-pub fn parse_tool_calls(raw: &str) -> Result<ParsedToolCalls, LlamaClientError> {
+pub fn parse_tool_calls(raw: &str) -> Result<ParsedToolCalls, LlmClientError> {
     parse_tool_calls_for_profile(raw, AgentModelProfile::Plain)
 }
 
 pub fn parse_tool_calls_for_profile(
     raw: &str,
     profile: AgentModelProfile,
-) -> Result<ParsedToolCalls, LlamaClientError> {
+) -> Result<ParsedToolCalls, LlmClientError> {
     let (reasoning, body) = match (profile.reasoning_open_tag(), profile.reasoning_close_tag()) {
         (Some(open), Some(close)) => extract_tagged_reasoning(raw, open, close),
         _ => extract_reasoning(raw),
     };
     let json_text = extract_json_root(&body)?;
     let parsed: Value = serde_json::from_str(json_text)
-        .map_err(|error| LlamaClientError::ToolCallParse(error.to_string()))?;
+        .map_err(|error| LlmClientError::ToolCallParse(error.to_string()))?;
     let entries = parsed.as_array().ok_or_else(|| {
-        LlamaClientError::ToolCallParse("tool-call root must be a JSON array".into())
+        LlmClientError::ToolCallParse("tool-call root must be a JSON array".into())
     })?;
     if entries.is_empty() {
-        return Err(LlamaClientError::ToolCallParse(
+        return Err(LlmClientError::ToolCallParse(
             "tool-call array must contain at least one call".into(),
         ));
     }
@@ -691,9 +909,9 @@ fn extract_tagged_reasoning(raw: &str, open_tag: &str, close_tag: &str) -> (Stri
     )
 }
 
-fn normalize_tool_call(value: &Value, index: usize) -> Result<ToolCallPayload, LlamaClientError> {
+fn normalize_tool_call(value: &Value, index: usize) -> Result<ToolCallPayload, LlmClientError> {
     let object = value.as_object().ok_or_else(|| {
-        LlamaClientError::ToolCallParse(format!(
+        LlmClientError::ToolCallParse(format!(
             "tool-call array entry {index} must be a JSON object"
         ))
     })?;
@@ -703,18 +921,18 @@ fn normalize_tool_call(value: &Value, index: usize) -> Result<ToolCallPayload, L
         .map(str::trim)
         .find(|name| !name.is_empty())
         .ok_or_else(|| {
-            LlamaClientError::ToolCallParse("tool-call must include a non-empty tool name".into())
+            LlmClientError::ToolCallParse("tool-call must include a non-empty tool name".into())
         })?
         .to_owned();
     let args = read_args(object)?;
     Ok(ToolCallPayload { tool, args })
 }
 
-fn read_args(object: &Map<String, Value>) -> Result<Value, LlamaClientError> {
+fn read_args(object: &Map<String, Value>) -> Result<Value, LlmClientError> {
     if let Some(nested) = object.get("args").or_else(|| object.get("arguments")) {
         let value = match nested {
             Value::String(raw) => serde_json::from_str(raw).map_err(|error| {
-                LlamaClientError::ToolCallParse(format!(
+                LlmClientError::ToolCallParse(format!(
                     "tool-call arguments must be valid JSON: {error}"
                 ))
             })?,
@@ -723,7 +941,7 @@ fn read_args(object: &Map<String, Value>) -> Result<Value, LlamaClientError> {
         if value.is_object() {
             return Ok(value);
         }
-        return Err(LlamaClientError::ToolCallParse(
+        return Err(LlmClientError::ToolCallParse(
             "tool-call args must be a JSON object".into(),
         ));
     }
@@ -733,7 +951,7 @@ fn read_args(object: &Map<String, Value>) -> Result<Value, LlamaClientError> {
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
     if flat.is_empty() {
-        return Err(LlamaClientError::ToolCallParse(
+        return Err(LlmClientError::ToolCallParse(
             "tool-call must include args".into(),
         ));
     }
@@ -773,10 +991,10 @@ fn extract_reasoning(raw: &str) -> (String, String) {
     (reasoning.join("\n\n"), body.trim().to_owned())
 }
 
-fn extract_json_root(raw: &str) -> Result<&str, LlamaClientError> {
+fn extract_json_root(raw: &str) -> Result<&str, LlmClientError> {
     let input = raw.trim();
     if input.is_empty() {
-        return Err(LlamaClientError::ToolCallParse(
+        return Err(LlmClientError::ToolCallParse(
             "tool-call body is empty".into(),
         ));
     }
@@ -829,11 +1047,11 @@ fn extract_json_root(raw: &str) -> Result<&str, LlamaClientError> {
         }
     }
     if start.is_none() {
-        Err(LlamaClientError::ToolCallParse(
+        Err(LlmClientError::ToolCallParse(
             "tool-call JSON value not found".into(),
         ))
     } else {
-        Err(LlamaClientError::ToolCallParse(
+        Err(LlmClientError::ToolCallParse(
             "tool-call JSON value is incomplete".into(),
         ))
     }
@@ -911,7 +1129,7 @@ fn number_or(value: Option<&Value>, fallback: f64) -> f64 {
         .unwrap_or(fallback)
 }
 
-fn extract_error_detail(raw: &str) -> String {
+pub(crate) fn extract_error_detail(raw: &str) -> String {
     let trimmed = raw.trim();
     let parsed = serde_json::from_str::<Value>(trimmed).ok();
     let detail = parsed
@@ -940,7 +1158,9 @@ fn extract_error_detail(raw: &str) -> String {
     }
 }
 
-fn model_ids_match(left: &str, right: &str) -> bool {
+/// Tolerant model-id comparison (`.` and `_` are interchangeable), matching
+/// what the Local API Server proxy uses when it resolves a session.
+pub(crate) fn model_ids_match(left: &str, right: &str) -> bool {
     left.len() == right.len()
         && left.bytes().zip(right.bytes()).all(|(left, right)| {
             left == right || matches!((left, right), (b'.', b'_') | (b'_', b'.'))
@@ -1086,7 +1306,7 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert!(matches!(error, LlamaClientError::Http { status: 500, .. }));
+        assert!(matches!(error, LlmClientError::Http { status: 500, .. }));
         assert_eq!(hook.calls.load(Ordering::SeqCst), 0);
     }
 
@@ -1136,7 +1356,7 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert!(matches!(error, LlamaClientError::Cancelled));
+        assert!(matches!(error, LlmClientError::Cancelled));
         assert_eq!(server.requests().len(), 1);
     }
 

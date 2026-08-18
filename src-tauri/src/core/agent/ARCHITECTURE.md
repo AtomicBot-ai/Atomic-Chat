@@ -8,8 +8,8 @@ decision log in `AGENTS.md`.
 ## Status and scope
 
 The agent backend is isolated from regular Atomic Chat conversations and from
-the Vercel AI SDK path. It talks directly to the active local llama.cpp session
-over native `/completion`.
+the Vercel AI SDK path. It runs on local llama.cpp, local MLX, and cloud
+providers that support tool calling.
 
 Iterations 1 and 1b are implemented. Agent turns also accept bounded local
 file and image attachments. Memory, tasks, browser automation, skills, dynamic
@@ -24,15 +24,37 @@ MCP tools, window control, and filesystem watchers are deferred.
 - `agent_cancel_turn` cancels a run by its caller-provided `run_id`.
 - `agent_resolve_approval` resolves a pending approval by its generated
   approval id.
-- `LlamaServerClient` resolves the active TurboQuant or upstream llama.cpp
-  session and calls its `/completion` endpoint directly.
+- `AgentLlmClient` is the transport seam. The loop needs exactly four things
+  from a model — a prompt profile, a context window, one completion, and image
+  description — and never branches on which transport provides them.
+  `AgentClientCapabilities` tells the loop which constraint artefacts to build.
+- `target::resolve_agent_target` picks the transport from the request's
+  `provider`, mirroring the conventions of the regular chat path:
+  - `llamacpp` / `llamacpp-upstream` → `LlamaServerClient`, calling the active
+    session's `/completion` directly with the static tool grammar,
+    `cache_prompt`, and a stable slot id. The Local API Server is not involved.
+  - `mlx` → `OpenAiCompatibleClient` pointed at the `mlx-server` session port,
+    so a fully local run needs no proxy.
+  - cloud → `OpenAiCompatibleClient` pointed at the Local API Server, which
+    resolves the provider by model id, substitutes its key and custom headers,
+    and translates Anthropic `/messages`. No provider credential reaches the
+    agent.
+  - `foundation-models` and keyless loopback providers are rejected explicitly.
 - Image analysis uses a separate, non-streaming `/v1/chat/completions` request
-  to the same active session. It never uses the grammar-constrained agent slot.
-- Every completion uses the static tool grammar, `cache_prompt`, and a stable
-  slot id. The local API server on port 1337 is not part of this path.
+  to the same target. It never uses the grammar-constrained agent slot.
+  `has_vision` comes from `mmproj_path` for llama.cpp and from the model
+  capabilities in the turn request for every other target.
+- Chat transports are non-streaming, pin `AgentModelProfile::Plain` (the server
+  applies the model's own chat template, so hand-emitted turn framing would
+  double-apply), and take the context window from the turn request because
+  there is no portable `/props` equivalent.
 
 ### Prompt and grammar
 
+- The prompt is built as `PromptParts { system, tail }`. llama.cpp sends the
+  concatenation, byte-identical to the pre-split rendering; chat transports send
+  `system` and `tail` as separate system and user messages so provider-side
+  prefix caches can key on the stable half.
 - The stable prompt prefix contains the persona, rules, tool catalog,
   capabilities, and instructions.
 - Frequent tools expose their complete argument schema in the stable prefix.
@@ -42,7 +64,17 @@ MCP tools, window control, and filesystem watchers are deferred.
   optional loop notice, and the response marker.
 - Tool output is constrained by an array-only GBNF root. One tool call is a
   one-element array; a step may contain up to eight calls at runtime.
-- The prompt catalog and grammar tool-name set must remain identical.
+- On OpenAI-compatible transports there is no GBNF. `tool_schema.rs` renders the
+  same catalog as a JSON Schema for `response_format`, pinning the array shape
+  and the tool-name enum but leaving `args` open — the prompt and
+  `authorize_call` already cover argument shape. It is sent only to targets
+  known to accept an array-root schema; `supports_array_json_schema` ships with
+  an empty cloud arm on purpose, because OpenAI historically requires an object
+  root. Where it is absent, the prompt contract and the one-shot repair step
+  carry the shape. A target that rejects the schema at runtime degrades once
+  per run and continues without it.
+- The prompt catalog, grammar tool-name set, and JSON-schema tool-name set must
+  remain identical.
 
 ### Loop and execution
 
@@ -126,6 +158,11 @@ network access:
   `/completion` server. It verifies request fields (`grammar`, `cache_prompt`,
   `slot_id`), prompt-tail transitions, event ordering, batching, approvals,
   cancellation, failures, and terminal reasons.
+- The same tests run against `ScriptedChatServer`, an OpenAI-compatible twin
+  serving only `POST /v1/chat/completions`. They pin the message split, the
+  absence of llama.cpp-only fields, `response_format` presence and its
+  degradation paths, system-message stability across steps, reasoning lifting,
+  and the error ladder.
 - `tools/contract_tests.rs` runs real filesystem, archive, Git, and safe shell
   operations inside an isolated workspace. It also pins traversal, path
   escape, hard-block, denial, cancellation, and output-boundary behavior.
@@ -282,6 +319,16 @@ Rare tools remain compact one-line entries in the stable prefix.
 
 ## Deferred work
 
+- Streaming on chat transports. `run_turn` consumes whole completions and never
+  emits `AssistantDelta` from the transport, so SSE parsing would buy nothing
+  today. It is the natural next step if `AssistantDelta` is ever wired up.
+- Native OpenAI `tools` / `tool_calls`. The text JSON-array contract is shared
+  by every transport; switching cloud targets to native function calling would
+  restructure the transcript into `messages[]` with tool roles.
+- Context recovery on cloud targets. MLX reuses the `auto_increase_ctx` ladder
+  through `SessionReloadHook`; a cloud target has nothing to reload, so
+  `ContextOverflow` surfaces as a `StepError { category: "context" }`. Halving
+  the conversation cap and retrying is a possible future refinement.
 - `os.fs.watch`
 - `vision.describe`
 - Skills and `skill.run_script`
@@ -301,9 +348,11 @@ When adding or changing a tool:
 
 1. Update the prompt descriptor.
 2. Update the grammar name set and GBNF alternative.
-3. Assign a resource class.
-4. Add the dispatch implementation.
-5. Apply shared path, approval, guard, timeout, and cancellation policies.
-6. Add focused unit tests.
-7. Verify prompt and grammar catalogs remain in lockstep.
-8. Record any non-trivial decision in `AGENTS.md`.
+3. Update the JSON-schema tool-name set (`tool_schema.rs`) used by
+   OpenAI-compatible transports; its lockstep tests fail otherwise.
+4. Assign a resource class.
+5. Add the dispatch implementation.
+6. Apply shared path, approval, guard, timeout, and cancellation policies.
+7. Add focused unit tests.
+8. Verify the prompt, grammar, and JSON-schema catalogs remain in lockstep.
+9. Record any non-trivial decision in `AGENTS.md`.

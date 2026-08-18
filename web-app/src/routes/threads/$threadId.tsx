@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute, useParams, useSearch } from '@tanstack/react-router'
-import { cn, isLlamacppProvider } from '@/lib/utils'
+import { cn } from '@/lib/utils'
+import {
+  agentContextWindow,
+  agentProviderBlockReason,
+  isAgentLocalProvider,
+} from '@/lib/agent-provider'
+import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
 
 import HeaderPage from '@/containers/HeaderPage'
 import { useThreads } from '@/hooks/useThreads'
@@ -817,9 +823,17 @@ function ThreadDetail() {
       // funnel does not read regenerations as new conversations.
       source: ChatTurnSource = 'agent'
     ) => {
-      if (!isLlamacppProvider(selectedProvider)) {
+      const agentProvider = getProviderByName(selectedProvider)
+      const blockReason = agentProviderBlockReason(agentProvider, selectedModel)
+      if (blockReason) {
         toast.error(t('chat:agentErrors.providerUnavailableTitle'), {
-          description: t('chat:agentErrors.providerUnavailableDescription'),
+          description: t(
+            blockReason === 'missing-api-key'
+              ? 'chat:agentErrors.providerKeyMissing'
+              : blockReason === 'no-tool-support'
+                ? 'chat:agentErrors.toolsUnsupported'
+                : 'chat:agentErrors.providerUnavailableDescription'
+          ),
         })
         return
       }
@@ -868,19 +882,37 @@ function ThreadDetail() {
       ]
       const workspace = useAgentMode.getState().getWorkspace(threadId)
       const workingDir = workspace.primaryRoot?.path
-      const providerSupportsAgent = isLlamacppProvider(selectedProvider)
-      const providerActiveModels = providerSupportsAgent
-        ? await serviceHub
-            .models()
-            .getActiveModels(selectedProvider)
-            .catch(() => [])
-        : []
-      if (
-        !selectedModel ||
-        !providerSupportsAgent ||
-        !providerActiveModels.includes(selectedModel.id)
-      ) {
-        toast.error(t('chat:agentErrors.localLlamacppRequired'))
+      // Local engines must have the model actually loaded — the backend
+      // resolves a live session by id. Cloud models have no local session; the
+      // Local API Server proxy is started on demand below instead.
+      if (isAgentLocalProvider(selectedProvider)) {
+        const providerActiveModels = await serviceHub
+          .models()
+          .getActiveModels(selectedProvider)
+          .catch(() => [])
+        if (
+          !selectedModel ||
+          !providerActiveModels.includes(selectedModel.id)
+        ) {
+          toast.error(t('chat:agentErrors.localModelRequired'))
+          return
+        }
+      } else if (agentProvider) {
+        // Same readiness path the chat transport uses for remote providers:
+        // registers the provider with the backend and starts the proxy.
+        try {
+          await ensureRemoteProviderReady(agentProvider, serviceHub)
+        } catch (error) {
+          console.error(
+            'Failed to prepare the remote provider for agent mode',
+            error
+          )
+          toast.error(t('chat:agentErrors.localServerRequired'))
+          return
+        }
+      }
+      if (!selectedModel) {
+        toast.error(t('chat:agentErrors.localModelRequired'))
         return
       }
       const currentRun = useAgentRun.getState().getRun(threadId)
@@ -945,6 +977,9 @@ function ThreadDetail() {
             run_id: runId,
             session_id: threadId,
             model_id: selectedModel.id,
+            provider: selectedProvider,
+            capabilities: selectedModel.capabilities ?? [],
+            context_window: agentContextWindow(selectedModel),
             user_message: text,
             selected_skill: agentSkillName,
             attachments: ipcAttachments,
@@ -973,6 +1008,10 @@ function ThreadDetail() {
         const message = String(error)
         if (message.includes('AGENT_VISION_MODEL_REQUIRED')) {
           toast.error(t('chat:agentErrors.visionModelRequired'))
+        } else if (message.includes('AGENT_LOCAL_SERVER_REQUIRED')) {
+          toast.error(t('chat:agentErrors.localServerRequired'))
+        } else if (message.includes('AGENT_PROVIDER_UNSUPPORTED')) {
+          toast.error(t('chat:agentErrors.providerUnavailableDescription'))
         } else {
           toast.error(t('chat:agentErrors.runFailed'))
         }
@@ -984,6 +1023,7 @@ function ThreadDetail() {
       attachmentsKey,
       clearAttachmentsForThread,
       getAttachments,
+      getProviderByName,
       selectedModel,
       selectedProvider,
       serviceHub,
@@ -1187,8 +1227,8 @@ function ThreadDetail() {
         // the window actually was comes from real `usage` on the response.
         ...contextTelemetry(
           null,
-          (selectedModel?.settings?.ctx_len?.controller_props?.value as number) ??
-            null
+          (selectedModel?.settings?.ctx_len?.controller_props
+            ?.value as number) ?? null
         ),
         turn_id: beginChatTurn(threadId),
         thread_id: threadId,

@@ -8,5 +8,17 @@
   },
   "sendMessage": "Odeslat zprávu",
   "newConversation": "Nová konverzace",
-  "clearHistory": "Vymazat historii"
+  "clearHistory": "Vymazat historii",
+  "agentMode": {
+    "providerUnavailable": "Režim agenta vyžaduje lokální model nebo cloudový model s podporou nástrojů.",
+    "providerKeyMissing": "Přidejte v Nastavení API klíč tohoto poskytovatele, abyste mohli použít režim agenta.",
+    "toolsUnsupported": "Tento model nepodporuje volání nástrojů."
+  },
+  "agentErrors": {
+    "localModelRequired": "Před spuštěním agenta model načtěte.",
+    "providerUnavailableDescription": "Zvolte lokální model nebo cloudový model s podporou nástrojů a API klíčem.",
+    "providerKeyMissing": "Přidejte v Nastavení API klíč tohoto poskytovatele a zkuste to znovu.",
+    "toolsUnsupported": "Tento model nepodporuje volání nástrojů. Zvolte jiný model.",
+    "localServerRequired": "Režim agenta s cloudovým modelem vyžaduje lokální API server. Spusťte jej v Nastavení."
+  }
 }

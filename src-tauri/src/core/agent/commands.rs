@@ -16,10 +16,13 @@ use super::approval::ApprovalGate;
 use super::attachments::stage_attachments;
 use super::folder_access::FolderAccessGate;
 use super::llm_client::{
-    find_session_by_model_and_backend, find_session_by_model_id, ContextExpansionHook,
-    LlamaClientError, LlamaServerClient, LlamaSessionTarget,
+    find_session_by_model_and_backend, AgentLlmClient, ContextExpansionHook, LlamaServerClient,
+    LlamaSessionTarget,
 };
-use super::model_profile::{detect_model_profile, AgentModelProfile};
+use super::openai_client::{
+    OpenAiCompatibleClient, OpenAiTarget, OpenAiTargetKind, SessionReloadHook,
+};
+use super::target::{resolve_agent_target, resolve_mlx_target, AgentTarget};
 use super::path_policy::{canonical_directory, expand_home, lexical_normalize, EditableRoots};
 use super::prompt::{
     build_stable_prefix_for_profile, CapabilitiesSummary, SkillDescriptor,
@@ -157,6 +160,81 @@ impl<R: Runtime> ContextExpansionHook for AgentContextExpansion<R> {
         )
         .await
         .map_err(|error| error.to_string())
+    }
+}
+
+/// MLX counterpart of [`AgentContextExpansion`].
+///
+/// The MLX extension already subscribes to the shared `auto_increase_ctx`
+/// channel with `backend: "mlx"`, so the ladder is reused verbatim. A reload
+/// spawns a fresh process, so the replacement target must be re-resolved to
+/// pick up the new port.
+struct AgentMlxContextExpansion<R: Runtime> {
+    app_handle: AppHandle<R>,
+    state: Arc<crate::core::state::AutoIncreaseState>,
+    request: AgentTurnRequest,
+}
+
+#[async_trait]
+impl<R: Runtime> SessionReloadHook for AgentMlxContextExpansion<R> {
+    async fn reload_with_larger_context(
+        &self,
+        target: &OpenAiTarget,
+        cancellation: &CancellationToken,
+    ) -> Result<OpenAiTarget, String> {
+        let outcome = request_context_increase(
+            &self.app_handle,
+            &self.state,
+            "mlx",
+            &target.model_id,
+            "error",
+            Some(cancellation),
+        )
+        .await;
+        if !outcome.ok {
+            return Err(format!(
+                "Context expansion failed: {}",
+                outcome.reason.as_deref().unwrap_or("unknown")
+            ));
+        }
+        resolve_mlx_target(&self.app_handle, &self.request).await
+    }
+}
+
+/// Builds the transport for a resolved target, attaching the context-expansion
+/// hook that belongs to that backend. Cloud targets get none: there is nothing
+/// to reload, and an honest error beats a silent truncation.
+fn build_agent_client<R: Runtime>(
+    target: AgentTarget,
+    app_handle: &AppHandle<R>,
+    state: &AppState,
+    request: &AgentTurnRequest,
+) -> Result<Box<dyn AgentLlmClient>, String> {
+    match target {
+        AgentTarget::Llama(target) => {
+            let hook = Arc::new(AgentContextExpansion {
+                app_handle: app_handle.clone(),
+                state: state.auto_increase_ctx.clone(),
+            });
+            Ok(Box::new(
+                LlamaServerClient::new(&target)
+                    .map_err(|error| error.to_string())?
+                    .with_context_expansion(hook),
+            ))
+        }
+        AgentTarget::OpenAi(target) => {
+            let is_mlx = target.kind == OpenAiTargetKind::LocalMlx;
+            let mut client =
+                OpenAiCompatibleClient::new(target).map_err(|error| error.to_string())?;
+            if is_mlx {
+                client = client.with_session_reload(Arc::new(AgentMlxContextExpansion {
+                    app_handle: app_handle.clone(),
+                    state: state.auto_increase_ctx.clone(),
+                    request: request.clone(),
+                }));
+            }
+            Ok(Box::new(client))
+        }
     }
 }
 
@@ -386,16 +464,12 @@ pub async fn agent_run_turn<R: Runtime>(
         }
     }
     let editable_roots = EditableRoots::new(&working_dir, &editable_external_roots).await?;
-    let llama_state: State<LlamacppState> = app_handle.state();
-    let upstream_state: State<LlamacppUpstreamState> = app_handle.state();
-    let target = find_session_by_model_id(&request.model_id, &llama_state, &upstream_state)
-        .await
-        .map_err(|error| error.to_string())?;
+    let target = resolve_agent_target(&app_handle, &state, &request).await?;
     let has_images = request
         .attachments
         .iter()
         .any(|attachment| attachment.kind == super::types::AgentAttachmentKind::Image);
-    ensure_vision_requirement(has_images, target.has_vision)?;
+    ensure_vision_requirement(has_images, target.has_vision())?;
     let staged = stage_attachments(&data_folder, &request.session_id, &request.attachments).await?;
     let user_message = staged.append_manifest(&request.user_message);
     let mut trusted_read_roots = read_only_external_roots;
@@ -404,13 +478,7 @@ pub async fn agent_run_turn<R: Runtime>(
         trusted_read_roots.push(attachment_root.clone());
     }
     let cancellation = CancellationToken::new();
-    let context_expansion = Arc::new(AgentContextExpansion {
-        app_handle: app_handle.clone(),
-        state: state.auto_increase_ctx.clone(),
-    });
-    let client = LlamaServerClient::new(&target)
-        .map_err(|error| error.to_string())?
-        .with_context_expansion(context_expansion);
+    let client = build_agent_client(target, &app_handle, &state, &request)?;
     let (cancel_tx, cancel_rx) = oneshot::channel();
     {
         let mut cancellations = state.tool_call_cancellations.lock().await;
@@ -448,14 +516,7 @@ pub async fn agent_run_turn<R: Runtime>(
             dangerous: record.manifest.dangerous,
         })
         .collect::<Vec<_>>();
-    let model_profile = match client.fetch_props(&cancellation).await {
-        Ok(props) => detect_model_profile(&props),
-        Err(LlamaClientError::Cancelled) => AgentModelProfile::Plain,
-        Err(error) => {
-            log::warn!("Agent model-profile probe failed; using plain profile: {error}");
-            AgentModelProfile::Plain
-        }
-    };
+    let model_profile = client.probe_model_profile(&cancellation).await;
     let stable_prefix = build_stable_prefix_for_profile(
         ITERATION_ONE_TOOLS,
         &skill_descriptors,
@@ -509,7 +570,7 @@ pub async fn agent_run_turn<R: Runtime>(
                         external_read_only_roots: &trusted_read_roots[..external_read_only_count],
                         trusted_read_roots: &trusted_read_roots,
                         max_steps: request.max_steps.unwrap_or(MAX_STEPS),
-                        client: &client,
+                        client: client.as_ref(),
                         approval: &approval,
                         folder_access: &folder_access,
                         desktop: &desktop,

@@ -8,5 +8,17 @@
   "newConversation": "新對話",
   "clearHistory": "清除歷史記錄",
   "temporaryChat": "臨時聊天",
-  "temporaryChatDescription": "開始一個不會儲存到聊天歷史記錄的臨時對話。"
+  "temporaryChatDescription": "開始一個不會儲存到聊天歷史記錄的臨時對話。",
+  "agentMode": {
+    "providerUnavailable": "智慧代理模式需要本機模型，或支援工具呼叫的雲端模型。",
+    "providerKeyMissing": "請在設定中為此供應商加入 API 金鑰後使用智慧代理模式。",
+    "toolsUnsupported": "此模型不支援工具呼叫。"
+  },
+  "agentErrors": {
+    "localModelRequired": "請先載入此模型，再執行智慧代理。",
+    "providerUnavailableDescription": "請選擇本機模型，或支援工具呼叫且已設定 API 金鑰的雲端模型。",
+    "providerKeyMissing": "請在設定中為此供應商加入 API 金鑰後重試。",
+    "toolsUnsupported": "此模型不支援工具呼叫，請改選其他模型。",
+    "localServerRequired": "以雲端模型執行智慧代理需要本機 API 伺服器，請在設定中啟動。"
+  }
 }

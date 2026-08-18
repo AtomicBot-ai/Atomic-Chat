@@ -13,6 +13,7 @@ use serde_json::Value;
 use tokio::sync::oneshot;
 
 use super::llm_client::{LlamaServerClient, LlamaSessionTarget};
+use super::openai_client::{OpenAiCompatibleClient, OpenAiTarget, OpenAiTargetKind};
 use super::skills::SkillRegistry;
 use super::tools::{ApprovalHook, DesktopServices, FolderAccessHook};
 use super::types::{AgentEvent, ApprovalDecision, ApprovalRequest, FolderAccessRequest};
@@ -193,7 +194,22 @@ impl DesktopServices for RecordingDesktop {
 pub(crate) struct ScriptedResponse {
     status: StatusCode,
     body: Value,
+    /// When set, served verbatim as `text/plain` instead of `body` as JSON.
+    text_body: Option<String>,
     delay: Duration,
+}
+
+impl ScriptedResponse {
+    fn into_response(self) -> Response<Body> {
+        match self.text_body {
+            Some(text) => Response::builder()
+                .status(self.status)
+                .header(hyper::header::CONTENT_TYPE, "text/plain")
+                .body(Body::from(text))
+                .expect("build scripted text response"),
+            None => json_response(self.status, self.body),
+        }
+    }
 }
 
 impl ScriptedResponse {
@@ -207,6 +223,41 @@ impl ScriptedResponse {
                 "tokens_evaluated": 1,
                 "tokens_predicted": 1
             }),
+            text_body: None,
+            delay: Duration::ZERO,
+        }
+    }
+
+    /// OpenAI chat-completions envelope.
+    pub(crate) fn chat_completion(content: impl Into<String>) -> Self {
+        Self::chat_envelope(content, None)
+    }
+
+    pub(crate) fn chat_completion_with_reasoning(
+        content: impl Into<String>,
+        reasoning: impl Into<String>,
+    ) -> Self {
+        Self::chat_envelope(content, Some(reasoning.into()))
+    }
+
+    fn chat_envelope(content: impl Into<String>, reasoning: Option<String>) -> Self {
+        let mut message = serde_json::json!({
+            "role": "assistant",
+            "content": content.into(),
+        });
+        if let Some(reasoning) = reasoning {
+            message["reasoning_content"] = serde_json::json!(reasoning);
+        }
+        Self {
+            status: StatusCode::OK,
+            body: serde_json::json!({
+                "id": "chatcmpl-scripted",
+                "object": "chat.completion",
+                "model": "scripted-test-model",
+                "choices": [{"index": 0, "message": message, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1}
+            }),
+            text_body: None,
             delay: Duration::ZERO,
         }
     }
@@ -215,6 +266,18 @@ impl ScriptedResponse {
         Self {
             status,
             body: serde_json::json!({"error": {"message": message.into()}}),
+            text_body: None,
+            delay: Duration::ZERO,
+        }
+    }
+
+    /// A plain-text error body, as the Local API Server's own auth gate
+    /// returns. The transport tells this apart from a provider's JSON error.
+    pub(crate) fn text_error(status: StatusCode, message: impl Into<String>) -> Self {
+        Self {
+            status,
+            body: Value::Null,
+            text_body: Some(message.into()),
             delay: Duration::ZERO,
         }
     }
@@ -307,6 +370,118 @@ impl Drop for ScriptedCompletionServer {
     }
 }
 
+/// OpenAI-compatible twin of [`ScriptedCompletionServer`].
+///
+/// Serves only `POST /v1/chat/completions`; every other path answers 404 so a
+/// stray `/props` probe fails loudly instead of silently succeeding.
+pub(crate) struct ScriptedChatServer {
+    address: SocketAddr,
+    requests: Arc<Mutex<Vec<Value>>>,
+    shutdown: Option<oneshot::Sender<()>>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl ScriptedChatServer {
+    pub(crate) async fn start(responses: Vec<ScriptedResponse>) -> Self {
+        let listener = TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .expect("bind scripted chat server");
+        listener
+            .set_nonblocking(true)
+            .expect("set scripted chat server nonblocking");
+        let address = listener.local_addr().expect("scripted chat server address");
+        let responses = Arc::new(tokio::sync::Mutex::new(VecDeque::from(responses)));
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let service_responses = Arc::clone(&responses);
+        let service_requests = Arc::clone(&requests);
+        let make_service = make_service_fn(move |_| {
+            let responses = Arc::clone(&service_responses);
+            let requests = Arc::clone(&service_requests);
+            async move {
+                Ok::<_, Infallible>(service_fn(move |request| {
+                    serve_chat_completion(request, Arc::clone(&responses), Arc::clone(&requests))
+                }))
+            }
+        });
+        let server = Server::from_tcp(listener)
+            .expect("build scripted chat server")
+            .serve(make_service)
+            .with_graceful_shutdown(async {
+                let _ = shutdown_rx.await;
+            });
+        let task = tokio::spawn(async move {
+            let _ = server.await;
+        });
+        tokio::task::yield_now().await;
+        Self {
+            address,
+            requests,
+            shutdown: Some(shutdown_tx),
+            task,
+        }
+    }
+
+    fn target(&self, json_schema: bool) -> OpenAiTarget {
+        OpenAiTarget {
+            kind: OpenAiTargetKind::LocalMlx,
+            base_url: format!("http://127.0.0.1:{}/v1", self.address.port()),
+            api_key: None,
+            model_id: "scripted-test-model".into(),
+            has_vision: false,
+            context_window: None,
+            json_schema,
+        }
+    }
+
+    pub(crate) fn client(&self) -> OpenAiCompatibleClient {
+        OpenAiCompatibleClient::new(self.target(true)).expect("create scripted chat client")
+    }
+
+    pub(crate) fn client_without_schema(&self) -> OpenAiCompatibleClient {
+        OpenAiCompatibleClient::new(self.target(false)).expect("create scripted chat client")
+    }
+
+    pub(crate) fn requests(&self) -> Vec<Value> {
+        self.requests.lock().expect("scripted chat requests").clone()
+    }
+}
+
+impl Drop for ScriptedChatServer {
+    fn drop(&mut self) {
+        if let Some(shutdown) = self.shutdown.take() {
+            let _ = shutdown.send(());
+        }
+        self.task.abort();
+    }
+}
+
+async fn serve_chat_completion(
+    request: Request<Body>,
+    responses: Arc<tokio::sync::Mutex<VecDeque<ScriptedResponse>>>,
+    requests: Arc<Mutex<Vec<Value>>>,
+) -> Result<Response<Body>, Infallible> {
+    if request.method() != Method::POST || request.uri().path() != "/v1/chat/completions" {
+        return Ok(json_response(
+            StatusCode::NOT_FOUND,
+            serde_json::json!({"error": {"message": "not found"}}),
+        ));
+    }
+    let body = to_bytes(request.into_body()).await.unwrap_or_default();
+    let parsed = serde_json::from_slice(&body)
+        .unwrap_or_else(|_| serde_json::json!({"invalidBody": String::from_utf8_lossy(&body)}));
+    requests
+        .lock()
+        .expect("scripted chat requests")
+        .push(parsed);
+    let response = responses.lock().await.pop_front().unwrap_or_else(|| {
+        ScriptedResponse::http_error(StatusCode::INTERNAL_SERVER_ERROR, "script exhausted")
+    });
+    if !response.delay.is_zero() {
+        tokio::time::sleep(response.delay).await;
+    }
+    Ok(response.into_response())
+}
+
 async fn serve_completion(
     request: Request<Body>,
     responses: Arc<tokio::sync::Mutex<VecDeque<ScriptedResponse>>>,
@@ -332,7 +507,7 @@ async fn serve_completion(
     if !response.delay.is_zero() {
         tokio::time::sleep(response.delay).await;
     }
-    Ok(json_response(response.status, response.body))
+    Ok(response.into_response())
 }
 
 fn json_response(status: StatusCode, body: Value) -> Response<Body> {

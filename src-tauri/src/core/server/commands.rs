@@ -4,7 +4,7 @@ use tauri_plugin_llamacpp_upstream::state::LlamacppState as LlamacppUpstreamStat
 use tauri_plugin_mlx::state::MlxState;
 
 use crate::core::server::proxy;
-use crate::core::state::AppState;
+use crate::core::state::{AppState, LocalServerEndpoint};
 
 #[derive(serde::Deserialize)]
 pub struct StartServerConfig {
@@ -46,10 +46,10 @@ pub async fn start_server<R: Runtime>(
         sessions,
         sessions_upstream,
         mlx_sessions,
-        host,
+        host.clone(),
         port,
-        prefix,
-        api_key,
+        prefix.clone(),
+        api_key.clone(),
         vec![trusted_hosts],
         proxy_timeout,
         state.provider_configs.clone(),
@@ -57,6 +57,15 @@ pub async fn start_server<R: Runtime>(
     )
     .await
     .map_err(|e| e.to_string())?;
+    // Publish the effective endpoint so in-process callers (the agent's cloud
+    // path) can reach the proxy. `actual_port` matters: a requested port of 0
+    // is auto-assigned.
+    *state.local_server_endpoint.lock().await = Some(LocalServerEndpoint::new(
+        &host,
+        actual_port,
+        &prefix,
+        &api_key,
+    ));
     Ok(actual_port)
 }
 
@@ -67,6 +76,7 @@ pub async fn stop_server(state: State<'_, AppState>) -> Result<(), String> {
     proxy::stop_server(server_handle)
         .await
         .map_err(|e| e.to_string())?;
+    state.local_server_endpoint.lock().await.take();
     Ok(())
 }
 

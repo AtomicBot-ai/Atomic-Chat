@@ -8,5 +8,17 @@
   },
   "sendMessage": "メッセージを送信",
   "newConversation": "新しい会話",
-  "clearHistory": "履歴を消去"
+  "clearHistory": "履歴を消去",
+  "agentMode": {
+    "providerUnavailable": "エージェントモードには、ローカルモデルまたはツール対応のクラウドモデルが必要です。",
+    "providerKeyMissing": "エージェントモードを使うには、設定でこのプロバイダーの API キーを追加してください。",
+    "toolsUnsupported": "このモデルはツール呼び出しに対応していません。"
+  },
+  "agentErrors": {
+    "localModelRequired": "エージェントを実行する前にモデルを読み込んでください。",
+    "providerUnavailableDescription": "ローカルモデル、またはツール対応で API キーのあるクラウドモデルを選んでください。",
+    "providerKeyMissing": "設定でこのプロバイダーの API キーを追加して、もう一度お試しください。",
+    "toolsUnsupported": "このモデルはツール呼び出しに対応していません。対応するモデルを選んでください。",
+    "localServerRequired": "クラウドモデルでのエージェントモードにはローカル API サーバーが必要です。設定から起動してください。"
+  }
 }
