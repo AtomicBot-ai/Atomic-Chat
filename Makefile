@@ -317,7 +317,7 @@ lint: install-and-build
 
 # Testing
 .PHONY: test test-all test-local test-web test-extensions test-rust stub-resources \
-	verify-fast verify test-quality test-hardening-contracts \
+	typecheck verify-fast verify test-quality test-hardening-contracts \
 	test-coverage-critical capture-capabilities capture-hw-profile \
 	sync-upstream-baseline gen-amd-rocm-pci-ids test-live test-live-cloud mutants
 
@@ -411,8 +411,15 @@ test-coverage-critical:
 		run test:coverage
 	node scripts/check-coverage-floor.mjs
 
+# The same `tsc -b` the release build runs inside `yarn build:web`. ESLint and
+# Vitest never check types (vite strips them unchecked), so without this the
+# first tsc a change ever meets is the tag-triggered release build.
+typecheck:
+	yarn workspace @janhq/web-app run tsc -b
+
 verify-fast:
 	yarn lint
+	"$(MAKE)" typecheck
 	"$(MAKE)" test-quality
 	"$(MAKE)" test-hardening-contracts
 	"$(MAKE)" test-coverage-critical

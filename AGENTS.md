@@ -128,7 +128,8 @@ Wiring new code into an existing `@janhq/*` package is fine; adding a new
 make dev      # first-time setup: deps, core, extensions, icons, launch Tauri
 yarn dev      # hot loop after make dev has run once
 make build    # production build (see Makefile / package.json for per-platform targets)
-make verify-fast # local agent gate: lint, quality guards, Vitest + critical coverage floors
+make typecheck # web-app `tsc -b` — the release build's type check; lint/Vitest don't check types
+make verify-fast # local agent gate: lint, typecheck, quality guards, Vitest + critical coverage floors
 make verify   # verify-fast plus every platform-supported Rust suite
 make test-all # exhaustive artefact build + verify + configured live contracts
 make test-local # root + extension Vitest and platform Rust suites; creates inert Tauri resource stubs
