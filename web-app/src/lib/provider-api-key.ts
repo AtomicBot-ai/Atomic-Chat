@@ -16,7 +16,7 @@
  */
 
 import { captureProviderKeyConfigured } from '@/lib/onboarding-telemetry'
-import type { ServiceHub } from '@/hooks/useServiceHub'
+import type { ServiceHub } from '@/services'
 
 /**
  * Copy of `settings` with the `api-key` entry's value replaced.
