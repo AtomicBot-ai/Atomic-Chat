@@ -277,6 +277,36 @@ describe('useBackendUpdater', () => {
 
       expect(result.current.recommendationPhase).toBe('restart-required')
     })
+
+    it('clears the completed auto-dismiss timer when a download starts mid-success', () => {
+      vi.useFakeTimers()
+      const { result } = renderHook(() => useBackendUpdater())
+      detect()
+
+      // Complete the download and hot-swap successfully
+      finishDownload('completed')
+      act(() => {
+        window.dispatchEvent(new Event(HOTSWAPPED_EVENT))
+      })
+      expect(result.current.recommendationPhase).toBe('completed')
+
+      // Start a new download while in 'completed' state (within auto-dismiss window)
+      act(() => {
+        events.emit('onBackendDownloadStarted', {
+          backend: RECOMMENDED,
+          status: 'downloading',
+        })
+      })
+      expect(result.current.recommendationPhase).toBe('downloading')
+
+      // Advance past the completed auto-dismiss window.
+      // Without the fix, the stale completed timeout fires and resets
+      // the phase to 'idle', losing the 'downloading' state.
+      act(() => {
+        vi.advanceTimersByTime(1500)
+      })
+      expect(result.current.recommendationPhase).toBe('downloading')
+    })
   })
 
   /// Both llama providers ship side by side on Windows/Linux and can be
