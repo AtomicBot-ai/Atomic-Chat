@@ -14,7 +14,11 @@
  */
 
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
-import { BASELINE_RECOMMENDED_MODELS } from '@/constants/models'
+import type { HardwareTier } from '@/lib/hardware-tier'
+import {
+  BASELINE_LOW_SPEC_RECOMMENDED_MODELS,
+  BASELINE_RECOMMENDED_MODELS,
+} from '@/constants/models'
 
 export type RecommendationPlatform = 'macos' | 'windows' | 'linux'
 
@@ -23,6 +27,15 @@ export type Recommendation = {
   description_key: string
   platforms?: RecommendationPlatform[]
   active?: boolean
+  /**
+   * Pins which quant to download, matched against the quant token parsed out of
+   * the GGUF filename (see `quantLabel`). Omitted = the client picks its house
+   * default. Only meaningful for entries the client is expected to download
+   * unattended, i.e. the onboarding recommendations.
+   */
+  quant?: string
+  /** Vision models only: pins the multimodal projector quant. */
+  mmproj_quant?: string
 }
 
 export const DEFAULT_REGISTRY_URL =
@@ -53,12 +66,25 @@ export type RegistryManifest = {
   schema_version: number
   updated_at: string
   recommendations: Recommendation[]
+  /**
+   * REPLACES `recommendations` on machines classified as low-spec — it does not
+   * extend them. Deliberately a sibling array rather than a per-entry `tier`
+   * field: `fetchManifest` rebuilds the manifest from a fixed key whitelist, so
+   * a client built before this key existed ignores it and keeps showing
+   * `recommendations` unchanged. A per-entry field would instead be stripped by
+   * `sanitizeRecommendation`, leaving old clients showing *both* lists — the
+   * exact opposite of the intent, and silently. Do NOT bump `schema_version`
+   * for this key; that would strand shipped clients on their bundled baseline.
+   */
+  low_spec_recommendations?: Recommendation[]
 }
 
 export type RegistrySource = 'remote' | 'cache' | 'baseline'
 
 export type RegistryFetchResult = {
   recommendations: Recommendation[]
+  /** Always an array; empty when the manifest carries no low-spec list. */
+  lowSpecRecommendations: Recommendation[]
   source: RegistrySource
   fetchedAt: number | null
   manifestUpdatedAt: string | null
@@ -70,6 +96,18 @@ export type RegistryFetchResult = {
  * values. Keeps the in-memory shape small and protects against malformed
  * upstream entries.
  */
+/**
+ * Quant pins are used to *select a file to download*, so a malformed or hostile
+ * manifest must not be able to smuggle a token that matches an unintended file.
+ * Restrict hard to the shape real quant labels take (`Q8_0`, `Q4_K_M`, `BF16`).
+ */
+const QUANT_TOKEN = /^[A-Za-z0-9_]{2,16}$/
+
+const sanitizeQuantToken = (value: unknown): string | undefined =>
+  typeof value === 'string' && QUANT_TOKEN.test(value)
+    ? value.toUpperCase()
+    : undefined
+
 const sanitizeRecommendation = (raw: unknown): Recommendation | null => {
   if (typeof raw !== 'object' || raw === null) return null
   const r = raw as Record<string, unknown>
@@ -85,11 +123,15 @@ const sanitizeRecommendation = (raw: unknown): Recommendation | null => {
       ) as RecommendationPlatform[])
     : undefined
   const active = typeof r.active === 'boolean' ? r.active : undefined
+  const quant = sanitizeQuantToken(r.quant)
+  const mmprojQuant = sanitizeQuantToken(r.mmproj_quant)
   return {
     model_name: r.model_name,
     description_key: r.description_key,
     ...(platforms && platforms.length > 0 ? { platforms } : {}),
     ...(active === false ? { active: false } : {}),
+    ...(quant ? { quant } : {}),
+    ...(mmprojQuant ? { mmproj_quant: mmprojQuant } : {}),
   }
 }
 
@@ -218,10 +260,19 @@ const fetchManifest = async (
     .map(sanitizeRecommendation)
     .filter((r): r is Recommendation => r !== null)
 
+  const lowSpec = Array.isArray(data.low_spec_recommendations)
+    ? data.low_spec_recommendations
+        .map(sanitizeRecommendation)
+        .filter((r): r is Recommendation => r !== null)
+    : []
+
+  // Only carried when non-empty so `writeCache` never persists an empty array
+  // that would be indistinguishable from "this manifest has no low-spec list".
   return {
     schema_version: data.schema_version,
     updated_at: data.updated_at,
     recommendations,
+    ...(lowSpec.length > 0 ? { low_spec_recommendations: lowSpec } : {}),
   }
 }
 
@@ -276,6 +327,9 @@ export const getRecommendationsOrFallback = async (
   if (!force && isCacheFresh(cached) && cached) {
     return {
       recommendations: cached.manifest.recommendations.slice(),
+      lowSpecRecommendations: (
+        cached.manifest.low_spec_recommendations ?? []
+      ).slice(),
       source: 'cache',
       fetchedAt: cached.fetchedAt,
       manifestUpdatedAt: cached.manifest.updated_at,
@@ -303,6 +357,9 @@ export const getRecommendationsOrFallback = async (
     )
     return {
       recommendations: manifest.recommendations.slice(),
+      lowSpecRecommendations: (
+        manifest.low_spec_recommendations ?? []
+      ).slice(),
       source: 'remote',
       fetchedAt,
       manifestUpdatedAt: manifest.updated_at,
@@ -321,6 +378,9 @@ export const getRecommendationsOrFallback = async (
     if (cached) {
       return {
         recommendations: cached.manifest.recommendations.slice(),
+        lowSpecRecommendations: (
+          cached.manifest.low_spec_recommendations ?? []
+        ).slice(),
         source: 'cache',
         fetchedAt: cached.fetchedAt,
         manifestUpdatedAt: cached.manifest.updated_at,
@@ -329,6 +389,7 @@ export const getRecommendationsOrFallback = async (
     }
     return {
       recommendations: BASELINE_RECOMMENDED_MODELS.slice(),
+      lowSpecRecommendations: BASELINE_LOW_SPEC_RECOMMENDED_MODELS.slice(),
       source: 'baseline',
       fetchedAt: null,
       manifestUpdatedAt: null,
@@ -351,3 +412,19 @@ export const filterRecommendationsForPlatform = (
   recommendations.filter(
     (r) => r.active !== false && (!r.platforms || r.platforms.includes(os))
   )
+
+/**
+ * Which list onboarding should show. The low-spec list REPLACES the standard
+ * one rather than extending it — a machine that cannot run the standard pair is
+ * not helped by being offered them alongside smaller ones.
+ *
+ * The `lowSpec.length > 0` guard is load-bearing: a cache entry written before
+ * the manifest gained its low-spec list carries none, and a low-spec machine
+ * must fall back to the standard pair rather than an empty picker.
+ */
+export const selectRecommendationsForTier = (
+  standard: ReadonlyArray<Recommendation>,
+  lowSpec: ReadonlyArray<Recommendation>,
+  tier: HardwareTier
+): Recommendation[] =>
+  tier === 'low' && lowSpec.length > 0 ? lowSpec.slice() : standard.slice()

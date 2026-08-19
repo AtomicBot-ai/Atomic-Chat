@@ -8,6 +8,7 @@ import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import posthog from 'posthog-js'
 import { useThreadReadStatus } from '@/stores/thread-read-store'
+import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 
 type ThreadState = {
   threads: Record<string, Thread>
@@ -79,9 +80,13 @@ export const useThreads = create<ThreadState>()((set, get) => ({
           ...thread,
           model: thread.model
             ? {
+                // A thread with no provider recorded binds to the default
+                // local engine (upstream), not the TurboQuant fork. The
+                // `llama.cpp` → `llamacpp` rewrite stays: it only fires for
+                // pre-fork cortex threads, which belong to existing users.
                 provider:
                   thread.model?.provider?.replace('llama.cpp', 'llamacpp') ??
-                  'llamacpp',
+                  LOCAL_LLAMACPP_PROVIDER,
                 // Cortex migration: take first two parts of the ID (the last is file name which is not needed)
                 id:
                   thread.model?.provider === 'llama.cpp' ||

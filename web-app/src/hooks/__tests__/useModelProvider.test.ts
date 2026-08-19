@@ -362,6 +362,79 @@ describe('useModelProvider - displayName functionality', () => {
   })
 })
 
+describe('useModelProvider - turboquant first-registration default', () => {
+  const TURBOQUANT_FLAG_KEY = 'atomic_turboquant_default_active_v1'
+
+  beforeEach(() => {
+    localStorageMock.getItem.mockReturnValue(null)
+    act(() => {
+      useModelProvider.setState({
+        providers: [],
+        selectedProvider: 'llamacpp-upstream',
+        selectedModel: null,
+        deletedModels: [],
+      })
+    })
+  })
+
+  const freshLlamacppProviders = [
+    { provider: 'llamacpp', active: true, models: [], settings: [] },
+    { provider: 'llamacpp-upstream', active: true, models: [], settings: [] },
+  ] as any
+
+  it('registers turboquant inactive on a fresh install (flag false), upstream active', () => {
+    localStorageMock.getItem.mockImplementation((key: string) =>
+      key === TURBOQUANT_FLAG_KEY ? 'false' : null
+    )
+    const { result } = renderHook(() => useModelProvider())
+
+    act(() => {
+      result.current.setProviders(freshLlamacppProviders)
+    })
+
+    expect(result.current.getProviderByName('llamacpp')?.active).toBe(false)
+    expect(result.current.getProviderByName('llamacpp-upstream')?.active).toBe(
+      true
+    )
+  })
+
+  it('registers turboquant active when the flag says existing profile or is absent', () => {
+    const { result } = renderHook(() => useModelProvider())
+
+    act(() => {
+      result.current.setProviders(freshLlamacppProviders)
+    })
+
+    expect(result.current.getProviderByName('llamacpp')?.active).toBe(true)
+  })
+
+  it('preserves a persisted active value regardless of the flag', () => {
+    localStorageMock.getItem.mockImplementation((key: string) =>
+      key === TURBOQUANT_FLAG_KEY ? 'false' : null
+    )
+    const { result } = renderHook(() => useModelProvider())
+
+    act(() => {
+      useModelProvider.setState({
+        providers: [
+          { provider: 'llamacpp', active: true, models: [], settings: [] },
+        ] as any,
+        selectedProvider: 'llamacpp',
+        selectedModel: null,
+        deletedModels: [],
+      })
+    })
+
+    act(() => {
+      result.current.setProviders(freshLlamacppProviders)
+    })
+
+    // The user (an existing profile) had turboquant active — the fresh-install
+    // default must not flip it off.
+    expect(result.current.getProviderByName('llamacpp')?.active).toBe(true)
+  })
+})
+
 describe('useModelProvider migrations', () => {
   it('migrates flash_attn setting to dropdown with default value', () => {
     const persistApi = (useModelProvider as any).persist

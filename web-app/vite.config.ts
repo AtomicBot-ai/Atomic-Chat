@@ -149,6 +149,18 @@ export default defineConfig(({ mode }) => {
         process.env.FORCE_ONBOARDING === 'true' ||
           env.FORCE_ONBOARDING === 'true'
       ),
+      // Dev-only (`make dev-fresh`): wipes webview localStorage once per app
+      // launch so every startup runs the fresh-install path (onboarding,
+      // turboquant disabled, upstream default). false in every shipped build.
+      FRESH_INSTALL: JSON.stringify(
+        process.env.FRESH_INSTALL === 'true' || env.FRESH_INSTALL === 'true'
+      ),
+      // Dev-only: pins the onboarding hardware tier so the low-spec
+      // recommendations can be reviewed on a machine that is not low-spec.
+      // '' in every shipped build, which leaves detection untouched.
+      FORCE_HARDWARE_TIER: JSON.stringify(
+        process.env.FORCE_HARDWARE_TIER ?? env.FORCE_HARDWARE_TIER ?? ''
+      ),
       UPDATE_CHECK_INTERVAL_MS: JSON.stringify(
         Number(env.UPDATE_CHECK_INTERVAL_MS) || 60 * 60 * 1000
       ),

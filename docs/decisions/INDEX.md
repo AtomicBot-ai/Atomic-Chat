@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-199 records, 2026-05-19 → 2026-08-18.
+210 records, 2026-05-19 → 2026-08-19.
 
 ---
 
@@ -125,8 +125,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 - **2026-05-19** — [Use `AtomicBot-ai/mlx-vlm` as the MLX backend](2026-05-19-use-atomicbot-ai-mlx-vlm-as-the-mlx-backend.md)
 
-## llama.cpp providers & backend selection (49)
+## llama.cpp providers & backend selection (50)
 
+- **2026-08-19** — [Disable the TurboQuant `llamacpp` provider by default on fresh installs](2026-08-19-disable-the-turboquant-provider-by-default-on-fresh-installs.md)
 - **2026-08-14** — [Keep the engine version out of the `latest/` sentinel trap](2026-08-14-keep-the-engine-version-out-of-the-latest-sentinel-trap.md)
 - **2026-08-13** — [Mirror and sign upstream llama.cpp releases in atomic-chat-conf](2026-08-13-mirror-and-sign-upstream-llama-cpp-in-atomic-chat-conf.md)
 - **2026-08-13** — [Add Windows ROCm to the upstream backend matrix](2026-08-13-add-windows-rocm-to-the-upstream-backend-matrix.md)
@@ -177,8 +178,11 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-19** — [Use `AtomicBot-ai/atomic-llama-cpp-turboquant` as the LLM backend](2026-05-19-use-atomicbot-ai-atomic-llama-cpp-turboquant-as-the-llm-backend.md)
 - **2026-05-19** — [Ship upstream `ggml-org/llama.cpp` as a second macOS provider, no fork](2026-05-19-ship-upstream-ggml-org-llama-cpp-as-a-second-macos-provider-no.md)
 
-## Models, Hub & downloads (24)
+## Models, Hub & downloads (27)
 
+- **2026-08-19** — [Do not preload a model on startup](2026-08-19-do-not-preload-a-model-on-startup.md)
+- **2026-08-19** — [Offer a low-spec model tier in onboarding](2026-08-19-offer-a-low-spec-model-tier-in-onboarding.md)
+- **2026-08-19** — [Delete only what a failed download wrote](2026-08-19-delete-only-what-a-failed-download-wrote.md)
 - **2026-08-18** — [Delete an installed model from the Hub download panel](2026-08-18-delete-an-installed-model-from-the-hub-download-panel.md)
 - **2026-08-14** — [Build the Hub "Installed on this device" list from the provider registry](2026-08-14-build-the-hub-installed-filter-from-the-provider-registry.md)
 - **2026-08-14** — [Recommend our own Gemma 4 E2B build in onboarding](2026-08-14-recommend-our-own-gemma-4-e2b-build-in-onboarding.md)
@@ -220,8 +224,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (12)
+## Packaging, installers, autostart & platform policy (13)
 
+- **2026-08-19** — [Leave launch at startup off for new installs](2026-08-19-leave-launch-at-startup-off-for-new-installs.md)
 - **2026-08-05** — [Default autostart on only for clean desktop installs](2026-08-05-default-autostart-on-only-for-clean-desktop-installs.md)
 - **2026-08-05** — [Keep launch at startup opt-in and ignore development binaries](2026-08-05-keep-launch-at-startup-opt-in-and-ignore-development-binaries.md)
 - **2026-08-03** — [Disable WebKit DMABUF rendering on Linux](2026-08-03-disable-webkit-dmabuf-rendering-on-linux.md)
@@ -235,8 +240,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (19)
+## UI / UX (20)
 
+- **2026-08-19** — [Let onboarding connect a cloud provider](2026-08-19-let-onboarding-connect-a-cloud-provider.md)
 - **2026-08-14** — [Show the streaming code while an HTML artifact generates](2026-08-14-show-the-streaming-code-while-an-html-artifact-generates.md)
 - **2026-08-14** — [Collapse the engine log behind a toggle in the model-load toast](2026-08-14-collapse-the-engine-log-behind-a-toggle-in-the-model-load-toast.md)
 - **2026-08-13** — [Move sampling back onto each assistant (per-assistant sampler, popover stays the only editor)](2026-08-13-move-sampling-back-onto-each-assistant.md)

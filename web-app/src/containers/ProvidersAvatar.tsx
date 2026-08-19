@@ -1,12 +1,25 @@
-import { getProviderLogo, getProviderTitle } from '@/lib/utils'
+import { cn, getProviderLogo, getProviderTitle } from '@/lib/utils'
 import { isMonochromeFamilyLogo } from '@/lib/model-logo'
 
-const ProvidersAvatar = ({ provider }: { provider: ProviderObject }) => {
+const ProvidersAvatar = ({
+  provider,
+  className = 'size-4.5',
+}: {
+  provider: ProviderObject
+  /** Sizing override. Applied to every branch so the letter fallback and the
+   *  logo stay the same size. */
+  className?: string
+}) => {
   const logoSrc = getProviderLogo(provider.provider)
 
   if (logoSrc === undefined) {
     return (
-      <div className="flex size-4.5 rounded-full border items-center justify-center">
+      <div
+        className={cn(
+          'flex rounded-full border items-center justify-center',
+          className
+        )}
+      >
         <p className="text-xs leading-0 capitalize">
           {getProviderTitle(provider.provider).charAt(0)}
         </p>
@@ -23,7 +36,7 @@ const ProvidersAvatar = ({ provider }: { provider: ProviderObject }) => {
       <span
         role="img"
         aria-label={`${provider.provider} - Logo`}
-        className="size-4.5 shrink-0 text-foreground"
+        className={cn('shrink-0 text-foreground', className)}
         style={{
           backgroundColor: 'currentColor',
           maskImage: `url(${logoSrc})`,
@@ -43,7 +56,7 @@ const ProvidersAvatar = ({ provider }: { provider: ProviderObject }) => {
     <img
       src={logoSrc}
       alt={`${provider.provider} - Logo`}
-      className="size-4.5 object-contain rounded-full"
+      className={cn('object-contain rounded-full', className)}
       style={{
         imageRendering: '-webkit-optimize-contrast',
       }}

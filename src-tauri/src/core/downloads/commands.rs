@@ -1,10 +1,9 @@
 use super::helpers::_download_files_internal;
-use super::models::DownloadItem;
+use super::models::{DownloadItem, DownloadTask};
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::AppState;
 use std::collections::HashMap;
 use tauri::{Runtime, State};
-use tokio_util::sync::CancellationToken;
 
 #[tauri::command]
 pub async fn download_files<R: Runtime>(
@@ -16,16 +15,17 @@ pub async fn download_files<R: Runtime>(
     resume: bool,
 ) -> Result<(), String> {
     // insert cancel tokens
-    let cancel_token = CancellationToken::new();
+    let task = DownloadTask::new();
+    let cancel_token = task.cancel_token.clone();
     {
         let mut download_manager = state.download_manager.lock().await;
-        if let Some(existing_token) = download_manager.cancel_tokens.remove(task_id) {
+        if let Some(existing) = download_manager.cancel_tokens.remove(task_id) {
             log::info!("Cancelling existing download task: {task_id}");
-            existing_token.cancel();
+            existing.supersede();
         }
         download_manager
             .cancel_tokens
-            .insert(task_id.to_string(), cancel_token.clone());
+            .insert(task_id.to_string(), task.clone());
     }
     let result = _download_files_internal(
         app.clone(),
@@ -37,18 +37,40 @@ pub async fn download_files<R: Runtime>(
     )
     .await;
 
-    // cleanup
+    // cleanup — but only our own registration. A successor that took this id
+    // over is the live task now, and dropping its token would leave it
+    // uncancellable.
     {
         let mut download_manager = state.download_manager.lock().await;
-        download_manager.cancel_tokens.remove(task_id);
+        let is_ours = download_manager
+            .cancel_tokens
+            .get(task_id)
+            .is_some_and(|current| current.is_same_task(&task));
+        if is_ours {
+            download_manager.cancel_tokens.remove(task_id);
+        }
     }
 
-    // delete files if cancelled
     if cancel_token.is_cancelled() {
-        let jan_data_folder = get_jan_data_folder_path(app.clone());
-        for item in items {
-            let save_path = jan_data_folder.join(&item.save_path);
-            let _ = std::fs::remove_file(&save_path); // don't check error
+        // A cancelled download owns its `.tmp` and `.url` partials, and nothing
+        // else. `save_path` is the *finished* file: when the download was a
+        // re-fetch of a model already on disk, that is the user's existing
+        // copy, and removing it here turned "cancel" (or a pause, which
+        // cancels the same token) into "delete my model". The partials stay
+        // put — pause/resume is built on them.
+        if task.was_superseded() {
+            log::info!(
+                "Download task {task_id} was superseded by a newer task for the same id; \
+                 leaving its files alone"
+            );
+        } else {
+            let jan_data_folder = get_jan_data_folder_path(app.clone());
+            for item in &items {
+                log::info!(
+                    "Download cancelled, keeping partial and finished files for {}",
+                    jan_data_folder.join(&item.save_path).display()
+                );
+            }
         }
     }
 
@@ -59,8 +81,8 @@ pub async fn download_files<R: Runtime>(
 pub async fn cancel_download_task(state: State<'_, AppState>, task_id: &str) -> Result<(), String> {
     // NOTE: might want to add User-Agent header
     let mut download_manager = state.download_manager.lock().await;
-    if let Some(token) = download_manager.cancel_tokens.remove(task_id) {
-        token.cancel();
+    if let Some(task) = download_manager.cancel_tokens.remove(task_id) {
+        task.cancel_token.cancel();
         log::info!("Cancelled download task: {task_id}");
         Ok(())
     } else {

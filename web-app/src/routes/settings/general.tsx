@@ -345,6 +345,16 @@ function General() {
                   }
                 />
               )}
+              <CardItem
+                title={t('settings:general.preloadModelOnStartup')}
+                description={t('settings:general.preloadModelOnStartupDesc')}
+                actions={
+                  <Switch
+                    checked={preloadModelOnStartup}
+                    onCheckedChange={setPreloadModelOnStartup}
+                  />
+                }
+              />
             </Card>
 
             <Card title="Contact Us">
@@ -658,16 +668,6 @@ function General() {
                   <Switch
                     checked={spellCheckChatInput}
                     onCheckedChange={(e) => setSpellCheckChatInput(e)}
-                  />
-                }
-              />
-              <CardItem
-                title="Preload last used model on startup"
-                description="Start the local inference server with your last model when the app opens."
-                actions={
-                  <Switch
-                    checked={preloadModelOnStartup}
-                    onCheckedChange={setPreloadModelOnStartup}
                   />
                 }
               />

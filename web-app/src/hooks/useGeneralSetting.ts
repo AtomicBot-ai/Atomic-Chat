@@ -22,6 +22,12 @@ type GeneralSettingState = {
   tokenCounterCompact: boolean
   disableReasoning: boolean
   reasoningBudget: ReasoningBudgetLevel
+  /**
+   * Restore the last used model — and therefore spawn its engine — while the
+   * app is starting. Off by default so a cold launch stays cold: the user
+   * picks a model in the model selector and only then is one loaded. Existing
+   * installs keep whatever they already persisted (no migration on purpose).
+   */
   preloadModelOnStartup: boolean
   maxImageSizePx: number
   huggingfaceToken?: string
@@ -51,7 +57,7 @@ export const useGeneralSetting = create<GeneralSettingState>()(
       tokenCounterCompact: true,
       disableReasoning: true,
       reasoningBudget: 'medium',
-      preloadModelOnStartup: true,
+      preloadModelOnStartup: false,
       maxImageSizePx: DEFAULT_MAX_IMAGE_SIZE_PX,
       huggingfaceToken: undefined,
       scanLocalModels: true,

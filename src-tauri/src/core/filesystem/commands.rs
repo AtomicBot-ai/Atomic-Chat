@@ -25,8 +25,13 @@ pub fn rm<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> Res
     }
 
     if path.is_file() {
+        log::info!("rm: removing file {}", path.display());
         fs::remove_file(&path).map_err(|e| e.to_string())?;
     } else if path.is_dir() {
+        // Recursive, frontend-initiated, and irreversible — the one call that
+        // can take a model directory with it. Recorded at warn so an "it
+        // deleted my model" report can be traced to the caller that asked.
+        log::warn!("rm: recursively removing directory {}", path.display());
         fs::remove_dir_all(&path).map_err(|e| e.to_string())?;
     } else {
         return Err("rm error: Path does not exist".to_string());

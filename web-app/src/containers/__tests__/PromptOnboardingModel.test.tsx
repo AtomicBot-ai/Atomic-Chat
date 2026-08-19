@@ -12,6 +12,12 @@ const mocks = vi.hoisted(() => ({
   convertHfRepoToCatalogModel: vi.fn(),
   pullModelWithMetadata: vi.fn(),
   localDownloadingModels: new Set<string>(),
+  hardwareTier: { tier: 'standard' as 'low' | 'standard', ready: true },
+}))
+
+// Unmocked, the real store reports no RAM and no GPU on a test host.
+vi.mock('@/hooks/useHardwareTier', () => ({
+  useHardwareTier: () => mocks.hardwareTier,
 }))
 
 vi.mock('@/hooks/useOnboardingModelReminder', () => ({
@@ -127,5 +133,82 @@ describe('PromptOnboardingModel', () => {
     const { container } = render(<PromptOnboardingModel />)
 
     expect(container).toBeEmptyDOMElement()
+  })
+})
+
+describe('PromptOnboardingModel hardware tiers', () => {
+  const VL_REPO = 'LiquidAI/LFM2.5-VL-450M-GGUF'
+
+  // Mirrors the real repo: it ships a Q4_K_M alongside the Q8_0 the manifest
+  // pins, and a BF16 projector ahead of the Q8_0 one.
+  const vlModel: CatalogModel = {
+    model_name: VL_REPO,
+    developer: 'LiquidAI',
+    downloads: 0,
+    quants: [
+      {
+        model_id: 'LiquidAI/LFM2_5-VL-450M-Q4_K_M',
+        path: 'https://example.test/LFM2.5-VL-450M-Q4_K_M.gguf',
+        file_size: '279.0 MB',
+      },
+      {
+        model_id: 'LiquidAI/LFM2_5-VL-450M-Q8_0',
+        path: 'https://example.test/LFM2.5-VL-450M-Q8_0.gguf',
+        file_size: '361.6 MB',
+      },
+    ],
+    mmproj_models: [
+      {
+        model_id: 'mmproj-LFM2_5-VL-450m-BF16',
+        path: 'https://example.test/mmproj-BF16.gguf',
+        file_size: '181.0 MB',
+      },
+      {
+        model_id: 'mmproj-LFM2_5-VL-450m-Q8_0',
+        path: 'https://example.test/mmproj-Q8_0.gguf',
+        file_size: '98.0 MB',
+      },
+    ],
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.localDownloadingModels = new Set()
+    mocks.hardwareTier.tier = 'low'
+    mocks.fetchHuggingFaceRepo.mockResolvedValue({ id: VL_REPO })
+    mocks.convertHfRepoToCatalogModel.mockReturnValue(vlModel)
+    seedServiceHub({
+      models: {
+        fetchHuggingFaceRepo: mocks.fetchHuggingFaceRepo,
+        convertHfRepoToCatalogModel: mocks.convertHfRepoToCatalogModel,
+        pullModelWithMetadata: mocks.pullModelWithMetadata,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+    })
+  })
+
+  it('offers the small model on a weak device', async () => {
+    render(<PromptOnboardingModel />)
+
+    // Nudging a low-spec machine toward Qwen3.5 4B would undo the whole point
+    // of the low-spec onboarding tier.
+    const heading = await screen.findByRole('heading', { level: 2 })
+    expect(heading.textContent?.replace(/\s+/g, ' ')).toBe(
+      'LFM2.5 VL 450M (361.6 MB)'
+    )
+    expect(screen.queryByText(/Qwen3.5 4B/)).not.toBeInTheDocument()
+    expect(mocks.fetchHuggingFaceRepo).toHaveBeenCalledWith(VL_REPO, '')
+  })
+
+  it('downloads the pinned quant and its matching projector', async () => {
+    render(<PromptOnboardingModel />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Download' }))
+
+    const [modelId, path, mmprojPath] =
+      mocks.pullModelWithMetadata.mock.calls[0]
+    expect(modelId).toBe('LiquidAI/LFM2_5-VL-450M-Q8_0')
+    expect(path).toContain('Q8_0.gguf')
+    // Not the BF16 projector, which is what the default preference returns.
+    expect(mmprojPath).toBe('https://example.test/mmproj-Q8_0.gguf')
   })
 })

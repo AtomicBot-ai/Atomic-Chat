@@ -124,3 +124,6 @@ autoqa/__pycache__
 
 # Benchmarks
 benchmarks/
+
+# Локальная копия манифеста рекомендаций для `make dev-onboarding-low-spec`.
+web-app/public/dev-recommended.json

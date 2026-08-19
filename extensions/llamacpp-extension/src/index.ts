@@ -3146,7 +3146,7 @@ export default class llamacpp_extension extends AIEngine {
             logger.warn('Failed to cancel download task:', cancelError)
           }
 
-          await this.deleteModelFolder(modelId)
+          await this.cleanupFailedDownload(modelId, downloadItems)
 
           // Emit validation failure event
           events.emit(DownloadEvent.onModelValidationFailed, {
@@ -3256,23 +3256,63 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   /**
-   * Deletes the entire model folder for a given modelId
-   * @param modelId The model ID to delete
+   * Remove what a failed download left behind — and nothing else.
+   *
+   * This used to `fs.rm` the whole model directory. That directory is shared:
+   * an mmproj, the speculative-decoding drafts and the other shards of a model
+   * that is already installed and working all live next to the file being
+   * fetched. One file failing its hash check therefore took the user's working
+   * model with it, with no way back but a multi-gigabyte re-download.
+   *
+   * Only the artifacts of *this* download are removed (the target file plus its
+   * `.tmp` / `.url` partials), and the directory itself goes only when nothing
+   * else is left in it.
+   *
+   * @param modelId The model whose directory was being written into
+   * @param items The download items this import queued
    */
-  private async deleteModelFolder(modelId: string): Promise<void> {
+  private async cleanupFailedDownload(
+    modelId: string,
+    items: DownloadItem[]
+  ): Promise<void> {
     try {
+      const janDataFolderPath = await getJanDataFolderPath()
+
+      for (const item of items) {
+        // `.tmp` is the in-flight file and `.url` the resume marker, named by
+        // the Rust downloader as `<save_path>.tmp` / `<save_path>.url`.
+        for (const suffix of ['', '.tmp', '.url']) {
+          const path = await joinPath([
+            janDataFolderPath,
+            `${item.save_path}${suffix}`,
+          ])
+          if (await fs.existsSync(path)) {
+            logger.warn(
+              `Removing artifact of the failed download of ${modelId}: ${path}`
+            )
+            await fs.rm(path)
+          }
+        }
+      }
+
       const modelDir = await joinPath([
         await this.getProviderPath(),
         'models',
         modelId,
       ])
+      if (!(await fs.existsSync(modelDir))) return
 
-      if (await fs.existsSync(modelDir)) {
-        logger.info(`Cleaning up model directory: ${modelDir}`)
+      const remaining = (await fs.readdirSync(modelDir)) as string[]
+      if (remaining.length === 0) {
+        logger.info(`Removing empty model directory: ${modelDir}`)
         await fs.rm(modelDir)
+      } else {
+        logger.warn(
+          `Keeping ${modelDir}: ${remaining.length} file(s) there did not belong to this download (${remaining.join(', ')})`
+        )
       }
     } catch (deleteError) {
-      logger.warn('Failed to delete model directory:', deleteError)
+      logger.warn('Failed to clean up after a failed download:', deleteError)
     }
   }
 

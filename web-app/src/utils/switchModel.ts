@@ -807,11 +807,16 @@ function isOutOfMemoryError(err: ErrorObject): boolean {
 // The two on-device llama.cpp engines are interchangeable for most models, so
 // when one rejects a model we can point the user at the other. `llamacpp` is the
 // turboquant fork; `llamacpp-upstream` is stock llama.cpp. The turboquant engine
-// only ships on macOS, so it's only a valid suggestion there.
+// only ships on macOS, so it's only a valid suggestion there — and only when
+// the user hasn't deactivated it (it ships disabled on fresh installs).
 function alternateLocalBackend(providerName?: string): string | undefined {
   if (providerName === 'llamacpp') return getProviderTitle('llamacpp-upstream')
-  if (providerName === 'llamacpp-upstream')
-    return IS_MACOS ? getProviderTitle('llamacpp') : undefined
+  if (providerName === 'llamacpp-upstream') {
+    const fork = useModelProvider.getState().getProviderByName('llamacpp')
+    return IS_MACOS && fork?.active !== false
+      ? getProviderTitle('llamacpp')
+      : undefined
+  }
   return undefined
 }
 

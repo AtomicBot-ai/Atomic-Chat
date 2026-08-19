@@ -5,6 +5,7 @@ import type { ServiceHub } from '@/services'
 import { seedServiceHub } from '@/test/service-hub'
 
 const mocks = vi.hoisted(() => ({
+  switchToModel: vi.fn(),
   checkForUpdate: vi.fn(),
   initializeWithLastUsed: vi.fn(),
   navigate: vi.fn(),
@@ -123,6 +124,10 @@ vi.mock('@/utils/registerRemoteProvider', () => ({
 
 vi.mock('@/utils/activeModelsSync', () => ({
   hydrateActiveModelsForRunningServer: vi.fn(),
+}))
+
+vi.mock('@/utils/switchModel', () => ({
+  switchToModel: mocks.switchToModel,
 }))
 
 vi.mock('@janhq/core', () => ({
@@ -254,6 +259,58 @@ describe('DataProvider', () => {
         },
       ])
     })
+    unmount()
+  })
+
+  it('auto-switches an imported model to an active provider, skipping a deactivated one', async () => {
+    // Both llama.cpp providers list every GGUF from the shared models dir.
+    // TurboQuant comes first in the array but is deactivated (the fresh-install
+    // default) — the auto-switch must land on upstream.
+    const { useModelProvider } = await import('@/hooks/useModelProvider')
+    const { events } = await import('@janhq/core')
+    const state = useModelProvider.getState() as unknown as {
+      providers: unknown[]
+    }
+    state.providers = [
+      {
+        provider: 'llamacpp',
+        active: false,
+        models: [{ id: 'imported-model' }],
+        settings: [],
+      },
+      {
+        provider: 'llamacpp-upstream',
+        active: true,
+        models: [{ id: 'imported-model' }],
+        settings: [],
+      },
+    ]
+    mocks.switchToModel.mockResolvedValue(undefined)
+
+    const { unmount } = render(<DataProvider />)
+    await waitFor(() => {
+      expect(events.on).toHaveBeenCalledWith(
+        'onModelImported',
+        expect.any(Function)
+      )
+    })
+
+    const handler = vi
+      .mocked(events.on)
+      .mock.calls.find(([event]) => event === 'onModelImported')?.[1] as (
+      data?: Record<string, unknown>
+    ) => Promise<void>
+    await handler({ modelId: 'imported-model' })
+
+    expect(mocks.switchToModel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelId: 'imported-model',
+        providerName: 'llamacpp-upstream',
+        isAutoStart: true,
+      })
+    )
+
+    state.providers = []
     unmount()
   })
 

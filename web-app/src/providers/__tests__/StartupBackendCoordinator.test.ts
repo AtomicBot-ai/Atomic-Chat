@@ -90,6 +90,35 @@ describe('StartupBackendCoordinator helpers', () => {
     expect(result.llamacpp?.detectionKind).toBe('cpu-optimal')
   })
 
+  it('never probes a provider the user has deactivated', async () => {
+    const probed: string[] = []
+    const extensions = {
+      getByName: (name: string) => {
+        const provider = name.includes('upstream')
+          ? ('llamacpp-upstream' as const)
+          : ('llamacpp' as const)
+        return {
+          getCachedOptimalBackend: () => null,
+          refreshOptimalBackendCache: vi.fn(async () => {
+            probed.push(provider)
+            return gpuRecord(provider)
+          }),
+        }
+      },
+    }
+
+    const result = await refreshStartupBackendCaches(
+      extensions,
+      false,
+      NOW,
+      (provider) => provider !== 'llamacpp'
+    )
+
+    expect(probed).toEqual(['llamacpp-upstream'])
+    expect(result.llamacpp).toBeUndefined()
+    expect(result['llamacpp-upstream']).toBeDefined()
+  })
+
   it('keeps a stale successful cache when refresh fails', async () => {
     const stale = gpuRecord('llamacpp-upstream', 1)
     const extensions = {

@@ -342,14 +342,21 @@ export function DataProvider() {
       // Resolve against the post-merge store, not the raw extension payload.
       // This keeps model/provider selection aligned with migrations and
       // persisted deletions before `switchToModel` runs.
+      // Both llama.cpp providers list every GGUF from the shared models dir,
+      // so an array-order find could land on a deactivated provider (e.g.
+      // TurboQuant, disabled by default on fresh installs) — skip those.
       const storeProviders = useModelProvider.getState().providers
-      let provider = storeProviders.find((p) =>
-        p?.models?.some((m: { id: string }) => m.id === modelId)
+      let provider = storeProviders.find(
+        (p) =>
+          p?.active !== false &&
+          p?.models?.some((m: { id: string }) => m.id === modelId)
       )
       if (!provider) {
         const altId = modelId.replace(/\//g, '\\')
-        provider = storeProviders.find((p) =>
-          p?.models?.some((m: { id: string }) => m.id === altId)
+        provider = storeProviders.find(
+          (p) =>
+            p?.active !== false &&
+            p?.models?.some((m: { id: string }) => m.id === altId)
         )
       }
       if (!provider) {

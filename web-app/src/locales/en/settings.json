@@ -302,7 +302,9 @@
     "atomicBotCliInstalledToast": "Atomic Bot CLI installed at {{path}}",
     "launchAtStartup": "Launch at startup",
     "launchAtStartupDesc": "Automatically start Atomic Chat when you log in to your computer.",
-    "launchAtStartupError": "Failed to update the launch at startup setting."
+    "launchAtStartupError": "Failed to update the launch at startup setting.",
+    "preloadModelOnStartup": "Preload last used model on startup",
+    "preloadModelOnStartupDesc": "Off by default so the app opens fast. Leave it off and Atomic Chat loads a model only after you pick one in the model selector."
   },
   "extensions": {
     "title": "Extensions"

@@ -80,11 +80,14 @@ export const ModelDownloadAction = ({
       )
       const fork = allProviders.find((p) => p.provider === 'llamacpp')
       const upstreamHasModel = upstream?.models.some((m) => m.id === modelId)
-      const forkHasModel = fork?.models.some((m) => m.id === modelId)
+      // Never route to a deactivated TurboQuant (disabled by default on
+      // fresh installs) — the upstream tail of the ternary covers it.
+      const forkUsable =
+        fork?.active !== false && fork?.models.some((m) => m.id === modelId)
       const targetLlamaProvider: 'llamacpp' | 'llamacpp-upstream' =
         upstreamHasModel
           ? 'llamacpp-upstream'
-          : forkHasModel
+          : forkUsable
             ? 'llamacpp'
             : upstream
               ? 'llamacpp-upstream'
@@ -97,8 +100,8 @@ export const ModelDownloadAction = ({
         targetLlamaProvider,
         '(upstreamHasModel:',
         upstreamHasModel,
-        'forkHasModel:',
-        forkHasModel,
+        'forkUsable:',
+        forkUsable,
         ')'
       )
 

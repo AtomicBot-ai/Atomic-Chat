@@ -202,6 +202,20 @@ describe('findInstalledLocalModel', () => {
     ).toEqual({ modelId: 'unsloth/Qwen3-4B-Q4_K_M', provider: 'llamacpp' })
   })
 
+  it('resolves an id both llama.cpp providers registered to the upstream one', () => {
+    // Shared models dir: both engines list the same file. The default engine
+    // (upstream) must answer, not the TurboQuant fork.
+    expect(
+      findInstalledLocalModel(
+        [
+          provider('llamacpp', ['Qwen3-4B-Q4_K_M']),
+          provider('llamacpp-upstream', ['Qwen3-4B-Q4_K_M']),
+        ],
+        quantModelIds(entry, 'Qwen3-4B-Q4_K_M')
+      )
+    ).toEqual({ modelId: 'Qwen3-4B-Q4_K_M', provider: 'llamacpp-upstream' })
+  })
+
   it('returns null when no local provider carries the id', () => {
     expect(
       findInstalledLocalModel(

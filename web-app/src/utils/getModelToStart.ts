@@ -31,7 +31,9 @@ function findFirstLocalModel(
     const firstUsable = provider?.models?.find(
       (m) => m.id !== EMBEDDING_MODEL_ID && !(m as { missing?: boolean }).missing
     )
-    if (provider && firstUsable) {
+    // A deactivated provider (Settings → Model Providers toggle) must never
+    // be auto-started — e.g. TurboQuant ships disabled on fresh installs.
+    if (provider && provider.active !== false && firstUsable) {
       return { model: firstUsable.id, provider }
     }
   }
@@ -52,8 +54,15 @@ export const getModelToStart = (params: {
     const provider = getProviderByName(lastUsedModel.provider)
     const lastModel = provider?.models.find((m) => m.id === lastUsedModel.model)
 
-    // A broken-link last-used model must not be reloaded — fall through to a healthy one.
-    if (provider && lastModel && !(lastModel as { missing?: boolean }).missing) {
+    // A broken-link last-used model must not be reloaded, and a last-used
+    // model on a since-deactivated provider must not resurrect that provider
+    // — fall through to a healthy one.
+    if (
+      provider &&
+      provider.active !== false &&
+      lastModel &&
+      !(lastModel as { missing?: boolean }).missing
+    ) {
       return { model: lastUsedModel.model, provider }
     } else {
       const fallback = findFirstLocalModel(getProviderByName)
@@ -64,7 +73,8 @@ export const getModelToStart = (params: {
   // Use selected model if available
   if (selectedModel && selectedProvider) {
     const provider = getProviderByName(selectedProvider)
-    if (provider) {
+    // A stale persisted selection may point at a deactivated provider.
+    if (provider && provider.active !== false) {
       return { model: selectedModel.id, provider }
     }
   }

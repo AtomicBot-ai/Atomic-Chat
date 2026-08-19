@@ -1,15 +1,22 @@
 {
   "$schema": "./schema.json",
   "schema_version": 1,
-  "updated_at": "2026-08-14T18:30:00Z",
+  "updated_at": "2026-08-19T09:00:00Z",
   "recommendations": [
+    { "model_name": "AtomicChat/Qwen3.5-4B-GGUF", "description_key": "hub:recEverydayUse" },
+    { "model_name": "AtomicChat/gemma-4-E2B-it-GGUF", "description_key": "hub:recEverydayUse" }
+  ],
+  "low_spec_recommendations": [
     {
-      "model_name": "AtomicChat/Qwen3.5-4B-GGUF",
-      "description_key": "hub:recEverydayUse"
+      "model_name": "LiquidAI/LFM2.5-2.6B-GGUF",
+      "description_key": "hub:recEverydayUse",
+      "quant": "Q4_K_M"
     },
     {
-      "model_name": "AtomicChat/gemma-4-E2B-it-GGUF",
-      "description_key": "hub:recEverydayUse"
+      "model_name": "LiquidAI/LFM2.5-VL-450M-GGUF",
+      "description_key": "hub:recVisionKnowledge",
+      "quant": "Q8_0",
+      "mmproj_quant": "Q8_0"
     }
   ]
 }

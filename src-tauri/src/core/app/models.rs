@@ -30,9 +30,14 @@ impl AppConfiguration {
         }
     }
 
+    /// A freshly created configuration. New installs no longer claim a Login
+    /// Item / startup entry: the app has to open fast and cold, and autostart
+    /// is opt-in from Settings. `PendingDefaultOn` is kept as a variant so
+    /// configurations written by older builds still deserialize and complete
+    /// the contract they were created under.
     pub fn new_install() -> Self {
         Self {
-            autostart_preference: AutostartPreference::PendingDefaultOn,
+            autostart_preference: AutostartPreference::Unmanaged,
             ..Self::default()
         }
     }
@@ -51,10 +56,10 @@ mod tests {
     }
 
     #[test]
-    fn new_install_defaults_autostart_to_pending_on() {
+    fn new_install_does_not_enable_autostart() {
         assert_eq!(
             AppConfiguration::new_install().autostart_preference,
-            AutostartPreference::PendingDefaultOn
+            AutostartPreference::Unmanaged
         );
     }
 

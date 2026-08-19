@@ -6,17 +6,19 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CatalogModel } from '@/services/models/types'
 import {
-  ONBOARDING_REMINDER_MODEL_HF_REPO,
+  ONBOARDING_REMINDER_MODELS,
   SETUP_SCREEN_QUANTIZATIONS,
 } from '@/constants/models'
+import { useHardwareTier } from '@/hooks/useHardwareTier'
+import { findPinnedQuant } from '@/lib/model-card'
 import { getPreferredMmprojModel } from '@/lib/models'
 import { HUGGINGFACE_LOGO_SRC, modelFamilyLogoSrc } from '@/lib/model-logo'
 import { captureOnboardingModelReminder } from '@/lib/onboarding-telemetry'
 
 // The offer is about the model, not the app, so it carries the model's brand
 // mark. Derived from the repo id so it follows the recommendation.
-const reminderModelLogoSrc =
-  modelFamilyLogoSrc(ONBOARDING_REMINDER_MODEL_HF_REPO) ?? HUGGINGFACE_LOGO_SRC
+const reminderModelLogoSrc = (repo: string) =>
+  modelFamilyLogoSrc(repo) ?? HUGGINGFACE_LOGO_SRC
 
 /// Bottom-right offer shown once onboarding has been left without a model,
 /// either by Skip or by the auto-exit timeout. Repeats the first onboarding
@@ -24,6 +26,10 @@ const reminderModelLogoSrc =
 export function PromptOnboardingModel() {
   const { setPending } = useOnboardingModelReminder()
   const serviceHub = useServiceHub()
+  // A weak device that skipped onboarding must not be nudged toward the model
+  // the low-spec tier exists to keep it away from.
+  const { tier } = useHardwareTier()
+  const reminder = ONBOARDING_REMINDER_MODELS[tier]
   const {
     downloads,
     localDownloadingModels,
@@ -46,10 +52,7 @@ export function PromptOnboardingModel() {
     try {
       const repo = await serviceHub
         .models()
-        .fetchHuggingFaceRepo(
-          ONBOARDING_REMINDER_MODEL_HF_REPO,
-          huggingfaceToken
-        )
+        .fetchHuggingFaceRepo(reminder.repo, huggingfaceToken)
 
       if (repo) {
         setRecommendedModel(
@@ -61,7 +64,7 @@ export function PromptOnboardingModel() {
     } finally {
       setIsLoading(false)
     }
-  }, [serviceHub, huggingfaceToken])
+  }, [serviceHub, huggingfaceToken, reminder.repo])
 
   useEffect(() => {
     fetchRecommendedModel()
@@ -69,6 +72,11 @@ export function PromptOnboardingModel() {
 
   const defaultVariant = useMemo(() => {
     if (!recommendedModel) return null
+
+    // The pin wins: this repo also ships a Q4_K_M that the loop below would
+    // match, so without it the reminder downloads the wrong file silently.
+    const pinned = findPinnedQuant(recommendedModel.quants, reminder.quant)
+    if (pinned) return pinned
 
     for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
       const variant = recommendedModel.quants?.find((quant) =>
@@ -78,7 +86,7 @@ export function PromptOnboardingModel() {
     }
 
     return recommendedModel.quants?.[0]
-  }, [recommendedModel])
+  }, [recommendedModel, reminder.quant])
 
   const isDownloading = useMemo(() => {
     if (!defaultVariant) return false
@@ -113,7 +121,10 @@ export function PromptOnboardingModel() {
       .pullModelWithMetadata(
         defaultVariant.model_id,
         defaultVariant.path,
-        getPreferredMmprojModel(recommendedModel)?.path,
+        (findPinnedQuant(
+          recommendedModel.mmproj_models,
+          reminder.mmprojQuant
+        ) ?? getPreferredMmprojModel(recommendedModel))?.path,
         huggingfaceToken,
         true,
         resumableDownloads.has(defaultVariant.model_id)
@@ -127,13 +138,13 @@ export function PromptOnboardingModel() {
     <div className="fixed bottom-4 right-4 z-50 p-4 shadow-lg bg-background w-4/5 md:w-100 border rounded-lg">
       <div className="flex items-center gap-2">
         <img
-          src={reminderModelLogoSrc}
+          src={reminderModelLogoSrc(reminder.repo)}
           alt=""
           className="size-5 shrink-0 object-contain"
           aria-hidden
         />
         <h2 className="font-medium">
-          Qwen3.5 4B
+          {reminder.title}
           {defaultVariant && (
             <span className="text-muted-foreground">
               {' '}
@@ -143,7 +154,7 @@ export function PromptOnboardingModel() {
         </h2>
       </div>
       <p className="mt-2 text-sm text-muted-foreground">
-        Get started with Qwen3.5 4B, our recommended local model for your
+        Get started with {reminder.title}, our recommended local model for your
         device.
       </p>
       <div className="mt-4 flex justify-end space-x-2">

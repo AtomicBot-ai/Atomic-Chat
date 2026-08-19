@@ -175,6 +175,26 @@ describe('ChatInput', () => {
     unmount()
   })
 
+  it('asks for a model instead of sending when none is selected', async () => {
+    // With model preloading off by default, this is the state of every cold
+    // launch until the user picks a model in the selector.
+    useModelProvider.setState({ selectedProvider: '', selectedModel: null })
+    const onSubmit = vi.fn()
+    const { unmount } = render(<ChatInput onSubmit={onSubmit} />)
+    const input = screen.getByTestId('chat-input')
+
+    fireEvent.change(input, { target: { value: 'Invoke the machine spirit' } })
+    fireEvent.click(
+      document.querySelector('[data-test-id="send-message-button"]')!
+    )
+
+    expect(await screen.findByText('chat:selectModelToChat')).toBeVisible()
+    expect(onSubmit).not.toHaveBeenCalled()
+    // The typed prompt survives so the user can send it once a model is picked.
+    expect(input).toHaveValue('Invoke the machine spirit')
+    unmount()
+  })
+
   it('downscales an image before applying the byte limit', async () => {
     const model = {
       id: 'vision-model',

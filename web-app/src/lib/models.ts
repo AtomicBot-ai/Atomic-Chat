@@ -237,13 +237,21 @@ export function getPreferredMmprojModel(
   )
 }
 
+/**
+ * Quoted download size: the weights plus whichever projector will be fetched.
+ *
+ * `mmproj` overrides the default projector choice — pass the same one the
+ * download will use, or the row quotes one file's size while fetching another
+ * (the LFM VL projectors range from 98 MB to 359 MB).
+ */
 export function getTotalDownloadFileSize(
   model: Pick<CatalogModel, 'mmproj_models'>,
-  variant?: Pick<ModelQuant, 'file_size'> | null
+  variant?: Pick<ModelQuant, 'file_size'> | null,
+  mmproj?: Pick<MMProjModel, 'file_size'> | null
 ): string | undefined {
   const modelBytes = parseCatalogFileSize(variant?.file_size)
   const mmprojBytes = parseCatalogFileSize(
-    getPreferredMmprojModel(model)?.file_size
+    (mmproj !== undefined ? mmproj : getPreferredMmprojModel(model))?.file_size
   )
 
   if (modelBytes === undefined) {

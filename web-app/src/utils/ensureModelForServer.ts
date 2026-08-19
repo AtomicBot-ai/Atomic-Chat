@@ -24,13 +24,19 @@ export interface EnsureModelDeps {
   onLoadEnd?: () => void
 }
 
-/** Find the provider that owns a given model ID. */
+/**
+ * Find the provider that owns a given model ID. Both llama.cpp providers list
+ * every GGUF from the shared models dir, so prefer an active provider before
+ * settling for a deactivated one (e.g. TurboQuant, disabled on fresh installs).
+ */
 function findProviderForModel(modelId: string): ModelProvider | undefined {
-  return useModelProvider
-    .getState()
-    .providers.find((p) =>
-      p?.models?.some((m: { id: string }) => m.id === modelId)
-    )
+  const { providers } = useModelProvider.getState()
+  const owns = (p: ModelProvider) =>
+    p?.models?.some((m: { id: string }) => m.id === modelId)
+  return (
+    providers.find((p) => p?.active !== false && owns(p)) ??
+    providers.find(owns)
+  )
 }
 
 /**

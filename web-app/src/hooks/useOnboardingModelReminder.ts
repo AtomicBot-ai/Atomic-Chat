@@ -1,5 +1,5 @@
 import { localStorageKey } from '@/constants/localStorage'
-import { ONBOARDING_REMINDER_MODEL_HF_REPO } from '@/constants/models'
+import { ONBOARDING_REMINDER_MODELS } from '@/constants/models'
 import { isLocalProvider } from '@/utils/registerRemoteProvider'
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
@@ -33,12 +33,17 @@ export const useOnboardingModelReminderStore =
 /// alphanumerics only keeps `Qwen3.5-4B-Q4_K_M` and `Qwen3_5-4B-IQ4_XS` equal.
 const normalizeModelId = (id: string) => id.toLowerCase().replace(/[^a-z0-9]/g, '')
 
-const REMINDER_MODEL_TOKEN = normalizeModelId(
-  ONBOARDING_REMINDER_MODEL_HF_REPO.split('/').pop()!.replace(/-GGUF$/i, '')
+/// Every tier's offer, not just the current one: the reminder is about whether
+/// the user ended up with a local model at all, and the tier can differ between
+/// the launch that armed it and the launch that reads it.
+const REMINDER_MODEL_TOKENS = Object.values(ONBOARDING_REMINDER_MODELS).map(
+  ({ repo }) => normalizeModelId(repo.split('/').pop()!.replace(/-GGUF$/i, ''))
 )
 
-const matchesReminderModel = (id: string) =>
-  normalizeModelId(id).includes(REMINDER_MODEL_TOKEN)
+const matchesReminderModel = (id: string) => {
+  const normalized = normalizeModelId(id)
+  return REMINDER_MODEL_TOKENS.some((token) => normalized.includes(token))
+}
 
 export const useOnboardingModelReminder = () => {
   const pending = useOnboardingModelReminderStore((state) => state.pending)

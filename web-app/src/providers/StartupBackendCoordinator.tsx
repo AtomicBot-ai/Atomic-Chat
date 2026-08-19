@@ -51,7 +51,14 @@ export function StartupBackendCoordinator() {
     if (!startupRefreshPromise) {
       startupRefreshPromise = refreshStartupBackendCaches(
         ExtensionManager.getInstance(),
-        gpuCount === 0
+        gpuCount === 0,
+        Date.now(),
+        /// Don't spend startup I/O probing a provider the user has
+        /// deactivated (TurboQuant ships disabled on fresh installs). The
+        /// store is merged by now — this effect waits for onboarding state.
+        (providerId) =>
+          providers.find((item) => item.provider === providerId)?.active !==
+          false
       )
     }
 

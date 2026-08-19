@@ -43,11 +43,18 @@ export function isOptimalBackendCacheFresh(
  * Refresh providers sequentially: both detection paths can touch manifests and
  * spawn backend probes, so running them in parallel would compete for startup
  * I/O. A confirmed CPU-only host takes the extensions' no-probe fast path.
+ *
+ * `isProviderActive` lets the caller skip probing a provider the user has
+ * deactivated (e.g. TurboQuant, disabled by default on fresh installs) — no
+ * point spending startup I/O on an engine that can't be auto-selected.
  */
 export async function refreshStartupBackendCaches(
   extensions: ExtensionLookup,
   hardwareHasNoGpu: boolean,
-  now = Date.now()
+  now = Date.now(),
+  isProviderActive: (
+    provider: OptimalBackendCacheRecord['provider']
+  ) => boolean = () => true
 ): Promise<
   Partial<Record<OptimalBackendCacheRecord['provider'], OptimalBackendCacheRecord>>
 > {
@@ -56,6 +63,7 @@ export async function refreshStartupBackendCaches(
   > = {}
 
   for (const config of PROVIDERS) {
+    if (!isProviderActive(config.provider)) continue
     const extension = extensions.getByName(
       config.extensionName
     ) as OptimalBackendExtension | null
