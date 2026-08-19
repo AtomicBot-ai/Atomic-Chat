@@ -294,27 +294,27 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
   // match to drive the phase transitions from events alone, regardless
   // of which component initiated the download.
   useEffect(() => {
-     const handleDownloadStarted = (payload: {
-       backend: string
-       status: string
-       provider?: string
-     }) => {
-       if (!isOurEvent(payload)) return
-       setDownloadState({
-         isDownloading: true,
-         backendName: payload.backend,
-         status: 'downloading',
-       })
-       if (
-         recommendation &&
-         payload.backend === recommendation.recommendedBackend &&
-         recommendationPhase !== 'restart-required'
-       ) {
-         clearHotswapTimeout()
-         clearCompletedTimeout()
-         setRecommendationPhase('downloading')
-       }
-     }
+    const handleDownloadStarted = (payload: {
+      backend: string
+      status: string
+      provider?: string
+    }) => {
+      if (!isOurEvent(payload)) return
+      setDownloadState({
+        isDownloading: true,
+        backendName: payload.backend,
+        status: 'downloading',
+      })
+      if (
+        recommendation &&
+        payload.backend === recommendation.recommendedBackend &&
+        recommendationPhase !== 'restart-required'
+      ) {
+        clearHotswapTimeout()
+        clearCompletedTimeout()
+        setRecommendationPhase('downloading')
+      }
+    }
 
     const handleDownloadFinished = (payload: {
       backend: string
@@ -363,7 +363,7 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
       events.off(AppEvent.onBackendDownloadStarted, handleDownloadStarted)
       events.off(AppEvent.onBackendDownloadFinished, handleDownloadFinished)
     }
-  }, [recommendationPhase, recommendation, clearHotswapTimeout, isOurEvent])
+  }, [recommendationPhase, recommendation, clearHotswapTimeout, clearCompletedTimeout, isOurEvent])
 
   // Listen for the live hot-swap completion event dispatched by
   // `applyBackendLive()` in the llamacpp extension. The event arrives on
