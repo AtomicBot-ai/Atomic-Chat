@@ -113,6 +113,7 @@ In Remote Model Providers:
     - [ ] [0.7.0] Azure
 	- [ ] Cohere
 	- [ ] OpenRouter
+	- [ ] OrcaRouter
 	- [ ] Mistral
 	- [ ] Groq
 	- [ ] Gemini

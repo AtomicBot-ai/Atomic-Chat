@@ -1,0 +1,101 @@
+---
+title: OrcaRouter
+description: A step-by-step guide on integrating Atomic Chat with OrcaRouter.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    OrcaRouter integration,
+    OrcaRouter,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Settings, Plus } from 'lucide-react'
+
+# OrcaRouter
+
+## Integrate OrcaRouter with Atomic Chat
+
+[OrcaRouter](https://www.orcarouter.ai) is an AI gateway that routes every
+request to the best model for the job — mixing frontier models, open-weight
+models, and long-context specialists behind one unified, OpenAI-compatible
+API. It also runs gateway-level, zero-trust security for AI agents on the same
+endpoint — screening every prompt/response and governing every tool call on a
+default-deny basis, with no application code changes.
+
+Atomic Chat supports the OrcaRouter API, so you can use one key to reach any
+of the 150+ models OrcaRouter routes to (Anthropic, Google, DeepSeek, MiniMax
+and more) without juggling a separate API key per provider.
+
+## Integrate OrcaRouter with Atomic Chat
+
+<Steps>
+
+### Step 1: Get Your API Key
+1. Visit [OrcaRouter](https://www.orcarouter.ai) and sign in
+2. Create & copy a new API key (keys are prefixed `sk-orca-`) or copy your existing one
+
+<Callout type='info'>
+`orcarouter/auto` is OrcaRouter's smart routing model: send every request to
+it and the gateway picks the cheapest model that satisfies the request, so
+you get frontier quality without the frontier price.
+</Callout>
+
+### Step 2: Configure Atomic Chat
+
+1. Navigate to the **Settings** page (<Settings width={16} height={16} style={{display:"inline"}}/>)
+2. Under **Model Providers**, select **OrcaRouter**
+3. Insert your **API Key**
+
+### Step 3: Start Using OrcaRouter Models
+
+1. Pick any existing **Chat** or create a new one
+2. Select any model from **model selector** under OrcaRouter
+3. Start chatting
+
+</Steps>
+
+## Available Models Through OrcaRouter
+
+Atomic Chat automatically lists OrcaRouter's available models via its
+`/v1/models` endpoint. For custom configurations:
+
+**Model Field Settings:**
+- Leave empty to use your account's default model
+- Specify a model using the format: `orcarouter/<router-name>` or
+  `<provider>/<model-name>`
+- The full model catalog is available at [https://www.orcarouter.ai/models](https://www.orcarouter.ai/models)
+
+**Examples of Model IDs:**
+- Smart router: `orcarouter/auto`
+- Claude via OrcaRouter: `anthropic/claude-sonnet-4.6`
+- Gemini via OrcaRouter: `google/gemini-3-flash-preview`
+
+## Troubleshooting
+
+Common issues and solutions:
+
+**1. API Key Issues**
+- Verify your API key is correct and starts with `sk-orca-`
+- Check you have sufficient credits in your OrcaRouter account
+- Ensure you have access to the model you're trying to use
+
+**2. Connection Problems**
+- Check your internet connection
+- Verify the API base URL is `https://api.orcarouter.ai/v1`
+- Look for error messages in [Atomic Chat's logs](/docs/desktop/troubleshooting#how-to-get-error-logs)
+
+**3. Model Unavailable**
+- Confirm the model is currently available on OrcaRouter
+- Check if you're using the correct model ID format (`orcarouter/` prefix for routers)
+- Verify the provider is currently operational
+
+Need more help? Join our [Discord community](https://discord.com/invite/8wGSsvmg4V) or check the [OrcaRouter documentation](https://docs.orcarouter.ai).

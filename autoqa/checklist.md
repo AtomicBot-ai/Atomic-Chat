@@ -98,6 +98,7 @@ In Remote Model Providers:
 	- [ ] Anthropic
 	- [ ] Cohere
 	- [ ] OpenRouter
+	- [ ] OrcaRouter
 	- [ ] Mistral
 	- [ ] Groq
 	- [ ] Gemini

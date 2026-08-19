@@ -767,6 +767,7 @@ export class ModelFactory {
       case 'moonshot':
       case 'minimax':
       case 'openrouter':
+      case 'orcarouter':
       case 'huggingface':
       case 'nvidia':
       case 'ollama':
