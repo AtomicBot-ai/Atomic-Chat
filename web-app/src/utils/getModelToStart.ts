@@ -64,7 +64,14 @@ export const getModelToStart = (params: {
   // Use selected model if available
   if (selectedModel && selectedProvider) {
     const provider = getProviderByName(selectedProvider)
-    if (provider) {
+    // Skip broken-link (missing weights) and embedding selected models —
+    // loading them only crashes — and fall through to a healthy model.
+    // Mirrors the guards in findFirstLocalModel and the last-used path.
+    if (
+      provider &&
+      selectedModel.id !== EMBEDDING_MODEL_ID &&
+      !(selectedModel as { missing?: boolean }).missing
+    ) {
       return { model: selectedModel.id, provider }
     }
   }
