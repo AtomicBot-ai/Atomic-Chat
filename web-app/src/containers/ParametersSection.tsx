@@ -113,7 +113,7 @@ export function ParametersSection({
                         if (Number.isNaN(parsed)) return
                         onChange(key, clamp(parsed, setting.min, setting.max))
                       }}
-                      className="h-6 w-14 rounded-md border-0 bg-transparent px-1 text-right text-xs text-muted-foreground/80 tabular-nums shadow-none focus-visible:ring-0 dark:bg-transparent"
+                      className="h-6 w-14 rounded-md border-0 bg-transparent px-1 py-0 text-right text-xs! leading-6 text-muted-foreground/80 tabular-nums shadow-none focus-visible:ring-0 dark:bg-transparent"
                     />
                   </div>
                   {setting.controllerType === 'slider' && (

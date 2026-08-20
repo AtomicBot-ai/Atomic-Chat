@@ -13,6 +13,7 @@ type AgentActivityProps = {
   durationLabel: string
   workingLabel: string
   hasDetails?: boolean
+  className?: string
   children: ReactNode
 }
 
@@ -21,6 +22,7 @@ export function AgentActivity({
   durationLabel,
   workingLabel,
   hasDetails = true,
+  className,
   children,
 }: AgentActivityProps) {
   const [open, setOpen] = useState(false)
@@ -29,7 +31,7 @@ export function AgentActivity({
     <Collapsible
       open={open}
       onOpenChange={setOpen}
-      className="not-prose mb-3 text-sm text-muted-foreground"
+      className={cn('not-prose mb-3 text-sm text-muted-foreground', className)}
     >
       <CollapsibleTrigger
         disabled={!hasDetails}

@@ -436,6 +436,10 @@ function ThreadDetail() {
 
       if (isAbort) {
         setIsChatRequestActive(false)
+        // Stop during an auto-continue never reaches the non-abort clear
+        // below, and a stale placeholder would flip the indicator row to
+        // "Growing the Mind..." on every later send in this thread.
+        setPendingContinueMessage(null)
         captureTurnOutcome('aborted', message)
       }
 
@@ -446,8 +450,7 @@ function ThreadDetail() {
         let willContinue = false
         const selectedModelState = useModelProvider.getState().selectedModel
         const usage = msgMeta?.usage as
-          | { inputTokens?: number; outputTokens?: number }
-          | undefined
+          { inputTokens?: number; outputTokens?: number } | undefined
         const totalTokens =
           (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0)
         const ctxLen =
@@ -1187,8 +1190,8 @@ function ThreadDetail() {
         // the window actually was comes from real `usage` on the response.
         ...contextTelemetry(
           null,
-          (selectedModel?.settings?.ctx_len?.controller_props?.value as number) ??
-            null
+          (selectedModel?.settings?.ctx_len?.controller_props
+            ?.value as number) ?? null
         ),
         turn_id: beginChatTurn(threadId),
         thread_id: threadId,
@@ -1797,6 +1800,10 @@ function ThreadDetail() {
                       isFirstMessage={false}
                       isLastMessage={true}
                       status={status}
+                      // The placeholder is a frozen snapshot: its activity must
+                      // read "Worked for Xs", not add a second live "Working"
+                      // shimmer under "Growing the Mind...".
+                      requestActive={false}
                       reasoningContainerRef={reasoningContainerRef}
                       onRegenerate={handleRegenerate}
                       onEdit={agentModeActive ? undefined : handleEditMessage}
@@ -1810,12 +1817,15 @@ function ThreadDetail() {
                   {(inputStatus === CHAT_STATUS.SUBMITTED ||
                     isAutoIncreasingContext) && (
                     <div className="flex flex-row items-center gap-2">
-                      {(pendingContinueMessage || isAutoIncreasingContext) && (
+                      {/* One indicator at a time: the context-growth shimmer
+                      replaces the generic "Working" progress, never joins it. */}
+                      {pendingContinueMessage || isAutoIncreasingContext ? (
                         <Shimmer duration={1}>Growing the Mind...</Shimmer>
-                      )}
-                      {inputStatus === CHAT_STATUS.SUBMITTED &&
+                      ) : (
+                        inputStatus === CHAT_STATUS.SUBMITTED &&
                         !agentModeActive &&
-                        !hasActiveAssistantMessage && <PromptProgress />}
+                        !hasActiveAssistantMessage && <PromptProgress />
+                      )}
                     </div>
                   )}
                   {(error || contextLimitError) &&

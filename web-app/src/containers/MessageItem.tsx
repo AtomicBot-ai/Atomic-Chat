@@ -354,7 +354,7 @@ export const MessageItem = memo(
             className={twMerge(
               'relative w-full overflow-auto',
               streaming
-                ? 'max-h-32 opacity-70 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
+                ? 'mt-2 max-h-32 opacity-70 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_bottom,transparent,black_1.5rem)]'
                 : 'h-auto opacity-100'
             )}
           >

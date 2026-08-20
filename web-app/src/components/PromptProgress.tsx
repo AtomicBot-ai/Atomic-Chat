@@ -26,6 +26,9 @@ export function PromptProgress() {
       workingLabel={t('activity.working')}
       durationLabel=""
       hasDetails={Boolean(showReadingProgress)}
+      // Rendered inside the indicator row, not the message flow — the default
+      // mb-3 would make this row taller than the shimmer it swaps with.
+      className="mb-0"
     >
       {showReadingProgress && (
         <ActivityDetail label={t('activity.reading', { count: percentage })}>

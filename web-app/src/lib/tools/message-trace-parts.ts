@@ -10,8 +10,7 @@ export function buildTraceBlocks(
 ): TraceBlock[] {
   const blocks: TraceBlock[] = []
   const metadata = message.metadata as
-    | { agent_run?: AgentRunSummary; activityDurationMs?: number }
-    | undefined
+    { agent_run?: AgentRunSummary; activityDurationMs?: number } | undefined
   const agentRun = metadata?.agent_run
   const reasoning: Array<{ key: string; text: string }> = []
   const tools: Extract<TraceBlock, { kind: 'activity' }>['tools'] = []
@@ -109,7 +108,23 @@ export function buildTraceBlocks(
     }
   }
 
-  if (activityIndex >= 0) {
+  const reasoningStreaming =
+    reasoning.length > 0 &&
+    (reasoningState === 'streaming' ||
+      (reasoningState !== 'done' && !answeredAfterReasoning))
+
+  // A block that exists only because of `ensureActivity` (no tools, no agent
+  // run, no recorded duration) is a bare "Working" shimmer. While the thinking
+  // stream is live, "Thinking..." already signals activity — showing both
+  // stacks two spinners on one message.
+  const activityIsPlaceholder =
+    tools.length === 0 &&
+    !agentRun &&
+    metadata?.activityDurationMs === undefined
+  const showActivity =
+    activityIndex >= 0 && !(activityIsPlaceholder && reasoningStreaming)
+
+  if (showActivity) {
     blocks.splice(activityIndex, 0, {
       kind: 'activity',
       key: `${message.id}-activity`,
@@ -122,13 +137,11 @@ export function buildTraceBlocks(
   if (reasoning.length > 0) {
     // Reasoning sits above the activity block so the thinking stream reads as
     // its own step rather than a detail nested inside "Working".
-    const index = activityIndex >= 0 ? activityIndex : reasoningIndex
+    const index = showActivity ? activityIndex : reasoningIndex
     blocks.splice(index, 0, {
       kind: 'reasoning',
       key: `${message.id}-reasoning`,
-      streaming:
-        reasoningState === 'streaming' ||
-        (reasoningState !== 'done' && !answeredAfterReasoning),
+      streaming: reasoningStreaming,
       items: reasoning,
     })
   }

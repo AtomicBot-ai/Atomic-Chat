@@ -1,9 +1,29 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react'
 import { Code2, Eye } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@/lib/utils'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { HtmlArtifact, estimateHtmlProgress } from './HtmlArtifact'
+
+/**
+ * Whether the message hosting the trigger is still streaming.
+ *
+ * This travels by context rather than by prop so the markdown `code` renderer
+ * keeps a stable component identity across the streaming→done transition.
+ * Rebuilding that renderer would remount the trigger, handing it a fresh
+ * `useId()` and orphaning the panel it had already bound to — which left the
+ * open preview stuck on "generating" forever.
+ */
+const ArtifactStreamingContext = createContext(false)
+
+export const ArtifactStreamingProvider = ArtifactStreamingContext.Provider
 
 interface ArtifactTriggerProps {
   code: string
@@ -14,8 +34,10 @@ interface ArtifactTriggerProps {
 export function ArtifactTrigger({
   code,
   className,
-  streaming = false,
+  streaming: streamingProp,
 }: ArtifactTriggerProps) {
+  const streamingFromContext = useContext(ArtifactStreamingContext)
+  const streaming = streamingProp ?? streamingFromContext
   const id = useId()
   const open = useArtifactStore((s) => s.open)
   const update = useArtifactStore((s) => s.update)
