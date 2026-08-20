@@ -32,7 +32,7 @@ export const ModelProvenanceDivider = memo(
           src="/images/transparent-logo.png"
           alt=""
           aria-hidden="true"
-          className="size-4 shrink-0 object-contain opacity-50 dark:invert"
+          className="size-4 shrink-0 object-contain opacity-50 dark:brightness-0 dark:invert"
         />
         <div className="flex-1 border-t border-border/60" />
         <Tooltip>
@@ -73,12 +73,6 @@ export const ModelProvenanceDivider = memo(
           </TooltipContent>
         </Tooltip>
         <div className="flex-1 border-t border-border/60" />
-        <img
-          src="/images/transparent-logo.png"
-          alt=""
-          aria-hidden="true"
-          className="size-4 shrink-0 object-contain opacity-50 dark:invert"
-        />
       </div>
     )
   }

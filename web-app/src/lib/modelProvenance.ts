@@ -1,9 +1,10 @@
 /**
  * Model provenance: which model/backend produced each assistant response.
  *
- * The chat transport stamps `metadata.modelProvenance` onto assistant
- * messages as they are generated (see custom-chat-transport.ts). This module
- * derives, at render time, where a thread should show a provenance divider:
+ * The chat transport records `modelId`, `providerId` and (when known)
+ * `backend` in each assistant message's finish metadata (see
+ * custom-chat-transport.ts). This module derives, at render time, where a
+ * thread should show a provenance divider:
  * one "served by" marker at the first stamped response, and a "switched to"
  * marker wherever the recorded model/backend changes afterwards.
  *
@@ -31,14 +32,16 @@ type ProvenanceMessage = {
   metadata?: unknown
 }
 
-/** Defensive read of the stamp — malformed metadata is treated as absent. */
+/**
+ * Defensive read of the provenance fields straight from message metadata.
+ * Malformed or missing values are treated as absent, so history recorded
+ * before these fields existed simply yields no stamp.
+ */
 export function readProvenanceStamp(
   metadata: unknown
 ): ModelProvenance | null {
   if (!metadata || typeof metadata !== 'object') return null
-  const stamp = (metadata as Record<string, unknown>).modelProvenance
-  if (!stamp || typeof stamp !== 'object') return null
-  const { modelId, providerId, backend } = stamp as Record<string, unknown>
+  const { modelId, providerId, backend } = metadata as Record<string, unknown>
   if (typeof modelId !== 'string' || modelId === '') return null
   if (typeof providerId !== 'string' || providerId === '') return null
   return {
@@ -57,9 +60,9 @@ const stampKey = (stamp: ModelProvenance) =>
 
 /**
  * Walk the thread once and return a map of message id → marker to render
- * above that message. Messages without a stamp (threads that predate the
- * feature) are skipped; the first stamped response then yields a "served"
- * marker, so old threads pick up provenance from their next response onward.
+ * above that message. Responses without recorded provenance (history older
+ * than the finish-metadata fields) are skipped; the first stamped response
+ * yields a "served" marker and every later change yields a "switched" one.
  */
 export function computeProvenanceMarkers(
   messages: readonly ProvenanceMessage[]

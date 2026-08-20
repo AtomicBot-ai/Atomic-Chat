@@ -4,8 +4,11 @@ import {
   readProvenanceStamp,
 } from '../modelProvenance'
 
+// Shape of the fields the transport records in finish metadata.
 const stamp = (modelId: string, providerId = 'llamacpp', backend?: string) => ({
-  modelProvenance: { modelId, providerId, ...(backend ? { backend } : {}) },
+  modelId,
+  providerId,
+  ...(backend ? { backend } : {}),
 })
 
 const user = (id: string) => ({ id, role: 'user' })
@@ -31,7 +34,7 @@ describe('computeProvenanceMarkers', () => {
     })
   })
 
-  it('does not mark responses when the model never changes', () => {
+  it('marks only the first response as served when the model never changes', () => {
     const markers = computeProvenanceMarkers([
       user('u1'),
       assistant('a1', stamp('model-a')),
@@ -115,11 +118,15 @@ describe('computeProvenanceMarkers', () => {
     const markers = computeProvenanceMarkers([
       user('u1'),
       assistant('a1', {
-        modelProvenance: { modelId: 'model v1', providerId: 'llamacpp', backend: 'beta' },
+        modelId: 'model v1',
+        providerId: 'llamacpp',
+        backend: 'beta',
       }),
       user('u2'),
       assistant('a2', {
-        modelProvenance: { modelId: 'model', providerId: 'llamacpp', backend: 'v1 beta' },
+        modelId: 'model',
+        providerId: 'llamacpp',
+        backend: 'v1 beta',
       }),
     ])
 
@@ -129,9 +136,9 @@ describe('computeProvenanceMarkers', () => {
   it('ignores malformed stamps', () => {
     const markers = computeProvenanceMarkers([
       user('u1'),
-      assistant('a1', { modelProvenance: { modelId: 42 } }),
-      assistant('a2', { modelProvenance: 'nope' }),
-      assistant('a3', { modelProvenance: { providerId: 'llamacpp' } }),
+      assistant('a1', { modelId: 42, providerId: 'llamacpp' }),
+      assistant('a2', 'nope'),
+      assistant('a3', { providerId: 'llamacpp' }),
     ])
 
     expect(markers.size).toBe(0)
@@ -139,6 +146,20 @@ describe('computeProvenanceMarkers', () => {
 })
 
 describe('readProvenanceStamp', () => {
+  it('reads provenance from real finish metadata alongside unrelated fields', () => {
+    // Threads recorded before this feature already carry modelId/providerId
+    // in their finish metadata, so they gain dividers retroactively.
+    expect(
+      readProvenanceStamp({
+        finishReason: 'stop',
+        ttftMs: 120,
+        modelId: 'Qwen3.6-27B',
+        providerId: 'llamacpp',
+        usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
+      })
+    ).toEqual({ modelId: 'Qwen3.6-27B', providerId: 'llamacpp' })
+  })
+
   it('reads a full stamp', () => {
     expect(
       readProvenanceStamp(stamp('m', 'llamacpp', 'b1'))
@@ -147,18 +168,14 @@ describe('readProvenanceStamp', () => {
 
   it('omits a non-string backend', () => {
     expect(
-      readProvenanceStamp({
-        modelProvenance: { modelId: 'm', providerId: 'p', backend: 7 },
-      })
+      readProvenanceStamp({ modelId: 'm', providerId: 'p', backend: 7 })
     ).toEqual({ modelId: 'm', providerId: 'p' })
   })
 
   it('returns null for absent or malformed metadata', () => {
     expect(readProvenanceStamp(undefined)).toBeNull()
     expect(readProvenanceStamp({})).toBeNull()
-    expect(readProvenanceStamp({ modelProvenance: null })).toBeNull()
-    expect(
-      readProvenanceStamp({ modelProvenance: { modelId: '', providerId: 'p' } })
-    ).toBeNull()
+    expect(readProvenanceStamp({ modelId: null, providerId: 'p' })).toBeNull()
+    expect(readProvenanceStamp({ modelId: '', providerId: 'p' })).toBeNull()
   })
 })
