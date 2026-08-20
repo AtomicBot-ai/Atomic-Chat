@@ -85,10 +85,13 @@ export const useDownloadStore = create<DownloadState>((set) => ({
         ...state.downloads,
         [id]: {
           ...state.downloads[id],
-          name: name || state.downloads[id]?.name || '',
+          // `??` (not `||`) so explicit zero values — e.g. a restarted or
+          // resumed transfer whose byte counter resets to 0 — are honored
+          // instead of being replaced by the stale previous value.
+          name: name ?? state.downloads[id]?.name ?? '',
           progress,
-          current: current || state.downloads[id]?.current || 0,
-          total: total || state.downloads[id]?.total || 0,
+          current: current ?? state.downloads[id]?.current ?? 0,
+          total: total ?? state.downloads[id]?.total ?? 0,
         },
       },
     })),

@@ -93,6 +93,28 @@ describe('useDownloadStore', () => {
         total: 0,
       })
     })
+
+    it('should honor explicit zero current/total after a non-zero value', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      // A download in progress reports a non-zero byte count.
+      act(() => {
+        result.current.updateProgress('test-id', 50, 'test-model', 500, 1000)
+      })
+
+      // A restarted/resumed transfer resets the counters to 0 — the store
+      // must not keep the stale 500/1000 from the previous transfer.
+      act(() => {
+        result.current.updateProgress('test-id', 0, 'test-model', 0, 0)
+      })
+
+      expect(result.current.downloads['test-id']).toEqual({
+        name: 'test-model',
+        progress: 0,
+        current: 0,
+        total: 0,
+      })
+    })
   })
 
   describe('removeDownload', () => {
