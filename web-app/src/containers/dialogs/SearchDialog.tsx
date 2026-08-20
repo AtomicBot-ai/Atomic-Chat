@@ -273,7 +273,8 @@ export function SearchDialog({ open, onOpenChange, mode }: SearchDialogProps) {
                 onClick={handleStartNewChat}
                 className={cn(
                   'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-foreground/10 transition-colors cursor-pointer',
-                  selectedIndex === 0 && 'bg-foreground/20 hover:bg-foreground/20'
+                  selectedIndex === 0 &&
+                    'bg-foreground/20 hover:bg-foreground/20'
                 )}
               >
                 <IconCirclePlus className="size-4 text-muted-foreground" />
@@ -305,7 +306,8 @@ export function SearchDialog({ open, onOpenChange, mode }: SearchDialogProps) {
                     onClick={() => handleSelectThread(thread.id)}
                     className={cn(
                       'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-foreground/10 transition-colors cursor-pointer',
-                      selectedIndex === itemIndex && 'bg-foreground/20 hover:bg-foreground/20'
+                      selectedIndex === itemIndex &&
+                        'bg-foreground/20 hover:bg-foreground/20'
                     )}
                   >
                     <IconHistory className="size-4 text-muted-foreground shrink-0" />
@@ -329,7 +331,8 @@ export function SearchDialog({ open, onOpenChange, mode }: SearchDialogProps) {
                       onClick={() => handleSelectThread(thread.id)}
                       className={cn(
                         'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-foreground/10 transition-colors cursor-pointer',
-                        selectedIndex === itemIndex && 'bg-foreground/20 hover:bg-foreground/20'
+                        selectedIndex === itemIndex &&
+                          'bg-foreground/20 hover:bg-foreground/20'
                       )}
                     >
                       <IconMessage className="size-4 text-muted-foreground shrink-0" />
@@ -343,7 +346,9 @@ export function SearchDialog({ open, onOpenChange, mode }: SearchDialogProps) {
                     </button>
                   )
                 }
-              )}            </div>          )}
+              )}{' '}
+            </div>
+          )}
 
           {/* Search results without project name */}
           {searchQuery && searchResults.withoutProject.length > 0 && (
@@ -357,7 +362,8 @@ export function SearchDialog({ open, onOpenChange, mode }: SearchDialogProps) {
                     onClick={() => handleSelectThread(thread.id)}
                     className={cn(
                       'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-foreground/10 transition-colors cursor-pointer',
-                      selectedIndex === itemIndex && 'bg-foreground/20 hover:bg-foreground/20'
+                      selectedIndex === itemIndex &&
+                        'bg-foreground/20 hover:bg-foreground/20'
                     )}
                   >
                     <IconMessage className="size-4 text-muted-foreground shrink-0" />
