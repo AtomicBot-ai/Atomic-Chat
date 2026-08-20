@@ -45,5 +45,24 @@
     "restartDesc": "The optimal backend has been downloaded. It will activate the next time you start Atomic Chat.",
     "restartLater": "Continue setup",
     "restartNow": "Restart now"
+  },
+  "cloudStep": {
+    "trigger": "Add cloud provider",
+    "galleryTitle": "Add a cloud provider",
+    "galleryDescription": "Connect an API key and start chatting right away — nothing to download.",
+    "modelCountOne": "1 model",
+    "modelCountOther": "{{count}} models",
+    "keyOnly": "Connect with your API key",
+    "empty": "No cloud providers are available right now.",
+    "keyTitle": "Connect {{provider}}",
+    "keyDescription": "Paste your API key to connect this provider.",
+    "keyLabel": "API key",
+    "keyPlaceholder": "Insert API key",
+    "keyProtected": "Your key is stored on this device and never leaves it except to call the provider.",
+    "showKey": "Show API key",
+    "hideKey": "Hide API key",
+    "saveKey": "Save key",
+    "saveFailed": "Couldn't save the API key",
+    "saved": "{{provider}} connected"
   }
 }

@@ -42,6 +42,7 @@ describe('iconKeyLogoSrc', () => {
       'bytedance',
       'inclusionai',
       'nanbeige',
+      'ornith',
     ]
     for (const key of keys) {
       expect(iconKeyLogoSrc(key), `missing logo for "${key}"`).toBeTruthy()
@@ -98,6 +99,9 @@ describe('modelFamilyLogoSrc', () => {
     expect(modelFamilyLogoSrc('z-ai/GLM-4.7-Flash-GGUF')).toBe('/svg/zai.svg')
     expect(modelFamilyLogoSrc('unsloth/MiniMax-M2.7-GGUF')).toBe(
       '/svg/minimax.svg'
+    )
+    expect(modelFamilyLogoSrc('AtomicChat/Ornith-1.5-35B-A3B-GGUF')).toBe(
+      '/images/model-provider/ornith.webp'
     )
   })
 

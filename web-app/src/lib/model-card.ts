@@ -290,6 +290,25 @@ export function quantLabel(modelId: string): string {
 }
 
 /**
+ * The manifest entry that pins a quant names it as a plain token (`Q8_0`).
+ * Match it against the token {@link quantLabel} parses out of the file id,
+ * rather than a substring test — `includes('q4_0')` would also hit `Q4_0_4_4`,
+ * and `includes('q8_0')` would hit a projector when scanning weights.
+ *
+ * `sanitizeModelId` rewrites `.` to `_`, so a pin written `Q4.K.M` still
+ * matches. Returns `undefined` when nothing matches, so callers fall back to
+ * their normal selection instead of failing the download.
+ */
+export function findPinnedQuant<T extends { model_id: string }>(
+  candidates: readonly T[] | undefined,
+  pin?: string
+): T | undefined {
+  if (!candidates?.length || !pin) return undefined
+  const wanted = pin.toUpperCase().replace(/\./g, '_')
+  return candidates.find((c) => quantLabel(c.model_id) === wanted)
+}
+
+/**
  * Usable memory budget in bytes. `total_memory` and GPU `total_memory` are
  * reported in MB (see `formatMegaBytes`). We take the larger of system RAM and
  * total VRAM to avoid double-counting Apple unified memory.

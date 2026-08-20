@@ -204,7 +204,10 @@ const SESSION_DIED_EVENT = 'local_backend://llamacpp_upstream_session_died'
 /// loading and report "ready", so the load was cut off at 600s with a raw
 /// MODEL_LOAD_TIMED_OUT error. The model-load readiness wait now uses at least
 /// this floor (30 min) while still honoring a larger user-configured timeout.
-/// The streaming / connection timeout itself is unchanged.
+/// The streaming path is bounded separately: `stream_local_http` treats the
+/// configured timeout as an inactivity budget between SSE chunks — floored at
+/// the same 30 min — so a long generation is never cut off while tokens are
+/// still arriving.
 const MODEL_LOAD_READY_TIMEOUT_FLOOR_SECS = 1800
 
 /// Effective timeout (seconds) for the "server is ready" wait during model
@@ -490,7 +493,7 @@ export const BACKEND_DETECTION_FAILED = 'BACKEND_DETECTION_FAILED'
 export default class llamacpp_upstream_extension extends AIEngine {
   provider: string = 'llamacpp-upstream'
   autoUnload: boolean = false
-  timeout: number = 600
+  timeout: number = 1800
   llamacpp_env: string = ''
   readonly providerId: string = 'llamacpp-upstream'
 
@@ -3724,7 +3727,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
             logger.warn('Failed to cancel download task:', cancelError)
           }
 
-          await this.deleteModelFolder(modelId)
+          await this.cleanupFailedDownload(modelId, downloadItems)
 
           // Emit validation failure event
           events.emit(DownloadEvent.onModelValidationFailed, {
@@ -4101,19 +4104,60 @@ export default class llamacpp_upstream_extension extends AIEngine {
   }
 
   /**
-   * Deletes the entire model folder for a given modelId
-   * @param modelId The model ID to delete
+   * Remove what a failed download left behind — and nothing else.
+   *
+   * This used to `fs.rm` the whole model directory. That directory is shared
+   * between both llama.cpp providers and holds far more than the file being
+   * fetched: the mmproj, the DFlash / MTP drafts, the other shards of an
+   * already-installed model. One file failing its hash check therefore took
+   * the user's working model with it, with no way back but a multi-gigabyte
+   * re-download.
+   *
+   * Only the artifacts of *this* download are removed (the target file plus its
+   * `.tmp` / `.url` partials), and the directory itself goes only when nothing
+   * else is left in it.
+   *
+   * @param modelId The model whose directory was being written into
+   * @param items The download items this import queued
    */
-  private async deleteModelFolder(modelId: string): Promise<void> {
+  private async cleanupFailedDownload(
+    modelId: string,
+    items: DownloadItem[]
+  ): Promise<void> {
     try {
-      const modelDir = await joinPath([await this.getModelsRootPath(), modelId])
+      const janDataFolderPath = await getJanDataFolderPath()
 
-      if (await fs.existsSync(modelDir)) {
-        logger.info(`Cleaning up model directory: ${modelDir}`)
+      for (const item of items) {
+        // `.tmp` is the in-flight file and `.url` the resume marker, named by
+        // the Rust downloader as `<save_path>.tmp` / `<save_path>.url`.
+        for (const suffix of ['', '.tmp', '.url']) {
+          const path = await joinPath([
+            janDataFolderPath,
+            `${item.save_path}${suffix}`,
+          ])
+          if (await fs.existsSync(path)) {
+            logger.warn(
+              `Removing artifact of the failed download of ${modelId}: ${path}`
+            )
+            await fs.rm(path)
+          }
+        }
+      }
+
+      const modelDir = await joinPath([await this.getModelsRootPath(), modelId])
+      if (!(await fs.existsSync(modelDir))) return
+
+      const remaining = (await fs.readdirSync(modelDir)) as string[]
+      if (remaining.length === 0) {
+        logger.info(`Removing empty model directory: ${modelDir}`)
         await fs.rm(modelDir)
+      } else {
+        logger.warn(
+          `Keeping ${modelDir}: ${remaining.length} file(s) there did not belong to this download (${remaining.join(', ')})`
+        )
       }
     } catch (deleteError) {
-      logger.warn('Failed to delete model directory:', deleteError)
+      logger.warn('Failed to clean up after a failed download:', deleteError)
     }
   }
 
@@ -6320,7 +6364,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       }
     }
 
-    const timeoutNum = Number(this.timeout) || 600
+    const timeoutNum = Number(this.timeout) || 1800
     logger.info(
       '[stream] invoking stream_local_http, url:',
       url,

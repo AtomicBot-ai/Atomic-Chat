@@ -623,7 +623,10 @@ const ChatInput = memo(function ChatInput({
 
   const handleSendMessage = async (prompt: string) => {
     if (!selectedModel) {
-      setMessage('Please select a model to start chatting.')
+      // Model preloading is off by default, so "nothing selected yet" is the
+      // normal state on every launch and this hint is now routine rather than
+      // an edge case — it has to be translated like the rest of the UI.
+      setMessage(t('chat:selectModelToChat'))
       return
     }
     if (!prompt.trim()) {

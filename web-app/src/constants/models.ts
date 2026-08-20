@@ -4,6 +4,7 @@
 
 import type { CatalogModel } from '@/services/models/types'
 import type { Recommendation } from '@/services/recommended-models-registry'
+import type { HardwareTier } from '@/lib/hardware-tier'
 
 export const EMBEDDING_MODEL_ID = 'sentence-transformer-mini'
 
@@ -14,6 +15,43 @@ export const EMBEDDING_MODEL_ID = 'sentence-transformer-mini'
  * reminder repeats the same recommendation the setup screen showed.
  */
 export const ONBOARDING_REMINDER_MODEL_HF_REPO = 'AtomicChat/Qwen3.5-4B-GGUF'
+
+/** What the bottom-right reminder offers, keyed by hardware tier. */
+export type OnboardingReminderModel = {
+  /** Hugging Face repo id. */
+  repo: string
+  /** Display name — this card is not translated, matching its siblings. */
+  title: string
+  /** Quant pin; see `findPinnedQuant`. Omitted = house default. */
+  quant?: string
+  /** Vision models only: projector pin. */
+  mmprojQuant?: string
+}
+
+/**
+ * The reminder must offer what the machine can actually run, or it repeats the
+ * mistake the low-spec tier exists to fix: a weak device that skipped
+ * onboarding got nudged toward a 2.5 GB model it would struggle with.
+ *
+ * Keep the `standard` entry in sync with the first entry of
+ * `recommendations` in the onboarding manifest, and `low` with the first entry
+ * of `low_spec_recommendations`.
+ */
+export const ONBOARDING_REMINDER_MODELS: Record<
+  HardwareTier,
+  OnboardingReminderModel
+> = {
+  standard: {
+    repo: ONBOARDING_REMINDER_MODEL_HF_REPO,
+    title: 'Qwen3.5 4B',
+  },
+  low: {
+    repo: 'LiquidAI/LFM2.5-VL-450M-GGUF',
+    title: 'LFM2.5 VL 450M',
+    quant: 'Q8_0',
+    mmprojQuant: 'Q8_0',
+  },
+}
 export const JAN_CODE_HF_REPO = 'janhq/Jan-Code-4b-Gguf'
 export const DEFAULT_MODEL_QUANTIZATIONS = ['iq4_xs', 'q4_k_m']
 
@@ -44,6 +82,31 @@ export const BASELINE_RECOMMENDED_MODELS: ReadonlyArray<Recommendation> = [
     description_key: 'hub:recEverydayUse',
   },
 ]
+
+/**
+ * Mirror of the manifest's `low_spec_recommendations` array. Shown INSTEAD of
+ * {@link BASELINE_RECOMMENDED_MODELS} on machines `classifyHardwareTier` calls
+ * low-spec, so the first model a weak machine downloads is one it can run.
+ *
+ * Same rule as above: keep this declarative and identical to the manifest —
+ * no `IS_MACOS` ternaries, no computed quants. The `quant` pins are required,
+ * not cosmetic: both repos also ship a Q4_K_M, so a dropped pin downloads a
+ * working-but-wrong file and fails silently.
+ */
+export const BASELINE_LOW_SPEC_RECOMMENDED_MODELS: ReadonlyArray<Recommendation> =
+  [
+    {
+      model_name: 'LiquidAI/LFM2.5-2.6B-GGUF',
+      description_key: 'hub:recEverydayUse',
+      quant: 'Q4_K_M',
+    },
+    {
+      model_name: 'LiquidAI/LFM2.5-VL-450M-GGUF',
+      description_key: 'hub:recVisionKnowledge',
+      quant: 'Q8_0',
+      mmproj_quant: 'Q8_0',
+    },
+  ]
 
 const ATOMIC_GEMMA4_E4B_HF =
   'https://huggingface.co/AtomicChat/gemma4-e4b-it-GGUF/resolve/main'

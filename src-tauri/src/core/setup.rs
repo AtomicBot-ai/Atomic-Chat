@@ -277,7 +277,7 @@ pub fn extract_extension_manifest<R: Read>(
     Ok(None)
 }
 
-/// Install/update the bundled `jan` CLI binary.
+/// Install/update the bundled `atomic-chat-cli` binary.
 ///
 /// - `version_changed`: pass `true` whenever the app version has changed (i.e. after an update).
 ///   When `true` the binary is always overwritten so the CLI stays in sync with the new app.
@@ -291,14 +291,14 @@ pub fn setup_jan_cli<R: Runtime>(app_handle: tauri::AppHandle<R>, version_change
         if !version_changed {
             let which_cmd = if cfg!(windows) { "where" } else { "which" };
             let mut cmd = std::process::Command::new(which_cmd);
-            cmd.arg("jan");
+            cmd.arg(crate::core::system::commands::CLI_COMMAND_NAME);
             #[cfg(windows)]
             {
                 use std::os::windows::process::CommandExt;
                 cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
             }
             if cmd.output().map(|o| o.status.success()).unwrap_or(false) {
-                log::debug!("jan CLI already on PATH — skipping reinstall");
+                log::debug!("Atomic Chat CLI already on PATH — skipping reinstall");
                 return;
             }
         }
@@ -306,7 +306,7 @@ pub fn setup_jan_cli<R: Runtime>(app_handle: tauri::AppHandle<R>, version_change
         match crate::core::system::commands::install_jan_cli_sync(&app_handle) {
             Ok(status) => {
                 log::info!(
-                    "jan CLI {} to {}",
+                    "Atomic Chat CLI {} to {}",
                     if version_changed {
                         "updated"
                     } else {
@@ -316,7 +316,7 @@ pub fn setup_jan_cli<R: Runtime>(app_handle: tauri::AppHandle<R>, version_change
                 );
             }
             Err(e) => {
-                log::warn!("jan CLI auto-install skipped: {e}");
+                log::warn!("Atomic Chat CLI auto-install skipped: {e}");
             }
         }
     });

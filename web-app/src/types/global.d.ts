@@ -28,6 +28,10 @@ declare global {
   declare const GA_MEASUREMENT_ID: string
   declare const IS_DEV: boolean
   declare const FORCE_ONBOARDING: boolean
+  /** Dev-only (`make dev-fresh`): launch with a wiped localStorage profile. */
+  declare const FRESH_INSTALL: boolean
+  /** Dev-only tier override: 'low' | 'standard', or '' when unset. */
+  declare const FORCE_HARDWARE_TIER: string
   interface Window {
     core: AppCore | undefined
     gtag?: (...args: unknown[]) => void

@@ -613,12 +613,80 @@ pub struct CliInstallStatus {
     pub path: Option<String>,
 }
 
-/// Check if the `jan` CLI binary is accessible on PATH.
+/// Name of the CLI command as it is installed on the user's PATH.
+pub const CLI_COMMAND_NAME: &str = "atomic-chat-cli";
+
+/// Name the CLI shipped under before the Atomic Chat rebrand. Older builds
+/// installed it as plain `jan`, which collides with the unrelated Jan.ai CLI.
+const LEGACY_CLI_COMMAND_NAME: &str = "jan";
+
+/// Marker string embedded in every Atomic Chat CLI build. Used to confirm that a
+/// leftover `jan` binary on PATH was written by us before we remove it — a `jan`
+/// belonging to the actual Jan.ai app must never be touched.
+const CLI_OWNERSHIP_MARKER: &[u8] = b"Atomic Chat";
+
+/// Return true when `path` is a binary we shipped (contains [`CLI_OWNERSHIP_MARKER`]).
+fn is_our_cli_binary(path: &std::path::Path) -> bool {
+    use std::io::Read;
+
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return false;
+    };
+    // Scan in chunks with an overlap so a marker straddling a chunk boundary
+    // is still found, without loading the whole binary into memory.
+    let overlap = CLI_OWNERSHIP_MARKER.len() - 1;
+    let mut buf = vec![0u8; 256 * 1024];
+    let mut carry: Vec<u8> = Vec::with_capacity(overlap);
+    loop {
+        let read = match file.read(&mut buf[..]) {
+            Ok(0) => return false,
+            Ok(n) => n,
+            Err(_) => return false,
+        };
+        let mut window = std::mem::take(&mut carry);
+        window.extend_from_slice(&buf[..read]);
+        if window
+            .windows(CLI_OWNERSHIP_MARKER.len())
+            .any(|w| w == CLI_OWNERSHIP_MARKER)
+        {
+            return true;
+        }
+        let keep = window.len().saturating_sub(overlap);
+        carry = window[keep..].to_vec();
+    }
+}
+
+/// Remove a legacy `jan` binary left behind by pre-rebrand installs, but only if
+/// we can prove we wrote it. A foreign `jan` (i.e. Jan.ai's own CLI) is left alone.
+fn remove_legacy_cli_binary(dir: &std::path::Path) {
+    let name = if cfg!(windows) {
+        "jan.exe"
+    } else {
+        LEGACY_CLI_COMMAND_NAME
+    };
+    let legacy = dir.join(name);
+    if !legacy.exists() {
+        return;
+    }
+    if !is_our_cli_binary(&legacy) {
+        log::info!(
+            "Leaving {} alone — not an Atomic Chat binary",
+            legacy.display()
+        );
+        return;
+    }
+    match std::fs::remove_file(&legacy) {
+        Ok(()) => log::info!("Removed legacy Atomic Chat CLI at {}", legacy.display()),
+        Err(e) => log::warn!("Could not remove {}: {}", legacy.display(), e),
+    }
+}
+
+/// Check if the `atomic-chat-cli` binary is accessible on PATH.
 #[tauri::command]
 pub async fn check_jan_cli_installed() -> CliInstallStatus {
     let which_cmd = if cfg!(windows) { "where" } else { "which" };
     let mut cmd = std::process::Command::new(which_cmd);
-    cmd.arg("jan");
+    cmd.arg(CLI_COMMAND_NAME);
 
     #[cfg(windows)]
     {
@@ -669,7 +737,11 @@ pub fn install_jan_cli_sync<R: Runtime>(
     } else {
         "jan-cli"
     };
-    let dest_bin_name = if cfg!(windows) { "jan.exe" } else { "jan" };
+    let dest_bin_name = if cfg!(windows) {
+        "atomic-chat-cli.exe"
+    } else {
+        CLI_COMMAND_NAME
+    };
     let resource_bin_dir = app_handle
         .path()
         .resource_dir()
@@ -679,22 +751,18 @@ pub fn install_jan_cli_sync<R: Runtime>(
     let dest = resource_bin_dir.join(dest_bin_name);
 
     if !bundled.exists() && !dest.exists() {
-        return Err("Jan CLI binary not bundled with this version of Jan.".to_string());
+        return Err("Atomic Chat CLI binary not bundled with this version of the app.".to_string());
     }
 
     #[cfg(windows)]
     {
         if bundled.exists() {
             if let Err(e) = std::fs::rename(&bundled, &dest) {
-                log::warn!("Could not rename jan-cli.exe to jan.exe: {}", e);
+                log::warn!("Could not rename jan-cli.exe to atomic-chat-cli.exe: {}", e);
             }
         }
-        if dest.exists() {
-            let alias = resource_bin_dir.join("atomic-chat-cli.exe");
-            if let Err(e) = std::fs::copy(&dest, &alias) {
-                log::warn!("Could not copy jan.exe to atomic-chat-cli.exe: {}", e);
-            }
-        }
+        // Older builds put `jan.exe` on PATH here; drop it so it stops shadowing Jan.ai.
+        remove_legacy_cli_binary(&resource_bin_dir);
         add_to_path_windows(&resource_bin_dir)?;
         return Ok(CliInstallStatus {
             installed: true,
@@ -708,12 +776,21 @@ pub fn install_jan_cli_sync<R: Runtime>(
         std::fs::create_dir_all(&install_dir).map_err(|e| e.to_string())?;
         let dest = install_dir.join(dest_bin_name);
 
-        std::fs::copy(&bundled, &dest)
-            .map_err(|e| format!("Failed to copy jan to {}: {}", dest.display(), e))?;
+        std::fs::copy(&bundled, &dest).map_err(|e| {
+            format!(
+                "Failed to copy {} to {}: {}",
+                CLI_COMMAND_NAME,
+                dest.display(),
+                e
+            )
+        })?;
 
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))
             .map_err(|e| e.to_string())?;
+
+        // Older builds installed this binary as plain `jan` in the same directory.
+        remove_legacy_cli_binary(&install_dir);
 
         Ok(CliInstallStatus {
             installed: true,
@@ -722,7 +799,7 @@ pub fn install_jan_cli_sync<R: Runtime>(
     }
 }
 
-/// Copy the bundled `jan` binary to the system PATH (Tauri command wrapper).
+/// Copy the bundled `atomic-chat-cli` binary to the system PATH (Tauri command wrapper).
 #[tauri::command]
 pub async fn install_jan_cli<R: Runtime>(
     app_handle: AppHandle<R>,
@@ -730,31 +807,37 @@ pub async fn install_jan_cli<R: Runtime>(
     install_jan_cli_sync(&app_handle)
 }
 
-/// Remove the installed `jan` CLI binary.
+/// Remove the installed `atomic-chat-cli` binary (plus any legacy `jan` we wrote).
 #[tauri::command]
 pub fn uninstall_jan_cli() -> Result<(), String> {
     #[cfg(windows)]
     {
         let bin_dir = jan_cli_bin_dir_windows()?;
-        for name in ["jan.exe", "atomic-chat-cli.exe"] {
-            let path = bin_dir.join(name);
-            if path.exists() {
-                if let Err(e) = std::fs::remove_file(&path) {
-                    log::warn!("Could not remove {}: {}", path.display(), e);
-                }
+        let path = bin_dir.join("atomic-chat-cli.exe");
+        if path.exists() {
+            if let Err(e) = std::fs::remove_file(&path) {
+                log::warn!("Could not remove {}: {}", path.display(), e);
             }
         }
+        remove_legacy_cli_binary(&bin_dir);
         remove_from_path_windows(&bin_dir)?;
         return Ok(());
     }
 
     #[cfg(unix)]
     {
-        let dest = jan_cli_install_dir()?.join("jan");
+        let install_dir = jan_cli_install_dir()?;
+        let dest = install_dir.join(CLI_COMMAND_NAME);
         if dest.exists() {
-            std::fs::remove_file(&dest)
-                .map_err(|e| format!("Failed to remove Jan CLI from {}: {}", dest.display(), e))?;
+            std::fs::remove_file(&dest).map_err(|e| {
+                format!(
+                    "Failed to remove the Atomic Chat CLI from {}: {}",
+                    dest.display(),
+                    e
+                )
+            })?;
         }
+        remove_legacy_cli_binary(&install_dir);
         Ok(())
     }
 }
@@ -3374,6 +3457,28 @@ fn write_marked_env_to_shell(
     Ok(())
 }
 
+/// Environment variables Copilot CLI reads for BYOK.
+///
+/// Shared by `configure_copilot`, which persists them to the user's shell rc,
+/// and by `atomic-chat-cli launch`, which must also set them directly on the
+/// spawned child: a freshly written rc file is not live in a process that is
+/// already running.
+pub fn copilot_env_vars(
+    api_url: &str,
+    model: &str,
+    api_key: Option<&str>,
+) -> Vec<(String, String)> {
+    let mut env_vars: Vec<(String, String)> = Vec::with_capacity(5);
+    env_vars.push(("COPILOT_PROVIDER_BASE_URL".to_string(), api_url.to_string()));
+    env_vars.push(("COPILOT_PROVIDER_TYPE".to_string(), "openai".to_string()));
+    env_vars.push(("COPILOT_MODEL".to_string(), model.to_string()));
+    env_vars.push(("COPILOT_OFFLINE".to_string(), "true".to_string()));
+    if let Some(key) = api_key.filter(|k| !k.is_empty()) {
+        env_vars.push(("COPILOT_PROVIDER_API_KEY".to_string(), key.to_string()));
+    }
+    env_vars
+}
+
 /// Configure GitHub Copilot CLI to use the local Atomic Chat server via its BYOK
 /// environment variables. Copilot has no provider config file — it reads these
 /// from the environment at launch — so we persist them to the user's shell rc
@@ -3385,14 +3490,7 @@ pub fn configure_copilot(
     model: String,
     api_key: Option<String>,
 ) -> Result<(), String> {
-    let mut env_vars: Vec<(String, String)> = Vec::with_capacity(5);
-    env_vars.push(("COPILOT_PROVIDER_BASE_URL".to_string(), api_url.clone()));
-    env_vars.push(("COPILOT_PROVIDER_TYPE".to_string(), "openai".to_string()));
-    env_vars.push(("COPILOT_MODEL".to_string(), model.clone()));
-    env_vars.push(("COPILOT_OFFLINE".to_string(), "true".to_string()));
-    if let Some(key) = api_key.as_deref().filter(|k| !k.is_empty()) {
-        env_vars.push(("COPILOT_PROVIDER_API_KEY".to_string(), key.to_string()));
-    }
+    let env_vars = copilot_env_vars(&api_url, &model, api_key.as_deref());
 
     const MARKER: &str = "# Atomic Chat - Copilot CLI Config";
 
@@ -3945,6 +4043,23 @@ pub fn configure_dsh(
     configure_dsh_at(&home, &api_url, &model, api_key.as_deref())
 }
 
+/// Environment variables Goose reads for BYOK. See `copilot_env_vars` for why
+/// this is shared with the CLI.
+pub fn goose_env_vars(api_url: &str, model: &str, api_key: Option<&str>) -> Vec<(String, String)> {
+    let key_val = api_key.filter(|k| !k.is_empty()).unwrap_or("atomic");
+
+    let mut env_vars: Vec<(String, String)> = Vec::with_capacity(5);
+    env_vars.push(("GOOSE_PROVIDER".to_string(), "openai".to_string()));
+    env_vars.push(("GOOSE_MODEL".to_string(), model.to_string()));
+    env_vars.push(("OPENAI_HOST".to_string(), api_url.to_string()));
+    env_vars.push((
+        "OPENAI_BASE_PATH".to_string(),
+        "v1/chat/completions".to_string(),
+    ));
+    env_vars.push(("OPENAI_API_KEY".to_string(), key_val.to_string()));
+    env_vars
+}
+
 /// Configure Goose via its BYOK environment variables. Goose has no provider
 /// config file we patch here — it reads `GOOSE_PROVIDER` / `GOOSE_MODEL` plus
 /// the OpenAI host vars from the environment — so we persist them to the user's
@@ -3957,20 +4072,7 @@ pub fn configure_goose(
     model: String,
     api_key: Option<String>,
 ) -> Result<(), String> {
-    let key_val = api_key
-        .as_deref()
-        .filter(|k| !k.is_empty())
-        .unwrap_or("atomic");
-
-    let mut env_vars: Vec<(String, String)> = Vec::with_capacity(5);
-    env_vars.push(("GOOSE_PROVIDER".to_string(), "openai".to_string()));
-    env_vars.push(("GOOSE_MODEL".to_string(), model.clone()));
-    env_vars.push(("OPENAI_HOST".to_string(), api_url.clone()));
-    env_vars.push((
-        "OPENAI_BASE_PATH".to_string(),
-        "v1/chat/completions".to_string(),
-    ));
-    env_vars.push(("OPENAI_API_KEY".to_string(), key_val.to_string()));
+    let env_vars = goose_env_vars(&api_url, &model, api_key.as_deref());
 
     const MARKER: &str = "# Atomic Chat - Goose Config";
 
@@ -4013,6 +4115,24 @@ pub fn configure_goose(
     Ok(())
 }
 
+/// Environment variables OpenHands reads for BYOK. See `copilot_env_vars` for
+/// why this is shared with the CLI.
+pub fn openhands_env_vars(
+    api_url: &str,
+    model: &str,
+    api_key: Option<&str>,
+) -> Vec<(String, String)> {
+    let key_val = api_key.filter(|k| !k.is_empty()).unwrap_or("atomic");
+
+    let mut env_vars: Vec<(String, String)> = Vec::with_capacity(3);
+    // The litellm `openai/` prefix is required for a custom OpenAI-compatible
+    // base_url.
+    env_vars.push(("LLM_MODEL".to_string(), format!("openai/{}", model)));
+    env_vars.push(("LLM_BASE_URL".to_string(), api_url.to_string()));
+    env_vars.push(("LLM_API_KEY".to_string(), key_val.to_string()));
+    env_vars
+}
+
 /// Configure OpenHands via its BYOK environment variables. The CLI reads env
 /// overrides only when launched with `--override-with-envs`, using `LLM_API_KEY`
 /// / `LLM_BASE_URL` / `LLM_MODEL`. We persist them to the user's shell rc
@@ -4025,15 +4145,7 @@ pub fn configure_openhands(
     model: String,
     api_key: Option<String>,
 ) -> Result<(), String> {
-    let key_val = api_key
-        .as_deref()
-        .filter(|k| !k.is_empty())
-        .unwrap_or("atomic");
-
-    let mut env_vars: Vec<(String, String)> = Vec::with_capacity(3);
-    env_vars.push(("LLM_MODEL".to_string(), format!("openai/{}", model)));
-    env_vars.push(("LLM_BASE_URL".to_string(), api_url.clone()));
-    env_vars.push(("LLM_API_KEY".to_string(), key_val.to_string()));
+    let env_vars = openhands_env_vars(&api_url, &model, api_key.as_deref());
 
     const MARKER: &str = "# Atomic Chat - OpenHands Config";
 
@@ -4167,25 +4279,31 @@ fn poolside_standalone_base_url(api_url: &str) -> String {
 /// `POOLSIDE_STANDALONE_*` from the environment at launch — so we persist them
 /// to the user's shell rc (Windows: `setx`). The auto-opened terminal also
 /// passes them inline so the session works without re-sourcing the rc file.
+/// Environment variables Poolside reads in standalone mode. See
+/// `copilot_env_vars` for why this is shared with the CLI.
+pub fn poolside_env_vars(
+    api_url: &str,
+    model: &str,
+    api_key: Option<&str>,
+) -> Vec<(String, String)> {
+    let key_val = api_key.filter(|k| !k.is_empty()).unwrap_or("atomic");
+    let standalone_base = poolside_standalone_base_url(api_url);
+
+    let mut env_vars: Vec<(String, String)> = Vec::with_capacity(3);
+    env_vars.push(("POOLSIDE_STANDALONE_BASE_URL".to_string(), standalone_base));
+    env_vars.push(("POOLSIDE_API_KEY".to_string(), key_val.to_string()));
+    env_vars.push(("POOLSIDE_STANDALONE_MODEL".to_string(), model.to_string()));
+    env_vars
+}
+
 #[tauri::command]
 pub fn configure_poolside(
     api_url: String,
     model: String,
     api_key: Option<String>,
 ) -> Result<(), String> {
-    let key_val = api_key
-        .as_deref()
-        .filter(|k| !k.is_empty())
-        .unwrap_or("atomic");
     let standalone_base = poolside_standalone_base_url(&api_url);
-
-    let mut env_vars: Vec<(String, String)> = Vec::with_capacity(3);
-    env_vars.push((
-        "POOLSIDE_STANDALONE_BASE_URL".to_string(),
-        standalone_base.clone(),
-    ));
-    env_vars.push(("POOLSIDE_API_KEY".to_string(), key_val.to_string()));
-    env_vars.push(("POOLSIDE_STANDALONE_MODEL".to_string(), model.clone()));
+    let env_vars = poolside_env_vars(&api_url, &model, api_key.as_deref());
 
     const MARKER: &str = "# Atomic Chat - Poolside Config";
 
@@ -4538,6 +4656,70 @@ pub fn migrate_macos_autostart_launchagent<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A file in a throwaway directory that is removed when the guard drops,
+    /// so repeated test runs don't pile up directories under `target/`.
+    struct TempFile(std::path::PathBuf);
+
+    impl std::ops::Deref for TempFile {
+        type Target = std::path::Path;
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl Drop for TempFile {
+        fn drop(&mut self) {
+            if let Some(dir) = self.0.parent() {
+                let _ = std::fs::remove_dir_all(dir);
+            }
+        }
+    }
+
+    fn temp_file(name: &str, contents: &[u8]) -> TempFile {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("cli-marker-tests")
+            .join(uuid::Uuid::new_v4().to_string());
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let path = dir.join(name);
+        std::fs::write(&path, contents).expect("write temp file");
+        TempFile(path)
+    }
+
+    /// `remove_legacy_cli_binary` deletes files on the user's PATH, so the
+    /// ownership check must only ever accept binaries we shipped.
+    #[test]
+    fn is_our_cli_binary_detects_marker() {
+        let mut ours = vec![0u8; 700_000];
+        ours.extend_from_slice(CLI_OWNERSHIP_MARKER);
+        ours.extend_from_slice(&[0u8; 1024]);
+        assert!(is_our_cli_binary(&temp_file("ours", &ours)));
+    }
+
+    /// A foreign `jan` binary (i.e. Jan.ai's own CLI) must never be claimed.
+    #[test]
+    fn is_our_cli_binary_rejects_foreign_binary() {
+        let foreign = b"\x7fELF some other cli named jan, definitely not ours".to_vec();
+        assert!(!is_our_cli_binary(&temp_file("foreign", &foreign)));
+    }
+
+    /// The marker must still be found when it straddles a read-chunk boundary.
+    #[test]
+    fn is_our_cli_binary_finds_marker_across_chunk_boundary() {
+        // Chunks are 256 KiB; land the marker a few bytes before the boundary.
+        let mut bytes = vec![0u8; 256 * 1024 - 4];
+        bytes.extend_from_slice(CLI_OWNERSHIP_MARKER);
+        bytes.extend_from_slice(&[0u8; 64]);
+        assert!(is_our_cli_binary(&temp_file("split", &bytes)));
+    }
+
+    #[test]
+    fn is_our_cli_binary_rejects_missing_file() {
+        assert!(!is_our_cli_binary(std::path::Path::new(
+            "/nonexistent/atomic-chat-cli"
+        )));
+    }
 
     /// Regression test for the SIGABRT after MCP tool-call replies: delivering
     /// a desktop notification must be safe from a tokio runtime worker thread.

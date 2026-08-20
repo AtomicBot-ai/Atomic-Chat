@@ -31,10 +31,14 @@ import {
   getCachedManifest,
   getRecommendationsOrFallback,
   isCacheFresh,
+  selectRecommendationsForTier,
   SUPPORTED_SCHEMA_VERSION,
   type Recommendation,
 } from '../recommended-models-registry'
-import { BASELINE_RECOMMENDED_MODELS } from '@/constants/models'
+import {
+  BASELINE_LOW_SPEC_RECOMMENDED_MODELS,
+  BASELINE_RECOMMENDED_MODELS,
+} from '@/constants/models'
 
 const REMOTE_URL = 'https://example.test/recommended.json'
 
@@ -281,5 +285,156 @@ describe('filterRecommendationsForPlatform', () => {
       )
       expect(names).not.toContain('disabled/everywhere')
     }
+  })
+})
+
+describe('low-spec recommendations and quant pins', () => {
+  beforeEach(() => {
+    clearRegistryCache()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const lowSpecManifest = () =>
+    buildManifest({
+      low_spec_recommendations: [
+        {
+          model_name: 'LiquidAI/LFM2.5-VL-450M-GGUF',
+          description_key: 'hub:recVisionKnowledge',
+          quant: 'Q8_0',
+          mmproj_quant: 'Q8_0',
+        },
+      ],
+    })
+
+  it('carries the low-spec list and its quant pins through a fetch', async () => {
+    mockFetchSuccess(lowSpecManifest())
+
+    const result = await getRecommendationsOrFallback({ url: REMOTE_URL })
+
+    expect(result.lowSpecRecommendations.map((r) => r.model_name)).toEqual([
+      'LiquidAI/LFM2.5-VL-450M-GGUF',
+    ])
+    expect(result.lowSpecRecommendations[0].quant).toBe('Q8_0')
+    expect(result.lowSpecRecommendations[0].mmproj_quant).toBe('Q8_0')
+  })
+
+  it('survives the cache round-trip', async () => {
+    mockFetchSuccess(lowSpecManifest())
+    await getRecommendationsOrFallback({ url: REMOTE_URL })
+
+    const cached = getCachedManifest()
+    expect(cached?.manifest.low_spec_recommendations?.[0].quant).toBe('Q8_0')
+  })
+
+  it('reports an empty low-spec list when the manifest has none', async () => {
+    mockFetchSuccess(buildManifest())
+
+    const result = await getRecommendationsOrFallback({ url: REMOTE_URL })
+
+    expect(result.lowSpecRecommendations).toEqual([])
+  })
+
+  it('drops quant pins that are not plain quant tokens', async () => {
+    // These are used to pick a file to download, so a malformed manifest must
+    // not be able to smuggle a value through.
+    mockFetchSuccess(
+      buildManifest({
+        low_spec_recommendations: [
+          {
+            model_name: 'LiquidAI/LFM2.5-2.6B-GGUF',
+            description_key: 'hub:recEverydayUse',
+            quant: '../../etc/passwd',
+          },
+          {
+            model_name: 'LiquidAI/Other-GGUF',
+            description_key: 'hub:recEverydayUse',
+            quant: 12345,
+          },
+        ],
+      })
+    )
+
+    const result = await getRecommendationsOrFallback({ url: REMOTE_URL })
+
+    expect(result.lowSpecRecommendations).toHaveLength(2)
+    expect(result.lowSpecRecommendations[0].quant).toBeUndefined()
+    expect(result.lowSpecRecommendations[1].quant).toBeUndefined()
+  })
+
+  it('normalises a lowercase pin to upper case', async () => {
+    mockFetchSuccess(
+      buildManifest({
+        low_spec_recommendations: [
+          {
+            model_name: 'LiquidAI/LFM2.5-2.6B-GGUF',
+            description_key: 'hub:recEverydayUse',
+            quant: 'q4_k_m',
+          },
+        ],
+      })
+    )
+
+    const result = await getRecommendationsOrFallback({ url: REMOTE_URL })
+
+    expect(result.lowSpecRecommendations[0].quant).toBe('Q4_K_M')
+  })
+
+  it('loads cleanly when the manifest carries an unknown top-level key', async () => {
+    // The v1-compatibility contract: this is exactly how a client built before
+    // `low_spec_recommendations` existed sees the new manifest.
+    mockFetchSuccess(buildManifest({ some_future_key: { anything: true } }))
+
+    const result = await getRecommendationsOrFallback({ url: REMOTE_URL })
+
+    expect(result.source).toBe('remote')
+    expect(result.recommendations).toHaveLength(2)
+  })
+
+  it('falls back to the bundled low-spec baseline', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error('offline')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await getRecommendationsOrFallback({ url: REMOTE_URL })
+
+    expect(result.source).toBe('baseline')
+    expect(result.lowSpecRecommendations.map((r) => r.model_name)).toEqual(
+      BASELINE_LOW_SPEC_RECOMMENDED_MODELS.map((r) => r.model_name)
+    )
+  })
+})
+
+describe('selectRecommendationsForTier', () => {
+  const standard: Recommendation[] = [
+    { model_name: 'AtomicChat/Qwen3.5-4B-GGUF', description_key: 'hub:recEverydayUse' },
+  ]
+  const lowSpec: Recommendation[] = [
+    { model_name: 'LiquidAI/LFM2.5-2.6B-GGUF', description_key: 'hub:recEverydayUse' },
+  ]
+
+  it('replaces the standard list on a low-spec machine', () => {
+    expect(
+      selectRecommendationsForTier(standard, lowSpec, 'low').map(
+        (r) => r.model_name
+      )
+    ).toEqual(['LiquidAI/LFM2.5-2.6B-GGUF'])
+  })
+
+  it('keeps the standard list on a capable machine', () => {
+    expect(
+      selectRecommendationsForTier(standard, lowSpec, 'standard').map(
+        (r) => r.model_name
+      )
+    ).toEqual(['AtomicChat/Qwen3.5-4B-GGUF'])
+  })
+
+  it('falls back to the standard list when there is no low-spec list', () => {
+    // A cache entry written before the manifest gained its low-spec list has
+    // none; a low-spec machine must not be shown an empty picker.
+    expect(selectRecommendationsForTier(standard, [], 'low')).toEqual(standard)
   })
 })

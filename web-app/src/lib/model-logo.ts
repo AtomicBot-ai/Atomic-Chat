@@ -9,6 +9,7 @@ const FAMILY_LOGO_RULES: Array<[RegExp, string]> = [
   [/gemma/i, '/svg/google-color.svg'],
   [/\bglm\b|chatglm/i, '/svg/zai.svg'],
   [/bonsai/i, '/images/model-provider/prism-ml.webp'],
+  [/ornith/i, '/images/model-provider/ornith.webp'],
   [/qwen|qwq/i, '/svg/qwen-color.svg'],
   [/(?<!o)llama/i, '/svg/meta-color.svg'],
   [/mi[sx]tral|magistral|ministral|codestral|devstral/i, '/images/model-provider/mistral.svg'],
@@ -64,6 +65,7 @@ const ICON_KEY_LOGOS: Readonly<Record<string, string>> = {
   prism: '/images/model-provider/prism-ml.webp',
   inclusionai: '/images/model-provider/inclusionai.webp',
   nanbeige: '/images/model-provider/nanbeige.webp',
+  ornith: '/images/model-provider/ornith.webp',
   huggingface: '/images/model-provider/huggingface.svg',
 }
 

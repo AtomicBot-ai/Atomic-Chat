@@ -38,13 +38,16 @@ export function isFirstLaunch(): boolean {
 }
 
 /** How the user left onboarding. Mutually exclusive and single-fire — the
- * `hasNavigatedRef` guard in `SetupScreen` makes all four paths exclusive. */
+ * `hasNavigatedRef` guard in `SetupScreen` makes all five paths exclusive. */
 export type OnboardingExitPath =
   /** Picked a model already on disk; it was imported and launched. */
   | 'imported'
   /** Started a download and entered the chat while it ran. */
   | 'download_started'
-  /** Pressed Skip. */
+  /** Connected a cloud provider's API key instead of a local model. */
+  | 'cloud_provider'
+  /** Pressed Skip. No longer emitted — the link was removed from the model
+   *  step — but kept so historical events stay typed. */
   | 'skipped'
   /** The 15s auto-exit fired with the picker untouched. */
   | 'timeout'
@@ -128,10 +131,16 @@ export function captureBackendStepShown(): void {
 export function captureSetupScreenShown(params: {
   recommendedCount?: number | null
   rendered: boolean
+  /** Which recommendation list was shown — see `classifyHardwareTier`. */
+  hardwareTier?: 'low' | 'standard'
+  /** False when the tier deadline elapsed and 'standard' was assumed. */
+  hardwareTierResolved?: boolean
 }): void {
   capture('setup_screen_shown', {
     recommended_count: params.recommendedCount ?? 0,
     rendered: params.rendered,
+    hardware_tier: params.hardwareTier ?? null,
+    hardware_tier_resolved: params.hardwareTierResolved ?? null,
   })
 }
 

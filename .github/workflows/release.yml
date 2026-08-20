@@ -634,17 +634,22 @@ jobs:
       - name: Copy assets to Tauri
         run: yarn copy:assets:tauri
 
-      - name: Gate Agent checks (Windows)
-        run: |
-          cargo test --manifest-path src-tauri/Cargo.toml --lib --features test-tauri core::agent::
-          yarn workspace @janhq/web-app vitest --run src/lib/agent-path.test.ts src/lib/agent-file-links.test.ts src/stores/workspace-preview-store.test.ts
-
       - name: Build CLI
         shell: bash
         run: |
           mkdir -p src-tauri/resources/bin
           cd src-tauri && cargo build --release --features cli --bin jan-cli
           cp target/release/jan-cli.exe resources/bin/jan-cli.exe
+
+      # Runs after Build CLI: the tauri build script requires
+      # resources/bin/jan-cli.exe to exist, and `shell: bash` (-e -o pipefail)
+      # makes a cargo test failure actually fail the step — the default pwsh
+      # shell only reports the last command's exit code.
+      - name: Gate Agent checks (Windows)
+        shell: bash
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib --features test-tauri core::agent::
+          yarn workspace @janhq/web-app vitest --run src/lib/agent-path.test.ts src/lib/agent-file-links.test.ts src/stores/workspace-preview-store.test.ts
 
       - name: Build app (unsigned)
         env:

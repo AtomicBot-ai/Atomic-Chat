@@ -8,7 +8,12 @@ import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useMemo, useCallback, useRef, useState } from 'react'
 import { AppEvent, DownloadEvent, EngineManager, events } from '@janhq/core'
-import type { CatalogModel, ModelQuant } from '@/services/models/types'
+import { Cloud } from 'lucide-react'
+import type {
+  CatalogModel,
+  MMProjModel,
+  ModelQuant,
+} from '@/services/models/types'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -20,6 +25,13 @@ import {
   getTotalDownloadFileSize,
 } from '@/lib/models'
 import { useResolvedRecommendedModels } from '@/hooks/useResolvedRecommendedModels'
+import { useHardwareTier } from '@/hooks/useHardwareTier'
+import {
+  AddCloudProviderDialog,
+  selectCloudGalleryProviders,
+  type CloudProviderSaveResult,
+} from '@/containers/dialogs/AddCloudProviderDialog'
+import { findPinnedQuant } from '@/lib/model-card'
 import { useRecommendedModelsRegistryStore } from '@/stores/recommended-models-registry-store'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelLoad } from '@/hooks/useModelLoad'
@@ -48,8 +60,16 @@ import {
   captureSetupScreenShown,
 } from '@/lib/onboarding-telemetry'
 
-//* Вариант загрузки: приоритет квантов как в Hub
-function pickPreferredVariant(model: CatalogModel): ModelQuant | null {
+//* Вариант загрузки: пин из манифеста, иначе приоритет квантов как в Hub.
+//! Пин обязателен для LFM2.5-VL-450M (нужен Q8_0): репозиторий отдаёт и Q4_K_M,
+//! который матчится DEFAULT_MODEL_QUANTIZATIONS — без пина скачается рабочий,
+//! но не тот файл, и ошибка не всплывёт нигде.
+function pickPreferredVariant(
+  model: CatalogModel,
+  quantPin?: string
+): ModelQuant | null {
+  const pinned = findPinnedQuant(model.quants, quantPin)
+  if (pinned) return pinned
   const preferred =
     model.quants?.find((m) =>
       DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
@@ -57,6 +77,17 @@ function pickPreferredVariant(model: CatalogModel): ModelQuant | null {
       )
     ) ?? null
   return preferred ?? model.quants?.[0] ?? null
+}
+
+//* Проектор для vision-моделей: пин из манифеста, иначе обычный выбор.
+//! getPreferredMmprojModel ищет буквальный id 'mmproj-f16'. У LiquidAI id —
+//! 'mmproj-LFM2_5-VL-450m-F16', совпадения нет, и он падает на mmproj_models[0]
+//! = BF16 (181 MB) вместо Q8_0 (98 MB).
+function pickMmprojModel(
+  model: CatalogModel,
+  quantPin?: string
+): MMProjModel | undefined {
+  return findPinnedQuant(model.mmproj_models, quantPin) ?? getPreferredMmprojModel(model)
 }
 
 //* ГБ для строки прогресса (как в DownloadManagement)
@@ -128,6 +159,11 @@ type OnboardingStep = 'backend' | 'model'
 /// model step is left untouched for this long we enter the chat anyway and hand
 /// the recommendation over to the bottom-right reminder.
 const MODEL_STEP_AUTO_EXIT_MS = 15_000
+
+/// Neither the on-disk scan nor the hardware enumeration may hold the picker
+/// hostage. Both are raced against this deadline; whatever has not answered by
+/// then is treated as "nothing found" / "assume a standard machine".
+const PICKER_INPUT_DEADLINE_MS = 4_000
 
 function getInitialStep(): OnboardingStep {
   if (typeof window === 'undefined') return 'model'
@@ -215,6 +251,28 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   >(null)
   const [importingLocalId, setImportingLocalId] = useState<string | null>(null)
 
+  // The tier decides which two models the picker advertises, so rendering
+  // before it is known would swap the whole list under the user. Hardware
+  // enumeration starts at app boot and is normally done well before onboarding
+  // paints, so this deadline is a backstop, not a routine wait.
+  // Open state is mirrored into a ref because the auto-exit timeout callback
+  // below closes over its own render's value.
+  const [cloudDialogOpen, setCloudDialogOpen] = useState(false)
+  const cloudDialogOpenRef = useRef(false)
+  const setCloudDialog = useCallback((open: boolean) => {
+    cloudDialogOpenRef.current = open
+    setCloudDialogOpen(open)
+  }, [])
+
+  const [tierDeadlineElapsed, setTierDeadlineElapsed] = useState(false)
+  useEffect(() => {
+    const timer = setTimeout(
+      () => setTierDeadlineElapsed(true),
+      PICKER_INPUT_DEADLINE_MS
+    )
+    return () => clearTimeout(timer)
+  }, [])
+
   // A model already on disk from another app means onboarding never has to
   // offer a download: it launches that model straight away. 'failed' falls back
   // to the manual picker, and the ref keeps a failed launch from retrying.
@@ -245,7 +303,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     let cancelled = false
     const timer = setTimeout(() => {
       if (!cancelled) setLocalCandidates((prev) => prev ?? [])
-    }, 4000)
+    }, PICKER_INPUT_DEADLINE_MS)
 
     const { scanLocalModels: enabled, localScanFolders } =
       useGeneralSetting.getState()
@@ -288,7 +346,12 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     }
   }, [])
 
-  const recommendedItems = useResolvedRecommendedModels(sources)
+  const { tier: hardwareTier, ready: hardwareTierReady } = useHardwareTier()
+  const recommendedItems = useResolvedRecommendedModels(sources, hardwareTier)
+
+  // Every input the picker needs before it can paint a stable list.
+  const pickerInputsPending =
+    localCandidates === null || (!hardwareTierReady && !tierDeadlineElapsed)
 
   // Detected-on-disk models shown at the top of the picker. Only runnable
   // candidates get a Run button (LoRA adapters need a base model first, so
@@ -308,7 +371,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   const setupShownFiredRef = useRef(false)
   useEffect(() => {
     if (step !== 'model' || setupShownFiredRef.current) return
-    if (localCandidates === null) return
+    if (pickerInputsPending) return
     // A pending auto-start means the picker is never rendered. It used to
     // suppress the event entirely, which dropped those sessions out of the
     // funnel; now it is reported with `rendered: false`.
@@ -318,14 +381,18 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     captureSetupScreenShown({
       recommendedCount: recommendedItems.length,
       rendered,
+      hardwareTier,
+      hardwareTierResolved: hardwareTierReady,
     })
   }, [
     step,
-    localCandidates,
+    pickerInputsPending,
     autoRunTarget,
     autoRunState,
     recommendedItems.length,
     sourcesLoading,
+    hardwareTier,
+    hardwareTierReady,
   ])
 
   //* P0: клик «Download» на рекомендованной карточке (до старта загрузки).
@@ -421,7 +488,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         continue
       }
       const isMlx = !!model.is_mlx
-      const variant = !isMlx ? pickPreferredVariant(model) : null
+      const variant = !isMlx ? pickPreferredVariant(model, item.rec.quant) : null
       const downloaded = isMlx
         ? isMlxDownloaded(model)
         : variant
@@ -438,7 +505,11 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
             | 'mlx',
           sizeLabel: isMlx
             ? getMlxTotalFileSize(model)
-            : getTotalDownloadFileSize(model, variant!),
+            : getTotalDownloadFileSize(
+                model,
+                variant!,
+                pickMmprojModel(model, item.rec.mmprojQuant)
+              ),
         })
       } else {
         pending.push(item)
@@ -449,7 +520,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   }, [recommendedItems, isMlxDownloaded, isVariantDownloaded, getMlxModelId])
 
   const startDownload = useCallback(
-    (catalog: CatalogModel, variant: ModelQuant) => {
+    (catalog: CatalogModel, variant: ModelQuant, mmprojPath?: string) => {
       trackedImportIdsRef.current.set(
         variant.model_id,
         LOCAL_LLAMACPP_PROVIDER as LocalLlamacppProvider
@@ -461,7 +532,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         .pullModelWithMetadata(
           variant.model_id,
           variant.path,
-          getPreferredMmprojModel(catalog)?.path,
+          mmprojPath ?? getPreferredMmprojModel(catalog)?.path,
           huggingfaceToken,
           true,
           resumableDownloads.has(variant.model_id)
@@ -800,12 +871,80 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     onRunLocalModel,
   ])
 
-  // Shared exit for both ways of leaving onboarding empty-handed: the explicit
-  // Skip link and the auto-exit timeout. Picking a model takes a different
-  // route (handleImportedId / enterChatForDownload) and must not arm the
-  // bottom-right reminder.
+  // Exit taken when the user connects a cloud provider instead of downloading
+  // a model. Deliberately does NOT arm the bottom-right model reminder: that
+  // nudge is for users who left empty-handed, and a configured key is a
+  // finished setup, not an abandoned one.
+  const enterChatWithCloudProvider = useCallback(
+    ({ providerName, modelId }: CloudProviderSaveResult) => {
+      if (hasNavigatedRef.current) return
+      hasNavigatedRef.current = true
+
+      captureOnboardingCompleted({
+        exitPath: 'cloud_provider',
+        hadAnyModel: true,
+        stepReached: 'model',
+        startedAtMs: onboardingStartedAtRef.current,
+      })
+
+      // Same courtesy as every other exit: models found on disk still land in
+      // the library even though the user chose a cloud provider.
+      importCandidatesInBackground(localCandidates ?? [])
+
+      localStorage.setItem(localStorageKey.setupCompleted, 'true')
+      window.dispatchEvent(new Event('app:setup-completed'))
+
+      if (modelId) {
+        // Select up-front so the dropdown's "first local" fallback cannot
+        // override the provider the user just configured.
+        selectModelProvider(providerName, modelId)
+        localStorage.setItem(
+          localStorageKey.lastUsedModel,
+          JSON.stringify({ provider: providerName, model: modelId })
+        )
+      } else {
+        localStorage.removeItem(localStorageKey.lastUsedModel)
+      }
+
+      useLeftPanel.getState().setLeftPanel(true)
+
+      if (modelId) {
+        // Registers the remote provider and starts the local proxy.
+        // Fire-and-forget so navigation is not blocked on it.
+        void switchToModel({ modelId, providerName, serviceHub }).catch(() => {})
+      }
+
+      void navigate({
+        to: route.home,
+        replace: true,
+        search: modelId
+          ? { threadModel: { id: modelId, provider: providerName } }
+          : {},
+      })
+    },
+    [
+      navigate,
+      selectModelProvider,
+      serviceHub,
+      importCandidatesInBackground,
+      localCandidates,
+    ]
+  )
+
+  // Providers worth offering in the cloud dialog. Hidden rather than disabled
+  // when empty, so onboarding never opens a dialog with nothing in it.
+  const hasCloudProviders = useMemo(
+    () => selectCloudGalleryProviders(providers).length > 0,
+    [providers]
+  )
+
+  // Leaving onboarding empty-handed. Since the Skip link was removed this is
+  // reachable only through the auto-exit timeout — the `reason` is kept on the
+  // event so the existing `setup_skipped` funnel stays comparable across the
+  // change. Picking a model takes a different route (handleImportedId /
+  // enterChatForDownload) and must not arm the bottom-right reminder.
   const leaveWithoutModel = useCallback(
-    (reason: 'skipped' | 'timeout') => {
+    (reason: 'timeout') => {
       if (hasNavigatedRef.current) return
       hasNavigatedRef.current = true
 
@@ -867,15 +1006,22 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   // Armed only once the picker is actually on screen, and disarmed while an
   // import is in flight so a slow local model can't be cut short.
   useEffect(() => {
-    if (step !== 'model' || localCandidates === null) return
+    // Do not start the 15s exit clock behind the loading screen.
+    if (step !== 'model' || pickerInputsPending) return
     if (importingLocalId !== null) return
+    // Onboarding must not navigate out from under an open dialog.
+    if (cloudDialogOpen) return
 
     const timer = setTimeout(() => {
+      // Second layer, deliberately: the dependency above cancels a pending
+      // timer when the dialog opens, but a click at t≈14.99s can fire this
+      // callback before React commits that state update.
+      if (cloudDialogOpenRef.current) return
       leaveWithoutModelRef.current('timeout')
     }, MODEL_STEP_AUTO_EXIT_MS)
 
     return () => clearTimeout(timer)
-  }, [step, localCandidates, importingLocalId])
+  }, [step, pickerInputsPending, importingLocalId, cloudDialogOpen])
 
   // Unlike the previous full-screen onboarding, the model step lives inside the
   // chat area, so the sidebar is already there when the user lands in chat.
@@ -908,7 +1054,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   // models don't pop in and shove the list down) and the auto-start of a model
   // found on disk, which needs feedback rather than a decision.
   const statusMessage =
-    localCandidates === null
+    pickerInputsPending
       ? t('common:loading')
       : autoRunState === 'running' && autoRunTarget
         ? t('setup:localStep.autoStarting', {
@@ -933,7 +1079,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         <HeaderPage />
 
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <div className="pointer-events-auto mx-auto my-auto flex w-full max-w-[600px] flex-col px-6 py-8 sm:py-10">
+          <div className="pointer-events-auto mx-auto my-auto flex w-full max-w-[520px] flex-col px-6 py-8 sm:py-10">
             <div className="mb-5 flex shrink-0 flex-col items-center gap-3 text-center">
               <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-neutral-950 p-1 shadow-sm dark:bg-white dark:shadow-none">
                 <img
@@ -1119,7 +1265,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                     captureSetupLocalModelRun({
                                       trigger: 'installed_recommended',
                                       source: provider,
-                                      format: rec.format,
+                                      format: model.is_mlx ? 'mlx' : 'gguf',
                                     })
                                     importCandidatesInBackground(
                                       localCandidates ?? []
@@ -1156,12 +1302,20 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                         {pendingRecommended.map(({ rec, model }, index) => {
                           const isMlx = !!model?.is_mlx
                           const variant =
-                            model && !isMlx ? pickPreferredVariant(model) : null
+                            model && !isMlx
+                              ? pickPreferredVariant(model, rec.quant)
+                              : null
+                          //* Тот же проектор, что уйдёт в загрузку, — иначе
+                          //* строка покажет размер одного файла, а скачается другой.
+                          const mmproj =
+                            model && !isMlx
+                              ? pickMmprojModel(model, rec.mmprojQuant)
+                              : undefined
                           //* MLX: суммируем все safetensors-шарды; GGUF: quant + mmproj
                           const downloadSize = isMlx
                             ? getMlxTotalFileSize(model!)
                             : model && variant
-                              ? getTotalDownloadFileSize(model, variant)
+                              ? getTotalDownloadFileSize(model, variant, mmproj)
                               : variant?.file_size
                           //* id, по которому опрашиваем downloadStore (GGUF → quant.id, MLX → mlxId)
                           const rowTrackId = isMlx
@@ -1289,7 +1443,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                         sizeGb: sizeStringToGb(downloadSize),
                                         position: index,
                                       })
-                                      startDownload(model, variant)
+                                      startDownload(model, variant, mmproj?.path)
                                       enterChatForDownload(
                                         variant.model_id,
                                         LOCAL_LLAMACPP_PROVIDER as LocalLlamacppProvider
@@ -1349,21 +1503,47 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                   </>
                 )}
 
-                <div className="relative z-60 flex shrink-0 flex-col items-center pt-3">
-                  <Button
-                    type="button"
-                    variant="link"
-                    onClick={() => leaveWithoutModel('skipped')}
-                    className="text-muted-foreground/60 hover:text-muted-foreground relative z-60 h-auto p-0 text-xs font-normal underline-offset-4"
-                  >
-                    {t('setup:skip')}
-                  </Button>
+                {/* No Skip link: leaving empty-handed is handled by the
+                    `MODEL_STEP_AUTO_EXIT_MS` timeout, so the screen offers only
+                    the two ways to finish setup rather than a way to dodge it. */}
+                <div className="relative z-60 flex shrink-0 flex-col items-center gap-3 pt-3">
+                  {/* A user with no machine for local inference, or an existing
+                      cloud subscription, would otherwise have nothing to pick.
+                      The divider frames the two as alternatives rather than a
+                      primary and an afterthought. */}
+                  {hasCloudProviders && (
+                    <>
+                      <div className="flex w-full shrink-0 items-center gap-3">
+                        <span className="bg-border h-px flex-1" />
+                        <span className="text-muted-foreground text-xs">
+                          {t('setup:orDivider')}
+                        </span>
+                        <span className="bg-border h-px flex-1" />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setCloudDialog(true)}
+                        className="relative z-60 shrink-0 rounded-full px-4"
+                      >
+                        <Cloud />
+                        {t('setup:cloudStep.trigger')}
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      <AddCloudProviderDialog
+        open={cloudDialogOpen}
+        onOpenChange={setCloudDialog}
+        onKeySaved={enterChatWithCloudProvider}
+      />
     </div>
   )
 }

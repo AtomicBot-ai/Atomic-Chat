@@ -25,7 +25,7 @@ pub(crate) struct TestWorkspace {
 impl TestWorkspace {
     pub(crate) fn new() -> Self {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("target/agent-test-workspaces")
+            .join("target").join("agent-test-workspaces")
             .join(uuid::Uuid::new_v4().to_string());
         std::fs::create_dir_all(&path).expect("create agent test workspace");
         Self { path }

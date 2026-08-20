@@ -310,6 +310,8 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
         payload.backend === recommendation.recommendedBackend &&
         recommendationPhase !== 'restart-required'
       ) {
+        clearHotswapTimeout()
+        clearCompletedTimeout()
         setRecommendationPhase('downloading')
       }
     }
@@ -361,7 +363,7 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
       events.off(AppEvent.onBackendDownloadStarted, handleDownloadStarted)
       events.off(AppEvent.onBackendDownloadFinished, handleDownloadFinished)
     }
-  }, [recommendationPhase, recommendation, clearHotswapTimeout, isOurEvent])
+  }, [recommendationPhase, recommendation, clearHotswapTimeout, clearCompletedTimeout, isOurEvent])
 
   // Listen for the live hot-swap completion event dispatched by
   // `applyBackendLive()` in the llamacpp extension. The event arrives on

@@ -16,8 +16,12 @@ import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { sanitizeModelId } from '@/lib/utils'
 import type { CatalogModel } from '@/services/models/types'
 
-/** Both llama.cpp providers register downloads: the fork and the upstream build. */
-export const LLAMACPP_PROVIDERS = ['llamacpp', 'llamacpp-upstream'] as const
+/**
+ * Both llama.cpp providers register downloads: the fork and the upstream
+ * build. Upstream first — shared ids resolve to the default engine, not the
+ * TurboQuant fork (which may even be deactivated on fresh installs).
+ */
+export const LLAMACPP_PROVIDERS = ['llamacpp-upstream', 'llamacpp'] as const
 export const MLX_PROVIDER = 'mlx'
 /** Every provider that keeps model files on this device. */
 export const LOCAL_PROVIDERS = [...LLAMACPP_PROVIDERS, MLX_PROVIDER] as const

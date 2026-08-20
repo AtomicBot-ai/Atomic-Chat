@@ -59,12 +59,16 @@ vi.mock('@/containers/dialogs/ChangeDataFolderLocation', () => ({
   ),
 }))
 
+const mockSetPreloadModelOnStartup = vi.hoisted(() => vi.fn())
+
 vi.mock('@/hooks/useGeneralSetting', () => ({
   useGeneralSetting: () => ({
     spellCheckChatInput: true,
     setSpellCheckChatInput: vi.fn(),
     huggingfaceToken: 'test-token',
     setHuggingfaceToken: vi.fn(),
+    preloadModelOnStartup: false,
+    setPreloadModelOnStartup: mockSetPreloadModelOnStartup,
   }),
 }))
 
@@ -361,6 +365,40 @@ describe('General Settings Route', () => {
       fireEvent.click(switches[0])
     })
     expect(switches[0]).toBeInTheDocument()
+  })
+
+  it('renders the model preload toggle off, next to the startup settings', async () => {
+    const Component = GeneralRoute.component as React.ComponentType
+    await act(async () => {
+      render(<Component />)
+    })
+
+    const item = screen
+      .getAllByTestId('card-item')
+      .find(
+        (el) =>
+          el.getAttribute('data-title') ===
+          'settings:general.preloadModelOnStartup'
+      )
+    expect(item).toBeDefined()
+
+    // It belongs to the General card, alongside "Launch at startup" — not to
+    // the "Others" card it used to live in.
+    expect(item?.closest('[data-testid="card"]')).toHaveAttribute(
+      'data-title',
+      'common:general'
+    )
+
+    const toggle = item?.querySelector(
+      '[data-testid="switch"]'
+    ) as HTMLInputElement
+    expect(toggle).toBeDefined()
+    expect(toggle.checked).toBe(false)
+
+    await act(async () => {
+      fireEvent.click(toggle)
+    })
+    expect(mockSetPreloadModelOnStartup).toHaveBeenCalledWith(true)
   })
 
   it('should handle huggingface token change', async () => {

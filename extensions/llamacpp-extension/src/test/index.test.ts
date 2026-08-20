@@ -665,6 +665,84 @@ describe('llamacpp_extension', () => {
       // Per-file expectations would describe the download, not shard 1.
       expect(written.data.model_size_bytes).toBeUndefined()
     })
+
+    // A failed hash check used to `fs.rm` the whole model directory, which is
+    // shared with the mmproj, the drafts and the sibling shards of a model that
+    // may already be installed and working.
+    it('removes only the failed download, keeping the rest of the model folder', async () => {
+      const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
+
+      const mockDownloadManager = {
+        downloadFiles: vi
+          .fn()
+          .mockRejectedValue(
+            new Error('Hash verification failed for model.gguf')
+          ),
+        cancelDownload: vi.fn().mockResolvedValue(undefined),
+      }
+      window.core.extensionManager.getByName = vi
+        .fn()
+        .mockReturnValue(mockDownloadManager)
+
+      vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
+      vi.mocked(joinPath).mockImplementation((paths) =>
+        Promise.resolve(paths.join('/'))
+      )
+      // Everything is on disk except the config: the model was mid-import.
+      vi.mocked(fs.existsSync).mockImplementation((path: string) =>
+        Promise.resolve(!path.endsWith('model.yml'))
+      )
+      vi.mocked(fs.readdirSync).mockResolvedValue(['mmproj.gguf'])
+      vi.mocked(fs.rm).mockResolvedValue(undefined)
+
+      await expect(
+        extension.import('test-model', {
+          modelPath: 'https://example.com/model.gguf',
+        })
+      ).rejects.toThrow('Hash verification failed')
+
+      const removed = vi.mocked(fs.rm).mock.calls.map(([path]) => path)
+      expect(removed).toEqual([
+        '/path/to/jan/llamacpp/models/test-model/model.gguf',
+        '/path/to/jan/llamacpp/models/test-model/model.gguf.tmp',
+        '/path/to/jan/llamacpp/models/test-model/model.gguf.url',
+      ])
+      expect(removed).not.toContain('/path/to/jan/llamacpp/models/test-model')
+    })
+
+    it('removes the model folder when the failed download left it empty', async () => {
+      const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
+
+      const mockDownloadManager = {
+        downloadFiles: vi
+          .fn()
+          .mockRejectedValue(new Error('Size verification failed')),
+        cancelDownload: vi.fn().mockResolvedValue(undefined),
+      }
+      window.core.extensionManager.getByName = vi
+        .fn()
+        .mockReturnValue(mockDownloadManager)
+
+      vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
+      vi.mocked(joinPath).mockImplementation((paths) =>
+        Promise.resolve(paths.join('/'))
+      )
+      vi.mocked(fs.existsSync).mockImplementation((path: string) =>
+        Promise.resolve(!path.endsWith('model.yml'))
+      )
+      vi.mocked(fs.readdirSync).mockResolvedValue([])
+      vi.mocked(fs.rm).mockResolvedValue(undefined)
+
+      await expect(
+        extension.import('test-model', {
+          modelPath: 'https://example.com/model.gguf',
+        })
+      ).rejects.toThrow('Size verification failed')
+
+      expect(vi.mocked(fs.rm).mock.calls.map(([path]) => path)).toContain(
+        '/path/to/jan/llamacpp/models/test-model'
+      )
+    })
   })
 
   describe('load', () => {

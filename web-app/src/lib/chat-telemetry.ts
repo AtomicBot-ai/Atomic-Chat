@@ -194,7 +194,9 @@ export function toolTelemetry(
  */
 export type TelemetryMessageLike = {
   parts?: readonly { type: string; text?: string }[]
-  metadata?: Record<string, unknown> | undefined
+  // `UIMessage` leaves its metadata generic as `unknown`; keep the parameter
+  // assignable and narrow to a record here instead of at every call site.
+  metadata?: unknown
 }
 
 const num = (value: unknown): number | null =>
@@ -211,7 +213,7 @@ export function responseShapeFromMessage(
   mcpToolNames?: ReadonlySet<string> | null
 ): Record<string, unknown> {
   const parts = message?.parts ?? []
-  const meta = message?.metadata ?? {}
+  const meta = (message?.metadata ?? {}) as Record<string, unknown>
 
   const text = parts
     .filter((p) => p.type === 'text')
@@ -260,7 +262,7 @@ export type TelemetryAgentRunLike = {
   trace?: {
     assistantText?: string
     reasoning?: Record<number, string>
-    tools?: readonly { tool: string }[]
+    tools?: readonly { call?: { tool?: string } }[]
     error?: unknown
     finishReason?: string
     stepCount?: number
@@ -297,7 +299,9 @@ export function agentResponseShape(
     reasoning_len_bucket: lengthBucket(reasoning.length),
     code_block_count: codeBlockCount(text),
     ...toolTelemetry(
-      (trace.tools ?? []).map((t) => t.tool),
+      (trace.tools ?? [])
+        .map((t) => t.call?.tool)
+        .filter((name): name is string => !!name),
       ragToolNames,
       mcpToolNames
     ),

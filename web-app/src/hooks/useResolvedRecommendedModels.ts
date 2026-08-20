@@ -6,11 +6,16 @@ import { findCatalogModelForRecommendedRepo } from '@/lib/models'
 import { sanitizeModelId } from '@/lib/utils'
 import {
   filterRecommendationsForPlatform,
+  selectRecommendationsForTier,
   type Recommendation,
   type RecommendationPlatform,
 } from '@/services/recommended-models-registry'
+import type { HardwareTier } from '@/lib/hardware-tier'
 import { useRecommendedModelsRegistryStore } from '@/stores/recommended-models-registry-store'
 import type { CatalogModel } from '@/services/models/types'
+
+//* Стабильная ссылка: иначе селектор возвращал бы новый [] на каждый рендер.
+const EMPTY_RECOMMENDATIONS: Recommendation[] = []
 
 const currentOs: RecommendationPlatform = IS_MACOS
   ? 'macos'
@@ -22,11 +27,17 @@ const currentOs: RecommendationPlatform = IS_MACOS
 type LegacyRecommendation = {
   modelName: string
   descriptionKey: string
+  /** Pinned quant, if the manifest names one. See `findPinnedQuant`. */
+  quant?: string
+  /** Pinned multimodal projector quant, for vision entries. */
+  mmprojQuant?: string
 }
 
 const toLegacy = (rec: Recommendation): LegacyRecommendation => ({
   modelName: rec.model_name,
   descriptionKey: rec.description_key,
+  ...(rec.quant ? { quant: rec.quant } : {}),
+  ...(rec.mmproj_quant ? { mmprojQuant: rec.mmproj_quant } : {}),
 })
 
 //* Не теряем разрешённые карточки при размонтировании Hub между переходами.
@@ -36,19 +47,32 @@ const resolvedModels: Record<string, CatalogModel> = {
 const pendingModels = new Map<string, Promise<CatalogModel | null>>()
 
 //* Рекомендации: каталог; если репо ещё не в индексе — один запрос к HF API
-export function useResolvedRecommendedModels(sources: CatalogModel[]) {
+export function useResolvedRecommendedModels(
+  sources: CatalogModel[],
+  tier: HardwareTier = 'standard'
+) {
   const serviceHub = useServiceHub()
   const huggingfaceToken = useGeneralSetting((s) => s.huggingfaceToken)
   const remoteRecommendations = useRecommendedModelsRegistryStore(
     (s) => s.recommendations
   )
+  //* `?? []` — персистнутый/замоканный стор может быть без нового поля.
+  const lowSpecRecommendations = useRecommendedModelsRegistryStore(
+    (s) => s.lowSpecRecommendations ?? EMPTY_RECOMMENDATIONS
+  )
 
   const recommendations = useMemo<LegacyRecommendation[]>(
     () =>
-      filterRecommendationsForPlatform(remoteRecommendations, currentOs).map(
-        toLegacy
-      ),
-    [remoteRecommendations]
+      filterRecommendationsForPlatform(
+        //* Тир выбирает список целиком, платформа затем фильтрует внутри него.
+        selectRecommendationsForTier(
+          remoteRecommendations,
+          lowSpecRecommendations,
+          tier
+        ),
+        currentOs
+      ).map(toLegacy),
+    [remoteRecommendations, lowSpecRecommendations, tier]
   )
 
   const [fetched, setFetched] = useState<Record<string, CatalogModel>>(() => ({

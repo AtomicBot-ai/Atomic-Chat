@@ -7,6 +7,7 @@
     "empty": "Нет чатов"
   },
   "sendMessage": "Отправить сообщение",
+  "selectModelToChat": "Выберите модель, чтобы начать чат.",
   "newConversation": "Новый диалог",
   "clearHistory": "Очистить историю",
   "activity": {

@@ -88,7 +88,7 @@ function Index() {
     })
   }, [serviceHub])
 
-  //* После Skip без перемонтирования роутера — поднимаем флаг, иначе ре-рендер не гарантирован
+  //* После авто-выхода без перемонтирования роутера — поднимаем флаг, иначе ре-рендер не гарантирован
   const [setupSkippedThisSession, setSetupSkippedThisSession] = useState(false)
 
   // Shared with the startup auto-start gate so the two can never disagree about

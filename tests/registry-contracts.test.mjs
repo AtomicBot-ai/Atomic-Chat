@@ -215,14 +215,46 @@ test('the TurboQuant provider hardcodes no release tag', () => {
 
 test('recommended models conform to the loader schema contract', () => {
   const manifest = fixture('recommended-models')
+  // Must stay 1: bumping it makes every shipped client reject the manifest and
+  // fall back to its bundled baseline permanently.
   assert.equal(manifest.schema_version, 1)
-  unique(
-    manifest.recommendations.map(({ model_name }) => model_name),
-    'recommendations must be unique'
-  )
-  for (const recommendation of manifest.recommendations) {
-    assert.match(recommendation.model_name, /^[^/]+\/[^/]+$/)
-    assert.match(recommendation.description_key, /^hub:/)
+
+  const lowSpec = manifest.low_spec_recommendations ?? []
+
+  for (const [label, list] of [
+    ['recommendations', manifest.recommendations],
+    ['low_spec_recommendations', lowSpec],
+  ]) {
+    unique(
+      list.map(({ model_name }) => model_name),
+      `${label} must be unique`
+    )
+    for (const recommendation of list) {
+      assert.match(recommendation.model_name, /^[^/]+\/[^/]+$/)
+      assert.match(recommendation.description_key, /^hub:/)
+      for (const key of ['quant', 'mmproj_quant']) {
+        if (recommendation[key] !== undefined) {
+          assert.match(
+            recommendation[key],
+            /^[A-Za-z0-9_]{2,16}$/,
+            `${label}.${key} must be a quant token`
+          )
+        }
+      }
+    }
+  }
+
+  if (manifest.low_spec_recommendations !== undefined) {
+    assert.ok(lowSpec.length > 0, 'low_spec_recommendations must not be empty')
+    // The low-spec list REPLACES the standard one, so an entry in both would
+    // mean a model is offered on hardware the other list says it is wrong for.
+    const standard = new Set(manifest.recommendations.map((r) => r.model_name))
+    for (const { model_name } of lowSpec) {
+      assert.ok(
+        !standard.has(model_name),
+        `${model_name} appears in both recommendation lists`
+      )
+    }
   }
 })
 

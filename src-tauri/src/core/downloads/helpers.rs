@@ -653,10 +653,20 @@ pub async fn _download_files_internal(
             .map_err(|e| format!("Validation task join error: {e}"))?;
 
         if let Err(validation_error) = validation_result {
-            // Clean up the file if validation fails
+            // Clean up the file if validation fails. Logged at warn: this is a
+            // deletion of user data (several GB of it, for a model file), and
+            // when a report says "the app removed my model" this line is what
+            // says whether the downloader did it, and to which file.
+            log::warn!(
+                "Validation failed ({validation_error}); removing {}",
+                save_path.display()
+            );
             let _ = tokio::fs::remove_file(&save_path).await;
 
-            // Try to clean up the parent directory if it's empty
+            // Try to clean up the parent directory if it's empty. `remove_dir`
+            // (not `remove_dir_all`) is load-bearing: the directory is shared
+            // with the model's mmproj, drafts and sibling shards, and it must
+            // survive whenever any of them are still there.
             if let Some(parent) = save_path.parent() {
                 let _ = tokio::fs::remove_dir(parent).await;
             }

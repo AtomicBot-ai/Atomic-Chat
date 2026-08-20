@@ -5,6 +5,7 @@ import SettingsMenu from '@/containers/SettingsMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { isOnboardingPending } from '@/lib/onboarding'
 import { captureProviderKeyConfigured } from '@/lib/onboarding-telemetry'
+import { buildApiKeyUpdate } from '@/lib/provider-api-key'
 import {
   cn,
   getProviderTitle,
@@ -2316,7 +2317,13 @@ function ProviderDetail() {
                                 settingKey === 'api-key' &&
                                 typeof newValue === 'string'
                               ) {
-                                updateObj.api_key = newValue
+                                // Single-sourced with onboarding's cloud dialog
+                                // so the two cannot drift on what writing a key
+                                // means (settings entry + top-level mirror).
+                                Object.assign(
+                                  updateObj,
+                                  buildApiKeyUpdate(provider, newValue)
+                                )
                                 // Configuring a key satisfies the onboarding
                                 // gate, so this is a real exit from the flow
                                 // that previously bypassed all telemetry.

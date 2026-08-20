@@ -396,8 +396,29 @@ pub fn run() {
         })
         .setup(|app| {
             let log_dir = get_jan_data_folder_path(app.handle().clone()).join("logs");
+            // The plugin's defaults are 40 KB per file with
+            // `RotationStrategy::KeepOne`, and `KeepOne` does not archive
+            // anything — it `remove_file`s `app.log` and starts over. At
+            // `Debug` (where `reqwest` / `hyper` alone produce a line per
+            // connection) that budget is spent in minutes, so a bug report
+            // filed even shortly after an incident carried none of it, and the
+            // file appeared to erase itself while the app was still running.
+            // 10 MB across 5 generations covers a long session, and the noisy
+            // HTTP crates are dropped to `warn` so app-level events aren't
+            // pushed out by transport chatter.
+            const LOG_MAX_FILE_SIZE: u128 = 10 * 1024 * 1024;
+            const LOG_GENERATIONS: usize = 5;
             let log_builder = tauri_plugin_log::Builder::default()
                 .level(log::LevelFilter::Debug)
+                .level_for("reqwest", log::LevelFilter::Warn)
+                .level_for("hyper", log::LevelFilter::Warn)
+                .level_for("hyper_util", log::LevelFilter::Warn)
+                .level_for("rustls", log::LevelFilter::Warn)
+                .level_for("h2", log::LevelFilter::Warn)
+                .max_file_size(LOG_MAX_FILE_SIZE)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(
+                    LOG_GENERATIONS,
+                ))
                 .targets([
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),

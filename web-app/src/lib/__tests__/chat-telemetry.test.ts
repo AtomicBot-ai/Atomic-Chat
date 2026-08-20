@@ -241,7 +241,10 @@ describe('agentOutcome / agentResponseShape', () => {
       trace: {
         assistantText: 'done',
         reasoning: { 0: 'step one' },
-        tools: [{ tool: 'read_file' }, { tool: 'read_file' }],
+        tools: [
+          { call: { tool: 'read_file' } },
+          { call: { tool: 'read_file' } },
+        ],
         finishReason: 'finish',
         stepCount: 3,
       },

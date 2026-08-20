@@ -4,6 +4,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { modelSettings } from '@/lib/predefined'
 import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
+import { turboquantDefaultActive } from '@/lib/turboquantDefaultMigration'
 
 /**
  * Historical provider id retained for one-time migration logic. The
@@ -168,7 +169,14 @@ export const useModelProvider = create<ModelProviderState>()(
               }),
               api_key: existingProvider?.api_key || provider.api_key,
               base_url: existingProvider?.base_url || provider.base_url,
-              active: existingProvider ? existingProvider?.active : true,
+              // First registration: TurboQuant defaults to disabled on fresh
+              // installs (re-enableable via the Settings toggle); everything
+              // else — and every already-persisted provider — keeps its value.
+              active: existingProvider
+                ? existingProvider.active
+                : provider.provider === LEGACY_LLAMACPP_PROVIDER
+                  ? turboquantDefaultActive()
+                  : true,
             }
           })
           const nextProviders = [

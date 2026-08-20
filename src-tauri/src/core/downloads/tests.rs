@@ -830,3 +830,39 @@ fn test_download_item_deserialization() {
     assert_eq!(item.url, "https://example.com/file.zip");
     assert_eq!(item.save_path, "downloads/file.zip");
 }
+
+/// A task that is stopped because a newer download claimed its id must be
+/// distinguishable from one the user cancelled: only the latter's files are
+/// the caller's to touch.
+#[test]
+fn superseded_task_is_marked_and_cancelled() {
+    let losing = DownloadTask::new();
+    let winning = DownloadTask::new();
+
+    losing.supersede();
+
+    assert!(losing.cancel_token.is_cancelled());
+    assert!(losing.was_superseded());
+    assert!(!winning.was_superseded());
+}
+
+/// The end-of-run cleanup drops its registration only when the map still holds
+/// the same task — otherwise it would deregister the successor and leave that
+/// download uncancellable.
+#[test]
+fn a_task_recognises_itself_but_not_a_same_id_successor() {
+    let first = DownloadTask::new();
+    let successor = DownloadTask::new();
+
+    assert!(first.is_same_task(&first.clone()));
+    assert!(!first.is_same_task(&successor));
+}
+
+#[test]
+fn a_plain_cancellation_is_not_a_supersede() {
+    let task = DownloadTask::new();
+    task.cancel_token.cancel();
+
+    assert!(task.cancel_token.is_cancelled());
+    assert!(!task.was_superseded());
+}

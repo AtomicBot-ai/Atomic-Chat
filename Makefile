@@ -70,6 +70,23 @@ dev-fast: install-and-build
 	make build-cli-dev
 	yarn dev
 
+# Запуск глазами НОВОГО пользователя (как dev-fast по скорости). FRESH_INSTALL
+# очищает localStorage webview на каждом старте приложения: срабатывает вся
+# fresh-install ветка — онбординг с нуля, turboquant выключен по умолчанию,
+# дефолтный движок llamacpp-upstream. Настоящий dev-профиль (провайдеры,
+# API-ключи, флаги) бэкапится и автоматически восстанавливается при следующем
+# обычном `make dev` / `make dev-fast`; всё, что сделано во fresh-запусках,
+# отбрасывается. Модели на диске не удаляются (общий каталог data), поэтому
+# после онбординга они снова видны в списке.
+dev-fresh: install-and-build
+	yarn download:bin
+	make download-llamacpp-backend-if-exists
+	make download-llamacpp-upstream-backend-if-exists
+	make build-mlx-server-if-exists
+	make build-foundation-models-server-if-exists
+	make build-cli-dev
+	FRESH_INSTALL=true FORCE_ONBOARDING=true yarn dev
+
 # Dev-режим с форсированным SetupScreen (онбординг) без удаления моделей.
 # Флаг FORCE_ONBOARDING прокидывается в vite как compile-time константа.
 dev-onboarding: install-and-build
@@ -80,6 +97,34 @@ dev-onboarding: install-and-build
 	make build-foundation-models-server-if-exists
 	make build-cli-dev
 	FORCE_ONBOARDING=true yarn dev
+
+# Путь к соседнему чекауту atomic-chat-conf. Переопределяется:
+#   make dev-onboarding-low-spec ATOMIC_CHAT_CONF=~/work/atomic-chat-conf
+ATOMIC_CHAT_CONF ?= ../atomic-chat-conf
+
+# Онбординг глазами пользователя со слабой машиной: FORCE_HARDWARE_TIER=low
+# минует определение железа, и пикер показывает low-spec рекомендации (LFM)
+# на любом компьютере.
+#
+# Манифест берём из локального чекаута conf, пока правка туда не влита: в
+# удалённом ещё нет `low_spec_recommendations`, а без него клиент штатно
+# откатывается на стандартную пару, и низкий тир было бы не увидеть.
+dev-onboarding-low-spec: install-and-build
+	yarn download:bin
+	make download-llamacpp-backend
+	make download-llamacpp-upstream-backend
+	make build-mlx-server
+	make build-foundation-models-server-if-exists
+	make build-cli-dev
+	@if [ -f "$(ATOMIC_CHAT_CONF)/models/recommended.json" ]; then \
+		cp "$(ATOMIC_CHAT_CONF)/models/recommended.json" web-app/public/dev-recommended.json; \
+		echo "[dev] манифест: $(ATOMIC_CHAT_CONF)/models/recommended.json"; \
+		FORCE_ONBOARDING=true FORCE_HARDWARE_TIER=low \
+			VITE_RECOMMENDED_MODELS_REGISTRY_URL=/dev-recommended.json yarn dev; \
+	else \
+		echo "[dev] $(ATOMIC_CHAT_CONF) не найден — манифест из сети (задайте ATOMIC_CHAT_CONF=...)"; \
+		FORCE_ONBOARDING=true FORCE_HARDWARE_TIER=low yarn dev; \
+	fi
 
 # ──────────────────────────────────────────────────────────────
 # Windows Development
@@ -272,7 +317,7 @@ lint: install-and-build
 
 # Testing
 .PHONY: test test-all test-local test-web test-extensions test-rust stub-resources \
-	verify-fast verify test-quality test-hardening-contracts \
+	typecheck verify-fast verify test-quality test-hardening-contracts \
 	test-coverage-critical capture-capabilities capture-hw-profile \
 	sync-upstream-baseline gen-amd-rocm-pci-ids test-live test-live-cloud mutants
 
@@ -366,8 +411,15 @@ test-coverage-critical:
 		run test:coverage
 	node scripts/check-coverage-floor.mjs
 
+# The same `tsc -b` the release build runs inside `yarn build:web`. ESLint and
+# Vitest never check types (vite strips them unchecked), so without this the
+# first tsc a change ever meets is the tag-triggered release build.
+typecheck:
+	yarn workspace @janhq/web-app run tsc -b
+
 verify-fast:
 	yarn lint
+	"$(MAKE)" typecheck
 	"$(MAKE)" test-quality
 	"$(MAKE)" test-hardening-contracts
 	"$(MAKE)" test-coverage-critical
@@ -471,7 +523,7 @@ test-all: install-and-build install-rust-targets
 # validation run; normal builds never resolve a moving latest release.
 # Example:
 #   make build-mlx-server MLXVLM_TAG=mlxvlm-macos-arm64-abc1234
-MLXVLM_TAG ?= mlxvlm-macos-arm64-0e33b66
+MLXVLM_TAG ?= mlxvlm-macos-arm64-89acca5
 build-mlx-server:
 ifeq ($(shell uname -s),Darwin)
 	@mkdir -p src-tauri/resources/bin

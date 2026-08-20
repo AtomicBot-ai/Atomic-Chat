@@ -3,6 +3,7 @@ import type { CatalogModel, ModelQuant } from '@/services/models/types'
 import {
   deriveCapabilities,
   estimateFit,
+  findPinnedQuant,
   parseFileSizeToBytes,
   pickDownloadQuant,
   pickMedianQuant,
@@ -249,5 +250,56 @@ describe('deriveCapabilities', () => {
       tools: true,
     })
     expect(labels(model, undefined)).toEqual(['Tool Use', 'Reasoning'])
+  })
+})
+
+describe('findPinnedQuant', () => {
+  // Real ids as `convertHfRepoToCatalogModel` produces them for the LiquidAI
+  // repos onboarding pins ('.' is rewritten to '_' by sanitizeModelId).
+  const quants = [
+    { model_id: 'LiquidAI/LFM2_5-VL-450M-BF16' },
+    { model_id: 'LiquidAI/LFM2_5-VL-450M-Q4_K_M' },
+    { model_id: 'LiquidAI/LFM2_5-VL-450M-Q8_0' },
+  ]
+  const mmprojs = [
+    { model_id: 'mmproj-LFM2_5-VL-450m-BF16' },
+    { model_id: 'mmproj-LFM2_5-VL-450m-F16' },
+    { model_id: 'mmproj-LFM2_5-VL-450m-Q8_0' },
+  ]
+
+  it('picks the pinned weights quant rather than the first match', () => {
+    expect(findPinnedQuant(quants, 'Q8_0')?.model_id).toBe(
+      'LiquidAI/LFM2_5-VL-450M-Q8_0'
+    )
+  })
+
+  it('picks the pinned projector instead of falling through to BF16', () => {
+    // Without the pin, `getPreferredMmprojModel` returns mmproj_models[0] —
+    // the 181 MB BF16 file — because it only matches the literal id
+    // 'mmproj-f16'. The Q8_0 projector is 98 MB.
+    expect(findPinnedQuant(mmprojs, 'Q8_0')?.model_id).toBe(
+      'mmproj-LFM2_5-VL-450m-Q8_0'
+    )
+  })
+
+  it('matches whole quant tokens, not substrings', () => {
+    // 'Q4_0' must not match 'Q4_K_M', and vice versa.
+    expect(findPinnedQuant(quants, 'Q4_0')).toBeUndefined()
+    expect(findPinnedQuant(quants, 'Q4_K_M')?.model_id).toBe(
+      'LiquidAI/LFM2_5-VL-450M-Q4_K_M'
+    )
+  })
+
+  it('accepts a pin written with dots, as sanitizeModelId rewrites them', () => {
+    expect(findPinnedQuant(quants, 'q4.k.m')?.model_id).toBe(
+      'LiquidAI/LFM2_5-VL-450M-Q4_K_M'
+    )
+  })
+
+  it('returns undefined for no pin, no candidates, or no match', () => {
+    expect(findPinnedQuant(quants, undefined)).toBeUndefined()
+    expect(findPinnedQuant(undefined, 'Q8_0')).toBeUndefined()
+    expect(findPinnedQuant([], 'Q8_0')).toBeUndefined()
+    expect(findPinnedQuant(quants, 'IQ4_XS')).toBeUndefined()
   })
 })

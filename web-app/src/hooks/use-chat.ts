@@ -15,6 +15,7 @@ import {
 import { useEffect, useMemo, useRef, useCallback } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { ttftMarkFromRust } from '@/lib/ttft-timing'
+import { createSafeUnlisten } from '@/lib/tauriEvent'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useAppState } from '@/hooks/useAppState'
 
@@ -135,21 +136,36 @@ export function useChat(
   // The Rust proxy emits these unconditionally; collecting them is what makes
   // the proxy/backend split of TTFT visible in `chat_response_received`.
   useEffect(() => {
-    const unlisten = listen<{ marker: string; ms: number }>(
-      'ttft-timing',
-      (event) => {
-        const marker = event.payload.marker
-        if (
-          marker === 'zetaProxyIn' ||
-          marker === 'zetaUpstreamHeaders' ||
-          marker === 'etaFirstToken'
-        ) {
-          ttftMarkFromRust(marker, event.payload.ms)
-        }
+    let cancelled = false
+    let detach: (() => Promise<void>) | null = null
+
+    const setup = async () => {
+      try {
+        const unlisten = await listen<{ marker: string; ms: number }>(
+          'ttft-timing',
+          (event) => {
+            const marker = event.payload.marker
+            if (
+              marker === 'zetaProxyIn' ||
+              marker === 'zetaUpstreamHeaders' ||
+              marker === 'etaFirstToken'
+            ) {
+              ttftMarkFromRust(marker, event.payload.ms)
+            }
+          }
+        )
+        detach = createSafeUnlisten(unlisten)
+        if (cancelled) await detach()
+      } catch (e) {
+        console.error('Failed to attach ttft-timing listener', e)
       }
-    )
+    }
+
+    void setup()
+
     return () => {
-      void unlisten.then((fn) => fn())
+      cancelled = true
+      void detach?.()
     }
   }, [])
 
