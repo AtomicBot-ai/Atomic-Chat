@@ -388,7 +388,7 @@ export default function AddEditMCPServer({
             <div
               className={cn(
                 'size-6 cursor-pointer flex items-center justify-center rounded hover:bg-foreground/10 transition-all duration-200 ease-in-out',
-                isToggled && 'bg-secondary text-primary'
+                isToggled && 'bg-foreground/20 text-primary'
               )}
               title="Add server by JSON"
               onClick={() => setIsToggled(!isToggled)}

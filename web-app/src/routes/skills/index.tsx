@@ -156,8 +156,8 @@ export function SkillsPage() {
               <div
                 key={skill.name}
                 className={cn(
-                  'flex w-full items-center gap-2 rounded-lg border p-2 transition-colors hover:bg-accent',
-                  selected?.name === skill.name && 'bg-accent'
+                  'flex w-full items-center gap-2 rounded-lg border p-2 transition-colors hover:bg-foreground/10',
+                  selected?.name === skill.name && 'bg-foreground/20'
                 )}
               >
                 <button

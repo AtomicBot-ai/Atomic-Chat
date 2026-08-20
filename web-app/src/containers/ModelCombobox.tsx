@@ -157,8 +157,8 @@ const ModelsList = ({
         onMouseEnter={() => onHighlight(index)}
         className={cn(
           'cursor-pointer mx-3 px-2 rounded-md py-2 bg-background z-20 transition-all duration-200',
-          value === model && 'bg-secondary shadow-sm',
-          highlightedIndex === index && ' bg-secondary'
+          value === model && 'bg-foreground/20 shadow-sm',
+          highlightedIndex === index && ' bg-foreground/10'
         )}
       >
         <span className="text-sm truncate text-foreground">{model}</span>

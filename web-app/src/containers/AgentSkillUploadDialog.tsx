@@ -94,7 +94,7 @@ export function AgentSkillUploadDialog({
           disabled={submitting}
           className={cn(
             'h-56 w-full flex-col gap-5 rounded-lg border border-dashed text-muted-foreground',
-            dragging && 'border-primary bg-accent text-foreground'
+            dragging && 'border-primary bg-foreground/10 text-foreground'
           )}
           onClick={() => void chooseFile()}
           onDragEnter={(event) => {
