@@ -1,152 +1,44 @@
 //! CLI adapter layer — thin wrappers that call core logic without an AppHandle.
 //!
 //! This module is only compiled when the `cli` feature is enabled.
+//!
+//! The CLI targets a single inference provider: `llamacpp-upstream`, the same
+//! one the desktop app defaults to on every platform (see
+//! `LOCAL_LLAMACPP_PROVIDER` in `web-app/src/lib/utils.ts`).
+//!
+//! Note the asymmetry in the on-disk layout: backends are per-provider
+//! (`<data>/llamacpp-upstream/backends/`) but the GGUF tree is shared between
+//! both llama.cpp providers (`<data>/llamacpp/models/`). Models the user
+//! downloads in the app therefore show up here without any extra wiring.
 
-use std::path::PathBuf;
-use std::sync::Arc;
+pub mod integrations;
 
-use crate::core::app::commands::{resolve_config_file_path, resolve_jan_data_folder};
-use crate::core::server::proxy;
-use crate::core::state::AppState;
-use crate::core::threads::{
-    constants::THREADS_FILE,
-    helpers::read_messages_from_file,
-    utils::{ensure_data_dirs, get_data_dir, get_thread_dir, get_thread_metadata_path},
-};
-use tauri_plugin_llamacpp::state::LlamacppState;
+use std::path::{Path, PathBuf};
+
+use crate::core::app::commands::resolve_jan_data_folder;
 use tauri_plugin_llamacpp_upstream::state::LlamacppState as LlamacppUpstreamState;
-use tauri_plugin_mlx::state::MlxState;
 
-// Re-export impl functions and config types so the binary can call them directly
-pub use tauri_plugin_llamacpp::{load_llama_model_impl, LlamacppConfig};
-pub use tauri_plugin_mlx::state::SessionInfo;
-pub use tauri_plugin_mlx::{load_mlx_model_impl, MlxConfig};
+// Re-export impl functions and config types so the binary can call them directly.
+// `load_llama_model_impl` is explicitly documented as usable without an AppHandle.
+pub use tauri_plugin_llamacpp_upstream::{load_llama_model_impl, LlamacppConfig};
+
+/// The only inference provider the CLI runs: upstream `ggml-org/llama.cpp`.
+/// Its backends live under `<data_folder>/<LOCAL_PROVIDER>/backends/`.
+pub const LOCAL_PROVIDER: &str = "llamacpp-upstream";
+
+/// On-disk subfolder holding the GGUF tree, at `<data_folder>/<MODELS_ROOT>/models/`.
+///
+/// Both llama.cpp providers deliberately share it — see `MODELS_PROVIDER_ROOT`
+/// in `extensions/llamacpp-upstream-extension/src/index.ts` — so a model
+/// downloaded once is runnable by either engine. Only backends and
+/// provider-specific settings live per provider, which is why this is not the
+/// same constant as [`LOCAL_PROVIDER`].
+pub const MODELS_ROOT: &str = "llamacpp";
 
 // ── State constructors ─────────────────────────────────────────────────────
 
-pub fn init_llamacpp_state() -> LlamacppState {
-    LlamacppState::new()
-}
-
 pub fn init_llamacpp_upstream_state() -> LlamacppUpstreamState {
     LlamacppUpstreamState::new()
-}
-
-pub fn init_mlx_state() -> MlxState {
-    MlxState::new()
-}
-
-// ── Thread operations ──────────────────────────────────────────────────────
-
-/// List all threads from the Jan data folder.
-pub async fn cli_list_threads() -> Result<Vec<serde_json::Value>, String> {
-    use std::fs;
-
-    let data_folder = resolve_jan_data_folder();
-    ensure_data_dirs(&data_folder)?;
-    let data_dir = get_data_dir(&data_folder);
-    let mut threads = Vec::new();
-
-    if !data_dir.exists() {
-        return Ok(threads);
-    }
-
-    for entry in fs::read_dir(&data_dir).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let path = entry.path();
-        if path.is_dir() {
-            let metadata_path = path.join(THREADS_FILE);
-            if metadata_path.exists() {
-                let data = fs::read_to_string(&metadata_path).map_err(|e| e.to_string())?;
-                if let Ok(thread) = serde_json::from_str(&data) {
-                    threads.push(thread);
-                }
-            }
-        }
-    }
-
-    Ok(threads)
-}
-
-/// List messages for a thread.
-pub fn cli_list_messages(thread_id: &str) -> Result<Vec<serde_json::Value>, String> {
-    let data_folder = resolve_jan_data_folder();
-    read_messages_from_file(&data_folder, thread_id)
-}
-
-/// Delete a thread directory.
-pub fn cli_delete_thread(thread_id: &str) -> Result<(), String> {
-    use std::fs;
-
-    let data_folder = resolve_jan_data_folder();
-    let thread_dir = get_thread_dir(&data_folder, thread_id);
-    if thread_dir.exists() {
-        fs::remove_dir_all(thread_dir).map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-/// Get thread metadata by ID.
-pub fn cli_get_thread(thread_id: &str) -> Result<serde_json::Value, String> {
-    let data_folder = resolve_jan_data_folder();
-    let path = get_thread_metadata_path(&data_folder, thread_id);
-    if !path.exists() {
-        return Err(format!("Thread '{thread_id}' not found"));
-    }
-    let data = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    serde_json::from_str(&data).map_err(|e| e.to_string())
-}
-
-// ── Server operations ──────────────────────────────────────────────────────
-
-/// Start the OpenAI-compatible proxy server. Returns the port it's listening on.
-///
-/// The `app_handle` is used by `proxy::start_server` to emit Tauri events for
-/// the PostHog `api_server_request` analytics pipeline. CLI callers running
-/// inside a Tauri runtime should pass their `AppHandle`; headless CLI paths
-/// that have no runtime cannot call this function directly.
-#[allow(clippy::too_many_arguments)]
-pub async fn cli_start_server<R: tauri::Runtime>(
-    app_handle: tauri::AppHandle<R>,
-    app_state: Arc<AppState>,
-    llama_state: Arc<LlamacppState>,
-    llama_upstream_state: Arc<LlamacppUpstreamState>,
-    mlx_state: Arc<MlxState>,
-    host: String,
-    port: u16,
-    prefix: String,
-    api_key: String,
-    proxy_timeout: u64,
-) -> Result<u16, String> {
-    proxy::start_server(
-        app_handle,
-        app_state.server_handle.clone(),
-        llama_state.llama_server_process.clone(),
-        llama_upstream_state.llama_server_process.clone(),
-        mlx_state.mlx_server_process.clone(),
-        host,
-        port,
-        prefix,
-        api_key,
-        vec![vec![]],
-        proxy_timeout,
-        app_state.provider_configs.clone(),
-        app_state.auto_increase_ctx.clone(),
-    )
-    .await
-    .map_err(|e| e.to_string())
-}
-
-/// Stop the running proxy server.
-pub async fn cli_stop_server(app_state: Arc<AppState>) -> Result<(), String> {
-    proxy::stop_server(app_state.server_handle.clone())
-        .await
-        .map_err(|e| e.to_string())
-}
-
-/// Check whether the proxy server is currently running.
-pub async fn cli_is_server_running(app_state: Arc<AppState>) -> bool {
-    proxy::is_server_running(app_state.server_handle.clone()).await
 }
 
 // ── Model discovery ───────────────────────────────────────────────────────
@@ -168,14 +60,19 @@ pub struct ModelYml {
 /// A discovered model entry: `(model_id, yml)`.
 pub type ModelEntry = (String, ModelYml);
 
-/// Scan `<data_folder>/<engine>/models/` for `model.yml` files.
+/// List the chat models installed for the local provider.
 ///
-/// `engine` is `"llamacpp"` or `"mlx"`. Returns one entry per model found.
-pub fn list_models(engine: &str) -> Vec<ModelEntry> {
+/// Embedding models are excluded: they cannot serve `/v1/chat/completions`, so
+/// offering them anywhere the CLI leads is a dead end.
+pub fn list_chat_models() -> Vec<ModelEntry> {
+    list_chat_models_in(&resolve_jan_data_folder())
+}
+
+/// Same as [`list_chat_models`], against an explicit data folder.
+pub fn list_chat_models_in(data_folder: &Path) -> Vec<ModelEntry> {
     use std::fs;
 
-    let data_folder = resolve_jan_data_folder();
-    let models_root = data_folder.join(engine).join("models");
+    let models_root = data_folder.join(MODELS_ROOT).join("models");
 
     if !models_root.exists() {
         return Vec::new();
@@ -198,7 +95,9 @@ pub fn list_models(engine: &str) -> Vec<ModelEntry> {
                         .to_string_lossy()
                         .into_owned()
                         .replace('\\', "/");
-                    results.push((model_id, yml));
+                    if !yml.embedding {
+                        results.push((model_id, yml));
+                    }
                     continue; // don't recurse into a model directory
                 }
             }
@@ -217,51 +116,30 @@ pub fn list_models(engine: &str) -> Vec<ModelEntry> {
     results
 }
 
-/// Detect which engine owns `model_id` by probing the data folder, and
-/// resolve its paths.  Tries `llamacpp` first, then `mlx`.
-/// Returns `(engine, model_path, mmproj_path)`.
-pub fn resolve_model_engine(model_id: &str) -> Result<(String, PathBuf, Option<PathBuf>), String> {
-    let data_folder = resolve_jan_data_folder();
-    for engine in &["llamacpp", "mlx"] {
-        let yml_path = data_folder
-            .join(engine)
-            .join("models")
-            .join(model_id)
-            .join("model.yml");
-        if yml_path.exists() {
-            let (model_path, mmproj_path) = resolve_model_by_id(model_id, engine)?;
-            return Ok((engine.to_string(), model_path, mmproj_path));
-        }
-    }
-    Err(format!(
-        "Model '{}' not found for any engine. \
-        Run `jan models list` to see available models.",
-        model_id
-    ))
-}
-
-/// Resolve the absolute model file path (and optional mmproj path) for a
-/// given model ID and engine.
+/// Resolve the absolute model file path (and optional mmproj path) for a model ID.
 ///
 /// `model_path` in the YAML can be:
 ///   - absolute (`/…` or `C:\…`) — used verbatim
-///   - relative — joined with the Jan data folder
-pub fn resolve_model_by_id(
+///   - relative — joined with the Atomic Chat data folder
+pub fn resolve_model_by_id(model_id: &str) -> Result<(PathBuf, Option<PathBuf>), String> {
+    resolve_model_by_id_in(&resolve_jan_data_folder(), model_id)
+}
+
+/// Same as [`resolve_model_by_id`], against an explicit data folder.
+pub fn resolve_model_by_id_in(
+    data_folder: &Path,
     model_id: &str,
-    engine: &str,
 ) -> Result<(PathBuf, Option<PathBuf>), String> {
-    let data_folder = resolve_jan_data_folder();
     let yml_path = data_folder
-        .join(engine)
+        .join(MODELS_ROOT)
         .join("models")
         .join(model_id)
         .join("model.yml");
 
     if !yml_path.exists() {
         return Err(format!(
-            "Model '{}' not found for engine '{}'. \
-            Run `jan models list` to see available models.",
-            model_id, engine
+            "Model '{model_id}' is not installed. \
+            Run `atomic-chat-cli models list` to see available models."
         ));
     }
 
@@ -285,19 +163,42 @@ pub fn resolve_model_by_id(
 
 // ── Binary auto-discovery ──────────────────────────────────────────────────
 
-/// Find the llama-server binary inside the Jan data folder.
+/// A discovered `llama-server` and the backend it came from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackendBinary {
+    pub path: PathBuf,
+    /// `"<version>/<backend>"`, the form `ArgumentBuilder` parses to decide
+    /// which llama.cpp features (flash attention, reasoning-preserve, cache
+    /// quantization) the build supports. Getting this wrong silently disables
+    /// them, so it is carried alongside the path rather than reconstructed.
+    pub version_backend: String,
+}
+
+/// Parse the upstream llama.cpp build number out of a backend version directory
+/// name. Mirrors `ArgumentBuilder::parse_build_number`: handles plain upstream
+/// tags ("b6325") and the unified TurboQuant tag shape ("b10018-1.3.0").
+/// Returns `None` for anything else, which sorts last.
+fn parse_build_number(version: &str) -> Option<u32> {
+    version.strip_prefix('b')?.split('-').next()?.parse().ok()
+}
+
+/// Find the llama-server binary inside the Atomic Chat data folder.
 ///
-/// Walks `<data_folder>/llamacpp/backends/<version>/<backend>/` and checks
-/// two locations per backend (same logic as the llamacpp-extension):
+/// Walks `<data_folder>/llamacpp-upstream/backends/<version>/<backend>/` and
+/// checks two locations per backend (same logic as the llamacpp extension):
 ///   1. `<backend_dir>/build/bin/llama-server[.exe]`
 ///   2. `<backend_dir>/llama-server[.exe]`
 ///
-/// Returns the first binary found, or `None` if no installed backend is found.
-pub fn discover_llamacpp_binary() -> Option<PathBuf> {
+/// Returns the first binary found, preferring the newest version directory.
+pub fn discover_llamacpp_binary() -> Option<BackendBinary> {
+    discover_llamacpp_binary_in(&resolve_jan_data_folder())
+}
+
+/// Same as [`discover_llamacpp_binary`], against an explicit data folder.
+pub fn discover_llamacpp_binary_in(data_folder: &Path) -> Option<BackendBinary> {
     use std::fs;
 
-    let data_folder = resolve_jan_data_folder();
-    let backends_dir = data_folder.join("llamacpp").join("backends");
+    let backends_dir = data_folder.join(LOCAL_PROVIDER).join("backends");
 
     if !backends_dir.exists() {
         return None;
@@ -309,36 +210,52 @@ pub fn discover_llamacpp_binary() -> Option<PathBuf> {
         "llama-server"
     };
 
-    // Collect version directories, sorted descending so we prefer the latest.
+    // Collect version directories, newest first. Sorting the names as plain
+    // strings would rank "b9000" above "b10018-1.3.0" ('9' > '1'), so the build
+    // number is parsed out and compared numerically, with the raw name as the
+    // tiebreaker for anything unparseable (e.g. the fork's `turboquant-<sha>`).
     let mut version_entries: Vec<_> = fs::read_dir(&backends_dir)
         .ok()?
         .filter_map(|e| e.ok())
         .filter(|e| e.path().is_dir())
         .collect();
-    version_entries.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+    version_entries.sort_by(|a, b| {
+        let a_name = a.file_name().to_string_lossy().into_owned();
+        let b_name = b.file_name().to_string_lossy().into_owned();
+        parse_build_number(&b_name)
+            .cmp(&parse_build_number(&a_name))
+            .then_with(|| b_name.cmp(&a_name))
+    });
 
     for version_entry in version_entries {
         let version_dir = version_entry.path();
-        let mut backend_entries: Vec<_> = fs::read_dir(&version_dir)
-            .ok()?
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().is_dir())
-            .collect();
-        backend_entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+        let version = version_entry.file_name().to_string_lossy().into_owned();
+
+        let mut backend_entries: Vec<_> = match fs::read_dir(&version_dir) {
+            Ok(entries) => entries
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().is_dir())
+                .collect(),
+            Err(_) => continue,
+        };
+        backend_entries.sort_by_key(|e| e.file_name());
 
         for backend_entry in backend_entries {
             let backend_dir = backend_entry.path();
+            let backend = backend_entry.file_name().to_string_lossy().into_owned();
 
             // Primary location: <backend>/build/bin/llama-server
             let primary = backend_dir.join("build").join("bin").join(exe);
-            if primary.exists() {
-                return Some(primary);
-            }
-
             // Fallback: <backend>/llama-server
             let fallback = backend_dir.join(exe);
-            if fallback.exists() {
-                return Some(fallback);
+
+            for candidate in [primary, fallback] {
+                if candidate.exists() {
+                    return Some(BackendBinary {
+                        path: candidate,
+                        version_backend: format!("{version}/{backend}"),
+                    });
+                }
             }
         }
     }
@@ -346,34 +263,20 @@ pub fn discover_llamacpp_binary() -> Option<PathBuf> {
     None
 }
 
-/// Find the mlx-server binary.
+/// Recover `"<version>/<backend>"` from a hand-supplied `--bin` path.
 ///
-/// Checks standard locations in order:
-///   1. `/Applications/Jan.app/Contents/Resources/bin/mlx-server` (installed app)
-///   2. Next to the running binary (for dev/custom installs)
-pub fn discover_mlx_binary() -> Option<PathBuf> {
-    // 1. Standard macOS app bundle locations (try both path variants)
-    for candidate in &[
-        "/Applications/Jan.app/Contents/Resources/resources/bin/mlx-server",
-        "/Applications/Jan.app/Contents/Resources/bin/mlx-server",
-    ] {
-        let p = PathBuf::from(candidate);
-        if p.exists() {
-            return Some(p);
-        }
-    }
-
-    // 2. Next to the current executable (useful for dev builds / custom installs)
-    if let Ok(exe_dir) =
-        std::env::current_exe().map(|p| p.parent().map(|d| d.to_path_buf()).unwrap_or_default())
-    {
-        let next_to_bin = exe_dir.join("mlx-server");
-        if next_to_bin.exists() {
-            return Some(next_to_bin);
-        }
-    }
-
-    None
+/// Only works for a binary that still sits inside the standard
+/// `.../backends/<version>/<backend>/…` layout; returns `None` otherwise, in
+/// which case the caller falls back to a neutral placeholder.
+pub fn version_backend_from_bin_path(bin: &Path) -> Option<String> {
+    let components: Vec<String> = bin
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    let idx = components.iter().rposition(|c| c == "backends")?;
+    let version = components.get(idx + 1)?;
+    let backend = components.get(idx + 2)?;
+    Some(format!("{version}/{backend}"))
 }
 
 // ── HuggingFace download ───────────────────────────────────────────────────
@@ -439,7 +342,7 @@ pub async fn fetch_hf_gguf_files(
             ),
             404 => format!(
                 "HuggingFace repo '{repo_id}' not found. \
-                Check the repo ID or run `jan models list` to see local models."
+                Check the repo ID or run `atomic-chat-cli models list` to see local models."
             ),
             _ => format!("HuggingFace API error {status} for '{repo_id}'."),
         });
@@ -476,8 +379,7 @@ pub async fn fetch_hf_gguf_files(
 
     if files.is_empty() {
         return Err(format!(
-            "No GGUF files found in HuggingFace repo '{repo_id}'. \
-            For MLX/safetensors repos use `jan models load-mlx`."
+            "No GGUF files found in HuggingFace repo '{repo_id}'."
         ));
     }
 
@@ -488,8 +390,13 @@ pub async fn fetch_hf_gguf_files(
 
 /// Download one GGUF file from HuggingFace and write a `model.yml` for it.
 ///
-/// The model is stored at:
-/// `<data_folder>/llamacpp/models/<repo_id>/<filename>`
+/// The model is stored at `<data_folder>/llamacpp/models/<repo_id>/<filename>`
+/// — the shared GGUF tree the desktop app downloads into, so the two stay
+/// interchangeable.
+///
+/// The file is streamed to `<filename>.part` and renamed only once the download
+/// completes, so an interrupted run never leaves a truncated `.gguf` behind a
+/// `model.yml` that claims it is ready.
 ///
 /// `on_progress(downloaded, total)` is called after each chunk.
 /// Returns the local model ID (same as `repo_id`).
@@ -503,12 +410,13 @@ pub async fn download_hf_model(
     use tokio::io::AsyncWriteExt;
 
     let data_folder = resolve_jan_data_folder();
-    let model_dir = data_folder.join("llamacpp").join("models").join(repo_id);
+    let model_dir = data_folder.join(MODELS_ROOT).join("models").join(repo_id);
     tokio::fs::create_dir_all(&model_dir)
         .await
         .map_err(|e| e.to_string())?;
 
     let dest_path = model_dir.join(&file.filename);
+    let part_path = model_dir.join(format!("{}.part", file.filename));
 
     // ── Download ──────────────────────────────────────────────────────────
     let client = reqwest::Client::new();
@@ -526,23 +434,39 @@ pub async fn download_hf_model(
     let total = resp.content_length().unwrap_or(file.size);
     let mut downloaded: u64 = 0;
 
-    let mut dest = tokio::fs::File::create(&dest_path)
+    let mut dest = tokio::fs::File::create(&part_path)
         .await
         .map_err(|e| e.to_string())?;
 
     let mut stream = resp.bytes_stream();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| e.to_string())?;
-        dest.write_all(&chunk).await.map_err(|e| e.to_string())?;
+        let chunk = match chunk {
+            Ok(c) => c,
+            Err(e) => {
+                drop(dest);
+                let _ = tokio::fs::remove_file(&part_path).await;
+                return Err(e.to_string());
+            }
+        };
+        if let Err(e) = dest.write_all(&chunk).await {
+            drop(dest);
+            let _ = tokio::fs::remove_file(&part_path).await;
+            return Err(e.to_string());
+        }
         downloaded += chunk.len() as u64;
         on_progress(downloaded, total);
     }
     dest.flush().await.map_err(|e| e.to_string())?;
+    drop(dest);
+
+    tokio::fs::rename(&part_path, &dest_path)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // ── Write model.yml ───────────────────────────────────────────────────
-    // model_path is relative to the Jan data folder
-    let rel_path = format!("llamacpp/models/{}/{}", repo_id, file.filename);
-    let display_name = repo_id.split('/').last().unwrap_or(repo_id);
+    // model_path is relative to the Atomic Chat data folder
+    let rel_path = format!("{MODELS_ROOT}/models/{repo_id}/{}", file.filename);
+    let display_name = repo_id.rsplit('/').next().unwrap_or(repo_id);
 
     let mut yml = format!(
         "model_path: {rel_path}\nname: {display_name}\nsize_bytes: {}\nembedding: false\n",
@@ -565,11 +489,169 @@ pub fn cli_get_data_folder() -> PathBuf {
     resolve_jan_data_folder()
 }
 
-pub fn cli_get_config() -> Result<serde_json::Value, String> {
-    let path = resolve_config_file_path();
-    if !path.exists() {
-        return Err(format!("Config file not found at: {}", path.display()));
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_data_folder(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join("atomic-cli-tests").join(name);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create temp data folder");
+        dir
     }
-    let data = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    serde_json::from_str(&data).map_err(|e| e.to_string())
+
+    fn write_model(data_folder: &Path, model_id: &str, yml: &str) {
+        let dir = data_folder.join(MODELS_ROOT).join("models").join(model_id);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("model.yml"), yml).unwrap();
+    }
+
+    #[test]
+    fn lists_upstream_models_and_skips_embeddings() {
+        let data = temp_data_folder("list-models");
+
+        write_model(
+            &data,
+            "AtomicChat/Qwen3.5-9B-GGUF",
+            "model_path: llamacpp/models/AtomicChat/Qwen3.5-9B-GGUF/model.gguf\n\
+             name: Qwen3.5-9B\nsize_bytes: 123\nembedding: false\n",
+        );
+        // Embedding models cannot serve /v1/chat/completions.
+        write_model(
+            &data,
+            "some/embedder",
+            "model_path: llamacpp/models/some/embedder/model.gguf\n\
+             name: Embedder\nembedding: true\n",
+        );
+        // A directory with no model.yml is not a model.
+        std::fs::create_dir_all(data.join(MODELS_ROOT).join("models").join("junk")).unwrap();
+
+        let models = list_chat_models_in(&data);
+        let ids: Vec<&str> = models.iter().map(|(id, _)| id.as_str()).collect();
+
+        assert_eq!(ids, vec!["AtomicChat/Qwen3.5-9B-GGUF"]);
+        assert_eq!(models[0].1.name.as_deref(), Some("Qwen3.5-9B"));
+
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    #[test]
+    fn missing_provider_folder_lists_nothing() {
+        let data = temp_data_folder("no-provider");
+        assert!(list_chat_models_in(&data).is_empty());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    #[test]
+    fn resolves_relative_and_absolute_model_paths() {
+        let data = temp_data_folder("resolve-paths");
+
+        write_model(
+            &data,
+            "rel/model",
+            "model_path: llamacpp/models/rel/model/model.gguf\n\
+             mmproj_path: llamacpp/models/rel/model/mmproj.gguf\n",
+        );
+        let (model_path, mmproj) = resolve_model_by_id_in(&data, "rel/model").unwrap();
+        assert_eq!(
+            model_path,
+            data.join("llamacpp/models/rel/model/model.gguf")
+        );
+        assert_eq!(
+            mmproj.unwrap(),
+            data.join("llamacpp/models/rel/model/mmproj.gguf")
+        );
+
+        let absolute = if cfg!(windows) {
+            "C:\\models\\abs.gguf"
+        } else {
+            "/models/abs.gguf"
+        };
+        write_model(&data, "abs/model", &format!("model_path: {absolute}\n"));
+        let (model_path, mmproj) = resolve_model_by_id_in(&data, "abs/model").unwrap();
+        assert_eq!(model_path, PathBuf::from(absolute));
+        assert!(mmproj.is_none());
+
+        let err = resolve_model_by_id_in(&data, "nope").unwrap_err();
+        assert!(err.contains("not installed"), "unexpected error: {err}");
+
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    #[test]
+    fn discovers_newest_backend_and_reports_version_backend() {
+        let data = temp_data_folder("discover-backend");
+        let exe = if cfg!(windows) {
+            "llama-server.exe"
+        } else {
+            "llama-server"
+        };
+
+        // b9000 sorts ABOVE b10018 as a plain string, so this pair is exactly
+        // the case a lexicographic sort gets wrong.
+        for (version, backend, nested) in [
+            ("b9000", "linux-cpu-x64", true),
+            ("b10018-1.3.0", "linux-vulkan-x64", false),
+        ] {
+            let mut dir = data
+                .join(LOCAL_PROVIDER)
+                .join("backends")
+                .join(version)
+                .join(backend);
+            if nested {
+                dir = dir.join("build").join("bin");
+            }
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join(exe), b"stub").unwrap();
+        }
+
+        // The TurboQuant fork keeps its own backends next door; they must not
+        // be picked up.
+        let fork_dir = data
+            .join("llamacpp")
+            .join("backends")
+            .join("turboquant-x")
+            .join("linux-cpu-x64");
+        std::fs::create_dir_all(&fork_dir).unwrap();
+        std::fs::write(fork_dir.join(exe), b"stub").unwrap();
+
+        let found = discover_llamacpp_binary_in(&data).expect("binary discovered");
+        // Versions sort descending, so the newer build wins.
+        assert_eq!(found.version_backend, "b10018-1.3.0/linux-vulkan-x64");
+        assert!(found.path.ends_with(exe));
+        assert!(found.path.starts_with(data.join(LOCAL_PROVIDER)));
+
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    #[test]
+    fn no_backends_folder_discovers_nothing() {
+        let data = temp_data_folder("no-backends");
+        assert!(discover_llamacpp_binary_in(&data).is_none());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    #[test]
+    fn recovers_version_backend_from_an_explicit_bin_path() {
+        assert_eq!(
+            version_backend_from_bin_path(Path::new(
+                "/data/llamacpp-upstream/backends/b9691/linux-vulkan-x64/build/bin/llama-server"
+            )),
+            Some("b9691/linux-vulkan-x64".to_string())
+        );
+        assert_eq!(
+            version_backend_from_bin_path(Path::new("/usr/local/bin/llama-server")),
+            None
+        );
+    }
+
+    #[test]
+    fn recognises_huggingface_repo_ids() {
+        assert!(looks_like_hf_repo("AtomicChat/Qwen3.5-9B-GGUF"));
+        assert!(!looks_like_hf_repo("./local/path"));
+        assert!(!looks_like_hf_repo("/abs/path"));
+        assert!(!looks_like_hf_repo("~/home"));
+        assert!(!looks_like_hf_repo("nolash"));
+        assert!(!looks_like_hf_repo("too/many/parts"));
+    }
 }

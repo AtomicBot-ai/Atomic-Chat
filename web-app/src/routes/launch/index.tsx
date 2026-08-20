@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { listen } from '@tauri-apps/api/event'
 import { type as osType } from '@tauri-apps/plugin-os'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import posthog from 'posthog-js'
@@ -33,6 +33,7 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { useLaunchStore } from '@/stores/launch-store'
 import { useLaunchSettings } from '@/stores/launch-settings-store'
 import { cn } from '@/lib/utils'
+import { createSafeUnlisten } from '@/lib/tauriEvent'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.launch.index as any)({
@@ -568,16 +569,15 @@ function LaunchPage() {
       setLogs((prev) => ({ ...prev, [agent.id]: [] }))
       setOpenLog((prev) => ({ ...prev, [agent.id]: true }))
 
-      let unlisten: UnlistenFn | undefined
+      let detachInstallLog: (() => Promise<void>) | undefined
       try {
-        unlisten = await listen<string>(
-          `agent_install_log:${agent.id}`,
-          (event) => {
+        detachInstallLog = createSafeUnlisten(
+          await listen<string>(`agent_install_log:${agent.id}`, (event) => {
             setLogs((prev) => ({
               ...prev,
               [agent.id]: [...(prev[agent.id] ?? []), event.payload],
             }))
-          }
+          })
         )
         await invoke('install_agent', {
           agentId: agent.id,
@@ -604,7 +604,7 @@ function LaunchPage() {
         })
         return false
       } finally {
-        unlisten?.()
+        await detachInstallLog?.()
       }
     },
     [detect, t, setLogs, setOpenLog]

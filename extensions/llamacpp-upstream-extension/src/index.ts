@@ -202,7 +202,10 @@ const SESSION_DIED_EVENT = 'local_backend://llamacpp_upstream_session_died'
 /// loading and report "ready", so the load was cut off at 600s with a raw
 /// MODEL_LOAD_TIMED_OUT error. The model-load readiness wait now uses at least
 /// this floor (30 min) while still honoring a larger user-configured timeout.
-/// The streaming / connection timeout itself is unchanged.
+/// The streaming path is bounded separately: `stream_local_http` treats the
+/// configured timeout as an inactivity budget between SSE chunks — floored at
+/// the same 30 min — so a long generation is never cut off while tokens are
+/// still arriving.
 const MODEL_LOAD_READY_TIMEOUT_FLOOR_SECS = 1800
 
 /// Effective timeout (seconds) for the "server is ready" wait during model
@@ -488,7 +491,7 @@ export const BACKEND_DETECTION_FAILED = 'BACKEND_DETECTION_FAILED'
 export default class llamacpp_upstream_extension extends AIEngine {
   provider: string = 'llamacpp-upstream'
   autoUnload: boolean = false
-  timeout: number = 600
+  timeout: number = 1800
   llamacpp_env: string = ''
   readonly providerId: string = 'llamacpp-upstream'
 
@@ -6359,7 +6362,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       }
     }
 
-    const timeoutNum = Number(this.timeout) || 600
+    const timeoutNum = Number(this.timeout) || 1800
     logger.info(
       '[stream] invoking stream_local_http, url:',
       url,

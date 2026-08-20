@@ -31,6 +31,7 @@ import { listen } from '@tauri-apps/api/event'
 import { SystemEvent } from '@/types/events'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { createSafeUnlisten } from '@/lib/tauriEvent'
 import { MCPLogViewer } from '@/components/MCPLogViewer'
 import type { MCPServerStatus } from '@/services/mcp/types'
 
@@ -371,7 +372,7 @@ function MCPServersDesktop() {
     serviceHub.mcp().getMCPServerStatuses().then(setServerStatuses)
 
     let cancelled = false
-    let unlisten: Array<() => void> = []
+    let detachers: Array<() => Promise<void>> = []
     const setupListener = async () => {
       const refreshStatuses = () => {
         serviceHub.mcp().getMCPServerStatuses().then(setServerStatuses)
@@ -380,17 +381,20 @@ function MCPServersDesktop() {
         listen(SystemEvent.MCP_UPDATE, refreshStatuses),
         listen(SystemEvent.MCP_STATUS_UPDATE, refreshStatuses),
       ])
+      const safeDetachers = listeners.map((unsubscribe) =>
+        createSafeUnlisten(unsubscribe)
+      )
       if (cancelled) {
-        listeners.forEach((unsubscribe) => unsubscribe())
+        safeDetachers.forEach((detach) => void detach())
       } else {
-        unlisten = listeners
+        detachers = safeDetachers
       }
     }
     void setupListener()
 
     return () => {
       cancelled = true
-      unlisten.forEach((unsubscribe) => unsubscribe())
+      detachers.splice(0).forEach((detach) => void detach())
     }
   }, [serviceHub])
 

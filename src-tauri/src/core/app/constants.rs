@@ -6,6 +6,7 @@ pub const JAN_DATA_SUBDIRS: &[&str] = &[
     "extensions",
     "logs",
     "llamacpp",
+    "llamacpp-upstream",
     "mlx",
     "openclaw",
     "models",

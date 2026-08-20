@@ -130,11 +130,11 @@
   {
     "key": "timeout",
     "title": "Timeout for llamacpp",
-    "description": "Llamacpp connection and load timeout in seconds",
+    "description": "Llamacpp connection and load timeout in seconds. Model loading and chat streaming both use at least 1800s regardless of a lower value here.",
     "controllerType": "input",
     "controllerProps": {
-      "value": "600",
-      "placeholder": "e.g 600",
+      "value": "1800",
+      "placeholder": "e.g 1800",
       "type": "number",
       "textAlign": "right"
     }

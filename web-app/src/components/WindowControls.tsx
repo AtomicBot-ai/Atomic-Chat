@@ -2,6 +2,7 @@ import { Minus, Square, X } from 'lucide-react'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { createSafeUnlisten } from '@/lib/tauriEvent'
 import { useCallback, useEffect, useState } from 'react'
 
 export const WindowControls = () => {
@@ -14,11 +15,27 @@ export const WindowControls = () => {
 
   useEffect(() => {
     void refreshMaximized()
-    const unlisten = appWindow.onResized(() => {
-      void refreshMaximized()
-    })
+
+    let cancelled = false
+    let detach: (() => Promise<void>) | null = null
+
+    const setup = async () => {
+      try {
+        const unlisten = await appWindow.onResized(() => {
+          void refreshMaximized()
+        })
+        detach = createSafeUnlisten(unlisten)
+        if (cancelled) await detach()
+      } catch (e) {
+        console.error('Failed to attach window resize listener', e)
+      }
+    }
+
+    void setup()
+
     return () => {
-      void unlisten.then((fn) => fn())
+      cancelled = true
+      void detach?.()
     }
   }, [appWindow, refreshMaximized])
 

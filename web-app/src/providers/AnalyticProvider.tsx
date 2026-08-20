@@ -2,6 +2,7 @@ import posthog from 'posthog-js'
 import { useEffect } from 'react'
 
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { createSafeUnlisten } from '@/lib/tauriEvent'
 import { useAnalytic } from '@/hooks/useAnalytic'
 import {
   API_SERVER_REQUEST_EVENT,
@@ -325,12 +326,14 @@ export function AnalyticProvider() {
                 ])
               )
               .then(([unlistenRequest, unlistenSummary]) => {
+                const detachRequest = createSafeUnlisten(unlistenRequest)
+                const detachSummary = createSafeUnlisten(unlistenSummary)
                 if (cancelled) {
-                  unlistenRequest()
-                  unlistenSummary()
+                  void detachRequest()
+                  void detachSummary()
                 } else {
-                  unlistenApiServerRequest = unlistenRequest
-                  unlistenApiServerSummary = unlistenSummary
+                  unlistenApiServerRequest = detachRequest
+                  unlistenApiServerSummary = detachSummary
                 }
               })
               .catch((err) => {
@@ -347,8 +350,8 @@ export function AnalyticProvider() {
 
     return () => {
       cancelled = true
-      unlistenApiServerRequest?.()
-      unlistenApiServerSummary?.()
+      void unlistenApiServerRequest?.()
+      void unlistenApiServerSummary?.()
     }
   }, [productAnalytic, serviceHub])
 

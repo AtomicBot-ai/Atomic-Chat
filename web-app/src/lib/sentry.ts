@@ -86,7 +86,10 @@ export function isDevelopmentOnlyEvent(event: Sentry.ErrorEvent): boolean {
  * Tauri raises this from `_unlisten` when a listener registered by an async
  * effect is detached twice. It surfaces from every hook that listens, so the
  * default grouping (by stack) scatters one defect across several issues.
- * Collapse them while the individual call sites are being fixed.
+ *
+ * Every call site now detaches through `createSafeUnlisten`, so this should no
+ * longer fire; the fingerprint stays as a backstop that keeps any regression —
+ * or a listener added without the helper — grouped into a single issue.
  */
 const TAURI_UNLISTEN_RACE_RE = /listeners\[[^\]]+\]\.handlerId/
 

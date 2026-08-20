@@ -5,6 +5,7 @@
 import { emit, listen } from '@tauri-apps/api/event'
 import type { EventOptions, UnlistenFn } from './types'
 import { DefaultEventsService } from './default'
+import { createSafeUnlisten } from '@/lib/tauriEvent'
 
 export class TauriEventsService extends DefaultEventsService {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -21,7 +22,11 @@ export class TauriEventsService extends DefaultEventsService {
   async listen<T>(event: string, handler: (event: { payload: T }) => void, _options?: EventOptions): Promise<UnlistenFn> {
     try {
       const unlisten = await listen<T>(event, handler)
-      return unlisten
+      // Callers detach from effect cleanups that can run twice (StrictMode,
+      // fast unmount, HMR); hand them a detach that tolerates that instead of
+      // letting Tauri's stale-listener TypeError escape as an unhandled
+      // rejection. See `createSafeUnlisten`.
+      return createSafeUnlisten(unlisten)
     } catch (error) {
       console.error('Error listening to Tauri event:', error)
       return () => {}

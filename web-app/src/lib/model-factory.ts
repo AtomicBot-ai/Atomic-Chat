@@ -70,6 +70,22 @@ import { ttftPreBegin } from '@/lib/ttft-timing'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
 
 /**
+ * Inactivity budget (seconds) handed to `stream_local_http` on this generic
+ * local-provider path, which has no access to a provider's own `timeout`
+ * setting (the llama.cpp / MLX extensions pass theirs instead).
+ *
+ * This bounds the wait for response headers and the gap between consecutive
+ * SSE chunks — NOT total generation time. A model that keeps emitting tokens
+ * streams for as long as it needs; only a stream that goes silent this long
+ * is treated as dead.
+ *
+ * Matches `STREAM_IDLE_TIMEOUT_FLOOR_SECS` in src-tauri/src/core/http.rs, which
+ * floors this value anyway — kept in sync so reading either side gives the
+ * same answer.
+ */
+const LOCAL_STREAM_IDLE_TIMEOUT_SECS = 1800
+
+/**
  * Legacy llama.cpp / dflash timings structure (kept for backward
  * compatibility while users still have the old binary on disk).
  */
@@ -430,7 +446,7 @@ function createLocalStreamingFetch(
       url: urlStr,
       headers: hdrs,
       body: bodyStr,
-      timeoutSecs: 600,
+      timeoutSecs: LOCAL_STREAM_IDLE_TIMEOUT_SECS,
       onChunk: channel,
     })
 

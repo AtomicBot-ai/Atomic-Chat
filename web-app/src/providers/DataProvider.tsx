@@ -34,6 +34,7 @@ import {
   type Assistant as CoreAssistant,
 } from '@janhq/core'
 import { migrateGlobalSamplingToAssistants } from '@/lib/samplingParams'
+import { createSafeUnlisten } from '@/lib/tauriEvent'
 import { toast } from 'sonner'
 import { SystemEvent } from '@/types/events'
 import {
@@ -547,11 +548,12 @@ export function DataProvider() {
           }
           applyNewCtxLen(provider, modelId, newCtxLen, 'tauri')
         })
+        const detachNotify = createSafeUnlisten(unsub)
         if (cancelled) {
-          unsub()
+          void detachNotify()
           return
         }
-        unlistenTauri = unsub
+        unlistenTauri = detachNotify
         console.log(
           '[LocalAPI] Subscribed to Tauri event: local_backend://auto_increase_ctx_notify'
         )
@@ -585,10 +587,11 @@ export function DataProvider() {
             { id: `ctx-at-max-${provider}-${modelId}` }
           )
         })
+        const detachAtMax = createSafeUnlisten(unsubAtMax)
         if (cancelled) {
-          unsubAtMax()
+          void detachAtMax()
         } else {
-          unlistenAtMax = unsubAtMax
+          unlistenAtMax = detachAtMax
           console.log(
             '[LocalAPI] Subscribed to Tauri event: local_backend://auto_increase_ctx_at_max'
           )
@@ -604,8 +607,8 @@ export function DataProvider() {
     return () => {
       cancelled = true
       events.off(ModelEvent.OnAutoIncreasedCtxLen, handleFromEvents)
-      if (unlistenTauri) unlistenTauri()
-      if (unlistenAtMax) unlistenAtMax()
+      if (unlistenTauri) void unlistenTauri()
+      if (unlistenAtMax) void unlistenAtMax()
     }
   }, [])
 
@@ -654,11 +657,12 @@ export function DataProvider() {
               "The model's backend process exited unexpectedly. This can happen with Vulkan backends on some GPU drivers. Try reloading the model, or switch to a CPU backend in Settings → Providers.",
           })
         })
+        const detachSessionDied = createSafeUnlisten(unsub)
         if (cancelled) {
-          unsub()
+          void detachSessionDied()
           return
         }
-        unlistenSessionDied = unsub
+        unlistenSessionDied = detachSessionDied
       } catch (e) {
         console.warn(
           '[LocalAPI] Failed to subscribe to llamacpp_upstream_session_died:',
@@ -669,7 +673,7 @@ export function DataProvider() {
 
     return () => {
       cancelled = true
-      if (unlistenSessionDied) unlistenSessionDied()
+      if (unlistenSessionDied) void unlistenSessionDied()
     }
   }, [])
 

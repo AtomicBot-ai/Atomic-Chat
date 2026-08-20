@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useTheme, checkOSDarkMode } from '@/hooks/useTheme'
+import { createSafeUnlisten } from '@/lib/tauriEvent'
 import { isPlatformTauri } from '@/lib/platform/utils'
 
 /**
@@ -63,7 +64,7 @@ export function ThemeProvider() {
           })
         })
         .then((unlisten) => {
-          unlistenTauri = unlisten
+          unlistenTauri = createSafeUnlisten(unlisten)
         })
         .catch((err) => {
           console.error('Failed to setup Tauri theme listener:', err)
@@ -75,7 +76,7 @@ export function ThemeProvider() {
       clearTimeout(timeoutId)
       mediaQuery.removeEventListener('change', handleMediaChange)
       if (unlistenTauri) {
-        unlistenTauri()
+        void unlistenTauri()
       }
     }
   }, [activeTheme, setIsDark, setTheme])

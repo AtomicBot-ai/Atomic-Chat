@@ -4,6 +4,7 @@ use tauri_plugin_llamacpp_upstream::state::LlamacppState as LlamacppUpstreamStat
 use tauri_plugin_mlx::state::MlxState;
 
 use crate::core::server::proxy;
+use crate::core::server::state_file;
 use crate::core::state::AppState;
 
 #[derive(serde::Deserialize)]
@@ -30,6 +31,11 @@ pub async fn start_server<R: Runtime>(
         trusted_hosts,
         proxy_timeout,
     } = config;
+    // The CLI is headless and cannot read these settings out of the webview's
+    // localStorage, so mirror the effective address to disk for `server status`.
+    let requires_api_key = !api_key.is_empty();
+    let mirror_host = host.clone();
+    let mirror_prefix = prefix.clone();
     let server_handle = state.server_handle.clone();
     let llama_state: State<LlamacppState> = app_handle.state();
     let sessions = llama_state.llama_server_process.clone();
@@ -57,6 +63,9 @@ pub async fn start_server<R: Runtime>(
     )
     .await
     .map_err(|e| e.to_string())?;
+
+    state_file::mark_running(&mirror_host, actual_port, &mirror_prefix, requires_api_key);
+
     Ok(actual_port)
 }
 
@@ -67,6 +76,9 @@ pub async fn stop_server(state: State<'_, AppState>) -> Result<(), String> {
     proxy::stop_server(server_handle)
         .await
         .map_err(|e| e.to_string())?;
+
+    state_file::mark_stopped();
+
     Ok(())
 }
 
