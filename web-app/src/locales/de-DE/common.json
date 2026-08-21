@@ -239,9 +239,6 @@
     "deleteThread": {
       "description": "Bist Du sicher, daß Du diesen Thread löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden."
     },
-    "editMessage": {
-      "title": "Nachricht bearbeiten"
-    },
     "messageMetadata": {
       "title": "Nachricht Metadaten"
     }

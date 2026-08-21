@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getProviderTitle } from '@/lib/utils'
+import { sortProvidersForSettings } from '@/lib/providerOrder'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { AddProviderDialog } from '@/containers/dialogs'
 import { openAIProviderSettings } from '@/constants/providers'
@@ -26,7 +27,7 @@ const SettingsMenu = () => {
   const matches = useMatches()
   const navigate = useNavigate()
 
-  const { providers, addProvider } = useModelProvider()
+  const { providers, addProvider, selectedProvider } = useModelProvider()
 
   const createProvider = useCallback(
     (name: string) => {
@@ -55,17 +56,21 @@ const SettingsMenu = () => {
     [providers, addProvider, t, navigate]
   )
 
-  const activeProviders = providers.filter((provider) => {
-    if (!provider.active) return false
-    if (!IS_MACOS && provider.provider === 'mlx') return false
-    return true
-  })
+  const activeProviders = sortProvidersForSettings(
+    providers.filter((provider) => {
+      if (!provider.active) return false
+      if (!IS_MACOS && provider.provider === 'mlx') return false
+      return true
+    })
+  )
 
-  const hiddenProviders = providers.filter((provider) => {
-    if (provider.active) return false
-    if (!IS_MACOS && provider.provider === 'mlx') return false
-    return true
-  })
+  const hiddenProviders = sortProvidersForSettings(
+    providers.filter((provider) => {
+      if (provider.active) return false
+      if (!IS_MACOS && provider.provider === 'mlx') return false
+      return true
+    })
+  )
 
   // Check if current route has a providerName parameter and expand providers submenu
   useEffect(() => {
@@ -283,9 +288,17 @@ const SettingsMenu = () => {
                     }
                   >
                     <ProvidersAvatar provider={provider} />
-                    <div className="truncate flex-1">
+                    <div className="truncate">
                       <span>{getProviderTitle(provider.provider)}</span>
                     </div>
+                    {/* Same marker as the model select dropdown: the
+                        provider currently backing the selected model. */}
+                    {provider.provider === selectedProvider && (
+                      <span
+                        data-testid={`provider-active-dot-${provider.provider}`}
+                        className="size-2 rounded-full bg-green-500 shrink-0"
+                      />
+                    )}
                   </div>
                 )
               })}

@@ -233,9 +233,6 @@
     "deleteThread": {
       "description": "Na pewno chcesz usunąć ten wątek? Tej operacji nie można cofnąć."
     },
-    "editMessage": {
-      "title": "Edytuj Wiadomość"
-    },
     "messageMetadata": {
       "title": "Metadane Wiadomości"
     }

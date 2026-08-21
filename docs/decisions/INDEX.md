@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-211 records, 2026-05-19 → 2026-08-20.
+215 records, 2026-05-19 → 2026-08-21.
 
 ---
 
@@ -126,8 +126,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 - **2026-05-19** — [Use `AtomicBot-ai/mlx-vlm` as the MLX backend](2026-05-19-use-atomicbot-ai-mlx-vlm-as-the-mlx-backend.md)
 
-## llama.cpp providers & backend selection (50)
+## llama.cpp providers & backend selection (51)
 
+- **2026-08-21** — [Gate CUDA 13 on NVIDIA compute capability, not the driver version alone](2026-08-21-gate-cuda-13-on-nvidia-compute-capability-not-driver-alone.md)
 - **2026-08-19** — [Disable the TurboQuant `llamacpp` provider by default on fresh installs](2026-08-19-disable-the-turboquant-provider-by-default-on-fresh-installs.md)
 - **2026-08-14** — [Keep the engine version out of the `latest/` sentinel trap](2026-08-14-keep-the-engine-version-out-of-the-latest-sentinel-trap.md)
 - **2026-08-13** — [Mirror and sign upstream llama.cpp releases in atomic-chat-conf](2026-08-13-mirror-and-sign-upstream-llama-cpp-in-atomic-chat-conf.md)
@@ -241,8 +242,11 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (20)
+## UI / UX (23)
 
+- **2026-08-21** — [Never list TurboQuant next to upstream llama.cpp](2026-08-21-never-list-turboquant-next-to-upstream-llama-cpp.md)
+- **2026-08-21** — [Keep attachments when a message is edited in a chat thread](2026-08-21-keep-attachments-when-a-message-is-edited-in-a-chat-thread.md)
+- **2026-08-21** — [Edit messages inline in the transcript instead of in a modal dialog](2026-08-21-edit-messages-inline-in-the-transcript-instead-of-a-modal.md)
 - **2026-08-19** — [Let onboarding connect a cloud provider](2026-08-19-let-onboarding-connect-a-cloud-provider.md)
 - **2026-08-14** — [Show the streaming code while an HTML artifact generates](2026-08-14-show-the-streaming-code-while-an-html-artifact-generates.md)
 - **2026-08-14** — [Collapse the engine log behind a toggle in the model-load toast](2026-08-14-collapse-the-engine-log-behind-a-toggle-in-the-model-load-toast.md)
@@ -264,8 +268,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Other (9)
+## Other (10)
 
+- **2026-08-21** — [Strip every non-image file part before the model converter](2026-08-21-strip-every-non-image-file-part-before-the-model-converter.md)
 - **2026-07-31** — [Surface MCP server runtime errors (ATO-385)](2026-07-31-surface-mcp-server-runtime-errors.md)
 - **2026-07-31** — [Fallback between HTTP-based MCP transports (ATO-384, ATO-385)](2026-07-31-fallback-between-http-based-mcp-transports.md)
 - **2026-07-29** — [Gate agent changes with local contract evidence](2026-07-29-gate-agent-changes-with-local-contract-evidence.md)

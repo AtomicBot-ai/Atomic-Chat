@@ -322,9 +322,6 @@
     "deleteThread": {
       "description": "Are you sure you want to delete this thread? This action cannot be undone."
     },
-    "editMessage": {
-      "title": "Edit Message"
-    },
     "messageMetadata": {
       "title": "Message Metadata"
     }

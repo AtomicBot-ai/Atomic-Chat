@@ -41,6 +41,7 @@ describe('iconKeyLogoSrc', () => {
       'llama',
       'bytedance',
       'inclusionai',
+      'ling',
       'nanbeige',
       'ornith',
     ]

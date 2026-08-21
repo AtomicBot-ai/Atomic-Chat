@@ -483,6 +483,16 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
       groups[providerKey].push(item)
     })
 
+    // TurboQuant renders last, after every remote provider. Its title
+    // ("llama.cpp turboquant") differs from upstream's ("llama.cpp") by a
+    // single word, so the two headers sitting back to back read as a
+    // duplicate entry. Moving the key here (rather than in the sort above)
+    // keeps it at the bottom while searching too.
+    const { llamacpp: turboquantGroup, ...otherGroups } = groups
+    if (turboquantGroup) {
+      return { ...otherGroups, llamacpp: turboquantGroup }
+    }
+
     return groups
   }, [filteredItems, providers, searchValue, favoriteModels])
 

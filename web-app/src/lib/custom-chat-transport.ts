@@ -131,34 +131,36 @@ export function extractAudioInputParts(
   return []
 }
 
-/// Return a copy of `messages` with audio `file` parts removed. The audio is
-/// delivered out-of-band (see extractAudioInputParts), and leaving the parts in
-/// place would make the OpenAI-compatible converter throw. Non-audio parts and
-/// untouched messages are preserved by reference.
-function stripAudioFileParts(messages: UIMessage[]): UIMessage[] {
+/// Whether a part may travel to the model as-is.
+///
+/// `image/*` is the only file part any converter we route to accepts:
+/// `@ai-sdk/openai-compatible` (and `@ai-sdk/xai`) throw
+/// `UnsupportedFunctionalityError` on everything else, and Anthropic — which
+/// does understand `application/pdf` — would receive our `url`, a local
+/// filesystem path the SDK cannot resolve, as the document body. Every other
+/// attachment kind reaches the model through its own channel: audio as
+/// `input_audio` at the MLX fetch layer (see `extractAudioInputParts`),
+/// documents as text folded in by `mapUserInlineAttachments` or retrieved by
+/// the RAG tools. So a non-image file part is never information — only a way
+/// to break the request.
+function isModelSupportedPart(part: unknown): boolean {
+  const candidate = part as { type?: unknown; mediaType?: unknown }
+  if (candidate.type !== 'file') return true
+  return (
+    typeof candidate.mediaType === 'string' &&
+    candidate.mediaType.startsWith('image/')
+  )
+}
+
+/// Return a copy of `messages` with every non-image `file` part removed.
+/// Untouched messages are preserved by reference.
+export function stripUnsupportedFileParts(messages: UIMessage[]): UIMessage[] {
   return messages.map((message) => {
     const parts = Array.isArray(message.parts) ? message.parts : []
-    const hasAudio = parts.some(
-      (p) =>
-        (p as Record<string, unknown>).type === 'file' &&
-        typeof (p as Record<string, unknown>).mediaType === 'string' &&
-        ((p as Record<string, unknown>).mediaType as string).startsWith(
-          'audio/'
-        )
-    )
-    if (!hasAudio) return message
+    if (parts.every(isModelSupportedPart)) return message
     return {
       ...message,
-      parts: parts.filter(
-        (p) =>
-          !(
-            (p as Record<string, unknown>).type === 'file' &&
-            typeof (p as Record<string, unknown>).mediaType === 'string' &&
-            ((p as Record<string, unknown>).mediaType as string).startsWith(
-              'audio/'
-            )
-          )
-      ),
+      parts: parts.filter(isModelSupportedPart),
     } as UIMessage
   })
 }
@@ -673,11 +675,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         ? splitAnthropicSerialToolUse(options.messages)
         : options.messages
 
-    // Convert UI messages to model messages. Audio file parts are stripped
-    // first: they are delivered out-of-band as `input_audio` (see
-    // extractAudioInputParts), and the OpenAI-compatible converter throws on
-    // any non-image file part.
-    let preparedMessages = stripAudioFileParts(
+    // Convert UI messages to model messages. Non-image file parts are stripped
+    // first — the converters accept `image/*` and nothing else. Order matters:
+    // `mapUserInlineAttachments` folds document text into the message before
+    // the strip runs, and `extractAudioInputParts` ran earlier against the
+    // untouched `options.messages`, so neither loses anything.
+    let preparedMessages = stripUnsupportedFileParts(
       this.mapUserInlineAttachments(messagesToConvert)
     )
     // Local backends serialize tool results to a `role: "tool"` text message

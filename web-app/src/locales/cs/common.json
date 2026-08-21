@@ -240,9 +240,6 @@
     "deleteThread": {
       "description": "Opravdu chcete smazat toto vlákno? Tuto akci nelze vrátit zpět."
     },
-    "editMessage": {
-      "title": "Upravit zprávu"
-    },
     "messageMetadata": {
       "title": "Metadata zprávy"
     }

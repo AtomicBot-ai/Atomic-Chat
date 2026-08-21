@@ -37,6 +37,7 @@ import {
   extractContentPartsFromUIMessage,
 } from '@/lib/messages'
 import { newUserThreadContent } from '@/lib/completion'
+import { rebuildEditedContent, rebuildEditedParts } from '@/lib/message-edit'
 import {
   ttftBegin,
   ttftMark,
@@ -1408,20 +1409,13 @@ function ThreadDetail() {
           useAgentMode.getState().isAgentMode(threadId)
         ) === 'agent-ipc'
 
-      // Update the message content
+      // Update the message content. Attachments are kept for every thread, not
+      // just Agent ones: images live only in `content`, so dropping them here
+      // destroys them permanently (audio and documents survive in `metadata`,
+      // which is preserved below).
       const updatedMessage = {
         ...originalMessage,
-        content: [
-          {
-            type: ContentType.Text,
-            text: { value: newText, annotations: [] },
-          },
-          ...(isAgentThread
-            ? originalMessage.content.filter(
-                (content) => content.type !== ContentType.Text
-              )
-            : []),
-        ],
+        content: rebuildEditedContent(originalMessage.content, newText),
         metadata: isAgentThread
           ? {
               ...(originalMessage.metadata ?? {}),
@@ -1436,12 +1430,7 @@ function ThreadDetail() {
         if (msg.id === messageId) {
           return {
             ...msg,
-            parts: [
-              { type: 'text' as const, text: newText },
-              ...(isAgentThread
-                ? msg.parts.filter((part) => part.type === 'file')
-                : []),
-            ],
+            parts: rebuildEditedParts(msg.parts, newText),
           }
         }
         return msg

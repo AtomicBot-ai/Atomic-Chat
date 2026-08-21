@@ -43,8 +43,10 @@ title: "Open the Hub recommendations with a promoted head ahead of the family gr
   - Muse Glimmer carries no bundled brand mark of its own and is published from Meta's
     weights, so it reuses the `meta` icon key. Ling and Nanbeige come from labs with no mark
     in the `@lobehub/icons-static-svg` set, so they follow the `prism-ml` precedent and
-    bundle the Hugging Face avatar of the lab that trained the model — `inclusionai`,
-    `nanbeige` — as a 200x200 WebP in `public/images/model-provider/`. The mark follows the
+    bundle a 200x200 WebP in `public/images/model-provider/`. Ling ships its own product
+    mark (`ling`, the Bailing ring from `inclusionAI/Ling`) rather than the lab avatar,
+    which is what a user recognizes on the row; Nanbeige still bundles the Hugging Face
+    avatar of the lab that trained it (`nanbeige`) for want of a model mark. The mark follows the
     model's origin, not the account that published the quants, so a repo re-quantized by
     someone else keeps the same row art.
 

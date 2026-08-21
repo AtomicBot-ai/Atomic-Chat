@@ -18,9 +18,9 @@ import { Tool } from '@/components/ai-elements/tools/tool'
 import { CopyButton } from './CopyButton'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
-import { IconRefresh } from '@tabler/icons-react'
+import { IconPencil, IconRefresh } from '@tabler/icons-react'
 import { AudioPlayer } from '@/containers/AudioPlayer'
-import { EditMessageDialog } from '@/containers/dialogs/EditMessageDialog'
+import { InlineMessageEditor } from '@/containers/InlineMessageEditor'
 import { DeleteMessageDialog } from '@/containers/dialogs/DeleteMessageDialog'
 import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
 import { extractFilesFromPrompt, FileMetadata } from '@/lib/fileMetadata'
@@ -103,17 +103,24 @@ export const MessageItem = memo(
       url: string
       filename?: string
     } | null>(null)
+    // Editing state is deliberately local: the memo comparator below does not
+    // compare `onEdit` or any edit prop, so an `editingMessageId` lifted to the
+    // thread route would go stale for every non-last message.
+    const [isEditing, setIsEditing] = useState(false)
 
     const handleRegenerate = useCallback(() => {
       onRegenerate?.(message.id)
     }, [onRegenerate, message.id])
 
-    const handleEdit = useCallback(
+    const handleEditSave = useCallback(
       (newText: string) => {
+        setIsEditing(false)
         onEdit?.(message.id, newText)
       },
       [onEdit, message.id]
     )
+
+    const handleEditCancel = useCallback(() => setIsEditing(false), [])
 
     const handleDelete = useCallback(() => {
       onDelete?.(message.id)
@@ -131,21 +138,6 @@ export const MessageItem = memo(
       },
       [t]
     )
-
-    // Get image URLs from file parts for the edit dialog
-    const imageUrls = useMemo(() => {
-      return message.parts
-        .filter((part) => {
-          if (part.type !== 'file') return false
-          const filePart = part as {
-            type: 'file'
-            url?: string
-            mediaType?: string
-          }
-          return filePart.url && filePart.mediaType?.startsWith('image/')
-        })
-        .map((part) => (part as { url: string }).url)
-    }, [message.parts])
 
     const isStreaming = isLastMessage && status === CHAT_STATUS.STREAMING
     const isRequestActive =
@@ -233,6 +225,48 @@ export const MessageItem = memo(
         .join('\n')
     }, [message.parts])
 
+    const renderEditor = (key: string) => {
+      const editor = (
+        <InlineMessageEditor
+          initialText={getFullTextContent()}
+          onSave={handleEditSave}
+          onCancel={handleEditCancel}
+        />
+      )
+
+      if (message.role !== 'user') {
+        return (
+          <div key={key} className="w-full">
+            {editor}
+          </div>
+        )
+      }
+
+      return (
+        <div key={key} className="w-full">
+          <div className="flex justify-end w-full text-start">
+            {/* `w-full` instead of the bubble's `inline-block`, so clearing the
+                text does not collapse the box to caret width. */}
+            <div className="bg-secondary relative text-foreground p-2 rounded-md w-full max-w-[80%]">
+              {attachedFiles.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {attachedFiles.map((file: FileMetadata, idx: number) => (
+                    <AttachmentChip
+                      key={`file-${idx}-${file.id}`}
+                      name={file.name}
+                      fileType={file.type}
+                      size={file.size}
+                    />
+                  ))}
+                </div>
+              )}
+              {editor}
+            </div>
+          </div>
+        </div>
+      )
+    }
+
     const renderTextBlock = (block: TextTraceBlock, index: number) => {
       const isLastBlock = index === traceBlocks.length - 1
       const displayText =
@@ -246,6 +280,14 @@ export const MessageItem = memo(
         attachedFiles.length === 0
       ) {
         return null
+      }
+
+      // The editor owns the whole message text, because that is what the save
+      // handler writes back: a single text part. So only the first text block
+      // turns into an editor, and the rest are folded into it.
+      if (isEditing) {
+        if (block.key !== firstTextBlockKey) return null
+        return renderEditor(block.key)
       }
 
       return (
@@ -437,6 +479,14 @@ export const MessageItem = memo(
       [message, disableReasoning, isRequestActive]
     )
 
+    // A message with only attachments has no text block to anchor the editor
+    // to — `buildTraceBlocks` drops blank text parts — so it gets a standalone
+    // editor appended below the blocks instead.
+    const firstTextBlockKey = useMemo(
+      () => traceBlocks.find((block) => block.kind === 'text')?.key,
+      [traceBlocks]
+    )
+
     return (
       <div className="w-full mb-4">
         {/* Render message parts */}
@@ -457,17 +507,32 @@ export const MessageItem = memo(
           }
         })}
 
+        {isEditing && !firstTextBlockKey && renderEditor('inline-editor')}
+
         {/* Message actions for user messages */}
-        {message.role === 'user' && !hideActions && (
+        {message.role === 'user' && !hideActions && !isEditing && (
           <div className="flex items-center justify-end gap-1 text-muted-foreground text-xs mt-4">
             <CopyButton text={getFullTextContent()} />
 
             {onEdit && status !== CHAT_STATUS.STREAMING && (
-              <EditMessageDialog
-                message={getFullTextContent()}
-                imageUrls={imageUrls.length > 0 ? imageUrls : undefined}
-                onSave={handleEdit}
-              />
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                role="button"
+                tabIndex={0}
+                disabled={!selectedModel}
+                title={t('common:editMessage')}
+                aria-label={t('common:editMessage')}
+                onClick={() => setIsEditing(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setIsEditing(true)
+                  }
+                }}
+              >
+                <IconPencil size={16} />
+              </Button>
             )}
 
             {onDelete && status !== CHAT_STATUS.STREAMING && (
@@ -482,16 +547,29 @@ export const MessageItem = memo(
             <div
               className={cn(
                 'flex items-center gap-1',
-                (isRequestActive || hideActions) && 'hidden'
+                (isRequestActive || hideActions || isEditing) && 'hidden'
               )}
             >
               <CopyButton text={getFullTextContent()} />
 
               {onEdit && !isStreaming && (
-                <EditMessageDialog
-                  message={getFullTextContent()}
-                  onSave={handleEdit}
-                />
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  role="button"
+                  tabIndex={0}
+                  title={t('common:editMessage')}
+                  aria-label={t('common:editMessage')}
+                  onClick={() => setIsEditing(true)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setIsEditing(true)
+                    }
+                  }}
+                >
+                  <IconPencil size={16} />
+                </Button>
               )}
 
               {onDelete && !isStreaming && (

@@ -294,9 +294,6 @@
     "deleteThread": {
       "description": "Bạn có chắc chắn muốn xóa cuộc trò chuyện này không? Hành động này không thể hoàn tác."
     },
-    "editMessage": {
-      "title": "Chỉnh sửa tin nhắn"
-    },
     "messageMetadata": {
       "title": "Siêu dữ liệu tin nhắn"
     }

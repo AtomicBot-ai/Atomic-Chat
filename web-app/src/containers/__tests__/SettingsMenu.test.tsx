@@ -215,6 +215,54 @@ describe('SettingsMenu', () => {
     expect(llamaCpp?.className).toContain('hidden')
   })
 
+  it('lists turboquant below upstream, never first', () => {
+    // IS_MACOS is false under vitest, so this is the Windows/Linux list —
+    // mlx is filtered out and turboquant collapses under upstream.
+    vi.mocked(useModelProvider).mockReturnValue({
+      providers: [
+        { provider: 'llamacpp', active: true, models: [] },
+        { provider: 'llamacpp-upstream', active: true, models: [] },
+        { provider: 'openai', active: true, models: [] },
+      ],
+      addProvider: vi.fn(),
+    })
+
+    const { container } = render(<SettingsMenu />)
+
+    const rendered = Array.from(
+      container.querySelectorAll('[data-testid^="provider-avatar-"]')
+    ).map((el) =>
+      el.getAttribute('data-testid')?.replace('provider-avatar-', '')
+    )
+    expect(rendered).toEqual(['llamacpp-upstream', 'llamacpp', 'openai'])
+  })
+
+  it('marks the provider backing the selected model with a green dot', () => {
+    vi.mocked(useModelProvider).mockReturnValue({
+      providers: [
+        { provider: 'openai', active: true, models: [] },
+        { provider: 'llama.cpp', active: true, models: [] },
+      ],
+      selectedProvider: 'openai',
+      addProvider: vi.fn(),
+    })
+
+    render(<SettingsMenu />)
+
+    expect(screen.getByTestId('provider-active-dot-openai')).toBeInTheDocument()
+    expect(
+      screen.queryByTestId('provider-active-dot-llama.cpp')
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows no active dot when nothing is selected', () => {
+    render(<SettingsMenu />)
+
+    expect(
+      screen.queryByTestId('provider-active-dot-openai')
+    ).not.toBeInTheDocument()
+  })
+
   it('shows inactive providers in disabled section', () => {
     vi.mocked(useModelProvider).mockReturnValue({
       providers: [

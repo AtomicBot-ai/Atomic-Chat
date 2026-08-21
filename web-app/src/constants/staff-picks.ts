@@ -50,7 +50,7 @@ export const BASELINE_STAFF_PICKS: ReadonlyArray<StaffPick> = [
     title: 'Ling 3.0 flash',
     summary: 'Sparse 124B with linear attention: 5.1B active per token.',
     description_key: 'hub:recMathReasoning',
-    icon: 'inclusionai',
+    icon: 'ling',
     format: 'gguf',
     categories: ['general', 'reasoning', 'tools'],
     order: 5,

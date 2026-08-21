@@ -239,9 +239,6 @@
     "deleteThread": {
       "description": "Êtes-vous sûr de vouloir supprimer cette discussion ? Cette action ne peut pas être annulée."
     },
-    "editMessage": {
-      "title": "Modifier le message"
-    },
     "messageMetadata": {
       "title": "Métadonnées du message"
     }
