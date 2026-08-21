@@ -87,6 +87,61 @@ describe('buildTraceBlocks activity projection', () => {
     ])
   })
 
+  it('hides the placeholder activity while reasoning is still streaming', () => {
+    const message = {
+      id: 'assistant-reasoning-live',
+      role: 'assistant',
+      parts: [
+        {
+          type: 'reasoning',
+          text: 'Sketching the pelican.',
+          state: 'streaming',
+        },
+      ],
+    } as UIMessage
+
+    expect(buildTraceBlocks(message, false, { ensureActivity: true })).toEqual([
+      expect.objectContaining({ kind: 'reasoning', streaming: true }),
+    ])
+  })
+
+  it('restores the live activity once reasoning finishes', () => {
+    const message = {
+      id: 'assistant-reasoning-done',
+      role: 'assistant',
+      parts: [{ type: 'reasoning', text: 'Planned it out.', state: 'done' }],
+    } as UIMessage
+
+    expect(buildTraceBlocks(message, false, { ensureActivity: true })).toEqual([
+      expect.objectContaining({ kind: 'reasoning', streaming: false }),
+      expect.objectContaining({ kind: 'activity', tools: [] }),
+    ])
+  })
+
+  it('keeps a tool-backed activity visible while reasoning streams', () => {
+    const message = {
+      id: 'assistant-reasoning-tools',
+      role: 'assistant',
+      parts: [
+        { type: 'reasoning', text: 'Checking sources.', state: 'streaming' },
+        {
+          type: 'tool-mcp.search',
+          toolCallId: 'tool-1',
+          state: 'input-available',
+          input: { query: 'pelican' },
+        },
+      ],
+    } as UIMessage
+
+    expect(buildTraceBlocks(message, false, { ensureActivity: true })).toEqual([
+      expect.objectContaining({ kind: 'reasoning', streaming: true }),
+      expect.objectContaining({
+        kind: 'activity',
+        tools: [expect.objectContaining({ toolName: 'mcp.search' })],
+      }),
+    ])
+  })
+
   it('creates one live activity block before Chat emits any parts', () => {
     const message = {
       id: 'assistant-live',

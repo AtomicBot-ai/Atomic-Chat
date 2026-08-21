@@ -36,6 +36,7 @@ reqwest = { version = "0.11", features = ["json", "blocking", "stream", "rustls-
 nix = { version = "=0.30.1", features = ["signal", "process"] }
 
 [dev-dependencies]
+serde_json = "1.0"
 tempfile = "3.0"
 filetime = "0.2"
 

@@ -257,9 +257,6 @@
     "deleteThread": {
       "description": "¿Estás seguro de que deseas eliminar este hilo? Esta acción no se puede deshacer."
     },
-    "editMessage": {
-      "title": "Editar mensaje"
-    },
     "messageMetadata": {
       "title": "Metadatos del mensaje"
     }

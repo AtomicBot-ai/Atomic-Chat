@@ -238,9 +238,6 @@
     "deleteThread": {
       "description": "本当にこのスレッドを削除しますか？この操作は元に戻せません。"
     },
-    "editMessage": {
-      "title": "メッセージを編集"
-    },
     "messageMetadata": {
       "title": "メッセージメタデータ"
     },

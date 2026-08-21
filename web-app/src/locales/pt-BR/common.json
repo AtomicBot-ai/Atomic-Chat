@@ -238,9 +238,6 @@
     "deleteThread": {
       "description": "Tem certeza de que deseja remover esta conversa? Esta ação não pode ser desfeita."
     },
-    "editMessage": {
-      "title": "Editar Mensagem"
-    },
     "messageMetadata": {
       "title": "Metadados da Mensagem"
     }

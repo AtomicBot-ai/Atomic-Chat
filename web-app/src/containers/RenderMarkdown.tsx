@@ -24,7 +24,7 @@ import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
 import { MermaidError } from '@/components/MermaidError'
-import { ArtifactTrigger } from './ArtifactPanel'
+import { ArtifactStreamingProvider, ArtifactTrigger } from './ArtifactPanel'
 
 interface MarkdownProps {
   content: string
@@ -265,7 +265,9 @@ function RenderMarkdownComponent({
       const codeText = extractCodeText(children)
 
       if (HTML_LANGUAGES.has(language)) {
-        return <ArtifactTrigger code={codeText} streaming={!!isStreaming} />
+        // `streaming` arrives through context: keeping it out of this closure
+        // is what lets `CodeRenderer` keep one identity for the whole message.
+        return <ArtifactTrigger code={codeText} />
       }
 
       // Delegate every other code block (incl. mermaid) to streamdown.
@@ -275,7 +277,7 @@ function RenderMarkdownComponent({
     }
 
     return { code: CodeRenderer, ...(components ?? {}) }
-  }, [enableHtmlPreview, components, delegateProps, isStreaming])
+  }, [enableHtmlPreview, components, delegateProps])
 
   const containsMath =
     normalizedContent.includes('$$') ||
@@ -311,25 +313,27 @@ function RenderMarkdownComponent({
         className
       )}
     >
-      <Streamdown
-        animate={isAnimating ?? true}
-        animationDuration={500}
-        linkSafety={{
-          enabled: false,
-        }}
-        className={cn(
-          'size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
-          className
-        )}
-        remarkPlugins={REMARK_PLUGINS}
-        rehypePlugins={rehypePlugins}
-        components={mergedComponents}
-        plugins={STREAMDOWN_PLUGINS}
-        controls={STREAMDOWN_CONTROLS}
-        mermaid={mermaidConfig}
-      >
-        {normalizedContent}
-      </Streamdown>
+      <ArtifactStreamingProvider value={!!isStreaming}>
+        <Streamdown
+          animate={isAnimating ?? true}
+          animationDuration={500}
+          linkSafety={{
+            enabled: false,
+          }}
+          className={cn(
+            'size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
+            className
+          )}
+          remarkPlugins={REMARK_PLUGINS}
+          rehypePlugins={rehypePlugins}
+          components={mergedComponents}
+          plugins={STREAMDOWN_PLUGINS}
+          controls={STREAMDOWN_CONTROLS}
+          mermaid={mermaidConfig}
+        >
+          {normalizedContent}
+        </Streamdown>
+      </ArtifactStreamingProvider>
     </div>
   )
 }

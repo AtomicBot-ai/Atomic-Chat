@@ -610,6 +610,13 @@ pub struct GpuInfo {
 
 #[derive(Deserialize)]
 pub struct NvidiaInfo {
+    /// NVML `"major.minor"` compute capability, e.g. `"7.0"` for Volta,
+    /// `"7.5"` for Turing. `#[serde(default)]` because a payload whose
+    /// `nvidia_info` object lacks the field must not fail deserialization of
+    /// the whole `gpus` argument: the TS caller swallows the invoke error and
+    /// returns an *empty* supported-backend list, which would hide every
+    /// backend rather than just the CUDA-13 one.
+    #[serde(default)]
     compute_capability: String,
 }
 
@@ -626,6 +633,50 @@ fn is_amd_gpu(gpu: &GpuInfo) -> bool {
     gpu.vendor
         .as_deref()
         .is_some_and(|vendor| vendor.eq_ignore_ascii_case("amd"))
+}
+
+/// Lowest NVIDIA compute capability a CUDA-13 build still carries kernels for.
+///
+/// CUDA Toolkit 13.0 removed Maxwell (5.x), Pascal (6.x) and Volta (7.0)
+/// entirely, so Turing (7.5) is the floor for every `cuda-13.x` archive we
+/// offer. A Volta-or-older card handed a CUDA-13 build dies at
+/// `ggml_cuda_init` with "no kernel image is available for execution on the
+/// device".
+///
+/// The driver gate below cannot catch this on its own: R580 is the *last*
+/// branch that still supports Maxwell/Pascal/Volta, so those cards
+/// legitimately report a driver at or above the 581.15 CUDA-13 floor and
+/// sailed straight through. Reported by a user on a dual-Volta host that the
+/// app kept recommending CUDA 13 to.
+///
+/// Kept in sync by hand with the twin in
+/// `src-tauri/plugins/tauri-plugin-llamacpp/src/backend.rs` — the two plugins
+/// are independent crates with deliberately divergent driver floors.
+const MIN_CUDA13_COMPUTE_CAPABILITY: (u32, u32) = (7, 5);
+
+/// Parse an NVML `"major.minor"` compute capability.
+///
+/// Returns `None` for anything unreadable, which callers treat as "unknown —
+/// do not gate". That direction is deliberate: our hardware plugin drops a GPU
+/// entirely when NVML cannot report its capability, so `None` is unreachable
+/// in practice, and guessing "too old" would push a Blackwell host (CC 10.0 /
+/// 12.0) down onto the CUDA 12.4 archive, which has no kernels for it either.
+fn parse_compute_capability(raw: &str) -> Option<(u32, u32)> {
+    let mut parts = raw.trim().split('.');
+    let major: u32 = parts.next()?.trim().parse().ok()?;
+    let minor: u32 = parts.next().unwrap_or("0").trim().parse().unwrap_or(0);
+    Some((major, minor))
+}
+
+/// Whether this GPU's architecture is new enough for a CUDA-13 build.
+/// Tuple comparison is lexicographic, so `(10, 0) >= (7, 5)` holds — a plain
+/// string or float compare would get Blackwell wrong.
+fn gpu_meets_cuda13_arch_floor(nvidia: &NvidiaInfo) -> bool {
+    match parse_compute_capability(&nvidia.compute_capability) {
+        Some(cc) => cc >= MIN_CUDA13_COMPUTE_CAPABILITY,
+        // Unknown capability — leave the driver gate in charge, as before.
+        None => true,
+    }
 }
 
 /// The Windows ROCm decision, kept free of I/O so the policy itself is testable.
@@ -698,6 +749,11 @@ pub fn get_supported_features(
     // Check GPU features
     let mut amd_device_ids: Vec<u32> = Vec::new();
     let mut has_amd_gpu = false;
+    // The driver is a single system-wide version, so *any* NVIDIA GPU passing
+    // a driver floor enables that tier. Architecture is per-card and must hold
+    // for *every* card: llama.cpp's CUDA build enumerates and offloads across
+    // all visible devices, so one too-old GPU fails the whole run.
+    let mut all_nvidia_meet_cuda13_arch = true;
     for gpu_info in gpus {
         let driver_version = &gpu_info.driver_version;
 
@@ -709,7 +765,7 @@ pub fn get_supported_features(
         }
 
         // Check CUDA support
-        if gpu_info.nvidia_info.is_some() {
+        if let Some(nvidia_info) = gpu_info.nvidia_info.as_ref() {
             if compare_versions(driver_version, min_cuda11_driver) >= 0 {
                 features.cuda11 = true;
             }
@@ -719,6 +775,15 @@ pub fn get_supported_features(
             if compare_versions(driver_version, min_cuda13_driver) >= 0 {
                 features.cuda13 = true;
             }
+            if !gpu_meets_cuda13_arch_floor(nvidia_info) {
+                log::info!(
+                    "[get_supported_features] CUDA 13 disabled: GPU compute capability {} is below {}.{} (Turing)",
+                    nvidia_info.compute_capability,
+                    MIN_CUDA13_COMPUTE_CAPABILITY.0,
+                    MIN_CUDA13_COMPUTE_CAPABILITY.1
+                );
+                all_nvidia_meet_cuda13_arch = false;
+            }
         }
 
         // Check Vulkan support
@@ -726,6 +791,11 @@ pub fn get_supported_features(
             features.vulkan = true;
         }
     }
+
+    // Architecture veto, applied after every GPU has been seen. CUDA 12.4 has
+    // kernels for Maxwell through Hopper, so the vetoed host still lands on a
+    // working CUDA tier rather than dropping to Vulkan.
+    features.cuda13 &= all_nvidia_meet_cuda13_arch;
 
     // ROCm artifacts exist only for Windows upstream; Linux upstream is
     // Vulkan-only because ggml-org publishes no Linux HIP archive.
@@ -1829,11 +1899,15 @@ mod tests {
     }
 
     fn windows_nvidia_gpu(driver_version: &str) -> GpuInfo {
+        windows_nvidia_gpu_cc(driver_version, "8.9")
+    }
+
+    fn windows_nvidia_gpu_cc(driver_version: &str, compute_capability: &str) -> GpuInfo {
         GpuInfo {
             driver_version: driver_version.to_string(),
             vendor: None,
             nvidia_info: Some(NvidiaInfo {
-                compute_capability: "8.9".to_string(),
+                compute_capability: compute_capability.to_string(),
             }),
             vulkan_info: None,
         }
@@ -1900,6 +1974,108 @@ mod tests {
         let result = get_supported_features("windows".to_string(), vec![], gpus).unwrap();
         assert!(!result.cuda12);
         assert!(!result.cuda13);
+    }
+
+    // --- Compute-capability gate for CUDA 13 ---
+
+    #[test]
+    fn test_parse_compute_capability() {
+        assert_eq!(parse_compute_capability("7.0"), Some((7, 0)));
+        assert_eq!(parse_compute_capability("7.5"), Some((7, 5)));
+        assert_eq!(parse_compute_capability(" 12.0 "), Some((12, 0)));
+        // Major only — NVML always emits "major.minor", but be lenient.
+        assert_eq!(parse_compute_capability("8"), Some((8, 0)));
+        // Unreadable input is reported as unknown, never as "old".
+        assert_eq!(parse_compute_capability(""), None);
+        assert_eq!(parse_compute_capability("unknown"), None);
+    }
+
+    #[test]
+    fn test_volta_does_not_get_cuda13_despite_new_driver() {
+        // The reported bug: R580 still supports Volta, so a Volta card
+        // legitimately reports a driver above the 581.15 CUDA-13 floor. The
+        // driver gate alone let it through and llama.cpp then failed to load.
+        let gpus = vec![windows_nvidia_gpu_cc("581.42", "7.0")];
+        let result = get_supported_features("windows".to_string(), vec![], gpus).unwrap();
+        assert!(
+            result.cuda12,
+            "Volta must keep CUDA 12.4 — that build has sm_70 kernels"
+        );
+        assert!(
+            !result.cuda13,
+            "CUDA Toolkit 13.0 dropped Volta (7.0); the archive has no sm_70 kernels"
+        );
+    }
+
+    #[test]
+    fn test_pascal_and_maxwell_do_not_get_cuda13() {
+        for cc in ["6.1", "5.2"] {
+            let gpus = vec![windows_nvidia_gpu_cc("581.42", cc)];
+            let result = get_supported_features("windows".to_string(), vec![], gpus).unwrap();
+            assert!(!result.cuda13, "CUDA 13 dropped compute capability {cc}");
+            assert!(result.cuda12, "CUDA 12.4 still covers {cc}");
+        }
+    }
+
+    #[test]
+    fn test_turing_is_the_cuda13_floor() {
+        // 7.5 is the exact boundary — Turing is the oldest architecture CUDA
+        // Toolkit 13.x still generates code for.
+        let gpus = vec![windows_nvidia_gpu_cc("581.42", "7.5")];
+        let result = get_supported_features("windows".to_string(), vec![], gpus).unwrap();
+        assert!(result.cuda13);
+    }
+
+    #[test]
+    fn test_blackwell_compute_capability_gets_cuda13() {
+        // Guards the lexicographic trap: "10.0" < "7.5" as a string, and a
+        // float parse would mangle the minor. Tuple comparison gets it right.
+        for cc in ["10.0", "12.0"] {
+            let gpus = vec![windows_nvidia_gpu_cc("581.42", cc)];
+            let result = get_supported_features("windows".to_string(), vec![], gpus).unwrap();
+            assert!(result.cuda13, "compute capability {cc} is well above 7.5");
+        }
+    }
+
+    #[test]
+    fn test_one_old_gpu_vetoes_cuda13_for_the_whole_host() {
+        // The reporter's dual-NVIDIA host. llama.cpp enumerates and offloads
+        // across every visible CUDA device, so an Ada card next to a Volta one
+        // still cannot run the CUDA-13 build.
+        let gpus = vec![
+            windows_nvidia_gpu_cc("581.42", "8.9"),
+            windows_nvidia_gpu_cc("581.42", "7.0"),
+        ];
+        let result = get_supported_features("windows".to_string(), vec![], gpus).unwrap();
+        assert!(!result.cuda13, "one sub-7.5 card must veto the whole host");
+        assert!(result.cuda12, "both cards run CUDA 12.4");
+    }
+
+    #[test]
+    fn test_unknown_compute_capability_does_not_block_cuda13() {
+        // `#[serde(default)]` yields an empty string when the field is absent.
+        // Unknown must not be read as "old": that would strand a Blackwell
+        // host on CUDA 12.4, which has no kernels for it either.
+        let gpus = vec![windows_nvidia_gpu_cc("581.42", "")];
+        let result = get_supported_features("windows".to_string(), vec![], gpus).unwrap();
+        assert!(result.cuda13);
+    }
+
+    #[test]
+    fn test_nvidia_info_without_compute_capability_still_deserializes() {
+        // Regression guard for the serde default: without it the whole `gpus`
+        // argument fails to deserialize and the caller ends up with an empty
+        // backend list instead of a missing CUDA-13 entry.
+        let gpu: GpuInfo = serde_json::from_str(
+            r#"{"driver_version":"581.42","nvidia_info":{"index":0},"vulkan_info":null}"#,
+        )
+        .expect("nvidia_info without compute_capability must deserialize");
+        assert_eq!(
+            gpu.nvidia_info
+                .as_ref()
+                .map(|n| n.compute_capability.as_str()),
+            Some("")
+        );
     }
 
     // --- Tests for determine_supported_backends ---

@@ -13,6 +13,7 @@ import {
   IconSettings,
 } from '@tabler/icons-react'
 import { cn, getProviderTitle } from '@/lib/utils'
+import { sortProvidersForSettings } from '@/lib/providerOrder'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { AddProviderDialog } from '@/containers/dialogs'
 import { Switch } from '@/components/ui/switch'
@@ -102,32 +103,13 @@ function ModelProviders() {
     })()
   }, [refreshRegistry, serviceHub, setProviders, t])
 
-  const sortedProviders = useMemo(() => {
-    const providerPriority: Record<string, number> = {
-      'jan': 0,
-      'llamacpp': 1,
-      'mlx': 2,
-      'foundation-models': 3,
-    }
-
-    return providers
-      .filter((provider) => IS_MACOS || provider.provider !== 'mlx')
-      .slice()
-      .sort((a, b) => {
-        const aPriority =
-          providerPriority[a.provider] ?? Number.MAX_SAFE_INTEGER
-        const bPriority =
-          providerPriority[b.provider] ?? Number.MAX_SAFE_INTEGER
-
-        if (aPriority !== bPriority) {
-          return aPriority - bPriority
-        }
-
-        return getProviderTitle(a.provider).localeCompare(
-          getProviderTitle(b.provider)
-        )
-      })
-  }, [providers])
+  const sortedProviders = useMemo(
+    () =>
+      sortProvidersForSettings(
+        providers.filter((provider) => IS_MACOS || provider.provider !== 'mlx')
+      ),
+    [providers]
+  )
 
   const createProvider = useCallback(
     (name: string) => {

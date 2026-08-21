@@ -188,7 +188,12 @@ export const ReasoningContent = memo(
       )}
       {...props}
     >
-      <div className="ml-2 pl-4 border-l-2 border-dotted">
+      {/* Streamdown's own utility classes (list-inside, pl-6, ...) are not
+      emitted by this build (Tailwind doesn't scan node_modules), so markdown
+      here must be styled by the app's `.markdown` stylesheet — without it,
+      list markers fall back to `outside` with zero padding and overlap the
+      dotted border. */}
+      <div className="markdown ml-2 pl-4 border-l-2 border-dotted">
         <Streamdown animate={true} animationDuration={500} {...props}>
           {children}
         </Streamdown>

@@ -294,9 +294,6 @@
     "deleteThread": {
       "description": "您确定要删除此对话吗？此操作无法撤销。"
     },
-    "editMessage": {
-      "title": "编辑消息"
-    },
     "messageMetadata": {
       "title": "消息元数据"
     }

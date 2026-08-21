@@ -44,6 +44,7 @@ import {
   extractContentPartsFromUIMessage,
 } from '@/lib/messages'
 import { newUserThreadContent } from '@/lib/completion'
+import { rebuildEditedContent, rebuildEditedParts } from '@/lib/message-edit'
 import {
   ttftBegin,
   ttftMark,
@@ -443,6 +444,10 @@ function ThreadDetail() {
 
       if (isAbort) {
         setIsChatRequestActive(false)
+        // Stop during an auto-continue never reaches the non-abort clear
+        // below, and a stale placeholder would flip the indicator row to
+        // "Growing the Mind..." on every later send in this thread.
+        setPendingContinueMessage(null)
         captureTurnOutcome('aborted', message)
       }
 
@@ -453,8 +458,7 @@ function ThreadDetail() {
         let willContinue = false
         const selectedModelState = useModelProvider.getState().selectedModel
         const usage = msgMeta?.usage as
-          | { inputTokens?: number; outputTokens?: number }
-          | undefined
+          { inputTokens?: number; outputTokens?: number } | undefined
         const totalTokens =
           (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0)
         const ctxLen =
@@ -1454,20 +1458,13 @@ function ThreadDetail() {
           useAgentMode.getState().isAgentMode(threadId)
         ) === 'agent-ipc'
 
-      // Update the message content
+      // Update the message content. Attachments are kept for every thread, not
+      // just Agent ones: images live only in `content`, so dropping them here
+      // destroys them permanently (audio and documents survive in `metadata`,
+      // which is preserved below).
       const updatedMessage = {
         ...originalMessage,
-        content: [
-          {
-            type: ContentType.Text,
-            text: { value: newText, annotations: [] },
-          },
-          ...(isAgentThread
-            ? originalMessage.content.filter(
-                (content) => content.type !== ContentType.Text
-              )
-            : []),
-        ],
+        content: rebuildEditedContent(originalMessage.content, newText),
         metadata: isAgentThread
           ? {
               ...(originalMessage.metadata ?? {}),
@@ -1482,12 +1479,7 @@ function ThreadDetail() {
         if (msg.id === messageId) {
           return {
             ...msg,
-            parts: [
-              { type: 'text' as const, text: newText },
-              ...(isAgentThread
-                ? msg.parts.filter((part) => part.type === 'file')
-                : []),
-            ],
+            parts: rebuildEditedParts(msg.parts, newText),
           }
         }
         return msg
@@ -1846,6 +1838,10 @@ function ThreadDetail() {
                       isFirstMessage={false}
                       isLastMessage={true}
                       status={status}
+                      // The placeholder is a frozen snapshot: its activity must
+                      // read "Worked for Xs", not add a second live "Working"
+                      // shimmer under "Growing the Mind...".
+                      requestActive={false}
                       reasoningContainerRef={reasoningContainerRef}
                       onRegenerate={handleRegenerate}
                       onEdit={agentModeActive ? undefined : handleEditMessage}
@@ -1859,12 +1855,15 @@ function ThreadDetail() {
                   {(inputStatus === CHAT_STATUS.SUBMITTED ||
                     isAutoIncreasingContext) && (
                     <div className="flex flex-row items-center gap-2">
-                      {(pendingContinueMessage || isAutoIncreasingContext) && (
+                      {/* One indicator at a time: the context-growth shimmer
+                      replaces the generic "Working" progress, never joins it. */}
+                      {pendingContinueMessage || isAutoIncreasingContext ? (
                         <Shimmer duration={1}>Growing the Mind...</Shimmer>
-                      )}
-                      {inputStatus === CHAT_STATUS.SUBMITTED &&
+                      ) : (
+                        inputStatus === CHAT_STATUS.SUBMITTED &&
                         !agentModeActive &&
-                        !hasActiveAssistantMessage && <PromptProgress />}
+                        !hasActiveAssistantMessage && <PromptProgress />
+                      )}
                     </div>
                   )}
                   {(error || contextLimitError) &&

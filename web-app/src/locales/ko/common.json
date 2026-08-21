@@ -265,9 +265,6 @@
     "deleteThread": {
       "description": "정말 이 스레드를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다."
     },
-    "editMessage": {
-      "title": "메시지 편집"
-    },
     "messageMetadata": {
       "title": "메시지 메타데이터"
     }

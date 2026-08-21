@@ -948,6 +948,18 @@ const ChatInput = memo(function ChatInput({
     if (chatStatus !== 'submitted' && textareaRef.current) {
       // Small delay to ensure UI has updated
       setTimeout(() => {
+        // Never yank the caret out of another field the user is typing in —
+        // an inline message editor open in the transcript, for instance.
+        const active = document.activeElement
+        if (
+          active &&
+          active !== textareaRef.current &&
+          (active.tagName === 'TEXTAREA' ||
+            active.tagName === 'INPUT' ||
+            (active as HTMLElement).isContentEditable)
+        ) {
+          return
+        }
         textareaRef.current?.focus()
       }, 10)
     }
