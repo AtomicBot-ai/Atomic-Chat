@@ -59,6 +59,7 @@ import {
   captureSetupLocalModelRun,
   captureSetupScreenShown,
 } from '@/lib/onboarding-telemetry'
+import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
 
 //* Вариант загрузки: пин из манифеста, иначе приоритет квантов как в Hub.
 //! Пин обязателен для LFM2.5-VL-450M (нужен Q8_0): репозиторий отдаёт и Q4_K_M,
@@ -596,7 +597,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         markResumableDownload(mlxId)
         removeLocalDownloadingModel(mlxId)
         toast.error('Failed to download MLX model', {
-          description: error instanceof Error ? error.message : 'Unknown error',
+          description: extractModelErrorMessage(error),
         })
       }
     },
@@ -822,7 +823,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         pendingBackgroundImportsRef.current = []
         if (rest.length) importCandidatesInBackground(rest)
         toast.error(t('setup:localStep.importFailed'), {
-          description: error instanceof Error ? error.message : 'Unknown error',
+          description: extractModelErrorMessage(error),
         })
         return false
       }

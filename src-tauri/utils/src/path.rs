@@ -27,7 +27,19 @@ pub fn normalize_path(path: &Path) -> PathBuf {
                 pb.push(format!("{}:", disk as char));
                 pb
             }
-            Prefix::Verbatim(_) | Prefix::VerbatimUNC(_, _) => {
+            // `\\?\UNC\server\share` is the verbatim spelling of
+            // `\\server\share`. Dropping the prefix outright threw the host
+            // and share away, leaving a path that could never satisfy a
+            // containment check on a redirected or network data folder.
+            Prefix::VerbatimUNC(server, share) => {
+                components.next(); // skip this prefix
+                PathBuf::from(format!(
+                    "\\\\{}\\{}",
+                    server.to_string_lossy(),
+                    share.to_string_lossy()
+                ))
+            }
+            Prefix::Verbatim(_) => {
                 components.next(); // skip this prefix
                 PathBuf::new()
             }
@@ -61,6 +73,32 @@ pub fn normalize_path(path: &Path) -> PathBuf {
         }
     }
     ret
+}
+
+/// Whether `path` lives inside `root`, compared the way the host filesystem
+/// would compare them.
+///
+/// Both sides are normalized first, because one typically arrived through
+/// [`std::fs::canonicalize`] (which on Windows yields a `\\?\`-verbatim
+/// prefix) while the other came from a stored configuration string. Windows
+/// also compares paths case-insensitively, whereas [`Path::starts_with`]
+/// compares components byte-wise on every platform — so a data folder recorded
+/// as `C:\Users\Bob\...` would fail to contain a file resolved as
+/// `C:\Users\bob\...`.
+pub fn is_within(path: &Path, root: &Path) -> bool {
+    let path = normalize_path(path);
+    let root = normalize_path(root);
+
+    #[cfg(windows)]
+    {
+        let path = path.to_string_lossy().to_lowercase();
+        let root = root.to_string_lossy().to_lowercase();
+        Path::new(&path).starts_with(Path::new(&root))
+    }
+    #[cfg(not(windows))]
+    {
+        path.starts_with(&root)
+    }
 }
 
 /// Resolve symlinks in `path` as far as it actually exists, keeping any
@@ -190,6 +228,41 @@ mod tests {
         assert!(resolved.ends_with("models/not-downloaded-yet.gguf"));
 
         std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn a_path_inside_the_root_is_contained() {
+        assert!(is_within(
+            Path::new("/data/llamacpp/models/m/model.yml"),
+            Path::new("/data")
+        ));
+        assert!(!is_within(Path::new("/elsewhere/model.yml"), Path::new("/data")));
+    }
+
+    /// The data folder arrives as a stored config string while the file was
+    /// resolved through `canonicalize`, so the two can disagree on both the
+    /// prefix spelling and the casing.
+    #[cfg(windows)]
+    #[test]
+    fn a_verbatim_path_is_contained_by_its_plain_root() {
+        assert!(is_within(
+            Path::new(r"\\?\C:\Users\Bob\AppData\Roaming\Atomic Chat\data\model.yml"),
+            Path::new(r"C:\Users\bob\AppData\Roaming\Atomic Chat\data")
+        ));
+    }
+
+    /// `\\?\UNC\server\share` and `\\server\share` name the same place.
+    #[cfg(windows)]
+    #[test]
+    fn a_verbatim_unc_path_keeps_its_host_and_share() {
+        assert_eq!(
+            normalize_path(Path::new(r"\\?\UNC\server\share\data\model.yml")),
+            PathBuf::from(r"\\server\share\data\model.yml")
+        );
+        assert!(is_within(
+            Path::new(r"\\?\UNC\server\share\data\model.yml"),
+            Path::new(r"\\server\share\data")
+        ));
     }
 
     #[test]

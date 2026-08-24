@@ -1,5 +1,5 @@
 use crate::core::app::commands::get_jan_data_folder_path;
-use jan_utils::normalize_file_path;
+use jan_utils::{normalize_file_path, normalize_path};
 use std::path::PathBuf;
 use tauri::Runtime;
 
@@ -18,6 +18,11 @@ pub fn resolve_path<R: Runtime>(app_handle: tauri::AppHandle<R>, path: &str) -> 
     if path.starts_with("http://") || path.starts_with("https://") {
         path
     } else {
-        path.canonicalize().unwrap_or(path)
+        // On Windows `canonicalize` returns an extended-length (`\\?\`) path.
+        // Those escape into the frontend through `readdir_sync` / `join_path`,
+        // get persisted as `model_path` in `model.yml`, and are handed to
+        // `llama-server` on the command line. Normalize the prefix away so
+        // callers only ever see ordinary paths (issue #256).
+        normalize_path(&path.canonicalize().unwrap_or(path))
     }
 }

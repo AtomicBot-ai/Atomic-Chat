@@ -28,6 +28,8 @@
   "unstar": "Odebrat z oblíbených",
   "deleteAll": "Smazat vše",
   "star": "Přidat do oblíbených",
+  "openInNewWindow": "Otevřít v novém okně",
+  "openInNewWindowFailed": "Tento chat se nepodařilo otevřít v novém okně",
   "rename": "Přejmenovat",
   "delete": "Smazat",
   "copied": "Zkopírováno!",

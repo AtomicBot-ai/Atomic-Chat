@@ -28,6 +28,8 @@
   "unstar": "Usuń Gwiazdkę",
   "deleteAll": "Usuń Wszystko",
   "star": "Dodaj Gwiazdkę",
+  "openInNewWindow": "Otwórz w nowym oknie",
+  "openInNewWindowFailed": "Nie udało się otworzyć tego czatu w nowym oknie",
   "rename": "Zmień Nazwę",
   "delete": "Usuń",
   "copied": "Skopiowano!",

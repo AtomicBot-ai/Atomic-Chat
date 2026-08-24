@@ -28,6 +28,8 @@
   "unstar": "Remover Favorito",
   "deleteAll": "Apagar Tudo",
   "star": "Favoritar",
+  "openInNewWindow": "Abrir em nova janela",
+  "openInNewWindowFailed": "Não foi possível abrir esta conversa em uma nova janela",
   "rename": "Renomear",
   "delete": "Apagar",
   "copied": "Copiado!",
