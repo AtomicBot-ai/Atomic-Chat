@@ -128,6 +128,16 @@ const STATIC_TOOL_GRAMMARS: &[ToolGrammar] = &[
         args: r#""{" ws "\"url\"" ws ":" ws non-empty-string ( ws "," ws "\"extractMode\"" ws ":" ws ( "\"markdown\"" | "\"text\"" ) )? ( ws "," ws "\"maxChars\"" ws ":" ws positive-integer )? ws "}""#,
     },
     ToolGrammar {
+        name: "os.media.transcribe",
+        rule: "media-transcribe",
+        args: r#""{" ws "\"path\"" ws ":" ws non-empty-string ( ws "," ws "\"language\"" ws ":" ws non-empty-string )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.media.youtube",
+        rule: "media-youtube",
+        args: r#""{" ws "\"url\"" ws ":" ws non-empty-string ( ws "," ws "\"mode\"" ws ":" ws ( "\"transcript\"" | "\"frames\"" ) )? ( ws "," ws "\"maxFrames\"" ws ":" ws positive-integer )? ws "}""#,
+    },
+    ToolGrammar {
         name: "vision.describe",
         rule: "vision-describe",
         args: r#""{" ws "\"paths\"" ws ":" ws non-empty-string-array ws "," ws "\"prompt\"" ws ":" ws non-empty-string ws "}""#,
@@ -252,6 +262,8 @@ pub const GRAMMAR_TOOL_NAMES: &[&str] = &[
     "os.http.request",
     "os.web.search",
     "os.web.fetch",
+    "os.media.transcribe",
+    "os.media.youtube",
     "vision.describe",
     "os.git.status",
     "os.git.log",

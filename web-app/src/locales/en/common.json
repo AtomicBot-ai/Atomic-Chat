@@ -11,6 +11,7 @@
   "https_proxy": "HTTPS Proxy",
   "extensions": "Extensions",
   "attachments": "Attachments",
+  "voice": "Voice",
   "general": "General",
   "settings": "Settings",
   "modelProviders": "Model Providers",
@@ -172,6 +173,70 @@
     "high": "High",
     "xhigh": "Extra High",
     "max": "Max"
+  },
+  "voiceInput": {
+    "start": "Start voice input",
+    "stop": "Stop and insert",
+    "cancel": "Discard recording",
+    "listening": "Listening…",
+    "preparing": "Preparing voice input…",
+    "starting": "Starting the voice model…",
+    "transcribing": "Transcribing…",
+    "placeholder": "Listening — start speaking",
+    "level": "Microphone level",
+    "elapsed": "Recording time",
+    "unavailableWhileStreaming": "Voice input is unavailable while a reply is streaming",
+    "keptOnCancel": "Recording stopped. The text already inserted was kept.",
+    "deviceFallback": "That microphone wasn't available, so the system default is being used.",
+    "errors": {
+      "permission": "Atomic Chat can't use the microphone",
+      "noDevice": "No microphone was found",
+      "deviceBusy": "The microphone is in use by another app",
+      "deviceDisconnected": "The microphone was disconnected",
+      "modelMissing": "The voice model isn't installed yet",
+      "engineFailed": "The voice model couldn't be started",
+      "transcriptionFailed": "That phrase couldn't be transcribed",
+      "transcriptionUnsupported": "This llama.cpp build can't run the voice model",
+      "transcriptionTimeout": "The voice model took too long to answer",
+      "internal": "Voice input ran into a problem"
+    },
+    "setup": {
+      "title": "Set up voice input",
+      "subtitle": "Talk instead of typing.",
+      "step": "Step {{current}} of {{total}}",
+      "back": "Back",
+      "next": "Next",
+      "done": "Done",
+      "intro": {
+        "title": "Talk instead of typing",
+        "description": "Dictate into the message box and Atomic Chat writes it out as you speak.",
+        "bulletLive": "Live transcription — each phrase appears as soon as you finish it.",
+        "bulletLocal": "Fully on-device — your audio never leaves this computer.",
+        "bulletAnywhere": "Works in chat and in agent mode, in the same message box."
+      },
+      "permission": {
+        "title": "Allow microphone access",
+        "description": "Atomic Chat needs the microphone to hear you. Nothing is recorded until you press the microphone button.",
+        "allow": "Allow microphone",
+        "requesting": "Waiting for your answer…",
+        "allowed": "Allowed",
+        "denied": "Microphone access was denied",
+        "deniedHelp": "Turn the microphone back on for Atomic Chat in your system privacy settings, then check again.",
+        "openSystemSettings": "Open System Settings",
+        "checkAgain": "Check again",
+        "restartNote": "On macOS you may need to restart Atomic Chat after changing this.",
+        "unsupported": "This system handles microphone access outside the app."
+      },
+      "model": {
+        "title": "Install the voice model",
+        "description": "Voxtral Mini runs the transcription locally on the llama.cpp engine. It is downloaded once.",
+        "meta": "{{size}} · llama.cpp · one-time download",
+        "installed": "Installed",
+        "progress": "{{percent}}% · {{current}} / {{total}} GB",
+        "failed": "The voice model download failed",
+        "diskNote": "Make sure you have about {{gb}} GB of free disk space."
+      }
+    }
   },
   "proactive": "Proactive",
   "selectAModel": "Select a model",

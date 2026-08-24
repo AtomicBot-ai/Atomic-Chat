@@ -479,9 +479,17 @@ pub async fn run_turn(
                 notice = Some(message);
             }
         }
+        let observed = super::spill::spill_outcomes(
+            input.working_dir,
+            input.session_id,
+            input.session.turn_count,
+            step_index,
+            &parsed.calls[..parallel_len],
+            &outcomes[..parallel_len],
+        );
         input
             .session
-            .push_tool_observations(&parsed.calls[..parallel_len], &outcomes[..parallel_len]);
+            .push_tool_observations(&parsed.calls[..parallel_len], &observed);
         if let Some((reason, text)) = terminal {
             emit(AgentEvent::AssistantDelta { text: text.clone() })?;
             emit(AgentEvent::AssistantReply { text: text.clone() })?;

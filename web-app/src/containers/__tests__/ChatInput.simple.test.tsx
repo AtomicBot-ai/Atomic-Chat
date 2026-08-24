@@ -90,6 +90,14 @@ vi.mock('@/containers/DropdownToolsAvailable', () => ({
   default: () => null,
 }))
 
+vi.mock('@/containers/VoiceInputToggle', () => ({
+  default: () => null,
+}))
+
+vi.mock('@/containers/chatInput/VoiceRecordingBar', () => ({
+  default: () => null,
+}))
+
 vi.mock('@/containers/ReasoningToggle', () => ({
   default: () => null,
 }))

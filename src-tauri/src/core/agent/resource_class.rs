@@ -38,6 +38,8 @@ pub fn resource_class_for(tool_name: &str) -> ResourceClass {
         | "os.proc.list"
         | "os.web.search"
         | "os.web.fetch"
+        | "os.media.transcribe"
+        | "os.media.youtube"
         | "os.clipboard.read" => ResourceClass::PureRead,
         "vision.describe" => ResourceClass::Vision,
         "os.clipboard.write" | "os.notify" => ResourceClass::MemoryWrite,

@@ -181,6 +181,7 @@ mod tests {
             ("pandoc", vec![Darwin, Linux, Win32]),
             ("pdf", vec![Darwin, Linux, Win32]),
             ("skill-creator", vec![Darwin, Linux, Win32]),
+            ("wikipedia", vec![Darwin, Linux, Win32]),
             ("wttr-weather", vec![Darwin, Linux, Win32]),
             ("xlsx", vec![Darwin, Linux]),
         ]);

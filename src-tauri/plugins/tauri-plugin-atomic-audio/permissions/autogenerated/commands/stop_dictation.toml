@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-stop-dictation"
+description = "Enables the stop_dictation command without any pre-configured scope."
+commands.allow = ["stop_dictation"]
+
+[[permission]]
+identifier = "deny-stop-dictation"
+description = "Denies the stop_dictation command without any pre-configured scope."
+commands.deny = ["stop_dictation"]

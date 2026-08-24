@@ -295,7 +295,7 @@ async fn read_observation_is_visible_to_the_next_completion() {
 }
 
 #[tokio::test]
-async fn verbose_observation_is_compact_for_the_model_but_detailed_in_the_event() {
+async fn verbose_read_reaches_the_model_uncompressed() {
     let workspace = TestWorkspace::new();
     let detailed = (0..30)
         .map(|index| format!("EVENT_DETAIL_LINE_{index:02}"))
@@ -329,9 +329,52 @@ async fn verbose_observation_is_compact_for_the_model_but_detailed_in_the_event(
         .expect("read execution event");
     assert_eq!(event_summary, detailed);
     let next_prompt = run.requests[1]["prompt"].as_str().expect("next prompt");
-    assert!(next_prompt.contains("… [omitted 18 lines]"));
+    assert!(next_prompt.contains("EVENT_DETAIL_LINE_00"));
     assert!(next_prompt.contains("EVENT_DETAIL_LINE_29"));
-    assert!(!next_prompt.contains("EVENT_DETAIL_LINE_00"));
+    assert!(!next_prompt.contains("omitted"));
+}
+
+#[tokio::test]
+async fn oversized_observation_is_spilled_with_a_locator_and_full_text_on_disk() {
+    let workspace = TestWorkspace::new();
+    let body = (0..150)
+        .map(|index| format!("SPILL_MATCH_LINE_{index:03} with trailing detail padding"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    workspace.write("large.txt", &body);
+    let run = run_script(
+        &workspace,
+        vec![
+            ScriptedResponse::completion(
+                r#"[{"tool":"os.fs.grep","args":{"pattern":"SPILL_MATCH_LINE_","path":"."}}]"#,
+            ),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"observed"}}]"#),
+        ],
+        &RecordingApproval::deny(),
+        &CancellationToken::new(),
+        3,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    let next_prompt = run.requests[1]["prompt"].as_str().expect("next prompt");
+    assert!(next_prompt.contains("Full output saved to `"));
+    assert!(next_prompt.contains("… [omitted"));
+    assert!(next_prompt.contains("SPILL_MATCH_LINE_000"));
+    let spill_dir = workspace.path().join(".agent/observations");
+    let spilled = std::fs::read_dir(&spill_dir)
+        .expect("spill dir exists")
+        .filter_map(Result::ok)
+        .find(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .contains("os-fs-grep")
+        })
+        .expect("spilled grep observation");
+    let full = std::fs::read_to_string(spilled.path()).expect("read spill file");
+    assert!(full.contains("SPILL_MATCH_LINE_000"));
+    assert!(full.contains("SPILL_MATCH_LINE_149"));
 }
 
 #[tokio::test]

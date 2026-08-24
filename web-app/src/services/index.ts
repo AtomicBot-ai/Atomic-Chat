@@ -29,6 +29,8 @@ import { DefaultDeepLinkService } from './deeplink/default'
 import { DefaultProjectsService } from './projects/default'
 import { DefaultRAGService } from './rag/default'
 import type { RAGService } from './rag/types'
+import { DefaultVoiceService } from './voice/default'
+import type { VoiceService } from './voice/types'
 import { DefaultUploadsService } from './uploads/default'
 import type { UploadsService } from './uploads/types'
 
@@ -76,6 +78,7 @@ export interface ServiceHub {
   projects(): ProjectsService
   rag(): RAGService
   uploads(): UploadsService
+  voice(): VoiceService
 }
 
 class PlatformServiceHub implements ServiceHub {
@@ -100,6 +103,7 @@ class PlatformServiceHub implements ServiceHub {
   private projectsService: ProjectsService = new DefaultProjectsService()
   private ragService: RAGService = new DefaultRAGService()
   private uploadsService: UploadsService = new DefaultUploadsService()
+  private voiceService: VoiceService = new DefaultVoiceService()
   private initialized = false
 
   /**
@@ -132,6 +136,7 @@ class PlatformServiceHub implements ServiceHub {
           pathModule,
           coreModule,
           deepLinkModule,
+          voiceModule,
         ] = await Promise.all([
           import('./theme/tauri'),
           import('./window/tauri'),
@@ -146,6 +151,7 @@ class PlatformServiceHub implements ServiceHub {
           import('./path/tauri'),
           import('./core/tauri'),
           import('./deeplink/tauri'),
+          import('./voice/tauri'),
         ])
 
         this.themeService = new themeModule.TauriThemeService()
@@ -161,6 +167,7 @@ class PlatformServiceHub implements ServiceHub {
         this.pathService = new pathModule.TauriPathService()
         this.coreService = new coreModule.TauriCoreService()
         this.deepLinkService = new deepLinkModule.TauriDeepLinkService()
+        this.voiceService = new voiceModule.TauriVoiceService()
       } else if (isPlatformIOS() || isPlatformAndroid()) {
         const [
           themeModule,
@@ -322,6 +329,11 @@ class PlatformServiceHub implements ServiceHub {
   uploads(): UploadsService {
     this.ensureInitialized()
     return this.uploadsService
+  }
+
+  voice(): VoiceService {
+    this.ensureInitialized()
+    return this.voiceService
   }
 }
 

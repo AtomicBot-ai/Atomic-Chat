@@ -112,6 +112,7 @@ tauri-plugin-mlx = { path = "./plugins/tauri-plugin-mlx", optional = true }
 tauri-plugin-foundation-models = { path = "./plugins/tauri-plugin-foundation-models", optional = true }
 tauri-plugin-vector-db = { path = "./plugins/tauri-plugin-vector-db" }
 tauri-plugin-rag = { path = "./plugins/tauri-plugin-rag" }
+tauri-plugin-atomic-audio = { path = "./plugins/tauri-plugin-atomic-audio" }
 tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
 tauri-plugin-log = "2.0.0-rc"
 tauri-plugin-notification = "2"

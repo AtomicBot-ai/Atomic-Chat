@@ -858,6 +858,8 @@ jobs:
             libsoup-3.0-dev \
             libwebkit2gtk-4.1-dev \
             libjavascriptcoregtk-4.1-dev \
+            libasound2-dev \
+            pkg-config \
             patchelf \
             squashfs-tools \
             unzip

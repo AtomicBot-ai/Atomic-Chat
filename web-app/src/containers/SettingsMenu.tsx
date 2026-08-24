@@ -9,6 +9,8 @@ import {
 } from '@tabler/icons-react'
 import { useMatches, useNavigate } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getProviderTitle } from '@/lib/utils'
@@ -108,6 +110,12 @@ const SettingsMenu = () => {
       route: route.settings.attachments,
       hasSubMenu: false,
       isEnabled: true,
+    },
+    {
+      title: 'common:voice',
+      route: route.settings.voice,
+      hasSubMenu: false,
+      isEnabled: PlatformFeatures[PlatformFeature.VOICE_INPUT],
     },
     {
       title: 'common:interface',

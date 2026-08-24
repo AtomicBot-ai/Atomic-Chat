@@ -32,6 +32,7 @@
     "deep-link:default",
     "llamacpp:default",
     "llamacpp-upstream:default",
+    "atomic-audio:default",
     "mlx:default",
     "foundation-models:default",
     "updater:default",

@@ -91,6 +91,13 @@ pub fn run() {
         app_builder = app_builder.plugin(tauri_plugin_hardware::init());
     }
 
+    // Voice input. Desktop only: it captures from a real microphone and drives
+    // a local llama.cpp server, neither of which exists on the mobile targets.
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        app_builder = app_builder.plugin(tauri_plugin_atomic_audio::init());
+    }
+
     // Desktop: include updater commands
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let app_builder = app_builder.invoke_handler(tauri::generate_handler![

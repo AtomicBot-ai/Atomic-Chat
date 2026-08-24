@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::scoring::normalize_answer;
+use super::scoring::score_answer_detailed;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GaiaToolTrace {
@@ -24,6 +24,19 @@ pub enum GaiaTaskStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GaiaSampleResult {
+    pub sample_index: usize,
+    pub prediction: Option<String>,
+    pub normalized_prediction: Option<String>,
+    pub correct: bool,
+    pub status: GaiaTaskStatus,
+    pub terminal_reason: Option<String>,
+    pub step_count: u32,
+    pub duration_ms: u128,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GaiaTaskResult {
     pub task_id: String,
     pub level: u8,
@@ -31,6 +44,25 @@ pub struct GaiaTaskResult {
     pub prediction: Option<String>,
     pub normalized_prediction: Option<String>,
     pub gold_answer: String,
+    /// Which official-scorer branch fired: "number" | "list" | "string".
+    /// Separates formatting failures from reasoning failures per task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub score_branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub normalized_gold: Option<String>,
+    /// The agent's own terminal reply before the reformulator pass, plus a
+    /// diagnostic score for it — separates "reformulator saved it" from
+    /// "reformulator broke it" on full runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_prediction: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_prediction_correct: Option<bool>,
+    /// Per-sample outcomes when best-of-N voting ran (`--samples`); the
+    /// spread across samples doubles as a variance report.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub samples: Vec<GaiaSampleResult>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vote_size: Option<usize>,
     pub correct: bool,
     pub status: GaiaTaskStatus,
     pub terminal_reason: Option<String>,
@@ -47,17 +79,23 @@ impl GaiaTaskResult {
         question: String,
         prediction: String,
         gold_answer: String,
-        correct: bool,
     ) -> Self {
+        let detail = score_answer_detailed(&prediction, &gold_answer);
         Self {
             task_id,
             level,
             question,
-            normalized_prediction: Some(normalize_answer(&prediction)),
+            normalized_prediction: Some(detail.normalized_prediction),
             prediction: Some(prediction),
             gold_answer,
-            correct,
-            status: if correct {
+            score_branch: Some(detail.branch.as_str().to_string()),
+            normalized_gold: Some(detail.normalized_gold),
+            raw_prediction: None,
+            raw_prediction_correct: None,
+            samples: Vec::new(),
+            vote_size: None,
+            correct: detail.correct,
+            status: if detail.correct {
                 GaiaTaskStatus::Correct
             } else {
                 GaiaTaskStatus::Incorrect
@@ -156,9 +194,9 @@ mod tests {
     #[test]
     fn aggregates_statuses_and_levels() {
         let correct =
-            GaiaTaskResult::prediction("a".into(), 1, "Q".into(), "A".into(), "A".into(), true);
+            GaiaTaskResult::prediction("a".into(), 1, "Q".into(), "A".into(), "A".into());
         let incorrect =
-            GaiaTaskResult::prediction("b".into(), 2, "Q".into(), "B".into(), "A".into(), false);
+            GaiaTaskResult::prediction("b".into(), 2, "Q".into(), "B".into(), "A".into());
         let mut error = incorrect.clone();
         error.task_id = "c".into();
         error.level = 3;

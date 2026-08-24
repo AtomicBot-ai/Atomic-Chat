@@ -96,6 +96,7 @@ describe('SettingsMenu', () => {
 
     expect(screen.getByText('common:general')).toBeInTheDocument()
     expect(screen.getByText('common:attachments')).toBeInTheDocument()
+    expect(screen.getByText('common:voice')).toBeInTheDocument()
     expect(screen.getByText('common:interface')).toBeInTheDocument()
     expect(screen.getByText('common:assistants')).toBeInTheDocument()
     expect(screen.queryByText('common:privacy')).not.toBeInTheDocument()

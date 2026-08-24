@@ -61,4 +61,8 @@ export enum PlatformFeature {
 
   // File attachments/RAG UI and tooling (desktop-only for now)
   FILE_ATTACHMENTS = 'fileAttachments',
+
+  // Voice input / dictation. Needs native microphone capture and the local
+  // llama.cpp engine, so desktop only.
+  VOICE_INPUT = 'voiceInput',
 }

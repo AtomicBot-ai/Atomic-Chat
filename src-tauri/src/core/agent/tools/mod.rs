@@ -5,6 +5,7 @@ mod clipboard;
 mod fs;
 mod git;
 mod http;
+mod media;
 mod notify;
 mod proc;
 mod shell;
@@ -109,6 +110,9 @@ pub async fn execute(call: &ToolCallPayload, context: &ToolContext<'_>) -> ToolO
         "os.proc.list" | "os.proc.kill" => proc::execute(&call.tool, &call.args, context).await,
         "os.http.request" => http::execute(&call.args, context).await,
         "os.web.search" | "os.web.fetch" => web::execute(&call.tool, &call.args, context).await,
+        "os.media.transcribe" | "os.media.youtube" => {
+            media::execute(&call.tool, &call.args, context).await
+        }
         "os.clipboard.read" => clipboard::read(context).await,
         "os.clipboard.write" => clipboard::write(&call.args, context).await,
         "os.notify" => notify::execute(&call.args, context).await,

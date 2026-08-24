@@ -25,6 +25,7 @@ const EXPECTED_DESKTOP_ONLY = new Set([
 ])
 const EXPECTED_MOBILE_ONLY = new Set(['abort_remote_stream'])
 const EXPECTED_PLUGIN_IDS = [
+  'atomic-audio',
   'foundation-models',
   'hardware',
   'llamacpp',

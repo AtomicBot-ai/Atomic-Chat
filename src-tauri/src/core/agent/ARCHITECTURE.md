@@ -336,8 +336,6 @@ Rare tools remain compact one-line entries in the stable prefix.
   `ContextOverflow` surfaces as a `StepError { category: "context" }`. Halving
   the conversation cap and retrying is a possible future refinement.
 - `os.fs.watch`
-- `vision.describe`
-- Skills and `skill.run_script`
 - Dynamic MCP tool registration
 - Browser tools
 - Window list/focus
@@ -347,6 +345,11 @@ Rare tools remain compact one-line entries in the stable prefix.
 These features require separate architecture decisions because they introduce
 long-lived resources, additional inference paths, executable content, or a
 dynamic tool grammar.
+
+(`vision.describe`, skills, and `skill.run_script` have since shipped. The
+observation-compression policy this document once described is superseded by
+the spill policy — see
+`docs/decisions/2026-08-24-spill-oversized-observations-instead-of-compressing-them.md`.)
 
 ## Change checklist
 

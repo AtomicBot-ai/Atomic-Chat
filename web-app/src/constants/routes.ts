@@ -10,6 +10,7 @@ export const route = {
     providers: '/settings/providers/$providerName',
     general: '/settings/general',
     attachments: '/settings/attachments',
+    voice: '/settings/voice',
     interface: '/settings/interface',
     privacy: '/settings/privacy',
     shortcuts: '/settings/shortcuts',

@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-219 records, 2026-05-19 → 2026-08-21.
+223 records, 2026-05-19 → 2026-08-24.
 
 ---
 
@@ -244,8 +244,12 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (24)
+## UI / UX (25)
 
+- **2026-08-24** — [GAIA L1: media tools, PDF-from-URL, and web recovery fallbacks](2026-08-24-gaia-l1-media-tools-and-web-recovery.md)
+- **2026-08-24** — [GAIA L1: answer contract, reformulator, and harness sampling](2026-08-24-gaia-l1-answer-contract-and-harness.md)
+- **2026-08-24** — [Spill oversized observations to the workspace instead of compressing them](2026-08-24-spill-oversized-observations-instead-of-compressing-them.md)
+- **2026-08-24** — [Dictate into the composer with a local Voxtral model on `llamacpp-upstream`](2026-08-24-dictate-into-the-composer-with-a-local-voxtral-model.md)
 - **2026-08-21** — [Never list TurboQuant next to upstream llama.cpp](2026-08-21-never-list-turboquant-next-to-upstream-llama-cpp.md)
 - **2026-08-21** — [Keep attachments when a message is edited in a chat thread](2026-08-21-keep-attachments-when-a-message-is-edited-in-a-chat-thread.md)
 - **2026-08-21** — [Edit messages inline in the transcript instead of in a modal dialog](2026-08-21-edit-messages-inline-in-the-transcript-instead-of-a-modal.md)

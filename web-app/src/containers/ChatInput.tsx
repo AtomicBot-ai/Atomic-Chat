@@ -118,6 +118,15 @@ import { useAgentMode } from '@/hooks/useAgentMode'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import ReasoningToggle from '@/containers/ReasoningToggle'
 import WebSearchToggle from '@/containers/WebSearchToggle'
+import VoiceInputToggle from '@/containers/VoiceInputToggle'
+import VoiceRecordingBar from '@/containers/chatInput/VoiceRecordingBar'
+import { useVoiceInput } from '@/hooks/useVoiceInput'
+import {
+  captureAnchor as captureDictationAnchor,
+  mergeDictation,
+  revertDictation,
+} from '@/lib/voice/promptMerge'
+import { VOICE_ACTIVE_PHASES } from '@/constants/voice'
 import { ttftPreBegin } from '@/lib/ttft-timing'
 import { ModelFactory } from '@/lib/model-factory'
 import { canSelectChatAgentMode } from '@/containers/ChatAgentModeSwitch'
@@ -177,6 +186,14 @@ const ChatInput = memo(function ChatInput({
   const cancelToolCall = useAppState((state) => state.cancelToolCall)
   const prompt = usePrompt((state) => state.prompt)
   const setPrompt = usePrompt((state) => state.setPrompt)
+  // Narrow selectors on purpose. Subscribing to the whole voice store
+  // would pull in `level`, which updates ~20 times a second.
+  const voicePhase = useVoiceInput((state) => state.phase)
+  const voiceOwner = useVoiceInput((state) => state.ownerKey)
+  const voiceCommitted = useVoiceInput((state) => state.committed)
+  const voiceAnchor = useVoiceInput((state) => state.anchor)
+  const voiceOutcome = useVoiceInput((state) => state.lastOutcome)
+  const lastDictatedValueRef = useRef('')
   const currentThreadId = useThreads((state) => state.currentThreadId)
   const updateCurrentThreadModel = useThreads(
     (state) => state.updateCurrentThreadModel
@@ -213,6 +230,10 @@ const ChatInput = memo(function ChatInput({
   )
   const effectiveAgentMode =
     isAgentMode && !projectId && isAgentProviderSelected
+  // This composer owns the microphone only if it started the session —
+  // home and an open thread can both be mounted at once.
+  const isVoiceActive =
+    voiceOwner === agentModeKey && VOICE_ACTIVE_PHASES.has(voicePhase)
   const { skills: agentSkills, loading: agentSkillsLoading } =
     useAgentSkills(effectiveAgentMode)
   const [selectedAgentSkill, setSelectedAgentSkill] =
@@ -621,7 +642,80 @@ const ChatInput = memo(function ChatInput({
     })
   }
 
+  // Read the caret at the moment the microphone is pressed; dictated text is
+  // spliced there and whatever is to the right is preserved.
+  const captureVoiceAnchor = useCallback(
+    () =>
+      captureDictationAnchor(
+        usePrompt.getState().prompt,
+        textareaRef.current?.selectionStart ?? null
+      ),
+    []
+  )
+
+  // Recompute the whole value from the anchor on every new phrase rather than
+  // appending, so a dropped render can never duplicate a phrase.
+  useEffect(() => {
+    if (!isVoiceActive || !voiceAnchor) return
+    const { value, caret, insertedLength } = mergeDictation(
+      voiceAnchor,
+      voiceCommitted
+    )
+    lastDictatedValueRef.current = value
+    setPrompt(value)
+    useVoiceInput.getState().noteInserted(insertedLength)
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus()
+      textareaRef.current?.setSelectionRange(caret, caret)
+    })
+  }, [isVoiceActive, voiceAnchor, voiceCommitted, setPrompt])
+
+  // Cancelling removes exactly what this session inserted — unless the user
+  // edited the field meanwhile, in which case the text is theirs and stays.
+  useEffect(() => {
+    if (voiceOutcome !== 'cancelled') return
+    const state = useVoiceInput.getState()
+    if (state.ownerKey !== null && state.ownerKey !== agentModeKey) return
+    if (!voiceAnchor) return
+
+    if (state.canRevert) {
+      const reverted = revertDictation(
+        usePrompt.getState().prompt,
+        voiceAnchor,
+        state.insertedLength
+      )
+      if (reverted) {
+        setPrompt(reverted.value)
+        requestAnimationFrame(() => {
+          textareaRef.current?.setSelectionRange(
+            reverted.caret,
+            reverted.caret
+          )
+        })
+      }
+    } else if (state.insertedLength > 0) {
+      toast.info(t('common:voiceInput.keptOnCancel'))
+    }
+    state.reset()
+  }, [voiceOutcome, voiceAnchor, agentModeKey, setPrompt, t])
+
+  // Stop dictation when this composer goes away, otherwise the microphone
+  // stays open with nowhere to put the text.
+  useEffect(() => {
+    return () => {
+      const state = useVoiceInput.getState()
+      if (state.ownerKey === agentModeKey && state.sessionId) {
+        void state.cancel()
+      }
+    }
+  }, [agentModeKey])
+
   const handleSendMessage = async (prompt: string) => {
+    // Flush the tail phrase first, or pressing Enter mid-sentence drops the
+    // last few words the user just spoke.
+    if (isVoiceActive) {
+      await useVoiceInput.getState().stop()
+    }
     if (!selectedModel) {
       // Model preloading is off by default, so "nothing selected yet" is the
       // normal state on every launch and this hint is now routine rather than
@@ -2461,6 +2555,23 @@ const ChatInput = memo(function ChatInput({
                   data-testid={'chat-input'}
                   onChange={(e) => {
                     setPrompt(e.target.value)
+                    // The user typed while dictating. Re-baseline so the next
+                    // phrase lands after their edit instead of overwriting it,
+                    // and give up the ability to cleanly undo the session.
+                    if (
+                      isVoiceActive &&
+                      e.target.value !== lastDictatedValueRef.current
+                    ) {
+                      lastDictatedValueRef.current = e.target.value
+                      useVoiceInput
+                        .getState()
+                        .rebase(
+                          captureDictationAnchor(
+                            e.target.value,
+                            e.target.selectionStart
+                          )
+                        )
+                    }
                     updateAgentSkillSlashQuery(
                       e.target.value,
                       e.target.selectionStart
@@ -2509,6 +2620,11 @@ const ChatInput = memo(function ChatInput({
                         return
                       }
                     }
+                    if (isVoiceActive && e.key === 'Escape') {
+                      e.preventDefault()
+                      void useVoiceInput.getState().cancel()
+                      return
+                    }
                     if (agentSkillMenuOpen && e.key === 'Escape') {
                       e.preventDefault()
                       setAgentSkillMenuOpen(false)
@@ -2539,11 +2655,13 @@ const ChatInput = memo(function ChatInput({
                   }
                   onPaste={handlePaste}
                   placeholder={
-                    selectedAgentSkill
-                      ? ''
-                      : effectiveAgentMode
-                        ? t('chat:agentMode.placeholder')
-                        : t('common:placeholder.chatInput')
+                    isVoiceActive && !prompt
+                      ? t('common:voiceInput.placeholder')
+                      : selectedAgentSkill
+                        ? ''
+                        : effectiveAgentMode
+                          ? t('chat:agentMode.placeholder')
+                          : t('common:placeholder.chatInput')
                   }
                   autoFocus
                   spellCheck={spellCheckChatInput}
@@ -2562,6 +2680,10 @@ const ChatInput = memo(function ChatInput({
                   )}
                 />
               </div>
+              {/* Inside the composer body rather than the toolbar: the toolbar's
+                  left cluster is pointer-events-none while a reply streams, and
+                  a recording you cannot stop is worse than no recording. */}
+              <VoiceRecordingBar threadKey={agentModeKey} />
             </div>
           </div>
 
@@ -2817,6 +2939,17 @@ const ChatInput = memo(function ChatInput({
                     )}
 
                   <ReasoningToggle />
+
+                  {/* Voice sits with the other input-mode toggles rather than
+                      beside Send: it changes how you type, it does not commit.
+                      It also inherits this cluster's streaming guard, which is
+                      what we want — the voice model shares the llama.cpp engine
+                      with the reply being generated. */}
+                  <VoiceInputToggle
+                    threadKey={agentModeKey}
+                    captureAnchor={captureVoiceAnchor}
+                    disabled={isStreaming}
+                  />
                 </div>
               </div>
 

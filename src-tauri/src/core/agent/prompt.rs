@@ -129,6 +129,7 @@ const DEFAULT_SYSTEM_PERSONA_LINES: &[&str] = &[
     "- When the task is complete, call `reply` with the final answer. Only call `finish` if the user explicitly asked to end the session.",
     "- Keep `reply` short and to the point. If the user asked for an exact value or marker, `reply.text` must be ONLY that bare value — no preamble, no restating the question, no extra commentary or markdown before or after.",
     "- Respect the loop guard. If you are told a call was denied as a loop, change your approach — do not repeat the same call.",
+    "- When a tool result says \"Full output saved to <path>\", the complete output is on disk: page through it with `os.fs.read { path, offset, limit }` or search it with `os.fs.grep { pattern, path }` before concluding the information is absent.",
     "- Rare tools are listed without argument schemas. Call `tool.view { name }` before using a rare tool whose exact arguments are not already loaded.",
     "- Skills are listed as summaries. Call `skill.view { name }` before applying a skill whose full instructions are not already under `### loaded-skills`.",
     "- `skill.run_script.script` is only an exact bundled filename listed as `scripts=` for that skill; put its arguments in `args`. Never put a shell command or external CLI invocation in `script`. Skills without `scripts=` must use their declared tools, typically `os.shell.run { cmd, args }` for external CLIs.",
@@ -359,6 +360,20 @@ pub const ITERATION_ONE_TOOLS: &[ToolDescriptor] = &[
             r#"{"url":"https://example.com/article"}"#,
             r#"{"url":"https://docs.example.com/guide","extractMode":"text","maxChars":20000}"#,
         ],
+    },
+    ToolDescriptor {
+        name: "os.media.transcribe",
+        summary: "Transcribe a local audio file (mp3, wav, m4a, ...) to text with a local whisper CLI. Fails with an install hint when no whisper CLI is on PATH. Read-only.",
+        args_schema: r#"{ path: string, language?: string }"#,
+        tier: ToolTier::Frequent,
+        examples: &[r#"{"path":"/path/to/recording.mp3"}"#],
+    },
+    ToolDescriptor {
+        name: "os.media.youtube",
+        summary: "Read a YouTube video: mode \"transcript\" (default) returns its English subtitles via yt-dlp; mode \"frames\" samples up to 16 frames as images to inspect with vision.describe. Fails with an install hint when yt-dlp/ffmpeg are missing. Read-only.",
+        args_schema: r#"{ url: string, mode?: "transcript" | "frames", maxFrames?: number }"#,
+        tier: ToolTier::Frequent,
+        examples: &[r#"{"url":"https://www.youtube.com/watch?v=abc123"}"#],
     },
     ToolDescriptor {
         name: "vision.describe",
