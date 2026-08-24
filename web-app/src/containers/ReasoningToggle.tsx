@@ -61,9 +61,18 @@ const ReasoningToggle = memo(function ReasoningToggle({
       : resolveReasoningLevel(reasoningBudget, levels)
   const levelLabel = level ? t(`common:reasoningEffort.${level}`) : undefined
   const isMax = level === 'max'
+  // With the picker visible the bulb and the effort button share one pill so
+  // they read as a single control; alone, the bulb keeps its own background.
+  const hasPicker = enabled && Boolean(level)
 
   return (
-    <>
+    <div
+      className={cn(
+        'inline-flex items-center rounded-full',
+        hasPicker && 'bg-blue-500/10',
+        className
+      )}
+    >
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -71,9 +80,9 @@ const ReasoningToggle = memo(function ReasoningToggle({
               variant="ghost"
               size="icon-xs"
               className={cn(
-                enabled &&
-                  'bg-blue-500/10 text-blue-500 hover:bg-blue-500/15 hover:text-blue-500',
-                className
+                enabled && 'text-blue-500 hover:text-blue-500',
+                enabled && !hasPicker && 'bg-blue-500/10 hover:bg-blue-500/15',
+                hasPicker && 'hover:bg-blue-500/10'
               )}
               aria-label={label}
               aria-pressed={enabled}
@@ -100,7 +109,7 @@ const ReasoningToggle = memo(function ReasoningToggle({
               type="button"
               variant="ghost"
               size="sm"
-              className="h-7 gap-1 px-2 bg-blue-500/10 text-blue-500 hover:bg-blue-500/15 hover:text-blue-500"
+              className="h-6 gap-1 pl-1.5 pr-2 text-blue-500 hover:bg-blue-500/10 hover:text-blue-500"
               aria-label={t('common:reasoningEffort.ariaLabel', {
                 level: levelLabel,
               })}
@@ -170,7 +179,7 @@ const ReasoningToggle = memo(function ReasoningToggle({
           </PopoverContent>
         </Popover>
       )}
-    </>
+    </div>
   )
 })
 

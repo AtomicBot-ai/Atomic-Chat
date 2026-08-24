@@ -157,6 +157,9 @@
   "tools": "Tools",
   "webSearch": "Web Search",
   "reasoning": "Reasoning",
+  "webSearchToggleEnabled": "Web search enabled",
+  "webSearchToggleDisabled": "Web search disabled",
+  "webSearchToggleFailed": "Couldn't start web search ({{server}})",
   "reasoningToggleEnabled": "Reasoning enabled",
   "reasoningToggleDisabled": "Reasoning disabled",
   "reasoningEffort": {

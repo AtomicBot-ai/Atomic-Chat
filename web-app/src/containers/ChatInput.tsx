@@ -40,7 +40,6 @@ import {
   IconX,
   IconPaperclip,
   IconLoader2,
-  IconWorld,
   IconMusic,
 } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -118,6 +117,7 @@ import { PromptVisionModel } from '@/containers/PromptVisionModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import ReasoningToggle from '@/containers/ReasoningToggle'
+import WebSearchToggle from '@/containers/WebSearchToggle'
 import { ttftPreBegin } from '@/lib/ttft-timing'
 import { ModelFactory } from '@/lib/model-factory'
 import { canSelectChatAgentMode } from '@/containers/ChatAgentModeSwitch'
@@ -2741,10 +2741,12 @@ const ChatInput = memo(function ChatInput({
                       </Tooltip>
                     )}
 
+                  {/* The tools button stays put even with every MCP server
+                      switched off — the dropdown says so itself, and an icon
+                      that vanishes when web search goes off reads as a bug. */}
                   {!effectiveAgentMode &&
                     selectedModel?.capabilities?.includes('tools') &&
-                    hasActiveMCPServers &&
-                    (MCPToolComponent ? (
+                    (MCPToolComponent && hasActiveMCPServers ? (
                       // Use custom MCP component
                       <McpExtensionToolLoader
                         tools={tools}
@@ -2806,24 +2808,15 @@ const ChatInput = memo(function ChatInput({
                       </Tooltip>
                     ))}
 
-                  <ReasoningToggle />
-
+                  {/* Web search lives on the globe: it switches the Exa (or
+                      equivalent) MCP server on and off straight from the
+                      composer. The agent has its own built-in web backend. */}
                   {!effectiveAgentMode &&
-                    selectedModel?.capabilities?.includes('web_search') && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button variant="ghost" size="icon-xs">
-                            <IconWorld
-                              size={18}
-                              className="text-muted-foreground"
-                            />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Web Search</p>
-                        </TooltipContent>
-                      </Tooltip>
+                    selectedModel?.capabilities?.includes('tools') && (
+                      <WebSearchToggle initialMessage={initialMessage} />
                     )}
+
+                  <ReasoningToggle />
                 </div>
               </div>
 
