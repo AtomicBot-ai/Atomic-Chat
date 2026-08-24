@@ -75,6 +75,12 @@ impl MlxError {
             || lower_stderr.contains("unknown model type")
             || lower_stderr.contains("no module named 'mlx_vlm.models")
             || lower_stderr.contains("no module named 'mlx_vlm.speculative.drafters")
+            // mlx-vlm delegates text-only weights to mlx-lm, so a new
+            // architecture can fail one layer down instead (issue #250:
+            // `mlx_lm.models.qwen3_5_text`). Without the ValueError wrapper
+            // that bare ModuleNotFoundError falls through to the opaque
+            // process error.
+            || lower_stderr.contains("no module named 'mlx_lm.models")
             || lower_stderr.contains("switch_mlp");
 
         if is_unsupported_arch {
@@ -134,6 +140,15 @@ greater than the maximum allowed buffer size of 17179869184 bytes.";
 'mlx_vlm.speculative.drafters.gemma4_unified'";
         let err = MlxError::from_stderr(stderr);
         // OOM is checked first; this is arch-not-supported, not OOM.
+        assert!(matches!(err.code, ErrorCode::ModelArchNotSupported));
+    }
+
+    /// Issue #250: mlx-vlm handed the text sub-config's `model_type` to mlx-lm,
+    /// which has no module of that name.
+    #[test]
+    fn classifies_missing_mlx_lm_model_module() {
+        let stderr = "ModuleNotFoundError: No module named 'mlx_lm.models.qwen3_5_text'";
+        let err = MlxError::from_stderr(stderr);
         assert!(matches!(err.code, ErrorCode::ModelArchNotSupported));
     }
 

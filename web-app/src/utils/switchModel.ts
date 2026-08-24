@@ -811,6 +811,11 @@ function isOutOfMemoryError(err: ErrorObject): boolean {
 // the user hasn't deactivated it (it ships disabled on fresh installs).
 function alternateLocalBackend(providerName?: string): string | undefined {
   if (providerName === 'llamacpp') return getProviderTitle('llamacpp-upstream')
+  // MLX is macOS-only and its arch support is welded to the bundled sidecar,
+  // so a brand-new architecture lands here well before the backend is bumped
+  // (issue #250). The GGUF build of the same model runs on llama.cpp today —
+  // say so, instead of leaving "update the app" as the only advice.
+  if (providerName === 'mlx') return getProviderTitle('llamacpp-upstream')
   if (providerName === 'llamacpp-upstream') {
     const fork = useModelProvider.getState().getProviderByName('llamacpp')
     return IS_MACOS && fork?.active !== false
@@ -900,11 +905,13 @@ function reportModelLoadError(
     return
   }
   if (err.code === 'MODEL_ARCH_NOT_SUPPORTED') {
-    toast.error(t('model-errors:archNotSupportedTitle'), {
-      id: 'model-load-error',
+    // The backend names the architecture it choked on, which is the one thing
+    // a bug report needs. Keep it one click away instead of dropping it.
+    showModelLoadErrorToast({
+      title: t('model-errors:archNotSupportedTitle'),
       description: unsupportedDescription(t, 'archNotSupported', providerName),
+      details: splitModelLoadError(err).details,
       duration: 10000,
-      closeButton: true,
     })
     return
   }
