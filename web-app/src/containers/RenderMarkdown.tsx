@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { cn, disableIndentedCodeBlockPlugin } from '@/lib/utils'
 import { ttftEnabled, ttftMark, ttftReport } from '@/lib/ttft-timing'
+import { resolveCodeBlockFileName } from '@/lib/codeBlockFilename'
 // import 'katex/dist/katex.min.css'
 import {
   defaultRehypePlugins,
@@ -271,9 +272,24 @@ function RenderMarkdownComponent({
       }
 
       // Delegate every other code block (incl. mermaid) to streamdown.
+      //
+      // The fence is rebuilt from the language alone, which drops the info
+      // string — and with it the filename the model gave the file. Recover it
+      // from the hast node before delegating and publish it on a wrapper, so
+      // the download handler can save `styles.css` instead of `file.css`
+      // (issue #255).
+      const fileName = resolveCodeBlockFileName({
+        meta: (node?.data as { meta?: string } | undefined)?.meta,
+        code: codeText,
+        language,
+      })
       const fence = makeFence(codeText)
       const reconstructed = `${fence}${match?.[1] ?? ''}\n${codeText}\n${fence}`
-      return <Streamdown {...delegateProps}>{reconstructed}</Streamdown>
+      return (
+        <div data-code-filename={fileName ?? undefined}>
+          <Streamdown {...delegateProps}>{reconstructed}</Streamdown>
+        </div>
+      )
     }
 
     return { code: CodeRenderer, ...(components ?? {}) }

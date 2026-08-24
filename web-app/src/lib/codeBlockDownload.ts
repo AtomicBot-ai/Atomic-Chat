@@ -12,129 +12,29 @@ import { invoke } from '@tauri-apps/api/core'
 
 import { getServiceHub, isServiceHubInitialized } from '@/hooks/useServiceHub'
 import { useThreads } from '@/hooks/useThreads'
+import {
+  extensionForLanguage,
+  fileNameExtension,
+  looksLikeFileName,
+  matchesLanguage,
+  sanitizeFileName,
+  toDownloadFileName,
+} from '@/lib/codeBlockFilename'
 
 const DOWNLOAD_BUTTON_SELECTOR =
   '[data-streamdown="code-block-download-button"]'
 const CODE_BLOCK_SELECTOR = '[data-streamdown="code-block"]'
 const CODE_BODY_SELECTOR = '[data-streamdown="code-block-body"]'
 
-const LANG_TO_EXT: Record<string, string> = {
-  bash: 'sh',
-  sh: 'sh',
-  shell: 'sh',
-  shellscript: 'sh',
-  shellsession: 'sh',
-  zsh: 'zsh',
-  fish: 'fish',
-  powershell: 'ps1',
-  ps1: 'ps1',
-  bat: 'bat',
-  cmd: 'bat',
-  python: 'py',
-  py: 'py',
-  ipython: 'py',
-  javascript: 'js',
-  js: 'js',
-  jsx: 'jsx',
-  typescript: 'ts',
-  ts: 'ts',
-  tsx: 'tsx',
-  rust: 'rs',
-  rs: 'rs',
-  go: 'go',
-  c: 'c',
-  cpp: 'cpp',
-  'c++': 'cpp',
-  cxx: 'cpp',
-  cc: 'cc',
-  hpp: 'hpp',
-  h: 'h',
-  java: 'java',
-  kotlin: 'kt',
-  kt: 'kt',
-  swift: 'swift',
-  ruby: 'rb',
-  rb: 'rb',
-  php: 'php',
-  html: 'html',
-  xml: 'xml',
-  svg: 'svg',
-  css: 'css',
-  scss: 'scss',
-  sass: 'sass',
-  less: 'less',
-  json: 'json',
-  jsonc: 'json',
-  json5: 'json5',
-  yaml: 'yaml',
-  yml: 'yml',
-  toml: 'toml',
-  ini: 'ini',
-  sql: 'sql',
-  graphql: 'graphql',
-  gql: 'graphql',
-  markdown: 'md',
-  md: 'md',
-  mdx: 'mdx',
-  dockerfile: 'dockerfile',
-  docker: 'dockerfile',
-  makefile: 'makefile',
-  make: 'makefile',
-  vue: 'vue',
-  svelte: 'svelte',
-  astro: 'astro',
-  lua: 'lua',
-  r: 'r',
-  perl: 'pl',
-  pl: 'pl',
-  csharp: 'cs',
-  cs: 'cs',
-  fsharp: 'fs',
-  scala: 'scala',
-  haskell: 'hs',
-  hs: 'hs',
-  elixir: 'ex',
-  ex: 'ex',
-  erlang: 'erl',
-  erl: 'erl',
-  ocaml: 'ml',
-  clojure: 'clj',
-  clj: 'clj',
-  dart: 'dart',
-  groovy: 'groovy',
-  nim: 'nim',
-  zig: 'zig',
-  v: 'v',
-  julia: 'jl',
-  jl: 'jl',
-  diff: 'diff',
-  patch: 'patch',
-  text: 'txt',
-  txt: 'txt',
-}
 
 type CodeBlockPayload = {
   code: string
   language: string
+  /** Filename recovered from the block or its surroundings, when there is one. */
+  fileName?: string
 }
 
 const DEFAULT_FILE_BASENAME = 'file'
-
-/**
- * Turn a project name into a safe filename stem: strip path separators and
- * characters that are illegal on common filesystems, collapse whitespace, and
- * trim. Returns `null` when nothing usable remains.
- */
-const sanitizeFileBaseName = (name: string): string | null => {
-  const cleaned = name
-    .split('')
-    .map((character) => (character.charCodeAt(0) <= 31 ? ' ' : character))
-    .join('')
-    .replace(/[/\\:*?"<>|]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-  return cleaned.length > 0 ? cleaned : null
-}
 
 /**
  * Default filename stem for a generated file. Uses the current thread's project
@@ -146,12 +46,60 @@ const getDefaultFileBaseName = (): string => {
     const projectName =
       useThreads.getState().getCurrentThread()?.metadata?.project?.name
     if (typeof projectName === 'string') {
-      return sanitizeFileBaseName(projectName) ?? DEFAULT_FILE_BASENAME
+      return sanitizeFileName(projectName) ?? DEFAULT_FILE_BASENAME
     }
   } catch (error) {
     console.debug('[code-block-download] could not resolve project name:', error)
   }
   return DEFAULT_FILE_BASENAME
+}
+
+/**
+ * The filename a model printed as prose immediately above the block —
+ * "**styles.css**", "`js/main.js`", or a bare line. `RenderMarkdown` puts an
+ * explicit `data-code-filename` on blocks whose fence or first comment names
+ * the file; this covers the remaining shape, where the name only exists in the
+ * surrounding text.
+ *
+ * Streamdown renders each top-level markdown block as a direct child of its
+ * root, so the previous sibling of the block's own top-level ancestor is that
+ * line. It is only trusted when its extension matches the block's language.
+ */
+const fileNameFromPrecedingText = (
+  block: Element,
+  language: string,
+): string | undefined => {
+  let node: Element = block
+  // Climb to the top-level block, i.e. the last ancestor before the container
+  // that also holds the sibling paragraph.
+  while (
+    node.parentElement &&
+    node.parentElement.parentElement &&
+    !node.previousElementSibling
+  ) {
+    node = node.parentElement
+  }
+
+  const previous = node.previousElementSibling
+  if (!previous) return undefined
+
+  const text = (previous.textContent ?? '')
+    .trim()
+    .replace(/^[*_`#\s]+|[*_`:\s]+$/g, '')
+  if (!text || !looksLikeFileName(text)) return undefined
+  return matchesLanguage(text, language) ? text : undefined
+}
+
+/** The filename for this block, from the most explicit source available. */
+const resolveFileName = (
+  block: Element,
+  language: string,
+): string | undefined => {
+  const declared = block
+    .closest('[data-code-filename]')
+    ?.getAttribute('data-code-filename')
+  if (declared) return declared
+  return fileNameFromPrecedingText(block, language)
 }
 
 const extractCodeBlockPayload = (
@@ -183,14 +131,21 @@ const extractCodeBlockPayload = (
       ? lineNodes.map((node) => node.textContent ?? '').join('\n')
       : (codeEl.textContent ?? '')
 
-  return { code, language }
+  return { code, language, fileName: resolveFileName(block, language) }
 }
 
 const downloadViaTauri = async (
   payload: CodeBlockPayload,
 ): Promise<void> => {
-  const ext = LANG_TO_EXT[payload.language] ?? 'txt'
-  const defaultPath = `${getDefaultFileBaseName()}.${ext}`
+  const languageExt = extensionForLanguage(payload.language)
+  const defaultPath = toDownloadFileName(
+    payload.fileName,
+    languageExt,
+    getDefaultFileBaseName(),
+  )
+  // Filter on the extension actually being saved: a recovered `main.d.ts` or
+  // `app.min.js` must not be filtered as `.ts` / `.js`.
+  const ext = fileNameExtension(defaultPath) || languageExt
 
   if (!isServiceHubInitialized()) {
     console.warn('[code-block-download] ServiceHub not initialized yet')
