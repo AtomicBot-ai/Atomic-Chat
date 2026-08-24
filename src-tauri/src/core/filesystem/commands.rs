@@ -213,7 +213,7 @@ pub fn write_yaml(
     // TODO: have an internal function to check scope
     let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
     let save_path = jan_utils::normalize_path(&jan_data_folder.join(save_path));
-    if !save_path.starts_with(&jan_data_folder) {
+    if !jan_utils::is_within(&save_path, &jan_data_folder) {
         return Err(format!(
             "Error: save path {} is not under jan_data_folder {}",
             save_path.to_string_lossy(),
@@ -233,7 +233,7 @@ pub fn read_yaml<R: Runtime>(
 ) -> Result<serde_json::Value, String> {
     let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
     let path = jan_utils::normalize_path(&jan_data_folder.join(path));
-    if !path.starts_with(&jan_data_folder) {
+    if !jan_utils::is_within(&path, &jan_data_folder) {
         return Err(format!(
             "Error: path {} is not under jan_data_folder {}",
             path.to_string_lossy(),
@@ -256,7 +256,7 @@ pub fn decompress<R: Runtime>(
     let path_buf = jan_utils::normalize_path(&jan_data_folder.join(path));
 
     let output_dir_buf = jan_utils::normalize_path(&jan_data_folder.join(output_dir));
-    if !output_dir_buf.starts_with(&jan_data_folder) {
+    if !jan_utils::is_within(&output_dir_buf, &jan_data_folder) {
         return Err(format!(
             "Error: output directory {} is not under jan_data_folder {}",
             output_dir_buf.to_string_lossy(),
@@ -338,7 +338,7 @@ pub fn normalize_backend_layout<R: Runtime>(
 
     let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
     let output_dir_buf = jan_utils::normalize_path(&jan_data_folder.join(output_dir));
-    if !output_dir_buf.starts_with(&jan_data_folder) {
+    if !jan_utils::is_within(&output_dir_buf, &jan_data_folder) {
         return Err(format!(
             "Error: output directory {} is not under jan_data_folder {}",
             output_dir_buf.to_string_lossy(),
