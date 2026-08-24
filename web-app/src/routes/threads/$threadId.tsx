@@ -892,7 +892,7 @@ function ThreadDetail() {
         const providerActiveModels = await serviceHub
           .models()
           .getActiveModels(selectedProvider)
-          .catch(() => [])
+          .catch((): string[] => [])
         if (
           !selectedModel ||
           !providerActiveModels.includes(selectedModel.id)
