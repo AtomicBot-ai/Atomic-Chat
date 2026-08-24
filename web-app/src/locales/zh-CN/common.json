@@ -28,6 +28,8 @@
   "unstar": "取消收藏",
   "deleteAll": "全部删除",
   "star": "收藏",
+  "openInNewWindow": "在新窗口中打开",
+  "openInNewWindowFailed": "无法在新窗口中打开此聊天",
   "rename": "重命名",
   "delete": "删除",
   "copied": "已复制！",

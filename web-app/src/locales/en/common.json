@@ -89,6 +89,8 @@
   "unstar": "Unstar",
   "deleteAll": "Delete All",
   "star": "Star",
+  "openInNewWindow": "Open in new window",
+  "openInNewWindowFailed": "Couldn't open this chat in a new window",
   "rename": "Rename",
   "delete": "Delete",
   "copied": "Copied!",

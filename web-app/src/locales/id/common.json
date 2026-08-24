@@ -28,6 +28,8 @@
   "unstar": "Batal Bintangi",
   "deleteAll": "Hapus Semua",
   "star": "Bintangi",
+  "openInNewWindow": "Buka di jendela baru",
+  "openInNewWindowFailed": "Tidak dapat membuka obrolan ini di jendela baru",
   "rename": "Ubah Nama",
   "delete": "Hapus",
   "copied": "Tersalin!",

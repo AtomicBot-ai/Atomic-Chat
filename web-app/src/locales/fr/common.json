@@ -28,6 +28,8 @@
   "unstar": "Désélectionner",
   "deleteAll": "Tout supprimer",
   "star": "Étoile",
+  "openInNewWindow": "Ouvrir dans une nouvelle fenêtre",
+  "openInNewWindowFailed": "Impossible d'ouvrir cette discussion dans une nouvelle fenêtre",
   "rename": "Renommer",
   "delete": "Supprimer",
   "copied": "Copié!",
