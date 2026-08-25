@@ -239,6 +239,22 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     endpointWithPrefix: false,
   },
   {
+    id: 'atomic-agent',
+    name: 'Atomic Agent',
+    description:
+      'Local-first agent that browses, edits files, and runs commands.',
+    kind: 'assistant',
+    detectBin: 'atomic-agent',
+    docsUrl: 'https://github.com/AtomicBot-ai/atomic-agent',
+    installable: true,
+    configurable: true,
+    requiresModel: true,
+    // Atomic Agent stores an `openai-compatible` provider, whose `baseUrl` is
+    // the OpenAI API root. It normalises a trailing `/v1` away itself, but the
+    // stored value should still read as the base URL the user would paste.
+    endpointWithPrefix: true,
+  },
+  {
     id: 'hermes',
     name: 'Hermes Agent',
     description: 'Self-improving AI agent built by Nous Research.',

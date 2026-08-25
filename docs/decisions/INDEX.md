@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-215 records, 2026-05-19 → 2026-08-21.
+216 records, 2026-05-19 → 2026-08-25.
 
 ---
 
@@ -33,8 +33,9 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Launch page & external coding agents (16)
+## Launch page & external coding agents (17)
 
+- **2026-08-25** — [Add Atomic Agent as a one-click Launch-page assistant, configured by merging an `openai-compatible` provider into `~/.atomic-agent/config.json`](2026-08-25-add-atomic-agent-as-a-one-click-launch-page-assistant.md)
 - **2026-08-20** — [Narrow `atomic-chat-cli` to models / serve / launch / server status](2026-08-20-narrow-atomic-chat-cli-to-models-serve-launch-and-server-status.md)
 - **2026-08-18** — [Add DeepSeek Harness (`dsh`) as a one-click Launch-page coding agent, configured by merging a hand-declared `llm-pi-ai` route into `$DSH_HOME/settings.yaml`](2026-08-18-add-deepseek-harness-as-a-launch-page-coding-agent.md)
 - **2026-07-07** — [Fall back to the Local API Server's "Current Model" when configuring Launch-page agents against a cloud-provider selection](2026-07-07-fall-back-to-the-local-api-server-s-current-model-when.md)
