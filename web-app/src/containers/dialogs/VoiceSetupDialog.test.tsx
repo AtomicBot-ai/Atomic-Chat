@@ -31,6 +31,8 @@ vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: () => ({ voice }),
 }))
 
+import en from '@/locales/en/common.json'
+import ru from '@/locales/ru/common.json'
 import VoiceSetupDialog from './VoiceSetupDialog'
 import { useVoiceInput } from '@/hooks/useVoiceInput'
 import { useVoiceSetting } from '@/hooks/useVoiceSetting'
@@ -98,6 +100,65 @@ describe('VoiceSetupDialog', () => {
     }
   })
 
+  it('gives every step the same fixed content box', async () => {
+    render(<VoiceSetupDialog />)
+    const slotClass = () =>
+      document.querySelector('[data-testid="voice-setup-slot"]')!.className
+
+    const first = slotClass()
+    // A minimum would let the tallest step stretch the dialog, which is the
+    // regression this guards: paging must not resize the window.
+    expect(first).toMatch(/(^|\s)h-\[\d+px\]/)
+    expect(first).not.toContain('min-h-')
+
+    for (const _ of [1, 2]) {
+      await act(async () => {
+        await userEvent.click(screen.getByText('common:voiceInput.setup.next'))
+      })
+      expect(slotClass()).toBe(first)
+    }
+  })
+
+  it('gives every step the same fixed description slot', async () => {
+    render(<VoiceSetupDialog />)
+    const descClass = () =>
+      document.querySelector('[data-testid="voice-setup-description"]')!
+        .className
+
+    const first = descClass()
+    // One description wrapping to two lines while another fits on one is what
+    // made step 1 taller than the rest even after the content box was pinned.
+    expect(first).toMatch(/(^|\s)h-\d+/)
+    expect(first).not.toContain('min-h-')
+
+    for (const _ of [1, 2]) {
+      await act(async () => {
+        await userEvent.click(screen.getByText('common:voiceInput.setup.next'))
+      })
+      expect(descClass()).toBe(first)
+    }
+  })
+
+  it('keeps every step description short enough for that slot', () => {
+    // The slot is two lines of text-sm in a 400px-wide dialog. Allowing ~50
+    // characters per line worst case, a description over 100 characters would
+    // need a third line and be clipped — so this is the budget the copy has.
+    const MAX = 100
+    for (const [locale, bundle] of [
+      ['en', en],
+      ['ru', ru],
+    ] as const) {
+      const setup = bundle.voiceInput.setup
+      for (const step of ['intro', 'permission', 'model'] as const) {
+        const text = setup[step].description
+        expect(
+          text.length,
+          `${locale} ${step}.description is ${text.length} chars: "${text}"`
+        ).toBeLessThanOrEqual(MAX)
+      }
+    }
+  })
+
   it('walks forward and back through the three steps', async () => {
     render(<VoiceSetupDialog />)
 
@@ -125,8 +186,11 @@ describe('VoiceSetupDialog', () => {
     render(<VoiceSetupDialog />)
     const dots = document.querySelectorAll('[aria-hidden="true"] > span')
     expect(dots).toHaveLength(3)
-    expect(dots[0].className).toContain('w-5')
-    expect(dots[1].className).toContain('w-1.5')
+    // All the same size; only the colour marks where you are.
+    expect(dots[0].className).toContain('bg-primary')
+    expect(dots[1].className).toContain('bg-muted-foreground/30')
+    expect(dots[0].className).toContain('size-2')
+    expect(dots[1].className).toContain('size-2')
   })
 
   it('requests microphone access from the permission step', async () => {

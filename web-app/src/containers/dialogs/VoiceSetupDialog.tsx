@@ -40,13 +40,13 @@ function StepDots({ step }: { step: number }) {
   const { t } = useTranslation()
   return (
     <>
-      <div className="flex items-center justify-center gap-1.5" aria-hidden>
+      <div className="flex items-center justify-center gap-2" aria-hidden>
         {Array.from({ length: TOTAL_STEPS }).map((_, index) => (
           <span
             key={index}
             className={cn(
-              'h-1.5 rounded-full transition-all duration-200',
-              index === step ? 'w-5 bg-primary' : 'w-1.5 bg-muted-foreground/30'
+              'size-2 rounded-full transition-colors duration-200',
+              index === step ? 'bg-primary' : 'bg-muted-foreground/30'
             )}
           />
         ))}
@@ -271,14 +271,29 @@ const VoiceSetupDialog = memo(function VoiceSetupDialog() {
             <StepIcon size={24} className="text-foreground" />
           </div>
           <DialogTitle>{t(STEPS[step].title)}</DialogTitle>
-          <DialogDescription className="text-pretty">
+          {/* Two lines of text-sm, fixed. The dialog is 400px wide inside its
+              padding, so these descriptions land on one line or two depending
+              on the string and the locale — and a step whose description wraps
+              would otherwise sit taller than the ones that don't. The copy is
+              length-checked in the tests so nothing here ever needs a third
+              line. */}
+          <DialogDescription
+            data-testid="voice-setup-description"
+            className="h-10 text-pretty"
+          >
             {t(STEPS[step].description)}
           </DialogDescription>
         </DialogHeader>
 
-        {/* One slot, one height, content centred in it — so paging through the
-            wizard does not resize the dialog under the cursor. */}
-        <div className="flex min-h-[136px] flex-col justify-center gap-2 py-1">
+        {/* A fixed height, not a minimum: with a floor the tallest step still
+            stretched the dialog, so paging through it resized the window under
+            the cursor. Every step's content is centred in the same box.
+            `overflow-y-auto` only ever engages for the denied-permission block
+            on macOS, which carries an extra restart note. */}
+        <div
+          data-testid="voice-setup-slot"
+          className="flex h-[180px] flex-col justify-center gap-2 overflow-y-auto py-1"
+        >
           {step === 0 && <IntroStep />}
           {step === 1 && <VoicePermissionBlock />}
           {step === 2 && (

@@ -202,27 +202,25 @@
       "internal": "Voice input ran into a problem"
     },
     "setup": {
-      "title": "Set up voice input",
-      "subtitle": "Talk instead of typing.",
       "step": "Step {{current}} of {{total}}",
       "back": "Back",
       "next": "Next",
       "done": "Done",
       "intro": {
         "title": "Talk instead of typing",
-        "description": "Dictate into the message box and Atomic Chat writes it out as you speak.",
-        "bulletLive": "Live transcription — each phrase appears as soon as you finish it.",
-        "bulletLocal": "Fully on-device — your audio never leaves this computer.",
-        "bulletAnywhere": "Works in chat and in agent mode, in the same message box."
+        "description": "Dictate into the message box and your words appear as you speak.",
+        "bulletLive": "Each phrase lands as soon as you finish it.",
+        "bulletLocal": "Runs on this computer — audio never leaves it.",
+        "bulletAnywhere": "Works in chat and in agent mode."
       },
       "permission": {
         "title": "Allow microphone access",
-        "description": "Atomic Chat needs the microphone to hear you. Nothing is recorded until you press the microphone button.",
+        "description": "Nothing is recorded until you press the microphone button.",
         "allow": "Allow microphone",
         "requesting": "Waiting for your answer…",
         "allowed": "Allowed",
         "denied": "Microphone access was denied",
-        "deniedHelp": "Turn the microphone back on for Atomic Chat in your system privacy settings, then check again.",
+        "deniedHelp": "Re-enable the microphone for Atomic Chat in your privacy settings.",
         "openSystemSettings": "Open System Settings",
         "checkAgain": "Check again",
         "restartNote": "On macOS you may need to restart Atomic Chat after changing this.",
@@ -230,12 +228,12 @@
       },
       "model": {
         "title": "Install the voice model",
-        "description": "Voxtral Mini runs the transcription locally on the llama.cpp engine. It is downloaded once.",
+        "description": "Voxtral Mini transcribes locally. It is downloaded once.",
         "meta": "{{size}} · llama.cpp · one-time download",
         "installed": "Installed",
         "progress": "{{percent}}% · {{current}} / {{total}} GB",
         "failed": "The voice model download failed",
-        "diskNote": "Make sure you have about {{gb}} GB of free disk space."
+        "diskNote": "Needs about {{gb}} GB of free disk space."
       }
     }
   },

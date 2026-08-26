@@ -235,7 +235,10 @@ export function AgentWorkspaceLayout({
       {!filesVisible && (
         <button
           type="button"
-          className="absolute top-[17px] right-3 z-30 flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none ring-ring transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2"
+          // top-3.5 centres this 32px button on the h-15 (60px) page header,
+          // so it lines up with the header's own controls — the context gauge
+          // sits right beside it.
+          className="absolute top-3.5 right-3 z-30 flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none ring-ring transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2"
           aria-label="Open files sidebar"
           title="Open files sidebar"
           onClick={() => setFilesOpen(true)}
