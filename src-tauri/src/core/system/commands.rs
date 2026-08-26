@@ -4466,14 +4466,19 @@ const ATOMIC_AGENT_PROVIDER_ID: &str = "atomic-chat";
 /// The `llama-server` provider Atomic Agent synthesises for itself when the
 /// config file carries no `llm` block (`parseUserLlmFileConfig`'s defaults in
 /// `src/config/config-schema.ts`). `llm.activeEmbeddingProvider` must name an
-/// entry that exists in `llm.providers`, so a block we create from scratch has
-/// to carry this one too — pointing embeddings at Atomic Chat instead would
-/// silently repoint the agent's memory recall, which is not what Run asked for.
+/// entry that exists in `llm.providers`, so this is both what we seed a new
+/// block with and the only target we ever repair a dangling one to — pointing
+/// embeddings at Atomic Chat instead would silently repoint the agent's memory
+/// recall, which is not what Run asked for.
 const ATOMIC_AGENT_LOCAL_PROVIDER_ID: &str = "local-llama";
 
 /// Fallback for `localModels.url`, matching `USER_CONFIG_DEFAULTS` in
 /// Atomic Agent's `src/config/config-schema.ts`.
 const ATOMIC_AGENT_DEFAULT_LLAMA_URL: &str = "http://127.0.0.1:8080";
+
+/// Fallback for `localModels.managed.port`, from the same defaults. Used only
+/// when the config selects `mode: "managed"` without naming a port.
+const ATOMIC_AGENT_DEFAULT_MANAGED_PORT: u64 = 19_091;
 
 /// Per-request timeout seeded on our provider entry. Atomic Agent's
 /// OpenAI-compatible provider otherwise defaults to 600_000 ms
@@ -4504,94 +4509,146 @@ fn resolve_atomic_agent_state_dir() -> Result<PathBuf, String> {
     Ok(PathBuf::from(agent_home_dir()?).join(".atomic-agent"))
 }
 
+/// The `llama-server` entry Atomic Agent would synthesise for itself, built
+/// from the same inputs its parser uses (`parseUserLlmFileConfig`'s defaults in
+/// `src/config/config-schema.ts`). The URL is mode-aware: under
+/// `localModels.mode: "managed"` the agent ignores `localModels.url` and talks
+/// to the daemon it runs on `localModels.managed.port`.
+fn atomic_agent_local_llama_entry(
+    root: &serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Value {
+    let local_models = root.get("localModels");
+    let managed = local_models.and_then(|v| v.get("managed"));
+    let url = if local_models
+        .and_then(|v| v.get("mode"))
+        .and_then(|v| v.as_str())
+        == Some("managed")
+    {
+        let port = managed
+            .and_then(|v| v.get("port"))
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(ATOMIC_AGENT_DEFAULT_MANAGED_PORT);
+        format!("http://127.0.0.1:{}", port)
+    } else {
+        local_models
+            .and_then(|v| v.get("url"))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or(ATOMIC_AGENT_DEFAULT_LLAMA_URL)
+            .to_string()
+    };
+
+    serde_json::json!({
+        "id": ATOMIC_AGENT_LOCAL_PROVIDER_ID,
+        "kind": "llama-server",
+        "url": url,
+    })
+}
+
 /// Upsert the Atomic Chat provider into an Atomic Agent `config.json` payload.
 ///
 /// Split out from the command so the merge is unit-testable without touching a
 /// real state directory. Everything outside `llm` is left byte-for-byte alone;
 /// inside `llm`, only our own provider entry and `activeTextProvider` are
-/// rewritten. Unknown keys survive because Atomic Agent's parser carries
-/// unknown top-level keys through verbatim.
+/// rewritten (plus `activeEmbeddingProvider` when it is absent or dangling,
+/// which the agent would otherwise refuse to load). Unknown keys survive
+/// because Atomic Agent's parser carries unknown top-level keys through
+/// verbatim.
 fn atomic_agent_patch_config(
     mut root: serde_json::Value,
     api_url: &str,
     model: &str,
     api_key: Option<&str>,
 ) -> Result<serde_json::Value, String> {
+    // The agent's `parseOptionalString` rejects `""` outright rather than
+    // treating it as absent, so an empty model would take the whole file down
+    // at its next start. Both callers already guarantee a model; failing here
+    // makes that the writer's own contract instead of an inherited one.
+    if model.trim().is_empty() {
+        return Err("Atomic Agent needs a model: none is running.".to_string());
+    }
+
     let obj = root
         .as_object_mut()
         .ok_or_else(|| "config.json is not a JSON object".to_string())?;
 
-    // Only read for the `local-llama` seed below; never written back.
-    let local_llama_url = obj
-        .get("localModels")
-        .and_then(|v| v.get("url"))
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .unwrap_or(ATOMIC_AGENT_DEFAULT_LLAMA_URL)
-        .to_string();
+    // Read before the `llm` block is borrowed mutably; never written back.
+    let local_llama = atomic_agent_local_llama_entry(obj);
 
-    let llm = obj
-        .entry("llm")
-        .or_insert_with(|| serde_json::json!({}));
+    let llm = obj.entry("llm").or_insert_with(|| serde_json::json!({}));
     if !llm.is_object() {
         *llm = serde_json::json!({});
     }
     let llm = llm.as_object_mut().unwrap();
 
-    let providers = llm
-        .entry("providers")
-        .or_insert_with(|| serde_json::json!([]));
-    if !providers.is_array() {
-        *providers = serde_json::json!([]);
-    }
-    let providers = providers.as_array_mut().unwrap();
+    // Read before `llm.providers` is borrowed mutably below.
+    let current_embedding = llm
+        .get("activeEmbeddingProvider")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
 
-    // A brand-new block needs the agent's own default entry alongside ours, so
-    // `activeEmbeddingProvider` has something valid to point at.
-    if providers.is_empty() {
-        providers.push(serde_json::json!({
-            "id": ATOMIC_AGENT_LOCAL_PROVIDER_ID,
-            "kind": "llama-server",
-            "url": local_llama_url,
-        }));
-    }
+    // Embeddings drive memory recall, not chat, so a working selection is left
+    // alone. A missing or dangling one is repaired rather than carried forward,
+    // because Atomic Agent rejects the whole file when
+    // `activeEmbeddingProvider` names a provider that is not in the list.
+    let repair_embedding = {
+        let providers = llm
+            .entry("providers")
+            .or_insert_with(|| serde_json::json!([]));
+        if !providers.is_array() {
+            *providers = serde_json::json!([]);
+        }
+        let providers = providers.as_array_mut().unwrap();
 
-    let existing = providers.iter().position(|p| {
-        p.get("id").and_then(|v| v.as_str()) == Some(ATOMIC_AGENT_PROVIDER_ID)
-    });
+        // A brand-new block needs the agent's own default entry alongside ours,
+        // so `activeEmbeddingProvider` has something valid to point at.
+        if providers.is_empty() {
+            providers.push(local_llama.clone());
+        }
 
-    // Atomic Chat usually runs without auth, but the entry is stored as an
-    // `openai-compatible` provider and most such clients reject an empty key.
-    let key_val = api_key
-        .map(str::trim)
-        .filter(|k| !k.is_empty())
-        .unwrap_or("atomic");
+        let existing = providers
+            .iter()
+            .position(|p| p.get("id").and_then(|v| v.as_str()) == Some(ATOMIC_AGENT_PROVIDER_ID));
 
-    // A timeout the user tuned on our entry is theirs; we only fill the gap.
-    let timeout = existing
-        .and_then(|i| providers[i].get("requestTimeoutMs").cloned())
-        .filter(|v| v.is_number())
-        .unwrap_or_else(|| serde_json::json!(ATOMIC_AGENT_REQUEST_TIMEOUT_MS));
+        // Atomic Chat usually runs without auth, but the entry is stored as an
+        // `openai-compatible` provider and most such clients reject an empty key.
+        let key_val = api_key
+            .map(str::trim)
+            .filter(|k| !k.is_empty())
+            .unwrap_or("atomic");
 
-    let entry = serde_json::json!({
-        "id": ATOMIC_AGENT_PROVIDER_ID,
-        "kind": "openai-compatible",
-        "baseUrl": api_url,
-        "apiKey": key_val,
-        "defaultChatModel": model,
-        "supportsTools": true,
-        "requestTimeoutMs": timeout,
-    });
-    match existing {
-        Some(i) => providers[i] = entry,
-        None => providers.push(entry),
-    }
+        // A timeout the user tuned on our entry is theirs; we only fill the gap.
+        let timeout = existing
+            .and_then(|i| providers[i].get("requestTimeoutMs").cloned())
+            .filter(|v| v.is_number())
+            .unwrap_or_else(|| serde_json::json!(ATOMIC_AGENT_REQUEST_TIMEOUT_MS));
 
-    let provider_ids: Vec<String> = providers
-        .iter()
-        .filter_map(|p| p.get("id").and_then(|v| v.as_str()))
-        .map(str::to_string)
-        .collect();
+        let entry = serde_json::json!({
+            "id": ATOMIC_AGENT_PROVIDER_ID,
+            "kind": "openai-compatible",
+            "baseUrl": api_url,
+            "apiKey": key_val,
+            "defaultChatModel": model,
+            "supportsTools": true,
+            "requestTimeoutMs": timeout,
+        });
+        match existing {
+            Some(i) => providers[i] = entry,
+            None => providers.push(entry),
+        }
+
+        let repair = !current_embedding
+            .as_deref()
+            .is_some_and(|id| atomic_agent_lists(providers, id));
+        // The repair target is always `local-llama` — the agent's own default,
+        // seeded here when the file does not carry it. Falling back to our own
+        // id would quietly hand memory recall to Atomic Chat, which is not what
+        // Run asked for.
+        if repair && !atomic_agent_lists(providers, ATOMIC_AGENT_LOCAL_PROVIDER_ID) {
+            providers.push(local_llama);
+        }
+        repair
+    };
 
     // Pressing Run is an explicit "use this", so the text provider is switched
     // outright — same contract as OpenCode's `model` key.
@@ -4599,30 +4656,21 @@ fn atomic_agent_patch_config(
         "activeTextProvider".to_string(),
         serde_json::json!(ATOMIC_AGENT_PROVIDER_ID),
     );
-
-    // Embeddings drive memory recall, not chat, so this is filled only when
-    // absent. Atomic Agent rejects the whole file when it names a provider that
-    // is not in the list, so the value has to be one we can see.
-    let embedding_ok = llm
-        .get("activeEmbeddingProvider")
-        .and_then(|v| v.as_str())
-        .is_some_and(|id| provider_ids.iter().any(|p| p == id));
-    if !embedding_ok {
-        let fallback = provider_ids
-            .iter()
-            .find(|id| *id == ATOMIC_AGENT_LOCAL_PROVIDER_ID)
-            .cloned()
-            .unwrap_or_else(|| ATOMIC_AGENT_PROVIDER_ID.to_string());
+    if repair_embedding {
         llm.insert(
             "activeEmbeddingProvider".to_string(),
-            serde_json::json!(fallback),
+            serde_json::json!(ATOMIC_AGENT_LOCAL_PROVIDER_ID),
         );
     }
 
-    llm.entry("toolTransport")
-        .or_insert_with(|| serde_json::json!("auto"));
-
     Ok(root)
+}
+
+/// Whether `providers` already carries an entry with this id.
+fn atomic_agent_lists(providers: &[serde_json::Value], id: &str) -> bool {
+    providers
+        .iter()
+        .any(|p| p.get("id").and_then(|v| v.as_str()) == Some(id))
 }
 
 /// Configure Atomic Agent by upserting an `atomic-chat` provider in its user
@@ -4675,7 +4723,6 @@ pub fn configure_atomic_agent(
     );
     Ok(())
 }
-
 
 /// Open the OS terminal and run `command` interactively, so the user can start
 /// using a just-configured agent in one click. The terminal stays open after
@@ -5304,7 +5351,6 @@ mod atomic_agent_tests {
             out["llm"]["activeEmbeddingProvider"],
             ATOMIC_AGENT_LOCAL_PROVIDER_ID
         );
-        assert_eq!(out["llm"]["toolTransport"], "auto");
 
         let ours = provider(&out, ATOMIC_AGENT_PROVIDER_ID);
         assert_eq!(ours["kind"], "openai-compatible");
@@ -5332,6 +5378,29 @@ mod atomic_agent_tests {
         assert_eq!(
             provider(&out, ATOMIC_AGENT_LOCAL_PROVIDER_ID)["url"],
             "http://127.0.0.1:9999"
+        );
+    }
+
+    /// Under `mode: "managed"` the agent ignores `localModels.url` and talks to
+    /// the daemon on `managed.port`, so the seeded entry has to as well.
+    #[test]
+    fn seeded_llama_entry_is_managed_mode_aware() {
+        let out = patch(serde_json::json!({
+            "localModels": { "url": "http://127.0.0.1:9999", "mode": "managed",
+                             "managed": { "port": 20002 } }
+        }));
+        assert_eq!(
+            provider(&out, ATOMIC_AGENT_LOCAL_PROVIDER_ID)["url"],
+            "http://127.0.0.1:20002"
+        );
+
+        // `managed` without an explicit port falls back to the agent's default.
+        let out = patch(serde_json::json!({
+            "localModels": { "url": "http://127.0.0.1:9999", "mode": "managed" }
+        }));
+        assert_eq!(
+            provider(&out, ATOMIC_AGENT_LOCAL_PROVIDER_ID)["url"],
+            format!("http://127.0.0.1:{ATOMIC_AGENT_DEFAULT_MANAGED_PORT}")
         );
     }
 
@@ -5383,28 +5452,76 @@ mod atomic_agent_tests {
         assert_eq!(ours["apiKey"], "sk-local");
     }
 
-    /// A dangling `activeEmbeddingProvider` (hand-edited, or left behind by a
-    /// removed provider) would make the agent reject the whole file, so it is
-    /// repaired rather than carried forward.
+    /// A dangling or absent `activeEmbeddingProvider` would make the agent
+    /// reject the whole file, so it is repaired rather than carried forward —
+    /// and the repair lands on the agent's own `local-llama` default, seeding
+    /// that entry when the file does not already carry it. Repairing toward
+    /// `atomic-chat` would hand memory recall to Atomic Chat, which is exactly
+    /// what this writer refuses to do.
     #[test]
-    fn repairs_an_embedding_provider_that_no_longer_exists() {
+    fn repairs_a_dangling_embedding_provider_to_local_llama() {
+        for llm in [
+            serde_json::json!({
+                "activeEmbeddingProvider": "deleted-provider",
+                "providers": [{ "id": "groq", "kind": "openai-compatible" }]
+            }),
+            // Absent entirely, with a non-empty provider list — so the
+            // empty-array seed above never fires.
+            serde_json::json!({
+                "providers": [{ "id": "groq", "kind": "openai-compatible" }]
+            }),
+        ] {
+            let out = patch(serde_json::json!({ "llm": llm }));
+            assert_eq!(
+                out["llm"]["activeEmbeddingProvider"],
+                ATOMIC_AGENT_LOCAL_PROVIDER_ID
+            );
+            assert_eq!(
+                provider(&out, ATOMIC_AGENT_LOCAL_PROVIDER_ID)["kind"],
+                "llama-server",
+                "the repair target has to be listed, not just named"
+            );
+        }
+    }
+
+    /// An embedding provider the user actually has is theirs; Run selects a
+    /// chat provider and nothing else.
+    #[test]
+    fn leaves_a_working_embedding_selection_alone() {
         let out = patch(serde_json::json!({
             "llm": {
-                "activeEmbeddingProvider": "deleted-provider",
+                "activeEmbeddingProvider": "groq",
                 "providers": [{ "id": "groq", "kind": "openai-compatible" }]
             }
         }));
-        let ids: Vec<&str> = out["llm"]["providers"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|p| p["id"].as_str().unwrap())
-            .collect();
-        let embedding = out["llm"]["activeEmbeddingProvider"].as_str().unwrap();
+        assert_eq!(out["llm"]["activeEmbeddingProvider"], "groq");
         assert!(
-            ids.contains(&embedding),
-            "activeEmbeddingProvider {embedding} must name a listed provider"
+            out["llm"]["providers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|p| p["id"] != ATOMIC_AGENT_LOCAL_PROVIDER_ID),
+            "no reason to seed local-llama when the selection already works"
         );
+    }
+
+    /// `toolTransport` is deliberately not written: the agent defaults an
+    /// absent one to `"auto"` itself, so writing it would only add a key.
+    #[test]
+    fn never_writes_tool_transport() {
+        let out = patch(serde_json::json!({}));
+        assert!(out["llm"].get("toolTransport").is_none());
+
+        let out = patch(serde_json::json!({ "llm": { "toolTransport": "grammar" } }));
+        assert_eq!(out["llm"]["toolTransport"], "grammar");
+    }
+
+    /// The agent's `parseOptionalString` rejects `""` rather than treating it
+    /// as absent, so an empty model would take the whole file down at its next
+    /// start. Fail before writing instead.
+    #[test]
+    fn refuses_to_write_an_empty_model() {
+        assert!(atomic_agent_patch_config(serde_json::json!({}), URL, "  ", None).is_err());
     }
 
     #[test]

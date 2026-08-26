@@ -43,11 +43,18 @@ title: "Add Atomic Agent as a one-click Launch-page assistant, configured by mer
     every block it does not find with its own defaults on the next start, so we
     deliberately do **not** stamp a schema version we would have to track.
   - **`activeEmbeddingProvider` is load-bearing.** The agent rejects the whole
-    config when it names a provider that is not in `llm.providers`, so a block
-    created from nothing also carries the `local-llama` entry the agent
-    otherwise synthesises for itself, pointed at whatever `localModels.url`
-    says. Embeddings drive memory recall rather than chat, so Run never
-    repoints them — the key is only filled when absent or dangling.
+    config when it names a provider that is not in `llm.providers`. Embeddings
+    drive memory recall rather than chat, so a working selection is left alone;
+    an absent or dangling one is repaired, always to `local-llama` — the
+    agent's own default — and never to `atomic-chat`, which would hand memory
+    recall to Atomic Chat behind the user's back. The `local-llama` entry is
+    seeded in both paths (empty provider list, and repair over a list that does
+    not carry it), built from the same inputs the agent's own parser uses:
+    `localModels.url`, or `http://127.0.0.1:<managed.port>` when
+    `localModels.mode` is `managed`, which is what the agent talks to then.
+  - **`toolTransport` is deliberately not written.** The agent defaults an
+    absent one to `"auto"`, so writing it could only ever restate the agent's
+    own choice while adding a key to the user's file.
   - **Only the text provider is switched outright.** Pressing Run is an
     explicit "use this", the same contract as OpenCode's `model` key.
   - **`requestTimeoutMs` is a tightening, like Hermes'.** The agent's
@@ -55,9 +62,14 @@ title: "Add Atomic Agent as a one-click Launch-page assistant, configured by mer
     local turn looks like a hang; 300 s is seeded, and any value the user
     already tuned on our entry is preserved.
   - **`endpointWithPrefix: true`.** The stored `baseUrl` reads as the base URL
-    a user would paste; the agent normalises a trailing `/v1` away itself
-    (`normalizeOpenAiBaseUrl`), so requests still land on
+    a user would paste; the agent normalises a trailing `/v1` away in the
+    provider constructor (`normalizeOpenAiBaseUrl`), so requests still land on
     `/v1/chat/completions`, not `/v1/v1/...`.
+  - **An empty model is refused before the write.** The agent's
+    `parseOptionalString` rejects `""` rather than treating it as absent, so an
+    empty `defaultChatModel` would take the whole file down at its next start.
+    Both callers already guarantee a model; failing in the writer makes that
+    its own contract rather than an inherited one.
   - **The Windows registry read is reused.** `ATOMIC_AGENT_STATE_DIR` is read
     from `HKCU\Environment` before `std::env::var`, for the same
     stale-snapshot reason as
