@@ -21,6 +21,7 @@ import { useDesktopScreen } from '@/hooks/useMediaQuery'
 import { listAgentWorkspace } from '@/services/agent/tauri'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useWorkspacePreviewStore } from '@/stores/workspace-preview-store'
+import { useHeaderOverlay } from '@/stores/header-overlay-store'
 import type { AgentWorkspace, AgentWorkspaceRoot } from '@/hooks/useAgentMode'
 
 type AgentWorkspaceLayoutProps = {
@@ -169,6 +170,21 @@ export function AgentWorkspaceLayout({
 
   const hasPreview = tabs.length > 0
   const filesVisible = filesOpen
+
+  // The files button below floats against the window's right edge instead of
+  // living in the header, so the header's own right-aligned controls have to be
+  // told when it lands on top of them. That is only while the chat column runs
+  // the full width — with a preview panel open the button hangs over that
+  // panel, not over the header.
+  const filesToggleOverHeader =
+    shouldUseAgentWorkspaceLayout(agentModeActive, isDesktop) &&
+    !filesVisible &&
+    !hasPreview
+  const setRightOverlay = useHeaderOverlay((state) => state.setRightOverlay)
+  useEffect(() => {
+    setRightOverlay(filesToggleOverHeader)
+    return () => setRightOverlay(false)
+  }, [filesToggleOverHeader, setRightOverlay])
   const initialPreviewSize = hasPreview ? 24 : 0
   const initialFilesSize = filesVisible ? 24 : 0
   const initialChatSize = 100 - initialPreviewSize - initialFilesSize

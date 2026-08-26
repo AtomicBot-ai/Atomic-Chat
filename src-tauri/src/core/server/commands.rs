@@ -4,6 +4,7 @@ use tauri_plugin_llamacpp_upstream::state::LlamacppState as LlamacppUpstreamStat
 use tauri_plugin_mlx::state::MlxState;
 
 use crate::core::server::proxy;
+use crate::core::server::request_inspector::ApiRequestLogSnapshot;
 use crate::core::server::state_file;
 use crate::core::state::{AppState, LocalServerEndpoint};
 
@@ -46,6 +47,10 @@ pub async fn start_server<R: Runtime>(
     let mlx_state: State<MlxState> = app_handle.state();
     let mlx_sessions = mlx_state.mlx_server_process.clone();
 
+    // `AppState` is built before `.setup()`, so this is the first point where
+    // the inspector and an `AppHandle` exist together. Idempotent.
+    state.api_request_inspector.attach(app_handle.clone());
+
     let actual_port = proxy::start_server(
         app_handle.clone(),
         server_handle,
@@ -60,6 +65,7 @@ pub async fn start_server<R: Runtime>(
         proxy_timeout,
         state.provider_configs.clone(),
         state.auto_increase_ctx.clone(),
+        state.api_request_inspector.clone(),
     )
     .await
     .map_err(|e| e.to_string())?;
@@ -97,4 +103,30 @@ pub async fn get_server_status(state: State<'_, AppState>) -> Result<bool, Strin
     let server_handle = state.server_handle.clone();
 
     Ok(proxy::is_server_running(server_handle).await)
+}
+
+/// Snapshot of the live request log, used to hydrate the API screen on mount.
+#[tauri::command]
+pub async fn get_api_request_log(
+    state: State<'_, AppState>,
+) -> Result<ApiRequestLogSnapshot, String> {
+    Ok(state.api_request_inspector.snapshot())
+}
+
+/// Refcounted: recording only happens while at least one view is watching, and
+/// the ring is wiped when the last one leaves so prompt previews do not
+/// outlive the screen showing them.
+#[tauri::command]
+pub async fn set_api_inspector_enabled(
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<(), String> {
+    state.api_request_inspector.set_enabled(enabled);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn clear_api_request_log(state: State<'_, AppState>) -> Result<(), String> {
+    state.api_request_inspector.clear();
+    Ok(())
 }

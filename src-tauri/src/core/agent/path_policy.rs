@@ -190,6 +190,14 @@ pub async fn prepare_call_paths(
                 resolve_field(args, "path", &[], None, "read", &cwd, &mut resources).await?;
             }
         }
+        "os.code.symbols" => {
+            resolve_field(args, "path", &[], None, "read", &root, &mut resources).await?;
+        }
+        // Defaulting to the workspace root makes the common "search everywhere"
+        // call the one with no arguments to get wrong.
+        "os.code.refs" => {
+            resolve_field(args, "path", &[], Some("."), "read", &root, &mut resources).await?;
+        }
         "os.shell.run" => {
             resolve_field(
                 args,
@@ -197,6 +205,20 @@ pub async fn prepare_call_paths(
                 &[],
                 Some("."),
                 "shell_cwd",
+                &root,
+                &mut resources,
+            )
+            .await?;
+        }
+        // A spawned process is a shell command that outlives the step, so its
+        // working directory goes through exactly the same resolution.
+        "os.proc.spawn" => {
+            resolve_field(
+                args,
+                "cwd",
+                &[],
+                Some("."),
+                "spawn_cwd",
                 &root,
                 &mut resources,
             )

@@ -26,6 +26,16 @@ export function cancelAgentTurn(runId: string): Promise<void> {
   return invoke<void>('agent_cancel_turn', { runId })
 }
 
+/**
+ * Kill every process the agent started with `os.proc.spawn` for this session.
+ *
+ * Not called on turn cancellation on purpose: a dev server the agent started
+ * should outlive the turn that started it. It should not outlive the thread.
+ */
+export function killAgentSessionProcs(sessionId: string): Promise<number> {
+  return invoke<number>('agent_kill_session_procs', { sessionId })
+}
+
 export function resolveAgentApproval(
   decision: AgentApprovalDecision
 ): Promise<void> {

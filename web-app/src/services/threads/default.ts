@@ -7,6 +7,7 @@ import { ConversationalExtension, ExtensionTypeEnum } from '@janhq/core'
 import type { ThreadsService } from './types'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
+import { killAgentSessionProcs } from '@/services/agent/tauri'
 
 export class DefaultThreadsService implements ThreadsService {
   async fetchThreads(): Promise<Thread[]> {
@@ -171,6 +172,15 @@ export class DefaultThreadsService implements ThreadsService {
     // For temporary threads, skip deleting via conversational extension
     if (threadId === TEMPORARY_CHAT_ID) {
       return
+    }
+
+    // The agent binds its session id to the thread id, so deleting the thread
+    // is what ends any process it left running. Best-effort: a failure here
+    // must not block the deletion the user asked for.
+    try {
+      await killAgentSessionProcs(threadId)
+    } catch (error) {
+      console.warn('Could not stop agent processes for thread', threadId, error)
     }
 
     await ExtensionManager.getInstance()

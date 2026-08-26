@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as SkillsIndexRouteImport } from './routes/skills/index'
 import { Route as LaunchIndexRouteImport } from './routes/launch/index'
 import { Route as HubIndexRouteImport } from './routes/hub/index'
+import { Route as ApiIndexRouteImport } from './routes/api/index'
 import { Route as ThreadsThreadIdRouteImport } from './routes/threads/$threadId'
 import { Route as SettingsVoiceRouteImport } from './routes/settings/voice'
 import { Route as SettingsShortcutsRouteImport } from './routes/settings/shortcuts'
@@ -64,6 +65,11 @@ const LaunchIndexRoute = LaunchIndexRouteImport.update({
 const HubIndexRoute = HubIndexRouteImport.update({
   id: '/hub/',
   path: '/hub/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiIndexRoute = ApiIndexRouteImport.update({
+  id: '/api/',
+  path: '/api/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ThreadsThreadIdRoute = ThreadsThreadIdRouteImport.update({
@@ -190,6 +196,7 @@ export interface FileRoutesByFullPath {
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/settings/voice': typeof SettingsVoiceRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
+  '/api/': typeof ApiIndexRoute
   '/hub/': typeof HubIndexRoute
   '/launch/': typeof LaunchIndexRoute
   '/skills/': typeof SkillsIndexRoute
@@ -218,6 +225,7 @@ export interface FileRoutesByTo {
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/settings/voice': typeof SettingsVoiceRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
+  '/api': typeof ApiIndexRoute
   '/hub': typeof HubIndexRoute
   '/launch': typeof LaunchIndexRoute
   '/skills': typeof SkillsIndexRoute
@@ -247,6 +255,7 @@ export interface FileRoutesById {
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/settings/voice': typeof SettingsVoiceRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
+  '/api/': typeof ApiIndexRoute
   '/hub/': typeof HubIndexRoute
   '/launch/': typeof LaunchIndexRoute
   '/skills/': typeof SkillsIndexRoute
@@ -277,6 +286,7 @@ export interface FileRouteTypes {
     | '/settings/shortcuts'
     | '/settings/voice'
     | '/threads/$threadId'
+    | '/api/'
     | '/hub/'
     | '/launch/'
     | '/skills/'
@@ -305,6 +315,7 @@ export interface FileRouteTypes {
     | '/settings/shortcuts'
     | '/settings/voice'
     | '/threads/$threadId'
+    | '/api'
     | '/hub'
     | '/launch'
     | '/skills'
@@ -333,6 +344,7 @@ export interface FileRouteTypes {
     | '/settings/shortcuts'
     | '/settings/voice'
     | '/threads/$threadId'
+    | '/api/'
     | '/hub/'
     | '/launch/'
     | '/skills/'
@@ -362,6 +374,7 @@ export interface RootRouteChildren {
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
   SettingsVoiceRoute: typeof SettingsVoiceRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
+  ApiIndexRoute: typeof ApiIndexRoute
   HubIndexRoute: typeof HubIndexRoute
   LaunchIndexRoute: typeof LaunchIndexRoute
   SkillsIndexRoute: typeof SkillsIndexRoute
@@ -411,6 +424,13 @@ declare module '@tanstack/react-router' {
       path: '/hub'
       fullPath: '/hub/'
       preLoaderRoute: typeof HubIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/': {
+      id: '/api/'
+      path: '/api'
+      fullPath: '/api/'
+      preLoaderRoute: typeof ApiIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/threads/$threadId': {
@@ -578,6 +598,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsShortcutsRoute: SettingsShortcutsRoute,
   SettingsVoiceRoute: SettingsVoiceRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
+  ApiIndexRoute: ApiIndexRoute,
   HubIndexRoute: HubIndexRoute,
   LaunchIndexRoute: LaunchIndexRoute,
   SkillsIndexRoute: SkillsIndexRoute,

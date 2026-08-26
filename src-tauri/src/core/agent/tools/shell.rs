@@ -28,6 +28,27 @@ pub(super) fn parse_invocation(args: &Value) -> Result<ShellInvocation, ToolOutc
     Ok(ShellInvocation { program, arguments })
 }
 
+/// Resolve an invocation to the concrete program and arguments to execute.
+///
+/// Commands that need shell interpretation (pipes, `&&`, globs, redirection)
+/// are wrapped in the platform subshell; everything else is exec'd directly.
+/// `os.proc.spawn` shares this so a command behaves identically whether it is
+/// run to completion or left running.
+pub(super) fn resolve_program(invocation: &ShellInvocation) -> (String, Vec<String>) {
+    if !needs_shell_interpretation(&invocation.program, &invocation.arguments) {
+        return (invocation.program.clone(), invocation.arguments.clone());
+    }
+    let command_line = join_command_stream(&invocation.program, &invocation.arguments);
+    #[cfg(windows)]
+    {
+        ("cmd.exe".to_owned(), vec!["/C".to_owned(), command_line])
+    }
+    #[cfg(not(windows))]
+    {
+        ("sh".to_owned(), vec!["-c".to_owned(), command_line])
+    }
+}
+
 pub async fn execute(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, ToolOutcome> {
     let invocation = parse_invocation(args)?;
     let cwd = args
@@ -40,17 +61,9 @@ pub async fn execute(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutc
         .and_then(Value::as_u64)
         .unwrap_or(120_000)
         .clamp(1_000, 600_000);
-    let shell_mode = needs_shell_interpretation(&invocation.program, &invocation.arguments);
-    let mut command = if shell_mode {
-        platform_shell_command(join_command_stream(
-            &invocation.program,
-            &invocation.arguments,
-        ))
-    } else {
-        let mut command = Command::new(&invocation.program);
-        command.args(&invocation.arguments);
-        command
-    };
+    let (program, arguments) = resolve_program(&invocation);
+    let mut command = Command::new(&program);
+    command.args(&arguments);
     command.current_dir(cwd).kill_on_drop(true);
     let output = tokio::select! {
         _ = context.cancellation.cancelled() => {
@@ -69,20 +82,6 @@ pub async fn execute(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutc
     command_outcome(output)
 }
 
-#[cfg(windows)]
-fn platform_shell_command(command_line: String) -> Command {
-    let mut command = Command::new("cmd.exe");
-    command.arg("/C").arg(command_line);
-    command
-}
-
-#[cfg(not(windows))]
-fn platform_shell_command(command_line: String) -> Command {
-    let mut command = Command::new("sh");
-    command.arg("-c").arg(command_line);
-    command
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,6 +93,22 @@ mod tests {
                 .unwrap();
         assert_eq!(invocation.program, "git");
         assert_eq!(invocation.arguments, ["status", "--short"]);
+    }
+
+    #[test]
+    fn direct_execs_a_plain_command_and_subshells_an_interpreted_one() {
+        let plain =
+            parse_invocation(&serde_json::json!({"cmd": "git", "args": ["status"]})).unwrap();
+        assert_eq!(
+            resolve_program(&plain),
+            ("git".to_owned(), vec!["status".to_owned()])
+        );
+
+        let piped = parse_invocation(&serde_json::json!({"cmd": "ls | wc -l"})).unwrap();
+        let (program, arguments) = resolve_program(&piped);
+        assert_ne!(program, "ls | wc -l");
+        assert_eq!(arguments.len(), 2);
+        assert!(arguments[1].contains('|'));
     }
 
     #[test]

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AgentWorkspaceLayout } from './AgentWorkspaceLayout'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useWorkspacePreviewStore } from '@/stores/workspace-preview-store'
+import { useHeaderOverlay } from '@/stores/header-overlay-store'
 
 const media = vi.hoisted(() => ({ desktop: true }))
 const panelLayouts = vi.hoisted(() => ({ values: [] as number[][] }))
@@ -78,6 +79,42 @@ describe('AgentWorkspaceLayout', () => {
     ]
     useArtifactStore.getState().close()
     useWorkspacePreviewStore.getState().reset()
+    useHeaderOverlay.getState().setRightOverlay(false)
+  })
+
+  it('flags the header while the files button hangs over its corner', async () => {
+    const { unmount } = render(
+      <AgentWorkspaceLayout
+        threadId="thread"
+        agentModeActive
+        workspace={agentWorkspace}
+        onAddExternal={onAddExternal}
+        refreshKey={0}
+      >
+        <div>Chat</div>
+      </AgentWorkspaceLayout>
+    )
+
+    // Sidebar open: nothing floats over the header.
+    expect(await screen.findByText('Files')).toBeInTheDocument()
+    expect(useHeaderOverlay.getState().rightOverlay).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close files sidebar' }))
+    await waitFor(() => {
+      expect(useHeaderOverlay.getState().rightOverlay).toBe(true)
+    })
+
+    // A preview panel takes that edge instead, so the button no longer lands on
+    // the header.
+    act(() => {
+      useArtifactStore.getState().open('source', '<h1>Artifact</h1>')
+    })
+    await waitFor(() => {
+      expect(useHeaderOverlay.getState().rightOverlay).toBe(false)
+    })
+
+    unmount()
+    expect(useHeaderOverlay.getState().rightOverlay).toBe(false)
   })
 
   it('uses the workspace layout only for desktop Agent threads', async () => {

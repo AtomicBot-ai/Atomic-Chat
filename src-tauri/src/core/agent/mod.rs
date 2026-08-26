@@ -37,15 +37,17 @@ pub mod llm_client;
 pub mod loop_guard;
 pub mod model_profile;
 pub mod openai_client;
+pub mod output_buffer;
 pub mod path_policy;
 pub mod prompt;
+pub mod pty;
 pub mod resource_class;
 // `loop` is a reserved keyword; the run loop lives in `runner`.
 pub mod runner;
 pub mod session;
-pub mod spill;
 pub mod shell_guard;
 pub mod skills;
+pub mod spill;
 pub mod target;
 pub mod token_budget;
 pub mod tool_schema;

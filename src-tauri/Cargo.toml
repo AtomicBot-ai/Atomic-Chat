@@ -82,10 +82,12 @@ futures-util = "0.3.31"
 hex = "0.4"
 hmac = "0.12"
 hyper = { version = "0.14", features = ["server"] }
+atomic-code-index = { path = "./code-index" }
 jan-utils = { path = "./utils" }
 libloading = "0.8.7"
 log = "0.4"
 png = "0.18"
+portable-pty = "0.9"
 rand = "0.8"
 rmcp = { version = "0.8.5", features = [
     "client",

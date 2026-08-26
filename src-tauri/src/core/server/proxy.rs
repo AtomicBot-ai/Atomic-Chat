@@ -22,6 +22,12 @@ use crate::core::server::api_request_analytics::{
 use crate::core::server::context_expansion::{
     is_context_limit_error as shared_is_context_limit_error, request_context_increase,
 };
+use crate::core::server::request_inspector::{
+    is_usage_only_chunk, maybe_inject_stream_usage, prompt_preview, FinishFields, FinishGuard,
+    InspectorHandle, PromptPreview, RequestInspector, StartedFields, StreamTelemetry,
+    PREVIEW_MAX_CHARS,
+};
+use crate::core::server::sse::{SseData, SseLine, SseLineReader};
 use crate::core::state::{AutoIncreaseState, ProviderConfig, ServerHandle};
 
 /// Immediate analytics channel retained for bind failures, which happen
@@ -45,6 +51,70 @@ struct EmitState {
     upstream_status: Option<u16>,
     oom_detected: bool,
     ctx_overflow_detected: bool,
+    /// Live-inspector telemetry for this request; `None` whenever the API
+    /// dashboard has no subscribers, which is the common case.
+    ///
+    /// Note the handle is type-erased over `R: Runtime` (see
+    /// `request_inspector::InspectorSink`) precisely so this struct can stay
+    /// non-generic — making it generic would ripple through ~15 signatures.
+    inspector: Option<InspectorHandle>,
+}
+
+/// Ceiling on how much of a non-SSE streamed body the inspector buffers before
+/// parsing it. Only needs to cover a chat-completions envelope.
+const NON_SSE_CAPTURE_LIMIT: usize = 256 * 1024;
+
+/// Rolls streamed telemetry up into the fields a `FinishGuard` reports.
+fn finish_fields_from_stream(
+    telemetry: StreamTelemetry,
+    started: Instant,
+    status: u16,
+    aborted: bool,
+) -> FinishFields {
+    let mut fields = telemetry.into_finish_fields(started);
+    fields.status = Some(status);
+    fields.aborted = aborted;
+    fields.duration_ms = Some(started.elapsed().as_millis() as u64);
+    fields
+}
+
+/// Assembles the `request-started` payload from whatever the request handler
+/// has worked out so far.
+fn started_fields_from(
+    state: &EmitState,
+    method: &str,
+    preview: PromptPreview,
+    client_max_tokens: Option<u64>,
+) -> StartedFields {
+    StartedFields {
+        endpoint: state.endpoint.unwrap_or("other"),
+        method: method.to_string(),
+        model_id: state.model_id.clone(),
+        stream: state.stream,
+        message_count: preview.message_count,
+        prompt_preview: preview.text,
+        prompt_chars: preview.chars,
+        has_non_text_parts: preview.has_non_text_parts,
+        client_max_tokens,
+    }
+}
+
+/// Announces a request whose body has just been parsed.
+fn announce_parsed_request(
+    state: &EmitState,
+    method: &str,
+    json_body: &serde_json::Value,
+    buffered_body: Option<&[u8]>,
+) {
+    let Some(handle) = &state.inspector else {
+        return;
+    };
+    handle.announce(started_fields_from(
+        state,
+        method,
+        prompt_preview(json_body, PREVIEW_MAX_CHARS),
+        extract_client_max_tokens(buffered_body),
+    ));
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -837,11 +907,22 @@ fn extract_client_max_tokens(request_body: Option<&[u8]>) -> Option<u64> {
 ///      equals/exceeds the cap the stop was client-driven and we must
 ///      leave the model alone (otherwise we would auto-grow the ctx on
 ///      every short `max_tokens=16` healthcheck).
+/// Byte-taking wrapper kept for the existing tests; the request path uses
+/// [`is_context_overflow_finish_length_json`] so the response is parsed once.
+#[cfg(test)]
 fn is_context_overflow_finish_length(response_body: &[u8], request_body: Option<&[u8]>) -> bool {
-    let Ok(json) = serde_json::from_slice::<serde_json::Value>(response_body) else {
-        return false;
-    };
+    match serde_json::from_slice::<serde_json::Value>(response_body) {
+        Ok(json) => is_context_overflow_finish_length_json(&json, request_body),
+        Err(_) => false,
+    }
+}
 
+/// The body of [`is_context_overflow_finish_length`], split out so callers
+/// that already parsed the response (the inspector) do not parse it twice.
+fn is_context_overflow_finish_length_json(
+    json: &serde_json::Value,
+    request_body: Option<&[u8]>,
+) -> bool {
     let has_length = json
         .get("choices")
         .and_then(|c| c.as_array())
@@ -1001,6 +1082,7 @@ fn build_streaming_response(
     host_header: &str,
     origin_header: &str,
     trusted_hosts: &[Vec<String>],
+    inspector: Option<InspectorHandle>,
 ) -> Response<Body> {
     let status = response.status();
     let mut builder = Response::builder().status(status);
@@ -1012,9 +1094,24 @@ fn build_streaming_response(
     builder =
         add_cors_headers_with_host_and_origin(builder, host_header, origin_header, trusted_hosts);
 
+    let status_code = status.as_u16();
     let mut stream = response.bytes_stream();
     let (mut sender, body) = hyper::Body::channel();
+    // Built here, not inside the task: `FinishGuard::new` marks the request as
+    // deferred synchronously, and the request wrapper checks that flag as soon
+    // as this function returns. Constructing it in the task would race.
+    let mut guard = inspector.map(|handle| {
+        FinishGuard::new(
+            handle,
+            FinishFields {
+                status: Some(status_code),
+                aborted: true,
+                ..FinishFields::default()
+            },
+        )
+    });
     tokio::spawn(async move {
+        let started = Instant::now();
         loop {
             let chunk_result = match next_stream_chunk(&mut stream, STREAM_IDLE_TIMEOUT).await {
                 StreamStep::Chunk(chunk_result) => chunk_result,
@@ -1025,7 +1122,12 @@ fn build_streaming_response(
                     );
                     break;
                 }
-                StreamStep::Done => break,
+                StreamStep::Done => {
+                    if let Some(guard) = guard.as_mut() {
+                        guard.fields.aborted = false;
+                    }
+                    break;
+                }
             };
             match chunk_result {
                 Ok(chunk) => {
@@ -1039,6 +1141,9 @@ fn build_streaming_response(
                     break;
                 }
             }
+        }
+        if let Some(guard) = guard.as_mut() {
+            guard.fields.duration_ms = Some(started.elapsed().as_millis() as u64);
         }
     });
 
@@ -1119,6 +1224,7 @@ async fn handle_responses_request(
         }
     };
     state.model_id = Some(model_id.clone());
+    announce_parsed_request(state, "POST", &json, Some(&body_bytes));
 
     enum Target {
         Passthrough {
@@ -1258,6 +1364,7 @@ async fn handle_responses_request(
                     host_header,
                     origin_header,
                     &config.trusted_hosts,
+                    state.inspector.clone(),
                 )),
                 Err(e) => {
                     state.error_kind = Some(unreachable_error_kind(state.backend));
@@ -1339,7 +1446,24 @@ async fn handle_responses_request(
 
             let (mut sender, resp_body) = Body::channel();
             let model_for_conv = model_id.clone();
+            let inspector = state.inspector.clone();
+            // Closes the request whenever this relay exits, including the
+            // several early returns below. Built before the spawn so the
+            // deferral is visible to `proxy_request` without a race.
+            let mut guard = inspector.map(|handle| {
+                FinishGuard::new(
+                    handle,
+                    FinishFields {
+                        status: Some(200),
+                        aborted: true,
+                        ..FinishFields::default()
+                    },
+                )
+            });
+
             tokio::spawn(async move {
+                let started = Instant::now();
+                let mut telemetry = StreamTelemetry::new();
                 let mut conv =
                     responses_shim::ResponsesStreamConverter::new(response_id, model_for_conv);
                 if sender
@@ -1351,7 +1475,7 @@ async fn handle_responses_request(
                 }
 
                 let mut upstream = resp.bytes_stream();
-                let mut buf: Vec<u8> = Vec::new();
+                let mut reader = SseLineReader::new();
                 let mut usage: Option<serde_json::Value> = None;
 
                 'outer: while let Some(chunk) = upstream.next().await {
@@ -1362,33 +1486,42 @@ async fn handle_responses_request(
                             break;
                         }
                     };
-                    buf.extend_from_slice(&bytes);
+                    reader.push(&bytes);
 
-                    while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
-                        let line_bytes: Vec<u8> = buf.drain(..=pos).collect();
-                        let line = String::from_utf8_lossy(&line_bytes);
-                        let line = line.trim();
-                        if !line.starts_with("data:") {
+                    while let Some(line) = reader.next_line() {
+                        let SseLine::Data { payload, .. } = line else {
                             continue;
-                        }
-                        let data = line["data:".len()..].trim();
-                        if data == "[DONE]" {
-                            for ev in conv.finish(usage.as_ref()) {
-                                let _ = sender.send_data(sse_event(&ev)).await;
+                        };
+                        match payload {
+                            SseData::Done => {
+                                for ev in conv.finish(usage.as_ref()) {
+                                    let _ = sender.send_data(sse_event(&ev)).await;
+                                }
+                                if let Some(guard) = guard.as_mut() {
+                                    guard.fields = finish_fields_from_stream(
+                                        std::mem::take(&mut telemetry),
+                                        started,
+                                        200,
+                                        false,
+                                    );
+                                }
+                                return;
                             }
-                            return;
-                        }
-                        if let Ok(j) = serde_json::from_str::<serde_json::Value>(data) {
-                            if let Some(u) = j.get("usage") {
-                                if !u.is_null() {
-                                    usage = Some(u.clone());
+                            SseData::Json(j) => {
+                                telemetry.on_json(&j, Instant::now());
+                                if let Some(u) = j.get("usage") {
+                                    if !u.is_null() {
+                                        usage = Some(u.clone());
+                                    }
+                                }
+                                for ev in conv.on_chunk(&j) {
+                                    if sender.send_data(sse_event(&ev)).await.is_err() {
+                                        break 'outer;
+                                    }
                                 }
                             }
-                            for ev in conv.on_chunk(&j) {
-                                if sender.send_data(sse_event(&ev)).await.is_err() {
-                                    break 'outer;
-                                }
-                            }
+                            // Neither JSON nor [DONE]: nothing to translate.
+                            SseData::Raw(_) => {}
                         }
                     }
                 }
@@ -1396,6 +1529,10 @@ async fn handle_responses_request(
                 // Upstream closed without an explicit [DONE]; flush closers.
                 for ev in conv.finish(usage.as_ref()) {
                     let _ = sender.send_data(sse_event(&ev)).await;
+                }
+                if let Some(guard) = guard.as_mut() {
+                    guard.fields =
+                        finish_fields_from_stream(std::mem::take(&mut telemetry), started, 200, false);
                 }
             });
 
@@ -1459,12 +1596,16 @@ async fn proxy_request<R: Runtime>(
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
     auto_increase_state: Arc<AutoIncreaseState>,
     api_request_aggregator: Arc<ApiRequestAggregator>,
+    api_request_inspector: Arc<RequestInspector>,
     app_handle: AppHandle<R>,
 ) -> Result<Response<Body>, hyper::Error> {
     let start = Instant::now();
     let method_str = req.method().as_str().to_string();
+    // Minted here so `started_at` is honest, but only announced once the body
+    // has been parsed and the endpoint / model are known.
     let mut state = EmitState {
         backend: "unknown",
+        inspector: api_request_inspector.begin(start),
         ..EmitState::default()
     };
 
@@ -1482,6 +1623,39 @@ async fn proxy_request<R: Runtime>(
         app_handle.clone(),
     )
     .await?;
+
+    if let Some(handle) = state.inspector.take() {
+        // Paths that never reach a body-parse site (404s, auth failures) still
+        // get a started event, so the UI can treat started/finished as a strict
+        // pair. `announce` is idempotent, so the richer parse-site call wins
+        // wherever one happened.
+        //
+        // `skip_emit` traffic — CORS preflights, `/models`, `/metrics`, the
+        // Swagger assets — stays out of the dashboard for the same reason it
+        // stays out of analytics: it is not the user's traffic, and a polling
+        // client would drown the log in it.
+        if !state.skip_emit {
+            handle.announce(started_fields_from(
+                &state,
+                &method_str,
+                PromptPreview::default(),
+                None,
+            ));
+        }
+        if !handle.is_deferred() {
+            // A streaming body is still being relayed by a detached task that
+            // owns a `FinishGuard`; only close the request here when nothing
+            // deferred it.
+            let elapsed = start.elapsed().as_millis() as u64;
+            handle.finish(FinishFields {
+                status: Some(response.status().as_u16()),
+                error_kind: state.error_kind,
+                headers_ms: Some(elapsed),
+                duration_ms: Some(elapsed),
+                ..FinishFields::default()
+            });
+        }
+    }
 
     if !state.skip_emit {
         api_request_aggregator.record(ApiRequestObservation {
@@ -1864,6 +2038,16 @@ async fn inner_proxy_request<R: Runtime>(
                         .get("stream")
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false);
+                    state.model_id = json_body
+                        .get("model")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
+                    announce_parsed_request(
+                        state,
+                        method.as_str(),
+                        &json_body,
+                        buffered_body.as_deref(),
+                    );
                     if let Some(model_id) = json_body.get("model").and_then(|v| v.as_str()) {
                         state.model_id = Some(model_id.to_string());
                         let pc = provider_configs.lock().await;
@@ -2025,6 +2209,16 @@ async fn inner_proxy_request<R: Runtime>(
                         .get("stream")
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false);
+                    state.model_id = json_body
+                        .get("model")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
+                    announce_parsed_request(
+                        state,
+                        method.as_str(),
+                        &json_body,
+                        buffered_body.as_deref(),
+                    );
                     if let Some(model_id) = json_body.get("model").and_then(|v| v.as_str()) {
                         state.model_id = Some(model_id.to_string());
                         log::debug!("Extracted model_id: {model_id}");
@@ -2659,7 +2853,35 @@ async fn inner_proxy_request<R: Runtime>(
     }
 
     let session_api_key_for_req = session_api_key.clone();
-    let buffered_body_for_req = buffered_body.clone();
+    let mut buffered_body_for_req = buffered_body.clone();
+
+    // Ask the upstream to report real token counts so the dashboard can show
+    // them. Scoped tightly:
+    //   * only while someone is watching, so the relay's line-buffering and
+    //     this rewrite always travel together;
+    //   * only `/chat/completions` — `/messages` has no `stream_options` and
+    //     would 400, and `/responses` already injects its own;
+    //   * only local backends, because a remote provider that rejects unknown
+    //     fields would turn a diagnostics feature into an outage.
+    // The trailer chunk this adds is stripped back out in the relay.
+    let mut injected_stream_usage = false;
+    if state.inspector.is_some()
+        && state.stream
+        && destination_path == "/chat/completions"
+        && is_local_backend(state.backend)
+    {
+        if let Some(rewritten) = buffered_body_for_req
+            .as_ref()
+            .and_then(maybe_inject_stream_usage)
+        {
+            // The client's `content-length` was forwarded verbatim in the
+            // header loop above; leaving it would truncate the rewritten body.
+            outbound_req =
+                outbound_req.header(hyper::header::CONTENT_LENGTH, rewritten.len().to_string());
+            buffered_body_for_req = Some(rewritten);
+            injected_stream_usage = true;
+        }
+    }
 
     if let Some(key) = session_api_key_for_req {
         outbound_req = outbound_req.header("Authorization", format!("Bearer {key}"));
@@ -2822,14 +3044,37 @@ async fn inner_proxy_request<R: Runtime>(
 
                         let (sender, body) = hyper::Body::channel();
                         let dest_path = destination_path.clone();
+                        let inspector = state.inspector.clone();
+                        let fallback_status_code = fallback_status.as_u16();
+
+                        // Keeps the request in flight for as long as the
+                        // transform is actually relaying. No token counts here
+                        // on purpose: this path's Anthropic events carry a
+                        // fabricated word-count `output_tokens` (see
+                        // `transform_and_forward_stream`), which must never be
+                        // reported to the dashboard as tokens.
+                        let guard = inspector.map(|handle| {
+                            FinishGuard::new(
+                                handle,
+                                FinishFields {
+                                    status: Some(fallback_status_code),
+                                    ..FinishFields::default()
+                                },
+                            )
+                        });
 
                         tokio::spawn(async move {
+                            let started = Instant::now();
                             if is_streaming {
                                 let stream = res.bytes_stream();
                                 transform_and_forward_stream(stream, sender, &dest_path).await;
                             } else {
                                 let response_body = res.bytes().await;
                                 forward_non_streaming(response_body, sender, &dest_path).await;
+                            }
+                            if let Some(mut guard) = guard {
+                                guard.fields.duration_ms =
+                                    Some(started.elapsed().as_millis() as u64);
                             }
                         });
 
@@ -2910,6 +3155,7 @@ async fn inner_proxy_request<R: Runtime>(
                                         &host_header,
                                         &origin_header,
                                         &config.trusted_hosts,
+                                        state.inspector.clone(),
                                     ));
                                 } else {
                                     log::warn!(
@@ -3026,9 +3272,24 @@ async fn inner_proxy_request<R: Runtime>(
 
             if can_inspect_finish {
                 let body_bytes = response.bytes().await.unwrap_or_default();
+                let parsed = serde_json::from_slice::<serde_json::Value>(&body_bytes).ok();
 
-                let context_overflow =
-                    is_context_overflow_finish_length(&body_bytes, buffered_body.as_deref());
+                let context_overflow = parsed.as_ref().is_some_and(|json| {
+                    is_context_overflow_finish_length_json(json, buffered_body.as_deref())
+                });
+
+                // The same parse already yields the usage and finish_reason
+                // the dashboard wants; stash them for whichever path closes
+                // this request.
+                if let (Some(handle), Some(json)) = (&state.inspector, &parsed) {
+                    let now = Instant::now();
+                    let mut telemetry = StreamTelemetry::new();
+                    telemetry.on_json(json, now);
+                    // A non-streamed reply arrives whole; there is no
+                    // meaningful time-to-first-token to report.
+                    telemetry.first_content_at = None;
+                    handle.stash(telemetry.into_finish_fields(now));
+                }
 
                 if context_overflow {
                     let model_id = state.model_id.clone().unwrap();
@@ -3068,6 +3329,7 @@ async fn inner_proxy_request<R: Runtime>(
                                     &host_header,
                                     &origin_header,
                                     &config.trusted_hosts,
+                                    state.inspector.clone(),
                                 ));
                             }
                             Ok(retry_response) => {
@@ -3116,12 +3378,44 @@ async fn inner_proxy_request<R: Runtime>(
                 &config.trusted_hosts,
             );
 
+            // Read the upstream content type before `bytes_stream()` consumes
+            // the response: whether to parse SSE depends on what the upstream
+            // actually sent, not on what the client asked for.
+            let upstream_is_sse = response
+                .headers()
+                .get(hyper::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|ct| ct.starts_with("text/event-stream"));
+
             let mut stream = response.bytes_stream();
             let (mut sender, body) = hyper::Body::channel();
             let ttft_app = app_handle.clone();
             let mut eta_emitted = false;
+            let inspector = state.inspector.clone();
+            let strip_usage_trailer = injected_stream_usage;
+            let status_code = status.as_u16();
+
+            // Emits the finish event however the relay exits — every `break`
+            // below, a panic, or the client hanging up. Built before the spawn
+            // so the request is marked deferred before `proxy_request` looks.
+            let mut guard = inspector.map(|handle| {
+                FinishGuard::new(
+                    handle,
+                    FinishFields {
+                        status: Some(status_code),
+                        aborted: true,
+                        ..FinishFields::default()
+                    },
+                )
+            });
 
             tokio::spawn(async move {
+                let started = Instant::now();
+                let mut reader = SseLineReader::new();
+                let mut telemetry = StreamTelemetry::new();
+                let mut non_sse_captured = 0usize;
+                let mut dropping_trailer_event = false;
+
                 // Regular passthrough - when /messages succeeds directly,
                 // the response is already in the correct format
                 loop {
@@ -3134,7 +3428,13 @@ async fn inner_proxy_request<R: Runtime>(
                             );
                             break;
                         }
-                        StreamStep::Done => break,
+                        StreamStep::Done => {
+                            if let Some(guard) = guard.as_mut() {
+                                // A clean end of stream is not an abort.
+                                guard.fields.aborted = false;
+                            }
+                            break;
+                        }
                     };
                     match chunk_result {
                         Ok(chunk) => {
@@ -3142,16 +3442,101 @@ async fn inner_proxy_request<R: Runtime>(
                                 eta_emitted = true;
                                 emit_ttft_timing(&ttft_app, "etaFirstToken");
                             }
-                            if sender.send_data(chunk).await.is_err() {
+                            let Some(guard) = guard.as_mut() else {
+                                // Nobody is watching: byte-for-byte relay, the
+                                // way this loop has always worked.
+                                if sender.send_data(chunk).await.is_err() {
+                                    log::debug!("Client disconnected during streaming");
+                                    break;
+                                }
+                                continue;
+                            };
+
+                            if !upstream_is_sse {
+                                // A whole JSON document delivered as a stream
+                                // (remote non-streaming responses land here).
+                                // Capture a bounded prefix rather than mirroring
+                                // an arbitrarily large body into memory.
+                                if non_sse_captured < NON_SSE_CAPTURE_LIMIT {
+                                    let room = NON_SSE_CAPTURE_LIMIT - non_sse_captured;
+                                    let take = room.min(chunk.len());
+                                    reader.push(&chunk[..take]);
+                                    non_sse_captured += take;
+                                }
+                                if sender.send_data(chunk).await.is_err() {
+                                    log::debug!("Client disconnected during streaming");
+                                    break;
+                                }
+                                continue;
+                            }
+
+                            reader.push(&chunk);
+                            let mut forward: Vec<u8> = Vec::with_capacity(chunk.len());
+                            while let Some(line) = reader.next_line() {
+                                if let SseLine::Data {
+                                    payload: SseData::Json(json),
+                                    ..
+                                } = &line
+                                {
+                                    telemetry.on_json(json, Instant::now());
+                                    // Drop the usage-only trailer we asked for
+                                    // ourselves: the client never opted into an
+                                    // extra chunk with empty `choices`, and some
+                                    // clients throw on one.
+                                    if strip_usage_trailer && is_usage_only_chunk(json) {
+                                        dropping_trailer_event = true;
+                                        continue;
+                                    }
+                                }
+                                if dropping_trailer_event {
+                                    // Also swallow the blank line that ended the
+                                    // dropped event, so the bytes the client
+                                    // sees are exactly what it would have got
+                                    // had we never asked for usage at all.
+                                    dropping_trailer_event = false;
+                                    if matches!(&line, SseLine::Other { raw }
+                                        if raw.iter().all(|b| b.is_ascii_whitespace()))
+                                    {
+                                        continue;
+                                    }
+                                }
+                                forward.extend_from_slice(line.raw());
+                            }
+                            if !forward.is_empty()
+                                && sender.send_data(Bytes::from(forward)).await.is_err()
+                            {
                                 log::debug!("Client disconnected during streaming");
                                 break;
                             }
+                            guard.handle().progress(&telemetry);
                         }
                         Err(e) => {
                             log::error!("Stream error: {e}");
                             break;
                         }
                     }
+                }
+
+                if let Some(guard) = guard.as_mut() {
+                    let tail = reader.take_tail();
+                    if !tail.is_empty() {
+                        if upstream_is_sse {
+                            let _ = sender.send_data(Bytes::from(tail)).await;
+                        } else if let Ok(json) =
+                            serde_json::from_slice::<serde_json::Value>(&tail)
+                        {
+                            // Non-SSE: the buffer holds the whole document.
+                            telemetry.on_json(&json, Instant::now());
+                            telemetry.first_content_at = None;
+                        }
+                    }
+                    let aborted = guard.fields.aborted;
+                    let status = guard.fields.status;
+                    let mut fields = std::mem::take(&mut telemetry).into_finish_fields(started);
+                    fields.aborted = aborted;
+                    fields.status = status;
+                    fields.duration_ms = Some(started.elapsed().as_millis() as u64);
+                    guard.fields = fields;
                 }
                 log::debug!("Streaming complete to client");
             });
@@ -3257,6 +3642,7 @@ pub async fn start_server<R: Runtime>(
     proxy_timeout: u64,
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
     auto_increase_state: Arc<AutoIncreaseState>,
+    api_request_inspector: Arc<RequestInspector>,
 ) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
     start_server_internal(
         app_handle,
@@ -3272,6 +3658,7 @@ pub async fn start_server<R: Runtime>(
         proxy_timeout,
         provider_configs,
         auto_increase_state,
+        api_request_inspector,
     )
     .await
 }
@@ -3291,6 +3678,7 @@ async fn start_server_internal<R: Runtime>(
     proxy_timeout: u64,
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
     auto_increase_state: Arc<AutoIncreaseState>,
+    api_request_inspector: Arc<RequestInspector>,
 ) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
     let mut handle_guard = server_handle.lock().await;
     if handle_guard.is_some() {
@@ -3391,6 +3779,7 @@ async fn start_server_internal<R: Runtime>(
         let provider_configs = provider_configs.clone();
         let auto_increase_state = auto_increase_state.clone();
         let api_request_aggregator = api_request_aggregator.clone();
+        let api_request_inspector = api_request_inspector.clone();
         let app_handle = app_handle.clone();
 
         async move {
@@ -3406,6 +3795,7 @@ async fn start_server_internal<R: Runtime>(
                     provider_configs.clone(),
                     auto_increase_state.clone(),
                     api_request_aggregator.clone(),
+                    api_request_inspector.clone(),
                     app_handle.clone(),
                 )
             }))

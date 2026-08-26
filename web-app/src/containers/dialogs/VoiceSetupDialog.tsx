@@ -2,8 +2,10 @@ import { memo, useCallback, useEffect, useState } from 'react'
 import {
   IconCheck,
   IconCircleCheckFilled,
+  IconDownload,
   IconExternalLink,
   IconLoader2,
+  IconLock,
   IconMicrophone,
 } from '@tabler/icons-react'
 
@@ -174,41 +176,54 @@ export const VoicePermissionBlock = memo(function VoicePermissionBlock() {
   )
 })
 
+const INTRO_BULLETS = [
+  'common:voiceInput.setup.intro.bulletLive',
+  'common:voiceInput.setup.intro.bulletLocal',
+  'common:voiceInput.setup.intro.bulletAnywhere',
+]
+
 function IntroStep() {
   const { t } = useTranslation()
-  const bullets = [
-    'common:voiceInput.setup.intro.bulletLive',
-    'common:voiceInput.setup.intro.bulletLocal',
-    'common:voiceInput.setup.intro.bulletAnywhere',
-  ]
-
   return (
-    <>
-      <div className="flex justify-center py-2">
-        <div className="grid size-12 place-items-center rounded-xl bg-secondary">
-          <IconMicrophone size={24} className="text-foreground" />
+    <div className="space-y-2.5 rounded-md border bg-secondary p-3">
+      {INTRO_BULLETS.map((key) => (
+        <div key={key} className="flex items-start gap-2.5">
+          <IconCheck
+            size={16}
+            className="mt-0.5 shrink-0 text-muted-foreground"
+          />
+          <span className="text-sm leading-snug text-muted-foreground">
+            {t(key)}
+          </span>
         </div>
-      </div>
-      <p className="text-sm font-medium">
-        {t('common:voiceInput.setup.intro.title')}
-      </p>
-      <p className="text-sm text-muted-foreground">
-        {t('common:voiceInput.setup.intro.description')}
-      </p>
-      <div className="space-y-3">
-        {bullets.map((key) => (
-          <div key={key} className="flex items-start gap-2.5">
-            <IconCheck
-              size={16}
-              className="mt-0.5 shrink-0 text-muted-foreground"
-            />
-            <span className="text-sm text-muted-foreground">{t(key)}</span>
-          </div>
-        ))}
-      </div>
-    </>
+      ))}
+    </div>
   )
 }
+
+/**
+ * One shape for all three steps: an icon tile, a title, a one-line subtitle and
+ * a single bordered block. Keeping the slots identical is what stops the dialog
+ * resizing as you page through it — and it leaves room for exactly one sentence
+ * per step, which is the amount of copy a wizard can carry.
+ */
+const STEPS = [
+  {
+    icon: IconMicrophone,
+    title: 'common:voiceInput.setup.intro.title',
+    description: 'common:voiceInput.setup.intro.description',
+  },
+  {
+    icon: IconLock,
+    title: 'common:voiceInput.setup.permission.title',
+    description: 'common:voiceInput.setup.permission.description',
+  },
+  {
+    icon: IconDownload,
+    title: 'common:voiceInput.setup.model.title',
+    description: 'common:voiceInput.setup.model.description',
+  },
+] as const
 
 /**
  * Three-step first-run flow: what it does, microphone access, install the model.
@@ -230,6 +245,8 @@ const VoiceSetupDialog = memo(function VoiceSetupDialog() {
     [openSetup]
   )
 
+  const StepIcon = STEPS[step].icon
+
   const finish = useCallback(() => {
     // Closing early is safe: the next click on the microphone re-derives which
     // prerequisite is still missing and reopens the dialog right there.
@@ -243,39 +260,31 @@ const VoiceSetupDialog = memo(function VoiceSetupDialog() {
       onOpenChange={(next) => (next ? openSetup(step) : finish())}
     >
       <DialogContent className="sm:max-w-md lg:max-w-md xl:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{t('common:voiceInput.setup.title')}</DialogTitle>
-          <DialogDescription>
-            {t('common:voiceInput.setup.subtitle')}
+        {/* The step's own title carries the header. A fixed dialog title on top
+            of a per-step heading meant four stacked blocks of text, which is
+            what made this feel crowded. */}
+        <DialogHeader
+          data-testid="voice-setup-header"
+          className="items-center text-center sm:text-center"
+        >
+          <div className="mb-1 grid size-12 place-items-center rounded-xl bg-secondary">
+            <StepIcon size={24} className="text-foreground" />
+          </div>
+          <DialogTitle>{t(STEPS[step].title)}</DialogTitle>
+          <DialogDescription className="text-pretty">
+            {t(STEPS[step].description)}
           </DialogDescription>
         </DialogHeader>
 
-        {/* Fixed floor so the dots and footer do not jump between steps. */}
-        <div className="min-h-[268px] space-y-5 py-2">
+        {/* One slot, one height, content centred in it — so paging through the
+            wizard does not resize the dialog under the cursor. */}
+        <div className="flex min-h-[136px] flex-col justify-center gap-2 py-1">
           {step === 0 && <IntroStep />}
-
-          {step === 1 && (
-            <>
-              <p className="text-sm font-medium">
-                {t('common:voiceInput.setup.permission.title')}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {t('common:voiceInput.setup.permission.description')}
-              </p>
-              <VoicePermissionBlock />
-            </>
-          )}
-
+          {step === 1 && <VoicePermissionBlock />}
           {step === 2 && (
             <>
-              <p className="text-sm font-medium">
-                {t('common:voiceInput.setup.model.title')}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {t('common:voiceInput.setup.model.description')}
-              </p>
               <VoiceModelCard variant="dialog" />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-center text-xs text-muted-foreground">
                 {t('common:voiceInput.setup.model.diskNote', {
                   gb: VOICE_MODEL_FREE_DISK_GB,
                 })}

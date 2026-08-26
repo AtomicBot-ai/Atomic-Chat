@@ -2,6 +2,7 @@
 import { createFileRoute, useSearch } from '@tanstack/react-router'
 import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
+import HeaderContextSize from '@/containers/HeaderContextSize'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useTools } from '@/hooks/useTools'
 import { cn } from '@/lib/utils'
@@ -124,8 +125,11 @@ function Index() {
     >
       <div className="flex h-full w-full min-w-0 flex-col justify-center">
         <HeaderPage>
-          <div className="flex items-center gap-2 w-full">
+          <div className="flex items-center gap-2 w-full pr-2">
             <DropdownModelProvider showSampler={!isAgentMode} />
+            <div className="ml-auto shrink-0">
+              <HeaderContextSize />
+            </div>
           </div>
         </HeaderPage>
         <div

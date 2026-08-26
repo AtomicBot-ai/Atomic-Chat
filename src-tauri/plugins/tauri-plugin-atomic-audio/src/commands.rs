@@ -48,11 +48,18 @@ fn default_timeout() -> u64 {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DictationOptions {
-    /// e.g. `http://127.0.0.1:8123/v1`
-    pub base_url: String,
-    pub api_key: String,
+    /// e.g. `http://127.0.0.1:8123/v1`. Omit all three transcription fields to
+    /// run a monitor-only session: the microphone opens and level events flow,
+    /// but nothing is transcribed. That is what the settings page's "test
+    /// microphone" uses, so picking a device does not require the 3 GB voice
+    /// model to be installed and loaded first.
+    #[serde(default)]
+    pub base_url: Option<String>,
+    #[serde(default)]
+    pub api_key: Option<String>,
     /// llama-server alias, which is our model id.
-    pub model: String,
+    #[serde(default)]
+    pub model: Option<String>,
     #[serde(default)]
     pub language: Option<String>,
     #[serde(default)]
@@ -211,39 +218,52 @@ pub async fn start_dictation<R: Runtime>(
         Arc::clone(&err_slot),
     )?;
 
-    let target = Arc::new(RwLock::new(TranscriptionTarget {
-        base_url: options.base_url.clone(),
-        api_key: options.api_key.clone(),
-        model: options.model.clone(),
-        language: options.language.clone(),
-        prompt: options.prompt.clone(),
-        timeout_secs: options.request_timeout_secs,
-    }));
+    let target = match (&options.base_url, &options.api_key, &options.model) {
+        (Some(base_url), Some(api_key), Some(model)) => {
+            Some(Arc::new(RwLock::new(TranscriptionTarget {
+                base_url: base_url.clone(),
+                api_key: api_key.clone(),
+                model: model.clone(),
+                language: options.language.clone(),
+                prompt: options.prompt.clone(),
+                timeout_secs: options.request_timeout_secs,
+            })))
+        }
+        _ => None,
+    };
 
-    let (seg_tx, seg_rx) = tokio::sync::mpsc::channel::<SegmentJob>(8);
+    // Monitor-only sessions skip the whole transcription half: no HTTP client,
+    // no consumer task, and the worker does not even encode WAV.
+    let seg_tx = match &target {
+        Some(target) => {
+            let (seg_tx, seg_rx) = tokio::sync::mpsc::channel::<SegmentJob>(8);
 
-    // Async consumer: one request at a time, in order.
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .connect_timeout(Duration::from_secs(2))
-        .timeout(Duration::from_secs(options.request_timeout_secs))
-        .build()
-        .map_err(|e| {
-            AudioError::with_details(
-                AudioErrorCode::Internal,
-                "The transcription client could not be created.",
-                e.to_string(),
-            )
-        })?;
+            let client = reqwest::Client::builder()
+                .no_proxy()
+                .connect_timeout(Duration::from_secs(2))
+                .timeout(Duration::from_secs(options.request_timeout_secs))
+                .build()
+                .map_err(|e| {
+                    AudioError::with_details(
+                        AudioErrorCode::Internal,
+                        "The transcription client could not be created.",
+                        e.to_string(),
+                    )
+                })?;
 
-    tauri::async_runtime::spawn(transcribe_loop(
-        app.clone(),
-        session_id.clone(),
-        seg_rx,
-        Arc::clone(&target),
-        Arc::clone(&stats),
-        client,
-    ));
+            // Async consumer: one request at a time, in order.
+            tauri::async_runtime::spawn(transcribe_loop(
+                app.clone(),
+                session_id.clone(),
+                seg_rx,
+                Arc::clone(target),
+                Arc::clone(&stats),
+                client,
+            ));
+            Some(seg_tx)
+        }
+        None => None,
+    };
 
     // Worker: DSP + VAD, feeding the async consumer.
     let worker_join = spawn_worker(
@@ -392,8 +412,13 @@ pub async fn set_transcription_target(
         ));
     }
 
-    let mut target = session
-        .target
+    let Some(session_target) = session.target.as_ref() else {
+        return Err(AudioError::new(
+            AudioErrorCode::SessionNotFound,
+            "That voice session does not transcribe.",
+        ))
+    };
+    let mut target = session_target
         .write()
         .map_err(|_| AudioError::internal("Transcription target is poisoned."))?;
     target.base_url = base_url;
@@ -462,7 +487,7 @@ fn handle_outcome<R: Runtime>(
     outcome: crate::vad::VadOutcome,
     elapsed_ms: u64,
     stats: &SessionStats,
-    seg_tx: &tokio::sync::mpsc::Sender<SegmentJob>,
+    seg_tx: Option<&tokio::sync::mpsc::Sender<SegmentJob>>,
     segment_index: &mut u32,
     frames_since_level: &mut u32,
     level_every: u32,
@@ -484,6 +509,11 @@ fn handle_outcome<R: Runtime>(
     }
 
     let Some(segment) = outcome.segment else {
+        return;
+    };
+    // Monitor-only session: the phrase was detected, which is all the level
+    // meter needs. Skip the WAV encode entirely.
+    let Some(seg_tx) = seg_tx else {
         return;
     };
 
@@ -529,7 +559,7 @@ fn spawn_worker<R: Runtime>(
     stats: Arc<SessionStats>,
     dropped: Arc<AtomicU64>,
     err_slot: Arc<Mutex<Option<cpal::Error>>>,
-    seg_tx: tokio::sync::mpsc::Sender<SegmentJob>,
+    seg_tx: Option<tokio::sync::mpsc::Sender<SegmentJob>>,
 ) -> AudioResult<std::thread::JoinHandle<()>> {
     std::thread::Builder::new()
         .name("atomic-audio-vad".into())
@@ -561,7 +591,7 @@ fn spawn_worker<R: Runtime>(
                         outcome,
                         vad.elapsed_ms(),
                         &stats,
-                        &seg_tx,
+                        seg_tx.as_ref(),
                         &mut segment_index,
                         &mut frames_since_level,
                         level_every,
@@ -580,7 +610,7 @@ fn spawn_worker<R: Runtime>(
                 outcome,
                 elapsed,
                 &stats,
-                &seg_tx,
+                seg_tx.as_ref(),
                 &mut segment_index,
                 &mut frames_since_level,
                 // Force the final level event so the meter lands at rest.

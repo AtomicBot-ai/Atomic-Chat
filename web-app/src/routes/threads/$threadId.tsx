@@ -10,6 +10,7 @@ import { buildAgentReasoningRequest } from '@/lib/reasoning-effort'
 import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
 
 import HeaderPage from '@/containers/HeaderPage'
+import HeaderContextSize from '@/containers/HeaderContextSize'
 import { useThreads } from '@/hooks/useThreads'
 import ChatInput from '@/containers/ChatInput'
 import { useShallow } from 'zustand/react/shallow'
@@ -1774,6 +1775,9 @@ function ThreadDetail() {
         <HeaderPage>
           <div className="flex items-center justify-between w-full pr-2">
             <DropdownModelProvider showSampler={!agentModeActive} />
+            <div className="shrink-0">
+              <HeaderContextSize />
+            </div>
           </div>
         </HeaderPage>
         <div className="flex flex-1 overflow-hidden">

@@ -21,7 +21,8 @@ import {
 } from '@/constants/integrations'
 import HeaderPage from '@/containers/HeaderPage'
 import { Card } from '@/containers/Card'
-import { LocalApiServerPanel } from '@/containers/LocalApiServerPanel'
+import { LocalApiServerStatusRow } from '@/containers/LocalApiServerStatusRow'
+import { startLocalApiServer } from '@/utils/localApiServerControl'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -439,13 +440,8 @@ function LaunchPage() {
   const {
     serverHost,
     serverPort,
-    setServerPort,
     apiPrefix,
     apiKey,
-    trustedHosts,
-    corsEnabled,
-    verboseLogs,
-    proxyTimeout,
     defaultModelLocalApiServer,
   } = useLocalApiServer()
   const { serverStatus, setServerStatus } = useAppState()
@@ -531,35 +527,13 @@ function LaunchPage() {
   const ensureServerRunning = useCallback(async () => {
     if (serverStatus === 'running') return
     try {
-      const actualPort = await window.core?.api?.startServer({
-        host: serverHost,
-        port: serverPort,
-        prefix: apiPrefix,
-        apiKey,
-        trustedHosts,
-        isCorsEnabled: corsEnabled,
-        isVerboseEnabled: verboseLogs,
-        proxyTimeout,
-      })
-      if (actualPort && actualPort !== serverPort) setServerPort(actualPort)
+      await startLocalApiServer()
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       if (!msg.includes('already running')) throw err
     }
     setServerStatus('running')
-  }, [
-    serverStatus,
-    serverHost,
-    serverPort,
-    apiPrefix,
-    apiKey,
-    trustedHosts,
-    corsEnabled,
-    verboseLogs,
-    proxyTimeout,
-    setServerPort,
-    setServerStatus,
-  ])
+  }, [serverStatus, setServerStatus])
 
   // Install the agent's binary, streaming its installer log. Returns whether
   // the install succeeded. Does NOT manage the shared busy/spinner state —
@@ -1164,7 +1138,7 @@ function LaunchPage() {
                 {t('launch:serverSectionDesc')}
               </p>
             </div>
-            <LocalApiServerPanel />
+            <LocalApiServerStatusRow />
           </section>
 
           {assistants.length > 0 && (

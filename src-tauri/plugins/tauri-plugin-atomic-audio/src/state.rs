@@ -34,7 +34,9 @@ pub struct ActiveSession {
     pub discard: Arc<AtomicBool>,
     pub capture_join: Option<JoinHandle<()>>,
     pub worker_join: Option<JoinHandle<()>>,
-    pub target: Arc<RwLock<TranscriptionTarget>>,
+    /// None for a monitor-only session — the settings page's microphone
+    /// test opens the device without transcribing anything.
+    pub target: Option<Arc<RwLock<TranscriptionTarget>>>,
     pub stats: Arc<SessionStats>,
     pub started_at: Instant,
 }

@@ -98,9 +98,11 @@ const VoiceInputToggle = memo(function VoiceInputToggle({
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
+          {/* icon-sm, not the icon-xs used by the toggles in the left
+              cluster: this button sits next to Send and has to match it. */}
           <Button
             variant="ghost"
-            size="icon-xs"
+            size="icon-sm"
             className={cn(
               // Recording is the one thing in this toolbar that should read
               // as "hot". Same shape as the web-search toggle's active pill,

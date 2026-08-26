@@ -82,11 +82,16 @@ export type VoiceEvent =
     }
 
 export type StartVoiceSessionOptions = {
-  /** Base URL of the llama-server running the voice model, e.g. `http://127.0.0.1:8123/v1`. */
-  baseUrl: string
-  apiKey: string
+  /**
+   * Where to send audio. Leave all three out for a monitor-only session: the
+   * microphone opens and level events flow, but nothing is transcribed — which
+   * is how the settings page tests a device without needing the voice model
+   * installed.
+   */
+  baseUrl?: string
+  apiKey?: string
   /** llama-server alias, which is the model id. */
-  model: string
+  model?: string
   /** ISO-639-1 hint, or `auto`. */
   language?: string
   /** Optional biasing text. */

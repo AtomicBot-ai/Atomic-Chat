@@ -10,7 +10,22 @@ const FLOOR = 0.15
 /** Centre bars react more than the edges, which is what reads as a level meter. */
 const WEIGHTS = [0.55, 0.8, 1, 0.8, 0.55]
 
-type VoiceLevelMeterProps = { className?: string }
+/** Push level updates into a callback; returns an unsubscribe. */
+export type LevelSource = (onLevel: (level: number) => void) => () => void
+
+const dictationLevel: LevelSource = (onLevel) =>
+  useVoiceInput.subscribe((state) => onLevel(state.level))
+
+type VoiceLevelMeterProps = {
+  className?: string
+  /**
+   * Where the level comes from. Defaults to the dictation session; the settings
+   * page passes the microphone-test monitor instead.
+   */
+  source?: LevelSource
+  /** Bar colour. Recording is destructive-red; a device test is not. */
+  tone?: 'recording' | 'neutral'
+}
 
 /**
  * Five bars driven by the microphone level.
@@ -22,6 +37,8 @@ type VoiceLevelMeterProps = { className?: string }
  */
 const VoiceLevelMeter = memo(function VoiceLevelMeter({
   className,
+  source = dictationLevel,
+  tone = 'recording',
 }: VoiceLevelMeterProps) {
   const { t } = useTranslation()
   const barsRef = useRef<Array<HTMLSpanElement | null>>([])
@@ -39,9 +56,9 @@ const VoiceLevelMeter = memo(function VoiceLevelMeter({
       }
     }
 
-    apply(useVoiceInput.getState().level)
-    return useVoiceInput.subscribe((state) => apply(state.level))
-  }, [])
+    apply(0)
+    return source(apply)
+  }, [source])
 
   return (
     <div
@@ -55,7 +72,10 @@ const VoiceLevelMeter = memo(function VoiceLevelMeter({
           ref={(element) => {
             barsRef.current[index] = element
           }}
-          className="h-full w-[3px] origin-center rounded-full bg-destructive/70 transition-transform duration-75"
+          className={cn(
+            'h-full w-[3px] origin-center rounded-full transition-transform duration-75',
+            tone === 'recording' ? 'bg-destructive/70' : 'bg-primary/70'
+          )}
           style={{ transform: `scaleY(${FLOOR})` }}
         />
       ))}

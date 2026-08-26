@@ -1,8 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::core::{
-    agent::approval_allowlist::ApprovalAllowlist, downloads::models::DownloadManagerState,
-    mcp::models::McpSettings,
+    agent::approval_allowlist::ApprovalAllowlist, agent::pty::PtyRegistry,
+    downloads::models::DownloadManagerState, mcp::models::McpSettings,
 };
 use rmcp::{
     model::{CallToolRequestParam, CallToolResult, InitializeRequestParam, Tool},
@@ -145,6 +145,12 @@ pub struct AppState {
     pub agent_pending_folder_access: Arc<Mutex<HashMap<String, PendingAgentFolderAccess>>>,
     pub agent_approval_allowlist: Arc<Mutex<ApprovalAllowlist>>,
     pub agent_session_locks: AgentSessionLocks,
+    /// Processes started by `os.proc.spawn`, keyed by agent session.
+    ///
+    /// Lives here rather than in `AgentSessionState` because that one is
+    /// serialised to `agent-session.json` and cannot hold OS handles, and
+    /// because these processes deliberately outlive a single turn.
+    pub agent_pty_sessions: PtyRegistry,
     pub mcp_settings: Arc<Mutex<McpSettings>>,
     pub mcp_shutdown_in_progress: Arc<Mutex<bool>>,
     pub background_cleanup_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
@@ -154,6 +160,10 @@ pub struct AppState {
     /// Coordinator state for the Local API Server auto-increase-ctx flow.
     /// See `AutoIncreaseState` docs for the concurrency guarantees.
     pub auto_increase_ctx: Arc<AutoIncreaseState>,
+    /// Bounded, opt-in recorder of live proxy traffic for the API screen.
+    /// Lives here rather than inside the running server so the log survives a
+    /// server restart and the read commands work while the server is stopped.
+    pub api_request_inspector: Arc<crate::core::server::request_inspector::RequestInspector>,
     /// Handles to the dynamic rows in the system tray menu (desktop only).
     /// Populated by `setup::setup_tray` when the tray is installed, consumed by
     /// `tray_status::update_tray_status` to re-render server / model / RAM.

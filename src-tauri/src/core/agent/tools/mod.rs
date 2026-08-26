@@ -2,6 +2,7 @@
 
 mod archive;
 mod clipboard;
+mod code;
 mod fs;
 mod git;
 mod http;
@@ -30,6 +31,7 @@ use tokio_util::sync::CancellationToken;
 use super::approval_allowlist::fingerprint_prepared_action;
 use super::llm_client::AgentLlmClient;
 use super::path_policy::{prepare_call_paths, EditableRoots};
+use super::pty::PtyRegistry;
 use super::resource_class::{resource_class_for, ResourceClass};
 use super::shell_guard::{evaluate_shell_command, join_command_stream, ShellGuardVerdict};
 use super::skills::{loaded::LoadedSkills, SkillRegistry};
@@ -58,6 +60,9 @@ pub trait DesktopServices: Send + Sync {
 }
 
 pub struct ToolContext<'a> {
+    /// Owning agent session. Scopes the process registry so one thread can
+    /// never read or signal another thread's processes.
+    pub session_id: &'a str,
     pub working_dir: &'a Path,
     pub editable_roots: &'a EditableRoots,
     pub trusted_read_roots: &'a [PathBuf],
@@ -70,6 +75,11 @@ pub struct ToolContext<'a> {
     pub skill_registry: &'a SkillRegistry,
     pub bundled_script_runtime: Option<&'a Path>,
     pub desktop: &'a dyn DesktopServices,
+    /// Processes started with `os.proc.spawn`. Outlives the turn on purpose: a
+    /// dev server should survive until the thread closes.
+    pub pty: &'a PtyRegistry,
+    /// Where the code index caches parsed symbols between calls.
+    pub cache_dir: &'a Path,
 }
 
 pub async fn execute(call: &ToolCallPayload, context: &ToolContext<'_>) -> ToolOutcome {
@@ -107,7 +117,11 @@ pub async fn execute(call: &ToolCallPayload, context: &ToolContext<'_>) -> ToolO
         }
         tool if tool.starts_with("os.git.") => git::execute(tool, &call.args, context).await,
         "os.shell.run" => shell::execute(&call.args, context).await,
-        "os.proc.list" | "os.proc.kill" => proc::execute(&call.tool, &call.args, context).await,
+        "os.code.symbols" | "os.code.find" | "os.code.refs" => {
+            code::execute(&call.tool, &call.args, context).await
+        }
+        "os.proc.list" | "os.proc.kill" | "os.proc.spawn" | "os.proc.read" | "os.proc.write"
+        | "os.proc.stop" => proc::execute(&call.tool, &call.args, context).await,
         "os.http.request" => http::execute(&call.args, context).await,
         "os.web.search" | "os.web.fetch" => web::execute(&call.tool, &call.args, context).await,
         "os.media.transcribe" | "os.media.youtube" => {
@@ -171,7 +185,10 @@ async fn authorize_call(
     }
     let mut reasons = Vec::new();
     let mut skill_invocation = None;
-    if prepared.call.tool == "os.shell.run" {
+    if matches!(
+        prepared.call.tool.as_str(),
+        "os.shell.run" | "os.proc.spawn"
+    ) {
         let invocation = shell::parse_invocation(&prepared.call.args)?;
         match evaluate_shell_command(&join_command_stream(
             &invocation.program,
@@ -267,6 +284,7 @@ fn safe_preview(call: &ToolCallPayload) -> Value {
         "cwd",
         "method",
         "pid",
+        "procId",
         "signal",
         "apply",
         "skill",
@@ -677,6 +695,7 @@ mod tests {
                 calls: AtomicUsize::new(0),
             };
             let context = ToolContext {
+                session_id: "test-session",
                 working_dir: &root,
                 editable_roots: &editable_roots,
                 trusted_read_roots: &[],
@@ -689,6 +708,8 @@ mod tests {
                 skill_registry: &skill_registry,
                 bundled_script_runtime: None,
                 desktop: &desktop,
+                pty: &PtyRegistry::new(),
+                cache_dir: &std::env::temp_dir(),
             };
             let outcome = execute(
                 &ToolCallPayload {
@@ -735,6 +756,7 @@ mod tests {
         let desktop = TestDesktop::default();
         let cancellation = CancellationToken::new();
         let context = ToolContext {
+            session_id: "test-session",
             working_dir: &root,
             editable_roots: &editable_roots,
             trusted_read_roots: &[],
@@ -747,6 +769,8 @@ mod tests {
             skill_registry: &skill_registry,
             bundled_script_runtime: None,
             desktop: &desktop,
+            pty: &PtyRegistry::new(),
+            cache_dir: &std::env::temp_dir(),
         };
 
         let outcome = execute(
@@ -789,6 +813,7 @@ mod tests {
             calls: AtomicUsize::new(0),
         };
         let context = ToolContext {
+            session_id: "test-session",
             working_dir: &root,
             editable_roots: &editable_roots,
             trusted_read_roots: &[],
@@ -801,6 +826,8 @@ mod tests {
             skill_registry: &skill_registry,
             bundled_script_runtime: None,
             desktop: &desktop,
+            pty: &PtyRegistry::new(),
+            cache_dir: &std::env::temp_dir(),
         };
         let outcome = execute(
             &ToolCallPayload {
@@ -833,6 +860,7 @@ mod tests {
             calls: AtomicUsize::new(0),
         };
         let context = ToolContext {
+            session_id: "test-session",
             working_dir: &root,
             editable_roots: &editable_roots,
             trusted_read_roots: &[],
@@ -845,6 +873,8 @@ mod tests {
             skill_registry: &skill_registry,
             bundled_script_runtime: None,
             desktop: &desktop,
+            pty: &PtyRegistry::new(),
+            cache_dir: &std::env::temp_dir(),
         };
 
         let clipboard = execute(
@@ -890,6 +920,7 @@ mod tests {
             calls: AtomicUsize::new(0),
         };
         let context = ToolContext {
+            session_id: "test-session",
             working_dir: &root,
             editable_roots: &editable_roots,
             trusted_read_roots: &[],
@@ -902,6 +933,8 @@ mod tests {
             skill_registry: &skill_registry,
             bundled_script_runtime: None,
             desktop: &desktop,
+            pty: &PtyRegistry::new(),
+            cache_dir: &std::env::temp_dir(),
         };
 
         let blocked = authorize_call(
@@ -944,6 +977,7 @@ mod tests {
             calls: AtomicUsize::new(0),
         };
         let context = ToolContext {
+            session_id: "test-session",
             working_dir: &root,
             editable_roots: &editable_roots,
             trusted_read_roots: &[],
@@ -956,6 +990,8 @@ mod tests {
             skill_registry: &skill_registry,
             bundled_script_runtime: None,
             desktop: &desktop,
+            pty: &PtyRegistry::new(),
+            cache_dir: &std::env::temp_dir(),
         };
         let original = ToolCallPayload {
             tool: "os.fs.trash".into(),
@@ -996,6 +1032,7 @@ mod tests {
             calls: AtomicUsize::new(0),
         };
         let context = ToolContext {
+            session_id: "test-session",
             working_dir: &root,
             editable_roots: &editable_roots,
             trusted_read_roots: &[],
@@ -1008,6 +1045,8 @@ mod tests {
             skill_registry: &skill_registry,
             bundled_script_runtime: None,
             desktop: &desktop,
+            pty: &PtyRegistry::new(),
+            cache_dir: &std::env::temp_dir(),
         };
         let escaped = ToolCallPayload {
             tool: "os.fs.trash".into(),
@@ -1046,6 +1085,7 @@ mod tests {
             calls: AtomicUsize::new(0),
         };
         let context = ToolContext {
+            session_id: "test-session",
             working_dir: &root,
             editable_roots: &editable_roots,
             trusted_read_roots: &[],
@@ -1058,6 +1098,8 @@ mod tests {
             skill_registry: &skill_registry,
             bundled_script_runtime: None,
             desktop: &desktop,
+            pty: &PtyRegistry::new(),
+            cache_dir: &std::env::temp_dir(),
         };
 
         let denied = authorize_call(
@@ -1093,6 +1135,7 @@ mod tests {
             calls: AtomicUsize::new(0),
         };
         let context = ToolContext {
+            session_id: "test-session",
             working_dir: &root,
             editable_roots: &editable_roots,
             trusted_read_roots: &[],
@@ -1105,6 +1148,8 @@ mod tests {
             skill_registry: &skill_registry,
             bundled_script_runtime: None,
             desktop: &desktop,
+            pty: &PtyRegistry::new(),
+            cache_dir: &std::env::temp_dir(),
         };
 
         let denied = execute(

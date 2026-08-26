@@ -438,6 +438,10 @@ async fn read_workspace_text(path: &Path, limit: usize) -> Result<(String, bool)
     Ok((content, truncated))
 }
 
+/// Where the tree-sitter symbol index caches parsed files, under the app data
+/// folder. Pure derivative of the working tree: safe to delete at any time.
+const CODE_INDEX_CACHE_DIR: &str = "agent-code-index";
+
 #[tauri::command]
 pub async fn agent_run_turn<R: Runtime>(
     app_handle: AppHandle<R>,
@@ -554,6 +558,7 @@ pub async fn agent_run_turn<R: Runtime>(
     let desktop = AgentDesktopServices {
         app_handle: app_handle.clone(),
     };
+    let code_index_cache = data_folder.join(CODE_INDEX_CACHE_DIR);
     let session_lock = get_session_lock(&state.agent_session_locks, &request.session_id).await;
     let result = {
         let _session_guard = session_lock.lock().await;
@@ -581,6 +586,8 @@ pub async fn agent_run_turn<R: Runtime>(
                         session: &mut session,
                         skill_registry: &skill_registry,
                         bundled_script_runtime: bundled_script_runtime.as_deref(),
+                        pty: &state.agent_pty_sessions,
+                        cache_dir: &code_index_cache,
                     },
                     |event| on_event.send(event).map_err(|error| error.to_string()),
                 )
@@ -650,6 +657,20 @@ pub async fn agent_cancel_turn(state: State<'_, AppState>, run_id: String) -> Re
     clear_pending_approvals_for_run(&state, &run_id).await;
     clear_pending_folder_access_for_run(&state, &run_id).await;
     Ok(())
+}
+
+/// Kill every process `os.proc.spawn` started for one agent session.
+///
+/// Deliberately *not* wired to `agent_cancel_turn`: a dev server the agent
+/// started should survive the turn that started it, and usually the next one
+/// too. It should not survive the conversation, so the frontend calls this when
+/// the thread is closed or deleted.
+#[tauri::command]
+pub async fn agent_kill_session_procs(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<usize, String> {
+    Ok(state.agent_pty_sessions.kill_session(&session_id))
 }
 
 #[tauri::command]

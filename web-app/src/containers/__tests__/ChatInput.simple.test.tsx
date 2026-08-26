@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ChatInput from '../ChatInput'
 import { useChatAttachments } from '@/hooks/useChatAttachments'
+import { useMCPServers } from '@/hooks/useMCPServers'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { usePrompt } from '@/hooks/usePrompt'
 import { seedServiceHub } from '@/test/service-hub'
@@ -82,16 +83,15 @@ vi.mock('@/lib/extension', () => ({
   },
 }))
 
-vi.mock('@/containers/ContextSizeControl', () => ({
-  ContextSizeControl: () => null,
-}))
-
 vi.mock('@/containers/DropdownToolsAvailable', () => ({
-  default: () => null,
+  // A marker instead of null: the toolbar asserts the tools button is there.
+  default: () => <span data-test-id="tools-dropdown" />,
 }))
 
 vi.mock('@/containers/VoiceInputToggle', () => ({
-  default: () => null,
+  // A marker rather than null: the composer's placement of the microphone is
+  // asserted below, and that needs something in the DOM to locate.
+  default: () => <button data-test-id="voice-input-toggle" />,
 }))
 
 vi.mock('@/containers/chatInput/VoiceRecordingBar', () => ({
@@ -99,7 +99,8 @@ vi.mock('@/containers/chatInput/VoiceRecordingBar', () => ({
 }))
 
 vi.mock('@/containers/ReasoningToggle', () => ({
-  default: () => null,
+  // A marker rather than null: its place in the right-hand cluster is asserted.
+  default: () => <button data-test-id="reasoning-toggle" />,
 }))
 
 vi.mock('@/containers/dialogs/JanBrowserExtensionDialog', () => ({
@@ -160,6 +161,33 @@ describe('ChatInput', () => {
     unmount()
   })
 
+  it('puts reasoning and the microphone beside Send', () => {
+    const { unmount } = render(<ChatInput />)
+
+    const reasoning = document.querySelector(
+      '[data-test-id="reasoning-toggle"]'
+    )
+    const mic = document.querySelector('[data-test-id="voice-input-toggle"]')
+    const send = document.querySelector('[data-test-id="send-message-button"]')
+    expect(reasoning).toBeInTheDocument()
+    expect(mic).toBeInTheDocument()
+    expect(send).toBeInTheDocument()
+
+    // One cluster on the right...
+    expect(reasoning!.parentElement).toBe(send!.parentElement)
+    expect(mic!.parentElement).toBe(send!.parentElement)
+    // ...reading [reasoning] [mic] [send].
+    expect(
+      reasoning!.compareDocumentPosition(mic!) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    expect(
+      mic!.compareDocumentPosition(send!) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+
+    unmount()
+  })
+
   it('submits entered text and clears the controlled prompt', async () => {
     const onSubmit = vi.fn()
     const { unmount } = render(<ChatInput onSubmit={onSubmit} />)
@@ -200,6 +228,29 @@ describe('ChatInput', () => {
     expect(onSubmit).not.toHaveBeenCalled()
     // The typed prompt survives so the user can send it once a model is picked.
     expect(input).toHaveValue('Invoke the machine spirit')
+    unmount()
+  })
+
+  it('keeps the tools and web search controls before a model is picked', () => {
+    // A composer stripped down to a plus button reads as broken; the real
+    // `tools` capability only starts gating once a model is actually selected.
+    useMCPServers.setState({
+      mcpServers: {
+        exa: { command: '', args: [], env: {}, active: false },
+      },
+    })
+    useModelProvider.setState({ selectedProvider: '', selectedModel: null })
+
+    const { unmount } = render(<ChatInput />)
+
+    expect(
+      document.querySelector('[data-test-id="tools-dropdown"]')
+    ).toBeInTheDocument()
+    expect(
+      screen.getByLabelText('common:webSearchToggleDisabled')
+    ).toBeInTheDocument()
+
+    useMCPServers.setState({ mcpServers: {} })
     unmount()
   })
 

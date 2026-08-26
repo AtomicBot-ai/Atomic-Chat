@@ -11,6 +11,7 @@ use super::path_policy::EditableRoots;
 use super::prompt::{
     build_stable_prefix, CapabilitiesSummary, DEFAULT_MAX_PARALLEL_TOOL_CALLS, ITERATION_ONE_TOOLS,
 };
+use super::pty::PtyRegistry;
 use super::runner::{run_turn, RunTurnInput};
 use super::session::AgentSessionState;
 use super::test_support::{
@@ -177,6 +178,8 @@ impl LiveHarness {
                     session: &mut session,
                     skill_registry: &skill_registry,
                     bundled_script_runtime: None,
+                    pty: &PtyRegistry::new(),
+                    cache_dir: &std::env::temp_dir(),
                 },
                 |event| collect_event(&mut events, event),
             ),

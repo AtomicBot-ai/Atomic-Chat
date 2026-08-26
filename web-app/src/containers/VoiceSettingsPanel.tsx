@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ChevronsUpDown } from 'lucide-react'
-import { IconRefresh } from '@tabler/icons-react'
+import { IconLoader2, IconPlayerStopFilled, IconRefresh } from '@tabler/icons-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -13,12 +13,14 @@ import { Switch } from '@/components/ui/switch'
 import { Card, CardItem } from '@/containers/Card'
 import { VoicePermissionBlock } from '@/containers/dialogs/VoiceSetupDialog'
 import VoiceModelCard from '@/containers/VoiceModelCard'
+import VoiceLevelMeter from '@/containers/chatInput/VoiceLevelMeter'
 import {
   VOICE_LANGUAGES,
   VOICE_MODEL_BYTES,
   VOICE_MODEL_NAME,
   type VoiceLanguage,
 } from '@/constants/voice'
+import { useMicMonitor } from '@/hooks/useMicMonitor'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useVoiceInput } from '@/hooks/useVoiceInput'
 import { useVoiceModel } from '@/hooks/useVoiceModel'
@@ -26,6 +28,10 @@ import { useVoiceSetting } from '@/hooks/useVoiceSetting'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
 import type { VoiceInputDevice } from '@/services/voice/types'
+
+/** Stable across renders: the meter re-subscribes whenever this changes. */
+const monitorLevel = (onLevel: (level: number) => void) =>
+  useMicMonitor.subscribe((state) => onLevel(state.level))
 
 const PERMISSION_LABEL = {
   granted: 'settings:voice.permissionGranted',
@@ -60,6 +66,26 @@ export function VoiceSettingsPanel() {
 
   const [devices, setDevices] = useState<VoiceInputDevice[]>([])
   const [loadingDevices, setLoadingDevices] = useState(false)
+
+  const monitorActive = useMicMonitor((state) => state.active)
+  const monitorStarting = useMicMonitor((state) => state.starting)
+  const monitorErrorKey = useMicMonitor((state) => state.errorKey)
+  const startMonitor = useMicMonitor((state) => state.start)
+  const stopMonitor = useMicMonitor((state) => state.stop)
+
+  // Never leave the microphone open behind a navigation.
+  useEffect(() => () => void useMicMonitor.getState().stop(), [])
+
+  // Restart the test on the newly picked device, so switching devices while
+  // testing shows the new one rather than silently monitoring the old.
+  useEffect(() => {
+    if (!monitorActive) return
+    void (async () => {
+      await useMicMonitor.getState().stop()
+      await useMicMonitor.getState().start(inputDeviceId)
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputDeviceId])
 
   const refreshDevices = useCallback(async () => {
     setLoadingDevices(true)
@@ -182,6 +208,47 @@ export function VoiceSettingsPanel() {
                 <IconRefresh size={16} className="text-muted-foreground" />
               </Button>
             </div>
+          }
+        />
+
+        <CardItem
+          title={t('settings:voice.testTitle')}
+          description={t('settings:voice.testDescription')}
+          actions={
+            <div className="flex items-center gap-3">
+              {monitorActive && (
+                <VoiceLevelMeter source={monitorLevel} tone="neutral" />
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={monitorStarting || permission === 'denied'}
+                onClick={() =>
+                  void (monitorActive
+                    ? stopMonitor()
+                    : startMonitor(inputDeviceId))
+                }
+              >
+                {monitorStarting ? (
+                  <>
+                    <IconLoader2 size={14} className="animate-spin" />
+                    {t('settings:voice.testStarting')}
+                  </>
+                ) : monitorActive ? (
+                  <>
+                    <IconPlayerStopFilled size={14} />
+                    {t('settings:voice.testStop')}
+                  </>
+                ) : (
+                  t('settings:voice.testStart')
+                )}
+              </Button>
+            </div>
+          }
+          descriptionOutside={
+            monitorErrorKey ? (
+              <span className="text-destructive">{t(monitorErrorKey)}</span>
+            ) : undefined
           }
         />
       </Card>

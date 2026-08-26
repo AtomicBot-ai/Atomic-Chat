@@ -66,7 +66,6 @@ import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
-import { ContextSizeControl } from '@/containers/ContextSizeControl'
 import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
 import { McpExtensionToolLoader } from './McpExtensionToolLoader'
@@ -469,6 +468,17 @@ const ChatInput = memo(function ChatInput({
     return capabilities.includes('vision') && capabilities.includes('tools')
   }, [selectedModel?.capabilities])
 
+  // Tool-driven controls (the tools dropdown, web search, document ingest)
+  // stay visible while no model is picked yet: an empty toolbar reads as a
+  // broken composer, and picking a model is the very next thing the user does.
+  // Once a model is selected the real `tools` capability decides.
+  const supportsTools = useMemo(
+    () =>
+      !selectedModel ||
+      (selectedModel.capabilities?.includes('tools') ?? false),
+    [selectedModel]
+  )
+
   // Audio input is gated on the model's `audio` capability (omni/audio-capable
   // models such as Gemma 4 via the MLX backend). The "Add audio" menu item is
   // hidden entirely for non-audio models — unlike images, there is no
@@ -687,10 +697,7 @@ const ChatInput = memo(function ChatInput({
       if (reverted) {
         setPrompt(reverted.value)
         requestAnimationFrame(() => {
-          textareaRef.current?.setSelectionRange(
-            reverted.caret,
-            reverted.caret
-          )
+          textareaRef.current?.setSelectionRange(reverted.caret, reverted.caret)
         })
       }
     } else if (state.insertedLength > 0) {
@@ -2747,9 +2754,7 @@ const ChatInput = memo(function ChatInput({
                       {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
                       <DropdownMenuItem
                         onClick={handleAttachDocsIngest}
-                        disabled={
-                          !selectedModel?.capabilities?.includes('tools')
-                        }
+                        disabled={!supportsTools}
                       >
                         {ingestingDocs ? (
                           <IconLoader2
@@ -2867,16 +2872,13 @@ const ChatInput = memo(function ChatInput({
                       switched off — the dropdown says so itself, and an icon
                       that vanishes when web search goes off reads as a bug. */}
                   {!effectiveAgentMode &&
-                    selectedModel?.capabilities?.includes('tools') &&
+                    supportsTools &&
                     (MCPToolComponent && hasActiveMCPServers ? (
                       // Use custom MCP component
                       <McpExtensionToolLoader
                         tools={tools}
                         hasActiveMCPServers={hasActiveMCPServers}
-                        selectedModelHasTools={
-                          selectedModel?.capabilities?.includes('tools') ??
-                          false
-                        }
+                        selectedModelHasTools={supportsTools}
                         initialMessage={initialMessage}
                         MCPToolComponent={MCPToolComponent}
                       />
@@ -2933,38 +2935,30 @@ const ChatInput = memo(function ChatInput({
                   {/* Web search lives on the globe: it switches the Exa (or
                       equivalent) MCP server on and off straight from the
                       composer. The agent has its own built-in web backend. */}
-                  {!effectiveAgentMode &&
-                    selectedModel?.capabilities?.includes('tools') && (
-                      <WebSearchToggle initialMessage={initialMessage} />
-                    )}
-
-                  <ReasoningToggle />
-
-                  {/* Voice sits with the other input-mode toggles rather than
-                      beside Send: it changes how you type, it does not commit.
-                      It also inherits this cluster's streaming guard, which is
-                      what we want — the voice model shares the llama.cpp engine
-                      with the reply being generated. */}
-                  <VoiceInputToggle
-                    threadKey={agentModeKey}
-                    captureAnchor={captureVoiceAnchor}
-                    disabled={isStreaming}
-                  />
+                  {!effectiveAgentMode && supportsTools && (
+                    <WebSearchToggle initialMessage={initialMessage} />
+                  )}
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <ContextSizeControl
-                  messages={threadMessages || []}
-                  uploadedFiles={attachments
-                    .filter((a) => a.type === 'image' && a.dataUrl)
-                    .map((a) => ({
-                      name: a.name,
-                      type: a.mimeType || getFileTypeFromExtension(a.name),
-                      size: a.size || 0,
-                      base64: a.base64 || '',
-                      dataUrl: a.dataUrl!,
-                    }))}
+                {/* Reasoning rides with the microphone rather than the
+                    attachment cluster: both change how the next message is
+                    produced, and the context gauge that used to sit here now
+                    lives in the page header. */}
+                <ReasoningToggle className="mb-1" />
+
+                {/* Beside Send, which is where users expect a microphone.
+                    Note this cluster has no streaming guard of its own (the
+                    left one does), so the disable is passed explicitly — and
+                    the toggle deliberately stays clickable while it is the one
+                    recording, or sending a message would strand an
+                    unstoppable recording. */}
+                <VoiceInputToggle
+                  threadKey={agentModeKey}
+                  captureAnchor={captureVoiceAnchor}
+                  disabled={isStreaming}
+                  className="mb-1"
                 />
 
                 {isStreaming ? (

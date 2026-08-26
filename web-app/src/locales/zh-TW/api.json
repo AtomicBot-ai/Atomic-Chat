@@ -1,0 +1,86 @@
+{
+  "title": "API",
+  "subtitle": "Live traffic through the local OpenAI-compatible server.",
+  "actions": {
+    "refresh": "Refresh",
+    "clearLog": "Clear log",
+    "settings": "API settings",
+    "start": "Start server",
+    "stop": "Stop server",
+    "starting": "Starting server",
+    "loadingModel": "Loading model",
+    "openLogs": "Open logs"
+  },
+  "strip": {
+    "baseUrl": "Base URL",
+    "status": "Status",
+    "slots": "Slots",
+    "slotsValue": "{{busy}}/{{total}} busy",
+    "loadedModel": "Loaded model",
+    "noModel": "None",
+    "ctx": "{{count}} ctx"
+  },
+  "status": {
+    "ready": "Ready",
+    "noModel": "No model loaded",
+    "stopped": "Stopped",
+    "starting": "Starting…"
+  },
+  "stats": {
+    "inFlight": "In flight",
+    "requests": "Requests",
+    "completed": "Completed",
+    "errors": "Errors",
+    "avgLatency": "Avg latency",
+    "throughput": "Throughput",
+    "window": "recent window",
+    "errorShare": "{{percent}}% of finished",
+    "maxLatency": "max {{value}}",
+    "throughputDetail": "{{tokens}} tokens · generation {{duration}}"
+  },
+  "notice": {
+    "modelLoaded": "Model loaded",
+    "modelUnloaded": "Model unloaded"
+  },
+  "log": {
+    "searchPlaceholder": "Search model, endpoint, preview or error",
+    "empty": "No API traffic yet. Point a client at the base URL to see requests here.",
+    "noMatches": "No requests match this filter.",
+    "clearFilters": "Clear filters",
+    "feedUnavailable": "Live request telemetry is unavailable in this build. Server controls still work.",
+    "filter": {
+      "all": "All requests",
+      "in_flight": "In flight",
+      "completed": "Completed",
+      "errors": "Errors",
+      "cancelled": "Cancelled"
+    },
+    "status": {
+      "in_flight": "In flight",
+      "completed": "Completed",
+      "error": "Error",
+      "cancelled": "Cancelled"
+    }
+  },
+  "detail": {
+    "selectPrompt": "Select a request to inspect its prompt, reply, tokens and errors.",
+    "gone": "That request is no longer in the log.",
+    "started": "Started",
+    "duration": "Duration",
+    "promptTokens": "Prompt tokens",
+    "completionTokens": "Completion tokens",
+    "totalTokens": "Total tokens",
+    "context": "Context",
+    "firstToken": "First token",
+    "generating": "Generating",
+    "promptSpeed": "Prompt speed",
+    "generationSpeed": "Generation speed",
+    "stopReason": "Stop reason",
+    "prompt": "Prompt",
+    "reply": "Reply",
+    "noPrompt": "No prompt captured.",
+    "noReply": "No reply captured.",
+    "estimated": "estimated from streamed deltas",
+    "nonTextParts": "Includes non-text content"
+  }
+}

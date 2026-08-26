@@ -1,0 +1,23 @@
+[package]
+name = "atomic-code-index"
+version = "0.1.0"
+edition = "2021"
+description = "Tree-sitter symbol index over a workspace, for agent code navigation"
+
+[dependencies]
+# Gitignore-aware walking, matching what os.fs.glob already does in the app.
+ignore = "=0.4.30"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+
+# Grammar crates are pinned together with the core: their ABI compatibility is
+# exact, and a lone bump silently breaks parsing rather than failing the build.
+tree-sitter = "0.25.10"
+tree-sitter-javascript = "0.25.0"
+tree-sitter-python = "0.25.0"
+tree-sitter-rust = "0.24.0"
+tree-sitter-typescript = "0.23.2"
+
+[dev-dependencies]
+tempfile = "3"

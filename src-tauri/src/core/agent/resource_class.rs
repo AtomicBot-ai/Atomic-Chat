@@ -36,6 +36,10 @@ pub fn resource_class_for(tool_name: &str) -> ResourceClass {
         | "os.git.blame"
         | "os.git.branch"
         | "os.proc.list"
+        | "os.proc.read"
+        | "os.code.symbols"
+        | "os.code.find"
+        | "os.code.refs"
         | "os.web.search"
         | "os.web.fetch"
         | "os.media.transcribe"
@@ -49,6 +53,9 @@ pub fn resource_class_for(tool_name: &str) -> ResourceClass {
         | "os.fs.archive.extract"
         | "os.shell.run"
         | "os.proc.kill"
+        | "os.proc.spawn"
+        | "os.proc.write"
+        | "os.proc.stop"
         | "os.http.request"
         | "skill.run_script" => ResourceClass::ApprovalGated,
         "reply" | "finish" => ResourceClass::Terminal,

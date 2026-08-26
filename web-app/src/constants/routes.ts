@@ -30,6 +30,9 @@ export const route = {
   launch: {
     index: '/launch/',
   },
+  api: {
+    index: '/api/',
+  },
   skills: {
     index: '/skills/',
   },

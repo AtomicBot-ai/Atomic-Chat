@@ -174,6 +174,9 @@ pub fn run() {
         core::server::commands::start_server,
         core::server::commands::stop_server,
         core::server::commands::get_server_status,
+        core::server::commands::get_api_request_log,
+        core::server::commands::set_api_inspector_enabled,
+        core::server::commands::clear_api_request_log,
         // Remote provider commands
         core::server::remote_provider_commands::register_provider_config,
         core::server::remote_provider_commands::unregister_provider_config,
@@ -186,6 +189,7 @@ pub fn run() {
         core::mcp::commands::cancel_tool_call,
         core::agent::commands::agent_run_turn,
         core::agent::commands::agent_cancel_turn,
+        core::agent::commands::agent_kill_session_procs,
         core::agent::commands::agent_resolve_approval,
         core::agent::commands::agent_resolve_folder_access,
         core::agent::commands::agent_workspace_list,
@@ -318,6 +322,9 @@ pub fn run() {
         core::server::commands::start_server,
         core::server::commands::stop_server,
         core::server::commands::get_server_status,
+        core::server::commands::get_api_request_log,
+        core::server::commands::set_api_inspector_enabled,
+        core::server::commands::clear_api_request_log,
         // Remote provider commands
         core::server::remote_provider_commands::register_provider_config,
         core::server::remote_provider_commands::unregister_provider_config,
@@ -331,6 +338,7 @@ pub fn run() {
         core::mcp::commands::cancel_tool_call,
         core::agent::commands::agent_run_turn,
         core::agent::commands::agent_cancel_turn,
+        core::agent::commands::agent_kill_session_procs,
         core::agent::commands::agent_resolve_approval,
         core::agent::commands::agent_resolve_folder_access,
         core::agent::commands::agent_workspace_list,
@@ -392,12 +400,14 @@ pub fn run() {
             agent_pending_folder_access: Arc::new(Mutex::new(HashMap::new())),
             agent_approval_allowlist: Arc::new(Mutex::new(Default::default())),
             agent_session_locks: Arc::new(Mutex::new(HashMap::new())),
+            agent_pty_sessions: Default::default(),
             mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
             mcp_shutdown_in_progress: Arc::new(Mutex::new(false)),
             background_cleanup_handle: Arc::new(Mutex::new(None)),
             mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
             provider_configs: Arc::new(Mutex::new(HashMap::new())),
             auto_increase_ctx: Arc::new(core::state::AutoIncreaseState::default()),
+            api_request_inspector: Arc::new(Default::default()),
             #[cfg(desktop)]
             tray_handles: Arc::new(std::sync::Mutex::new(None)),
         })
@@ -458,6 +468,17 @@ pub fn run() {
             // init so its actions are recorded in app.log.
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             crate::core::process_reaper::reap_orphan_backends(app.handle());
+
+            // Same rationale for the agent's own children, which the backend
+            // reaper cannot recognise: they are arbitrary user commands, so
+            // they are identified by a journal of pids instead of by name.
+            {
+                let data_folder = get_jan_data_folder_path(app.handle().clone());
+                crate::core::agent::pty::reap_orphans(&data_folder);
+                app.state::<AppState>()
+                    .agent_pty_sessions
+                    .set_journal_path(&data_folder);
+            }
 
             #[cfg(target_os = "windows")]
             {
@@ -616,6 +637,13 @@ pub fn run() {
             }
 
             let state = app_handle.state::<AppState>();
+
+            // Agent-started processes are ours to end: nothing else will, and
+            // they hold ports and CPU. Synchronous and cheap — signals only.
+            let killed = state.agent_pty_sessions.kill_all();
+            if killed > 0 {
+                log::info!("[agent-pty] terminated {killed} agent process(es) on exit");
+            }
 
             // Check if cleanup already ran.
             // block_on is safe here: RunEvent callbacks run on the main

@@ -26,6 +26,7 @@ use super::prompt::{
     build_prompt_parts_with_workspace_for_profile, build_prompt_with_workspace_for_profile,
     format_workspace,
 };
+use super::pty::PtyRegistry;
 use super::resource_class::{is_batchable, resource_class_for, ResourceClass};
 use super::session::AgentSessionState;
 use super::skills::{loaded::LoadedSkills, SkillRegistry};
@@ -71,6 +72,11 @@ pub struct RunTurnInput<'a> {
     pub session: &'a mut AgentSessionState,
     pub skill_registry: &'a SkillRegistry,
     pub bundled_script_runtime: Option<&'a Path>,
+    /// Processes started in earlier turns of this session, plus any this turn
+    /// starts. Shared app-wide and scoped by `session_id`.
+    pub pty: &'a PtyRegistry,
+    /// Cache directory for the code index.
+    pub cache_dir: &'a Path,
 }
 
 pub async fn run_turn(
@@ -430,6 +436,7 @@ pub async fn run_turn(
         }
 
         let tool_context = ToolContext {
+            session_id: input.session_id,
             working_dir: input.working_dir,
             editable_roots: input.editable_roots,
             trusted_read_roots: input.trusted_read_roots,
@@ -442,6 +449,8 @@ pub async fn run_turn(
             skill_registry: input.skill_registry,
             bundled_script_runtime: input.bundled_script_runtime,
             desktop: input.desktop,
+            pty: input.pty,
+            cache_dir: input.cache_dir,
         };
         let has_terminal_tail = parsed
             .calls

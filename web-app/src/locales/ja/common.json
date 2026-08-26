@@ -443,6 +443,7 @@
   "searchChats": "チャットを検索",
   "searchAgentChats": "エージェントチャットを検索",
   "launch": "外部連携",
+  "api": "API",
   "skills": "スキル",
   "agentSkill": {
     "selected": "スキル: {{name}}",

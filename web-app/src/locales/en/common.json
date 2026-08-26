@@ -35,6 +35,7 @@
   "hub": "Hub",
   "models": "Models",
   "launch": "Integrations",
+  "api": "API",
   "skills": "Skills",
   "agentSkill": {
     "selected": "Skill: {{name}}",

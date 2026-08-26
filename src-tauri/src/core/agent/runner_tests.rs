@@ -5,6 +5,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::llm_client::AgentLlmClient;
 use super::path_policy::EditableRoots;
+use super::pty::PtyRegistry;
 use super::runner::{run_turn, RunTurnInput};
 use super::session::AgentSessionState;
 use super::test_support::{
@@ -113,6 +114,8 @@ async fn run_script_with_reasoning(
             session: &mut session,
             skill_registry: &skill_registry,
             bundled_script_runtime: None,
+            pty: &PtyRegistry::new(),
+            cache_dir: &std::env::temp_dir(),
         },
         |event| collect_event(&mut events, event),
     )
@@ -246,6 +249,8 @@ async fn gemma4_turn_uses_native_framing_and_parses_channel_reasoning() {
             session: &mut session,
             skill_registry: &skill_registry,
             bundled_script_runtime: None,
+            pty: &PtyRegistry::new(),
+            cache_dir: &std::env::temp_dir(),
         },
         |event| collect_event(&mut events, event),
     )
@@ -419,6 +424,8 @@ async fn sequential_runs_share_the_session_transcript() {
                 session: &mut session,
                 skill_registry: &skill_registry,
                 bundled_script_runtime: None,
+                pty: &PtyRegistry::new(),
+                cache_dir: &std::env::temp_dir(),
             },
             |_| Ok(()),
         )
@@ -787,6 +794,10 @@ async fn cancellation_interrupts_an_in_flight_completion() {
     let editable_roots = EditableRoots::for_test(workspace.path());
     let folder_access = RecordingFolderAccess::deny();
     let cancel = cancellation.clone();
+    // Bound outside the call: this future is held across statements, so the
+    // registry has to outlive the `run_turn` expression.
+    let pty = PtyRegistry::new();
+    let cache_dir = std::env::temp_dir();
     let run = run_turn(
         RunTurnInput {
             run_id: "cancel-run",
@@ -809,6 +820,8 @@ async fn cancellation_interrupts_an_in_flight_completion() {
             session: &mut session,
             skill_registry: &skill_registry,
             bundled_script_runtime: None,
+            pty: &pty,
+            cache_dir: &cache_dir,
         },
         |event| collect_event(&mut events, event),
     );
@@ -1069,6 +1082,8 @@ async fn skill_view_loads_the_body_and_restores_it_on_the_next_turn() {
             session: &mut restored_session,
             skill_registry: &registry,
             bundled_script_runtime: None,
+            pty: &PtyRegistry::new(),
+            cache_dir: &std::env::temp_dir(),
         },
         |event| collect_event(&mut events, event),
     )
@@ -1127,6 +1142,8 @@ async fn selected_skill_is_loaded_into_the_first_prompt_without_skill_view() {
             session: &mut session,
             skill_registry: &registry,
             bundled_script_runtime: None,
+            pty: &PtyRegistry::new(),
+            cache_dir: &std::env::temp_dir(),
         },
         |event| collect_event(&mut events, event),
     )
@@ -1186,6 +1203,8 @@ async fn unknown_selected_skill_fails_before_completion() {
             session: &mut session,
             skill_registry: &registry,
             bundled_script_runtime: None,
+            pty: &PtyRegistry::new(),
+            cache_dir: &std::env::temp_dir(),
         },
         |event| collect_event(&mut events, event),
     )

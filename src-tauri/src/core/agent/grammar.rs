@@ -183,6 +183,41 @@ const STATIC_TOOL_GRAMMARS: &[ToolGrammar] = &[
         args: r#""{" ws "\"pid\"" ws ":" ws positive-integer ( ws "," ws "\"signal\"" ws ":" ws ( "\"SIGTERM\"" | "\"SIGKILL\"" | "\"SIGINT\"" | "\"SIGHUP\"" ) )? ws "}""#,
     },
     ToolGrammar {
+        name: "os.code.symbols",
+        rule: "code-symbols",
+        args: r#""{" ws "\"path\"" ws ":" ws non-empty-string ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.code.find",
+        rule: "code-find",
+        args: r#""{" ws "\"name\"" ws ":" ws non-empty-string ( ws "," ws "\"kind\"" ws ":" ws symbol-kind )? ( ws "," ws "\"limit\"" ws ":" ws positive-integer )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.code.refs",
+        rule: "code-refs",
+        args: r#""{" ws "\"name\"" ws ":" ws non-empty-string ( ws "," ws "\"path\"" ws ":" ws non-empty-string )? ( ws "," ws "\"limit\"" ws ":" ws positive-integer )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.proc.spawn",
+        rule: "proc-spawn",
+        args: r#""{" ws "\"cmd\"" ws ":" ws non-empty-string ( ws "," ws "\"args\"" ws ":" ws string-array )? ( ws "," ws "\"cwd\"" ws ":" ws non-empty-string )? ( ws "," ws "\"cols\"" ws ":" ws positive-integer )? ( ws "," ws "\"rows\"" ws ":" ws positive-integer )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.proc.read",
+        rule: "proc-read",
+        args: r#""{" ws "\"procId\"" ws ":" ws non-empty-string ( ws "," ws "\"since\"" ws ":" ws nonnegative-integer )? ( ws "," ws "\"maxChars\"" ws ":" ws positive-integer )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.proc.write",
+        rule: "proc-write",
+        args: r#""{" ws "\"procId\"" ws ":" ws non-empty-string ws "," ws "\"data\"" ws ":" ws string ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.proc.stop",
+        rule: "proc-stop",
+        args: r#""{" ws "\"procId\"" ws ":" ws non-empty-string ( ws "," ws "\"signal\"" ws ":" ws ( "\"SIGTERM\"" | "\"SIGKILL\"" | "\"SIGINT\"" | "\"SIGHUP\"" ) )? ws "}""#,
+    },
+    ToolGrammar {
         name: "os.clipboard.read",
         rule: "clipboard-read",
         args: r#""{" ws "}""#,
@@ -273,6 +308,13 @@ pub const GRAMMAR_TOOL_NAMES: &[&str] = &[
     "os.git.branch",
     "os.proc.list",
     "os.proc.kill",
+    "os.code.symbols",
+    "os.code.find",
+    "os.code.refs",
+    "os.proc.spawn",
+    "os.proc.read",
+    "os.proc.write",
+    "os.proc.stop",
     "os.clipboard.read",
     "os.clipboard.write",
     "os.notify",
@@ -359,6 +401,10 @@ pub fn tool_call_grammar_for_profile(
         )
         .expect("writing skill grammar to String cannot fail");
     }
+
+    grammar.push_str(
+        "symbol-kind ::= \"\\\"class\\\"\" | \"\\\"struct\\\"\" | \"\\\"enum\\\"\" | \"\\\"trait\\\"\" | \"\\\"interface\\\"\" | \"\\\"method\\\"\" | \"\\\"function\\\"\" | \"\\\"macro\\\"\" | \"\\\"type\\\"\" | \"\\\"module\\\"\" | \"\\\"constant\\\"\"\n",
+    );
 
     let rare_tool_names = ITERATION_ONE_TOOLS
         .iter()
@@ -562,6 +608,101 @@ mod tests {
                 !grammar.contains(excluded),
                 "grammar must not contain deferred category `{excluded}`"
             );
+        }
+    }
+
+    /// Split a GBNF body into the identifiers it *references*, ignoring string
+    /// literals and character classes where the same characters are data.
+    fn referenced_rules(body: &str) -> Vec<String> {
+        let bytes: Vec<char> = body.chars().collect();
+        let mut names = Vec::new();
+        let mut index = 0;
+        while index < bytes.len() {
+            match bytes[index] {
+                // A quoted literal: skip it whole, honouring backslash escapes.
+                '"' => {
+                    index += 1;
+                    while index < bytes.len() && bytes[index] != '"' {
+                        index += if bytes[index] == '\\' { 2 } else { 1 };
+                    }
+                    index += 1;
+                }
+                // A character class: same idea.
+                '[' => {
+                    index += 1;
+                    while index < bytes.len() && bytes[index] != ']' {
+                        index += if bytes[index] == '\\' { 2 } else { 1 };
+                    }
+                    index += 1;
+                }
+                character if character.is_ascii_alphabetic() => {
+                    let start = index;
+                    while index < bytes.len()
+                        && (bytes[index].is_ascii_alphanumeric() || bytes[index] == '-')
+                    {
+                        index += 1;
+                    }
+                    names.push(bytes[start..index].iter().collect::<String>());
+                }
+                _ => index += 1,
+            }
+        }
+        names
+    }
+
+    /// Every non-terminal the grammar mentions must also be defined.
+    ///
+    /// Nothing else checks this: llama.cpp only discovers a dangling rule when
+    /// it compiles the grammar mid-run, and the failure surfaces as a broken
+    /// agent on local models rather than a failing build. Adding a tool means
+    /// hand-writing GBNF, which is exactly where a typo lands.
+    #[test]
+    fn the_symbol_kind_rule_emits_quoted_json_literals() {
+        // The rule is built from a hand-escaped Rust string; a wrong number of
+        // backslashes yields GBNF that parses but matches the wrong bytes,
+        // which `every_referenced_grammar_rule_is_defined` would not catch.
+        let temp = TempDir::new().expect("temp dir");
+        let grammar = tool_call_grammar_for_profile(
+            &empty_registry(&temp),
+            AgentModelProfile::Plain,
+            false,
+        );
+        let line = grammar
+            .lines()
+            .find(|line| line.starts_with("symbol-kind ::="))
+            .expect("symbol-kind must be defined");
+        assert!(line.contains(r#""\"function\"""#), "{line}");
+        assert!(line.contains(r#""\"constant\"""#), "{line}");
+        assert_eq!(line.matches('|').count(), 10, "eleven alternatives: {line}");
+    }
+
+    #[test]
+    fn every_referenced_grammar_rule_is_defined() {
+        let temp = TempDir::new().expect("temp dir");
+        for thinking in [false, true] {
+            for profile in [
+                AgentModelProfile::Plain,
+                AgentModelProfile::Gemma4Think,
+            ] {
+                let grammar =
+                    tool_call_grammar_for_profile(&empty_registry(&temp), profile, thinking);
+                let mut defined = std::collections::HashSet::new();
+                let mut referenced = Vec::new();
+                for line in grammar.lines() {
+                    let Some((head, body)) = line.split_once("::=") else {
+                        continue;
+                    };
+                    defined.insert(head.trim().to_owned());
+                    referenced.extend(referenced_rules(body));
+                }
+                for name in referenced {
+                    assert!(
+                        defined.contains(&name),
+                        "rule `{name}` is referenced but never defined \
+                         (profile {profile:?}, thinking={thinking})"
+                    );
+                }
+            }
         }
     }
 

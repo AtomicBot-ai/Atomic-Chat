@@ -11,6 +11,10 @@ import { FolderPlusIcon } from '@/components/animated-icon/folder-plus'
 import { ListTodoIcon } from '@/components/animated-icon/list-todo'
 import { MessageCircleIcon } from '@/components/animated-icon/message-circle'
 import { PlugIcon, type PlugIconHandle } from '@/components/animated-icon/plug'
+import {
+  RadioTowerIcon,
+  type RadioTowerIconHandle,
+} from '@/components/animated-icon/radio-tower'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { SearchDialog } from '@/containers/dialogs/SearchDialog'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
@@ -37,6 +41,7 @@ export function NavMain({ mode }: { mode: SidebarMode }) {
   const skillsIconRef = useRef<AnimatedIconHandle>(null)
   const projectIconRef = useRef<AnimatedIconHandle>(null)
   const integrationsIconRef = useRef<PlugIconHandle>(null)
+  const apiIconRef = useRef<RadioTowerIconHandle>(null)
   const integrationsBadgeSeen = useGeneralSetting(
     (state) => state.integrationsBadgeSeen
   )
@@ -165,6 +170,24 @@ export function NavMain({ mode }: { mode: SidebarMode }) {
                       {t('common:newBadge')}
                     </span>
                   )}
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={pathname.startsWith('/api')}
+                className="data-[active=true]:bg-sidebar-foreground/15"
+                onMouseEnter={() => apiIconRef.current?.startAnimation()}
+                onMouseLeave={() => apiIconRef.current?.stopAnimation()}
+              >
+                <Link to={route.api.index}>
+                  <RadioTowerIcon
+                    ref={apiIconRef}
+                    className="text-foreground/70"
+                    size={16}
+                  />
+                  <span>{t('common:api')}</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
