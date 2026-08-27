@@ -17,7 +17,11 @@ import DeleteProvider from '@/containers/dialogs/DeleteProvider'
 import { InputControl } from '@/containers/dynamicControllerSetting/InputControl'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { isProviderConnected, takesApiKey } from '@/lib/cloud-providers'
+import {
+  isProviderConnected,
+  isSubscriptionProvider,
+  takesApiKey,
+} from '@/lib/cloud-providers'
 import { isOnboardingPending } from '@/lib/onboarding'
 import { buildApiKeyUpdate, saveProviderApiKey } from '@/lib/provider-api-key'
 import { getProviderTitle } from '@/lib/utils'
@@ -83,6 +87,11 @@ export function CloudConnectionCard({
   }, [selected?.provider, selected?.api_key])
 
   const localApiServerUrl = useMemo(() => getLocalApiServerUrl(), [])
+
+  // A subscription is connected by signing in, not by a key or a base URL, so
+  // its own card owns the whole body. Rendering the status line here too would
+  // show a second, always-"not connected" state for the same provider.
+  const isSubscription = isSubscriptionProvider(selected?.provider)
 
   const apiKeySetting = selected?.settings.find((s) => s.key === 'api-key')
   const baseUrlSetting = selected?.settings.find((s) => s.key === 'base-url')
@@ -162,7 +171,7 @@ export function CloudConnectionCard({
             ? t('cloud:connection.empty')
             : t('cloud:connection.placeholder')}
         </p>
-      ) : (
+      ) : isSubscription ? null : (
         <>
           <CardItem
             title={

@@ -46,15 +46,23 @@ export const isCloudProvider = (provider: ProviderObject): boolean =>
  * A whitespace-only key is not a key — pasting a stray space would otherwise
  * present a provider as connected and fail on the first request.
  */
-export const isProviderConnected = (provider: ProviderObject): boolean =>
-  Boolean(provider.api_key?.trim()) || isKeylessRemoteProvider(provider)
+export const isProviderConnected = (provider: ProviderObject): boolean => {
+  // A subscription carries no key — the bearer token lives in the Rust
+  // backend — so "connected" is read off the model list `useChatGptAuth`
+  // writes on sign-in and empties on sign-out. Same signal `hasValidProviders`
+  // already uses.
+  if (isSubscriptionProvider(provider.provider))
+    return (provider.models?.length ?? 0) > 0
+  return Boolean(provider.api_key?.trim()) || isKeylessRemoteProvider(provider)
+}
 
 /**
  * Providers authorised by signing in rather than by an API key.
  *
- * They own a dedicated card on the Cloud page — sign-in, account, model count —
- * so they are deliberately absent from the connection dropdown. Two places to
- * connect one thing is how the two drift apart.
+ * They are picked from the connection dropdown like any other provider, but
+ * their card on the Cloud page is a sign-in card rather than a key field — the
+ * connection card renders no body for them, so there is still only one place
+ * to connect one thing.
  */
 const SUBSCRIPTION_PROVIDERS = new Set(['chatgpt'])
 
@@ -84,16 +92,22 @@ export type CloudProviderGroups = {
 export const groupCloudProviders = (
   providers: ProviderObject[]
 ): CloudProviderGroups => {
-  const cloud = providers.filter(
-    (provider) =>
-      isCloudProvider(provider) && !isSubscriptionProvider(provider.provider)
-  )
+  const cloud = providers.filter(isCloudProvider)
+  // Subscriptions declare no `api-key` setting, so the property test would
+  // file them under self-hosted. They run on somebody else's servers: list
+  // them with the hosted clouds regardless.
+  const subscription = (provider: ProviderObject) =>
+    isSubscriptionProvider(provider.provider)
   return {
     selfHosted: cloud.filter(
-      (provider) => isKeylessRemoteProvider(provider) || !takesApiKey(provider)
+      (provider) =>
+        !subscription(provider) &&
+        (isKeylessRemoteProvider(provider) || !takesApiKey(provider))
     ),
     hosted: cloud.filter(
-      (provider) => !isKeylessRemoteProvider(provider) && takesApiKey(provider)
+      (provider) =>
+        subscription(provider) ||
+        (!isKeylessRemoteProvider(provider) && takesApiKey(provider))
     ),
   }
 }

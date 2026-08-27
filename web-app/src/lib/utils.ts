@@ -100,8 +100,11 @@ export function getProviderLogo(provider: string) {
     case 'gemini':
       return '/images/model-provider/gemini.svg'
     case 'openai':
-    case 'chatgpt':
       return '/images/model-provider/openai.svg'
+    // The subscription is reached through the Codex backend, and its own mark
+    // keeps it apart from the API-key OpenAI provider in the same list.
+    case 'chatgpt':
+      return '/images/model-provider/codex.svg'
     case 'azure':
       return '/images/model-provider/azure.svg'
     case 'xai':

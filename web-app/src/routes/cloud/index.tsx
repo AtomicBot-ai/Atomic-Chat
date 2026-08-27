@@ -15,7 +15,11 @@ import { useChatGptAuth } from '@/hooks/useChatGptAuth'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { isCloudProvider, isProviderConnected } from '@/lib/cloud-providers'
+import {
+  isCloudProvider,
+  isProviderConnected,
+  isSubscriptionProvider,
+} from '@/lib/cloud-providers'
 import { refreshProviderModels } from '@/lib/refresh-provider-models'
 import { cn } from '@/lib/utils'
 import { useProviderRegistryStore } from '@/stores/provider-registry-store'
@@ -209,15 +213,17 @@ export function CloudPage() {
             serviceHub={serviceHub}
           />
 
-          <CloudSubscriptionCard
-            state={subscription.state}
-            account={subscription.account}
-            error={subscription.error}
-            modelCount={subscription.modelCount}
-            onConnectBrowser={() => void subscription.connect()}
-            onCancel={() => void subscription.cancel()}
-            onDisconnect={() => void subscription.disconnect()}
-          />
+          {isSubscriptionProvider(selected?.provider) && (
+            <CloudSubscriptionCard
+              state={subscription.state}
+              account={subscription.account}
+              error={subscription.error}
+              modelCount={subscription.modelCount}
+              onConnectBrowser={() => void subscription.connect()}
+              onCancel={() => void subscription.cancel()}
+              onDisconnect={() => void subscription.disconnect()}
+            />
+          )}
 
           {selected && (
             <CloudModelsCard

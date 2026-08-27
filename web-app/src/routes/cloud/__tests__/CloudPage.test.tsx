@@ -146,6 +146,15 @@ const baseUrlSetting: ProviderSetting = {
 const providers: ProviderObject[] = [
   { provider: 'llamacpp-upstream', active: true, models: [], settings: [], persist: true },
   {
+    // Signed in with a ChatGPT account: no key, no settings, models arrive on
+    // sign-in. Its card only renders while it is the selected provider.
+    provider: 'chatgpt',
+    active: true,
+    models: [],
+    settings: [],
+    base_url: 'https://chatgpt.com/backend-api/codex',
+  },
+  {
     provider: 'openai',
     active: true,
     models: [{ id: 'gpt-5.4' }, { id: 'gpt-5.4-mini' }],
@@ -183,14 +192,30 @@ describe('CloudPage', () => {
     mockStore()
   })
 
-  it('renders the connection and subscription cards', () => {
-    render(<CloudPage />)
+  it('renders the subscription card only while its provider is selected', () => {
+    searchState.current = { provider: 'openai' }
+    const { unmount } = render(<CloudPage />)
 
     expect(screen.getByText('cloud:connection.title')).toBeInTheDocument()
+    expect(
+      screen.queryByText('cloud:subscription.title')
+    ).not.toBeInTheDocument()
+    unmount()
+
+    searchState.current = { provider: 'chatgpt' }
+    render(<CloudPage />)
+
     expect(screen.getByText('cloud:subscription.title')).toBeInTheDocument()
+    // The connection card keeps its picker but hands the body to the
+    // subscription card — no second, always-"not connected" status line.
+    expect(screen.getByText('cloud:connection.title')).toBeInTheDocument()
+    expect(
+      screen.queryByText('cloud:connection.routing')
+    ).not.toBeInTheDocument()
   })
 
   it('offers browser sign-in and keeps device code disabled', async () => {
+    searchState.current = { provider: 'chatgpt' }
     render(<CloudPage />)
     await waitFor(() =>
       expect(auth.chatgptStatus.mock.calls.length).toBeGreaterThan(0)
@@ -206,6 +231,7 @@ describe('CloudPage', () => {
   })
 
   it('shows the connected account once signed in', async () => {
+    searchState.current = { provider: 'chatgpt' }
     auth.chatgptStatus.mockResolvedValueOnce({
       connected: true,
       email: 'user@example.test',
@@ -222,6 +248,7 @@ describe('CloudPage', () => {
   })
 
   it('surfaces the backend message when sign-in fails', async () => {
+    searchState.current = { provider: 'chatgpt' }
     auth.chatgptLogin.mockRejectedValueOnce(
       new Error('cannot listen on 127.0.0.1:1455 for the sign-in callback')
     )
@@ -300,9 +327,10 @@ describe('CloudPage', () => {
 
   it('clears the key on disconnect', () => {
     searchState.current = { provider: 'openai' }
+    const openai = providers.find((p) => p.provider === 'openai')!
     mockStore([
       ...providers.filter((p) => p.provider !== 'openai'),
-      { ...providers[1], api_key: 'sk-live' },
+      { ...openai, api_key: 'sk-live' },
     ])
     render(<CloudPage />)
 
