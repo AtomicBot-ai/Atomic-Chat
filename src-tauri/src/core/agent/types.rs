@@ -146,6 +146,82 @@ pub struct AgentTurnRequest {
     /// Thinking intent for this turn. Absent leaves every transport default.
     #[serde(default)]
     pub reasoning: Option<AgentReasoningRequest>,
+    /// The thread assistant's rendered system prompt. The frontend resolves
+    /// templates (`{{current_date}}`, …) before sending; this side treats the
+    /// text as opaque and renders it into the stable prefix's `### assistant`
+    /// section, truncated to a fixed budget.
+    #[serde(default)]
+    pub assistant_instructions: Option<String>,
+    /// Sampling parameters of the thread assistant. Applied only when
+    /// `sampling_overridden` is true — otherwise the agent keeps its own tuned
+    /// defaults, which the tool-call discipline was calibrated against.
+    #[serde(default)]
+    pub sampling: Option<AgentSamplingRequest>,
+    /// True once the user explicitly tuned the assistant's sampling.
+    #[serde(default)]
+    pub sampling_overridden: bool,
+    /// Per-turn switch for the built-in web tools (`os.web.search`,
+    /// `os.web.fetch`). Off removes them from the prompt catalog, the grammar,
+    /// the JSON schema, and dispatch for this turn.
+    #[serde(default = "default_true")]
+    pub web_search: bool,
+    /// Expose the user's connected MCP servers as dynamic `mcp.*` tools.
+    #[serde(default = "default_true")]
+    pub mcp_enabled: bool,
+    /// Auto-approve MCP-origin tools regardless of their annotations. Carries
+    /// the legacy chat `allowAllMCPPermissions` setting; never widens approval
+    /// for built-in tools.
+    #[serde(default = "default_true")]
+    pub auto_approve_mcp: bool,
+    /// Per-thread disabled MCP tools as `server::tool` keys (the frontend's
+    /// `useToolAvailable` format). Filtered out of the turn's catalog.
+    #[serde(default)]
+    pub disabled_mcp_tools: Vec<String>,
+    /// Per-turn document-index (RAG) context. Absent disables the `docs.*`
+    /// tools for the turn, keeping the prompt prefix byte-stable for threads
+    /// without documents.
+    #[serde(default)]
+    pub rag: Option<AgentRagRequest>,
+}
+
+/// Per-turn RAG context. Collection names are computed frontend-side
+/// (`attachments_<threadId>` / `project_<projectId>` — the TypeScript naming
+/// in `extensions/vector-db-extension/src/index.ts` stays the single source
+/// of truth) and arrive verbatim.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AgentRagRequest {
+    pub thread_collection: String,
+    #[serde(default)]
+    pub project_collection: Option<String>,
+    /// Names of documents attached (indexed) on this turn, surfaced to the
+    /// model in the `### documents` note.
+    #[serde(default)]
+    pub attached_file_names: Vec<String>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Sampling overrides for one agent turn, mirroring the chat assistant's
+/// parameter bag. Every field is optional; absent fields keep the agent's
+/// tuned defaults.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AgentSamplingRequest {
+    #[serde(default)]
+    pub temperature: Option<f32>,
+    #[serde(default)]
+    pub top_p: Option<f32>,
+    #[serde(default)]
+    pub top_k: Option<i32>,
+    #[serde(default)]
+    pub min_p: Option<f32>,
+    #[serde(default)]
+    pub frequency_penalty: Option<f32>,
+    #[serde(default)]
+    pub presence_penalty: Option<f32>,
+    #[serde(default)]
+    pub repeat_penalty: Option<f32>,
 }
 
 /// Thinking intent for one turn, as the frontend resolved it.
@@ -362,5 +438,23 @@ pub enum AgentEvent {
         /// `"reply"` | `"finish"` | `"max_steps"` | `"cancelled"` | `"failed"`.
         reason: String,
         step_count: u32,
+        /// Aggregated model usage for the turn, when the transport reports it.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        usage: Option<AgentTurnUsage>,
     },
+}
+
+/// Token accounting for one finished turn, summed over its completions.
+/// Mirrors what the chat transport attaches as message metadata so the UI's
+/// token counters and speed indicator work on both engines.
+#[derive(Debug, Clone, Default, Serialize, PartialEq)]
+pub struct AgentTurnUsage {
+    pub tokens_in: f64,
+    pub tokens_out: f64,
+    /// Decode speed in tokens/second, from the final completion's timings.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tps: Option<f64>,
+    /// Milliseconds from turn start to the first streamed or completed output.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttft_ms: Option<f64>,
 }

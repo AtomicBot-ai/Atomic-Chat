@@ -17,19 +17,23 @@ use super::attachments::stage_attachments;
 use super::folder_access::FolderAccessGate;
 use super::llm_client::{
     find_session_by_model_and_backend, AgentLlmClient, ContextExpansionHook, LlamaServerClient,
-    LlamaSessionTarget,
+    LlamaSessionTarget, SamplingOverrides,
 };
 use super::openai_client::{
     OpenAiCompatibleClient, OpenAiTarget, OpenAiTargetKind, SessionReloadHook,
 };
 use super::target::{resolve_agent_target, resolve_mlx_target, AgentTarget};
 use super::path_policy::{canonical_directory, expand_home, lexical_normalize, EditableRoots};
+use super::mcp_tools::{snapshot_catalog, LiveMcpBridge, McpBridge};
+use super::rag_bridge::{DocsBridge, LiveDocsBridge};
 use super::prompt::{
-    build_stable_prefix_for_profile, CapabilitiesSummary, SkillDescriptor,
+    build_stable_prefix_with, CapabilitiesSummary, SkillDescriptor, StablePrefixArgs,
     DEFAULT_MAX_PARALLEL_TOOL_CALLS, ITERATION_ONE_TOOLS,
 };
 use super::runner::{run_turn, RunTurnInput, MAX_STEPS};
-use super::session::{load_session, save_session, validate_session_id};
+use super::session::{
+    load_session, save_session, validate_session_id, AgentReseedMessage,
+};
 use super::skills::load_registry;
 use super::tools::DesktopServices;
 use super::types::{
@@ -522,15 +526,97 @@ pub async fn agent_run_turn<R: Runtime>(
         .collect::<Vec<_>>();
     let model_profile = client.probe_model_profile(&cancellation).await;
     let reasoning = AgentReasoning::from_request(request.reasoning.as_ref());
-    let stable_prefix = build_stable_prefix_for_profile(
-        ITERATION_ONE_TOOLS,
-        &skill_descriptors,
-        &capabilities,
-        DEFAULT_MAX_PARALLEL_TOOL_CALLS,
-        None,
-        model_profile,
-        reasoning.is_on(),
-    );
+    // Assistant sampling reaches the loop only once the user explicitly tuned
+    // it; otherwise the agent keeps its own calibrated sampler.
+    let sampling = SamplingOverrides::from_request(if request.sampling_overridden {
+        request.sampling.as_ref()
+    } else {
+        None
+    });
+    // Per-turn switch for the built-in web tools. The prompt, grammar, schema
+    // and dispatch all read this one set.
+    let mut disabled_tools: std::collections::BTreeSet<String> = if request.web_search {
+        std::collections::BTreeSet::new()
+    } else {
+        ["os.web.search", "os.web.fetch"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
+    };
+    // Threads without documents keep the docs.* tools out of the prompt,
+    // grammar, schema and dispatch — the stable prefix stays byte-identical
+    // to pre-RAG turns.
+    if request.rag.is_none() {
+        disabled_tools.extend(
+            super::tools::docs::DOCS_TOOL_NAMES
+                .into_iter()
+                .map(str::to_owned),
+        );
+    }
+    let enabled_descriptors: Vec<super::prompt::ToolDescriptor> = ITERATION_ONE_TOOLS
+        .iter()
+        .filter(|descriptor| !disabled_tools.contains(descriptor.name))
+        .cloned()
+        .collect();
+    // Snapshot the MCP catalog once: the tool set is frozen for the whole
+    // turn, so every step's prompt stays byte-stable.
+    let mcp_bridge: Option<LiveMcpBridge> = if request.mcp_enabled {
+        let disabled_keys = request
+            .disabled_mcp_tools
+            .iter()
+            .cloned()
+            .collect::<std::collections::BTreeSet<String>>();
+        let catalog = snapshot_catalog(&state, &disabled_keys).await;
+        if catalog.is_empty() {
+            None
+        } else {
+            let call_timeout = state.mcp_settings.lock().await.tool_call_timeout_duration();
+            Some(LiveMcpBridge::new(
+                catalog,
+                state.mcp_servers.clone(),
+                call_timeout,
+            ))
+        }
+    } else {
+        None
+    };
+    let mcp: Option<&dyn McpBridge> = mcp_bridge
+        .as_ref()
+        .map(|bridge| bridge as &dyn McpBridge);
+    // Document-index bridge for turns that carry rag context. Collection
+    // names arrive verbatim from the frontend (validated above); the
+    // embedding session is TS-owned and merely looked up per call.
+    let docs_bridge: Option<LiveDocsBridge> = request.rag.as_ref().map(|rag| {
+        let vector_db = app_handle.state::<tauri_plugin_vector_db::VectorDBState>();
+        let llamacpp = app_handle.state::<LlamacppState>();
+        let upstream = app_handle.state::<LlamacppUpstreamState>();
+        LiveDocsBridge::new(
+            vector_db.base_dir.clone(),
+            rag.thread_collection.clone(),
+            rag.project_collection.clone(),
+            llamacpp.llama_server_process.clone(),
+            upstream.llama_server_process.clone(),
+        )
+    });
+    let docs: Option<&dyn DocsBridge> = docs_bridge
+        .as_ref()
+        .map(|bridge| bridge as &dyn DocsBridge);
+    let documents_note = request.rag.as_ref().map(format_documents_note);
+    let stable_prefix = build_stable_prefix_with(&StablePrefixArgs {
+        tool_descriptors: &enabled_descriptors,
+        skill_descriptors: &skill_descriptors,
+        capabilities: &capabilities,
+        max_parallel_tool_calls: DEFAULT_MAX_PARALLEL_TOOL_CALLS,
+        system_persona: None,
+        assistant_instructions: request.assistant_instructions.as_deref(),
+        mcp_tools: mcp.map(|bridge| bridge.descriptors()).unwrap_or(&[]),
+        mcp_omitted: mcp_bridge
+            .as_ref()
+            .map(|bridge| bridge.omitted())
+            .unwrap_or(0),
+        profile: model_profile,
+        thinking: reasoning.is_on(),
+    });
     let approval_events = on_event.clone();
     let approval = ApprovalGate::new(
         request.run_id.clone(),
@@ -578,6 +664,12 @@ pub async fn agent_run_turn<R: Runtime>(
                         trusted_read_roots: &trusted_read_roots,
                         max_steps: request.max_steps.unwrap_or(MAX_STEPS),
                         reasoning: reasoning.clone(),
+                        sampling: &sampling,
+                        mcp,
+                        disabled_tools: &disabled_tools,
+                        auto_approve_mcp: request.auto_approve_mcp,
+                        docs,
+                        documents_note: documents_note.as_deref(),
                         client: client.as_ref(),
                         approval: &approval,
                         folder_access: &folder_access,
@@ -608,6 +700,30 @@ pub async fn agent_run_turn<R: Runtime>(
     clear_pending_approvals_for_run(&state, &request.run_id).await;
     clear_pending_folder_access_for_run(&state, &request.run_id).await;
     result
+}
+
+/// Re-seed the durable agent transcript from the authoritative frontend
+/// message list — after edit/delete/regenerate, or lazily when a thread has
+/// turns the loop never saw (legacy chat history, fallback-engine turns).
+///
+/// Serialized on the per-session lock, so it can never interleave a running
+/// turn's `save_session`; the frontend must cancel or await any active run
+/// first. Spawned PTY processes are left alone — they are session resources
+/// that survive history edits and die with the thread.
+#[tauri::command]
+pub async fn agent_session_reseed<R: Runtime>(
+    app_handle: AppHandle<R>,
+    state: State<'_, AppState>,
+    session_id: String,
+    messages: Vec<AgentReseedMessage>,
+) -> Result<(), String> {
+    validate_session_id(&session_id)?;
+    let data_folder = get_jan_data_folder_path(app_handle);
+    let session_lock = get_session_lock(&state.agent_session_locks, &session_id).await;
+    let _session_guard = session_lock.lock().await;
+    let mut session = load_session(&data_folder, &session_id).await?;
+    session.reseed(&messages);
+    save_session(&data_folder, &session).await
 }
 
 fn resolve_bundled_script_runtime<R: Runtime>(app_handle: &AppHandle<R>) -> Option<PathBuf> {
@@ -768,7 +884,70 @@ fn validate_request(request: &AgentTurnRequest) -> Result<(), String> {
     if request.user_message.trim().is_empty() {
         return Err("user_message must not be empty".into());
     }
+    if let Some(rag) = &request.rag {
+        validate_collection_name(&rag.thread_collection)?;
+        if let Some(project) = &rag.project_collection {
+            validate_collection_name(project)?;
+        }
+    }
     Ok(())
+}
+
+/// Collection names become SQLite file names under the vector-db base dir;
+/// only the charset the TS extension generates is accepted.
+fn validate_collection_name(name: &str) -> Result<(), String> {
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
+    {
+        return Err(format!("Invalid collection name: '{name}'"));
+    }
+    Ok(())
+}
+
+/// The `### documents` note rendered into the variable tail on RAG turns:
+/// tells the model the documents live in the index, not in attachment files.
+fn format_documents_note(rag: &super::types::AgentRagRequest) -> String {
+    const NAME_LIST_MAX_CHARS: usize = 2_000;
+    let names: Vec<&str> = rag
+        .attached_file_names
+        .iter()
+        .map(String::as_str)
+        .filter(|name| !name.trim().is_empty())
+        .collect();
+    let mut note = String::new();
+    if names.is_empty() {
+        note.push_str("This conversation has indexed documents.");
+    } else {
+        let mut list = String::new();
+        let mut listed = 0usize;
+        for name in &names {
+            let entry = if list.is_empty() {
+                (*name).to_string()
+            } else {
+                format!(", {name}")
+            };
+            if list.len() + entry.len() > NAME_LIST_MAX_CHARS {
+                break;
+            }
+            list.push_str(&entry);
+            listed += 1;
+        }
+        note.push_str(&format!("{} indexed document(s): {list}", names.len()));
+        if names.len() > listed {
+            note.push_str(&format!(" (+{} more)", names.len() - listed));
+        }
+        note.push('.');
+    }
+    if rag.project_collection.is_some() {
+        note.push_str(" Project-wide documents are also indexed (scope: \"project\").");
+    }
+    note.push_str(
+        " Search them with docs.retrieve (semantic query), enumerate them with docs.list, and \
+         read nearby passages with docs.chunks. Do not guess document contents — retrieve first.",
+    );
+    note
 }
 
 async fn get_session_lock(
@@ -899,6 +1078,44 @@ mod tests {
 
     use super::*;
     use crate::core::agent::test_support::TestWorkspace;
+
+    #[test]
+    fn documents_note_lists_names_and_caps_the_list() {
+        let note = format_documents_note(&crate::core::agent::types::AgentRagRequest {
+            thread_collection: "attachments_t1".into(),
+            project_collection: None,
+            attached_file_names: vec!["report.pdf".into(), "notes.md".into()],
+        });
+        assert!(note.starts_with("2 indexed document(s): report.pdf, notes.md."));
+        assert!(note.contains("docs.retrieve"));
+        assert!(!note.contains("scope: \"project\""));
+
+        let long_names: Vec<String> = (0..200).map(|i| format!("document-{i:03}.pdf")).collect();
+        let capped = format_documents_note(&crate::core::agent::types::AgentRagRequest {
+            thread_collection: "attachments_t1".into(),
+            project_collection: Some("project_p1".into()),
+            attached_file_names: long_names,
+        });
+        assert!(capped.contains("more)"), "long lists truncate with a count");
+        assert!(capped.len() < 3_000);
+        assert!(capped.contains("scope: \"project\""));
+
+        let bare = format_documents_note(&crate::core::agent::types::AgentRagRequest {
+            thread_collection: "attachments_t1".into(),
+            project_collection: None,
+            attached_file_names: Vec::new(),
+        });
+        assert!(bare.starts_with("This conversation has indexed documents."));
+    }
+
+    #[test]
+    fn collection_names_validate_a_safe_charset() {
+        assert!(validate_collection_name("attachments_thread-1.a").is_ok());
+        assert!(validate_collection_name("").is_err());
+        assert!(validate_collection_name("has space").is_err());
+        assert!(validate_collection_name("has/slash").is_err());
+        assert!(validate_collection_name("has\\backslash").is_err());
+    }
 
     #[cfg(windows)]
     fn create_junction(link: &Path, target: &Path) {

@@ -786,6 +786,12 @@ export class ModelFactory {
       case 'huggingface':
       case 'nvidia':
       case 'ollama':
+      // `chatgpt` is the subscription. It speaks Responses upstream, but the
+      // local proxy translates that, so what reaches this client is ordinary
+      // Chat Completions — and the openai-compatible client also brings the
+      // `<think>` reasoning middleware that `createOpenAIModel` does not.
+      // eslint-disable-next-line no-fallthrough
+      case 'chatgpt':
         return this.createOpenAICompatibleModel(modelId, provider, override)
 
       case 'xai':

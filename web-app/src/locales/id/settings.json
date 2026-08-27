@@ -64,7 +64,9 @@
     "autoApproveTools": "Auto-approve tool calls",
     "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
     "desktopNotifications": "Notifikasi desktop",
-    "desktopNotificationsDesc": "Kirim notifikasi sistem saat balasan selesai dibuat dan jendela tidak aktif."
+    "desktopNotificationsDesc": "Kirim notifikasi sistem saat balasan selesai dibuat dan jendela tidak aktif.",
+    "legacyChatEngine": "Gunakan mesin chat lama",
+    "legacyChatEngineDesc": "Arahkan semua pesan melalui pipeline chat sebelumnya alih-alih mesin agen terpadu. Opsi kompatibilitas sementara."
   },
   "threadNotifications": {
     "notificationTitle": "Balasan siap",

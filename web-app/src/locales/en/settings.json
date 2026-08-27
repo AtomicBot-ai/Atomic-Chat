@@ -79,7 +79,9 @@
     "autoApproveTools": "Auto-approve tool calls",
     "autoApproveToolsDesc": "Skip the approval popup and automatically allow every tool/MCP call. When disabled, you'll be asked to confirm each new tool.",
     "desktopNotifications": "Desktop notifications",
-    "desktopNotificationsDesc": "Send a system notification when a reply finishes generating and the window isn't focused."
+    "desktopNotificationsDesc": "Send a system notification when a reply finishes generating and the window isn't focused.",
+    "legacyChatEngine": "Use legacy chat engine",
+    "legacyChatEngineDesc": "Route every message through the previous chat pipeline instead of the unified agent engine. Temporary compatibility option."
   },
   "threadNotifications": {
     "notificationTitle": "Reply ready",

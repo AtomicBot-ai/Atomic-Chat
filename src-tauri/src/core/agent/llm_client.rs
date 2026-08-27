@@ -111,6 +111,21 @@ pub trait AgentLlmClient: Send + Sync {
         cancellation: &CancellationToken,
     ) -> Result<CompletionResult, LlmClientError>;
 
+    /// Streaming completion: forwards raw content / reasoning deltas as they
+    /// arrive and resolves with the same final result as [`Self::complete`].
+    /// The default implementation is the non-streaming fallback, so transports
+    /// opt in individually (llama.cpp today; SSE on chat transports is the
+    /// deferred next step).
+    async fn complete_streaming(
+        &self,
+        request: &CompletionRequest,
+        cancellation: &CancellationToken,
+        on_chunk: &mut (dyn FnMut(StreamChunk) -> Result<(), String> + Send),
+    ) -> Result<CompletionResult, LlmClientError> {
+        let _ = on_chunk;
+        self.complete(request, cancellation).await
+    }
+
     async fn describe_images(
         &self,
         prompt: &str,
@@ -170,6 +185,12 @@ pub struct CompletionRequest {
     /// llama.cpp-only sampler; chat transports drop it (OpenAI and Groq return
     /// 400 on unknown parameters).
     pub top_k: i32,
+    /// llama.cpp only. `None` keeps the server default.
+    pub min_p: Option<f32>,
+    /// Sent to every transport, but only when set — absent keeps today's
+    /// request bodies byte-identical.
+    pub frequency_penalty: Option<f32>,
+    pub presence_penalty: Option<f32>,
     /// llama.cpp only.
     pub repeat_penalty: f32,
     /// llama.cpp only.
@@ -238,10 +259,77 @@ impl CompletionRequest {
             temperature: 0.2,
             top_p: 0.95,
             top_k: 40,
+            min_p: None,
+            frequency_penalty: None,
+            presence_penalty: None,
             repeat_penalty: 1.1,
             repeat_last_n: 256,
             stop: Vec::new(),
             reasoning: CompletionReasoning::Unset,
+        }
+    }
+}
+
+/// Sampling overrides resolved from the thread assistant.
+///
+/// Constrained decoding makes this safe at any temperature: the GBNF grammar
+/// (and the JSON-schema `response_format` on chat transports) masks invalid
+/// tokens *before* sampling, so overrides can only affect tool *choice* and
+/// reply wording, never the output shape. Values are clamped to sane ranges;
+/// everything left `None` keeps the agent's tuned defaults.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SamplingOverrides {
+    pub temperature: Option<f32>,
+    pub top_p: Option<f32>,
+    pub top_k: Option<i32>,
+    pub min_p: Option<f32>,
+    pub frequency_penalty: Option<f32>,
+    pub presence_penalty: Option<f32>,
+    pub repeat_penalty: Option<f32>,
+}
+
+impl SamplingOverrides {
+    pub fn from_request(request: Option<&crate::core::agent::types::AgentSamplingRequest>) -> Self {
+        let Some(request) = request else {
+            return Self::default();
+        };
+        let clamp = |value: Option<f32>, min: f32, max: f32| {
+            value
+                .filter(|v| v.is_finite())
+                .map(|v| v.clamp(min, max))
+        };
+        Self {
+            temperature: clamp(request.temperature, 0.0, 2.0),
+            top_p: clamp(request.top_p, 0.0, 1.0),
+            top_k: request.top_k.map(|v| v.max(0)),
+            min_p: clamp(request.min_p, 0.0, 1.0),
+            frequency_penalty: clamp(request.frequency_penalty, -2.0, 2.0),
+            presence_penalty: clamp(request.presence_penalty, -2.0, 2.0),
+            repeat_penalty: clamp(request.repeat_penalty, 0.5, 2.0),
+        }
+    }
+
+    pub fn apply(&self, request: &mut CompletionRequest) {
+        if let Some(temperature) = self.temperature {
+            request.temperature = temperature;
+        }
+        if let Some(top_p) = self.top_p {
+            request.top_p = top_p;
+        }
+        if let Some(top_k) = self.top_k {
+            request.top_k = top_k;
+        }
+        if self.min_p.is_some() {
+            request.min_p = self.min_p;
+        }
+        if self.frequency_penalty.is_some() {
+            request.frequency_penalty = self.frequency_penalty;
+        }
+        if self.presence_penalty.is_some() {
+            request.presence_penalty = self.presence_penalty;
+        }
+        if let Some(repeat_penalty) = self.repeat_penalty {
+            request.repeat_penalty = repeat_penalty;
         }
     }
 }
@@ -339,6 +427,12 @@ struct CompletionPayload<'a> {
     n_predict: u32,
     repeat_penalty: f32,
     repeat_last_n: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    min_p: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    frequency_penalty: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    presence_penalty: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     grammar: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -712,6 +806,9 @@ impl LlamaServerClient {
             n_predict: request.max_tokens,
             repeat_penalty: request.repeat_penalty,
             repeat_last_n: request.repeat_last_n,
+            min_p: request.min_p,
+            frequency_penalty: request.frequency_penalty,
+            presence_penalty: request.presence_penalty,
             grammar: request.grammar.as_deref(),
             stop: (!request.stop.is_empty()).then_some(request.stop.as_slice()),
             slot_id: request.slot_id,
@@ -802,6 +899,16 @@ impl AgentLlmClient for LlamaServerClient {
         cancellation: &CancellationToken,
     ) -> Result<CompletionResult, LlmClientError> {
         LlamaServerClient::complete(self, request, cancellation).await
+    }
+
+    async fn complete_streaming(
+        &self,
+        request: &CompletionRequest,
+        cancellation: &CancellationToken,
+        on_chunk: &mut (dyn FnMut(StreamChunk) -> Result<(), String> + Send),
+    ) -> Result<CompletionResult, LlmClientError> {
+        LlamaServerClient::complete_stream(self, request, cancellation, |chunk| on_chunk(chunk))
+            .await
     }
 
     async fn describe_images(
@@ -1118,7 +1225,7 @@ fn extract_json_root(raw: &str) -> Result<&str, LlmClientError> {
     }
 }
 
-fn drain_sse_events(buffer: &mut String) -> Vec<String> {
+pub(crate) fn drain_sse_events(buffer: &mut String) -> Vec<String> {
     let normalized = buffer.replace("\r\n", "\n");
     *buffer = normalized;
     let mut events = Vec::new();
@@ -1129,7 +1236,7 @@ fn drain_sse_events(buffer: &mut String) -> Vec<String> {
     events
 }
 
-fn parse_sse_event(raw: &str) -> Option<Value> {
+pub(crate) fn parse_sse_event(raw: &str) -> Option<Value> {
     let data = raw
         .lines()
         .filter_map(|line| line.strip_prefix("data:"))

@@ -2,7 +2,6 @@
 import { createFileRoute, useSearch } from '@tanstack/react-router'
 import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
-import HeaderContextSize from '@/containers/HeaderContextSize'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useTools } from '@/hooks/useTools'
 import { cn } from '@/lib/utils'
@@ -48,17 +47,11 @@ export const Route = createFileRoute(route.home as any)({
 function Index() {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
-  const { providers, selectedProvider } = useModelProvider()
+  const { providers } = useModelProvider()
   const search = useSearch({ from: route.home as any })
   const threadModel = search.threadModel
   const agentSkill = search.agentSkill
   const { setCurrentThreadId } = useThreads()
-  const isAgentMode = useAgentMode(
-    (state) => state.agentThreads[TEMPORARY_CHAT_ID] === true
-  )
-  const sidebarMode = useAgentMode((state) => state.sidebarMode)
-  const setAgentMode = useAgentMode((state) => state.setAgentMode)
-  const setSidebarMode = useAgentMode((state) => state.setSidebarMode)
   const agentWorkspace = useAgentMode(
     (state) => state.workspaces[TEMPORARY_CHAT_ID]
   )
@@ -102,15 +95,6 @@ function Index() {
     setCurrentThreadId(undefined)
   }, [setCurrentThreadId])
 
-  useEffect(() => {
-    const nextMode =
-      sidebarMode === 'agent' && selectedProvider === 'mlx'
-        ? 'chat'
-        : sidebarMode
-    if (nextMode !== sidebarMode) setSidebarMode(nextMode)
-    setAgentMode(TEMPORARY_CHAT_ID, nextMode === 'agent')
-  }, [selectedProvider, setAgentMode, setSidebarMode, sidebarMode])
-
   if (onboardingPending) {
     return <SetupScreen onSkipped={() => setSetupSkippedThisSession(true)} />
   }
@@ -118,7 +102,6 @@ function Index() {
   return (
     <AgentWorkspaceLayout
       threadId={TEMPORARY_CHAT_ID}
-      agentModeActive={isAgentMode}
       workspace={agentWorkspace ?? { externalRoots: [] }}
       onAddExternal={() => void addExternalAgentRoot()}
       refreshKey={0}
@@ -126,10 +109,7 @@ function Index() {
       <div className="flex h-full w-full min-w-0 flex-col justify-center">
         <HeaderPage>
           <div className="flex items-center gap-2 w-full pr-2">
-            <DropdownModelProvider showSampler={!isAgentMode} />
-            <div className="ml-auto shrink-0">
-              <HeaderContextSize />
-            </div>
+            <DropdownModelProvider />
           </div>
         </HeaderPage>
         <div
@@ -154,10 +134,7 @@ function Index() {
               />
             </div>
             <div className="absolute inset-x-0 top-full mx-auto w-full max-w-3xl">
-              <AgentTaskSuggestions
-                visible={isAgentMode}
-                onSelect={handleSelectAgentTask}
-              />
+              <AgentTaskSuggestions visible onSelect={handleSelectAgentTask} />
             </div>
           </div>
         </div>

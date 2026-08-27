@@ -46,11 +46,32 @@ export const openAIProviderSettings = [
   },
 ]
 
+/** Base of the subscription API. No trailing slash — the Rust proxy joins
+ *  `/chat/completions` onto provider base URLs without trimming one. */
+export const CHATGPT_BASE_URL = 'https://chatgpt.com/backend-api/codex'
+
 /**
  * In-app baseline of providers that cannot (or should not) live in the remote
  * registry. The registry-store seeds itself from this list on first load.
  */
 export const BASELINE_PROVIDERS: ProviderObject[] = [
+  {
+    // Authorised by signing in, not by a key: it declares no `api-key`
+    // setting, and the bearer token lives in the Rust backend. That is exactly
+    // the "cannot live in the remote registry" case this file is for.
+    active: true,
+    api_key: '',
+    base_url: CHATGPT_BASE_URL,
+    provider: 'chatgpt',
+    settings: [],
+    // Filled in from the account's own catalogue on sign-in and emptied on
+    // sign-out, so a model is only ever listed while it can be served — and so
+    // `hasValidProviders` can read "has models" as "is connected".
+    models: [],
+    // The subscription has no OpenAI-style `/v1/models`; its catalogue comes
+    // from a dedicated backend command instead.
+    supports_model_listing: false,
+  },
   {
     active: true,
     api_key: '',

@@ -10,7 +10,7 @@ use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tauri_plugin_llamacpp::LLamaBackendSession;
 use tauri_plugin_llamacpp_upstream::LLamaBackendSession as LLamaUpstreamBackendSession;
 use tokio::sync::{oneshot, Mutex};
@@ -27,6 +27,7 @@ use crate::core::server::request_inspector::{
     InspectorHandle, PromptPreview, RequestInspector, StartedFields, StreamTelemetry,
     PREVIEW_MAX_CHARS,
 };
+use crate::core::server::chatgpt_route;
 use crate::core::server::sse::{SseData, SseLine, SseLineReader};
 use crate::core::state::{AutoIncreaseState, ProviderConfig, ServerHandle};
 
@@ -1541,6 +1542,129 @@ async fn handle_responses_request(
     }
 }
 
+/// Buffer a `/chat/completions` body, and answer it from the ChatGPT
+/// subscription when the model belongs to it.
+///
+/// Returns the body unread-equivalent (as `Bytes`) when it does not, so the
+/// caller can hand it to the generic path unchanged.
+async fn try_serve_chatgpt<R: Runtime>(
+    state: &mut EmitState,
+    body: Body,
+    host_header: &str,
+    origin_header: &str,
+    config: &ProxyConfig,
+    provider_configs: &Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    app_handle: &AppHandle<R>,
+) -> Result<chatgpt_route::ChatGptRouting, hyper::Error> {
+    let body_bytes = hyper::body::to_bytes(body).await?;
+
+    let Ok(json) = serde_json::from_slice::<serde_json::Value>(&body_bytes) else {
+        // Not parseable here is not our call to make — the generic path already
+        // has the error handling for it.
+        return Ok(chatgpt_route::ChatGptRouting::NotSubscription(body_bytes));
+    };
+    let Some(model_id) = json.get("model").and_then(|v| v.as_str()) else {
+        return Ok(chatgpt_route::ChatGptRouting::NotSubscription(body_bytes));
+    };
+
+    // Same three-step resolution the other endpoints use: exact model list,
+    // then a `provider/model` prefix, then the model id as a provider name.
+    let provider_name = {
+        let configs = provider_configs.lock().await;
+        configs
+            .iter()
+            .find(|(_, config)| config.models.iter().any(|m| m == model_id))
+            .map(|(_, config)| config.provider.clone())
+            .or_else(|| {
+                if let Some(sep_pos) = model_id.find('/') {
+                    let candidate: &str = &model_id[..sep_pos];
+                    if configs.contains_key(candidate) {
+                        return Some(candidate.to_string());
+                    }
+                }
+                configs.get(model_id).map(|c| c.provider.clone())
+            })
+    };
+
+    if !chatgpt_route::is_subscription_model(provider_name.as_deref()) {
+        return Ok(chatgpt_route::ChatGptRouting::NotSubscription(body_bytes));
+    }
+
+    let stream = json
+        .get("stream")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    state.endpoint = Some("chat_completions");
+    state.backend = "remote";
+    state.provider = provider_name;
+    state.model_id = Some(model_id.to_string());
+    state.stream = stream;
+    announce_parsed_request(state, "POST", &json, Some(&body_bytes));
+
+    // Both closures need the CORS inputs, so they are owned rather than
+    // borrowed from the caller's frame.
+    let host = host_header.to_string();
+    let origin = origin_header.to_string();
+    let trusted_hosts = config.trusted_hosts.clone();
+
+    let make_err = {
+        let (host, origin, trusted_hosts) = (host.clone(), origin.clone(), trusted_hosts.clone());
+        move |status: StatusCode, msg: &str| -> Response<Body> {
+            let mut b = Response::builder().status(status);
+            b = add_cors_headers_with_host_and_origin(b, &host, &origin, &trusted_hosts);
+            b.body(Body::from(msg.to_string()))
+                .expect("static error response")
+        }
+    };
+    let ok_builder = move |content_type: &str| {
+        let mut b = Response::builder()
+            .status(StatusCode::OK)
+            .header(hyper::header::CONTENT_TYPE, content_type);
+        b = add_cors_headers_with_host_and_origin(b, &host, &origin, &trusted_hosts);
+        b
+    };
+
+    let response = {
+        let client = match chatgpt_route::client() {
+            Ok(client) => client,
+            Err(err) => {
+                state.error_kind = Some("upstream_error");
+                return Ok(chatgpt_route::ChatGptRouting::Handled(make_err(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    &err,
+                )));
+            }
+        };
+        // Scoped so the (non-`Send`) `State` guard is dropped before the
+        // await below; hyper needs this future to be `Send`.
+        let auth = {
+            let app_state = app_handle.state::<crate::core::state::AppState>();
+            app_state.chatgpt_auth.clone()
+        };
+        let data_dir = crate::core::app::commands::get_jan_data_folder_path(app_handle.clone());
+        let created = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let session_id = uuid::Uuid::new_v4().to_string();
+
+        chatgpt_route::respond(
+            &client,
+            &auth,
+            &data_dir,
+            &json,
+            stream,
+            created,
+            &session_id,
+            &make_err,
+            &ok_builder,
+        )
+        .await
+    };
+
+    Ok(chatgpt_route::ChatGptRouting::Handled(response))
+}
+
 /// Requests the shared extension-owned context reload and resolves the
 /// replacement session after the coordinated reload completes.
 #[allow(clippy::too_many_arguments)]
@@ -1993,6 +2117,33 @@ async fn inner_proxy_request<R: Runtime>(
         )
         .await;
     }
+
+    // A model served by the connected ChatGPT subscription cannot go through
+    // the generic forwarder: `chatgpt.com/backend-api/codex` speaks the
+    // Responses protocol and takes its own headers. Handled in full here, the
+    // same way `/responses` is, so no other provider's path changes.
+    let body = if method == hyper::Method::POST
+        && get_destination_path(parts.uri.path(), &config.prefix) == "/chat/completions"
+    {
+        match try_serve_chatgpt(
+            state,
+            body,
+            &host_header,
+            &origin_header,
+            &config,
+            &provider_configs,
+            &app_handle,
+        )
+        .await?
+        {
+            chatgpt_route::ChatGptRouting::Handled(response) => return Ok(response),
+            // Reading a `Body` consumes it, so the bytes come back to be
+            // rebuilt for whichever path actually owns this request.
+            chatgpt_route::ChatGptRouting::NotSubscription(bytes) => Body::from(bytes),
+        }
+    } else {
+        body
+    };
 
     let original_path = parts.uri.path();
     let destination_path = get_destination_path(original_path, &config.prefix);

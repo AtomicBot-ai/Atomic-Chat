@@ -182,6 +182,12 @@ pub fn run() {
         core::server::remote_provider_commands::unregister_provider_config,
         core::server::remote_provider_commands::get_provider_config,
         core::server::remote_provider_commands::list_provider_configs,
+        // ChatGPT subscription sign-in
+        core::auth::commands::chatgpt_status,
+        core::auth::commands::chatgpt_login,
+        core::auth::commands::chatgpt_cancel_login,
+        core::auth::commands::chatgpt_logout,
+        core::auth::commands::chatgpt_models,
         // MCP commands
         core::mcp::commands::get_tools,
         core::mcp::commands::get_mcp_server_statuses,
@@ -190,6 +196,7 @@ pub fn run() {
         core::agent::commands::agent_run_turn,
         core::agent::commands::agent_cancel_turn,
         core::agent::commands::agent_kill_session_procs,
+        core::agent::commands::agent_session_reseed,
         core::agent::commands::agent_resolve_approval,
         core::agent::commands::agent_resolve_folder_access,
         core::agent::commands::agent_workspace_list,
@@ -339,6 +346,7 @@ pub fn run() {
         core::agent::commands::agent_run_turn,
         core::agent::commands::agent_cancel_turn,
         core::agent::commands::agent_kill_session_procs,
+        core::agent::commands::agent_session_reseed,
         core::agent::commands::agent_resolve_approval,
         core::agent::commands::agent_resolve_folder_access,
         core::agent::commands::agent_workspace_list,
@@ -406,6 +414,7 @@ pub fn run() {
             background_cleanup_handle: Arc::new(Mutex::new(None)),
             mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
             provider_configs: Arc::new(Mutex::new(HashMap::new())),
+            chatgpt_auth: Arc::new(Default::default()),
             auto_increase_ctx: Arc::new(core::state::AutoIncreaseState::default()),
             api_request_inspector: Arc::new(Default::default()),
             #[cfg(desktop)]

@@ -81,6 +81,35 @@ describe('getModelToStart', () => {
     expect(result?.provider.provider).toBe('llamacpp-upstream')
   })
 
+  it('honors an active selection when there is no lastUsedModel', () => {
+    // The selected-model branch is only reachable with the localStorage entry
+    // absent — otherwise lastUsedModel resolves or falls through to the first
+    // local model, and this path is never taken.
+    const providers = [
+      makeProvider('llamacpp-upstream', ['model-b'], true),
+      makeProvider('llamacpp', ['model-a'], true),
+    ]
+
+    const result = getModelToStart({
+      selectedModel: { id: 'model-a' } as never,
+      selectedProvider: 'llamacpp',
+      getProviderByName: lookup(providers),
+    })
+    expect(result?.provider.provider).toBe('llamacpp')
+    expect(result?.model).toBe('model-a')
+  })
+
+  it('falls through when the stored lastUsedModel is unreadable', () => {
+    // A half-written or hand-edited entry must not throw out of startup; the
+    // reader swallows it and the caller picks the first local model instead.
+    localStorage.setItem(localStorageKey.lastUsedModel, '{ not json')
+    const providers = [makeProvider('llamacpp-upstream', ['model-b'], true)]
+
+    const result = getModelToStart({ getProviderByName: lookup(providers) })
+    expect(result?.provider.provider).toBe('llamacpp-upstream')
+    expect(result?.model).toBe('model-b')
+  })
+
   it('returns null when only deactivated providers carry models', () => {
     const providers = [
       makeProvider('llamacpp-upstream', [], true),

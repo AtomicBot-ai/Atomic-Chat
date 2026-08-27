@@ -4,20 +4,14 @@ import { NavMain } from './NavMain'
 import { NavProjects } from './NavProjects'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
-import { agentProviderBlockReason } from '@/lib/agent-provider'
-import { useAgentProvider } from '@/hooks/useAgentProvider'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useAgentMode, type SidebarMode } from '@/hooks/useAgentMode'
-import { ChatAgentModeSwitch } from '@/containers/ChatAgentModeSwitch'
-import { TEMPORARY_CHAT_ID } from '@/constants/chat'
-import { localStorageKey } from '@/constants/localStorage'
 import { route } from '@/constants/routes'
-import { Link, useLocation, useNavigate } from '@tanstack/react-router'
+import { Link, useLocation } from '@tanstack/react-router'
 import {
   SettingsIcon,
   type SettingsIconHandle,
 } from '@/components/animated-icon/settings'
-import { useEffect, useRef, useState } from 'react'
+import { useRef } from 'react'
 
 import {
   Sidebar,
@@ -34,38 +28,8 @@ import {
 export function LeftSidebar() {
   const { t } = useTranslation()
   const isLeftPanelOpen = useLeftPanel((state) => state.open)
-  const navigate = useNavigate()
   const { pathname } = useLocation()
-  const sidebarMode = useAgentMode((state) => state.sidebarMode)
-  const setSidebarMode = useAgentMode((state) => state.setSidebarMode)
-  const agentProvider = useAgentProvider()
-  const agentBlockReason = agentProviderBlockReason(agentProvider)
-  const isAgentProviderSelected = agentBlockReason === null
-  useEffect(() => {
-    // Why the Agent toggle is greyed out is otherwise only visible in a
-    // tooltip, which makes bug reports hard to act on.
-    if (agentBlockReason) {
-      console.debug(
-        `[agent-mode] disabled for provider "${agentProvider?.provider ?? '(none)'}": ${agentBlockReason}`
-      )
-    }
-  }, [agentBlockReason, agentProvider?.provider])
   const settingsIconRef = useRef<SettingsIconHandle>(null)
-  const [showAgentAttention, setShowAgentAttention] = useState(
-    () =>
-      localStorage.getItem(localStorageKey.agentModeAttentionSeen) !== 'true'
-  )
-
-  const selectMode = (mode: SidebarMode) => {
-    if (mode === 'agent' && !isAgentProviderSelected) return
-    if (mode === 'agent' && showAgentAttention) {
-      localStorage.setItem(localStorageKey.agentModeAttentionSeen, 'true')
-      setShowAgentAttention(false)
-    }
-    setSidebarMode(mode)
-    useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, mode === 'agent')
-    navigate({ to: route.home })
-  }
 
   return (
     <div className="relative z-50">
@@ -194,26 +158,11 @@ export function LeftSidebar() {
               />
             </svg>
           </div>
-          <div className="mt-[6px] px-1">
-            <ChatAgentModeSwitch
-              isAgentMode={sidebarMode === 'agent'}
-              onChange={(isAgent) => selectMode(isAgent ? 'agent' : 'chat')}
-              chatLabel={t('chat:agentMode.chat')}
-              agentLabel={t('chat:agentMode.agent')}
-              agentDisabled={!isAgentProviderSelected}
-              agentDisabledTooltip={t(
-                agentBlockReason === 'missing-api-key'
-                  ? 'chat:agentMode.providerKeyMissing'
-                  : 'chat:agentMode.providerUnavailable'
-              )}
-              showAgentAttention={showAgentAttention}
-            />
-          </div>
         </SidebarHeader>
         <SidebarContent className="mask-b-from-95% mask-t-from-98%">
-          <NavMain mode={sidebarMode} />
-          {sidebarMode === 'chat' && <NavProjects />}
-          <NavChats mode={sidebarMode} />
+          <NavMain />
+          <NavProjects />
+          <NavChats />
         </SidebarContent>
         <SidebarFooter>
           <SidebarMenu>

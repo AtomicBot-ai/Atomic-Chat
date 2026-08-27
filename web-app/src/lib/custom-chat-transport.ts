@@ -199,6 +199,28 @@ export function foldSystemIntoFirstUserMessage<
   return copy
 }
 
+/**
+ * Drop the `tool-*` parts of assistant messages produced by the agent engine
+ * (`metadata.agent_run`). Their tool names exist only in the Rust loop and
+ * their states include values (`output-denied`) the AI-SDK converters do not
+ * accept, so on a mixed-engine thread a fallback turn would otherwise send
+ * unknown `tool_use` blocks to the provider. The text and reasoning survive —
+ * that is the part of the exchange the next turn needs.
+ */
+export function stripAgentRunToolParts<T extends UIMessage>(
+  messages: T[]
+): T[] {
+  return messages.map((message) => {
+    const metadata = message.metadata as Record<string, unknown> | undefined
+    if (!metadata?.agent_run) return message
+    const parts = message.parts?.filter(
+      (part) => !part.type.startsWith('tool-') && part.type !== 'dynamic-tool'
+    )
+    if (!parts || parts.length === (message.parts?.length ?? 0)) return message
+    return { ...message, parts }
+  })
+}
+
 export function shouldSuppressToolsForUpstreamDflash(
   providerId: string,
   settings: readonly ProviderSetting[] | undefined
@@ -677,10 +699,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // split it into separate messages so convertToModelMessages produces the
     // tool_use / tool_result pairing that the Claude API requires.
     // See: https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use#parallel-tool-use
+    // Mixed-engine hygiene: agent-run tool parts never reach a chat request.
+    const sanitizedMessages = stripAgentRunToolParts(options.messages)
     const messagesToConvert =
       effectiveProviderName === 'anthropic'
-        ? splitAnthropicSerialToolUse(options.messages)
-        : options.messages
+        ? splitAnthropicSerialToolUse(sanitizedMessages)
+        : sanitizedMessages
 
     // Convert UI messages to model messages. Non-image file parts are stripped
     // first — the converters accept `image/*` and nothing else. Order matters:

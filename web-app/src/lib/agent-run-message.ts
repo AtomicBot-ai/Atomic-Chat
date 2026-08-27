@@ -88,12 +88,35 @@ export function buildAgentUIMessage(state: AgentRunState): UIMessage {
     parts.push({ type: 'text', text: state.trace.assistantText })
   }
 
+  // Mirror the chat transport's metadata shape so the token counters and the
+  // speed indicator work identically on agent turns.
+  const usage = state.usage
   return {
     id: `agent-${runId}`,
     role: 'assistant',
     parts: parts as UIMessage['parts'],
     metadata: {
       agent_run: buildAgentRunSummary(state),
+      ...(usage
+        ? {
+            usage: {
+              inputTokens: usage.tokens_in,
+              outputTokens: usage.tokens_out,
+              totalTokens: usage.tokens_in + usage.tokens_out,
+            },
+            ...(usage.tps !== undefined
+              ? {
+                  tokenSpeed: {
+                    tokenSpeed: usage.tps,
+                    tokenCount: usage.tokens_out,
+                    lastTimestamp: state.finishedAtMs ?? 0,
+                    message: `agent-${runId}`,
+                  },
+                }
+              : {}),
+            ...(usage.ttft_ms !== undefined ? { ttftMs: usage.ttft_ms } : {}),
+          }
+        : {}),
     },
   }
 }

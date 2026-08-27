@@ -8,7 +8,6 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 
 import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
-import HeaderContextSize from '@/containers/HeaderContextSize'
 import ThreadList from '@/containers/ThreadList'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 
@@ -90,10 +89,7 @@ function ProjectPageContent() {
     <div className="flex flex-col h-svh w-full min-w-0 overflow-hidden">
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
-          <DropdownModelProvider showSampler={false} />
-          <div className="shrink-0">
-            <HeaderContextSize />
-          </div>
+          <DropdownModelProvider />
         </div>
       </HeaderPage>
 

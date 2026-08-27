@@ -272,6 +272,10 @@ pub async fn get_tools(
                             description: tool.description.as_ref().map(|d| d.to_string()),
                             input_schema: serde_json::Value::Object((*tool.input_schema).clone()),
                             server: server_name.clone(),
+                            annotations: tool
+                                .annotations
+                                .as_ref()
+                                .and_then(|annotations| serde_json::to_value(annotations).ok()),
                         });
                     }
                 }

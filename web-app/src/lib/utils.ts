@@ -100,6 +100,7 @@ export function getProviderLogo(provider: string) {
     case 'gemini':
       return '/images/model-provider/gemini.svg'
     case 'openai':
+    case 'chatgpt':
       return '/images/model-provider/openai.svg'
     case 'azure':
       return '/images/model-provider/azure.svg'
@@ -174,6 +175,8 @@ export const getProviderTitle = (provider: string) => {
       return 'MLX'
     case 'openai':
       return 'OpenAI'
+    case 'chatgpt':
+      return 'ChatGPT subscription'
     case 'openrouter':
       return 'OpenRouter'
     case 'gemini':

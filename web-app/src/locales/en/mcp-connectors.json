@@ -1,0 +1,46 @@
+{
+  "title": "Connectors",
+  "connectedSection": "Connected MCP Servers",
+  "connectedSectionDesc": "MCP servers this app can call tools on.",
+  "emptyState": {
+    "title": "No MCPs connected yet",
+    "desc": "Choose a popular MCP below to get started."
+  },
+  "popularSection": "Popular MCPs",
+  "popularSectionDesc": "Hand-picked MCP servers with a simple setup.",
+  "manualSection": "Manual MCP server setup",
+  "manualSectionDesc": "Add a local command or remote MCP server.",
+  "addCustom": "Add custom MCP",
+  "findMore": "Find more MCP servers at",
+  "advancedSection": "Advanced",
+  "setUp": "Set Up",
+  "added": "Added",
+  "connected": "Connected",
+  "enable": "Enable",
+  "by": "By {{name}}",
+  "featuredBadge": "Featured",
+  "tabs": {
+    "connectors": "Connectors",
+    "logs": "Logs"
+  },
+  "secretDialog": {
+    "title": "Connect {{name}}",
+    "desc": "This connector needs a key to work. It is stored locally in your MCP configuration.",
+    "connect": "Connect",
+    "getKey": "Get your API key"
+  },
+  "secrets": {
+    "serperApiKey": "Serper API key"
+  },
+  "toast": {
+    "connected": "{{name}} connected"
+  },
+  "descriptions": {
+    "exa": "Web search and page crawling built for AI. Works out of the box, no key needed.",
+    "fetch": "Fetch a web page and convert it to markdown for the model.",
+    "filesystem": "Read and write files in your Documents sandbox folder.",
+    "sequentialThinking": "Structured step-by-step reasoning for complex problems.",
+    "browsermcp": "Automate your own browser: navigate, click, and fill forms.",
+    "serper": "Google search results via the Serper API."
+  }
+}

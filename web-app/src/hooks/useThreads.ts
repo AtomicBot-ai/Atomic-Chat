@@ -60,7 +60,9 @@ const cleanupVectorDB = async (threadId: string) => {
       ExtensionTypeEnum.VectorDB
     )
     if (vec?.deleteCollection) {
-      await vec.deleteCollection(`attachments_${threadId}`)
+      // The extension prefixes `attachments_` itself; passing a pre-prefixed
+      // name used to double it up and the real collection never got deleted.
+      await vec.deleteCollection(threadId)
     }
   } catch (e) {
     console.warn(
@@ -204,6 +206,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
 
       // Delete threads and clean up their vector DB collections
       threadsToDeleteIds.forEach((threadId) => {
+        useAgentMode.getState().removeThread(threadId)
         useThreadReadStatus.getState().removeThread(threadId)
         cleanupVectorDB(threadId)
         getServiceHub().threads().deleteThread(threadId)
@@ -257,6 +260,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
 
       // Delete threads and clean up their vector DB collections
       toDeleteSet.forEach((threadId) => {
+        useAgentMode.getState().removeThread(threadId)
         useThreadReadStatus.getState().removeThread(threadId)
         cleanupVectorDB(threadId)
         getServiceHub().threads().deleteThread(threadId)
@@ -506,6 +510,11 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       const updatedThread = {
         ...thread,
         ...updates,
+        // Deep-merge metadata: a partial update like { hasDocuments: true }
+        // must not clobber sibling keys (project membership among them).
+        ...(updates.metadata !== undefined
+          ? { metadata: { ...thread.metadata, ...updates.metadata } }
+          : {}),
         updated: Date.now() / 1000,
       }
 

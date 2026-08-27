@@ -7,6 +7,7 @@ import {
 } from '@/components/ui/popover'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
+import { isCloudProvider } from '@/lib/cloud-providers'
 import { highlightFzfMatch } from '@/utils/highlight'
 import Capabilities from './Capabilities'
 import {
@@ -51,20 +52,13 @@ const setLastUsedModel = (provider: string, model: string) => {
   }
 }
 
-interface DropdownModelProviderProps {
-  /** Show the Sampling popover trigger inside the model bar (hidden for projects). */
-  showSampler?: boolean
-}
-
 // Vision detection asks the backend whether an mmproj sidecar exists next to the
 // model file. That answer cannot change while the app runs, so the result is
 // cached per model id: opening the model list must not re-probe the whole
 // llamacpp library every time.
 const visionProbeCache = new Map<string, boolean>()
 
-const DropdownModelProvider = memo(function DropdownModelProvider({
-  showSampler = true,
-}: DropdownModelProviderProps) {
+const DropdownModelProvider = memo(function DropdownModelProvider() {
   const providers = useModelProvider((state) => state.providers)
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
   const selectModelProvider = useModelProvider(
@@ -603,11 +597,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
             contextSize={getContextSize()}
             className="ml-0.5 shrink-0"
           />
-          {showSampler && (
-            <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-              <SamplerPopover />
-            </div>
-          )}
+          <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+            <SamplerPopover />
+          </div>
         </div>
       </PopoverTrigger>
 
@@ -748,10 +740,19 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                           className="size-6 cursor-pointer flex items-center justify-center rounded-sm bg-secondary-foreground/8 transition-all duration-200 ease-in-out"
                           onClick={(e) => {
                             e.stopPropagation()
-                            navigate({
-                              to: route.settings.providers,
-                              params: { providerName: providerInfo.provider },
-                            })
+                            // Cloud providers are set up on `/cloud`; local
+                            // engines keep their Settings detail page.
+                            if (isCloudProvider(providerInfo)) {
+                              navigate({
+                                to: route.cloud.index,
+                                search: { provider: providerInfo.provider },
+                              })
+                            } else {
+                              navigate({
+                                to: route.settings.providers,
+                                params: { providerName: providerInfo.provider },
+                              })
+                            }
                             setOpen(false)
                           }}
                         >

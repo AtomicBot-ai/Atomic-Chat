@@ -5,16 +5,17 @@
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use tokio_util::sync::CancellationToken;
 
 use super::batch_executor::{execute_batch, PlannedCall};
-use super::grammar::{tool_call_grammar_for_profile, GENERIC_THINK_CLOSE, GENERIC_THINK_OPEN};
+use super::grammar::{tool_call_grammar_dynamic, GENERIC_THINK_CLOSE, GENERIC_THINK_OPEN};
 use super::llm_client::{
     parse_tool_calls_for_profile, AgentLlmClient, AgentPrompt, CompletionReasoning,
-    CompletionRequest, LlmClientError, ParsedToolCalls, ReasoningTags,
+    CompletionRequest, CompletionResult, LlmClientError, ParsedToolCalls, ReasoningTags,
+    SamplingOverrides, StreamChunk,
 };
 use super::loop_guard::{
     format_forced_loop_reply, format_repeat_notice, format_veto_instruction,
@@ -22,22 +23,23 @@ use super::loop_guard::{
 };
 use super::model_profile::AgentModelProfile;
 use super::path_policy::EditableRoots;
-use super::prompt::{
-    build_prompt_parts_with_workspace_for_profile, build_prompt_with_workspace_for_profile,
-    format_workspace,
-};
+use super::mcp_tools::McpBridge;
+use super::rag_bridge::DocsBridge;
+use super::prompt::{build_prompt_dynamic, build_prompt_parts_dynamic, format_workspace};
 use super::pty::PtyRegistry;
-use super::resource_class::{is_batchable, resource_class_for, ResourceClass};
+use super::reply_stream::ReplyStreamScanner;
+use super::resource_class::{is_batchable, resource_class_for_call, ResourceClass};
 use super::session::AgentSessionState;
 use super::skills::{loaded::LoadedSkills, SkillRegistry};
 use super::token_budget::{
     compute_effective_conversation_cap, estimate_tokens, COMPLETION_MAX_TOKENS,
     CONFIGURED_CONVERSATION_CAP,
 };
-use super::tool_schema::tool_call_response_format;
+use super::tool_schema::tool_call_response_format_dynamic;
 use super::tools::{self, ApprovalHook, DesktopServices, FolderAccessHook, ToolContext};
 use super::types::{
-    AgentEvent, AgentReasoning, LoopLevel, ToolCallPayload, ToolExecution, ToolOutcome, ToolStatus,
+    AgentEvent, AgentReasoning, AgentTurnUsage, LoopLevel, ToolCallPayload, ToolExecution,
+    ToolOutcome, ToolStatus,
 };
 
 pub const MAX_STEPS: u32 = 25;
@@ -64,6 +66,19 @@ pub struct RunTurnInput<'a> {
     /// Thinking intent for this turn. Drives the GBNF prelude and, on
     /// llama.cpp, the reasoning-budget sampler.
     pub reasoning: AgentReasoning,
+    /// Assistant sampling overrides for this turn. `Default` keeps the agent's
+    /// tuned sampler untouched.
+    pub sampling: &'a SamplingOverrides,
+    /// The turn's MCP catalog and dispatcher. `None` disables `mcp.*` tools.
+    pub mcp: Option<&'a dyn McpBridge>,
+    /// The turn's document-index dispatcher. `None` disables `docs.*` tools.
+    pub docs: Option<&'a dyn DocsBridge>,
+    /// Pre-rendered `### documents` note for the variable tail.
+    pub documents_note: Option<&'a str>,
+    /// Built-in tools switched off for this turn (e.g. `os.web.*`).
+    pub disabled_tools: &'a std::collections::BTreeSet<String>,
+    /// Auto-approve MCP-origin tools (migrated chat `allowAllMCPPermissions`).
+    pub auto_approve_mcp: bool,
     pub client: &'a dyn AgentLlmClient,
     pub approval: &'a dyn ApprovalHook,
     pub folder_access: &'a dyn FolderAccessHook,
@@ -81,16 +96,18 @@ pub struct RunTurnInput<'a> {
 
 pub async fn run_turn(
     input: RunTurnInput<'_>,
-    mut emit: impl FnMut(AgentEvent) -> Result<(), String>,
+    mut emit: impl FnMut(AgentEvent) -> Result<(), String> + Send,
 ) -> Result<(), String> {
     emit(AgentEvent::TurnStarted {
         run_id: input.run_id.to_owned(),
         session_id: input.session_id.to_owned(),
     })?;
+    let mut usage = TurnUsageTracker::new();
     let max_steps = input.max_steps.clamp(1, MAX_STEPS);
     let mut notice: Option<String> = None;
     let mut tracker = ToolLoopTracker::default();
-    let loaded_tools = tools::tool_view::LoadedTools::restore(&input.session.loaded_tools);
+    let loaded_tools =
+        tools::tool_view::LoadedTools::restore(&input.session.loaded_tools, input.mcp);
     let loaded_skills = LoadedSkills::restore(&input.session.loaded_skills, input.skill_registry);
     if let Some(selected_skill) = input.selected_skill {
         let outcome = loaded_skills
@@ -105,6 +122,7 @@ pub async fn run_turn(
             emit(AgentEvent::TurnFinished {
                 reason: "failed".into(),
                 step_count: 0,
+                usage: usage.finish(),
             })?;
             return Err(message);
         }
@@ -115,8 +133,24 @@ pub async fn run_turn(
     // contract plus the repair step. Build only what this client can honour.
     let capabilities = input.client.capabilities();
     let thinking = input.reasoning.is_on();
+    let mcp_names = input
+        .mcp
+        .map(|bridge| {
+            bridge
+                .descriptors()
+                .iter()
+                .map(|descriptor| descriptor.agent_name.clone())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     let tool_grammar = capabilities.grammar.then(|| {
-        tool_call_grammar_for_profile(input.skill_registry, input.model_profile, thinking)
+        tool_call_grammar_dynamic(
+            input.skill_registry,
+            input.model_profile,
+            thinking,
+            &mcp_names,
+            input.disabled_tools,
+        )
     });
     // The repair completion asks for corrected JSON only, and its budget is a
     // tenth of a normal step's — a mandatory think block could swallow it whole.
@@ -125,18 +159,28 @@ pub async fn run_turn(
     let repair_grammar = match (&tool_grammar, input.model_profile.reasoning_open_tag()) {
         (None, _) | (Some(_), Some(_)) => tool_grammar.clone(),
         (Some(_), None) => capabilities.grammar.then(|| {
-            tool_call_grammar_for_profile(input.skill_registry, input.model_profile, false)
+            tool_call_grammar_dynamic(
+                input.skill_registry,
+                input.model_profile,
+                false,
+                &mcp_names,
+                input.disabled_tools,
+            )
         }),
     };
     let completion_reasoning = completion_reasoning(&input.reasoning, input.model_profile);
-    let response_schema = capabilities
-        .json_schema
-        .then(|| Arc::new(tool_call_response_format(input.skill_registry)));
+    let response_schema = capabilities.json_schema.then(|| {
+        Arc::new(tool_call_response_format_dynamic(
+            input.skill_registry,
+            &mcp_names,
+            input.disabled_tools,
+        ))
+    });
 
     for step_index in 0..max_steps {
         if input.cancellation.is_cancelled() {
             finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
-            return finish_cancelled(step_index, &mut emit);
+            return finish_cancelled(step_index, usage.finish(), &mut emit);
         }
         emit(AgentEvent::StepStarted { step_index })?;
         let loaded_tool_names = loaded_tools.snapshot().await;
@@ -151,7 +195,7 @@ pub async fn run_turn(
             &editable_roots,
             input.external_read_only_roots,
         );
-        let fixed_prompt = build_prompt_with_workspace_for_profile(
+        let fixed_prompt = build_prompt_dynamic(
             input.stable_prefix,
             &loaded_tool_names,
             &loaded_skill_entries,
@@ -159,12 +203,14 @@ pub async fn run_turn(
             "",
             notice.as_deref(),
             input.model_profile,
+            input.mcp,
+            input.documents_note,
         );
         let context_window = match input.client.fetch_context_window(input.cancellation).await {
             Ok(value) => value,
             Err(LlmClientError::Cancelled) => {
                 finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
-                return finish_cancelled(step_index, &mut emit);
+                return finish_cancelled(step_index, usage.finish(), &mut emit);
             }
             Err(error) => {
                 log::warn!("Agent /props context probe failed; using configured cap: {error}");
@@ -178,7 +224,7 @@ pub async fn run_turn(
             COMPLETION_MAX_TOKENS,
         );
         let conversation = input.session.render_conversation(conversation_cap);
-        let prompt = build_prompt_parts_with_workspace_for_profile(
+        let prompt = build_prompt_parts_dynamic(
             input.stable_prefix,
             &loaded_tool_names,
             &loaded_skill_entries,
@@ -186,9 +232,11 @@ pub async fn run_turn(
             &conversation,
             notice.as_deref(),
             input.model_profile,
+            input.mcp,
+            input.documents_note,
         );
         notice = None;
-        let request = CompletionRequest {
+        let mut request = CompletionRequest {
             reasoning: completion_reasoning.clone(),
             ..CompletionRequest::tool_call_parts(
                 AgentPrompt::parts(prompt.system, prompt.tail),
@@ -197,12 +245,62 @@ pub async fn run_turn(
                 AGENT_SLOT_ID,
             )
         };
-        let completion = complete_with_deadline(input.client, &request, input.cancellation).await;
+        input.sampling.apply(&mut request);
+        // Stream the completion where the transport can: reasoning deltas go
+        // straight to the UI, and when the array opens with `reply` its text
+        // value streams live as `AssistantDelta`. Both are best-effort — the
+        // parsed completion below stays authoritative.
+        let mut scanner =
+            ReplyStreamScanner::new(stream_prelude(&completion_reasoning, input.model_profile));
+        let mut prelude_reasoning_streamed = false;
+        let mut server_reasoning_streamed = false;
+        let completion = {
+            let scanner = &mut scanner;
+            let usage = &mut usage;
+            let prelude_flag = &mut prelude_reasoning_streamed;
+            let server_flag = &mut server_reasoning_streamed;
+            let emit = &mut emit;
+            let mut on_chunk = move |chunk: StreamChunk| -> Result<(), String> {
+                if !chunk.reasoning_delta.is_empty() {
+                    *server_flag = true;
+                    usage.mark_output();
+                    emit(AgentEvent::ReasoningDelta {
+                        step_index,
+                        text: chunk.reasoning_delta,
+                    })?;
+                }
+                if !chunk.delta.is_empty() {
+                    usage.mark_output();
+                    let scanned = scanner.feed(&chunk.delta);
+                    if !scanned.reasoning.is_empty() {
+                        *prelude_flag = true;
+                        emit(AgentEvent::ReasoningDelta {
+                            step_index,
+                            text: scanned.reasoning,
+                        })?;
+                    }
+                    if !scanned.reply.is_empty() {
+                        emit(AgentEvent::AssistantDelta {
+                            text: scanned.reply,
+                        })?;
+                    }
+                }
+                Ok(())
+            };
+            complete_streaming_with_deadline(
+                input.client,
+                &request,
+                input.cancellation,
+                &mut on_chunk,
+            )
+            .await
+        };
         let mut previous_output = String::new();
         let mut parsed = match completion {
             Ok(completion) => {
+                usage.observe(&completion);
                 previous_output.clone_from(&completion.content);
-                if !completion.reasoning_content.is_empty() {
+                if !completion.reasoning_content.is_empty() && !server_reasoning_streamed {
                     emit(AgentEvent::ReasoningDelta {
                         step_index,
                         text: completion.reasoning_content.clone(),
@@ -223,6 +321,7 @@ pub async fn run_turn(
                             &error.to_string(),
                             input.cancellation,
                             input.model_profile,
+                            input.mcp,
                         )
                         .await
                         {
@@ -230,7 +329,7 @@ pub async fn run_turn(
                             Err(LlmClientError::Cancelled) => {
                                 finish_session(input.session, &loaded_tools, &loaded_skills, None)
                                     .await;
-                                return finish_cancelled(step_index, &mut emit);
+                                return finish_cancelled(step_index, usage.finish(), &mut emit);
                             }
                             Err(error) => {
                                 let message = error.to_string();
@@ -241,6 +340,7 @@ pub async fn run_turn(
                                 emit(AgentEvent::TurnFinished {
                                     reason: "failed".into(),
                                     step_count: step_index + 1,
+                                    usage: usage.finish(),
                                 })?;
                                 finish_session(input.session, &loaded_tools, &loaded_skills, None)
                                     .await;
@@ -263,13 +363,14 @@ pub async fn run_turn(
                     "Tool-step completion exceeded the 600-second deadline",
                     input.cancellation,
                     input.model_profile,
+                    input.mcp,
                 )
                 .await
                 {
                     Ok(parsed) => parsed,
                     Err(LlmClientError::Cancelled) => {
                         finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
-                        return finish_cancelled(step_index, &mut emit);
+                        return finish_cancelled(step_index, usage.finish(), &mut emit);
                     }
                     Err(error) => {
                         let message = error.to_string();
@@ -280,6 +381,7 @@ pub async fn run_turn(
                         emit(AgentEvent::TurnFinished {
                             reason: "failed".into(),
                             step_count: step_index + 1,
+                            usage: usage.finish(),
                         })?;
                         finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
                         return Err(message);
@@ -288,7 +390,7 @@ pub async fn run_turn(
             }
             Err(LlmClientError::Cancelled) => {
                 finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
-                return finish_cancelled(step_index, &mut emit);
+                return finish_cancelled(step_index, usage.finish(), &mut emit);
             }
             Err(error) => {
                 emit(AgentEvent::StepError {
@@ -298,20 +400,28 @@ pub async fn run_turn(
                 emit(AgentEvent::TurnFinished {
                     reason: "failed".into(),
                     step_count: step_index,
+                    usage: usage.finish(),
                 })?;
                 finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
                 return Err(error.to_string());
             }
         };
         if let Some(reasoning) = parsed.reasoning.filter(|value| !value.is_empty()) {
-            emit(AgentEvent::ReasoningDelta {
-                step_index,
-                text: reasoning,
-            })?;
+            // Skip when the prelude already streamed char by char — re-emitting
+            // the parsed block would double it in the trace. (A repair after a
+            // streamed prelude loses its own reasoning here; the repair grammar
+            // drops the generic prelude anyway.)
+            if !prelude_reasoning_streamed {
+                emit(AgentEvent::ReasoningDelta {
+                    step_index,
+                    text: reasoning,
+                })?;
+            }
         }
-        if let Err(error) = validate_batch(&parsed.calls) {
+        if let Err(error) = validate_batch(&parsed.calls, input.mcp) {
             if error.is_approval_only() {
-                let (trimmed, dropped_tools) = trim_to_first_approval_gated(&parsed.calls);
+                let (trimmed, dropped_tools) =
+                    trim_to_first_approval_gated(&parsed.calls, input.mcp);
                 let kept_tool = trimmed[0].tool.clone();
                 let reason = error.to_string();
                 emit(AgentEvent::BatchTrimmed {
@@ -335,13 +445,14 @@ pub async fn run_turn(
                     &error.to_string(),
                     input.cancellation,
                     input.model_profile,
+                    input.mcp,
                 )
                 .await
                 {
                     Ok(repaired) => parsed = repaired,
                     Err(LlmClientError::Cancelled) => {
                         finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
-                        return finish_cancelled(step_index, &mut emit);
+                        return finish_cancelled(step_index, usage.finish(), &mut emit);
                     }
                     Err(error) => {
                         let message = error.to_string();
@@ -352,6 +463,7 @@ pub async fn run_turn(
                         emit(AgentEvent::TurnFinished {
                             reason: "failed".into(),
                             step_count: step_index + 1,
+                            usage: usage.finish(),
                         })?;
                         finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
                         return Err(message);
@@ -430,12 +542,17 @@ pub async fn run_turn(
             emit(AgentEvent::TurnFinished {
                 reason: "reply".into(),
                 step_count: step_index + 1,
+                usage: usage.finish(),
             })?;
             finish_session(input.session, &loaded_tools, &loaded_skills, Some(&reply)).await;
             return Ok(());
         }
 
         let tool_context = ToolContext {
+            mcp: input.mcp,
+            docs: input.docs,
+            disabled_tools: input.disabled_tools,
+            auto_approve_mcp: input.auto_approve_mcp,
             session_id: input.session_id,
             working_dir: input.working_dir,
             editable_roots: input.editable_roots,
@@ -452,10 +569,9 @@ pub async fn run_turn(
             pty: input.pty,
             cache_dir: input.cache_dir,
         };
-        let has_terminal_tail = parsed
-            .calls
-            .last()
-            .is_some_and(|call| resource_class_for(&call.tool) == ResourceClass::Terminal);
+        let has_terminal_tail = parsed.calls.last().is_some_and(|call| {
+            resource_class_for_call(&call.tool, input.mcp) == ResourceClass::Terminal
+        });
         let parallel_len = batch_size - usize::from(has_terminal_tail);
         let outcomes = execute_batch(&parsed.calls, &planned, &tool_context).await;
         let mut terminal: Option<(&str, String)> = None;
@@ -500,11 +616,24 @@ pub async fn run_turn(
             .session
             .push_tool_observations(&parsed.calls[..parallel_len], &observed);
         if let Some((reason, text)) = terminal {
-            emit(AgentEvent::AssistantDelta { text: text.clone() })?;
+            // Reconcile with what the scanner already streamed: emit only the
+            // missing suffix, or nothing on a mismatch — `AssistantReply`
+            // replaces the accumulated text either way.
+            let streamed = scanner.streamed_reply();
+            if streamed.is_empty() {
+                emit(AgentEvent::AssistantDelta { text: text.clone() })?;
+            } else if let Some(suffix) = text.strip_prefix(streamed) {
+                if !suffix.is_empty() {
+                    emit(AgentEvent::AssistantDelta {
+                        text: suffix.to_owned(),
+                    })?;
+                }
+            }
             emit(AgentEvent::AssistantReply { text: text.clone() })?;
             emit(AgentEvent::TurnFinished {
                 reason: reason.into(),
                 step_count: step_index + 1,
+                usage: usage.finish(),
             })?;
             finish_session(input.session, &loaded_tools, &loaded_skills, Some(&text)).await;
             return Ok(());
@@ -517,6 +646,7 @@ pub async fn run_turn(
     emit(AgentEvent::TurnFinished {
         reason: "max_steps".into(),
         step_count: max_steps,
+        usage: usage.finish(),
     })?;
     finish_session(input.session, &loaded_tools, &loaded_skills, Some(&text)).await;
     Ok(())
@@ -566,7 +696,10 @@ impl std::fmt::Display for BatchValidationError {
     }
 }
 
-fn validate_batch(calls: &[ToolCallPayload]) -> Result<(), BatchValidationError> {
+fn validate_batch(
+    calls: &[ToolCallPayload],
+    mcp: Option<&dyn McpBridge>,
+) -> Result<(), BatchValidationError> {
     let mut issues = Vec::new();
     if calls.is_empty() {
         issues.push(BatchValidationIssue {
@@ -582,7 +715,7 @@ fn validate_batch(calls: &[ToolCallPayload]) -> Result<(), BatchValidationError>
     }
     let mut terminal_count = 0;
     for (index, call) in calls.iter().enumerate() {
-        let class = resource_class_for(&call.tool);
+        let class = resource_class_for_call(&call.tool, mcp);
         if class == ResourceClass::Unknown {
             issues.push(BatchValidationIssue {
                 kind: BatchValidationKind::Unknown,
@@ -629,10 +762,13 @@ fn validate_batch(calls: &[ToolCallPayload]) -> Result<(), BatchValidationError>
     }
 }
 
-fn trim_to_first_approval_gated(calls: &[ToolCallPayload]) -> (Vec<ToolCallPayload>, Vec<String>) {
+fn trim_to_first_approval_gated(
+    calls: &[ToolCallPayload],
+    mcp: Option<&dyn McpBridge>,
+) -> (Vec<ToolCallPayload>, Vec<String>) {
     let kept_index = calls
         .iter()
-        .position(|call| resource_class_for(&call.tool) == ResourceClass::ApprovalGated)
+        .position(|call| resource_class_for_call(&call.tool, mcp) == ResourceClass::ApprovalGated)
         .expect("approval-only validation requires an approval-gated call");
     let kept = calls[kept_index].clone();
     let dropped = calls
@@ -655,10 +791,11 @@ fn format_batch_trim_notice(kept_tool: &str, dropped_tools: &[String]) -> String
 fn parse_and_validate(
     content: &str,
     profile: AgentModelProfile,
+    mcp: Option<&dyn McpBridge>,
 ) -> Result<ParsedToolCalls, String> {
     let parsed =
         parse_tool_calls_for_profile(content, profile).map_err(|error| error.to_string())?;
-    validate_batch(&parsed.calls).map_err(|error| error.to_string())?;
+    validate_batch(&parsed.calls, mcp).map_err(|error| error.to_string())?;
     Ok(parsed)
 }
 
@@ -700,6 +837,7 @@ async fn repair_tool_calls(
     reason: &str,
     cancellation: &CancellationToken,
     profile: AgentModelProfile,
+    mcp: Option<&dyn McpBridge>,
 ) -> Result<ParsedToolCalls, LlmClientError> {
     let invalid_output = invalid_output.chars().take(4_000).collect::<String>();
     let repair_instruction = format!(
@@ -739,7 +877,7 @@ async fn repair_tool_calls(
         request.reasoning = CompletionReasoning::Unset;
     }
     let completion = complete_with_deadline(client, &request, cancellation).await?;
-    parse_and_validate(&completion.content, profile)
+    parse_and_validate(&completion.content, profile, mcp)
         .map_err(|error| LlmClientError::InvalidResponse(format!("Repair failed: {error}")))
 }
 
@@ -758,6 +896,104 @@ async fn complete_with_deadline(
             Ok(result) => result,
             Err(_) => Err(LlmClientError::TimedOut),
         },
+    }
+}
+
+async fn complete_streaming_with_deadline(
+    client: &dyn AgentLlmClient,
+    request: &CompletionRequest,
+    cancellation: &CancellationToken,
+    on_chunk: &mut (dyn FnMut(StreamChunk) -> Result<(), String> + Send),
+) -> Result<super::llm_client::CompletionResult, LlmClientError> {
+    tokio::select! {
+        biased;
+        _ = cancellation.cancelled() => Err(LlmClientError::Cancelled),
+        result = tokio::time::timeout(
+            TOOL_STEP_COMPLETION_DEADLINE,
+            client.complete_streaming(request, cancellation, on_chunk),
+        ) => match result {
+            Ok(result) => result,
+            Err(_) => Err(LlmClientError::TimedOut),
+        },
+    }
+}
+
+/// The reasoning tag pair the grammar puts ahead of the tool-call array for
+/// this turn — the scanner uses it to stream the thinking block live. `None`
+/// when the completion opens straight with JSON.
+fn stream_prelude(
+    reasoning: &CompletionReasoning,
+    profile: AgentModelProfile,
+) -> Option<(&'static str, &'static str)> {
+    match (profile.reasoning_open_tag(), profile.reasoning_close_tag()) {
+        (Some(open), Some(close)) => Some((open, close)),
+        _ => match reasoning {
+            CompletionReasoning::On { tags, .. } => Some((tags.open, tags.close)),
+            _ => None,
+        },
+    }
+}
+
+/// Aggregates model usage across a turn's completions for `TurnFinished`.
+///
+/// The prompt is re-sent (and mostly cache-hit) every step, so `tokens_in`
+/// reports the *last* completion's prompt-side size — evaluated plus cached —
+/// which is what the context gauge wants. `tokens_out` sums generation across
+/// steps. Repair completions are not observed; they are rare and bounded.
+struct TurnUsageTracker {
+    started: Instant,
+    first_output: Option<Instant>,
+    tokens_in: f64,
+    tokens_out: f64,
+    last_tps: Option<f64>,
+    observed: bool,
+}
+
+impl TurnUsageTracker {
+    fn new() -> Self {
+        Self {
+            started: Instant::now(),
+            first_output: None,
+            tokens_in: 0.0,
+            tokens_out: 0.0,
+            last_tps: None,
+            observed: false,
+        }
+    }
+
+    fn mark_output(&mut self) {
+        if self.first_output.is_none() {
+            self.first_output = Some(Instant::now());
+        }
+    }
+
+    fn observe(&mut self, completion: &CompletionResult) {
+        self.observed = true;
+        self.mark_output();
+        let prompt_side = completion.timing.prompt_tokens + completion.cache_hit_tokens;
+        if prompt_side > 0.0 {
+            self.tokens_in = prompt_side;
+        }
+        self.tokens_out += completion.timing.predicted_tokens;
+        if completion.timing.predicted_ms > 0.0 && completion.timing.predicted_tokens > 0.0 {
+            self.last_tps = Some(
+                completion.timing.predicted_tokens / (completion.timing.predicted_ms / 1000.0),
+            );
+        }
+    }
+
+    fn finish(&self) -> Option<AgentTurnUsage> {
+        if !self.observed {
+            return None;
+        }
+        Some(AgentTurnUsage {
+            tokens_in: self.tokens_in,
+            tokens_out: self.tokens_out,
+            tps: self.last_tps,
+            ttft_ms: self
+                .first_output
+                .map(|at| at.duration_since(self.started).as_secs_f64() * 1000.0),
+        })
     }
 }
 
@@ -803,10 +1039,12 @@ async fn finish_session(
 
 fn finish_cancelled(
     step_count: u32,
+    usage: Option<AgentTurnUsage>,
     emit: &mut impl FnMut(AgentEvent) -> Result<(), String>,
 ) -> Result<(), String> {
     emit(AgentEvent::TurnFinished {
         reason: "cancelled".into(),
         step_count,
+        usage,
     })
 }

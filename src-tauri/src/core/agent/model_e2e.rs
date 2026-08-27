@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use tokio_util::sync::CancellationToken;
 
-use super::llm_client::{LlamaServerClient, LlamaSessionTarget};
+use super::llm_client::{LlamaServerClient, LlamaSessionTarget, SamplingOverrides};
 use super::path_policy::EditableRoots;
 use super::prompt::{
     build_stable_prefix, CapabilitiesSummary, DEFAULT_MAX_PARALLEL_TOOL_CALLS, ITERATION_ONE_TOOLS,
@@ -170,6 +170,12 @@ impl LiveHarness {
                     trusted_read_roots: &[],
                     max_steps,
                     reasoning: AgentReasoning::default(),
+                    sampling: &SamplingOverrides::default(),
+                    mcp: None,
+                    disabled_tools: &std::collections::BTreeSet::new(),
+                    auto_approve_mcp: true,
+                    docs: None,
+                    documents_note: None,
                     client: &self.client,
                     approval,
                     folder_access: &folder_access,

@@ -157,6 +157,9 @@ pub struct AppState {
     pub mcp_server_pids: Arc<Mutex<HashMap<String, HashMap<u64, u32>>>>,
     /// Remote provider configurations (e.g., Anthropic, OpenAI, etc.)
     pub provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    /// ChatGPT subscription session. Unlike `provider_configs`, this one owns
+    /// durable secrets and persists them itself — they never cross IPC.
+    pub chatgpt_auth: Arc<crate::core::auth::state::ChatGptAuthState>,
     /// Coordinator state for the Local API Server auto-increase-ctx flow.
     /// See `AutoIncreaseState` docs for the concurrency guarantees.
     pub auto_increase_ctx: Arc<AutoIncreaseState>,

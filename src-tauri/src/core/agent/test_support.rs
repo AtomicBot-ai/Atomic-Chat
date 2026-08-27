@@ -196,11 +196,17 @@ pub(crate) struct ScriptedResponse {
     body: Value,
     /// When set, served verbatim as `text/plain` instead of `body` as JSON.
     text_body: Option<String>,
+    /// When set, served verbatim as `text/event-stream` — for hand-written
+    /// SSE exotica the synthetic splitters cannot express.
+    sse_body: Option<String>,
     delay: Duration,
 }
 
 impl ScriptedResponse {
     fn into_response(self) -> Response<Body> {
+        if let Some(sse) = self.sse_body {
+            return sse_response(sse);
+        }
         match self.text_body {
             Some(text) => Response::builder()
                 .status(self.status)
@@ -224,6 +230,7 @@ impl ScriptedResponse {
                 "tokens_predicted": 1
             }),
             text_body: None,
+            sse_body: None,
             delay: Duration::ZERO,
         }
     }
@@ -258,6 +265,7 @@ impl ScriptedResponse {
                 "usage": {"prompt_tokens": 1, "completion_tokens": 1}
             }),
             text_body: None,
+            sse_body: None,
             delay: Duration::ZERO,
         }
     }
@@ -267,6 +275,7 @@ impl ScriptedResponse {
             status,
             body: serde_json::json!({"error": {"message": message.into()}}),
             text_body: None,
+            sse_body: None,
             delay: Duration::ZERO,
         }
     }
@@ -278,6 +287,18 @@ impl ScriptedResponse {
             status,
             body: Value::Null,
             text_body: Some(message.into()),
+            sse_body: None,
+            delay: Duration::ZERO,
+        }
+    }
+
+    /// A verbatim SSE body (served with 200 + `text/event-stream`).
+    pub(crate) fn raw_sse(payload: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::OK,
+            body: Value::Null,
+            text_body: None,
+            sse_body: Some(payload.into()),
             delay: Duration::ZERO,
         }
     }
@@ -467,8 +488,11 @@ async fn serve_chat_completion(
         ));
     }
     let body = to_bytes(request.into_body()).await.unwrap_or_default();
-    let parsed = serde_json::from_slice(&body)
+    let parsed: Value = serde_json::from_slice(&body)
         .unwrap_or_else(|_| serde_json::json!({"invalidBody": String::from_utf8_lossy(&body)}));
+    let wants_stream = parsed.get("stream").and_then(Value::as_bool) == Some(true);
+    let include_usage =
+        parsed.pointer("/stream_options/include_usage").and_then(Value::as_bool) == Some(true);
     requests
         .lock()
         .expect("scripted chat requests")
@@ -479,7 +503,99 @@ async fn serve_chat_completion(
     if !response.delay.is_zero() {
         tokio::time::sleep(response.delay).await;
     }
+    // Mirror OpenAI-compatible servers: a successful `stream: true` chat
+    // completion answers with SSE chunks; the usage trailer (empty `choices`)
+    // appears only when the request opted in via `stream_options`.
+    if wants_stream
+        && response.status == StatusCode::OK
+        && response.text_body.is_none()
+        && response.sse_body.is_none()
+        && response.body.pointer("/choices/0/message").is_some()
+    {
+        return Ok(sse_chat_completion_response(response.body, include_usage));
+    }
     Ok(response.into_response())
+}
+
+/// Splits a whole chat-completions envelope into a scripted SSE stream:
+/// role-only delta, reasoning delta, two content halves, a finish chunk
+/// (`"usage": null` on every one of those, as OpenAI sends), then optionally
+/// the usage trailer with an empty `choices` array, and `[DONE]`.
+fn sse_chat_completion_response(body: Value, include_usage: bool) -> Response<Body> {
+    let model = body
+        .get("model")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!("scripted-test-model"));
+    let message = body.pointer("/choices/0/message").cloned().unwrap_or_default();
+    let content = message
+        .get("content")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let reasoning = message
+        .get("reasoning_content")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let finish = body
+        .pointer("/choices/0/finish_reason")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!("stop"));
+    let chunk = |delta: Value, finish_reason: Value| {
+        serde_json::json!({
+            "id": "chatcmpl-scripted",
+            "object": "chat.completion.chunk",
+            "model": model,
+            "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
+            "usage": Value::Null,
+        })
+    };
+    let mut events = vec![chunk(
+        serde_json::json!({"role": "assistant"}),
+        Value::Null,
+    )];
+    if !reasoning.is_empty() {
+        events.push(chunk(
+            serde_json::json!({"reasoning_content": reasoning}),
+            Value::Null,
+        ));
+    }
+    let split_at = content
+        .char_indices()
+        .nth(content.chars().count() / 2)
+        .map_or(content.len(), |(index, _)| index);
+    let (head, tail) = content.split_at(split_at);
+    for part in [head, tail] {
+        if !part.is_empty() {
+            events.push(chunk(serde_json::json!({"content": part}), Value::Null));
+        }
+    }
+    events.push(chunk(serde_json::json!({}), finish));
+    if include_usage {
+        if let Some(usage) = body.get("usage").filter(|usage| !usage.is_null()) {
+            events.push(serde_json::json!({
+                "id": "chatcmpl-scripted",
+                "object": "chat.completion.chunk",
+                "model": model,
+                "choices": [],
+                "usage": usage,
+            }));
+        }
+    }
+    let payload = events
+        .iter()
+        .map(|event| format!("data: {event}\n\n"))
+        .chain(std::iter::once("data: [DONE]\n\n".to_owned()))
+        .collect::<String>();
+    sse_response(payload)
+}
+
+fn sse_response(payload: String) -> Response<Body> {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(hyper::header::CONTENT_TYPE, "text/event-stream")
+        .body(Body::from(payload))
+        .expect("build scripted SSE response")
 }
 
 async fn serve_completion(
@@ -498,8 +614,9 @@ async fn serve_completion(
         ));
     }
     let body = to_bytes(request.into_body()).await.unwrap_or_default();
-    let parsed = serde_json::from_slice(&body)
+    let parsed: Value = serde_json::from_slice(&body)
         .unwrap_or_else(|_| serde_json::json!({"invalidBody": String::from_utf8_lossy(&body)}));
+    let wants_stream = parsed.get("stream").and_then(Value::as_bool) == Some(true);
     requests.lock().expect("scripted requests").push(parsed);
     let response = responses.lock().await.pop_front().unwrap_or_else(|| {
         ScriptedResponse::http_error(StatusCode::INTERNAL_SERVER_ERROR, "script exhausted")
@@ -507,7 +624,60 @@ async fn serve_completion(
     if !response.delay.is_zero() {
         tokio::time::sleep(response.delay).await;
     }
+    // Mirror llama.cpp: a successful `stream: true` completion answers with
+    // SSE — partial content chunks, then a final `stop: true` envelope whose
+    // text fields are empty (the client accumulates the deltas).
+    if wants_stream
+        && response.status == StatusCode::OK
+        && response.text_body.is_none()
+        && response.body.get("content").is_some()
+    {
+        return Ok(sse_completion_response(response.body));
+    }
     Ok(response.into_response())
+}
+
+fn sse_completion_response(body: Value) -> Response<Body> {
+    let content = body
+        .get("content")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let reasoning = body
+        .get("reasoning_content")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let split_at = content
+        .char_indices()
+        .nth(content.chars().count() / 2)
+        .map_or(content.len(), |(index, _)| index);
+    let (head, tail) = content.split_at(split_at);
+    let mut events = Vec::new();
+    if !reasoning.is_empty() {
+        events.push(serde_json::json!({
+            "content": "", "reasoning_content": reasoning, "stop": false
+        }));
+    }
+    for chunk in [head, tail] {
+        if !chunk.is_empty() {
+            events.push(serde_json::json!({"content": chunk, "stop": false}));
+        }
+    }
+    let mut final_event = body;
+    final_event["content"] = Value::String(String::new());
+    final_event["reasoning_content"] = Value::String(String::new());
+    final_event["stop"] = Value::Bool(true);
+    events.push(final_event);
+    let payload = events
+        .iter()
+        .map(|event| format!("data: {event}\n\n"))
+        .collect::<String>();
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(hyper::header::CONTENT_TYPE, "text/event-stream")
+        .body(Body::from(payload))
+        .expect("build scripted SSE response")
 }
 
 fn json_response(status: StatusCode, body: Value) -> Response<Body> {

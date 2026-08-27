@@ -83,6 +83,28 @@ vi.mock('@/lib/extension', () => ({
   },
 }))
 
+// Render menus inline so the attach-menu items are queryable without
+// driving Radix pointer events through jsdom.
+vi.mock('@/components/ui/dropdown-menu', async () => {
+  const React = await import('react')
+  type WithChildren = { children?: React.ReactNode }
+  const passthrough = ({ children }: WithChildren) => <div>{children}</div>
+  return {
+    DropdownMenu: passthrough,
+    DropdownMenuContent: passthrough,
+    DropdownMenuTrigger: passthrough,
+    DropdownMenuItem: ({
+      children,
+      onClick,
+      ...props
+    }: WithChildren & { onClick?: () => void }) => (
+      <button onClick={onClick} {...props}>
+        {children}
+      </button>
+    ),
+  }
+})
+
 vi.mock('@/containers/DropdownToolsAvailable', () => ({
   // A marker instead of null: the toolbar asserts the tools button is there.
   default: () => <span data-test-id="tools-dropdown" />,
@@ -112,7 +134,8 @@ vi.mock('@/containers/PromptVisionModel', () => ({
 }))
 
 vi.mock('@/containers/AgentApprovalModeSelect', () => ({
-  AgentApprovalModeSelect: () => null,
+  // A marker: the project-composer test asserts the agent affordances render.
+  AgentApprovalModeSelect: () => <span data-test-id="approval-mode-select" />,
 }))
 
 vi.mock('@/containers/AgentExternalFolderButton', () => ({
@@ -228,6 +251,52 @@ describe('ChatInput', () => {
     expect(onSubmit).not.toHaveBeenCalled()
     // The typed prompt survives so the user can send it once a model is picked.
     expect(input).toHaveValue('Invoke the machine spirit')
+    unmount()
+  })
+
+  // The seeded 'openai' provider has no API key, which routes to the chat
+  // fallback; the agent-affordance tests need an agent-capable provider.
+  const selectLocalProvider = () => {
+    const model = { id: 'local-model', capabilities: [], settings: {} } as Model
+    const provider = {
+      provider: 'llamacpp',
+      active: true,
+      models: [model],
+      settings: [],
+    } as ModelProvider
+    useModelProvider.setState({
+      providers: [provider],
+      selectedProvider: 'llamacpp',
+      selectedModel: model,
+    })
+  }
+
+  it('keeps the agent affordances on the project composer but hides Add folder', () => {
+    selectLocalProvider()
+    const { unmount } = render(
+      <ChatInput initialMessage projectId="project-1" />
+    )
+
+    // The approval-mode select proves the project composer routes to the
+    // agent engine (the old project gate is gone)...
+    expect(
+      document.querySelector('[data-test-id="approval-mode-select"]')
+    ).toBeInTheDocument()
+    // ...while the workspace-folder item stays off this page: it has no
+    // files panel to surface the folder in.
+    expect(
+      screen.queryByText('chat:agentWorkspace.addFolder')
+    ).not.toBeInTheDocument()
+    unmount()
+  })
+
+  it('offers Add folder in the attach menu of a plain composer', () => {
+    selectLocalProvider()
+    const { unmount } = render(<ChatInput initialMessage />)
+
+    expect(
+      screen.getByText('chat:agentWorkspace.addFolder')
+    ).toBeInTheDocument()
     unmount()
   })
 

@@ -16,7 +16,8 @@
 //!   * the channel constants deliberately avoid the `analytics://` namespace
 //!     that `AnalyticProvider.tsx` forwards to PostHog verbatim;
 //!   * the record types are `Serialize` only, never `Deserialize`, and never
-//!     go near `state_file.rs`;
+//!     go near `state_file.rs`, so the previews never reach disk and never
+//!     outlive the process;
 //!   * `Debug` is implemented by hand and redacts both previews, so a
 //!     `log::debug!("{record:?}")` added later cannot leak them. Do not
 //!     replace those impls with `#[derive(Debug)]`.
@@ -299,8 +300,12 @@ impl RequestInspector {
         self.subscribers.load(Ordering::Relaxed) > 0
     }
 
-    /// Adds or removes a watcher. When the count reaches zero the ring is
-    /// cleared, so prompt previews do not outlive the screen showing them.
+    /// Adds or removes a watcher.
+    ///
+    /// The ring deliberately survives the last unsubscribe: navigating away
+    /// from the API screen and back must not wipe the log. It is emptied by
+    /// "Clear log", or by the app exiting — the buffer is memory-only and has
+    /// no on-disk form, so a restart always starts clean.
     pub fn set_enabled(&self, enabled: bool) {
         if enabled {
             self.subscribers.fetch_add(1, Ordering::Relaxed);
@@ -310,7 +315,6 @@ impl RequestInspector {
         if previous <= 1 {
             // Never let a stray unsubscribe drive the count negative.
             self.subscribers.store(0, Ordering::Relaxed);
-            self.clear();
         }
     }
 
@@ -687,7 +691,7 @@ pub(crate) struct StreamTelemetry {
 ///
 /// First match wins: a payload that carries two of them describes one stream of
 /// thinking, and counting it twice would inflate the token estimate.
-fn extract_reasoning(choice: &serde_json::Value) -> Option<String> {
+pub(crate) fn extract_reasoning(choice: &serde_json::Value) -> Option<String> {
     for field in ["reasoning_content", "reasoning"] {
         for parent in ["delta", "message"] {
             if let Some(text) = choice
@@ -1502,8 +1506,10 @@ mod tests {
         assert!(record.done);
     }
 
+    /// Leaving the API screen must not wipe the log — the user expects it back
+    /// when they return. Only "Clear log" and app exit empty it.
     #[test]
-    fn dropping_to_zero_subscribers_clears_previews() {
+    fn the_log_survives_the_last_unsubscribe() {
         let (inspector, _) = inspector_with_sink();
         let h = inspector.begin(Instant::now()).unwrap();
         h.announce(started_fields());
@@ -1512,8 +1518,21 @@ mod tests {
 
         inspector.set_enabled(false);
         assert!(!inspector.enabled());
+        assert_eq!(inspector.snapshot().records.len(), 1);
+
+        // Coming back sees the same history.
+        inspector.set_enabled(true);
+        assert!(inspector.enabled());
+        assert_eq!(inspector.snapshot().records.len(), 1);
+
+        inspector.clear();
         assert!(inspector.snapshot().records.is_empty());
-        // A stray extra unsubscribe must not drive the count negative.
+    }
+
+    #[test]
+    fn a_stray_unsubscribe_does_not_drive_the_count_negative() {
+        let (inspector, _) = inspector_with_sink();
+        inspector.set_enabled(false);
         inspector.set_enabled(false);
         inspector.set_enabled(true);
         assert!(inspector.enabled());

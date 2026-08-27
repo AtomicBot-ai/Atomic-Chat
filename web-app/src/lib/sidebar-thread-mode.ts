@@ -1,37 +1,16 @@
-import type { SidebarMode } from '@/hooks/useAgentMode'
-
-export function isThreadInSidebarMode(
-  threadId: string,
-  mode: SidebarMode,
-  agentThreads: Readonly<Record<string, boolean>>
-): boolean {
-  return (agentThreads[threadId] === true) === (mode === 'agent')
-}
-
-export function filterThreadsBySidebarMode<T extends { id: string }>(
-  threads: readonly T[],
-  mode: SidebarMode,
-  agentThreads: Readonly<Record<string, boolean>>
-): T[] {
-  return threads.filter((thread) =>
-    isThreadInSidebarMode(thread.id, mode, agentThreads)
-  )
-}
-
+/**
+ * Sidebar history filters. The chat/agent split is gone — every thread lives
+ * in one unified history; only project threads (rendered under their project)
+ * and favorites (for bulk delete) are filtered here.
+ */
 export function filterSidebarHistoryThreads<
   T extends {
     id: string
     isFavorite?: boolean
     metadata?: { project?: unknown }
   },
->(
-  threads: readonly T[],
-  mode: SidebarMode,
-  agentThreads: Readonly<Record<string, boolean>>
-): T[] {
-  return filterThreadsBySidebarMode(threads, mode, agentThreads).filter(
-    (thread) => !thread.metadata?.project
-  )
+>(threads: readonly T[]): T[] {
+  return threads.filter((thread) => !thread.metadata?.project)
 }
 
 export function filterDeletableSidebarHistoryThreads<
@@ -40,12 +19,8 @@ export function filterDeletableSidebarHistoryThreads<
     isFavorite?: boolean
     metadata?: { project?: unknown }
   },
->(
-  threads: readonly T[],
-  mode: SidebarMode,
-  agentThreads: Readonly<Record<string, boolean>>
-): T[] {
-  return filterSidebarHistoryThreads(threads, mode, agentThreads).filter(
+>(threads: readonly T[]): T[] {
+  return filterSidebarHistoryThreads(threads).filter(
     (thread) => !thread.isFavorite
   )
 }

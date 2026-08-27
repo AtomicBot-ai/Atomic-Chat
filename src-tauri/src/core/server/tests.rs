@@ -715,4 +715,505 @@ mod tests {
             2
         );
     }
+
+    // ── ChatGPT subscription shim (chat_to_responses_shim.rs) ────────────────
+    //
+    // The mirror of the section above. These pin the wire shape we send to
+    // `chatgpt.com/backend-api/codex/responses` and the chunks we hand back.
+    use crate::core::server::chat_to_responses_shim::{
+        chat_request_to_responses, chat_response_format_to_text, chat_tool_choice_to_responses,
+        chat_tool_to_responses, map_usage_reverse, normalize_function_schema,
+        responses_call_id, ChatChunkStreamConverter, COMPATIBILITY_INSTRUCTIONS,
+    };
+
+    fn to_responses(body: &serde_json::Value) -> serde_json::Value {
+        chat_request_to_responses(body, "cache-key")
+    }
+
+    fn converter() -> ChatChunkStreamConverter {
+        ChatChunkStreamConverter::new("gpt-5.4", 1_700_000_000)
+    }
+
+    #[test]
+    fn chat_request_hoists_system_turns_into_instructions() {
+        let req = json!({
+            "model": "gpt-5.4",
+            "messages": [
+                {"role": "system", "content": "be terse"},
+                {"role": "user", "content": "hello"},
+                {"role": "developer", "content": "and precise"}
+            ]
+        });
+        let out = to_responses(&req);
+
+        assert_eq!(out["model"], "gpt-5.4");
+        // Both system-ish turns are joined, in order, out of the input array,
+        // behind the compatibility preamble the endpoint's models expect.
+        assert_eq!(
+            out["instructions"],
+            format!("{COMPATIBILITY_INSTRUCTIONS}\n\nbe terse\n\nand precise")
+        );
+        let input = out["input"].as_array().unwrap();
+        assert_eq!(input.len(), 1);
+        // A user turn is a bare {role, content} — no `type: "message"`.
+        assert!(input[0].get("type").is_none());
+        assert_eq!(input[0]["role"], "user");
+        assert_eq!(input[0]["content"][0]["type"], "input_text");
+        assert_eq!(input[0]["content"][0]["text"], "hello");
+    }
+
+    #[test]
+    fn chat_request_always_streams_and_never_stores() {
+        // The endpoint only streams, and we never want the conversation kept.
+        // The client's own `stream` preference is honoured by aggregating on
+        // the way back, not by asking upstream for a non-streamed reply.
+        let req = json!({"model": "m", "messages": [], "stream": false});
+        let out = to_responses(&req);
+        assert_eq!(out["stream"], true);
+        assert_eq!(out["store"], false);
+    }
+
+    #[test]
+    fn the_output_cap_and_sampling_knobs_are_dropped() {
+        // The Codex Responses endpoint rejects `max_output_tokens` even though
+        // the public Responses API accepts it — the subscription applies its
+        // own cap — and sampling is not part of this contract. Forwarding any
+        // of them fails the whole request, so they are dropped rather than
+        // translated.
+        let out = to_responses(&json!({
+            "messages": [],
+            "max_tokens": 256,
+            "max_completion_tokens": 512,
+            "temperature": 0.7,
+            "top_p": 0.9
+        }));
+        assert!(out.get("max_output_tokens").is_none());
+        assert!(out.get("max_tokens").is_none());
+        assert!(out.get("temperature").is_none());
+        assert!(out.get("top_p").is_none());
+    }
+
+    #[test]
+    fn the_request_carries_the_subscription_specific_fields() {
+        let out = to_responses(&json!({"messages": []}));
+        assert_eq!(out["include"], json!(["reasoning.encrypted_content"]));
+        assert_eq!(out["prompt_cache_key"], "cache-key");
+        assert_eq!(out["parallel_tool_calls"], true);
+        assert_eq!(out["text"]["verbosity"], "low");
+        // Absent from the client request, `tool_choice` still has to be there.
+        assert_eq!(out["tool_choice"], "auto");
+    }
+
+    #[test]
+    fn reasoning_effort_is_forwarded_with_a_summary() {
+        let out = to_responses(&json!({"messages": [], "reasoning_effort": "high"}));
+        assert_eq!(out["reasoning"], json!({"effort": "high", "summary": "auto"}));
+        assert!(to_responses(&json!({"messages": []})).get("reasoning").is_none());
+    }
+
+    #[test]
+    fn assistant_text_and_tool_calls_become_separate_items() {
+        let req = json!({"messages": [{
+            "role": "assistant",
+            "content": "calling a tool",
+            "tool_calls": [{
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "search", "arguments": "{\"q\":\"rust\"}"}
+            }]
+        }]});
+        let input = to_responses(&req)["input"].clone();
+        let input = input.as_array().unwrap();
+
+        assert_eq!(input.len(), 2);
+        // An assistant turn is replayed as a completed output item.
+        assert_eq!(input[0]["type"], "message");
+        assert_eq!(input[0]["status"], "completed");
+        // What the assistant produced is `output_text`, with annotations.
+        assert_eq!(input[0]["content"][0]["type"], "output_text");
+        assert_eq!(input[0]["content"][0]["annotations"], json!([]));
+        assert_eq!(input[1]["type"], "function_call");
+        assert_eq!(input[1]["call_id"], "call_1");
+        assert_eq!(input[1]["name"], "search");
+        assert_eq!(input[1]["arguments"], "{\"q\":\"rust\"}");
+    }
+
+    #[test]
+    fn tool_results_become_function_call_output() {
+        let req = json!({"messages": [
+            {"role": "tool", "tool_call_id": "call_1", "content": "42"}
+        ]});
+        let input = to_responses(&req)["input"].clone();
+        let input = input.as_array().unwrap();
+
+        assert_eq!(input.len(), 1);
+        assert_eq!(input[0]["type"], "function_call_output");
+        assert_eq!(input[0]["call_id"], "call_1");
+        assert_eq!(input[0]["output"], "42");
+    }
+
+    #[test]
+    fn image_parts_survive_as_input_image() {
+        let req = json!({"messages": [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "what is this"},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAA"}}
+            ]
+        }]});
+        let input = to_responses(&req)["input"].clone();
+        let parts = input[0]["content"].as_array().unwrap().clone();
+
+        assert_eq!(parts[0]["type"], "input_text");
+        assert_eq!(parts[1]["type"], "input_image");
+        assert_eq!(parts[1]["detail"], "auto");
+        assert_eq!(parts[1]["image_url"], "data:image/png;base64,AAA");
+    }
+
+    #[test]
+    fn tools_are_flattened_out_of_the_function_wrapper() {
+        let tool = json!({
+            "type": "function",
+            "function": {
+                "name": "search",
+                "description": "look things up",
+                "parameters": {"type": "object"}
+            }
+        });
+        let out = chat_tool_to_responses(&tool).unwrap();
+        assert_eq!(out["type"], "function");
+        assert_eq!(out["name"], "search");
+        assert_eq!(out["description"], "look things up");
+        assert_eq!(out["parameters"]["type"], "object");
+        assert!(out.get("function").is_none());
+
+        // Non-function tools have no Responses equivalent here.
+        assert!(chat_tool_to_responses(&json!({"type": "web_search"})).is_none());
+    }
+
+    #[test]
+    fn object_schemas_always_get_properties() {
+        // The endpoint rejects an object schema without `properties`, and a
+        // tool it rejects is indistinguishable from a broken request.
+        let normalized = normalize_function_schema(Some(&json!({"type": "object"})));
+        assert_eq!(normalized["properties"], json!({}));
+
+        // Including the ones nested inside combinators.
+        let nested = normalize_function_schema(Some(&json!({
+            "type": "object",
+            "properties": {"inner": {"type": "object"}},
+            "anyOf": [{"type": "object"}]
+        })));
+        assert_eq!(nested["properties"]["inner"]["properties"], json!({}));
+        assert_eq!(nested["anyOf"][0]["properties"], json!({}));
+
+        // A non-object schema is left exactly as it was.
+        let scalar = normalize_function_schema(Some(&json!({"type": "string"})));
+        assert!(scalar.get("properties").is_none());
+        // And a missing schema still describes something callable.
+        assert_eq!(
+            normalize_function_schema(None),
+            json!({"type": "object", "properties": {}})
+        );
+    }
+
+    #[test]
+    fn over_long_call_ids_are_shortened_without_colliding() {
+        let short = "call_abc";
+        assert_eq!(responses_call_id(short), short);
+
+        let long_a = format!("call_{}", "a".repeat(80));
+        let long_b = format!("call_{}", "a".repeat(79) + "b");
+        let a = responses_call_id(&long_a);
+        let b = responses_call_id(&long_b);
+        assert!(a.len() <= 64, "{a}");
+        // The shared 31-char prefix must not be enough to merge them.
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn tool_choice_loses_the_function_wrapper_too() {
+        assert_eq!(chat_tool_choice_to_responses(&json!("auto")), json!("auto"));
+        assert_eq!(
+            chat_tool_choice_to_responses(&json!({"type": "function", "function": {"name": "s"}})),
+            json!({"type": "function", "name": "s"})
+        );
+    }
+
+    #[test]
+    fn response_format_becomes_text_format() {
+        let rf = json!({
+            "type": "json_schema",
+            "json_schema": {"name": "answer", "schema": {"type": "object"}, "strict": true}
+        });
+        let out = chat_response_format_to_text(&rf).unwrap();
+        assert_eq!(out["type"], "json_schema");
+        assert_eq!(out["name"], "answer");
+        assert_eq!(out["strict"], true);
+
+        assert_eq!(
+            chat_response_format_to_text(&json!({"type": "json_object"})).unwrap(),
+            json!({"type": "json_object"})
+        );
+        assert!(chat_response_format_to_text(&json!({"type": "text"})).is_none());
+    }
+
+    #[test]
+    fn usage_maps_back_to_the_chat_names() {
+        let usage = json!({"input_tokens": 10, "output_tokens": 4, "total_tokens": 14});
+        assert_eq!(
+            map_usage_reverse(&usage),
+            json!({"prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14})
+        );
+        // Total is derived when the upstream omits it.
+        assert_eq!(
+            map_usage_reverse(&json!({"input_tokens": 3, "output_tokens": 2}))["total_tokens"],
+            5
+        );
+    }
+
+    #[test]
+    fn text_deltas_become_chunks_with_the_role_sent_once() {
+        let mut conv = converter();
+        let first = conv.on_event(&json!({
+            "type": "response.output_text.delta", "delta": "Hel"
+        }));
+        let second = conv.on_event(&json!({
+            "type": "response.output_text.delta", "delta": "lo"
+        }));
+
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0]["object"], "chat.completion.chunk");
+        assert_eq!(first[0]["choices"][0]["delta"]["role"], "assistant");
+        assert_eq!(first[0]["choices"][0]["delta"]["content"], "Hel");
+        // The role belongs on the first chunk only.
+        assert!(second[0]["choices"][0]["delta"].get("role").is_none());
+        assert_eq!(second[0]["choices"][0]["delta"]["content"], "lo");
+    }
+
+    #[test]
+    fn the_served_model_overrides_the_requested_one() {
+        let mut conv = converter();
+        conv.on_event(&json!({
+            "type": "response.created", "response": {"model": "gpt-5.4-2026-01-01"}
+        }));
+        let chunks = conv.on_event(&json!({
+            "type": "response.output_text.delta", "delta": "x"
+        }));
+        assert_eq!(chunks[0]["model"], "gpt-5.4-2026-01-01");
+    }
+
+    #[test]
+    fn reasoning_deltas_use_the_de_facto_field() {
+        let mut conv = converter();
+        let chunks = conv.on_event(&json!({
+            "type": "response.reasoning_summary_text.delta", "delta": "thinking"
+        }));
+        assert_eq!(
+            chunks[0]["choices"][0]["delta"]["reasoning_content"],
+            "thinking"
+        );
+    }
+
+    #[test]
+    fn function_calls_get_a_chat_style_index() {
+        let mut conv = converter();
+        let opened = conv.on_event(&json!({
+            "type": "response.output_item.added",
+            "item": {"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "search"}
+        }));
+        assert_eq!(opened[0]["choices"][0]["delta"]["tool_calls"][0]["index"], 0);
+        assert_eq!(opened[0]["choices"][0]["delta"]["tool_calls"][0]["id"], "call_1");
+        assert_eq!(
+            opened[0]["choices"][0]["delta"]["tool_calls"][0]["function"]["name"],
+            "search"
+        );
+
+        let args = conv.on_event(&json!({
+            "type": "response.function_call_arguments.delta",
+            "item_id": "fc_1",
+            "delta": "{\"q\":"
+        }));
+        assert_eq!(args[0]["choices"][0]["delta"]["tool_calls"][0]["index"], 0);
+        assert_eq!(
+            args[0]["choices"][0]["delta"]["tool_calls"][0]["function"]["arguments"],
+            "{\"q\":"
+        );
+
+        // A second call takes the next index, which is the only thing chat
+        // chunks have to tell them apart.
+        let second = conv.on_event(&json!({
+            "type": "response.output_item.added",
+            "item": {"type": "function_call", "id": "fc_2", "call_id": "call_2", "name": "fetch"}
+        }));
+        assert_eq!(second[0]["choices"][0]["delta"]["tool_calls"][0]["index"], 1);
+    }
+
+    #[test]
+    fn completion_finishes_with_tool_calls_when_a_tool_was_opened() {
+        let mut conv = converter();
+        conv.on_event(&json!({
+            "type": "response.output_item.added",
+            "item": {"type": "function_call", "id": "fc_1", "call_id": "c", "name": "n"}
+        }));
+        let done = conv.on_event(&json!({
+            "type": "response.completed",
+            "response": {"usage": {"input_tokens": 7, "output_tokens": 3}}
+        }));
+
+        assert_eq!(done.len(), 1);
+        assert_eq!(done[0]["choices"][0]["finish_reason"], "tool_calls");
+        // Usage rides the terminal chunk itself.
+        assert_eq!(done[0]["usage"]["prompt_tokens"], 7);
+    }
+
+    #[test]
+    fn an_incomplete_response_finishes_as_length_not_stop() {
+        // The upstream stopped at a cap. Reporting `stop` would tell the
+        // client a truncated answer was a finished one.
+        let mut conv = converter();
+        conv.on_event(&json!({"type": "response.output_text.delta", "delta": "half a "}));
+        let done = conv.on_event(&json!({"type": "response.incomplete", "response": {}}));
+        assert_eq!(done[0]["choices"][0]["finish_reason"], "length");
+    }
+
+    #[test]
+    fn a_whole_function_call_arriving_at_once_is_still_announced() {
+        // Some streams skip `output_item.added` and the argument deltas.
+        let mut conv = converter();
+        let chunks = conv.on_event(&json!({
+            "type": "response.output_item.done",
+            "item": {
+                "type": "function_call", "id": "fc_1", "call_id": "call_1",
+                "name": "search", "arguments": "{\"q\":\"rust\"}"
+            }
+        }));
+        assert_eq!(chunks[0]["choices"][0]["delta"]["tool_calls"][0]["id"], "call_1");
+        assert_eq!(
+            chunks[0]["choices"][0]["delta"]["tool_calls"][0]["function"]["arguments"],
+            "{\"q\":\"rust\"}"
+        );
+
+        // A call that already streamed normally is not announced twice.
+        let mut conv = converter();
+        conv.on_event(&json!({
+            "type": "response.output_item.added",
+            "item": {"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "search"}
+        }));
+        assert!(conv
+            .on_event(&json!({
+                "type": "response.output_item.done",
+                "item": {
+                    "type": "function_call", "id": "fc_1", "call_id": "call_1",
+                    "name": "search", "arguments": "{}"
+                }
+            }))
+            .is_empty());
+    }
+
+    #[test]
+    fn a_refusal_reaches_the_client_as_content() {
+        // Dropping it would end the turn with an empty message and no reason.
+        let mut conv = converter();
+        let chunks = conv.on_event(&json!({
+            "type": "response.refusal.delta", "delta": "I can't help with that."
+        }));
+        assert_eq!(
+            chunks[0]["choices"][0]["delta"]["content"],
+            "I can't help with that."
+        );
+    }
+
+    #[test]
+    fn plain_text_completions_finish_with_stop() {
+        let mut conv = converter();
+        conv.on_event(&json!({"type": "response.output_text.delta", "delta": "hi"}));
+        let done = conv.on_event(&json!({"type": "response.completed", "response": {}}));
+        assert_eq!(done[0]["choices"][0]["finish_reason"], "stop");
+        // No usage block upstream means no trailing usage chunk.
+        assert_eq!(done.len(), 1);
+    }
+
+    #[test]
+    fn events_after_the_terminal_one_are_ignored() {
+        let mut conv = converter();
+        conv.on_event(&json!({"type": "response.completed", "response": {}}));
+        assert!(conv
+            .on_event(&json!({"type": "response.output_text.delta", "delta": "late"}))
+            .is_empty());
+        assert!(conv.finish().is_empty());
+    }
+
+    #[test]
+    fn a_dropped_stream_still_gets_its_finish_chunk() {
+        let mut conv = converter();
+        conv.on_event(&json!({"type": "response.output_text.delta", "delta": "partial"}));
+        let tail = conv.finish();
+        assert_eq!(tail.len(), 1);
+        assert_eq!(tail[0]["choices"][0]["finish_reason"], "stop");
+    }
+
+    #[test]
+    fn an_upstream_failure_is_reported_rather_than_swallowed() {
+        let mut conv = converter();
+        let chunks = conv.on_event(&json!({
+            "type": "response.failed",
+            "response": {"error": {"message": "usage limit reached"}}
+        }));
+        assert_eq!(chunks[0]["choices"][0]["finish_reason"], "stop");
+        assert_eq!(conv.error(), Some("usage limit reached"));
+    }
+
+    #[test]
+    fn unknown_events_are_dropped_without_disturbing_the_stream() {
+        let mut conv = converter();
+        assert!(conv
+            .on_event(&json!({"type": "response.content_part.added"}))
+            .is_empty());
+        assert!(conv.on_event(&json!({"no": "type"})).is_empty());
+        let chunks = conv.on_event(&json!({
+            "type": "response.output_text.delta", "delta": "still here"
+        }));
+        // The role has not been spent by the ignored events.
+        assert_eq!(chunks[0]["choices"][0]["delta"]["role"], "assistant");
+    }
+
+    #[test]
+    fn the_same_converter_aggregates_a_non_streamed_reply() {
+        let mut conv = converter();
+        conv.on_event(&json!({"type": "response.output_text.delta", "delta": "the "}));
+        conv.on_event(&json!({"type": "response.output_text.delta", "delta": "answer"}));
+        conv.on_event(&json!({
+            "type": "response.output_item.added",
+            "item": {"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "search"}
+        }));
+        conv.on_event(&json!({
+            "type": "response.function_call_arguments.delta",
+            "item_id": "fc_1",
+            "delta": "{}"
+        }));
+        conv.on_event(&json!({
+            "type": "response.completed",
+            "response": {"usage": {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3}}
+        }));
+
+        let completion = conv.into_chat_completion();
+        assert_eq!(completion["object"], "chat.completion");
+        assert_eq!(completion["choices"][0]["message"]["content"], "the answer");
+        assert_eq!(
+            completion["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"],
+            "{}"
+        );
+        assert_eq!(completion["choices"][0]["finish_reason"], "tool_calls");
+        assert_eq!(completion["usage"]["total_tokens"], 3);
+    }
+
+    #[test]
+    fn an_empty_reply_aggregates_to_null_content_not_an_empty_string() {
+        // `content: ""` reads as "the model said nothing"; `null` is what the
+        // Chat API uses for a turn that produced only tool calls.
+        let conv = converter();
+        let completion = conv.into_chat_completion();
+        assert!(completion["choices"][0]["message"]["content"].is_null());
+    }
 }

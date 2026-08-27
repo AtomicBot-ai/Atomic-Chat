@@ -22,8 +22,14 @@ import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 
 type Props = {
   provider?: ProviderObject
+  /**
+   * Where to go once the provider is gone. Defaults to the Settings provider
+   * detail page, which is where this dialog has always lived; the Cloud page
+   * passes its own so a delete there doesn't bounce the user into Settings.
+   */
+  onDeleted?: () => void
 }
-const DeleteProvider = ({ provider }: Props) => {
+const DeleteProvider = ({ provider, onDeleted }: Props) => {
   const { t } = useTranslation()
   const { deleteProvider, providers } = useModelProvider()
   const { favoriteModels, removeFavorite } = useFavoriteModel()
@@ -52,6 +58,10 @@ const DeleteProvider = ({ provider }: Props) => {
       }),
     })
     setTimeout(() => {
+      if (onDeleted) {
+        onDeleted()
+        return
+      }
       router.navigate({
         to: route.settings.providers,
         params: {

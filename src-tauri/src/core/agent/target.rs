@@ -198,6 +198,14 @@ mod tests {
             max_steps: None,
             auto_approve: false,
             reasoning: None,
+            assistant_instructions: None,
+            sampling: None,
+            sampling_overridden: false,
+            web_search: true,
+            mcp_enabled: true,
+            auto_approve_mcp: true,
+            disabled_mcp_tools: Vec::new(),
+            rag: None,
         }
     }
 

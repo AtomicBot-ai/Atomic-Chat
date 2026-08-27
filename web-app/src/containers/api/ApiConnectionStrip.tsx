@@ -6,11 +6,7 @@ import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
-import {
-  getConcurrentSlots,
-  getModelContextLength,
-  getProviderNameForModel,
-} from '@/utils/apiServerCapacity'
+import { getModelContextLength } from '@/utils/apiServerCapacity'
 import { formatCount } from '@/utils/apiServerStats'
 import { getLocalApiServerUrl } from '@/utils/localApiServerControl'
 
@@ -33,7 +29,7 @@ function Field({
   )
 }
 
-export function ApiConnectionStrip({ inFlight }: { inFlight: number }) {
+export function ApiConnectionStrip() {
   const { t } = useTranslation()
   const { serverStatus, activeModels } = useAppState()
   const { serverHost, serverPort, apiPrefix } = useLocalApiServer()
@@ -47,7 +43,6 @@ export function ApiConnectionStrip({ inFlight }: { inFlight: number }) {
 
   const loadedModel = activeModels[0] ?? null
   const contextLength = getModelContextLength(loadedModel)
-  const slotTotal = getConcurrentSlots(getProviderNameForModel(loadedModel))
 
   const { tone, label }: { tone: StatusTone; label: string } =
     serverStatus === 'stopped'
@@ -82,17 +77,6 @@ export function ApiConnectionStrip({ inFlight }: { inFlight: number }) {
           {label}
         </span>
       </Field>
-
-      {serverStatus !== 'stopped' && (
-        <Field label={t('api:strip.slots')}>
-          <span className="tabular-nums">
-            {t('api:strip.slotsValue', {
-              busy: Math.min(inFlight, slotTotal),
-              total: slotTotal,
-            })}
-          </span>
-        </Field>
-      )}
 
       <Field label={t('api:strip.loadedModel')} className="flex-1">
         <span className="block truncate" title={loadedModel ?? undefined}>

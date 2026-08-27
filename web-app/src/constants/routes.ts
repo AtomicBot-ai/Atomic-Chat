@@ -23,12 +23,18 @@ export const route = {
     claude_code: '/settings/claude-code',
     hermes_agent: '/settings/hermes-agent',
   },
+  cloud: {
+    index: '/cloud/',
+  },
   hub: {
     index: '/hub/',
     model: '/hub/$modelId',
   },
   launch: {
     index: '/launch/',
+  },
+  connectors: {
+    index: '/connectors/',
   },
   api: {
     index: '/api/',

@@ -48,7 +48,9 @@
     "deny": "Отклонить",
     "alwaysAllow": "Всегда разрешать это действие",
     "approveOnce": "Разрешить один раз",
-    "resolveFailed": "Не удалось отправить решение."
+    "resolveFailed": "Не удалось отправить решение.",
+    "showDetails": "Показать детали",
+    "hideDetails": "Скрыть детали"
   },
   "agentFolderAccess": {
     "title": "Разрешить доступ к папке",

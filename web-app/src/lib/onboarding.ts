@@ -1,5 +1,6 @@
 import { localStorageKey } from '@/constants/localStorage'
 import { isKnownProvider } from '@/stores/provider-registry-store'
+import { isSubscriptionProvider } from '@/utils/registerRemoteProvider'
 
 type ProviderLike = {
   provider: string
@@ -21,6 +22,9 @@ export function hasValidProviders(providers: ProviderLike[]): boolean {
     }
     return Boolean(
       provider.api_key?.length ||
+        // A subscription carries no key; its models are only present while it
+        // is signed in, so their presence is the connected signal.
+        (isSubscriptionProvider(provider.provider) && provider.models.length) ||
         (provider.provider === 'llamacpp' && provider.models.length) ||
         (provider.provider === 'llamacpp-upstream' && provider.models.length) ||
         (provider.provider === 'jan' && provider.models.length)

@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::mcp_tools::{McpBridge, MCP_TOOL_PREFIX};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ResourceClass {
@@ -13,6 +15,10 @@ pub enum ResourceClass {
     Vision,
     ApprovalGated,
     Terminal,
+    /// An MCP tool whose server advertises `readOnlyHint`. Batchable but
+    /// serialized within its group: the hint comes from an external server, so
+    /// it never earns `PureRead`'s parallelism.
+    McpRead,
     Unknown,
 }
 
@@ -42,6 +48,9 @@ pub fn resource_class_for(tool_name: &str) -> ResourceClass {
         | "os.code.refs"
         | "os.web.search"
         | "os.web.fetch"
+        | "docs.list"
+        | "docs.retrieve"
+        | "docs.chunks"
         | "os.media.transcribe"
         | "os.media.youtube"
         | "os.clipboard.read" => ResourceClass::PureRead,
@@ -61,6 +70,20 @@ pub fn resource_class_for(tool_name: &str) -> ResourceClass {
         "reply" | "finish" => ResourceClass::Terminal,
         _ => ResourceClass::Unknown,
     }
+}
+
+/// Class lookup for a concrete call, MCP-aware. `mcp.*` names resolve through
+/// the turn's bridge: read-only → [`ResourceClass::McpRead`], anything else →
+/// [`ResourceClass::ApprovalGated`], unresolved → fail-closed `Unknown`.
+pub fn resource_class_for_call(tool_name: &str, mcp: Option<&dyn McpBridge>) -> ResourceClass {
+    if tool_name.starts_with(MCP_TOOL_PREFIX) {
+        return match mcp.and_then(|bridge| bridge.resolve(tool_name)) {
+            Some(descriptor) if descriptor.read_only => ResourceClass::McpRead,
+            Some(_) => ResourceClass::ApprovalGated,
+            None => ResourceClass::Unknown,
+        };
+    }
+    resource_class_for(tool_name)
 }
 
 pub fn is_batchable(class: ResourceClass) -> bool {

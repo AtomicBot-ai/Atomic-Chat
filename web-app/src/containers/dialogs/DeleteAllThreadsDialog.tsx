@@ -16,18 +16,15 @@ import { IconTrash } from '@tabler/icons-react'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
 import { route } from '@/constants/routes'
-import type { SidebarMode } from '@/hooks/useAgentMode'
 
 interface DeleteAllThreadsDialogProps {
   onDeleteAll: () => void
   onDropdownClose?: () => void
-  mode?: SidebarMode
 }
 
 export function DeleteAllThreadsDialog({
   onDeleteAll,
   onDropdownClose,
-  mode = 'chat',
 }: DeleteAllThreadsDialogProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -45,11 +42,9 @@ export function DeleteAllThreadsDialog({
     onDeleteAll()
     setIsOpen(false)
     if (onDropdownClose) onDropdownClose()
-    const translationScope =
-      mode === 'agent' ? 'deleteAllAgentThreads' : 'deleteAllThreads'
-    toast.success(t(`common:toast.${translationScope}.title`), {
+    toast.success(t('common:toast.deleteAllThreads.title'), {
       id: 'delete-all-threads',
-      description: t(`common:toast.${translationScope}.description`),
+      description: t('common:toast.deleteAllThreads.description'),
     })
     setTimeout(() => {
       navigate({ to: route.home })
@@ -80,19 +75,9 @@ export function DeleteAllThreadsDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle>
-            {t(
-              `common:dialogs.${
-                mode === 'agent' ? 'deleteAllAgentThreads' : 'deleteAllThreads'
-              }.title`
-            )}
-          </DialogTitle>
+          <DialogTitle>{t('common:dialogs.deleteAllThreads.title')}</DialogTitle>
           <DialogDescription>
-            {t(
-              `common:dialogs.${
-                mode === 'agent' ? 'deleteAllAgentThreads' : 'deleteAllThreads'
-              }.description`
-            )}
+            {t('common:dialogs.deleteAllThreads.description')}
           </DialogDescription>
           <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <DialogClose asChild>

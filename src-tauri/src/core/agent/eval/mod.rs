@@ -21,7 +21,7 @@ use self::report::{
     GaiaToolTrace,
 };
 use self::server::{DedicatedLlamaServer, LlamaServerConfig};
-use super::llm_client::{AgentLlmClient, LlamaBackend, LlamaServerClient, LlamaSessionTarget};
+use super::llm_client::{AgentLlmClient, LlamaBackend, LlamaServerClient, LlamaSessionTarget, SamplingOverrides};
 use super::model_profile::{detect_model_profile, AgentModelProfile};
 use super::path_policy::EditableRoots;
 use super::prompt::{
@@ -460,6 +460,12 @@ async fn run_task_sample(
             trusted_read_roots: &[],
             max_steps,
             reasoning,
+            sampling: &SamplingOverrides::default(),
+            mcp: None,
+            disabled_tools: &std::collections::BTreeSet::new(),
+            auto_approve_mcp: true,
+            docs: None,
+            documents_note: None,
             client,
             approval: &approval,
             folder_access: &DenyFolderAccess,
@@ -639,7 +645,7 @@ impl TaskCapture {
             AgentEvent::StepError { message, category } => {
                 self.error = Some(format!("{category}: {message}"));
             }
-            AgentEvent::TurnFinished { reason, step_count } => {
+            AgentEvent::TurnFinished { reason, step_count, .. } => {
                 self.terminal_reason = Some(reason);
                 self.step_count = step_count;
             }
@@ -847,6 +853,7 @@ mod tests {
         capture.observe(AgentEvent::TurnFinished {
             reason: "reply".into(),
             step_count: 2,
+            usage: None,
         });
 
         assert_eq!(capture.reply.as_deref(), Some("42"));

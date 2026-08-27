@@ -128,6 +128,21 @@ const STATIC_TOOL_GRAMMARS: &[ToolGrammar] = &[
         args: r#""{" ws "\"url\"" ws ":" ws non-empty-string ( ws "," ws "\"extractMode\"" ws ":" ws ( "\"markdown\"" | "\"text\"" ) )? ( ws "," ws "\"maxChars\"" ws ":" ws positive-integer )? ws "}""#,
     },
     ToolGrammar {
+        name: "docs.list",
+        rule: "docs-list",
+        args: r#""{" ws ( "\"scope\"" ws ":" ws ( "\"thread\"" | "\"project\"" ) ws )? "}""#,
+    },
+    ToolGrammar {
+        name: "docs.retrieve",
+        rule: "docs-retrieve",
+        args: r#""{" ws "\"query\"" ws ":" ws non-empty-string ( ws "," ws "\"top_k\"" ws ":" ws positive-integer )? ( ws "," ws "\"file_ids\"" ws ":" ws non-empty-string-array )? ( ws "," ws "\"scope\"" ws ":" ws ( "\"thread\"" | "\"project\"" ) )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "docs.chunks",
+        rule: "docs-chunks",
+        args: r#""{" ws "\"file_id\"" ws ":" ws non-empty-string ws "," ws "\"start_order\"" ws ":" ws nonnegative-integer ws "," ws "\"end_order\"" ws ":" ws nonnegative-integer ( ws "," ws "\"scope\"" ws ":" ws ( "\"thread\"" | "\"project\"" ) )? ws "}""#,
+    },
+    ToolGrammar {
         name: "os.media.transcribe",
         rule: "media-transcribe",
         args: r#""{" ws "\"path\"" ws ":" ws non-empty-string ( ws "," ws "\"language\"" ws ":" ws non-empty-string )? ws "}""#,
@@ -297,6 +312,9 @@ pub const GRAMMAR_TOOL_NAMES: &[&str] = &[
     "os.http.request",
     "os.web.search",
     "os.web.fetch",
+    "docs.list",
+    "docs.retrieve",
+    "docs.chunks",
     "os.media.transcribe",
     "os.media.youtube",
     "vision.describe",
@@ -342,17 +360,43 @@ pub fn tool_call_grammar_for_profile(
     profile: AgentModelProfile,
     thinking: bool,
 ) -> String {
+    tool_call_grammar_dynamic(
+        skill_registry,
+        profile,
+        thinking,
+        &[],
+        &std::collections::BTreeSet::new(),
+    )
+}
+
+/// The full dynamic form: `mcp_names` stitches the turn's MCP catalog into the
+/// grammar (generalizing the skill-name pattern), `disabled` removes built-in
+/// tools switched off for this turn (e.g. `os.web.*` when web search is off).
+pub fn tool_call_grammar_dynamic(
+    skill_registry: &SkillRegistry,
+    profile: AgentModelProfile,
+    thinking: bool,
+    mcp_names: &[String],
+    disabled: &std::collections::BTreeSet<String>,
+) -> String {
     let skill_names = skill_registry
         .enabled()
         .map(|record| record.manifest.name.as_str())
         .collect::<Vec<_>>();
-    let mut call_rules = STATIC_TOOL_GRAMMARS
+    let enabled_static = STATIC_TOOL_GRAMMARS
+        .iter()
+        .filter(|grammar| !disabled.contains(grammar.name))
+        .collect::<Vec<_>>();
+    let mut call_rules = enabled_static
         .iter()
         .map(|grammar| format!("{}-call", grammar.rule))
         .collect::<Vec<_>>();
     if !skill_names.is_empty() {
         call_rules.insert(1, "skill-view-call".into());
         call_rules.insert(2, "skill-run-script-call".into());
+    }
+    if !mcp_names.is_empty() {
+        call_rules.push("mcp-call".into());
     }
 
     // At most one prelude: emitting two would duplicate `prelude-trail-ws` and
@@ -370,7 +414,7 @@ pub fn tool_call_grammar_for_profile(
         "root ::= {root}\ntool-call ::= {}\n",
         call_rules.join(" | ")
     );
-    for tool in STATIC_TOOL_GRAMMARS {
+    for tool in &enabled_static {
         writeln!(
             grammar,
             "{}-call ::= call-prefix {} args-prefix {}-args call-suffix",
@@ -381,6 +425,32 @@ pub fn tool_call_grammar_for_profile(
         .expect("writing tool grammar to String cannot fail");
         writeln!(grammar, "{}-args ::= {}", tool.rule, tool.args)
             .expect("writing tool args grammar to String cannot fail");
+    }
+
+    if !mcp_names.is_empty() {
+        // MCP args are validated by the serving MCP server (and previewed for
+        // approval), so the grammar pins only "a JSON object" — the generic
+        // value rules exist solely for this branch.
+        grammar.push_str(
+            "mcp-call ::= call-prefix mcp-tool-name args-prefix json-object call-suffix\n",
+        );
+        writeln!(
+            grammar,
+            "mcp-tool-name ::= {}",
+            mcp_names
+                .iter()
+                .map(|name| gbnf_json_literal(name))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        )
+        .expect("writing mcp grammar to String cannot fail");
+        grammar.push_str(
+            "json-object ::= \"{\" ws ( json-member ( ws \",\" ws json-member )* )? ws \"}\"\n\
+             json-member ::= string ws \":\" ws json-value\n\
+             json-array-generic ::= \"[\" ws ( json-value ( ws \",\" ws json-value )* )? ws \"]\"\n\
+             json-value ::= string | json-number | json-object | json-array-generic | boolean | \"null\"\n\
+             json-number ::= \"-\"? ( \"0\" | [1-9] [0-9]* ) ( \".\" [0-9]+ )? ( [eE] [+-]? [0-9]+ )?\n",
+        );
     }
 
     if !skill_names.is_empty() {
@@ -406,10 +476,14 @@ pub fn tool_call_grammar_for_profile(
         "symbol-kind ::= \"\\\"class\\\"\" | \"\\\"struct\\\"\" | \"\\\"enum\\\"\" | \"\\\"trait\\\"\" | \"\\\"interface\\\"\" | \"\\\"method\\\"\" | \"\\\"function\\\"\" | \"\\\"macro\\\"\" | \"\\\"type\\\"\" | \"\\\"module\\\"\" | \"\\\"constant\\\"\"\n",
     );
 
+    // MCP tools join the rare-name alternation so `tool.view` can load their
+    // full schemas into the variable tail on demand.
     let rare_tool_names = ITERATION_ONE_TOOLS
         .iter()
         .filter(|descriptor| descriptor.tier == ToolTier::Rare)
+        .filter(|descriptor| !disabled.contains(descriptor.name))
         .map(|descriptor| gbnf_json_literal(descriptor.name))
+        .chain(mcp_names.iter().map(|name| gbnf_json_literal(name)))
         .collect::<Vec<_>>();
     writeln!(
         grammar,
@@ -544,6 +618,117 @@ mod tests {
         assert!(grammar.starts_with("root ::= tool-call-array\n"));
         assert!(!grammar.contains("think-prelude"));
         assert!(!grammar.contains("prelude-trail-ws"));
+    }
+
+    /// The `mcp.` namespace is reserved for dynamic MCP tools; a built-in tool
+    /// using it would shadow the catalog's reverse mapping.
+    #[test]
+    fn no_builtin_tool_uses_the_mcp_namespace() {
+        for name in GRAMMAR_TOOL_NAMES {
+            assert!(
+                !name.starts_with("mcp."),
+                "built-in tool `{name}` uses the reserved mcp. namespace"
+            );
+        }
+        for descriptor in ITERATION_ONE_TOOLS {
+            assert!(!descriptor.name.starts_with("mcp."));
+        }
+    }
+
+    #[test]
+    fn mcp_names_get_an_alternation_and_generic_json_rules() {
+        let temp = TempDir::new().unwrap();
+        let registry = empty_registry(&temp);
+        let names = vec![
+            "mcp.github.create_issue".to_string(),
+            "mcp.linear.search".to_string(),
+        ];
+        let grammar = tool_call_grammar_dynamic(
+            &registry,
+            AgentModelProfile::Plain,
+            false,
+            &names,
+            &BTreeSet::new(),
+        );
+
+        assert!(grammar.contains("| mcp-call\n"));
+        assert!(grammar
+            .contains("mcp-call ::= call-prefix mcp-tool-name args-prefix json-object call-suffix"));
+        assert!(grammar.contains(
+            r#"mcp-tool-name ::= "\"mcp.github.create_issue\"" | "\"mcp.linear.search\"""#
+        ));
+        assert!(grammar.contains("json-value ::="));
+        // `tool.view` can name an MCP tool.
+        assert!(grammar.contains(r#"rare-tool-name ::="#));
+        let rare_line = grammar
+            .lines()
+            .find(|line| line.starts_with("rare-tool-name ::="))
+            .expect("rare-tool-name rule");
+        assert!(rare_line.contains("mcp.github.create_issue"));
+    }
+
+    #[test]
+    fn empty_mcp_catalog_leaves_the_grammar_byte_identical() {
+        let temp = TempDir::new().unwrap();
+        let registry = empty_registry(&temp);
+        let baseline = tool_call_grammar_for_profile(&registry, AgentModelProfile::Plain, false);
+        let dynamic = tool_call_grammar_dynamic(
+            &registry,
+            AgentModelProfile::Plain,
+            false,
+            &[],
+            &BTreeSet::new(),
+        );
+        assert_eq!(baseline, dynamic);
+        assert!(!baseline.contains("json-value"));
+        assert!(!baseline.contains("mcp-call"));
+    }
+
+    #[test]
+    fn disabled_web_tools_leave_grammar_and_dispatch_rules() {
+        let temp = TempDir::new().unwrap();
+        let registry = empty_registry(&temp);
+        let disabled: BTreeSet<String> = ["os.web.search", "os.web.fetch"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let grammar = tool_call_grammar_dynamic(
+            &registry,
+            AgentModelProfile::Plain,
+            false,
+            &[],
+            &disabled,
+        );
+
+        assert!(!grammar.contains(r#""\"os.web.search\"""#));
+        assert!(!grammar.contains(r#""\"os.web.fetch\"""#));
+        // Unrelated tools survive the filter.
+        assert!(grammar.contains(r#""\"os.fs.read\"""#));
+        assert!(grammar.contains(r#""\"reply\"""#));
+    }
+
+    #[test]
+    fn disabled_docs_tools_leave_grammar_and_dispatch_rules() {
+        let temp = TempDir::new().unwrap();
+        let registry = empty_registry(&temp);
+        let disabled: BTreeSet<String> = ["docs.list", "docs.retrieve", "docs.chunks"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let grammar = tool_call_grammar_dynamic(
+            &registry,
+            AgentModelProfile::Plain,
+            false,
+            &[],
+            &disabled,
+        );
+
+        assert!(!grammar.contains(r#""\"docs.list\"""#));
+        assert!(!grammar.contains(r#""\"docs.retrieve\"""#));
+        assert!(!grammar.contains(r#""\"docs.chunks\"""#));
+        // Unrelated tools survive the filter.
+        assert!(grammar.contains(r#""\"os.fs.read\"""#));
+        assert!(grammar.contains(r#""\"reply\"""#));
     }
 
     #[test]

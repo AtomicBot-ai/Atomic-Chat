@@ -53,6 +53,8 @@ function General() {
     setHuggingfaceToken,
     preloadModelOnStartup,
     setPreloadModelOnStartup,
+    legacyChatEngine,
+    setLegacyChatEngine,
     reasoningBudget,
     setReasoningBudget,
   } = useGeneralSetting()
@@ -426,6 +428,16 @@ function General() {
                   <Switch
                     checked={notificationsGloballyEnabled}
                     onCheckedChange={setNotificationsGloballyEnabled}
+                  />
+                }
+              />
+              <CardItem
+                title={t('settings:chatBehavior.legacyChatEngine')}
+                description={t('settings:chatBehavior.legacyChatEngineDesc')}
+                actions={
+                  <Switch
+                    checked={legacyChatEngine}
+                    onCheckedChange={setLegacyChatEngine}
                   />
                 }
               />

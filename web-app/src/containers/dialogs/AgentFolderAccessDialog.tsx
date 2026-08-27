@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useAgentRun } from '@/hooks/useAgentRun'
+import { useThreads } from '@/hooks/useThreads'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   isStaleAgentFolderAccessError,
@@ -30,8 +31,11 @@ export default function AgentFolderAccessDialog() {
     threadId ? state.runs[threadId] : undefined
   )
   const request = run?.pendingFolderAccess
+  const currentThreadId = useThreads((state) => state.currentThreadId)
 
   if (!threadId || !run || !request) return null
+  // The open thread renders folder-access requests inline in the composer.
+  if (threadId === currentThreadId) return null
 
   const resolve = async (allow: boolean) => {
     if (

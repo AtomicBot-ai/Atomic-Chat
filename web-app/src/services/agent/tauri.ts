@@ -3,6 +3,7 @@ import type {
   AgentApprovalDecision,
   AgentFolderAccessDecision,
   AgentEvent,
+  AgentReseedMessage,
   AgentTurnRequest,
   AgentWorkspaceEntry,
   AgentWorkspaceFile,
@@ -24,6 +25,19 @@ export function runAgentTurn(
 
 export function cancelAgentTurn(runId: string): Promise<void> {
   return invoke<void>('agent_cancel_turn', { runId })
+}
+
+/**
+ * Re-seed the durable agent transcript from the authoritative frontend
+ * message list — after edit/delete/regenerate, or lazily when the thread has
+ * turns the agent engine never saw (legacy chat history, fallback turns).
+ * Cancel or await any active run first.
+ */
+export function reseedAgentSession(
+  sessionId: string,
+  messages: AgentReseedMessage[]
+): Promise<void> {
+  return invoke<void>('agent_session_reseed', { sessionId, messages })
 }
 
 /**

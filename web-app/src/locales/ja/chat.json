@@ -47,7 +47,9 @@
     "deny": "拒否",
     "alwaysAllow": "このアクションを常に許可",
     "approveOnce": "1回のみ承認",
-    "resolveFailed": "承認決定の送信に失敗しました。"
+    "resolveFailed": "承認決定の送信に失敗しました。",
+    "showDetails": "詳細を表示",
+    "hideDetails": "詳細を隠す"
   },
   "agentFolderAccess": {
     "title": "フォルダへのアクセスを許可",

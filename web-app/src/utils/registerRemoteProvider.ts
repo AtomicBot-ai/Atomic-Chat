@@ -50,6 +50,20 @@ export function isKeylessRemoteProvider(
 }
 
 /**
+ * Providers whose credential lives in the Rust backend rather than on the
+ * provider object. `api_key` is empty for these by design — the proxy attaches
+ * the bearer token itself — so every "no key ⇒ skip" gate must let them past.
+ */
+const SUBSCRIPTION_PROVIDER_NAMES = ['chatgpt'] as const
+
+export function isSubscriptionProvider(
+  providerName: string | undefined | null
+): boolean {
+  if (!providerName) return false
+  return (SUBSCRIPTION_PROVIDER_NAMES as readonly string[]).includes(providerName)
+}
+
+/**
  * Idempotently register a remote (cloud) provider with the Tauri backend
  * so the Local API Server proxy can route requests for its models.
  *
@@ -64,7 +78,11 @@ export async function registerRemoteProvider(
     return false
   }
 
-  if (!provider.api_key && !isKeylessRemoteProvider(provider)) {
+  if (
+    !provider.api_key &&
+    !isKeylessRemoteProvider(provider) &&
+    !isSubscriptionProvider(provider.provider)
+  ) {
     console.log(
       `[registerRemoteProvider] Provider ${provider.provider} has no API key, skipping registration`
     )

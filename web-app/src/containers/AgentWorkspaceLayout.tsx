@@ -27,18 +27,16 @@ import type { AgentWorkspace, AgentWorkspaceRoot } from '@/hooks/useAgentMode'
 type AgentWorkspaceLayoutProps = {
   children: ReactNode
   threadId: string
-  agentModeActive: boolean
   workspace: AgentWorkspace
   onAddExternal: () => void
   refreshKey: number
   isGenerating?: boolean
 }
 
-function shouldUseAgentWorkspaceLayout(
-  agentModeActive: boolean,
-  isDesktop: boolean
-): boolean {
-  return agentModeActive && isDesktop
+// The 3-panel workspace layout is now universal — every thread runs on the
+// agent engine; only small screens fall back to a plain main.
+function shouldUseAgentWorkspaceLayout(isDesktop: boolean): boolean {
+  return isDesktop
 }
 
 function ResizeHandle({ hidden = false }: { hidden?: boolean }) {
@@ -71,7 +69,6 @@ function cssLengthToPixels(value: string): number | undefined {
 export function AgentWorkspaceLayout({
   children,
   threadId,
-  agentModeActive,
   workspace,
   onAddExternal,
   refreshKey,
@@ -89,7 +86,7 @@ export function AgentWorkspaceLayout({
   const previousWorkspaceHasEntriesRef = useRef<boolean | undefined>(undefined)
 
   useEffect(() => {
-    if (!agentModeActive || !isDesktop) {
+    if (!isDesktop) {
       useWorkspacePreviewStore.getState().removeArtifact()
       return
     }
@@ -98,7 +95,7 @@ export function AgentWorkspaceLayout({
     } else {
       useWorkspacePreviewStore.getState().removeArtifact()
     }
-  }, [agentModeActive, artifactOpen, artifactTitle, isDesktop])
+  }, [artifactOpen, artifactTitle, isDesktop])
 
   useEffect(() => {
     useWorkspacePreviewStore.getState().reset()
@@ -106,7 +103,7 @@ export function AgentWorkspaceLayout({
   }, [threadId, workspace.primaryRoot?.rootId])
 
   useEffect(() => {
-    if (!agentModeActive || !isDesktop) return
+    if (!isDesktop) return
 
     const roots = [workspace.primaryRoot, ...workspace.externalRoots].filter(
       (root): root is AgentWorkspaceRoot => Boolean(root)
@@ -152,7 +149,6 @@ export function AgentWorkspaceLayout({
       cancelled = true
     }
   }, [
-    agentModeActive,
     isDesktop,
     refreshKey,
     threadId,
@@ -177,9 +173,7 @@ export function AgentWorkspaceLayout({
   // the full width — with a preview panel open the button hangs over that
   // panel, not over the header.
   const filesToggleOverHeader =
-    shouldUseAgentWorkspaceLayout(agentModeActive, isDesktop) &&
-    !filesVisible &&
-    !hasPreview
+    shouldUseAgentWorkspaceLayout(isDesktop) && !filesVisible && !hasPreview
   const setRightOverlay = useHeaderOverlay((state) => state.setRightOverlay)
   useEffect(() => {
     setRightOverlay(filesToggleOverHeader)
@@ -190,7 +184,7 @@ export function AgentWorkspaceLayout({
   const initialChatSize = 100 - initialPreviewSize - initialFilesSize
 
   useLayoutEffect(() => {
-    if (!agentModeActive || !isDesktop) return
+    if (!isDesktop) return
 
     const previewSize = hasPreview ? 24 : 0
     const workspaceWidth = workspaceRef.current?.getBoundingClientRect().width
@@ -207,18 +201,9 @@ export function AgentWorkspaceLayout({
       previewSize,
       filesSize,
     ])
-  }, [agentModeActive, filesVisible, hasPreview, isDesktop])
+  }, [filesVisible, hasPreview, isDesktop])
 
-  if (!agentModeActive) {
-    return (
-      <main className="flex h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))] w-full min-w-0 overflow-hidden">
-        {children}
-        <ArtifactPanel />
-      </main>
-    )
-  }
-
-  if (!shouldUseAgentWorkspaceLayout(agentModeActive, isDesktop)) {
+  if (!shouldUseAgentWorkspaceLayout(isDesktop)) {
     return (
       <main className="flex h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))] w-full min-w-0 overflow-hidden">
         {children}

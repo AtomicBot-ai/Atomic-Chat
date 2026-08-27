@@ -3,8 +3,10 @@ use std::time::Duration;
 use hyper::StatusCode;
 use tokio_util::sync::CancellationToken;
 
-use super::llm_client::AgentLlmClient;
+use super::llm_client::{AgentLlmClient, SamplingOverrides};
+use super::mcp_tools::{McpBridge, McpToolDescriptor};
 use super::path_policy::EditableRoots;
+use super::rag_bridge::{DocsAttachment, DocsBridge, DocsChunk, DocsScope};
 use super::pty::PtyRegistry;
 use super::runner::{run_turn, RunTurnInput};
 use super::session::AgentSessionState;
@@ -86,6 +88,36 @@ async fn run_script_with_reasoning(
     max_steps: u32,
     reasoning: AgentReasoning,
 ) -> TestRun {
+    run_script_with_options(
+        workspace,
+        client,
+        approval,
+        cancellation,
+        max_steps,
+        reasoning,
+        None,
+        true,
+        None,
+        None,
+        &std::collections::BTreeSet::new(),
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_script_with_options(
+    workspace: &TestWorkspace,
+    client: &dyn AgentLlmClient,
+    approval: &RecordingApproval,
+    cancellation: &CancellationToken,
+    max_steps: u32,
+    reasoning: AgentReasoning,
+    mcp: Option<&dyn McpBridge>,
+    auto_approve_mcp: bool,
+    docs: Option<&dyn DocsBridge>,
+    documents_note: Option<&str>,
+    disabled_tools: &std::collections::BTreeSet<String>,
+) -> TestRun {
     let desktop = RecordingDesktop::default();
     let mut events = Vec::new();
     let mut session = AgentSessionState::new("test-session");
@@ -106,6 +138,12 @@ async fn run_script_with_reasoning(
             trusted_read_roots: &[],
             max_steps,
             reasoning,
+            sampling: &SamplingOverrides::default(),
+            mcp,
+            disabled_tools,
+            auto_approve_mcp,
+            docs,
+            documents_note,
             client,
             approval,
             folder_access: &folder_access,
@@ -125,6 +163,78 @@ async fn run_script_with_reasoning(
         events,
         requests: Vec::new(),
         session,
+    }
+}
+
+/// Scripted [`McpBridge`]: fixed descriptors, canned results, recorded calls.
+struct ScriptedMcpBridge {
+    descriptors: Vec<McpToolDescriptor>,
+    fail_calls: bool,
+    calls: std::sync::Mutex<Vec<String>>,
+}
+
+impl ScriptedMcpBridge {
+    fn new(tools: &[(&str, bool)]) -> Self {
+        Self {
+            descriptors: tools
+                .iter()
+                .map(|(tool, read_only)| McpToolDescriptor {
+                    agent_name: format!("mcp.test.{tool}"),
+                    server: "test".into(),
+                    tool: (*tool).into(),
+                    description: format!("scripted {tool}"),
+                    input_schema: serde_json::json!({"type": "object"}),
+                    read_only: *read_only,
+                })
+                .collect(),
+            fail_calls: false,
+            calls: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    fn failing(tools: &[(&str, bool)]) -> Self {
+        Self {
+            fail_calls: true,
+            ..Self::new(tools)
+        }
+    }
+
+    fn calls(&self) -> Vec<String> {
+        self.calls.lock().expect("mcp calls").clone()
+    }
+}
+
+#[async_trait::async_trait]
+impl McpBridge for ScriptedMcpBridge {
+    fn resolve(&self, agent_name: &str) -> Option<&McpToolDescriptor> {
+        self.descriptors
+            .iter()
+            .find(|descriptor| descriptor.agent_name == agent_name)
+    }
+
+    fn descriptors(&self) -> &[McpToolDescriptor] {
+        &self.descriptors
+    }
+
+    async fn call(
+        &self,
+        descriptor: &McpToolDescriptor,
+        _args: &serde_json::Value,
+        _cancellation: &CancellationToken,
+    ) -> Result<rmcp::model::CallToolResult, String> {
+        self.calls
+            .lock()
+            .expect("mcp calls")
+            .push(descriptor.agent_name.clone());
+        if self.fail_calls {
+            return Err(format!(
+                "MCP server '{}' is not connected — it may have stopped; do not retry this tool",
+                descriptor.server
+            ));
+        }
+        Ok(rmcp::model::CallToolResult::success(vec![
+            rmcp::model::Content::text(format!("result from {}", descriptor.tool)),
+        ]))
     }
 }
 
@@ -149,7 +259,7 @@ fn event_kind(event: &AgentEvent) -> &'static str {
 
 fn finished_reason(events: &[AgentEvent]) -> Option<(&str, u32)> {
     events.iter().rev().find_map(|event| match event {
-        AgentEvent::TurnFinished { reason, step_count } => Some((reason.as_str(), *step_count)),
+        AgentEvent::TurnFinished { reason, step_count, .. } => Some((reason.as_str(), *step_count)),
         _ => None,
     })
 }
@@ -164,6 +274,468 @@ fn executed(events: &[AgentEvent]) -> Vec<(&str, ToolStatus)> {
             _ => None,
         })
         .collect()
+}
+
+async fn run_mcp_script(
+    responses: Vec<ScriptedResponse>,
+    bridge: &ScriptedMcpBridge,
+    approval: &RecordingApproval,
+    auto_approve_mcp: bool,
+) -> TestRun {
+    let workspace = TestWorkspace::new();
+    let server = ScriptedCompletionServer::start(responses).await;
+    let client = server.client();
+    let cancellation = CancellationToken::new();
+    let run = run_script_with_options(
+        &workspace,
+        &client,
+        approval,
+        &cancellation,
+        3,
+        AgentReasoning::default(),
+        Some(bridge),
+        auto_approve_mcp,
+        None,
+        None,
+        &std::collections::BTreeSet::new(),
+    )
+    .await;
+    TestRun {
+        requests: server.requests(),
+        ..run
+    }
+}
+
+/// Scripted [`DocsBridge`]: fixed scopes, canned chunks, recorded embeds.
+struct ScriptedDocsBridge {
+    scopes: Vec<DocsScope>,
+    fail_embed: bool,
+    embeds: std::sync::Mutex<Vec<String>>,
+}
+
+impl ScriptedDocsBridge {
+    fn thread_only() -> Self {
+        Self {
+            scopes: vec![DocsScope::Thread],
+            fail_embed: false,
+            embeds: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    fn with_project() -> Self {
+        Self {
+            scopes: vec![DocsScope::Thread, DocsScope::Project],
+            ..Self::thread_only()
+        }
+    }
+
+    fn embedding_down() -> Self {
+        Self {
+            fail_embed: true,
+            ..Self::thread_only()
+        }
+    }
+
+    fn embeds(&self) -> Vec<String> {
+        self.embeds.lock().expect("embeds").clone()
+    }
+}
+
+#[async_trait::async_trait]
+impl DocsBridge for ScriptedDocsBridge {
+    fn scopes(&self) -> &[DocsScope] {
+        &self.scopes
+    }
+
+    async fn embed(
+        &self,
+        query: &str,
+        _cancellation: &CancellationToken,
+    ) -> Result<Vec<f32>, String> {
+        if self.fail_embed {
+            return Err(super::rag_bridge::EMBEDDING_UNAVAILABLE.into());
+        }
+        self.embeds.lock().expect("embeds").push(query.to_owned());
+        Ok(vec![0.1, 0.2, 0.3])
+    }
+
+    async fn list(&self, scope: DocsScope) -> Result<Vec<DocsAttachment>, String> {
+        Ok(vec![DocsAttachment {
+            id: format!("{}-file", scope.as_str()),
+            name: Some(format!("{}.pdf", scope.as_str())),
+            file_type: Some("pdf".into()),
+            size: Some(1024),
+            chunk_count: 4,
+            scope: scope.as_str(),
+        }])
+    }
+
+    async fn retrieve(
+        &self,
+        scope: DocsScope,
+        _query_embedding: &[f32],
+        _top_k: usize,
+        _file_ids: Option<&[String]>,
+    ) -> Result<Vec<DocsChunk>, String> {
+        let score = match scope {
+            DocsScope::Thread => 0.9,
+            DocsScope::Project => 0.8,
+        };
+        Ok(vec![DocsChunk {
+            id: format!("{}-chunk", scope.as_str()),
+            text: format!("passage from the {} index", scope.as_str()),
+            score: Some(score),
+            file_id: format!("{}-file", scope.as_str()),
+            chunk_file_order: 0,
+            scope: scope.as_str(),
+        }])
+    }
+
+    async fn chunks(
+        &self,
+        scope: DocsScope,
+        file_id: &str,
+        start_order: i64,
+        end_order: i64,
+    ) -> Result<Vec<DocsChunk>, String> {
+        Ok((start_order..=end_order)
+            .map(|order| DocsChunk {
+                id: format!("{file_id}-{order}"),
+                text: format!("chunk {order}"),
+                score: None,
+                file_id: file_id.to_owned(),
+                chunk_file_order: order,
+                scope: scope.as_str(),
+            })
+            .collect())
+    }
+}
+
+async fn run_docs_script(
+    responses: Vec<ScriptedResponse>,
+    docs: Option<&dyn DocsBridge>,
+    documents_note: Option<&str>,
+    disabled_tools: &std::collections::BTreeSet<String>,
+) -> TestRun {
+    let workspace = TestWorkspace::new();
+    let server = ScriptedCompletionServer::start(responses).await;
+    let client = server.client();
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let run = run_script_with_options(
+        &workspace,
+        &client,
+        &approval,
+        &cancellation,
+        3,
+        AgentReasoning::default(),
+        None,
+        true,
+        docs,
+        documents_note,
+        disabled_tools,
+    )
+    .await;
+    TestRun {
+        requests: server.requests(),
+        ..run
+    }
+}
+
+#[tokio::test]
+async fn docs_retrieve_merges_scopes_and_feeds_citations_back() {
+    let bridge = ScriptedDocsBridge::with_project();
+    let run = run_docs_script(
+        vec![
+            ScriptedResponse::completion(
+                r#"[{"tool":"docs.retrieve","args":{"query":"quarterly revenue","top_k":2}}]"#,
+            ),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"cited"}}]"#),
+        ],
+        Some(&bridge),
+        Some("2 indexed document(s): a.pdf, b.pdf."),
+        &std::collections::BTreeSet::new(),
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(
+        executed(&run.events),
+        [("docs.retrieve", ToolStatus::Ok), ("reply", ToolStatus::Ok)]
+    );
+    assert_eq!(bridge.embeds(), ["quarterly revenue"]);
+    // The variable tail carries the documents note; the grammar advertises
+    // the docs alternation.
+    let prompt = run.requests[0]["prompt"].as_str().expect("prompt");
+    assert!(prompt.contains("### documents"));
+    assert!(prompt.contains("a.pdf"));
+    let grammar = run.requests[0]["grammar"].as_str().expect("grammar");
+    assert!(grammar.contains("docs-retrieve"));
+    // The observation feeds both scopes' citations back, thread first.
+    let followup = run.requests[1]["prompt"].as_str().expect("prompt");
+    assert!(followup.contains("passage from the thread index"));
+    assert!(followup.contains("passage from the project index"));
+}
+
+#[tokio::test]
+async fn missing_embedding_session_is_a_structured_error_and_the_turn_recovers() {
+    let bridge = ScriptedDocsBridge::embedding_down();
+    let run = run_docs_script(
+        vec![
+            ScriptedResponse::completion(
+                r#"[{"tool":"docs.retrieve","args":{"query":"quarterly revenue"}}]"#,
+            ),
+            ScriptedResponse::completion(
+                r#"[{"tool":"reply","args":{"text":"cannot search right now"}}]"#,
+            ),
+        ],
+        Some(&bridge),
+        Some("1 indexed document(s): a.pdf."),
+        &std::collections::BTreeSet::new(),
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(
+        executed(&run.events),
+        [
+            ("docs.retrieve", ToolStatus::Error),
+            ("reply", ToolStatus::Ok)
+        ]
+    );
+    let summary = run
+        .events
+        .iter()
+        .find_map(|event| match event {
+            AgentEvent::ToolCallExecuted { result } if result.call.tool == "docs.retrieve" => {
+                Some(result.outcome.summary.clone())
+            }
+            _ => None,
+        })
+        .expect("docs execution outcome");
+    assert!(summary.contains("embedding model is not running"));
+    assert!(summary.contains("do not retry"));
+}
+
+#[tokio::test]
+async fn docs_tools_stay_disabled_without_rag_context() {
+    let disabled: std::collections::BTreeSet<String> = super::tools::docs::DOCS_TOOL_NAMES
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    let run = run_docs_script(
+        vec![
+            ScriptedResponse::completion(
+                r#"[{"tool":"docs.retrieve","args":{"query":"quarterly revenue"}}]"#,
+            ),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"no docs"}}]"#),
+        ],
+        None,
+        None,
+        &disabled,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    // The grammar never advertises the docs tools, and the defense-in-depth
+    // dispatch guard refuses the call anyway.
+    let grammar = run.requests[0]["grammar"].as_str().expect("grammar");
+    assert!(!grammar.contains("docs-retrieve"));
+    let prompt = run.requests[0]["prompt"].as_str().expect("prompt");
+    assert!(!prompt.contains("### documents"));
+    let executions = executed(&run.events);
+    assert_eq!(executions.last(), Some(&("reply", ToolStatus::Ok)));
+    if executions.len() == 2 {
+        assert_eq!(executions[0].0, "docs.retrieve");
+        assert_eq!(executions[0].1, ToolStatus::Error);
+    }
+}
+
+#[tokio::test]
+async fn two_docs_retrieves_batch_as_pure_reads() {
+    let bridge = ScriptedDocsBridge::thread_only();
+    let run = run_docs_script(
+        vec![
+            ScriptedResponse::completion(
+                r#"[{"tool":"docs.retrieve","args":{"query":"first topic"}},{"tool":"docs.retrieve","args":{"query":"second topic"}}]"#,
+            ),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"both"}}]"#),
+        ],
+        Some(&bridge),
+        Some("1 indexed document(s): a.pdf."),
+        &std::collections::BTreeSet::new(),
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(
+        executed(&run.events),
+        [
+            ("docs.retrieve", ToolStatus::Ok),
+            ("docs.retrieve", ToolStatus::Ok),
+            ("reply", ToolStatus::Ok)
+        ]
+    );
+    let mut embeds = bridge.embeds();
+    embeds.sort();
+    assert_eq!(embeds, ["first topic", "second topic"]);
+}
+
+#[tokio::test]
+async fn read_only_mcp_tool_executes_without_any_approval() {
+    let bridge = ScriptedMcpBridge::new(&[("search", true)]);
+    let approval = RecordingApproval::deny();
+    let run = run_mcp_script(
+        vec![
+            ScriptedResponse::completion(
+                r#"[{"tool":"mcp.test.search","args":{"query":"atomic"}}]"#,
+            ),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"found"}}]"#),
+        ],
+        &bridge,
+        &approval,
+        false,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(
+        executed(&run.events),
+        [("mcp.test.search", ToolStatus::Ok), ("reply", ToolStatus::Ok)]
+    );
+    assert!(approval.requests().is_empty(), "readOnlyHint skips the gate");
+    assert_eq!(bridge.calls(), ["mcp.test.search"]);
+    // The grammar for the step advertises the MCP alternation.
+    let grammar = run.requests[0]["grammar"].as_str().expect("grammar");
+    assert!(grammar.contains("mcp-tool-name"));
+    assert!(grammar.contains("mcp.test.search"));
+}
+
+#[tokio::test]
+async fn non_read_only_mcp_tool_is_gated_and_fails_closed_on_deny() {
+    let bridge = ScriptedMcpBridge::new(&[("create_issue", false)]);
+    let approval = RecordingApproval::deny();
+    let run = run_mcp_script(
+        vec![
+            ScriptedResponse::completion(
+                r#"[{"tool":"mcp.test.create_issue","args":{"title":"bug"}}]"#,
+            ),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"could not"}}]"#),
+        ],
+        &bridge,
+        &approval,
+        false,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(
+        executed(&run.events),
+        [
+            ("mcp.test.create_issue", ToolStatus::Denied),
+            ("reply", ToolStatus::Ok)
+        ]
+    );
+    let requests = approval.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].tool, "mcp.test.create_issue");
+    assert!(requests[0].can_remember, "Always allow must be offered");
+    assert!(requests[0]
+        .affected_resources
+        .iter()
+        .any(|resource| resource.kind == "mcp"));
+    assert!(bridge.calls().is_empty(), "denied call never reaches the server");
+}
+
+#[tokio::test]
+async fn auto_approve_mcp_bypasses_the_gate_for_mcp_tools_only() {
+    let bridge = ScriptedMcpBridge::new(&[("create_issue", false)]);
+    let approval = RecordingApproval::deny();
+    let run = run_mcp_script(
+        vec![
+            ScriptedResponse::completion(
+                r#"[{"tool":"mcp.test.create_issue","args":{"title":"bug"}}]"#,
+            ),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"done"}}]"#),
+        ],
+        &bridge,
+        &approval,
+        true,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(
+        executed(&run.events),
+        [
+            ("mcp.test.create_issue", ToolStatus::Ok),
+            ("reply", ToolStatus::Ok)
+        ]
+    );
+    assert!(approval.requests().is_empty());
+    assert_eq!(bridge.calls(), ["mcp.test.create_issue"]);
+}
+
+#[tokio::test]
+async fn dead_mcp_server_yields_a_structured_error_outcome() {
+    let bridge = ScriptedMcpBridge::failing(&[("search", true)]);
+    let approval = RecordingApproval::deny();
+    let run = run_mcp_script(
+        vec![
+            ScriptedResponse::completion(
+                r#"[{"tool":"mcp.test.search","args":{"query":"atomic"}}]"#,
+            ),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"server gone"}}]"#),
+        ],
+        &bridge,
+        &approval,
+        false,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    let executions = executed(&run.events);
+    assert_eq!(executions[0].0, "mcp.test.search");
+    assert_eq!(executions[0].1, ToolStatus::Error);
+    let error_summary = run
+        .events
+        .iter()
+        .find_map(|event| match event {
+            AgentEvent::ToolCallExecuted { result }
+                if result.call.tool == "mcp.test.search" =>
+            {
+                Some(result.outcome.summary.clone())
+            }
+            _ => None,
+        })
+        .expect("mcp execution outcome");
+    assert!(error_summary.contains("not connected"));
+    assert!(error_summary.contains("do not retry"));
+}
+
+#[tokio::test]
+async fn unknown_mcp_name_stays_out_of_the_batch() {
+    // A name the bridge cannot resolve classifies as Unknown → validation
+    // rejects the batch and the repair path takes over.
+    let bridge = ScriptedMcpBridge::new(&[("search", true)]);
+    let approval = RecordingApproval::deny();
+    let run = run_mcp_script(
+        vec![
+            ScriptedResponse::completion(
+                r#"[{"tool":"mcp.test.missing","args":{}}]"#,
+            ),
+            // Repair completion returns a valid array.
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"ok"}}]"#),
+        ],
+        &bridge,
+        &approval,
+        false,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(executed(&run.events), [("reply", ToolStatus::Ok)]);
+    assert!(bridge.calls().is_empty());
 }
 
 #[tokio::test]
@@ -183,18 +755,29 @@ async fn immediate_reply_preserves_event_order_and_completion_contract() {
     .await;
 
     assert!(run.result.is_ok());
+    // `assistant_delta` precedes the parse events: `reply.args.text` streams
+    // live out of the constrained completion.
     assert_eq!(
         run.events.iter().map(event_kind).collect::<Vec<_>>(),
         [
             "turn_started",
             "step_started",
+            "assistant_delta",
             "tool_call_parsed",
             "tool_call_executed",
-            "assistant_delta",
             "assistant_reply",
             "turn_finished"
         ]
     );
+    let streamed = run
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            AgentEvent::AssistantDelta { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<String>();
+    assert_eq!(streamed, "done");
     assert_eq!(finished_reason(&run.events), Some(("reply", 1)));
     assert_eq!(run.requests.len(), 1);
     let request = &run.requests[0];
@@ -241,6 +824,12 @@ async fn gemma4_turn_uses_native_framing_and_parses_channel_reasoning() {
             trusted_read_roots: &[],
             max_steps: 1,
             reasoning: AgentReasoning::default(),
+            sampling: &SamplingOverrides::default(),
+            mcp: None,
+            disabled_tools: &std::collections::BTreeSet::new(),
+            auto_approve_mcp: true,
+            docs: None,
+            documents_note: None,
             client: &client,
             approval: &approval,
             folder_access: &folder_access,
@@ -416,6 +1005,12 @@ async fn sequential_runs_share_the_session_transcript() {
                 trusted_read_roots: &[],
                 max_steps: 3,
                 reasoning: AgentReasoning::default(),
+                sampling: &SamplingOverrides::default(),
+                mcp: None,
+                disabled_tools: &std::collections::BTreeSet::new(),
+                auto_approve_mcp: true,
+                docs: None,
+                documents_note: None,
                 client: &client,
                 approval: &approval,
                 folder_access: &folder_access,
@@ -798,6 +1393,8 @@ async fn cancellation_interrupts_an_in_flight_completion() {
     // registry has to outlive the `run_turn` expression.
     let pty = PtyRegistry::new();
     let cache_dir = std::env::temp_dir();
+    let sampling = SamplingOverrides::default();
+    let disabled_tools = std::collections::BTreeSet::new();
     let run = run_turn(
         RunTurnInput {
             run_id: "cancel-run",
@@ -812,6 +1409,12 @@ async fn cancellation_interrupts_an_in_flight_completion() {
             trusted_read_roots: &[],
             max_steps: 2,
             reasoning: AgentReasoning::default(),
+            sampling: &sampling,
+            mcp: None,
+            disabled_tools: &disabled_tools,
+            auto_approve_mcp: true,
+            docs: None,
+            documents_note: None,
             client: &client,
             approval: &approval,
             folder_access: &folder_access,
@@ -1074,6 +1677,12 @@ async fn skill_view_loads_the_body_and_restores_it_on_the_next_turn() {
             trusted_read_roots: &[],
             max_steps: 2,
             reasoning: AgentReasoning::default(),
+            sampling: &SamplingOverrides::default(),
+            mcp: None,
+            disabled_tools: &std::collections::BTreeSet::new(),
+            auto_approve_mcp: true,
+            docs: None,
+            documents_note: None,
             client: &client,
             approval: &approval,
             folder_access: &folder_access,
@@ -1134,6 +1743,12 @@ async fn selected_skill_is_loaded_into_the_first_prompt_without_skill_view() {
             trusted_read_roots: &[],
             max_steps: 2,
             reasoning: AgentReasoning::default(),
+            sampling: &SamplingOverrides::default(),
+            mcp: None,
+            disabled_tools: &std::collections::BTreeSet::new(),
+            auto_approve_mcp: true,
+            docs: None,
+            documents_note: None,
             client: &client,
             approval: &approval,
             folder_access: &folder_access,
@@ -1195,6 +1810,12 @@ async fn unknown_selected_skill_fails_before_completion() {
             trusted_read_roots: &[],
             max_steps: 2,
             reasoning: AgentReasoning::default(),
+            sampling: &SamplingOverrides::default(),
+            mcp: None,
+            disabled_tools: &std::collections::BTreeSet::new(),
+            auto_approve_mcp: true,
+            docs: None,
+            documents_note: None,
             client: &client,
             approval: &approval,
             folder_access: &folder_access,
@@ -1259,7 +1880,9 @@ async fn chat_transport_sends_system_and_user_messages() {
     assert!(messages[1]["content"]
         .as_str()
         .is_some_and(|value| value.contains("### conversation\nUSER: perform the fixture task")));
-    assert_eq!(request["stream"], false);
+    // Step completions stream, with usage opted in for the whole-run counters.
+    assert_eq!(request["stream"], true);
+    assert_eq!(request["stream_options"], serde_json::json!({"include_usage": true}));
 
     // llama.cpp-only fields must not leak onto an OpenAI-compatible endpoint.
     for absent in [
@@ -1395,6 +2018,9 @@ async fn chat_transport_repair_appends_to_the_user_message() {
         .as_str()
         .is_some_and(|value| value.contains("### tool-call-repair")));
     assert_eq!(repair["max_tokens"], 1024);
+    // Repair completions stay non-streaming.
+    assert_eq!(repair["stream"], false);
+    assert!(repair.get("stream_options").is_none());
 }
 
 #[tokio::test]
@@ -1449,6 +2075,66 @@ async fn chat_transport_degrades_on_speculative_decoding_conflict() {
     assert!(run.result.is_ok());
     assert_eq!(run.requests.len(), 2);
     assert!(run.requests[1].get("response_format").is_none());
+}
+
+#[tokio::test]
+async fn chat_transport_drops_stream_options_when_rejected() {
+    let workspace = TestWorkspace::new();
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let run = run_chat_script(
+        &workspace,
+        vec![
+            ScriptedResponse::http_error(
+                StatusCode::BAD_REQUEST,
+                "Unrecognized request argument supplied: stream_options",
+            ),
+            ScriptedResponse::chat_completion(r#"[{"tool":"reply","args":{"text":"done"}}]"#),
+        ],
+        &approval,
+        &cancellation,
+        3,
+        true,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(finished_reason(&run.events), Some(("reply", 1)));
+    assert_eq!(run.requests.len(), 2);
+    assert!(run.requests[0].get("stream_options").is_some());
+    // The retry still streams — only the usage opt-in is dropped, sticky.
+    assert_eq!(run.requests[1]["stream"], true);
+    assert!(run.requests[1].get("stream_options").is_none());
+}
+
+#[tokio::test]
+async fn chat_transport_falls_back_to_non_streaming_when_streaming_rejected() {
+    let workspace = TestWorkspace::new();
+    let approval = RecordingApproval::deny();
+    let cancellation = CancellationToken::new();
+    let run = run_chat_script(
+        &workspace,
+        vec![
+            ScriptedResponse::http_error(
+                StatusCode::BAD_REQUEST,
+                "stream mode is not supported for this model",
+            ),
+            ScriptedResponse::chat_completion(r#"[{"tool":"reply","args":{"text":"done"}}]"#),
+        ],
+        &approval,
+        &cancellation,
+        3,
+        true,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(finished_reason(&run.events), Some(("reply", 1)));
+    assert_eq!(run.requests.len(), 2);
+    assert_eq!(run.requests[0]["stream"], true);
+    // Sticky fallback: the whole run continues non-streaming after one 400.
+    assert_eq!(run.requests[1]["stream"], false);
+    assert!(run.requests[1].get("stream_options").is_none());
 }
 
 async fn run_thinking_script(
@@ -1653,18 +2339,29 @@ async fn chat_transport_reply_preserves_event_order() {
     )
     .await;
 
+    // Same contract as the llama.cpp transport: `reply.args.text` streams
+    // live out of the SSE completion, so the delta precedes the parse events.
     assert_eq!(
         run.events.iter().map(event_kind).collect::<Vec<_>>(),
         [
             "turn_started",
             "step_started",
+            "assistant_delta",
             "tool_call_parsed",
             "tool_call_executed",
-            "assistant_delta",
             "assistant_reply",
             "turn_finished"
         ]
     );
+    let streamed = run
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            AgentEvent::AssistantDelta { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<String>();
+    assert_eq!(streamed, "done");
 }
 
 #[tokio::test]

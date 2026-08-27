@@ -4,7 +4,7 @@ use std::future::Future;
 
 use futures_util::future::join_all;
 
-use super::resource_class::{is_parallel_within_group, resource_class_for, ResourceClass};
+use super::resource_class::{is_parallel_within_group, resource_class_for_call, ResourceClass};
 use super::tools::{self, ToolContext};
 use super::types::{ToolCallPayload, ToolOutcome};
 
@@ -20,13 +20,13 @@ pub(crate) async fn execute_batch(
     context: &ToolContext<'_>,
 ) -> Vec<ToolOutcome> {
     debug_assert_eq!(calls.len(), planned.len());
-    let has_terminal_tail = calls
-        .last()
-        .is_some_and(|call| resource_class_for(&call.tool) == ResourceClass::Terminal);
+    let has_terminal_tail = calls.last().is_some_and(|call| {
+        resource_class_for_call(&call.tool, context.mcp) == ResourceClass::Terminal
+    });
     let non_terminal_len = calls.len() - usize::from(has_terminal_tail);
     let classes = calls[..non_terminal_len]
         .iter()
-        .map(|call| resource_class_for(&call.tool))
+        .map(|call| resource_class_for_call(&call.tool, context.mcp))
         .collect::<Vec<_>>();
     execute_with_terminal_tail(
         &classes,

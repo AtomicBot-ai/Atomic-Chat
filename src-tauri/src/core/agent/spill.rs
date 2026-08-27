@@ -41,6 +41,8 @@ pub fn should_spill_tool(tool: &str) -> bool {
             | "os.http.request"
             | "os.web.search"
             | "os.web.fetch"
+            | "docs.retrieve"
+            | "docs.chunks"
             | "vision.describe"
     ) || tool.starts_with("os.media.")
 }

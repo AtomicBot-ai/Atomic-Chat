@@ -3,6 +3,7 @@ use std::path::{Component, Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::compressor::{compress_tool_result, should_compress_tool};
+use super::mcp_tools::MCP_TOOL_PREFIX;
 use super::prompt::ToolTier;
 use super::skills::loaded::{LoadedSkillState, LOADED_SKILLS_CAP, LOADED_SKILL_BODY_MAX_CHARS};
 use super::token_budget::estimate_tokens;
@@ -57,6 +58,20 @@ pub enum AgentSessionTurn {
     },
 }
 
+/// Role of one authoritative frontend message handed to [`AgentSessionState::reseed`].
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ReseedRole {
+    User,
+    Assistant,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AgentReseedMessage {
+    pub role: ReseedRole,
+    pub text: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentSessionState {
     pub version: u32,
@@ -109,6 +124,56 @@ impl AgentSessionState {
         self.push_turn(AgentSessionTurn::AssistantReply {
             text: truncate_chars(text, MAX_REPLY_TEXT_CHARS),
         });
+    }
+
+    /// Rebuild or extend the transcript from the authoritative frontend
+    /// message list, after the user edited, deleted, or regenerated history
+    /// (or after a legacy-engine turn the loop never saw).
+    ///
+    /// When the stored user/reply sequence is a prefix of `messages`, only the
+    /// missing turns are appended — step-level tool observations survive. On
+    /// any divergence the transcript is rebuilt from the list alone and the
+    /// observations are dropped: they refer to superseded content, and the
+    /// model re-derives what it still needs. `turn_count` stays monotonic
+    /// either way (spill files key on it), and `loaded_tools`/`loaded_skills`
+    /// describe prompt-tail state, orthogonal to the conversation.
+    pub fn reseed(&mut self, messages: &[AgentReseedMessage]) {
+        let mut incoming: Vec<AgentSessionTurn> = messages
+            .iter()
+            .map(|message| match message.role {
+                ReseedRole::User => AgentSessionTurn::User {
+                    text: truncate_chars(&message.text, MAX_USER_TEXT_CHARS),
+                },
+                ReseedRole::Assistant => AgentSessionTurn::AssistantReply {
+                    text: truncate_chars(&message.text, MAX_REPLY_TEXT_CHARS),
+                },
+            })
+            .collect();
+        let stored: Vec<&AgentSessionTurn> = self
+            .turns
+            .iter()
+            .filter(|turn| {
+                matches!(
+                    turn,
+                    AgentSessionTurn::User { .. } | AgentSessionTurn::AssistantReply { .. }
+                )
+            })
+            .collect();
+        let is_prefix = stored.len() <= incoming.len()
+            && stored
+                .iter()
+                .zip(incoming.iter())
+                .all(|(stored, incoming)| **stored == *incoming);
+        if is_prefix {
+            for turn in incoming.into_iter().skip(stored.len()) {
+                self.push_turn(turn);
+            }
+        } else {
+            // Same cap `push_turn` enforces: keep the newest tail, or a long
+            // legacy thread would fail `validate` and never persist.
+            let overflow = incoming.len().saturating_sub(MAX_TURNS);
+            self.turns = incoming.split_off(overflow);
+        }
     }
 
     pub fn finish_turn(&mut self) {
@@ -191,7 +256,11 @@ impl AgentSessionState {
         }
         if self.loaded_tools.len() > LOADED_TOOLS_CAP
             || self.loaded_tools.iter().any(|name| {
-                descriptor_for(name).is_none_or(|descriptor| descriptor.tier != ToolTier::Rare)
+                // Dynamic MCP tools are validated per turn by the catalog, not
+                // by the static descriptor table.
+                !name.starts_with(MCP_TOOL_PREFIX)
+                    && descriptor_for(name)
+                        .is_none_or(|descriptor| descriptor.tier != ToolTier::Rare)
             })
         {
             return Err("Agent session contains invalid loaded tools".into());
@@ -222,7 +291,7 @@ impl AgentSessionState {
                 }
                 AgentSessionTurn::AssistantToolCall { tool, .. }
                 | AgentSessionTurn::ToolResult { tool, .. }
-                    if descriptor_for(tool).is_none() =>
+                    if !tool.starts_with(MCP_TOOL_PREFIX) && descriptor_for(tool).is_none() =>
                 {
                     return Err("Agent session contains an unknown tool".into());
                 }
@@ -490,6 +559,142 @@ mod tests {
 
         state.finish_turn();
         assert!(!state.render_conversation(32_000).contains("secret.txt"));
+    }
+
+    #[test]
+    fn validate_accepts_dynamic_mcp_tool_names() {
+        let mut state = AgentSessionState::new("thread-a");
+        state.push_user("question");
+        state.push_tool_observations(
+            &[ToolCallPayload {
+                tool: "mcp.github.search_issues".into(),
+                args: serde_json::json!({"query": "bug"}),
+            }],
+            &[ToolOutcome::ok("3 issues")],
+        );
+        state.set_loaded_tools(vec!["mcp.github.search_issues".into()]);
+        state.push_reply("answer");
+
+        assert!(state.validate("thread-a").is_ok());
+    }
+
+    #[test]
+    fn reseed_rebuild_keeps_the_newest_tail_within_the_turn_cap() {
+        let mut state = AgentSessionState::new("thread-a");
+        state.push_user("stored question");
+        state.push_reply("stored answer");
+        state.finish_turn();
+
+        // Divergent history longer than the cap: an edited long legacy thread.
+        let messages: Vec<AgentReseedMessage> = (0..120)
+            .map(|index| {
+                reseed_message(
+                    if index % 2 == 0 {
+                        ReseedRole::User
+                    } else {
+                        ReseedRole::Assistant
+                    },
+                    &format!("message {index}"),
+                )
+            })
+            .collect();
+        state.reseed(&messages);
+
+        assert!(state.turns.len() <= MAX_TURNS);
+        assert!(state.validate("thread-a").is_ok());
+        let rendered = state.render_conversation(64_000);
+        assert!(rendered.contains("message 119"), "newest tail survives");
+        assert!(!rendered.contains("message 0\n"), "oldest turns dropped");
+    }
+
+    fn reseed_message(role: ReseedRole, text: &str) -> AgentReseedMessage {
+        AgentReseedMessage {
+            role,
+            text: text.into(),
+        }
+    }
+
+    #[test]
+    fn reseed_appends_missing_turns_and_keeps_observations() {
+        let mut state = AgentSessionState::new("thread-a");
+        state.push_user("question one");
+        state.push_tool_observations(
+            &[ToolCallPayload {
+                tool: "os.fs.read".into(),
+                args: serde_json::json!({"path": "a.txt"}),
+            }],
+            &[ToolOutcome::ok("file contents")],
+        );
+        state.push_reply("answer one");
+        state.finish_turn();
+
+        // A fallback-engine turn happened outside the loop; the frontend list
+        // is a strict superset.
+        state.reseed(&[
+            reseed_message(ReseedRole::User, "question one"),
+            reseed_message(ReseedRole::Assistant, "answer one"),
+            reseed_message(ReseedRole::User, "question two"),
+            reseed_message(ReseedRole::Assistant, "answer two"),
+        ]);
+
+        let rendered = state.render_conversation(32_000);
+        assert!(rendered.contains("file contents"), "observations survive");
+        assert!(rendered.contains("question two"));
+        assert!(rendered.contains("answer two"));
+        assert_eq!(state.turn_count, 1, "turn_count stays monotonic");
+    }
+
+    #[test]
+    fn reseed_rebuilds_on_divergence_and_drops_observations() {
+        let mut state = AgentSessionState::new("thread-a");
+        state.push_user("question one");
+        state.push_tool_observations(
+            &[ToolCallPayload {
+                tool: "os.fs.read".into(),
+                args: serde_json::json!({"path": "a.txt"}),
+            }],
+            &[ToolOutcome::ok("stale observation")],
+        );
+        state.push_reply("old answer");
+        state.finish_turn();
+        let turn_count = state.turn_count;
+
+        // The user edited the question: the stored transcript diverges.
+        state.reseed(&[reseed_message(ReseedRole::User, "edited question")]);
+
+        let rendered = state.render_conversation(32_000);
+        assert!(!rendered.contains("stale observation"));
+        assert!(!rendered.contains("old answer"));
+        assert!(rendered.contains("edited question"));
+        assert_eq!(state.turn_count, turn_count);
+        assert_eq!(state.turns.len(), 1);
+    }
+
+    #[test]
+    fn reseed_matches_against_the_stored_truncated_form() {
+        let mut state = AgentSessionState::new("thread-a");
+        let long_text = "x".repeat(MAX_USER_TEXT_CHARS + 500);
+        state.push_user(&long_text);
+        state.push_reply("answer");
+        state.finish_turn();
+
+        // The frontend re-sends the untruncated original; the stored prefix
+        // must still match after applying the same caps.
+        state.reseed(&[
+            reseed_message(ReseedRole::User, &long_text),
+            reseed_message(ReseedRole::Assistant, "answer"),
+            reseed_message(ReseedRole::User, "follow-up"),
+        ]);
+
+        assert!(state.render_conversation(64_000).contains("follow-up"));
+        assert_eq!(
+            state
+                .turns
+                .iter()
+                .filter(|turn| matches!(turn, AgentSessionTurn::User { .. }))
+                .count(),
+            2
+        );
     }
 
     #[test]
