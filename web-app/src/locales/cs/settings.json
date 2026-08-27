@@ -64,7 +64,9 @@
     "autoApproveTools": "Auto-approve tool calls",
     "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
     "desktopNotifications": "Oznámení na ploše",
-    "desktopNotificationsDesc": "Odeslat systémové oznámení, když je odpověď připravena a okno není aktivní."
+    "desktopNotificationsDesc": "Odeslat systémové oznámení, když je odpověď připravena a okno není aktivní.",
+    "legacyChatEngine": "Použít starší chatovací engine",
+    "legacyChatEngineDesc": "Směrovat všechny zprávy přes předchozí chatovací pipeline místo sjednoceného agentního enginu. Dočasná volba kompatibility."
   },
   "threadNotifications": {
     "notificationTitle": "Odpověď je připravena",

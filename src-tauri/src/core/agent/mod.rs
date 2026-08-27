@@ -35,12 +35,14 @@ pub mod folder_access;
 pub mod grammar;
 pub mod llm_client;
 pub mod loop_guard;
+pub mod mcp_tools;
 pub mod model_profile;
 pub mod openai_client;
 pub mod output_buffer;
 pub mod path_policy;
 pub mod prompt;
 pub mod pty;
+pub mod reply_stream;
 pub mod resource_class;
 // `loop` is a reserved keyword; the run loop lives in `runner`.
 pub mod runner;

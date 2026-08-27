@@ -498,8 +498,9 @@ async fn serve_completion(
         ));
     }
     let body = to_bytes(request.into_body()).await.unwrap_or_default();
-    let parsed = serde_json::from_slice(&body)
+    let parsed: Value = serde_json::from_slice(&body)
         .unwrap_or_else(|_| serde_json::json!({"invalidBody": String::from_utf8_lossy(&body)}));
+    let wants_stream = parsed.get("stream").and_then(Value::as_bool) == Some(true);
     requests.lock().expect("scripted requests").push(parsed);
     let response = responses.lock().await.pop_front().unwrap_or_else(|| {
         ScriptedResponse::http_error(StatusCode::INTERNAL_SERVER_ERROR, "script exhausted")
@@ -507,7 +508,60 @@ async fn serve_completion(
     if !response.delay.is_zero() {
         tokio::time::sleep(response.delay).await;
     }
+    // Mirror llama.cpp: a successful `stream: true` completion answers with
+    // SSE — partial content chunks, then a final `stop: true` envelope whose
+    // text fields are empty (the client accumulates the deltas).
+    if wants_stream
+        && response.status == StatusCode::OK
+        && response.text_body.is_none()
+        && response.body.get("content").is_some()
+    {
+        return Ok(sse_completion_response(response.body));
+    }
     Ok(response.into_response())
+}
+
+fn sse_completion_response(body: Value) -> Response<Body> {
+    let content = body
+        .get("content")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let reasoning = body
+        .get("reasoning_content")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let split_at = content
+        .char_indices()
+        .nth(content.chars().count() / 2)
+        .map_or(content.len(), |(index, _)| index);
+    let (head, tail) = content.split_at(split_at);
+    let mut events = Vec::new();
+    if !reasoning.is_empty() {
+        events.push(serde_json::json!({
+            "content": "", "reasoning_content": reasoning, "stop": false
+        }));
+    }
+    for chunk in [head, tail] {
+        if !chunk.is_empty() {
+            events.push(serde_json::json!({"content": chunk, "stop": false}));
+        }
+    }
+    let mut final_event = body;
+    final_event["content"] = Value::String(String::new());
+    final_event["reasoning_content"] = Value::String(String::new());
+    final_event["stop"] = Value::Bool(true);
+    events.push(final_event);
+    let payload = events
+        .iter()
+        .map(|event| format!("data: {event}\n\n"))
+        .collect::<String>();
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(hyper::header::CONTENT_TYPE, "text/event-stream")
+        .body(Body::from(payload))
+        .expect("build scripted SSE response")
 }
 
 fn json_response(status: StatusCode, body: Value) -> Response<Body> {

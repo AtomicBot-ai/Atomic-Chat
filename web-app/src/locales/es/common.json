@@ -1,8 +1,10 @@
 {
   "api": "API",
+  "cloud": "Cloud",
   "assistants": "Asistentes",
   "hardware": "Hardware",
   "mcp-servers": "Servidores MCP",
+  "connectors": "Conectores",
   "local_api_server": "Servidor API local",
   "remote_access": "Acceso remoto",
   "integrations": "Integraciones",

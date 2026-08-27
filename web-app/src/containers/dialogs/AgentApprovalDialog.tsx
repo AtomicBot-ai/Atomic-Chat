@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useAgentRun } from '@/hooks/useAgentRun'
+import { useThreads } from '@/hooks/useThreads'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   isStaleAgentApprovalError,
@@ -44,12 +45,18 @@ export default function AgentApprovalDialog() {
     threadId ? state.runs[threadId] : undefined
   )
   const approval = run?.pendingApproval
+  const currentThreadId = useThreads((state) => state.currentThreadId)
   const preview = useMemo(
     () => (approval ? boundedJson(approval.preview) : ''),
     [approval]
   )
 
   if (!threadId || !run || !approval) {
+    return null
+  }
+  // The open thread renders its approvals inline in the composer; the modal
+  // remains the safety net for a run awaiting approval on another screen.
+  if (threadId === currentThreadId) {
     return null
   }
 

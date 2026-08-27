@@ -22,7 +22,12 @@ import { useApiServerLog, type BatchOp } from './useApiServerLog'
  * Subscribes the API screen to the proxy's live request channel.
  *
  * Mounted by the route only: a closed dashboard costs nothing, and the Rust
- * ring buffer is what fills the log back in when the user returns.
+ * ring buffer is what fills the log back in when the user returns — it is kept
+ * across unsubscribes for exactly that reason.
+ *
+ * Consequence worth knowing: recording is gated on someone watching, so
+ * traffic that arrives while the screen is closed is not in the log. The
+ * timestamps make the gap visible rather than silent.
  */
 
 // Module-level, deliberately outside React: a burst of events must not cause a
@@ -89,7 +94,7 @@ export function useApiServerLogFeed() {
     const attach = async () => {
       try {
         // Refcounted on the Rust side: recording only happens while at least
-        // one view is subscribed, and the ring is wiped when the last one goes.
+        // one view is subscribed. The ring itself outlives the subscription.
         await serviceHub
           .core()
           .invoke(API_SERVER_LOG_SUBSCRIBE_COMMAND, { enabled: true })

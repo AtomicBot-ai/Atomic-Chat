@@ -35,24 +35,18 @@ vi.mock('@/hooks/useModelProvider', () => ({
   useModelProvider: vi.fn(() => ({
     providers: [
       {
-        provider: 'openai',
+        provider: 'llamacpp-upstream',
         active: true,
         models: [],
       },
       {
-        provider: 'llama.cpp',
+        provider: 'llamacpp',
         active: true,
         models: [],
       },
     ],
     addProvider: vi.fn(),
   })),
-}))
-
-vi.mock('@/containers/dialogs', () => ({
-  AddProviderDialog: ({ children }: { children: React.ReactNode }) => (
-    <>{children}</>
-  ),
 }))
 
 vi.mock('@/lib/utils', () => ({
@@ -84,8 +78,8 @@ describe('SettingsMenu', () => {
     vi.mocked(useMatches).mockReturnValue(mockMatches)
     vi.mocked(useModelProvider).mockReturnValue({
       providers: [
-        { provider: 'openai', active: true, models: [] },
-        { provider: 'llama.cpp', active: true, models: [] },
+        { provider: 'llamacpp-upstream', active: true, models: [] },
+        { provider: 'llamacpp', active: true, models: [] },
       ],
       addProvider: vi.fn(),
     })
@@ -110,29 +104,40 @@ describe('SettingsMenu', () => {
       screen.queryByText('common:local_api_server')
     ).not.toBeInTheDocument()
     expect(screen.getByText('common:https_proxy')).toBeInTheDocument()
-    expect(screen.getByText('common:mcp-servers')).toBeInTheDocument()
+    // MCP moved to the top-level Connectors page.
+    expect(screen.queryByText('common:mcp-servers')).not.toBeInTheDocument()
   })
 
-  it('shows provider expansion chevron when providers are active', () => {
-    render(<SettingsMenu />)
+  it('shows the expansion chevron only when a provider is disabled', () => {
+    // No disabled provider: nothing to expand, and no other button in the
+    // section since the add-provider `+` moved to `/cloud`.
+    const { unmount } = render(<SettingsMenu />)
+    expect(screen.queryAllByRole('button')).toHaveLength(0)
+    unmount()
 
-    // There should be at least one button (the chevron)
-    const chevronButtons = screen.getAllByRole('button')
-    expect(chevronButtons.length).toBeGreaterThan(0)
+    vi.mocked(useModelProvider).mockReturnValue({
+      providers: [
+        { provider: 'llamacpp-upstream', active: true, models: [] },
+        { provider: 'foundation-models', active: false, models: [] },
+      ],
+      addProvider: vi.fn(),
+    })
+    render(<SettingsMenu />)
+    expect(screen.getAllByRole('button').length).toBeGreaterThan(0)
   })
 
   it('shows expanded providers by default', () => {
     render(<SettingsMenu />)
 
     // Providers ARE expanded by default (expandedProviders starts as true)
-    expect(screen.getByTestId('provider-avatar-openai')).toBeInTheDocument()
+    expect(screen.getByTestId('provider-avatar-llamacpp-upstream')).toBeInTheDocument()
   })
 
   it('collapses disabled providers section when toggle is clicked', async () => {
     vi.mocked(useModelProvider).mockReturnValue({
       providers: [
-        { provider: 'openai', active: true, models: [] },
-        { provider: 'anthropic', active: false, models: [] },
+        { provider: 'llamacpp-upstream', active: true, models: [] },
+        { provider: 'foundation-models', active: false, models: [] },
       ],
       addProvider: vi.fn(),
     })
@@ -141,7 +146,7 @@ describe('SettingsMenu', () => {
     render(<SettingsMenu />)
 
     // Disabled section is expanded by default — anthropic is visible
-    expect(screen.getByTestId('provider-avatar-anthropic')).toBeInTheDocument()
+    expect(screen.getByTestId('provider-avatar-foundation-models')).toBeInTheDocument()
 
     // Click the toggle to collapse the disabled section
     const toggleButton = screen.getByText('common:hiddenProviders')
@@ -149,7 +154,7 @@ describe('SettingsMenu', () => {
 
     // After collapsing, anthropic should be hidden
     expect(
-      screen.queryByTestId('provider-avatar-anthropic')
+      screen.queryByTestId('provider-avatar-foundation-models')
     ).not.toBeInTheDocument()
   })
 
@@ -157,29 +162,29 @@ describe('SettingsMenu', () => {
     vi.mocked(useMatches).mockReturnValue([
       {
         routeId: '/settings/providers/$providerName',
-        params: { providerName: 'openai' },
+        params: { providerName: 'llamacpp-upstream' },
       },
     ])
 
     render(<SettingsMenu />)
 
-    expect(screen.getByTestId('provider-avatar-openai')).toBeInTheDocument()
+    expect(screen.getByTestId('provider-avatar-llamacpp-upstream')).toBeInTheDocument()
   })
 
   it('highlights active provider in submenu', () => {
     vi.mocked(useMatches).mockReturnValue([
       {
         routeId: '/settings/providers/$providerName',
-        params: { providerName: 'openai' },
+        params: { providerName: 'llamacpp-upstream' },
       },
     ])
 
     render(<SettingsMenu />)
 
-    const openaiProvider = screen
-      .getByTestId('provider-avatar-openai')
+    const upstreamProvider = screen
+      .getByTestId('provider-avatar-llamacpp-upstream')
       .closest('div')
-    expect(openaiProvider).toBeInTheDocument()
+    expect(upstreamProvider).toBeInTheDocument()
   })
 
   it('navigates to provider when provider is clicked', async () => {
@@ -187,33 +192,36 @@ describe('SettingsMenu', () => {
     render(<SettingsMenu />)
 
     // Providers are expanded by default, click directly on a provider
-    const openaiProvider = screen
-      .getByTestId('provider-avatar-openai')
+    const upstreamProvider = screen
+      .getByTestId('provider-avatar-llamacpp-upstream')
       .closest('div[class*="cursor-pointer"]')
-    await user.click(openaiProvider!)
+    await user.click(upstreamProvider!)
 
     expect(mockNavigate).toHaveBeenCalled()
   })
 
-  it('hides llama.cpp during setup remote provider step', () => {
-    vi.mocked(useMatches).mockReturnValue([
-      {
-        routeId: '/settings/providers/',
-        params: {},
-        search: { step: 'setup_remote_provider' },
-      },
-    ])
+  it('lists no cloud provider', () => {
+    vi.mocked(useModelProvider).mockReturnValue({
+      providers: [
+        { provider: 'llamacpp-upstream', active: true, models: [] },
+        { provider: 'openai', active: true, models: [] },
+        { provider: 'ollama', active: true, models: [], base_url: 'http://localhost:11434/v1' },
+        { provider: 'my-custom', active: false, models: [] },
+      ],
+      addProvider: vi.fn(),
+    })
 
     render(<SettingsMenu />)
 
-    // openai should be visible during remote provider setup
-    expect(screen.getByTestId('provider-avatar-openai')).toBeInTheDocument()
-
-    // llama.cpp should have 'hidden' class during setup_remote_provider step
-    const llamaCpp = screen
-      .getByTestId('provider-avatar-llama.cpp')
-      .closest('div[class*="cursor-pointer"]')
-    expect(llamaCpp?.className).toContain('hidden')
+    expect(
+      screen.getByTestId('provider-avatar-llamacpp-upstream')
+    ).toBeInTheDocument()
+    // Connecting these lives on `/cloud` now.
+    expect(screen.queryByTestId('provider-avatar-openai')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('provider-avatar-ollama')).not.toBeInTheDocument()
+    expect(
+      screen.queryByTestId('provider-avatar-my-custom')
+    ).not.toBeInTheDocument()
   })
 
   it('lists turboquant below upstream, never first', () => {
@@ -223,7 +231,6 @@ describe('SettingsMenu', () => {
       providers: [
         { provider: 'llamacpp', active: true, models: [] },
         { provider: 'llamacpp-upstream', active: true, models: [] },
-        { provider: 'openai', active: true, models: [] },
       ],
       addProvider: vi.fn(),
     })
@@ -235,24 +242,24 @@ describe('SettingsMenu', () => {
     ).map((el) =>
       el.getAttribute('data-testid')?.replace('provider-avatar-', '')
     )
-    expect(rendered).toEqual(['llamacpp-upstream', 'llamacpp', 'openai'])
+    expect(rendered).toEqual(['llamacpp-upstream', 'llamacpp'])
   })
 
   it('marks the provider backing the selected model with a green dot', () => {
     vi.mocked(useModelProvider).mockReturnValue({
       providers: [
-        { provider: 'openai', active: true, models: [] },
-        { provider: 'llama.cpp', active: true, models: [] },
+        { provider: 'llamacpp-upstream', active: true, models: [] },
+        { provider: 'llamacpp', active: true, models: [] },
       ],
-      selectedProvider: 'openai',
+      selectedProvider: 'llamacpp-upstream',
       addProvider: vi.fn(),
     })
 
     render(<SettingsMenu />)
 
-    expect(screen.getByTestId('provider-active-dot-openai')).toBeInTheDocument()
+    expect(screen.getByTestId('provider-active-dot-llamacpp-upstream')).toBeInTheDocument()
     expect(
-      screen.queryByTestId('provider-active-dot-llama.cpp')
+      screen.queryByTestId('provider-active-dot-llamacpp')
     ).not.toBeInTheDocument()
   })
 
@@ -260,15 +267,15 @@ describe('SettingsMenu', () => {
     render(<SettingsMenu />)
 
     expect(
-      screen.queryByTestId('provider-active-dot-openai')
+      screen.queryByTestId('provider-active-dot-llamacpp-upstream')
     ).not.toBeInTheDocument()
   })
 
   it('shows inactive providers in disabled section', () => {
     vi.mocked(useModelProvider).mockReturnValue({
       providers: [
-        { provider: 'openai', active: true, models: [] },
-        { provider: 'anthropic', active: false, models: [] },
+        { provider: 'llamacpp-upstream', active: true, models: [] },
+        { provider: 'foundation-models', active: false, models: [] },
       ],
       addProvider: vi.fn(),
     })
@@ -276,9 +283,9 @@ describe('SettingsMenu', () => {
     render(<SettingsMenu />)
 
     // Active provider shown normally
-    expect(screen.getByTestId('provider-avatar-openai')).toBeInTheDocument()
+    expect(screen.getByTestId('provider-avatar-llamacpp-upstream')).toBeInTheDocument()
     // Inactive provider shown in the disabled section (expanded by default)
-    expect(screen.getByTestId('provider-avatar-anthropic')).toBeInTheDocument()
+    expect(screen.getByTestId('provider-avatar-foundation-models')).toBeInTheDocument()
     // Disabled section label is shown
     expect(screen.getByText('common:hiddenProviders')).toBeInTheDocument()
   })

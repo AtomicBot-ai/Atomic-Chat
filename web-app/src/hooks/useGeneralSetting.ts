@@ -35,6 +35,12 @@ type GeneralSettingState = {
    * installs keep whatever they already persisted (no migration on purpose).
    */
   preloadModelOnStartup: boolean
+  /**
+   * Escape hatch for the unified agent engine: route every turn through the
+   * legacy AI-SDK chat pipeline instead of the Rust agent loop. Off by
+   * default; planned for removal after two stable releases.
+   */
+  legacyChatEngine: boolean
   maxImageSizePx: number
   huggingfaceToken?: string
   scanLocalModels: boolean
@@ -42,12 +48,16 @@ type GeneralSettingState = {
   // Drives the "New" pill on the Integrations nav item — cleared on first visit.
   integrationsBadgeSeen: boolean
   markIntegrationsBadgeSeen: () => void
+  // Same pattern for the Connectors nav item.
+  connectorsBadgeSeen: boolean
+  markConnectorsBadgeSeen: () => void
   setHuggingfaceToken: (token: string) => void
   setSpellCheckChatInput: (value: boolean) => void
   setTokenCounterCompact: (value: boolean) => void
   setDisableReasoning: (value: boolean) => void
   setReasoningBudget: (value: ReasoningBudgetLevel) => void
   setPreloadModelOnStartup: (value: boolean) => void
+  setLegacyChatEngine: (value: boolean) => void
   setMaxImageSizePx: (value: number) => void
   setCurrentLanguage: (value: Language) => void
   setScanLocalModels: (value: boolean) => void
@@ -64,6 +74,7 @@ export const useGeneralSetting = create<GeneralSettingState>()(
       disableReasoning: true,
       reasoningBudget: 'medium',
       preloadModelOnStartup: false,
+      legacyChatEngine: false,
       maxImageSizePx: DEFAULT_MAX_IMAGE_SIZE_PX,
       huggingfaceToken: undefined,
       scanLocalModels: true,
@@ -73,11 +84,17 @@ export const useGeneralSetting = create<GeneralSettingState>()(
         set((state) =>
           state.integrationsBadgeSeen ? state : { integrationsBadgeSeen: true }
         ),
+      connectorsBadgeSeen: false,
+      markConnectorsBadgeSeen: () =>
+        set((state) =>
+          state.connectorsBadgeSeen ? state : { connectorsBadgeSeen: true }
+        ),
       setSpellCheckChatInput: (value) => set({ spellCheckChatInput: value }),
       setTokenCounterCompact: (value) => set({ tokenCounterCompact: value }),
       setDisableReasoning: (value) => set({ disableReasoning: value }),
       setReasoningBudget: (value) => set({ reasoningBudget: value }),
       setPreloadModelOnStartup: (value) => set({ preloadModelOnStartup: value }),
+      setLegacyChatEngine: (value) => set({ legacyChatEngine: value }),
       setMaxImageSizePx: (value) =>
         set({ maxImageSizePx: Number.isFinite(value) && value > 0 ? value : 0 }),
       setCurrentLanguage: (value) => set({ currentLanguage: value }),

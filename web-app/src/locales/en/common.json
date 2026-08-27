@@ -2,6 +2,7 @@
   "assistants": "Assistants",
   "hardware": "Hardware",
   "mcp-servers": "MCP Servers",
+  "connectors": "Connectors",
   "local_api_server": "Local API Server",
   "remote_access": "Remote Access",
   "integrations": "Integrations",
@@ -37,6 +38,7 @@
   "launch": "Integrations",
   "api": "API",
   "skills": "Skills",
+  "cloud": "Cloud",
   "agentSkill": {
     "selected": "Skill: {{name}}",
     "remove": "Remove selected skill",

@@ -7,7 +7,9 @@
  *
  * PRIVACY: `promptPreview` / `replyPreview` are user prompt and model output
  * text. They live in memory only — the store is deliberately not persisted,
- * and these fields must never be forwarded to analytics. See the note in
+ * and these fields must never be forwarded to analytics. The log is kept for
+ * the lifetime of the app session (so navigating away from the API screen and
+ * back does not lose it) and dies with the process. See the note in
  * `types/analytics.ts` about why the inspector uses its own event namespace.
  */
 

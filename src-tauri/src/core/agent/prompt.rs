@@ -124,10 +124,11 @@ const DEFAULT_SYSTEM_PERSONA_LINES: &[&str] = &[
     "Operating principles:",
     "- Think, then act. Emit a small batch of tool calls, observe the results, then decide the next step. One inference = one JSON array of tool calls.",
     "- Prefer the cheapest tool that answers the question. Read before you write. Never guess a file's contents — read it.",
+    "- Not every message needs tools. When you can answer correctly from the conversation and your own knowledge — greetings, explanations, writing, or analysis of text already provided — respond immediately with a single `reply` call carrying the complete answer. Use tools only when the task needs fresh information, files, the web, or side effects.",
     "- Batch only independent calls. Approval-gated tools and calls that depend on another call's result must use a length-1 array. A terminal verb may appear only once and only last.",
     "- Be decisive. Do not narrate what you are about to do in prose — call the tool. Do not ask for confirmation unless a tool is approval-gated.",
     "- When the task is complete, call `reply` with the final answer. Only call `finish` if the user explicitly asked to end the session.",
-    "- Keep `reply` short and to the point. If the user asked for an exact value or marker, `reply.text` must be ONLY that bare value — no preamble, no restating the question, no extra commentary or markdown before or after.",
+    "- Match `reply` length to the request — conversational and complete for chat questions, short and direct for task reports. If the user asked for an exact value or marker, `reply.text` must be ONLY that bare value — no preamble, no restating the question, no extra commentary or markdown before or after.",
     "- Respect the loop guard. If you are told a call was denied as a loop, change your approach — do not repeat the same call.",
     "- When a tool result says \"Full output saved to <path>\", the complete output is on disk: page through it with `os.fs.read { path, offset, limit }` or search it with `os.fs.grep { pattern, path }` before concluding the information is absent.",
     "- Rare tools are listed without argument schemas. Call `tool.view { name }` before using a rare tool whose exact arguments are not already loaded.",
@@ -493,6 +494,30 @@ fn format_tool_rare(descriptor: &ToolDescriptor) -> String {
     format!("- {} — {}", descriptor.name, descriptor.summary)
 }
 
+/// Character budget for the `# mcp` block. Real servers (GitHub ≈ 40 tools)
+/// would otherwise swell the stable prefix; full schemas load on demand via
+/// `tool.view`.
+const MAX_MCP_CATALOG_CHARS: usize = 12_000;
+const MCP_DESCRIPTION_CHARS: usize = 160;
+
+/// One-line catalog entry for a dynamic MCP tool.
+fn format_tool_mcp(descriptor: &crate::core::agent::mcp_tools::McpToolDescriptor) -> String {
+    let mut description: String = descriptor
+        .description
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if description.chars().count() > MCP_DESCRIPTION_CHARS {
+        description = description.chars().take(MCP_DESCRIPTION_CHARS).collect();
+        description.push('…');
+    }
+    if description.is_empty() {
+        description = "(no description)".into();
+    }
+    let marker = if descriptor.read_only { " [read-only]" } else { "" };
+    format!("- {} — {description}{marker}", descriptor.agent_name)
+}
+
 /// Render the `### capabilities` body. Ported from `formatCapabilities`.
 fn format_capabilities(caps: &CapabilitiesSummary) -> String {
     let mut lines = vec![
@@ -552,6 +577,31 @@ pub fn build_stable_prefix(
     )
 }
 
+/// Character budget for the thread assistant's `### assistant` section. Keeps
+/// a runaway custom prompt from starving the conversation window.
+pub const MAX_ASSISTANT_INSTRUCTIONS_CHARS: usize = 8_000;
+
+/// Inputs of the stable prefix. A struct rather than positional arguments:
+/// the list keeps growing (assistant instructions, MCP catalog) and every
+/// addition would otherwise churn all call sites and tests.
+pub struct StablePrefixArgs<'a> {
+    pub tool_descriptors: &'a [ToolDescriptor],
+    pub skill_descriptors: &'a [SkillDescriptor],
+    pub capabilities: &'a CapabilitiesSummary,
+    pub max_parallel_tool_calls: usize,
+    pub system_persona: Option<&'a str>,
+    /// The thread assistant's rendered instructions — user data, rendered
+    /// last (after `### instructions`) so the common prefix stays
+    /// byte-identical across threads for KV-cache sharing.
+    pub assistant_instructions: Option<&'a str>,
+    /// This turn's MCP catalog, rendered as one-liners under `### tools`.
+    pub mcp_tools: &'a [crate::core::agent::mcp_tools::McpToolDescriptor],
+    /// Tools dropped by the catalog cap, surfaced as an omission marker.
+    pub mcp_omitted: usize,
+    pub profile: crate::core::agent::model_profile::AgentModelProfile,
+    pub thinking: bool,
+}
+
 pub fn build_stable_prefix_for_profile(
     tool_descriptors: &[ToolDescriptor],
     skill_descriptors: &[SkillDescriptor],
@@ -561,6 +611,34 @@ pub fn build_stable_prefix_for_profile(
     profile: crate::core::agent::model_profile::AgentModelProfile,
     thinking: bool,
 ) -> String {
+    build_stable_prefix_with(&StablePrefixArgs {
+        tool_descriptors,
+        skill_descriptors,
+        capabilities,
+        max_parallel_tool_calls,
+        system_persona,
+        assistant_instructions: None,
+        mcp_tools: &[],
+        mcp_omitted: 0,
+        profile,
+        thinking,
+    })
+}
+
+pub fn build_stable_prefix_with(args: &StablePrefixArgs<'_>) -> String {
+    let StablePrefixArgs {
+        tool_descriptors,
+        skill_descriptors,
+        capabilities,
+        max_parallel_tool_calls,
+        system_persona,
+        assistant_instructions,
+        mcp_tools,
+        mcp_omitted,
+        profile,
+        thinking,
+    } = *args;
+    let max_parallel_tool_calls = max_parallel_tool_calls;
     let persona = system_persona
         .map(str::to_string)
         .unwrap_or_else(default_system_persona);
@@ -623,6 +701,29 @@ pub fn build_stable_prefix_for_profile(
             tools_section.push_str(&format_tool_rare(descriptor));
         }
     }
+    if !mcp_tools.is_empty() {
+        tools_section.push_str(
+            "\n# mcp\nExternal integrations connected by the user. Load an `mcp.*` tool's full \
+             argument schema with `tool.view { name }` before first use unless it is already \
+             under ### loaded-tools.",
+        );
+        let mut used = 0usize;
+        let mut rendered = 0usize;
+        for descriptor in mcp_tools {
+            let entry = format_tool_mcp(descriptor);
+            if used + entry.len() > MAX_MCP_CATALOG_CHARS {
+                break;
+            }
+            used += entry.len();
+            rendered += 1;
+            tools_section.push('\n');
+            tools_section.push_str(&entry);
+        }
+        let omitted = mcp_omitted + (mcp_tools.len() - rendered);
+        if omitted > 0 {
+            tools_section.push_str(&format!("\n... [{omitted} mcp tools omitted]"));
+        }
+    }
     sections.push(tools_section);
 
     sections.push(format!(
@@ -643,7 +744,30 @@ pub fn build_stable_prefix_for_profile(
         .join("\n"),
     );
 
+    // Rendered last on purpose: the sections above are byte-identical across
+    // threads, so a shared llama.cpp slot re-ingests only from here down when
+    // the user switches threads.
+    if let Some(instructions) = assistant_instructions
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+    {
+        let bounded = bounded_chars(instructions, MAX_ASSISTANT_INSTRUCTIONS_CHARS);
+        sections.push(format!(
+            "### assistant\nThe user configured this assistant profile for this thread. Follow it \
+             where it does not conflict with the rules above.\n{bounded}"
+        ));
+    }
+
     sections.join("\n\n")
+}
+
+fn bounded_chars(text: &str, limit: usize) -> String {
+    if text.chars().count() <= limit {
+        return text.to_owned();
+    }
+    let mut bounded: String = text.chars().take(limit).collect();
+    bounded.push('…');
+    bounded
 }
 
 /// Assemble the full prompt: stable prefix + variable tail
@@ -715,7 +839,7 @@ pub fn build_prompt_with_workspace_for_profile(
     notice: Option<&str>,
     profile: crate::core::agent::model_profile::AgentModelProfile,
 ) -> String {
-    build_prompt_parts_with_workspace_for_profile(
+    build_prompt_parts_dynamic(
         stable_prefix,
         loaded_tool_names,
         loaded_skills,
@@ -723,6 +847,33 @@ pub fn build_prompt_with_workspace_for_profile(
         conversation,
         notice,
         profile,
+        None,
+    )
+    .rendered()
+}
+
+/// MCP-aware flat form used by the runner: loaded `mcp.*` descriptors render
+/// with their full input schema.
+#[allow(clippy::too_many_arguments)]
+pub fn build_prompt_dynamic(
+    stable_prefix: &str,
+    loaded_tool_names: &[String],
+    loaded_skills: &[crate::core::agent::skills::loaded::LoadedSkillState],
+    workspace: Option<&str>,
+    conversation: &str,
+    notice: Option<&str>,
+    profile: crate::core::agent::model_profile::AgentModelProfile,
+    mcp: Option<&dyn crate::core::agent::mcp_tools::McpBridge>,
+) -> String {
+    build_prompt_parts_dynamic(
+        stable_prefix,
+        loaded_tool_names,
+        loaded_skills,
+        workspace,
+        conversation,
+        notice,
+        profile,
+        mcp,
     )
     .rendered()
 }
@@ -736,9 +887,32 @@ pub fn build_prompt_parts_with_workspace_for_profile(
     notice: Option<&str>,
     profile: crate::core::agent::model_profile::AgentModelProfile,
 ) -> PromptParts {
+    build_prompt_parts_dynamic(
+        stable_prefix,
+        loaded_tool_names,
+        loaded_skills,
+        workspace,
+        conversation,
+        notice,
+        profile,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn build_prompt_parts_dynamic(
+    stable_prefix: &str,
+    loaded_tool_names: &[String],
+    loaded_skills: &[crate::core::agent::skills::loaded::LoadedSkillState],
+    workspace: Option<&str>,
+    conversation: &str,
+    notice: Option<&str>,
+    profile: crate::core::agent::model_profile::AgentModelProfile,
+    mcp: Option<&dyn crate::core::agent::mcp_tools::McpBridge>,
+) -> PromptParts {
     let mut tail: Vec<String> = Vec::new();
 
-    if let Some(loaded_tools) = render_loaded_tools(loaded_tool_names) {
+    if let Some(loaded_tools) = render_loaded_tools(loaded_tool_names, mcp) {
         tail.push("### loaded-tools".to_string());
         tail.push(loaded_tools);
         tail.push(String::new());
@@ -831,16 +1005,47 @@ pub fn format_workspace(
 
 const LOADED_TOOLS_MAX_CHARS: usize = 8_000;
 
-fn render_loaded_tools(names: &[String]) -> Option<String> {
+/// Full entry for a loaded MCP tool: name, description, and its JSON input
+/// schema, bounded so one verbose server cannot monopolize the tail budget.
+fn format_loaded_mcp_tool(
+    descriptor: &crate::core::agent::mcp_tools::McpToolDescriptor,
+) -> String {
+    const MCP_LOADED_SCHEMA_CHARS: usize = 2_500;
+    let mut schema = descriptor.input_schema.to_string();
+    if schema.chars().count() > MCP_LOADED_SCHEMA_CHARS {
+        schema = schema.chars().take(MCP_LOADED_SCHEMA_CHARS).collect();
+        schema.push('…');
+    }
+    format!(
+        "- {} — {}\n  args schema: {schema}",
+        descriptor.agent_name,
+        if descriptor.description.is_empty() {
+            "(no description)"
+        } else {
+            &descriptor.description
+        }
+    )
+}
+
+fn render_loaded_tools(
+    names: &[String],
+    mcp: Option<&dyn crate::core::agent::mcp_tools::McpBridge>,
+) -> Option<String> {
     let mut rendered = String::new();
     for name in names {
-        let Some(descriptor) = ITERATION_ONE_TOOLS
+        let entry = if name.starts_with(crate::core::agent::mcp_tools::MCP_TOOL_PREFIX) {
+            let Some(descriptor) = mcp.and_then(|bridge| bridge.resolve(name)) else {
+                continue;
+            };
+            format_loaded_mcp_tool(descriptor)
+        } else if let Some(descriptor) = ITERATION_ONE_TOOLS
             .iter()
             .find(|descriptor| descriptor.name == name && descriptor.tier == ToolTier::Rare)
-        else {
+        {
+            format_tool_frequent(descriptor)
+        } else {
             continue;
         };
-        let entry = format_tool_frequent(descriptor);
         let separator = usize::from(!rendered.is_empty());
         if rendered.len() + separator + entry.len() > LOADED_TOOLS_MAX_CHARS {
             if !rendered.is_empty() {

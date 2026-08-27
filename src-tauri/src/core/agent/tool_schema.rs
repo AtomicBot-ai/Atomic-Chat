@@ -41,8 +41,31 @@ pub fn schema_tool_names(skill_registry: &SkillRegistry) -> Vec<&'static str> {
         .collect()
 }
 
+/// Dynamic form of [`schema_tool_names`]: adds the turn's MCP catalog names
+/// and removes built-ins disabled for this turn. Mirrors
+/// `grammar::tool_call_grammar_dynamic` — the lockstep tests pin both.
+pub fn schema_tool_names_dynamic<'a>(
+    skill_registry: &SkillRegistry,
+    mcp_names: &'a [String],
+    disabled: &std::collections::BTreeSet<String>,
+) -> Vec<&'a str> {
+    schema_tool_names(skill_registry)
+        .into_iter()
+        .filter(|name| !disabled.contains(*name))
+        .chain(mcp_names.iter().map(String::as_str))
+        .collect()
+}
+
 /// The bare schema: an array of `{tool, args}` objects.
 pub fn tool_call_json_schema(skill_registry: &SkillRegistry) -> Value {
+    tool_call_json_schema_dynamic(skill_registry, &[], &std::collections::BTreeSet::new())
+}
+
+pub fn tool_call_json_schema_dynamic(
+    skill_registry: &SkillRegistry,
+    mcp_names: &[String],
+    disabled: &std::collections::BTreeSet<String>,
+) -> Value {
     json!({
         "type": "array",
         "minItems": 1,
@@ -52,7 +75,7 @@ pub fn tool_call_json_schema(skill_registry: &SkillRegistry) -> Value {
             "properties": {
                 "tool": {
                     "type": "string",
-                    "enum": schema_tool_names(skill_registry),
+                    "enum": schema_tool_names_dynamic(skill_registry, mcp_names, disabled),
                 },
                 "args": {
                     "type": "object",
@@ -71,12 +94,20 @@ pub fn tool_call_json_schema(skill_registry: &SkillRegistry) -> Value {
 /// `additionalProperties: false` all the way down, which the open-ended `args`
 /// object cannot satisfy.
 pub fn tool_call_response_format(skill_registry: &SkillRegistry) -> Value {
+    tool_call_response_format_dynamic(skill_registry, &[], &std::collections::BTreeSet::new())
+}
+
+pub fn tool_call_response_format_dynamic(
+    skill_registry: &SkillRegistry,
+    mcp_names: &[String],
+    disabled: &std::collections::BTreeSet<String>,
+) -> Value {
     json!({
         "type": "json_schema",
         "json_schema": {
             "name": TOOL_SCHEMA_NAME,
             "strict": false,
-            "schema": tool_call_json_schema(skill_registry),
+            "schema": tool_call_json_schema_dynamic(skill_registry, mcp_names, disabled),
         },
     })
 }
@@ -168,6 +199,35 @@ mod tests {
         assert_eq!(schema["maxItems"], json!(MAX_PARALLEL_TOOL_CALLS));
         assert_eq!(schema["minItems"], json!(1));
         assert_eq!(schema["type"], json!("array"));
+    }
+
+    #[test]
+    fn dynamic_names_add_mcp_and_drop_disabled_builtins() {
+        let (_temp, registry) = registry_with(&[]);
+        let mcp_names = vec!["mcp.github.create_issue".to_string()];
+        let disabled: BTreeSet<String> = ["os.web.search", "os.web.fetch"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let names = schema_tool_names_dynamic(&registry, &mcp_names, &disabled);
+
+        assert!(names.contains(&"mcp.github.create_issue"));
+        assert!(!names.contains(&"os.web.search"));
+        assert!(!names.contains(&"os.web.fetch"));
+        assert!(names.contains(&"os.fs.read"));
+
+        // The schema enum mirrors the dynamic name list exactly.
+        let schema = tool_call_json_schema_dynamic(&registry, &mcp_names, &disabled);
+        assert_eq!(enum_names(&schema), names);
+    }
+
+    #[test]
+    fn dynamic_form_with_empty_inputs_matches_the_static_form() {
+        let (_temp, registry) = registry_with(&["pdf"]);
+        assert_eq!(
+            tool_call_response_format(&registry),
+            tool_call_response_format_dynamic(&registry, &[], &BTreeSet::new())
+        );
     }
 
     #[test]

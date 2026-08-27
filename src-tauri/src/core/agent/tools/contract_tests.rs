@@ -85,6 +85,9 @@ impl ToolFixture {
                 desktop: &self.desktop,
                 pty: &self.pty,
                 cache_dir: self.workspace.path(),
+                mcp: None,
+                disabled_tools: &std::collections::BTreeSet::new(),
+                auto_approve_mcp: true,
             },
         )
         .await
@@ -1235,6 +1238,9 @@ async fn symlink_escape_requires_folder_access_and_denial_prevents_read() {
             desktop: &desktop,
             pty: &PtyRegistry::new(),
             cache_dir: &std::env::temp_dir(),
+            mcp: None,
+            disabled_tools: &std::collections::BTreeSet::new(),
+            auto_approve_mcp: true,
         },
     )
     .await;

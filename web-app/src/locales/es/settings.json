@@ -64,7 +64,9 @@
     "autoApproveTools": "Auto-approve tool calls",
     "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
     "desktopNotifications": "Notificaciones de escritorio",
-    "desktopNotificationsDesc": "Enviar una notificación del sistema cuando una respuesta termine y la ventana no esté enfocada."
+    "desktopNotificationsDesc": "Enviar una notificación del sistema cuando una respuesta termine y la ventana no esté enfocada.",
+    "legacyChatEngine": "Usar el motor de chat clásico",
+    "legacyChatEngineDesc": "Enviar todos los mensajes por la canalización de chat anterior en lugar del motor de agente unificado. Opción temporal de compatibilidad."
   },
   "threadNotifications": {
     "notificationTitle": "Respuesta lista",

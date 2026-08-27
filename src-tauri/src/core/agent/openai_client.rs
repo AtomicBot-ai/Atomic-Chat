@@ -246,10 +246,18 @@ impl OpenAiCompatibleClient {
         body.insert("stream".into(), json!(false));
         body.insert("temperature".into(), json!(request.temperature));
         body.insert("top_p".into(), json!(request.top_p));
+        // Standard OpenAI parameters, sent only when the turn set them so
+        // default request bodies stay byte-identical.
+        if let Some(frequency_penalty) = request.frequency_penalty {
+            body.insert("frequency_penalty".into(), json!(frequency_penalty));
+        }
+        if let Some(presence_penalty) = request.presence_penalty {
+            body.insert("presence_penalty".into(), json!(presence_penalty));
+        }
 
-        // `top_k`, `repeat_penalty` and `repeat_last_n` are llama.cpp samplers.
-        // OpenAI and Groq answer 400 on unknown parameters, so they never leave
-        // the request struct.
+        // `top_k`, `min_p`, `repeat_penalty` and `repeat_last_n` are llama.cpp
+        // samplers. OpenAI and Groq answer 400 on unknown parameters, so they
+        // never leave the request struct.
         let token_key = if self.use_max_completion_tokens.load(Ordering::SeqCst) {
             "max_completion_tokens"
         } else {
@@ -503,6 +511,14 @@ pub(crate) fn parse_chat_response(value: &Value) -> Result<CompletionResult, Llm
         .and_then(Value::as_str)
         .unwrap_or_default();
 
+    // OpenAI's `usage.prompt_tokens` is the TOTAL prompt (cached included),
+    // while llama.cpp's `tokens_evaluated` excludes cache hits. Normalize to
+    // the llama.cpp convention — `prompt_tokens` = newly evaluated,
+    // `cache_hit_tokens` = reused — so consumers may sum the two.
+    let cached_tokens = value
+        .pointer("/usage/prompt_tokens_details/cached_tokens")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0);
     Ok(CompletionResult {
         content,
         reasoning_content,
@@ -512,13 +528,10 @@ pub(crate) fn parse_chat_response(value: &Value) -> Result<CompletionResult, Llm
             // Chat completions report token counts but no wall-clock split.
             prompt_ms: 0.0,
             predicted_ms: 0.0,
-            prompt_tokens: usage_number(value, "prompt_tokens"),
+            prompt_tokens: (usage_number(value, "prompt_tokens") - cached_tokens).max(0.0),
             predicted_tokens: usage_number(value, "completion_tokens"),
         },
-        cache_hit_tokens: value
-            .pointer("/usage/prompt_tokens_details/cached_tokens")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0),
+        cache_hit_tokens: cached_tokens,
         // No slot pinning on this transport.
         slot_id: -1,
         model_id: value
@@ -868,7 +881,9 @@ mod tests {
         assert_eq!(result.content, "[{\"tool\":\"reply\",\"args\":{}}]");
         assert!(result.stop);
         assert!(!result.truncated);
-        assert_eq!(result.timing.prompt_tokens, 120.0);
+        // Normalized to llama.cpp semantics: `prompt_tokens` excludes the
+        // cached subset so the two may be summed.
+        assert_eq!(result.timing.prompt_tokens, 56.0);
         assert_eq!(result.timing.predicted_tokens, 8.0);
         assert_eq!(result.cache_hit_tokens, 64.0);
         assert_eq!(result.slot_id, -1);

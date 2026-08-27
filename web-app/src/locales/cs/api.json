@@ -14,8 +14,6 @@
   "strip": {
     "baseUrl": "Base URL",
     "status": "Status",
-    "slots": "Slots",
-    "slotsValue": "{{busy}}/{{total}} busy",
     "loadedModel": "Loaded model",
     "noModel": "None",
     "ctx": "{{count}} ctx"

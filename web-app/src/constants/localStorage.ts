@@ -43,7 +43,6 @@ export const localStorageKey = {
   // dismissed. Survives a restart so the offer is not lost with the session.
   onboardingModelReminder: 'atomic-onboarding-model-reminder',
   agentMode: 'agent-mode',
-  agentModeAttentionSeen: 'agent-mode-attention-seen-v1',
   factoryResetPending: 'factory-reset-pending',
   lastSeenVersion: 'last-seen-version',
   threadNotifications: 'thread-notifications',

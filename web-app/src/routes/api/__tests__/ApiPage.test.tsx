@@ -56,8 +56,6 @@ vi.mock('@/hooks/useAppState', () => ({
 
 vi.mock('@/utils/apiServerCapacity', () => ({
   getModelContextLength: () => 4096,
-  getProviderNameForModel: () => 'llamacpp',
-  getConcurrentSlots: () => 4,
 }))
 
 vi.mock('@/utils/localApiServerControl', () => ({

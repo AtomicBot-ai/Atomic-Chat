@@ -3,7 +3,8 @@ use std::time::Duration;
 use hyper::StatusCode;
 use tokio_util::sync::CancellationToken;
 
-use super::llm_client::AgentLlmClient;
+use super::llm_client::{AgentLlmClient, SamplingOverrides};
+use super::mcp_tools::{McpBridge, McpToolDescriptor};
 use super::path_policy::EditableRoots;
 use super::pty::PtyRegistry;
 use super::runner::{run_turn, RunTurnInput};
@@ -86,6 +87,30 @@ async fn run_script_with_reasoning(
     max_steps: u32,
     reasoning: AgentReasoning,
 ) -> TestRun {
+    run_script_with_options(
+        workspace,
+        client,
+        approval,
+        cancellation,
+        max_steps,
+        reasoning,
+        None,
+        true,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_script_with_options(
+    workspace: &TestWorkspace,
+    client: &dyn AgentLlmClient,
+    approval: &RecordingApproval,
+    cancellation: &CancellationToken,
+    max_steps: u32,
+    reasoning: AgentReasoning,
+    mcp: Option<&dyn McpBridge>,
+    auto_approve_mcp: bool,
+) -> TestRun {
     let desktop = RecordingDesktop::default();
     let mut events = Vec::new();
     let mut session = AgentSessionState::new("test-session");
@@ -106,6 +131,10 @@ async fn run_script_with_reasoning(
             trusted_read_roots: &[],
             max_steps,
             reasoning,
+            sampling: &SamplingOverrides::default(),
+            mcp,
+            disabled_tools: &std::collections::BTreeSet::new(),
+            auto_approve_mcp,
             client,
             approval,
             folder_access: &folder_access,
@@ -125,6 +154,78 @@ async fn run_script_with_reasoning(
         events,
         requests: Vec::new(),
         session,
+    }
+}
+
+/// Scripted [`McpBridge`]: fixed descriptors, canned results, recorded calls.
+struct ScriptedMcpBridge {
+    descriptors: Vec<McpToolDescriptor>,
+    fail_calls: bool,
+    calls: std::sync::Mutex<Vec<String>>,
+}
+
+impl ScriptedMcpBridge {
+    fn new(tools: &[(&str, bool)]) -> Self {
+        Self {
+            descriptors: tools
+                .iter()
+                .map(|(tool, read_only)| McpToolDescriptor {
+                    agent_name: format!("mcp.test.{tool}"),
+                    server: "test".into(),
+                    tool: (*tool).into(),
+                    description: format!("scripted {tool}"),
+                    input_schema: serde_json::json!({"type": "object"}),
+                    read_only: *read_only,
+                })
+                .collect(),
+            fail_calls: false,
+            calls: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    fn failing(tools: &[(&str, bool)]) -> Self {
+        Self {
+            fail_calls: true,
+            ..Self::new(tools)
+        }
+    }
+
+    fn calls(&self) -> Vec<String> {
+        self.calls.lock().expect("mcp calls").clone()
+    }
+}
+
+#[async_trait::async_trait]
+impl McpBridge for ScriptedMcpBridge {
+    fn resolve(&self, agent_name: &str) -> Option<&McpToolDescriptor> {
+        self.descriptors
+            .iter()
+            .find(|descriptor| descriptor.agent_name == agent_name)
+    }
+
+    fn descriptors(&self) -> &[McpToolDescriptor] {
+        &self.descriptors
+    }
+
+    async fn call(
+        &self,
+        descriptor: &McpToolDescriptor,
+        _args: &serde_json::Value,
+        _cancellation: &CancellationToken,
+    ) -> Result<rmcp::model::CallToolResult, String> {
+        self.calls
+            .lock()
+            .expect("mcp calls")
+            .push(descriptor.agent_name.clone());
+        if self.fail_calls {
+            return Err(format!(
+                "MCP server '{}' is not connected — it may have stopped; do not retry this tool",
+                descriptor.server
+            ));
+        }
+        Ok(rmcp::model::CallToolResult::success(vec![
+            rmcp::model::Content::text(format!("result from {}", descriptor.tool)),
+        ]))
     }
 }
 
@@ -149,7 +250,7 @@ fn event_kind(event: &AgentEvent) -> &'static str {
 
 fn finished_reason(events: &[AgentEvent]) -> Option<(&str, u32)> {
     events.iter().rev().find_map(|event| match event {
-        AgentEvent::TurnFinished { reason, step_count } => Some((reason.as_str(), *step_count)),
+        AgentEvent::TurnFinished { reason, step_count, .. } => Some((reason.as_str(), *step_count)),
         _ => None,
     })
 }
@@ -164,6 +265,190 @@ fn executed(events: &[AgentEvent]) -> Vec<(&str, ToolStatus)> {
             _ => None,
         })
         .collect()
+}
+
+async fn run_mcp_script(
+    responses: Vec<ScriptedResponse>,
+    bridge: &ScriptedMcpBridge,
+    approval: &RecordingApproval,
+    auto_approve_mcp: bool,
+) -> TestRun {
+    let workspace = TestWorkspace::new();
+    let server = ScriptedCompletionServer::start(responses).await;
+    let client = server.client();
+    let cancellation = CancellationToken::new();
+    let run = run_script_with_options(
+        &workspace,
+        &client,
+        approval,
+        &cancellation,
+        3,
+        AgentReasoning::default(),
+        Some(bridge),
+        auto_approve_mcp,
+    )
+    .await;
+    TestRun {
+        requests: server.requests(),
+        ..run
+    }
+}
+
+#[tokio::test]
+async fn read_only_mcp_tool_executes_without_any_approval() {
+    let bridge = ScriptedMcpBridge::new(&[("search", true)]);
+    let approval = RecordingApproval::deny();
+    let run = run_mcp_script(
+        vec![
+            ScriptedResponse::completion(
+                r#"[{"tool":"mcp.test.search","args":{"query":"atomic"}}]"#,
+            ),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"found"}}]"#),
+        ],
+        &bridge,
+        &approval,
+        false,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(
+        executed(&run.events),
+        [("mcp.test.search", ToolStatus::Ok), ("reply", ToolStatus::Ok)]
+    );
+    assert!(approval.requests().is_empty(), "readOnlyHint skips the gate");
+    assert_eq!(bridge.calls(), ["mcp.test.search"]);
+    // The grammar for the step advertises the MCP alternation.
+    let grammar = run.requests[0]["grammar"].as_str().expect("grammar");
+    assert!(grammar.contains("mcp-tool-name"));
+    assert!(grammar.contains("mcp.test.search"));
+}
+
+#[tokio::test]
+async fn non_read_only_mcp_tool_is_gated_and_fails_closed_on_deny() {
+    let bridge = ScriptedMcpBridge::new(&[("create_issue", false)]);
+    let approval = RecordingApproval::deny();
+    let run = run_mcp_script(
+        vec![
+            ScriptedResponse::completion(
+                r#"[{"tool":"mcp.test.create_issue","args":{"title":"bug"}}]"#,
+            ),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"could not"}}]"#),
+        ],
+        &bridge,
+        &approval,
+        false,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(
+        executed(&run.events),
+        [
+            ("mcp.test.create_issue", ToolStatus::Denied),
+            ("reply", ToolStatus::Ok)
+        ]
+    );
+    let requests = approval.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].tool, "mcp.test.create_issue");
+    assert!(requests[0].can_remember, "Always allow must be offered");
+    assert!(requests[0]
+        .affected_resources
+        .iter()
+        .any(|resource| resource.kind == "mcp"));
+    assert!(bridge.calls().is_empty(), "denied call never reaches the server");
+}
+
+#[tokio::test]
+async fn auto_approve_mcp_bypasses_the_gate_for_mcp_tools_only() {
+    let bridge = ScriptedMcpBridge::new(&[("create_issue", false)]);
+    let approval = RecordingApproval::deny();
+    let run = run_mcp_script(
+        vec![
+            ScriptedResponse::completion(
+                r#"[{"tool":"mcp.test.create_issue","args":{"title":"bug"}}]"#,
+            ),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"done"}}]"#),
+        ],
+        &bridge,
+        &approval,
+        true,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(
+        executed(&run.events),
+        [
+            ("mcp.test.create_issue", ToolStatus::Ok),
+            ("reply", ToolStatus::Ok)
+        ]
+    );
+    assert!(approval.requests().is_empty());
+    assert_eq!(bridge.calls(), ["mcp.test.create_issue"]);
+}
+
+#[tokio::test]
+async fn dead_mcp_server_yields_a_structured_error_outcome() {
+    let bridge = ScriptedMcpBridge::failing(&[("search", true)]);
+    let approval = RecordingApproval::deny();
+    let run = run_mcp_script(
+        vec![
+            ScriptedResponse::completion(
+                r#"[{"tool":"mcp.test.search","args":{"query":"atomic"}}]"#,
+            ),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"server gone"}}]"#),
+        ],
+        &bridge,
+        &approval,
+        false,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    let executions = executed(&run.events);
+    assert_eq!(executions[0].0, "mcp.test.search");
+    assert_eq!(executions[0].1, ToolStatus::Error);
+    let error_summary = run
+        .events
+        .iter()
+        .find_map(|event| match event {
+            AgentEvent::ToolCallExecuted { result }
+                if result.call.tool == "mcp.test.search" =>
+            {
+                Some(result.outcome.summary.clone())
+            }
+            _ => None,
+        })
+        .expect("mcp execution outcome");
+    assert!(error_summary.contains("not connected"));
+    assert!(error_summary.contains("do not retry"));
+}
+
+#[tokio::test]
+async fn unknown_mcp_name_stays_out_of_the_batch() {
+    // A name the bridge cannot resolve classifies as Unknown → validation
+    // rejects the batch and the repair path takes over.
+    let bridge = ScriptedMcpBridge::new(&[("search", true)]);
+    let approval = RecordingApproval::deny();
+    let run = run_mcp_script(
+        vec![
+            ScriptedResponse::completion(
+                r#"[{"tool":"mcp.test.missing","args":{}}]"#,
+            ),
+            // Repair completion returns a valid array.
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"ok"}}]"#),
+        ],
+        &bridge,
+        &approval,
+        false,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(executed(&run.events), [("reply", ToolStatus::Ok)]);
+    assert!(bridge.calls().is_empty());
 }
 
 #[tokio::test]
@@ -183,18 +468,29 @@ async fn immediate_reply_preserves_event_order_and_completion_contract() {
     .await;
 
     assert!(run.result.is_ok());
+    // `assistant_delta` precedes the parse events: `reply.args.text` streams
+    // live out of the constrained completion.
     assert_eq!(
         run.events.iter().map(event_kind).collect::<Vec<_>>(),
         [
             "turn_started",
             "step_started",
+            "assistant_delta",
             "tool_call_parsed",
             "tool_call_executed",
-            "assistant_delta",
             "assistant_reply",
             "turn_finished"
         ]
     );
+    let streamed = run
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            AgentEvent::AssistantDelta { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<String>();
+    assert_eq!(streamed, "done");
     assert_eq!(finished_reason(&run.events), Some(("reply", 1)));
     assert_eq!(run.requests.len(), 1);
     let request = &run.requests[0];
@@ -241,6 +537,10 @@ async fn gemma4_turn_uses_native_framing_and_parses_channel_reasoning() {
             trusted_read_roots: &[],
             max_steps: 1,
             reasoning: AgentReasoning::default(),
+            sampling: &SamplingOverrides::default(),
+            mcp: None,
+            disabled_tools: &std::collections::BTreeSet::new(),
+            auto_approve_mcp: true,
             client: &client,
             approval: &approval,
             folder_access: &folder_access,
@@ -416,6 +716,10 @@ async fn sequential_runs_share_the_session_transcript() {
                 trusted_read_roots: &[],
                 max_steps: 3,
                 reasoning: AgentReasoning::default(),
+                sampling: &SamplingOverrides::default(),
+                mcp: None,
+                disabled_tools: &std::collections::BTreeSet::new(),
+                auto_approve_mcp: true,
                 client: &client,
                 approval: &approval,
                 folder_access: &folder_access,
@@ -798,6 +1102,8 @@ async fn cancellation_interrupts_an_in_flight_completion() {
     // registry has to outlive the `run_turn` expression.
     let pty = PtyRegistry::new();
     let cache_dir = std::env::temp_dir();
+    let sampling = SamplingOverrides::default();
+    let disabled_tools = std::collections::BTreeSet::new();
     let run = run_turn(
         RunTurnInput {
             run_id: "cancel-run",
@@ -812,6 +1118,10 @@ async fn cancellation_interrupts_an_in_flight_completion() {
             trusted_read_roots: &[],
             max_steps: 2,
             reasoning: AgentReasoning::default(),
+            sampling: &sampling,
+            mcp: None,
+            disabled_tools: &disabled_tools,
+            auto_approve_mcp: true,
             client: &client,
             approval: &approval,
             folder_access: &folder_access,
@@ -1074,6 +1384,10 @@ async fn skill_view_loads_the_body_and_restores_it_on_the_next_turn() {
             trusted_read_roots: &[],
             max_steps: 2,
             reasoning: AgentReasoning::default(),
+            sampling: &SamplingOverrides::default(),
+            mcp: None,
+            disabled_tools: &std::collections::BTreeSet::new(),
+            auto_approve_mcp: true,
             client: &client,
             approval: &approval,
             folder_access: &folder_access,
@@ -1134,6 +1448,10 @@ async fn selected_skill_is_loaded_into_the_first_prompt_without_skill_view() {
             trusted_read_roots: &[],
             max_steps: 2,
             reasoning: AgentReasoning::default(),
+            sampling: &SamplingOverrides::default(),
+            mcp: None,
+            disabled_tools: &std::collections::BTreeSet::new(),
+            auto_approve_mcp: true,
             client: &client,
             approval: &approval,
             folder_access: &folder_access,
@@ -1195,6 +1513,10 @@ async fn unknown_selected_skill_fails_before_completion() {
             trusted_read_roots: &[],
             max_steps: 2,
             reasoning: AgentReasoning::default(),
+            sampling: &SamplingOverrides::default(),
+            mcp: None,
+            disabled_tools: &std::collections::BTreeSet::new(),
+            auto_approve_mcp: true,
             client: &client,
             approval: &approval,
             folder_access: &folder_access,

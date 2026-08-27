@@ -48,7 +48,9 @@
     "deny": "Deny",
     "alwaysAllow": "Always allow this action",
     "approveOnce": "Approve once",
-    "resolveFailed": "Failed to send the approval decision."
+    "resolveFailed": "Failed to send the approval decision.",
+    "showDetails": "Show details",
+    "hideDetails": "Hide details"
   },
   "agentFolderAccess": {
     "title": "Allow folder access",

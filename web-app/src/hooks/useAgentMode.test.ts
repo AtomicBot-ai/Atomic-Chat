@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { localStorageKey } from '@/constants/localStorage'
 import { useAgentMode } from '@/hooks/useAgentMode'
@@ -8,17 +8,14 @@ describe('useAgentMode', () => {
     useAgentMode.getState().clearAll()
   })
 
-  it('moves the Home selection to the created thread', () => {
-    useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, true)
+  it('moves the Home composer state to the created thread', () => {
     useAgentMode.getState().setApprovalMode(TEMPORARY_CHAT_ID, 'skip')
     useAgentMode.getState().setWorkingDir(TEMPORARY_CHAT_ID, '/workspace')
 
-    useAgentMode.getState().transferAgentMode(TEMPORARY_CHAT_ID, 'thread-1')
+    useAgentMode.getState().transferThreadState(TEMPORARY_CHAT_ID, 'thread-1')
 
-    expect(useAgentMode.getState().isAgentMode('thread-1')).toBe(true)
     expect(useAgentMode.getState().getApprovalMode('thread-1')).toBe('skip')
     expect(useAgentMode.getState().getWorkingDir('thread-1')).toBe('/workspace')
-    expect(useAgentMode.getState().isAgentMode(TEMPORARY_CHAT_ID)).toBe(false)
     expect(useAgentMode.getState().getApprovalMode(TEMPORARY_CHAT_ID)).toBe(
       'manual'
     )
@@ -27,56 +24,24 @@ describe('useAgentMode', () => {
     )
   })
 
-  it('keeps a newly created Chat thread out of the agent map', () => {
-    useAgentMode.getState().transferAgentMode(TEMPORARY_CHAT_ID, 'thread-1')
+  it('transfer with no composer state leaves the target on defaults', () => {
+    useAgentMode.getState().transferThreadState(TEMPORARY_CHAT_ID, 'thread-1')
 
-    expect(useAgentMode.getState().isAgentMode('thread-1')).toBe(false)
+    expect(useAgentMode.getState().getApprovalMode('thread-1')).toBe('manual')
+    expect(useAgentMode.getState().getWorkspace('thread-1')).toEqual({
+      externalRoots: [],
+    })
+  })
+
+  it('transfer clears stale state on the target thread', () => {
+    useAgentMode.getState().setApprovalMode('thread-1', 'skip')
+
+    useAgentMode.getState().transferThreadState(TEMPORARY_CHAT_ID, 'thread-1')
+
     expect(useAgentMode.getState().getApprovalMode('thread-1')).toBe('manual')
   })
 
-  it('persists the selected sidebar mode', () => {
-    useAgentMode.getState().setSidebarMode('agent')
-
-    expect(useAgentMode.getState().sidebarMode).toBe('agent')
-    expect(
-      JSON.parse(localStorage.getItem(localStorageKey.agentMode) ?? '{}').state
-        .sidebarMode
-    ).toBe('agent')
-  })
-
-  it('does not notify subscribers when the sidebar mode is unchanged', () => {
-    // Opening a thread re-asserts the current mode on every navigation, so an
-    // unchanged value must not wake the whole sidebar tree.
-    const listener = vi.fn()
-    const unsubscribe = useAgentMode.subscribe(listener)
-    const stateBefore = useAgentMode.getState()
-
-    useAgentMode.getState().setSidebarMode('chat')
-    expect(useAgentMode.getState()).toBe(stateBefore)
-    expect(listener).not.toHaveBeenCalled()
-
-    useAgentMode.getState().setSidebarMode('agent')
-    expect(useAgentMode.getState().sidebarMode).toBe('agent')
-    expect(listener).toHaveBeenCalledTimes(1)
-
-    const stateAfterChange = useAgentMode.getState()
-    useAgentMode.getState().setSidebarMode('agent')
-    expect(useAgentMode.getState()).toBe(stateAfterChange)
-    expect(listener).toHaveBeenCalledTimes(1)
-
-    unsubscribe()
-  })
-
-  it('resets the sidebar mode with the Agent state', () => {
-    useAgentMode.getState().setSidebarMode('agent')
-
-    useAgentMode.getState().clearAll()
-
-    expect(useAgentMode.getState().sidebarMode).toBe('chat')
-  })
-
   it('moves primary and external roots from Home to the created thread', () => {
-    useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, true)
     useAgentMode.getState().setPrimaryRoot(TEMPORARY_CHAT_ID, {
       rootId: 'primary',
       path: '/workspace',
@@ -90,7 +55,7 @@ describe('useAgentMode', () => {
       canEdit: true,
     })
 
-    useAgentMode.getState().transferAgentMode(TEMPORARY_CHAT_ID, 'thread-1')
+    useAgentMode.getState().transferThreadState(TEMPORARY_CHAT_ID, 'thread-1')
 
     expect(useAgentMode.getState().getWorkspace('thread-1')).toEqual({
       primaryRoot: {
@@ -220,5 +185,41 @@ describe('useAgentMode', () => {
       },
       externalRoots: [],
     })
+  })
+
+  it('drops the retired chat/agent split in the v3 migration', async () => {
+    localStorage.setItem(
+      localStorageKey.agentMode,
+      JSON.stringify({
+        state: {
+          agentThreads: { 'thread-1': true, 'thread-2': false },
+          approvalModes: { 'thread-1': 'skip' },
+          workspaces: {
+            'thread-1': {
+              primaryRoot: {
+                rootId: 'root-1',
+                path: '/workspace',
+                name: 'workspace',
+                canEdit: true,
+              },
+              externalRoots: [],
+            },
+          },
+          sidebarMode: 'agent',
+        },
+        version: 2,
+      })
+    )
+
+    await useAgentMode.persist.rehydrate()
+
+    // Approval modes and workspaces survive; the split does not.
+    expect(useAgentMode.getState().getApprovalMode('thread-1')).toBe('skip')
+    expect(useAgentMode.getState().getWorkingDir('thread-1')).toBe('/workspace')
+    const persisted = JSON.parse(
+      localStorage.getItem(localStorageKey.agentMode) ?? '{}'
+    )
+    expect(persisted.state.agentThreads).toBeUndefined()
+    expect(persisted.state.sidebarMode).toBeUndefined()
   })
 })

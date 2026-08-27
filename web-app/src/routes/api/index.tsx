@@ -83,18 +83,22 @@ export function ApiPage() {
 
   return (
     <div className="flex h-svh w-full flex-col">
-      <HeaderPage>
+      {/* Empty: the title lives in the content below, but the bar is still
+          needed for the macOS drag region and the sidebar toggle. */}
+      <HeaderPage />
+
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-6 pb-6">
         <div
           className={cn(
-            'flex w-full items-center justify-between gap-4 pr-3',
+            'flex flex-wrap items-start justify-between gap-4 pb-2',
             !IS_MACOS && 'pr-30'
           )}
         >
           <div className="min-w-0">
-            <span className="font-studio text-base font-medium">
+            <h1 className="font-studio text-3xl font-medium text-foreground">
               {t('api:title')}
-            </span>
-            <p className="truncate text-xs text-muted-foreground">
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
               {t('api:subtitle')}
             </p>
           </div>
@@ -109,10 +113,8 @@ export function ApiPage() {
             refreshing={refreshing}
           />
         </div>
-      </HeaderPage>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 pt-0">
-        <ApiConnectionStrip inFlight={stats.inFlight} />
+        <ApiConnectionStrip />
 
         {hydrated ? (
           <ApiStatTiles stats={stats} />

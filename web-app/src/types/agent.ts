@@ -51,6 +51,49 @@ export type AgentTurnRequest = {
    * backend's default, which is to request no thinking.
    */
   reasoning?: AgentReasoningRequest
+  /**
+   * The thread assistant's system prompt, already rendered
+   * (`renderInstructions` resolved `{{current_date}}` etc.). The backend
+   * appends it as the final stable-prefix section.
+   */
+  assistant_instructions?: string
+  /** Assistant sampling bag; applied only when `sampling_overridden`. */
+  sampling?: AgentSamplingRequest
+  sampling_overridden?: boolean
+  /** Built-in web tools on/off for this turn. Defaults to on. */
+  web_search?: boolean
+  /** Expose connected MCP servers as dynamic agent tools. Defaults to on. */
+  mcp_enabled?: boolean
+  /**
+   * Auto-approve MCP-origin tools (the migrated chat auto-approve setting).
+   * Never widens approval for built-in shell/fs tools.
+   */
+  auto_approve_mcp?: boolean
+  /** Per-thread disabled MCP tools as `server::tool` keys. */
+  disabled_mcp_tools?: string[]
+}
+
+export type AgentSamplingRequest = {
+  temperature?: number
+  top_p?: number
+  top_k?: number
+  min_p?: number
+  frequency_penalty?: number
+  presence_penalty?: number
+  repeat_penalty?: number
+}
+
+/** Aggregated model usage reported by `turn_finished`. */
+export type AgentTurnUsage = {
+  tokens_in: number
+  tokens_out: number
+  tps?: number
+  ttft_ms?: number
+}
+
+export type AgentReseedMessage = {
+  role: 'user' | 'assistant'
+  text: string
 }
 
 export type AgentWorkspaceRequest = {
@@ -179,6 +222,7 @@ export type AgentEvent =
       type: 'turn_finished'
       reason: AgentTurnFinishReason
       step_count: number
+      usage?: AgentTurnUsage
     }
 
 export type AgentApprovalRequestEvent = Extract<
@@ -232,6 +276,7 @@ export type AgentRunState = {
   runId?: string
   startedAtMs?: number
   finishedAtMs?: number
+  usage?: AgentTurnUsage
   status: AgentRunStatus
   pendingApproval?: AgentApprovalRequestEvent
   pendingFolderAccess?: AgentFolderAccessRequestEvent

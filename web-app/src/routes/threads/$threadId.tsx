@@ -63,9 +63,11 @@ import {
   currentChatTurn,
   responseShapeFromMessage,
   type AttachmentTelemetry,
+  type ChatEngine,
   type ChatOutcome,
   type ChatTurnSource,
 } from '@/lib/chat-telemetry'
+import { type RouteReason } from '@/lib/agent-route'
 import { classifyChatFailure, lengthBucket } from '@/lib/telemetry'
 import {
   ThreadMessage,
@@ -126,16 +128,21 @@ import {
   buildAgentUIMessage,
   claimAgentRunPersistence,
 } from '@/lib/agent-run-message'
-import { resolveMessageExecutionRoute } from '@/lib/agent-route'
+import { resolveThreadExecutionRoute } from '@/lib/thread-execution-route'
 import {
   extractAgentAttachmentReferences,
   type AgentFileReference,
 } from '@/lib/agent-file-links'
 import {
   cancelAgentTurn,
+  reseedAgentSession,
   resolveAgentWorkspaceRoot,
   runAgentTurn,
 } from '@/services/agent/tauri'
+import { buildAgentSessionSyncMessages } from '@/lib/agent-session-sync'
+import { getSamplingParamsForThread } from '@/lib/samplingParams'
+import { useMCPServers } from '@/hooks/useMCPServers'
+import { findWebSearchServer } from '@/lib/web-search'
 import type {
   AgentAttachment as AgentIpcAttachment,
   AgentEvent,
@@ -245,7 +252,6 @@ function ThreadDetail() {
   const search = useSearch({ from: Route.id })
   const searchThreadModel = search.threadModel
   const setCurrentThreadId = useThreads((state) => state.setCurrentThreadId)
-  const setSidebarMode = useAgentMode((state) => state.setSidebarMode)
   const setCurrentAssistant = useAssistant((state) => state.setCurrentAssistant)
   const assistants = useAssistant((state) => state.assistants)
   const setMessages = useMessages((state) => state.setMessages)
@@ -339,6 +345,8 @@ function ThreadDetail() {
   const turnContextRef = useRef<{
     source: ChatTurnSource
     attachments: AttachmentTelemetry
+    engine?: ChatEngine
+    routeReason?: RouteReason
   }>({ source: 'chat', attachments: attachmentTelemetry([]) })
 
   /**
@@ -347,13 +355,20 @@ function ThreadDetail() {
    * which left the send count — the funnel's denominator — short.
    */
   const captureRetryRequest = useCallback(
-    (source: 'regenerate' | 'edit') => {
-      turnContextRef.current = { ...turnContextRef.current, source }
+    (source: 'regenerate' | 'edit', routeReason?: RouteReason) => {
+      turnContextRef.current = {
+        ...turnContextRef.current,
+        source,
+        engine: 'chat-transport',
+        routeReason: routeReason ?? turnContextRef.current.routeReason,
+      }
       captureChatRequest({
         ...turnContextRef.current.attachments,
         turn_id: beginChatTurn(threadId),
         thread_id: threadId,
         source,
+        engine: turnContextRef.current.engine,
+        route_reason: turnContextRef.current.routeReason,
         model_id: useModelProvider.getState().selectedModel?.id,
         provider: useModelProvider.getState().selectedProvider,
         turn_index: chatMessagesRef.current.length,
@@ -392,6 +407,8 @@ function ThreadDetail() {
         turn_id: currentChatTurn(threadId),
         thread_id: threadId,
         source,
+        engine: turnContextRef.current.engine,
+        route_reason: turnContextRef.current.routeReason,
         outcome,
         error,
         model_id:
@@ -681,16 +698,13 @@ function ThreadDetail() {
 
   useEffect(() => {
     setCurrentThreadId(threadId)
-    setSidebarMode(
-      useAgentMode.getState().isAgentMode(threadId) ? 'agent' : 'chat'
-    )
     useThreadReadStatus.getState().markRead(threadId)
     const assistant = assistants.find(
       (assistant) => assistant.id === thread?.assistants?.[0]?.id
     )
     if (assistant) setCurrentAssistant(assistant)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId, assistants, setSidebarMode])
+  }, [threadId, assistants])
 
   // Load messages on first mount
   useEffect(() => {
@@ -803,6 +817,8 @@ function ThreadDetail() {
           turn_id: currentChatTurn(threadId),
           thread_id: threadId,
           source: turnContextRef.current.source,
+          engine: turnContextRef.current.engine,
+          route_reason: turnContextRef.current.routeReason,
           outcome: agentOutcome(event.reason),
           error: run.trace.error,
           model_id: useModelProvider.getState().selectedModel?.id ?? null,
@@ -818,6 +834,49 @@ function ThreadDetail() {
     [persistAgentRun, threadId]
   )
 
+  // Tracks whether the durable Rust transcript is known to match this
+  // thread's history. `dirty` is per-thread (this component survives thread
+  // switches) and is set by history mutations; `synced` caches the last
+  // verified thread and is dropped whenever a turn bypasses the agent engine.
+  const agentSessionSyncedRef = useRef<string | null>(null)
+  const agentSessionDirtyRef = useRef<Set<string>>(new Set())
+  const syncAgentSessionIfNeeded = useCallback(
+    async (excludeTrailingUserMessage: boolean) => {
+      const force = agentSessionDirtyRef.current.has(threadId)
+      if (!force && agentSessionSyncedRef.current === threadId) return
+      const history = useMessages.getState().getMessages(threadId)
+      const lastAssistant = [...history]
+        .reverse()
+        .find((message) => message.role === 'assistant')
+      const lastAssistantFromAgent = Boolean(
+        (lastAssistant?.metadata as { agent_run?: unknown } | undefined)
+          ?.agent_run
+      )
+      // Legacy chat threads and fallback-engine turns leave history the agent
+      // session never saw; explicit mutations force a rebuild.
+      const needsSync = force || (history.length > 0 && !lastAssistantFromAgent)
+      if (needsSync) {
+        const messages = buildAgentSessionSyncMessages(history)
+        // On a regenerate the retained user message is re-sent as this turn's
+        // input and the loop pushes it itself — keeping it in the reseed list
+        // would duplicate the user turn in the transcript.
+        if (excludeTrailingUserMessage && messages.at(-1)?.role === 'user') {
+          messages.pop()
+        }
+        try {
+          await reseedAgentSession(threadId, messages)
+        } catch (error) {
+          // An older backend without the command: regenerate still works, the
+          // transcript just keeps its previous shape.
+          console.warn('[agent] session reseed skipped:', error)
+        }
+      }
+      agentSessionDirtyRef.current.delete(threadId)
+      agentSessionSyncedRef.current = threadId
+    },
+    [threadId]
+  )
+
   const processAndRunAgent = useCallback(
     async (
       text: string,
@@ -827,7 +886,8 @@ function ThreadDetail() {
       persistUserMessage = true,
       // Distinguishes a fresh send from a retry of the same prompt, so the
       // funnel does not read regenerations as new conversations.
-      source: ChatTurnSource = 'agent'
+      source: ChatTurnSource = 'agent',
+      routeReason: RouteReason = 'default-agent'
     ) => {
       const agentProvider = getProviderByName(selectedProvider)
       const blockReason = agentProviderBlockReason(agentProvider)
@@ -890,16 +950,25 @@ function ThreadDetail() {
       // resolves a live session by id. Cloud models have no local session; the
       // Local API Server proxy is started on demand below instead.
       if (isAgentLocalProvider(selectedProvider)) {
+        if (!selectedModel) {
+          toast.error(t('chat:agentErrors.localModelRequired'))
+          return
+        }
         const providerActiveModels = await serviceHub
           .models()
           .getActiveModels(selectedProvider)
           .catch((): string[] => [])
-        if (
-          !selectedModel ||
-          !providerActiveModels.includes(selectedModel.id)
-        ) {
-          toast.error(t('chat:agentErrors.localModelRequired'))
-          return
+        if (!providerActiveModels.includes(selectedModel.id)) {
+          // Auto-start on the same path the chat transport uses instead of
+          // bouncing the send with a "load a model" toast.
+          try {
+            if (!agentProvider) throw new Error('provider not found')
+            await serviceHub.models().startModel(agentProvider, selectedModel.id)
+          } catch (error) {
+            console.error('Failed to start the local model for the agent', error)
+            toast.error(t('chat:agentErrors.localModelRequired'))
+            return
+          }
         }
       } else if (agentProvider) {
         // Same readiness path the chat transport uses for remote providers:
@@ -929,6 +998,7 @@ function ThreadDetail() {
       }
 
       await useThreads.getState().awaitThreadPersistence(threadId)
+      await syncAgentSessionIfNeeded(!persistUserMessage)
       if (persistUserMessage) {
         const messageId =
           useOptimisticUserMessage.getState().byThread[threadId]?.id ??
@@ -961,12 +1031,19 @@ function ThreadDetail() {
       const runId = generateId()
       useAgentRun.getState().startRun(threadId, runId)
       const agentAttachments = attachmentTelemetry(combinedAttachments)
-      turnContextRef.current = { source, attachments: agentAttachments }
+      turnContextRef.current = {
+        source,
+        attachments: agentAttachments,
+        engine: 'agent-ipc',
+        routeReason,
+      }
       captureChatRequest({
         ...agentAttachments,
         turn_id: beginChatTurn(threadId),
         thread_id: threadId,
         source,
+        engine: 'agent-ipc',
+        route_reason: routeReason,
         model_id: selectedModel.id,
         provider: selectedProvider,
         turn_index: chatMessagesRef.current.length,
@@ -984,6 +1061,17 @@ function ThreadDetail() {
         selectedModel.reasoning
       )
 
+      // Assistant sampling, exactly as the chat transport resolves it; the
+      // backend applies it only when the user explicitly tuned it.
+      const sampling = getSamplingParamsForThread(threadId)
+      // The composer's globe drives the same web-search state for both
+      // engines: MCP server activation for the chat transport, this per-turn
+      // flag for the agent's built-in web tools. No configured server means
+      // no globe to turn it off with, so web access stays off — an existing
+      // chat setup without a search server never made web requests.
+      const webSearchServer = findWebSearchServer(
+        useMCPServers.getState().mcpServers
+      )
       try {
         await runAgentTurn(
           {
@@ -1004,6 +1092,16 @@ function ThreadDetail() {
             })),
             auto_approve:
               useAgentMode.getState().getApprovalMode(threadId) === 'skip',
+            assistant_instructions: systemMessage,
+            sampling: sampling.params,
+            sampling_overridden: sampling.overridden,
+            web_search: Boolean(webSearchServer?.config.active),
+            mcp_enabled: true,
+            auto_approve_mcp:
+              useToolApproval.getState().allowAllMCPPermissions,
+            disabled_mcp_tools: useToolAvailable
+              .getState()
+              .getDisabledToolsForThread(threadId),
           },
           applyAgentEvent
         )
@@ -1042,6 +1140,8 @@ function ThreadDetail() {
       selectedProvider,
       serviceHub,
       setChatMessages,
+      syncAgentSessionIfNeeded,
+      systemMessage,
       t,
       threadId,
     ]
@@ -1055,23 +1155,6 @@ function ThreadDetail() {
       documentsFromPayload?: Attachment[],
       agentSkillName?: string
     ) => {
-      if (
-        resolveMessageExecutionRoute(
-          useAgentMode.getState().isAgentMode(threadId)
-        ) === 'agent-ipc'
-      ) {
-        await processAndRunAgent(
-          text,
-          files,
-          documentsFromPayload,
-          agentSkillName
-        )
-        return
-      }
-      ttftBegin()
-      const persistReady = useThreads
-        .getState()
-        .awaitThreadPersistence(threadId)
       // Documents may be passed explicitly via the initial-message payload
       // (home → new thread flow). In that case the store has already been
       // cleared synchronously on send to avoid the chip lingering in the
@@ -1080,6 +1163,33 @@ function ThreadDetail() {
       const documentAttachments =
         documentsFromPayload ??
         getAttachments(attachmentsKey).filter((a) => a.type === 'document')
+      const executionRoute = resolveThreadExecutionRoute(threadId, {
+        hasAudioAttachment: files?.some((file) =>
+          file.mediaType?.startsWith('audio/')
+        ),
+        hasDocumentAttachment: documentAttachments.length > 0,
+      })
+      if (executionRoute.route === 'agent-ipc') {
+        await processAndRunAgent(
+          text,
+          files,
+          documentsFromPayload,
+          agentSkillName,
+          true,
+          'agent',
+          executionRoute.reason
+        )
+        return
+      }
+      ttftBegin()
+      // This turn bypasses the agent engine; its exchange must be reseeded
+      // into the durable transcript before the next agent turn.
+      if (agentSessionSyncedRef.current === threadId) {
+        agentSessionSyncedRef.current = null
+      }
+      const persistReady = useThreads
+        .getState()
+        .awaitThreadPersistence(threadId)
       console.log(
         '[processAndSendMessage] attachmentsKey:',
         attachmentsKey,
@@ -1232,11 +1342,18 @@ function ThreadDetail() {
       console.log('[processAndSendMessage] sendMessage called successfully')
 
       const chatAttachments = attachmentTelemetry(processedAttachments)
-      turnContextRef.current = { source: 'chat', attachments: chatAttachments }
+      turnContextRef.current = {
+        source: 'chat',
+        attachments: chatAttachments,
+        engine: 'chat-transport',
+        routeReason: executionRoute.reason,
+      }
       const ragToolNames = useAppState.getState().ragToolNames
       const mcpToolNames = useAppState.getState().mcpToolNames
       captureChatRequest({
         ...chatAttachments,
+        engine: 'chat-transport',
+        route_reason: executionRoute.reason,
         // Only the configured context length is known at send time; how full
         // the window actually was comes from real `usage` on the response.
         ...contextTelemetry(
@@ -1330,11 +1447,19 @@ function ThreadDetail() {
   // - For assistant messages: finds the closest preceding user message, deletes from there
   const handleRegenerate = useCallback(
     async (messageId?: string) => {
+      // Mutating history under an active agent run would wipe the streaming
+      // UI and then bail on the run guard, losing messages for nothing.
+      const activeRun = useAgentRun.getState().getRun(threadId)
+      if (
+        activeRun.status === 'running' ||
+        activeRun.status === 'awaiting_approval' ||
+        activeRun.status === 'awaiting_folder_access'
+      ) {
+        return
+      }
       const currentLocalMessages = useMessages.getState().getMessages(threadId)
-      const isAgentThread =
-        resolveMessageExecutionRoute(
-          useAgentMode.getState().isAgentMode(threadId)
-        ) === 'agent-ipc'
+      let isAgentThread =
+        resolveThreadExecutionRoute(threadId).route === 'agent-ipc'
 
       if (isAgentThread) {
         let userMessageIndex = messageId
@@ -1361,6 +1486,16 @@ function ThreadDetail() {
         }
 
         const userMessage = currentLocalMessages[userMessageIndex]
+        // A turn that carried audio was served by the chat transport; the
+        // agent loop cannot replay it, so its regenerate stays there too.
+        const turnHasAudio = Boolean(
+          (userMessage.metadata as { input_audio?: unknown } | undefined)
+            ?.input_audio
+        )
+        if (turnHasAudio) {
+          isAgentThread = false
+        }
+        if (isAgentThread) {
         const {
           text,
           files: agentFiles,
@@ -1375,6 +1510,8 @@ function ThreadDetail() {
         currentLocalMessages
           .slice(userMessageIndex + 1)
           .forEach((message) => deleteMessage(threadId, message.id))
+        // The durable agent transcript still holds the deleted turns.
+        agentSessionDirtyRef.current.add(threadId)
 
         const retainedUiMessages =
           convertThreadMessagesToUIMessages(retainedMessages)
@@ -1389,6 +1526,7 @@ function ThreadDetail() {
           'regenerate'
         )
         return
+        }
       }
 
       // If regenerating from a specific message, delete all messages after it
@@ -1423,6 +1561,7 @@ function ThreadDetail() {
             messagesToDelete.forEach((msg) => {
               deleteMessage(threadId, msg.id)
             })
+            agentSessionDirtyRef.current.add(threadId)
           }
         }
       }
@@ -1446,6 +1585,14 @@ function ThreadDetail() {
   // Handle edit message - updates the message and regenerates from it
   const handleEditMessage = useCallback(
     async (messageId: string, newText: string) => {
+      const activeRun = useAgentRun.getState().getRun(threadId)
+      if (
+        activeRun.status === 'running' ||
+        activeRun.status === 'awaiting_approval' ||
+        activeRun.status === 'awaiting_folder_access'
+      ) {
+        return
+      }
       const currentLocalMessages = useMessages.getState().getMessages(threadId)
       const messageIndex = currentLocalMessages.findIndex(
         (m) => m.id === messageId
@@ -1455,9 +1602,7 @@ function ThreadDetail() {
 
       const originalMessage = currentLocalMessages[messageIndex]
       const isAgentThread =
-        resolveMessageExecutionRoute(
-          useAgentMode.getState().isAgentMode(threadId)
-        ) === 'agent-ipc'
+        resolveThreadExecutionRoute(threadId).route === 'agent-ipc'
 
       // Update the message content. Attachments are kept for every thread, not
       // just Agent ones: images live only in `content`, so dropping them here
@@ -1474,6 +1619,7 @@ function ThreadDetail() {
           : originalMessage.metadata,
       }
       updateMessage(updatedMessage)
+      agentSessionDirtyRef.current.add(threadId)
 
       // Update chat messages for UI
       const updatedChatMessages = chatMessages.map((msg) => {
@@ -1522,6 +1668,7 @@ function ThreadDetail() {
   const handleDeleteMessage = useCallback(
     (messageId: string) => {
       deleteMessage(threadId, messageId)
+      agentSessionDirtyRef.current.add(threadId)
 
       // Update chat messages for UI
       const updatedChatMessages = chatMessages.filter(
@@ -1619,16 +1766,13 @@ function ThreadDetail() {
   handleContextSizeIncreaseRef.current = handleContextSizeIncrease
   setContinueFromContentRef.current = setContinueFromContent
 
-  // Skip auto-context-increase in agent mode
-  const agentModeActive = useAgentMode((s) => s.agentThreads[threadId] === true)
   const agentWorkspace = useAgentMode((s) => s.workspaces[threadId])
+  // Every thread lazily resolves a primary workspace root (the app-data
+  // agent-workspace folder by default) — this is how migrated chat threads
+  // acquire a workspace.
   useEffect(() => {
     const currentRoot = agentWorkspace?.primaryRoot
-    if (
-      !agentModeActive ||
-      (currentRoot && !currentRoot.rootId.startsWith('legacy:'))
-    )
-      return
+    if (currentRoot && !currentRoot.rootId.startsWith('legacy:')) return
     void resolveAgentWorkspaceRoot(currentRoot?.path)
       .then((root) => {
         useAgentMode.getState().setPrimaryRoot(threadId, {
@@ -1642,7 +1786,7 @@ function ThreadDetail() {
           resolveError
         )
       })
-  }, [agentModeActive, agentWorkspace?.primaryRoot, threadId])
+  }, [agentWorkspace?.primaryRoot, threadId])
 
   const addExternalAgentRoot = useCallback(async () => {
     const selected = await serviceHub.dialog().open({
@@ -1656,8 +1800,14 @@ function ThreadDetail() {
       canEdit: true,
     })
   }, [serviceHub, threadId])
+  const isAgentRunning =
+    agentRun?.status === 'running' ||
+    agentRun?.status === 'awaiting_approval' ||
+    agentRun?.status === 'awaiting_folder_access'
   useEffect(() => {
-    if (!error || agentModeActive) return
+    // The Rust engine has its own context-recovery ladder; the frontend one
+    // only serves the chat transport.
+    if (!error || isAgentRunning) return
     const autoIncrease =
       selectedModel?.settings?.auto_increase_ctx_len?.controller_props?.value ??
       true
@@ -1702,10 +1852,10 @@ function ThreadDetail() {
     () => searchThreadModel ?? thread?.model,
     [searchThreadModel, thread]
   )
-  const isAgentRunning =
-    agentRun?.status === 'running' || agentRun?.status === 'awaiting_approval'
   const handleStop = useCallback(() => {
-    if (!agentModeActive || !isAgentRunning || !agentRun?.runId) {
+    // Decide by live run state, not by routing: a chat-transport stream must
+    // survive a provider flip mid-generation.
+    if (!isAgentRunning || !agentRun?.runId) {
       toolCallAbortController.current?.abort()
       toolCallAbortController.current = null
       sessionData.tools = []
@@ -1722,7 +1872,6 @@ function ThreadDetail() {
       toast.error(t('chat:agentErrors.cancelFailed'))
     })
   }, [
-    agentModeActive,
     agentRun?.pendingApproval,
     agentRun?.runId,
     isAgentRunning,
@@ -1731,8 +1880,7 @@ function ThreadDetail() {
     t,
     threadId,
   ])
-  const requestActive =
-    isAgentRunning || (!agentModeActive && isChatRequestActive)
+  const requestActive = isAgentRunning || isChatRequestActive
   const inputStatus = requestActive ? CHAT_STATUS.SUBMITTED : status
   const lastChatMessage = chatMessages[chatMessages.length - 1]
   const hasActiveAssistantMessage = lastChatMessage?.role === 'assistant'
@@ -1765,7 +1913,6 @@ function ThreadDetail() {
   return (
     <AgentWorkspaceLayout
       threadId={threadId}
-      agentModeActive={agentModeActive}
       workspace={agentWorkspace ?? { externalRoots: [] }}
       onAddExternal={() => void addExternalAgentRoot()}
       refreshKey={agentRun?.finishedAtMs ?? 0}
@@ -1774,9 +1921,10 @@ function ThreadDetail() {
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
         <HeaderPage>
           <div className="flex items-center justify-between w-full pr-2">
-            <DropdownModelProvider showSampler={!agentModeActive} />
+            <DropdownModelProvider />
             <div className="shrink-0">
-              <HeaderContextSize />
+              {/* The context gauge appears once the conversation has begun. */}
+              {chatMessages.length > 0 && <HeaderContextSize />}
             </div>
           </div>
         </HeaderPage>
@@ -1801,10 +1949,8 @@ function ThreadDetail() {
                         requestActive={requestActive}
                         reasoningContainerRef={reasoningContainerRef}
                         onRegenerate={handleRegenerate}
-                        onEdit={agentModeActive ? undefined : handleEditMessage}
-                        onDelete={
-                          agentModeActive ? undefined : handleDeleteMessage
-                        }
+                        onEdit={handleEditMessage}
+                        onDelete={handleDeleteMessage}
                         isAnimating={!pendingContinueMessage}
                         hideActions={!!pendingContinueMessage}
                         agentAttachmentReferences={agentAttachmentReferencesByMessageId.get(
@@ -1823,10 +1969,8 @@ function ThreadDetail() {
                         status={status}
                         reasoningContainerRef={reasoningContainerRef}
                         onRegenerate={handleRegenerate}
-                        onEdit={agentModeActive ? undefined : handleEditMessage}
-                        onDelete={
-                          agentModeActive ? undefined : handleDeleteMessage
-                        }
+                        onEdit={handleEditMessage}
+                        onDelete={handleDeleteMessage}
                         hideActions
                         isAnimating={false}
                       />
@@ -1848,10 +1992,8 @@ function ThreadDetail() {
                       requestActive={false}
                       reasoningContainerRef={reasoningContainerRef}
                       onRegenerate={handleRegenerate}
-                      onEdit={agentModeActive ? undefined : handleEditMessage}
-                      onDelete={
-                        agentModeActive ? undefined : handleDeleteMessage
-                      }
+                      onEdit={handleEditMessage}
+                      onDelete={handleDeleteMessage}
                       hideActions
                       isAnimating={false}
                     />
@@ -1865,7 +2007,7 @@ function ThreadDetail() {
                         <Shimmer duration={1}>Growing the Mind...</Shimmer>
                       ) : (
                         inputStatus === CHAT_STATUS.SUBMITTED &&
-                        !agentModeActive &&
+                        !isAgentRunning &&
                         !hasActiveAssistantMessage && <PromptProgress />
                       )}
                     </div>

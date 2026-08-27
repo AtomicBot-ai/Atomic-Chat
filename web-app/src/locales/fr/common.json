@@ -1,8 +1,10 @@
 {
   "api": "API",
+  "cloud": "Cloud",
   "assistants": "Assistants",
   "hardware": "Matériel",
   "mcp-servers": "Serveurs MCP",
+  "connectors": "Connecteurs",
   "local_api_server": "Serveur Local API",
   "https_proxy": "Mandataire Proxy HTTPS",
   "extensions": "Extensions",

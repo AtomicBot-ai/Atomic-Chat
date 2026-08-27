@@ -17,19 +17,22 @@ use super::attachments::stage_attachments;
 use super::folder_access::FolderAccessGate;
 use super::llm_client::{
     find_session_by_model_and_backend, AgentLlmClient, ContextExpansionHook, LlamaServerClient,
-    LlamaSessionTarget,
+    LlamaSessionTarget, SamplingOverrides,
 };
 use super::openai_client::{
     OpenAiCompatibleClient, OpenAiTarget, OpenAiTargetKind, SessionReloadHook,
 };
 use super::target::{resolve_agent_target, resolve_mlx_target, AgentTarget};
 use super::path_policy::{canonical_directory, expand_home, lexical_normalize, EditableRoots};
+use super::mcp_tools::{snapshot_catalog, LiveMcpBridge, McpBridge};
 use super::prompt::{
-    build_stable_prefix_for_profile, CapabilitiesSummary, SkillDescriptor,
+    build_stable_prefix_with, CapabilitiesSummary, SkillDescriptor, StablePrefixArgs,
     DEFAULT_MAX_PARALLEL_TOOL_CALLS, ITERATION_ONE_TOOLS,
 };
 use super::runner::{run_turn, RunTurnInput, MAX_STEPS};
-use super::session::{load_session, save_session, validate_session_id};
+use super::session::{
+    load_session, save_session, validate_session_id, AgentReseedMessage,
+};
 use super::skills::load_registry;
 use super::tools::DesktopServices;
 use super::types::{
@@ -522,15 +525,68 @@ pub async fn agent_run_turn<R: Runtime>(
         .collect::<Vec<_>>();
     let model_profile = client.probe_model_profile(&cancellation).await;
     let reasoning = AgentReasoning::from_request(request.reasoning.as_ref());
-    let stable_prefix = build_stable_prefix_for_profile(
-        ITERATION_ONE_TOOLS,
-        &skill_descriptors,
-        &capabilities,
-        DEFAULT_MAX_PARALLEL_TOOL_CALLS,
-        None,
-        model_profile,
-        reasoning.is_on(),
-    );
+    // Assistant sampling reaches the loop only once the user explicitly tuned
+    // it; otherwise the agent keeps its own calibrated sampler.
+    let sampling = SamplingOverrides::from_request(if request.sampling_overridden {
+        request.sampling.as_ref()
+    } else {
+        None
+    });
+    // Per-turn switch for the built-in web tools. The prompt, grammar, schema
+    // and dispatch all read this one set.
+    let disabled_tools: std::collections::BTreeSet<String> = if request.web_search {
+        std::collections::BTreeSet::new()
+    } else {
+        ["os.web.search", "os.web.fetch"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
+    };
+    let enabled_descriptors: Vec<super::prompt::ToolDescriptor> = ITERATION_ONE_TOOLS
+        .iter()
+        .filter(|descriptor| !disabled_tools.contains(descriptor.name))
+        .cloned()
+        .collect();
+    // Snapshot the MCP catalog once: the tool set is frozen for the whole
+    // turn, so every step's prompt stays byte-stable.
+    let mcp_bridge: Option<LiveMcpBridge> = if request.mcp_enabled {
+        let disabled_keys = request
+            .disabled_mcp_tools
+            .iter()
+            .cloned()
+            .collect::<std::collections::BTreeSet<String>>();
+        let catalog = snapshot_catalog(&state, &disabled_keys).await;
+        if catalog.is_empty() {
+            None
+        } else {
+            let call_timeout = state.mcp_settings.lock().await.tool_call_timeout_duration();
+            Some(LiveMcpBridge::new(
+                catalog,
+                state.mcp_servers.clone(),
+                call_timeout,
+            ))
+        }
+    } else {
+        None
+    };
+    let mcp: Option<&dyn McpBridge> = mcp_bridge
+        .as_ref()
+        .map(|bridge| bridge as &dyn McpBridge);
+    let stable_prefix = build_stable_prefix_with(&StablePrefixArgs {
+        tool_descriptors: &enabled_descriptors,
+        skill_descriptors: &skill_descriptors,
+        capabilities: &capabilities,
+        max_parallel_tool_calls: DEFAULT_MAX_PARALLEL_TOOL_CALLS,
+        system_persona: None,
+        assistant_instructions: request.assistant_instructions.as_deref(),
+        mcp_tools: mcp.map(|bridge| bridge.descriptors()).unwrap_or(&[]),
+        mcp_omitted: mcp_bridge
+            .as_ref()
+            .map(|bridge| bridge.omitted())
+            .unwrap_or(0),
+        profile: model_profile,
+        thinking: reasoning.is_on(),
+    });
     let approval_events = on_event.clone();
     let approval = ApprovalGate::new(
         request.run_id.clone(),
@@ -578,6 +634,10 @@ pub async fn agent_run_turn<R: Runtime>(
                         trusted_read_roots: &trusted_read_roots,
                         max_steps: request.max_steps.unwrap_or(MAX_STEPS),
                         reasoning: reasoning.clone(),
+                        sampling: &sampling,
+                        mcp,
+                        disabled_tools: &disabled_tools,
+                        auto_approve_mcp: request.auto_approve_mcp,
                         client: client.as_ref(),
                         approval: &approval,
                         folder_access: &folder_access,
@@ -608,6 +668,30 @@ pub async fn agent_run_turn<R: Runtime>(
     clear_pending_approvals_for_run(&state, &request.run_id).await;
     clear_pending_folder_access_for_run(&state, &request.run_id).await;
     result
+}
+
+/// Re-seed the durable agent transcript from the authoritative frontend
+/// message list — after edit/delete/regenerate, or lazily when a thread has
+/// turns the loop never saw (legacy chat history, fallback-engine turns).
+///
+/// Serialized on the per-session lock, so it can never interleave a running
+/// turn's `save_session`; the frontend must cancel or await any active run
+/// first. Spawned PTY processes are left alone — they are session resources
+/// that survive history edits and die with the thread.
+#[tauri::command]
+pub async fn agent_session_reseed<R: Runtime>(
+    app_handle: AppHandle<R>,
+    state: State<'_, AppState>,
+    session_id: String,
+    messages: Vec<AgentReseedMessage>,
+) -> Result<(), String> {
+    validate_session_id(&session_id)?;
+    let data_folder = get_jan_data_folder_path(app_handle);
+    let session_lock = get_session_lock(&state.agent_session_locks, &session_id).await;
+    let _session_guard = session_lock.lock().await;
+    let mut session = load_session(&data_folder, &session_id).await?;
+    session.reseed(&messages);
+    save_session(&data_folder, &session).await
 }
 
 fn resolve_bundled_script_runtime<R: Runtime>(app_handle: &AppHandle<R>) -> Option<PathBuf> {

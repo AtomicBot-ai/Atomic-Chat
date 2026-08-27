@@ -31,10 +31,12 @@ vi.mock('@/components/animated-icon/plug', () => ({
   PlugIcon: () => null,
 }))
 
+vi.mock('@/components/animated-icon/cloud', () => ({
+  CloudIcon: () => null,
+}))
+
 vi.mock('@/containers/dialogs/SearchDialog', () => ({
-  SearchDialog: ({ mode }: { mode: string }) => (
-    <div data-testid="search-mode">{mode}</div>
-  ),
+  SearchDialog: () => <div data-testid="search-dialog" />,
 }))
 
 vi.mock('@/containers/dialogs/AddProjectDialog', () => ({
@@ -68,71 +70,45 @@ describe('NavMain', () => {
     vi.mocked(useLocation).mockReturnValue({ pathname: '/' } as never)
   })
 
-  it('shows Integrations only in Chat mode', () => {
-    const { rerender } = render(<NavMain mode="chat" />)
-
-    expect(screen.getByText('common:launch')).toBeInTheDocument()
-
-    rerender(<NavMain mode="agent" />)
-
-    expect(screen.queryByText('common:launch')).not.toBeInTheDocument()
-  })
-
-  it('shows New Project only in Chat mode', () => {
-    const { rerender } = render(<NavMain mode="chat" />)
-
-    expect(screen.getByText('common:projects.new')).toBeInTheDocument()
-
-    rerender(<NavMain mode="agent" />)
-
-    expect(screen.queryByText('common:projects.new')).not.toBeInTheDocument()
-  })
-
-  it('shows Models in both modes', () => {
-    const { rerender } = render(<NavMain mode="chat" />)
-
-    expect(screen.getByText('common:models')).toBeInTheDocument()
-
-    rerender(<NavMain mode="agent" />)
-
-    expect(screen.getByText('common:models')).toBeInTheDocument()
-  })
-
-  it('shows Skills only in Agent mode', () => {
-    const { rerender } = render(<NavMain mode="chat" />)
-
-    expect(screen.queryByText('common:skills')).not.toBeInTheDocument()
-
-    rerender(<NavMain mode="agent" />)
-
-    expect(screen.getByText('common:skills')).toBeInTheDocument()
-  })
-
-  it('labels the new conversation action for the active mode', () => {
-    const { rerender } = render(<NavMain mode="chat" />)
+  it('shows every section on the unified sidebar', () => {
+    render(<NavMain />)
 
     expect(screen.getByText('common:newChat')).toBeInTheDocument()
-
-    rerender(<NavMain mode="agent" />)
-
-    expect(screen.getByText('common:newTask')).toBeInTheDocument()
-    expect(screen.queryByText('common:newChat')).not.toBeInTheDocument()
+    expect(screen.getByText('common:models')).toBeInTheDocument()
+    expect(screen.getByText('common:cloud')).toBeInTheDocument()
+    expect(screen.getByText('common:connectors')).toBeInTheDocument()
+    expect(screen.getByText('common:skills')).toBeInTheDocument()
+    expect(screen.getByText('common:projects.new')).toBeInTheDocument()
+    expect(screen.getByText('common:launch')).toBeInTheDocument()
+    expect(screen.getByText('common:api')).toBeInTheDocument()
+    expect(screen.queryByText('common:newTask')).not.toBeInTheDocument()
   })
 
-  it('passes the active mode to search', () => {
-    const { rerender } = render(<NavMain mode="chat" />)
+  it('highlights Connectors on its route', () => {
+    vi.mocked(useLocation).mockReturnValue({
+      pathname: '/connectors/',
+    } as never)
+    render(<NavMain />)
 
-    expect(screen.getByTestId('search-mode')).toHaveTextContent('chat')
+    expect(
+      screen.getByText('common:connectors').closest('[data-active]')
+    ).toHaveAttribute('data-active', 'true')
+  })
 
-    rerender(<NavMain mode="agent" />)
+  it('highlights Cloud on the cloud route', () => {
+    vi.mocked(useLocation).mockReturnValue({ pathname: '/cloud/' } as never)
 
-    expect(screen.getByTestId('search-mode')).toHaveTextContent('agent')
+    render(<NavMain />)
+
+    expect(
+      screen.getByText('common:cloud').closest('[data-active]')
+    ).toHaveAttribute('data-active', 'true')
   })
 
   it('highlights Integrations on the launch route', () => {
     vi.mocked(useLocation).mockReturnValue({ pathname: '/launch/' } as never)
 
-    render(<NavMain mode="chat" />)
+    render(<NavMain />)
 
     expect(
       screen.getByText('common:launch').closest('[data-active]')

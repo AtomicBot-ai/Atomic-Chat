@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-223 records, 2026-05-19 → 2026-08-24.
+225 records, 2026-05-19 → 2026-08-27.
 
 ---
 
@@ -52,8 +52,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Add a `/v1/responses` translation shim to the local proxy so Codex CLI works on llama.cpp models](2026-06-02-add-a-v1-responses-translation-shim-to-the-local-proxy-so-codex.md)
 - **2026-06-01** — [Add a "Launch" page to install + configure external coding agents / assistants against the local OpenAI-compatible API](2026-06-01-add-a-launch-page-to-install-configure-external-coding-agents.md)
 
-## Agent mode — autonomous loop, tools, skills, workspace (42)
+## Agent mode — autonomous loop, tools, skills, workspace (43)
 
+- **2026-08-27** — [Unify chat and agent on the agent engine](2026-08-27-unify-chat-and-agent-on-the-agent-engine.md)
 - **2026-08-18** — [Let Agent turns think, and apply the same thinking level chat uses](2026-08-18-let-agent-turns-think-and-apply-the-thinking-level.md)
 - **2026-08-18** — [Extend Agent mode to MLX and cloud tool providers](2026-08-18-extend-agent-mode-to-mlx-and-cloud-tool-providers.md)
 - **2026-07-31** — [Raise the Agent tool-step completion deadline to 600 seconds](2026-07-31-raise-agent-tool-step-completion-deadline-to-600-seconds.md)
@@ -244,8 +245,11 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (25)
+## UI / UX (27)
 
+- **2026-08-27** — [Unify chat and agent on the agent engine](2026-08-27-unify-chat-and-agent-on-the-agent-engine.md)
+- **2026-08-27** — [Connect a ChatGPT subscription as a model provider](2026-08-27-connect-a-chatgpt-subscription-as-a-model-provider.md)
+- **2026-08-27** — [Move cloud providers out of Settings into a Cloud page](2026-08-27-move-cloud-providers-into-a-cloud-page.md)
 - **2026-08-24** — [GAIA L1: media tools, PDF-from-URL, and web recovery fallbacks](2026-08-24-gaia-l1-media-tools-and-web-recovery.md)
 - **2026-08-24** — [GAIA L1: answer contract, reformulator, and harness sampling](2026-08-24-gaia-l1-answer-contract-and-harness.md)
 - **2026-08-24** — [Spill oversized observations to the workspace instead of compressing them](2026-08-24-spill-oversized-observations-instead-of-compressing-them.md)

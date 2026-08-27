@@ -12,8 +12,9 @@ the Vercel AI SDK path. It runs on local llama.cpp, local MLX, and cloud
 providers that support tool calling.
 
 Iterations 1 and 1b are implemented. Agent turns also accept bounded local
-file and image attachments. Memory, tasks, browser automation, skills, dynamic
-MCP tools, window control, and filesystem watchers are deferred.
+file and image attachments, the thread assistant's instructions and sampling,
+and the user's connected MCP servers as dynamic `mcp.*` tools. Memory, tasks,
+browser automation, window control, and filesystem watchers are deferred.
 
 ## Current architecture
 
@@ -81,6 +82,54 @@ MCP tools, window control, and filesystem watchers are deferred.
   per run and continues without it.
 - The prompt catalog, grammar tool-name set, and JSON-schema tool-name set must
   remain identical.
+
+### Dynamic MCP tools
+
+- `mcp_tools::snapshot_catalog` freezes the connected servers' tools **once per
+  turn** (ATO-271 discipline: peers cloned under the lock, 5s per-server
+  listing timeout, failed servers skipped). The set is stable for every step of
+  the turn; drift costs one KV-prefix re-ingest at the next turn boundary.
+- Agent-facing names are `mcp.<server-slug>.<tool>` (cap 96 chars, collision
+  suffixes); the reverse mapping lives only in the catalog — names are never
+  parsed. `mcp.` is a reserved namespace, pinned by test.
+- The catalog is capped at 64 tools; the `exa` server is excluded (the built-in
+  `os.web.search` / `os.web.fetch` already call the same hosted endpoint). The
+  frontend's per-thread `server::tool` disables filter the snapshot.
+- Prompt: one-line `# mcp` entries under `### tools` (12 000-char budget);
+  `tool.view` loads a full schema into `### loaded-tools` (2 500 chars each).
+- Grammar/schema: an `mcp-call` alternation with a generic `json-object` args
+  rule — argument shape is validated by the serving MCP server and previewed
+  for approval, mirroring the open `args` object on the JSON-schema path.
+- Resource classes: `readOnlyHint` ⇒ `McpRead` (batchable, serialized within
+  its group — the hint is untrusted); everything else ⇒ `ApprovalGated` with
+  `Always allow` fingerprints. `auto_approve_mcp` (the migrated chat
+  `allowAllMCPPermissions`, default true) bypasses the gate for MCP-origin
+  tools only, never for built-in shell/fs tools.
+- Dispatch goes through the `McpBridge` trait (`LiveMcpBridge` in production,
+  a scripted bridge in `runner_tests`), with the MCP per-call timeout and the
+  run's cancellation token; a dead server yields a structured "do not retry"
+  error outcome.
+
+### Per-turn parity inputs
+
+- `assistant_instructions` renders as the final `### assistant` stable-prefix
+  section (8 000-char cap) so the common prefix stays byte-identical across
+  threads for KV-cache sharing.
+- `sampling` + `sampling_overridden` apply the assistant's sampler (clamped)
+  only when the user explicitly tuned it; the agent's calibrated defaults
+  remain otherwise. Constrained decoding masks logits before sampling, so any
+  temperature stays shape-safe.
+- `web_search: false` filters `os.web.search` / `os.web.fetch` out of the
+  prompt, grammar, schema, and dispatch for the turn.
+- `agent_session_reseed` rebuilds the durable transcript from the frontend's
+  authoritative message list after history mutations: a prefix match appends
+  (tool observations survive), divergence rebuilds (observations drop).
+  `turn_count` is monotonic either way; PTY processes are untouched.
+- The llama.cpp transport streams: reasoning deltas live, and `reply.args.text`
+  is recovered incrementally from the constrained JSON stream
+  (`reply_stream.rs`). The parsed completion stays authoritative and
+  `AssistantReply` reconciles scanner drift. `turn_finished` carries
+  aggregated `usage` (tokens in/out, tps, ttft).
 
 ### Loop and execution
 
@@ -325,9 +374,9 @@ Rare tools remain compact one-line entries in the stable prefix.
 
 ## Deferred work
 
-- Streaming on chat transports. `run_turn` consumes whole completions and never
-  emits `AssistantDelta` from the transport, so SSE parsing would buy nothing
-  today. It is the natural next step if `AssistantDelta` is ever wired up.
+- Streaming on chat transports (mlx, cloud). The llama.cpp path streams via
+  `complete_streaming`; the OpenAI-compatible client still consumes whole
+  completions — SSE parsing there is the natural next step.
 - Native OpenAI `tools` / `tool_calls`. The text JSON-array contract is shared
   by every transport; switching cloud targets to native function calling would
   restructure the transcript into `messages[]` with tool roles.
@@ -336,7 +385,6 @@ Rare tools remain compact one-line entries in the stable prefix.
   `ContextOverflow` surfaces as a `StepError { category: "context" }`. Halving
   the conversation cap and retrying is a possible future refinement.
 - `os.fs.watch`
-- Dynamic MCP tool registration
 - Browser tools
 - Window list/focus
 - Memory

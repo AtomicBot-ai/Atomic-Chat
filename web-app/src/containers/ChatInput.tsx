@@ -6,8 +6,9 @@ import {
   LOCAL_LLAMACPP_PROVIDER,
   isLlamacppProvider,
 } from '@/lib/utils'
-import { isAgentCapableProvider } from '@/lib/agent-provider'
-import { useAgentProvider } from '@/hooks/useAgentProvider'
+import { useMessageExecutionRoute } from '@/hooks/useMessageExecutionRoute'
+import AgentApprovalInline from '@/containers/AgentApprovalInline'
+import { addExternalAgentFolder } from '@/lib/agent-workspace-actions'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
 import {
@@ -38,6 +39,7 @@ import {
   IconCodeCircle2,
   IconPlayerStopFilled,
   IconX,
+  IconFolderPlus,
   IconPaperclip,
   IconLoader2,
   IconMusic,
@@ -128,9 +130,7 @@ import {
 import { VOICE_ACTIVE_PHASES } from '@/constants/voice'
 import { ttftPreBegin } from '@/lib/ttft-timing'
 import { ModelFactory } from '@/lib/model-factory'
-import { canSelectChatAgentMode } from '@/containers/ChatAgentModeSwitch'
 import { AgentApprovalModeSelect } from '@/containers/AgentApprovalModeSelect'
-import { AgentExternalFolderButton } from '@/containers/AgentExternalFolderButton'
 import { AgentSkillSlashMenu } from '@/containers/AgentSkillSlashMenu'
 import {
   filterAgentSkills,
@@ -219,22 +219,24 @@ const ChatInput = memo(function ChatInput({
   const updateProvider = useModelProvider((state) => state.updateProvider)
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
 
-  const canSelectAgentMode = canSelectChatAgentMode(initialMessage, projectId)
-  const isAgentProviderSelected = isAgentCapableProvider(useAgentProvider())
-  const agentModeKey = canSelectAgentMode
+  // Keys per-composer state (voice, workspace, approval mode). The home and
+  // project composers use the temporary id until the real thread exists.
+  const composerThreadKey = initialMessage
     ? TEMPORARY_CHAT_ID
     : (currentThreadId ?? TEMPORARY_CHAT_ID)
-  const isAgentMode = useAgentMode(
-    (state) => state.agentThreads[agentModeKey] === true
-  )
-  const effectiveAgentMode =
-    isAgentMode && !projectId && isAgentProviderSelected
+  // Which engine would serve a send right now. Gates agent-only affordances;
+  // per-turn factors (audio) are re-resolved at send time.
+  const agentRouteActive =
+    useMessageExecutionRoute({
+      threadId: initialMessage ? undefined : currentThreadId,
+      projectId,
+    }).route === 'agent-ipc'
   // This composer owns the microphone only if it started the session —
   // home and an open thread can both be mounted at once.
   const isVoiceActive =
-    voiceOwner === agentModeKey && VOICE_ACTIVE_PHASES.has(voicePhase)
+    voiceOwner === composerThreadKey && VOICE_ACTIVE_PHASES.has(voicePhase)
   const { skills: agentSkills, loading: agentSkillsLoading } =
-    useAgentSkills(effectiveAgentMode)
+    useAgentSkills(agentRouteActive)
   const [selectedAgentSkill, setSelectedAgentSkill] =
     useState<AgentSkill | null>(null)
   const preselectedAgentSkillAppliedRef = useRef<string | null>(null)
@@ -246,9 +248,8 @@ const ChatInput = memo(function ChatInput({
     () => filterAgentSkills(agentSkills, agentSkillSlashQuery?.query ?? ''),
     [agentSkillSlashQuery?.query, agentSkills]
   )
-  const setAgentMode = useAgentMode((state) => state.setAgentMode)
   const approvalMode = useAgentMode(
-    (state) => state.approvalModes[agentModeKey] ?? 'manual'
+    (state) => state.approvalModes[composerThreadKey] ?? 'manual'
   )
   const setApprovalMode = useAgentMode((state) => state.setApprovalMode)
 
@@ -257,17 +258,11 @@ const ChatInput = memo(function ChatInput({
   }, [selectedAgentSkill])
 
   useEffect(() => {
-    if (!isAgentProviderSelected && isAgentMode) {
-      setAgentMode(agentModeKey, false)
-    }
-  }, [agentModeKey, isAgentProviderSelected, isAgentMode, setAgentMode])
-
-  useEffect(() => {
-    if (effectiveAgentMode) return
+    if (agentRouteActive) return
     setSelectedAgentSkill(null)
     setAgentSkillSlashQuery(null)
     setAgentSkillMenuOpen(false)
-  }, [effectiveAgentMode])
+  }, [agentRouteActive])
 
   useEffect(() => {
     if (!preselectedAgentSkillName) {
@@ -275,7 +270,7 @@ const ChatInput = memo(function ChatInput({
       return
     }
     if (
-      !effectiveAgentMode ||
+      !agentRouteActive ||
       agentSkillsLoading ||
       preselectedAgentSkillAppliedRef.current === preselectedAgentSkillName
     ) {
@@ -290,7 +285,7 @@ const ChatInput = memo(function ChatInput({
   }, [
     agentSkills,
     agentSkillsLoading,
-    effectiveAgentMode,
+    agentRouteActive,
     preselectedAgentSkillName,
   ])
 
@@ -300,9 +295,9 @@ const ChatInput = memo(function ChatInput({
 
   const handleApprovalModeChange = useCallback(
     (mode: 'manual' | 'skip') => {
-      setApprovalMode(agentModeKey, mode)
+      setApprovalMode(composerThreadKey, mode)
     },
-    [agentModeKey, setApprovalMode]
+    [composerThreadKey, setApprovalMode]
   )
 
   // Get current thread messages for token counting
@@ -633,7 +628,7 @@ const ChatInput = memo(function ChatInput({
   const MCPToolComponent = mcpExtension?.getToolComponent?.()
 
   const updateAgentSkillSlashQuery = (value: string, cursor: number | null) => {
-    if (!effectiveAgentMode) return
+    if (!agentRouteActive) return
     const nextQuery = findAgentSkillSlashQuery(value, cursor)
     setAgentSkillSlashQuery(nextQuery)
     setAgentSkillMenuOpen(nextQuery !== null)
@@ -685,7 +680,7 @@ const ChatInput = memo(function ChatInput({
   useEffect(() => {
     if (voiceOutcome !== 'cancelled') return
     const state = useVoiceInput.getState()
-    if (state.ownerKey !== null && state.ownerKey !== agentModeKey) return
+    if (state.ownerKey !== null && state.ownerKey !== composerThreadKey) return
     if (!voiceAnchor) return
 
     if (state.canRevert) {
@@ -704,18 +699,18 @@ const ChatInput = memo(function ChatInput({
       toast.info(t('common:voiceInput.keptOnCancel'))
     }
     state.reset()
-  }, [voiceOutcome, voiceAnchor, agentModeKey, setPrompt, t])
+  }, [voiceOutcome, voiceAnchor, composerThreadKey, setPrompt, t])
 
   // Stop dictation when this composer goes away, otherwise the microphone
   // stays open with nowhere to put the text.
   useEffect(() => {
     return () => {
       const state = useVoiceInput.getState()
-      if (state.ownerKey === agentModeKey && state.sessionId) {
+      if (state.ownerKey === composerThreadKey && state.sessionId) {
         void state.cancel()
       }
     }
-  }, [agentModeKey])
+  }, [composerThreadKey])
 
   const handleSendMessage = async (prompt: string) => {
     // Flush the tail phrase first, or pressing Enter mid-sentence drops the
@@ -738,14 +733,7 @@ const ChatInput = memo(function ChatInput({
       return
     }
     if (
-      effectiveAgentMode &&
-      attachments.some((attachment) => attachment.type === 'audio')
-    ) {
-      toast.error(t('chat:agentErrors.audioUnsupported'))
-      return
-    }
-    if (
-      effectiveAgentMode &&
+      agentRouteActive &&
       !hasMmproj &&
       attachments.some((attachment) => attachment.type === 'image')
     ) {
@@ -877,10 +865,10 @@ const ChatInput = memo(function ChatInput({
         // image data URLs can exceed the per-origin quota and silently abort
         // navigation with QuotaExceededError.
         useInitialMessage.getState().set(TEMPORARY_CHAT_ID, messagePayload)
-        if (isAgentMode && agentModeKey !== TEMPORARY_CHAT_ID) {
+        if (composerThreadKey !== TEMPORARY_CHAT_ID) {
           useAgentMode
             .getState()
-            .transferAgentMode(agentModeKey, TEMPORARY_CHAT_ID)
+            .transferThreadState(composerThreadKey, TEMPORARY_CHAT_ID)
         }
         router.navigate({
           to: route.threadsDetail,
@@ -970,7 +958,7 @@ const ChatInput = memo(function ChatInput({
           )
         }
 
-        useAgentMode.getState().transferAgentMode(agentModeKey, newThread.id)
+        useAgentMode.getState().transferThreadState(composerThreadKey, newThread.id)
 
         useInitialMessage.getState().set(newThread.id, messagePayload)
 
@@ -2391,11 +2379,15 @@ const ChatInput = memo(function ChatInput({
 
   return (
     <div className="relative mx-auto w-full max-w-3xl">
+      {/* Pending approvals dock above the composer. Outside the streaming-
+          disabled toolbar cluster: a run awaiting approval reports
+          `submitted`, and an unclickable Approve button would deadlock it. */}
+      {!initialMessage && <AgentApprovalInline threadId={composerThreadKey} />}
       <div className="relative">
         <div
           className={cn(
             'relative p-0.5 rounded-3xl',
-            effectiveAgentMode ? 'overflow-visible' : 'overflow-hidden',
+            agentRouteActive ? 'overflow-visible' : 'overflow-hidden',
             isStreaming && 'opacity-70'
           )}
         >
@@ -2532,7 +2524,7 @@ const ChatInput = memo(function ChatInput({
                   )}
                 </div>
               )}
-              {effectiveAgentMode && (
+              {agentRouteActive && (
                 <AgentSkillSlashMenu
                   skills={eligibleAgentSkills}
                   activeIndex={agentSkillActiveIndex}
@@ -2666,7 +2658,7 @@ const ChatInput = memo(function ChatInput({
                       ? t('common:voiceInput.placeholder')
                       : selectedAgentSkill
                         ? ''
-                        : effectiveAgentMode
+                        : agentRouteActive
                           ? t('chat:agentMode.placeholder')
                           : t('common:placeholder.chatInput')
                   }
@@ -2690,7 +2682,7 @@ const ChatInput = memo(function ChatInput({
               {/* Inside the composer body rather than the toolbar: the toolbar's
                   left cluster is pointer-events-none while a reply streams, and
                   a recording you cannot stop is worse than no recording. */}
-              <VoiceRecordingBar threadKey={agentModeKey} />
+              <VoiceRecordingBar threadKey={composerThreadKey} />
             </div>
           </div>
 
@@ -2773,12 +2765,29 @@ const ChatInput = memo(function ChatInput({
                             : 'Add documents or files'}
                         </span>
                       </DropdownMenuItem>
+                      {/* Workspace folders ride in the same attach menu: for
+                          the agent they are just another kind of context. */}
+                      {agentRouteActive && (
+                        <DropdownMenuItem
+                          onClick={() =>
+                            void addExternalAgentFolder(
+                              serviceHub,
+                              composerThreadKey
+                            )
+                          }
+                        >
+                          <IconFolderPlus
+                            size={18}
+                            className="text-muted-foreground"
+                          />
+                          <span>{t('chat:agentWorkspace.addFolder')}</span>
+                        </DropdownMenuItem>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
 
-                  {effectiveAgentMode && (
+                  {agentRouteActive && (
                     <>
-                      <AgentExternalFolderButton workspaceKey={agentModeKey} />
                       <AgentApprovalModeSelect
                         mode={approvalMode}
                         onChange={handleApprovalModeChange}
@@ -2808,7 +2817,7 @@ const ChatInput = memo(function ChatInput({
                   />
                 )} */}
                   {/* //! Кнопка Browse (Chrome) — временно скрыта
-                {!effectiveAgentMode && hasJanBrowserMCPConfig && modelSupportsBrowser && (
+                {!agentRouteActive && hasJanBrowserMCPConfig && modelSupportsBrowser && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -2851,8 +2860,7 @@ const ChatInput = memo(function ChatInput({
                 )}
                 */}
 
-                  {!effectiveAgentMode &&
-                    selectedModel?.capabilities?.includes('embeddings') && (
+                  {selectedModel?.capabilities?.includes('embeddings') && (
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button variant="ghost" size="icon-xs">
@@ -2866,13 +2874,12 @@ const ChatInput = memo(function ChatInput({
                           <p>{t('embeddings')}</p>
                         </TooltipContent>
                       </Tooltip>
-                    )}
+                  )}
 
                   {/* The tools button stays put even with every MCP server
                       switched off — the dropdown says so itself, and an icon
                       that vanishes when web search goes off reads as a bug. */}
-                  {!effectiveAgentMode &&
-                    supportsTools &&
+                  {(supportsTools || agentRouteActive) &&
                     (MCPToolComponent && hasActiveMCPServers ? (
                       // Use custom MCP component
                       <McpExtensionToolLoader
@@ -2932,10 +2939,10 @@ const ChatInput = memo(function ChatInput({
                       </Tooltip>
                     ))}
 
-                  {/* Web search lives on the globe: it switches the Exa (or
-                      equivalent) MCP server on and off straight from the
-                      composer. The agent has its own built-in web backend. */}
-                  {!effectiveAgentMode && supportsTools && (
+                  {/* Web search lives on the globe. On the chat transport it
+                      switches the Exa (or equivalent) MCP server; agent turns
+                      read the same state as their per-turn web_search flag. */}
+                  {(supportsTools || agentRouteActive) && (
                     <WebSearchToggle initialMessage={initialMessage} />
                   )}
                 </div>
@@ -2955,7 +2962,7 @@ const ChatInput = memo(function ChatInput({
                     recording, or sending a message would strand an
                     unstoppable recording. */}
                 <VoiceInputToggle
-                  threadKey={agentModeKey}
+                  threadKey={composerThreadKey}
                   captureAnchor={captureVoiceAnchor}
                   disabled={isStreaming}
                   className="mb-1"

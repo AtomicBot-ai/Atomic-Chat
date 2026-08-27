@@ -6,6 +6,7 @@ mod code;
 mod fs;
 mod git;
 mod http;
+mod mcp_call;
 mod media;
 mod notify;
 mod proc;
@@ -28,11 +29,14 @@ use async_trait::async_trait;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
+use std::collections::BTreeSet;
+
 use super::approval_allowlist::fingerprint_prepared_action;
 use super::llm_client::AgentLlmClient;
+use super::mcp_tools::{McpBridge, MCP_TOOL_PREFIX};
 use super::path_policy::{prepare_call_paths, EditableRoots};
 use super::pty::PtyRegistry;
-use super::resource_class::{resource_class_for, ResourceClass};
+use super::resource_class::{resource_class_for, resource_class_for_call, ResourceClass};
 use super::shell_guard::{evaluate_shell_command, join_command_stream, ShellGuardVerdict};
 use super::skills::{loaded::LoadedSkills, SkillRegistry};
 use super::types::{
@@ -80,6 +84,14 @@ pub struct ToolContext<'a> {
     pub pty: &'a PtyRegistry,
     /// Where the code index caches parsed symbols between calls.
     pub cache_dir: &'a Path,
+    /// The turn's MCP catalog and dispatcher. `None` when MCP is disabled.
+    pub mcp: Option<&'a dyn McpBridge>,
+    /// Built-in tools switched off for this turn (defense-in-depth behind the
+    /// grammar/schema filters).
+    pub disabled_tools: &'a BTreeSet<String>,
+    /// Auto-approve MCP-origin tools (legacy chat `allowAllMCPPermissions`).
+    /// Never widens approval for built-in tools.
+    pub auto_approve_mcp: bool,
 }
 
 pub async fn execute(call: &ToolCallPayload, context: &ToolContext<'_>) -> ToolOutcome {
@@ -89,6 +101,16 @@ pub async fn execute(call: &ToolCallPayload, context: &ToolContext<'_>) -> ToolO
             summary: "Tool call cancelled".into(),
             details: None,
         };
+    }
+    if context.disabled_tools.contains(&call.tool) {
+        return ToolOutcome::error(format!("Tool disabled for this turn: {}", call.tool));
+    }
+    if call.tool.starts_with(MCP_TOOL_PREFIX) {
+        let call = match authorize_call(call, context).await {
+            Ok(call) => call,
+            Err(outcome) => return outcome,
+        };
+        return mcp_call::execute(&call, context).await;
     }
     if call.tool == "os.proc.kill" {
         if let Err(error) = proc::validate_kill_args(&call.args) {
@@ -133,7 +155,7 @@ pub async fn execute(call: &ToolCallPayload, context: &ToolContext<'_>) -> ToolO
         "vision.describe" => vision::describe(&call.args, context).await,
         "skill.run_script" => skill_run_script::execute(&call.args, context).await,
         "skill.view" => skill_view::execute(&call.args, context).await,
-        "tool.view" => tool_view::execute(&call.args, context.loaded_tools).await,
+        "tool.view" => tool_view::execute(&call.args, context.loaded_tools, context.mcp).await,
         "reply" => required_string(&call.args, "text")
             .map(ToolOutcome::ok)
             .map_err(ToolOutcome::error),
@@ -220,7 +242,12 @@ async fn authorize_call(
         }
         skill_invocation = Some(invocation);
     }
-    let is_approval_gated = resource_class_for(&prepared.call.tool) == ResourceClass::ApprovalGated;
+    let is_mcp = prepared.call.tool.starts_with(MCP_TOOL_PREFIX);
+    let is_approval_gated =
+        resource_class_for_call(&prepared.call.tool, context.mcp) == ResourceClass::ApprovalGated
+            // The legacy chat pipeline auto-approved every MCP tool; the
+            // migrated setting keeps that contract for MCP-origin tools only.
+            && !(is_mcp && context.auto_approve_mcp);
     if is_approval_gated {
         reasons.push("tool is approval-gated".to_string());
     }
@@ -276,6 +303,18 @@ async fn authorize_call(
 
 fn safe_preview(call: &ToolCallPayload) -> Value {
     let mut preview = serde_json::Map::new();
+    // The user configured the MCP server and must see the payload it will
+    // receive — the full args, bounded.
+    if call.tool.starts_with(MCP_TOOL_PREFIX) {
+        const MCP_ARGS_PREVIEW_CHARS: usize = 2_000;
+        let mut args_text = serde_json::to_string(&call.args).unwrap_or_default();
+        if args_text.chars().count() > MCP_ARGS_PREVIEW_CHARS {
+            args_text = args_text.chars().take(MCP_ARGS_PREVIEW_CHARS).collect();
+            args_text.push('…');
+        }
+        preview.insert("args".into(), Value::String(args_text));
+        return Value::Object(preview);
+    }
     let allowed = [
         "path",
         "pathA",
@@ -446,6 +485,13 @@ fn safe_url_preview(raw: &str) -> String {
 }
 
 fn non_path_resources(call: &ToolCallPayload) -> Vec<ApprovalResource> {
+    if call.tool.starts_with(MCP_TOOL_PREFIX) {
+        return vec![ApprovalResource {
+            kind: "mcp".into(),
+            value: call.tool.clone(),
+            operation: "call".into(),
+        }];
+    }
     match call.tool.as_str() {
         "os.http.request" => call
             .args
@@ -710,6 +756,9 @@ mod tests {
                 desktop: &desktop,
                 pty: &PtyRegistry::new(),
                 cache_dir: &std::env::temp_dir(),
+                mcp: None,
+                disabled_tools: &std::collections::BTreeSet::new(),
+                auto_approve_mcp: true,
             };
             let outcome = execute(
                 &ToolCallPayload {
@@ -771,6 +820,9 @@ mod tests {
             desktop: &desktop,
             pty: &PtyRegistry::new(),
             cache_dir: &std::env::temp_dir(),
+            mcp: None,
+            disabled_tools: &std::collections::BTreeSet::new(),
+            auto_approve_mcp: true,
         };
 
         let outcome = execute(
@@ -828,6 +880,9 @@ mod tests {
             desktop: &desktop,
             pty: &PtyRegistry::new(),
             cache_dir: &std::env::temp_dir(),
+            mcp: None,
+            disabled_tools: &std::collections::BTreeSet::new(),
+            auto_approve_mcp: true,
         };
         let outcome = execute(
             &ToolCallPayload {
@@ -875,6 +930,9 @@ mod tests {
             desktop: &desktop,
             pty: &PtyRegistry::new(),
             cache_dir: &std::env::temp_dir(),
+            mcp: None,
+            disabled_tools: &std::collections::BTreeSet::new(),
+            auto_approve_mcp: true,
         };
 
         let clipboard = execute(
@@ -935,6 +993,9 @@ mod tests {
             desktop: &desktop,
             pty: &PtyRegistry::new(),
             cache_dir: &std::env::temp_dir(),
+            mcp: None,
+            disabled_tools: &std::collections::BTreeSet::new(),
+            auto_approve_mcp: true,
         };
 
         let blocked = authorize_call(
@@ -992,6 +1053,9 @@ mod tests {
             desktop: &desktop,
             pty: &PtyRegistry::new(),
             cache_dir: &std::env::temp_dir(),
+            mcp: None,
+            disabled_tools: &std::collections::BTreeSet::new(),
+            auto_approve_mcp: true,
         };
         let original = ToolCallPayload {
             tool: "os.fs.trash".into(),
@@ -1047,6 +1111,9 @@ mod tests {
             desktop: &desktop,
             pty: &PtyRegistry::new(),
             cache_dir: &std::env::temp_dir(),
+            mcp: None,
+            disabled_tools: &std::collections::BTreeSet::new(),
+            auto_approve_mcp: true,
         };
         let escaped = ToolCallPayload {
             tool: "os.fs.trash".into(),
@@ -1100,6 +1167,9 @@ mod tests {
             desktop: &desktop,
             pty: &PtyRegistry::new(),
             cache_dir: &std::env::temp_dir(),
+            mcp: None,
+            disabled_tools: &std::collections::BTreeSet::new(),
+            auto_approve_mcp: true,
         };
 
         let denied = authorize_call(
@@ -1150,6 +1220,9 @@ mod tests {
             desktop: &desktop,
             pty: &PtyRegistry::new(),
             cache_dir: &std::env::temp_dir(),
+            mcp: None,
+            disabled_tools: &std::collections::BTreeSet::new(),
+            auto_approve_mcp: true,
         };
 
         let denied = execute(

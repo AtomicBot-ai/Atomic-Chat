@@ -54,6 +54,10 @@ pub struct ToolWithServer {
     #[serde(rename = "inputSchema")]
     pub input_schema: serde_json::Value,
     pub server: String,
+    /// Raw MCP `ToolAnnotations` (`readOnlyHint`, …) when the server sends
+    /// them. Additive and optional — older consumers ignore it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
