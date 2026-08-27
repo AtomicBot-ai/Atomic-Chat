@@ -4480,6 +4480,11 @@ const ATOMIC_AGENT_DEFAULT_LLAMA_URL: &str = "http://127.0.0.1:8080";
 /// when the config selects `mode: "managed"` without naming a port.
 const ATOMIC_AGENT_DEFAULT_MANAGED_PORT: u64 = 19_091;
 
+/// Fallback for `localModels.embeddings.port`, from the same defaults. The
+/// agent derives `localModels.embeddings.url` from it when the file names a
+/// port but no url (`config-schema.ts`'s `embeddingsDaemon`).
+const ATOMIC_AGENT_DEFAULT_EMBEDDINGS_PORT: u64 = 19_092;
+
 /// Per-request timeout seeded on our provider entry. Atomic Agent's
 /// OpenAI-compatible provider otherwise defaults to 600_000 ms
 /// (`src/llm/provider/openai/openai-provider.ts`), so a wedged local turn would
@@ -4514,6 +4519,10 @@ fn resolve_atomic_agent_state_dir() -> Result<PathBuf, String> {
 /// `src/config/config-schema.ts`). The URL is mode-aware: under
 /// `localModels.mode: "managed"` the agent ignores `localModels.url` and talks
 /// to the daemon it runs on `localModels.managed.port`.
+///
+/// `url` carries chat, `baseUrl` carries embeddings — see
+/// `atomic_agent_embedding_base_url` for why the two can differ and why
+/// omitting the second would move a working embeddings setup.
 fn atomic_agent_local_llama_entry(
     root: &serde_json::Map<String, serde_json::Value>,
 ) -> serde_json::Value {
@@ -4541,8 +4550,50 @@ fn atomic_agent_local_llama_entry(
     serde_json::json!({
         "id": ATOMIC_AGENT_LOCAL_PROVIDER_ID,
         "kind": "llama-server",
+        "baseUrl": atomic_agent_embedding_base_url(root, &url),
         "url": url,
     })
+}
+
+/// Where the agent would look for embeddings if we were not writing an `llm`
+/// block at all — the no-block branch of `resolveEmbeddingLlmConfig`
+/// (`src/memory/embeddings/embedding-provider-registry.ts`), which reads
+/// `embeddings.enabled ? embeddings.url : localModels.url`. `chat_url` is the
+/// mode-aware URL already computed for this entry, because `localModels.url`
+/// is itself resolved to the managed daemon before that branch sees it
+/// (`src/config/load-config.ts`).
+///
+/// Seeding this matters because the embedding path resolves a provider entry
+/// as `baseUrl ?? url`: without it, creating the `llm` block would silently
+/// repoint embeddings at the chat daemon for everyone running the embeddings
+/// daemon. The agent's own synthesised entry sets `baseUrl` unconditionally to
+/// the embeddings daemon URL, but copying that literally would point a default
+/// install at a port with nothing listening — the branch that governs the
+/// files we convert is the no-`llm`-block one, so that is the one we mirror.
+fn atomic_agent_embedding_base_url(
+    root: &serde_json::Map<String, serde_json::Value>,
+    chat_url: &str,
+) -> String {
+    let embeddings = root.get("localModels").and_then(|v| v.get("embeddings"));
+    let enabled = embeddings
+        .and_then(|v| v.get("enabled"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    if !enabled {
+        return chat_url.to_string();
+    }
+    embeddings
+        .and_then(|v| v.get("url"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            let port = embeddings
+                .and_then(|v| v.get("port"))
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(ATOMIC_AGENT_DEFAULT_EMBEDDINGS_PORT);
+            format!("http://127.0.0.1:{}", port)
+        })
 }
 
 /// Upsert the Atomic Chat provider into an Atomic Agent `config.json` payload.
@@ -4628,7 +4679,7 @@ fn atomic_agent_patch_config(
             "kind": "openai-compatible",
             "baseUrl": api_url,
             "apiKey": key_val,
-            "defaultChatModel": model,
+            "defaultChatModel": model.trim(),
             "supportsTools": true,
             "requestTimeoutMs": timeout,
         });
@@ -5401,6 +5452,81 @@ mod atomic_agent_tests {
         assert_eq!(
             provider(&out, ATOMIC_AGENT_LOCAL_PROVIDER_ID)["url"],
             format!("http://127.0.0.1:{ATOMIC_AGENT_DEFAULT_MANAGED_PORT}")
+        );
+    }
+
+    /// Chat and embeddings are two different daemons. The embedding path
+    /// resolves a provider entry as `baseUrl ?? url`
+    /// (`src/memory/embeddings/embedding-provider-registry.ts`), so an entry
+    /// carrying only `url` would send embeddings to the chat server the moment
+    /// we create the `llm` block. `baseUrl` therefore mirrors the branch the
+    /// agent uses for a file with no `llm` block at all:
+    /// `embeddings.enabled ? embeddings.url : localModels.url`.
+    #[test]
+    fn seeded_llama_entry_keeps_embeddings_on_the_embeddings_daemon() {
+        let base_url = |local_models: serde_json::Value| {
+            patch(serde_json::json!({ "localModels": local_models }))["llm"]["providers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|p| p["id"] == ATOMIC_AGENT_LOCAL_PROVIDER_ID)
+                .expect("local-llama must be seeded")["baseUrl"]
+                .as_str()
+                .expect("baseUrl must be written")
+                .to_string()
+        };
+
+        // Daemon off: embeddings ride the chat URL, exactly as today.
+        assert_eq!(
+            base_url(serde_json::json!({})),
+            ATOMIC_AGENT_DEFAULT_LLAMA_URL
+        );
+        assert_eq!(
+            base_url(serde_json::json!({ "url": "http://127.0.0.1:9000" })),
+            "http://127.0.0.1:9000"
+        );
+        assert_eq!(
+            base_url(serde_json::json!({ "mode": "managed", "managed": { "port": 20001 } })),
+            "http://127.0.0.1:20001"
+        );
+
+        // Daemon on: embeddings stay on the daemon, in either mode.
+        assert_eq!(
+            base_url(serde_json::json!({
+                "embeddings": { "enabled": true, "url": "http://127.0.0.1:19092" }
+            })),
+            "http://127.0.0.1:19092"
+        );
+        assert_eq!(
+            base_url(serde_json::json!({
+                "mode": "managed",
+                "embeddings": { "enabled": true, "url": "http://127.0.0.1:19092" }
+            })),
+            "http://127.0.0.1:19092"
+        );
+        // A port with no url: the agent derives the url from it, so we do too.
+        assert_eq!(
+            base_url(serde_json::json!({
+                "embeddings": { "enabled": true, "port": 20500 }
+            })),
+            "http://127.0.0.1:20500"
+        );
+        assert_eq!(
+            base_url(serde_json::json!({ "embeddings": { "enabled": true } })),
+            format!("http://127.0.0.1:{ATOMIC_AGENT_DEFAULT_EMBEDDINGS_PORT}")
+        );
+    }
+
+    /// The model is validated trimmed, so it has to be stored trimmed as well —
+    /// otherwise `" qwen "` reaches the file and the agent asks the server for
+    /// a model no server has.
+    #[test]
+    fn writes_the_model_trimmed() {
+        let out = atomic_agent_patch_config(serde_json::json!({}), URL, "  qwen3-4b\n", None)
+            .expect("merge must succeed");
+        assert_eq!(
+            provider(&out, ATOMIC_AGENT_PROVIDER_ID)["defaultChatModel"],
+            "qwen3-4b"
         );
     }
 

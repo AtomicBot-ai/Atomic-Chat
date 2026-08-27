@@ -52,6 +52,30 @@ title: "Add Atomic Agent as a one-click Launch-page assistant, configured by mer
     not carry it), built from the same inputs the agent's own parser uses:
     `localModels.url`, or `http://127.0.0.1:<managed.port>` when
     `localModels.mode` is `managed`, which is what the agent talks to then.
+  - **The absent case writes the key, unlike `toolTransport`.** Absent and
+    dangling are repaired the same way on purpose: an absent
+    `activeEmbeddingProvider` defaults to `local-llama` inside the agent's
+    parser, which then rejects the file unless that entry is *listed* — so the
+    absent case is already a write (the seeded provider), not a no-op. Naming
+    the provider we just seeded next to it keeps a hand-edited file
+    self-describing, and by construction the name matches what the parser would
+    have chosen anyway. That is the one place we restate an agent default, and
+    it is deliberate.
+  - **The seeded `local-llama` entry carries `baseUrl`, not just `url`.** Chat
+    and embeddings are two different daemons, and the embedding path resolves a
+    provider entry as `baseUrl ?? url`
+    (`src/memory/embeddings/embedding-provider-registry.ts`). Creating the
+    `llm` block therefore moves a config from the branch that reads
+    `localModels.*` directly to the branch that reads the entry — and an entry
+    with only `url` would silently repoint embeddings at the chat daemon for
+    everyone running the embeddings daemon, the exact outcome this writer
+    exists to avoid. `baseUrl` mirrors the no-`llm`-block branch:
+    `localModels.embeddings.url` (or `http://127.0.0.1:<embeddings.port>`) when
+    that daemon is enabled, and the entry's own chat URL when it is not. The
+    entry the agent synthesises for itself sets `baseUrl` to the embeddings URL
+    *unconditionally*; copying that literally would point a default install at
+    a port with nothing listening, so the branch that governs the files we
+    convert is the one we mirror.
   - **`toolTransport` is deliberately not written.** The agent defaults an
     absent one to `"auto"`, so writing it could only ever restate the agent's
     own choice while adding a key to the user's file.
@@ -59,8 +83,10 @@ title: "Add Atomic Agent as a one-click Launch-page assistant, configured by mer
     explicit "use this", the same contract as OpenCode's `model` key.
   - **`requestTimeoutMs` is a tightening, like Hermes'.** The agent's
     OpenAI-compatible provider defaults to 600 s, long enough that a wedged
-    local turn looks like a hang; 300 s is seeded, and any value the user
-    already tuned on our entry is preserved.
+    local turn looks like a hang; 300 s is seeded, and a `requestTimeoutMs`
+    already tuned on our entry is preserved. Nothing else on the entry is: a
+    re-run rewrites `atomic-chat` wholesale, because every other field on it is
+    ours to state.
   - **`endpointWithPrefix: true`.** The stored `baseUrl` reads as the base URL
     a user would paste; the agent normalises a trailing `/v1` away in the
     provider constructor (`normalizeOpenAiBaseUrl`), so requests still land on
@@ -69,7 +95,9 @@ title: "Add Atomic Agent as a one-click Launch-page assistant, configured by mer
     `parseOptionalString` rejects `""` rather than treating it as absent, so an
     empty `defaultChatModel` would take the whole file down at its next start.
     Both callers already guarantee a model; failing in the writer makes that
-    its own contract rather than an inherited one.
+    its own contract rather than an inherited one. The check is on the trimmed
+    name, so the write is too — the agent asks the server for the string it
+    finds, and `" qwen "` is not a model any server has.
   - **The Windows registry read is reused.** `ATOMIC_AGENT_STATE_DIR` is read
     from `HKCU\Environment` before `std::env::var`, for the same
     stale-snapshot reason as
