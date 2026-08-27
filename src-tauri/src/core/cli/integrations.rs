@@ -220,6 +220,19 @@ pub const AGENTS: &[Agent] = &[
         run_mode: RunMode::Terminal,
     },
     Agent {
+        id: "atomic-agent",
+        name: "Atomic Agent",
+        detect_bin: "atomic-agent",
+        // `atag` is the short alias the installer drops next to the binary.
+        aliases: &["atag"],
+        requires_model: true,
+        endpoint_with_prefix: true,
+        docs_url: "https://github.com/AtomicBot-ai/atomic-agent",
+        // A bare `atomic-agent` opens the TUI.
+        run_args: &[],
+        run_mode: RunMode::Terminal,
+    },
+    Agent {
         id: "hermes",
         name: "Hermes Agent",
         detect_bin: "hermes",
@@ -290,6 +303,7 @@ pub fn configure(agent: &Agent, api_url: &str, model: &str, api_key: &str) -> Re
         "openhands" => agents::configure_openhands(url, model_owned, key),
         "poolside" => agents::configure_poolside(url, model_owned, key),
         "goose" => agents::configure_goose(url, model_owned, key),
+        "atomic-agent" => agents::configure_atomic_agent(url, model_owned, key),
         "hermes" => {
             agents::configure_hermes_agent(url, model_owned, key, Some(HERMES_CONTEXT_LENGTH))
         }

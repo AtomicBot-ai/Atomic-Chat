@@ -87,7 +87,7 @@ Bound to `127.0.0.1` by default; set `host: 0.0.0.0` to expose it on your LAN. W
 
 **Tools & integrations**
 
-- One-click agent launch — launch coding agents like Claude Code, Codex CLI, Cline, OpenCode, Droid, Goose, OpenHands, Copilot CLI, Kilo Code and Zed in one click from the Integrations tab
+- One-click agent launch — launch agents like Atomic Agent, Claude Code, Codex CLI, Cline, OpenCode, Droid, Goose, OpenHands, Copilot CLI, Kilo Code and Zed in one click from the Integrations tab
 - Artifacts — live preview panel for HTML/CSS/JS code with copy, download and print
 - Connect multiple [MCP](https://modelcontextprotocol.io/) servers — bring your own tools, file access, web search
 - Custom assistants with per-assistant system prompts
