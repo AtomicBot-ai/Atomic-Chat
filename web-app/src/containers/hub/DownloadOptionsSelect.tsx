@@ -154,7 +154,7 @@ export function DownloadOptionsSelect({
           type="button"
           onClick={() => setExpanded((prev) => !prev)}
           aria-expanded={expanded}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-md bg-muted/40 px-2 py-2 text-left hover:bg-muted/60"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-md bg-muted/40 px-2 py-2 text-left hover:bg-foreground/10"
         >
           {fitKnown && <FitDot fit={selectedFit} />}
           <span className="shrink-0 rounded-[5px] bg-secondary px-[7px] py-0.5 font-mono text-[11px] font-semibold text-muted-foreground">
@@ -224,8 +224,8 @@ export function DownloadOptionsSelect({
                     quant.model_id === selected.model_id ? 'true' : undefined
                   }
                   className={cn(
-                    'flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left hover:bg-muted/40',
-                    quant.model_id === selected.model_id && 'bg-muted/60'
+                    'flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left hover:bg-foreground/10',
+                    quant.model_id === selected.model_id && 'bg-foreground/20'
                   )}
                 >
                   {fitKnown && <FitDot fit={fit} />}

@@ -106,7 +106,7 @@ function AssistantContent() {
                           key={a.id}
                           className={cn(
                             'cursor-pointer my-0.5',
-                            defaultAssistantId === a.id && 'bg-secondary-foreground/8'
+                            defaultAssistantId === a.id && 'bg-foreground/20'
                           )}
                           onClick={() => setDefaultAssistant(a.id)}
                         >
@@ -120,7 +120,7 @@ function AssistantContent() {
               <h1 className="text-foreground font-studio font-medium text-sm mt-4 mb-4">{t('assistants:allAssistants')}</h1>
               {sortedAssistants.map((assistant) => (
                 <div
-                  className="group flex items-center gap-3 px-3 py-3 rounded-lg my-1 bg-secondary/20 hover:bg-secondary dark:hover:bg-secondary/20 transition-colors"
+                  className="group flex items-center gap-3 px-3 py-3 rounded-lg my-1 bg-secondary/20 hover:bg-foreground/10 transition-colors"
                   key={assistant.id}
                 >
                   <div className="size-9 shrink-0 flex items-center justify-center bg-secondary dark:bg-secondary/40 rounded-lg">

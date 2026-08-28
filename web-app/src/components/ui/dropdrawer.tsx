@@ -298,7 +298,7 @@ function DropDrawerContent({
                 <div className="flex items-center gap-2">
                   <button
                     onClick={goBack}
-                    className="hover:bg-muted/50 rounded-full p-1"
+                    className="hover:bg-foreground/10 rounded-full p-1"
                   >
                     <ChevronLeftIcon className="size-5" />
                   </button>

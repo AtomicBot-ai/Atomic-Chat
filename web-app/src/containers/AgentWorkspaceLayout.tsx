@@ -219,7 +219,7 @@ export function AgentWorkspaceLayout({
       {!filesVisible && (
         <button
           type="button"
-          className="absolute top-[17px] right-3 z-30 flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none ring-ring transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2"
+          className="absolute top-[17px] right-3 z-30 flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none ring-ring transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:ring-2"
           aria-label="Open files sidebar"
           title="Open files sidebar"
           onClick={() => setFilesOpen(true)}

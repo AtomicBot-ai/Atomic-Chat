@@ -36,7 +36,7 @@ export function AgentWorkspaceSelect({
   return (
     <button
       type="button"
-      className="flex max-w-48 cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-0.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="flex max-w-48 cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-0.5 text-sm text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       title={workingDir ?? t('agentWorkspace.defaultDescription')}
       aria-label={
         workingDir ? t('agentWorkspace.change') : t('agentWorkspace.choose')

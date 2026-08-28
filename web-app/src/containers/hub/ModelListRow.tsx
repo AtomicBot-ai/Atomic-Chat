@@ -40,8 +40,8 @@ export function ModelListRow({
       onClick={onSelect}
       aria-current={selected ? 'true' : undefined}
       className={cn(
-        'flex w-full items-center gap-3 rounded-lg border border-transparent px-2 py-3 text-left transition-colors hover:bg-accent',
-        selected && 'border-border bg-accent'
+        'flex w-full items-center gap-3 rounded-lg border border-transparent px-2 py-3 text-left transition-colors hover:bg-foreground/10',
+        selected && 'border-border bg-foreground/20'
       )}
     >
       <ModelLogo

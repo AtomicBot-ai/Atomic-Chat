@@ -180,7 +180,7 @@ export function AddCloudProviderDialog({
                       onClick={() => setStep({ name: 'key', provider })}
                       className={cn(
                         'flex items-center gap-3 rounded-lg border bg-secondary/50 p-3 text-left',
-                        'hover:bg-secondary focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none'
+                        'hover:bg-foreground/10 focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none'
                       )}
                     >
                       <ProvidersAvatar

@@ -371,7 +371,7 @@ function CopyableField({
         </code>
         <button
           onClick={copy}
-          className="shrink-0 p-0.5 rounded hover:bg-secondary/60 text-muted-foreground"
+          className="shrink-0 p-0.5 rounded hover:bg-foreground/10 text-muted-foreground"
         >
           {copied ? (
             <IconCheck size={13} className="text-emerald-500" />
@@ -631,9 +631,9 @@ function ModelSelector({
                             onClick={() => handleSelect(model)}
                             className={cn(
                               'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
-                              'hover:bg-secondary/40',
+                              'hover:bg-foreground/10',
                               isSelected &&
-                                'bg-secondary/60 hover:bg-secondary/60'
+                                'bg-foreground/20 hover:bg-foreground/20'
                             )}
                           >
                             <div className="flex items-center gap-2 flex-1 min-w-0">

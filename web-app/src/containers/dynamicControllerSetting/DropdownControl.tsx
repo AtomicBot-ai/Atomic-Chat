@@ -45,7 +45,7 @@ export function DropdownControl({
             className={cn(
               'flex items-center justify-between my-1',
               isSelected === option.name
-                ? 'bg-secondary/60 hover:bg-secondary/40'
+                ? 'bg-foreground/20 hover:bg-foreground/20'
                 : ''
             )}
           >

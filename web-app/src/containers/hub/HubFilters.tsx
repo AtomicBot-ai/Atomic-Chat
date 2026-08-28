@@ -119,7 +119,7 @@ export function HubFilters({
               key={key}
               className={cn(
                 'my-0.5 cursor-pointer',
-                state.sort === key && 'bg-secondary'
+                state.sort === key && 'bg-foreground/20'
               )}
               onClick={() => onChange({ ...state, sort: key })}
             >

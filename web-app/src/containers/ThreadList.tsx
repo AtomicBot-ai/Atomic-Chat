@@ -219,8 +219,8 @@ const ThreadItem = memo(
             to="/threads/$threadId"
             params={{ threadId: thread.id }}
             className={cn(
-              'bg-card dark:bg-secondary/20 mb-2 px-4 py-4 border hover:dark:bg-secondary/30 rounded-lg block',
-              isActive && 'bg-secondary dark:bg-secondary/80'
+              'bg-card dark:bg-secondary/20 mb-2 px-4 py-4 border hover:bg-foreground/10 rounded-lg block',
+              isActive && 'bg-foreground/20'
             )}
           >
             <span className="flex items-center gap-2 pr-8 min-w-0">

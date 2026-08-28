@@ -49,8 +49,8 @@ export function AgentSkillSlashMenu({
               aria-selected={index === activeIndex}
               className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left ${
                 index === activeIndex
-                  ? 'bg-accent text-accent-foreground'
-                  : 'hover:bg-accent/60'
+                  ? 'bg-foreground/20 text-accent-foreground'
+                  : 'hover:bg-foreground/10'
               }`}
               onMouseDown={(event) => event.preventDefault()}
               onMouseEnter={() => onActiveIndexChange(index)}

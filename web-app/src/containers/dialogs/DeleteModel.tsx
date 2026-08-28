@@ -81,7 +81,7 @@ export const DialogDeleteModel = ({
     <Dialog>
       <DialogTrigger asChild>
         <div
-          className="size-6 cursor-pointer flex items-center justify-center rounded transition-all duration-200 ease-in-out"
+          className="size-6 cursor-pointer flex items-center justify-center rounded transition-all duration-200 ease-in-out hover:bg-foreground/10"
           title={t('providers:deleteModel.delete')}
           aria-label={t('providers:deleteModel.delete')}
         >

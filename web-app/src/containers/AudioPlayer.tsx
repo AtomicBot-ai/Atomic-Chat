@@ -244,7 +244,7 @@ export function AudioPlayer({
             <button
               type="button"
               aria-label="Playback options"
-              className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-foreground/10 hover:text-foreground"
             >
               <IconDots size={16} />
             </button>

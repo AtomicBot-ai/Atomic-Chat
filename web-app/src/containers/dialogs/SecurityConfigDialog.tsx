@@ -409,7 +409,7 @@ export function SecurityConfigDialog({
           className="space-y-2"
           disabled={isChangingAuthMode}
         >
-          <div className="flex items-center space-x-3 p-3 rounded-lg border border-border hover:bg-secondary/30 transition-colors">
+          <div className="flex items-center space-x-3 p-3 rounded-lg border border-border hover:bg-foreground/10 transition-colors">
             <RadioGroupItem value="token" id="auth-token" />
             <label htmlFor="auth-token" className="flex-1 cursor-pointer">
               <span className="font-medium text-foreground">Token</span>
@@ -418,7 +418,7 @@ export function SecurityConfigDialog({
               </p>
             </label>
           </div>
-          <div className="flex items-center space-x-3 p-3 rounded-lg border border-border hover:bg-secondary/30 transition-colors">
+          <div className="flex items-center space-x-3 p-3 rounded-lg border border-border hover:bg-foreground/10 transition-colors">
             <RadioGroupItem value="password" id="auth-password" />
             <label htmlFor="auth-password" className="flex-1 cursor-pointer">
               <span className="font-medium text-foreground">Password</span>
@@ -427,7 +427,7 @@ export function SecurityConfigDialog({
               </p>
             </label>
           </div>
-          <div className="flex items-center space-x-3 p-3 rounded-lg border border-border hover:bg-secondary/30 transition-colors">
+          <div className="flex items-center space-x-3 p-3 rounded-lg border border-border hover:bg-foreground/10 transition-colors">
             <RadioGroupItem value="none" id="auth-none" />
             <label htmlFor="auth-none" className="flex-1 cursor-pointer">
               <span className="font-medium text-foreground">None</span>
