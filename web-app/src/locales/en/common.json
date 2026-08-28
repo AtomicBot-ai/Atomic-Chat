@@ -300,6 +300,13 @@
     "title": "Model Settings - {{modelId}}",
     "description": "Configure model settings to optimize performance and behavior."
   },
+  "modelProvenance": {
+    "servedBy": "Served by {{model}}",
+    "switchedTo": "Switched to {{model}}",
+    "model": "Model",
+    "provider": "Provider",
+    "backend": "Backend"
+  },
   "dialogs": {
     "changeDataFolder": {
       "title": "Change Data Folder Location",

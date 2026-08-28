@@ -532,6 +532,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const providerId = useModelProvider.getState().selectedProvider
     const effectiveProviderName = providerId
     const provider = useModelProvider.getState().getProviderByName(providerId)
+
+    // Backend build that serves THIS response, recorded alongside modelId and
+    // providerId in the finish metadata so threads can show where provenance
+    // changed (see lib/modelProvenance.ts). Read at send time on purpose:
+    // later backend upgrades must not rewrite already-generated history.
+    const backendVersion = provider?.settings?.find(
+      (setting) => setting.key === 'version_backend'
+    )?.controller_props?.value
     if (this.serviceHub && modelId && provider) {
       try {
         const updatedProvider = useModelProvider
@@ -850,6 +858,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
             // recorded anywhere, so a finished turn could not be attributed.
             modelId,
             providerId,
+            ...(typeof backendVersion === 'string' && backendVersion !== ''
+              ? { backend: backendVersion }
+              : {}),
             usage: {
               inputTokens: inputTokens,
               outputTokens: outputTokens,
