@@ -29,6 +29,8 @@
   "unstar": "スターを解除",
   "deleteAll": "すべて削除",
   "star": "スターを付ける",
+  "openInNewWindow": "新しいウィンドウで開く",
+  "openInNewWindowFailed": "このチャットを新しいウィンドウで開けませんでした",
   "rename": "名前を変更",
   "delete": "削除",
   "copied": "コピーしました！",

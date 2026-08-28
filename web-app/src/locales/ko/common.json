@@ -39,6 +39,8 @@
   "unstar": "즐겨찾기 해제",
   "deleteAll": "모두 삭제",
   "star": "즐겨찾기",
+  "openInNewWindow": "새 창에서 열기",
+  "openInNewWindowFailed": "이 채팅을 새 창에서 열 수 없습니다",
   "rename": "이름 변경",
   "delete": "삭제",
   "copied": "복사되었습니다!",

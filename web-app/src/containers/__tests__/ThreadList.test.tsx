@@ -24,11 +24,15 @@ vi.mock('@tanstack/react-router', () => ({
 // test asserts the real wiring without pulling in the full sidebar context.
 vi.mock('@/components/ui/sidebar', () => ({
   useSidebar: () => ({ isMobile: false }),
-  SidebarMenuItem: ({ children, className }: any) => (
-    <li className={className}>{children}</li>
+  SidebarMenuItem: ({ children, className, ...props }: any) => (
+    <li className={className} {...props}>
+      {children}
+    </li>
   ),
-  SidebarMenuSubItem: ({ children, className }: any) => (
-    <li className={className}>{children}</li>
+  SidebarMenuSubItem: ({ children, className, ...props }: any) => (
+    <li className={className} {...props}>
+      {children}
+    </li>
   ),
   SidebarMenuButton: ({ children, isActive }: any) => (
     <div data-testid="thread-button" data-active={String(!!isActive)}>
@@ -48,10 +52,13 @@ vi.mock('@/components/ui/sidebar', () => ({
 // Dropdown menu and dialogs are not under test — collapse them to passthroughs.
 vi.mock('@/components/ui/dropdown-menu', () => {
   const Pass = ({ children }: any) => <div>{children}</div>
+  const Item = ({ children, onSelect }: any) => (
+    <div onClick={onSelect}>{children}</div>
+  )
   return {
     DropdownMenu: Pass,
     DropdownMenuContent: Pass,
-    DropdownMenuItem: Pass,
+    DropdownMenuItem: Item,
     DropdownMenuSeparator: Pass,
     DropdownMenuTrigger: Pass,
     DropdownMenuSub: Pass,
@@ -68,6 +75,9 @@ vi.mock('@/containers/dialogs', () => ({
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
+
+// "Open in new window" only exists on the desktop build.
+vi.mock('@/lib/platform/utils', () => ({ isPlatformTauri: () => true }))
 
 vi.mock('@/lib/utils', () => ({
   cn: (...args: any[]) => args.filter(Boolean).join(' '),
@@ -225,5 +235,59 @@ describe('ThreadList active highlight', () => {
     expect(
       screen.queryByLabelText('chat:threadType.agent')
     ).not.toBeInTheDocument()
+  })
+})
+
+describe('ThreadList right-click menu', () => {
+  let openWindow: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(useParams).mockReturnValue({} as never)
+    openWindow = vi.fn().mockResolvedValue(undefined)
+    seedServiceHub({
+      messages: { fetchMessages: vi.fn() } as unknown as MessagesService,
+      window: { openWindow } as never,
+    })
+  })
+
+  // Issue #254: the row is a real <a>, so without preventDefault the embedding
+  // WebView shows its own link menu — whose "Open link in new window" it then
+  // silently drops.
+  it('suppresses the native context menu and opens our own', async () => {
+    await act(async () => {
+      render(<ThreadList threads={threads} />)
+    })
+
+    const row = screen.getByText('First chat').closest('li')!
+    const event = new MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+    })
+    await act(async () => {
+      row.dispatchEvent(event)
+    })
+
+    expect(event.defaultPrevented).toBe(true)
+  })
+
+  it('opens the thread in its own window', async () => {
+    await act(async () => {
+      render(<ThreadList threads={threads} />)
+    })
+
+    const item = screen
+      .getAllByText('common:openInNewWindow')[0]
+      .closest('div')!
+    await act(async () => {
+      item.click()
+    })
+
+    expect(openWindow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: '/threads/thread-1',
+        label: 'thread-thread-1',
+      })
+    )
   })
 })

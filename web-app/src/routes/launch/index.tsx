@@ -269,6 +269,25 @@ function AgentIcon({ agent }: { agent: IntegrationAgent }) {
           />
         </IconBox>
       )
+    case 'atomic-agent':
+      // Atomic Agent's own mark (assets/logo.svg in AtomicBot-ai/atomic-agent),
+      // white on the Atomic brand blue.
+      return (
+        <IconBox bg="#006aff">
+          <svg
+            width="22"
+            height="22"
+            viewBox="0 0 64 64"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M35.2357 49.918C35.923 49.918 36.4741 49.359 36.5369 48.6746C37.1268 42.2442 42.2464 37.1246 48.6768 36.5347C49.3612 36.4719 49.9202 35.9208 49.9202 35.2335L49.9202 28.7624C49.9202 28.0751 49.363 27.518 48.6757 27.518L37.7246 27.518C37.0373 27.518 36.4802 26.9608 36.4802 26.2735L36.4802 15.3224C36.4802 14.6351 35.923 14.078 35.2357 14.078L28.7646 14.078C28.0773 14.078 27.5262 14.6369 27.4634 15.3213C26.8736 21.7517 21.754 26.8714 15.3236 27.4612C14.6391 27.524 14.0802 28.0751 14.0802 28.7624L14.0802 35.2335C14.0802 35.9208 14.6373 36.478 15.3246 36.478L26.2757 36.478C26.963 36.478 27.5202 37.0351 27.5202 37.7224L27.5202 48.6735C27.5202 49.3608 28.0773 49.918 28.7646 49.918L35.2357 49.918Z"
+              fill="#ffffff"
+            />
+          </svg>
+        </IconBox>
+      )
     case 'hermes':
       return (
         <IconBox bg="#ffffff">
@@ -638,6 +657,9 @@ function LaunchPage() {
           break
         case 'droid':
           await invoke('configure_droid', { apiUrl, model, apiKey: key })
+          break
+        case 'atomic-agent':
+          await invoke('configure_atomic_agent', { apiUrl, model, apiKey: key })
           break
         case 'hermes':
           await invoke('configure_hermes_agent', {

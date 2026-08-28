@@ -31,6 +31,8 @@
   "unstar": "De-Favorisieren",
   "deleteAll": "Alles löschen",
   "star": "Favorisieren",
+  "openInNewWindow": "In neuem Fenster öffnen",
+  "openInNewWindowFailed": "Dieser Chat konnte nicht in einem neuen Fenster geöffnet werden",
   "rename": "Umbenennen",
   "delete": "Löschen",
   "copied": "Kopiert!",

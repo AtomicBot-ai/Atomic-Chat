@@ -31,6 +31,8 @@
   "unstar": "取消星號",
   "deleteAll": "全部刪除",
   "star": "星號",
+  "openInNewWindow": "在新視窗中開啟",
+  "openInNewWindowFailed": "無法在新視窗中開啟此對話",
   "rename": "重新命名",
   "delete": "刪除",
   "copied": "已複製！",

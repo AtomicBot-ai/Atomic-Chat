@@ -248,6 +248,51 @@ describe('RenderMarkdown', () => {
     expect(codeBlock).toBeTruthy()
   })
 
+  it('carries the filename from the fence info string to the DOM', async () => {
+    const content = [
+      'Here is the stylesheet.',
+      '',
+      '```css title="styles.css"',
+      'body { color: red; }',
+      '```',
+      '',
+    ].join('\n')
+
+    const { container, findByText } = render(
+      <RenderMarkdown content={content} enableHtmlPreview />
+    )
+    await findByText('body', { exact: false })
+    expect(
+      container.querySelector('[data-code-filename="styles.css"]')
+    ).toBeTruthy()
+  })
+
+  it('carries the filename from a leading comment when the fence has none', async () => {
+    const content =
+      ['```js', '// js/main.js', 'const a = 1', '```'].join('\n') + '\n'
+
+    const { container, findByText } = render(
+      <RenderMarkdown content={content} enableHtmlPreview />
+    )
+    await findByText('const', { exact: false })
+    expect(
+      container.querySelector('[data-code-filename="js/main.js"]')
+    ).toBeTruthy()
+  })
+
+  it('leaves the filename unset when nothing names the file', async () => {
+    const content =
+      ['```css', 'body { color: red; }', '```'].join('\n') + '\n'
+
+    const { container, findByText } = render(
+      <RenderMarkdown content={content} enableHtmlPreview />
+    )
+    await findByText('body', { exact: false })
+    // The block must actually be a code block, or the assertion below is vacuous.
+    expect(container.querySelector('[data-streamdown="code-block"]')).toBeTruthy()
+    expect(container.querySelector('[data-code-filename]')).toBeNull()
+  })
+
   it('formats fenced code blocks without lang spec correctly', async () => {
     const contentWithFencedCodeBlock = `Please explain this code block.
 

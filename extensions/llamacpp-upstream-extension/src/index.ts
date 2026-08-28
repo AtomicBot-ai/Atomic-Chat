@@ -3956,15 +3956,35 @@ export default class llamacpp_upstream_extension extends AIEngine {
       )
     }
 
+    // A Tauri command rejects with a bare string, so the step that failed and
+    // the path it failed on are both lost by the time the toast renders — which
+    // is why every import failure on Windows read "unknown error" and nothing
+    // reached the log (issue #256). Name each step on the way out.
+    const step = async <T>(what: string, run: () => Promise<T>): Promise<T> => {
+      try {
+        return await run()
+      } catch (error) {
+        const reason =
+          error instanceof Error ? error.message : String(error ?? 'unknown')
+        logger.error(`import(${modelId}): ${what} failed: ${reason}`)
+        throw new Error(`${what} failed: ${reason}`)
+      }
+    }
+
     // Calculate file sizes. A sharded model is the sum of its parts; quoting
     // only the first shard would advertise a 150 GB model as a few megabytes.
     let size_bytes = 0
     for (const shard of ggufShardSetPaths(fullModelPath)) {
-      size_bytes += (await fs.fileStat(shard)).size
+      size_bytes += (
+        await step(`reading ${shard}`, () => fs.fileStat(shard))
+      ).size
     }
     if (mmprojPath) {
+      const fullMmprojPath = await joinPath([janDataFolderPath, mmprojPath])
       size_bytes += (
-        await fs.fileStat(await joinPath([janDataFolderPath, mmprojPath]))
+        await step(`reading ${fullMmprojPath}`, () =>
+          fs.fileStat(fullMmprojPath)
+        )
       ).size
     }
 
@@ -3990,11 +4010,14 @@ export default class llamacpp_upstream_extension extends AIEngine {
       embedding: isEmbedding,
       ...(importSource ? { source: importSource } : {}),
     } as ModelConfig
-    await fs.mkdir(await joinPath([janDataFolderPath, modelDir]))
-    await invoke<void>('write_yaml', {
-      data: modelConfig,
-      savePath: configPath,
-    })
+    const fullModelDir = await joinPath([janDataFolderPath, modelDir])
+    await step(`creating ${fullModelDir}`, () => fs.mkdir(fullModelDir))
+    await step(`writing ${configPath}`, () =>
+      invoke<void>('write_yaml', {
+        data: modelConfig,
+        savePath: configPath,
+      })
+    )
     events.emit(AppEvent.onModelImported, {
       modelId,
       modelPath,

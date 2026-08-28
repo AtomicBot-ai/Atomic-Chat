@@ -10,6 +10,7 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
+import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
 import {
   scanLocalModels,
   collectImportedModelPaths,
@@ -74,7 +75,7 @@ export default function LocalModelLocationsCard() {
     } catch (error) {
       console.error('Local model scan failed:', error)
       toast.error('Scan failed', {
-        description: error instanceof Error ? error.message : 'Unknown error',
+        description: extractModelErrorMessage(error),
       })
     } finally {
       setScanning(false)
@@ -106,7 +107,7 @@ export default function LocalModelLocationsCard() {
         toast.success('Model imported', { description: cand.displayName })
       } catch (error) {
         toast.error('Import failed', {
-          description: error instanceof Error ? error.message : 'Unknown error',
+          description: extractModelErrorMessage(error),
         })
       } finally {
         setImportingId(null)
