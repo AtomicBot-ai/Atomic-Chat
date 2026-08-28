@@ -1,13 +1,24 @@
 import type { MCPConnector } from '@/constants/mcp-connectors'
+import { cn } from '@/lib/utils'
 
 /**
- * 32px brand tile for a catalog connector: image asset when one exists,
- * otherwise a monogram on the connector's brand color.
+ * Brand tile for a catalog connector: image asset when one exists, otherwise a
+ * monogram on the connector's brand color. 32px on the Connectors page, smaller
+ * where it sits in a menu row — pass `className` to size it.
  */
-export function ConnectorIcon({ connector }: { connector: MCPConnector }) {
+export function ConnectorIcon({
+  connector,
+  className,
+}: {
+  connector: MCPConnector
+  className?: string
+}) {
   return (
     <div
-      className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md"
+      className={cn(
+        'flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md',
+        className
+      )}
       style={{ backgroundColor: connector.icon.bg }}
     >
       {connector.icon.src ? (

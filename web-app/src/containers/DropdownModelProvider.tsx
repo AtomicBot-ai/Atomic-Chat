@@ -7,7 +7,11 @@ import {
 } from '@/components/ui/popover'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
-import { isCloudProvider } from '@/lib/cloud-providers'
+import {
+  isCloudProvider,
+  isLocalEngineProvider,
+  isProviderReady,
+} from '@/lib/cloud-providers'
 import { highlightFzfMatch } from '@/utils/highlight'
 import Capabilities from './Capabilities'
 import {
@@ -31,6 +35,24 @@ import { getLastUsedModel } from '@/utils/getModelToStart'
 import { switchToModel } from '@/utils/switchModel'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ChevronsUpDown } from 'lucide-react'
+
+/**
+ * Which providers earn a section in the picker.
+ *
+ * Local engines always do — they are the app's own runtimes, and an empty one
+ * still needs its header so the user can reach its settings. A cloud provider
+ * earns one only once it is actually connected: the registry ships every
+ * catalogue entry `active: true`, so without this the picker is a wall of
+ * empty headers for providers the user never set up (the ChatGPT subscription
+ * among them) burying the ones they did.
+ *
+ * Custom providers are judged on their models, as they are everywhere else:
+ * they may legitimately need no key.
+ */
+const isPickerSection = (provider: ModelProvider): boolean =>
+  isLocalEngineProvider(provider) ||
+  isProviderReady(provider) ||
+  (!isKnownProvider(provider.provider) && provider.models.length > 0)
 
 interface SearchableModel {
   provider: ModelProvider
@@ -337,16 +359,12 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
         // Skip embedding models - they can't be used for chat
         if (modelItem.embedding || modelItem.id === EMBEDDING_MODEL_ID) return
 
-        // Skip models that require API key but don't have one (except llamacpp)
-        // For custom providers, allow if they have at least one model loaded
-        const isPredefined = isKnownProvider(provider.provider)
-        if (
-          provider &&
-          provider.provider !== 'llamacpp' &&
-          !provider.api_key?.length &&
-          (isPredefined || provider.models.length === 0)
-        )
-          return
+        // Skip catalogue entries for providers the user has not set up.
+        // `isProviderConnected` is the check, not a bare `api_key` test: a
+        // subscription carries its token in the backend and a loopback server
+        // (Ollama, LM Studio) needs none, so keying off `api_key` alone hid
+        // their models even while they were signed in and serving.
+        if (!isPickerSection(provider)) return
 
         const capabilities = modelItem.capabilities || []
         const capabilitiesString = capabilities.join(' ')
@@ -422,18 +440,12 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
     const groups: Record<string, SearchableModel[]> = {}
 
     if (!searchValue) {
-      const isLocalProvider = (name: string) =>
-        name === 'mlx' ||
-        name === 'llamacpp' ||
-        name === 'llamacpp-upstream' ||
-        name === 'foundation-models'
-
       const activeProviders = providers
-        .filter((p) => p.active)
+        .filter((p) => p.active && isPickerSection(p))
         .sort((a, b) => {
           // Local providers first, regardless of whether they have models
-          const aIsLocal = isLocalProvider(a.provider)
-          const bIsLocal = isLocalProvider(b.provider)
+          const aIsLocal = isLocalEngineProvider(a)
+          const bIsLocal = isLocalEngineProvider(b)
           if (aIsLocal !== bIsLocal) return aIsLocal ? -1 : 1
 
           // Within the same group, non-empty providers first

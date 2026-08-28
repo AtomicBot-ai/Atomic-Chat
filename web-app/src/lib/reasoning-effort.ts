@@ -60,6 +60,13 @@ const usesNativeEffort = (
   controls.effortValues.length > 0
 
 /**
+ * Offered while no model is selected: there is nothing to clamp against yet,
+ * so the picker keeps the full scale and the level the user already chose
+ * stays on screen instead of blinking out of the composer between picks.
+ */
+export const DEFAULT_REASONING_LEVELS: ReasoningEffortLevel[] = [...ALL_LEVELS]
+
+/**
  * Levels the model can express: everything for a budget model, and only the
  * declared values for a native-effort one.
  */

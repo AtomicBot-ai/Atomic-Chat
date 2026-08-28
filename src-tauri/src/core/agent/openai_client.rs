@@ -55,6 +55,32 @@ const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_RETRY_AFTER: Duration = Duration::from_secs(20);
 const TRANSIENT_RETRY_DELAY: Duration = Duration::from_secs(1);
 const VISION_MAX_TOKENS: u32 = 1024;
+/// How many times one completion may be re-sent while walking the degrade
+/// ladder. Six sticky rungs plus the two once-per-completion transient ones
+/// bound the real ladder well below this; the cap is a backstop against a
+/// target whose 400s keep changing shape.
+const MAX_DEGRADE_ATTEMPTS: usize = 10;
+
+/// What to do about one failed attempt. See [`OpenAiCompatibleClient::classify_degrade`].
+enum Degrade {
+    /// Re-send now — a sticky flag was flipped, so the shape has changed.
+    Retry,
+    /// Re-send the same shape after `.0` — the target was busy, not wrong.
+    RetryAfter(Duration),
+    /// Streaming is off for the run; hand the turn to the non-streaming path.
+    Unstream,
+    /// Nothing left to try; surface the error.
+    Fail,
+}
+
+/// Once-per-completion guards for the two rungs that re-send an *unchanged*
+/// request. Without them the ladder could spin on a target that keeps
+/// answering 429 or 503.
+#[derive(Default)]
+struct TransientBudget {
+    rate_limited: bool,
+    gateway: bool,
+}
 
 /// Where an OpenAI-compatible request is sent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,6 +146,10 @@ pub struct OpenAiCompatibleClient {
     /// Set once a target rejects streaming altogether; every later step goes
     /// straight to the non-streaming path.
     streaming_disabled: AtomicBool,
+    /// Set once a target rejects `temperature` or `top_p`. OpenAI's reasoning
+    /// models (gpt-5, o-series) accept only the defaults and answer 400 on any
+    /// other value, so the run drops both fields and lets the target sample.
+    sampling_disabled: AtomicBool,
 }
 
 impl OpenAiCompatibleClient {
@@ -146,6 +176,7 @@ impl OpenAiCompatibleClient {
             reasoning_disabled: AtomicBool::new(false),
             stream_usage_disabled: AtomicBool::new(false),
             streaming_disabled: AtomicBool::new(false),
+            sampling_disabled: AtomicBool::new(false),
         })
     }
 
@@ -178,7 +209,11 @@ impl OpenAiCompatibleClient {
         stream: bool,
         cancellation: &CancellationToken,
     ) -> Result<reqwest::Response, LlmClientError> {
-        let client = if stream { &self.stream_client } else { &self.client };
+        let client = if stream {
+            &self.stream_client
+        } else {
+            &self.client
+        };
         let accept = if stream {
             "text/event-stream"
         } else {
@@ -235,68 +270,39 @@ impl OpenAiCompatibleClient {
             .map_err(|error| LlmClientError::InvalidResponse(error.to_string()))
     }
 
-    /// Runs one completion, applying the degrade ladder. Each rung retries at
-    /// most once, and each sets a sticky flag so the next step starts from the
-    /// already-corrected shape.
+    /// Runs one completion, walking the degrade ladder until the target
+    /// accepts the request shape.
+    ///
+    /// Every 400 rung is sticky and strictly narrowing — it drops or renames a
+    /// field and never restores it — so successive rejections can chain: a
+    /// target that answers `max_tokens` first and `temperature` second (every
+    /// OpenAI reasoning model does exactly that) is corrected in one turn
+    /// instead of failing on the second 400. The sticky flags also mean the
+    /// next step starts from the already-corrected shape.
     async fn complete_with_degrade(
         &self,
         target: &OpenAiTarget,
         request: &CompletionRequest,
         cancellation: &CancellationToken,
     ) -> Result<CompletionResult, LlmClientError> {
-        let payload = self.chat_payload(target, request, false);
-        match self.post_chat(target, &payload, cancellation).await {
-            Ok(value) => parse_chat_response(&value),
-            Err(LlmClientError::RateLimited { retry_after_secs }) => {
-                let delay = retry_after_secs
-                    .map(Duration::from_secs)
-                    .unwrap_or(TRANSIENT_RETRY_DELAY)
-                    .min(MAX_RETRY_AFTER);
-                sleep_or_cancel(delay, cancellation).await?;
-                let value = self.post_chat(target, &payload, cancellation).await?;
-                parse_chat_response(&value)
+        let mut budget = TransientBudget::default();
+        let mut attempts = 0;
+        loop {
+            let payload = self.chat_payload(target, request, false);
+            let error = match self.post_chat(target, &payload, cancellation).await {
+                Ok(value) => return parse_chat_response(&value),
+                Err(error) => error,
+            };
+            attempts += 1;
+            if attempts >= MAX_DEGRADE_ATTEMPTS {
+                return Err(error);
             }
-            Err(LlmClientError::Http { status, detail })
-                if status == 400 && mentions_schema_rejection(&detail) =>
-            {
-                log::info!(
-                    "Disabling response_format for this run: the model server rejected the \
-                     tool-call schema ({detail})"
-                );
-                self.schema_disabled.store(true, Ordering::SeqCst);
-                let retry = self.chat_payload(target, request, false);
-                let value = self.post_chat(target, &retry, cancellation).await?;
-                parse_chat_response(&value)
+            match self.classify_degrade(&error, false, &mut budget) {
+                Degrade::Retry => {}
+                Degrade::RetryAfter(delay) => sleep_or_cancel(delay, cancellation).await?,
+                // `Unstream` is only ever returned for the streaming ladder.
+                Degrade::Unstream | Degrade::Fail => return Err(error),
             }
-            Err(LlmClientError::Http { status, detail })
-                if status == 400
-                    && mentions_reasoning_rejection(&detail)
-                    && !self.reasoning_disabled.load(Ordering::SeqCst) =>
-            {
-                log::info!(
-                    "Dropping the reasoning fields for this run: the model server rejected \
-                     them ({detail})"
-                );
-                self.reasoning_disabled.store(true, Ordering::SeqCst);
-                let retry = self.chat_payload(target, request, false);
-                let value = self.post_chat(target, &retry, cancellation).await?;
-                parse_chat_response(&value)
-            }
-            Err(LlmClientError::Http { status, detail })
-                if status == 400 && mentions_max_tokens_rename(&detail) =>
-            {
-                self.use_max_completion_tokens.store(true, Ordering::SeqCst);
-                let retry = self.chat_payload(target, request, false);
-                let value = self.post_chat(target, &retry, cancellation).await?;
-                parse_chat_response(&value)
-            }
-            Err(LlmClientError::Http { status, detail }) if is_transient_gateway(status) => {
-                log::warn!("Retrying agent completion after HTTP {status}: {detail}");
-                sleep_or_cancel(TRANSIENT_RETRY_DELAY, cancellation).await?;
-                let value = self.post_chat(target, &payload, cancellation).await?;
-                parse_chat_response(&value)
-            }
-            Err(error) => Err(error),
         }
     }
 
@@ -314,90 +320,136 @@ impl OpenAiCompatibleClient {
         on_chunk: &mut (dyn FnMut(StreamChunk) -> Result<(), String> + Send),
     ) -> Result<CompletionResult, LlmClientError> {
         if self.streaming_disabled.load(Ordering::SeqCst) {
-            return self.complete_with_degrade(target, request, cancellation).await;
+            return self
+                .complete_with_degrade(target, request, cancellation)
+                .await;
         }
-        let payload = self.chat_payload(target, request, true);
-        match self.send_chat(target, &payload, true, cancellation).await {
-            Ok(response) => consume_chat_stream(response, cancellation, on_chunk).await,
-            Err(LlmClientError::RateLimited { retry_after_secs }) => {
-                let delay = retry_after_secs
-                    .map(Duration::from_secs)
-                    .unwrap_or(TRANSIENT_RETRY_DELAY)
-                    .min(MAX_RETRY_AFTER);
-                sleep_or_cancel(delay, cancellation).await?;
-                let response = self.send_chat(target, &payload, true, cancellation).await?;
-                consume_chat_stream(response, cancellation, on_chunk).await
+        let mut budget = TransientBudget::default();
+        let mut attempts = 0;
+        loop {
+            let payload = self.chat_payload(target, request, true);
+            let error = match self.send_chat(target, &payload, true, cancellation).await {
+                Ok(response) => return consume_chat_stream(response, cancellation, on_chunk).await,
+                Err(error) => error,
+            };
+            attempts += 1;
+            if attempts >= MAX_DEGRADE_ATTEMPTS {
+                return Err(error);
             }
-            Err(LlmClientError::Http { status, detail })
-                if status == 400 && mentions_schema_rejection(&detail) =>
-            {
-                log::info!(
-                    "Disabling response_format for this run: the model server rejected the \
-                     tool-call schema ({detail})"
-                );
-                self.schema_disabled.store(true, Ordering::SeqCst);
-                let retry = self.chat_payload(target, request, true);
-                let response = self.send_chat(target, &retry, true, cancellation).await?;
-                consume_chat_stream(response, cancellation, on_chunk).await
+            match self.classify_degrade(&error, true, &mut budget) {
+                Degrade::Retry => {}
+                Degrade::RetryAfter(delay) => sleep_or_cancel(delay, cancellation).await?,
+                Degrade::Unstream => {
+                    return self
+                        .complete_with_degrade(target, request, cancellation)
+                        .await
+                }
+                Degrade::Fail => return Err(error),
             }
-            Err(LlmClientError::Http { status, detail })
-                if status == 400
-                    && mentions_reasoning_rejection(&detail)
-                    && !self.reasoning_disabled.load(Ordering::SeqCst) =>
-            {
-                log::info!(
-                    "Dropping the reasoning fields for this run: the model server rejected \
-                     them ({detail})"
-                );
-                self.reasoning_disabled.store(true, Ordering::SeqCst);
-                let retry = self.chat_payload(target, request, true);
-                let response = self.send_chat(target, &retry, true, cancellation).await?;
-                consume_chat_stream(response, cancellation, on_chunk).await
-            }
-            Err(LlmClientError::Http { status, detail })
-                if status == 400 && mentions_max_tokens_rename(&detail) =>
-            {
-                self.use_max_completion_tokens.store(true, Ordering::SeqCst);
-                let retry = self.chat_payload(target, request, true);
-                let response = self.send_chat(target, &retry, true, cancellation).await?;
-                consume_chat_stream(response, cancellation, on_chunk).await
-            }
-            // Checked before the plain stream rejection: "stream_options"
-            // contains "stream", so the narrower matcher must win.
-            Err(LlmClientError::Http { status, detail })
-                if status == 400
-                    && mentions_stream_options_rejection(&detail)
-                    && !self.stream_usage_disabled.load(Ordering::SeqCst) =>
-            {
-                log::info!(
-                    "Dropping stream_options for this run: the model server rejected it \
-                     ({detail})"
-                );
-                self.stream_usage_disabled.store(true, Ordering::SeqCst);
-                let retry = self.chat_payload(target, request, true);
-                let response = self.send_chat(target, &retry, true, cancellation).await?;
-                consume_chat_stream(response, cancellation, on_chunk).await
-            }
-            Err(LlmClientError::Http { status, detail })
-                if status == 400 && mentions_stream_rejection(&detail) =>
-            {
-                log::info!(
-                    "Disabling streaming for this run: the model server rejected it ({detail})"
-                );
-                self.streaming_disabled.store(true, Ordering::SeqCst);
-                self.complete_with_degrade(target, request, cancellation).await
-            }
-            Err(LlmClientError::Http { status, detail }) if is_transient_gateway(status) => {
-                log::warn!("Retrying agent completion after HTTP {status}: {detail}");
-                sleep_or_cancel(TRANSIENT_RETRY_DELAY, cancellation).await?;
-                let response = self.send_chat(target, &payload, true, cancellation).await?;
-                consume_chat_stream(response, cancellation, on_chunk).await
-            }
-            Err(error) => Err(error),
         }
     }
 
-    fn chat_payload(&self, target: &OpenAiTarget, request: &CompletionRequest, stream: bool) -> Value {
+    /// Picks the rung for one failed attempt, flipping the sticky flag it owns.
+    ///
+    /// Each sticky rung is guarded on its own flag, so a rung fires at most
+    /// once per run and the ladder cannot loop on a message it has already
+    /// acted on. The two rungs that retry an *unchanged* request — a rate limit
+    /// and a transient gateway — are guarded by `budget` instead, once each per
+    /// completion.
+    fn classify_degrade(
+        &self,
+        error: &LlmClientError,
+        streaming: bool,
+        budget: &mut TransientBudget,
+    ) -> Degrade {
+        let (status, detail) = match error {
+            LlmClientError::RateLimited { retry_after_secs } if !budget.rate_limited => {
+                budget.rate_limited = true;
+                return Degrade::RetryAfter(
+                    retry_after_secs
+                        .map(Duration::from_secs)
+                        .unwrap_or(TRANSIENT_RETRY_DELAY)
+                        .min(MAX_RETRY_AFTER),
+                );
+            }
+            LlmClientError::Http { status, detail } => (*status, detail.as_str()),
+            _ => return Degrade::Fail,
+        };
+
+        if is_transient_gateway(status) {
+            if budget.gateway {
+                return Degrade::Fail;
+            }
+            budget.gateway = true;
+            log::warn!("Retrying agent completion after HTTP {status}: {detail}");
+            return Degrade::RetryAfter(TRANSIENT_RETRY_DELAY);
+        }
+        if status != 400 {
+            return Degrade::Fail;
+        }
+
+        if mentions_schema_rejection(detail) && !self.schema_disabled.load(Ordering::SeqCst) {
+            log::info!(
+                "Disabling response_format for this run: the model server rejected the \
+                 tool-call schema ({detail})"
+            );
+            self.schema_disabled.store(true, Ordering::SeqCst);
+            return Degrade::Retry;
+        }
+        if mentions_reasoning_rejection(detail) && !self.reasoning_disabled.load(Ordering::SeqCst) {
+            log::info!(
+                "Dropping the reasoning fields for this run: the model server rejected \
+                 them ({detail})"
+            );
+            self.reasoning_disabled.store(true, Ordering::SeqCst);
+            return Degrade::Retry;
+        }
+        if mentions_max_tokens_rename(detail)
+            && !self.use_max_completion_tokens.load(Ordering::SeqCst)
+        {
+            log::info!(
+                "Switching to max_completion_tokens for this run: the model server rejected \
+                 max_tokens ({detail})"
+            );
+            self.use_max_completion_tokens.store(true, Ordering::SeqCst);
+            return Degrade::Retry;
+        }
+        if mentions_sampling_rejection(detail) && !self.sampling_disabled.load(Ordering::SeqCst) {
+            log::info!(
+                "Dropping temperature and top_p for this run: the model server accepts only \
+                 its own defaults ({detail})"
+            );
+            self.sampling_disabled.store(true, Ordering::SeqCst);
+            return Degrade::Retry;
+        }
+        if !streaming {
+            return Degrade::Fail;
+        }
+        // Checked before the plain stream rejection: "stream_options"
+        // contains "stream", so the narrower matcher must win.
+        if mentions_stream_options_rejection(detail)
+            && !self.stream_usage_disabled.load(Ordering::SeqCst)
+        {
+            log::info!(
+                "Dropping stream_options for this run: the model server rejected it ({detail})"
+            );
+            self.stream_usage_disabled.store(true, Ordering::SeqCst);
+            return Degrade::Retry;
+        }
+        if mentions_stream_rejection(detail) && !self.streaming_disabled.load(Ordering::SeqCst) {
+            log::info!("Disabling streaming for this run: the model server rejected it ({detail})");
+            self.streaming_disabled.store(true, Ordering::SeqCst);
+            return Degrade::Unstream;
+        }
+        Degrade::Fail
+    }
+
+    fn chat_payload(
+        &self,
+        target: &OpenAiTarget,
+        request: &CompletionRequest,
+        stream: bool,
+    ) -> Value {
         let mut body = Map::new();
         body.insert("model".into(), json!(target.model_id));
         body.insert("messages".into(), json!(prompt_messages(&request.prompt)));
@@ -408,8 +460,13 @@ impl OpenAiCompatibleClient {
             // Servers that reject the field trip the sticky degrade rung.
             body.insert("stream_options".into(), json!({"include_usage": true}));
         }
-        body.insert("temperature".into(), json!(request.temperature));
-        body.insert("top_p".into(), json!(request.top_p));
+        // OpenAI's reasoning models pin both to their defaults and answer 400
+        // on any other value, so the sampling rung drops them for the run and
+        // lets the target sample on its own terms.
+        if !self.sampling_disabled.load(Ordering::SeqCst) {
+            body.insert("temperature".into(), json!(request.temperature));
+            body.insert("top_p".into(), json!(request.top_p));
+        }
         // Standard OpenAI parameters, sent only when the turn set them so
         // default request bodies stay byte-identical.
         if let Some(frequency_penalty) = request.frequency_penalty {
@@ -632,8 +689,33 @@ impl AgentLlmClient for OpenAiCompatibleClient {
                 "the active model is not vision-capable".into(),
             ));
         }
-        let payload = vision_payload(&target, prompt, images);
-        let value = self.post_chat(&target, &payload, cancellation).await?;
+        // The same ladder as the chat path: the vision tool is often the first
+        // request of a run, so it cannot assume a sibling completion has
+        // already taught the client which fields this target refuses.
+        let mut budget = TransientBudget::default();
+        let mut attempts = 0;
+        let value = loop {
+            let payload = vision_payload(
+                &target,
+                prompt,
+                images,
+                self.sampling_disabled.load(Ordering::SeqCst),
+                self.use_max_completion_tokens.load(Ordering::SeqCst),
+            );
+            let error = match self.post_chat(&target, &payload, cancellation).await {
+                Ok(value) => break value,
+                Err(error) => error,
+            };
+            attempts += 1;
+            if attempts >= MAX_DEGRADE_ATTEMPTS {
+                return Err(error);
+            }
+            match self.classify_degrade(&error, false, &mut budget) {
+                Degrade::Retry => {}
+                Degrade::RetryAfter(delay) => sleep_or_cancel(delay, cancellation).await?,
+                Degrade::Unstream | Degrade::Fail => return Err(error),
+            }
+        };
         value
             .pointer("/choices/0/message/content")
             .and_then(Value::as_str)
@@ -659,7 +741,18 @@ fn prompt_messages(prompt: &AgentPrompt) -> Vec<Value> {
     }
 }
 
-fn vision_payload(target: &OpenAiTarget, prompt: &str, images: &[(String, String)]) -> Value {
+/// Builds the vision request.
+///
+/// `drop_sampling` and `use_max_completion_tokens` are the two sticky degrade
+/// flags, threaded in so a target that has already rejected a field on the chat
+/// path is not asked to reject it again here.
+fn vision_payload(
+    target: &OpenAiTarget,
+    prompt: &str,
+    images: &[(String, String)],
+    drop_sampling: bool,
+    use_max_completion_tokens: bool,
+) -> Value {
     let mut content = images
         .iter()
         .map(|(media_type, base64)| {
@@ -678,8 +771,15 @@ fn vision_payload(target: &OpenAiTarget, prompt: &str, images: &[(String, String
         json!([{"role": "user", "content": content}]),
     );
     body.insert("stream".into(), json!(false));
-    body.insert("max_tokens".into(), json!(VISION_MAX_TOKENS));
-    body.insert("temperature".into(), json!(0.2));
+    let token_key = if use_max_completion_tokens {
+        "max_completion_tokens"
+    } else {
+        "max_tokens"
+    };
+    body.insert(token_key.into(), json!(VISION_MAX_TOKENS));
+    if !drop_sampling {
+        body.insert("temperature".into(), json!(0.2));
+    }
     if target.kind == OpenAiTargetKind::LocalMlx {
         // Documented mlx-vlm knob. Cloud providers reject unknown fields, and
         // `reasoning_format` is a llama.cpp-server extension that has no
@@ -964,6 +1064,47 @@ fn mentions_max_tokens_rename(detail: &str) -> bool {
         || (lowered.contains("max_tokens") && lowered.contains("unsupported"))
 }
 
+/// Whether a 400 blames `temperature` or `top_p`.
+///
+/// OpenAI's reasoning models pin both to their defaults and reject anything
+/// else — "Unsupported value: 'temperature' does not support 0.2 with this
+/// model" — one field per response, so the rung drops both at once rather than
+/// paying a second round trip for `top_p` after `temperature` is gone. A
+/// rejection verb is required because both names appear in unrelated messages.
+fn mentions_sampling_rejection(detail: &str) -> bool {
+    let lowered = detail.to_ascii_lowercase();
+    if !["temperature", "top_p"]
+        .iter()
+        .any(|needle| lowered.contains(needle))
+    {
+        return false;
+    }
+    [
+        // OpenAI reasoning models: "Unsupported value: 'temperature' does not
+        // support 0.2 with this model. Only the default (1) value is
+        // supported." / "Unsupported parameter: 'top_p' is not supported".
+        "unsupported",
+        "not supported",
+        "not support",
+        "invalid",
+        // Anthropic, Claude 4.1 and newer: "`temperature` and `top_p` cannot
+        // both be specified for this model. Please use only one." Nothing in
+        // that sentence matches the OpenAI wording above, so it needs its own
+        // needles — dropping both fields satisfies it either way.
+        "cannot both",
+        "only one",
+        "cannot be",
+        "must be",
+        // Anthropic again, for models released after Claude Opus 4.6 (the
+        // reference marks both fields Deprecated): "temperature is deprecated
+        // for this model." Only the default is accepted, so dropping the field
+        // is the whole fix.
+        "deprecated",
+    ]
+    .iter()
+    .any(|needle| lowered.contains(needle))
+}
+
 /// Whether a 400 blames `stream_options`. Checked before
 /// [`mentions_stream_rejection`] — the field name contains "stream".
 fn mentions_stream_options_rejection(detail: &str) -> bool {
@@ -1239,6 +1380,175 @@ mod tests {
     }
 
     #[test]
+    fn sampling_rejection_is_detected() {
+        // Verbatim from api.openai.com for gpt-5-mini.
+        assert!(mentions_sampling_rejection(
+            "Unsupported value: 'temperature' does not support 0.2 with this model. \
+             Only the default (1) value is supported."
+        ));
+        assert!(mentions_sampling_rejection(
+            "Unsupported parameter: 'top_p' is not supported with this model."
+        ));
+        // Verbatim from api.anthropic.com for claude-sonnet-4-5 and every
+        // Claude 4.1+ model: the wording shares no vocabulary with OpenAI's.
+        assert!(mentions_sampling_rejection(
+            "`temperature` and `top_p` cannot both be specified for this model. \
+             Please use only one."
+        ));
+        // Verbatim from api.anthropic.com for claude-opus-4-7 and newer, whose
+        // reference marks both fields Deprecated. Shares no vocabulary with
+        // either of the wordings above.
+        assert!(mentions_sampling_rejection(
+            "temperature is deprecated for this model."
+        ));
+        assert!(mentions_sampling_rejection(
+            "top_p is deprecated for this model."
+        ));
+        // A rejection verb is required: both names appear in healthy prose.
+        assert!(!mentions_sampling_rejection("temperature 0.2, top_p 0.95"));
+        assert!(!mentions_sampling_rejection("invalid model"));
+        // ...and a sampler name is required, so unrelated 400s stay untouched.
+        assert!(!mentions_sampling_rejection(
+            "messages: at least one message is required"
+        ));
+        assert!(!mentions_sampling_rejection(
+            "max_tokens must be greater than 0"
+        ));
+    }
+
+    /// The Anthropic shape end to end: one 400 naming both samplers, one rung,
+    /// and a retry that sends neither.
+    #[test]
+    fn anthropic_temperature_top_p_conflict_is_recovered() {
+        let client =
+            OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalApiServer, false)).unwrap();
+        let conflict = LlmClientError::Http {
+            status: 400,
+            detail: "`temperature` and `top_p` cannot both be specified for this model. \
+                     Please use only one."
+                .into(),
+        };
+
+        assert!(matches!(
+            client.classify_degrade(&conflict, true, &mut TransientBudget::default()),
+            Degrade::Retry
+        ));
+
+        let payload = client.chat_payload(&client.target(), &request_with_schema(), true);
+        assert!(payload.get("temperature").is_none());
+        assert!(payload.get("top_p").is_none());
+        // Anthropic's compat endpoint takes max_tokens as-is, so the rename
+        // rung must stay unfired here.
+        assert_eq!(payload["max_tokens"], json!(8_192));
+    }
+
+    #[test]
+    fn payload_drops_sampling_after_a_rejection() {
+        let client =
+            OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalApiServer, false)).unwrap();
+        let payload = client.chat_payload(&client.target(), &request_with_schema(), false);
+        assert!(payload.get("temperature").is_some());
+        assert!(payload.get("top_p").is_some());
+
+        client.sampling_disabled.store(true, Ordering::SeqCst);
+        let payload = client.chat_payload(&client.target(), &request_with_schema(), false);
+        assert!(payload.get("temperature").is_none());
+        assert!(payload.get("top_p").is_none());
+    }
+
+    /// The shape every OpenAI reasoning model forces: `max_tokens` is rejected
+    /// first, then `temperature` on the corrected retry. One rung per
+    /// completion used to leave the second 400 unhandled, which surfaced as an
+    /// empty reply.
+    #[test]
+    fn degrade_ladder_chains_rungs_within_one_completion() {
+        let client =
+            OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalApiServer, false)).unwrap();
+        let mut budget = TransientBudget::default();
+
+        let rename = LlmClientError::Http {
+            status: 400,
+            detail: "Unsupported parameter: 'max_tokens' is not supported with this model. \
+                     Use 'max_completion_tokens' instead."
+                .into(),
+        };
+        assert!(matches!(
+            client.classify_degrade(&rename, true, &mut budget),
+            Degrade::Retry
+        ));
+        // A rung that already fired cannot fire again, so the loop terminates.
+        assert!(matches!(
+            client.classify_degrade(&rename, true, &mut budget),
+            Degrade::Fail
+        ));
+
+        let temperature = LlmClientError::Http {
+            status: 400,
+            detail: "Unsupported value: 'temperature' does not support 0.2 with this model.".into(),
+        };
+        assert!(matches!(
+            client.classify_degrade(&temperature, true, &mut budget),
+            Degrade::Retry
+        ));
+
+        let payload = client.chat_payload(&client.target(), &request_with_schema(), true);
+        assert_eq!(payload["max_completion_tokens"], json!(8_192));
+        assert!(payload.get("max_tokens").is_none());
+        assert!(payload.get("temperature").is_none());
+        assert!(payload.get("top_p").is_none());
+    }
+
+    #[test]
+    fn transient_rungs_retry_once_each_then_give_up() {
+        let client =
+            OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalApiServer, false)).unwrap();
+        let mut budget = TransientBudget::default();
+
+        let limited = LlmClientError::RateLimited {
+            retry_after_secs: Some(3),
+        };
+        assert!(matches!(
+            client.classify_degrade(&limited, false, &mut budget),
+            Degrade::RetryAfter(delay) if delay == Duration::from_secs(3)
+        ));
+        assert!(matches!(
+            client.classify_degrade(&limited, false, &mut budget),
+            Degrade::Fail
+        ));
+
+        let gateway = LlmClientError::Http {
+            status: 503,
+            detail: "upstream unavailable".into(),
+        };
+        assert!(matches!(
+            client.classify_degrade(&gateway, false, &mut budget),
+            Degrade::RetryAfter(_)
+        ));
+        assert!(matches!(
+            client.classify_degrade(&gateway, false, &mut budget),
+            Degrade::Fail
+        ));
+    }
+
+    #[test]
+    fn stream_rungs_are_streaming_only() {
+        let client =
+            OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalApiServer, false)).unwrap();
+        let rejected = LlmClientError::Http {
+            status: 400,
+            detail: "stream is not supported with this model".into(),
+        };
+        assert!(matches!(
+            client.classify_degrade(&rejected, false, &mut TransientBudget::default()),
+            Degrade::Fail
+        ));
+        assert!(matches!(
+            client.classify_degrade(&rejected, true, &mut TransientBudget::default()),
+            Degrade::Unstream
+        ));
+    }
+
+    #[test]
     fn max_tokens_key_switches_after_a_rename_rejection() {
         let client =
             OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalApiServer, false)).unwrap();
@@ -1396,6 +1706,8 @@ mod tests {
             &target(OpenAiTargetKind::LocalMlx, true),
             "describe",
             &images,
+            false,
+            false,
         );
         assert_eq!(mlx["chat_template_kwargs"]["enable_thinking"], json!(false));
         assert!(mlx.get("reasoning_format").is_none());
@@ -1403,13 +1715,37 @@ mod tests {
             mlx["messages"][0]["content"][0]["image_url"]["url"],
             json!("data:image/png;base64,AAAA")
         );
+        assert_eq!(mlx["temperature"], json!(0.2));
+        assert_eq!(mlx["max_tokens"], json!(VISION_MAX_TOKENS));
 
         let proxied = vision_payload(
             &target(OpenAiTargetKind::LocalApiServer, false),
             "describe",
             &images,
+            false,
+            false,
         );
         assert!(proxied.get("chat_template_kwargs").is_none());
+    }
+
+    /// The vision tool used to build its payload by hand and post it straight
+    /// past the ladder, so a target that refuses `temperature` (Claude Opus 4.7
+    /// and newer, every OpenAI reasoning model) failed the image tool even
+    /// after the chat path had learned better.
+    #[test]
+    fn vision_payload_honours_the_degrade_flags() {
+        let images = vec![("image/png".to_string(), "AAAA".to_string())];
+        let degraded = vision_payload(
+            &target(OpenAiTargetKind::LocalApiServer, false),
+            "describe",
+            &images,
+            true,
+            true,
+        );
+
+        assert!(degraded.get("temperature").is_none());
+        assert!(degraded.get("max_tokens").is_none());
+        assert_eq!(degraded["max_completion_tokens"], json!(VISION_MAX_TOKENS));
     }
 
     #[tokio::test]

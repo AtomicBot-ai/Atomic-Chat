@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ChatInput from '../ChatInput'
 import { useChatAttachments } from '@/hooks/useChatAttachments'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { usePrompt } from '@/hooks/usePrompt'
@@ -105,9 +106,9 @@ vi.mock('@/components/ui/dropdown-menu', async () => {
   }
 })
 
-vi.mock('@/containers/DropdownToolsAvailable', () => ({
-  // A marker instead of null: the toolbar asserts the tools button is there.
-  default: () => <span data-test-id="tools-dropdown" />,
+vi.mock('@/containers/DropdownConnectors', () => ({
+  // A marker instead of null: the toolbar asserts the connectors button is there.
+  default: () => <span data-test-id="connectors-dropdown" />,
 }))
 
 vi.mock('@/containers/VoiceInputToggle', () => ({
@@ -152,6 +153,7 @@ describe('ChatInput', () => {
     seedServiceHub()
     usePrompt.setState({ prompt: '' })
     useChatAttachments.setState({ attachmentsByThread: {} })
+    useGeneralSetting.setState({ connectorsPinned: true })
 
     const model = {
       id: 'test-model',
@@ -300,7 +302,7 @@ describe('ChatInput', () => {
     unmount()
   })
 
-  it('keeps the tools and web search controls before a model is picked', () => {
+  it('keeps the connectors and web search controls before a model is picked', () => {
     // A composer stripped down to a plus button reads as broken; the real
     // `tools` capability only starts gating once a model is actually selected.
     useMCPServers.setState({
@@ -313,13 +315,107 @@ describe('ChatInput', () => {
     const { unmount } = render(<ChatInput />)
 
     expect(
-      document.querySelector('[data-test-id="tools-dropdown"]')
+      document.querySelector('[data-test-id="connectors-dropdown"]')
     ).toBeInTheDocument()
     expect(
       screen.getByLabelText('common:webSearchToggleDisabled')
     ).toBeInTheDocument()
 
     useMCPServers.setState({ mcpServers: {} })
+    unmount()
+  })
+
+  // A model that actually advertises tools: the connectors button and the
+  // attach-menu pin toggle both hang off that capability.
+  const selectToolCapableModel = () => {
+    const model = {
+      id: 'tool-model',
+      capabilities: ['tools'],
+      settings: {},
+    } as unknown as Model
+    useModelProvider.setState({
+      providers: [
+        {
+          provider: 'openai',
+          active: true,
+          models: [model],
+          settings: [],
+        } as ModelProvider,
+      ],
+      selectedProvider: 'openai',
+      selectedModel: model,
+    })
+  }
+
+  it('drops the connectors button from the toolbar once it is unpinned', () => {
+    // Unpinning is a UI choice, not a kill switch: it only takes the button
+    // out of the toolbar, and the "+" menu is the way back to it.
+    useMCPServers.setState({
+      mcpServers: {
+        exa: { command: '', args: [], env: {}, active: true },
+      },
+    })
+    useGeneralSetting.setState({ connectorsPinned: false })
+    selectToolCapableModel()
+
+    const { unmount } = render(<ChatInput />)
+
+    expect(
+      document.querySelector('[data-test-id="connectors-dropdown"]')
+    ).not.toBeInTheDocument()
+    // The server it would have listed is still connected, and web search —
+    // which runs on one of those servers — is still on the toolbar.
+    expect(useMCPServers.getState().mcpServers.exa.active).toBe(true)
+    expect(
+      screen.getByLabelText('common:webSearchToggleEnabled')
+    ).toBeInTheDocument()
+
+    useMCPServers.setState({ mcpServers: {} })
+    unmount()
+  })
+
+  it('pins and unpins the connectors button from the attach menu', () => {
+    selectToolCapableModel()
+
+    const { unmount } = render(<ChatInput />)
+
+    fireEvent.click(screen.getByText('connectors'))
+    expect(useGeneralSetting.getState().connectorsPinned).toBe(false)
+    expect(
+      document.querySelector('[data-test-id="connectors-dropdown"]')
+    ).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('connectors'))
+    expect(useGeneralSetting.getState().connectorsPinned).toBe(true)
+    expect(
+      document.querySelector('[data-test-id="connectors-dropdown"]')
+    ).toBeInTheDocument()
+
+    unmount()
+  })
+
+  it('keeps the agent controls while no provider is resolved yet', () => {
+    // The provider list loads asynchronously at boot and no model is picked on
+    // a cold launch: routing says "chat transport" only because it has nothing
+    // to judge, and the composer must not shed its agent controls meanwhile.
+    useModelProvider.setState({
+      providers: [],
+      selectedProvider: '',
+      selectedModel: null,
+    })
+
+    const { unmount } = render(<ChatInput initialMessage />)
+
+    expect(
+      document.querySelector('[data-test-id="approval-mode-select"]')
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('chat-input')).toHaveAttribute(
+      'placeholder',
+      'chat:agentMode.placeholder'
+    )
+    expect(
+      screen.getByText('chat:agentWorkspace.addFolder')
+    ).toBeInTheDocument()
     unmount()
   })
 

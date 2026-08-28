@@ -599,5 +599,12 @@
   },
   "files": {
     "chunksCount": "{{count}} chunks"
+  },
+  "connectorsMenu": {
+    "title": "Connectors",
+    "empty": "No connectors yet",
+    "manage": "Manage connectors",
+    "toolCount": "{{count}} tools",
+    "toggleFailed": "Couldn't start {{server}}"
   }
 }

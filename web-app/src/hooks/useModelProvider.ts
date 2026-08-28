@@ -5,6 +5,7 @@ import { getServiceHub } from '@/hooks/useServiceHub'
 import { modelSettings } from '@/lib/predefined'
 import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import { turboquantDefaultActive } from '@/lib/turboquantDefaultMigration'
+import { isCloudProvider, isProviderReady } from '@/lib/cloud-providers'
 
 /**
  * Historical provider id retained for one-time migration logic. The
@@ -682,9 +683,33 @@ export const useModelProvider = create<ModelProviderState>()(
           state.selectedProvider = LOCAL_LLAMACPP_PROVIDER
         }
 
+        // v15 — cloud providers first registered by a build that defaulted
+        // them to `active: false` stayed off forever: `setProviders` keeps
+        // whatever was persisted, so connecting one on the Cloud page left it
+        // out of the model picker *and* out of `syncRemoteProviders` (which
+        // registers the proxy route). The result was a provider the Cloud page
+        // calls connected and nothing else can use, with no UI saying why.
+        //
+        // Only providers the user actually connected are re-enabled — an
+        // untouched one keeps its flag, so nothing the user deliberately
+        // switched off before ever setting it up is resurrected. This runs
+        // once per install, so the Settings toggle still has the last word
+        // afterwards.
+        if (version <= 14 && state?.providers) {
+          state.providers.forEach((provider) => {
+            if (
+              !provider.active &&
+              isCloudProvider(provider) &&
+              isProviderReady(provider)
+            ) {
+              provider.active = true
+            }
+          })
+        }
+
         return state
       },
-      version: 14,
+      version: 15,
     }
   )
 )

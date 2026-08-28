@@ -51,6 +51,13 @@ type GeneralSettingState = {
   // Same pattern for the Connectors nav item.
   connectorsBadgeSeen: boolean
   markConnectorsBadgeSeen: () => void
+  /**
+   * Whether the connectors button is pinned to the composer toolbar. Unpinning
+   * only hides the button — connected MCP servers keep running and their tools
+   * stay available to the model; the "+" menu pins it back.
+   */
+  connectorsPinned: boolean
+  setConnectorsPinned: (value: boolean) => void
   setHuggingfaceToken: (token: string) => void
   setSpellCheckChatInput: (value: boolean) => void
   setTokenCounterCompact: (value: boolean) => void
@@ -89,6 +96,8 @@ export const useGeneralSetting = create<GeneralSettingState>()(
         set((state) =>
           state.connectorsBadgeSeen ? state : { connectorsBadgeSeen: true }
         ),
+      connectorsPinned: true,
+      setConnectorsPinned: (value) => set({ connectorsPinned: value }),
       setSpellCheckChatInput: (value) => set({ spellCheckChatInput: value }),
       setTokenCounterCompact: (value) => set({ tokenCounterCompact: value }),
       setDisableReasoning: (value) => set({ disableReasoning: value }),

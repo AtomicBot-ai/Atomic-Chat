@@ -527,7 +527,7 @@ test-all: install-and-build install-rust-targets
 # validation run; normal builds never resolve a moving latest release.
 # Example:
 #   make build-mlx-server MLXVLM_TAG=mlxvlm-macos-arm64-abc1234
-MLXVLM_TAG ?= mlxvlm-macos-arm64-89acca5
+MLXVLM_TAG ?= mlxvlm-macos-arm64-07ba5a1
 build-mlx-server:
 ifeq ($(shell uname -s),Darwin)
 	@mkdir -p src-tauri/resources/bin

@@ -82,7 +82,11 @@ export function saveProviderApiKey(params: {
     })
   }
 
-  updateProvider(provider.provider, { ...provider, ...update })
+  // Saving a key is an explicit "I want to use this provider", so it also
+  // clears `active: false`. Without this a provider left disabled by an older
+  // build's default reads as connected on the Cloud page while staying out of
+  // the model picker and out of the proxy registration in `DataProvider`.
+  updateProvider(provider.provider, { ...provider, ...update, active: true })
 
   try {
     void Promise.resolve(

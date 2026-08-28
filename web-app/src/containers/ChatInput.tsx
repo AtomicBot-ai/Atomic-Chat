@@ -7,6 +7,7 @@ import {
   isLlamacppProvider,
 } from '@/lib/utils'
 import { useMessageExecutionRoute } from '@/hooks/useMessageExecutionRoute'
+import { useAgentProvider } from '@/hooks/useAgentProvider'
 import AgentApprovalInline from '@/containers/AgentApprovalInline'
 import { addExternalAgentFolder } from '@/lib/agent-workspace-actions'
 import { usePrompt } from '@/hooks/usePrompt'
@@ -34,8 +35,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ArrowRight, PlusIcon } from 'lucide-react'
 import {
+  IconCheck,
   IconPhoto,
-  IconTool,
+  IconPlug,
   IconCodeCircle2,
   IconPlayerStopFilled,
   IconX,
@@ -65,7 +67,7 @@ import { buildOptimisticUserMessage } from '@/lib/optimisticUserMessage'
 import { localStorageKey } from '@/constants/localStorage'
 import { defaultModel } from '@/lib/models'
 import { useAssistant } from '@/hooks/useAssistant'
-import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
+import DropdownConnectors from '@/containers/DropdownConnectors'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
@@ -206,6 +208,12 @@ const ChatInput = memo(function ChatInput({
     (state) => state.tokenCounterCompact
   )
   const maxImageSizePx = useGeneralSetting((state) => state.maxImageSizePx)
+  // The connectors button can be unpinned from the toolbar for a quieter
+  // composer; the "+" menu keeps the switch and pins it back.
+  const connectorsPinned = useGeneralSetting((state) => state.connectorsPinned)
+  const setConnectorsPinned = useGeneralSetting(
+    (state) => state.setConnectorsPinned
+  )
   const { shouldPrompt: shouldPromptBackendMismatch } = useBackendMismatch()
   useTools()
   const router = useRouter()
@@ -230,7 +238,15 @@ const ChatInput = memo(function ChatInput({
   })
   // Which engine would serve a send right now. Gates agent-only affordances;
   // per-turn factors (audio) are re-resolved at send time.
-  const agentRouteActive = useMessageExecutionRoute().route === 'agent-ipc'
+  //
+  // A provider that has not resolved yet counts as agent mode: routing reports
+  // `chat-transport` there only because there is nothing to judge (the list
+  // loads asynchronously at boot, and no model is picked on a fresh launch),
+  // and a composer that drops its approval mode, skills and placeholder until
+  // a model is chosen reads as a broken input rather than a deliberate one.
+  const agentProviderResolved = Boolean(useAgentProvider())
+  const agentRouteActive =
+    useMessageExecutionRoute().route === 'agent-ipc' || !agentProviderResolved
   // This composer owns the microphone only if it started the session —
   // home and an open thread can both be mounted at once.
   const isVoiceActive =
@@ -2765,6 +2781,26 @@ const ChatInput = memo(function ChatInput({
                             : 'Add documents or files'}
                         </span>
                       </DropdownMenuItem>
+                      {/* Pin/unpin the connectors button. Unpinning only
+                          hides it: whatever is connected keeps running, and
+                          this stays the way back to the button. */}
+                      {(supportsTools || agentRouteActive) && (
+                        <DropdownMenuItem
+                          onClick={() => setConnectorsPinned(!connectorsPinned)}
+                        >
+                          <IconPlug
+                            size={18}
+                            className="text-muted-foreground"
+                          />
+                          <span>{t('connectors')}</span>
+                          {connectorsPinned && (
+                            <IconCheck
+                              size={16}
+                              className="ml-auto text-primary"
+                            />
+                          )}
+                        </DropdownMenuItem>
+                      )}
                       {/* Workspace folders ride in the same attach menu: for
                           the agent they are just another kind of context. The
                           project composer hides it — that page has no files
@@ -2878,10 +2914,14 @@ const ChatInput = memo(function ChatInput({
                       </Tooltip>
                   )}
 
-                  {/* The tools button stays put even with every MCP server
-                      switched off — the dropdown says so itself, and an icon
-                      that vanishes when web search goes off reads as a bug. */}
+                  {/* Servers and their tools live behind this one menu, which
+                      is also where a server gets (dis)connected. It stays put
+                      even with every MCP server switched off — the dropdown
+                      says so itself, and an icon that vanishes when web search
+                      goes off reads as a bug. Only unpinning from the "+" menu
+                      takes it out of the toolbar. */}
                   {(supportsTools || agentRouteActive) &&
+                    connectorsPinned &&
                     (MCPToolComponent && hasActiveMCPServers ? (
                       // Use custom MCP component
                       <McpExtensionToolLoader
@@ -2892,7 +2932,7 @@ const ChatInput = memo(function ChatInput({
                         MCPToolComponent={MCPToolComponent}
                       />
                     ) : (
-                      // Use default tools dropdown
+                      // Use default connectors dropdown
                       <Tooltip
                         open={tooltipToolsAvailable}
                         onOpenChange={setTooltipToolsAvailable}
@@ -2909,7 +2949,7 @@ const ChatInput = memo(function ChatInput({
                               e.stopPropagation()
                             }}
                           >
-                            <DropdownToolsAvailable
+                            <DropdownConnectors
                               initialMessage={initialMessage}
                               onOpenChange={(isOpen) => {
                                 setDropdownToolsAvailable(isOpen)
@@ -2918,25 +2958,28 @@ const ChatInput = memo(function ChatInput({
                                 }
                               }}
                             >
-                              {() => {
+                              {(_isOpen, activeConnectors) => {
                                 return (
                                   <div
                                     className={cn(
                                       'p-1 flex items-center justify-center rounded-sm transition-all duration-200 ease-in-out gap-1 cursor-pointer'
                                     )}
                                   >
-                                    <IconTool
+                                    <IconPlug
                                       size={18}
-                                      className={cn('text-muted-foreground')}
+                                      className={cn(
+                                        'text-muted-foreground',
+                                        activeConnectors > 0 && 'text-primary'
+                                      )}
                                     />
                                   </div>
                                 )
                               }}
-                            </DropdownToolsAvailable>
+                            </DropdownConnectors>
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p>{t('tools')}</p>
+                          <p>{t('connectors')}</p>
                         </TooltipContent>
                       </Tooltip>
                     ))}

@@ -18,6 +18,7 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
+  DEFAULT_REASONING_LEVELS,
   availableReasoningLevels,
   resolveReasoningLevel,
 } from '@/lib/reasoning-effort'
@@ -54,7 +55,11 @@ const ReasoningToggle = memo(function ReasoningToggle({
   // The effort picker is a separate control that only appears once reasoning is
   // on and the model's chat template declares a thinking phase. Switching
   // reasoning on and off stays entirely on the bulb.
-  const levels = availableReasoningLevels(selectedModel?.reasoning)
+  // No model picked yet — keep the full scale so the chosen level stays
+  // visible; a *selected* model without a thinking phase still hides it.
+  const levels = selectedModel
+    ? availableReasoningLevels(selectedModel.reasoning)
+    : DEFAULT_REASONING_LEVELS
   const level =
     reasoningBudget === 'off'
       ? undefined

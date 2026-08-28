@@ -606,4 +606,52 @@ describe('useModelProvider migrations', () => {
       'https://api.openai.com/v1'
     )
   })
+
+  it('re-enables cloud providers the user connected but that stayed disabled', () => {
+    // Builds that registered cloud entries `active: false` left them off for
+    // good — `setProviders` preserves the persisted flag, so connecting one
+    // afterwards produced a provider the Cloud page calls connected while the
+    // picker and the proxy registration both ignore it.
+    const persistApi = (useModelProvider as any).persist
+    const migrate = persistApi?.getOptions().migrate as
+      | ((state: unknown, version: number) => any)
+      | undefined
+
+    expect(migrate).toBeDefined()
+
+    const persistedState = {
+      providers: [
+        { provider: 'openai', active: false, api_key: 'sk-test', models: [], settings: [] },
+        { provider: 'anthropic', active: false, api_key: '', models: [], settings: [] },
+        {
+          provider: 'ollama',
+          active: false,
+          api_key: '',
+          base_url: 'http://localhost:11434/v1',
+          models: [],
+          settings: [],
+        },
+        // A local engine the platform disabled: not this migration's business.
+        { provider: 'foundation-models', active: false, persist: true, models: [], settings: [] },
+      ],
+      selectedProvider: 'openai',
+      selectedModel: null,
+      deletedModels: [],
+    }
+
+    const migrated = migrate!(persistedState, 14)
+    const active = Object.fromEntries(
+      migrated.providers.map((p: any) => [p.provider, p.active])
+    )
+
+    expect(active).toEqual({
+      // Connected — a key is intent on its own.
+      openai: true,
+      // Never set up: whatever the user chose stands.
+      anthropic: false,
+      // Keyless loopback with nothing behind it — not proof of a connection.
+      ollama: false,
+      'foundation-models': false,
+    })
+  })
 })

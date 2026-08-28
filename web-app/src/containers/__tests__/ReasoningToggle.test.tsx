@@ -59,6 +59,18 @@ describe('ReasoningToggle', () => {
     expect(screen.getAllByRole('button')).toHaveLength(1)
   })
 
+  it('keeps the chosen level on offer while no model is selected', () => {
+    // Cold launch: nothing to clamp against yet, and an effort pill that
+    // disappears until a model is picked reads as a lost setting.
+    selectedModel.current = undefined
+
+    render(<ReasoningToggle />)
+
+    expect(
+      screen.getByRole('button', { name: /reasoningEffort\.ariaLabel/ })
+    ).toHaveTextContent('common:reasoningEffort.medium')
+  })
+
   it('hides the effort picker while reasoning is off', () => {
     selectedModel.current = BUDGET_MODEL
     useGeneralSetting.setState({ disableReasoning: true })

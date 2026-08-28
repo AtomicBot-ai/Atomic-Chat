@@ -57,6 +57,19 @@ export const isProviderConnected = (provider: ProviderObject): boolean => {
 }
 
 /**
+ * Connected *and* with something to show for it.
+ *
+ * A key counts on its own — it is intent, and the section it earns in the
+ * model picker is how the user gets back to the gear to fetch the catalogue.
+ * Everything else has to actually offer models: a loopback server that is not
+ * running is "keyless" and therefore "connected" by the rule above, and a
+ * permanently empty Ollama row is noise rather than information.
+ */
+export const isProviderReady = (provider: ProviderObject): boolean =>
+  isProviderConnected(provider) &&
+  (Boolean(provider.api_key?.trim()) || (provider.models?.length ?? 0) > 0)
+
+/**
  * Providers authorised by signing in rather than by an API key.
  *
  * They are picked from the connection dropdown like any other provider, but

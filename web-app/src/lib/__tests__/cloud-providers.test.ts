@@ -4,6 +4,7 @@ import {
   isCloudProvider,
   isLocalEngineProvider,
   isProviderConnected,
+  isProviderReady,
   takesApiKey,
 } from '@/lib/cloud-providers'
 
@@ -117,6 +118,36 @@ describe('isProviderConnected', () => {
       api_key: '   ',
     })
     expect(isProviderConnected(provider)).toBe(false)
+  })
+})
+
+describe('isProviderReady', () => {
+  it('counts a saved key on its own, before any catalogue is fetched', () => {
+    expect(isProviderReady(byName('my-hosted'))).toBe(true)
+  })
+
+  it('asks a keyless loopback server for models before listing it', () => {
+    // "Connected" for Ollama only means it needs no key. Nothing proves the
+    // server is actually there until it answers with a catalogue.
+    expect(isProviderConnected(byName('ollama'))).toBe(true)
+    expect(isProviderReady(byName('ollama'))).toBe(false)
+    expect(
+      isProviderReady({
+        ...byName('ollama'),
+        models: [{ id: 'llama3' } as Model],
+      })
+    ).toBe(true)
+  })
+
+  it('stays false for a catalogue entry the user never connected', () => {
+    // The registry ships openai with a model list; without a key it is an
+    // advert, not a connection.
+    expect(
+      isProviderReady({
+        ...byName('openai'),
+        models: [{ id: 'gpt-4o' } as Model],
+      })
+    ).toBe(false)
   })
 })
 
