@@ -7,6 +7,7 @@
   "quickStartFailed": "Что-то пошло не так Пожалуйста, попробуйте ещё раз.",
   "downloading": "Загрузка…",
   "downloadPreparing": "Запуск загрузки…",
+  "downloadStartedOpening": "Загрузка началась — открываем чат…",
   "downloadingDescription": "Подождите, пока модель загружается. Это может занять несколько минут.",
   "orDivider": "или",
   "localModel": "Настроить локальную модель",

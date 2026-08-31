@@ -103,19 +103,21 @@ export default function AddProjectDialog({
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-md lg:max-w-md xl:max-w-md">
         <DialogHeader>
           <DialogTitle>
             {editingKey ? t('projects.addProjectDialog.editTitle') : t('projects.addProjectDialog.createTitle')}
           </DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
+        <div className="space-y-5 py-1">
           <div>
+            <label className="text-sm font-medium mb-1.5 block">
+              {t('projects.addProjectDialog.nameLabel')}
+            </label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={t('projects.addProjectDialog.namePlaceholder')}
-              className="mt-1"
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !isButtonDisabled) {

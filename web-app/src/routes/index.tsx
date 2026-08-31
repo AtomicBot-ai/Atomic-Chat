@@ -15,8 +15,6 @@ import { useThreads } from '@/hooks/useThreads'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
-import { usePrompt } from '@/hooks/usePrompt'
-import { AgentTaskSuggestions } from '@/containers/AgentTaskSuggestions'
 import { AgentWorkspaceLayout } from '@/containers/AgentWorkspaceLayout'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { resolveAgentWorkspaceRoot } from '@/services/agent/tauri'
@@ -55,18 +53,7 @@ function Index() {
   const agentWorkspace = useAgentMode(
     (state) => state.workspaces[TEMPORARY_CHAT_ID]
   )
-  const setPrompt = usePrompt((state) => state.setPrompt)
   useTools()
-
-  const handleSelectAgentTask = useCallback(
-    (prompt: string) => {
-      setPrompt(prompt)
-      document
-        .querySelector<HTMLTextAreaElement>('[data-testid="chat-input"]')
-        ?.focus()
-    },
-    [setPrompt]
-  )
 
   const addExternalAgentRoot = useCallback(async () => {
     const selected = await serviceHub.dialog().open({
@@ -117,9 +104,7 @@ function Index() {
             'h-full overflow-y-auto inline-flex flex-col gap-2 justify-center px-3'
           )}
         >
-          <div
-            className={cn('relative mx-auto w-full md:w-4/5 xl:w-4/6 -mt-20')}
-          >
+          <div className={cn('mx-auto w-full md:w-4/5 xl:w-4/6 -mt-20')}>
             <div className={cn('text-center mb-4')}>
               <h1 className={cn('text-2xl mt-2 font-studio font-medium')}>
                 {t('chat:description')}
@@ -132,9 +117,6 @@ function Index() {
                 initialMessage={true}
                 preselectedAgentSkillName={agentSkill}
               />
-            </div>
-            <div className="absolute inset-x-0 top-full mx-auto w-full max-w-3xl">
-              <AgentTaskSuggestions visible onSelect={handleSelectAgentTask} />
             </div>
           </div>
         </div>

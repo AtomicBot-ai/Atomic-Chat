@@ -1,4 +1,32 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+/**
+ * The grouping asks the registry store what the catalogue ships, so the
+ * catalogue is stated here rather than fetched: `my-hosted` and `my-vllm` are
+ * absent from it on purpose — they are the user-added providers.
+ */
+const registryState = {
+  hasInitialized: true,
+  providers: [
+    { provider: 'ollama' },
+    { provider: 'llamacpp-server' },
+    { provider: 'openai' },
+    { provider: 'azure' },
+    { provider: 'chatgpt' },
+    // Flagship ids the real registry ships ahead of the baseline; only the
+    // subscription-placement cases below build providers for them.
+    { provider: 'anthropic' },
+    { provider: 'openrouter' },
+    { provider: 'mistral' },
+    { provider: 'groq' },
+    { provider: 'xai' },
+  ],
+}
+
+vi.mock('@/stores/provider-registry-store', () => ({
+  useProviderRegistryStore: { getState: () => registryState },
+}))
+
 import {
   groupCloudProviders,
   isCloudProvider,
@@ -7,6 +35,7 @@ import {
   isProviderReady,
   takesApiKey,
 } from '@/lib/cloud-providers'
+import { CHATGPT_BASE_URL } from '@/constants/providers'
 
 const apiKeySetting: ProviderSetting = {
   key: 'api-key',
@@ -40,6 +69,12 @@ const providers: ProviderObject[] = [
   // must be enough to keep it in Settings.
   makeProvider('future-engine', { persist: true }),
   makeProvider('ollama', { base_url: 'http://localhost:11434/v1' }),
+  // The user's own llama-server, pointed at a box on the LAN rather than
+  // loopback, with the optional `--api-key` setting it ships with.
+  makeProvider('llamacpp-server', {
+    base_url: 'http://192.168.1.50:8080/v1',
+    settings: [apiKeySetting],
+  }),
   makeProvider('openai', {
     base_url: 'https://api.openai.com/v1',
     settings: [apiKeySetting],
@@ -76,8 +111,8 @@ describe('isLocalEngineProvider / isCloudProvider', () => {
 
   it('keeps every local engine in Settings', () => {
     expect(
-      ['llamacpp-upstream', 'llamacpp', 'mlx', 'foundation-models'].map((name) =>
-        isLocalEngineProvider(byName(name))
+      ['llamacpp-upstream', 'llamacpp', 'mlx', 'foundation-models'].map(
+        (name) => isLocalEngineProvider(byName(name))
       )
     ).toEqual([true, true, true, true])
   })
@@ -162,7 +197,9 @@ describe('groupCloudProviders', () => {
   const groups = groupCloudProviders(providers)
 
   it('drops every local engine', () => {
-    const names = [...groups.selfHosted, ...groups.hosted].map((p) => p.provider)
+    const names = [...groups.selfHosted, ...groups.hosted].map(
+      (p) => p.provider
+    )
     expect(names).not.toContain('llamacpp-upstream')
     expect(names).not.toContain('future-engine')
   })
@@ -170,20 +207,83 @@ describe('groupCloudProviders', () => {
   it('groups loopback endpoints as self-hosted', () => {
     expect(groups.selfHosted.map((p) => p.provider)).toEqual([
       'ollama',
+      'llamacpp-server',
+      'my-hosted',
       'my-vllm',
     ])
   })
 
-  it('groups key-taking remote endpoints as hosted, in input order', () => {
-    expect(groups.hosted.map((p) => p.provider)).toEqual([
-      'openai',
-      'azure',
-      'my-hosted',
-    ])
+  it('keeps a self-hosted runtime self-hosted off loopback', () => {
+    // Moving `llama-server` from `localhost` to the box under the desk does
+    // not turn it into somebody else's cloud, and its optional `--api-key`
+    // setting must not push it across the separator either.
+    expect(groups.selfHosted.map((p) => p.provider)).toContain(
+      'llamacpp-server'
+    )
+    expect(groups.hosted.map((p) => p.provider)).not.toContain(
+      'llamacpp-server'
+    )
+  })
+
+  it('files a user-added provider with self-hosted, not at the bottom', () => {
+    // `my-hosted` looks exactly like a cloud — https URL, api-key setting, a
+    // saved key — and is only distinguishable by being absent from the
+    // catalogue. That is what "the user added it themselves" means here.
+    expect(groups.selfHosted.map((p) => p.provider)).toContain('my-hosted')
+  })
+
+  it('groups catalogue clouds as hosted, in input order', () => {
+    expect(groups.hosted.map((p) => p.provider)).toEqual(['openai', 'azure'])
   })
 
   it('covers every cloud provider exactly once', () => {
     const cloud = providers.filter(isCloudProvider)
     expect(groups.selfHosted.length + groups.hosted.length).toBe(cloud.length)
+  })
+})
+
+describe('groupCloudProviders: subscription placement', () => {
+  /** The registry order, with the baseline appended the way `seedProviders` does. */
+  const catalogue = (): ProviderObject[] =>
+    ['openai', 'anthropic', 'openrouter', 'mistral', 'groq', 'xai']
+      .map((name) =>
+        makeProvider(name, {
+          base_url: `https://api.${name}.test/v1`,
+          settings: [apiKeySetting],
+        })
+      )
+      .concat(makeProvider('chatgpt', { base_url: CHATGPT_BASE_URL }))
+
+  it('lifts the subscription to fifth, leaving the rest in registry order', () => {
+    expect(
+      groupCloudProviders(catalogue()).hosted.map((p) => p.provider)
+    ).toEqual([
+      'openai',
+      'anthropic',
+      'openrouter',
+      'mistral',
+      'chatgpt',
+      'groq',
+      'xai',
+    ])
+  })
+
+  it('keeps it last when there is nothing to promote it past', () => {
+    const short = [
+      makeProvider('openai', {
+        base_url: 'https://api.openai.com/v1',
+        settings: [apiKeySetting],
+      }),
+      makeProvider('chatgpt', { base_url: CHATGPT_BASE_URL }),
+    ]
+    expect(groupCloudProviders(short).hosted.map((p) => p.provider)).toEqual([
+      'openai',
+      'chatgpt',
+    ])
+  })
+
+  it('keeps the subscription out of the self-hosted group', () => {
+    const groups = groupCloudProviders(catalogue())
+    expect(groups.selfHosted.map((p) => p.provider)).not.toContain('chatgpt')
   })
 })

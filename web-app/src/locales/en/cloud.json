@@ -27,7 +27,7 @@
     "placeholder": "Pick a connection above to set it up."
   },
   "subscription": {
-    "title": "ChatGPT subscription",
+    "title": "ChatGPT subscription (Codex)",
     "description": "Authorize in your system browser. Tokens never enter browser storage.",
     "connectInBrowser": "Connect in browser",
     "useDeviceCode": "Use device code",

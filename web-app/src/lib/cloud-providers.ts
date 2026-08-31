@@ -1,6 +1,8 @@
 /**
  * Which providers belong to Settings, which belong to the Cloud page, and what
- * "connected" means — in one place, as pure predicates.
+ * "connected" means — in one place. Everything here is a pure predicate over
+ * the provider object except the grouping, which additionally asks the
+ * registry store whether an entry is one the catalogue ships.
  *
  * The two membership predicates are exact complements on purpose. Settings
  * renders `isLocalEngineProvider`, `/cloud` renders `isCloudProvider`, and
@@ -19,7 +21,9 @@
 import {
   isKeylessRemoteProvider,
   isLocalProvider,
+  isSelfHostedProviderName,
 } from '@/utils/registerRemoteProvider'
+import { useProviderRegistryStore } from '@/stores/provider-registry-store'
 
 /**
  * A provider served by an in-process engine extension.
@@ -81,11 +85,26 @@ const SUBSCRIPTION_PROVIDERS = new Set(['chatgpt'])
 
 export const isSubscriptionProvider = (
   providerName: string | undefined | null
-): boolean => Boolean(providerName) && SUBSCRIPTION_PROVIDERS.has(providerName as string)
+): boolean =>
+  Boolean(providerName) && SUBSCRIPTION_PROVIDERS.has(providerName as string)
 
 /** True when the provider asks for an API key at all. */
 export const takesApiKey = (provider: ProviderObject): boolean =>
   provider.settings?.some((setting) => setting.key === 'api-key') === true
+
+/**
+ * A provider the user added themselves, rather than one the catalogue ships.
+ *
+ * Same rule the model picker, the delete dialog and onboarding already use —
+ * "not in the registry" — with one guard: until the first registry load
+ * resolves the catalogue is baseline-only, and calling everything else custom
+ * would sweep OpenAI and friends into the self-hosted group for a frame.
+ */
+const isUserAddedProvider = (provider: ProviderObject): boolean => {
+  const registry = useProviderRegistryStore.getState()
+  if (!registry.hasInitialized) return false
+  return !registry.providers.some((p) => p.provider === provider.provider)
+}
 
 export type CloudProviderGroups = {
   /** Runs on this machine or the user's own hardware: Ollama, custom endpoints. */
@@ -95,32 +114,73 @@ export type CloudProviderGroups = {
 }
 
 /**
+ * Somebody's own server rather than somebody else's service.
+ *
+ * Three ways to qualify, in order of how much they know:
+ *
+ *  - a catalogue id that is a self-hosted runtime by definition (Ollama, a
+ *    `llama-server`) — true wherever it is reachable, so moving it off
+ *    `localhost` onto the LAN box does not reclassify it;
+ *  - a provider the user added through "Custom provider", which is their
+ *    endpoint by construction — it is why the entry exists;
+ *  - the property test, which catches an LM-Studio-style registry entry added
+ *    later with no code change here: no key asked for, or a loopback address.
+ *
+ * Subscriptions declare no `api-key` setting, so the property test alone would
+ * file them here. They run on somebody else's servers: excluded up front.
+ */
+const isSelfHostedGroup = (provider: ProviderObject): boolean => {
+  if (isSubscriptionProvider(provider.provider)) return false
+  return (
+    isSelfHostedProviderName(provider.provider) ||
+    isUserAddedProvider(provider) ||
+    isKeylessRemoteProvider(provider) ||
+    !takesApiKey(provider)
+  )
+}
+
+/**
+ * Where a subscription sits in the hosted list, 0-based: fifth, under the
+ * flagships the registry ships first.
+ *
+ * Without this it lands last. Subscriptions live in `BASELINE_PROVIDERS`, and
+ * `seedProviders` appends the baseline *after* everything the registry
+ * carries — so the one connection that needs no API key would be the one the
+ * user has to scroll for.
+ */
+const SUBSCRIPTION_HOSTED_INDEX = 4
+
+/**
+ * Lifts the subscriptions out of a hosted list and re-inserts them at
+ * {@link SUBSCRIPTION_HOSTED_INDEX}, preserving the order of everything else.
+ * A shorter list than that just keeps them at the end.
+ */
+const promoteSubscriptions = (hosted: ProviderObject[]): ProviderObject[] => {
+  const subscriptions = hosted.filter((p) => isSubscriptionProvider(p.provider))
+  if (subscriptions.length === 0) return hosted
+
+  const rest = hosted.filter((p) => !isSubscriptionProvider(p.provider))
+  const at = Math.min(SUBSCRIPTION_HOSTED_INDEX, rest.length)
+  return [...rest.slice(0, at), ...subscriptions, ...rest.slice(at)]
+}
+
+/**
  * The connection dropdown's two groups, above and below the separator.
  *
- * Membership is by property, not by id, so an LM-Studio-style entry added to
- * the registry later is grouped correctly with no code change here. Order
- * inside each group is the caller's (the registry ships flagship-first) and is
- * deliberately not sorted.
+ * Order inside each group is the caller's (the registry ships flagship-first)
+ * and is otherwise deliberately not sorted — which is also what puts a
+ * just-added custom provider at the end of the self-hosted list, next to the
+ * "+" that made it, rather than at the bottom of the whole dropdown. The one
+ * exception is the subscription promotion above.
  */
 export const groupCloudProviders = (
   providers: ProviderObject[]
 ): CloudProviderGroups => {
   const cloud = providers.filter(isCloudProvider)
-  // Subscriptions declare no `api-key` setting, so the property test would
-  // file them under self-hosted. They run on somebody else's servers: list
-  // them with the hosted clouds regardless.
-  const subscription = (provider: ProviderObject) =>
-    isSubscriptionProvider(provider.provider)
   return {
-    selfHosted: cloud.filter(
-      (provider) =>
-        !subscription(provider) &&
-        (isKeylessRemoteProvider(provider) || !takesApiKey(provider))
-    ),
-    hosted: cloud.filter(
-      (provider) =>
-        subscription(provider) ||
-        (!isKeylessRemoteProvider(provider) && takesApiKey(provider))
+    selfHosted: cloud.filter(isSelfHostedGroup),
+    hosted: promoteSubscriptions(
+      cloud.filter((provider) => !isSelfHostedGroup(provider))
     ),
   }
 }

@@ -73,6 +73,48 @@ export const BASELINE_PROVIDERS: ProviderObject[] = [
     supports_model_listing: false,
   },
   {
+    // The user's own `llama-server`. It cannot live in the remote registry for
+    // the same reason Azure cannot: the endpoint is per-user configuration —
+    // there is no shared address to publish, only the one they started.
+    //
+    // The key is optional: llama.cpp serves unauthenticated unless started
+    // with `--api-key`. `isKeylessRemoteProvider` knows this id, so the proxy
+    // registers the provider with or without one — on loopback or on a
+    // LAN/VPS host.
+    active: true,
+    api_key: '',
+    base_url: 'http://localhost:8080/v1',
+    explore_models_url: 'https://github.com/ggml-org/llama.cpp',
+    provider: 'llamacpp-server',
+    settings: [
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'Address of your own `llama-server`. Start it with `llama-server -m model.gguf --host 0.0.0.0 --port 8080`, then point this at `http://<host>:8080/v1`. See the [llama.cpp server docs](https://github.com/ggml-org/llama.cpp/tree/master/tools/server).',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'http://localhost:8080/v1',
+          value: 'http://localhost:8080/v1',
+        },
+      },
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          'Optional. Only needed when you started `llama-server` with `--api-key`.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Leave empty for an unauthenticated server',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+    ],
+    models: [],
+  },
+  {
     active: true,
     api_key: '',
     base_url: 'https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1',

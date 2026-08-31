@@ -37,7 +37,6 @@ const MONOCHROME_FAMILY_LOGOS: ReadonlySet<string> = new Set([
   '/svg/nousresearch.svg',
   '/svg/zai.svg',
   '/svg/minimax.svg',
-  '/images/model-provider/codex.svg',
 ])
 
 // Explicit icon keys addressable from the staff-picks manifest. Curators pick

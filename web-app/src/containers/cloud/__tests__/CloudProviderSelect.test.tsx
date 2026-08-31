@@ -8,6 +8,23 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
 
+// The grouping asks the registry store what the catalogue ships; anything
+// absent from this list is a provider the user added themselves.
+vi.mock('@/stores/provider-registry-store', () => ({
+  useProviderRegistryStore: {
+    getState: () => ({
+      hasInitialized: true,
+      providers: [
+        { provider: 'openai' },
+        { provider: 'anthropic' },
+        { provider: 'ollama' },
+      ],
+    }),
+  },
+  isKnownProvider: (name: string) =>
+    ['openai', 'anthropic', 'ollama'].includes(name),
+}))
+
 vi.mock('@/containers/ProvidersAvatar', () => ({
   default: ({ provider }: { provider: { provider: string } }) => (
     <span data-testid={`avatar-${provider.provider}`} />
@@ -118,6 +135,30 @@ describe('CloudProviderSelect', () => {
 
     expect(onSelect.mock.calls).toHaveLength(1)
     expect(onSelect.mock.calls[0][0]).toBe('anthropic')
+  })
+
+  it('lists a user-added provider with self-hosted, not below the clouds', async () => {
+    // It looks like a cloud from its fields alone — https URL, api-key
+    // setting — so only its absence from the catalogue puts it up top, beside
+    // the "+" that created it.
+    await renderSelect({
+      providers: [
+        ...providers,
+        {
+          provider: 'my-endpoint',
+          active: true,
+          models: [],
+          settings: [apiKeySetting],
+          base_url: 'https://api.openai.com/v1',
+        },
+      ],
+    })
+
+    const labels = screen.getAllByText(/^(my-endpoint|cloud:connection\.group)/)
+    const order = labels.map((node) => node.textContent)
+    expect(order.indexOf('my-endpoint')).toBeLessThan(
+      order.indexOf('cloud:connection.groupHosted')
+    )
   })
 
   it('offers a custom OpenAI-compatible entry', async () => {

@@ -7,6 +7,7 @@
   "quickStartFailed": "エラーが発生しました。もう一度お試しください。",
   "downloading": "ダウンロード中…",
   "downloadPreparing": "ダウンロードを開始中…",
+  "downloadStartedOpening": "ダウンロードを開始しました — チャットを開いています…",
   "downloadingDescription": "モデルをダウンロードしていますのでお待ちください。数分かかる場合があります。",
   "orDivider": "または",
   "localModel": "ローカルモデルをセットアップ",

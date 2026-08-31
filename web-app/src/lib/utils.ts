@@ -80,8 +80,11 @@ export function getProviderLogo(provider: string) {
   switch (provider) {
     case 'jan':
       return '/images/model-provider/jan.png'
+    // Both engines the app starts, plus the `llama-server` the user starts and
+    // we merely connect to — same engine, so the same mark.
     case 'llamacpp':
     case 'llamacpp-upstream':
+    case 'llamacpp-server':
       return '/images/model-provider/llamacpp.svg'
     case 'mlx':
       return '/images/model-provider/mlx.png'
@@ -101,8 +104,8 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/gemini.svg'
     case 'openai':
       return '/images/model-provider/openai.svg'
-    // The subscription is reached through the Codex backend, and its own mark
-    // keeps it apart from the API-key OpenAI provider in the same list.
+    // The subscription is reached through the Codex backend, and the Codex app
+    // mark keeps it apart from the API-key OpenAI provider in the same list.
     case 'chatgpt':
       return '/images/model-provider/codex.svg'
     case 'azure':
@@ -174,12 +177,16 @@ export const getProviderTitle = (provider: string) => {
       return 'llama.cpp turboquant'
     case 'llamacpp-upstream':
       return 'llama.cpp'
+    // Named for what it is from here: a llama.cpp server the user runs and
+    // connects to, as opposed to the two engines the app starts itself.
+    case 'llamacpp-server':
+      return 'llama.cpp server'
     case 'mlx':
       return 'MLX'
     case 'openai':
       return 'OpenAI'
     case 'chatgpt':
-      return 'ChatGPT subscription'
+      return 'ChatGPT subscription (Codex)'
     case 'openrouter':
       return 'OpenRouter'
     case 'gemini':
