@@ -3,9 +3,8 @@
 use std::time::Duration;
 
 use crate::core::auth::chatgpt::{
-    authorize_url, decode_jwt_claims, derive_challenge, new_pkce, new_state,
-    parse_callback_query, redirect_uri, state_matches, CallbackParams, CALLBACK_PORT, CLIENT_ID,
-    ORIGINATOR,
+    authorize_url, decode_jwt_claims, derive_challenge, new_pkce, new_state, parse_callback_query,
+    redirect_uri, state_matches, CallbackParams, CALLBACK_PORT, CLIENT_ID, ORIGINATOR,
 };
 use crate::core::auth::state::{now_unix, ChatGptAuthState, REFRESH_SAFETY_MARGIN_SECS};
 use crate::core::auth::store::{self, StoredTokens, TOKEN_FILE_VERSION};
@@ -78,7 +77,10 @@ fn authorize_url_carries_the_pkce_challenge_and_never_the_verifier() {
 /// and `_`, which survive, so a plain containment check is enough once we
 /// account for nothing needing escaping here.
 fn urlencoding_of(value: &str) -> String {
-    value.replace('+', "%2B").replace('/', "%2F").replace('=', "%3D")
+    value
+        .replace('+', "%2B")
+        .replace('/', "%2F")
+        .replace('=', "%3D")
 }
 
 #[test]
@@ -103,8 +105,8 @@ fn callback_query_yields_the_code_and_state() {
 
 #[test]
 fn callback_query_surfaces_a_provider_error() {
-    let parsed =
-        parse_callback_query("error=access_denied&error_description=User+declined").expect("parses");
+    let parsed = parse_callback_query("error=access_denied&error_description=User+declined")
+        .expect("parses");
     assert_eq!(
         parsed,
         CallbackParams::Error {
@@ -244,7 +246,9 @@ async fn status_reflects_what_is_on_disk() {
 async fn logout_forgets_the_session_in_memory_and_on_disk() {
     let dir = temp_dir("logout");
     let auth = ChatGptAuthState::default();
-    auth.set(&dir, tokens(now_unix() + 3600)).await.expect("set");
+    auth.set(&dir, tokens(now_unix() + 3600))
+        .await
+        .expect("set");
     assert!(auth.status(&dir).await.connected);
 
     auth.logout(&dir).await.expect("logout");
@@ -256,7 +260,9 @@ async fn logout_forgets_the_session_in_memory_and_on_disk() {
 async fn a_live_token_is_returned_without_touching_the_network() {
     let dir = temp_dir("live-token");
     let auth = ChatGptAuthState::default();
-    auth.set(&dir, tokens(now_unix() + 3600)).await.expect("set");
+    auth.set(&dir, tokens(now_unix() + 3600))
+        .await
+        .expect("set");
 
     let token = auth.access_token(&dir, false).await.expect("token");
     assert_eq!(token.token, "access-abc");

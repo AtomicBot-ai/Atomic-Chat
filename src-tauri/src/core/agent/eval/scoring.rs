@@ -168,7 +168,10 @@ mod tests {
         let detail = score_answer_detailed("1234", "$1,234");
         assert_eq!(detail.branch, ScoreBranch::List);
         assert!(!detail.correct);
-        assert_eq!(score_answer_detailed("1,234", "1,234").branch, ScoreBranch::List);
+        assert_eq!(
+            score_answer_detailed("1,234", "1,234").branch,
+            ScoreBranch::List
+        );
     }
 
     #[test]
@@ -177,7 +180,10 @@ mod tests {
         assert!(score_answer("THE CASTLE", "the castle"));
         assert!(score_answer("sea gull", "seagull"));
         assert!(score_answer("Saint Petersburg", "Saint Petersburg"));
-        assert!(!score_answer("Saint Petersburg, Russia", "Saint Petersburg"));
+        assert!(!score_answer(
+            "Saint Petersburg, Russia",
+            "Saint Petersburg"
+        ));
         assert!(score_answer("FunkMonk", "funkmonk"));
         assert!(score_answer("80GSFC21M0002", "80GSFC21M0002"));
         assert!(score_answer("Guava.", "Guava"));
@@ -197,7 +203,10 @@ mod tests {
         // ASCII parens strip, Unicode logical operators must match exactly.
         assert!(score_answer("(¬A → B) ↔ (A ∨ ¬B)", "(¬A → B) ↔ (A ∨ ¬B)"));
         assert!(score_answer("¬A → B ↔ A ∨ ¬B", "(¬A → B) ↔ (A ∨ ¬B)"));
-        assert!(!score_answer("(-A -> B) <-> (A v -B)", "(¬A → B) ↔ (A ∨ ¬B)"));
+        assert!(!score_answer(
+            "(-A -> B) <-> (A v -B)",
+            "(¬A → B) ↔ (A ∨ ¬B)"
+        ));
     }
 
     #[test]

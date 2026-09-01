@@ -19,6 +19,7 @@ use crate::core::server::api_request_analytics::{
     ApiRequestAggregator, ApiRequestObservation, ApiRequestSummary, API_REQUEST_SUMMARY_CHANNEL,
     API_REQUEST_SUMMARY_WINDOW_SECS,
 };
+use crate::core::server::chatgpt_route;
 use crate::core::server::context_expansion::{
     is_context_limit_error as shared_is_context_limit_error, request_context_increase,
 };
@@ -27,7 +28,6 @@ use crate::core::server::request_inspector::{
     InspectorHandle, PromptPreview, RequestInspector, StartedFields, StreamTelemetry,
     PREVIEW_MAX_CHARS,
 };
-use crate::core::server::chatgpt_route;
 use crate::core::server::sse::{SseData, SseLine, SseLineReader};
 use crate::core::state::{AutoIncreaseState, ProviderConfig, ServerHandle};
 
@@ -203,10 +203,7 @@ pub(crate) enum StreamStep<T> {
 }
 
 /// Await the next chunk, giving up if the stream goes silent for `idle_timeout`.
-pub(crate) async fn next_stream_chunk<S, T>(
-    stream: &mut S,
-    idle_timeout: Duration,
-) -> StreamStep<T>
+pub(crate) async fn next_stream_chunk<S, T>(stream: &mut S, idle_timeout: Duration) -> StreamStep<T>
 where
     S: futures_util::Stream<Item = T> + Unpin,
 {
@@ -1651,8 +1648,12 @@ async fn handle_responses_request(
                     let _ = sender.send_data(sse_event(&ev)).await;
                 }
                 if let Some(guard) = guard.as_mut() {
-                    guard.fields =
-                        finish_fields_from_stream(std::mem::take(&mut telemetry), started, 200, false);
+                    guard.fields = finish_fields_from_stream(
+                        std::mem::take(&mut telemetry),
+                        started,
+                        200,
+                        false,
+                    );
                 }
             });
 
@@ -3683,23 +3684,24 @@ async fn inner_proxy_request<R: Runtime>(
                 // Regular passthrough - when /messages succeeds directly,
                 // the response is already in the correct format
                 loop {
-                    let chunk_result = match next_stream_chunk(&mut stream, STREAM_IDLE_TIMEOUT).await {
-                        StreamStep::Chunk(chunk_result) => chunk_result,
-                        StreamStep::Idle => {
-                            log::warn!(
-                                "Stream produced no data for {}s; giving up on the response",
-                                STREAM_IDLE_TIMEOUT.as_secs()
-                            );
-                            break;
-                        }
-                        StreamStep::Done => {
-                            if let Some(guard) = guard.as_mut() {
-                                // A clean end of stream is not an abort.
-                                guard.fields.aborted = false;
+                    let chunk_result =
+                        match next_stream_chunk(&mut stream, STREAM_IDLE_TIMEOUT).await {
+                            StreamStep::Chunk(chunk_result) => chunk_result,
+                            StreamStep::Idle => {
+                                log::warn!(
+                                    "Stream produced no data for {}s; giving up on the response",
+                                    STREAM_IDLE_TIMEOUT.as_secs()
+                                );
+                                break;
                             }
-                            break;
-                        }
-                    };
+                            StreamStep::Done => {
+                                if let Some(guard) = guard.as_mut() {
+                                    // A clean end of stream is not an abort.
+                                    guard.fields.aborted = false;
+                                }
+                                break;
+                            }
+                        };
                     match chunk_result {
                         Ok(chunk) => {
                             if !eta_emitted && sse_chunk_has_visible_content(&chunk) {
@@ -3786,8 +3788,7 @@ async fn inner_proxy_request<R: Runtime>(
                     if !tail.is_empty() {
                         if upstream_is_sse {
                             let _ = sender.send_data(Bytes::from(tail)).await;
-                        } else if let Ok(json) =
-                            serde_json::from_slice::<serde_json::Value>(&tail)
+                        } else if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&tail)
                         {
                             // Non-SSE: the buffer holds the whole document.
                             telemetry.on_json(&json, Instant::now());
@@ -4889,7 +4890,10 @@ mod muse_catalogue_tests {
     /// `GET /muse-code/models`. Verified against Muse Code 1.0.1.
     #[test]
     fn muse_catalogue_route_is_reachable_with_and_without_the_api_prefix() {
-        assert_eq!(get_destination_path("/muse-code/models", "/v1"), "/muse-code/models");
+        assert_eq!(
+            get_destination_path("/muse-code/models", "/v1"),
+            "/muse-code/models"
+        );
         assert_eq!(
             get_destination_path("/v1/muse-code/models", "/v1"),
             "/muse-code/models"

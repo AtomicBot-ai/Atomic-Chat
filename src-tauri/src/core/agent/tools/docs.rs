@@ -122,7 +122,9 @@ async fn chunks(
     }
 
     for scope in scopes {
-        let result = bridge.chunks(*scope, file_id, start_order, end_order).await?;
+        let result = bridge
+            .chunks(*scope, file_id, start_order, end_order)
+            .await?;
         if !result.is_empty() {
             return Ok(json!({
                 "file_id": file_id,
@@ -154,7 +156,12 @@ fn parse_top_k(args: &Value) -> Result<usize, String> {
         Some(value) => {
             let requested = value
                 .as_u64()
-                .or_else(|| value.as_f64().filter(|v| v.fract() == 0.0).map(|v| v as u64))
+                .or_else(|| {
+                    value
+                        .as_f64()
+                        .filter(|v| v.fract() == 0.0)
+                        .map(|v| v as u64)
+                })
                 .ok_or("top_k must be a positive integer")?;
             if requested == 0 {
                 return Err("top_k must be at least 1".into());

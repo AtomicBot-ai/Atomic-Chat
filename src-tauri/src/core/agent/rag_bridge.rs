@@ -109,8 +109,7 @@ pub trait DocsBridge: Send + Sync {
     ) -> Result<Vec<DocsChunk>, String>;
 }
 
-type LlamacppSessions =
-    Arc<Mutex<HashMap<i32, tauri_plugin_llamacpp::state::LLamaBackendSession>>>;
+type LlamacppSessions = Arc<Mutex<HashMap<i32, tauri_plugin_llamacpp::state::LLamaBackendSession>>>;
 type UpstreamSessions =
     Arc<Mutex<HashMap<i32, tauri_plugin_llamacpp_upstream::state::LLamaBackendSession>>>;
 

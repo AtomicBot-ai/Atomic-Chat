@@ -535,7 +535,11 @@ fn format_tool_mcp(descriptor: &crate::core::agent::mcp_tools::McpToolDescriptor
     if description.is_empty() {
         description = "(no description)".into();
     }
-    let marker = if descriptor.read_only { " [read-only]" } else { "" };
+    let marker = if descriptor.read_only {
+        " [read-only]"
+    } else {
+        ""
+    };
     format!("- {} — {description}{marker}", descriptor.agent_name)
 }
 
@@ -1039,9 +1043,7 @@ const LOADED_TOOLS_MAX_CHARS: usize = 8_000;
 
 /// Full entry for a loaded MCP tool: name, description, and its JSON input
 /// schema, bounded so one verbose server cannot monopolize the tail budget.
-fn format_loaded_mcp_tool(
-    descriptor: &crate::core::agent::mcp_tools::McpToolDescriptor,
-) -> String {
+fn format_loaded_mcp_tool(descriptor: &crate::core::agent::mcp_tools::McpToolDescriptor) -> String {
     const MCP_LOADED_SCHEMA_CHARS: usize = 2_500;
     let mut schema = descriptor.input_schema.to_string();
     if schema.chars().count() > MCP_LOADED_SCHEMA_CHARS {

@@ -221,8 +221,10 @@ pub async fn respond(
 ) -> Response<Body> {
     // Stable per-conversation key so the upstream can reuse its prompt cache
     // across the turns of one thread; also the session affinity header.
-    let payload =
-        crate::core::server::chat_to_responses_shim::chat_request_to_responses(request_body, session_id);
+    let payload = crate::core::server::chat_to_responses_shim::chat_request_to_responses(
+        request_body,
+        session_id,
+    );
     let model_id = request_body
         .get("model")
         .and_then(|v| v.as_str())
@@ -353,7 +355,9 @@ pub async fn respond(
         for chunk in conv.finish() {
             let _ = sender.send_data(sse_event(&chunk)).await;
         }
-        let _ = sender.send_data(Bytes::from_static(b"data: [DONE]\n\n")).await;
+        let _ = sender
+            .send_data(Bytes::from_static(b"data: [DONE]\n\n"))
+            .await;
     });
 
     ok_builder("text/event-stream")

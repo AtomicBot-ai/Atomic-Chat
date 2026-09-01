@@ -692,8 +692,9 @@ mod tests {
         );
 
         assert!(grammar.contains("| mcp-call\n"));
-        assert!(grammar
-            .contains("mcp-call ::= call-prefix mcp-tool-name args-prefix json-object call-suffix"));
+        assert!(grammar.contains(
+            "mcp-call ::= call-prefix mcp-tool-name args-prefix json-object call-suffix"
+        ));
         assert!(grammar.contains(
             r#"mcp-tool-name ::= "\"mcp.github.create_issue\"" | "\"mcp.linear.search\"""#
         ));
@@ -732,13 +733,8 @@ mod tests {
             .into_iter()
             .map(str::to_owned)
             .collect();
-        let grammar = tool_call_grammar_dynamic(
-            &registry,
-            AgentModelProfile::Plain,
-            false,
-            &[],
-            &disabled,
-        );
+        let grammar =
+            tool_call_grammar_dynamic(&registry, AgentModelProfile::Plain, false, &[], &disabled);
 
         assert!(!grammar.contains(r#""\"os.web.search\"""#));
         assert!(!grammar.contains(r#""\"os.web.fetch\"""#));
@@ -755,13 +751,8 @@ mod tests {
             .into_iter()
             .map(str::to_owned)
             .collect();
-        let grammar = tool_call_grammar_dynamic(
-            &registry,
-            AgentModelProfile::Plain,
-            false,
-            &[],
-            &disabled,
-        );
+        let grammar =
+            tool_call_grammar_dynamic(&registry, AgentModelProfile::Plain, false, &[], &disabled);
 
         assert!(!grammar.contains(r#""\"docs.list\"""#));
         assert!(!grammar.contains(r#""\"docs.retrieve\"""#));
@@ -896,11 +887,8 @@ mod tests {
         // backslashes yields GBNF that parses but matches the wrong bytes,
         // which `every_referenced_grammar_rule_is_defined` would not catch.
         let temp = TempDir::new().expect("temp dir");
-        let grammar = tool_call_grammar_for_profile(
-            &empty_registry(&temp),
-            AgentModelProfile::Plain,
-            false,
-        );
+        let grammar =
+            tool_call_grammar_for_profile(&empty_registry(&temp), AgentModelProfile::Plain, false);
         let line = grammar
             .lines()
             .find(|line| line.starts_with("symbol-kind ::="))
@@ -914,10 +902,7 @@ mod tests {
     fn every_referenced_grammar_rule_is_defined() {
         let temp = TempDir::new().expect("temp dir");
         for thinking in [false, true] {
-            for profile in [
-                AgentModelProfile::Plain,
-                AgentModelProfile::Gemma4Think,
-            ] {
+            for profile in [AgentModelProfile::Plain, AgentModelProfile::Gemma4Think] {
                 let grammar =
                     tool_call_grammar_for_profile(&empty_registry(&temp), profile, thinking);
                 let mut defined = std::collections::HashSet::new();

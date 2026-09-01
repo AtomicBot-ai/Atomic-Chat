@@ -8,6 +8,18 @@ const activateMCPServer = vi.fn()
 const deactivateMCPServer = vi.fn()
 const getMCPServerStatuses = vi.fn()
 const updateMCPConfig = vi.fn()
+const mcpOauthLogin = vi.fn()
+const mcpOauthCancel = vi.fn()
+const mcpOauthLogout = vi.fn()
+
+const toastError = vi.hoisted(() => vi.fn())
+vi.mock('sonner', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('sonner')>()
+  return {
+    ...actual,
+    toast: { ...actual.toast, error: toastError },
+  }
+})
 
 vi.mock('@/containers/HeaderPage', () => ({
   default: ({ children }: { children: React.ReactNode }) => (
@@ -50,6 +62,9 @@ const serviceHubMock = {
     deactivateMCPServer,
     getMCPServerStatuses,
     updateMCPConfig,
+    mcpOauthLogin,
+    mcpOauthCancel,
+    mcpOauthLogout,
   }),
 }
 
@@ -83,6 +98,9 @@ describe('ConnectorsPage', () => {
     activateMCPServer.mockResolvedValue(undefined)
     deactivateMCPServer.mockResolvedValue(undefined)
     updateMCPConfig.mockResolvedValue(undefined)
+    mcpOauthLogin.mockResolvedValue(undefined)
+    mcpOauthCancel.mockResolvedValue(undefined)
+    mcpOauthLogout.mockResolvedValue(undefined)
     seedServers({})
   })
 
@@ -129,7 +147,7 @@ describe('ConnectorsPage', () => {
     }
   })
 
-  it('keeps oauth connectors as a disabled sign-in, never installing them', async () => {
+  it('keeps oauth-soon connectors as a disabled sign-in, never installing them', async () => {
     render(<ConnectorsPage />)
 
     const githubCard = screen.getByText('GitHub').closest('div.bg-card')!
@@ -142,6 +160,75 @@ describe('ConnectorsPage', () => {
         name: 'mcp-connectors:setUp',
       })
     ).not.toBeInTheDocument()
+    expect(activateMCPServer).not.toHaveBeenCalled()
+  })
+
+  it('signs an oauth connector in via the browser, then installs it', async () => {
+    const user = userEvent.setup()
+    render(<ConnectorsPage />)
+
+    const linearCard = screen.getByText('Linear').closest('div.bg-card')!
+    await user.click(
+      within(linearCard as HTMLElement).getByRole('button', {
+        name: 'mcp-connectors:oauth.signIn',
+      })
+    )
+
+    await waitFor(() =>
+      expect(mcpOauthLogin).toHaveBeenCalledWith(
+        'linear',
+        'https://mcp.linear.app/mcp'
+      )
+    )
+    await waitFor(() =>
+      expect(activateMCPServer).toHaveBeenCalledWith(
+        'linear',
+        expect.objectContaining({ type: 'http', active: true })
+      )
+    )
+    expect(useMCPServers.getState().mcpServers.linear.active).toBe(true)
+  })
+
+  it('surfaces a failed browser sign-in and never installs the server', async () => {
+    const user = userEvent.setup()
+    mcpOauthLogin.mockRejectedValue(
+      new Error('linear: authorization discovery failed')
+    )
+    render(<ConnectorsPage />)
+
+    const linearCard = screen.getByText('Linear').closest('div.bg-card')!
+    await user.click(
+      within(linearCard as HTMLElement).getByRole('button', {
+        name: 'mcp-connectors:oauth.signIn',
+      })
+    )
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        'mcp-connectors:oauth.failed',
+        expect.objectContaining({
+          description: 'linear: authorization discovery failed',
+        })
+      )
+    )
+    expect(activateMCPServer).not.toHaveBeenCalled()
+    expect(useMCPServers.getState().mcpServers.linear).toBeUndefined()
+  })
+
+  it('stays quiet when the user cancels the browser sign-in', async () => {
+    const user = userEvent.setup()
+    mcpOauthLogin.mockRejectedValue(new Error('sign-in cancelled'))
+    render(<ConnectorsPage />)
+
+    const linearCard = screen.getByText('Linear').closest('div.bg-card')!
+    await user.click(
+      within(linearCard as HTMLElement).getByRole('button', {
+        name: 'mcp-connectors:oauth.signIn',
+      })
+    )
+
+    await waitFor(() => expect(mcpOauthLogin).toHaveBeenCalled())
+    expect(toastError).not.toHaveBeenCalled()
     expect(activateMCPServer).not.toHaveBeenCalled()
   })
 

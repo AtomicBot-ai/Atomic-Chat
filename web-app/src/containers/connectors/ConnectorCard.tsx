@@ -35,6 +35,7 @@ export function ConnectorCard({
   status,
   busy,
   onSetUp,
+  onCancelSignIn,
   onToggle,
   onEdit,
   onEditJson,
@@ -47,6 +48,8 @@ export function ConnectorCard({
   status?: MCPServerStatus
   busy: boolean
   onSetUp?: () => void
+  /** Abandons a browser sign-in that is still pending. */
+  onCancelSignIn?: () => void
   onToggle?: (active: boolean) => void
   onEdit?: () => void
   onEditJson?: () => void
@@ -187,9 +190,9 @@ export function ConnectorCard({
         </div>
       ) : (
         <div className="flex min-h-8 items-center justify-end gap-2">
-          {connector?.auth === 'oauth' ? (
-            // Browser sign-in is not wired up yet — an honest disabled button
-            // beats installing a server that immediately errors with a 401.
+          {connector?.auth === 'oauth-soon' ? (
+            // The provider does not accept our automatic registration yet —
+            // an honest disabled button beats a flow that always fails.
             <span title={t('mcp-connectors:oauth.comingSoon')}>
               <Button
                 size="sm"
@@ -200,6 +203,28 @@ export function ConnectorCard({
                 {t('mcp-connectors:oauth.signIn')}
               </Button>
             </span>
+          ) : connector?.auth === 'oauth' ? (
+            busy ? (
+              // The sign-in is waiting on the browser; the button becomes the
+              // way out.
+              <Button
+                size="sm"
+                variant="secondary"
+                className="w-[88px] justify-center gap-1.5"
+                onClick={onCancelSignIn}
+              >
+                <IconLoader2 size={14} className="animate-spin" />
+                {t('mcp-connectors:oauth.cancel')}
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                className="w-[88px] justify-center gap-1.5"
+                onClick={onSetUp}
+              >
+                {t('mcp-connectors:oauth.signIn')}
+              </Button>
+            )
           ) : (
             <Button
               size="sm"

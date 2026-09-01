@@ -35,9 +35,9 @@ use std::collections::BTreeSet;
 use super::approval_allowlist::fingerprint_prepared_action;
 use super::llm_client::AgentLlmClient;
 use super::mcp_tools::{McpBridge, MCP_TOOL_PREFIX};
-use super::rag_bridge::DocsBridge;
 use super::path_policy::{prepare_call_paths, EditableRoots};
 use super::pty::PtyRegistry;
+use super::rag_bridge::DocsBridge;
 use super::resource_class::{resource_class_for_call, ResourceClass};
 use super::shell_guard::{evaluate_shell_command, join_command_stream, ShellGuardVerdict};
 use super::skills::{loaded::LoadedSkills, SkillRegistry};
@@ -250,8 +250,7 @@ async fn authorize_call(
         skill_invocation = Some(invocation);
     }
     let is_mcp = prepared.call.tool.starts_with(MCP_TOOL_PREFIX);
-    let is_approval_gated =
-        resource_class_for_call(&prepared.call.tool, context.mcp) == ResourceClass::ApprovalGated
+    let is_approval_gated = resource_class_for_call(&prepared.call.tool, context.mcp) == ResourceClass::ApprovalGated
             // The legacy chat pipeline auto-approved every MCP tool; the
             // migrated setting keeps that contract for MCP-origin tools only.
             && !(is_mcp && context.auto_approve_mcp);
@@ -829,7 +828,7 @@ mod tests {
             pty: &PtyRegistry::new(),
             cache_dir: &std::env::temp_dir(),
             mcp: None,
-                docs: None,
+            docs: None,
             disabled_tools: &std::collections::BTreeSet::new(),
             auto_approve_mcp: true,
         };
@@ -890,7 +889,7 @@ mod tests {
             pty: &PtyRegistry::new(),
             cache_dir: &std::env::temp_dir(),
             mcp: None,
-                docs: None,
+            docs: None,
             disabled_tools: &std::collections::BTreeSet::new(),
             auto_approve_mcp: true,
         };
@@ -941,7 +940,7 @@ mod tests {
             pty: &PtyRegistry::new(),
             cache_dir: &std::env::temp_dir(),
             mcp: None,
-                docs: None,
+            docs: None,
             disabled_tools: &std::collections::BTreeSet::new(),
             auto_approve_mcp: true,
         };
@@ -1005,7 +1004,7 @@ mod tests {
             pty: &PtyRegistry::new(),
             cache_dir: &std::env::temp_dir(),
             mcp: None,
-                docs: None,
+            docs: None,
             disabled_tools: &std::collections::BTreeSet::new(),
             auto_approve_mcp: true,
         };
@@ -1066,7 +1065,7 @@ mod tests {
             pty: &PtyRegistry::new(),
             cache_dir: &std::env::temp_dir(),
             mcp: None,
-                docs: None,
+            docs: None,
             disabled_tools: &std::collections::BTreeSet::new(),
             auto_approve_mcp: true,
         };
@@ -1125,7 +1124,7 @@ mod tests {
             pty: &PtyRegistry::new(),
             cache_dir: &std::env::temp_dir(),
             mcp: None,
-                docs: None,
+            docs: None,
             disabled_tools: &std::collections::BTreeSet::new(),
             auto_approve_mcp: true,
         };
@@ -1182,7 +1181,7 @@ mod tests {
             pty: &PtyRegistry::new(),
             cache_dir: &std::env::temp_dir(),
             mcp: None,
-                docs: None,
+            docs: None,
             disabled_tools: &std::collections::BTreeSet::new(),
             auto_approve_mcp: true,
         };
@@ -1236,7 +1235,7 @@ mod tests {
             pty: &PtyRegistry::new(),
             cache_dir: &std::env::temp_dir(),
             mcp: None,
-                docs: None,
+            docs: None,
             disabled_tools: &std::collections::BTreeSet::new(),
             auto_approve_mcp: true,
         };

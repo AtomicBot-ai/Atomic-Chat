@@ -44,7 +44,9 @@ pub async fn execute(
     match tool {
         "os.media.transcribe" => transcribe(args, context).await,
         "os.media.youtube" => youtube(args, context).await,
-        _ => Err(ToolOutcome::error(format!("Unsupported media tool: {tool}"))),
+        _ => Err(ToolOutcome::error(format!(
+            "Unsupported media tool: {tool}"
+        ))),
     }
 }
 
@@ -200,8 +202,8 @@ const ALLOWED_YOUTUBE_HOSTS: &[&str] = &[
 ];
 
 fn validate_youtube_url(url: &str) -> Result<(), String> {
-    let parsed = reqwest::Url::parse(url)
-        .map_err(|error| format!("`url` is not a valid URL: {error}"))?;
+    let parsed =
+        reqwest::Url::parse(url).map_err(|error| format!("`url` is not a valid URL: {error}"))?;
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err(format!("`url` must use http or https: {url}"));
     }
@@ -257,14 +259,10 @@ async fn youtube_transcript(
         })?;
     let raw = tokio::fs::read_to_string(&subtitle_path)
         .await
-        .map_err(|error| {
-            ToolOutcome::error(format!("{}: {error}", subtitle_path.display()))
-        })?;
+        .map_err(|error| ToolOutcome::error(format!("{}: {error}", subtitle_path.display())))?;
     let transcript = parse_vtt_transcript(&raw);
     if transcript.is_empty() {
-        return Err(ToolOutcome::error(
-            "Subtitles contained no transcript text",
-        ));
+        return Err(ToolOutcome::error("Subtitles contained no transcript text"));
     }
     Ok(ToolOutcome {
         status: ToolStatus::Ok,
@@ -307,9 +305,14 @@ async fn youtube_frames(
     let video_path = downloaded_video_path(&output, youtube_dir).await?;
     let video_id = file_stem(&video_path);
     let frames_dir = youtube_dir.join("frames").join(&video_id);
-    tokio::fs::create_dir_all(&frames_dir).await.map_err(|error| {
-        ToolOutcome::error(format!("Could not create {}: {error}", frames_dir.display()))
-    })?;
+    tokio::fs::create_dir_all(&frames_dir)
+        .await
+        .map_err(|error| {
+            ToolOutcome::error(format!(
+                "Could not create {}: {error}",
+                frames_dir.display()
+            ))
+        })?;
     let mut command = Command::new(&ffmpeg);
     command
         .arg("-y")
@@ -489,9 +492,7 @@ async fn run_media_command(
     label: &str,
     context: &ToolContext<'_>,
 ) -> Result<Output, ToolOutcome> {
-    command
-        .current_dir(context.working_dir)
-        .kill_on_drop(true);
+    command.current_dir(context.working_dir).kill_on_drop(true);
     tokio::select! {
         _ = context.cancellation.cancelled() => Err(ToolOutcome {
             status: ToolStatus::Cancelled,
@@ -513,9 +514,9 @@ async fn run_media_command(
 
 async fn ensure_dir(working_dir: &Path, relative: &str) -> Result<PathBuf, ToolOutcome> {
     let dir = working_dir.join(relative);
-    tokio::fs::create_dir_all(&dir)
-        .await
-        .map_err(|error| ToolOutcome::error(format!("Could not create {}: {error}", dir.display())))?;
+    tokio::fs::create_dir_all(&dir).await.map_err(|error| {
+        ToolOutcome::error(format!("Could not create {}: {error}", dir.display()))
+    })?;
     Ok(dir)
 }
 
@@ -569,7 +570,10 @@ fn stderr_tail(output: &Output) -> String {
     if count <= MAX_STDERR_TAIL_CHARS {
         return trimmed.to_owned();
     }
-    let tail: String = trimmed.chars().skip(count - MAX_STDERR_TAIL_CHARS).collect();
+    let tail: String = trimmed
+        .chars()
+        .skip(count - MAX_STDERR_TAIL_CHARS)
+        .collect();
     format!("[...] {tail}")
 }
 
@@ -618,21 +622,14 @@ mod tests {
 
     #[test]
     fn locator_finds_nothing_on_an_empty_path_override() {
-        assert_eq!(
-            locate_binary(WHISPER_BINARIES, Some(OsStr::new(""))),
-            None
-        );
+        assert_eq!(locate_binary(WHISPER_BINARIES, Some(OsStr::new(""))), None);
         assert_eq!(locate_binary(&["yt-dlp"], None), None);
     }
 
     #[test]
     fn missing_binary_error_names_every_candidate_and_the_install_hint() {
-        let outcome = require_binary(
-            WHISPER_BINARIES,
-            Some(OsStr::new("")),
-            WHISPER_INSTALL_HINT,
-        )
-        .unwrap_err();
+        let outcome = require_binary(WHISPER_BINARIES, Some(OsStr::new("")), WHISPER_INSTALL_HINT)
+            .unwrap_err();
         assert_eq!(outcome.status, ToolStatus::Error);
         assert!(outcome.summary.contains("`whisper-cli`"));
         assert!(outcome.summary.contains("`whisper`"));
@@ -642,15 +639,15 @@ mod tests {
 
     #[test]
     fn locator_prefers_earlier_names_across_the_whole_path() {
-        let parent = std::env::temp_dir().join(format!("atomic-chat-media-{}", uuid::Uuid::new_v4()));
+        let parent =
+            std::env::temp_dir().join(format!("atomic-chat-media-{}", uuid::Uuid::new_v4()));
         let first = parent.join("first");
         let second = parent.join("second");
         std::fs::create_dir_all(&first).unwrap();
         std::fs::create_dir_all(&second).unwrap();
         std::fs::write(first.join(binary_file_name("whisper")), "").unwrap();
         std::fs::write(second.join(binary_file_name("whisper-cli")), "").unwrap();
-        let path_value =
-            std::env::join_paths([&first, &second]).unwrap();
+        let path_value = std::env::join_paths([&first, &second]).unwrap();
 
         let located = locate_binary(WHISPER_BINARIES, Some(&path_value)).unwrap();
 

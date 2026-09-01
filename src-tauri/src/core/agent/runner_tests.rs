@@ -6,8 +6,8 @@ use tokio_util::sync::CancellationToken;
 use super::llm_client::{AgentLlmClient, SamplingOverrides};
 use super::mcp_tools::{McpBridge, McpToolDescriptor};
 use super::path_policy::EditableRoots;
-use super::rag_bridge::{DocsAttachment, DocsBridge, DocsChunk, DocsScope};
 use super::pty::PtyRegistry;
+use super::rag_bridge::{DocsAttachment, DocsBridge, DocsChunk, DocsScope};
 use super::runner::{run_turn, RunTurnInput};
 use super::session::AgentSessionState;
 use super::test_support::{
@@ -259,7 +259,9 @@ fn event_kind(event: &AgentEvent) -> &'static str {
 
 fn finished_reason(events: &[AgentEvent]) -> Option<(&str, u32)> {
     events.iter().rev().find_map(|event| match event {
-        AgentEvent::TurnFinished { reason, step_count, .. } => Some((reason.as_str(), *step_count)),
+        AgentEvent::TurnFinished {
+            reason, step_count, ..
+        } => Some((reason.as_str(), *step_count)),
         _ => None,
     })
 }
@@ -601,9 +603,15 @@ async fn read_only_mcp_tool_executes_without_any_approval() {
     assert!(run.result.is_ok());
     assert_eq!(
         executed(&run.events),
-        [("mcp.test.search", ToolStatus::Ok), ("reply", ToolStatus::Ok)]
+        [
+            ("mcp.test.search", ToolStatus::Ok),
+            ("reply", ToolStatus::Ok)
+        ]
     );
-    assert!(approval.requests().is_empty(), "readOnlyHint skips the gate");
+    assert!(
+        approval.requests().is_empty(),
+        "readOnlyHint skips the gate"
+    );
     assert_eq!(bridge.calls(), ["mcp.test.search"]);
     // The grammar for the step advertises the MCP alternation.
     let grammar = run.requests[0]["grammar"].as_str().expect("grammar");
@@ -644,7 +652,10 @@ async fn non_read_only_mcp_tool_is_gated_and_fails_closed_on_deny() {
         .affected_resources
         .iter()
         .any(|resource| resource.kind == "mcp"));
-    assert!(bridge.calls().is_empty(), "denied call never reaches the server");
+    assert!(
+        bridge.calls().is_empty(),
+        "denied call never reaches the server"
+    );
 }
 
 #[tokio::test]
@@ -701,9 +712,7 @@ async fn dead_mcp_server_yields_a_structured_error_outcome() {
         .events
         .iter()
         .find_map(|event| match event {
-            AgentEvent::ToolCallExecuted { result }
-                if result.call.tool == "mcp.test.search" =>
-            {
+            AgentEvent::ToolCallExecuted { result } if result.call.tool == "mcp.test.search" => {
                 Some(result.outcome.summary.clone())
             }
             _ => None,
@@ -721,9 +730,7 @@ async fn unknown_mcp_name_stays_out_of_the_batch() {
     let approval = RecordingApproval::deny();
     let run = run_mcp_script(
         vec![
-            ScriptedResponse::completion(
-                r#"[{"tool":"mcp.test.missing","args":{}}]"#,
-            ),
+            ScriptedResponse::completion(r#"[{"tool":"mcp.test.missing","args":{}}]"#),
             // Repair completion returns a valid array.
             ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"ok"}}]"#),
         ],
@@ -959,12 +966,7 @@ async fn oversized_observation_is_spilled_with_a_locator_and_full_text_on_disk()
     let spilled = std::fs::read_dir(&spill_dir)
         .expect("spill dir exists")
         .filter_map(Result::ok)
-        .find(|entry| {
-            entry
-                .file_name()
-                .to_string_lossy()
-                .contains("os-fs-grep")
-        })
+        .find(|entry| entry.file_name().to_string_lossy().contains("os-fs-grep"))
         .expect("spilled grep observation");
     let full = std::fs::read_to_string(spilled.path()).expect("read spill file");
     assert!(full.contains("SPILL_MATCH_LINE_000"));
@@ -1961,7 +1963,10 @@ async fn chat_transport_sends_system_and_user_messages() {
         .is_some_and(|value| value.contains("### conversation\nUSER: perform the fixture task")));
     // Step completions stream, with usage opted in for the whole-run counters.
     assert_eq!(request["stream"], true);
-    assert_eq!(request["stream_options"], serde_json::json!({"include_usage": true}));
+    assert_eq!(
+        request["stream_options"],
+        serde_json::json!({"include_usage": true})
+    );
 
     // llama.cpp-only fields must not leak onto an OpenAI-compatible endpoint.
     for absent in [

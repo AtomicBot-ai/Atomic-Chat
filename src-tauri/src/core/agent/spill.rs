@@ -201,7 +201,13 @@ mod tests {
         assert_eq!(outcomes[0].summary, "short");
         // os.fs.read is exempt even over the threshold.
         assert_eq!(outcomes[1].summary, long);
-        assert!(!dir.join(SPILL_DIR).exists() || std::fs::read_dir(dir.join(SPILL_DIR)).map(|entries| entries.count()).unwrap_or(0) == 0);
+        assert!(
+            !dir.join(SPILL_DIR).exists()
+                || std::fs::read_dir(dir.join(SPILL_DIR))
+                    .map(|entries| entries.count())
+                    .unwrap_or(0)
+                    == 0
+        );
         std::fs::remove_dir_all(dir).ok();
     }
 

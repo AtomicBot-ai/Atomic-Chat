@@ -244,7 +244,9 @@ pub async fn start_mcp_server<R: Runtime>(
     }
 }
 
-async fn connect_remote_mcp(
+async fn connect_remote_mcp<R: Runtime>(
+    app: &AppHandle<R>,
+    name: &str,
     config: &McpServerConfig,
     transport_type: &str,
 ) -> Result<RunningService<RoleClient, InitializeRequestParam>, String> {
@@ -271,8 +273,43 @@ async fn connect_remote_mcp(
             },
         };
 
-        match transport_type {
-            "http" => {
+        // A server the user signed into gets its session restored (refreshed
+        // first when close to expiry) and wrapped around the base client. The
+        // restore does its own discovery round trip — bounded by this timeout.
+        let oauth_manager = {
+            let state = app.state::<AppState>();
+            let data_dir = get_jan_data_folder_path(app.clone());
+            state
+                .mcp_oauth
+                .manager_for_connect(&data_dir, name, url)
+                .await?
+        };
+
+        // The auth and plain arms are deliberately duplicated: the transports
+        // are generic over the client type, and unifying `AuthClient<C>` with
+        // `C` behind one variable costs more bounds than these lines.
+        match (transport_type, oauth_manager) {
+            ("http", Some(manager)) => {
+                let auth_client = rmcp::transport::auth::AuthClient::new(client, manager);
+                app.state::<AppState>()
+                    .mcp_oauth
+                    .register_live(name, auth_client.auth_manager.clone())
+                    .await;
+                // `auth_header` stays unset: when it is Some, the transport
+                // pre-fills the token and AuthClient never runs.
+                let transport = StreamableHttpClientTransport::with_client(
+                    auth_client,
+                    StreamableHttpClientTransportConfig {
+                        uri: url.into(),
+                        ..Default::default()
+                    },
+                );
+                client_info
+                    .serve(transport)
+                    .await
+                    .map_err(|e| format!("Streamable HTTP handshake failed: {e}"))
+            }
+            ("http", None) => {
                 let transport = StreamableHttpClientTransport::with_client(
                     client,
                     StreamableHttpClientTransportConfig {
@@ -285,7 +322,27 @@ async fn connect_remote_mcp(
                     .await
                     .map_err(|e| format!("Streamable HTTP handshake failed: {e}"))
             }
-            "sse" => {
+            ("sse", Some(manager)) => {
+                let auth_client = rmcp::transport::auth::AuthClient::new(client, manager);
+                app.state::<AppState>()
+                    .mcp_oauth
+                    .register_live(name, auth_client.auth_manager.clone())
+                    .await;
+                let transport = SseClientTransport::start_with_client(
+                    auth_client,
+                    rmcp::transport::sse_client::SseClientConfig {
+                        sse_endpoint: url.into(),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(|e| format!("SSE transport failed: {e}"))?;
+                client_info
+                    .serve(transport)
+                    .await
+                    .map_err(|e| format!("SSE handshake failed: {e}"))
+            }
+            ("sse", None) => {
                 let transport = SseClientTransport::start_with_client(
                     client,
                     rmcp::transport::sse_client::SseClientConfig {
@@ -300,7 +357,7 @@ async fn connect_remote_mcp(
                     .await
                     .map_err(|e| format!("SSE handshake failed: {e}"))
             }
-            other => Err(format!("Unsupported remote MCP transport '{other}'")),
+            (other, _) => Err(format!("Unsupported remote MCP transport '{other}'")),
         }
     })
     .await
@@ -430,17 +487,52 @@ async fn schedule_mcp_start_task<R: Runtime>(
             "http"
         };
 
-        let client = match connect_remote_mcp(&config_params, primary_transport).await {
+        let has_oauth_session = {
+            let state = app.state::<AppState>();
+            state.mcp_oauth.has_entry(&app_path, &name).await
+        };
+
+        let client = match connect_remote_mcp(&app, &name, &config_params, primary_transport).await
+        {
             Ok(client) => {
                 log::info!("MCP server {name} connected using {primary_transport} transport");
                 client
+            }
+            // A 401 on a signed-in server is an auth problem, not a transport
+            // problem: retry the same transport once after a forced token
+            // refresh instead of a pointless fallback-transport attempt.
+            Err(primary_error)
+                if has_oauth_session && crate::core::mcp::oauth::is_auth_error(&primary_error) =>
+            {
+                log::warn!(
+                    "MCP server {name}: auth failure on {primary_transport}: {primary_error}; \
+                     refreshing the sign-in and retrying"
+                );
+                app.state::<AppState>()
+                    .mcp_oauth
+                    .refresh_if_stale(&app_path, &name, true)
+                    .await?;
+                match connect_remote_mcp(&app, &name, &config_params, primary_transport).await {
+                    Ok(client) => {
+                        log::info!(
+                            "MCP server {name} connected using {primary_transport} after refresh"
+                        );
+                        client
+                    }
+                    Err(retry_error) => {
+                        return Err(format!(
+                            "Failed to connect MCP server {name}: the sign-in is no longer \
+                             valid ({retry_error}) — open Connectors and sign in again"
+                        ));
+                    }
+                }
             }
             Err(primary_error) => {
                 log::warn!(
                     "MCP server {name} failed using {primary_transport} transport: \
                      {primary_error}; retrying with {fallback_transport}"
                 );
-                match connect_remote_mcp(&config_params, fallback_transport).await {
+                match connect_remote_mcp(&app, &name, &config_params, fallback_transport).await {
                     Ok(client) => {
                         log::info!(
                             "MCP server {name} connected using fallback \
@@ -975,8 +1067,6 @@ async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
 
     Ok(())
 }
-
-
 
 #[cfg(unix)]
 pub(crate) async fn kill_process_tree_by_pid(pid: u32) -> Result<(), String> {

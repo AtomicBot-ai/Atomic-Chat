@@ -77,7 +77,10 @@ pub fn chat_request_to_responses(body: &Value, prompt_cache_key: &str) -> Value 
                 }
                 continue;
             }
-            input.extend(chat_message_to_responses_items(message, &mut assistant_index));
+            input.extend(chat_message_to_responses_items(
+                message,
+                &mut assistant_index,
+            ));
         }
     }
 
@@ -145,10 +148,7 @@ pub fn chat_request_to_responses(body: &Value, prompt_cache_key: &str) -> Value 
 /// One Chat message becomes one or more Responses input items: an assistant
 /// turn that carries both text and tool calls is two items, and a `tool` result
 /// is a `function_call_output`.
-pub fn chat_message_to_responses_items(
-    message: &Value,
-    assistant_index: &mut usize,
-) -> Vec<Value> {
+pub fn chat_message_to_responses_items(message: &Value, assistant_index: &mut usize) -> Vec<Value> {
     let role = message
         .get("role")
         .and_then(|r| r.as_str())
@@ -393,7 +393,10 @@ pub fn chat_response_format_to_text(rf: &Value) -> Option<Value> {
 
 /// Responses `usage` in the Chat Completions shape.
 pub fn map_usage_reverse(usage: &Value) -> Value {
-    let input = usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+    let input = usage
+        .get("input_tokens")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     let output = usage
         .get("output_tokens")
         .and_then(|v| v.as_u64())

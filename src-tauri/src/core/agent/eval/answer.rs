@@ -75,10 +75,11 @@ pub async fn reformulate(
         temperature: 0.0,
         ..CompletionRequest::tool_call_parts(AgentPrompt::single(prompt), None, None, 0)
     };
-    let completion = tokio::time::timeout(LLM_CALL_DEADLINE, client.complete(&request, cancellation))
-        .await
-        .map_err(|_| "Reformulator completion timed out".to_string())?
-        .map_err(|error| format!("Reformulator completion failed: {error}"))?;
+    let completion =
+        tokio::time::timeout(LLM_CALL_DEADLINE, client.complete(&request, cancellation))
+            .await
+            .map_err(|_| "Reformulator completion timed out".to_string())?
+            .map_err(|error| format!("Reformulator completion failed: {error}"))?;
     let answer = extract_final_answer(&completion.content)
         .ok_or_else(|| "Reformulator emitted no FINAL ANSWER line".to_string())?;
     if answer.is_empty() {
@@ -110,10 +111,11 @@ pub async fn plan_hints(
         temperature: 0.2,
         ..CompletionRequest::tool_call_parts(AgentPrompt::single(prompt), None, None, 0)
     };
-    let completion = tokio::time::timeout(LLM_CALL_DEADLINE, client.complete(&request, cancellation))
-        .await
-        .ok()?
-        .ok()?;
+    let completion =
+        tokio::time::timeout(LLM_CALL_DEADLINE, client.complete(&request, cancellation))
+            .await
+            .ok()?
+            .ok()?;
     let hints = completion.content.trim();
     if hints.is_empty() {
         return None;
@@ -202,7 +204,11 @@ fn digest_trace(trace: &[GaiaToolTrace]) -> String {
             "-> {} {args} [{}]\n{}\n",
             entry.tool,
             entry.status,
-            head_tail(&entry.summary, TRACE_ENTRY_HEAD_CHARS, TRACE_ENTRY_TAIL_CHARS)
+            head_tail(
+                &entry.summary,
+                TRACE_ENTRY_HEAD_CHARS,
+                TRACE_ENTRY_TAIL_CHARS
+            )
         );
         let cost = block.chars().count();
         if !blocks.is_empty() && used + cost > TRACE_DIGEST_MAX_CHARS {
@@ -279,7 +285,10 @@ mod tests {
             extract_final_answer("FINAL ANSWER: [your final answer]\n2. Extract data..."),
             None
         );
-        assert_eq!(extract_final_answer("FINAL ANSWER: YOUR FINAL ANSWER"), None);
+        assert_eq!(
+            extract_final_answer("FINAL ANSWER: YOUR FINAL ANSWER"),
+            None
+        );
     }
 
     #[test]

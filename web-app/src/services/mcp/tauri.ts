@@ -129,6 +129,18 @@ export class TauriMCPService extends DefaultMCPService {
   async checkJanBrowserExtensionConnected(): Promise<boolean> {
     return await invoke('check_jan_browser_extension_connected')
   }
+
+  async mcpOauthLogin(name: string, url: string): Promise<void> {
+    return await invoke('mcp_oauth_login', { name, url })
+  }
+
+  async mcpOauthCancel(): Promise<void> {
+    return await invoke('mcp_oauth_cancel')
+  }
+
+  async mcpOauthLogout(name: string): Promise<void> {
+    return await invoke('mcp_oauth_logout', { name })
+  }
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

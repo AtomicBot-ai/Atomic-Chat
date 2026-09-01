@@ -10,6 +10,7 @@ import i18n from '@/i18n/setup'
 import type { ServiceHub } from '@/services'
 import {
   isKeylessRemoteProvider,
+  isSubscriptionProvider,
   registerRemoteProvider,
 } from '@/utils/registerRemoteProvider'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
@@ -589,7 +590,16 @@ async function doSwitchToModel(params: {
     } else {
       // 4b. Cloud branch — register the provider so the proxy can route
       //     requests for `modelId` to provider.base_url.
-      if (!provider.api_key && !isKeylessRemoteProvider(provider)) {
+      //     Subscriptions (ChatGPT/Codex) carry no `api_key` by design — the
+      //     bearer token lives in the Rust backend and the proxy attaches it
+      //     itself — so they must pass this gate exactly like keyless
+      //     self-hosted servers do. Mirrors `registerRemoteProvider` and
+      //     `ensureRemoteProviderReady`.
+      if (
+        !provider.api_key &&
+        !isKeylessRemoteProvider(provider) &&
+        !isSubscriptionProvider(providerName)
+      ) {
         throw new Error(
           `Provider '${providerName}' has no API key. Add one in Settings before selecting this model.`
         )

@@ -103,7 +103,7 @@ describe('catalog hygiene', () => {
   })
 
   it('oauth connectors are remote, recognizable by URL, and keyless', () => {
-    const oauth = MCP_CONNECTORS.filter((c) => c.auth === 'oauth')
+    const oauth = MCP_CONNECTORS.filter((c) => c.auth !== undefined)
     expect(oauth.length).toBeGreaterThan(0)
     for (const connector of oauth) {
       expect(connector.config.url).toBeTruthy()

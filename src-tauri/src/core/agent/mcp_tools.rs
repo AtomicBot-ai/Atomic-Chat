@@ -338,17 +338,17 @@ mod tests {
 
     #[test]
     fn catalog_resolves_by_exact_name_and_dedupes_collisions() {
-        let catalog = McpCatalog::from_tools(vec![
-            descriptor("a.b", "c"),
-            descriptor("a", "b.c"),
-        ]);
+        let catalog = McpCatalog::from_tools(vec![descriptor("a.b", "c"), descriptor("a", "b.c")]);
         // Both slug to `mcp.a-b.c` / `mcp.a.b.c` style names; whatever the
         // collision outcome, resolution goes through the catalog only.
         let names = catalog.names();
         assert_eq!(names.len(), 2);
         for name in &names {
             let resolved = catalog.resolve(name).expect("resolvable");
-            assert_eq!(agent_tool_name(&resolved.server, &resolved.tool).len() > 0, true);
+            assert_eq!(
+                agent_tool_name(&resolved.server, &resolved.tool).len() > 0,
+                true
+            );
         }
         assert!(catalog.resolve("mcp.unknown.tool").is_none());
     }

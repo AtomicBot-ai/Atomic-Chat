@@ -58,6 +58,7 @@ import {
   isKeylessRemoteProvider,
   isLocalProvider,
   isLoopbackUrl,
+  isSubscriptionProvider,
   unregisterRemoteProvider,
 } from '@/utils/registerRemoteProvider'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
@@ -2750,11 +2751,14 @@ function ProviderDetail() {
                                     provider.provider === 'mlx'
                                   // Cloud providers need an API key before
                                   // they can be "started" (registered with the
-                                  // proxy). Local engines don't.
+                                  // proxy). Local engines don't, and neither do
+                                  // subscriptions — their token lives in the
+                                  // backend, not on the provider object.
                                   const needsApiKey =
                                     !isLocalProvider(provider.provider) &&
                                     !provider.api_key &&
-                                    !isKeylessRemoteProvider(provider)
+                                    !isKeylessRemoteProvider(provider) &&
+                                    !isSubscriptionProvider(provider.provider)
                                   const isActive = activeModels.some(
                                     (activeModel) => activeModel === model.id
                                   )

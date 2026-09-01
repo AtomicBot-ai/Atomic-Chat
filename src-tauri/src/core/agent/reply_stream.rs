@@ -297,7 +297,12 @@ mod tests {
         let mut scanner = ReplyStreamScanner::new(None);
         let output = feed_all(
             &mut scanner,
-            &[r#"[{"tool": "re"#, r#"ply", "args": {"te"#, r#"xt": "Hello, "#, r#"world"}}]"#],
+            &[
+                r#"[{"tool": "re"#,
+                r#"ply", "args": {"te"#,
+                r#"xt": "Hello, "#,
+                r#"world"}}]"#,
+            ],
         );
         assert_eq!(output.reply, "Hello, world");
         assert_eq!(scanner.streamed_reply(), "Hello, world");
@@ -307,8 +312,7 @@ mod tests {
     #[test]
     fn decodes_escapes_and_unicode() {
         let mut scanner = ReplyStreamScanner::new(None);
-        let output =
-            scanner.feed(r#"[{"tool":"reply","args":{"text":"a\nb\"cé😀"}}]"#);
+        let output = scanner.feed(r#"[{"tool":"reply","args":{"text":"a\nb\"cé😀"}}]"#);
         assert_eq!(output.reply, "a\nb\"cé😀");
     }
 
@@ -324,7 +328,11 @@ mod tests {
         let mut scanner = ReplyStreamScanner::new(Some(("<think>", "</think>")));
         let output = feed_all(
             &mut scanner,
-            &["<think>let me <", "/ think about it</th", r#"ink>[{"tool":"reply","args":{"text":"ok"}}]"#],
+            &[
+                "<think>let me <",
+                "/ think about it</th",
+                r#"ink>[{"tool":"reply","args":{"text":"ok"}}]"#,
+            ],
         );
         assert_eq!(output.reasoning, "let me </ think about it");
         assert_eq!(output.reply, "ok");
@@ -340,7 +348,8 @@ mod tests {
     #[test]
     fn tolerates_whitespace_between_tokens() {
         let mut scanner = ReplyStreamScanner::new(None);
-        let output = scanner.feed("[ { \"tool\" : \"reply\" ,\n\"args\" : { \"text\" : \"hi\" } } ]");
+        let output =
+            scanner.feed("[ { \"tool\" : \"reply\" ,\n\"args\" : { \"text\" : \"hi\" } } ]");
         assert_eq!(output.reply, "hi");
     }
 

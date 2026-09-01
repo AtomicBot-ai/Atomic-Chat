@@ -593,9 +593,10 @@ async fn process_tools_reject_invalid_kill_before_approval_and_list_deterministi
 #[tokio::test]
 async fn code_symbols_lists_definitions_with_lines_and_rejects_unknown_languages() {
     let fixture = ToolFixture::allowed();
-    fixture
-        .workspace
-        .write("lib.rs", "pub struct Registry;\npub fn authorize_call() {}\n");
+    fixture.workspace.write(
+        "lib.rs",
+        "pub struct Registry;\npub fn authorize_call() {}\n",
+    );
     fixture.workspace.write("notes.md", "# not code\n");
 
     let outcome = fixture
@@ -625,7 +626,10 @@ async fn code_find_locates_a_definition_and_reports_a_partial_match_as_such() {
         .write("lib.rs", "pub fn authorize_call() {}\n");
 
     let exact = fixture
-        .call("os.code.find", serde_json::json!({"name": "authorize_call"}))
+        .call(
+            "os.code.find",
+            serde_json::json!({"name": "authorize_call"}),
+        )
         .await;
     assert_eq!(exact.status, ToolStatus::Ok);
     assert!(exact.summary.contains("lib.rs:1"), "{}", exact.summary);
@@ -637,9 +641,16 @@ async fn code_find_locates_a_definition_and_reports_a_partial_match_as_such() {
 
     // Half-remembered name: useful, but the caller must be told it is a guess.
     let fuzzy = fixture
-        .call("os.code.find", serde_json::json!({"name": "AUTHORIZE_CALL"}))
+        .call(
+            "os.code.find",
+            serde_json::json!({"name": "AUTHORIZE_CALL"}),
+        )
         .await;
-    assert!(fuzzy.summary.contains("authorize_call"), "{}", fuzzy.summary);
+    assert!(
+        fuzzy.summary.contains("authorize_call"),
+        "{}",
+        fuzzy.summary
+    );
     assert!(
         fuzzy.summary.contains("partial"),
         "a fallback match must be labelled: {}",
@@ -647,10 +658,17 @@ async fn code_find_locates_a_definition_and_reports_a_partial_match_as_such() {
     );
 
     let missing = fixture
-        .call("os.code.find", serde_json::json!({"name": "nothing_here_at_all"}))
+        .call(
+            "os.code.find",
+            serde_json::json!({"name": "nothing_here_at_all"}),
+        )
         .await;
     assert_eq!(missing.status, ToolStatus::Ok);
-    assert!(missing.summary.contains("No definition"), "{}", missing.summary);
+    assert!(
+        missing.summary.contains("No definition"),
+        "{}",
+        missing.summary
+    );
 
     let bad_kind = fixture
         .call(
@@ -674,7 +692,11 @@ async fn code_find_filters_by_kind() {
             serde_json::json!({"name": "Target", "kind": "struct"}),
         )
         .await;
-    assert!(structs.summary.contains("struct\tTarget"), "{}", structs.summary);
+    assert!(
+        structs.summary.contains("struct\tTarget"),
+        "{}",
+        structs.summary
+    );
 
     let traits = fixture
         .call(
@@ -682,7 +704,11 @@ async fn code_find_filters_by_kind() {
             serde_json::json!({"name": "Target", "kind": "trait"}),
         )
         .await;
-    assert!(traits.summary.contains("No definition"), "{}", traits.summary);
+    assert!(
+        traits.summary.contains("No definition"),
+        "{}",
+        traits.summary
+    );
 }
 
 #[tokio::test]
@@ -694,10 +720,17 @@ async fn code_refs_skips_comments_and_strings_and_states_its_limits() {
     );
 
     let outcome = fixture
-        .call("os.code.refs", serde_json::json!({"name": "authorize_call"}))
+        .call(
+            "os.code.refs",
+            serde_json::json!({"name": "authorize_call"}),
+        )
         .await;
     assert_eq!(outcome.status, ToolStatus::Ok);
-    assert!(outcome.summary.contains("caller.rs:2"), "{}", outcome.summary);
+    assert!(
+        outcome.summary.contains("caller.rs:2"),
+        "{}",
+        outcome.summary
+    );
     assert!(
         !outcome.summary.contains("caller.rs:1") && !outcome.summary.contains("caller.rs:3"),
         "comment and string hits must be filtered out: {}",
@@ -715,7 +748,10 @@ async fn code_refs_skips_comments_and_strings_and_states_its_limits() {
 async fn code_tools_cannot_reach_outside_the_workspace() {
     let fixture = ToolFixture::denied();
     for (tool, args) in [
-        ("os.code.symbols", serde_json::json!({"path": "../outside.rs"})),
+        (
+            "os.code.symbols",
+            serde_json::json!({"path": "../outside.rs"}),
+        ),
         (
             "os.code.refs",
             serde_json::json!({"name": "x", "path": "../outside"}),
@@ -1240,7 +1276,7 @@ async fn symlink_escape_requires_folder_access_and_denial_prevents_read() {
             pty: &PtyRegistry::new(),
             cache_dir: &std::env::temp_dir(),
             mcp: None,
-                docs: None,
+            docs: None,
             disabled_tools: &std::collections::BTreeSet::new(),
             auto_approve_mcp: true,
         },

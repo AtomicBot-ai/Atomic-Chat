@@ -294,9 +294,7 @@ impl SamplingOverrides {
             return Self::default();
         };
         let clamp = |value: Option<f32>, min: f32, max: f32| {
-            value
-                .filter(|v| v.is_finite())
-                .map(|v| v.clamp(min, max))
+            value.filter(|v| v.is_finite()).map(|v| v.clamp(min, max))
         };
         Self {
             temperature: clamp(request.temperature, 0.0, 2.0),

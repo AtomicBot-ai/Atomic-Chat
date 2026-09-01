@@ -193,8 +193,7 @@ mod tests {
 
     #[test]
     fn aggregates_statuses_and_levels() {
-        let correct =
-            GaiaTaskResult::prediction("a".into(), 1, "Q".into(), "A".into(), "A".into());
+        let correct = GaiaTaskResult::prediction("a".into(), 1, "Q".into(), "A".into(), "A".into());
         let incorrect =
             GaiaTaskResult::prediction("b".into(), 2, "Q".into(), "B".into(), "A".into());
         let mut error = incorrect.clone();

@@ -20,6 +20,8 @@
   },
   "oauth": {
     "signIn": "Sign in",
+    "cancel": "Cancel",
+    "failed": "Sign-in failed",
     "comingSoon": "Browser sign-in is coming soon"
   },
   "secretDialog": {

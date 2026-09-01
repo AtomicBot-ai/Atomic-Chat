@@ -48,4 +48,12 @@ export interface MCPService {
   activateMCPServer(name: string, config: MCPServerConfig): Promise<void>
   deactivateMCPServer(name: string): Promise<void>
   checkJanBrowserExtensionConnected(): Promise<boolean>
+
+  // MCP OAuth browser sign-in (desktop only; tokens never reach the frontend)
+  /** Opens the system browser and resolves once the callback is exchanged. */
+  mcpOauthLogin(name: string, url: string): Promise<void>
+  /** Abandons a sign-in that is still waiting on the browser. */
+  mcpOauthCancel(): Promise<void>
+  /** Forgets the stored session for a server. Missing is success. */
+  mcpOauthLogout(name: string): Promise<void>
 }

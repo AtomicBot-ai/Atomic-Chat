@@ -300,7 +300,11 @@ mod tests {
         // Port 1 on loopback refuses instantly — the same shape as an offline
         // machine: the request never reaches a server.
         let error = updater
-            .check_for_updates(vec!["http://127.0.0.1:1/latest.json".into()], "seed", "1.0.0")
+            .check_for_updates(
+                vec!["http://127.0.0.1:1/latest.json".into()],
+                "seed",
+                "1.0.0",
+            )
             .await
             .expect_err("connecting to a closed port must fail");
 

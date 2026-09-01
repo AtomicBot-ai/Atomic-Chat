@@ -18,8 +18,9 @@ use serde_json::Value;
 use tokio::sync::Mutex;
 
 use crate::core::server::proxy;
-use crate::core::server::request_inspector::{RequestInspector, API_INSPECTOR_FINISHED,
-    API_INSPECTOR_STARTED};
+use crate::core::server::request_inspector::{
+    RequestInspector, API_INSPECTOR_FINISHED, API_INSPECTOR_STARTED,
+};
 use crate::core::state::{AutoIncreaseState, ServerHandle};
 
 type Captured = Arc<StdMutex<Vec<(&'static str, Value)>>>;
@@ -51,7 +52,9 @@ async fn spawn_stub_upstream(seen: SeenBody) -> u16 {
             Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
                 let seen = seen.clone();
                 async move {
-                    let bytes = hyper::body::to_bytes(req.into_body()).await.unwrap_or_default();
+                    let bytes = hyper::body::to_bytes(req.into_body())
+                        .await
+                        .unwrap_or_default();
                     let mut include_usage = false;
                     if let Ok(json) = serde_json::from_slice::<Value>(&bytes) {
                         include_usage = json
@@ -201,7 +204,12 @@ impl Harness {
     }
 
     fn channels(&self) -> Vec<&'static str> {
-        self.captured.lock().unwrap().iter().map(|(c, _)| *c).collect()
+        self.captured
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(c, _)| *c)
+            .collect()
     }
 
     async fn stop(self) {
@@ -224,9 +232,7 @@ async fn a_streamed_request_reports_tokens_previews_and_timings() {
         }))
         .await;
 
-    let started = harness
-        .event(API_INSPECTOR_STARTED)
-        .expect("started event");
+    let started = harness.event(API_INSPECTOR_STARTED).expect("started event");
     assert_eq!(started["endpoint"], "chat/completions");
     assert_eq!(started["method"], "POST");
     assert_eq!(started["model_id"], "test-model");

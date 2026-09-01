@@ -25,7 +25,8 @@ pub(crate) struct TestWorkspace {
 impl TestWorkspace {
     pub(crate) fn new() -> Self {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("target").join("agent-test-workspaces")
+            .join("target")
+            .join("agent-test-workspaces")
             .join(uuid::Uuid::new_v4().to_string());
         std::fs::create_dir_all(&path).expect("create agent test workspace");
         Self { path }
@@ -463,7 +464,10 @@ impl ScriptedChatServer {
     }
 
     pub(crate) fn requests(&self) -> Vec<Value> {
-        self.requests.lock().expect("scripted chat requests").clone()
+        self.requests
+            .lock()
+            .expect("scripted chat requests")
+            .clone()
     }
 }
 
@@ -491,8 +495,10 @@ async fn serve_chat_completion(
     let parsed: Value = serde_json::from_slice(&body)
         .unwrap_or_else(|_| serde_json::json!({"invalidBody": String::from_utf8_lossy(&body)}));
     let wants_stream = parsed.get("stream").and_then(Value::as_bool) == Some(true);
-    let include_usage =
-        parsed.pointer("/stream_options/include_usage").and_then(Value::as_bool) == Some(true);
+    let include_usage = parsed
+        .pointer("/stream_options/include_usage")
+        .and_then(Value::as_bool)
+        == Some(true);
     requests
         .lock()
         .expect("scripted chat requests")
@@ -526,7 +532,10 @@ fn sse_chat_completion_response(body: Value, include_usage: bool) -> Response<Bo
         .get("model")
         .cloned()
         .unwrap_or_else(|| serde_json::json!("scripted-test-model"));
-    let message = body.pointer("/choices/0/message").cloned().unwrap_or_default();
+    let message = body
+        .pointer("/choices/0/message")
+        .cloned()
+        .unwrap_or_default();
     let content = message
         .get("content")
         .and_then(Value::as_str)
@@ -550,10 +559,7 @@ fn sse_chat_completion_response(body: Value, include_usage: bool) -> Response<Bo
             "usage": Value::Null,
         })
     };
-    let mut events = vec![chunk(
-        serde_json::json!({"role": "assistant"}),
-        Value::Null,
-    )];
+    let mut events = vec![chunk(serde_json::json!({"role": "assistant"}), Value::Null)];
     if !reasoning.is_empty() {
         events.push(chunk(
             serde_json::json!({"reasoning_content": reasoning}),

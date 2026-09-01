@@ -722,8 +722,8 @@ mod tests {
     // `chatgpt.com/backend-api/codex/responses` and the chunks we hand back.
     use crate::core::server::chat_to_responses_shim::{
         chat_request_to_responses, chat_response_format_to_text, chat_tool_choice_to_responses,
-        chat_tool_to_responses, map_usage_reverse, normalize_function_schema,
-        responses_call_id, ChatChunkStreamConverter, COMPATIBILITY_INSTRUCTIONS,
+        chat_tool_to_responses, map_usage_reverse, normalize_function_schema, responses_call_id,
+        ChatChunkStreamConverter, COMPATIBILITY_INSTRUCTIONS,
     };
 
     fn to_responses(body: &serde_json::Value) -> serde_json::Value {
@@ -807,8 +807,13 @@ mod tests {
     #[test]
     fn reasoning_effort_is_forwarded_with_a_summary() {
         let out = to_responses(&json!({"messages": [], "reasoning_effort": "high"}));
-        assert_eq!(out["reasoning"], json!({"effort": "high", "summary": "auto"}));
-        assert!(to_responses(&json!({"messages": []})).get("reasoning").is_none());
+        assert_eq!(
+            out["reasoning"],
+            json!({"effort": "high", "summary": "auto"})
+        );
+        assert!(to_responses(&json!({"messages": []}))
+            .get("reasoning")
+            .is_none());
     }
 
     #[test]
@@ -1022,8 +1027,14 @@ mod tests {
             "type": "response.output_item.added",
             "item": {"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "search"}
         }));
-        assert_eq!(opened[0]["choices"][0]["delta"]["tool_calls"][0]["index"], 0);
-        assert_eq!(opened[0]["choices"][0]["delta"]["tool_calls"][0]["id"], "call_1");
+        assert_eq!(
+            opened[0]["choices"][0]["delta"]["tool_calls"][0]["index"],
+            0
+        );
+        assert_eq!(
+            opened[0]["choices"][0]["delta"]["tool_calls"][0]["id"],
+            "call_1"
+        );
         assert_eq!(
             opened[0]["choices"][0]["delta"]["tool_calls"][0]["function"]["name"],
             "search"
@@ -1046,7 +1057,10 @@ mod tests {
             "type": "response.output_item.added",
             "item": {"type": "function_call", "id": "fc_2", "call_id": "call_2", "name": "fetch"}
         }));
-        assert_eq!(second[0]["choices"][0]["delta"]["tool_calls"][0]["index"], 1);
+        assert_eq!(
+            second[0]["choices"][0]["delta"]["tool_calls"][0]["index"],
+            1
+        );
     }
 
     #[test]
@@ -1088,7 +1102,10 @@ mod tests {
                 "name": "search", "arguments": "{\"q\":\"rust\"}"
             }
         }));
-        assert_eq!(chunks[0]["choices"][0]["delta"]["tool_calls"][0]["id"], "call_1");
+        assert_eq!(
+            chunks[0]["choices"][0]["delta"]["tool_calls"][0]["id"],
+            "call_1"
+        );
         assert_eq!(
             chunks[0]["choices"][0]["delta"]["tool_calls"][0]["function"]["arguments"],
             "{\"q\":\"rust\"}"

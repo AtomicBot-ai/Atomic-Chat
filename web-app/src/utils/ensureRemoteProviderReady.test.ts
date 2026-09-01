@@ -17,6 +17,7 @@ vi.mock('@/utils/registerRemoteProvider', () => ({
     ),
   isKeylessRemoteProvider: (provider: ModelProvider) =>
     provider.base_url?.startsWith('http://localhost') ?? false,
+  isSubscriptionProvider: (provider: string) => provider === 'chatgpt',
   registerRemoteProvider,
 }))
 

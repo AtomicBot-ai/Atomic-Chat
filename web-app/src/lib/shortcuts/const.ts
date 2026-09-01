@@ -30,15 +30,4 @@ export const PlatformShortcuts: ShortcutMap = {
 
   // Search - opens search dialog
   [ShortcutAction.SEARCH]: { key: 'k', usePlatformMetaKey: true },
-
-  // Zoom shortcuts - same on both platforms (standard shortcuts)
-  [ShortcutAction.ZOOM_IN]: {
-    key: '+',
-    usePlatformMetaKey: true,
-  },
-
-  [ShortcutAction.ZOOM_OUT]: {
-    key: '-',
-    usePlatformMetaKey: true,
-  },
 }

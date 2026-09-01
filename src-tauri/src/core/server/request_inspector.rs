@@ -355,7 +355,10 @@ impl RequestInspector {
         // pairing the counter with `announce` would leak a slot in that race.
         self.in_flight.fetch_add(1, Ordering::Relaxed);
         Some(InspectorHandle(Arc::new(HandleInner {
-            id: format!("apireq_{}", &uuid::Uuid::new_v4().simple().to_string()[..12]),
+            id: format!(
+                "apireq_{}",
+                &uuid::Uuid::new_v4().simple().to_string()[..12]
+            ),
             seq,
             start,
             started_at_ms: now_ms(),
@@ -511,11 +514,13 @@ impl InspectorHandle {
         if fields.duration_ms.is_none() {
             fields.duration_ms = Some(self.elapsed_ms());
         }
-        let _ = self.0.inspector.in_flight.fetch_update(
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-            |v| Some(v.saturating_sub(1)),
-        );
+        let _ =
+            self.0
+                .inspector
+                .in_flight
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+                    Some(v.saturating_sub(1))
+                });
         let finished_at_ms = now_ms();
         self.0
             .inspector
@@ -1042,7 +1047,10 @@ mod tests {
         let out = maybe_inject_stream_usage(&body(json!({"model": "m", "stream": true})))
             .expect("should inject");
         let parsed: serde_json::Value = serde_json::from_slice(&out).unwrap();
-        assert_eq!(parsed.pointer("/stream_options/include_usage"), Some(&json!(true)));
+        assert_eq!(
+            parsed.pointer("/stream_options/include_usage"),
+            Some(&json!(true))
+        );
     }
 
     #[test]
@@ -1179,7 +1187,10 @@ mod tests {
         let mut tel = StreamTelemetry::new();
         let start = Instant::now();
         tel.on_json(&json!({"choices": [{"delta": {"content": null}}]}), start);
-        assert!(tel.first_content_at.is_none(), "a null content is not a token");
+        assert!(
+            tel.first_content_at.is_none(),
+            "a null content is not a token"
+        );
 
         let later = start + Duration::from_millis(120);
         tel.on_json(
@@ -1202,8 +1213,8 @@ mod tests {
     #[test]
     fn every_reasoning_alias_is_understood() {
         for delta in [
-            json!({"reasoning_content": "thought"}),          // llama.cpp, Qwen
-            json!({"reasoning": "thought"}),                  // Ollama, vLLM
+            json!({"reasoning_content": "thought"}), // llama.cpp, Qwen
+            json!({"reasoning": "thought"}),         // Ollama, vLLM
             json!({"reasoning_details": [{"text": "thou"}, {"text": "ght"}]}), // OpenRouter
         ] {
             let mut tel = StreamTelemetry::new();
@@ -1285,7 +1296,10 @@ mod tests {
         let mut tel = StreamTelemetry::new();
         let now = Instant::now();
         tel.on_json(&delta("a"), now);
-        tel.on_json(&json!({"choices": [{"delta": {}, "finish_reason": "length"}]}), now);
+        tel.on_json(
+            &json!({"choices": [{"delta": {}, "finish_reason": "length"}]}),
+            now,
+        );
         assert_eq!(
             tel.into_finish_fields(now).finish_reason.as_deref(),
             Some("length")
@@ -1321,7 +1335,10 @@ mod tests {
         let mut tel = StreamTelemetry::new();
         let start = Instant::now();
         tel.on_json(&delta(""), start);
-        assert!(tel.first_content_at.is_none(), "empty delta must not set ttft");
+        assert!(
+            tel.first_content_at.is_none(),
+            "empty delta must not set ttft"
+        );
         let later = start + Duration::from_millis(250);
         tel.on_json(&delta("x"), later);
         tel.on_json(&delta("y"), start + Duration::from_millis(900));

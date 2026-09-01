@@ -95,10 +95,7 @@ pub(super) async fn execute(call: &ToolCallPayload, context: &ToolContext<'_>) -
         .map(|value| value.to_string())
         .unwrap_or_default();
     if structured.chars().count() > MAX_DETAILS_CONTENT_CHARS {
-        structured = structured
-            .chars()
-            .take(MAX_DETAILS_CONTENT_CHARS)
-            .collect();
+        structured = structured.chars().take(MAX_DETAILS_CONTENT_CHARS).collect();
         structured.push('…');
     }
     let details = json!({

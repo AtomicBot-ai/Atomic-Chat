@@ -160,6 +160,9 @@ pub struct AppState {
     /// ChatGPT subscription session. Unlike `provider_configs`, this one owns
     /// durable secrets and persists them itself — they never cross IPC.
     pub chatgpt_auth: Arc<crate::core::auth::state::ChatGptAuthState>,
+    /// MCP OAuth sessions (one per remote server), same secrecy rules as
+    /// `chatgpt_auth`: persisted by the state itself, never cross IPC.
+    pub mcp_oauth: Arc<crate::core::mcp::oauth::McpOAuthState>,
     /// Coordinator state for the Local API Server auto-increase-ctx flow.
     /// See `AutoIncreaseState` docs for the concurrency guarantees.
     pub auto_increase_ctx: Arc<AutoIncreaseState>,

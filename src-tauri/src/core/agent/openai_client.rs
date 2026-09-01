@@ -1329,7 +1329,8 @@ mod tests {
                 effort_value: Some("high".into()),
             },
         ] {
-            let payload = client.chat_payload(&client.target(), &request_with_reasoning(reasoning), false);
+            let payload =
+                client.chat_payload(&client.target(), &request_with_reasoning(reasoning), false);
 
             // We have no chat template for a cloud model, so any value we could
             // send would be a guess — and strict schemas 400 on a wrong one.

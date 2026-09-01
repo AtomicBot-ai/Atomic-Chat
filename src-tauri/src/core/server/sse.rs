@@ -28,10 +28,7 @@ pub(crate) enum SseData {
 #[derive(Debug, PartialEq)]
 pub(crate) enum SseLine {
     /// A `data:` line, with its payload pre-parsed.
-    Data {
-        raw: Vec<u8>,
-        payload: SseData,
-    },
+    Data { raw: Vec<u8>, payload: SseData },
     /// `event:`, `id:`, `retry:`, a comment, or the blank event separator.
     Other { raw: Vec<u8> },
 }

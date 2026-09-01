@@ -172,6 +172,18 @@ describe('TauriMCPService', () => {
     ])
   })
 
+  it('invokes the MCP OAuth commands', async () => {
+    await mcpService.mcpOauthLogin('linear', 'https://mcp.linear.app/mcp')
+    await mcpService.mcpOauthCancel()
+    await mcpService.mcpOauthLogout('linear')
+
+    expect(ipcHandler.mock.calls).toEqual([
+      ['mcp_oauth_login', { name: 'linear', url: 'https://mcp.linear.app/mcp' }],
+      ['mcp_oauth_cancel', {}],
+      ['mcp_oauth_logout', { name: 'linear' }],
+    ])
+  })
+
   it('keeps optional window.core calls as graceful no-ops', async () => {
     window.core = undefined
 

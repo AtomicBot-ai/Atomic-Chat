@@ -1,7 +1,8 @@
 use super::commands::{collect_mcp_server_statuses, is_extension_not_connected_error};
 use super::helpers::{
-    add_server_config, add_server_config_with_path, append_bounded_stderr, ensure_mcp_config_exists,
-    extract_command_args, format_mcp_start_error, is_process_already_gone, run_mcp_commands,
+    add_server_config, add_server_config_with_path, append_bounded_stderr,
+    ensure_mcp_config_exists, extract_command_args, format_mcp_start_error,
+    is_process_already_gone, run_mcp_commands,
 };
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::{AppState, SharedMcpServers};

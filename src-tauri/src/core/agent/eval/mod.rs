@@ -15,13 +15,15 @@ use tokio_util::sync::CancellationToken;
 
 use self::dataset::{GaiaDatasetClient, GaiaFilters, GaiaTask};
 use self::hooks::{DenyFolderAccess, HeadlessDesktop, WorkspaceApproval};
-use self::scoring::score_answer;
 use self::report::{
     aggregate_results, write_report, GaiaReport, GaiaSampleResult, GaiaTaskResult, GaiaTaskStatus,
     GaiaToolTrace,
 };
+use self::scoring::score_answer;
 use self::server::{DedicatedLlamaServer, LlamaServerConfig};
-use super::llm_client::{AgentLlmClient, LlamaBackend, LlamaServerClient, LlamaSessionTarget, SamplingOverrides};
+use super::llm_client::{
+    AgentLlmClient, LlamaBackend, LlamaServerClient, LlamaSessionTarget, SamplingOverrides,
+};
 use super::model_profile::{detect_model_profile, AgentModelProfile};
 use super::path_policy::EditableRoots;
 use super::prompt::{
@@ -482,7 +484,9 @@ async fn run_task_sample(
     );
     // Reserve part of the task budget so a timed-out run can still be forced
     // into a scored best guess instead of an unanswered Timeout.
-    let reserve = (timeout / 4).min(Duration::from_secs(60)).max(Duration::from_secs(1));
+    let reserve = (timeout / 4)
+        .min(Duration::from_secs(60))
+        .max(Duration::from_secs(1));
     let inner_timeout = timeout.saturating_sub(reserve);
     let run_result = tokio::time::timeout(inner_timeout, future).await;
     let duration_ms = started.elapsed().as_millis();
@@ -645,7 +649,9 @@ impl TaskCapture {
             AgentEvent::StepError { message, category } => {
                 self.error = Some(format!("{category}: {message}"));
             }
-            AgentEvent::TurnFinished { reason, step_count, .. } => {
+            AgentEvent::TurnFinished {
+                reason, step_count, ..
+            } => {
                 self.terminal_reason = Some(reason);
                 self.step_count = step_count;
             }
@@ -761,8 +767,13 @@ mod tests {
                 gold.into(),
             ),
             None => {
-                let mut result =
-                    GaiaTaskResult::prediction("task".into(), 1, "Q".into(), String::new(), gold.into());
+                let mut result = GaiaTaskResult::prediction(
+                    "task".into(),
+                    1,
+                    "Q".into(),
+                    String::new(),
+                    gold.into(),
+                );
                 result.prediction = None;
                 result
             }

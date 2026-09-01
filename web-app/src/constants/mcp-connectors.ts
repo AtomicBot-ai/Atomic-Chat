@@ -44,11 +44,13 @@ export type MCPConnector = {
   /** URL substrings identifying this connector when the key differs. */
   matchUrls?: string[]
   /**
-   * Authorizes via a browser OAuth flow the app does not run yet. The card
-   * shows a disabled "Sign in" until that flow exists; the config template is
+   * `'oauth'`: signs in via the browser (MCP OAuth 2.1 — discovery, dynamic
+   * client registration, PKCE — run by the Rust side). `'oauth-soon'`: the
+   * provider requires OAuth but does not accept dynamic registration yet
+   * (GitHub), so the card shows a disabled "Sign in"; the config template is
    * real so a hand-added server (e.g. with a PAT header) is still recognized.
    */
-  auth?: 'oauth'
+  auth?: 'oauth' | 'oauth-soon'
 }
 
 /**
@@ -84,23 +86,6 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     },
   },
   {
-    serverKey: 'github',
-    name: 'GitHub',
-    author: 'GitHub',
-    descriptionKey: 'mcp-connectors:descriptions.github',
-    icon: { bg: '#181717', src: '/images/connectors/github.svg' },
-    docsUrl: 'https://github.com/github/github-mcp-server',
-    matchUrls: ['api.githubcopilot.com'],
-    auth: 'oauth',
-    config: {
-      type: 'http',
-      url: 'https://api.githubcopilot.com/mcp/',
-      command: '',
-      args: [],
-      env: {},
-    },
-  },
-  {
     serverKey: 'linear',
     name: 'Linear',
     author: 'Linear',
@@ -109,9 +94,10 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     docsUrl: 'https://linear.app/docs/mcp',
     matchUrls: ['mcp.linear.app'],
     auth: 'oauth',
+    // Streamable HTTP at /mcp — Linear retired the /sse endpoint (404s now).
     config: {
-      type: 'sse',
-      url: 'https://mcp.linear.app/sse',
+      type: 'http',
+      url: 'https://mcp.linear.app/mcp',
       command: '',
       args: [],
       env: {},
@@ -161,9 +147,11 @@ export const MCP_CONNECTORS: MCPConnector[] = [
       'https://support.atlassian.com/rovo/docs/getting-started-with-the-atlassian-remote-mcp-server/',
     matchUrls: ['mcp.atlassian.com'],
     auth: 'oauth',
+    // /v1/sse still answers today, but SSE is the deprecated transport —
+    // streamable HTTP is the one Atlassian documents going forward.
     config: {
-      type: 'sse',
-      url: 'https://mcp.atlassian.com/v1/sse',
+      type: 'http',
+      url: 'https://mcp.atlassian.com/v1/mcp',
       command: '',
       args: [],
       env: {},
@@ -188,6 +176,26 @@ export const MCP_CONNECTORS: MCPConnector[] = [
       labelKey: 'mcp-connectors:secrets.serperApiKey',
       placeholder: 'sk-...',
       helpUrl: 'https://serper.dev/api-key',
+    },
+  },
+  // Last while its sign-in is 'oauth-soon': GitHub's remote MCP has no
+  // Dynamic Client Registration (OAuth is limited to registered apps like the
+  // first-party Copilot IDEs), so browser sign-in cannot work yet.
+  {
+    serverKey: 'github',
+    name: 'GitHub',
+    author: 'GitHub',
+    descriptionKey: 'mcp-connectors:descriptions.github',
+    icon: { bg: '#181717', src: '/images/connectors/github.svg' },
+    docsUrl: 'https://github.com/github/github-mcp-server',
+    matchUrls: ['api.githubcopilot.com'],
+    auth: 'oauth-soon',
+    config: {
+      type: 'http',
+      url: 'https://api.githubcopilot.com/mcp/',
+      command: '',
+      args: [],
+      env: {},
     },
   },
 ]

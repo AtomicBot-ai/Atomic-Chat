@@ -223,6 +223,9 @@ pub fn run() {
         core::mcp::commands::activate_mcp_server,
         core::mcp::commands::deactivate_mcp_server,
         core::mcp::commands::check_jan_browser_extension_connected,
+        core::mcp::oauth::mcp_oauth_login,
+        core::mcp::oauth::mcp_oauth_cancel,
+        core::mcp::oauth::mcp_oauth_logout,
         // Threads
         core::threads::commands::list_threads,
         core::threads::commands::create_thread,
@@ -376,6 +379,9 @@ pub fn run() {
         core::mcp::commands::activate_mcp_server,
         core::mcp::commands::deactivate_mcp_server,
         core::mcp::commands::check_jan_browser_extension_connected,
+        core::mcp::oauth::mcp_oauth_login,
+        core::mcp::oauth::mcp_oauth_cancel,
+        core::mcp::oauth::mcp_oauth_logout,
         // Threads
         core::threads::commands::list_threads,
         core::threads::commands::create_thread,
@@ -421,6 +427,7 @@ pub fn run() {
             mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
             provider_configs: Arc::new(Mutex::new(HashMap::new())),
             chatgpt_auth: Arc::new(Default::default()),
+            mcp_oauth: Arc::new(Default::default()),
             auto_increase_ctx: Arc::new(core::state::AutoIncreaseState::default()),
             api_request_inspector: Arc::new(Default::default()),
             #[cfg(desktop)]
@@ -629,115 +636,122 @@ pub fn run() {
             RunEvent::ExitRequested { .. } => {
                 log::info!("Application exit requested");
             }
-            RunEvent::WindowEvent { label, event: window_event, .. } => {
-                match window_event {
-                    tauri::WindowEvent::CloseRequested { .. } => {
-                        log::info!("Window close requested: {label}");
-                    }
-                    tauri::WindowEvent::Destroyed => {
-                        log::info!("Window destroyed: {label}");
-                    }
-                    _ => {}
+            RunEvent::WindowEvent {
+                label,
+                event: window_event,
+                ..
+            } => match window_event {
+                tauri::WindowEvent::CloseRequested { .. } => {
+                    log::info!("Window close requested: {label}");
                 }
-            }
+                tauri::WindowEvent::Destroyed => {
+                    log::info!("Window destroyed: {label}");
+                }
+                _ => {}
+            },
             RunEvent::Exit => {
                 let app_handle = app.clone();
 
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            {
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.emit("app-shutting-down", ());
-                    let _ = window.hide();
+                #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                {
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.emit("app-shutting-down", ());
+                        let _ = window.hide();
+                    }
                 }
-            }
 
-            let state = app_handle.state::<AppState>();
+                let state = app_handle.state::<AppState>();
 
-            // Agent-started processes are ours to end: nothing else will, and
-            // they hold ports and CPU. Synchronous and cheap — signals only.
-            let killed = state.agent_pty_sessions.kill_all();
-            if killed > 0 {
-                log::info!("[agent-pty] terminated {killed} agent process(es) on exit");
-            }
+                // Agent-started processes are ours to end: nothing else will, and
+                // they hold ports and CPU. Synchronous and cheap — signals only.
+                let killed = state.agent_pty_sessions.kill_all();
+                if killed > 0 {
+                    log::info!("[agent-pty] terminated {killed} agent process(es) on exit");
+                }
 
-            // Check if cleanup already ran.
-            // block_on is safe here: RunEvent callbacks run on the main
-            // thread, which is never a tokio runtime worker (block_in_place
-            // is a pass-through outside a runtime).
-            let cleanup_already_running = tokio::task::block_in_place(|| {
-                tauri::async_runtime::block_on(async {
-                    let handle = state.background_cleanup_handle.lock().await;
-                    handle.is_some()
-                })
-            });
-
-            if cleanup_already_running {
-                return;
-            }
-
-            // Run cleanup synchronously and WAIT for it to complete
-            tokio::task::block_in_place(|| {
-                tauri::async_runtime::block_on(async {
-                    use crate::core::mcp::helpers::background_cleanup_mcp_servers;
-
-                    let state = app_handle.state::<AppState>();
-
-                    if let Err(e) =
-                        crate::core::server::proxy::stop_server(state.server_handle.clone()).await
-                    {
-                        log::warn!("Local API Server shutdown failed: {e}");
-                    }
-
-                    // Increase timeout to 10 seconds and log if it times out
-                    let cleanup_future = background_cleanup_mcp_servers(&app_handle, &state);
-                    match tokio::time::timeout(tokio::time::Duration::from_secs(10), cleanup_future)
-                        .await
-                    {
-                        Ok(_) => log::info!("MCP cleanup completed successfully"),
-                        Err(_) => log::warn!("MCP cleanup timed out after 10 seconds"),
-                    }
-
-                    // Both llama.cpp providers keep their own process map, so clean
-                    // up each one to avoid orphaned llama-server processes on quit.
-                    if let Err(e) =
-                        tauri_plugin_llamacpp::cleanup_llama_processes(app_handle.clone()).await
-                    {
-                        log::warn!("Failed to cleanup llamacpp processes: {}", e);
-                    } else {
-                        log::info!("llamacpp processes cleaned up successfully");
-                    }
-
-                    if let Err(e) =
-                        tauri_plugin_llamacpp_upstream::cleanup_llama_processes(app_handle.clone())
-                            .await
-                    {
-                        log::warn!("Failed to cleanup llamacpp-upstream processes: {}", e);
-                    } else {
-                        log::info!("llamacpp-upstream processes cleaned up successfully");
-                    }
-
-                    #[cfg(feature = "mlx")]
-                    {
-                        use tauri_plugin_mlx::cleanup_mlx_processes;
-                        if let Err(e) = cleanup_mlx_processes(app_handle.clone()).await {
-                            log::warn!("Failed to cleanup MLX processes: {}", e);
-                        } else {
-                            log::info!("MLX processes cleaned up successfully");
-                        }
-                    }
-
-                    #[cfg(feature = "foundation-models")]
-                    {
-                        use tauri_plugin_foundation_models::cleanup_processes;
-                        cleanup_processes(&app_handle).await;
-                        log::info!("Foundation Models processes cleaned up successfully");
-                    }
-
-                    log::info!("App cleanup completed");
+                // Check if cleanup already ran.
+                // block_on is safe here: RunEvent callbacks run on the main
+                // thread, which is never a tokio runtime worker (block_in_place
+                // is a pass-through outside a runtime).
+                let cleanup_already_running = tokio::task::block_in_place(|| {
+                    tauri::async_runtime::block_on(async {
+                        let handle = state.background_cleanup_handle.lock().await;
+                        handle.is_some()
+                    })
                 });
-            });
+
+                if cleanup_already_running {
+                    return;
+                }
+
+                // Run cleanup synchronously and WAIT for it to complete
+                tokio::task::block_in_place(|| {
+                    tauri::async_runtime::block_on(async {
+                        use crate::core::mcp::helpers::background_cleanup_mcp_servers;
+
+                        let state = app_handle.state::<AppState>();
+
+                        if let Err(e) =
+                            crate::core::server::proxy::stop_server(state.server_handle.clone())
+                                .await
+                        {
+                            log::warn!("Local API Server shutdown failed: {e}");
+                        }
+
+                        // Increase timeout to 10 seconds and log if it times out
+                        let cleanup_future = background_cleanup_mcp_servers(&app_handle, &state);
+                        match tokio::time::timeout(
+                            tokio::time::Duration::from_secs(10),
+                            cleanup_future,
+                        )
+                        .await
+                        {
+                            Ok(_) => log::info!("MCP cleanup completed successfully"),
+                            Err(_) => log::warn!("MCP cleanup timed out after 10 seconds"),
+                        }
+
+                        // Both llama.cpp providers keep their own process map, so clean
+                        // up each one to avoid orphaned llama-server processes on quit.
+                        if let Err(e) =
+                            tauri_plugin_llamacpp::cleanup_llama_processes(app_handle.clone()).await
+                        {
+                            log::warn!("Failed to cleanup llamacpp processes: {}", e);
+                        } else {
+                            log::info!("llamacpp processes cleaned up successfully");
+                        }
+
+                        if let Err(e) = tauri_plugin_llamacpp_upstream::cleanup_llama_processes(
+                            app_handle.clone(),
+                        )
+                        .await
+                        {
+                            log::warn!("Failed to cleanup llamacpp-upstream processes: {}", e);
+                        } else {
+                            log::info!("llamacpp-upstream processes cleaned up successfully");
+                        }
+
+                        #[cfg(feature = "mlx")]
+                        {
+                            use tauri_plugin_mlx::cleanup_mlx_processes;
+                            if let Err(e) = cleanup_mlx_processes(app_handle.clone()).await {
+                                log::warn!("Failed to cleanup MLX processes: {}", e);
+                            } else {
+                                log::info!("MLX processes cleaned up successfully");
+                            }
+                        }
+
+                        #[cfg(feature = "foundation-models")]
+                        {
+                            use tauri_plugin_foundation_models::cleanup_processes;
+                            cleanup_processes(&app_handle).await;
+                            log::info!("Foundation Models processes cleaned up successfully");
+                        }
+
+                        log::info!("App cleanup completed");
+                    });
+                });
+            }
+            _ => {}
         }
-        _ => {}
-    }
-});
+    });
 }

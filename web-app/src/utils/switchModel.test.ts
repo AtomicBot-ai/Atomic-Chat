@@ -82,6 +82,7 @@ vi.mock('@/hooks/useThreads', () => ({
 
 vi.mock('@/utils/registerRemoteProvider', () => ({
   isKeylessRemoteProvider: vi.fn(() => false),
+  isSubscriptionProvider: vi.fn((name: string) => name === 'chatgpt'),
   registerRemoteProvider: vi.fn(),
 }))
 

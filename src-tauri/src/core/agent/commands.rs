@@ -19,22 +19,20 @@ use super::llm_client::{
     find_session_by_model_and_backend, AgentLlmClient, ContextExpansionHook, LlamaServerClient,
     LlamaSessionTarget, SamplingOverrides,
 };
+use super::mcp_tools::{snapshot_catalog, LiveMcpBridge, McpBridge};
 use super::openai_client::{
     OpenAiCompatibleClient, OpenAiTarget, OpenAiTargetKind, SessionReloadHook,
 };
-use super::target::{resolve_agent_target, resolve_mlx_target, AgentTarget};
 use super::path_policy::{canonical_directory, expand_home, lexical_normalize, EditableRoots};
-use super::mcp_tools::{snapshot_catalog, LiveMcpBridge, McpBridge};
-use super::rag_bridge::{DocsBridge, LiveDocsBridge};
 use super::prompt::{
     build_stable_prefix_with, CapabilitiesSummary, SkillDescriptor, StablePrefixArgs,
     DEFAULT_MAX_PARALLEL_TOOL_CALLS, ITERATION_ONE_TOOLS,
 };
+use super::rag_bridge::{DocsBridge, LiveDocsBridge};
 use super::runner::{run_turn, RunTurnInput, MAX_STEPS};
-use super::session::{
-    load_session, save_session, validate_session_id, AgentReseedMessage,
-};
+use super::session::{load_session, save_session, validate_session_id, AgentReseedMessage};
 use super::skills::load_registry;
+use super::target::{resolve_agent_target, resolve_mlx_target, AgentTarget};
 use super::tools::DesktopServices;
 use super::types::{
     AgentApprovalDecision, AgentEvent, AgentFolderAccessDecision, AgentReasoning, AgentTurnRequest,
@@ -580,9 +578,7 @@ pub async fn agent_run_turn<R: Runtime>(
     } else {
         None
     };
-    let mcp: Option<&dyn McpBridge> = mcp_bridge
-        .as_ref()
-        .map(|bridge| bridge as &dyn McpBridge);
+    let mcp: Option<&dyn McpBridge> = mcp_bridge.as_ref().map(|bridge| bridge as &dyn McpBridge);
     // Document-index bridge for turns that carry rag context. Collection
     // names arrive verbatim from the frontend (validated above); the
     // embedding session is TS-owned and merely looked up per call.
@@ -598,9 +594,8 @@ pub async fn agent_run_turn<R: Runtime>(
             upstream.llama_server_process.clone(),
         )
     });
-    let docs: Option<&dyn DocsBridge> = docs_bridge
-        .as_ref()
-        .map(|bridge| bridge as &dyn DocsBridge);
+    let docs: Option<&dyn DocsBridge> =
+        docs_bridge.as_ref().map(|bridge| bridge as &dyn DocsBridge);
     let documents_note = request.rag.as_ref().map(format_documents_note);
     let stable_prefix = build_stable_prefix_with(&StablePrefixArgs {
         tool_descriptors: &enabled_descriptors,

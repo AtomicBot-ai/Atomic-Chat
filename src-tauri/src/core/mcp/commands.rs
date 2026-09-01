@@ -353,7 +353,8 @@ pub(crate) async fn collect_mcp_server_statuses(state: &AppState) -> Vec<McpServ
 /// 5. Supports cancellation via cancellation_token
 /// 6. Returns error if no server has the requested tool or if specified server not found
 #[tauri::command]
-pub async fn call_tool(
+pub async fn call_tool<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppState>,
     tool_name: String,
     server_name: Option<String>,
@@ -361,6 +362,7 @@ pub async fn call_tool(
     cancellation_token: Option<String>,
 ) -> Result<CallToolResult, String> {
     let timeout_duration = tool_call_timeout(&state).await;
+    let data_dir = get_jan_data_folder_path(app.clone());
     match server_name.as_deref() {
         Some(server) => log::info!(
             "MCP server {server}: calling tool {tool_name} (timeout {}s)",
@@ -396,6 +398,11 @@ pub async fn call_tool(
         }
     }
 
+    // When a signed-in server rejects the call as unauthorized, the session is
+    // refreshed and the server restarted for one retry — set inside the loop,
+    // acted on after the servers lock is released.
+    let mut auth_retry: Option<(String, String)> = None;
+
     // Iterate through servers and find the one that contains the tool
     for (srv_name, service) in servers_to_check.iter() {
         let tools = match service.list_all_tools().await {
@@ -414,9 +421,20 @@ pub async fn call_tool(
 
         log::info!("MCP server {srv_name}: dispatching tool {tool_name}");
 
+        // rmcp's own expiry check never fires (it compares the static
+        // `expires_in`), so a near-expiry session is refreshed here, in place.
+        // A cheap no-op for servers without an OAuth session.
+        if let Err(e) = state
+            .mcp_oauth
+            .refresh_if_stale(&data_dir, srv_name, false)
+            .await
+        {
+            log::warn!("MCP server {srv_name}: pre-call token refresh failed: {e}");
+        }
+
         let tool_call = service.call_tool(CallToolRequestParam {
             name: tool_name.clone().into(),
-            arguments,
+            arguments: arguments.clone(),
         });
 
         // Race between timeout, tool call, and cancellation
@@ -456,10 +474,58 @@ pub async fn call_tool(
             }
             Err(e) => {
                 log::error!("MCP server {srv_name}: tool {tool_name} failed: {e}");
+                if crate::core::mcp::oauth::is_auth_error(e)
+                    && state.mcp_oauth.has_entry(&data_dir, srv_name).await
+                {
+                    auth_retry = Some((srv_name.to_string(), e.clone()));
+                    break;
+                }
             }
         }
 
         return result;
+    }
+
+    if let Some((srv, original_error)) = auth_retry {
+        drop(servers);
+        log::warn!(
+            "MCP server {srv}: auth failure on tool {tool_name}; refreshing the sign-in \
+             and reconnecting for one retry"
+        );
+        state
+            .mcp_oauth
+            .refresh_if_stale(&data_dir, &srv, true)
+            .await?;
+        let config = state
+            .mcp_active_servers
+            .lock()
+            .await
+            .get(&srv)
+            .cloned()
+            .ok_or_else(|| original_error.clone())?;
+        start_mcp_server(app.clone(), state.mcp_servers.clone(), srv.clone(), config).await?;
+
+        let servers = state.mcp_servers.lock().await;
+        let Some(service) = servers.get(&srv) else {
+            return Err(original_error);
+        };
+        let retry = timeout(
+            timeout_duration,
+            service.call_tool(CallToolRequestParam {
+                name: tool_name.clone().into(),
+                arguments,
+            }),
+        )
+        .await;
+        return match retry {
+            Ok(call_result) => {
+                call_result.map_err(|e| format!("{srv}: {e} — open Connectors and sign in again"))
+            }
+            Err(_) => Err(format!(
+                "Tool call '{tool_name}' timed out after {} seconds",
+                timeout_duration.as_secs()
+            )),
+        };
     }
 
     log::warn!("MCP: tool {tool_name} not found on any connected server");
@@ -625,6 +691,33 @@ pub async fn get_mcp_configs<R: Runtime>(app: AppHandle<R>) -> Result<String, St
                         mutated = true;
                     }
                 }
+            }
+        }
+    }
+
+    // Migration: Linear retired its SSE endpoint (mcp.linear.app/sse now
+    // 404s) in favour of streamable HTTP at /mcp. Rewrite only the exact
+    // retired URL — any other user-edited URL is left untouched. Idempotent:
+    // once rewritten the URL no longer matches.
+    if let Some(servers) = config_object
+        .get_mut("mcpServers")
+        .and_then(|v| v.as_object_mut())
+    {
+        for server in servers.values_mut() {
+            let Some(server_obj) = server.as_object_mut() else {
+                continue;
+            };
+            if server_obj.get("url").and_then(|v| v.as_str()) == Some("https://mcp.linear.app/sse")
+            {
+                server_obj.insert(
+                    "url".to_string(),
+                    Value::String("https://mcp.linear.app/mcp".to_string()),
+                );
+                server_obj.insert("type".to_string(), Value::String("http".to_string()));
+                log::info!(
+                    "Migrating config: moved Linear MCP off the retired /sse endpoint to /mcp"
+                );
+                mutated = true;
             }
         }
     }

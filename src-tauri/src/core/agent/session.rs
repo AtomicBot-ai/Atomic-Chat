@@ -522,7 +522,8 @@ mod tests {
     impl SessionFixture {
         fn new(session_ids: &[&str]) -> Self {
             let data_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("target").join("agent-session-tests")
+                .join("target")
+                .join("agent-session-tests")
                 .join(uuid::Uuid::new_v4().to_string());
             std::fs::create_dir_all(get_data_dir(&data_dir)).expect("create threads root");
             for session_id in session_ids {

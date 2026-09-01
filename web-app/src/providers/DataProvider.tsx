@@ -44,6 +44,7 @@ import {
 import {
   isKeylessRemoteProvider,
   isLocalProvider,
+  isSubscriptionProvider,
   registerRemoteProvider,
   unregisterRemoteProvider,
 } from '@/utils/registerRemoteProvider'
@@ -74,10 +75,15 @@ const syncRemoteProviders = () => {
     // provider ids are packaged on every desktop platform.
     // The pre-fix check excluded only `'llamacpp'`, which silently leaked
     // `'llamacpp-upstream'` into the remote-registration path on Windows.
+    // Subscriptions (ChatGPT/Codex) hold no `api_key` on the provider object —
+    // the token lives in the Rust backend — so they register on the same
+    // footing as keyless self-hosted servers.
     if (
       provider.active &&
       !isLocalProvider(provider.provider) &&
-      (provider.api_key || isKeylessRemoteProvider(provider))
+      (provider.api_key ||
+        isKeylessRemoteProvider(provider) ||
+        isSubscriptionProvider(provider.provider))
     ) {
       safeRegisterRemoteProvider(provider)
       currentActive.add(provider.provider)

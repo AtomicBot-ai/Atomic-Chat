@@ -127,15 +127,22 @@ pub fn authorize_url(pkce: &Pkce, state: &str) -> String {
 /// What the browser hands back on the loopback callback.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CallbackParams {
-    Code { code: String, state: String },
+    Code {
+        code: String,
+        state: String,
+    },
     /// The provider reported a failure (user declined, expired request, …).
-    Error { error: String, description: Option<String> },
+    Error {
+        error: String,
+        description: Option<String>,
+    },
 }
 
 /// Parse the callback's query string. Pure so the error paths are testable.
 pub fn parse_callback_query(query: &str) -> Result<CallbackParams, String> {
-    let pairs: HashMap<String, String> =
-        url::form_urlencoded::parse(query.as_bytes()).into_owned().collect();
+    let pairs: HashMap<String, String> = url::form_urlencoded::parse(query.as_bytes())
+        .into_owned()
+        .collect();
 
     if let Some(error) = pairs.get("error") {
         return Ok(CallbackParams::Error {
@@ -202,10 +209,12 @@ pub async fn await_callback(
 
                     let outcome = match parse_callback_query(req.uri().query().unwrap_or("")) {
                         Err(err) => Err(err),
-                        Ok(CallbackParams::Error { error, description }) => Err(match description {
-                            Some(d) => format!("{error}: {d}"),
-                            None => error,
-                        }),
+                        Ok(CallbackParams::Error { error, description }) => {
+                            Err(match description {
+                                Some(d) => format!("{error}: {d}"),
+                                None => error,
+                            })
+                        }
                         Ok(CallbackParams::Code { code, state }) => {
                             if state_matches(&expected, &state) {
                                 Ok(code)
@@ -355,7 +364,11 @@ fn to_stored(
         // Default to an hour when the server omits it, and clamp: a nonsense
         // lifetime would either hammer the refresh endpoint or leave a dead
         // token in place for weeks. The 401 retry is the real backstop.
-        expires_at: now_unix + response.expires_in.unwrap_or(3600).clamp(60, 30 * 24 * 3600),
+        expires_at: now_unix
+            + response
+                .expires_in
+                .unwrap_or(3600)
+                .clamp(60, 30 * 24 * 3600),
     })
 }
 
@@ -407,11 +420,7 @@ async fn post_token_form(form: &[(&str, &str)]) -> Result<TokenResponse, String>
         .map_err(|e| format!("cannot parse token response: {e}"))
 }
 
-pub async fn exchange_code(
-    code: &str,
-    pkce: &Pkce,
-    now_unix: i64,
-) -> Result<StoredTokens, String> {
+pub async fn exchange_code(code: &str, pkce: &Pkce, now_unix: i64) -> Result<StoredTokens, String> {
     let redirect = redirect_uri();
     let response = post_token_form(&[
         ("grant_type", "authorization_code"),
@@ -424,10 +433,7 @@ pub async fn exchange_code(
     to_stored(response, now_unix, None)
 }
 
-pub async fn refresh_tokens(
-    refresh_token: &str,
-    now_unix: i64,
-) -> Result<StoredTokens, String> {
+pub async fn refresh_tokens(refresh_token: &str, now_unix: i64) -> Result<StoredTokens, String> {
     let response = post_token_form(&[
         ("grant_type", "refresh_token"),
         ("client_id", CLIENT_ID),

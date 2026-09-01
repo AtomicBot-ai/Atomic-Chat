@@ -114,6 +114,7 @@ vi.mock('@/hooks/useModelLoad', () => ({
 
 vi.mock('@/utils/registerRemoteProvider', () => ({
   isKeylessRemoteProvider: () => false,
+  isSubscriptionProvider: (provider: string) => provider === 'chatgpt',
   isLocalProvider: (provider: string) =>
     ['llamacpp', 'llamacpp-upstream', 'mlx', 'foundation-models'].includes(
       provider

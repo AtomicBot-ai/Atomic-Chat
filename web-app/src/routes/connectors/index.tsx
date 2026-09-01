@@ -244,15 +244,53 @@ function ConnectorsPage() {
     }
   }
 
+  // Browser sign-in: one long-running invoke that resolves after the Rust
+  // side has exchanged the loopback callback and stored the session; then the
+  // normal install path activates the server, whose connection picks the
+  // stored session up on its own. Tokens never reach the frontend.
+  const oauthConnect = async (connector: MCPConnector) => {
+    const key = connector.serverKey
+    setBusy(key, true)
+    try {
+      const config = await buildConnectorConfig(connector)
+      await serviceHub.mcp().mcpOauthLogin(key, config.url ?? '')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      // A cancelled sign-in is the user closing the door themselves.
+      if (!message.includes('cancelled')) {
+        toast.error(t('mcp-connectors:oauth.failed'), { description: message })
+      }
+      return
+    } finally {
+      setBusy(key, false)
+    }
+    await install(connector)
+  }
+
   const handleSetUp = (connector: MCPConnector) => {
-    // Browser OAuth is not implemented yet; the card renders a disabled
-    // sign-in button, this guard just keeps the flow honest.
-    if (connector.auth === 'oauth') return
+    if (connector.auth === 'oauth') {
+      void oauthConnect(connector)
+      return
+    }
+    // 'oauth-soon': the provider does not accept our registration yet; the
+    // card renders a disabled sign-in button, this guard keeps the flow honest.
+    if (connector.auth === 'oauth-soon') return
     if (connector.secret) {
       setSecretConnector(connector)
     } else {
       void install(connector)
     }
+  }
+
+  const handleCancelSignIn = () => {
+    // The pending mcpOauthLogin promise rejects with "sign-in cancelled" and
+    // oauthConnect's catch stays silent about it.
+    serviceHub
+      .mcp()
+      .mcpOauthCancel()
+      .catch((error) => {
+        console.warn('Failed to cancel MCP sign-in:', error)
+      })
   }
 
   const handleSecretConnect = async (value: string) => {
@@ -303,6 +341,13 @@ function ConnectorsPage() {
         await serviceHub.mcp().deactivateMCPServer(serverToDelete)
       } catch (error) {
         console.error('Error stopping server before deletion:', error)
+      }
+
+      // Also forget any stored OAuth session; a no-op for other servers.
+      try {
+        await serviceHub.mcp().mcpOauthLogout(serverToDelete)
+      } catch (error) {
+        console.error('Error clearing MCP sign-in during deletion:', error)
       }
 
       deleteServer(serverToDelete)
@@ -440,6 +485,7 @@ function ConnectorsPage() {
                     status={installed ? statusByName.get(key) : undefined}
                     busy={!!busyServers[key]}
                     onSetUp={() => connector && handleSetUp(connector)}
+                    onCancelSignIn={handleCancelSignIn}
                     onToggle={(checked) => toggleServer(key, checked)}
                     onEdit={() => handleOpenDialog(key)}
                     onEditJson={() => handleOpenJsonEditor(key)}

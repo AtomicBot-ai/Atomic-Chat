@@ -4719,11 +4719,7 @@ pub fn configure_poolside(
 /// the only piece that persists, and Muse only checks that `META_API_KEY` is
 /// present -- the upstream call goes to whatever `--base-url` points at -- so
 /// the local server's own key satisfies both ends.
-pub fn muse_env_vars(
-    _api_url: &str,
-    _model: &str,
-    api_key: Option<&str>,
-) -> Vec<(String, String)> {
+pub fn muse_env_vars(_api_url: &str, _model: &str, api_key: Option<&str>) -> Vec<(String, String)> {
     let key_val = api_key.filter(|k| !k.is_empty()).unwrap_or("atomic");
     vec![("META_API_KEY".to_string(), key_val.to_string())]
 }

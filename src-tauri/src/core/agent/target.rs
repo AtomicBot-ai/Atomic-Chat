@@ -244,9 +244,11 @@ mod tests {
 
         let mut text_only = request("gpt-4.1");
         text_only.capabilities = vec!["tools".into()];
-        assert!(!resolve_cloud_target(Some(&endpoint), "openai", &text_only)
-            .unwrap()
-            .has_vision);
+        assert!(
+            !resolve_cloud_target(Some(&endpoint), "openai", &text_only)
+                .unwrap()
+                .has_vision
+        );
 
         let mut with_vision = request("gpt-4.1");
         with_vision.capabilities = vec!["tools".into(), "vision".into()];

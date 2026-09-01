@@ -1,6 +1,7 @@
 import {
   isKeylessRemoteProvider,
   isLocalProvider,
+  isSubscriptionProvider,
 } from '@/utils/registerRemoteProvider'
 
 /**
@@ -66,10 +67,15 @@ export function agentProviderBlockReason(
   // Any other local engine (today: foundation-models) has no transport.
   if (isLocalProvider(provider.provider)) return 'unsupported-provider'
   // Mirrors the registration condition in `DataProvider`: a remote provider is
-  // usable when it has a key, or when it is a keyless loopback server that
-  // needs none. Without either the proxy cannot authenticate upstream and the
+  // usable when it has a key, when it is a keyless loopback server that needs
+  // none, or when it is a subscription whose bearer token the backend attaches
+  // itself. Without any of those the proxy cannot authenticate upstream and the
   // run is certain to fail, so it is worth blocking up front.
-  if (!provider.api_key?.trim() && !isKeylessRemoteProvider(provider)) {
+  if (
+    !provider.api_key?.trim() &&
+    !isKeylessRemoteProvider(provider) &&
+    !isSubscriptionProvider(provider.provider)
+  ) {
     return 'missing-api-key'
   }
   return null

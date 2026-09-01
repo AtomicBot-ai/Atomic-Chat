@@ -21,12 +21,12 @@ use super::loop_guard::{
     format_forced_loop_reply, format_repeat_notice, format_veto_instruction,
     format_wandering_redirect, LoopCheckLevel, ToolLoopTracker,
 };
+use super::mcp_tools::McpBridge;
 use super::model_profile::AgentModelProfile;
 use super::path_policy::EditableRoots;
-use super::mcp_tools::McpBridge;
-use super::rag_bridge::DocsBridge;
 use super::prompt::{build_prompt_dynamic, build_prompt_parts_dynamic, format_workspace};
 use super::pty::PtyRegistry;
+use super::rag_bridge::DocsBridge;
 use super::reply_stream::ReplyStreamScanner;
 use super::resource_class::{is_batchable, resource_class_for_call, ResourceClass};
 use super::session::AgentSessionState;
