@@ -123,7 +123,36 @@ export function isMtpCompanionFile(rfilename: string): boolean {
   const lower = rfilename.toLowerCase()
   if (/(^|\/)mtp\//.test(lower)) return true
   const base = (lower.split('/').pop() ?? lower).replace(/\.gguf$/, '')
-  return /^mtp[-_.]/.test(base) || /[-_]mtp$/.test(base)
+  if (/^mtp[-_.]/.test(base)) return true
+  // A trailing `MTP` right after a quant token names a full set of weights with
+  // the MTP layers baked in (`Qwen3.6-27B-UDT-Q6_K_MTP.gguf`, 21.6 GB), not a
+  // head — reading it as a companion hid those repos from the Hub entirely.
+  if (/[-_]mtp$/.test(base)) return !QUANT_BEFORE_MTP.test(base)
+  return false
+}
+
+const QUANT_BEFORE_MTP =
+  /[-_](?:i?q\d[0-9a-z_]*|bf16|f16|f32|mxfp\d[0-9a-z_]*)[-_]mtp$/
+
+/**
+ * GGUF files a repository ships next to its weights that llama.cpp cannot run
+ * on its own: importance matrices, vocab-only dumps, speculative-decoding
+ * drafts, and the tokenizer/vocoder halves of an audio stack. Offering them as
+ * download options is how a user ends up with a 1.4 GB `imatrix_unsloth.gguf`
+ * and a model that never loads.
+ *
+ * Matching is anchored to the start or the end of the file name, never taken as
+ * a substring: `…-NEO-IMATRIX-MAX-MTP.Q4_K_M.gguf` is an ordinary quant of a
+ * model whose *name* mentions imatrix, and a loose test would hide the repo.
+ */
+const NON_WEIGHT_GGUF_PREFIX =
+  /^(?:imatrix|ggml-vocab|vocab|dflash|eagle3|tokenizer|vocoder|audio(?:de|en)coder)(?:[-_.]|$)/
+
+export function isNonWeightGgufFile(rfilename: string): boolean {
+  const lower = rfilename.toLowerCase()
+  const base = (lower.split('/').pop() ?? lower).replace(/\.gguf$/, '')
+  // `<model>.imatrix.gguf` / `<model>-imatrix.gguf` (mradermacher, bartowski).
+  return NON_WEIGHT_GGUF_PREFIX.test(base) || /[-_.]imatrix$/.test(base)
 }
 
 // A quant too large for one file is published as `-00001-of-000NN` shards, and
@@ -214,15 +243,24 @@ export function mergeShardedQuants<
   return { ...model, quants, num_quants: quants.length }
 }
 
-// Drop MTP companion quants from a catalog entry, keying off the file path
-// (the real HF filename) and falling back to the quant id when absent.
-export function stripMtpCompanionQuants<
+/**
+ * Drop the quants of a catalog entry that are not runnable weights — MTP heads
+ * and everything {@link isNonWeightGgufFile} covers. Keys off the file path
+ * (the real HF filename), falling back to the quant id when absent.
+ *
+ * The curated catalog mirrors each repository's file list verbatim, so without
+ * this an `imatrix` sits in the download list next to the real quants, sorted
+ * to the top by size and preselected as the one that fits — which is how a user
+ * downloads 1.4 GB of importance matrix and reports the model as broken.
+ */
+export function stripNonWeightQuants<
   T extends Pick<CatalogModel, 'quants' | 'num_quants'>,
 >(model: T): T {
   if (!model.quants?.length) return model
-  const quants = model.quants.filter(
-    (q) => !isMtpCompanionFile(q.path || q.model_id)
-  )
+  const quants = model.quants.filter((q) => {
+    const file = q.path || q.model_id
+    return !isMtpCompanionFile(file) && !isNonWeightGgufFile(file)
+  })
   if (quants.length === model.quants.length) return model
   return { ...model, quants, num_quants: quants.length }
 }

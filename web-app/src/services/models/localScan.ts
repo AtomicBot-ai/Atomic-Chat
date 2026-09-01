@@ -17,7 +17,7 @@
  * yields no candidates rather than throwing.
  */
 import { getServiceHub } from '@/hooks/useServiceHub'
-import { groupGgufShards } from '@/lib/models'
+import { groupGgufShards, isNonWeightGgufFile } from '@/lib/models'
 
 export type LocalScanFormat = 'gguf' | 'mlx' | 'adapter'
 
@@ -176,7 +176,9 @@ async function collectGgufFiles(
       mmprojs.push(...nested.mmprojs)
     } else if (name.toLowerCase().endsWith('.gguf')) {
       if (looksLikeMmproj(name)) mmprojs.push(child)
-      else models.push(child)
+      // An imatrix or draft GGUF sitting in someone's LM Studio cache is not a
+      // model — listing it only offers a run that cannot start.
+      else if (!isNonWeightGgufFile(name)) models.push(child)
     }
   }
   return { models, mmprojs }
