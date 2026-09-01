@@ -160,6 +160,7 @@ pub fn run() {
         core::system::commands::configure_zed,
         core::system::commands::launch_zed,
         core::system::commands::configure_openclaw,
+        core::system::commands::launch_openclaw_app,
         core::system::commands::configure_claude_code,
         core::system::commands::configure_copilot,
         core::system::commands::configure_droid,
@@ -169,6 +170,7 @@ pub fn run() {
         core::system::commands::configure_openhands,
         core::system::commands::configure_kilo,
         core::system::commands::configure_poolside,
+        core::system::commands::configure_muse,
         core::system::commands::open_agent_terminal,
         core::system::commands::launch_editor,
         // Server commands
@@ -316,6 +318,7 @@ pub fn run() {
         core::system::commands::configure_zed,
         core::system::commands::launch_zed,
         core::system::commands::configure_openclaw,
+        core::system::commands::launch_openclaw_app,
         core::system::commands::configure_claude_code,
         core::system::commands::configure_copilot,
         core::system::commands::configure_droid,
@@ -325,6 +328,7 @@ pub fn run() {
         core::system::commands::configure_openhands,
         core::system::commands::configure_kilo,
         core::system::commands::configure_poolside,
+        core::system::commands::configure_muse,
         core::system::commands::open_agent_terminal,
         core::system::commands::launch_editor,
         // Server commands

@@ -8,7 +8,16 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { seedServiceHub } from '@/test/service-hub'
 import { CustomChatTransport } from '../custom-chat-transport'
+import { loadChatSkillDetails } from '../chat-skill-injection'
 import { ModelFactory } from '../model-factory'
+
+// The skill-body loader is Tauri-only (IS_TAURI is false under vitest), so it
+// is mocked at the boundary; the pure collect/render/compose helpers run real.
+vi.mock('../chat-skill-injection', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../chat-skill-injection')>()
+  return { ...actual, loadChatSkillDetails: vi.fn().mockResolvedValue([]) }
+})
 
 type ModelStreamPart =
   | { type: 'stream-start'; warnings: [] }
@@ -195,6 +204,96 @@ describe('CustomChatTransport production harness', () => {
         input: { query: 'alpha' },
       })
     )
+  })
+})
+
+/**
+ * Skills on the chat pipeline ride the system prompt: `sendMessages` reads
+ * `agent_skill_name` off user-message metadata, loads bodies, and appends the
+ * rendered block to the system message. Driven through the real transport so
+ * the wiring into `streamText` is what gets pinned.
+ */
+describe('CustomChatTransport skill injection', () => {
+  const idleStream: ModelStreamPart[] = [
+    { type: 'stream-start', warnings: [] },
+    { type: 'text-start', id: 'text-1' },
+    { type: 'text-delta', id: 'text-1', delta: 'ok' },
+    { type: 'text-end', id: 'text-1' },
+    {
+      type: 'finish',
+      finishReason: 'stop',
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+    },
+  ]
+
+  it('appends invoked-skill bodies to the system prompt', async () => {
+    vi.mocked(loadChatSkillDetails).mockResolvedValueOnce([
+      {
+        name: 'style-guide',
+        version: '1.0.0',
+        body: 'Always answer in haiku.',
+      } as never,
+    ])
+    const model = fakeStreamingModel(idleStream)
+    vi.spyOn(ModelFactory, 'createModel').mockResolvedValue(model)
+    const transport = new CustomChatTransport('be brief', 'thread-7')
+
+    await readChunks(
+      (await transport.sendMessages({
+        chatId: 'chat-1',
+        messages: [
+          {
+            ...userMessage,
+            metadata: { agent_skill_name: 'style-guide' },
+          } as UIMessage,
+        ],
+        abortSignal: undefined,
+        trigger: 'submit-message',
+        messageId: undefined,
+      })) as ReadableStream<Record<string, unknown>>
+    )
+
+    expect(loadChatSkillDetails).toHaveBeenCalledWith(
+      ['style-guide'],
+      expect.any(Map),
+      expect.any(Set)
+    )
+    const doStream = (model as unknown as { doStream: ReturnType<typeof vi.fn> })
+      .doStream
+    const prompt = doStream.mock.calls[0][0].prompt as Array<{
+      role: string
+      content: unknown
+    }>
+    const system = prompt.find((message) => message.role === 'system')
+    expect(system?.content).toContain('be brief')
+    expect(system?.content).toContain('## Invoked skills')
+    expect(system?.content).toContain('# skill: style-guide (v1.0.0)')
+    expect(system?.content).toContain('Always answer in haiku.')
+  })
+
+  it('sends the base system prompt untouched when no skill was invoked', async () => {
+    const model = fakeStreamingModel(idleStream)
+    vi.spyOn(ModelFactory, 'createModel').mockResolvedValue(model)
+    const transport = new CustomChatTransport('be brief', 'thread-7')
+
+    await readChunks(
+      (await transport.sendMessages({
+        chatId: 'chat-1',
+        messages: [userMessage],
+        abortSignal: undefined,
+        trigger: 'submit-message',
+        messageId: undefined,
+      })) as ReadableStream<Record<string, unknown>>
+    )
+
+    const doStream = (model as unknown as { doStream: ReturnType<typeof vi.fn> })
+      .doStream
+    const prompt = doStream.mock.calls[0][0].prompt as Array<{
+      role: string
+      content: unknown
+    }>
+    const system = prompt.find((message) => message.role === 'system')
+    expect(system?.content).toBe('be brief')
   })
 })
 

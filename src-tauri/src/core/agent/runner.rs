@@ -432,6 +432,22 @@ pub async fn run_turn(
                 })?;
                 notice = Some(format_batch_trim_notice(&kept_tool, &dropped_tools));
                 parsed.calls = trimmed;
+            } else if let Some((trimmed, dropped_tools)) =
+                trim_surplus_terminals(&parsed.calls, input.mcp)
+            {
+                let kept_tool = trimmed
+                    .last()
+                    .expect("the trim keeps the first terminal call")
+                    .tool
+                    .clone();
+                emit(AgentEvent::BatchTrimmed {
+                    step_index,
+                    reason: error.to_string(),
+                    kept_tool: kept_tool.clone(),
+                    dropped_tools: dropped_tools.clone(),
+                })?;
+                notice = Some(format_surplus_terminal_notice(&kept_tool, &dropped_tools));
+                parsed.calls = trimmed;
             } else {
                 emit(AgentEvent::ParseRetry {
                     step_index,
@@ -685,11 +701,16 @@ impl BatchValidationError {
 
 impl std::fmt::Display for BatchValidationError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // One issue per offending call, so a batch that breaks the same rule
+        // twice would otherwise repeat itself verbatim — both in the repair
+        // instruction the model reads and in the error the user sees.
+        let mut seen = std::collections::BTreeSet::new();
         formatter.write_str(
             &self
                 .issues
                 .iter()
                 .map(|issue| issue.message.as_str())
+                .filter(|message| seen.insert(*message))
                 .collect::<Vec<_>>()
                 .join("; "),
         )
@@ -780,6 +801,49 @@ fn trim_to_first_approval_gated(
     (vec![kept], dropped)
 }
 
+/// Deterministic salvage for a batch that names more than one terminal: keep
+/// everything through the first one and drop the rest.
+///
+/// The surplus terminals carry no new intent — the model already committed to
+/// ending the turn at the first — so a repair round-trip buys nothing, and on
+/// the small local models that produce this batch it usually repeats the
+/// mistake and kills the turn. A single misplaced terminal is a different
+/// error (the model wants to answer *and* keep working) and still goes to
+/// repair.
+///
+/// `None` when the trim would not yield a runnable batch, leaving the caller
+/// on the repair path.
+fn trim_surplus_terminals(
+    calls: &[ToolCallPayload],
+    mcp: Option<&dyn McpBridge>,
+) -> Option<(Vec<ToolCallPayload>, Vec<String>)> {
+    let is_terminal = |call: &ToolCallPayload| {
+        resource_class_for_call(&call.tool, mcp) == ResourceClass::Terminal
+    };
+    if calls.iter().filter(|call| is_terminal(call)).count() < 2 {
+        return None;
+    }
+    let kept_index = calls.iter().position(is_terminal)?;
+    let trimmed = calls[..=kept_index].to_vec();
+    // Re-validate rather than reason about what is left: a surviving prefix can
+    // still break another batch rule (an approval-gated call, say), and that
+    // one does need the model.
+    validate_batch(&trimmed, mcp).ok()?;
+    let dropped = calls[kept_index + 1..]
+        .iter()
+        .map(|call| call.tool.clone())
+        .collect();
+    Some((trimmed, dropped))
+}
+
+fn format_surplus_terminal_notice(kept_tool: &str, dropped_tools: &[String]) -> String {
+    format!(
+        "The previous batch named more than one terminal verb. Executed `{kept_tool}` and dropped \
+         the rest: {}. A terminal verb may appear only once and only last.",
+        dropped_tools.join(", ")
+    )
+}
+
 fn format_batch_trim_notice(kept_tool: &str, dropped_tools: &[String]) -> String {
     format!(
         "The previous batch contained a tool that must run alone in a length-1 array. Executed \
@@ -793,9 +857,20 @@ fn parse_and_validate(
     profile: AgentModelProfile,
     mcp: Option<&dyn McpBridge>,
 ) -> Result<ParsedToolCalls, String> {
-    let parsed =
+    let mut parsed =
         parse_tool_calls_for_profile(content, profile).map_err(|error| error.to_string())?;
-    validate_batch(&parsed.calls, mcp).map_err(|error| error.to_string())?;
+    if let Err(error) = validate_batch(&parsed.calls, mcp) {
+        // The repair has already had its round-trip; salvage what the shape
+        // allows rather than failing the turn on a mistake it just repeated.
+        let Some((trimmed, dropped)) = trim_surplus_terminals(&parsed.calls, mcp) else {
+            return Err(error.to_string());
+        };
+        log::warn!(
+            "Agent repair named surplus terminals; dropped {}",
+            dropped.join(", ")
+        );
+        parsed.calls = trimmed;
+    }
     Ok(parsed)
 }
 

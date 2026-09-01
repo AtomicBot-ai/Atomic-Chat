@@ -10,6 +10,9 @@
   "newConversation": "Percakapan Baru",
   "clearHistory": "Hapus Riwayat",
   "agentMode": {
+    "menuItem": "Mode agen",
+    "agent": "Agen",
+    "turnOff": "Matikan mode agen",
     "providerUnavailable": "Mode agen memerlukan model lokal atau penyedia cloud dengan kunci API.",
     "providerKeyMissing": "Tambahkan kunci API untuk penyedia ini di Pengaturan untuk memakai mode agen."
   },

@@ -66,7 +66,7 @@
     "desktopNotifications": "Notificaciones de escritorio",
     "desktopNotificationsDesc": "Enviar una notificación del sistema cuando una respuesta termine y la ventana no esté enfocada.",
     "legacyChatEngine": "Usar el motor de chat clásico",
-    "legacyChatEngineDesc": "Enviar todos los mensajes por la canalización de chat anterior en lugar del motor de agente unificado. Opción temporal de compatibilidad."
+    "legacyChatEngineDesc": "Fuerza la canalización de chat anterior para todos los mensajes y desactiva por completo el modo agente. Vía de escape temporal."
   },
   "threadNotifications": {
     "notificationTitle": "Respuesta lista",

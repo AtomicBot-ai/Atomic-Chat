@@ -66,7 +66,7 @@
     "desktopNotifications": "Powiadomienia pulpitu",
     "desktopNotificationsDesc": "Wysyłaj powiadomienia systemowe, gdy odpowiedź jest gotowa, a okno nie jest aktywne.",
     "legacyChatEngine": "Użyj starego silnika czatu",
-    "legacyChatEngineDesc": "Kieruj wszystkie wiadomości przez poprzedni potok czatu zamiast zunifikowanego silnika agenta. Tymczasowa opcja zgodności."
+    "legacyChatEngineDesc": "Wymusza poprzedni potok czatu dla każdej wiadomości i całkowicie wyłącza tryb agenta. Tymczasowe obejście."
   },
   "threadNotifications": {
     "notificationTitle": "Odpowiedź gotowa",

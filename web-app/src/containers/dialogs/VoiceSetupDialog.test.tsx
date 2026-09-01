@@ -13,6 +13,22 @@ vi.mock('@/containers/VoiceModelCard', () => ({
   default: () => <div data-testid="voice-model-card" />,
 }))
 
+// Whether the model is on disk is derived from the provider list and the
+// download store; the dialog only cares about the one boolean.
+const modelInstalled = vi.hoisted(() => ({ current: false }))
+vi.mock('@/hooks/useVoiceModel', () => ({
+  useVoiceModel: () => ({
+    installed: modelInstalled.current,
+    downloading: false,
+    progress: 0,
+    currentBytes: 0,
+    totalBytes: 0,
+    download: vi.fn(),
+    cancelDownload: vi.fn(),
+    remove: vi.fn(),
+  }),
+}))
+
 const requestPermission = vi.hoisted(() => vi.fn(async () => 'granted' as const))
 const getPermission = vi.hoisted(() => vi.fn(async () => 'undetermined' as const))
 const openSystemMicrophoneSettings = vi.hoisted(() => vi.fn(async () => {}))
@@ -59,6 +75,7 @@ describe('VoiceSetupDialog', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     localStorage.clear()
+    modelInstalled.current = false
     await useVoiceSetting.persist.rehydrate()
     useVoiceSetting.setState({ setupCompleted: false })
     useVoiceInput.getState().reset()
@@ -198,8 +215,11 @@ describe('VoiceSetupDialog', () => {
     render(<VoiceSetupDialog />)
 
     await act(async () => {
+      // The row shows the short label; the full one is the accessible name.
       await userEvent.click(
-        screen.getByText('common:voiceInput.setup.permission.allow')
+        screen.getByRole('button', {
+          name: 'common:voiceInput.setup.permission.allow',
+        })
       )
     })
 
@@ -220,15 +240,68 @@ describe('VoiceSetupDialog', () => {
     expect(openSystemMicrophoneSettings).toHaveBeenCalled()
   })
 
+  it('keeps the dots on the centre line, between the two buttons', () => {
+    useVoiceInput.setState({ setupStep: 1 })
+    render(<VoiceSetupDialog />)
+
+    // A three-column footer, not `justify-between`: the dots belong to the
+    // dialog, so they must not drift when Back appears or disappears.
+    const footer = document.querySelector('[data-slot="dialog-footer"]')!
+    expect(footer.className).toContain('grid-cols-3')
+    // Exactly three columns, with the dots in the middle one — a fourth child
+    // (the sr-only step label, say) would wrap the buttons onto a second row.
+    expect(footer.children).toHaveLength(3)
+    expect(footer.children[1].querySelectorAll('[aria-hidden="true"] > span'))
+      .toHaveLength(3)
+  })
+
+  it('only allows Done once both prerequisites are in place', async () => {
+    // Permission alone is not enough — the model still has to be on disk.
+    useVoiceInput.setState({ setupStep: 2, permission: 'granted' })
+    getPermission.mockResolvedValue('granted')
+    const withoutModel = render(<VoiceSetupDialog />)
+    expect(screen.getByTestId('voice-setup-done')).toBeDisabled()
+    withoutModel.unmount()
+
+    // Nor is the model on its own.
+    modelInstalled.current = true
+    useVoiceInput.setState({ setupStep: 2, permission: 'undetermined' })
+    getPermission.mockResolvedValue('undetermined')
+    const withoutPermission = render(<VoiceSetupDialog />)
+    expect(screen.getByTestId('voice-setup-done')).toBeDisabled()
+    withoutPermission.unmount()
+
+    useVoiceInput.setState({ setupStep: 2, permission: 'granted' })
+    getPermission.mockResolvedValue('granted')
+    render(<VoiceSetupDialog />)
+    expect(screen.getByTestId('voice-setup-done')).toBeEnabled()
+  })
+
   it('marks setup complete on Done', async () => {
-    useVoiceInput.setState({ setupStep: 2 })
+    modelInstalled.current = true
+    useVoiceInput.setState({ setupStep: 2, permission: 'granted' })
+    getPermission.mockResolvedValue('granted')
     render(<VoiceSetupDialog />)
 
     await act(async () => {
-      await userEvent.click(screen.getByText('common:voiceInput.setup.done'))
+      await userEvent.click(screen.getByTestId('voice-setup-done'))
     })
 
     expect(useVoiceSetting.getState().setupCompleted).toBe(true)
+    expect(useVoiceInput.getState().setupOpen).toBe(false)
+  })
+
+  it('can still be dismissed with the close button when nothing is set up', async () => {
+    useVoiceInput.setState({ setupStep: 2 })
+    render(<VoiceSetupDialog />)
+
+    expect(screen.getByTestId('voice-setup-done')).toBeDisabled()
+    await act(async () => {
+      await userEvent.click(screen.getByRole('button', { name: 'Close' }))
+    })
+
+    // Dismissing half-configured is deliberate: the microphone button reopens
+    // the wizard on whichever prerequisite is still missing.
     expect(useVoiceInput.getState().setupOpen).toBe(false)
   })
 })

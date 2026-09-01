@@ -10,6 +10,9 @@
   "newConversation": "Nova Conversa",
   "clearHistory": "Limpar Histórico",
   "agentMode": {
+    "menuItem": "Modo agente",
+    "agent": "Agente",
+    "turnOff": "Desativar o modo agente",
     "providerUnavailable": "O modo agente precisa de um modelo local ou de um provedor na nuvem com chave de API.",
     "providerKeyMissing": "Adicione uma chave de API para este provedor em Configurações para usar o modo agente."
   },

@@ -63,6 +63,13 @@ import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ttftMark } from '@/lib/ttft-timing'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
+import {
+  collectSkillNamesFromMessages,
+  composeSystemMessage,
+  loadChatSkillDetails,
+  renderChatSkillsBlock,
+} from '@/lib/chat-skill-injection'
+import type { AgentSkillDetail } from '@/services/agent/skills'
 import type { ServiceHub } from '@/services'
 import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
 import { isLocalProvider as isLocalProviderName } from '@/utils/registerRemoteProvider'
@@ -348,6 +355,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private continueFromContent: string | null = null
   private toolsCacheKey = ''
   private toolsCacheValid = false
+  // Invoked-skill bodies, memoized for the transport's (per-thread) lifetime;
+  // null marks a skill known to be unusable on the chat pipeline.
+  private skillDetailCache = new Map<string, AgentSkillDetail | null>()
 
   constructor(systemMessage?: string, threadId?: string) {
     this.systemMessage = systemMessage
@@ -766,18 +776,38 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const shouldEnableTools =
       hasTools && modelSupportsTools && !suppressToolsForDflash
 
+    // Skills invoked on this thread (via the composer's "/" menu, stamped on
+    // user-message metadata) ride the system prompt — the chat counterpart of
+    // the agent's `skill.view` loading. Reading them off `options.messages`
+    // makes send, regenerate, edit and app-restart replay uniform.
+    const invokedSkillNames = collectSkillNamesFromMessages(options.messages)
+    const skillsBlock = renderChatSkillsBlock(
+      await loadChatSkillDetails(
+        invokedSkillNames,
+        this.skillDetailCache,
+        new Set([
+          ...useAppState.getState().mcpToolNames,
+          ...useAppState.getState().ragToolNames,
+        ])
+      )
+    )
+    const systemWithSkills = composeSystemMessage(
+      this.systemMessage,
+      skillsBlock
+    )
+
     const dropSystemForTools =
-      isLocalProvider && shouldEnableTools && !!this.systemMessage
+      isLocalProvider && shouldEnableTools && !!systemWithSkills
     const effectiveSystemMessage = dropSystemForTools
       ? undefined
-      : this.systemMessage
+      : systemWithSkills
 
     // When we drop the `system` field for the gemma+tools CoT workaround, fold
     // the instructions into the first user message so they still reach the
     // model instead of being silently lost.
     const finalModelMessages =
-      dropSystemForTools && this.systemMessage
-        ? foldSystemIntoFirstUserMessage(modelMessages, this.systemMessage)
+      dropSystemForTools && systemWithSkills
+        ? foldSystemIntoFirstUserMessage(modelMessages, systemWithSkills)
         : modelMessages
 
     // Track stream timing and token count for token speed calculation.

@@ -66,7 +66,7 @@
     "desktopNotifications": "Desktop-Benachrichtigungen",
     "desktopNotificationsDesc": "Sendet eine Systembenachrichtigung, wenn eine Antwort fertig ist und das Fenster nicht im Fokus ist.",
     "legacyChatEngine": "Klassische Chat-Engine verwenden",
-    "legacyChatEngineDesc": "Alle Nachrichten über die bisherige Chat-Pipeline statt der vereinheitlichten Agent-Engine senden. Vorübergehende Kompatibilitätsoption."
+    "legacyChatEngineDesc": "Erzwingt für jede Nachricht die frühere Chat-Pipeline und deaktiviert den Agentenmodus vollständig. Vorübergehende Notlösung."
   },
   "threadNotifications": {
     "notificationTitle": "Antwort bereit",

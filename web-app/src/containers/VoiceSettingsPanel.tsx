@@ -149,7 +149,9 @@ export function VoiceSettingsPanel() {
             </span>
           }
           descriptionOutside={
-            permission === 'denied' ? <VoicePermissionBlock /> : undefined
+            permission === 'denied' ? (
+              <VoicePermissionBlock variant="settings" />
+            ) : undefined
           }
         />
 

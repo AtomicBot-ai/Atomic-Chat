@@ -5,6 +5,7 @@
   "hardware": "Hardware",
   "mcp-servers": "Servidores MCP",
   "connectors": "Conectores",
+  "plugins": "Plugins",
   "local_api_server": "Servidor API local",
   "remote_access": "Acceso remoto",
   "integrations": "Integraciones",
@@ -455,5 +456,11 @@
   },
   "files": {
     "chunksCount": "{{count}} fragmentos"
+  },
+  "skills": "Habilidades",
+  "pluginsMenu": {
+    "title": "Plugins",
+    "emptySkills": "Aún no hay habilidades",
+    "manageSkills": "Gestionar habilidades"
   }
 }

@@ -24,8 +24,9 @@
     "generating": "Preview will be available after generation finishes."
   },
   "agentMode": {
-    "chat": "Chat",
+    "menuItem": "Agent mode",
     "agent": "Agent",
+    "turnOff": "Turn off Agent mode",
     "placeholder": "Describe a task for the agent...",
     "providerUnavailable": "Agent mode needs a local model, or a cloud provider with an API key.",
     "providerKeyMissing": "Add an API key for this provider in Settings to use Agent mode."

@@ -32,4 +32,21 @@ function CollapsibleContent({
   )
 }
 
-export { Collapsible, CollapsibleTrigger, CollapsibleContent }
+/**
+ * Height animation for a collapsible panel, opt-in per call site so panels
+ * that already animate themselves (the reasoning block) keep their own.
+ *
+ * Radix measures the panel and publishes its height as a CSS var, which is
+ * what these keyframes animate to — a plain height transition can't, since
+ * the target is `auto`. `overflow-hidden` keeps the rows clipped while that
+ * height is still moving.
+ */
+const collapsiblePanelAnimation =
+  'overflow-hidden duration-300 data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down'
+
+export {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+  collapsiblePanelAnimation,
+}

@@ -10,6 +10,9 @@
   "temporaryChat": "臨時聊天",
   "temporaryChatDescription": "開始一個不會儲存到聊天歷史記錄的臨時對話。",
   "agentMode": {
+    "menuItem": "智慧代理模式",
+    "agent": "智慧代理",
+    "turnOff": "關閉智慧代理模式",
     "providerUnavailable": "智慧代理模式需要本機模型，或已設定 API 金鑰的雲端供應商。",
     "providerKeyMissing": "請在設定中為此供應商加入 API 金鑰後使用智慧代理模式。"
   },

@@ -1,27 +1,26 @@
 {
   "title": "Connectors",
-  "connectedSection": "Connected MCP Servers",
-  "connectedSectionDesc": "MCP servers this app can call tools on.",
-  "emptyState": {
-    "title": "No MCPs connected yet",
-    "desc": "Choose a popular MCP below to get started."
-  },
-  "popularSection": "Popular MCPs",
-  "popularSectionDesc": "Hand-picked MCP servers with a simple setup.",
-  "manualSection": "Manual MCP server setup",
-  "manualSectionDesc": "Add a local command or remote MCP server.",
-  "addCustom": "Add custom MCP",
+  "addServer": "Add Server",
+  "importConfig": "Import Config",
+  "connectSection": "MCP Connectors",
+  "connectSectionDesc": "Connect new MCP servers and manage the ones you already have.",
   "findMore": "Find more MCP servers at",
   "advancedSection": "Advanced",
   "setUp": "Set Up",
-  "added": "Added",
   "connected": "Connected",
-  "enable": "Enable",
+  "statusError": "Error",
+  "statusInactive": "Inactive",
   "by": "By {{name}}",
   "featuredBadge": "Featured",
-  "tabs": {
-    "connectors": "Connectors",
-    "logs": "Logs"
+  "serverActions": "Server actions",
+  "editJson": "Edit JSON",
+  "logs": {
+    "show": "Show logs",
+    "hide": "Hide logs"
+  },
+  "oauth": {
+    "signIn": "Sign in",
+    "comingSoon": "Browser sign-in is coming soon"
   },
   "secretDialog": {
     "title": "Connect {{name}}",
@@ -37,10 +36,11 @@
   },
   "descriptions": {
     "exa": "Web search and page crawling built for AI. Works out of the box, no key needed.",
-    "fetch": "Fetch a web page and convert it to markdown for the model.",
-    "filesystem": "Read and write files in your Documents sandbox folder.",
-    "sequentialThinking": "Structured step-by-step reasoning for complex problems.",
-    "browsermcp": "Automate your own browser: navigate, click, and fill forms.",
+    "github": "Work with repositories, issues, pull requests, and code.",
+    "linear": "Find, create, and update issues, projects, and comments.",
+    "notion": "Search, read, and update pages and databases in your workspace.",
+    "sentry": "Investigate errors, traces, and application performance.",
+    "atlassian": "Work with Jira issues, Confluence pages, and team knowledge.",
     "serper": "Google search results via the Serper API."
   }
 }

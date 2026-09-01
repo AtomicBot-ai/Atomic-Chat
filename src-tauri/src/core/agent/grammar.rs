@@ -9,14 +9,18 @@
 //! Root is **array-only** (`root ::= tool-call-array`): every completion starts
 //! with `[` so the model cannot fall into the single-object form via
 //! first-token bias even when it only needs one call. A solo step is the model
-//! emitting `[{...}]`. Up to 16 calls per completion (the runtime also clamps
-//! via `DEFAULT_MAX_PARALLEL_TOOL_CALLS`).
+//! emitting `[{...}]`. The array holds up to [`MAX_PARALLEL_TOOL_CALLS`] calls,
+//! of which at most one is a terminal (`reply` / `finish`) and only in the
+//! final position — the two batch rules `validate_batch` can decide from the
+//! shape alone are enforced during sampling rather than after it.
 
 use std::fmt::Write;
 
 use super::{
     model_profile::AgentModelProfile,
     prompt::{ToolTier, ITERATION_ONE_TOOLS},
+    resource_class::{resource_class_for, ResourceClass},
+    runner::MAX_PARALLEL_TOOL_CALLS,
     skills::SkillRegistry,
 };
 
@@ -259,8 +263,7 @@ const STATIC_TOOL_GRAMMARS: &[ToolGrammar] = &[
     },
 ];
 
-const JSON_RULES: &str = r##"tool-call-array ::= "[" ws tool-call ( ws "," ws tool-call ){0,15} ws "]"
-call-prefix ::= "{" ws "\"tool\"" ws ":" ws
+const JSON_RULES: &str = r##"call-prefix ::= "{" ws "\"tool\"" ws ":" ws
 args-prefix ::= ws "," ws "\"args\"" ws ":" ws
 call-suffix ::= ws "}"
 
@@ -387,16 +390,26 @@ pub fn tool_call_grammar_dynamic(
         .iter()
         .filter(|grammar| !disabled.contains(grammar.name))
         .collect::<Vec<_>>();
-    let mut call_rules = enabled_static
+    // Terminals get their own alternation so the array rule can pin them to the
+    // final position. Skills and MCP tools are always steps: neither ends a turn.
+    let (terminal_static, step_static): (Vec<&ToolGrammar>, Vec<&ToolGrammar>) = enabled_static
+        .iter()
+        .copied()
+        .partition(|grammar| resource_class_for(grammar.name) == ResourceClass::Terminal);
+    let mut step_rules = step_static
+        .iter()
+        .map(|grammar| format!("{}-call", grammar.rule))
+        .collect::<Vec<_>>();
+    let terminal_rules = terminal_static
         .iter()
         .map(|grammar| format!("{}-call", grammar.rule))
         .collect::<Vec<_>>();
     if !skill_names.is_empty() {
-        call_rules.insert(1, "skill-view-call".into());
-        call_rules.insert(2, "skill-run-script-call".into());
+        step_rules.insert(1, "skill-view-call".into());
+        step_rules.insert(2, "skill-run-script-call".into());
     }
     if !mcp_names.is_empty() {
-        call_rules.push("mcp-call".into());
+        step_rules.push("mcp-call".into());
     }
 
     // At most one prelude: emitting two would duplicate `prelude-trail-ws` and
@@ -410,10 +423,37 @@ pub fn tool_call_grammar_dynamic(
         Some((stem, _, _)) => format!("{stem}-prelude tool-call-array"),
         None => "tool-call-array".to_string(),
     };
-    let mut grammar = format!(
-        "root ::= {root}\ntool-call ::= {}\n",
-        call_rules.join(" | ")
-    );
+    // The two batch rules that are decidable from the shape alone are enforced
+    // here rather than left to `validate_batch`: at most `MAX_PARALLEL_TOOL_CALLS`
+    // calls, and at most one terminal, only as the last element. Small local
+    // models otherwise emit `[..., reply, reply]` often enough to kill turns —
+    // the repair completion tends to repeat the same mistake.
+    let tail = MAX_PARALLEL_TOOL_CALLS - 1;
+    let mut grammar = format!("root ::= {root}\n");
+    if step_rules.is_empty() || terminal_rules.is_empty() {
+        // Unreachable while `reply` and `finish` stay undisablable — the loop
+        // has no way to end without them — but an empty alternation would be
+        // unparseable GBNF, so degrade to the unpositioned form.
+        let call_rules = [step_rules.as_slice(), terminal_rules.as_slice()].concat();
+        writeln!(
+            grammar,
+            "tool-call-array ::= \"[\" ws tool-call ( ws \",\" ws tool-call ){{0,{tail}}} ws \"]\""
+        )
+        .expect("writing array grammar to String cannot fail");
+        writeln!(grammar, "tool-call ::= {}", call_rules.join(" | "))
+            .expect("writing tool grammar to String cannot fail");
+    } else {
+        writeln!(
+            grammar,
+            "tool-call-array ::= \"[\" ws ( step-call ws \",\" ws ){{0,{tail}}} ( step-call | \
+             terminal-call ) ws \"]\""
+        )
+        .expect("writing array grammar to String cannot fail");
+        writeln!(grammar, "step-call ::= {}", step_rules.join(" | "))
+            .expect("writing step grammar to String cannot fail");
+        writeln!(grammar, "terminal-call ::= {}", terminal_rules.join(" | "))
+            .expect("writing terminal grammar to String cannot fail");
+    }
     for tool in &enabled_static {
         writeln!(
             grammar,
@@ -756,6 +796,15 @@ mod tests {
         }
     }
 
+    /// The body of a named GBNF rule, for assertions that care about one rule
+    /// rather than the whole grammar text.
+    fn rule<'a>(grammar: &'a str, name: &str) -> &'a str {
+        grammar
+            .lines()
+            .find_map(|line| line.strip_prefix(&format!("{name} ::= ")))
+            .unwrap_or_else(|| panic!("grammar defines no `{name}` rule"))
+    }
+
     #[test]
     fn root_is_array_only() {
         // The very first rule must bind `root` to the array form, never the
@@ -982,10 +1031,46 @@ mod tests {
     #[test]
     fn omits_skill_calls_when_no_skill_is_available() {
         let grammar = grammar_with_skills(&[]);
-        let tool_call_rule = grammar.lines().nth(1).unwrap();
-        assert!(!tool_call_rule.contains("skill-view-call"));
-        assert!(!tool_call_rule.contains("skill-run-script-call"));
+        let step_call_rule = rule(&grammar, "step-call");
+        assert!(!step_call_rule.contains("skill-view-call"));
+        assert!(!step_call_rule.contains("skill-run-script-call"));
         assert!(!grammar.contains("skill-name ::="));
+    }
+
+    #[test]
+    fn a_terminal_can_only_be_the_last_call_in_the_array() {
+        // The batch rules `validate_batch` decides from the shape alone are
+        // enforced during sampling: a grammar-constrained model cannot emit the
+        // `[..., reply, reply]` that used to fail the turn through a repair.
+        let grammar = grammar_with_skills(&["pdf"]);
+        assert_eq!(rule(&grammar, "terminal-call"), "reply-call | finish-call");
+        let step_call_rule = rule(&grammar, "step-call");
+        assert!(!step_call_rule.contains("reply-call"));
+        assert!(!step_call_rule.contains("finish-call"));
+        assert_eq!(
+            rule(&grammar, "tool-call-array"),
+            format!(
+                "\"[\" ws ( step-call ws \",\" ws ){{0,{}}} ( step-call | terminal-call ) ws \"]\"",
+                MAX_PARALLEL_TOOL_CALLS - 1
+            )
+        );
+        // The unpositioned form is gone: nothing may reach a call except
+        // through `step-call` or the single trailing `terminal-call`.
+        assert!(!grammar.contains("tool-call ::="));
+    }
+
+    #[test]
+    fn the_array_never_admits_more_calls_than_the_runtime_executes() {
+        // A grammar that allows a longer batch than `validate_batch` accepts
+        // turns a legal sample into a repair round-trip, or a dead turn.
+        let grammar = grammar_with_skills(&[]);
+        let array = rule(&grammar, "tool-call-array");
+        let repeats = array
+            .split_once("){0,")
+            .and_then(|(_, tail)| tail.split_once('}'))
+            .map(|(count, _)| count.parse::<usize>().expect("repetition bound"))
+            .expect("bounded repetition");
+        assert_eq!(repeats + 1, MAX_PARALLEL_TOOL_CALLS);
     }
 
     #[test]

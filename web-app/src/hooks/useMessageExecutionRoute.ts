@@ -15,10 +15,12 @@ import { shouldSuppressToolsForUpstreamDflash } from '@/lib/custom-chat-transpor
  */
 export function useMessageExecutionRoute(): ResolvedMessageExecutionRoute {
   const legacyChatEngine = useGeneralSetting((s) => s.legacyChatEngine)
+  const agentModeSelected = useGeneralSetting((s) => s.agentModeEnabled)
   const provider = useAgentProvider()
 
   return resolveMessageExecutionRoute({
     legacyChatEngine,
+    agentModeSelected,
     providerBlockReason: agentProviderBlockReason(provider),
     hasAudioAttachment: false,
     dflashEnabled: shouldSuppressToolsForUpstreamDflash(

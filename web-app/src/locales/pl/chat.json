@@ -10,6 +10,9 @@
   "temporaryChat": "Tymczasowy Czat",
   "temporaryChatDescription": "Rozpocznij tymczasową rozmowę, która nie zostanie zapisana w historii czatów.",
   "agentMode": {
+    "menuItem": "Tryb agenta",
+    "agent": "Agent",
+    "turnOff": "Wyłącz tryb agenta",
     "providerUnavailable": "Tryb agenta wymaga modelu lokalnego lub dostawcy w chmurze z kluczem API.",
     "providerKeyMissing": "Dodaj klucz API tego dostawcy w Ustawieniach, aby korzystać z trybu agenta."
   },

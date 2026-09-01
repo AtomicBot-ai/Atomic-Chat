@@ -8,9 +8,6 @@ import { useHeaderOverlay } from '@/stores/header-overlay-store'
 
 const media = vi.hoisted(() => ({ desktop: true }))
 const panelLayouts = vi.hoisted(() => ({ values: [] as number[][] }))
-const workspace = vi.hoisted(() => ({
-  entries: [{ name: 'output.txt', path: 'output.txt', kind: 'file' }],
-}))
 const agentWorkspace = {
   primaryRoot: {
     id: 'primary',
@@ -27,7 +24,7 @@ vi.mock('@/hooks/useMediaQuery', () => ({
 }))
 
 vi.mock('@/services/agent/tauri', () => ({
-  listAgentWorkspace: vi.fn(async () => workspace.entries),
+  listAgentWorkspace: vi.fn(async () => []),
 }))
 
 vi.mock('react-resizable-panels', () => ({
@@ -74,9 +71,6 @@ describe('AgentWorkspaceLayout', () => {
   beforeEach(() => {
     media.desktop = true
     panelLayouts.values = []
-    workspace.entries = [
-      { name: 'output.txt', path: 'output.txt', kind: 'file' },
-    ]
     useArtifactStore.getState().close()
     useWorkspacePreviewStore.getState().reset()
     useHeaderOverlay.getState().setRightOverlay(false)
@@ -94,9 +88,16 @@ describe('AgentWorkspaceLayout', () => {
       </AgentWorkspaceLayout>
     )
 
-    // Sidebar open: nothing floats over the header.
+    // Sidebar closed: the floating button lands on the header's corner.
+    await waitFor(() => {
+      expect(useHeaderOverlay.getState().rightOverlay).toBe(true)
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open files sidebar' }))
     expect(await screen.findByText('Files')).toBeInTheDocument()
-    expect(useHeaderOverlay.getState().rightOverlay).toBe(false)
+    await waitFor(() => {
+      expect(useHeaderOverlay.getState().rightOverlay).toBe(false)
+    })
 
     fireEvent.click(screen.getByRole('button', { name: 'Close files sidebar' }))
     await waitFor(() => {
@@ -127,6 +128,7 @@ describe('AgentWorkspaceLayout', () => {
         <div>Agent chat</div>
       </AgentWorkspaceLayout>
     )
+    fireEvent.click(screen.getByRole('button', { name: 'Open files sidebar' }))
     expect(await screen.findByText('Files')).toBeInTheDocument()
     expect(screen.getByTestId('panel-agent-preview')).toBeInTheDocument()
     expect(screen.queryByText('Artifact panel')).not.toBeInTheDocument()
@@ -197,7 +199,7 @@ describe('AgentWorkspaceLayout', () => {
     expect(container.querySelector('iframe')).toBeNull()
   })
 
-  it('closes and reopens the files sidebar', async () => {
+  it('opens and closes the files sidebar on demand', async () => {
     render(
       <AgentWorkspaceLayout
         threadId="thread"
@@ -209,19 +211,18 @@ describe('AgentWorkspaceLayout', () => {
       </AgentWorkspaceLayout>
     )
 
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'Close files sidebar' })
-    )
-    await waitFor(() => {
-      expect(screen.queryByText('Files')).not.toBeInTheDocument()
-    })
+    expect(screen.queryByText('Files')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Open files sidebar' }))
     expect(await screen.findByText('Files')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close files sidebar' }))
+    await waitFor(() => {
+      expect(screen.queryByText('Files')).not.toBeInTheDocument()
+    })
   })
 
-  it('opens the files sidebar when an empty workspace gains an entry', async () => {
-    workspace.entries = []
+  it('keeps the files sidebar closed when the workspace gains an entry', async () => {
     const { rerender } = render(
       <AgentWorkspaceLayout
         threadId="thread"
@@ -240,9 +241,6 @@ describe('AgentWorkspaceLayout', () => {
       ).toBeInTheDocument()
     })
 
-    workspace.entries = [
-      { name: 'result.txt', path: 'result.txt', kind: 'file' },
-    ]
     rerender(
       <AgentWorkspaceLayout
         threadId="thread"
@@ -254,11 +252,13 @@ describe('AgentWorkspaceLayout', () => {
       </AgentWorkspaceLayout>
     )
 
-    expect(await screen.findByText('Files')).toBeInTheDocument()
+    expect(
+      await screen.findByRole('button', { name: 'Open files sidebar' })
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Files')).not.toBeInTheDocument()
   })
 
-  it('starts an empty Agent workspace at full chat width', async () => {
-    workspace.entries = []
+  it('starts an Agent workspace at full chat width', async () => {
     render(
       <AgentWorkspaceLayout
         threadId="home"
@@ -283,8 +283,7 @@ describe('AgentWorkspaceLayout', () => {
     )
   })
 
-  it('opens the files sidebar when an empty external folder is connected', async () => {
-    workspace.entries = []
+  it('keeps the files sidebar closed when an external folder is connected', async () => {
     render(
       <AgentWorkspaceLayout
         threadId="home"
@@ -305,7 +304,10 @@ describe('AgentWorkspaceLayout', () => {
       </AgentWorkspaceLayout>
     )
 
-    expect(await screen.findByText('Files')).toBeInTheDocument()
+    expect(
+      await screen.findByRole('button', { name: 'Open files sidebar' })
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Files')).not.toBeInTheDocument()
   })
 
   it('opens preview space without changing the files panel width', async () => {
@@ -319,6 +321,9 @@ describe('AgentWorkspaceLayout', () => {
         <div>Chat</div>
       </AgentWorkspaceLayout>
     )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open files sidebar' }))
+    expect(await screen.findByText('Files')).toBeInTheDocument()
 
     act(() => {
       useWorkspacePreviewStore.getState().openFile({

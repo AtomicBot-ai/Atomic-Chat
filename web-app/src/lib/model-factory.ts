@@ -782,6 +782,7 @@ export class ModelFactory {
       case 'perplexity':
       case 'moonshot':
       case 'minimax':
+      case 'meta':
       case 'openrouter':
       case 'huggingface':
       case 'nvidia':

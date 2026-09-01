@@ -65,7 +65,11 @@ browser automation, window control, and filesystem watchers are deferred.
 - The variable tail contains loaded rare descriptors, the conversation, an
   optional loop notice, and the response marker.
 - Tool output is constrained by an array-only GBNF root. One tool call is a
-  one-element array; a step may contain up to eight calls at runtime.
+  one-element array; a step may contain up to eight calls. The array rule pins
+  both shape-decidable batch rules during sampling: at most eight calls, and at
+  most one terminal, only as the last element (`terminal-call` is reachable
+  nowhere else). `validate_batch` still enforces them for transports without
+  GBNF.
 - When the turn asks for thinking, the root gains one reasoning prelude ahead of
   the array: the profile's native channel where it has one, a generic
   `<think>...</think>` pair otherwise. The same tags arm llama.cpp's
@@ -183,6 +187,13 @@ The loop is:
 Pure reads may run concurrently. Mutating and stateful classes are serialized.
 Approval-gated tools cannot appear in a multi-call batch. A terminal tool is
 valid only as the final call and executes after all preceding calls finish.
+
+An invalid batch is repaired by one model round-trip, except where the batch
+can be salvaged deterministically: an approval-gated call in a batch runs solo
+and the rest are dropped, and a batch naming more than one terminal keeps
+everything through the first one. Both emit `BatchTrimmed` and tell the next
+step what was dropped. A *single* misplaced terminal still repairs — there the
+model contradicted itself rather than repeating itself.
 
 ### Safety controls already present
 

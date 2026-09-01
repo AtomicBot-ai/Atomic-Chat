@@ -40,7 +40,9 @@ vi.mock('@/components/ui/dropdrawer', () => {
   type Props = {
     children?: React.ReactNode
     icon?: React.ReactNode
+    disabled?: boolean
     onSelect?: (event: { preventDefault: () => void }) => void
+    onClick?: (event: React.MouseEvent) => void
   }
   const Passthrough = ({ children }: Props) => <div>{children}</div>
   return {
@@ -53,9 +55,17 @@ vi.mock('@/components/ui/dropdrawer', () => {
     DropDrawerSub: Passthrough,
     DropDrawerSubTrigger: Passthrough,
     DropDrawerSubContent: Passthrough,
-    DropDrawerItem: ({ children, icon, onSelect }: Props) => (
+    DropDrawerItem: ({ children, icon, onSelect, onClick, disabled }: Props) => (
       <div>
-        <button onClick={() => onSelect?.({ preventDefault: () => {} })}>
+        <button
+          disabled={disabled}
+          onClick={(event) => {
+            onClick?.(event)
+            // A menu item runs its select through the same click and skips it
+            // when the handler prevented the default — same as radix.
+            if (!event.defaultPrevented) onSelect?.(event)
+          }}
+        >
           {children}
         </button>
         {icon}
@@ -64,11 +74,14 @@ vi.mock('@/components/ui/dropdrawer', () => {
   }
 })
 
-import DropdownConnectors from '../DropdownConnectors'
+import DropdownPlugins from '../DropdownPlugins'
 import { useAppState } from '@/hooks/useAppState'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
+import type { AgentSkill } from '@/services/agent/skills'
 import type { MCPTool } from '@/types/completion'
+
+type DropdownPluginsProps = React.ComponentProps<typeof DropdownPlugins>
 
 const tool = (server: string, name: string): MCPTool => ({
   server,
@@ -83,14 +96,30 @@ class MockResizeObserver {
   disconnect() {}
 }
 
-const renderDropdown = () =>
+const skill = (name: string, overrides: Partial<AgentSkill> = {}): AgentSkill => ({
+  name,
+  description: `${name} description`,
+  version: '1.0.0',
+  requiresTools: [],
+  requiresScripts: [],
+  dangerous: false,
+  platforms: null,
+  enabled: true,
+  compatible: true,
+  reserved: false,
+  unavailableReasons: [],
+  error: null,
+  ...overrides,
+})
+
+const renderDropdown = (props: Partial<DropdownPluginsProps> = {}) =>
   render(
-    <DropdownConnectors>
+    <DropdownPlugins {...props}>
       {(_isOpen, active) => <button>connectors:{active}</button>}
-    </DropdownConnectors>
+    </DropdownPlugins>
   )
 
-describe('DropdownConnectors', () => {
+describe('DropdownPlugins', () => {
   beforeAll(() => {
     global.ResizeObserver = MockResizeObserver as never
   })
@@ -106,7 +135,7 @@ describe('DropdownConnectors', () => {
     useMCPServers.setState({
       mcpServers: {
         exa: { command: '', args: [], env: {}, active: true },
-        filesystem: { command: 'npx', args: [], env: {}, active: false },
+        serper: { command: 'npx', args: [], env: {}, active: false },
       },
     })
     useAppState.setState({
@@ -116,7 +145,7 @@ describe('DropdownConnectors', () => {
     renderDropdown()
 
     expect(screen.getByRole('switch', { name: 'Exa' })).toBeChecked()
-    expect(screen.getByRole('switch', { name: 'Filesystem' })).not.toBeChecked()
+    expect(screen.getByRole('switch', { name: 'Serper' })).not.toBeChecked()
     // The connector is the only switch there is — its tools are counted, not
     // listed, and none of them can be toggled on its own.
     expect(screen.getAllByRole('switch')).toHaveLength(2)
@@ -142,21 +171,21 @@ describe('DropdownConnectors', () => {
 
   it('connects a server and unmutes its tools when switched on', async () => {
     const config = { command: 'npx', args: ['x'], env: {}, active: false }
-    useMCPServers.setState({ mcpServers: { filesystem: config } })
+    useMCPServers.setState({ mcpServers: { serper: config } })
     useToolAvailable.setState({
-      disabledTools: { 'thread-1': ['filesystem::read_file', 'exa::search'] },
+      disabledTools: { 'thread-1': ['serper::google_search', 'exa::search'] },
     })
 
     renderDropdown()
-    await userEvent.click(screen.getByRole('switch', { name: 'Filesystem' }))
+    await userEvent.click(screen.getByRole('switch', { name: 'Serper' }))
 
     await waitFor(() =>
-      expect(activateMCPServer).toHaveBeenCalledWith('filesystem', {
+      expect(activateMCPServer).toHaveBeenCalledWith('serper', {
         ...config,
         active: true,
       })
     )
-    expect(useMCPServers.getState().mcpServers.filesystem.active).toBe(true)
+    expect(useMCPServers.getState().mcpServers.serper.active).toBe(true)
     // Only this server's tools are unmuted; the others stay as they were.
     expect(useToolAvailable.getState().disabledTools['thread-1']).toEqual([
       'exa::search',
@@ -181,14 +210,14 @@ describe('DropdownConnectors', () => {
   it('leaves the stored config off when the server fails to start', async () => {
     activateMCPServer.mockRejectedValueOnce(new Error('spawn failed') as never)
     useMCPServers.setState({
-      mcpServers: { filesystem: { command: 'npx', args: [], env: {}, active: false } },
+      mcpServers: { serper: { command: 'npx', args: [], env: {}, active: false } },
     })
 
     renderDropdown()
-    await userEvent.click(screen.getByRole('switch', { name: 'Filesystem' }))
+    await userEvent.click(screen.getByRole('switch', { name: 'Serper' }))
 
     await waitFor(() =>
-      expect(useMCPServers.getState().mcpServers.filesystem.active).toBe(false)
+      expect(useMCPServers.getState().mcpServers.serper.active).toBe(false)
     )
   })
 
@@ -198,13 +227,13 @@ describe('DropdownConnectors', () => {
     useMCPServers.setState({
       mcpServers: {
         exa: { command: '', args: [], env: {}, active: true },
-        filesystem: { command: 'npx', args: [], env: {}, active: false },
+        serper: { command: 'npx', args: [], env: {}, active: false },
       },
     })
     useAppState.setState({ tools: [tool('exa', 'web_search_exa')] })
     useToolAvailable.setState({
       disabledTools: {
-        'thread-1': ['exa::web_search_exa', 'filesystem::read_file'],
+        'thread-1': ['exa::web_search_exa', 'serper::google_search'],
       },
     })
 
@@ -212,15 +241,70 @@ describe('DropdownConnectors', () => {
 
     // The disconnected server keeps its entry — it is switched off as a whole.
     expect(useToolAvailable.getState().disabledTools['thread-1']).toEqual([
-      'filesystem::read_file',
+      'serper::google_search',
     ])
   })
 
-  it('opens the connectors page from the menu footer', async () => {
+  it('opens the connectors page from the section footer', async () => {
     renderDropdown()
 
     await userEvent.click(screen.getByText('common:connectorsMenu.manage'))
 
     expect(navigate).toHaveBeenCalledWith({ to: '/connectors/' })
+  })
+
+  it('leaves out the skills section where skills do not exist', () => {
+    renderDropdown()
+
+    expect(screen.queryByText('common:skills')).toBeNull()
+  })
+
+  it('switches a skill with the same flag the skills page flips', async () => {
+    const onToggleSkill = vi.fn()
+    renderDropdown({
+      skills: [skill('pdf'), skill('xlsx', { enabled: false })],
+      onToggleSkill,
+    })
+
+    // Collapsed by default, so the rows only exist once the section opens.
+    expect(screen.queryByRole('switch', { name: 'pdf' })).toBeNull()
+    await userEvent.click(screen.getByText('common:skills'))
+
+    expect(screen.getByRole('switch', { name: 'pdf' })).toBeChecked()
+    expect(screen.getByRole('switch', { name: 'xlsx' })).not.toBeChecked()
+
+    await userEvent.click(screen.getByRole('switch', { name: 'pdf' }))
+    expect(onToggleSkill).toHaveBeenCalledWith('pdf', false)
+  })
+
+  it('keeps a broken skill read-only', async () => {
+    renderDropdown({
+      skills: [skill('broken', { error: 'bad frontmatter' })],
+      onToggleSkill: vi.fn(),
+    })
+    await userEvent.click(screen.getByText('common:skills'))
+
+    expect(screen.getByRole('switch', { name: 'broken' })).toBeDisabled()
+  })
+
+  it('opens the skills page from the section footer', async () => {
+    renderDropdown({ skills: [] })
+    await userEvent.click(screen.getByText('common:skills'))
+    await userEvent.click(screen.getByText('common:pluginsMenu.manageSkills'))
+
+    expect(navigate).toHaveBeenCalledWith({ to: '/skills/' })
+  })
+
+  it('collapses the connectors section on demand', async () => {
+    useMCPServers.setState({
+      mcpServers: { exa: { command: '', args: [], env: {}, active: true } },
+    })
+
+    renderDropdown()
+    expect(screen.getByRole('switch', { name: 'Exa' })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByText('common:connectors'))
+
+    expect(screen.queryByRole('switch', { name: 'Exa' })).toBeNull()
   })
 })

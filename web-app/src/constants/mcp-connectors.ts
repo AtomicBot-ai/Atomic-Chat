@@ -43,13 +43,27 @@ export type MCPConnector = {
   secret?: ConnectorSecret
   /** URL substrings identifying this connector when the key differs. */
   matchUrls?: string[]
+  /**
+   * Authorizes via a browser OAuth flow the app does not run yet. The card
+   * shows a disabled "Sign in" until that flow exists; the config template is
+   * real so a hand-added server (e.g. with a PAT header) is still recognized.
+   */
+  auth?: 'oauth'
 }
 
-/** Matches useJanBrowserExtension: driven by the chat Browse button, never listed. */
-export const HIDDEN_SERVER_KEYS = ['Jan Browser MCP']
-
-// Pinned to match FILESYSTEM_MCP_PINNED_VERSION in src-tauri constants.rs.
-const FILESYSTEM_MCP_SPEC = '@modelcontextprotocol/server-filesystem@2026.1.14'
+/**
+ * Servers the UI never lists: 'Jan Browser MCP' is driven by the chat Browse
+ * button (matches useJanBrowserExtension), the rest are system defaults seeded
+ * by the Rust template (DEFAULT_MCP_CONFIG_TEMPLATE) and not user-facing
+ * connectors. Keys are exact matches against mcp_config.json.
+ */
+export const HIDDEN_SERVER_KEYS = [
+  'Jan Browser MCP',
+  'browsermcp',
+  'sequential-thinking',
+  'filesystem',
+  'fetch',
+]
 
 export const MCP_CONNECTORS: MCPConnector[] = [
   {
@@ -57,7 +71,7 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'Exa',
     author: 'Exa',
     descriptionKey: 'mcp-connectors:descriptions.exa',
-    icon: { bg: '#1741f6' },
+    icon: { bg: '#1741f6', src: '/images/connectors/exa.svg' },
     featured: true,
     docsUrl: 'https://docs.exa.ai',
     matchUrls: ['exa.ai'],
@@ -70,69 +84,88 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     },
   },
   {
-    serverKey: 'fetch',
-    name: 'Fetch',
-    author: 'Anthropic',
-    descriptionKey: 'mcp-connectors:descriptions.fetch',
-    icon: { bg: '#0f766e' },
-    docsUrl:
-      'https://github.com/modelcontextprotocol/servers/tree/main/src/fetch',
+    serverKey: 'github',
+    name: 'GitHub',
+    author: 'GitHub',
+    descriptionKey: 'mcp-connectors:descriptions.github',
+    icon: { bg: '#181717', src: '/images/connectors/github.svg' },
+    docsUrl: 'https://github.com/github/github-mcp-server',
+    matchUrls: ['api.githubcopilot.com'],
+    auth: 'oauth',
     config: {
-      command: 'uvx',
-      args: ['mcp-server-fetch'],
+      type: 'http',
+      url: 'https://api.githubcopilot.com/mcp/',
+      command: '',
+      args: [],
       env: {},
     },
   },
   {
-    serverKey: 'filesystem',
-    name: 'Filesystem',
-    author: 'Anthropic',
-    descriptionKey: 'mcp-connectors:descriptions.filesystem',
-    icon: { bg: '#b45309' },
-    docsUrl:
-      'https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem',
+    serverKey: 'linear',
+    name: 'Linear',
+    author: 'Linear',
+    descriptionKey: 'mcp-connectors:descriptions.linear',
+    icon: { bg: '#5E6AD2', src: '/images/connectors/linear.svg' },
+    docsUrl: 'https://linear.app/docs/mcp',
+    matchUrls: ['mcp.linear.app'],
+    auth: 'oauth',
     config: {
-      command: 'npx',
-      args: ['-y', FILESYSTEM_MCP_SPEC],
-      env: {},
-    },
-    // The sandbox dir mirrors default_filesystem_root() on the Rust side
-    // (~/Documents/Atomic_chat); resolved at install time, not module load.
-    resolveConfig: async () => {
-      const { documentDir, join } = await import('@tauri-apps/api/path')
-      const root = await join(await documentDir(), 'Atomic_chat')
-      return {
-        command: 'npx',
-        args: ['-y', FILESYSTEM_MCP_SPEC, root],
-        env: {},
-        cwd: root,
-      }
-    },
-  },
-  {
-    serverKey: 'sequential-thinking',
-    name: 'Sequential Thinking',
-    author: 'Anthropic',
-    descriptionKey: 'mcp-connectors:descriptions.sequentialThinking',
-    icon: { bg: '#6d28d9' },
-    docsUrl:
-      'https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking',
-    config: {
-      command: 'npx',
-      args: ['-y', '@modelcontextprotocol/server-sequential-thinking'],
+      type: 'sse',
+      url: 'https://mcp.linear.app/sse',
+      command: '',
+      args: [],
       env: {},
     },
   },
   {
-    serverKey: 'browsermcp',
-    name: 'Browser MCP',
-    author: 'Browser MCP',
-    descriptionKey: 'mcp-connectors:descriptions.browsermcp',
-    icon: { bg: '#dc2626' },
-    docsUrl: 'https://browsermcp.io',
+    serverKey: 'notion',
+    name: 'Notion',
+    author: 'Notion',
+    descriptionKey: 'mcp-connectors:descriptions.notion',
+    icon: { bg: '#191919', src: '/images/connectors/notion.svg' },
+    docsUrl: 'https://developers.notion.com/docs/mcp',
+    matchUrls: ['mcp.notion.com'],
+    auth: 'oauth',
     config: {
-      command: 'npx',
-      args: ['@browsermcp/mcp'],
+      type: 'http',
+      url: 'https://mcp.notion.com/mcp',
+      command: '',
+      args: [],
+      env: {},
+    },
+  },
+  {
+    serverKey: 'sentry',
+    name: 'Sentry',
+    author: 'Sentry',
+    descriptionKey: 'mcp-connectors:descriptions.sentry',
+    icon: { bg: '#362D59', src: '/images/connectors/sentry.svg' },
+    docsUrl: 'https://docs.sentry.io/product/sentry-mcp/',
+    matchUrls: ['mcp.sentry.dev'],
+    auth: 'oauth',
+    config: {
+      type: 'http',
+      url: 'https://mcp.sentry.dev/mcp',
+      command: '',
+      args: [],
+      env: {},
+    },
+  },
+  {
+    serverKey: 'atlassian',
+    name: 'Atlassian',
+    author: 'Atlassian',
+    descriptionKey: 'mcp-connectors:descriptions.atlassian',
+    icon: { bg: '#0052CC', src: '/images/connectors/atlassian.svg' },
+    docsUrl:
+      'https://support.atlassian.com/rovo/docs/getting-started-with-the-atlassian-remote-mcp-server/',
+    matchUrls: ['mcp.atlassian.com'],
+    auth: 'oauth',
+    config: {
+      type: 'sse',
+      url: 'https://mcp.atlassian.com/v1/sse',
+      command: '',
+      args: [],
       env: {},
     },
   },
@@ -141,7 +174,8 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'Serper',
     author: 'Serper',
     descriptionKey: 'mcp-connectors:descriptions.serper',
-    icon: { bg: '#171717' },
+    // The mark ships on its own white tile, so the bg matches it.
+    icon: { bg: '#ffffff', src: '/images/connectors/serper.png' },
     docsUrl: 'https://serper.dev',
     config: {
       command: 'npx',

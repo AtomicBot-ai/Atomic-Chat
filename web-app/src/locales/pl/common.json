@@ -5,6 +5,7 @@
   "hardware": "Sprzęt",
   "mcp-servers": "Serwery MCP",
   "connectors": "Konektory",
+  "plugins": "Wtyczki",
   "local_api_server": "Lokalny Serwer API",
   "https_proxy": "Pośrednik HTTPS",
   "extensions": "Rozszerzenia",
@@ -384,5 +385,11 @@
   "conversationNotAvailable": "Rozmowa niedostępna",
   "conversationNotAvailableDescription": "Rozmowa, do której próbujesz uzyskać dostęp, nie jest dostępna lub została usunięta.",
   "temporaryChat": "Tymczasowy Czat",
-  "temporaryChatTooltip": "Tymczasowy czat nie pojawi się w Twojej historii"
+  "temporaryChatTooltip": "Tymczasowy czat nie pojawi się w Twojej historii",
+  "skills": "Umiejętności",
+  "pluginsMenu": {
+    "title": "Wtyczki",
+    "emptySkills": "Brak umiejętności",
+    "manageSkills": "Zarządzaj umiejętnościami"
+  }
 }

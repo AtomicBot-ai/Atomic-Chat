@@ -66,7 +66,7 @@
     "desktopNotifications": "桌面通知",
     "desktopNotificationsDesc": "当回复生成完毕且窗口未激活时发送系统通知。",
     "legacyChatEngine": "使用旧版聊天引擎",
-    "legacyChatEngineDesc": "将所有消息通过旧版聊天管线处理，而不是统一的智能体引擎。临时兼容选项。"
+    "legacyChatEngineDesc": "强制所有消息走旧的聊天管线，并完全禁用智能体模式。临时应急选项。"
   },
   "threadNotifications": {
     "notificationTitle": "回复已就绪",

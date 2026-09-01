@@ -4,12 +4,14 @@ export type MessageExecutionRoute = 'agent-ipc' | 'chat-transport'
 
 /**
  * Why a turn landed on its engine. Attached to telemetry (`route_reason`) so
- * fallback traffic stays observable while the legacy chat pipeline is being
- * retired. `project-thread` and `rag-documents` are historical: those gates
- * are gone (the agent serves projects and documents natively), but the
- * variants stay so stored telemetry keeps parsing.
+ * fallback traffic stays observable. `default-agent`, `project-thread` and
+ * `rag-documents` are historical: those gates are gone (agent is opt-in now,
+ * and the agent serves projects and documents natively), but the variants
+ * stay so stored telemetry keeps parsing.
  */
 export type RouteReason =
+  | 'default-chat'
+  | 'user-selected-agent'
   | 'default-agent'
   | 'legacy-setting'
   | 'provider-unsupported'
@@ -22,6 +24,8 @@ export type RouteReason =
 export type RouteInput = {
   /** Settings → General escape hatch: force every turn onto the old pipeline. */
   legacyChatEngine: boolean
+  /** The user turned on Agent mode (global toggle in the composer "+" menu). */
+  agentModeSelected: boolean
   /** From `agentProviderBlockReason(provider)`; `null` = agent-capable. */
   providerBlockReason: AgentProviderBlockReason | null
   /** This turn carries an audio attachment (agent loop cannot take audio). */
@@ -38,14 +42,16 @@ export type ResolvedMessageExecutionRoute = {
 const CHAT: MessageExecutionRoute = 'chat-transport'
 
 /**
- * The single fork between the Rust agent loop and the legacy AI-SDK chat
- * pipeline. Ordered rules, first match wins; everything not explicitly sent
- * to the chat transport runs on the agent engine.
+ * The single fork between the Rust agent loop and the AI-SDK chat pipeline.
+ * Ordered rules, first match wins. Chat is the default; the agent engine
+ * serves a turn only when the user opted in via Agent mode AND none of the
+ * chat-forcing fallbacks (provider block, audio, dflash) apply.
  */
 export function resolveMessageExecutionRoute(
   input: RouteInput
 ): ResolvedMessageExecutionRoute {
   if (input.legacyChatEngine) return { route: CHAT, reason: 'legacy-setting' }
+  if (!input.agentModeSelected) return { route: CHAT, reason: 'default-chat' }
   if (input.providerBlockReason === 'unsupported-provider') {
     return { route: CHAT, reason: 'provider-unsupported' }
   }
@@ -56,5 +62,5 @@ export function resolveMessageExecutionRoute(
     return { route: CHAT, reason: 'audio-attachment' }
   }
   if (input.dflashEnabled) return { route: CHAT, reason: 'dflash' }
-  return { route: 'agent-ipc', reason: 'default-agent' }
+  return { route: 'agent-ipc', reason: 'user-selected-agent' }
 }

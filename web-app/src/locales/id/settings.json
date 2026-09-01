@@ -66,7 +66,7 @@
     "desktopNotifications": "Notifikasi desktop",
     "desktopNotificationsDesc": "Kirim notifikasi sistem saat balasan selesai dibuat dan jendela tidak aktif.",
     "legacyChatEngine": "Gunakan mesin chat lama",
-    "legacyChatEngineDesc": "Arahkan semua pesan melalui pipeline chat sebelumnya alih-alih mesin agen terpadu. Opsi kompatibilitas sementara."
+    "legacyChatEngineDesc": "Paksa semua pesan melalui pipeline chat sebelumnya dan nonaktifkan mode agen sepenuhnya. Jalan keluar sementara."
   },
   "threadNotifications": {
     "notificationTitle": "Balasan siap",

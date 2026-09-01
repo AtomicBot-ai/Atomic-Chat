@@ -115,6 +115,7 @@ import { Button } from '@/components/ui/button'
 import { LinkifiedText } from '@/components/LinkifiedText'
 import { IconAlertCircle, IconRefresh } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
+import { resolveMcpAutoApprove } from '@/lib/mcp-approval'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
@@ -597,10 +598,17 @@ function ThreadDetail() {
           threadId,
           ragToolNames,
           mcpToolNames,
+          // The composer's approval select governs chat tool calls too: an
+          // explicit "skip" runs them silently, an explicit "manual" prompts
+          // even while the global MCP auto-approve switch is on.
           approve: (toolName, currentThreadId, input) =>
-            useToolApproval
-              .getState()
-              .showApprovalModal(toolName, currentThreadId, input),
+            resolveMcpAutoApprove(currentThreadId)
+              ? Promise.resolve(true)
+              : useToolApproval
+                  .getState()
+                  .showApprovalModal(toolName, currentThreadId, input, {
+                    bypassGlobalAutoApprove: true,
+                  }),
           callRagTool: (args) => serviceHub.rag().callTool(args),
           callMcpTool: (args) => serviceHub.mcp().callTool(args),
           // Resolve project scope from the live route-keyed thread record.
@@ -889,7 +897,7 @@ function ThreadDetail() {
       // Distinguishes a fresh send from a retry of the same prompt, so the
       // funnel does not read regenerations as new conversations.
       source: ChatTurnSource = 'agent',
-      routeReason: RouteReason = 'default-agent'
+      routeReason: RouteReason = 'user-selected-agent'
     ) => {
       const agentProvider = getProviderByName(selectedProvider)
       const blockReason = agentProviderBlockReason(agentProvider)
@@ -1146,8 +1154,7 @@ function ThreadDetail() {
             sampling_overridden: sampling.overridden,
             web_search: Boolean(webSearchServer?.config.active),
             mcp_enabled: true,
-            auto_approve_mcp:
-              useToolApproval.getState().allowAllMCPPermissions,
+            auto_approve_mcp: resolveMcpAutoApprove(threadId),
             disabled_mcp_tools: useToolAvailable
               .getState()
               .getDisabledToolsForThread(threadId),
@@ -1349,6 +1356,15 @@ function ThreadDetail() {
         processedAttachments,
         messageId
       )
+      // A selected skill rides on message metadata (same key as the agent
+      // path) — CustomChatTransport reads it back from the message list, so
+      // send, regenerate, edit and app-restart replay it uniformly.
+      if (agentSkillName) {
+        userMessage.metadata = {
+          ...(userMessage.metadata ?? {}),
+          agent_skill_name: agentSkillName,
+        }
+      }
       addMessage(userMessage)
 
       // Build parts for AI SDK (only images are sent as file parts)
@@ -1418,6 +1434,7 @@ function ThreadDetail() {
         turn_index: chatMessagesRef.current.length,
         prompt_len_bucket: lengthBucket(text.length),
         is_agent_mode: false,
+        agent_skill: agentSkillName ?? null,
         tools_enabled_count: ragToolNames.size + mcpToolNames.size,
         has_rag: ragToolNames.size > 0,
         has_mcp: mcpToolNames.size > 0,

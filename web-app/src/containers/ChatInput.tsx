@@ -8,6 +8,7 @@ import {
 } from '@/lib/utils'
 import { useMessageExecutionRoute } from '@/hooks/useMessageExecutionRoute'
 import { useAgentProvider } from '@/hooks/useAgentProvider'
+import { agentProviderBlockReason } from '@/lib/agent-provider'
 import AgentApprovalInline from '@/containers/AgentApprovalInline'
 import { addExternalAgentFolder } from '@/lib/agent-workspace-actions'
 import { usePrompt } from '@/hooks/usePrompt'
@@ -37,7 +38,6 @@ import { ArrowRight, PlusIcon } from 'lucide-react'
 import {
   IconCheck,
   IconPhoto,
-  IconPlug,
   IconCodeCircle2,
   IconPlayerStopFilled,
   IconX,
@@ -45,6 +45,7 @@ import {
   IconPaperclip,
   IconLoader2,
   IconMusic,
+  IconRobot,
 } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -67,7 +68,8 @@ import { buildOptimisticUserMessage } from '@/lib/optimisticUserMessage'
 import { localStorageKey } from '@/constants/localStorage'
 import { defaultModel } from '@/lib/models'
 import { useAssistant } from '@/hooks/useAssistant'
-import DropdownConnectors from '@/containers/DropdownConnectors'
+import DropdownPlugins from '@/containers/DropdownPlugins'
+import { BriefcaseIcon } from '@/components/animated-icon/briefcase'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
@@ -139,6 +141,7 @@ import {
   filterAgentSkills,
   findAvailableAgentSkill,
   findAgentSkillSlashQuery,
+  isChatCompatibleSkill,
   moveAgentSkillActiveIndex,
   removeAgentSkillSlashQuery,
   type AgentSkillSlashQuery,
@@ -239,20 +242,37 @@ const ChatInput = memo(function ChatInput({
   // Which engine would serve a send right now. Gates agent-only affordances;
   // per-turn factors (audio) are re-resolved at send time.
   //
-  // A provider that has not resolved yet counts as agent mode: routing reports
-  // `chat-transport` there only because there is nothing to judge (the list
-  // loads asynchronously at boot, and no model is picked on a fresh launch),
-  // and a composer that drops its approval mode, skills and placeholder until
-  // a model is chosen reads as a broken input rather than a deliberate one.
-  const agentProviderResolved = Boolean(useAgentProvider())
+  // While the user has Agent mode on, a provider that has not resolved yet
+  // still counts as agent mode: routing reports `chat-transport` there only
+  // because there is nothing to judge (the list loads asynchronously at boot,
+  // and no model is picked on a fresh launch), and a composer that drops its
+  // approval mode, skills and placeholder until a model is chosen reads as a
+  // broken input rather than a deliberate one. With the toggle off, chat is
+  // simply the default — no guard needed.
+  const agentProvider = useAgentProvider()
+  const agentProviderResolved = Boolean(agentProvider)
+  const agentModeEnabled = useGeneralSetting((state) => state.agentModeEnabled)
+  const setAgentModeEnabled = useGeneralSetting(
+    (state) => state.setAgentModeEnabled
+  )
   const agentRouteActive =
-    useMessageExecutionRoute().route === 'agent-ipc' || !agentProviderResolved
+    useMessageExecutionRoute().route === 'agent-ipc' ||
+    (agentModeEnabled && !agentProviderResolved)
+  // Why the current provider can't serve the agent loop (null = it can).
+  // Only used for hints — the toggle stays usable and routing falls back to
+  // chat safely at send time.
+  const agentBlockReason = agentProviderBlockReason(agentProvider)
   // This composer owns the microphone only if it started the session —
   // home and an open thread can both be mounted at once.
   const isVoiceActive =
     voiceOwner === composerThreadKey && VOICE_ACTIVE_PHASES.has(voicePhase)
-  const { skills: agentSkills, loading: agentSkillsLoading } =
-    useAgentSkills(agentRouteActive)
+  // Skills work on both engines now; the web build has no `invoke`, so the
+  // hook stays off there.
+  const {
+    skills: agentSkills,
+    loading: agentSkillsLoading,
+    setEnabled: setAgentSkillEnabled,
+  } = useAgentSkills(IS_TAURI)
   const [selectedAgentSkill, setSelectedAgentSkill] =
     useState<AgentSkill | null>(null)
   const preselectedAgentSkillAppliedRef = useRef<string | null>(null)
@@ -260,9 +280,29 @@ const ChatInput = memo(function ChatInput({
     useState<AgentSkillSlashQuery | null>(null)
   const [agentSkillMenuOpen, setAgentSkillMenuOpen] = useState(false)
   const [agentSkillActiveIndex, setAgentSkillActiveIndex] = useState(0)
+  // The chat pipeline can call MCP/RAG tools but nothing else — skills that
+  // need scripts or the agent's built-in tools are hidden outside agent mode.
+  const mcpToolNames = useAppState((state) => state.mcpToolNames)
+  const ragToolNames = useAppState((state) => state.ragToolNames)
+  const chatAvailableToolNames = useMemo(
+    () => new Set([...mcpToolNames, ...ragToolNames]),
+    [mcpToolNames, ragToolNames]
+  )
+  const agentSkillFilterOptions = useMemo(
+    () => ({
+      chatMode: !agentRouteActive,
+      availableToolNames: chatAvailableToolNames,
+    }),
+    [agentRouteActive, chatAvailableToolNames]
+  )
   const eligibleAgentSkills = useMemo(
-    () => filterAgentSkills(agentSkills, agentSkillSlashQuery?.query ?? ''),
-    [agentSkillSlashQuery?.query, agentSkills]
+    () =>
+      filterAgentSkills(
+        agentSkills,
+        agentSkillSlashQuery?.query ?? '',
+        agentSkillFilterOptions
+      ),
+    [agentSkillSlashQuery?.query, agentSkills, agentSkillFilterOptions]
   )
   const approvalMode = useAgentMode(
     (state) => state.approvalModes[composerThreadKey] ?? 'manual'
@@ -273,12 +313,16 @@ const ChatInput = memo(function ChatInput({
     setAgentSkillTokenWidth(agentSkillTokenRef.current?.offsetWidth ?? 0)
   }, [selectedAgentSkill])
 
+  // On a flip to chat mode, keep an instruction-style selection alive and
+  // drop only skills the chat pipeline can't serve.
   useEffect(() => {
     if (agentRouteActive) return
-    setSelectedAgentSkill(null)
-    setAgentSkillSlashQuery(null)
-    setAgentSkillMenuOpen(false)
-  }, [agentRouteActive])
+    setSelectedAgentSkill((skill) =>
+      skill && !isChatCompatibleSkill(skill, chatAvailableToolNames)
+        ? null
+        : skill
+    )
+  }, [agentRouteActive, chatAvailableToolNames])
 
   useEffect(() => {
     if (!preselectedAgentSkillName) {
@@ -286,7 +330,6 @@ const ChatInput = memo(function ChatInput({
       return
     }
     if (
-      !agentRouteActive ||
       agentSkillsLoading ||
       preselectedAgentSkillAppliedRef.current === preselectedAgentSkillName
     ) {
@@ -294,14 +337,15 @@ const ChatInput = memo(function ChatInput({
     }
     const skill = findAvailableAgentSkill(
       agentSkills,
-      preselectedAgentSkillName
+      preselectedAgentSkillName,
+      agentSkillFilterOptions
     )
     preselectedAgentSkillAppliedRef.current = preselectedAgentSkillName
     if (skill) setSelectedAgentSkill(skill)
   }, [
     agentSkills,
     agentSkillsLoading,
-    agentRouteActive,
+    agentSkillFilterOptions,
     preselectedAgentSkillName,
   ])
 
@@ -644,10 +688,25 @@ const ChatInput = memo(function ChatInput({
   const MCPToolComponent = mcpExtension?.getToolComponent?.()
 
   const updateAgentSkillSlashQuery = (value: string, cursor: number | null) => {
-    if (!agentRouteActive) return
     const nextQuery = findAgentSkillSlashQuery(value, cursor)
     setAgentSkillSlashQuery(nextQuery)
     setAgentSkillMenuOpen(nextQuery !== null)
+  }
+
+  // Switching a skill off from the plugins menu is the same flag the skills
+  // page flips. A skill that is off can't run, so the composer drops it as
+  // the selected one too rather than sending a name the agent will reject.
+  const handleAgentSkillToggle = (name: string, enabled: boolean) => {
+    void (async () => {
+      try {
+        await setAgentSkillEnabled(name, enabled)
+        if (!enabled && selectedAgentSkill?.name === name) {
+          setSelectedAgentSkill(null)
+        }
+      } catch (reason) {
+        toast.error(String(reason))
+      }
+    })()
   }
 
   const handleAgentSkillSelect = (skill: AgentSkill) => {
@@ -2403,7 +2462,9 @@ const ChatInput = memo(function ChatInput({
         <div
           className={cn(
             'relative p-0.5 rounded-3xl',
-            agentRouteActive ? 'overflow-visible' : 'overflow-hidden',
+            // Always visible: the skills slash menu pops above the composer
+            // in both modes and would be clipped by overflow-hidden.
+            'overflow-visible',
             isStreaming && 'opacity-70'
           )}
         >
@@ -2540,16 +2601,14 @@ const ChatInput = memo(function ChatInput({
                   )}
                 </div>
               )}
-              {agentRouteActive && (
-                <AgentSkillSlashMenu
-                  skills={eligibleAgentSkills}
-                  activeIndex={agentSkillActiveIndex}
-                  loading={agentSkillsLoading}
-                  open={agentSkillMenuOpen}
-                  onSelect={handleAgentSkillSelect}
-                  onActiveIndexChange={setAgentSkillActiveIndex}
-                />
-              )}
+              <AgentSkillSlashMenu
+                skills={eligibleAgentSkills}
+                activeIndex={agentSkillActiveIndex}
+                loading={agentSkillsLoading}
+                open={agentSkillMenuOpen}
+                onSelect={handleAgentSkillSelect}
+                onActiveIndexChange={setAgentSkillActiveIndex}
+              />
               <div className="relative min-w-0 w-full px-4 pt-3">
                 {selectedAgentSkill && (
                   <span
@@ -2781,18 +2840,49 @@ const ChatInput = memo(function ChatInput({
                             : 'Add documents or files'}
                         </span>
                       </DropdownMenuItem>
-                      {/* Pin/unpin the connectors button. Unpinning only
-                          hides it: whatever is connected keeps running, and
-                          this stays the way back to the button. */}
+                      {/* Global Agent mode toggle. Like the connectors pin it
+                          lives here and surfaces as a toolbar chip; routing
+                          guards at send time, so it stays togglable even when
+                          the current provider can't serve the agent loop —
+                          the hint below explains why nothing changes. */}
+                      <DropdownMenuItem
+                        onClick={() => setAgentModeEnabled(!agentModeEnabled)}
+                      >
+                        <IconRobot
+                          size={18}
+                          className="text-muted-foreground"
+                        />
+                        <div className="flex flex-col min-w-0">
+                          <span>{t('chat:agentMode.menuItem')}</span>
+                          {agentBlockReason && (
+                            <span className="text-xs text-muted-foreground whitespace-normal">
+                              {t(
+                                agentBlockReason === 'missing-api-key'
+                                  ? 'chat:agentMode.providerKeyMissing'
+                                  : 'chat:agentMode.providerUnavailable'
+                              )}
+                            </span>
+                          )}
+                        </div>
+                        {agentModeEnabled && (
+                          <IconCheck
+                            size={16}
+                            className="ml-auto text-primary"
+                          />
+                        )}
+                      </DropdownMenuItem>
+                      {/* Pin/unpin the plugins button. Unpinning only hides
+                          it: whatever is connected keeps running, and this
+                          stays the way back to the button. */}
                       {(supportsTools || agentRouteActive) && (
                         <DropdownMenuItem
                           onClick={() => setConnectorsPinned(!connectorsPinned)}
                         >
-                          <IconPlug
+                          <BriefcaseIcon
                             size={18}
                             className="text-muted-foreground"
                           />
-                          <span>{t('connectors')}</span>
+                          <span>{t('plugins')}</span>
                           {connectorsPinned && (
                             <IconCheck
                               size={16}
@@ -2824,28 +2914,64 @@ const ChatInput = memo(function ChatInput({
                     </DropdownMenuContent>
                   </DropdownMenu>
 
-                  {agentRouteActive && (
-                    <>
-                      <AgentApprovalModeSelect
-                        mode={approvalMode}
-                        onChange={handleApprovalModeChange}
-                        manualSelectedLabel={t(
-                          'chat:agentApprovals.manualSelected'
-                        )}
-                        manualLabel={t('chat:agentApprovals.manual')}
-                        manualDescription={t(
-                          'chat:agentApprovals.manualDescription'
-                        )}
-                        skipSelectedLabel={t(
-                          'chat:agentApprovals.skipSelected'
-                        )}
-                        skipLabel={t('chat:agentApprovals.skip')}
-                        skipDescription={t(
-                          'chat:agentApprovals.skipDescription'
-                        )}
-                      />
-                    </>
+                  {/* Agent mode chip — the toolbar face of the global toggle,
+                      like the pinned connectors button. The X (or unchecking
+                      in the "+" menu) turns it off everywhere. Muted with a
+                      tooltip while the provider can't serve the agent loop. */}
+                  {agentModeEnabled && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div
+                          className={cn(
+                            'flex items-center gap-1 rounded-full bg-secondary pl-2 pr-1 py-0.5 mb-1 shrink-0',
+                            agentBlockReason && 'opacity-60'
+                          )}
+                          data-testid="agent-mode-chip"
+                        >
+                          <IconRobot
+                            size={16}
+                            className="text-secondary-foreground"
+                          />
+                          <span className="text-xs text-secondary-foreground">
+                            {t('chat:agentMode.agent')}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            className="rounded-full size-5"
+                            aria-label={t('chat:agentMode.turnOff')}
+                            onClick={() => setAgentModeEnabled(false)}
+                          >
+                            <IconX size={12} />
+                          </Button>
+                        </div>
+                      </TooltipTrigger>
+                      {agentBlockReason && (
+                        <TooltipContent>
+                          {t(
+                            agentBlockReason === 'missing-api-key'
+                              ? 'chat:agentMode.providerKeyMissing'
+                              : 'chat:agentMode.providerUnavailable'
+                          )}
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
                   )}
+                  {/* Approval mode rides the toolbar in both engines: it
+                      gates the agent's dangerous tools AND the MCP/RAG calls
+                      of the chat pipeline (see lib/mcp-approval.ts). */}
+                  <AgentApprovalModeSelect
+                    mode={approvalMode}
+                    onChange={handleApprovalModeChange}
+                    manualSelectedLabel={t('chat:agentApprovals.manualSelected')}
+                    manualLabel={t('chat:agentApprovals.manual')}
+                    manualDescription={t(
+                      'chat:agentApprovals.manualDescription'
+                    )}
+                    skipSelectedLabel={t('chat:agentApprovals.skipSelected')}
+                    skipLabel={t('chat:agentApprovals.skip')}
+                    skipDescription={t('chat:agentApprovals.skipDescription')}
+                  />
                   {/* {model?.provider === 'llamacpp' && loadingModel ? (
                   <ModelLoader />
                 ) : (
@@ -2949,8 +3075,11 @@ const ChatInput = memo(function ChatInput({
                               e.stopPropagation()
                             }}
                           >
-                            <DropdownConnectors
+                            <DropdownPlugins
                               initialMessage={initialMessage}
+                              skills={IS_TAURI ? agentSkills : undefined}
+                              skillsLoading={agentSkillsLoading}
+                              onToggleSkill={handleAgentSkillToggle}
                               onOpenChange={(isOpen) => {
                                 setDropdownToolsAvailable(isOpen)
                                 if (isOpen) {
@@ -2965,7 +3094,7 @@ const ChatInput = memo(function ChatInput({
                                       'p-1 flex items-center justify-center rounded-sm transition-all duration-200 ease-in-out gap-1 cursor-pointer'
                                     )}
                                   >
-                                    <IconPlug
+                                    <BriefcaseIcon
                                       size={18}
                                       className={cn(
                                         'text-muted-foreground',
@@ -2975,11 +3104,11 @@ const ChatInput = memo(function ChatInput({
                                   </div>
                                 )
                               }}
-                            </DropdownConnectors>
+                            </DropdownPlugins>
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p>{t('connectors')}</p>
+                          <p>{t('plugins')}</p>
                         </TooltipContent>
                       </Tooltip>
                     ))}

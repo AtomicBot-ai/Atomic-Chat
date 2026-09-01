@@ -1,5 +1,10 @@
 import { memo, useState } from 'react'
-import { IconMicrophone, IconTrash, IconX } from '@tabler/icons-react'
+import {
+  IconCircleCheckFilled,
+  IconDownload,
+  IconTrash,
+  IconX,
+} from '@tabler/icons-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -11,10 +16,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { ModelLogo } from '@/containers/ModelLogo'
+import { VoiceSetupRow } from '@/containers/VoiceSetupRow'
 import { VOICE_MODEL_BYTES, VOICE_MODEL_NAME } from '@/constants/voice'
 import { useVoiceModel } from '@/hooks/useVoiceModel'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { cn } from '@/lib/utils'
 
 type VoiceModelCardProps = {
   /** `dialog` draws its own bordered row; `settings` is bare for a CardItem. */
@@ -99,7 +105,8 @@ const VoiceModelCard = memo(function VoiceModelCard({
     </div>
   ) : installed ? (
     <div className="flex items-center gap-2">
-      <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+      <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+        <IconCircleCheckFilled size={16} />
         {t('common:voiceInput.setup.model.installed')}
       </span>
       {variant === 'settings' && (
@@ -114,7 +121,14 @@ const VoiceModelCard = memo(function VoiceModelCard({
       )}
     </div>
   ) : (
-    <Button variant="outline" size="sm" onClick={() => void download()}>
+    // Primary in the wizard, where downloading is the one thing that step is
+    // asking for; outline in settings, where it is one row among many.
+    <Button
+      variant={variant === 'dialog' ? 'default' : 'outline'}
+      size="sm"
+      onClick={() => void download()}
+    >
+      {variant === 'dialog' && <IconDownload size={16} />}
       {t('hub:download')}
     </Button>
   )
@@ -123,29 +137,32 @@ const VoiceModelCard = memo(function VoiceModelCard({
     variant === 'settings' ? (
       actions
     ) : (
-      <div
-        className={cn(
-          'flex items-center justify-between gap-3 rounded-lg border bg-secondary/50 px-3 py-2.5',
-          className
-        )}
-      >
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <div className="grid size-8 shrink-0 place-items-center rounded-md bg-background">
-            <IconMicrophone size={18} className="text-muted-foreground" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="truncate text-sm font-medium leading-tight">
-              {VOICE_MODEL_NAME}
-            </h2>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
-              {t('common:voiceInput.setup.model.meta', {
-                size: `${gb(VOICE_MODEL_BYTES)} GB`,
+      <VoiceSetupRow
+        className={className}
+        // The publisher's mark, not a generic microphone glyph: it is the same
+        // model the Hub lists, and the logo is what makes it recognizable as
+        // "a model" rather than "a file the app wants to download".
+        media={
+          <ModelLogo
+            name={VOICE_MODEL_NAME}
+            icon="mistral"
+            className="size-10 rounded-lg"
+          />
+        }
+        title={VOICE_MODEL_NAME}
+        description={
+          <>
+            {t('common:voiceInput.setup.model.tagline')}
+            <span className="mx-1.5 text-muted-foreground/50">·</span>
+            <span className="whitespace-nowrap tabular-nums">
+              {t('common:voiceInput.setup.model.sizeGb', {
+                size: gb(VOICE_MODEL_BYTES),
               })}
-            </p>
-          </div>
-        </div>
-        {actions}
-      </div>
+            </span>
+          </>
+        }
+        action={actions}
+      />
     )
 
   return (

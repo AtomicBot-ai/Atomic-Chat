@@ -10,6 +10,9 @@
   "newConversation": "Neue Konversation",
   "clearHistory": "Verlauf löschen",
   "agentMode": {
+    "menuItem": "Agentenmodus",
+    "agent": "Agent",
+    "turnOff": "Agentenmodus deaktivieren",
     "providerUnavailable": "Der Agentenmodus benötigt ein lokales Modell oder einen Cloud-Anbieter mit API-Schlüssel.",
     "providerKeyMissing": "Fügen Sie in den Einstellungen einen API-Schlüssel für diesen Anbieter hinzu."
   },

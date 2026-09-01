@@ -161,23 +161,17 @@ export function CloudPage() {
 
   return (
     <div className="flex h-svh w-full flex-col">
-      <HeaderPage />
-      <div className="h-[calc(100%-60px)] overflow-y-auto px-4 pb-6">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
-          <div
-            className={cn(
-              'flex flex-wrap items-start justify-between gap-3 pb-2',
-              !IS_MACOS && 'pr-30'
-            )}
-          >
-            <div className="min-w-0">
-              <h1 className="font-studio text-2xl font-medium text-foreground">
-                {t('cloud:title')}
-              </h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {t('cloud:subtitle')}
-              </p>
-            </div>
+      <HeaderPage>
+        <div
+          className={cn(
+            'flex items-center justify-between w-full mr-2 pr-3',
+            !IS_MACOS && 'pr-30'
+          )}
+        >
+          <span className="font-medium text-base font-studio">
+            {t('cloud:title')}
+          </span>
+          <div className="relative z-50 flex shrink-0 items-center gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -202,7 +196,10 @@ export function CloudPage() {
               </span>
             </Button>
           </div>
-
+        </div>
+      </HeaderPage>
+      <div className="h-[calc(100%-60px)] overflow-y-auto p-4 pt-0">
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
           <CloudConnectionCard
             providers={providers}
             selected={selected}

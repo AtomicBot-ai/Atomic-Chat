@@ -81,7 +81,7 @@
     "desktopNotifications": "Desktop notifications",
     "desktopNotificationsDesc": "Send a system notification when a reply finishes generating and the window isn't focused.",
     "legacyChatEngine": "Use legacy chat engine",
-    "legacyChatEngineDesc": "Route every message through the previous chat pipeline instead of the unified agent engine. Temporary compatibility option."
+    "legacyChatEngineDesc": "Force the previous chat pipeline for every message and disable Agent mode entirely. Temporary escape hatch."
   },
   "threadNotifications": {
     "notificationTitle": "Reply ready",

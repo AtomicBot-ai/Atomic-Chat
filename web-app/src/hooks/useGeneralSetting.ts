@@ -58,6 +58,13 @@ type GeneralSettingState = {
    */
   connectorsPinned: boolean
   setConnectorsPinned: (value: boolean) => void
+  /**
+   * Global opt-in for the agent engine. Off = every turn runs on the chat
+   * pipeline. Toggled from the composer "+" menu; while on, an "Agent" chip
+   * sits in the composer toolbar until the user removes it.
+   */
+  agentModeEnabled: boolean
+  setAgentModeEnabled: (value: boolean) => void
   setHuggingfaceToken: (token: string) => void
   setSpellCheckChatInput: (value: boolean) => void
   setTokenCounterCompact: (value: boolean) => void
@@ -98,6 +105,8 @@ export const useGeneralSetting = create<GeneralSettingState>()(
         ),
       connectorsPinned: true,
       setConnectorsPinned: (value) => set({ connectorsPinned: value }),
+      agentModeEnabled: false,
+      setAgentModeEnabled: (value) => set({ agentModeEnabled: value }),
       setSpellCheckChatInput: (value) => set({ spellCheckChatInput: value }),
       setTokenCounterCompact: (value) => set({ tokenCounterCompact: value }),
       setDisableReasoning: (value) => set({ disableReasoning: value }),

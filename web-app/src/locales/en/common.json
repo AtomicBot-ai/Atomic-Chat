@@ -3,6 +3,7 @@
   "hardware": "Hardware",
   "mcp-servers": "MCP Servers",
   "connectors": "Connectors",
+  "plugins": "Plugins",
   "local_api_server": "Local API Server",
   "remote_access": "Remote Access",
   "integrations": "Integrations",
@@ -228,7 +229,13 @@
         "openSystemSettings": "Open System Settings",
         "checkAgain": "Check again",
         "restartNote": "On macOS you may need to restart Atomic Chat after changing this.",
-        "unsupported": "This system handles microphone access outside the app."
+        "unsupported": "This system handles microphone access outside the app.",
+        "rowTitle": "Microphone",
+        "rowDescription": "Required to capture your speech for transcription.",
+        "deniedShort": "Denied",
+        "unsupportedShort": "System-managed",
+        "privacyNote": "You can revoke access at any time in your system privacy settings.",
+        "allowShort": "Allow"
       },
       "model": {
         "title": "Install the voice model",
@@ -237,8 +244,11 @@
         "installed": "Installed",
         "progress": "{{percent}}% · {{current}} / {{total}} GB",
         "failed": "The voice model download failed",
-        "diskNote": "Needs about {{gb}} GB of free disk space."
-      }
+        "diskNote": "Needs about {{gb}} GB of free disk space.",
+        "tagline": "Realtime multilingual transcription",
+        "sizeGb": "{{size}} GB"
+      },
+      "doneBlocked": "Allow the microphone and install the voice model to finish."
     }
   },
   "proactive": "Proactive",
@@ -608,5 +618,10 @@
     "manage": "Manage connectors",
     "toolCount": "{{count}} tools",
     "toggleFailed": "Couldn't start {{server}}"
+  },
+  "pluginsMenu": {
+    "title": "Plugins",
+    "emptySkills": "No skills yet",
+    "manageSkills": "Manage skills"
   }
 }

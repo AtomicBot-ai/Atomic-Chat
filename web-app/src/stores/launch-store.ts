@@ -29,6 +29,12 @@ type LaunchState = {
   installed: Record<string, boolean>
   /** True when the agent was only found inside a WSL distribution (Windows). */
   viaWsl: Record<string, boolean>
+  /**
+   * Absolute path to the launcher when it was found *off* PATH — a custom path,
+   * or a prefix install like the one OpenClaw's desktop app creates under
+   * `~/.openclaw/bin`. Absent when the bare binary name resolves on PATH.
+   */
+  binPath: Record<string, string | undefined>
   busy: Record<string, boolean>
   spinning: Record<string, boolean>
   phase: Record<string, RunPhase>
@@ -36,6 +42,7 @@ type LaunchState = {
   openLog: Record<string, boolean>
   setInstalled: SetState<Record<string, boolean>>
   setViaWsl: SetState<Record<string, boolean>>
+  setBinPath: SetState<Record<string, string | undefined>>
   setBusy: SetState<Record<string, boolean>>
   setSpinning: SetState<Record<string, boolean>>
   setPhase: SetState<Record<string, RunPhase>>
@@ -46,6 +53,7 @@ type LaunchState = {
 export const useLaunchStore = create<LaunchState>((set) => ({
   installed: {},
   viaWsl: {},
+  binPath: {},
   busy: {},
   spinning: {},
   phase: {},
@@ -54,6 +62,8 @@ export const useLaunchStore = create<LaunchState>((set) => ({
   setInstalled: (updater) =>
     set((s) => ({ installed: apply(updater, s.installed) })),
   setViaWsl: (updater) => set((s) => ({ viaWsl: apply(updater, s.viaWsl) })),
+  setBinPath: (updater) =>
+    set((s) => ({ binPath: apply(updater, s.binPath) })),
   setBusy: (updater) => set((s) => ({ busy: apply(updater, s.busy) })),
   setSpinning: (updater) =>
     set((s) => ({ spinning: apply(updater, s.spinning) })),

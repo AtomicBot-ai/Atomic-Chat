@@ -25,7 +25,8 @@ vi.mock('@/containers/dialogs/AddEditMCPServer', () => ({
 }))
 
 vi.mock('@/containers/dialogs/EditJsonMCPserver', () => ({
-  default: () => null,
+  default: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="json-editor-dialog" /> : null,
 }))
 
 vi.mock('@/containers/dialogs/DeleteMCPServerConfirm', () => ({
@@ -85,23 +86,31 @@ describe('ConnectorsPage', () => {
     seedServers({})
   })
 
-  it('shows the empty state when nothing is connected', () => {
-    render(<ConnectorsPage />)
-
-    expect(
-      screen.getByText('mcp-connectors:emptyState.title')
-    ).toBeInTheDocument()
-  })
-
-  it('lists connected servers and hides the browser MCP entry', () => {
+  it('merges installed servers into the grid and hides the system defaults', () => {
     seedServers({
-      exa: { command: '', args: [], env: {}, type: 'http', url: 'https://x' },
+      exa: {
+        command: '',
+        args: [],
+        env: {},
+        type: 'http',
+        url: 'https://mcp.exa.ai/mcp',
+      },
+      'my server': { command: 'npx', args: ['-y', 'some-mcp'], env: {} },
       'Jan Browser MCP': { command: 'npx', args: [], env: {} },
+      filesystem: { command: 'npx', args: [], env: {} },
+      'sequential-thinking': { command: 'npx', args: [], env: {} },
+      browsermcp: { command: 'npx', args: [], env: {} },
     })
     render(<ConnectorsPage />)
 
-    expect(screen.getByText('exa')).toBeInTheDocument()
+    // The installed exa is one merged card, not a connected row plus a
+    // catalog card.
+    expect(screen.getAllByText('Exa')).toHaveLength(1)
+    expect(screen.getByText('my server')).toBeInTheDocument()
     expect(screen.queryByText('Jan Browser MCP')).not.toBeInTheDocument()
+    expect(screen.queryByText('filesystem')).not.toBeInTheDocument()
+    expect(screen.queryByText('sequential-thinking')).not.toBeInTheDocument()
+    expect(screen.queryByText('browsermcp')).not.toBeInTheDocument()
   })
 
   it('renders every catalog connector', () => {
@@ -109,14 +118,31 @@ describe('ConnectorsPage', () => {
 
     for (const name of [
       'Exa',
-      'Fetch',
-      'Filesystem',
-      'Sequential Thinking',
-      'Browser MCP',
+      'GitHub',
+      'Linear',
+      'Notion',
+      'Sentry',
+      'Atlassian',
       'Serper',
     ]) {
       expect(screen.getByText(name)).toBeInTheDocument()
     }
+  })
+
+  it('keeps oauth connectors as a disabled sign-in, never installing them', async () => {
+    render(<ConnectorsPage />)
+
+    const githubCard = screen.getByText('GitHub').closest('div.bg-card')!
+    const signIn = within(githubCard as HTMLElement).getByRole('button', {
+      name: 'mcp-connectors:oauth.signIn',
+    })
+    expect(signIn).toBeDisabled()
+    expect(
+      within(githubCard as HTMLElement).queryByRole('button', {
+        name: 'mcp-connectors:setUp',
+      })
+    ).not.toBeInTheDocument()
+    expect(activateMCPServer).not.toHaveBeenCalled()
   })
 
   it('installs a keyless connector in one click', async () => {
@@ -149,19 +175,19 @@ describe('ConnectorsPage', () => {
     activateMCPServer.mockRejectedValue(new Error('spawn failed'))
     render(<ConnectorsPage />)
 
-    const fetchCard = screen.getByText('Fetch').closest('div.bg-card')!
+    const exaCard = screen.getByText('Exa').closest('div.bg-card')!
     await user.click(
-      within(fetchCard as HTMLElement).getByRole('button', {
+      within(exaCard as HTMLElement).getByRole('button', {
         name: 'mcp-connectors:setUp',
       })
     )
 
     await waitFor(() =>
-      expect(useMCPServers.getState().mcpServers.fetch?.active).toBe(false)
+      expect(useMCPServers.getState().mcpServers.exa?.active).toBe(false)
     )
   })
 
-  it('shows connector state instead of Set Up once installed', () => {
+  it('shows a toggle instead of Set Up once installed', () => {
     seedServers({
       exa: {
         command: '',
@@ -174,15 +200,38 @@ describe('ConnectorsPage', () => {
     })
     render(<ConnectorsPage />)
 
-    const exaCard = screen.getAllByText('Exa')[0].closest('div.bg-card')!
+    const exaCard = screen.getByText('Exa').closest('div.bg-card')!
     expect(
       within(exaCard as HTMLElement).queryByRole('button', {
         name: 'mcp-connectors:setUp',
       })
     ).not.toBeInTheDocument()
     expect(
-      within(exaCard as HTMLElement).getByText('mcp-connectors:added')
+      within(exaCard as HTMLElement).getByRole('switch')
     ).toBeInTheDocument()
+  })
+
+  it('toggles an installed server off from its card', async () => {
+    const user = userEvent.setup()
+    seedServers({
+      exa: {
+        command: '',
+        args: [],
+        env: {},
+        type: 'http',
+        url: 'https://mcp.exa.ai/mcp',
+        active: true,
+      },
+    })
+    render(<ConnectorsPage />)
+
+    const exaCard = screen.getByText('Exa').closest('div.bg-card')!
+    await user.click(within(exaCard as HTMLElement).getByRole('switch'))
+
+    await waitFor(() =>
+      expect(deactivateMCPServer).toHaveBeenCalledWith('exa')
+    )
+    expect(useMCPServers.getState().mcpServers.exa.active).toBe(false)
   })
 
   it('asks for a key before installing a secret connector', async () => {
@@ -219,23 +268,43 @@ describe('ConnectorsPage', () => {
     )
   })
 
-  it('opens the custom MCP dialog from the manual section', async () => {
+  it('opens the custom MCP dialog from the header action', async () => {
     const user = userEvent.setup()
     render(<ConnectorsPage />)
 
     await user.click(
-      screen.getByRole('button', { name: /mcp-connectors:addCustom/ })
+      screen.getByRole('button', { name: /mcp-connectors:addServer/ })
     )
 
     expect(screen.getByTestId('add-edit-dialog')).toBeInTheDocument()
   })
 
-  it('switches to the logs tab', async () => {
+  it('opens the bulk JSON editor from the header action', async () => {
     const user = userEvent.setup()
     render(<ConnectorsPage />)
 
-    await user.click(screen.getByText('mcp-connectors:tabs.logs'))
+    expect(screen.queryByTestId('json-editor-dialog')).not.toBeInTheDocument()
+    await user.click(
+      screen.getByRole('button', { name: /mcp-connectors:importConfig/ })
+    )
+
+    expect(screen.getByTestId('json-editor-dialog')).toBeInTheDocument()
+  })
+
+  it('expands the logs section from the bottom button', async () => {
+    const user = userEvent.setup()
+    render(<ConnectorsPage />)
+
+    expect(screen.queryByTestId('log-viewer')).not.toBeInTheDocument()
+    await user.click(
+      screen.getByRole('button', { name: /mcp-connectors:logs.show/ })
+    )
 
     expect(screen.getByTestId('log-viewer')).toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', { name: /mcp-connectors:logs.hide/ })
+    )
+    expect(screen.queryByTestId('log-viewer')).not.toBeInTheDocument()
   })
 })

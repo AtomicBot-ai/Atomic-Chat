@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { IconCodeCircle, IconPlus } from '@tabler/icons-react'
+import { IconChevronRight, IconCodeCircle, IconPlus } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
 import {
   HIDDEN_SERVER_KEYS,
@@ -13,12 +13,10 @@ import {
 import HeaderPage from '@/containers/HeaderPage'
 import { Card, CardItem } from '@/containers/Card'
 import { ConnectorCard } from '@/containers/connectors/ConnectorCard'
-import { ConnectedServerCard } from '@/containers/connectors/ConnectedServerCard'
 import AddEditMCPServer from '@/containers/dialogs/AddEditMCPServer'
 import ConnectorSecretDialog from '@/containers/dialogs/ConnectorSecretDialog'
 import DeleteMCPServerConfirm from '@/containers/dialogs/DeleteMCPServerConfirm'
 import EditJsonMCPserver from '@/containers/dialogs/EditJsonMCPserver'
-import { UnplugIcon } from '@/components/animated-icon/unplug'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -63,9 +61,9 @@ function ConnectorsPage() {
   const { statusByName, refresh } = useMCPServerStatuses()
   const setErrorMessage = useAppState((state) => state.setErrorMessage)
 
-  const [activeTab, setActiveTab] = useState<'connectors' | 'logs'>(
-    'connectors'
-  )
+  // Logs are secondary: collapsed by default, expanded by the button at the
+  // bottom of the page. Mount-on-open also skips the log tail subscription.
+  const [logsOpen, setLogsOpen] = useState(false)
   const [selectedLogServer, setSelectedLogServer] = useState<
     string | undefined
   >(undefined)
@@ -138,6 +136,24 @@ function ConnectorsPage() {
     }
     return map
   }, [installedByConnector])
+
+  // One grid for everything: installed servers first (their stored order,
+  // catalog or hand-added alike), then the catalog connectors left to set up.
+  const gridItems = useMemo(() => {
+    const installed = visibleServerEntries.map(([key, config]) => ({
+      key,
+      connector: connectorByServerKey.get(key),
+      installed: { key, config },
+    }))
+    const available = MCP_CONNECTORS.filter(
+      (connector) => !installedByConnector.get(connector.serverKey)
+    ).map((connector) => ({
+      key: connector.serverKey,
+      connector: connector as MCPConnector | undefined,
+      installed: undefined,
+    }))
+    return [...installed, ...available]
+  }, [connectorByServerKey, installedByConnector, visibleServerEntries])
 
   const updateToolCallTimeout = (rawValue: string) => {
     if (rawValue === '') {
@@ -229,6 +245,9 @@ function ConnectorsPage() {
   }
 
   const handleSetUp = (connector: MCPConnector) => {
+    // Browser OAuth is not implemented yet; the card renders a disabled
+    // sign-in button, this guard just keeps the flow honest.
+    if (connector.auth === 'oauth') return
     if (connector.secret) {
       setSecretConnector(connector)
     } else {
@@ -372,249 +391,166 @@ function ConnectorsPage() {
     <Fragment>
       <div className="flex h-svh w-full flex-col">
         <HeaderPage>
-          <span className="font-medium text-base font-studio">
-            {t('mcp-connectors:title')}
-          </span>
+          <div
+            className={cn(
+              'flex items-center justify-between w-full mr-2 pr-3',
+              !IS_MACOS && 'pr-30'
+            )}
+          >
+            <span className="font-medium text-base font-studio">
+              {t('mcp-connectors:title')}
+            </span>
+            <div className="relative z-50 flex shrink-0 items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleOpenJsonEditor()}
+              >
+                <IconCodeCircle size={16} className="text-muted-foreground" />
+                <span>{t('mcp-connectors:importConfig')}</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleOpenDialog()}
+              >
+                <IconPlus size={16} className="text-muted-foreground" />
+                <span>{t('mcp-connectors:addServer')}</span>
+              </Button>
+            </div>
+          </div>
         </HeaderPage>
         <div className="h-[calc(100%-60px)] overflow-y-auto p-4 pt-0">
-          <div className="mx-auto flex max-w-3xl flex-col gap-6">
-            <div className="flex gap-1 p-1 bg-secondary/50 rounded-lg mt-4 sticky top-0 z-10">
-              <button
-                type="button"
-                onClick={() => setActiveTab('connectors')}
-                className={cn(
-                  'flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors flex-1 justify-center',
-                  activeTab === 'connectors'
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                )}
-              >
-                {t('mcp-connectors:tabs.connectors')}
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('logs')}
-                className={cn(
-                  'flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors flex-1 justify-center',
-                  activeTab === 'logs'
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                )}
-              >
-                {t('mcp-connectors:tabs.logs')}
-              </button>
-            </div>
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 pt-4">
+            <section className="flex flex-col gap-3">
+              <div>
+                <h1 className="font-studio text-lg font-medium text-foreground">
+                  {t('mcp-connectors:connectSection')}
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                  {t('mcp-connectors:connectSectionDesc')}
+                </p>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {gridItems.map(({ key, connector, installed }) => (
+                  <ConnectorCard
+                    key={key}
+                    connector={connector}
+                    installed={installed}
+                    status={installed ? statusByName.get(key) : undefined}
+                    busy={!!busyServers[key]}
+                    onSetUp={() => connector && handleSetUp(connector)}
+                    onToggle={(checked) => toggleServer(key, checked)}
+                    onEdit={() => handleOpenDialog(key)}
+                    onEditJson={() => handleOpenJsonEditor(key)}
+                    onDelete={() => {
+                      setServerToDelete(key)
+                      setDeleteDialogOpen(true)
+                    }}
+                  />
+                ))}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {t('mcp-connectors:findMore')}{' '}
+                <a
+                  href="https://mcp.so/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  mcp.so
+                </a>
+              </p>
+            </section>
 
-            {activeTab === 'connectors' && (
-              <>
-                <section className="flex flex-col gap-3">
-                  <div>
-                    <h1 className="font-studio text-lg font-medium text-foreground">
-                      {t('mcp-connectors:connectedSection')}
-                    </h1>
-                    <p className="text-sm text-muted-foreground">
-                      {t('mcp-connectors:connectedSectionDesc')}
-                    </p>
-                  </div>
-                  {visibleServerEntries.length === 0 ? (
-                    <Card className="bg-card rounded-lg border border-dashed border-border p-6">
-                      <div className="flex flex-col items-center gap-2 text-center">
-                        <UnplugIcon
-                          className="text-muted-foreground"
-                          size={24}
-                        />
-                        <span className="font-medium text-foreground">
-                          {t('mcp-connectors:emptyState.title')}
-                        </span>
-                        <span className="text-sm text-muted-foreground">
-                          {t('mcp-connectors:emptyState.desc')}
-                        </span>
-                      </div>
-                    </Card>
-                  ) : (
-                    visibleServerEntries.map(([key, config]) => (
-                      <ConnectedServerCard
-                        key={key}
-                        serverKey={key}
-                        config={config}
-                        status={statusByName.get(key)}
-                        connector={connectorByServerKey.get(key)}
-                        loading={!!busyServers[key]}
-                        onEdit={() => handleOpenDialog(key)}
-                        onEditJson={() => handleOpenJsonEditor(key)}
-                        onDelete={() => {
-                          setServerToDelete(key)
-                          setDeleteDialogOpen(true)
-                        }}
-                        onToggle={(checked) => toggleServer(key, checked)}
+            <section className="flex flex-col gap-3">
+              <Card title={t('mcp-connectors:advancedSection')}>
+                <CardItem
+                  title={t('mcp-servers:allowPermissions')}
+                  description={t('mcp-servers:allowPermissionsDesc')}
+                  actions={
+                    <div className="shrink-0 ml-4">
+                      <Switch
+                        checked={allowAllMCPPermissions}
+                        onCheckedChange={setAllowAllMCPPermissions}
                       />
-                    ))
+                    </div>
+                  }
+                />
+                <CardItem
+                  title={t('mcp-servers:runtimeSettings.toolCallTimeout')}
+                  description={t(
+                    'mcp-servers:runtimeSettings.toolCallTimeoutDesc'
                   )}
-                </section>
+                  actions={
+                    <Input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={settings.toolCallTimeoutSeconds}
+                      onChange={(event) =>
+                        updateToolCallTimeout(event.target.value)
+                      }
+                      onBlur={() => {
+                        void syncServers()
+                      }}
+                      className="w-28"
+                    />
+                  }
+                />
+              </Card>
+            </section>
 
-                <section className="flex flex-col gap-3">
-                  <div>
-                    <h1 className="font-studio text-lg font-medium text-foreground">
-                      {t('mcp-connectors:popularSection')}
-                    </h1>
-                    <p className="text-sm text-muted-foreground">
-                      {t('mcp-connectors:popularSectionDesc')}
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {MCP_CONNECTORS.map((connector) => {
-                      const installed = installedByConnector.get(
-                        connector.serverKey
-                      )
-                      return (
-                        <ConnectorCard
-                          key={connector.serverKey}
-                          connector={connector}
-                          installed={installed}
-                          status={
-                            installed
-                              ? statusByName.get(installed.key)
-                              : undefined
-                          }
-                          busy={!!busyServers[connector.serverKey]}
-                          onSetUp={() => handleSetUp(connector)}
-                          onEnable={() =>
-                            installed && toggleServer(installed.key, true)
-                          }
-                        />
-                      )
-                    })}
-                  </div>
-                </section>
-
-                <section className="flex flex-col gap-3">
+            <section className="flex flex-col gap-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="self-start text-muted-foreground"
+                onClick={() => setLogsOpen((open) => !open)}
+              >
+                <IconChevronRight
+                  size={16}
+                  className={cn('transition-transform', logsOpen && 'rotate-90')}
+                />
+                {logsOpen
+                  ? t('mcp-connectors:logs.hide')
+                  : t('mcp-connectors:logs.show')}
+              </Button>
+              {logsOpen && (
+                <div className="flex flex-col gap-3 w-full">
                   <Card>
                     <CardItem
-                      title={t('mcp-connectors:manualSection')}
-                      description={
-                        <>
-                          {t('mcp-connectors:manualSectionDesc')}{' '}
-                          {t('mcp-connectors:findMore')}{' '}
-                          <a
-                            href="https://mcp.so/"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hover:underline"
-                          >
-                            mcp.so
-                          </a>
-                        </>
-                      }
+                      title={t('mcp-servers:logs.serverFilterLabel')}
                       actions={
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleOpenDialog()}
-                        >
-                          <IconPlus
-                            size={18}
-                            className="text-muted-foreground"
-                          />
-                          {t('mcp-connectors:addCustom')}
-                        </Button>
-                      }
-                    />
-                  </Card>
-                </section>
-
-                <section className="flex flex-col gap-3">
-                  <Card
-                    header={
-                      <div className="flex items-center justify-between mb-4">
-                        <h1 className="text-foreground font-medium text-base font-studio">
-                          {t('mcp-connectors:advancedSection')}
-                        </h1>
-                        <Button
-                          onClick={() => handleOpenJsonEditor()}
-                          title={t('mcp-servers:editAllJson')}
-                          size="icon-xs"
-                          variant="ghost"
-                        >
-                          <IconCodeCircle
-                            size={18}
-                            className="text-muted-foreground"
-                          />
-                        </Button>
-                      </div>
-                    }
-                  >
-                    <CardItem
-                      title={t('mcp-servers:allowPermissions')}
-                      description={t('mcp-servers:allowPermissionsDesc')}
-                      actions={
-                        <div className="shrink-0 ml-4">
-                          <Switch
-                            checked={allowAllMCPPermissions}
-                            onCheckedChange={setAllowAllMCPPermissions}
-                          />
-                        </div>
-                      }
-                    />
-                    <CardItem
-                      title={t('mcp-servers:runtimeSettings.toolCallTimeout')}
-                      description={t(
-                        'mcp-servers:runtimeSettings.toolCallTimeoutDesc'
-                      )}
-                      actions={
-                        <Input
-                          type="number"
-                          min={1}
-                          step={1}
-                          value={settings.toolCallTimeoutSeconds}
+                        <select
+                          value={selectedLogServer ?? ''}
                           onChange={(event) =>
-                            updateToolCallTimeout(event.target.value)
+                            setSelectedLogServer(
+                              event.target.value === ''
+                                ? undefined
+                                : event.target.value
+                            )
                           }
-                          onBlur={() => {
-                            void syncServers()
-                          }}
-                          className="w-28"
-                        />
+                          className="h-9 rounded-md border border-input bg-background px-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                        >
+                          <option value="">
+                            {t('mcp-servers:logs.allServers')}
+                          </option>
+                          {visibleServerEntries.map(([key]) => (
+                            <option key={key} value={key}>
+                              {key}
+                            </option>
+                          ))}
+                        </select>
                       }
                     />
                   </Card>
-                </section>
-              </>
-            )}
-
-            {activeTab === 'logs' && (
-              <div className="flex flex-col gap-3 w-full">
-                <Card>
-                  <CardItem
-                    title={t('mcp-servers:logs.serverFilterLabel')}
-                    actions={
-                      <select
-                        value={selectedLogServer ?? ''}
-                        onChange={(event) =>
-                          setSelectedLogServer(
-                            event.target.value === ''
-                              ? undefined
-                              : event.target.value
-                          )
-                        }
-                        className="h-9 rounded-md border border-input bg-background px-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                      >
-                        <option value="">
-                          {t('mcp-servers:logs.allServers')}
-                        </option>
-                        {visibleServerEntries.map(([key]) => (
-                          <option key={key} value={key}>
-                            {key}
-                          </option>
-                        ))}
-                      </select>
-                    }
-                  />
-                </Card>
-                <div className="min-h-[400px] flex-1">
-                  <MCPLogViewer serverName={selectedLogServer} />
+                  <div className="min-h-[400px] flex-1">
+                    <MCPLogViewer serverName={selectedLogServer} />
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </section>
           </div>
         </div>
       </div>

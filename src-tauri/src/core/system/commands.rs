@@ -1722,6 +1722,68 @@ fn strip_atomic_managed_block(content: &str) -> String {
     result
 }
 
+/// Parse a leading `major.minor.patch` out of a `--version` line, tolerating a
+/// `v` prefix and a `-beta.1` / `+build` suffix.
+fn parse_version(text: &str) -> Option<(u64, u64, u64)> {
+    let core = text.trim().trim_start_matches('v');
+    let core = core.split(['-', '+', ' ']).next()?;
+    let mut parts = core.split('.');
+    let major: u64 = parts.next()?.parse().ok()?;
+    let minor: u64 = parts.next().unwrap_or("0").parse().ok()?;
+    let patch: u64 = parts.next().unwrap_or("0").parse().ok()?;
+    Some((major, minor, patch))
+}
+
+/// Run `<tool> --version` against the user's real PATH and parse the result.
+///
+/// Windows routes through `cmd /C` because `npm` there is `npm.cmd`, a batch
+/// shim `CreateProcessW` refuses to execute directly (rust-lang/rust#37519) —
+/// the same reason the npm installer below does it.
+fn tool_version(tool: &str) -> Option<(u64, u64, u64)> {
+    let mut cmd = if cfg!(windows) {
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/C", tool, "--version"]);
+        c
+    } else {
+        let mut c = std::process::Command::new(tool);
+        c.arg("--version");
+        c
+    };
+    apply_login_path(&mut cmd);
+    apply_runtime_path(&mut cmd);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let out = cmd.output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    parse_version(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// npm gained per-package lifecycle-script approval (`--allow-scripts=<pkg>`)
+/// in 11.16; older npm rejects it as an unknown flag, so it has to be
+/// version-gated rather than always passed. OpenClaw's install docs make the
+/// same split ("On npm 11.15 and earlier, omit `--allow-scripts=openclaw`").
+const NPM_ALLOW_SCRIPTS_MIN: (u64, u64, u64) = (11, 16, 0);
+
+/// OpenClaw's published `engines`: `>=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0`.
+/// npm only *warns* on an engines mismatch, so on an unsupported Node the
+/// install "succeeds" and every later `openclaw` invocation fails instead —
+/// which reads as a broken integration rather than a Node problem.
+fn node_meets_openclaw_engines((major, minor, patch): (u64, u64, u64)) -> bool {
+    match major {
+        ..=21 => false,
+        22 => (minor, patch) >= (22, 3),
+        23 => false, // explicitly unsupported, not merely old
+        24 => minor >= 15,
+        25 => minor >= 9,
+        _ => true,
+    }
+}
+
 /// Installer spec for an agent: (program, args, prerequisite_binary, docs_url).
 /// Verified against each vendor's official install path:
 ///   - Claude Code / Codex / OpenCode / OpenClaw ship as global npm packages.
@@ -2012,6 +2074,30 @@ fn agent_install_spec(
                 ))
             }
         }
+        "muse" => {
+            // Meta ships Muse Code through an official shell installer only --
+            // there is no PowerShell or npm equivalent (`/install.ps1` on the
+            // same host is a 404). Windows users install it inside WSL and run
+            // it from that shell, so fail with that instruction rather than
+            // spawning an installer that cannot work.
+            if cfg!(windows) {
+                return Err(
+                    "Muse Code has no native Windows installer. Install it inside WSL with \
+                     'curl -fsSL https://dev.meta.ai/install.sh | sh' and run it from your \
+                     WSL shell: https://developer.meta.com/ai/products/muse-code/"
+                        .to_string(),
+                );
+            }
+            Ok((
+                "sh".to_string(),
+                vec![
+                    "-c".to_string(),
+                    "curl -fsSL https://dev.meta.ai/install.sh | sh".to_string(),
+                ],
+                "curl",
+                "https://developer.meta.com/ai/products/muse-code/",
+            ))
+        }
         other => Err(format!("Unknown or non-installable agent id: {}", other)),
     }
 }
@@ -2298,14 +2384,80 @@ fn output_indicates_network_failure(output: &str) -> bool {
     .any(|sig| lower.contains(sig))
 }
 
+/// Launcher locations an agent's installer can write to without ever putting
+/// the binary on `PATH`, keyed by detect binary.
+///
+/// OpenClaw is the case that forced this. Its prefix installer (`install-cli.sh`)
+/// writes the launcher to `<prefix>/bin/openclaw` and leaves `PATH` alone, and
+/// the macOS app runs exactly that installer during its own onboarding — so
+/// *every* user who installed the desktop app rather than the npm package has a
+/// working OpenClaw that `which openclaw` cannot see. The git method of
+/// `install.sh` / `install.ps1` lands in `~/.local/bin` for the same reason.
+/// Without these candidates the Launch page reports OpenClaw as missing and
+/// offers to install a second copy on top of the app's.
+///
+/// Returns an empty vector for every other agent: they all install onto `PATH`,
+/// and guessing locations for them would only produce false positives.
+pub fn off_path_candidates(bin: &str) -> Vec<PathBuf> {
+    if bin != "openclaw" {
+        return Vec::new();
+    }
+    let Ok(home) = agent_home_dir() else {
+        return Vec::new();
+    };
+    let home = PathBuf::from(home);
+
+    // `--prefix` / `OPENCLAW_PREFIX` relocates the whole install, so honour an
+    // explicit prefix before falling back to the installer's defaults.
+    let mut roots: Vec<PathBuf> = Vec::new();
+    if let Some(prefix) = std::env::var("OPENCLAW_PREFIX")
+        .ok()
+        .filter(|p| !p.trim().is_empty())
+    {
+        roots.push(PathBuf::from(prefix));
+    }
+    roots.push(home.join(".openclaw"));
+    roots.push(home.join(".local"));
+
+    // Windows launchers are `.cmd` shims; POSIX ones are extensionless.
+    let names: &[&str] = if cfg!(windows) {
+        &["openclaw.cmd", "openclaw.exe", "openclaw"]
+    } else {
+        &["openclaw"]
+    };
+
+    let mut out = Vec::with_capacity(roots.len() * names.len());
+    for root in roots {
+        for name in names {
+            out.push(root.join("bin").join(name));
+        }
+    }
+    out
+}
+
+/// First [`off_path_candidates`] entry that exists on disk.
+pub fn resolve_off_path(bin: &str) -> Option<PathBuf> {
+    off_path_candidates(bin).into_iter().find(|p| p.is_file())
+}
+
 /// Result of probing whether an external CLI agent is reachable.
+///
+/// `rename_all` matters: the Launch page reads `viaWsl`, and without it serde
+/// emits `via_wsl`, so the "Installed (WSL)" badge never rendered.
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AgentDetection {
     /// Whether the binary was found (native PATH, WSL, or a user-supplied path).
     pub installed: bool,
     /// True only when the binary was found inside a WSL distribution (Windows),
     /// where it is reachable via `wsl.exe` but not from the native Win32 PATH.
     pub via_wsl: bool,
+    /// Absolute path to the launcher when it was found *off* `PATH` — either a
+    /// user-supplied custom path or one of
+    /// [`integrations::off_path_candidates`]. `None` when the bare name
+    /// resolves on `PATH`, so callers keep opening terminals with the short
+    /// command instead of an absolute path nobody wants to read.
+    pub path: Option<String>,
 }
 
 /// Probe whether a CLI binary is reachable on the native PATH (`which`/`where`).
@@ -2372,9 +2524,11 @@ pub async fn detect_agent_installed(bin: String, custom_path: Option<String>) ->
         .map(str::trim)
         .filter(|p| !p.is_empty())
     {
+        let installed = std::path::Path::new(path).is_file();
         return AgentDetection {
-            installed: std::path::Path::new(path).is_file(),
+            installed,
             via_wsl: false,
+            path: installed.then(|| path.to_string()),
         };
     }
 
@@ -2382,6 +2536,18 @@ pub async fn detect_agent_installed(bin: String, custom_path: Option<String>) ->
         return AgentDetection {
             installed: true,
             via_wsl: false,
+            path: None,
+        };
+    }
+
+    // Prefix installers (the one the macOS OpenClaw app runs during its own
+    // onboarding included) never touch PATH, so probe their known locations
+    // before declaring the agent missing and offering to install a second copy.
+    if let Some(found) = resolve_off_path(&bin) {
+        return AgentDetection {
+            installed: true,
+            via_wsl: false,
+            path: Some(found.to_string_lossy().into_owned()),
         };
     }
 
@@ -2391,6 +2557,7 @@ pub async fn detect_agent_installed(bin: String, custom_path: Option<String>) ->
             return AgentDetection {
                 installed: true,
                 via_wsl: true,
+                path: None,
             };
         }
     }
@@ -2398,6 +2565,7 @@ pub async fn detect_agent_installed(bin: String, custom_path: Option<String>) ->
     AgentDetection {
         installed: false,
         via_wsl: false,
+        path: None,
     }
 }
 
@@ -2514,7 +2682,7 @@ pub async fn install_agent<R: Runtime>(
     agent_id: String,
     proxy: Option<ProxyEnv>,
 ) -> Result<(), String> {
-    let (program, args, prereq, docs) = agent_install_spec(&agent_id)?;
+    let (program, mut args, prereq, docs) = agent_install_spec(&agent_id)?;
 
     let event = format!("agent_install_log:{}", agent_id);
 
@@ -2538,6 +2706,35 @@ pub async fn install_agent<R: Runtime>(
                  then restart Atomic Chat and try again: {}",
                 prereq, docs
             ));
+        }
+    }
+
+    // OpenClaw pins a narrow set of Node releases and ships its npm install
+    // behind npm's script-approval flag. Both are checked here, after the npm
+    // prerequisite (and any winget bootstrap) has settled, so we read the Node
+    // that will actually run the agent.
+    if agent_id == "openclaw" {
+        let node = tokio::task::spawn_blocking(|| tool_version("node"))
+            .await
+            .unwrap_or(None);
+        // A missing/unparsable version is not treated as a failure: npm was
+        // found, so Node exists, and guessing wrong here would block a working
+        // install.
+        if let Some(version) = node.filter(|v| !node_meets_openclaw_engines(*v)) {
+            return Err(format!(
+                "OpenClaw requires Node.js 22.22.3+, 24.15+ or 25.9+ (Node 23 is not supported), \
+                 but v{}.{}.{} is on your PATH. Update Node from https://nodejs.org, \
+                 then restart Atomic Chat and try again: {}",
+                version.0, version.1, version.2, docs
+            ));
+        }
+        let allow_scripts = tokio::task::spawn_blocking(
+            || matches!(tool_version("npm"), Some(v) if v >= NPM_ALLOW_SCRIPTS_MIN),
+        )
+        .await
+        .unwrap_or(false);
+        if allow_scripts {
+            args.push("--allow-scripts=openclaw".to_string());
         }
     }
 
@@ -3211,53 +3408,116 @@ pub fn launch_zed() -> Result<(), String> {
     Err("Could not launch Zed. Is it installed and on your PATH?".to_string())
 }
 
-/// Configure OpenClaw by upserting `models.providers.atomic` plus the
-/// `agents.defaults.models` allowlist entry in `~/.openclaw/openclaw.json`.
-#[tauri::command]
-pub fn configure_openclaw(
-    api_url: String,
-    model: String,
-    api_key: Option<String>,
-) -> Result<(), String> {
-    let home = agent_home_dir()?;
-    let config_path = std::env::var("OPENCLAW_CONFIG_PATH")
-        .ok()
-        .filter(|p| !p.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(&home).join(".openclaw").join("openclaw.json"));
+/// Whether OpenClaw's desktop app is installed, and whether we brought it up.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenclawAppStatus {
+    /// The desktop app is present on this machine.
+    pub installed: bool,
+    /// We were able to bring it to the front. False with `installed: true` means
+    /// the user has to open it themselves.
+    pub launched: bool,
+}
 
-    if let Some(parent) = config_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create {}: {}", parent.display(), e))?;
+/// Report (and on macOS, open) OpenClaw's desktop app.
+///
+/// The app and the CLI share `~/.openclaw/openclaw.json`, and the Gateway
+/// watches that file and hot-reloads it, so `configure_openclaw` is the whole
+/// integration for app users too — this only saves them from going to find the
+/// app afterwards, the way `launch_zed` does for Zed.
+///
+/// macOS ships `OpenClaw.app`, which `open -a` addresses by path. Windows Hub
+/// ("OpenClaw Companion") installs per-user with no documented install path or
+/// AUMID to launch it by, so there we only *detect* it — via its state
+/// directory, which is the one location the docs pin down — and let the UI point
+/// the user at the tray icon. Guessing a Start-menu path would break silently on
+/// every install that does not match the guess.
+#[tauri::command]
+pub fn launch_openclaw_app() -> OpenclawAppStatus {
+    #[cfg(target_os = "macos")]
+    {
+        let mut candidates = vec![PathBuf::from("/Applications/OpenClaw.app")];
+        if let Ok(home) = agent_home_dir() {
+            candidates.push(PathBuf::from(home).join("Applications/OpenClaw.app"));
+        }
+        let Some(app) = candidates.into_iter().find(|p| p.exists()) else {
+            return OpenclawAppStatus {
+                installed: false,
+                launched: false,
+            };
+        };
+        let launched = std::process::Command::new("open")
+            .arg("-a")
+            .arg(&app)
+            .spawn()
+            .is_ok();
+        if launched {
+            log::info!("Launched {}", app.display());
+        } else {
+            log::warn!("Found {} but could not open it", app.display());
+        }
+        return OpenclawAppStatus {
+            installed: true,
+            launched,
+        };
     }
 
-    // OpenClaw reads this file as JSON5 (comments, unquoted keys, trailing
-    // commas), so we must parse with the same leniency or we reject configs
-    // OpenClaw happily accepts (ATO-87). json5 deserializes into the same
-    // serde_json::Value, and we always re-serialize as strict JSON on write,
-    // which normalizes (and silently drops comments from) the file.
-    let mut root: serde_json::Value = if config_path.exists() {
-        let text = std::fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
-        if text.trim().is_empty() {
-            serde_json::json!({})
-        } else {
-            json5::from_str(&text).map_err(|e| {
-                format!(
-                    "Could not parse {}: {}. Fix the reported location and try again.",
-                    config_path.display(),
-                    e
-                )
-            })?
-        }
-    } else {
-        serde_json::json!({})
-    };
+    #[cfg(windows)]
+    {
+        // `%LOCALAPPDATA%\OpenClawTray` is the Hub's own state directory (its
+        // setup logs live under it), so its presence is a reliable marker even
+        // though the install root is not.
+        let installed = std::env::var("LOCALAPPDATA")
+            .ok()
+            .filter(|p| !p.is_empty())
+            .map(|local| PathBuf::from(local).join("OpenClawTray"))
+            .is_some_and(|dir| dir.is_dir());
+        return OpenclawAppStatus {
+            installed,
+            launched: false,
+        };
+    }
 
+    #[allow(unreachable_code)]
+    OpenclawAppStatus {
+        installed: false,
+        launched: false,
+    }
+}
+
+/// Provider id we own inside `openclaw.json`. Model refs are `<provider>/<id>`,
+/// so this is also the prefix of every ref we write.
+const OPENCLAW_PROVIDER_ID: &str = "atomic";
+
+/// Whether an `agents.defaults.modelPolicy.allow` list already permits
+/// `model_ref`. OpenClaw matches exact refs plus trailing prefix wildcards
+/// (`provider/*`, `provider/namespace/*`), so both forms are honoured here.
+fn model_policy_allows(list: &[serde_json::Value], model_ref: &str) -> bool {
+    list.iter()
+        .filter_map(|entry| entry.as_str())
+        .any(|entry| match entry.strip_suffix('*') {
+            Some(prefix) => model_ref.starts_with(prefix),
+            None => entry == model_ref,
+        })
+}
+
+/// Apply Atomic Chat's provider, primary model and policy edits to a parsed
+/// `openclaw.json`, returning the updated document.
+///
+/// Split out from [`configure_openclaw`] so the merge rules — which of the
+/// user's keys we overwrite, which we only seed, and how an existing
+/// `modelPolicy.allow` is widened — are testable without touching the disk.
+fn openclaw_patch_config(
+    mut root: serde_json::Value,
+    api_url: &str,
+    model: &str,
+    api_key: Option<&str>,
+) -> Result<serde_json::Value, String> {
     let obj = root
         .as_object_mut()
         .ok_or_else(|| "openclaw.json is not a JSON object".to_string())?;
 
-    let model_ref = format!("atomic/{}", model);
+    let model_ref = format!("{}/{}", OPENCLAW_PROVIDER_ID, model);
     let key_val = api_key
         .as_deref()
         .filter(|k| !k.is_empty())
@@ -3280,7 +3540,7 @@ pub fn configure_openclaw(
     // OpenClaw builds the model ref as `<providerId>/<id>` (= `model_ref`), so
     // prefixing here would double it to `atomic/atomic/...` and break lookup.
     providers_obj.insert(
-        "atomic".to_string(),
+        OPENCLAW_PROVIDER_ID.to_string(),
         serde_json::json!({
             "baseUrl": api_url,
             "apiKey": key_val,
@@ -3331,10 +3591,11 @@ pub fn configure_openclaw(
     defaults_obj
         .entry("timeoutSeconds")
         .or_insert_with(|| serde_json::json!(240));
-    // Point the agent at our model via `model.primary` (object form; current
-    // OpenClaw rejects a plain string). Preserve sibling `model.*` keys and heal
-    // a stale string written by older builds. Run is explicit "use this", so we
-    // overwrite primary to keep it synced with the active model.
+    // Point the agent at our model via `model.primary`. Preserve sibling
+    // `model.*` keys and normalize a plain string (both forms are accepted, but
+    // only the object form has room for the fallbacks OpenClaw writes itself).
+    // Run is explicit "use this", so we overwrite primary to keep it synced with
+    // the active model.
     let model_entry = defaults_obj
         .entry("model")
         .or_insert_with(|| serde_json::json!({}));
@@ -3342,16 +3603,92 @@ pub fn configure_openclaw(
         *model_entry = serde_json::json!({});
     }
     model_entry["primary"] = serde_json::json!(model_ref.clone());
-    let allow = defaults_obj
+    // `agents.defaults.models` holds aliases and per-model settings. It used to
+    // double as the allowlist, and pre-migration OpenClaw builds still read it
+    // that way, so keep seeding an entry — but it no longer restricts anything
+    // on current builds ("adding an entry does not restrict model overrides").
+    let settings = defaults_obj
         .entry("models")
         .or_insert_with(|| serde_json::json!({}));
-    let allow_obj = allow
+    let settings_obj = settings
         .as_object_mut()
         .ok_or_else(|| "agents.defaults.models is not a JSON object".to_string())?;
-    allow_obj
-        .entry(model_ref)
+    settings_obj
+        .entry(model_ref.clone())
         .or_insert_with(|| serde_json::json!({}));
+    // The allowlist that actually gates model selection is
+    // `agents.defaults.modelPolicy.allow`: when it is non-empty it governs
+    // `/model`, session overrides and `--model`, and anything outside it is
+    // rejected before a reply is generated. So a user who restricted their agent
+    // to a cloud provider would watch Run "succeed" and then be told our model
+    // is not allowed. Widen an existing policy with a provider wildcard.
+    //
+    // Only when the user actually has one: an absent key or `[]` already means
+    // "allow any model", and writing a list there would *introduce* a
+    // restriction nobody asked for. Per-agent `agents.entries.*.modelPolicy`
+    // replaces this default for that agent and is deliberately left alone —
+    // those are explicit per-agent decisions, not the default Run targets.
+    if let Some(list) = defaults_obj
+        .get_mut("modelPolicy")
+        .and_then(|policy| policy.as_object_mut())
+        .and_then(|policy| policy.get_mut("allow"))
+        .and_then(|allow| allow.as_array_mut())
+    {
+        if !list.is_empty() && !model_policy_allows(list, &model_ref) {
+            list.push(serde_json::json!(format!("{}/*", OPENCLAW_PROVIDER_ID)));
+        }
+    }
 
+    Ok(root)
+}
+
+/// Configure OpenClaw by upserting `models.providers.atomic`, the agent's
+/// primary model, and its per-model settings entry in `~/.openclaw/openclaw.json`.
+///
+/// The desktop apps (macOS `OpenClaw.app`, Windows Hub) read the same file
+/// through the same Gateway, and the Gateway watches it and hot-reloads, so
+/// this one write covers both the CLI and the app with no restart.
+#[tauri::command]
+pub fn configure_openclaw(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let home = agent_home_dir()?;
+    let config_path = std::env::var("OPENCLAW_CONFIG_PATH")
+        .ok()
+        .filter(|p| !p.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(&home).join(".openclaw").join("openclaw.json"));
+
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create {}: {}", parent.display(), e))?;
+    }
+
+    // OpenClaw reads this file as JSON5 (comments, unquoted keys, trailing
+    // commas), so we must parse with the same leniency or we reject configs
+    // OpenClaw happily accepts (ATO-87). json5 deserializes into the same
+    // serde_json::Value, and we always re-serialize as strict JSON on write,
+    // which normalizes (and silently drops comments from) the file.
+    let root: serde_json::Value = if config_path.exists() {
+        let text = std::fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
+        if text.trim().is_empty() {
+            serde_json::json!({})
+        } else {
+            json5::from_str(&text).map_err(|e| {
+                format!(
+                    "Could not parse {}: {}. Fix the reported location and try again.",
+                    config_path.display(),
+                    e
+                )
+            })?
+        }
+    } else {
+        serde_json::json!({})
+    };
+
+    let root = openclaw_patch_config(root, &api_url, &model, api_key.as_deref())?;
     let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
     std::fs::write(&config_path, pretty + "\n")
         .map_err(|e| format!("Failed to write {}: {}", config_path.display(), e))?;
@@ -4367,6 +4704,68 @@ pub fn configure_poolside(
     log::info!(
         "Poolside configured: base_url={}, model={}, rc={}",
         standalone_base,
+        model,
+        env_file_path
+    );
+    Ok(())
+}
+
+/// Environment Muse Code needs before it will talk to a non-Meta endpoint.
+///
+/// Muse Code is the one agent here with no writable endpoint configuration:
+/// `~/.config/muse/settings.json` holds UI, tool and MCP preferences, while the
+/// provider is chosen per invocation with `--provider meta --base-url <url>
+/// --model <id>` (see `cli::integrations::dynamic_run_args`). The credential is
+/// the only piece that persists, and Muse only checks that `META_API_KEY` is
+/// present -- the upstream call goes to whatever `--base-url` points at -- so
+/// the local server's own key satisfies both ends.
+pub fn muse_env_vars(
+    _api_url: &str,
+    _model: &str,
+    api_key: Option<&str>,
+) -> Vec<(String, String)> {
+    let key_val = api_key.filter(|k| !k.is_empty()).unwrap_or("atomic");
+    vec![("META_API_KEY".to_string(), key_val.to_string())]
+}
+
+/// Configure Muse Code by persisting `META_API_KEY`.
+///
+/// `api_url` and `model` are accepted for symmetry with the other
+/// `configure_*` commands the Launch page invokes, but Muse takes both as
+/// launch flags rather than configuration, so only the key is written here.
+#[tauri::command]
+pub fn configure_muse(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let env_vars = muse_env_vars(&api_url, &model, api_key.as_deref());
+
+    const MARKER: &str = "# Atomic Chat - Muse Code Config";
+
+    if cfg!(target_os = "windows") {
+        for (key, value) in &env_vars {
+            let output = std::process::Command::new("setx")
+                .arg(key)
+                .arg(value)
+                .output()
+                .map_err(|e| e.to_string())?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("Failed to set env var {}: {}", key, stderr));
+            }
+        }
+        log::info!("Muse Code configured (Windows env): base_url={}", api_url);
+        return Ok(());
+    }
+
+    let home = agent_home_dir()?;
+    let is_macos = cfg!(target_os = "macos");
+    let (_shell, env_file_path) = detect_shell_env_file(&home, is_macos);
+    write_marked_env_to_shell(&env_file_path, MARKER, "META_", &env_vars)?;
+    log::info!(
+        "Muse Code configured: base_url={}, model={}, rc={}",
+        api_url,
         model,
         env_file_path
     );
@@ -5653,5 +6052,203 @@ mod atomic_agent_tests {
     #[test]
     fn rejects_a_config_file_that_is_not_an_object() {
         assert!(atomic_agent_patch_config(serde_json::json!([]), URL, "m", None).is_err());
+    }
+}
+
+/// Config-merge and environment-probe rules for the OpenClaw integration. The
+/// desktop apps and the CLI share one `openclaw.json`, so these rules decide
+/// what both of them end up running.
+#[cfg(test)]
+mod openclaw_tests {
+    use super::*;
+
+    const OC_URL: &str = "http://127.0.0.1:1337/v1";
+
+    fn patch_openclaw(root: serde_json::Value) -> serde_json::Value {
+        openclaw_patch_config(root, OC_URL, "gemma-4", Some("atomic")).expect("patch must succeed")
+    }
+
+    #[test]
+    fn openclaw_seeds_provider_and_primary_model() {
+        let out = patch_openclaw(serde_json::json!({}));
+        assert_eq!(out["models"]["providers"]["atomic"]["baseUrl"], OC_URL);
+        assert_eq!(
+            out["models"]["providers"]["atomic"]["api"],
+            "openai-completions"
+        );
+        // The catalog id stays bare; OpenClaw builds the ref as provider/id.
+        assert_eq!(
+            out["models"]["providers"]["atomic"]["models"][0]["id"],
+            "gemma-4"
+        );
+        assert_eq!(
+            out["agents"]["defaults"]["model"]["primary"],
+            "atomic/gemma-4"
+        );
+        assert!(out["agents"]["defaults"]["models"]["atomic/gemma-4"].is_object());
+    }
+
+    /// A non-empty `modelPolicy.allow` gates `/model`, session overrides and
+    /// `--model`, so without widening it our model is rejected at use time even
+    /// though the write "succeeded".
+    #[test]
+    fn openclaw_widens_a_restrictive_model_policy() {
+        let out = patch_openclaw(serde_json::json!({
+            "agents": { "defaults": { "modelPolicy": { "allow": ["anthropic/*"] } } }
+        }));
+        let allow = out["agents"]["defaults"]["modelPolicy"]["allow"]
+            .as_array()
+            .expect("allow stays an array");
+        assert_eq!(
+            allow,
+            &vec![
+                serde_json::json!("anthropic/*"),
+                serde_json::json!("atomic/*"),
+            ]
+        );
+    }
+
+    /// Absent or `[]` already means "allow any model". Writing a list into
+    /// either would introduce a restriction the user never asked for.
+    #[test]
+    fn openclaw_does_not_invent_a_model_policy() {
+        let out = patch_openclaw(serde_json::json!({}));
+        assert!(out["agents"]["defaults"].get("modelPolicy").is_none());
+
+        let out = patch_openclaw(serde_json::json!({
+            "agents": { "defaults": { "modelPolicy": { "allow": [] } } }
+        }));
+        assert_eq!(
+            out["agents"]["defaults"]["modelPolicy"]["allow"]
+                .as_array()
+                .unwrap()
+                .len(),
+            0
+        );
+    }
+
+    #[test]
+    fn openclaw_leaves_a_policy_that_already_covers_us_untouched() {
+        for existing in [
+            serde_json::json!(["atomic/*"]),
+            serde_json::json!(["atomic/gemma-4"]),
+            serde_json::json!(["openai/gpt-5.4", "atomic/*"]),
+        ] {
+            let before = existing.as_array().unwrap().len();
+            let out = patch_openclaw(serde_json::json!({
+                "agents": { "defaults": { "modelPolicy": { "allow": existing } } }
+            }));
+            assert_eq!(
+                out["agents"]["defaults"]["modelPolicy"]["allow"]
+                    .as_array()
+                    .unwrap()
+                    .len(),
+                before,
+                "an allow list that already covers us must not grow"
+            );
+        }
+    }
+
+    /// Both `model` shapes are valid OpenClaw config; older builds of ours wrote
+    /// the plain string. Normalize to the object form without losing siblings.
+    #[test]
+    fn openclaw_normalizes_a_plain_string_model() {
+        let out = patch_openclaw(serde_json::json!({
+            "agents": { "defaults": { "model": "atomic/stale-model" } }
+        }));
+        assert_eq!(
+            out["agents"]["defaults"]["model"]["primary"],
+            "atomic/gemma-4"
+        );
+
+        let out = patch_openclaw(serde_json::json!({
+            "agents": { "defaults": { "model": { "fallbacks": ["anthropic/claude"] } } }
+        }));
+        assert_eq!(
+            out["agents"]["defaults"]["model"]["primary"],
+            "atomic/gemma-4"
+        );
+        assert_eq!(
+            out["agents"]["defaults"]["model"]["fallbacks"][0],
+            "anthropic/claude"
+        );
+    }
+
+    /// Gateway keys are seeded for a fresh loopback setup but never overwritten:
+    /// a user on a remote gateway or token auth must keep it.
+    #[test]
+    fn openclaw_preserves_deliberate_gateway_settings() {
+        let out = patch_openclaw(serde_json::json!({}));
+        assert_eq!(out["gateway"]["mode"], "local");
+        assert_eq!(out["gateway"]["auth"]["mode"], "none");
+
+        let out = patch_openclaw(serde_json::json!({
+            "gateway": { "mode": "remote", "auth": { "mode": "token" } }
+        }));
+        assert_eq!(out["gateway"]["mode"], "remote");
+        assert_eq!(out["gateway"]["auth"]["mode"], "token");
+    }
+
+    #[test]
+    fn model_policy_matching_handles_exact_refs_and_wildcards() {
+        let list = vec![
+            serde_json::json!("anthropic/claude-opus-4-6"),
+            serde_json::json!("openai/*"),
+        ];
+        assert!(model_policy_allows(&list, "anthropic/claude-opus-4-6"));
+        assert!(model_policy_allows(&list, "openai/gpt-5.4"));
+        assert!(!model_policy_allows(&list, "anthropic/claude-sonnet-4-6"));
+        assert!(!model_policy_allows(&list, "atomic/gemma-4"));
+
+        // Multi-segment refs and namespace wildcards.
+        let ns = vec![serde_json::json!("atomic/vendor/*")];
+        assert!(model_policy_allows(&ns, "atomic/vendor/gemma-4"));
+        assert!(!model_policy_allows(&ns, "atomic/gemma-4"));
+    }
+
+    /// OpenClaw's engines: `>=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0`.
+    #[test]
+    fn node_engine_gate_matches_openclaws_ranges() {
+        assert!(node_meets_openclaw_engines((22, 22, 3)));
+        assert!(node_meets_openclaw_engines((22, 23, 0)));
+        assert!(!node_meets_openclaw_engines((22, 22, 2)));
+        assert!(!node_meets_openclaw_engines((20, 19, 0)));
+        // 23 is explicitly unsupported, not merely old.
+        assert!(!node_meets_openclaw_engines((23, 11, 0)));
+        assert!(!node_meets_openclaw_engines((24, 14, 9)));
+        assert!(node_meets_openclaw_engines((24, 15, 0)));
+        assert!(!node_meets_openclaw_engines((25, 8, 9)));
+        assert!(node_meets_openclaw_engines((25, 9, 0)));
+        assert!(node_meets_openclaw_engines((26, 0, 0)));
+    }
+
+    #[test]
+    fn version_parsing_tolerates_prefixes_and_prereleases() {
+        assert_eq!(parse_version("v22.22.3\n"), Some((22, 22, 3)));
+        assert_eq!(parse_version("11.16.0"), Some((11, 16, 0)));
+        assert_eq!(parse_version("12.0.0-beta.1"), Some((12, 0, 0)));
+        assert_eq!(parse_version("13"), Some((13, 0, 0)));
+        assert_eq!(parse_version("not a version"), None);
+    }
+
+    /// Only OpenClaw ships a launcher that can live off PATH; guessing paths for
+    /// the other agents would only produce false positives.
+    #[test]
+    fn off_path_candidates_are_openclaw_only() {
+        assert!(off_path_candidates("claude").is_empty());
+        assert!(off_path_candidates("codex").is_empty());
+
+        let candidates = off_path_candidates("openclaw");
+        assert!(!candidates.is_empty());
+        assert!(
+            candidates
+                .iter()
+                .all(|p| p.parent().is_some_and(|d| d.ends_with("bin"))),
+            "every candidate must sit in a <prefix>/bin directory"
+        );
+        // The macOS app's own installer default has to be covered.
+        assert!(candidates
+            .iter()
+            .any(|p| p.to_string_lossy().contains(".openclaw")));
     }
 }

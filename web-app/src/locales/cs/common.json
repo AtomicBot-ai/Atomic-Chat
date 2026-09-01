@@ -5,6 +5,7 @@
   "hardware": "Hardware",
   "mcp-servers": "MCP servery",
   "connectors": "Konektory",
+  "plugins": "Pluginy",
   "local_api_server": "Lokální API server",
   "https_proxy": "HTTPS Proxy",
   "extensions": "Rozšíření",
@@ -384,5 +385,11 @@
       "title": "Vlákno odebráno",
       "description": "Vlákno bylo úspěšně odebráno z \"{{projectName}}\""
     }
+  },
+  "skills": "Dovednosti",
+  "pluginsMenu": {
+    "title": "Pluginy",
+    "emptySkills": "Zatím žádné dovednosti",
+    "manageSkills": "Spravovat dovednosti"
   }
 }

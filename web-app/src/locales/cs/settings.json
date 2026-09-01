@@ -66,7 +66,7 @@
     "desktopNotifications": "Oznámení na ploše",
     "desktopNotificationsDesc": "Odeslat systémové oznámení, když je odpověď připravena a okno není aktivní.",
     "legacyChatEngine": "Použít starší chatovací engine",
-    "legacyChatEngineDesc": "Směrovat všechny zprávy přes předchozí chatovací pipeline místo sjednoceného agentního enginu. Dočasná volba kompatibility."
+    "legacyChatEngineDesc": "Vynutit pro všechny zprávy předchozí chatovací pipeline a zcela vypnout režim agenta. Dočasná pojistka."
   },
   "threadNotifications": {
     "notificationTitle": "Odpověď je připravena",

@@ -104,6 +104,9 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/gemini.svg'
     case 'openai':
       return '/images/model-provider/openai.svg'
+    // Meta Model API — the same mark the Llama/Muse model families already use.
+    case 'meta':
+      return '/svg/meta-color.svg'
     // The subscription is reached through the Codex backend, and the Codex app
     // mark keeps it apart from the API-key OpenAI provider in the same list.
     case 'chatgpt':

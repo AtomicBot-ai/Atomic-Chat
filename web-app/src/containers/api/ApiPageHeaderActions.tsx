@@ -36,7 +36,7 @@ export function ApiPageHeaderActions({
         : t('api:actions.start')
 
   return (
-    <div className="flex shrink-0 items-center gap-2">
+    <div className="relative z-50 flex shrink-0 items-center gap-2">
       <Button variant="outline" size="sm" onClick={onRefresh}>
         <IconRefresh size={14} className={cn(refreshing && 'animate-spin')} />
         {t('api:actions.refresh')}

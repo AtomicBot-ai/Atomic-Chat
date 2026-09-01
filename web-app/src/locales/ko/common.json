@@ -3,6 +3,7 @@
   "hardware": "하드웨어",
   "mcp-servers": "MCP 서버",
   "connectors": "커넥터",
+  "plugins": "플러그인",
   "local_api_server": "로컬 API 서버",
   "remote_access": "원격 접속",
   "integrations": "연동",
@@ -463,5 +464,11 @@
   },
   "files": {
     "chunksCount": "{{count}}개 청크"
+  },
+  "skills": "스킬",
+  "pluginsMenu": {
+    "title": "플러그인",
+    "emptySkills": "아직 스킬이 없습니다",
+    "manageSkills": "스킬 관리"
   }
 }

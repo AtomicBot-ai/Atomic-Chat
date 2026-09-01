@@ -66,7 +66,7 @@
     "desktopNotifications": "桌面通知",
     "desktopNotificationsDesc": "當回覆生成完畢且視窗未啟用時傳送系統通知。",
     "legacyChatEngine": "使用舊版聊天引擎",
-    "legacyChatEngineDesc": "將所有訊息透過舊版聊天管線處理，而非統一的智慧代理引擎。臨時相容性選項。"
+    "legacyChatEngineDesc": "強制所有訊息走舊的聊天管線，並完全停用智慧代理模式。臨時應急選項。"
   },
   "threadNotifications": {
     "notificationTitle": "回覆已就緒",

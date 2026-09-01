@@ -66,7 +66,7 @@
     "desktopNotifications": "Notificações da área de trabalho",
     "desktopNotificationsDesc": "Enviar uma notificação do sistema quando uma resposta terminar e a janela não estiver em foco.",
     "legacyChatEngine": "Usar o mecanismo de chat antigo",
-    "legacyChatEngineDesc": "Encaminha todas as mensagens pelo pipeline de chat anterior em vez do mecanismo de agente unificado. Opção temporária de compatibilidade."
+    "legacyChatEngineDesc": "Força o pipeline de chat anterior para todas as mensagens e desativa completamente o modo agente. Válvula de escape temporária."
   },
   "threadNotifications": {
     "notificationTitle": "Resposta pronta",

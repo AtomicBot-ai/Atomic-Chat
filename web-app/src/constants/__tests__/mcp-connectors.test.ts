@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  HIDDEN_SERVER_KEYS,
   MCP_CONNECTORS,
   findInstalledServer,
   buildConnectorConfig,
@@ -8,7 +9,7 @@ import type { MCPServers } from '@/hooks/useMCPServers'
 
 const exa = MCP_CONNECTORS.find((c) => c.serverKey === 'exa')!
 const serper = MCP_CONNECTORS.find((c) => c.serverKey === 'serper')!
-const fetchConnector = MCP_CONNECTORS.find((c) => c.serverKey === 'fetch')!
+const github = MCP_CONNECTORS.find((c) => c.serverKey === 'github')!
 
 describe('findInstalledServer', () => {
   it('matches by exact key', () => {
@@ -49,7 +50,7 @@ describe('findInstalledServer', () => {
       },
     }
     expect(findInstalledServer(exa, servers)).toBeUndefined()
-    expect(findInstalledServer(fetchConnector, servers)).toBeUndefined()
+    expect(findInstalledServer(github, servers)).toBeUndefined()
   })
 })
 
@@ -98,6 +99,23 @@ describe('catalog hygiene', () => {
       if (connector.config.url) {
         expect(connector.config.type).toMatch(/^(http|sse)$/)
       }
+    }
+  })
+
+  it('oauth connectors are remote, recognizable by URL, and keyless', () => {
+    const oauth = MCP_CONNECTORS.filter((c) => c.auth === 'oauth')
+    expect(oauth.length).toBeGreaterThan(0)
+    for (const connector of oauth) {
+      expect(connector.config.url).toBeTruthy()
+      expect(connector.config.type).toMatch(/^(http|sse)$/)
+      expect(connector.matchUrls?.length).toBeGreaterThan(0)
+      expect(connector.secret).toBeUndefined()
+    }
+  })
+
+  it('never lists a hidden server key in the catalog', () => {
+    for (const connector of MCP_CONNECTORS) {
+      expect(HIDDEN_SERVER_KEYS).not.toContain(connector.serverKey)
     }
   })
 })

@@ -47,14 +47,12 @@ vi.mock('@/hooks/useTools', () => ({
 }))
 
 vi.mock('@/hooks/useAgentSkills', () => ({
-  useAgentSkills: () => ({ skills: [], loading: false }),
+  useAgentSkills: () => ({ skills: [], loading: false, setEnabled: vi.fn() }),
 }))
 
 vi.mock('@/hooks/useAgentMode', () => {
   const state = {
-    agentThreads: {},
     approvalModes: {},
-    setAgentMode: vi.fn(),
     setApprovalMode: vi.fn(),
   }
   const useAgentMode = (selector: (value: typeof state) => unknown) =>
@@ -106,8 +104,8 @@ vi.mock('@/components/ui/dropdown-menu', async () => {
   }
 })
 
-vi.mock('@/containers/DropdownConnectors', () => ({
-  // A marker instead of null: the toolbar asserts the connectors button is there.
+vi.mock('@/containers/DropdownPlugins', () => ({
+  // A marker instead of null: the toolbar asserts the plugins button is there.
   default: () => <span data-test-id="connectors-dropdown" />,
 }))
 
@@ -153,7 +151,7 @@ describe('ChatInput', () => {
     seedServiceHub()
     usePrompt.setState({ prompt: '' })
     useChatAttachments.setState({ attachmentsByThread: {} })
-    useGeneralSetting.setState({ connectorsPinned: true })
+    useGeneralSetting.setState({ connectorsPinned: true, agentModeEnabled: false })
 
     const model = {
       id: 'test-model',
@@ -256,9 +254,11 @@ describe('ChatInput', () => {
     unmount()
   })
 
-  // The seeded 'openai' provider has no API key, which routes to the chat
-  // fallback; the agent-affordance tests need an agent-capable provider.
+  // Agent affordances need the global toggle on AND an agent-capable
+  // provider: the seeded 'openai' provider has no API key, which would still
+  // route to the chat fallback.
   const selectLocalProvider = () => {
+    useGeneralSetting.setState({ agentModeEnabled: true })
     const model = { id: 'local-model', capabilities: [], settings: {} } as Model
     const provider = {
       provider: 'llamacpp',
@@ -279,10 +279,10 @@ describe('ChatInput', () => {
       <ChatInput initialMessage projectId="project-1" />
     )
 
-    // The approval-mode select proves the project composer routes to the
-    // agent engine (the old project gate is gone)...
+    // The agent chip proves the project composer routes to the agent engine
+    // (the old project gate is gone)...
     expect(
-      document.querySelector('[data-test-id="approval-mode-select"]')
+      document.querySelector('[data-testid="agent-mode-chip"]')
     ).toBeInTheDocument()
     // ...while the workspace-folder item stays off this page: it has no
     // files panel to surface the folder in.
@@ -374,18 +374,18 @@ describe('ChatInput', () => {
     unmount()
   })
 
-  it('pins and unpins the connectors button from the attach menu', () => {
+  it('pins and unpins the plugins button from the attach menu', () => {
     selectToolCapableModel()
 
     const { unmount } = render(<ChatInput />)
 
-    fireEvent.click(screen.getByText('connectors'))
+    fireEvent.click(screen.getByText('plugins'))
     expect(useGeneralSetting.getState().connectorsPinned).toBe(false)
     expect(
       document.querySelector('[data-test-id="connectors-dropdown"]')
     ).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByText('connectors'))
+    fireEvent.click(screen.getByText('plugins'))
     expect(useGeneralSetting.getState().connectorsPinned).toBe(true)
     expect(
       document.querySelector('[data-test-id="connectors-dropdown"]')
@@ -394,10 +394,12 @@ describe('ChatInput', () => {
     unmount()
   })
 
-  it('keeps the agent controls while no provider is resolved yet', () => {
+  it('keeps the agent controls while no provider is resolved yet, if agent mode is on', () => {
     // The provider list loads asynchronously at boot and no model is picked on
     // a cold launch: routing says "chat transport" only because it has nothing
-    // to judge, and the composer must not shed its agent controls meanwhile.
+    // to judge, and a composer the user switched to Agent mode must not shed
+    // its agent controls meanwhile.
+    useGeneralSetting.setState({ agentModeEnabled: true })
     useModelProvider.setState({
       providers: [],
       selectedProvider: '',
@@ -416,6 +418,72 @@ describe('ChatInput', () => {
     expect(
       screen.getByText('chat:agentWorkspace.addFolder')
     ).toBeInTheDocument()
+    unmount()
+  })
+
+  it('shows the plain chat composer by default even on an agent-capable provider', () => {
+    // Chat is the default engine: with the global toggle off, an agent-capable
+    // local provider still gets the chat placeholder and no agent controls.
+    const model = { id: 'local-model', capabilities: [], settings: {} } as Model
+    useModelProvider.setState({
+      providers: [
+        {
+          provider: 'llamacpp',
+          active: true,
+          models: [model],
+          settings: [],
+        } as ModelProvider,
+      ],
+      selectedProvider: 'llamacpp',
+      selectedModel: model,
+    })
+
+    const { unmount } = render(<ChatInput initialMessage />)
+
+    expect(screen.getByTestId('chat-input')).toHaveAttribute(
+      'placeholder',
+      'common:placeholder.chatInput'
+    )
+    // The approval select stays in the toolbar for both engines — it governs
+    // chat MCP/RAG calls too — but the agent chip only shows with the toggle.
+    expect(
+      document.querySelector('[data-test-id="approval-mode-select"]')
+    ).toBeInTheDocument()
+    expect(
+      document.querySelector('[data-testid="agent-mode-chip"]')
+    ).not.toBeInTheDocument()
+    unmount()
+  })
+
+  it('toggles the global agent mode from the attach menu', () => {
+    const { unmount } = render(<ChatInput />)
+
+    fireEvent.click(screen.getByText('chat:agentMode.menuItem'))
+    expect(useGeneralSetting.getState().agentModeEnabled).toBe(true)
+
+    fireEvent.click(screen.getByText('chat:agentMode.menuItem'))
+    expect(useGeneralSetting.getState().agentModeEnabled).toBe(false)
+    unmount()
+  })
+
+  it('renders the agent chip whose X turns the mode off everywhere', () => {
+    selectLocalProvider()
+
+    const { unmount } = render(<ChatInput initialMessage />)
+
+    expect(
+      document.querySelector('[data-testid="agent-mode-chip"]')
+    ).toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('chat:agentMode.turnOff'))
+    expect(useGeneralSetting.getState().agentModeEnabled).toBe(false)
+    expect(
+      document.querySelector('[data-testid="agent-mode-chip"]')
+    ).not.toBeInTheDocument()
+    expect(screen.getByTestId('chat-input')).toHaveAttribute(
+      'placeholder',
+      'common:placeholder.chatInput'
+    )
     unmount()
   })
 

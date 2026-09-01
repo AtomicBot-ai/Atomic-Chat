@@ -5,6 +5,7 @@
   "hardware": "硬件",
   "mcp-servers": "MCP 服务",
   "connectors": "连接器",
+  "plugins": "插件",
   "local_api_server": "本地 API 服务",
   "https_proxy": "HTTPS 代理",
   "extensions": "扩展",
@@ -384,5 +385,11 @@
       "title": "线程已移除",
       "description": "线程已成功从\"{{projectName}}\"中移除"
     }
+  },
+  "skills": "技能",
+  "pluginsMenu": {
+    "title": "插件",
+    "emptySkills": "暂无技能",
+    "manageSkills": "管理技能"
   }
 }

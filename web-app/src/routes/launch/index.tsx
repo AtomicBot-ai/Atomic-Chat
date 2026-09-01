@@ -45,6 +45,23 @@ export const Route = createFileRoute(route.launch.index as any)({
 // than this; near-instant config writes finish first and never flash it.
 const SPINNER_DELAY_MS = 350
 
+// The token that starts an agent in the terminal we open.
+//
+// Normally the bare binary name: short to read, and it resolves against the
+// login-shell PATH that terminal inherits. When detection found the launcher
+// *off* PATH — a user-set custom path, or the prefix install OpenClaw's desktop
+// app creates under `~/.openclaw/bin` — the bare name resolves to nothing, so
+// the absolute path is used instead, quoted for the shell that will run it.
+function launcherCommand(detectBin: string, path?: string): string {
+  if (!path) return detectBin
+  // cmd.exe has no escape for `"` inside a quoted token; POSIX shells take the
+  // close-escape-reopen dance. Neither appears in a real install path, but a
+  // username can contain a quote.
+  return osType() === 'windows'
+    ? `"${path.replace(/"/g, '')}"`
+    : `'${path.replace(/'/g, `'\\''`)}'`
+}
+
 // Snapshot the app proxy config (if enabled) into the payload the Rust
 // `install_agent` / `open_agent_terminal` commands expect, so spawned installers
 // and the launched agent can reach the network behind a region block. Returns
@@ -52,13 +69,8 @@ const SPINNER_DELAY_MS = 350
 function buildProxyPayload():
   | { url: string; username?: string; password?: string; no_proxy?: string }
   | undefined {
-  const {
-    proxyEnabled,
-    proxyUrl,
-    proxyUsername,
-    proxyPassword,
-    noProxy,
-  } = useProxyConfig.getState()
+  const { proxyEnabled, proxyUrl, proxyUsername, proxyPassword, noProxy } =
+    useProxyConfig.getState()
   if (!proxyEnabled || !proxyUrl.trim()) return undefined
   return {
     url: proxyUrl.trim(),
@@ -68,13 +80,7 @@ function buildProxyPayload():
   }
 }
 
-function IconBox({
-  children,
-  bg,
-}: {
-  children: ReactNode
-  bg?: string
-}) {
+function IconBox({ children, bg }: { children: ReactNode; bg?: string }) {
   return (
     <div
       className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md"
@@ -168,6 +174,19 @@ function AgentIcon({ agent }: { agent: IntegrationAgent }) {
               fill="#ffffff"
             />
           </svg>
+        </IconBox>
+      )
+    case 'muse':
+      // Meta's own mark, the same `/svg/meta-color.svg` the Llama and Muse
+      // model families use elsewhere in the app. Its gradient is tuned for a
+      // light ground, so the box stays white in both themes.
+      return (
+        <IconBox bg="#ffffff">
+          <img
+            src="/svg/meta-color.svg"
+            alt={agent.name}
+            className="size-5 object-contain"
+          />
         </IconBox>
       )
     case 'mimo':
@@ -473,6 +492,7 @@ function LaunchPage() {
   const setInstalled = useLaunchStore((s) => s.setInstalled)
   const viaWsl = useLaunchStore((s) => s.viaWsl)
   const setViaWsl = useLaunchStore((s) => s.setViaWsl)
+  const setBinPath = useLaunchStore((s) => s.setBinPath)
   const customPaths = useLaunchSettings((s) => s.customPaths)
   const setCustomPath = useLaunchSettings((s) => s.setCustomPath)
   const busy = useLaunchStore((s) => s.busy)
@@ -493,23 +513,32 @@ function LaunchPage() {
   const detect = useCallback(
     async (agent: IntegrationAgent): Promise<boolean> => {
       try {
-        const result = await invoke<{ installed: boolean; viaWsl: boolean }>(
-          'detect_agent_installed',
-          {
-            bin: agent.detectBin,
-            customPath: customPaths[agent.id] || null,
-          }
-        )
+        const result = await invoke<{
+          installed: boolean
+          viaWsl: boolean
+          path?: string | null
+        }>('detect_agent_installed', {
+          bin: agent.detectBin,
+          customPath: customPaths[agent.id] || null,
+        })
         setInstalled((prev) => ({ ...prev, [agent.id]: result.installed }))
         setViaWsl((prev) => ({ ...prev, [agent.id]: result.viaWsl }))
+        // Only set for launchers found off PATH (a custom path, or a prefix
+        // install like OpenClaw's app-managed `~/.openclaw/bin/openclaw`), where
+        // the bare binary name would not resolve in the terminal we open.
+        setBinPath((prev) => ({
+          ...prev,
+          [agent.id]: result.path ?? undefined,
+        }))
         return result.installed
       } catch {
         setInstalled((prev) => ({ ...prev, [agent.id]: false }))
         setViaWsl((prev) => ({ ...prev, [agent.id]: false }))
+        setBinPath((prev) => ({ ...prev, [agent.id]: undefined }))
         return false
       }
     },
-    [setInstalled, setViaWsl, customPaths]
+    [setInstalled, setViaWsl, setBinPath, customPaths]
   )
 
   const refreshRunningModels = useCallback(async () => {
@@ -587,9 +616,10 @@ function LaunchPage() {
         const msg = err instanceof Error ? err.message : String(err)
         // Surface a localized, actionable hint for network/DNS failures
         // (commonly a region block with no proxy); keep the raw detail otherwise.
-        const isNetworkFailure = /dns|tunnel|proxy|os error 11001|wsahost_not_found|could not reach the network|resolve host|getaddrinfo|name resolution/i.test(
-          msg
-        )
+        const isNetworkFailure =
+          /dns|tunnel|proxy|os error 11001|wsahost_not_found|could not reach the network|resolve host|getaddrinfo|name resolution/i.test(
+            msg
+          )
         toast.error(t('launch:toast.installFailed', { name: agent.name }), {
           description: isNetworkFailure
             ? t('launch:toast.installFailedNetworkDesc')
@@ -686,6 +716,9 @@ function LaunchPage() {
         case 'poolside':
           await invoke('configure_poolside', { apiUrl, model, apiKey: key })
           break
+        case 'muse':
+          await invoke('configure_muse', { apiUrl, model, apiKey: key })
+          break
         case 'openclaw':
           await invoke('configure_openclaw', { apiUrl, model, apiKey: key })
           break
@@ -696,17 +729,29 @@ function LaunchPage() {
           throw new Error(`Unknown agent: ${agent.id}`)
       }
 
+      const configuredDescKey =
+        agent.id === 'zed'
+          ? 'launch:toast.configuredDescEditor'
+          : agent.id === 'openclaw'
+            ? // OpenClaw's Gateway watches the config file and hot-reloads, so
+              // there is nothing to restart — but a chat that was already pinned
+              // to another model keeps it, and only `/model default` clears that.
+              'launch:toast.configuredDescOpenclaw'
+            : 'launch:toast.configuredDesc'
       toast.success(t('launch:toast.configured', { name: agent.name }), {
-        description: t(
-          agent.id === 'zed'
-            ? 'launch:toast.configuredDescEditor'
-            : 'launch:toast.configuredDesc',
-          { name: agent.name }
-        ),
+        description: t(configuredDescKey, { name: agent.name }),
         duration: 8000,
       })
     },
-    [serverStatus, ensureServerRunning, serverHost, serverPort, apiPrefix, apiKey, t]
+    [
+      serverStatus,
+      ensureServerRunning,
+      serverHost,
+      serverPort,
+      apiPrefix,
+      apiKey,
+      t,
+    ]
   )
 
   // Single entry point behind the unified button: install first if the agent
@@ -754,6 +799,28 @@ function LaunchPage() {
             await invoke('launch_zed')
             return
           }
+          // OpenClaw also ships a desktop app (macOS `OpenClaw.app`, Windows
+          // Hub), and it reads the very config we just wrote — its Gateway owns
+          // the file and hot-reloads it. So when the app is installed it *is*
+          // the destination, and dropping the user into a terminal TUI would
+          // land them in the wrong window.
+          if (agent.id === 'openclaw') {
+            const app = await invoke<{
+              installed: boolean
+              launched: boolean
+            }>('launch_openclaw_app')
+            if (app.launched) return
+            if (app.installed) {
+              // Windows Hub installs per-user with no documented path or AUMID
+              // to launch it by, so hand the user the one instruction we can
+              // give confidently instead of guessing at a shortcut.
+              toast.info(t('launch:toast.openclawAppReady'), {
+                description: t('launch:toast.openclawAppReadyDesc'),
+                duration: 10000,
+              })
+              return
+            }
+          }
           // OpenClaw's bare `openclaw` entry is the Crestodian setup/repair
           // helper (deterministic commands), not a chat. `openclaw chat` runs
           // the embedded local agent runtime, so the user lands straight in a
@@ -763,12 +830,22 @@ function LaunchPage() {
           // launched with `--override-with-envs`. Everything else runs its
           // bare detect binary.
           let command: string
+          // Off-PATH installs (custom path, or OpenClaw's app-managed prefix)
+          // have to be spawned by absolute path; everything else keeps the bare
+          // binary name.
+          // Read through the store rather than a render-closure copy: this same
+          // callback may have just run `detect`, whose result is not in the
+          // closure it was invoked from.
+          const launcher = launcherCommand(
+            agent.detectBin,
+            useLaunchStore.getState().binPath[agent.id]
+          )
           if (agent.id === 'openclaw') {
-            command = 'openclaw chat'
+            command = `${launcher} chat`
           } else if (agent.id === 'goose') {
-            command = 'goose session'
+            command = `${launcher} session`
           } else if (agent.id === 'openhands') {
-            command = 'openhands --override-with-envs'
+            command = `${launcher} --override-with-envs`
           } else if (agent.id === 'dsh') {
             // DeepSeek Harness is a browser app, not a terminal chat: a bare
             // `dsh` has no profile to hand its arguments to and only prints the
@@ -776,7 +853,27 @@ function LaunchPage() {
             // which serves the UI on http://127.0.0.1:3080. The first run of
             // that profile initializes it from a shipped template, so the URL
             // can take a while to appear.
-            command = 'dsh web'
+            command = `${launcher} web`
+          } else if (agent.id === 'muse') {
+            // Muse Code has no writable endpoint configuration: the provider,
+            // base URL and model are flags on every invocation, and META_API_KEY
+            // only has to be non-empty for its provider check -- the request
+            // itself goes to whatever --base-url points at. `apiUrl` already
+            // carries the /v1 prefix (endpointWithPrefix), which is the root
+            // Muse appends `/responses` to.
+            const connectHost =
+              serverHost === '0.0.0.0' || (serverHost as string) === '::'
+                ? '127.0.0.1'
+                : serverHost
+            const apiUrl = `http://${connectHost}:${serverPort}${apiPrefix}`
+            const key = apiKey || 'atomic'
+            if (osType() === 'windows') {
+              const modelArg = model ? ` --model ${model}` : ''
+              command = `set META_API_KEY=${key}&& ${launcher} --provider meta --base-url ${apiUrl}${modelArg}`
+            } else {
+              const modelArg = model ? ` --model '${model}'` : ''
+              command = `META_API_KEY='${key}' ${launcher} --provider meta --base-url '${apiUrl}'${modelArg}`
+            }
           } else if (agent.id === 'poolside') {
             const connectHost =
               serverHost === '0.0.0.0' || (serverHost as string) === '::'
@@ -787,12 +884,12 @@ function LaunchPage() {
             const key = apiKey || 'atomic'
             const modelId = model ?? ''
             if (osType() === 'windows') {
-              command = `set POOLSIDE_STANDALONE_BASE_URL=${standaloneBase}&& set POOLSIDE_API_KEY=${key}&& set POOLSIDE_STANDALONE_MODEL=${modelId}&& pool`
+              command = `set POOLSIDE_STANDALONE_BASE_URL=${standaloneBase}&& set POOLSIDE_API_KEY=${key}&& set POOLSIDE_STANDALONE_MODEL=${modelId}&& ${launcher}`
             } else {
-              command = `POOLSIDE_STANDALONE_BASE_URL='${standaloneBase}' POOLSIDE_API_KEY='${key}' POOLSIDE_STANDALONE_MODEL='${modelId}' pool`
+              command = `POOLSIDE_STANDALONE_BASE_URL='${standaloneBase}' POOLSIDE_API_KEY='${key}' POOLSIDE_STANDALONE_MODEL='${modelId}' ${launcher}`
             }
           } else {
-            command = agent.detectBin
+            command = launcher
           }
           await invoke('open_agent_terminal', {
             command,
@@ -801,9 +898,12 @@ function LaunchPage() {
         } catch (termErr) {
           const tmsg =
             termErr instanceof Error ? termErr.message : String(termErr)
-          toast.warning(t('launch:toast.terminalFailed', { name: agent.name }), {
-            description: tmsg,
-          })
+          toast.warning(
+            t('launch:toast.terminalFailed', { name: agent.name }),
+            {
+              description: tmsg,
+            }
+          )
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
@@ -900,9 +1000,12 @@ function LaunchPage() {
         })
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
-        toast.error(t('launch:toast.editorLaunchFailed', { name: agent.name }), {
-          description: msg,
-        })
+        toast.error(
+          t('launch:toast.editorLaunchFailed', { name: agent.name }),
+          {
+            description: msg,
+          }
+        )
       } finally {
         setEditorBusy((prev) => ({ ...prev, [agent.id]: false }))
       }
@@ -963,9 +1066,7 @@ function LaunchPage() {
               onClick={() => handleLaunchEditor(agent)}
               disabled={isBusy}
             >
-              {isBusy && (
-                <IconLoader2 size={14} className="animate-spin" />
-              )}
+              {isBusy && <IconLoader2 size={14} className="animate-spin" />}
               {t('launch:enable')}
             </Button>
           </div>
@@ -1148,7 +1249,13 @@ function LaunchPage() {
 
   return (
     <div className="flex h-svh w-full flex-col">
-      <HeaderPage />
+      <HeaderPage>
+        <div className="flex items-center gap-2 w-full">
+          <span className="font-medium text-base font-studio">
+            {t('launch:title')}
+          </span>
+        </div>
+      </HeaderPage>
       <div className="h-[calc(100%-60px)] overflow-y-auto p-4 pt-0">
         <div className="mx-auto flex max-w-3xl flex-col gap-6">
           <section className="flex flex-col gap-3">

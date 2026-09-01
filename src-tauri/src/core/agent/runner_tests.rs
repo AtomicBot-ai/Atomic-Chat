@@ -1348,6 +1348,85 @@ async fn misplaced_terminal_and_empty_reply_are_repaired() {
 }
 
 #[tokio::test]
+async fn surplus_terminal_calls_are_trimmed_instead_of_repaired() {
+    // What small local models actually emit when they over-close a turn. The
+    // extra terminal carries no new intent, so the batch is salvaged in place:
+    // no repair round-trip, no failed turn.
+    let workspace = TestWorkspace::new();
+    let run = run_script(
+        &workspace,
+        vec![ScriptedResponse::completion(
+            r#"[
+                {"tool":"os.fs.list","args":{}},
+                {"tool":"reply","args":{"text":"answered"}},
+                {"tool":"reply","args":{"text":"answered again"}}
+            ]"#,
+        )],
+        &RecordingApproval::deny(),
+        &CancellationToken::new(),
+        2,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(finished_reason(&run.events), Some(("reply", 1)));
+    assert_eq!(
+        executed(&run.events),
+        [("os.fs.list", ToolStatus::Ok), ("reply", ToolStatus::Ok)]
+    );
+    assert_eq!(run.requests.len(), 1);
+    assert!(!run
+        .events
+        .iter()
+        .any(|event| matches!(event, AgentEvent::ParseRetry { .. })));
+    assert!(run.events.iter().any(|event| matches!(
+        event,
+        AgentEvent::BatchTrimmed { kept_tool, dropped_tools, .. }
+            if kept_tool == "reply" && dropped_tools == &["reply".to_string()]
+    )));
+    assert!(run
+        .events
+        .iter()
+        .any(|event| matches!(event, AgentEvent::AssistantReply { text } if text == "answered")));
+}
+
+/// A surplus terminal behind a call that must run solo is not salvageable —
+/// the trimmed prefix still breaks the batch rules, so the model gets its
+/// round-trip.
+#[tokio::test]
+async fn a_surplus_terminal_after_an_approval_gated_call_still_repairs() {
+    let workspace = TestWorkspace::new();
+    let run = run_script(
+        &workspace,
+        vec![
+            ScriptedResponse::completion(
+                r#"[
+                    {"tool":"os.shell.run","args":{"cmd":"echo"}},
+                    {"tool":"reply","args":{"text":"early"}},
+                    {"tool":"reply","args":{"text":"early again"}}
+                ]"#,
+            ),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"fixed"}}]"#),
+        ],
+        &RecordingApproval::deny(),
+        &CancellationToken::new(),
+        2,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(finished_reason(&run.events), Some(("reply", 1)));
+    assert_eq!(run.requests.len(), 2);
+    assert_eq!(
+        run.events
+            .iter()
+            .filter(|event| matches!(event, AgentEvent::ParseRetry { .. }))
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
 async fn llama_http_error_is_reported_as_llm_failure() {
     let workspace = TestWorkspace::new();
     let run = run_script(

@@ -67,7 +67,7 @@
     "desktopNotifications": "데스크톱 알림",
     "desktopNotificationsDesc": "응답 생성이 완료되었고 창이 포커스되지 않았을 때 시스템 알림을 보냅니다.",
     "legacyChatEngine": "기존 채팅 엔진 사용",
-    "legacyChatEngineDesc": "통합 에이전트 엔진 대신 이전 채팅 파이프라인으로 모든 메시지를 처리합니다. 임시 호환성 옵션입니다."
+    "legacyChatEngineDesc": "모든 메시지를 이전 채팅 파이프라인으로 처리하고 에이전트 모드를 완전히 비활성화합니다. 임시 우회 수단입니다."
   },
   "threadNotifications": {
     "notificationTitle": "응답 준비됨",

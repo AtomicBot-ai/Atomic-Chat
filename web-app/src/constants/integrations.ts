@@ -239,6 +239,21 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     endpointWithPrefix: false,
   },
   {
+    id: 'muse',
+    name: 'Muse Code',
+    description: "Meta's multi-agent coding tool for your terminal.",
+    kind: 'coding',
+    detectBin: 'muse',
+    docsUrl: 'https://developer.meta.com/ai/products/muse-code/',
+    installable: true,
+    configurable: true,
+    requiresModel: true,
+    // `--base-url` replaces the Meta Model API root (`https://api.meta.ai/v1`),
+    // onto which Muse appends `/responses` itself -- the same Responses wire
+    // protocol Codex CLI speaks, which the local server already serves.
+    endpointWithPrefix: true,
+  },
+  {
     id: 'atomic-agent',
     name: 'Atomic Agent',
     description:

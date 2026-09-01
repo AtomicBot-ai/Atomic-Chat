@@ -66,7 +66,7 @@
     "desktopNotifications": "Notifications de bureau",
     "desktopNotificationsDesc": "Envoyer une notification système lorsqu'une réponse est prête et que la fenêtre n'est pas au premier plan.",
     "legacyChatEngine": "Utiliser l'ancien moteur de chat",
-    "legacyChatEngineDesc": "Achemine chaque message via l'ancien pipeline de chat au lieu du moteur d'agent unifié. Option de compatibilité temporaire."
+    "legacyChatEngineDesc": "Force l’ancien pipeline de chat pour chaque message et désactive complètement le mode agent. Échappatoire temporaire."
   },
   "threadNotifications": {
     "notificationTitle": "Réponse prête",

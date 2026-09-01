@@ -18,7 +18,6 @@ import { AgentWorkspacePreview } from './AgentWorkspacePreview'
 import { ArtifactPanel } from './ArtifactPanel'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useDesktopScreen } from '@/hooks/useMediaQuery'
-import { listAgentWorkspace } from '@/services/agent/tauri'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useWorkspacePreviewStore } from '@/stores/workspace-preview-store'
 import { useHeaderOverlay } from '@/stores/header-overlay-store'
@@ -83,7 +82,6 @@ export function AgentWorkspaceLayout({
   const workspaceRef = useRef<HTMLElement>(null)
   const sidebarWidth = useRef(useLeftPanel.getState().width)
   const workspaceKeyRef = useRef<string | undefined>(undefined)
-  const previousWorkspaceHasEntriesRef = useRef<boolean | undefined>(undefined)
 
   useEffect(() => {
     if (!isDesktop) {
@@ -102,59 +100,18 @@ export function AgentWorkspaceLayout({
     useArtifactStore.getState().close()
   }, [threadId, workspace.primaryRoot?.rootId])
 
+  // The files sidebar stays closed until it is asked for: a chat opens at full
+  // width and keeps it, even once the agent has written files into the
+  // workspace. Switching threads (or swapping roots) drops it back to closed.
   useEffect(() => {
-    if (!isDesktop) return
-
     const roots = [workspace.primaryRoot, ...workspace.externalRoots].filter(
       (root): root is AgentWorkspaceRoot => Boolean(root)
     )
     const workspaceKey = `${threadId}\0${roots.map((root) => root.rootId).join('\0')}`
-    if (workspaceKeyRef.current !== workspaceKey) {
-      workspaceKeyRef.current = workspaceKey
-      previousWorkspaceHasEntriesRef.current = undefined
-      setFilesOpen(false)
-    }
-
-    let cancelled = false
-    void Promise.all(
-      roots.map((root) =>
-        listAgentWorkspace({
-          rootId: root.rootId,
-          rootPath: root.path,
-        }).catch(() => [])
-      )
-    ).then(
-      (rootEntries) => {
-        if (cancelled) return
-        const hasEntries =
-          workspace.externalRoots.length > 0 ||
-          rootEntries.some((entries) => entries.length > 0)
-        const previouslyHadEntries = previousWorkspaceHasEntriesRef.current
-
-        if (!hasEntries) {
-          setFilesOpen(false)
-        } else if (previouslyHadEntries !== true) {
-          setFilesOpen(true)
-        }
-        previousWorkspaceHasEntriesRef.current = hasEntries
-      },
-      () => {
-        if (cancelled || previousWorkspaceHasEntriesRef.current !== undefined)
-          return
-        setFilesOpen(false)
-      }
-    )
-
-    return () => {
-      cancelled = true
-    }
-  }, [
-    isDesktop,
-    refreshKey,
-    threadId,
-    workspace.externalRoots,
-    workspace.primaryRoot,
-  ])
+    if (workspaceKeyRef.current === workspaceKey) return
+    workspaceKeyRef.current = workspaceKey
+    setFilesOpen(false)
+  }, [threadId, workspace.externalRoots, workspace.primaryRoot])
 
   useEffect(
     () => () => {

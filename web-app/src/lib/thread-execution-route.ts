@@ -26,6 +26,7 @@ export function resolveThreadExecutionRoute(
 
   return resolveMessageExecutionRoute({
     legacyChatEngine: useGeneralSetting.getState().legacyChatEngine,
+    agentModeSelected: useGeneralSetting.getState().agentModeEnabled,
     providerBlockReason: agentProviderBlockReason(provider),
     hasAudioAttachment: Boolean(turn.hasAudioAttachment),
     dflashEnabled: shouldSuppressToolsForUpstreamDflash(

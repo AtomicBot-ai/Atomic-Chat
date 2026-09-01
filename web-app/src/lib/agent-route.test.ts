@@ -6,16 +6,26 @@ import {
 
 const agentEligible: RouteInput = {
   legacyChatEngine: false,
+  agentModeSelected: true,
   providerBlockReason: null,
   hasAudioAttachment: false,
   dflashEnabled: false,
 }
 
 describe('resolveMessageExecutionRoute', () => {
-  it('defaults to the agent engine', () => {
+  it('defaults to the chat pipeline when agent mode is off', () => {
+    expect(
+      resolveMessageExecutionRoute({
+        ...agentEligible,
+        agentModeSelected: false,
+      })
+    ).toEqual({ route: 'chat-transport', reason: 'default-chat' })
+  })
+
+  it('routes to the agent engine when the user opted in', () => {
     expect(resolveMessageExecutionRoute(agentEligible)).toEqual({
       route: 'agent-ipc',
-      reason: 'default-agent',
+      reason: 'user-selected-agent',
     })
   })
 

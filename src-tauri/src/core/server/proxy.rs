@@ -276,6 +276,7 @@ fn endpoint_from_path(path: &str) -> &'static str {
         "/embeddings" => "embeddings",
         "/messages/count_tokens" => "messages/count_tokens",
         "/models" => "models",
+        "/muse-code/models" => "muse-code/models",
         "/metrics" => "metrics",
         _ => "other",
     }
@@ -722,7 +723,7 @@ pub fn allowed_methods_for_path(path: &str) -> Option<&'static [&'static str]> {
         "/" | "/openapi.json" | "/docs/swagger-ui.css" | "/docs/swagger-ui-bundle.js" => {
             Some(&["GET"])
         }
-        "/models" | "/metrics" => Some(&["GET"]),
+        "/models" | "/metrics" | "/muse-code/models" => Some(&["GET"]),
         "/messages"
         | "/chat/completions"
         | "/responses"
@@ -731,6 +732,124 @@ pub fn allowed_methods_for_path(path: &str) -> Option<&'static [&'static str]> {
         | "/messages/count_tokens" => Some(&["POST"]),
         _ => None,
     }
+}
+
+/// Context and output limits advertised to Muse Code.
+///
+/// Nothing here knows a session's real `n_ctx`: `SessionInfo` does not carry it
+/// and a remote provider never reports one. These are therefore deliberate
+/// under-estimates -- Muse compacts the conversation as it approaches the
+/// advertised context, so guessing low costs an earlier compaction while
+/// guessing high produces hard context-overflow errors mid-run. 32K matches the
+/// context `atomic-chat-cli launch` starts a local model with by default.
+const MUSE_LOCAL_CONTEXT_LIMIT: u32 = 32_768;
+const MUSE_REMOTE_CONTEXT_LIMIT: u32 = 200_000;
+const MUSE_OUTPUT_LIMIT: u32 = 32_768;
+
+/// Every model the server can currently route to, as `(id, owned_by)`.
+///
+/// Shared by `GET /models` and `GET /muse-code/models`, which differ only in the
+/// wire shape they wrap this list in.
+async fn collect_served_models(
+    sessions: &Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    sessions_upstream: &Arc<Mutex<HashMap<i32, LLamaUpstreamBackendSession>>>,
+    mlx_sessions: &Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+    provider_configs: &Arc<Mutex<HashMap<String, ProviderConfig>>>,
+) -> Vec<(String, &'static str)> {
+    let mut models: Vec<(String, &'static str)> = Vec::new();
+
+    {
+        let guard = sessions.lock().await;
+        models.extend(
+            guard
+                .values()
+                .map(|session| (session.info.model_id.clone(), "llama.cpp")),
+        );
+    }
+    {
+        let guard = sessions_upstream.lock().await;
+        models.extend(
+            guard
+                .values()
+                .map(|session| (session.info.model_id.clone(), "llama.cpp-upstream")),
+        );
+    }
+    {
+        let guard = mlx_sessions.lock().await;
+        models.extend(
+            guard
+                .values()
+                .map(|session| (session.info.model_id.clone(), "mlx")),
+        );
+    }
+    {
+        let guard = provider_configs.lock().await;
+        models.extend(
+            guard
+                .values()
+                .flat_map(|provider_cfg| provider_cfg.models.clone())
+                .map(|model_id| (model_id, "remote")),
+        );
+    }
+
+    models
+}
+
+/// One row of the catalogue Muse Code fetches from `/muse-code/models`.
+///
+/// The shape is Muse's own: an OpenAI-style model row carrying a `muse-code`
+/// metadata block describing what the model may be asked to do. Two fields are
+/// deliberately conservative because the proxy cannot know them per model --
+/// `modalities.input` claims text only, so a text-only GGUF is never sent an
+/// image, and `reasoning` is false so Muse attaches no reasoning parameters a
+/// backend might reject. `tool_call` must stay true: without it Muse has no
+/// agent loop to run.
+fn muse_catalog_entry(model_id: &str, owned_by: &str) -> serde_json::Value {
+    let context_limit = if owned_by == "remote" {
+        MUSE_REMOTE_CONTEXT_LIMIT
+    } else {
+        MUSE_LOCAL_CONTEXT_LIMIT
+    };
+
+    serde_json::json!({
+        "id": model_id,
+        "object": "model",
+        "created": 1,
+        "owned_by": owned_by,
+        "metadata": {
+            "muse-code": {
+                "name": model_id,
+                "family": owned_by,
+                "release_date": "2026-01-01",
+                "is_hidden": false,
+                "attachment": false,
+                "reasoning": false,
+                "temperature": false,
+                "tool_call": true,
+                "modalities": {
+                    "input": ["text"],
+                    "output": ["text"],
+                },
+                "limit": {
+                    "context": context_limit,
+                    "output": MUSE_OUTPUT_LIMIT,
+                },
+                "options": {
+                    "include": [],
+                    "temperature": 0.9,
+                    "top_p": 0.9,
+                },
+                "variants": {},
+                "description": format!("{model_id} via Atomic Chat"),
+                "cost": {
+                    "input": "0",
+                    "output": "0",
+                    "cached": "0",
+                    "currency": "USD",
+                },
+            }
+        }
+    })
 }
 
 use tauri_plugin_mlx::state::{MlxBackendSession, SessionInfo};
@@ -2575,78 +2694,25 @@ async fn inner_proxy_request<R: Runtime>(
             state.skip_emit = true;
             log::debug!("Handling GET /v1/models request");
 
-            // Get local llama.cpp (turboquant) sessions
-            let sessions_guard = sessions.lock().await;
-            let mut local_models: Vec<_> = sessions_guard
-                .values()
-                .map(|session| {
-                    serde_json::json!({
-                        "id": session.info.model_id,
-                        "object": "model",
-                        "created": 1,
-                        "owned_by": "llama.cpp"
-                    })
-                })
-                .collect();
-            drop(sessions_guard);
+            let served = collect_served_models(
+                &sessions,
+                &sessions_upstream,
+                &mlx_sessions,
+                &provider_configs,
+            )
+            .await;
 
-            // Get upstream llama.cpp sessions
-            let sessions_upstream_guard = sessions_upstream.lock().await;
-            let upstream_models: Vec<_> = sessions_upstream_guard
-                .values()
-                .map(|session| {
-                    serde_json::json!({
-                        "id": session.info.model_id,
-                        "object": "model",
-                        "created": 1,
-                        "owned_by": "llama.cpp-upstream"
-                    })
-                })
-                .collect();
-            drop(sessions_upstream_guard);
-            local_models.extend(upstream_models);
-
-            // Get MLX sessions
-            let mlx_models: Vec<_> = {
-                let mlx_guard = mlx_sessions.lock().await;
-                mlx_guard
-                    .values()
-                    .map(|session| {
-                        serde_json::json!({
-                            "id": session.info.model_id,
-                            "object": "model",
-                            "created": 1,
-                            "owned_by": "mlx"
-                        })
-                    })
-                    .collect()
-            };
-
-            // Get remote provider models
-            let pc = provider_configs.lock().await;
-            let remote_models: Vec<_> = pc
-                .values()
-                .flat_map(|provider_cfg| provider_cfg.models.clone())
-                .map(|model_id| {
+            let all_models: Vec<_> = served
+                .iter()
+                .map(|(model_id, owned_by)| {
                     serde_json::json!({
                         "id": model_id,
                         "object": "model",
                         "created": 1,
-                        "owned_by": "remote"
+                        "owned_by": owned_by
                     })
                 })
                 .collect();
-
-            // Store counts before moving
-            let local_count = local_models.len();
-            let mlx_count = mlx_models.len();
-            let remote_count = remote_models.len();
-
-            // Combine all models
-            let mut all_models = Vec::with_capacity(local_count + mlx_count + remote_count);
-            all_models.extend(local_models);
-            all_models.extend(mlx_models);
-            all_models.extend(remote_models);
 
             let response_json = serde_json::json!({
                 "object": "list",
@@ -2667,13 +2733,60 @@ async fn inner_proxy_request<R: Runtime>(
                 &config.trusted_hosts,
             );
 
-            log::debug!(
-                "Returning {} models ({} llama.cpp, {} MLX, {} remote)",
-                all_models.len(),
-                local_count,
-                mlx_count,
-                remote_count
+            log::debug!("Returning {} models", all_models.len());
+
+            return Ok(response_builder.body(Body::from(body_str)).unwrap());
+        }
+
+        // Muse Code's model catalogue. Muse fetches this at startup and refuses
+        // to run without it -- even with `--model` pinned -- so a server that
+        // only serves `/models` fails with "failed to fetch model catalog".
+        //
+        // Note the path: Muse drops the path component of `--base-url` for its
+        // control-plane calls and asks the ORIGIN for `/muse-code/models`, while
+        // still posting inference to `<base-url>/responses`. So this route is
+        // reached un-prefixed; `remove_prefix` leaves it untouched, and a
+        // `/v1/muse-code/models` spelling would normalise onto the same arm.
+        (hyper::Method::GET, "/muse-code/models") => {
+            state.endpoint = Some("muse-code/models");
+            // Same reasoning as `/models`: catalogue fetches are client
+            // bookkeeping, not a product signal.
+            state.skip_emit = true;
+            log::debug!("Handling GET /muse-code/models request");
+
+            let served = collect_served_models(
+                &sessions,
+                &sessions_upstream,
+                &mlx_sessions,
+                &provider_configs,
+            )
+            .await;
+
+            let data: Vec<_> = served
+                .iter()
+                .map(|(model_id, owned_by)| muse_catalog_entry(model_id, owned_by))
+                .collect();
+
+            let response_json = serde_json::json!({
+                "object": "list",
+                "data": data
+            });
+
+            let body_str =
+                serde_json::to_string(&response_json).unwrap_or_else(|_| "{}".to_string());
+
+            let mut response_builder = Response::builder()
+                .status(StatusCode::OK)
+                .header(hyper::header::CONTENT_TYPE, "application/json");
+
+            response_builder = add_cors_headers_with_host_and_origin(
+                response_builder,
+                &host_header,
+                &origin_header,
+                &config.trusted_hosts,
             );
+
+            log::debug!("Returning {} models to Muse Code", served.len());
 
             return Ok(response_builder.body(Body::from(body_str)).unwrap());
         }
@@ -4763,6 +4876,63 @@ mod auto_increase_ctx_tests {
                 .get("Access-Control-Allow-Origin")
                 .is_none(),
             "Untrusted origin must not be reflected in ACAO"
+        );
+    }
+}
+
+#[cfg(test)]
+mod muse_catalogue_tests {
+    use super::*;
+
+    /// Muse Code refuses to start when its catalogue 404s, and it asks the
+    /// server ORIGIN for it -- `--base-url http://host/v1` still produces
+    /// `GET /muse-code/models`. Verified against Muse Code 1.0.1.
+    #[test]
+    fn muse_catalogue_route_is_reachable_with_and_without_the_api_prefix() {
+        assert_eq!(get_destination_path("/muse-code/models", "/v1"), "/muse-code/models");
+        assert_eq!(
+            get_destination_path("/v1/muse-code/models", "/v1"),
+            "/muse-code/models"
+        );
+        assert_eq!(
+            allowed_methods_for_path("/muse-code/models"),
+            Some(&["GET"][..]),
+            "a POST to the catalogue must 405, not fall through to 404"
+        );
+        assert_eq!(endpoint_from_path("/muse-code/models"), "muse-code/models");
+    }
+
+    /// The fields Muse Code actually reads out of a catalogue row. Dropping any
+    /// of them sends it back to "failed to fetch model catalog", which is a
+    /// startup failure rather than a degraded run -- so they are pinned here.
+    #[test]
+    fn muse_catalogue_entry_carries_the_fields_muse_requires() {
+        let entry = muse_catalog_entry("some/model-id", "llama.cpp-upstream");
+
+        assert_eq!(entry["id"], "some/model-id");
+        assert_eq!(entry["object"], "model");
+
+        let meta = &entry["metadata"]["muse-code"];
+        assert_eq!(meta["name"], "some/model-id");
+        assert_eq!(meta["is_hidden"], false);
+        assert_eq!(
+            meta["tool_call"], true,
+            "without tool calling Muse has no agent loop to run"
+        );
+        assert_eq!(meta["limit"]["context"], MUSE_LOCAL_CONTEXT_LIMIT);
+        assert_eq!(meta["limit"]["output"], MUSE_OUTPUT_LIMIT);
+        assert_eq!(meta["modalities"]["input"][0], "text");
+        assert!(meta["cost"]["currency"].is_string());
+    }
+
+    /// A cloud model is not bounded by the local server's own context window,
+    /// so the two are advertised differently.
+    #[test]
+    fn remote_models_advertise_the_larger_context() {
+        let remote = muse_catalog_entry("gpt-5.4", "remote");
+        assert_eq!(
+            remote["metadata"]["muse-code"]["limit"]["context"],
+            MUSE_REMOTE_CONTEXT_LIMIT
         );
     }
 }
