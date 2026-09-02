@@ -122,10 +122,31 @@ describe('CloudProviderSelect', () => {
     await renderSelect()
 
     expect(screen.getByTestId('cloud-connected-dot-openai')).toBeInTheDocument()
-    expect(screen.getByTestId('cloud-connected-dot-ollama')).toBeInTheDocument()
     expect(
       screen.queryByTestId('cloud-connected-dot-anthropic')
     ).not.toBeInTheDocument()
+  })
+
+  it('leaves a self-hosted endpoint undotted until it has answered', async () => {
+    // Ollama needs no key, which is not the same as the user having set it up:
+    // an empty model list means nothing has ever replied on that port.
+    await renderSelect()
+
+    expect(
+      screen.queryByTestId('cloud-connected-dot-ollama')
+    ).not.toBeInTheDocument()
+  })
+
+  it('dots a self-hosted endpoint once it has served a model list', async () => {
+    await renderSelect({
+      providers: providers.map((provider) =>
+        provider.provider === 'ollama'
+          ? { ...provider, models: [{ id: 'llama3' } as Model] }
+          : provider
+      ),
+    })
+
+    expect(screen.getByTestId('cloud-connected-dot-ollama')).toBeInTheDocument()
   })
 
   it('reports the picked provider', async () => {

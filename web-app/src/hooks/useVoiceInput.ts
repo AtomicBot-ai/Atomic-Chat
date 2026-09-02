@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useVoiceSetting } from '@/hooks/useVoiceSetting'
 import {
   ensureVoiceEngine,
@@ -14,6 +15,7 @@ import {
   voiceErrorFromNative,
   type VoiceErrorCode,
 } from '@/lib/voice/errors'
+import { transcriptionPrompt } from '@/lib/voice/language'
 import { appendSegment, type DictationAnchor } from '@/lib/voice/promptMerge'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
@@ -192,7 +194,14 @@ export const useVoiceInput = create<VoiceInputState>()((set, get) => ({
         baseUrl: target.baseUrl,
         apiKey: target.apiKey,
         model: target.model,
-        language: settings.languageHint,
+        // The directive goes in `prompt`, not `language`: llama.cpp turns the
+        // `language` field into a parenthetical " (language: ru)" appended to
+        // the prompt, which the model reads as prose and sometimes echoes back
+        // in place of the transcript. See `lib/voice/language`.
+        prompt: transcriptionPrompt(
+          settings.languageHint,
+          useGeneralSetting.getState().currentLanguage
+        ),
         deviceId: settings.inputDeviceId,
       })
 

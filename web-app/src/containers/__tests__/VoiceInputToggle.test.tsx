@@ -155,7 +155,7 @@ describe('VoiceInputToggle', () => {
   })
 
   it('starts a session with the stored device and language', async () => {
-    useVoiceSetting.setState({ inputDeviceId: 'mic-2', languageHint: 'ru' })
+    useVoiceSetting.setState({ inputDeviceId: 'mic-2', languageHint: 'en' })
     renderToggle()
 
     await act(async () => {
@@ -166,7 +166,7 @@ describe('VoiceInputToggle', () => {
 
     expect(startSession).toHaveBeenCalledTimes(1)
     expect(startSession).toHaveBeenCalledWith(
-      expect.objectContaining({ deviceId: 'mic-2', language: 'ru' })
+      expect.objectContaining({ deviceId: 'mic-2', prompt: 'lang:en' })
     )
   })
 

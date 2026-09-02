@@ -2,8 +2,8 @@ import { memo, useEffect } from 'react'
 import {
   IconLoader2,
   IconMicrophone,
-  IconMicrophoneFilled,
   IconMicrophoneOff,
+  IconPlayerStopFilled,
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
 
@@ -87,7 +87,9 @@ const VoiceInputToggle = memo(function VoiceInputToggle({
   const icon = pending ? (
     <IconLoader2 size={18} className="animate-spin text-muted-foreground" />
   ) : recording ? (
-    <IconMicrophoneFilled size={18} className="text-destructive" />
+    // The stop square, not a filled microphone: this button *is* the stop
+    // control while recording, and the recording strip no longer duplicates it.
+    <IconPlayerStopFilled size={16} className="text-destructive" />
   ) : failed ? (
     <IconMicrophoneOff size={18} className="text-destructive" />
   ) : (

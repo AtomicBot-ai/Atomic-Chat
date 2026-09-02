@@ -92,9 +92,12 @@ export type StartVoiceSessionOptions = {
   apiKey?: string
   /** llama-server alias, which is the model id. */
   model?: string
-  /** ISO-639-1 hint, or `auto`. */
+  /**
+   * ISO-639-1 hint, or `auto`. Unused with Voxtral, which reads the language
+   * off `prompt` instead — see `lib/voice/language`.
+   */
   language?: string
-  /** Optional biasing text. */
+  /** Text placed in the user turn, after the audio. Carries `lang:xx`. */
   prompt?: string
   deviceId?: string | null
   requestTimeoutSecs?: number

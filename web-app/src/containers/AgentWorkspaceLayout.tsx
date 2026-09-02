@@ -25,7 +25,7 @@ import { useArtifactStore } from '@/stores/artifact-store'
 import { useWorkspacePreviewStore } from '@/stores/workspace-preview-store'
 import { useHeaderOverlay } from '@/stores/header-overlay-store'
 import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
-import type { AgentWorkspace, AgentWorkspaceRoot } from '@/hooks/useAgentMode'
+import type { AgentWorkspace } from '@/hooks/useAgentMode'
 
 type AgentWorkspaceLayoutProps = {
   children: ReactNode
@@ -104,6 +104,7 @@ export function AgentWorkspaceLayout({
   const workspaceRef = useRef<HTMLElement>(null)
   const sidebarWidth = useRef(useLeftPanel.getState().width)
   const workspaceKeyRef = useRef<string | undefined>(undefined)
+  const externalRootCountRef = useRef(0)
 
   useEffect(() => {
     if (!isDesktop) {
@@ -124,16 +125,28 @@ export function AgentWorkspaceLayout({
 
   // The files sidebar stays closed until it is asked for: a chat opens at full
   // width and keeps it, even once the agent has written files into the
-  // workspace. Switching threads (or swapping roots) drops it back to closed.
+  // workspace. Switching threads (or swapping the primary root) drops it back
+  // to closed. Attaching an external folder is the exception — that is an
+  // explicit "here is my code" gesture, so the panel opens on the folder that
+  // was just added, wherever it was added from (the composer's "+" menu, an
+  // approval prompt, or the panel's own "+").
   useEffect(() => {
-    const roots = [workspace.primaryRoot, ...workspace.externalRoots].filter(
-      (root): root is AgentWorkspaceRoot => Boolean(root)
-    )
-    const workspaceKey = `${threadId}\0${roots.map((root) => root.rootId).join('\0')}`
-    if (workspaceKeyRef.current === workspaceKey) return
-    workspaceKeyRef.current = workspaceKey
-    setFilesOpen(false)
-  }, [threadId, workspace.externalRoots, workspace.primaryRoot])
+    const workspaceKey = `${threadId}\0${workspace.primaryRoot?.rootId ?? ''}`
+    const externalCount = workspace.externalRoots.length
+    if (workspaceKeyRef.current !== workspaceKey) {
+      workspaceKeyRef.current = workspaceKey
+      externalRootCountRef.current = externalCount
+      setFilesOpen(false)
+      return
+    }
+    if (externalCount > externalRootCountRef.current) {
+      externalRootCountRef.current = externalCount
+      closeSettings()
+      setFilesOpen(true)
+      return
+    }
+    externalRootCountRef.current = externalCount
+  }, [threadId, workspace.externalRoots, workspace.primaryRoot, closeSettings])
 
   useEffect(
     () => () => {

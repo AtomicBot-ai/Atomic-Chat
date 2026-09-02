@@ -92,9 +92,11 @@ function Index() {
       workspace={agentWorkspace ?? { externalRoots: [] }}
       onAddExternal={() => void addExternalAgentRoot()}
       refreshKey={0}
-      // The home composer has no thread yet, so no agent workspace to browse:
-      // only the run settings live in its right column.
-      filesEnabled={false}
+      // The home composer has no thread yet, so normally there is nothing to
+      // browse and only the run settings live in its right column. Attaching a
+      // folder before the first message is the exception: that folder already
+      // belongs to the chat about to start, so let the sidebar show it.
+      filesEnabled={(agentWorkspace?.externalRoots.length ?? 0) > 0}
     >
       <div className="flex h-full w-full min-w-0 flex-col justify-center">
         <HeaderPage>

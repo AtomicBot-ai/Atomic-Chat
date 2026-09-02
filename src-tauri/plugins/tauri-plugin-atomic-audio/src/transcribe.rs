@@ -156,6 +156,29 @@ pub fn parse_response(status: u16, body: &str) -> AudioResult<String> {
     Err(classify_error(status, body))
 }
 
+/// Drop the prompt when the model has repeated it back at the head of the
+/// transcript.
+///
+/// The prompt is not an instruction the model is trained to hide: it is text in
+/// the user turn, sitting between the audio and `[TRANSCRIBE]`. Voxtral usually
+/// ignores it and transcribes, but on longer clips it prefixes the transcript
+/// with the directive it was handed — `"lang:en\nThis is a much longer …"` —
+/// and splicing that into the composer is exactly the sort of noise dictation
+/// is supposed to spare the user.
+///
+/// Only a *leading* copy is removed, and only an exact one: a speaker who
+/// happens to say the words in the prompt keeps them.
+pub fn strip_echoed_prompt(text: &str, prompt: Option<&str>) -> String {
+    let prompt = prompt.map(str::trim).unwrap_or_default();
+    if prompt.is_empty() {
+        return text.to_string();
+    }
+    match text.trim_start().strip_prefix(prompt) {
+        Some(rest) => rest.trim_start().to_string(),
+        None => text.to_string(),
+    }
+}
+
 /// Map an HTTP failure onto an actionable code.
 pub fn classify_error(status: u16, body: &str) -> AudioError {
     let message = extract_server_message(body).unwrap_or_else(|| body.trim().to_string());
@@ -270,6 +293,7 @@ pub async fn transcribe(
     })?;
 
     parse_response(status, &text)
+        .map(|transcript| strip_echoed_prompt(&transcript, target.prompt.as_deref()))
 }
 
 #[cfg(test)]
@@ -413,6 +437,30 @@ are a few options: Google Drive, Descript, Rev, Trint, Amazon Transcribe."
     fn markdown_is_never_speech() {
         assert!(!is_plausible_transcript("run ```ffmpeg -i in.wav```", 8_000));
         assert!(!is_plausible_transcript("one\ntwo\nthree\nfour", 8_000));
+    }
+
+    #[test]
+    fn an_echoed_language_directive_is_stripped() {
+        assert_eq!(
+            strip_echoed_prompt("lang:en\nThis is a longer sentence.", Some("lang:en")),
+            "This is a longer sentence."
+        );
+        // The whole answer being the echo leaves nothing — i.e. "no speech".
+        assert_eq!(strip_echoed_prompt("lang:auto", Some("lang:auto")), "");
+    }
+
+    #[test]
+    fn a_transcript_that_merely_resembles_the_prompt_is_left_alone() {
+        // Someone dictating about the directive itself, and the no-prompt case.
+        assert_eq!(
+            strip_echoed_prompt("Send lang:en with it.", Some("lang:en")),
+            "Send lang:en with it."
+        );
+        assert_eq!(
+            strip_echoed_prompt("lang:en now", Some("lang:ru")),
+            "lang:en now"
+        );
+        assert_eq!(strip_echoed_prompt("lang:en now", None), "lang:en now");
     }
 
     #[test]

@@ -38,7 +38,7 @@ export const VOICE_MODEL_BYTES = 2_473_001_920 + 715_714_080
 export const VOICE_MODEL_FREE_DISK_GB = 4
 
 /** Language hints offered in settings. `auto` lets the model decide per phrase. */
-export const VOICE_LANGUAGES = ['auto', 'en', 'ru'] as const
+export const VOICE_LANGUAGES = ['auto', 'en'] as const
 export type VoiceLanguage = (typeof VOICE_LANGUAGES)[number]
 
 /**

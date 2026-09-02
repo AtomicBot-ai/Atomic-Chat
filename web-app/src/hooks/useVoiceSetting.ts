@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 
 import { localStorageKey } from '@/constants/localStorage'
-import type { VoiceLanguage } from '@/constants/voice'
+import { VOICE_LANGUAGES, type VoiceLanguage } from '@/constants/voice'
 
 type VoiceSettingState = {
   /** Set once the user finishes (or closes) the setup wizard. */
@@ -62,7 +62,22 @@ export const useVoiceSetting = create<VoiceSettingState>()(
     {
       name: localStorageKey.settingVoice,
       storage: createJSONStorage(() => localStorage),
-      version: 1,
+      version: 2,
+      /**
+       * A hint we no longer offer (the list has shrunk at least once) would
+       * otherwise stay selected forever: the picker cannot show it and the
+       * user cannot clear it. Fall back to `auto`.
+       */
+      migrate: (persisted) => {
+        const state = persisted as Partial<VoiceSettingState> | undefined
+        if (
+          state?.languageHint &&
+          !VOICE_LANGUAGES.includes(state.languageHint)
+        ) {
+          return { ...state, languageHint: 'auto' }
+        }
+        return state
+      },
     }
   )
 )

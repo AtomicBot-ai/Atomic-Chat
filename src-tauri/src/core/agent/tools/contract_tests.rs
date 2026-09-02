@@ -335,9 +335,13 @@ async fn filesystem_patch_defaults_to_validation_and_prevalidates_every_file() {
 async fn filesystem_trash_moves_directories_through_the_native_trash_api() {
     let fixture = ToolFixture::allowed();
     fixture.workspace.write("discard/nested.txt", "recoverable");
+    // The FreeDesktop trash is the native mechanism on Linux, so only the other
+    // platforms can treat that directory as evidence of a hand-rolled fallback.
+    #[cfg(not(target_os = "linux"))]
     let linux_trash = dirs::home_dir()
         .expect("home directory")
         .join(".local/share/Trash/files");
+    #[cfg(not(target_os = "linux"))]
     let linux_trash_existed = linux_trash.exists();
 
     let trashed = fixture
@@ -346,6 +350,7 @@ async fn filesystem_trash_moves_directories_through_the_native_trash_api() {
     assert_eq!(trashed.status, ToolStatus::Ok);
     assert!(!fixture.workspace.path().join("discard").exists());
     assert_eq!(fixture.approval.requests().len(), 1);
+    #[cfg(not(target_os = "linux"))]
     if !linux_trash_existed {
         assert!(
             !linux_trash.exists(),

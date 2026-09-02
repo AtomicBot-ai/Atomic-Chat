@@ -47,8 +47,17 @@ export const isCloudProvider = (provider: ProviderObject): boolean =>
 /**
  * Has the user actually set this cloud provider up?
  *
- * A whitespace-only key is not a key — pasting a stray space would otherwise
- * present a provider as connected and fail on the first request.
+ * A key counts on its own — it is intent, and pasting one is the whole of
+ * "connect" for a key-taking cloud. A whitespace-only key is not a key, though:
+ * a stray space on paste would otherwise present a provider as connected and
+ * fail on the first request.
+ *
+ * Everything keyless has to show a model list instead. "Needs no API key" is
+ * not the same as "the user set this up": Ollama and `llama-server` are
+ * keyless wherever they are reachable, so the bare keyless test marked them
+ * connected on a machine where the daemon has never run — a green dot the user
+ * never earned. The model list is the proof, because it is only ever written
+ * by a `/v1/models` call the endpoint answered.
  */
 export const isProviderConnected = (provider: ProviderObject): boolean => {
   // A subscription carries no key — the bearer token lives in the Rust
@@ -57,21 +66,9 @@ export const isProviderConnected = (provider: ProviderObject): boolean => {
   // already uses.
   if (isSubscriptionProvider(provider.provider))
     return (provider.models?.length ?? 0) > 0
-  return Boolean(provider.api_key?.trim()) || isKeylessRemoteProvider(provider)
+  if (provider.api_key?.trim()) return true
+  return isKeylessRemoteProvider(provider) && (provider.models?.length ?? 0) > 0
 }
-
-/**
- * Connected *and* with something to show for it.
- *
- * A key counts on its own — it is intent, and the section it earns in the
- * model picker is how the user gets back to the gear to fetch the catalogue.
- * Everything else has to actually offer models: a loopback server that is not
- * running is "keyless" and therefore "connected" by the rule above, and a
- * permanently empty Ollama row is noise rather than information.
- */
-export const isProviderReady = (provider: ProviderObject): boolean =>
-  isProviderConnected(provider) &&
-  (Boolean(provider.api_key?.trim()) || (provider.models?.length ?? 0) > 0)
 
 /**
  * Providers authorised by signing in rather than by an API key.

@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { IconPlayerStopFilled, IconX } from '@tabler/icons-react'
+import { IconX } from '@tabler/icons-react'
 
 import VoiceElapsedTimer from '@/containers/chatInput/VoiceElapsedTimer'
 import VoiceLevelMeter from '@/containers/chatInput/VoiceLevelMeter'
@@ -18,9 +18,8 @@ type VoiceRecordingBarProps = {
 /**
  * The recording strip, shown inside the composer body while dictation runs.
  *
- * Deliberately *not* in the toolbar's left cluster: that cluster is disabled
- * wholesale while a reply streams (`opacity-50 pointer-events-none`), which
- * would leave an in-flight recording with no way to stop it.
+ * Status and discard only — stopping is the microphone button's job, since
+ * that is where the user reaches to end what they started there.
  */
 const VoiceRecordingBar = memo(function VoiceRecordingBar({
   threadKey,
@@ -32,7 +31,6 @@ const VoiceRecordingBar = memo(function VoiceRecordingBar({
   const ownerKey = useVoiceInput((state) => state.ownerKey)
   const interim = useVoiceInput((state) => state.interim)
   const segmentInFlight = useVoiceInput((state) => state.segmentInFlight)
-  const stop = useVoiceInput((state) => state.stop)
   const cancel = useVoiceInput((state) => state.cancel)
 
   if (ownerKey !== threadKey || !VOICE_ACTIVE_PHASES.has(phase)) return null
@@ -71,6 +69,9 @@ const VoiceRecordingBar = memo(function VoiceRecordingBar({
 
       <VoiceElapsedTimer className="shrink-0 text-xs text-muted-foreground" />
 
+      {/* Discard only. Stopping lives on the microphone button in the
+          toolbar, which turns into the stop square while recording — two
+          identical squares a few pixels apart just made the user guess. */}
       <Button
         variant="ghost"
         size="icon-xs"
@@ -78,15 +79,6 @@ const VoiceRecordingBar = memo(function VoiceRecordingBar({
         onClick={() => void cancel()}
       >
         <IconX size={16} className="text-muted-foreground" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        aria-label={t('common:voiceInput.stop')}
-        onClick={() => void stop()}
-        className="text-destructive hover:text-destructive bg-destructive/10 hover:bg-destructive/15"
-      >
-        <IconPlayerStopFilled size={16} />
       </Button>
     </div>
   )

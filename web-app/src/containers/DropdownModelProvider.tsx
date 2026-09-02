@@ -10,7 +10,7 @@ import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
 import {
   isCloudProvider,
   isLocalEngineProvider,
-  isProviderReady,
+  isProviderConnected,
 } from '@/lib/cloud-providers'
 import { highlightFzfMatch } from '@/utils/highlight'
 import Capabilities from './Capabilities'
@@ -50,7 +50,7 @@ import { ChevronsUpDown } from 'lucide-react'
  */
 const isPickerSection = (provider: ModelProvider): boolean =>
   isLocalEngineProvider(provider) ||
-  isProviderReady(provider) ||
+  isProviderConnected(provider) ||
   (!isKnownProvider(provider.provider) && provider.models.length > 0)
 
 interface SearchableModel {

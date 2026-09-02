@@ -5,7 +5,7 @@ import { getServiceHub } from '@/hooks/useServiceHub'
 import { modelSettings } from '@/lib/predefined'
 import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import { turboquantDefaultActive } from '@/lib/turboquantDefaultMigration'
-import { isCloudProvider, isProviderReady } from '@/lib/cloud-providers'
+import { isCloudProvider, isProviderConnected } from '@/lib/cloud-providers'
 
 /**
  * Historical provider id retained for one-time migration logic. The
@@ -712,7 +712,7 @@ export const useModelProvider = create<ModelProviderState>()(
             if (
               !provider.active &&
               isCloudProvider(provider) &&
-              isProviderReady(provider)
+              isProviderConnected(provider)
             ) {
               provider.active = true
             }

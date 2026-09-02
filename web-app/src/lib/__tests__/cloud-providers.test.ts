@@ -32,7 +32,6 @@ import {
   isCloudProvider,
   isLocalEngineProvider,
   isProviderConnected,
-  isProviderReady,
   takesApiKey,
 } from '@/lib/cloud-providers'
 import { CHATGPT_BASE_URL } from '@/constants/providers'
@@ -133,11 +132,7 @@ describe('isLocalEngineProvider / isCloudProvider', () => {
 })
 
 describe('isProviderConnected', () => {
-  it('is true for a keyless loopback provider', () => {
-    expect(isProviderConnected(byName('ollama'))).toBe(true)
-  })
-
-  it('is true once a key is saved', () => {
+  it('counts a saved key on its own, before any catalogue is fetched', () => {
     expect(isProviderConnected(byName('my-hosted'))).toBe(true)
   })
 
@@ -154,20 +149,14 @@ describe('isProviderConnected', () => {
     })
     expect(isProviderConnected(provider)).toBe(false)
   })
-})
 
-describe('isProviderReady', () => {
-  it('counts a saved key on its own, before any catalogue is fetched', () => {
-    expect(isProviderReady(byName('my-hosted'))).toBe(true)
-  })
-
-  it('asks a keyless loopback server for models before listing it', () => {
-    // "Connected" for Ollama only means it needs no key. Nothing proves the
-    // server is actually there until it answers with a catalogue.
-    expect(isProviderConnected(byName('ollama'))).toBe(true)
-    expect(isProviderReady(byName('ollama'))).toBe(false)
+  it('asks a keyless self-hosted server for models before calling it connected', () => {
+    // Needing no key is not the same as being set up: an Ollama that has never
+    // run answers nothing, so it gets no green dot.
+    expect(isProviderConnected(byName('ollama'))).toBe(false)
+    expect(isProviderConnected(byName('llamacpp-server'))).toBe(false)
     expect(
-      isProviderReady({
+      isProviderConnected({
         ...byName('ollama'),
         models: [{ id: 'llama3' } as Model],
       })
@@ -178,7 +167,7 @@ describe('isProviderReady', () => {
     // The registry ships openai with a model list; without a key it is an
     // advert, not a connection.
     expect(
-      isProviderReady({
+      isProviderConnected({
         ...byName('openai'),
         models: [{ id: 'gpt-4o' } as Model],
       })

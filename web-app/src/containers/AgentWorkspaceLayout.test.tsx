@@ -370,6 +370,51 @@ describe('AgentWorkspaceLayout', () => {
     expect(screen.queryByText('Files')).not.toBeInTheDocument()
   })
 
+  it('opens the files sidebar when a folder is attached mid-session', async () => {
+    const { rerender } = render(
+      <AgentWorkspaceLayout
+        threadId="thread"
+        workspace={agentWorkspace}
+        onAddExternal={onAddExternal}
+        refreshKey={0}
+      >
+        <div>Chat</div>
+      </AgentWorkspaceLayout>
+    )
+
+    // Run settings hold the right column until the folder lands.
+    fireEvent.click(
+      screen.getByRole('button', { name: 'chat:runSettings.open' })
+    )
+    expect(await screen.findByText('Run settings')).toBeInTheDocument()
+
+    rerender(
+      <AgentWorkspaceLayout
+        threadId="thread"
+        workspace={{
+          ...agentWorkspace,
+          externalRoots: [
+            {
+              rootId: 'external',
+              path: '/external',
+              name: 'external',
+              canEdit: true,
+            },
+          ],
+        }}
+        onAddExternal={onAddExternal}
+        refreshKey={0}
+      >
+        <div>Chat</div>
+      </AgentWorkspaceLayout>
+    )
+
+    // The run settings node lingers while its exit animation runs, so the
+    // store is what says the slot changed hands.
+    expect(await screen.findByText('Files')).toBeInTheDocument()
+    expect(useRunSettingsPanel.getState().isOpen).toBe(false)
+  })
+
   it('opens preview space without changing the files panel width', async () => {
     render(
       <AgentWorkspaceLayout

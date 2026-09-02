@@ -68,6 +68,7 @@ vi.mock('@/lib/voice/engine', () => ({
   },
 }))
 
+import { useGeneralSetting } from '../useGeneralSetting'
 import { ensureVoiceReady, useVoiceInput } from '../useVoiceInput'
 import { useVoiceSetting } from '../useVoiceSetting'
 
@@ -89,6 +90,7 @@ describe('useVoiceInput', () => {
       inputDeviceId: null,
       languageHint: 'auto',
     })
+    useGeneralSetting.setState({ currentLanguage: 'en' })
     useVoiceInput.getState().reset()
     useVoiceInput.setState({ setupOpen: false, setupStep: 0, permission: 'unknown' })
     getPermission.mockResolvedValue('granted')
@@ -103,6 +105,30 @@ describe('useVoiceInput', () => {
     expect(state.sessionId).toBe('session-1')
     expect(state.ownerKey).toBe('thread-1')
     expect(startSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends the language as a transcription directive', async () => {
+    // Without one the model treats every clip as English, so this is not a
+    // hint that can quietly go missing.
+    useGeneralSetting.setState({ currentLanguage: 'de-DE' })
+    useVoiceSetting.setState({ languageHint: 'en' })
+
+    await useVoiceInput.getState().begin('thread-1', ANCHOR)
+
+    expect(startSession).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: 'lang:en' })
+    )
+  })
+
+  it('falls back to the app language when the hint is auto', async () => {
+    useGeneralSetting.setState({ currentLanguage: 'de-DE' })
+    useVoiceSetting.setState({ languageHint: 'auto' })
+
+    await useVoiceInput.getState().begin('thread-1', ANCHOR)
+
+    expect(startSession).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: 'lang:de' })
+    )
   })
 
   it('opens the setup dialog on the model step when the model is absent', async () => {

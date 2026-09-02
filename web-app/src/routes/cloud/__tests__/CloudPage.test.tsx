@@ -267,7 +267,8 @@ describe('CloudPage', () => {
   })
 
   it('shows no models card while nothing is connected', () => {
-    mockStore(providers.filter((p) => p.provider !== 'ollama'))
+    // Nothing here has a key, and the keyless Ollama has never answered.
+    mockStore()
     render(<CloudPage />)
 
     expect(screen.getByText('cloud:connection.placeholder')).toBeInTheDocument()
@@ -275,7 +276,15 @@ describe('CloudPage', () => {
   })
 
   it('opens on an already-connected provider when the URL names none', () => {
-    // `ollama` is keyless on loopback, so it counts as set up.
+    // `ollama` needs no key, but only a served model list proves the daemon is
+    // actually there — an empty one is not a connection to open on.
+    mockStore(
+      providers.map((p) =>
+        p.provider === 'ollama'
+          ? { ...p, models: [{ id: 'llama3' } as Model] }
+          : p
+      )
+    )
     render(<CloudPage />)
 
     expect(screen.getByText('providers:models')).toBeInTheDocument()

@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { ChevronDown, PanelRight } from 'lucide-react'
-import { IconChevronDown } from '@tabler/icons-react'
+import { IconChevronDown, IconCirclePlus } from '@tabler/icons-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -12,6 +12,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Slider } from '@/components/ui/slider'
@@ -19,6 +20,8 @@ import { Switch } from '@/components/ui/switch'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { ModelSettingsList } from '@/containers/ModelSetting'
 import { ParametersSection } from '@/containers/ParametersSection'
+import AddEditAssistant from '@/containers/dialogs/AddEditAssistant'
+import { useAssistant } from '@/hooks/useAssistant'
 import { useEffectiveAssistant } from '@/hooks/useEffectiveAssistant'
 import {
   formatContextSize,
@@ -68,8 +71,18 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
   const { t } = useTranslation()
   const { assistants, activeAssistant, selectAssistant, updateParam } =
     useEffectiveAssistant()
+  const addAssistant = useAssistant((state) => state.addAssistant)
   const context = useModelContextLength()
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [createAssistantOpen, setCreateAssistantOpen] = useState(false)
+
+  // A new assistant made from here is meant for the chat at hand, so it
+  // becomes the active one straight away instead of only landing in Settings.
+  const handleCreateAssistant = (assistant: Assistant) => {
+    addAssistant(assistant)
+    selectAssistant(assistant)
+    setCreateAssistantOpen(false)
+  }
 
   const closeLabel = t('chat:runSettings.close')
 
@@ -118,7 +131,10 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
                       {activeAssistant?.name ?? t('assistants:none')}
                     </span>
                   </span>
-                  <IconChevronDown size={14} className="text-muted-foreground" />
+                  <IconChevronDown
+                    size={14}
+                    className="text-muted-foreground"
+                  />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent
@@ -158,8 +174,19 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
                     </span>
                   </DropdownMenuItem>
                 )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setCreateAssistantOpen(true)}>
+                  <IconCirclePlus size={14} className="text-muted-foreground" />
+                  <span>{t('assistants:addAssistant')}</span>
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <AddEditAssistant
+              open={createAssistantOpen}
+              onOpenChange={setCreateAssistantOpen}
+              editingKey={null}
+              onSave={handleCreateAssistant}
+            />
           </div>
 
           {/* Model: only local engines expose a context knob and load options. */}

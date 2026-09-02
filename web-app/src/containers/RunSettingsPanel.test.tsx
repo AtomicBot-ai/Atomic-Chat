@@ -1,10 +1,12 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { RunSettingsPanel } from '@/containers/RunSettingsPanel'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useThreads } from '@/hooks/useThreads'
+import type { ServiceHub } from '@/services'
 import type { ModelsService } from '@/services/models/types'
 import { seedServiceHub } from '@/test/service-hub'
 
@@ -17,6 +19,13 @@ class MockResizeObserver {
 beforeAll(() => {
   global.ResizeObserver = MockResizeObserver
 })
+
+// emoji-picker-react probes the DOM with selectors jsdom rejects, and the
+// assistant dialog under test does not need a live picker.
+vi.mock('emoji-picker-react', () => ({
+  default: () => null,
+  Theme: { LIGHT: 'light', DARK: 'dark', AUTO: 'auto' },
+}))
 
 vi.mock('@/containers/dynamicControllerSetting', () => ({
   DynamicControllerSetting: ({ title }: { title: string }) => (
@@ -113,6 +122,37 @@ describe('RunSettingsPanel', () => {
     expect(onClose).toHaveBeenCalled()
   })
 
+  it('creates an assistant from the dropdown and makes it the active one', async () => {
+    const createAssistant = vi.fn().mockResolvedValue(undefined)
+    seedServiceHub({
+      models: {
+        stopModel: vi.fn(),
+        startModel: vi.fn(),
+        getActiveModels: vi.fn().mockResolvedValue([]),
+      } as unknown as ModelsService,
+      assistants: {
+        createAssistant,
+      } as unknown as ReturnType<ServiceHub['assistants']>,
+    })
+    seedModel('llamacpp')
+    render(<RunSettingsPanel onClose={onClose} />)
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: /Writer/ }))
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'assistants:addAssistant' })
+    )
+
+    const nameField = await screen.findByPlaceholderText('assistants:enterName')
+    fireEvent.change(nameField, { target: { value: 'Reviewer' } })
+    fireEvent.click(screen.getByRole('button', { name: 'assistants:save' }))
+
+    const state = useAssistant.getState()
+    expect(state.assistants.map((a) => a.name)).toContain('Reviewer')
+    expect(state.pendingAssistant?.name).toBe('Reviewer')
+    expect(createAssistant).toHaveBeenCalled()
+  })
+
   it('reveals the model load options behind the advanced switch', () => {
     seedModel('llamacpp')
     render(<RunSettingsPanel onClose={onClose} />)
@@ -125,10 +165,14 @@ describe('RunSettingsPanel', () => {
 
     act(() => {
       fireEvent.click(
-        screen.getByRole('switch', { name: 'chat:runSettings.advancedSettings' })
+        screen.getByRole('switch', {
+          name: 'chat:runSettings.advancedSettings',
+        })
       )
     })
-    expect(screen.getByRole('button', { name: 'GPU Layers' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'GPU Layers' })
+    ).toBeInTheDocument()
     // Context length has its own slider above, so it is not listed twice.
     expect(
       screen.queryByRole('button', { name: 'Context Size' })
