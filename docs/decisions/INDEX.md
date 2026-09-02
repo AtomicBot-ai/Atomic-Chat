@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-229 records, 2026-05-19 → 2026-09-01.
+231 records, 2026-05-19 → 2026-09-02.
 
 ---
 
@@ -248,8 +248,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (27)
+## UI / UX (29)
 
+- **2026-09-02** — [Switch single MCP tools per connector from a tools dialog; a connector's per-chat on/off lives there too](2026-09-02-switch-single-mcp-tools-per-connector-from-a-tools-dialog.md)
+- **2026-09-02** — [Measure and surface MCP tool cost in chat; never trim or hide schemas](2026-09-02-measure-and-surface-mcp-tool-cost-in-chat.md)
 - **2026-08-27** — [Connect a ChatGPT subscription as a model provider](2026-08-27-connect-a-chatgpt-subscription-as-a-model-provider.md)
 - **2026-08-27** — [Move cloud providers out of Settings into a Cloud page](2026-08-27-move-cloud-providers-into-a-cloud-page.md)
 - **2026-08-24** — [GAIA L1: media tools, PDF-from-URL, and web recovery fallbacks](2026-08-24-gaia-l1-media-tools-and-web-recovery.md)

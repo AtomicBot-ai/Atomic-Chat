@@ -211,6 +211,40 @@ describe('useVoiceInput', () => {
     expect(state.lastOutcome).toBe('inserted')
   })
 
+  it('does not resolve stop() until the tail phrase has landed', async () => {
+    await useVoiceInput.getState().begin('thread-1', ANCHOR)
+
+    let resolved = false
+    const stopping = useVoiceInput
+      .getState()
+      .stop()
+      .then(() => {
+        resolved = true
+      })
+
+    // `stopSession` has already returned here: natively that only means the
+    // microphone is shut. The phrase the user was in the middle of is still
+    // being transcribed, and resolving now would send the message without it.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(stopSession).toHaveBeenCalledWith('session-1')
+    expect(resolved).toBe(false)
+    expect(useVoiceInput.getState().phase).toBe('finalizing')
+
+    fire({
+      type: 'transcript',
+      sessionId: 'session-1',
+      index: 0,
+      text: 'the last thing I said',
+      durationMs: 900,
+      latencyMs: 300,
+    })
+    fire({ type: 'state', sessionId: 'session-1', state: 'stopped' })
+
+    await stopping
+    expect(resolved).toBe(true)
+    expect(useVoiceInput.getState().committed).toBe('the last thing I said')
+  })
+
   it('cancels without transcribing the tail', async () => {
     await useVoiceInput.getState().begin('thread-1', ANCHOR)
     await useVoiceInput.getState().cancel()
@@ -309,6 +343,47 @@ describe('ensureVoiceReady', () => {
     await ensureVoiceReady('thread-1', ANCHOR)
 
     expect(useVoiceInput.getState().setupStep).toBe(2)
+    expect(startSession).not.toHaveBeenCalled()
+  })
+
+  it('recovers after the model step once the model has been installed', async () => {
+    isVoiceModelInstalled.mockResolvedValue(false)
+    await ensureVoiceReady('thread-1', ANCHOR)
+    expect(useVoiceInput.getState().phase).toBe('model-missing')
+
+    // The user downloads the model from the wizard and closes it.
+    isVoiceModelInstalled.mockResolvedValue(true)
+    useVoiceInput.getState().closeSetup()
+
+    await ensureVoiceReady('thread-1', ANCHOR)
+
+    expect(startSession).toHaveBeenCalledTimes(1)
+    expect(useVoiceInput.getState().phase).toBe('listening')
+  })
+
+  it('recovers after the permission step once access has been granted', async () => {
+    getPermission.mockResolvedValue('denied')
+    await ensureVoiceReady('thread-1', ANCHOR)
+    expect(useVoiceInput.getState().phase).toBe('permission-denied')
+
+    getPermission.mockResolvedValue('granted')
+    useVoiceInput.getState().closeSetup()
+
+    await ensureVoiceReady('thread-1', ANCHOR)
+
+    expect(startSession).toHaveBeenCalledTimes(1)
+    expect(useVoiceInput.getState().phase).toBe('listening')
+  })
+
+  it('reports a failing permission check instead of dropping the click', async () => {
+    getPermission.mockRejectedValueOnce(new Error('plugin unavailable'))
+
+    await ensureVoiceReady('thread-1', ANCHOR)
+
+    const state = useVoiceInput.getState()
+    expect(state.phase).toBe('error')
+    expect(state.error?.code).toBe('internal')
+    expect(state.ownerKey).toBe('thread-1')
     expect(startSession).not.toHaveBeenCalled()
   })
 

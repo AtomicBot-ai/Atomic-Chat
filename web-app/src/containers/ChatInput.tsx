@@ -45,7 +45,6 @@ import {
   IconPaperclip,
   IconLoader2,
   IconMusic,
-  IconRobot,
 } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -69,7 +68,9 @@ import { localStorageKey } from '@/constants/localStorage'
 import { defaultModel } from '@/lib/models'
 import { useAssistant } from '@/hooks/useAssistant'
 import DropdownPlugins from '@/containers/DropdownPlugins'
-import { BriefcaseIcon } from '@/components/animated-icon/briefcase'
+import ToolCostHint from '@/containers/ToolCostHint'
+import { PuzzleIcon } from '@/components/animated-icon/puzzle'
+import { RobotHeadIcon } from '@/components/icons/robot-head'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
@@ -266,6 +267,10 @@ const ChatInput = memo(function ChatInput({
   // home and an open thread can both be mounted at once.
   const isVoiceActive =
     voiceOwner === composerThreadKey && VOICE_ACTIVE_PHASES.has(voicePhase)
+  // Insertion outlives the recording. The tail phrase is transcribed after the
+  // microphone closes, so it arrives together with the `stopped` event — by
+  // which point the phase is `idle` and `isVoiceActive` is already false.
+  const isVoiceOwned = voiceOwner === composerThreadKey
   // Skills work on both engines now; the web build has no `invoke`, so the
   // hook stays off there.
   const {
@@ -410,7 +415,21 @@ const ChatInput = memo(function ChatInput({
           shouldAttemptAutoStart,
           isExplicitSwitchPending,
         } = await import('@/utils/switchModel')
+        const { isAnyChatBusy } = await import('@/stores/chat-session-store')
         if (cancelled) return
+
+        // Never reshuffle engines while an answer is being generated: a
+        // switch runs `stopAllModelsExcept` / `stopAllModels`, which SIGKILLs
+        // the llama-server that is streaming. `chatStatus` covers this
+        // composer's thread; `isAnyChatBusy` covers other threads and the
+        // home/project composers that get no `chatStatus`. The effect re-runs
+        // once the stream ends (`chatStatus` is a dependency).
+        if (
+          chatStatus === 'submitted' ||
+          chatStatus === 'streaming' ||
+          isAnyChatBusy()
+        )
+          return
 
         // An explicit pick (dropdown / send) is already driving this exact
         // target. It changes the selection first, so this effect fires while
@@ -429,12 +448,36 @@ const ChatInput = memo(function ChatInput({
         // every navigation into a thread.
         syncActiveModelsFromEngines(activeAcrossProviders || [])
 
-        if (
-          actualActive.length === 1 &&
-          actualActive[0] === selectedModel.id &&
-          activeAcrossProviders.length === 1 &&
-          activeAcrossProviders[0] === selectedModel.id
-        ) {
+        if (actualActive.includes(selectedModel.id)) {
+          // The selected provider already serves this model. If another
+          // engine holds a stray copy (both llama.cpp providers list the
+          // same GGUF dir, so a post-download auto-start can land in the
+          // other one), drop only that copy — a full `switchToModel` would
+          // tear down the serving engine as well. `getActiveModels()` with
+          // no provider de-duplicates ids across engines, so the same model
+          // loaded twice is invisible there; probe the other engines.
+          const otherEngines = (
+            ['llamacpp', 'llamacpp-upstream', 'mlx'] as const
+          ).filter((engine) => engine !== selectedProvider)
+          const strayCopies = await Promise.all(
+            otherEngines.map((engine) =>
+              serviceHub
+                .models()
+                .getActiveModels(engine)
+                .catch(() => [] as string[])
+            )
+          )
+          if (cancelled) return
+          if (
+            actualActive.length > 1 ||
+            strayCopies.some((models) => models.length > 0)
+          ) {
+            await serviceHub
+              .models()
+              .stopAllModelsExcept(selectedModel.id, selectedProvider)
+            if (cancelled) return
+            syncActiveModelsFromEngines([selectedModel.id])
+          }
           return
         }
 
@@ -473,6 +516,8 @@ const ChatInput = memo(function ChatInput({
     // finishes and marks the model active again is a harmless no-op (the
     // active-model check above short-circuits immediately).
     isModelActive,
+    // Re-check after a stream ends: the busy guard above skipped the probe.
+    chatStatus,
   ])
 
   const modelLoadError = useModelLoad((state) => state.modelLoadError)
@@ -736,7 +781,9 @@ const ChatInput = memo(function ChatInput({
   // Recompute the whole value from the anchor on every new phrase rather than
   // appending, so a dropped render can never duplicate a phrase.
   useEffect(() => {
-    if (!isVoiceActive || !voiceAnchor) return
+    if (!isVoiceOwned || !voiceAnchor) return
+    // A discarded recording is the revert effect's business, not ours.
+    if (voiceOutcome === 'cancelled') return
     const { value, caret, insertedLength } = mergeDictation(
       voiceAnchor,
       voiceCommitted
@@ -748,7 +795,7 @@ const ChatInput = memo(function ChatInput({
       textareaRef.current?.focus()
       textareaRef.current?.setSelectionRange(caret, caret)
     })
-  }, [isVoiceActive, voiceAnchor, voiceCommitted, setPrompt])
+  }, [isVoiceOwned, voiceAnchor, voiceCommitted, voiceOutcome, setPrompt])
 
   // Cancelling removes exactly what this session inserted — unless the user
   // edited the field meanwhile, in which case the text is theirs and stays.
@@ -787,11 +834,19 @@ const ChatInput = memo(function ChatInput({
     }
   }, [composerThreadKey])
 
-  const handleSendMessage = async (prompt: string) => {
+  const handleSendMessage = async (submitted: string) => {
+    let prompt = submitted
     // Flush the tail phrase first, or pressing Enter mid-sentence drops the
-    // last few words the user just spoke.
+    // last few words the user just spoke. `stop()` resolves only once that
+    // phrase has actually been transcribed, so the value has to be recomputed
+    // afterwards — `submitted` was captured before those words existed.
     if (isVoiceActive) {
       await useVoiceInput.getState().stop()
+      const { anchor, committed, lastOutcome } = useVoiceInput.getState()
+      if (anchor && lastOutcome !== 'cancelled') {
+        prompt = mergeDictation(anchor, committed).value
+        setPrompt(prompt)
+      }
     }
     if (!selectedModel) {
       // Model preloading is off by default, so "nothing selected yet" is the
@@ -2601,6 +2656,10 @@ const ChatInput = memo(function ChatInput({
                   )}
                 </div>
               )}
+              <ToolCostHint
+                threadId={currentThreadId}
+                initialMessage={initialMessage}
+              />
               <AgentSkillSlashMenu
                 skills={eligibleAgentSkills}
                 activeIndex={agentSkillActiveIndex}
@@ -2733,9 +2792,7 @@ const ChatInput = memo(function ChatInput({
                       ? t('common:voiceInput.placeholder')
                       : selectedAgentSkill
                         ? ''
-                        : agentRouteActive
-                          ? t('chat:agentMode.placeholder')
-                          : t('common:placeholder.chatInput')
+                        : t('common:placeholder.chatInput')
                   }
                   autoFocus
                   spellCheck={spellCheckChatInput}
@@ -2749,6 +2806,10 @@ const ChatInput = memo(function ChatInput({
                   }}
                   className={cn(
                     'block min-w-0 w-full resize-none border-none bg-transparent p-0 text-sm leading-6 outline-0 break-words',
+                    // Sideways is never a scroll axis here: text wraps, and
+                    // WebKit otherwise rubber-bands a vertically scrollable
+                    // textarea on a horizontal trackpad swipe.
+                    'overflow-x-hidden overscroll-x-none',
                     rows < maxRows && 'scrollbar-hide',
                     className
                   )}
@@ -2761,7 +2822,11 @@ const ChatInput = memo(function ChatInput({
             </div>
           </div>
 
-          <div className="absolute z-20 bg-transparent bottom-0 w-full p-2 ">
+          {/* inset-x, not w-full: the parent pads 2px, and a full-width box
+              placed at the static position overhangs the right edge by that
+              much — enough for the page's scroll container to let the whole
+              composer be dragged sideways. */}
+          <div className="absolute z-20 bg-transparent bottom-0 inset-x-0.5 p-2">
             <div className="flex justify-between items-center w-full">
               <div className="px-1 flex items-center gap-1 flex-1 min-w-0">
                 <div
@@ -2844,26 +2909,16 @@ const ChatInput = memo(function ChatInput({
                           lives here and surfaces as a toolbar chip; routing
                           guards at send time, so it stays togglable even when
                           the current provider can't serve the agent loop —
-                          the hint below explains why nothing changes. */}
+                          the chip's tooltip carries that explanation, so this
+                          row stays a single line like its neighbours. */}
                       <DropdownMenuItem
                         onClick={() => setAgentModeEnabled(!agentModeEnabled)}
                       >
-                        <IconRobot
+                        <RobotHeadIcon
                           size={18}
                           className="text-muted-foreground"
                         />
-                        <div className="flex flex-col min-w-0">
-                          <span>{t('chat:agentMode.menuItem')}</span>
-                          {agentBlockReason && (
-                            <span className="text-xs text-muted-foreground whitespace-normal">
-                              {t(
-                                agentBlockReason === 'missing-api-key'
-                                  ? 'chat:agentMode.providerKeyMissing'
-                                  : 'chat:agentMode.providerUnavailable'
-                              )}
-                            </span>
-                          )}
-                        </div>
+                        <span>{t('chat:agentMode.menuItem')}</span>
                         {agentModeEnabled && (
                           <IconCheck
                             size={16}
@@ -2878,7 +2933,7 @@ const ChatInput = memo(function ChatInput({
                         <DropdownMenuItem
                           onClick={() => setConnectorsPinned(!connectorsPinned)}
                         >
-                          <BriefcaseIcon
+                          <PuzzleIcon
                             size={18}
                             className="text-muted-foreground"
                           />
@@ -2914,49 +2969,6 @@ const ChatInput = memo(function ChatInput({
                     </DropdownMenuContent>
                   </DropdownMenu>
 
-                  {/* Agent mode chip — the toolbar face of the global toggle,
-                      like the pinned connectors button. The X (or unchecking
-                      in the "+" menu) turns it off everywhere. Muted with a
-                      tooltip while the provider can't serve the agent loop. */}
-                  {agentModeEnabled && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div
-                          className={cn(
-                            'flex items-center gap-1 rounded-full bg-secondary pl-2 pr-1 py-0.5 mb-1 shrink-0',
-                            agentBlockReason && 'opacity-60'
-                          )}
-                          data-testid="agent-mode-chip"
-                        >
-                          <IconRobot
-                            size={16}
-                            className="text-secondary-foreground"
-                          />
-                          <span className="text-xs text-secondary-foreground">
-                            {t('chat:agentMode.agent')}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            className="rounded-full size-5"
-                            aria-label={t('chat:agentMode.turnOff')}
-                            onClick={() => setAgentModeEnabled(false)}
-                          >
-                            <IconX size={12} />
-                          </Button>
-                        </div>
-                      </TooltipTrigger>
-                      {agentBlockReason && (
-                        <TooltipContent>
-                          {t(
-                            agentBlockReason === 'missing-api-key'
-                              ? 'chat:agentMode.providerKeyMissing'
-                              : 'chat:agentMode.providerUnavailable'
-                          )}
-                        </TooltipContent>
-                      )}
-                    </Tooltip>
-                  )}
                   {/* Approval mode rides the toolbar in both engines: it
                       gates the agent's dangerous tools AND the MCP/RAG calls
                       of the chat pipeline (see lib/mcp-approval.ts). */}
@@ -3087,20 +3099,30 @@ const ChatInput = memo(function ChatInput({
                                 }
                               }}
                             >
-                              {(_isOpen, activeConnectors) => {
+                              {(_isOpen, sentConnectors, activeConnectors) => {
+                                // Lit when a connector's tools ride this
+                                // chat; "sent/active" once some are muted.
                                 return (
                                   <div
                                     className={cn(
                                       'p-1 flex items-center justify-center rounded-sm transition-all duration-200 ease-in-out gap-1 cursor-pointer'
                                     )}
                                   >
-                                    <BriefcaseIcon
+                                    <PuzzleIcon
                                       size={18}
                                       className={cn(
                                         'text-muted-foreground',
-                                        activeConnectors > 0 && 'text-primary'
+                                        sentConnectors > 0 && 'text-primary'
                                       )}
                                     />
+                                    {activeConnectors > sentConnectors && (
+                                      <span
+                                        className="text-[10px] text-muted-foreground"
+                                        data-testid="connectors-sent-count"
+                                      >
+                                        {sentConnectors}/{activeConnectors}
+                                      </span>
+                                    )}
                                   </div>
                                 )
                               }}
@@ -3118,6 +3140,52 @@ const ChatInput = memo(function ChatInput({
                       read the same state as their per-turn web_search flag. */}
                   {(supportsTools || agentRouteActive) && (
                     <WebSearchToggle initialMessage={initialMessage} />
+                  )}
+                  {/* Agent mode chip — the toolbar face of the global toggle,
+                      like the pinned connectors button. Last in the cluster on
+                      purpose: turning the mode on then appends the chip instead
+                      of shifting every control the user was aiming at. The X
+                      (or unchecking in the "+" menu) turns it off everywhere.
+                      Muted with a tooltip while the provider can't serve the
+                      agent loop. */}
+                  {agentModeEnabled && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div
+                          className={cn(
+                            'flex items-center gap-1 rounded-full bg-secondary pl-2 pr-1 py-0.5 mb-1 shrink-0',
+                            agentBlockReason && 'opacity-60'
+                          )}
+                          data-testid="agent-mode-chip"
+                        >
+                          <RobotHeadIcon
+                            size={16}
+                            className="text-secondary-foreground"
+                          />
+                          <span className="text-xs text-secondary-foreground">
+                            {t('chat:agentMode.agent')}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            className="rounded-full size-5"
+                            aria-label={t('chat:agentMode.turnOff')}
+                            onClick={() => setAgentModeEnabled(false)}
+                          >
+                            <IconX size={12} />
+                          </Button>
+                        </div>
+                      </TooltipTrigger>
+                      {agentBlockReason && (
+                        <TooltipContent>
+                          {t(
+                            agentBlockReason === 'missing-api-key'
+                              ? 'chat:agentMode.providerKeyMissing'
+                              : 'chat:agentMode.providerUnavailable'
+                          )}
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
                   )}
                 </div>
               </div>

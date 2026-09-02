@@ -4,7 +4,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AgentWorkspaceLayout } from './AgentWorkspaceLayout'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useWorkspacePreviewStore } from '@/stores/workspace-preview-store'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useHeaderOverlay } from '@/stores/header-overlay-store'
+import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
 
 const media = vi.hoisted(() => ({ desktop: true }))
 const panelLayouts = vi.hoisted(() => ({ values: [] as number[][] }))
@@ -63,6 +65,17 @@ vi.mock('./AgentWorkspaceFiles', () => ({
   ),
 }))
 
+vi.mock('./RunSettingsPanel', () => ({
+  RunSettingsPanel: ({ onClose }: { onClose: () => void }) => (
+    <div>
+      Run settings
+      <button type="button" onClick={onClose}>
+        Close run settings
+      </button>
+    </div>
+  ),
+}))
+
 vi.mock('./ArtifactPanel', () => ({
   ArtifactPanel: () => <div>Artifact panel</div>,
 }))
@@ -73,10 +86,57 @@ describe('AgentWorkspaceLayout', () => {
     panelLayouts.values = []
     useArtifactStore.getState().close()
     useWorkspacePreviewStore.getState().reset()
-    useHeaderOverlay.getState().setRightOverlay(false)
+    useHeaderOverlay.getState().setRightOverlayButtons(0)
+    useRunSettingsPanel.getState().close()
+    useGeneralSetting.setState({ agentModeEnabled: true })
   })
 
-  it('flags the header while the files button hangs over its corner', async () => {
+  it('offers the files sidebar only while agent mode is on', async () => {
+    useGeneralSetting.setState({ agentModeEnabled: false })
+    render(
+      <AgentWorkspaceLayout
+        threadId="thread"
+        workspace={agentWorkspace}
+        onAddExternal={onAddExternal}
+        refreshKey={0}
+      >
+        <div>Chat</div>
+      </AgentWorkspaceLayout>
+    )
+
+    // A plain chat: run settings only, and the header clears one button.
+    expect(
+      screen.getByRole('button', { name: 'chat:runSettings.open' })
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Open files sidebar' })
+    ).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(useHeaderOverlay.getState().rightOverlayButtons).toBe(1)
+    })
+
+    // Switching agent mode on brings the files toggle in; off again while the
+    // files are open closes them.
+    act(() => {
+      useGeneralSetting.setState({ agentModeEnabled: true })
+    })
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Open files sidebar' })
+    )
+    expect(await screen.findByText('Files')).toBeInTheDocument()
+
+    act(() => {
+      useGeneralSetting.setState({ agentModeEnabled: false })
+    })
+    await waitFor(() => {
+      expect(screen.queryByText('Files')).not.toBeInTheDocument()
+    })
+    expect(
+      screen.queryByRole('button', { name: 'Open files sidebar' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('tells the header how many corner buttons hang over it', async () => {
     const { unmount } = render(
       <AgentWorkspaceLayout
         threadId="thread"
@@ -88,33 +148,33 @@ describe('AgentWorkspaceLayout', () => {
       </AgentWorkspaceLayout>
     )
 
-    // Sidebar closed: the floating button lands on the header's corner.
+    // Sidebar closed: both floating buttons land on the header's corner.
     await waitFor(() => {
-      expect(useHeaderOverlay.getState().rightOverlay).toBe(true)
+      expect(useHeaderOverlay.getState().rightOverlayButtons).toBe(2)
     })
 
     fireEvent.click(screen.getByRole('button', { name: 'Open files sidebar' }))
     expect(await screen.findByText('Files')).toBeInTheDocument()
     await waitFor(() => {
-      expect(useHeaderOverlay.getState().rightOverlay).toBe(false)
+      expect(useHeaderOverlay.getState().rightOverlayButtons).toBe(0)
     })
 
     fireEvent.click(screen.getByRole('button', { name: 'Close files sidebar' }))
     await waitFor(() => {
-      expect(useHeaderOverlay.getState().rightOverlay).toBe(true)
+      expect(useHeaderOverlay.getState().rightOverlayButtons).toBe(2)
     })
 
-    // A preview panel takes that edge instead, so the button no longer lands on
-    // the header.
+    // A preview panel takes that edge instead, so the buttons no longer land
+    // on the header.
     act(() => {
       useArtifactStore.getState().open('source', '<h1>Artifact</h1>')
     })
     await waitFor(() => {
-      expect(useHeaderOverlay.getState().rightOverlay).toBe(false)
+      expect(useHeaderOverlay.getState().rightOverlayButtons).toBe(0)
     })
 
     unmount()
-    expect(useHeaderOverlay.getState().rightOverlay).toBe(false)
+    expect(useHeaderOverlay.getState().rightOverlayButtons).toBe(0)
   })
 
   it('uses the workspace layout on desktop and falls back on narrow screens', async () => {
@@ -277,7 +337,7 @@ describe('AgentWorkspaceLayout', () => {
       'data-default-size',
       '100'
     )
-    expect(screen.getByTestId('panel-agent-files')).toHaveAttribute(
+    expect(screen.getByTestId('panel-agent-sidebar')).toHaveAttribute(
       'data-default-size',
       '0'
     )
@@ -336,5 +396,151 @@ describe('AgentWorkspaceLayout', () => {
     await waitFor(() => {
       expect(panelLayouts.values.at(-1)).toEqual([52, 24, 24])
     })
+  })
+
+  it('offers only the run settings toggle when files are disabled', async () => {
+    render(
+      <AgentWorkspaceLayout
+        threadId="home"
+        workspace={{ externalRoots: [] }}
+        onAddExternal={onAddExternal}
+        refreshKey={0}
+        filesEnabled={false}
+      >
+        <div>Home</div>
+      </AgentWorkspaceLayout>
+    )
+
+    expect(
+      screen.getByRole('button', { name: 'chat:runSettings.open' })
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Open files sidebar' })
+    ).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(useHeaderOverlay.getState().rightOverlayButtons).toBe(1)
+    })
+  })
+
+  it('opens and closes the run settings, hiding the corner buttons meanwhile', async () => {
+    render(
+      <AgentWorkspaceLayout
+        threadId="thread"
+        workspace={agentWorkspace}
+        onAddExternal={onAddExternal}
+        refreshKey={0}
+      >
+        <div>Chat</div>
+      </AgentWorkspaceLayout>
+    )
+
+    expect(screen.queryByText('Run settings')).not.toBeInTheDocument()
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'chat:runSettings.open' })
+    )
+    expect(await screen.findByText('Run settings')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'chat:runSettings.open' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Open files sidebar' })
+    ).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(panelLayouts.values.at(-1)).toEqual([76, 0, 24])
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close run settings' }))
+    await waitFor(() => {
+      expect(screen.queryByText('Run settings')).not.toBeInTheDocument()
+    })
+    expect(
+      screen.getByRole('button', { name: 'chat:runSettings.open' })
+    ).toBeInTheDocument()
+  })
+
+  it('lets files and run settings take turns in the right column', async () => {
+    render(
+      <AgentWorkspaceLayout
+        threadId="thread"
+        workspace={agentWorkspace}
+        onAddExternal={onAddExternal}
+        refreshKey={0}
+      >
+        <div>Chat</div>
+      </AgentWorkspaceLayout>
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'chat:runSettings.open' })
+    )
+    expect(await screen.findByText('Run settings')).toBeInTheDocument()
+
+    // Closing the settings brings the corner buttons back; opening files from
+    // there is the only route to the files panel, and it takes the column.
+    fireEvent.click(screen.getByRole('button', { name: 'Close run settings' }))
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Open files sidebar' })
+    )
+    expect(await screen.findByText('Files')).toBeInTheDocument()
+    // The settings panel may still be sliding out; it must end up gone.
+    await waitFor(() => {
+      expect(screen.queryByText('Run settings')).not.toBeInTheDocument()
+    })
+    expect(useRunSettingsPanel.getState().isOpen).toBe(false)
+  })
+
+  it('keeps run settings open across a thread switch while files reset', async () => {
+    const { rerender } = render(
+      <AgentWorkspaceLayout
+        threadId="thread-a"
+        workspace={agentWorkspace}
+        onAddExternal={onAddExternal}
+        refreshKey={0}
+      >
+        <div>Chat</div>
+      </AgentWorkspaceLayout>
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'chat:runSettings.open' })
+    )
+    expect(await screen.findByText('Run settings')).toBeInTheDocument()
+
+    rerender(
+      <AgentWorkspaceLayout
+        threadId="thread-b"
+        workspace={agentWorkspace}
+        onAddExternal={onAddExternal}
+        refreshKey={0}
+      >
+        <div>Chat</div>
+      </AgentWorkspaceLayout>
+    )
+    expect(await screen.findByText('Run settings')).toBeInTheDocument()
+
+    // Files, on the other hand, close on a thread switch and hand the column
+    // back to the settings that were left open.
+    fireEvent.click(screen.getByRole('button', { name: 'Close run settings' }))
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Open files sidebar' })
+    )
+    expect(await screen.findByText('Files')).toBeInTheDocument()
+    rerender(
+      <AgentWorkspaceLayout
+        threadId="thread-c"
+        workspace={agentWorkspace}
+        onAddExternal={onAddExternal}
+        refreshKey={0}
+      >
+        <div>Chat</div>
+      </AgentWorkspaceLayout>
+    )
+    await waitFor(() => {
+      expect(screen.queryByText('Files')).not.toBeInTheDocument()
+    })
+    expect(
+      screen.getByRole('button', { name: 'chat:runSettings.open' })
+    ).toBeInTheDocument()
   })
 })

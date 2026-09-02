@@ -547,11 +547,24 @@ async function doSwitchToModel(params: {
   )
 
   try {
-    // 1. Stop ALL local engines (llamacpp + mlx). This is a no-op for cloud
-    //    but guarantees only one model is ever "active" globally.
-    await serviceHub.models().stopAllModels()
-    setActiveModels([])
-    console.log('[switchToModel] All local models stopped')
+    // 1. Stop every other local model (llamacpp + mlx) so only one model is
+    //    ever "active" globally. For a local target the target engine's own
+    //    copy is left alone: `startModel` short-circuits on an already-loaded
+    //    model, so a switch whose only job is to drop a stray copy in another
+    //    provider never kills a server that may be streaming right now.
+    if (isLocal) {
+      await serviceHub.models().stopAllModelsExcept(modelId, providerName)
+      const stillActive = await serviceHub
+        .models()
+        .getActiveModels(providerName)
+        .catch(() => [] as string[])
+      setActiveModels(stillActive.filter((m) => m === modelId))
+      console.log('[switchToModel] Other local models stopped')
+    } else {
+      await serviceHub.models().stopAllModels()
+      setActiveModels([])
+      console.log('[switchToModel] All local models stopped')
+    }
 
     // 2. Stop the API server so we start it fresh with the new configuration.
     try {

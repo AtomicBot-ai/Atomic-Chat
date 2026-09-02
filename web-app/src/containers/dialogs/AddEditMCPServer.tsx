@@ -7,7 +7,6 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { ButtonGroup } from '@/components/ui/button-group'
 import { Input } from '@/components/ui/input'
 import {
   Collapsible,
@@ -341,6 +340,7 @@ export default function AddEditMCPServer({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
+        className="sm:max-w-2xl lg:max-w-2xl xl:max-w-2xl"
         showCloseButton={false}
         onInteractOutside={(e) => {
           e.preventDefault()
@@ -422,12 +422,20 @@ export default function AddEditMCPServer({
               <label className="text-sm mb-2 inline-block">
                 {t('mcp-servers:connection')}
               </label>
-              <ButtonGroup className="w-full">
+              <div
+                role="group"
+                className="bg-muted flex w-full items-stretch gap-1 rounded-full p-1"
+              >
                 <Button
                   type="button"
-                  variant={connection === 'local' ? 'default' : 'outline'}
+                  variant="ghost"
                   aria-pressed={connection === 'local'}
-                  className="flex-1"
+                  className={cn(
+                    'flex-1',
+                    connection === 'local'
+                      ? 'bg-background text-foreground shadow-xs hover:bg-background'
+                      : 'text-muted-foreground hover:bg-transparent hover:text-foreground'
+                  )}
                   onClick={() => {
                     setConnection('local')
                     clearError()
@@ -437,9 +445,14 @@ export default function AddEditMCPServer({
                 </Button>
                 <Button
                   type="button"
-                  variant={connection === 'remote' ? 'default' : 'outline'}
+                  variant="ghost"
                   aria-pressed={connection === 'remote'}
-                  className="flex-1"
+                  className={cn(
+                    'flex-1',
+                    connection === 'remote'
+                      ? 'bg-background text-foreground shadow-xs hover:bg-background'
+                      : 'text-muted-foreground hover:bg-transparent hover:text-foreground'
+                  )}
                   onClick={() => {
                     setConnection('remote')
                     clearError()
@@ -447,7 +460,7 @@ export default function AddEditMCPServer({
                 >
                   {t('mcp-servers:connectionRemote')}
                 </Button>
-              </ButtonGroup>
+              </div>
             </div>
 
             {connection === 'local' ? (

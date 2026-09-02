@@ -61,12 +61,18 @@ const HeaderContextSize = memo(function HeaderContextSize() {
     [attachments]
   )
 
-  // Clears the floating "open files" button (32px wide, 12px off the window
-  // edge) whenever the agent workspace paints one over this corner.
-  const rightOverlay = useHeaderOverlay((state) => state.rightOverlay)
+  // Clears the floating corner buttons (32px each, 12px off the window edge)
+  // whenever the agent workspace paints them over this corner.
+  const overlayButtons = useHeaderOverlay((state) => state.rightOverlayButtons)
 
   return (
-    <div className={cn('shrink-0', rightOverlay && 'mr-10')}>
+    <div
+      className={cn(
+        'shrink-0',
+        overlayButtons === 1 && 'mr-10',
+        overlayButtons >= 2 && 'mr-20'
+      )}
+    >
       <ContextSizeControl
         messages={messages || []}
         uploadedFiles={uploadedFiles}

@@ -141,6 +141,7 @@ jobs:
   build-macos:
     if: github.event_name == 'push' || inputs.build_macos
     runs-on: macos-latest-xlarge
+    timeout-minutes: 75
     needs: create-draft-release
     outputs:
       mac_sig: ${{ steps.metadata.outputs.mac_sig }}
@@ -375,6 +376,9 @@ jobs:
     if: github.event_name == 'push' || inputs.build_windows
     # Pinned to windows-2022 — DigiCert KSP is incompatible with Server 2025
     runs-on: windows-2022
+    # A green run is ~40min. The ceiling exists so a hung step fails the job in
+    # an hour instead of running to GitHub's 6h default.
+    timeout-minutes: 75
     needs: create-draft-release
     outputs:
       win_sig: ${{ steps.metadata.outputs.win_sig }}
@@ -404,6 +408,12 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # Releases are tag pushes, and an Actions cache written under
+          # `refs/tags/vX.Y.Z` is readable only by that same tag — the next
+          # release restores nothing from it. Saving it costs ~2.5min per job
+          # and evicts caches that *are* reachable, so only the default branch
+          # writes. Restore still reads main's cache from any ref.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Cache Yarn
         uses: actions/cache@v4
@@ -646,6 +656,7 @@ jobs:
       # makes a cargo test failure actually fail the step — the default pwsh
       # shell only reports the last command's exit code.
       - name: Gate Agent checks (Windows)
+        timeout-minutes: 20
         shell: bash
         run: |
           cargo test --manifest-path src-tauri/Cargo.toml --lib --features test-tauri core::agent::
@@ -809,6 +820,7 @@ jobs:
     # Mint / Pop!_OS / Arch. Upstream remains the Linux default while the
     # TurboQuant Vulkan build ships as the optional second provider.
     runs-on: ubuntu-22.04
+    timeout-minutes: 75
     needs: create-draft-release
     outputs:
       linux_sig: ${{ steps.metadata.outputs.linux_sig }}
@@ -829,6 +841,12 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # Releases are tag pushes, and an Actions cache written under
+          # `refs/tags/vX.Y.Z` is readable only by that same tag — the next
+          # release restores nothing from it. Saving it costs ~2.5min per job
+          # and evicts caches that *are* reachable, so only the default branch
+          # writes. Restore still reads main's cache from any ref.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Cache Yarn
         uses: actions/cache@v4
@@ -967,6 +985,16 @@ jobs:
           cd src-tauri && cargo build --release --features cli --bin jan-cli
           cp target/release/jan-cli resources/bin/jan-cli
           chmod +x resources/bin/jan-cli
+
+      # The agent's pty/process contract is Unix-only (see contract_tests.rs):
+      # ConPTY never EOFs the output pipe on child exit, so those cases cannot
+      # run in the Windows gate. This is where they actually execute. Runs after
+      # Build CLI for the same reason as on Windows — the tauri build script
+      # wants resources/bin/jan-cli to exist.
+      - name: Gate Agent checks (Linux)
+        timeout-minutes: 20
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib --features test-tauri core::agent::
 
       - name: Build app (AppImage)
         env:

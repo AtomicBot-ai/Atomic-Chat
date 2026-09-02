@@ -97,7 +97,10 @@ export default function AgentApprovalDialog() {
         if (!open) void resolve('deny')
       }}
     >
-      <DialogContent showCloseButton={false}>
+      <DialogContent
+        className="sm:max-w-lg lg:max-w-lg xl:max-w-lg"
+        showCloseButton={false}
+      >
         <DialogHeader>
           <DialogTitle>{t('agentApproval.title')}</DialogTitle>
           <DialogDescription>

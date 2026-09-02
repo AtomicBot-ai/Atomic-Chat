@@ -325,7 +325,7 @@ const VoiceSetupDialog = memo(function VoiceSetupDialog() {
       open={open}
       onOpenChange={(next) => (next ? openSetup(step) : finish())}
     >
-      <DialogContent className="sm:max-w-md lg:max-w-md xl:max-w-md">
+      <DialogContent>
         {/* The step's own title carries the header. A fixed dialog title on top
             of a per-step heading meant four stacked blocks of text, which is
             what made this feel crowded. */}

@@ -1,14 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import debounce from 'lodash.debounce'
-import {
-  EngineManager,
-  type AIEngine,
-  type ThreadMessage,
-} from '@janhq/core'
-import {
-  IconArrowDown,
-  IconArrowUp,
-} from '@tabler/icons-react'
+import { type ThreadMessage } from '@janhq/core'
+import { IconArrowDown, IconArrowUp } from '@tabler/icons-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -18,18 +9,12 @@ import {
 } from '@/components/ui/popover'
 import { Progress } from '@/components/ui/progress'
 import { Slider } from '@/components/ui/slider'
-import { useModelProvider } from '@/hooks/useModelProvider'
-import { useServiceHub } from '@/hooks/useServiceHub'
+import {
+  formatContextSize,
+  useModelContextLength,
+} from '@/hooks/useModelContextLength'
 import { useTokensCount } from '@/hooks/useTokensCount'
 import { cn } from '@/lib/utils'
-import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
-
-const LOCAL_CONTEXT_PROVIDERS = new Set([
-  'llamacpp',
-  'llamacpp-upstream',
-  'mlx',
-])
-const FALLBACK_MAX_CONTEXT = 512 * 1024
 
 interface ContextSizeControlProps {
   messages?: ThreadMessage[]
@@ -43,21 +28,9 @@ interface ContextSizeControlProps {
   }>
 }
 
-type NumericControllerProps = ControllerProps & {
-  min?: number
-  max?: number
-  step?: number
-}
-
 function formatTokenCount(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
   if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`
-  return value.toString()
-}
-
-function formatContextSize(value: number): string {
-  if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)}M`
-  if (value >= 1024) return `${(value / 1024).toFixed(1)}K`
   return value.toString()
 }
 
@@ -113,13 +86,6 @@ export function ContextSizeControl({
   additionalTokens = 0,
   uploadedFiles = [],
 }: ContextSizeControlProps) {
-  const selectedProvider = useModelProvider((state) => state.selectedProvider)
-  const selectedModel = useModelProvider((state) => state.selectedModel)
-  const updateProvider = useModelProvider((state) => state.updateProvider)
-  const getProviderByName = useModelProvider(
-    (state) => state.getProviderByName
-  )
-  const serviceHub = useServiceHub()
   const tokenData = useTokensCount(messages, uploadedFiles)
   const latestUsage = getLatestTokenUsage(messages)
   const measuredTokens = tokenData.tokenCount + additionalTokens
@@ -127,10 +93,7 @@ export function ContextSizeControl({
     measuredTokens > 0
       ? measuredTokens
       : latestUsage.totalTokens + additionalTokens
-  const completionTokens = Math.min(
-    totalTokens,
-    latestUsage.outputTokens
-  )
+  const completionTokens = Math.min(totalTokens, latestUsage.outputTokens)
   const promptTokens = Math.max(0, totalTokens - completionTokens)
   const percentage = tokenData.maxTokens
     ? (totalTokens / tokenData.maxTokens) * 100
@@ -142,148 +105,18 @@ export function ContextSizeControl({
       : percentage >= 70
         ? 'bg-orange-500'
         : 'bg-emerald-500'
-  const contextValue = Number(
-    selectedModel?.settings?.ctx_len?.controller_props?.value
-  )
-  const selectedContextProps = selectedModel?.settings?.ctx_len
-    ?.controller_props as NumericControllerProps | undefined
-  const configuredMax = Number(
-    selectedContextProps?.max
-  )
-  const fallbackMaxContext = Math.max(
-    FALLBACK_MAX_CONTEXT,
-    configuredMax > 0 ? configuredMax : 0
-  )
-  const [maxContext, setMaxContext] = useState(fallbackMaxContext)
-  const [draftContext, setDraftContext] = useState(
-    contextValue > 0 ? contextValue : 0
-  )
+  const {
+    available,
+    contextSetting,
+    draft: draftContext,
+    setDraft: setDraftContext,
+    commit: handleContextChange,
+    sliderMin,
+    sliderMax,
+    sliderStep,
+  } = useModelContextLength()
 
-  const restartModel = useMemo(
-    () =>
-      debounce(async (modelId: string, providerName: string) => {
-        try {
-          await serviceHub.models().stopModel(modelId)
-          const freshProvider =
-            useModelProvider.getState().getProviderByName(providerName)
-          if (freshProvider) {
-            await serviceHub.models().startModel(freshProvider, modelId, true)
-          }
-          const activeModels = await serviceHub.models().getActiveModels()
-          syncActiveModelsFromEngines(activeModels || [])
-        } catch (error) {
-          console.error(
-            'Failed to restart model after context size change:',
-            error
-          )
-        }
-      }, 500),
-    [serviceHub]
-  )
-
-  useEffect(() => () => restartModel.cancel(), [restartModel])
-
-  useEffect(() => {
-    const currentValue = Number(
-      selectedModel?.settings?.ctx_len?.controller_props?.value
-    )
-    setDraftContext(currentValue > 0 ? currentValue : 0)
-    setMaxContext(fallbackMaxContext)
-
-    if (!selectedProvider || !selectedModel) return
-
-    let cancelled = false
-    const resolveMaxContext = async () => {
-      let resolvedMax = fallbackMaxContext
-      try {
-        const engine = EngineManager.instance().get(selectedProvider) as
-          | (AIEngine & {
-              getMaxCtxTrain?: (id: string) => Promise<number | undefined>
-            })
-          | undefined
-        if (engine && typeof engine.getMaxCtxTrain === 'function') {
-          const modelMax = await engine.getMaxCtxTrain(selectedModel.id)
-          if (typeof modelMax === 'number' && modelMax > 0) {
-            resolvedMax = modelMax
-          }
-        }
-      } catch (error) {
-        console.warn(
-          `Failed to resolve maximum context for ${selectedProvider}/${selectedModel?.id}:`,
-          error
-        )
-      }
-      if (!cancelled) setMaxContext(resolvedMax)
-    }
-
-    void resolveMaxContext()
-    return () => {
-      cancelled = true
-    }
-  }, [
-    configuredMax,
-    fallbackMaxContext,
-    selectedModel,
-    selectedProvider,
-  ])
-
-  if (
-    !selectedProvider ||
-    !LOCAL_CONTEXT_PROVIDERS.has(selectedProvider) ||
-    !selectedModel
-  ) {
-    return null
-  }
-
-  const provider = getProviderByName(selectedProvider)
-  const contextSetting = selectedModel.settings?.ctx_len as
-    | ProviderSetting
-    | undefined
-
-  if (!provider || !contextSetting) return null
-
-  const contextControllerProps =
-    contextSetting.controller_props as NumericControllerProps
-  const currentContext = Number(contextControllerProps.value) || 0
-  const sliderMin = Math.max(1, Number(contextControllerProps.min) || 1024)
-  const sliderMax = Math.max(sliderMin, currentContext, maxContext || 0)
-  const sliderStep = Math.max(1, Number(contextControllerProps.step) || 1024)
-
-  const handleContextChange = (value: string | boolean | number) => {
-    const modelIndex = provider.models.findIndex(
-      (model) => model.id === selectedModel.id
-    )
-    if (modelIndex === -1) return
-
-    const updatedModels = [...provider.models]
-    updatedModels[modelIndex] = {
-      ...selectedModel,
-      settings: {
-        ...selectedModel.settings,
-        ctx_len: {
-          ...contextSetting,
-          controller_props: {
-            ...contextSetting.controller_props,
-            value,
-          },
-        },
-      },
-    } as Model
-
-    updateProvider(provider.provider, { models: updatedModels })
-
-    serviceHub
-      .models()
-      .getActiveModels()
-      .then((activeModels) => {
-        if (activeModels.includes(selectedModel.id)) {
-          restartModel(selectedModel.id, provider.provider)
-        }
-      })
-      .catch((error) => {
-        console.error('Failed to check active models:', error)
-      })
-  }
+  if (!available || !contextSetting) return null
 
   const percentageLabel = `${percentage.toFixed(1)}%`
 

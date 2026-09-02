@@ -92,6 +92,9 @@ function Index() {
       workspace={agentWorkspace ?? { externalRoots: [] }}
       onAddExternal={() => void addExternalAgentRoot()}
       refreshKey={0}
+      // The home composer has no thread yet, so no agent workspace to browse:
+      // only the run settings live in its right column.
+      filesEnabled={false}
     >
       <div className="flex h-full w-full min-w-0 flex-col justify-center">
         <HeaderPage>

@@ -3271,6 +3271,9 @@ export default class llamacpp_extension extends AIEngine {
     )
     events.emit(AppEvent.onModelImported, {
       modelId,
+      // Both llama.cpp providers list the same GGUF dir, so the web-app
+      // cannot tell from `modelId` alone which engine imported the file.
+      provider: this.provider,
       modelPath,
       mmprojPath,
       size_bytes,

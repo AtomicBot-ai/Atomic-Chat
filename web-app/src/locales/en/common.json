@@ -617,11 +617,41 @@
     "empty": "No connectors yet",
     "manage": "Manage connectors",
     "toolCount": "{{count}} tools",
-    "toggleFailed": "Couldn't start {{server}}"
+    "toggleFailed": "Couldn't start {{server}}",
+    "cost": "{{count}} tools · ≈{{tokens}} tokens",
+    "costShare": "{{count}} tools · ≈{{tokens}} tokens ({{share}}% of context)",
+    "heavy": "Heavy: these tool definitions alone take {{share}}% of the {{ctx}}-token context on every request.",
+    "muteForChat": "Turn off for this chat",
+    "unmuteForChat": "Turn on for this chat",
+    "mutedForChat": "Off for this chat",
+    "toolCountPartial": "{{enabled}} of {{count}} tools",
+    "costPartial": "{{enabled}} of {{count}} tools · ≈{{tokens}} tokens",
+    "costSharePartial": "{{enabled}} of {{count}} tools · ≈{{tokens}} tokens ({{share}}% of context)",
+    "configureTools": "Tools"
+  },
+  "connectorTools": {
+    "title": "{{name}} tools",
+    "scopeChat": "Changes apply to this chat only.",
+    "scopeDefault": "Defaults for new chats. A chat with its own tool settings keeps them.",
+    "summary": "{{enabled}} of {{count}} tools on",
+    "onForChat": "On for this chat",
+    "onByDefault": "On for new chats",
+    "mutedHint": "Turn the connector on to switch its tools.",
+    "search": "Search tools",
+    "enableAll": "Turn all on",
+    "disableAll": "Turn all off",
+    "noTools": "No tools listed. Connect the server to load its tools.",
+    "noMatches": "No tools match"
   },
   "pluginsMenu": {
     "title": "Plugins",
     "emptySkills": "No skills yet",
     "manageSkills": "Manage skills"
+  },
+  "toolCostHint": {
+    "title": "Tool definitions take ≈{{tokens}} of {{ctx}} context tokens",
+    "body": "Connected connectors ({{servers}}) add their tool definitions to every request, so answers from a local model get slow. Turn the ones you do not need off for this chat.",
+    "mute": "Turn off {{server}} for this chat",
+    "dismiss": "Keep as is"
   }
 }

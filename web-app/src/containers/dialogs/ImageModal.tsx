@@ -16,7 +16,7 @@ const ImageModal = ({ image, onClose }: ImageModalProps) => {
 
   return (
     <Dialog open={!!image} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-4xl max-h-[90vh] p-0">
+      <DialogContent className="sm:max-w-4xl lg:max-w-4xl xl:max-w-4xl max-h-[90vh] p-0">
         <DialogHeader className="p-6 pb-2">
           <DialogTitle>{image?.alt || t('common:image')}</DialogTitle>
         </DialogHeader>

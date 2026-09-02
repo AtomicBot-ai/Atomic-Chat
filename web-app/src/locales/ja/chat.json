@@ -26,7 +26,6 @@
     "menuItem": "エージェントモード",
     "agent": "エージェント",
     "turnOff": "エージェントモードをオフにする",
-    "placeholder": "エージェントへのタスクを入力してください...",
     "providerUnavailable": "エージェントモードには、ローカルモデルまたは API キーを設定したクラウドプロバイダーが必要です。",
     "providerKeyMissing": "エージェントモードを使うには、設定でこのプロバイダーの API キーを追加してください。"
   },
@@ -74,6 +73,14 @@
     "allowEditing": "編集を許可",
     "makeViewOnly": "閲覧のみにする",
     "removeFolder": "エージェントから削除"
+  },
+  "runSettings": {
+    "title": "実行設定",
+    "open": "実行設定を開く",
+    "close": "実行設定を閉じる",
+    "model": "モデル",
+    "advancedSettings": "詳細設定",
+    "advancedSettingsHint": "読み込み時のオプションです。変更すると実行中のモデルが再起動します。"
   },
   "agentErrors": {
     "audioUnsupported": "エージェントモードは音声添付に対応していません。",

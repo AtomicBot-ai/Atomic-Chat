@@ -201,7 +201,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-xl p-0 gap-0 overflow-hidden"
+        className="sm:max-w-xl lg:max-w-xl xl:max-w-xl p-0 gap-0 overflow-hidden"
         showCloseButton={false}
         aria-describedby={undefined}
       >

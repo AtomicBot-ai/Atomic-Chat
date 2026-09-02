@@ -31,15 +31,19 @@ const VoiceRecordingBar = memo(function VoiceRecordingBar({
   const phase = useVoiceInput((state) => state.phase)
   const ownerKey = useVoiceInput((state) => state.ownerKey)
   const interim = useVoiceInput((state) => state.interim)
+  const segmentInFlight = useVoiceInput((state) => state.segmentInFlight)
   const stop = useVoiceInput((state) => state.stop)
   const cancel = useVoiceInput((state) => state.cancel)
 
   if (ownerKey !== threadKey || !VOICE_ACTIVE_PHASES.has(phase)) return null
 
+  // The model transcribes a phrase only once it is finished, so the gap
+  // between speaking and seeing the words is real. Saying so is the difference
+  // between "it is working on it" and "it is broken".
   const status =
     phase === 'starting'
       ? t('common:voiceInput.starting')
-      : phase === 'transcribing' || phase === 'finalizing'
+      : phase === 'transcribing' || phase === 'finalizing' || segmentInFlight
         ? t('common:voiceInput.transcribing')
         : t('common:voiceInput.listening')
 

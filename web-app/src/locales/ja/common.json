@@ -534,5 +534,42 @@
     "title": "プラグイン",
     "emptySkills": "スキルはまだありません",
     "manageSkills": "スキルを管理"
+  },
+  "connectorsMenu": {
+    "title": "コネクター",
+    "empty": "コネクターはまだありません",
+    "manage": "コネクターを管理",
+    "toolCount": "{{count}} 個のツール",
+    "toggleFailed": "{{server}} を起動できませんでした",
+    "cost": "ツール {{count}} 個 · 約{{tokens}}トークン",
+    "costShare": "ツール {{count}} 個 · 約{{tokens}}トークン（コンテキストの{{share}}%）",
+    "heavy": "重い: このツール定義だけで、毎回のリクエストで {{ctx}} トークンのコンテキストの {{share}}% を占めます。",
+    "muteForChat": "このチャットではオフにする",
+    "unmuteForChat": "このチャットではオンにする",
+    "mutedForChat": "このチャットではオフ",
+    "toolCountPartial": "{{count}} 個中 {{enabled}} 個のツール",
+    "costPartial": "ツール {{count}} 個中 {{enabled}} 個 · 約{{tokens}}トークン",
+    "costSharePartial": "ツール {{count}} 個中 {{enabled}} 個 · 約{{tokens}}トークン（コンテキストの{{share}}%）",
+    "configureTools": "ツール"
+  },
+  "connectorTools": {
+    "title": "{{name}} のツール",
+    "scopeChat": "変更はこのチャットにのみ適用されます。",
+    "scopeDefault": "新しいチャットの既定値です。独自のツール設定を持つチャットはそのままです。",
+    "summary": "{{count}} 個中 {{enabled}} 個がオン",
+    "onForChat": "このチャットでオン",
+    "onByDefault": "新しいチャットでオン",
+    "mutedHint": "ツールを切り替えるにはコネクターをオンにしてください。",
+    "search": "ツールを検索",
+    "enableAll": "すべてオン",
+    "disableAll": "すべてオフ",
+    "noTools": "ツールがありません。サーバーに接続するとツールが読み込まれます。",
+    "noMatches": "一致するツールがありません"
+  },
+  "toolCostHint": {
+    "title": "ツール定義がコンテキスト {{ctx}} トークン中 約{{tokens}} を占めています",
+    "body": "接続中のコネクター（{{servers}}）は毎回のリクエストにツール定義を追加するため、ローカルモデルの応答が遅くなります。このチャットで不要なものはオフにしてください。",
+    "mute": "このチャットで {{server}} をオフにする",
+    "dismiss": "このままにする"
   }
 }

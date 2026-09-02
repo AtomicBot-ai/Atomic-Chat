@@ -19,6 +19,48 @@ use crate::error::{AudioError, AudioErrorCode, AudioResult};
 const FILE_FIELD: &str = "file";
 const FILE_NAME: &str = "segment.wav";
 
+/// Upper bound on how fast anyone talks, in characters per second of audio.
+///
+/// Ordinary speech runs 12-15. Thirty leaves room for a fast speaker and for
+/// the fact that a segment's timestamps span its pre-roll and hangover as well
+/// as the words, so the real speech is always shorter than `duration_ms`.
+const MAX_CHARS_PER_SECOND: f32 = 30.0;
+
+/// Flat allowance on top of the rate, for short segments where one word plus
+/// its punctuation already outruns any per-second budget.
+const CHAR_ALLOWANCE: usize = 48;
+
+/// Could this text have come out of `duration_ms` of someone talking?
+///
+/// `/v1/audio/transcriptions` is a chat completion wearing a different name:
+/// `convert_transcriptions_to_chatcmpl` feeds the audio to the same instruct
+/// model through the same template. Hand it a segment with nothing intelligible
+/// in it and the model does what instruct models do — it answers. A page of
+/// advice about Descript and Amazon Transcribe is not a transcript of two
+/// seconds of room noise, and splicing it into the composer is far worse than
+/// dropping the phrase.
+///
+/// The test is deliberately coarse. It has to reject an essay without ever
+/// eating a real sentence, so every threshold errs towards letting text
+/// through.
+pub fn is_plausible_transcript(text: &str, duration_ms: u64) -> bool {
+    if text.is_empty() {
+        return true;
+    }
+    // Nobody dictates a fenced code block.
+    if text.contains("```") {
+        return false;
+    }
+    // A phrase is one utterance. Several paragraphs is the model writing prose.
+    if text.matches('\n').count() > 2 {
+        return false;
+    }
+
+    let budget =
+        CHAR_ALLOWANCE + (MAX_CHARS_PER_SECOND * duration_ms as f32 / 1000.0) as usize;
+    text.chars().count() <= budget
+}
+
 #[derive(Debug, Clone)]
 pub struct TranscriptionTarget {
     /// e.g. `http://127.0.0.1:8123/v1`
@@ -337,6 +379,40 @@ mod tests {
         let err = parse_response(502, "Bad Gateway").unwrap_err();
         assert_eq!(err.code, AudioErrorCode::TranscriptionFailed);
         assert_eq!(err.details.as_deref(), Some("Bad Gateway"));
+    }
+
+    #[test]
+    fn a_real_phrase_is_plausible_for_its_duration() {
+        // ~2.5 s of speech, pre-roll and hangover included.
+        assert!(is_plausible_transcript(
+            "Привет, давай посмотрим что там с этим билдом",
+            2_500
+        ));
+        assert!(is_plausible_transcript("Yes.", 900));
+        assert!(is_plausible_transcript("", 1_200));
+    }
+
+    #[test]
+    fn a_fast_speaker_is_not_cut_off() {
+        // 15 s — the longest segment the VAD emits — at a brisk 20 chars/s.
+        let fast = "a".repeat(300);
+        assert!(is_plausible_transcript(&fast, 15_000));
+    }
+
+    #[test]
+    fn an_instruct_answer_to_silence_is_rejected() {
+        // What the model actually returned for a segment of room noise.
+        let essay = "I'm unable to transcribe audio directly. However, I can \
+guide you on how to use various tools and services to transcribe audio. Here \
+are a few options: Google Drive, Descript, Rev, Trint, Amazon Transcribe."
+            .repeat(4);
+        assert!(!is_plausible_transcript(&essay, 1_400));
+    }
+
+    #[test]
+    fn markdown_is_never_speech() {
+        assert!(!is_plausible_transcript("run ```ffmpeg -i in.wav```", 8_000));
+        assert!(!is_plausible_transcript("one\ntwo\nthree\nfour", 8_000));
     }
 
     #[test]

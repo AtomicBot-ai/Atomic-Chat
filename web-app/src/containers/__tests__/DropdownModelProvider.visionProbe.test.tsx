@@ -63,10 +63,6 @@ vi.mock('../ModelSupportStatus', () => ({
   ModelSupportStatus: () => <div />,
 }))
 
-vi.mock('../SamplerPopover', () => ({
-  SamplerPopover: () => <div />,
-}))
-
 type TestModel = { id: string; capabilities: string[] }
 
 let checkMmprojExists: ReturnType<typeof vi.fn>

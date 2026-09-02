@@ -86,6 +86,7 @@ export default function AddEditCustomCliDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
+        className="sm:max-w-lg lg:max-w-lg xl:max-w-lg"
         showCloseButton={false}
         onInteractOutside={(e) => {
           e.preventDefault()

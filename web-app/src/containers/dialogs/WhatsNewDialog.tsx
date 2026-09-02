@@ -51,7 +51,7 @@ const WhatsNewDialog = () => {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-xl lg:max-w-2xl">
+      <DialogContent className="sm:max-w-2xl lg:max-w-2xl xl:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <IconSparkles size={20} className="text-primary shrink-0" />

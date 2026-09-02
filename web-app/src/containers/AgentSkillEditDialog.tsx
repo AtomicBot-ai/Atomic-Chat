@@ -61,7 +61,7 @@ export function AgentSkillEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="sm:max-w-2xl lg:max-w-2xl xl:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{t('common:editSkill')}</DialogTitle>
           <DialogDescription>

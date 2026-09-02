@@ -13,6 +13,14 @@ import { ModelFactory } from '../model-factory'
 
 // The skill-body loader is Tauri-only (IS_TAURI is false under vitest), so it
 // is mocked at the boundary; the pure collect/render/compose helpers run real.
+const contextMocks = vi.hoisted(() => ({
+  growModelContext: vi.fn(),
+}))
+vi.mock('../context-size', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../context-size')>()
+  return { ...actual, growModelContext: contextMocks.growModelContext }
+})
+
 vi.mock('../chat-skill-injection', async (importOriginal) => {
   const actual =
     await importOriginal<typeof import('../chat-skill-injection')>()
@@ -110,7 +118,6 @@ beforeEach(() => {
 })
 
 describe('CustomChatTransport production harness', () => {
-
   it('preserves delta order while stripping leaked MLX special tokens', async () => {
     vi.spyOn(ModelFactory, 'createModel').mockResolvedValue(
       fakeStreamingModel([
@@ -258,8 +265,9 @@ describe('CustomChatTransport skill injection', () => {
       expect.any(Map),
       expect.any(Set)
     )
-    const doStream = (model as unknown as { doStream: ReturnType<typeof vi.fn> })
-      .doStream
+    const doStream = (
+      model as unknown as { doStream: ReturnType<typeof vi.fn> }
+    ).doStream
     const prompt = doStream.mock.calls[0][0].prompt as Array<{
       role: string
       content: unknown
@@ -286,8 +294,9 @@ describe('CustomChatTransport skill injection', () => {
       })) as ReadableStream<Record<string, unknown>>
     )
 
-    const doStream = (model as unknown as { doStream: ReturnType<typeof vi.fn> })
-      .doStream
+    const doStream = (
+      model as unknown as { doStream: ReturnType<typeof vi.fn> }
+    ).doStream
     const prompt = doStream.mock.calls[0][0].prompt as Array<{
       role: string
       content: unknown
@@ -360,9 +369,7 @@ describe('CustomChatTransport reasoning override', () => {
       })) as ReadableStream<Record<string, unknown>>
     )
 
-    return createModel.mock.calls[0]?.[3] as
-      | Record<string, unknown>
-      | undefined
+    return createModel.mock.calls[0]?.[3] as Record<string, unknown> | undefined
   }
 
   it('sends a top-level reasoning_effort to mlx when the template declares an off value', async () => {
@@ -544,5 +551,250 @@ describe('CustomChatTransport per-turn state', () => {
     expect(onTokenUsage.mock.calls[0][0]).toEqual(
       expect.objectContaining({ inputTokens: 11, outputTokens: 7 })
     )
+  })
+})
+
+/**
+ * Pre-flight context sizing: before `streamText`, local providers estimate
+ * the prompt and grow the context window once when it would not fit —
+ * instead of sending, failing with "exceeds the available context size",
+ * reloading and regenerating.
+ */
+describe('CustomChatTransport pre-flight context sizing', () => {
+  const idleStream: ModelStreamPart[] = [
+    { type: 'stream-start', warnings: [] },
+    { type: 'text-start', id: 'text-1' },
+    { type: 'text-delta', id: 'text-1', delta: 'ok' },
+    { type: 'text-end', id: 'text-1' },
+    {
+      type: 'finish',
+      finishReason: 'stop',
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+    },
+  ]
+
+  const send = async (transport: CustomChatTransport) =>
+    readChunks(
+      (await transport.sendMessages({
+        chatId: 'chat-1',
+        messages: [userMessage],
+        abortSignal: undefined,
+        trigger: 'submit-message',
+        messageId: undefined,
+      })) as ReadableStream<Record<string, unknown>>
+    )
+
+  const selectCtx = (ctxLen: number, autoIncrease = true) =>
+    useModelProvider.setState((state) => ({
+      selectedModel: {
+        ...state.selectedModel!,
+        settings: {
+          ctx_len: { controller_props: { value: ctxLen } },
+          auto_increase_ctx_len: { controller_props: { value: autoIncrease } },
+        },
+      },
+    }))
+
+  beforeEach(() => {
+    contextMocks.growModelContext.mockReset()
+  })
+
+  it('grows the window once and re-creates the model when the prompt would not fit', async () => {
+    // 'hello' + the 1024-token output reserve cannot fit a 512-token window.
+    selectCtx(512)
+    contextMocks.growModelContext.mockResolvedValue({
+      ok: true,
+      from: 512,
+      to: 8192,
+    })
+    const createModel = vi
+      .spyOn(ModelFactory, 'createModel')
+      .mockResolvedValue(fakeStreamingModel(idleStream))
+    const transport = new CustomChatTransport()
+
+    const chunks = await send(transport)
+
+    expect(contextMocks.growModelContext).toHaveBeenCalledTimes(1)
+    expect(contextMocks.growModelContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: 'mlx',
+        modelId: 'fixture-model',
+        minCtxLen: expect.any(Number),
+      })
+    )
+    const { minCtxLen } = contextMocks.growModelContext.mock.calls[0][0]
+    expect(minCtxLen).toBeGreaterThan(1024)
+    // Once before the pre-flight, once against the reloaded session.
+    expect(createModel).toHaveBeenCalledTimes(2)
+    expect(chunks.some((chunk) => chunk.type === 'text-delta')).toBe(true)
+    expect(transport.lastPromptSize).toEqual(
+      expect.objectContaining({ ctxLen: 8192, measured: false })
+    )
+  })
+
+  it('does nothing when the prompt fits', async () => {
+    selectCtx(65536)
+    const createModel = vi
+      .spyOn(ModelFactory, 'createModel')
+      .mockResolvedValue(fakeStreamingModel(idleStream))
+
+    await send(new CustomChatTransport())
+
+    expect(contextMocks.growModelContext).not.toHaveBeenCalled()
+    expect(createModel).toHaveBeenCalledTimes(1)
+  })
+
+  it('respects a disabled auto_increase_ctx_len', async () => {
+    selectCtx(512, false)
+    vi.spyOn(ModelFactory, 'createModel').mockResolvedValue(
+      fakeStreamingModel(idleStream)
+    )
+
+    await send(new CustomChatTransport())
+
+    expect(contextMocks.growModelContext).not.toHaveBeenCalled()
+  })
+
+  it('refuses to send into a window that is already at the model maximum', async () => {
+    selectCtx(512)
+    contextMocks.growModelContext.mockResolvedValue({
+      ok: false,
+      reason: 'at_max',
+      from: 512,
+      max: 512,
+    })
+    vi.spyOn(ModelFactory, 'createModel').mockResolvedValue(
+      fakeStreamingModel(idleStream)
+    )
+
+    await expect(send(new CustomChatTransport())).rejects.toThrow(
+      /exceeds the available context size/
+    )
+  })
+})
+
+/**
+ * Per-chat muted connectors and the tool-cost report: muting a server drops
+ * its tools from the request (the server keeps running), and every refresh
+ * records what the remaining definitions cost against the model's window.
+ */
+describe('CustomChatTransport muted connectors and tool cost', () => {
+  const linearTools = Array.from({ length: 5 }, (_, i) => ({
+    name: `linear_tool_${i}`,
+    server: 'linear',
+    description: 'A Linear tool with a fairly long description. '.repeat(6),
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'Issue id' } },
+    },
+  }))
+  const exaTool = {
+    name: 'web_search_exa',
+    server: 'exa',
+    description: 'Search the web',
+    inputSchema: { type: 'object', properties: { query: { type: 'string' } } },
+  }
+
+  beforeEach(() => {
+    useAppState.setState({
+      tools: [...linearTools, exaTool],
+      mcpToolNames: new Set([...linearTools.map((t) => t.name), exaTool.name]),
+      toolCostReports: {},
+    })
+    useToolAvailable.setState({ mutedServers: {}, defaultMutedServers: [] })
+    useModelProvider.setState((state) => ({
+      selectedModel: {
+        ...state.selectedModel!,
+        capabilities: ['tools'],
+        settings: { ctx_len: { controller_props: { value: 2048 } } },
+      },
+    }))
+  })
+
+  const sendAndCaptureTools = async () => {
+    const doStream = vi.fn(async () => ({
+      stream: new ReadableStream({
+        start(controller) {
+          controller.enqueue({ type: 'stream-start', warnings: [] })
+          controller.enqueue({
+            type: 'finish',
+            finishReason: 'stop',
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          })
+          controller.close()
+        },
+      }),
+    }))
+    vi.spyOn(ModelFactory, 'createModel').mockResolvedValue({
+      specificationVersion: 'v2',
+      provider: 'fixture',
+      modelId: 'fixture-model',
+      supportedUrls: {},
+      doGenerate: vi.fn(),
+      doStream,
+    } as unknown as LanguageModel)
+    const transport = new CustomChatTransport()
+    await readChunks(
+      (await transport.sendMessages({
+        chatId: 'chat-1',
+        messages: [userMessage],
+        abortSignal: undefined,
+        trigger: 'submit-message',
+        messageId: undefined,
+      })) as ReadableStream<Record<string, unknown>>
+    )
+    const call = doStream.mock.calls[0]?.[0] as
+      | { tools?: Array<{ name: string }> }
+      | undefined
+    return (call?.tools ?? []).map((t) => t.name).sort()
+  }
+
+  it('sends every connector by default and reports the per-server cost', async () => {
+    const sent = await sendAndCaptureTools()
+
+    expect(sent).toEqual(
+      [...linearTools.map((t) => t.name), exaTool.name].sort()
+    )
+    const report = useAppState.getState().toolCostReports['']
+    expect(report.toolCount).toBe(6)
+    expect(report.perServer.map((s) => s.server)).toEqual(['linear', 'exa'])
+    expect(report.ctxLen).toBe(2048)
+    // 5 verbose tools on a 2k window: Linear is heavy, the total is too.
+    expect(report.heavyServers).toEqual(['linear'])
+    expect(report.tooHeavy).toBe(true)
+  })
+
+  it('drops a muted connector from the request but keeps the others', async () => {
+    useToolAvailable.setState({ defaultMutedServers: ['linear'] })
+
+    const sent = await sendAndCaptureTools()
+
+    expect(sent).toEqual([exaTool.name])
+    const report = useAppState.getState().toolCostReports['']
+    expect(report.perServer.map((s) => s.server)).toEqual(['exa'])
+    expect(report.tooHeavy).toBe(false)
+  })
+
+  it('never sends a system server (filesystem, fetch) — that is agent-mode tooling', async () => {
+    const systemTools = [
+      { ...exaTool, name: 'read_file', server: 'filesystem' },
+      { ...exaTool, name: 'fetch', server: 'fetch' },
+    ]
+    useAppState.setState({
+      tools: [...linearTools, exaTool, ...systemTools],
+      mcpToolNames: new Set([
+        ...linearTools.map((t) => t.name),
+        exaTool.name,
+        ...systemTools.map((t) => t.name),
+      ]),
+    })
+
+    const sent = await sendAndCaptureTools()
+
+    expect(sent).toEqual(
+      [...linearTools.map((t) => t.name), exaTool.name].sort()
+    )
+    const report = useAppState.getState().toolCostReports['']
+    expect(report.perServer.map((s) => s.server)).toEqual(['linear', 'exa'])
   })
 })

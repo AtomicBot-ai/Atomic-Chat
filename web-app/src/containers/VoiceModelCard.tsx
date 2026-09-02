@@ -169,7 +169,7 @@ const VoiceModelCard = memo(function VoiceModelCard({
     <>
       {body}
       <Dialog open={confirmRemove} onOpenChange={setConfirmRemove}>
-        <DialogContent className="sm:max-w-md lg:max-w-md xl:max-w-md">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('settings:voice.removeTitle')}</DialogTitle>
             <DialogDescription>

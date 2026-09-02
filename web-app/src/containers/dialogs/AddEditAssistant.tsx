@@ -127,7 +127,7 @@ export default function AddEditAssistant({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-lg lg:max-w-lg xl:max-w-lg">
         <DialogHeader>
           <DialogTitle>
             {editingKey

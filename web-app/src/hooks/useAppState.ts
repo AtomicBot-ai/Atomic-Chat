@@ -1,3 +1,4 @@
+import type { ToolCostReport } from '@/lib/tool-cost'
 import { create } from 'zustand'
 import { ThreadMessage } from '@janhq/core'
 import { MCPTool } from '@/types/completion'
@@ -17,6 +18,9 @@ type AppErrorMessage = {
 
 type AppState = {
   streamingContent?: ThreadMessage
+  // Last measured cost of the tool definitions per thread ('' = index page).
+  toolCostReports: Record<string, ToolCostReport>
+  setToolCostReport: (threadId: string, report: ToolCostReport) => void
   loadingModel?: boolean
   tools: MCPTool[]
   ragToolNames: Set<string>
@@ -53,6 +57,11 @@ type AppState = {
 
 export const useAppState = create<AppState>()((set) => ({
   streamingContent: undefined,
+  toolCostReports: {},
+  setToolCostReport: (threadId, report) =>
+    set((state) => ({
+      toolCostReports: { ...state.toolCostReports, [threadId]: report },
+    })),
   loadingModel: false,
   tools: [],
   ragToolNames: new Set<string>(),

@@ -766,11 +766,18 @@ async fn code_tools_cannot_reach_outside_the_workspace() {
     }
 }
 
+// The process contract below is exercised on Unix only. Every case drives a
+// POSIX shell script through the pty, and on Windows two things break it: the
+// script reaches `cmd.exe /C` verbatim, and ConPTY keeps the output pipe open
+// until the pseudoconsole is closed rather than when the child exits — so the
+// reader thread never sees EOF, the exit status is never recorded, and the test
+// hangs instead of failing. `pty.rs` gates its own pty tests the same way.
 /// Poll `os.proc.read` until `predicate` accepts a page, or give up.
 ///
 /// PTY output is asynchronous by nature: a process that will print in 20ms has
 /// printed nothing at all when `spawn` returns. Every assertion about output
 /// therefore needs a bounded wait rather than a single read.
+#[cfg(unix)]
 async fn read_until(
     fixture: &ToolFixture,
     proc_id: &str,
@@ -801,6 +808,7 @@ fn proc_id_of(outcome: &ToolOutcome) -> String {
         .to_owned()
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn spawned_process_streams_output_then_reports_its_exit_status() {
     let fixture = ToolFixture::allowed();
@@ -840,6 +848,7 @@ async fn spawned_process_streams_output_then_reports_its_exit_status() {
     assert_eq!(fixture.approval.requests().len(), 1);
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn the_remembered_cursor_returns_only_new_output() {
     let fixture = ToolFixture::allowed();
@@ -879,6 +888,7 @@ async fn the_remembered_cursor_returns_only_new_output() {
     }
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn writing_to_a_spawned_process_answers_its_prompt() {
     let fixture = ToolFixture::allowed();
@@ -907,6 +917,7 @@ async fn writing_to_a_spawned_process_answers_its_prompt() {
     assert!(page.summary.contains("got:hello"), "{}", page.summary);
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn stop_ends_a_process_that_would_otherwise_run_forever() {
     let fixture = ToolFixture::allowed();

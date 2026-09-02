@@ -27,7 +27,6 @@
     "menuItem": "Agent mode",
     "agent": "Agent",
     "turnOff": "Turn off Agent mode",
-    "placeholder": "Describe a task for the agent...",
     "providerUnavailable": "Agent mode needs a local model, or a cloud provider with an API key.",
     "providerKeyMissing": "Add an API key for this provider in Settings to use Agent mode."
   },
@@ -75,6 +74,14 @@
     "allowEditing": "Can edit",
     "makeViewOnly": "View only",
     "removeFolder": "Remove from Agent"
+  },
+  "runSettings": {
+    "title": "Run settings",
+    "open": "Open run settings",
+    "close": "Close run settings",
+    "model": "Model",
+    "advancedSettings": "Advanced settings",
+    "advancedSettingsHint": "Load-time options. Changing them restarts a running model."
   },
   "agentErrors": {
     "audioUnsupported": "Agent mode does not support audio attachments.",

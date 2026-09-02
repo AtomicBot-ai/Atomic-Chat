@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 
-import { VOICE_ACTIVE_PHASES } from '@/constants/voice'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { useVoiceSetting } from '@/hooks/useVoiceSetting'
 import {
@@ -121,6 +120,40 @@ const IDLE = {
  */
 let unsubscribe: (() => void) | null = null
 
+/**
+ * How long `stop()` waits for the tail phrase before giving up on it.
+ *
+ * The transcription request is already bounded natively; this only bounds the
+ * composer's wait for it, so pressing Enter can never wedge the send button
+ * behind a model that has stopped answering.
+ */
+const FINALIZE_TIMEOUT_MS = 15_000
+
+/**
+ * Resolves when the session has really finished — the native side emits
+ * `stopped` only once every queued phrase has been transcribed. `stop()` awaits
+ * it, so a caller that sends the message afterwards sends the last words too.
+ */
+let settleStop: (() => void) | null = null
+
+function settle() {
+  settleStop?.()
+  settleStop = null
+}
+
+/**
+ * Phases a new session may start from. `model-missing` and `permission-denied`
+ * are parked states left behind by a failed pre-flight: once the user fixes
+ * the prerequisite the next click must be able to start, or the microphone
+ * silently does nothing forever.
+ */
+const RESTARTABLE_PHASES = new Set<VoicePhase>([
+  'idle',
+  'error',
+  'model-missing',
+  'permission-denied',
+])
+
 function detach() {
   unsubscribe?.()
   unsubscribe = null
@@ -134,7 +167,7 @@ export const useVoiceInput = create<VoiceInputState>()((set, get) => ({
   setupStep: 0,
 
   begin: async (ownerKey, anchor) => {
-    if (get().phase !== 'idle' && get().phase !== 'error') return
+    if (!RESTARTABLE_PHASES.has(get().phase)) return
 
     set({
       ...IDLE,
@@ -188,22 +221,37 @@ export const useVoiceInput = create<VoiceInputState>()((set, get) => ({
 
   stop: async () => {
     const { sessionId, phase } = get()
-    if (!sessionId || !VOICE_ACTIVE_PHASES.has(phase)) return
+    // Not `VOICE_ACTIVE_PHASES`: the finalizing phases are already a stop in
+    // progress, and starting a second one would strand the first caller's
+    // `await` on a resolver nobody holds any more.
+    if (!sessionId || (phase !== 'listening' && phase !== 'starting')) return
 
     const live = useVoiceSetting.getState().liveTranscription
     set({ phase: live ? 'finalizing' : 'transcribing' })
+
+    // `stopSession` returns as soon as the microphone is closed — the tail
+    // phrase is still being transcribed at that point. Wait for `stopped`.
+    const finished = new Promise<void>((resolve) => {
+      settleStop = resolve
+      setTimeout(resolve, FINALIZE_TIMEOUT_MS)
+    })
+
     try {
       await getServiceHub().voice().stopSession(sessionId)
     } catch (error) {
+      settle()
       get().fail(
         'internal',
         error instanceof Error ? error.message : String(error)
       )
+      return
     }
+    await finished
   },
 
   cancel: async () => {
     const { sessionId } = get()
+    settle()
     detachOnIdle(set)
     if (!sessionId) {
       set({ ...IDLE, lastOutcome: 'cancelled' })
@@ -225,6 +273,7 @@ export const useVoiceInput = create<VoiceInputState>()((set, get) => ({
   noteInserted: (length) => set({ insertedLength: length }),
 
   fail: (code, message) => {
+    settle()
     detach()
     set({
       ...IDLE,
@@ -243,6 +292,7 @@ export const useVoiceInput = create<VoiceInputState>()((set, get) => ({
   },
 
   reset: () => {
+    settle()
     detach()
     set({ ...IDLE, lastOutcome: null })
   },
@@ -305,6 +355,7 @@ function handleEvent(
 
     case 'state': {
       if (event.state === 'stopped') {
+        settle()
         detach()
         const merged = appendSegment(current.committed, current.buffer)
         set({
@@ -361,7 +412,20 @@ export async function ensureVoiceReady(
     return
   }
 
-  const permission = await store.refreshPermission()
+  // A pre-flight that throws (the audio plugin failing to answer, say) must
+  // surface as an error toast, not an unhandled rejection the user never sees.
+  let permission: MicPermission
+  try {
+    permission = await store.refreshPermission()
+  } catch (error) {
+    // `fail` keeps the owner so the composer that was clicked shows the toast.
+    useVoiceInput.setState({ ownerKey })
+    store.fail(
+      'internal',
+      error instanceof Error ? error.message : String(error)
+    )
+    return
+  }
   if (permission === 'denied') {
     useVoiceInput.setState({ phase: 'permission-denied' })
     store.openSetup(1)

@@ -17,16 +17,16 @@ import {
 } from '@/components/ui/sidebar'
 import { BlocksIcon } from '@/components/animated-icon/blocks'
 import {
-  BriefcaseIcon,
-  type BriefcaseIconHandle,
-} from '@/components/animated-icon/briefcase'
-import {
   CloudIcon,
   type CloudIconHandle,
 } from '@/components/animated-icon/cloud'
 import { FolderPlusIcon } from '@/components/animated-icon/folder-plus'
 import { MessageCircleIcon } from '@/components/animated-icon/message-circle'
 import { PlugIcon, type PlugIconHandle } from '@/components/animated-icon/plug'
+import {
+  PuzzleIcon,
+  type PuzzleIconHandle,
+} from '@/components/animated-icon/puzzle'
 import {
   RadioTowerIcon,
   type RadioTowerIconHandle,
@@ -53,7 +53,7 @@ export function NavMain() {
   const { pathname } = useLocation()
   const newChatIconRef = useRef<AnimatedIconHandle>(null)
   const modelsIconRef = useRef<AnimatedIconHandle>(null)
-  const pluginsIconRef = useRef<BriefcaseIconHandle>(null)
+  const pluginsIconRef = useRef<PuzzleIconHandle>(null)
   const cloudIconRef = useRef<CloudIconHandle>(null)
   const projectIconRef = useRef<AnimatedIconHandle>(null)
   const integrationsIconRef = useRef<PlugIconHandle>(null)
@@ -168,7 +168,7 @@ export function NavMain() {
                 onMouseEnter={() => pluginsIconRef.current?.startAnimation()}
                 onMouseLeave={() => pluginsIconRef.current?.stopAnimation()}
               >
-                <BriefcaseIcon
+                <PuzzleIcon
                   ref={pluginsIconRef}
                   className="text-foreground/70"
                   size={16}

@@ -41,7 +41,6 @@ export function DeleteAssistantDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-[425px] max-w-[90vw]"
         onOpenAutoFocus={(e) => {
           e.preventDefault()
           deleteButtonRef.current?.focus()

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Route as ConnectorsRoute } from '../index'
 import { useMCPServers, type MCPServerConfig } from '@/hooks/useMCPServers'
+import { MCP_CONNECTORS } from '@/constants/mcp-connectors'
 
 const activateMCPServer = vi.fn()
 const deactivateMCPServer = vi.fn()
@@ -106,7 +107,7 @@ describe('ConnectorsPage', () => {
 
   it('merges installed servers into the grid and hides the system defaults', () => {
     seedServers({
-      exa: {
+      'exa': {
         command: '',
         args: [],
         env: {},
@@ -115,9 +116,9 @@ describe('ConnectorsPage', () => {
       },
       'my server': { command: 'npx', args: ['-y', 'some-mcp'], env: {} },
       'Jan Browser MCP': { command: 'npx', args: [], env: {} },
-      filesystem: { command: 'npx', args: [], env: {} },
+      'filesystem': { command: 'npx', args: [], env: {} },
       'sequential-thinking': { command: 'npx', args: [], env: {} },
-      browsermcp: { command: 'npx', args: [], env: {} },
+      'browsermcp': { command: 'npx', args: [], env: {} },
     })
     render(<ConnectorsPage />)
 
@@ -131,33 +132,42 @@ describe('ConnectorsPage', () => {
     expect(screen.queryByText('browsermcp')).not.toBeInTheDocument()
   })
 
-  it('renders every catalog connector', () => {
+  it('renders every visible catalog connector', () => {
     render(<ConnectorsPage />)
 
-    for (const name of [
-      'Exa',
-      'GitHub',
-      'Linear',
-      'Notion',
-      'Sentry',
-      'Atlassian',
-      'Serper',
-    ]) {
+    const visible = MCP_CONNECTORS.filter((c) => !c.hidden)
+    expect(visible.length).toBeGreaterThanOrEqual(22)
+    for (const connector of visible) {
+      expect(screen.getByText(connector.name)).toBeInTheDocument()
+    }
+    for (const name of ['Exa', 'Atomic Mail', 'Firecrawl', 'Stripe']) {
       expect(screen.getByText(name)).toBeInTheDocument()
     }
   })
 
-  it('keeps oauth-soon connectors as a disabled sign-in, never installing them', async () => {
-    render(<ConnectorsPage />)
+  it('keeps hidden connectors out of the grid until the user adds one by hand', () => {
+    const { unmount } = render(<ConnectorsPage />)
+    expect(screen.queryByText('GitHub')).not.toBeInTheDocument()
+    unmount()
 
-    const githubCard = screen.getByText('GitHub').closest('div.bg-card')!
-    const signIn = within(githubCard as HTMLElement).getByRole('button', {
-      name: 'mcp-connectors:oauth.signIn',
+    // A hand-added server matching the hidden entry still gets its card,
+    // branded and installed, with the disabled oauth-soon sign-in never shown.
+    seedServers({
+      'my github': {
+        command: '',
+        args: [],
+        env: {},
+        type: 'http',
+        url: 'https://api.githubcopilot.com/mcp/',
+        headers: { Authorization: 'Bearer ghp_x' },
+      },
     })
-    expect(signIn).toBeDisabled()
+    render(<ConnectorsPage />)
+    const githubCard = screen.getByText('GitHub').closest('div.bg-card')!
+    expect(githubCard).toBeInTheDocument()
     expect(
       within(githubCard as HTMLElement).queryByRole('button', {
-        name: 'mcp-connectors:setUp',
+        name: 'mcp-connectors:oauth.signIn',
       })
     ).not.toBeInTheDocument()
     expect(activateMCPServer).not.toHaveBeenCalled()
@@ -315,9 +325,7 @@ describe('ConnectorsPage', () => {
     const exaCard = screen.getByText('Exa').closest('div.bg-card')!
     await user.click(within(exaCard as HTMLElement).getByRole('switch'))
 
-    await waitFor(() =>
-      expect(deactivateMCPServer).toHaveBeenCalledWith('exa')
-    )
+    await waitFor(() => expect(deactivateMCPServer).toHaveBeenCalledWith('exa'))
     expect(useMCPServers.getState().mcpServers.exa.active).toBe(false)
   })
 
@@ -338,10 +346,7 @@ describe('ConnectorsPage', () => {
     expect(connect).toBeDisabled()
     expect(activateMCPServer).not.toHaveBeenCalled()
 
-    await user.type(
-      screen.getByPlaceholderText('sk-...'),
-      'my-serper-key'
-    )
+    await user.type(screen.getByPlaceholderText('sk-...'), 'my-serper-key')
     await user.click(connect)
 
     await waitFor(() =>

@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, it, expect } from 'vitest'
 import {
   HIDDEN_SERVER_KEYS,
@@ -116,6 +118,42 @@ describe('catalog hygiene', () => {
   it('never lists a hidden server key in the catalog', () => {
     for (const connector of MCP_CONNECTORS) {
       expect(HIDDEN_SERVER_KEYS).not.toContain(connector.serverKey)
+    }
+  })
+
+  it('uses a unique server key per connector', () => {
+    const keys = MCP_CONNECTORS.map((c) => c.serverKey.toLowerCase())
+    expect(new Set(keys).size).toBe(keys.length)
+  })
+
+  it('injects header secrets only into remote templates and env secrets only into local ones', () => {
+    for (const connector of MCP_CONNECTORS) {
+      if (!connector.secret) continue
+      if (connector.secret.kind === 'header') {
+        expect(connector.config.url).toBeTruthy()
+        expect(connector.matchUrls?.length).toBeGreaterThan(0)
+      } else {
+        expect(connector.config.command).toBeTruthy()
+        expect(connector.config.url).toBeUndefined()
+      }
+    }
+  })
+
+  it('ships every referenced icon asset', () => {
+    const publicDir = join(__dirname, '..', '..', '..', 'public')
+    for (const connector of MCP_CONNECTORS) {
+      if (!connector.icon.src) continue
+      expect(connector.icon.src).toMatch(/^\/images\/connectors\//)
+      expect(
+        existsSync(join(publicDir, connector.icon.src)),
+        `${connector.serverKey}: ${connector.icon.src}`
+      ).toBe(true)
+    }
+  })
+
+  it('hides only entries whose sign-in cannot work yet', () => {
+    for (const connector of MCP_CONNECTORS.filter((c) => c.hidden)) {
+      expect(connector.auth).toBe('oauth-soon')
     }
   })
 })

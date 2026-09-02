@@ -282,6 +282,7 @@ export const ImportVisionModelDialog = ({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent
+        className="sm:max-w-lg lg:max-w-lg xl:max-w-lg"
         onInteractOutside={(e) => {
           e.preventDefault()
         }}

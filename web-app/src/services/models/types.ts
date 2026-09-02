@@ -153,6 +153,12 @@ export interface ModelsService {
   getActiveModels(provider?: string): Promise<string[]>
   stopModel(model: string, provider?: string): Promise<UnloadResult | undefined>
   stopAllModels(): Promise<void>
+  /**
+   * Unload every locally loaded model except `(providerName, modelId)`.
+   * Lets a switch drop stray copies of a model living in another engine
+   * without touching the one that is currently serving requests.
+   */
+  stopAllModelsExcept(modelId: string, providerName: string): Promise<void>
   startModel(
     provider: ProviderObject,
     model: string,

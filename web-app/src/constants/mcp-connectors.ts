@@ -51,6 +51,12 @@ export type MCPConnector = {
    * real so a hand-added server (e.g. with a PAT header) is still recognized.
    */
   auth?: 'oauth' | 'oauth-soon'
+  /**
+   * Not listed in the Connectors grid or the plugins dropdown. The entry
+   * stays in the catalog so `findInstalledServer` still recognizes a server
+   * the user added by hand (by key or `matchUrls`) and brands its card.
+   */
+  hidden?: boolean
 }
 
 /**
@@ -67,6 +73,17 @@ export const HIDDEN_SERVER_KEYS = [
   'fetch',
 ]
 
+/** Servers the chat Browse button owns; never listed as connectors. */
+export const BROWSER_SERVER_KEYS = ['Jan Browser MCP', 'browsermcp']
+
+/**
+ * System defaults from the Rust template. They are not connectors: they run
+ * for agent mode, which takes its MCP catalog from the Rust engine, and stay
+ * out of chat mode entirely — the chat transport never sends their tools and
+ * the plugins menu never lists them, so a chat pays nothing for them.
+ */
+export const SYSTEM_SERVER_KEYS = ['sequential-thinking', 'filesystem', 'fetch']
+
 export const MCP_CONNECTORS: MCPConnector[] = [
   {
     serverKey: 'exa',
@@ -82,6 +99,23 @@ export const MCP_CONNECTORS: MCPConnector[] = [
       url: 'https://mcp.exa.ai/mcp',
       command: '',
       args: [],
+      env: {},
+    },
+  },
+  {
+    serverKey: 'atomicmail',
+    name: 'Atomic Mail',
+    author: 'Atomic Mail',
+    descriptionKey: 'mcp-connectors:descriptions.atomicmail',
+    // The mark ships on its own dark tile, so the bg matches it.
+    icon: { bg: '#0b1017', src: '/images/connectors/atomicmail.png' },
+    featured: true,
+    docsUrl: 'https://github.com/Atomic-Mail/atomic-mail-agentic',
+    // Keyless: the server registers its own @atomicmail.ai inbox on first use
+    // (proof-of-work signup via the `register` tool), credentials stay local.
+    config: {
+      command: 'npx',
+      args: ['-y', '@atomicmail/mcp-github'],
       env: {},
     },
   },
@@ -108,7 +142,9 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'Notion',
     author: 'Notion',
     descriptionKey: 'mcp-connectors:descriptions.notion',
-    icon: { bg: '#191919', src: '/images/connectors/notion.svg' },
+    // Notion's mark is black on a white page, so the tile is white too
+    // (the same treatment as Serper) instead of an inverted black tile.
+    icon: { bg: '#ffffff', src: '/images/connectors/notion.svg' },
     docsUrl: 'https://developers.notion.com/docs/mcp',
     matchUrls: ['mcp.notion.com'],
     auth: 'oauth',
@@ -178,11 +214,301 @@ export const MCP_CONNECTORS: MCPConnector[] = [
       helpUrl: 'https://serper.dev/api-key',
     },
   },
-  // Last while its sign-in is 'oauth-soon': GitHub's remote MCP has no
+  // Remote OAuth connectors below were probed for MCP OAuth discovery +
+  // Dynamic Client Registration before landing here. Probed and left out:
+  // Figma (registration endpoint answers 403), Stack Overflow (no
+  // authorization-server metadata at all) — both would only ever fail.
+  {
+    serverKey: 'stripe',
+    name: 'Stripe',
+    author: 'Stripe',
+    descriptionKey: 'mcp-connectors:descriptions.stripe',
+    icon: { bg: '#635BFF', src: '/images/connectors/stripe.svg' },
+    docsUrl: 'https://docs.stripe.com/mcp',
+    matchUrls: ['mcp.stripe.com'],
+    auth: 'oauth',
+    config: {
+      type: 'http',
+      url: 'https://mcp.stripe.com',
+      command: '',
+      args: [],
+      env: {},
+    },
+  },
+  {
+    serverKey: 'supabase',
+    name: 'Supabase',
+    author: 'Supabase',
+    descriptionKey: 'mcp-connectors:descriptions.supabase',
+    icon: { bg: '#3ECF8E', src: '/images/connectors/supabase.svg' },
+    docsUrl: 'https://supabase.com/docs/guides/getting-started/mcp',
+    matchUrls: ['mcp.supabase.com'],
+    auth: 'oauth',
+    config: {
+      type: 'http',
+      url: 'https://mcp.supabase.com/mcp',
+      command: '',
+      args: [],
+      env: {},
+    },
+  },
+  {
+    serverKey: 'cloudflare',
+    name: 'Cloudflare',
+    author: 'Cloudflare',
+    descriptionKey: 'mcp-connectors:descriptions.cloudflare',
+    // Full-colour mark (two oranges) lifted from cloudflare.com/icons.svg, so
+    // the tile is white like Notion's instead of a brand-colour fill.
+    icon: { bg: '#ffffff', src: '/images/connectors/cloudflare.svg' },
+    docsUrl:
+      'https://developers.cloudflare.com/agents/model-context-protocol/mcp-servers-for-cloudflare/',
+    matchUrls: ['mcp.cloudflare.com'],
+    auth: 'oauth',
+    config: {
+      type: 'http',
+      url: 'https://mcp.cloudflare.com/mcp',
+      command: '',
+      args: [],
+      env: {},
+    },
+  },
+  {
+    serverKey: 'posthog',
+    name: 'PostHog',
+    author: 'PostHog',
+    descriptionKey: 'mcp-connectors:descriptions.posthog',
+    icon: { bg: '#1D4AFF', src: '/images/connectors/posthog.svg' },
+    docsUrl: 'https://posthog.com/docs/model-context-protocol',
+    matchUrls: ['mcp.posthog.com'],
+    auth: 'oauth',
+    config: {
+      type: 'http',
+      url: 'https://mcp.posthog.com/mcp',
+      command: '',
+      args: [],
+      env: {},
+    },
+  },
+  {
+    serverKey: 'paypal',
+    name: 'PayPal',
+    author: 'PayPal',
+    descriptionKey: 'mcp-connectors:descriptions.paypal',
+    // PayPal's post-2024 navy, sampled from their own monogram asset
+    // (paypalobjects.com/marketing/web/icons/monogram); #003087 was the old one.
+    icon: { bg: '#002991', src: '/images/connectors/paypal.svg' },
+    docsUrl: 'https://developer.paypal.com/tools/mcp-server/',
+    matchUrls: ['mcp.paypal.com'],
+    auth: 'oauth',
+    config: {
+      type: 'http',
+      url: 'https://mcp.paypal.com/mcp',
+      command: '',
+      args: [],
+      env: {},
+    },
+  },
+  {
+    serverKey: 'trello',
+    name: 'Trello',
+    author: 'Atlassian',
+    descriptionKey: 'mcp-connectors:descriptions.trello',
+    icon: { bg: '#0052CC', src: '/images/connectors/trello.svg' },
+    docsUrl: 'https://support.atlassian.com/trello/docs/trello-mcp-server/',
+    matchUrls: ['mcp.trello.com'],
+    auth: 'oauth',
+    config: {
+      type: 'http',
+      url: 'https://mcp.trello.com/v1',
+      command: '',
+      args: [],
+      env: {},
+    },
+  },
+  {
+    serverKey: 'granola',
+    name: 'Granola',
+    author: 'Granola',
+    descriptionKey: 'mcp-connectors:descriptions.granola',
+    // The mark ships on its own olive tile, so the bg matches it.
+    icon: { bg: '#b2c248', src: '/images/connectors/granola.png' },
+    docsUrl: 'https://www.granola.ai/docs/mcp',
+    matchUrls: ['mcp.granola.ai'],
+    auth: 'oauth',
+    config: {
+      type: 'http',
+      url: 'https://mcp.granola.ai/mcp',
+      command: '',
+      args: [],
+      env: {},
+    },
+  },
+  {
+    serverKey: 'calcom',
+    name: 'Cal.com',
+    author: 'Cal.com',
+    descriptionKey: 'mcp-connectors:descriptions.calcom',
+    icon: { bg: '#292929', src: '/images/connectors/calcom.svg' },
+    docsUrl: 'https://cal.com/docs/developing/guides/mcp',
+    matchUrls: ['mcp.cal.com'],
+    auth: 'oauth',
+    config: {
+      type: 'http',
+      url: 'https://mcp.cal.com/mcp',
+      command: '',
+      args: [],
+      env: {},
+    },
+  },
+  {
+    serverKey: 'airtable',
+    name: 'Airtable',
+    author: 'Airtable',
+    descriptionKey: 'mcp-connectors:descriptions.airtable',
+    // Full-colour mark taken from Airtable's own inline logo on airtable.com;
+    // the three brand colours need a white tile, not a blue one.
+    icon: { bg: '#ffffff', src: '/images/connectors/airtable.svg' },
+    docsUrl: 'https://airtable.com/developers/mcp',
+    matchUrls: ['mcp.airtable.com'],
+    auth: 'oauth',
+    config: {
+      type: 'http',
+      url: 'https://mcp.airtable.com/mcp',
+      command: '',
+      args: [],
+      env: {},
+    },
+  },
+  {
+    serverKey: 'webflow',
+    name: 'Webflow',
+    author: 'Webflow',
+    descriptionKey: 'mcp-connectors:descriptions.webflow',
+    icon: { bg: '#146EF5', src: '/images/connectors/webflow.svg' },
+    docsUrl: 'https://developers.webflow.com/data/docs/ai-tools',
+    matchUrls: ['mcp.webflow.com'],
+    auth: 'oauth',
+    // Webflow only documents the SSE endpoint for its remote server.
+    config: {
+      type: 'sse',
+      url: 'https://mcp.webflow.com/sse',
+      command: '',
+      args: [],
+      env: {},
+    },
+  },
+  {
+    serverKey: 'firecrawl',
+    name: 'Firecrawl',
+    author: 'Firecrawl',
+    descriptionKey: 'mcp-connectors:descriptions.firecrawl',
+    icon: { bg: '#FF6B1A', src: '/images/connectors/firecrawl.svg' },
+    docsUrl: 'https://docs.firecrawl.dev/mcp-server',
+    matchUrls: ['mcp.firecrawl.dev'],
+    config: {
+      type: 'http',
+      url: 'https://mcp.firecrawl.dev/v2/mcp',
+      command: '',
+      args: [],
+      env: {},
+    },
+    secret: {
+      kind: 'header',
+      key: 'Authorization',
+      labelKey: 'mcp-connectors:secrets.firecrawlApiKey',
+      placeholder: 'fc-...',
+      helpUrl: 'https://www.firecrawl.dev/app/api-keys',
+      format: (value) => `Bearer ${value}`,
+    },
+  },
+  {
+    serverKey: 'perplexity',
+    name: 'Perplexity',
+    author: 'Perplexity',
+    descriptionKey: 'mcp-connectors:descriptions.perplexity',
+    icon: { bg: '#20808D', src: '/images/connectors/perplexity.svg' },
+    docsUrl: 'https://docs.perplexity.ai/guides/mcp-server',
+    matchUrls: ['api.perplexity.ai/mcp'],
+    config: {
+      type: 'http',
+      url: 'https://api.perplexity.ai/mcp',
+      command: '',
+      args: [],
+      env: {},
+    },
+    secret: {
+      kind: 'header',
+      key: 'Authorization',
+      labelKey: 'mcp-connectors:secrets.perplexityApiKey',
+      placeholder: 'pplx-...',
+      helpUrl: 'https://www.perplexity.ai/settings/api',
+      format: (value) => `Bearer ${value}`,
+    },
+  },
+  {
+    serverKey: 'zapier',
+    name: 'Zapier',
+    author: 'Zapier',
+    descriptionKey: 'mcp-connectors:descriptions.zapier',
+    icon: { bg: '#FF4A00', src: '/images/connectors/zapier.svg' },
+    docsUrl: 'https://docs.zapier.com/mcp',
+    matchUrls: ['mcp.zapier.com'],
+    config: {
+      type: 'http',
+      url: 'https://mcp.zapier.com/api/mcp/mcp',
+      command: '',
+      args: [],
+      env: {},
+    },
+    secret: {
+      kind: 'header',
+      key: 'Authorization',
+      labelKey: 'mcp-connectors:secrets.zapierToken',
+      placeholder: '...',
+      helpUrl: 'https://mcp.zapier.com',
+      format: (value) => `Bearer ${value}`,
+    },
+  },
+  {
+    serverKey: 'resend',
+    name: 'Resend',
+    author: 'Resend',
+    descriptionKey: 'mcp-connectors:descriptions.resend',
+    icon: { bg: '#000000', src: '/images/connectors/resend.svg' },
+    docsUrl: 'https://resend.com/docs/knowledge-base/mcp-server',
+    config: {
+      command: 'npx',
+      args: ['-y', 'resend-mcp'],
+      env: {},
+    },
+    secret: {
+      kind: 'env',
+      key: 'RESEND_API_KEY',
+      labelKey: 'mcp-connectors:secrets.resendApiKey',
+      placeholder: 're_...',
+      helpUrl: 'https://resend.com/api-keys',
+    },
+  },
+  {
+    serverKey: 'shopify-dev',
+    name: 'Shopify Dev',
+    author: 'Shopify',
+    descriptionKey: 'mcp-connectors:descriptions.shopify-dev',
+    icon: { bg: '#96BF48', src: '/images/connectors/shopify-dev.svg' },
+    docsUrl: 'https://shopify.dev/docs/apps/build/devmcp',
+    config: {
+      command: 'npx',
+      args: ['-y', '@shopify/dev-mcp@latest'],
+      env: {},
+    },
+  },
+  // Hidden while its sign-in is 'oauth-soon': GitHub's remote MCP has no
   // Dynamic Client Registration (OAuth is limited to registered apps like the
-  // first-party Copilot IDEs), so browser sign-in cannot work yet.
+  // first-party Copilot IDEs), so browser sign-in cannot work yet. The entry
+  // stays so a hand-added server (e.g. with a PAT header) still gets the card.
   {
     serverKey: 'github',
+    hidden: true,
     name: 'GitHub',
     author: 'GitHub',
     descriptionKey: 'mcp-connectors:descriptions.github',

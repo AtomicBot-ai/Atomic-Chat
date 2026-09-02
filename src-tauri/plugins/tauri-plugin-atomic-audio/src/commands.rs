@@ -90,6 +90,18 @@ struct SegmentJob {
     duration_ms: u64,
 }
 
+/// What the worker sends the transcription consumer.
+///
+/// `End` is the last message of every session. The consumer — not the worker —
+/// emits `stopped` when it gets there, so the event can never overtake a phrase
+/// that is still being transcribed. Without that ordering the frontend tears
+/// the session down while the tail phrase is still in flight, and the last
+/// thing the user said is lost every single time.
+enum Job {
+    Segment(SegmentJob),
+    End { reason: Option<String> },
+}
+
 fn new_session_id() -> String {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let nanos = SystemTime::now()
@@ -236,7 +248,7 @@ pub async fn start_dictation<R: Runtime>(
     // no consumer task, and the worker does not even encode WAV.
     let seg_tx = match &target {
         Some(target) => {
-            let (seg_tx, seg_rx) = tokio::sync::mpsc::channel::<SegmentJob>(8);
+            let (seg_tx, seg_rx) = tokio::sync::mpsc::channel::<Job>(8);
 
             let client = reqwest::Client::builder()
                 .no_proxy()
@@ -487,7 +499,7 @@ fn handle_outcome<R: Runtime>(
     outcome: crate::vad::VadOutcome,
     elapsed_ms: u64,
     stats: &SessionStats,
-    seg_tx: Option<&tokio::sync::mpsc::Sender<SegmentJob>>,
+    seg_tx: Option<&tokio::sync::mpsc::Sender<Job>>,
     segment_index: &mut u32,
     frames_since_level: &mut u32,
     level_every: u32,
@@ -536,11 +548,11 @@ fn handle_outcome<R: Runtime>(
 
     let encoded = wav::encode_pcm16_mono(&segment.samples, TARGET_SAMPLE_RATE);
     if seg_tx
-        .blocking_send(SegmentJob {
+        .blocking_send(Job::Segment(SegmentJob {
             index,
             wav: encoded,
             duration_ms,
-        })
+        }))
         .is_err()
     {
         log::warn!("[atomic-audio] transcription consumer is gone");
@@ -559,7 +571,7 @@ fn spawn_worker<R: Runtime>(
     stats: Arc<SessionStats>,
     dropped: Arc<AtomicU64>,
     err_slot: Arc<Mutex<Option<cpal::Error>>>,
-    seg_tx: Option<tokio::sync::mpsc::Sender<SegmentJob>>,
+    seg_tx: Option<tokio::sync::mpsc::Sender<Job>>,
 ) -> AudioResult<std::thread::JoinHandle<()>> {
     std::thread::Builder::new()
         .name("atomic-audio-vad".into())
@@ -621,9 +633,6 @@ fn spawn_worker<R: Runtime>(
                 .dropped_frames
                 .store(dropped.load(Ordering::Relaxed), Ordering::Relaxed);
 
-            // Closing the sender ends the async consumer once its queue drains.
-            drop(seg_tx);
-
             let device_error = err_slot
                 .lock()
                 .ok()
@@ -644,15 +653,31 @@ fn spawn_worker<R: Runtime>(
                 None
             };
 
-            emit(
-                &app,
-                EVENT_STATE,
-                StatePayload {
-                    session_id: session_id.clone(),
-                    state: SessionState::Stopped,
-                    reason,
-                },
-            );
+            // Hand the end of the session to the consumer so it lands *after*
+            // the phrases still queued ahead of it, then close the channel.
+            // A monitor-only session (or a consumer that has already died) has
+            // nothing to order against, so emit it here instead.
+            let handed_over = match seg_tx {
+                Some(tx) => {
+                    let sent = tx.blocking_send(Job::End {
+                        reason: reason.clone(),
+                    });
+                    sent.is_ok()
+                }
+                None => false,
+            };
+
+            if !handed_over {
+                emit(
+                    &app,
+                    EVENT_STATE,
+                    StatePayload {
+                        session_id: session_id.clone(),
+                        state: SessionState::Stopped,
+                        reason,
+                    },
+                );
+            }
         })
         .map_err(|e| {
             AudioError::with_details(
@@ -670,19 +695,45 @@ fn spawn_worker<R: Runtime>(
 async fn transcribe_loop<R: Runtime>(
     app: AppHandle<R>,
     session_id: String,
-    mut rx: tokio::sync::mpsc::Receiver<SegmentJob>,
+    mut rx: tokio::sync::mpsc::Receiver<Job>,
     target: Arc<RwLock<TranscriptionTarget>>,
     stats: Arc<SessionStats>,
     client: reqwest::Client,
 ) {
     let mut consecutive_failures: u64 = 0;
+    // Set once the endpoint has proved itself broken. The queue is still
+    // drained afterwards rather than abandoned, because the `End` marker sits
+    // behind it and the session cannot report that it stopped without it.
+    let mut give_up = false;
 
     while let Some(job) = rx.recv().await {
+        let job = match job {
+            Job::End { reason } => {
+                emit(
+                    &app,
+                    EVENT_STATE,
+                    StatePayload {
+                        session_id: session_id.clone(),
+                        state: SessionState::Stopped,
+                        reason,
+                    },
+                );
+                continue;
+            }
+            Job::Segment(job) => job,
+        };
+        if give_up {
+            continue;
+        }
+
         let snapshot = match target.read() {
             Ok(guard) => guard.clone(),
             Err(_) => {
+                // Keep draining so the `End` marker behind this job still
+                // reaches the frontend and the session can end.
                 log::error!("[atomic-audio] transcription target is poisoned");
-                break;
+                give_up = true;
+                continue;
             }
         };
 
@@ -706,7 +757,20 @@ async fn transcribe_loop<R: Runtime>(
                 stats.segments_transcribed.fetch_add(1, Ordering::Relaxed);
                 // An empty transcript is the "no speech in this segment" case.
                 // Silently dropping it keeps the composer clean.
-                if !text.is_empty() {
+                //
+                // So is an answer the model invented because the segment held
+                // nothing it could read: the endpoint is a chat completion
+                // underneath, and silence makes an instruct model helpful
+                // rather than quiet.
+                if text.is_empty() {
+                    // Nothing was said. Nothing to insert.
+                } else if !transcribe::is_plausible_transcript(&text, job.duration_ms) {
+                    log::warn!(
+                        "[atomic-audio] discarded a {} character answer for a {} ms segment",
+                        text.chars().count(),
+                        job.duration_ms
+                    );
+                } else {
                     emit(
                         &app,
                         EVENT_TRANSCRIPT,
@@ -725,8 +789,9 @@ async fn transcribe_loop<R: Runtime>(
                 emit_error(&app, Some(&session_id), &err);
 
                 if err.code == AudioErrorCode::TranscriptionUnsupported {
-                    // Terminal: no point recording any further.
-                    break;
+                    // Terminal: no point transcribing any further.
+                    give_up = true;
+                    continue;
                 }
 
                 consecutive_failures += 1;
@@ -745,7 +810,7 @@ async fn transcribe_loop<R: Runtime>(
                             ),
                         ),
                     );
-                    break;
+                    give_up = true;
                 }
             }
         }

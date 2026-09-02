@@ -52,6 +52,15 @@ export function isSessionBusy(session: ChatSession | undefined): boolean {
   return session?.isStreaming || (session?.data?.tools?.length ?? 0) > 0;
 }
 
+/**
+ * `true` while any chat session is streaming or still running tool calls.
+ * Model auto-switch paths use it to avoid unloading an engine that is in the
+ * middle of answering (a `stopAllModels` mid-stream SIGKILLs the server).
+ */
+export function isAnyChatBusy(): boolean {
+  return Object.values(useChatSessions.getState().sessions).some(isSessionBusy);
+}
+
 const createSessionData = (): SessionData => ({
   tools: [],
   messages: [],

@@ -7,10 +7,23 @@ import { useMCPServers } from '@/hooks/useMCPServers'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { usePrompt } from '@/hooks/usePrompt'
 import { seedServiceHub } from '@/test/service-hub'
+import type { ServiceHub } from '@/services'
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   downscaleImageDataUrl: vi.fn(),
+  switchToModel: vi.fn(),
+  chatBusy: false,
+}))
+
+vi.mock('@/utils/switchModel', () => ({
+  switchToModel: mocks.switchToModel,
+  shouldAttemptAutoStart: () => true,
+  isExplicitSwitchPending: () => false,
+}))
+
+vi.mock('@/stores/chat-session-store', () => ({
+  isAnyChatBusy: () => mocks.chatBusy,
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -411,10 +424,9 @@ describe('ChatInput', () => {
     expect(
       document.querySelector('[data-test-id="approval-mode-select"]')
     ).toBeInTheDocument()
-    expect(screen.getByTestId('chat-input')).toHaveAttribute(
-      'placeholder',
-      'chat:agentMode.placeholder'
-    )
+    expect(
+      document.querySelector('[data-testid="agent-mode-chip"]')
+    ).toBeInTheDocument()
     expect(
       screen.getByText('chat:agentWorkspace.addFolder')
     ).toBeInTheDocument()
@@ -537,5 +549,107 @@ describe('ChatInput', () => {
         }),
       ])
     })
+  })
+})
+
+describe('ChatInput local model auto-start', () => {
+  const localModel = {
+    id: 'shared-model',
+    capabilities: [],
+    settings: {},
+  } as Model
+  const upstream = {
+    provider: 'llamacpp-upstream',
+    active: true,
+    models: [localModel],
+    settings: [],
+  } as ModelProvider
+
+  function seedModels(activeByProvider: Record<string, string[]>) {
+    const getActiveModels = vi.fn(async (provider?: string) =>
+      provider
+        ? (activeByProvider[provider] ?? [])
+        : [...new Set(Object.values(activeByProvider).flat())]
+    )
+    const stopAllModelsExcept = vi.fn().mockResolvedValue(undefined)
+    seedServiceHub({
+      models: {
+        getActiveModels,
+        stopAllModelsExcept,
+      } as unknown as ReturnType<ServiceHub['models']>,
+    })
+    return { getActiveModels, stopAllModelsExcept }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.chatBusy = false
+    mocks.switchToModel.mockResolvedValue(undefined)
+    usePrompt.setState({ prompt: '' })
+    useChatAttachments.setState({ attachmentsByThread: {} })
+    useGeneralSetting.setState({ connectorsPinned: true, agentModeEnabled: false })
+    useModelProvider.setState({
+      providers: [upstream],
+      selectedProvider: 'llamacpp-upstream',
+      selectedModel: localModel,
+    })
+  })
+
+  it('drops a stray copy in another engine instead of switching', async () => {
+    const { stopAllModelsExcept } = seedModels({
+      'llamacpp-upstream': ['shared-model'],
+      llamacpp: ['shared-model'],
+    })
+    const { unmount } = render(<ChatInput />)
+
+    await waitFor(() => {
+      expect(stopAllModelsExcept).toHaveBeenCalledWith(
+        'shared-model',
+        'llamacpp-upstream'
+      )
+    })
+    expect(mocks.switchToModel).not.toHaveBeenCalled()
+    unmount()
+  })
+
+  it('auto-starts when the selected engine does not serve the model', async () => {
+    seedModels({})
+    const { unmount } = render(<ChatInput />)
+
+    await waitFor(() => {
+      expect(mocks.switchToModel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          modelId: 'shared-model',
+          providerName: 'llamacpp-upstream',
+          isAutoStart: true,
+        })
+      )
+    })
+    unmount()
+  })
+
+  it('never touches the engines while this thread is streaming', async () => {
+    const { getActiveModels, stopAllModelsExcept } = seedModels({
+      'llamacpp-upstream': ['shared-model'],
+      llamacpp: ['shared-model'],
+    })
+    const { unmount } = render(<ChatInput chatStatus="streaming" />)
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(getActiveModels).not.toHaveBeenCalled()
+    expect(stopAllModelsExcept).not.toHaveBeenCalled()
+    expect(mocks.switchToModel).not.toHaveBeenCalled()
+    unmount()
+  })
+
+  it('never touches the engines while another chat is busy', async () => {
+    mocks.chatBusy = true
+    const { getActiveModels } = seedModels({})
+    const { unmount } = render(<ChatInput />)
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(getActiveModels).not.toHaveBeenCalled()
+    expect(mocks.switchToModel).not.toHaveBeenCalled()
+    unmount()
   })
 })

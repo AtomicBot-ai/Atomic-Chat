@@ -14,6 +14,7 @@
   "featuredBadge": "Featured",
   "serverActions": "Server actions",
   "editJson": "Edit JSON",
+  "tools": "Tools",
   "logs": {
     "show": "Show logs",
     "hide": "Hide logs"
@@ -31,7 +32,11 @@
     "getKey": "Get your API key"
   },
   "secrets": {
-    "serperApiKey": "Serper API key"
+    "serperApiKey": "Serper API key",
+    "firecrawlApiKey": "Firecrawl API key",
+    "perplexityApiKey": "Perplexity API key",
+    "zapierToken": "Zapier MCP token",
+    "resendApiKey": "Resend API key"
   },
   "toast": {
     "connected": "{{name}} connected"
@@ -43,6 +48,22 @@
     "notion": "Search, read, and update pages and databases in your workspace.",
     "sentry": "Investigate errors, traces, and application performance.",
     "atlassian": "Work with Jira issues, Confluence pages, and team knowledge.",
-    "serper": "Google search results via the Serper API."
+    "serper": "Google search results via the Serper API.",
+    "atomicmail": "Give your agent its own inbox: read, send, and manage email. No key needed.",
+    "stripe": "Read and manage customers, payments, subscriptions, and invoices.",
+    "supabase": "Query your database, manage projects, and read Supabase docs.",
+    "cloudflare": "Manage Workers, DNS, storage, and observability across your account.",
+    "posthog": "Query product analytics, feature flags, errors, and session data.",
+    "paypal": "Create invoices, track orders and payments, and manage disputes.",
+    "trello": "Read and update boards, lists, and cards.",
+    "granola": "Search and read your meeting notes and transcripts.",
+    "calcom": "Manage bookings, event types, and availability.",
+    "airtable": "Read, create, and update records in your bases.",
+    "webflow": "Manage sites, CMS collections, and pages.",
+    "firecrawl": "Scrape, crawl, search, and extract web pages into LLM-ready data.",
+    "perplexity": "Real-time web research with cited answers from Perplexity.",
+    "zapier": "Run actions across thousands of apps through your Zapier MCP server.",
+    "resend": "Send transactional emails through the Resend API.",
+    "shopify-dev": "Shopify developer docs and GraphQL schemas for building apps."
   }
 }

@@ -27,7 +27,7 @@ export function LlamacppMtpUnsupportedDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[460px] max-w-[90vw]">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle className="font-bold">
             {t('settings:llamacppMtpUnsupportedTitle', {

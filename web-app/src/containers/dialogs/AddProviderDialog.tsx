@@ -75,7 +75,6 @@ export function AddProviderDialog({
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       {children && <DialogTrigger asChild>{children}</DialogTrigger>}
       <DialogContent
-        className="sm:max-w-[425px] max-w-[90vw]"
         onOpenAutoFocus={(e) => {
           e.preventDefault()
           createButtonRef.current?.focus()

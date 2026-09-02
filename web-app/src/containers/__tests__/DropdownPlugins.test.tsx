@@ -149,7 +149,11 @@ describe('DropdownPlugins', () => {
     // The connector is the only switch there is — its tools are counted, not
     // listed, and none of them can be toggled on its own.
     expect(screen.getAllByRole('switch')).toHaveLength(2)
-    expect(screen.getByText('2')).toBeInTheDocument()
+    // The row carries the tool count (the cost label falls back to it until
+    // the transport has measured the tool block).
+    expect(screen.getByTestId('connector-cost-exa')).toHaveTextContent(
+      'common:connectorsMenu.toolCount'
+    )
     expect(screen.queryByText('web_search_exa')).toBeNull()
     // One connector connected out of two.
     expect(screen.getByText('connectors:1')).toBeInTheDocument()
@@ -169,7 +173,7 @@ describe('DropdownPlugins', () => {
     expect(screen.getByText('common:connectorsMenu.empty')).toBeInTheDocument()
   })
 
-  it('connects a server and unmutes its tools when switched on', async () => {
+  it('connects a server and keeps its per-tool switches', async () => {
     const config = { command: 'npx', args: ['x'], env: {}, active: false }
     useMCPServers.setState({ mcpServers: { serper: config } })
     useToolAvailable.setState({
@@ -186,8 +190,10 @@ describe('DropdownPlugins', () => {
       })
     )
     expect(useMCPServers.getState().mcpServers.serper.active).toBe(true)
-    // Only this server's tools are unmuted; the others stay as they were.
+    // A tool the user switched off stays off across a restart; the tools
+    // dialog is where that shows and where it is undone.
     expect(useToolAvailable.getState().disabledTools['thread-1']).toEqual([
+      'serper::google_search',
       'exa::search',
     ])
   })
@@ -221,16 +227,16 @@ describe('DropdownPlugins', () => {
     )
   })
 
-  it('clears tools an older build muted on a connected server', () => {
-    // Nothing can unmute a single tool any more, so a leftover would sit in
-    // storage muting it forever.
+  it('reports a connector with single tools off as "k of N"', () => {
     useMCPServers.setState({
       mcpServers: {
         exa: { command: '', args: [], env: {}, active: true },
         serper: { command: 'npx', args: [], env: {}, active: false },
       },
     })
-    useAppState.setState({ tools: [tool('exa', 'web_search_exa')] })
+    useAppState.setState({
+      tools: [tool('exa', 'web_search_exa'), tool('exa', 'crawling_exa')],
+    })
     useToolAvailable.setState({
       disabledTools: {
         'thread-1': ['exa::web_search_exa', 'serper::google_search'],
@@ -239,10 +245,14 @@ describe('DropdownPlugins', () => {
 
     renderDropdown()
 
-    // The disconnected server keeps its entry — it is switched off as a whole.
+    // Nothing sweeps the keys: they are the user's switches now.
     expect(useToolAvailable.getState().disabledTools['thread-1']).toEqual([
+      'exa::web_search_exa',
       'serper::google_search',
     ])
+    expect(screen.getByTestId('connector-cost-exa')).toHaveTextContent(
+      'common:connectorsMenu.toolCountPartial'
+    )
   })
 
   it('opens the connectors page from the section footer', async () => {
@@ -306,5 +316,166 @@ describe('DropdownPlugins', () => {
     await userEvent.click(screen.getByText('common:connectors'))
 
     expect(screen.queryByRole('switch', { name: 'Exa' })).toBeNull()
+  })
+})
+
+describe('DropdownPlugins tool cost and per-chat mute', () => {
+  const exaConfig = { command: '', args: [], env: {}, active: true }
+  const linearConfig = { command: '', args: [], env: {}, active: true }
+
+  beforeAll(() => {
+    global.ResizeObserver = MockResizeObserver as never
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useMCPServers.setState({ mcpServers: { exa: exaConfig, linear: linearConfig } })
+    useAppState.setState({
+      tools: [tool('exa', 'web_search_exa'), tool('linear', 'list_issues')],
+      toolCostReports: {},
+    })
+    useToolAvailable.setState({
+      disabledTools: {},
+      defaultDisabledTools: [],
+      mutedServers: {},
+      defaultMutedServers: [],
+    })
+  })
+
+  it('shows the measured cost per connector and flags a heavy one', () => {
+    useAppState.setState({
+      toolCostReports: {
+        'thread-1': {
+          totalTokens: 18_200,
+          toolCount: 71,
+          ctxLen: 16_384,
+          ctxShare: 1.1,
+          perServer: [
+            { server: 'linear', toolCount: 70, tokens: 18_000, ctxShare: 1.1, heavy: true },
+            { server: 'exa', toolCount: 1, tokens: 200, ctxShare: 0.01, heavy: false },
+          ],
+          heavyServers: ['linear'],
+          tooHeavy: true,
+        },
+      },
+    })
+
+    renderDropdown()
+
+    const linear = screen.getByTestId('connector-cost-linear')
+    expect(linear).toHaveTextContent('common:connectorsMenu.costShare')
+    expect(linear).toHaveAttribute('data-heavy', 'true')
+    expect(screen.getByTestId('connector-cost-exa')).not.toHaveAttribute('data-heavy')
+  })
+
+  it('mutes a connector for this chat from its tools dialog, not the global switch', async () => {
+    const user = userEvent.setup()
+    renderDropdown()
+
+    await user.click(screen.getByTestId('connector-tools-linear'))
+    const dialog = await screen.findByTestId('connector-tools-dialog')
+    expect(dialog).toHaveTextContent('common:connectorTools.scopeChat')
+
+    await user.click(screen.getByTestId('connector-tools-master'))
+
+    expect(useToolAvailable.getState().getMutedServersForThread('thread-1')).toEqual([
+      'linear',
+    ])
+    expect(activateMCPServer).not.toHaveBeenCalled()
+    expect(deactivateMCPServer).not.toHaveBeenCalled()
+    expect(useMCPServers.getState().mcpServers.linear.active).toBe(true)
+    expect(screen.getByTestId('connector-cost-linear')).toHaveTextContent(
+      'common:connectorsMenu.mutedForChat'
+    )
+    // Only connectors whose tools ride the chat count in the trigger.
+    expect(screen.getByText('connectors:1')).toBeInTheDocument()
+    // A muted connector's tool switches are parked until it is back on.
+    expect(screen.getByRole('switch', { name: 'list_issues' })).toBeDisabled()
+
+    await user.click(screen.getByTestId('connector-tools-master'))
+    expect(useToolAvailable.getState().getMutedServersForThread('thread-1')).toEqual([])
+  })
+
+  it('switches one tool off for this chat from the tools dialog', async () => {
+    const user = userEvent.setup()
+    useAppState.setState({
+      tools: [
+        tool('exa', 'web_search_exa'),
+        tool('linear', 'list_issues'),
+        tool('linear', 'create_issue'),
+      ],
+    })
+    renderDropdown()
+
+    await user.click(screen.getByTestId('connector-tools-linear'))
+    await user.click(await screen.findByRole('switch', { name: 'list_issues' }))
+
+    expect(useToolAvailable.getState().disabledTools['thread-1']).toEqual([
+      'linear::list_issues',
+    ])
+    expect(useToolAvailable.getState().defaultDisabledTools).toEqual([])
+    expect(screen.getByTestId('connector-cost-linear')).toHaveTextContent(
+      'common:connectorsMenu.toolCountPartial'
+    )
+    // The whole connector still rides the chat, so the trigger count holds.
+    expect(screen.getByText('connectors:2')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('switch', { name: 'list_issues' }))
+    expect(useToolAvailable.getState().disabledTools['thread-1']).toEqual([])
+  })
+
+  it('does not sweep a muted connector as a stale per-tool key', async () => {
+    useToolAvailable.setState({ mutedServers: { 'thread-1': ['linear'] } })
+
+    renderDropdown()
+    await waitFor(() => {
+      expect(screen.getByTestId('connector-cost-linear')).toHaveTextContent(
+        'common:connectorsMenu.mutedForChat'
+      )
+    })
+    expect(useToolAvailable.getState().mutedServers['thread-1']).toEqual(['linear'])
+  })
+})
+
+describe('DropdownPlugins system default servers', () => {
+  beforeAll(() => {
+    global.ResizeObserver = MockResizeObserver as never
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useAppState.setState({ tools: [], toolCostReports: {} })
+    useToolAvailable.setState({
+      disabledTools: {},
+      defaultDisabledTools: [],
+      mutedServers: {},
+      defaultMutedServers: [],
+    })
+  })
+
+  it('never lists a system server, on or off — they are agent-mode tooling', () => {
+    useMCPServers.setState({
+      mcpServers: {
+        filesystem: { command: 'npx', args: [], env: {}, active: true },
+        fetch: { command: 'uvx', args: [], env: {}, active: false },
+        'Jan Browser MCP': { command: '', args: [], env: {}, active: true },
+      },
+    })
+    useAppState.setState({
+      tools: [
+        tool('filesystem', 'read_file'),
+        tool('filesystem', 'write_file'),
+        tool('Jan Browser MCP', 'browser_click'),
+      ],
+    })
+
+    renderDropdown()
+
+    expect(screen.queryByRole('switch', { name: 'filesystem' })).toBeNull()
+    expect(screen.queryByRole('switch', { name: 'fetch' })).toBeNull()
+    expect(screen.queryByRole('switch', { name: 'Jan Browser MCP' })).toBeNull()
+    expect(screen.getByText('common:connectorsMenu.empty')).toBeInTheDocument()
+    // Nothing rides the chat, so the trigger counts none.
+    expect(screen.getByText('connectors:0')).toBeInTheDocument()
   })
 })

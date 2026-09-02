@@ -44,6 +44,7 @@ type ModelProviderState = {
   addProvider: (provider: ModelProvider) => void
   deleteProvider: (providerName: string) => void
   deleteModel: (modelId: string) => void
+  clearDeletedModel: (modelId: string) => void
 }
 
 export const useModelProvider = create<ModelProviderState>()(
@@ -289,6 +290,17 @@ export const useModelProvider = create<ModelProviderState>()(
             deletedModels: [...currentDeletedModels, modelId],
           }
         })
+      },
+      // Re-downloading a model has to lift its tombstone, or `setProviders`
+      // keeps filtering the fresh id out of every engine listing and the model
+      // stays invisible until the store is wiped.
+      clearDeletedModel: (modelId: string) => {
+        set((state) => ({
+          deletedModels: (Array.isArray(state.deletedModels)
+            ? state.deletedModels
+            : []
+          ).filter((id) => id !== modelId),
+        }))
       },
       addProvider: (provider: ModelProvider) => {
         set((state) => ({

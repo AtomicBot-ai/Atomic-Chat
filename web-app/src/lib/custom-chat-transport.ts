@@ -6,6 +6,7 @@ import {
   type ChatRequestOptions,
   type ChatTransport,
   type LanguageModel,
+  type ModelMessage,
   type UIMessageChunk,
   type Tool,
   type LanguageModelUsage,
@@ -50,6 +51,7 @@ const stripSpecialTokensTransform = () =>
   })
 import { useServiceStore } from '@/hooks/useServiceHub'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
+import { SYSTEM_SERVER_KEYS } from '@/constants/mcp-connectors'
 import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getSamplingParamsForThread } from '@/lib/samplingParams'
@@ -62,6 +64,21 @@ import { useAppState } from '@/hooks/useAppState'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ttftMark } from '@/lib/ttft-timing'
+import {
+  growModelContext,
+  readAutoIncreaseCtx,
+  readModelCtxLen,
+} from '@/lib/context-size'
+import {
+  DEFAULT_OUTPUT_RESERVE_TOKENS,
+  PREFLIGHT_CTX_THRESHOLD,
+  estimatePromptTokensHeuristic,
+  estimateToolsTokens,
+  toOpenAiMessages,
+  toOpenAiTools,
+} from '@/lib/prompt-size'
+import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
+import { summarizeToolCost } from '@/lib/tool-cost'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
 import {
   collectSkillNamesFromMessages,
@@ -416,15 +433,29 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   ): string {
     const mcp = [...useAppState.getState().mcpToolNames].sort().join(',')
     const rag = [...useAppState.getState().ragToolNames].sort().join(',')
+    const muted = [...this.mutedServersForThread()].sort().join(',')
+    // The cost report is measured against the selected model's window, so
+    // a context change must rebuild it even when the tool set is unchanged.
+    const ctxLen = readModelCtxLen(useModelProvider.getState().selectedModel)
     return [
       this.threadId ?? '',
       hasDocuments,
       ragFeatureAvailable,
       modelSupportsTools,
       disabledToolKeys.join(','),
+      muted,
+      ctxLen ?? '',
       mcp,
       rag,
     ].join('|')
+  }
+
+  /** Connectors the user switched off for this chat (see `useToolAvailable`). */
+  private mutedServersForThread(): string[] {
+    const store = useToolAvailable.getState()
+    return this.threadId
+      ? store.getMutedServersForThread(this.threadId)
+      : store.getDefaultMutedServers()
   }
 
   async refreshTools(force = false) {
@@ -523,9 +554,34 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       }
     }
 
-    this.tools = buildToolsRecord(ragTools, mcpTools, disabledToolKeys)
+    // System servers (filesystem, fetch, …) are agent-mode tooling: the
+    // agent engine reads them from its own catalog, a chat never sends them.
+    const muted = new Set([
+      ...this.mutedServersForThread(),
+      ...SYSTEM_SERVER_KEYS,
+    ])
+    const audibleMcpTools = mcpTools.filter((tool) => !muted.has(tool.server))
+
+    this.tools = buildToolsRecord(ragTools, audibleMcpTools, disabledToolKeys)
     this.toolsCacheKey = cacheKey
     this.toolsCacheValid = true
+
+    // What the tool block costs, per connector, for the plugins menu and the
+    // composer hint. Measured on what is actually sent (muted/disabled tools
+    // excluded), against the selected model's context window.
+    const disabled = new Set(disabledToolKeys)
+    const sentTools = audibleMcpTools.filter(
+      (tool) => !disabled.has(`${tool.server || 'unknown'}::${tool.name}`)
+    )
+    useAppState
+      .getState()
+      .setToolCostReport(
+        this.threadId ?? '',
+        summarizeToolCost(
+          modelSupportsTools ? sentTools : [],
+          readModelCtxLen(selectedModel)
+        )
+      )
   }
 
   /**
@@ -541,6 +597,111 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
    */
   setContinueFromContent(content: string) {
     this.continueFromContent = content
+  }
+
+  /** `chat_template_kwargs` of the last created model (reasoning on/off). */
+  private lastChatTemplateKwargs: Record<string, unknown> | undefined
+
+  /** Size of the last prepared prompt, for diagnostics / telemetry. */
+  lastPromptSize:
+    | {
+        promptTokens: number
+        toolTokens: number
+        ctxLen: number
+        measured: boolean
+      }
+    | undefined
+
+  /**
+   * Estimate (or, for llama.cpp, measure) the prompt and grow the model's
+   * context window once when it would not fit. Returns silently on any
+   * failure — the reactive error path in the thread route remains the
+   * safety net. Throws a context-limit error when the ladder is already at
+   * the model's maximum so the request is not sent into a window it cannot
+   * fit.
+   */
+  private async ensureContextFits(args: {
+    providerId: string
+    modelId: string
+    provider: ProviderObject | undefined
+    system: string | undefined
+    messages: ModelMessage[]
+    tools: Record<string, Tool> | undefined
+    maxOutputTokens: number | undefined
+    recreateModel: () => Promise<void>
+    abortSignal: AbortSignal | undefined
+  }): Promise<void> {
+    const selectedModel = useModelProvider.getState().selectedModel
+    if (!selectedModel || selectedModel.id !== args.modelId) return
+    if (!readAutoIncreaseCtx(selectedModel)) return
+    const ctxLen = readModelCtxLen(selectedModel)
+    if (!ctxLen || !this.serviceHub) return
+
+    const heuristic = estimatePromptTokensHeuristic({
+      system: args.system,
+      messages: args.messages,
+      tools: args.tools,
+    })
+    let promptTokens = heuristic
+    let measured = false
+    if (
+      args.providerId === 'llamacpp' ||
+      args.providerId === 'llamacpp-upstream'
+    ) {
+      const exact = await ModelFactory.countLocalPromptTokens(
+        args.providerId,
+        args.modelId,
+        args.provider,
+        {
+          messages: toOpenAiMessages({
+            system: args.system,
+            messages: args.messages,
+          }),
+          tools: toOpenAiTools(args.tools),
+          ...(this.lastChatTemplateKwargs
+            ? { chat_template_kwargs: this.lastChatTemplateKwargs }
+            : {}),
+        }
+      )
+      if (exact !== null) {
+        promptTokens = exact
+        measured = true
+      }
+    }
+    if (args.abortSignal?.aborted) return
+
+    const needed =
+      promptTokens + (args.maxOutputTokens ?? DEFAULT_OUTPUT_RESERVE_TOKENS)
+    const limit = ctxLen * PREFLIGHT_CTX_THRESHOLD
+    this.lastPromptSize = {
+      promptTokens,
+      toolTokens: estimateToolsTokens(args.tools),
+      ctxLen,
+      measured,
+    }
+    if (needed <= limit) return
+
+    const minCtxLen = Math.ceil(needed / PREFLIGHT_CTX_THRESHOLD)
+    console.info(
+      `[chat] prompt ${promptTokens} tokens (${measured ? 'measured' : 'estimated'}) + ${needed - promptTokens} reserved does not fit ctx ${ctxLen}; growing to >= ${minCtxLen}`
+    )
+    const result = await growModelContext({
+      providerId: args.providerId,
+      modelId: args.modelId,
+      serviceHub: this.serviceHub,
+      minCtxLen,
+    })
+    if (!result.ok) {
+      if (result.reason === 'at_max') {
+        throw new Error(
+          `${OUT_OF_CONTEXT_SIZE} The prompt needs about ${needed} tokens (${this.lastPromptSize.toolTokens} of them are tool definitions) but the model's maximum context is ${result.max ?? result.from}. Disable some connectors for this chat or shorten the conversation.`
+        )
+      }
+      return
+    }
+    if (args.abortSignal?.aborted) return
+    await args.recreateModel()
+    this.lastPromptSize = { ...this.lastPromptSize, ctxLen: result.to }
   }
 
   async sendMessages(
@@ -565,6 +726,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const providerId = useModelProvider.getState().selectedProvider
     const effectiveProviderName = providerId
     const provider = useModelProvider.getState().getProviderByName(providerId)
+    // Re-creates `this.model` against the provider store's current settings
+    // (used after a pre-flight context growth reloads the local session).
+    let recreateModel: (() => Promise<void>) | undefined
     if (this.serviceHub && modelId && provider) {
       try {
         const updatedProvider = useModelProvider
@@ -581,11 +745,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         const inferenceParams = withUpstreamDflashSampling(
           providerId,
           providerSettings,
-          withRecommendedSampling(
-            modelId,
-            sampling.params,
-            sampling.overridden
-          )
+          withRecommendedSampling(modelId, sampling.params, sampling.overridden)
         )
 
         // Global "Disable reasoning" setting — best-effort: dispatch the
@@ -694,6 +854,22 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           audioInputParts.length > 0 ? audioInputParts : undefined
         )
         ttftMark('deltaEnd')
+        recreateModel = async () => {
+          const fresh =
+            useModelProvider.getState().getProviderByName(providerId) ??
+            effectiveProvider
+          this.model = await ModelFactory.createModel(
+            modelId,
+            fresh,
+            inferenceParams ?? {},
+            hasOverride ? effectiveReasoningOverride : undefined,
+            audioInputParts.length > 0 ? audioInputParts : undefined
+          )
+        }
+        this.lastChatTemplateKwargs =
+          effectiveReasoningOverride.chat_template_kwargs as
+            | Record<string, unknown>
+            | undefined
       } catch (error) {
         console.error('Failed to create model:', error)
         throw new Error(
@@ -821,6 +997,25 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const maxOutputTokens = getSamplingParamsForThread(this.threadId).params
       ?.max_output_tokens as number | undefined
 
+    // Pre-flight (local engines only): measure the rendered prompt — tool
+    // schemas included — and grow the context window BEFORE the request
+    // when it would not fit. Without this a long tool catalogue fails with
+    // "exceeds the available context size", the model is reloaded, and the
+    // whole prompt is regenerated; with it there is one reload and no error.
+    if (isLocalProvider && modelId && recreateModel) {
+      await this.ensureContextFits({
+        providerId: effectiveProviderName,
+        modelId,
+        provider,
+        system: effectiveSystemMessage,
+        messages: finalModelMessages,
+        tools: shouldEnableTools ? this.tools : undefined,
+        maxOutputTokens,
+        recreateModel,
+        abortSignal: options.abortSignal,
+      })
+    }
+
     const result = streamText({
       model: this.model,
       messages: finalModelMessages,
@@ -829,6 +1024,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       toolChoice: shouldEnableTools ? 'auto' : undefined,
       system: effectiveSystemMessage,
       maxOutputTokens,
+      // Local engines answer a prompt that does not fit with a fast,
+      // deterministic error; retrying it (the SDK default for 5xx) only
+      // delays the context-growth path. Cloud providers keep the default.
+      maxRetries: isLocalProvider ? 0 : undefined,
       experimental_transform: stripSpecialTokensTransform,
       experimental_repairToolCall: async ({ toolCall, error }) => {
         if (NoSuchToolError.isInstance(error)) return null

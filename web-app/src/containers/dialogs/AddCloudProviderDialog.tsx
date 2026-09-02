@@ -155,7 +155,7 @@ export function AddCloudProviderDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg lg:max-w-lg xl:max-w-lg">
         {step.name === 'gallery' ? (
           <>
             <DialogHeader>

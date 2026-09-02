@@ -361,6 +361,45 @@ describe('DefaultModelsService', () => {
     })
   })
 
+  describe('stopAllModelsExcept', () => {
+    it('unloads every local model except the kept (provider, model) pair', async () => {
+      const engines = {
+        'llamacpp': {
+          ...mockEngine,
+          getLoadedModels: vi.fn().mockResolvedValue(['shared-model']),
+          unload: vi.fn(),
+        },
+        'llamacpp-upstream': {
+          ...mockEngine,
+          getLoadedModels: vi
+            .fn()
+            .mockResolvedValue(['shared-model', 'other-model']),
+          unload: vi.fn(),
+        },
+        'mlx': {
+          ...mockEngine,
+          getLoadedModels: vi.fn().mockResolvedValue([]),
+          unload: vi.fn(),
+        },
+      }
+      mockEngineManager.get.mockImplementation(
+        (provider: keyof typeof engines) => engines[provider]
+      )
+
+      await modelsService.stopAllModelsExcept(
+        'shared-model',
+        'llamacpp-upstream'
+      )
+
+      expect(engines['llamacpp'].unload).toHaveBeenCalledWith('shared-model')
+      expect(engines['llamacpp-upstream'].unload).toHaveBeenCalledTimes(1)
+      expect(engines['llamacpp-upstream'].unload).toHaveBeenCalledWith(
+        'other-model'
+      )
+      expect(engines['mlx'].unload).not.toHaveBeenCalled()
+    })
+  })
+
   describe('startModel', () => {
     it('should start model successfully', async () => {
       const mockSettings = {

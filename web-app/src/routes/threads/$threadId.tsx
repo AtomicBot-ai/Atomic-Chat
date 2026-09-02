@@ -74,9 +74,6 @@ import {
   MessageStatus,
   ChatCompletionRole,
   ContentType,
-  computeNextCtxLen,
-  EngineManager,
-  type AIEngine,
 } from '@janhq/core'
 import { toast } from 'sonner'
 import {
@@ -110,6 +107,7 @@ import {
   isContextLimitError,
   isOutOfMemoryError,
 } from '@/utils/error'
+import { growModelContext } from '@/lib/context-size'
 import { captureHandledError } from '@/lib/sentry'
 import { Button } from '@/components/ui/button'
 import { LinkifiedText } from '@/components/LinkifiedText'
@@ -1415,6 +1413,7 @@ function ThreadDetail() {
       }
       const ragToolNames = useAppState.getState().ragToolNames
       const mcpToolNames = useAppState.getState().mcpToolNames
+      const toolCost = useAppState.getState().toolCostReports[threadId]
       captureChatRequest({
         ...chatAttachments,
         engine: 'chat-transport',
@@ -1438,6 +1437,14 @@ function ThreadDetail() {
         tools_enabled_count: ragToolNames.size + mcpToolNames.size,
         has_rag: ragToolNames.size > 0,
         has_mcp: mcpToolNames.size > 0,
+        // Cost of the tool definitions actually sent (muted/disabled ones
+        // excluded), from the transport's last refresh.
+        tools_tokens_estimate: toolCost?.totalTokens ?? null,
+        tools_ctx_share:
+          toolCost?.ctxShare !== undefined
+            ? Math.round(toolCost.ctxShare * 100) / 100
+            : null,
+        tools_heavy_servers: toolCost?.heavyServers.length ?? 0,
       })
 
       // Clear attachments after sending
@@ -1749,84 +1756,26 @@ function ThreadDetail() {
   const handleContextSizeIncrease = useCallback(async () => {
     if (!selectedModel) return
 
-    const updateProvider = useModelProvider.getState().updateProvider
-    const provider = getProviderByName(selectedProvider)
-    if (!provider) return
-
-    const modelIndex = provider.models.findIndex(
-      (m) => m.id === selectedModel.id
-    )
-    if (modelIndex === -1) return
-
-    const model = provider.models[modelIndex]
-
-    const currentCtxLen =
-      (model.settings?.ctx_len?.controller_props?.value as number) ?? 8192
-
-    /// Ask the owning local-provider engine for the model's training-max
-    /// context. Duck-typed so non-local providers (or extensions that
-    /// haven't been updated yet) gracefully fall back to the open-ended
-    /// ladder instead of crashing. The shared `computeNextCtxLen` ladder
-    /// then clamps the next step so we never push past what the model's
-    /// positional embeddings actually support.
-    let maxCtxLen: number | undefined
-    try {
-      const engine = EngineManager.instance().get(selectedProvider) as
-        | (AIEngine & {
-            getMaxCtxTrain?: (id: string) => Promise<number | undefined>
-          })
-        | undefined
-      if (engine && typeof engine.getMaxCtxTrain === 'function') {
-        maxCtxLen = await engine.getMaxCtxTrain(selectedModel.id)
+    // The ladder itself lives in `growModelContext` (shared with the chat
+    // transport's pre-flight); this reactive path only adds the regenerate.
+    const result = await growModelContext({
+      providerId: selectedProvider,
+      modelId: selectedModel.id,
+      serviceHub,
+    })
+    if (!result.ok) {
+      if (result.reason === 'at_max') {
+        toast.error('Model reached its maximum context, auto-expand stopped', {
+          id: `ctx-at-max-${selectedProvider}-${selectedModel.id}`,
+        })
       }
-    } catch (e) {
-      console.warn(
-        `[auto-expand-ctx] getMaxCtxTrain failed for ${selectedProvider}/${selectedModel.id}:`,
-        e
-      )
-    }
-
-    const newCtxLen = computeNextCtxLen(currentCtxLen, maxCtxLen)
-    if (newCtxLen <= currentCtxLen) {
-      toast.error('Model reached its maximum context, auto-expand stopped', {
-        id: `ctx-at-max-${selectedProvider}-${selectedModel.id}`,
-      })
       return
     }
-
-    const updatedModel = {
-      ...model,
-      settings: {
-        ...model.settings,
-        ctx_len: {
-          ...(model.settings?.ctx_len ?? {}),
-          controller_props: {
-            ...(model.settings?.ctx_len?.controller_props ?? {}),
-            value: newCtxLen,
-          },
-        },
-      },
-    }
-
-    const updatedModels = [...provider.models]
-    updatedModels[modelIndex] = updatedModel as Model
-
-    updateProvider(provider.provider, {
-      models: updatedModels,
-    })
-
-    await serviceHub.models().stopModel(selectedModel.id)
 
     setTimeout(() => {
       handleRegenerate()
     }, 1000)
-  }, [
-    selectedModel,
-    selectedProvider,
-    getProviderByName,
-    serviceHub,
-    handleRegenerate,
-  ])
+  }, [selectedModel, selectedProvider, serviceHub, handleRegenerate])
 
   // Keep refs in sync so onFinish always calls the latest versions
   handleContextSizeIncreaseRef.current = handleContextSizeIncrease

@@ -103,7 +103,7 @@ export default function AddProjectDialog({
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md lg:max-w-md xl:max-w-md">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>
             {editingKey ? t('projects.addProjectDialog.editTitle') : t('projects.addProjectDialog.createTitle')}

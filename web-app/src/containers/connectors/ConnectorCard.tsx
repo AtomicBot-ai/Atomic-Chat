@@ -3,6 +3,7 @@ import {
   IconDotsVertical,
   IconLoader2,
   IconPencil,
+  IconTool,
   IconTrash,
 } from '@tabler/icons-react'
 import type { MCPConnector } from '@/constants/mcp-connectors'
@@ -39,6 +40,7 @@ export function ConnectorCard({
   onToggle,
   onEdit,
   onEditJson,
+  onTools,
   onDelete,
 }: {
   /** Catalog entry, when one exists — drives icon, name and description. */
@@ -53,6 +55,8 @@ export function ConnectorCard({
   onToggle?: (active: boolean) => void
   onEdit?: () => void
   onEditJson?: () => void
+  /** Opens the per-tool switches for this server. */
+  onTools?: () => void
   onDelete?: () => void
 }) {
   const { t } = useTranslation()
@@ -136,6 +140,12 @@ export function ConnectorCard({
                 <IconCodeCircle size={16} />
                 {t('mcp-connectors:editJson')}
               </DropdownMenuItem>
+              {onTools && (
+                <DropdownMenuItem onSelect={onTools}>
+                  <IconTool size={16} />
+                  {t('mcp-connectors:tools')}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onSelect={onDelete}>
                 <IconTrash size={16} />

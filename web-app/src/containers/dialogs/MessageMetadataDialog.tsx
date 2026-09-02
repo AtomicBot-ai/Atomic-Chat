@@ -55,7 +55,7 @@ export function MessageMetadataDialog({
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>{triggerElement || defaultTrigger}</DialogTrigger>
-      <DialogContent>
+      <DialogContent className="sm:max-w-2xl lg:max-w-2xl xl:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{t('common:dialogs.messageMetadata.title')}</DialogTitle>
           <div className="space-y-2 mt-4">

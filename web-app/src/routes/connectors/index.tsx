@@ -15,6 +15,7 @@ import { Card, CardItem } from '@/containers/Card'
 import { ConnectorCard } from '@/containers/connectors/ConnectorCard'
 import AddEditMCPServer from '@/containers/dialogs/AddEditMCPServer'
 import ConnectorSecretDialog from '@/containers/dialogs/ConnectorSecretDialog'
+import ConnectorToolsDialog from '@/containers/dialogs/ConnectorToolsDialog'
 import DeleteMCPServerConfirm from '@/containers/dialogs/DeleteMCPServerConfirm'
 import EditJsonMCPserver from '@/containers/dialogs/EditJsonMCPserver'
 import { Button } from '@/components/ui/button'
@@ -75,6 +76,9 @@ function ConnectorsPage() {
     MCPServerConfig | undefined
   >(undefined)
 
+  // Per-tool switches dialog: which installed server it is open for.
+  const [toolsServerKey, setToolsServerKey] = useState<string | null>(null)
+
   // Delete confirmation dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [serverToDelete, setServerToDelete] = useState<string | null>(null)
@@ -97,9 +101,7 @@ function ConnectorsPage() {
     null
   )
 
-  const [busyServers, setBusyServers] = useState<{ [key: string]: boolean }>(
-    {}
-  )
+  const [busyServers, setBusyServers] = useState<{ [key: string]: boolean }>({})
   const setBusy = (key: string, busy: boolean) =>
     setBusyServers((prev) => ({ ...prev, [key]: busy }))
 
@@ -146,7 +148,8 @@ function ConnectorsPage() {
       installed: { key, config },
     }))
     const available = MCP_CONNECTORS.filter(
-      (connector) => !installedByConnector.get(connector.serverKey)
+      (connector) =>
+        !connector.hidden && !installedByConnector.get(connector.serverKey)
     ).map((connector) => ({
       key: connector.serverKey,
       connector: connector as MCPConnector | undefined,
@@ -489,6 +492,7 @@ function ConnectorsPage() {
                     onToggle={(checked) => toggleServer(key, checked)}
                     onEdit={() => handleOpenDialog(key)}
                     onEditJson={() => handleOpenJsonEditor(key)}
+                    onTools={() => setToolsServerKey(key)}
                     onDelete={() => {
                       setServerToDelete(key)
                       setDeleteDialogOpen(true)
@@ -556,7 +560,10 @@ function ConnectorsPage() {
               >
                 <IconChevronRight
                   size={16}
-                  className={cn('transition-transform', logsOpen && 'rotate-90')}
+                  className={cn(
+                    'transition-transform',
+                    logsOpen && 'rotate-90'
+                  )}
                 />
                 {logsOpen
                   ? t('mcp-connectors:logs.hide')
@@ -617,6 +624,18 @@ function ConnectorsPage() {
         connector={secretConnector}
         busy={!!secretConnector && !!busyServers[secretConnector.serverKey]}
         onConnect={handleSecretConnect}
+      />
+
+      <ConnectorToolsDialog
+        open={toolsServerKey !== null}
+        onOpenChange={(open) => {
+          if (!open) setToolsServerKey(null)
+        }}
+        serverKey={toolsServerKey ?? ''}
+        connector={
+          toolsServerKey ? connectorByServerKey.get(toolsServerKey) : undefined
+        }
+        scope={{ kind: 'default' }}
       />
 
       <DeleteMCPServerConfirm

@@ -6,12 +6,14 @@ import { seedServiceHub } from '@/test/service-hub'
 
 const mocks = vi.hoisted(() => ({
   switchToModel: vi.fn(),
+  chatBusy: false,
   checkForUpdate: vi.fn(),
   initializeWithLastUsed: vi.fn(),
   navigate: vi.fn(),
   setAssistants: vi.fn(),
   setMessages: vi.fn(),
   setProviders: vi.fn(),
+  clearDeletedModel: vi.fn(),
   setServerStatus: vi.fn(),
   setServers: vi.fn(),
   setSettings: vi.fn(),
@@ -38,6 +40,7 @@ vi.mock('@/hooks/useModelProvider', () => {
     getProviderByName: vi.fn(),
     setProviders: mocks.setProviders,
     updateProvider: vi.fn(),
+    clearDeletedModel: mocks.clearDeletedModel,
   }
   const useModelProvider = () => ({ setProviders: mocks.setProviders })
   useModelProvider.getState = () => state
@@ -129,6 +132,10 @@ vi.mock('@/utils/activeModelsSync', () => ({
 
 vi.mock('@/utils/switchModel', () => ({
   switchToModel: mocks.switchToModel,
+}))
+
+vi.mock('@/stores/chat-session-store', () => ({
+  isAnyChatBusy: () => mocks.chatBusy,
 }))
 
 vi.mock('@janhq/core', () => ({
@@ -313,6 +320,87 @@ describe('DataProvider', () => {
 
     state.providers = []
     unmount()
+  })
+
+  describe('imported-model auto-switch provider resolution', () => {
+    const bothActive = [
+      {
+        provider: 'llamacpp',
+        active: true,
+        models: [{ id: 'imported-model' }],
+        settings: [],
+      },
+      {
+        provider: 'llamacpp-upstream',
+        active: true,
+        models: [{ id: 'imported-model' }],
+        settings: [],
+      },
+    ]
+
+    async function fireImport(
+      providersList: unknown[],
+      payload: Record<string, unknown>
+    ) {
+      const { useModelProvider } = await import('@/hooks/useModelProvider')
+      const { events } = await import('@janhq/core')
+      const state = useModelProvider.getState() as unknown as {
+        providers: unknown[]
+      }
+      state.providers = providersList
+      mocks.switchToModel.mockResolvedValue(undefined)
+      const { unmount } = render(<DataProvider />)
+      await waitFor(() => {
+        expect(events.on).toHaveBeenCalledWith(
+          'onModelImported',
+          expect.any(Function)
+        )
+      })
+      const handler = vi
+        .mocked(events.on)
+        .mock.calls.find(([event]) => event === 'onModelImported')?.[1] as (
+        data?: Record<string, unknown>
+      ) => Promise<void>
+      await handler(payload)
+      state.providers = []
+      unmount()
+    }
+
+    beforeEach(() => {
+      mocks.chatBusy = false
+    })
+
+    it('prefers the selected provider when both llama.cpp providers list the model', async () => {
+      // TurboQuant is first in the array AND active (existing profiles keep
+      // it on), but the user is chatting with upstream. Loading into
+      // TurboQuant would put a second copy of the model in memory.
+      await fireImport(bothActive, { modelId: 'imported-model' })
+
+      expect(mocks.switchToModel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          modelId: 'imported-model',
+          providerName: 'llamacpp-upstream',
+          isAutoStart: true,
+        })
+      )
+    })
+
+    it('skips the auto-switch while a chat is streaming', async () => {
+      mocks.chatBusy = true
+      await fireImport(bothActive, { modelId: 'imported-model' })
+
+      expect(mocks.switchToModel).not.toHaveBeenCalled()
+    })
+
+    it('skips the auto-switch when the resolved engine already serves the model', async () => {
+      getActiveModels.mockImplementation(async (provider?: string) =>
+        provider === 'llamacpp-upstream' ? ['imported-model'] : []
+      )
+      await fireImport(bothActive, { modelId: 'imported-model' })
+
+      expect(getActiveModels).toHaveBeenCalledWith('llamacpp-upstream')
+      expect(mocks.switchToModel).not.toHaveBeenCalled()
+    })
   })
 
   it('routes a startup deep link through the production parser', async () => {

@@ -81,7 +81,7 @@ export function AgentSkillUploadDialog({
         }
       }}
     >
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="sm:max-w-2xl lg:max-w-2xl xl:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{t('common:uploadSkill')}</DialogTitle>
           <DialogDescription className="sr-only">

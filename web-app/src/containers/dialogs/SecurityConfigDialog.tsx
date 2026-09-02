@@ -795,7 +795,7 @@ export function SecurityConfigDialog({
         open={!!confirmAction.type}
         onOpenChange={() => setConfirmAction({ type: null })}
       >
-        <DialogContent className="sm:max-w-[400px]">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
             <DialogDescription>{description}</DialogDescription>
@@ -820,7 +820,7 @@ export function SecurityConfigDialog({
   return (
     <>
       <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-        <DialogContent className="sm:max-w-[560px] max-w-[90vw] max-h-[85vh] flex flex-col">
+        <DialogContent className="sm:max-w-2xl lg:max-w-2xl xl:max-w-2xl max-h-[85vh] flex flex-col">
           <DialogHeader>
             <div className="flex items-center gap-2">
               <IconShield size={24} className="text-primary" />

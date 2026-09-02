@@ -664,6 +664,20 @@ export class DefaultModelsService implements ModelsService {
     )
   }
 
+  async stopAllModelsExcept(
+    modelId: string,
+    providerName: string
+  ): Promise<void> {
+    const activeByProvider = await this.getLocalActiveModelsByProvider()
+    await Promise.all(
+      activeByProvider.flatMap(({ provider, models }) =>
+        models
+          .filter((model) => !(provider === providerName && model === modelId))
+          .map((model) => this.stopModel(model, provider))
+      )
+    )
+  }
+
   async startModel(
     provider: ProviderObject,
     model: string,

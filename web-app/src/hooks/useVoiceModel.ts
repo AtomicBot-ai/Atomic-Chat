@@ -14,6 +14,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { markDownloadCancellationRequested } from '@/lib/downloadCancellation'
+import { deleteLocalModel } from '@/lib/model-deletion'
 import { releaseVoiceEngine } from '@/lib/voice/engine'
 import { markSilentImport } from '@/utils/backgroundImports'
 
@@ -56,6 +57,7 @@ export function useVoiceModel(): VoiceModelState {
   const clearResumableDownload = useDownloadStore(
     (state) => state.clearResumableDownload
   )
+  const clearDeletedModel = useModelProvider((state) => state.clearDeletedModel)
   const markResumableDownload = useDownloadStore(
     (state) => state.markResumableDownload
   )
@@ -76,6 +78,9 @@ export function useVoiceModel(): VoiceModelState {
     localDownloadingModels.has(VOICE_MODEL_ID) || Boolean(progressEntry)
 
   const download = useCallback(async () => {
+    // A previous removal tombstoned this id — lift it, or the finished
+    // download never re-registers the model in the provider list.
+    clearDeletedModel(VOICE_MODEL_ID)
     clearResumableDownload(VOICE_MODEL_ID)
     addLocalDownloadingModel(VOICE_MODEL_ID)
     // Without this, `DataProvider`'s onModelImported handler would switch the
@@ -105,6 +110,7 @@ export function useVoiceModel(): VoiceModelState {
     }
   }, [
     addLocalDownloadingModel,
+    clearDeletedModel,
     clearResumableDownload,
     huggingfaceToken,
     markResumableDownload,
@@ -123,7 +129,10 @@ export function useVoiceModel(): VoiceModelState {
   const remove = useCallback(async () => {
     // Stop the server before deleting the files it has mmapped.
     await releaseVoiceEngine()
-    await serviceHub.models().deleteModel(VOICE_MODEL_ID, VOICE_PROVIDER)
+    // Not `models().deleteModel()`: that erases the files but leaves the model
+    // in the provider list, so `installed` stayed true and both the settings
+    // card and the setup dialog kept showing "Installed" after a removal.
+    await deleteLocalModel(serviceHub, VOICE_MODEL_ID, VOICE_PROVIDER)
   }, [serviceHub])
 
   return {
