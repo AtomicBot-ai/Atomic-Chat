@@ -1002,7 +1002,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // when it would not fit. Without this a long tool catalogue fails with
     // "exceeds the available context size", the model is reloaded, and the
     // whole prompt is regenerated; with it there is one reload and no error.
-    if (isLocalProvider && modelId && recreateModel) {
+    if (isLocalProvider && modelId) {
       await this.ensureContextFits({
         providerId: effectiveProviderName,
         modelId,

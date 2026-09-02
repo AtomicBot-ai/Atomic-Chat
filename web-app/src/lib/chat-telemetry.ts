@@ -345,6 +345,12 @@ export type ChatRequestProps = {
   is_agent_mode?: boolean
   agent_skill?: string | null
   tools_enabled_count?: number
+  /** Estimated token cost of the tool definitions actually sent. */
+  tools_tokens_estimate?: number | null
+  /** That cost as a fraction of the configured context window. */
+  tools_ctx_share?: number | null
+  /** How many MCP servers contribute an outsized share of that cost. */
+  tools_heavy_servers?: number
 } & Partial<AttachmentTelemetry> &
   Partial<ContextTelemetry> &
   Partial<Pick<ToolTelemetry, 'has_rag' | 'has_mcp'>>

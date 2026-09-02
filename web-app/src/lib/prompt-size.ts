@@ -59,8 +59,17 @@ export function messageText(message: ModelMessage): string {
   const { content } = message
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return ''
-  return (content as Array<Record<string, unknown>>)
-    .map((part) => {
+  // The part unions differ per message role; read the few fields we need
+  // structurally rather than switching on every variant.
+  return (content as readonly unknown[])
+    .map((raw) => {
+      const part = raw as {
+        type?: unknown
+        text?: unknown
+        toolName?: unknown
+        input?: unknown
+        output?: unknown
+      }
       if (typeof part.text === 'string') return part.text
       if (part.type === 'tool-call') {
         return JSON.stringify({ name: part.toolName, input: part.input })
