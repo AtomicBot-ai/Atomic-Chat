@@ -123,6 +123,10 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/moonshot.svg'
     case 'qwen':
       return '/images/model-provider/qwen.svg'
+    // The same whale mark the DeepSeek model family already resolves to via
+    // `model-logo.ts`, so the provider row and its models read as one brand.
+    case 'deepseek':
+      return '/svg/deepseek-color.svg'
     case 'ollama':
       return '/images/model-provider/ollama.svg'
     default:
@@ -206,6 +210,8 @@ export const getProviderTitle = (provider: string) => {
       return 'Moonshot'
     case 'qwen':
       return 'Qwen'
+    case 'deepseek':
+      return 'DeepSeek'
     case 'ollama':
       return 'Ollama'
     default:
