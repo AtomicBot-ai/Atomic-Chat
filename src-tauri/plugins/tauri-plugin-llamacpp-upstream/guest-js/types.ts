@@ -150,6 +150,13 @@ export interface ModelConfig {
   mmproj_size_bytes?: number
   embedding?: boolean
   /**
+   * Which modality this model's mmproj carries. Cached on first read so
+   * `list()` does not have to parse the projector GGUF every time. An
+   * mmproj is not necessarily vision — Voxtral's is an audio encoder.
+   */
+  projector_vision?: boolean
+  projector_audio?: boolean
+  /**
    * Path (relative to Jan's data folder) to the downloaded Gemma 4 MTP draft
    * head GGUF, if MTP was enabled for this model. Absent for non-MTP models
    * and for Qwen-style built-in MTP.

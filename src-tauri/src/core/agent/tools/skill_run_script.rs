@@ -565,8 +565,7 @@ mod tests {
                 "cmd.exe".to_string(),
                 vec![
                     "/C".into(),
-                    "for /L %i in (0,0,1) do @echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                        .into(),
+                    "for /L %i in (0,0,1) do @echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".into(),
                 ],
             )
         } else {

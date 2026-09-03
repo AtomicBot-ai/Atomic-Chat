@@ -220,6 +220,22 @@ pub const AGENTS: &[Agent] = &[
         run_mode: RunMode::Terminal,
     },
     Agent {
+        id: "muse",
+        name: "Muse Code",
+        detect_bin: "muse",
+        aliases: &["muse-code", "musecode"],
+        requires_model: true,
+        // `--base-url` replaces the Meta Model API root (`https://api.meta.ai/v1`);
+        // Muse appends `/responses` to it itself.
+        endpoint_with_prefix: true,
+        docs_url: "https://developer.meta.com/ai/products/muse-code/",
+        // Muse takes its endpoint and model as flags rather than config, but
+        // they depend on the running server, so the Launch page builds the whole
+        // command line itself. Nothing static to add here.
+        run_args: &[],
+        run_mode: RunMode::Terminal,
+    },
+    Agent {
         id: "atomic-agent",
         name: "Atomic Agent",
         detect_bin: "atomic-agent",
@@ -269,6 +285,12 @@ pub fn find(name: &str) -> Option<&'static Agent> {
     })
 }
 
+/// Agent-launcher lookup that tolerates installs which never touch `PATH`.
+///
+/// Re-exported from `core::system::commands` so the CLI binary — which only
+/// imports this module — resolves binaries exactly the way the Launch page does.
+pub use crate::core::system::commands::{off_path_candidates, resolve_off_path};
+
 /// Build the endpoint an agent should be pointed at, mirroring the Launch page:
 /// the bare base URL, plus the API prefix only when the agent expects it.
 pub fn api_url_for(agent: &Agent, base_url: &str, prefix: &str) -> String {
@@ -303,6 +325,7 @@ pub fn configure(agent: &Agent, api_url: &str, model: &str, api_key: &str) -> Re
         "openhands" => agents::configure_openhands(url, model_owned, key),
         "poolside" => agents::configure_poolside(url, model_owned, key),
         "goose" => agents::configure_goose(url, model_owned, key),
+        "muse" => agents::configure_muse(url, model_owned, key),
         "atomic-agent" => agents::configure_atomic_agent(url, model_owned, key),
         "hermes" => {
             agents::configure_hermes_agent(url, model_owned, key, Some(HERMES_CONTEXT_LENGTH))
@@ -331,6 +354,7 @@ pub fn child_env(
         "goose" => agents::goose_env_vars(api_url, model, key),
         "openhands" => agents::openhands_env_vars(api_url, model, key),
         "poolside" => agents::poolside_env_vars(api_url, model, key),
+        "muse" => agents::muse_env_vars(api_url, model, key),
         _ => Vec::new(),
     }
 }

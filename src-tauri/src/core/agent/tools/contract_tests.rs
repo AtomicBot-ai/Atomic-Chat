@@ -4,6 +4,7 @@ use std::process::Command;
 use tokio_util::sync::CancellationToken;
 
 use super::super::path_policy::EditableRoots;
+use super::super::pty::PtyRegistry;
 use super::super::skills::{loaded::LoadedSkills, SkillRegistry};
 use super::tool_view::LoadedTools;
 use super::{execute, ToolContext, MAX_TOOL_OUTPUT_CHARS};
@@ -22,6 +23,7 @@ struct ToolFixture {
     loaded_tools: LoadedTools,
     loaded_skills: LoadedSkills,
     skill_registry: SkillRegistry,
+    pty: PtyRegistry,
 }
 
 impl ToolFixture {
@@ -39,6 +41,7 @@ impl ToolFixture {
             loaded_tools: LoadedTools::default(),
             loaded_skills: LoadedSkills::default(),
             skill_registry,
+            pty: PtyRegistry::new(),
         }
     }
 
@@ -56,6 +59,7 @@ impl ToolFixture {
             loaded_tools: LoadedTools::default(),
             loaded_skills: LoadedSkills::default(),
             skill_registry,
+            pty: PtyRegistry::new(),
         }
     }
 
@@ -66,6 +70,7 @@ impl ToolFixture {
                 args,
             },
             &ToolContext {
+                session_id: "contract-test-session",
                 working_dir: self.workspace.path(),
                 editable_roots: &self.editable_roots,
                 trusted_read_roots: &[],
@@ -78,6 +83,12 @@ impl ToolFixture {
                 skill_registry: &self.skill_registry,
                 bundled_script_runtime: None,
                 desktop: &self.desktop,
+                pty: &self.pty,
+                cache_dir: self.workspace.path(),
+                mcp: None,
+                docs: None,
+                disabled_tools: &std::collections::BTreeSet::new(),
+                auto_approve_mcp: true,
             },
         )
         .await
@@ -324,9 +335,13 @@ async fn filesystem_patch_defaults_to_validation_and_prevalidates_every_file() {
 async fn filesystem_trash_moves_directories_through_the_native_trash_api() {
     let fixture = ToolFixture::allowed();
     fixture.workspace.write("discard/nested.txt", "recoverable");
+    // The FreeDesktop trash is the native mechanism on Linux, so only the other
+    // platforms can treat that directory as evidence of a hand-rolled fallback.
+    #[cfg(not(target_os = "linux"))]
     let linux_trash = dirs::home_dir()
         .expect("home directory")
         .join(".local/share/Trash/files");
+    #[cfg(not(target_os = "linux"))]
     let linux_trash_existed = linux_trash.exists();
 
     let trashed = fixture
@@ -335,6 +350,7 @@ async fn filesystem_trash_moves_directories_through_the_native_trash_api() {
     assert_eq!(trashed.status, ToolStatus::Ok);
     assert!(!fixture.workspace.path().join("discard").exists());
     assert_eq!(fixture.approval.requests().len(), 1);
+    #[cfg(not(target_os = "linux"))]
     if !linux_trash_existed {
         assert!(
             !linux_trash.exists(),
@@ -580,6 +596,455 @@ async fn process_tools_reject_invalid_kill_before_approval_and_list_deterministi
 }
 
 #[tokio::test]
+async fn code_symbols_lists_definitions_with_lines_and_rejects_unknown_languages() {
+    let fixture = ToolFixture::allowed();
+    fixture.workspace.write(
+        "lib.rs",
+        "pub struct Registry;\npub fn authorize_call() {}\n",
+    );
+    fixture.workspace.write("notes.md", "# not code\n");
+
+    let outcome = fixture
+        .call("os.code.symbols", serde_json::json!({"path": "lib.rs"}))
+        .await;
+    assert_eq!(outcome.status, ToolStatus::Ok);
+    assert!(outcome.summary.contains("Registry"), "{}", outcome.summary);
+    assert!(
+        outcome.summary.contains("2\tfunction\tauthorize_call"),
+        "line, kind and name must all be present: {}",
+        outcome.summary
+    );
+
+    let unsupported = fixture
+        .call("os.code.symbols", serde_json::json!({"path": "notes.md"}))
+        .await;
+    assert_eq!(unsupported.status, ToolStatus::Error);
+    // Reading code is a pure read; it must never prompt.
+    assert!(fixture.approval.requests().is_empty());
+}
+
+#[tokio::test]
+async fn code_find_locates_a_definition_and_reports_a_partial_match_as_such() {
+    let fixture = ToolFixture::allowed();
+    fixture
+        .workspace
+        .write("lib.rs", "pub fn authorize_call() {}\n");
+
+    let exact = fixture
+        .call(
+            "os.code.find",
+            serde_json::json!({"name": "authorize_call"}),
+        )
+        .await;
+    assert_eq!(exact.status, ToolStatus::Ok);
+    assert!(exact.summary.contains("lib.rs:1"), "{}", exact.summary);
+    assert!(
+        !exact.summary.contains("partial"),
+        "an exact hit must not be labelled partial: {}",
+        exact.summary
+    );
+
+    // Half-remembered name: useful, but the caller must be told it is a guess.
+    let fuzzy = fixture
+        .call(
+            "os.code.find",
+            serde_json::json!({"name": "AUTHORIZE_CALL"}),
+        )
+        .await;
+    assert!(
+        fuzzy.summary.contains("authorize_call"),
+        "{}",
+        fuzzy.summary
+    );
+    assert!(
+        fuzzy.summary.contains("partial"),
+        "a fallback match must be labelled: {}",
+        fuzzy.summary
+    );
+
+    let missing = fixture
+        .call(
+            "os.code.find",
+            serde_json::json!({"name": "nothing_here_at_all"}),
+        )
+        .await;
+    assert_eq!(missing.status, ToolStatus::Ok);
+    assert!(
+        missing.summary.contains("No definition"),
+        "{}",
+        missing.summary
+    );
+
+    let bad_kind = fixture
+        .call(
+            "os.code.find",
+            serde_json::json!({"name": "authorize_call", "kind": "widget"}),
+        )
+        .await;
+    assert_eq!(bad_kind.status, ToolStatus::Error);
+}
+
+#[tokio::test]
+async fn code_find_filters_by_kind() {
+    let fixture = ToolFixture::allowed();
+    fixture
+        .workspace
+        .write("lib.rs", "pub struct Target;\npub fn Target_fn() {}\n");
+
+    let structs = fixture
+        .call(
+            "os.code.find",
+            serde_json::json!({"name": "Target", "kind": "struct"}),
+        )
+        .await;
+    assert!(
+        structs.summary.contains("struct\tTarget"),
+        "{}",
+        structs.summary
+    );
+
+    let traits = fixture
+        .call(
+            "os.code.find",
+            serde_json::json!({"name": "Target", "kind": "trait"}),
+        )
+        .await;
+    assert!(
+        traits.summary.contains("No definition"),
+        "{}",
+        traits.summary
+    );
+}
+
+#[tokio::test]
+async fn code_refs_skips_comments_and_strings_and_states_its_limits() {
+    let fixture = ToolFixture::allowed();
+    fixture.workspace.write(
+        "caller.rs",
+        "// authorize_call in a comment\nfn run() { authorize_call(); }\nconst D: &str = \"authorize_call\";\n",
+    );
+
+    let outcome = fixture
+        .call(
+            "os.code.refs",
+            serde_json::json!({"name": "authorize_call"}),
+        )
+        .await;
+    assert_eq!(outcome.status, ToolStatus::Ok);
+    assert!(
+        outcome.summary.contains("caller.rs:2"),
+        "{}",
+        outcome.summary
+    );
+    assert!(
+        !outcome.summary.contains("caller.rs:1") && !outcome.summary.contains("caller.rs:3"),
+        "comment and string hits must be filtered out: {}",
+        outcome.summary
+    );
+    // The caveat is the whole reason this is safe to expose.
+    assert!(
+        outcome.summary.contains("not resolved references"),
+        "the result must not read as authoritative: {}",
+        outcome.summary
+    );
+}
+
+#[tokio::test]
+async fn code_tools_cannot_reach_outside_the_workspace() {
+    let fixture = ToolFixture::denied();
+    for (tool, args) in [
+        (
+            "os.code.symbols",
+            serde_json::json!({"path": "../outside.rs"}),
+        ),
+        (
+            "os.code.refs",
+            serde_json::json!({"name": "x", "path": "../outside"}),
+        ),
+    ] {
+        let outcome = fixture.call(tool, args).await;
+        assert_ne!(
+            outcome.status,
+            ToolStatus::Ok,
+            "{tool} must not escape the connected roots"
+        );
+    }
+}
+
+// The process contract below is exercised on Unix only. Every case drives a
+// POSIX shell script through the pty, and on Windows two things break it: the
+// script reaches `cmd.exe /C` verbatim, and ConPTY keeps the output pipe open
+// until the pseudoconsole is closed rather than when the child exits — so the
+// reader thread never sees EOF, the exit status is never recorded, and the test
+// hangs instead of failing. `pty.rs` gates its own pty tests the same way.
+/// Poll `os.proc.read` until `predicate` accepts a page, or give up.
+///
+/// PTY output is asynchronous by nature: a process that will print in 20ms has
+/// printed nothing at all when `spawn` returns. Every assertion about output
+/// therefore needs a bounded wait rather than a single read.
+#[cfg(unix)]
+async fn read_until(
+    fixture: &ToolFixture,
+    proc_id: &str,
+    predicate: impl Fn(&ToolOutcome) -> bool,
+) -> ToolOutcome {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let page = fixture
+            .call(
+                "os.proc.read",
+                serde_json::json!({"procId": proc_id, "since": 0}),
+            )
+            .await;
+        if predicate(&page) || std::time::Instant::now() >= deadline {
+            return page;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+}
+
+fn proc_id_of(outcome: &ToolOutcome) -> String {
+    outcome
+        .details
+        .as_ref()
+        .and_then(|details| details.get("procId"))
+        .and_then(|value| value.as_str())
+        .unwrap_or_else(|| panic!("spawn returned no procId: {outcome:?}"))
+        .to_owned()
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn spawned_process_streams_output_then_reports_its_exit_status() {
+    let fixture = ToolFixture::allowed();
+    let spawned = fixture
+        .call(
+            "os.proc.spawn",
+            serde_json::json!({"cmd": "echo one; echo two"}),
+        )
+        .await;
+    assert_eq!(spawned.status, ToolStatus::Ok);
+    // Starting a process is approval-gated, exactly like os.shell.run.
+    assert_eq!(fixture.approval.requests().len(), 1);
+    let proc_id = proc_id_of(&spawned);
+
+    let page = read_until(&fixture, &proc_id, |outcome| {
+        outcome.summary.contains("two")
+    })
+    .await;
+    assert_eq!(page.status, ToolStatus::Ok);
+    assert!(page.summary.contains("one"), "{}", page.summary);
+
+    let exited = read_until(&fixture, &proc_id, |outcome| {
+        outcome
+            .details
+            .as_ref()
+            .and_then(|details| details.get("running"))
+            .and_then(serde_json::Value::as_bool)
+            == Some(false)
+    })
+    .await;
+    assert!(
+        exited.summary.contains("exited with code 0"),
+        "{}",
+        exited.summary
+    );
+    // Reading is a pure read: it never asks for approval.
+    assert_eq!(fixture.approval.requests().len(), 1);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn the_remembered_cursor_returns_only_new_output() {
+    let fixture = ToolFixture::allowed();
+    let spawned = fixture
+        .call(
+            "os.proc.spawn",
+            serde_json::json!({"cmd": "echo first; sleep 0.4; echo second"}),
+        )
+        .await;
+    let proc_id = proc_id_of(&spawned);
+
+    read_until(&fixture, &proc_id, |outcome| {
+        outcome.summary.contains("first")
+    })
+    .await;
+    // Drain through the remembered cursor so everything so far is delivered.
+    fixture
+        .call("os.proc.read", serde_json::json!({"procId": proc_id}))
+        .await;
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let page = fixture
+            .call("os.proc.read", serde_json::json!({"procId": proc_id}))
+            .await;
+        if page.summary.contains("second") {
+            // The point of the cursor: already-delivered output does not
+            // come back and re-spend the context window.
+            assert!(!page.summary.contains("first"), "{}", page.summary);
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "never saw the second line"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn writing_to_a_spawned_process_answers_its_prompt() {
+    let fixture = ToolFixture::allowed();
+    let spawned = fixture
+        .call(
+            "os.proc.spawn",
+            serde_json::json!({"cmd": "read answer; echo got:$answer"}),
+        )
+        .await;
+    let proc_id = proc_id_of(&spawned);
+
+    let wrote = fixture
+        .call(
+            "os.proc.write",
+            serde_json::json!({"procId": proc_id, "data": "hello\n"}),
+        )
+        .await;
+    assert_eq!(wrote.status, ToolStatus::Ok);
+    // Feeding stdin is approval-gated too: spawn (1) plus write (2).
+    assert_eq!(fixture.approval.requests().len(), 2);
+
+    let page = read_until(&fixture, &proc_id, |outcome| {
+        outcome.summary.contains("got:hello")
+    })
+    .await;
+    assert!(page.summary.contains("got:hello"), "{}", page.summary);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn stop_ends_a_process_that_would_otherwise_run_forever() {
+    let fixture = ToolFixture::allowed();
+    let spawned = fixture
+        .call(
+            "os.proc.spawn",
+            serde_json::json!({"cmd": "while true; do sleep 1; done"}),
+        )
+        .await;
+    let proc_id = proc_id_of(&spawned);
+
+    let listed = fixture.call("os.proc.list", serde_json::json!({})).await;
+    assert!(
+        listed.summary.contains(&proc_id),
+        "os.proc.list must surface agent-started processes: {}",
+        listed.summary
+    );
+
+    let stopped = fixture
+        .call(
+            "os.proc.stop",
+            serde_json::json!({"procId": proc_id, "signal": "SIGKILL"}),
+        )
+        .await;
+    assert_eq!(stopped.status, ToolStatus::Ok);
+
+    let exited = read_until(&fixture, &proc_id, |outcome| {
+        outcome
+            .details
+            .as_ref()
+            .and_then(|details| details.get("running"))
+            .and_then(serde_json::Value::as_bool)
+            == Some(false)
+    })
+    .await;
+    assert_eq!(
+        exited
+            .details
+            .and_then(|details| details.get("running").and_then(serde_json::Value::as_bool)),
+        Some(false)
+    );
+}
+
+#[tokio::test]
+async fn process_tools_reject_unknown_ids_and_bad_signals() {
+    let fixture = ToolFixture::allowed();
+    for (tool, args) in [
+        ("os.proc.read", serde_json::json!({"procId": "proc-999"})),
+        (
+            "os.proc.write",
+            serde_json::json!({"procId": "proc-999", "data": "x"}),
+        ),
+        ("os.proc.stop", serde_json::json!({"procId": "proc-999"})),
+        ("os.proc.read", serde_json::json!({})),
+    ] {
+        let outcome = fixture.call(tool, args).await;
+        assert_eq!(
+            outcome.status,
+            ToolStatus::Error,
+            "{tool} must fail cleanly"
+        );
+    }
+
+    let spawned = fixture
+        .call(
+            "os.proc.spawn",
+            serde_json::json!({"cmd": "sleep", "args": ["5"]}),
+        )
+        .await;
+    let proc_id = proc_id_of(&spawned);
+    let bad_signal = fixture
+        .call(
+            "os.proc.stop",
+            serde_json::json!({"procId": proc_id, "signal": "STOP"}),
+        )
+        .await;
+    assert_eq!(bad_signal.status, ToolStatus::Error);
+    fixture
+        .call(
+            "os.proc.stop",
+            serde_json::json!({"procId": proc_id, "signal": "SIGKILL"}),
+        )
+        .await;
+}
+
+#[tokio::test]
+async fn spawn_is_gated_by_the_shell_guard_approval_and_cancellation() {
+    // A command the guard hard-blocks must not become reachable just because it
+    // is spawned instead of run to completion.
+    let allowed = ToolFixture::allowed();
+    let blocked = allowed
+        .call(
+            "os.proc.spawn",
+            serde_json::json!({"cmd": "echo ready && sudo rm -rf /"}),
+        )
+        .await;
+    assert_eq!(blocked.status, ToolStatus::Denied);
+    assert!(allowed.approval.requests().is_empty());
+
+    let denied = ToolFixture::denied();
+    let refused = denied
+        .call(
+            "os.proc.spawn",
+            serde_json::json!({"cmd": "echo MUST_NOT_RUN"}),
+        )
+        .await;
+    assert_eq!(refused.status, ToolStatus::Denied);
+    assert!(denied.pty.list("contract-test-session").is_empty());
+
+    let cancelled = ToolFixture::allowed();
+    cancelled.cancellation.cancel();
+    let outcome = cancelled
+        .call(
+            "os.proc.spawn",
+            serde_json::json!({"cmd": "echo MUST_NOT_RUN"}),
+        )
+        .await;
+    assert_eq!(outcome.status, ToolStatus::Cancelled);
+    assert!(cancelled.pty.list("contract-test-session").is_empty());
+}
+
+#[tokio::test]
 async fn archive_tools_list_read_extract_and_reject_traversal() {
     let fixture = ToolFixture::allowed();
     create_zip(
@@ -811,6 +1276,7 @@ async fn symlink_escape_requires_folder_access_and_denial_prevents_read() {
             args: serde_json::json!({"path": "link.txt"}),
         },
         &ToolContext {
+            session_id: "test-session",
             working_dir: &root,
             editable_roots: &editable_roots,
             trusted_read_roots: &[],
@@ -823,6 +1289,12 @@ async fn symlink_escape_requires_folder_access_and_denial_prevents_read() {
             skill_registry: &skill_registry,
             bundled_script_runtime: None,
             desktop: &desktop,
+            pty: &PtyRegistry::new(),
+            cache_dir: &std::env::temp_dir(),
+            mcp: None,
+            docs: None,
+            disabled_tools: &std::collections::BTreeSet::new(),
+            auto_approve_mcp: true,
         },
     )
     .await;

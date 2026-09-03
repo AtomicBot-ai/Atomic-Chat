@@ -3,6 +3,7 @@ use std::path::{Component, Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::compressor::{compress_tool_result, should_compress_tool};
+use super::mcp_tools::MCP_TOOL_PREFIX;
 use super::prompt::ToolTier;
 use super::skills::loaded::{LoadedSkillState, LOADED_SKILLS_CAP, LOADED_SKILL_BODY_MAX_CHARS};
 use super::token_budget::estimate_tokens;
@@ -12,12 +13,29 @@ use crate::core::threads::utils::{get_data_dir, get_thread_dir};
 
 const SESSION_VERSION: u32 = 2;
 const SESSION_FILE_NAME: &str = "agent-session.json";
-const MAX_SESSION_FILE_BYTES: u64 = 512 * 1024;
+// MAX_SESSION_FILE_BYTES, MAX_TOOL_SUMMARY_CHARS, and MAX_FS_READ_SUMMARY_CHARS
+// move in lockstep: 96 turns of tool summaries plus JSON escaping must fit the
+// file ceiling, and save_session hard-errors on overflow.
+const MAX_SESSION_FILE_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_TURNS: usize = 96;
 const MAX_USER_TEXT_CHARS: usize = 8_000;
 const MAX_REPLY_TEXT_CHARS: usize = 12_000;
-const MAX_TOOL_SUMMARY_CHARS: usize = 1_200;
+const MAX_TOOL_SUMMARY_CHARS: usize = 4_800;
+/// `os.fs.read` is the designated paging tool for spilled observations, so its
+/// output must survive verbatim up to its own output cap — truncating it to
+/// the generic summary cap would make the model skip the middle of a file it
+/// was told to page. Kept in step with `tools::MAX_TOOL_OUTPUT_CHARS`.
+const MAX_FS_READ_SUMMARY_CHARS: usize = 16_000;
 const SUMMARY_TOKEN_RESERVE: usize = 80;
+
+/// Per-tool ceiling on the model-visible tool summary stored in the session.
+fn tool_summary_cap(tool: &str) -> usize {
+    if tool == "os.fs.read" {
+        MAX_FS_READ_SUMMARY_CHARS
+    } else {
+        MAX_TOOL_SUMMARY_CHARS
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -38,6 +56,20 @@ pub enum AgentSessionTurn {
     AssistantReply {
         text: String,
     },
+}
+
+/// Role of one authoritative frontend message handed to [`AgentSessionState::reseed`].
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ReseedRole {
+    User,
+    Assistant,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AgentReseedMessage {
+    pub role: ReseedRole,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -83,7 +115,7 @@ impl AgentSessionState {
             self.push_turn(AgentSessionTurn::ToolResult {
                 tool: call.tool.clone(),
                 status: outcome.status,
-                summary: truncate_chars(&prompt_summary, MAX_TOOL_SUMMARY_CHARS),
+                summary: truncate_chars(&prompt_summary, tool_summary_cap(&call.tool)),
             });
         }
     }
@@ -92,6 +124,56 @@ impl AgentSessionState {
         self.push_turn(AgentSessionTurn::AssistantReply {
             text: truncate_chars(text, MAX_REPLY_TEXT_CHARS),
         });
+    }
+
+    /// Rebuild or extend the transcript from the authoritative frontend
+    /// message list, after the user edited, deleted, or regenerated history
+    /// (or after a legacy-engine turn the loop never saw).
+    ///
+    /// When the stored user/reply sequence is a prefix of `messages`, only the
+    /// missing turns are appended — step-level tool observations survive. On
+    /// any divergence the transcript is rebuilt from the list alone and the
+    /// observations are dropped: they refer to superseded content, and the
+    /// model re-derives what it still needs. `turn_count` stays monotonic
+    /// either way (spill files key on it), and `loaded_tools`/`loaded_skills`
+    /// describe prompt-tail state, orthogonal to the conversation.
+    pub fn reseed(&mut self, messages: &[AgentReseedMessage]) {
+        let mut incoming: Vec<AgentSessionTurn> = messages
+            .iter()
+            .map(|message| match message.role {
+                ReseedRole::User => AgentSessionTurn::User {
+                    text: truncate_chars(&message.text, MAX_USER_TEXT_CHARS),
+                },
+                ReseedRole::Assistant => AgentSessionTurn::AssistantReply {
+                    text: truncate_chars(&message.text, MAX_REPLY_TEXT_CHARS),
+                },
+            })
+            .collect();
+        let stored: Vec<&AgentSessionTurn> = self
+            .turns
+            .iter()
+            .filter(|turn| {
+                matches!(
+                    turn,
+                    AgentSessionTurn::User { .. } | AgentSessionTurn::AssistantReply { .. }
+                )
+            })
+            .collect();
+        let is_prefix = stored.len() <= incoming.len()
+            && stored
+                .iter()
+                .zip(incoming.iter())
+                .all(|(stored, incoming)| **stored == *incoming);
+        if is_prefix {
+            for turn in incoming.into_iter().skip(stored.len()) {
+                self.push_turn(turn);
+            }
+        } else {
+            // Same cap `push_turn` enforces: keep the newest tail, or a long
+            // legacy thread would fail `validate` and never persist.
+            let overflow = incoming.len().saturating_sub(MAX_TURNS);
+            self.turns = incoming.split_off(overflow);
+        }
     }
 
     pub fn finish_turn(&mut self) {
@@ -131,17 +213,23 @@ impl AgentSessionState {
             used += costs[index];
             start = index;
         }
-        if let Some(last_user) = self
-            .turns
-            .iter()
-            .rposition(|turn| matches!(turn, AgentSessionTurn::User { .. }))
-        {
-            start = start.min(last_user);
-        }
         if start == 0 {
             return rendered.join("\n");
         }
-        let mut packed = vec![render_dropped_summary(&self.turns[..start])];
+        // Always surface the latest user turn — it holds the task question —
+        // but do NOT force-retain every observation after it. On a single-turn
+        // task the question sits at the front, so pulling `start` back to it
+        // would render the whole (unbounded) conversation and defeat the token
+        // budget. Instead, when the latest user turn was evicted, re-emit just
+        // its text ahead of the dropped-history summary.
+        let mut packed = Vec::new();
+        if let Some(last_user) = self.turns[..start]
+            .iter()
+            .rposition(|turn| matches!(turn, AgentSessionTurn::User { .. }))
+        {
+            packed.push(render_turn(&self.turns[last_user]));
+        }
+        packed.push(render_dropped_summary(&self.turns[..start]));
         packed.extend(rendered.into_iter().skip(start));
         packed.join("\n")
     }
@@ -168,7 +256,11 @@ impl AgentSessionState {
         }
         if self.loaded_tools.len() > LOADED_TOOLS_CAP
             || self.loaded_tools.iter().any(|name| {
-                descriptor_for(name).is_none_or(|descriptor| descriptor.tier != ToolTier::Rare)
+                // Dynamic MCP tools are validated per turn by the catalog, not
+                // by the static descriptor table.
+                !name.starts_with(MCP_TOOL_PREFIX)
+                    && descriptor_for(name)
+                        .is_none_or(|descriptor| descriptor.tier != ToolTier::Rare)
             })
         {
             return Err("Agent session contains invalid loaded tools".into());
@@ -192,14 +284,14 @@ impl AgentSessionState {
                 {
                     return Err("Agent session contains an oversized assistant reply".into());
                 }
-                AgentSessionTurn::ToolResult { summary, .. }
-                    if summary.chars().count() > MAX_TOOL_SUMMARY_CHARS =>
+                AgentSessionTurn::ToolResult { tool, summary, .. }
+                    if summary.chars().count() > tool_summary_cap(tool) =>
                 {
                     return Err("Agent session contains an oversized tool result".into());
                 }
                 AgentSessionTurn::AssistantToolCall { tool, .. }
                 | AgentSessionTurn::ToolResult { tool, .. }
-                    if descriptor_for(tool).is_none() =>
+                    if !tool.starts_with(MCP_TOOL_PREFIX) && descriptor_for(tool).is_none() =>
                 {
                     return Err("Agent session contains an unknown tool".into());
                 }
@@ -430,7 +522,8 @@ mod tests {
     impl SessionFixture {
         fn new(session_ids: &[&str]) -> Self {
             let data_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("target").join("agent-session-tests")
+                .join("target")
+                .join("agent-session-tests")
                 .join(uuid::Uuid::new_v4().to_string());
             std::fs::create_dir_all(get_data_dir(&data_dir)).expect("create threads root");
             for session_id in session_ids {
@@ -470,7 +563,143 @@ mod tests {
     }
 
     #[test]
-    fn verbose_tool_results_are_compressed_without_mutating_the_source_outcome() {
+    fn validate_accepts_dynamic_mcp_tool_names() {
+        let mut state = AgentSessionState::new("thread-a");
+        state.push_user("question");
+        state.push_tool_observations(
+            &[ToolCallPayload {
+                tool: "mcp.github.search_issues".into(),
+                args: serde_json::json!({"query": "bug"}),
+            }],
+            &[ToolOutcome::ok("3 issues")],
+        );
+        state.set_loaded_tools(vec!["mcp.github.search_issues".into()]);
+        state.push_reply("answer");
+
+        assert!(state.validate("thread-a").is_ok());
+    }
+
+    #[test]
+    fn reseed_rebuild_keeps_the_newest_tail_within_the_turn_cap() {
+        let mut state = AgentSessionState::new("thread-a");
+        state.push_user("stored question");
+        state.push_reply("stored answer");
+        state.finish_turn();
+
+        // Divergent history longer than the cap: an edited long legacy thread.
+        let messages: Vec<AgentReseedMessage> = (0..120)
+            .map(|index| {
+                reseed_message(
+                    if index % 2 == 0 {
+                        ReseedRole::User
+                    } else {
+                        ReseedRole::Assistant
+                    },
+                    &format!("message {index}"),
+                )
+            })
+            .collect();
+        state.reseed(&messages);
+
+        assert!(state.turns.len() <= MAX_TURNS);
+        assert!(state.validate("thread-a").is_ok());
+        let rendered = state.render_conversation(64_000);
+        assert!(rendered.contains("message 119"), "newest tail survives");
+        assert!(!rendered.contains("message 0\n"), "oldest turns dropped");
+    }
+
+    fn reseed_message(role: ReseedRole, text: &str) -> AgentReseedMessage {
+        AgentReseedMessage {
+            role,
+            text: text.into(),
+        }
+    }
+
+    #[test]
+    fn reseed_appends_missing_turns_and_keeps_observations() {
+        let mut state = AgentSessionState::new("thread-a");
+        state.push_user("question one");
+        state.push_tool_observations(
+            &[ToolCallPayload {
+                tool: "os.fs.read".into(),
+                args: serde_json::json!({"path": "a.txt"}),
+            }],
+            &[ToolOutcome::ok("file contents")],
+        );
+        state.push_reply("answer one");
+        state.finish_turn();
+
+        // A fallback-engine turn happened outside the loop; the frontend list
+        // is a strict superset.
+        state.reseed(&[
+            reseed_message(ReseedRole::User, "question one"),
+            reseed_message(ReseedRole::Assistant, "answer one"),
+            reseed_message(ReseedRole::User, "question two"),
+            reseed_message(ReseedRole::Assistant, "answer two"),
+        ]);
+
+        let rendered = state.render_conversation(32_000);
+        assert!(rendered.contains("file contents"), "observations survive");
+        assert!(rendered.contains("question two"));
+        assert!(rendered.contains("answer two"));
+        assert_eq!(state.turn_count, 1, "turn_count stays monotonic");
+    }
+
+    #[test]
+    fn reseed_rebuilds_on_divergence_and_drops_observations() {
+        let mut state = AgentSessionState::new("thread-a");
+        state.push_user("question one");
+        state.push_tool_observations(
+            &[ToolCallPayload {
+                tool: "os.fs.read".into(),
+                args: serde_json::json!({"path": "a.txt"}),
+            }],
+            &[ToolOutcome::ok("stale observation")],
+        );
+        state.push_reply("old answer");
+        state.finish_turn();
+        let turn_count = state.turn_count;
+
+        // The user edited the question: the stored transcript diverges.
+        state.reseed(&[reseed_message(ReseedRole::User, "edited question")]);
+
+        let rendered = state.render_conversation(32_000);
+        assert!(!rendered.contains("stale observation"));
+        assert!(!rendered.contains("old answer"));
+        assert!(rendered.contains("edited question"));
+        assert_eq!(state.turn_count, turn_count);
+        assert_eq!(state.turns.len(), 1);
+    }
+
+    #[test]
+    fn reseed_matches_against_the_stored_truncated_form() {
+        let mut state = AgentSessionState::new("thread-a");
+        let long_text = "x".repeat(MAX_USER_TEXT_CHARS + 500);
+        state.push_user(&long_text);
+        state.push_reply("answer");
+        state.finish_turn();
+
+        // The frontend re-sends the untruncated original; the stored prefix
+        // must still match after applying the same caps.
+        state.reseed(&[
+            reseed_message(ReseedRole::User, &long_text),
+            reseed_message(ReseedRole::Assistant, "answer"),
+            reseed_message(ReseedRole::User, "follow-up"),
+        ]);
+
+        assert!(state.render_conversation(64_000).contains("follow-up"));
+        assert_eq!(
+            state
+                .turns
+                .iter()
+                .filter(|turn| matches!(turn, AgentSessionTurn::User { .. }))
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn verbose_listing_results_are_compressed_without_mutating_the_source_outcome() {
         let mut state = AgentSessionState::new("thread-a");
         let detailed = (0..30)
             .map(|index| format!("detailed line {index}"))
@@ -479,8 +708,8 @@ mod tests {
         let outcome = ToolOutcome::ok(detailed.clone());
         state.push_tool_observations(
             &[ToolCallPayload {
-                tool: "os.fs.read".into(),
-                args: serde_json::json!({"path": "large.txt"}),
+                tool: "os.fs.list".into(),
+                args: serde_json::json!({"path": "."}),
             }],
             std::slice::from_ref(&outcome),
         );
@@ -496,6 +725,29 @@ mod tests {
     }
 
     #[test]
+    fn content_bearing_results_pass_through_uncompressed() {
+        let mut state = AgentSessionState::new("thread-a");
+        let body = (0..30)
+            .map(|index| format!("body line {index}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for tool in ["os.fs.read", "os.web.fetch", "os.fs.read_document"] {
+            state.push_tool_observations(
+                &[ToolCallPayload {
+                    tool: tool.into(),
+                    args: serde_json::json!({"path": "large.txt"}),
+                }],
+                &[ToolOutcome::ok(body.clone())],
+            );
+        }
+
+        let rendered = state.render_conversation(32_000);
+        assert!(rendered.contains("body line 0"));
+        assert!(rendered.contains("body line 29"));
+        assert!(!rendered.contains("omitted"));
+    }
+
+    #[test]
     fn failed_verbose_results_keep_the_key_error_signature() {
         let mut state = AgentSessionState::new("thread-a");
         let output = [
@@ -506,8 +758,8 @@ mod tests {
         .join("\n");
         state.push_tool_observations(
             &[ToolCallPayload {
-                tool: "os.shell.run".into(),
-                args: serde_json::json!({"cmd": "test"}),
+                tool: "os.git.status".into(),
+                args: serde_json::json!({}),
             }],
             &[ToolOutcome::error(output)],
         );
@@ -541,11 +793,45 @@ mod tests {
 
         let rendered = state.render_conversation(40);
 
-        assert!(rendered
-            .starts_with("summary: 2 older turns dropped (1 user, 0 tool calls, 1 replies)"));
+        // The latest question is re-surfaced and old turns are summarized away.
         assert!(rendered.contains("USER: latest question"));
+        assert!(rendered.contains("older turns dropped"));
         assert!(!rendered.contains("old question"));
         assert!(!rendered.contains("old answer"));
+    }
+
+    #[test]
+    fn token_budget_is_enforced_even_with_a_single_front_user_turn() {
+        // Regression: a task has one user turn at the front followed by many
+        // large observations. The budget must still evict old observations and
+        // re-surface the question, not render everything.
+        let mut state = AgentSessionState::new("thread-a");
+        state.push_user("the task question");
+        for index in 0..30 {
+            state.push_tool_observations(
+                &[ToolCallPayload {
+                    tool: "os.web.fetch".into(),
+                    args: serde_json::json!({ "url": format!("https://example.com/{index}") }),
+                }],
+                &[ToolOutcome::ok(format!(
+                    "OBSERVATION_{index} {}",
+                    "body ".repeat(400)
+                ))],
+            );
+        }
+
+        let rendered = state.render_conversation(2_000);
+        let cost = estimate_tokens(&rendered);
+        assert!(
+            cost <= 2_000,
+            "rendered conversation ({cost} tokens) must respect the budget"
+        );
+        // The question survives, older observations are summarized away.
+        assert!(rendered.contains("USER: the task question"));
+        assert!(rendered.contains("older turns dropped"));
+        assert!(!rendered.contains("OBSERVATION_0 "));
+        // The most recent observation is retained.
+        assert!(rendered.contains("OBSERVATION_29"));
     }
 
     #[tokio::test]

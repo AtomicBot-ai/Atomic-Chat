@@ -9,14 +9,18 @@
 //! Root is **array-only** (`root ::= tool-call-array`): every completion starts
 //! with `[` so the model cannot fall into the single-object form via
 //! first-token bias even when it only needs one call. A solo step is the model
-//! emitting `[{...}]`. Up to 16 calls per completion (the runtime also clamps
-//! via `DEFAULT_MAX_PARALLEL_TOOL_CALLS`).
+//! emitting `[{...}]`. The array holds up to [`MAX_PARALLEL_TOOL_CALLS`] calls,
+//! of which at most one is a terminal (`reply` / `finish`) and only in the
+//! final position — the two batch rules `validate_batch` can decide from the
+//! shape alone are enforced during sampling rather than after it.
 
 use std::fmt::Write;
 
 use super::{
     model_profile::AgentModelProfile,
     prompt::{ToolTier, ITERATION_ONE_TOOLS},
+    resource_class::{resource_class_for, ResourceClass},
+    runner::MAX_PARALLEL_TOOL_CALLS,
     skills::SkillRegistry,
 };
 
@@ -128,6 +132,31 @@ const STATIC_TOOL_GRAMMARS: &[ToolGrammar] = &[
         args: r#""{" ws "\"url\"" ws ":" ws non-empty-string ( ws "," ws "\"extractMode\"" ws ":" ws ( "\"markdown\"" | "\"text\"" ) )? ( ws "," ws "\"maxChars\"" ws ":" ws positive-integer )? ws "}""#,
     },
     ToolGrammar {
+        name: "docs.list",
+        rule: "docs-list",
+        args: r#""{" ws ( "\"scope\"" ws ":" ws ( "\"thread\"" | "\"project\"" ) ws )? "}""#,
+    },
+    ToolGrammar {
+        name: "docs.retrieve",
+        rule: "docs-retrieve",
+        args: r#""{" ws "\"query\"" ws ":" ws non-empty-string ( ws "," ws "\"top_k\"" ws ":" ws positive-integer )? ( ws "," ws "\"file_ids\"" ws ":" ws non-empty-string-array )? ( ws "," ws "\"scope\"" ws ":" ws ( "\"thread\"" | "\"project\"" ) )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "docs.chunks",
+        rule: "docs-chunks",
+        args: r#""{" ws "\"file_id\"" ws ":" ws non-empty-string ws "," ws "\"start_order\"" ws ":" ws nonnegative-integer ws "," ws "\"end_order\"" ws ":" ws nonnegative-integer ( ws "," ws "\"scope\"" ws ":" ws ( "\"thread\"" | "\"project\"" ) )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.media.transcribe",
+        rule: "media-transcribe",
+        args: r#""{" ws "\"path\"" ws ":" ws non-empty-string ( ws "," ws "\"language\"" ws ":" ws non-empty-string )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.media.youtube",
+        rule: "media-youtube",
+        args: r#""{" ws "\"url\"" ws ":" ws non-empty-string ( ws "," ws "\"mode\"" ws ":" ws ( "\"transcript\"" | "\"frames\"" ) )? ( ws "," ws "\"maxFrames\"" ws ":" ws positive-integer )? ws "}""#,
+    },
+    ToolGrammar {
         name: "vision.describe",
         rule: "vision-describe",
         args: r#""{" ws "\"paths\"" ws ":" ws non-empty-string-array ws "," ws "\"prompt\"" ws ":" ws non-empty-string ws "}""#,
@@ -173,6 +202,41 @@ const STATIC_TOOL_GRAMMARS: &[ToolGrammar] = &[
         args: r#""{" ws "\"pid\"" ws ":" ws positive-integer ( ws "," ws "\"signal\"" ws ":" ws ( "\"SIGTERM\"" | "\"SIGKILL\"" | "\"SIGINT\"" | "\"SIGHUP\"" ) )? ws "}""#,
     },
     ToolGrammar {
+        name: "os.code.symbols",
+        rule: "code-symbols",
+        args: r#""{" ws "\"path\"" ws ":" ws non-empty-string ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.code.find",
+        rule: "code-find",
+        args: r#""{" ws "\"name\"" ws ":" ws non-empty-string ( ws "," ws "\"kind\"" ws ":" ws symbol-kind )? ( ws "," ws "\"limit\"" ws ":" ws positive-integer )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.code.refs",
+        rule: "code-refs",
+        args: r#""{" ws "\"name\"" ws ":" ws non-empty-string ( ws "," ws "\"path\"" ws ":" ws non-empty-string )? ( ws "," ws "\"limit\"" ws ":" ws positive-integer )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.proc.spawn",
+        rule: "proc-spawn",
+        args: r#""{" ws "\"cmd\"" ws ":" ws non-empty-string ( ws "," ws "\"args\"" ws ":" ws string-array )? ( ws "," ws "\"cwd\"" ws ":" ws non-empty-string )? ( ws "," ws "\"cols\"" ws ":" ws positive-integer )? ( ws "," ws "\"rows\"" ws ":" ws positive-integer )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.proc.read",
+        rule: "proc-read",
+        args: r#""{" ws "\"procId\"" ws ":" ws non-empty-string ( ws "," ws "\"since\"" ws ":" ws nonnegative-integer )? ( ws "," ws "\"maxChars\"" ws ":" ws positive-integer )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.proc.write",
+        rule: "proc-write",
+        args: r#""{" ws "\"procId\"" ws ":" ws non-empty-string ws "," ws "\"data\"" ws ":" ws string ws "}""#,
+    },
+    ToolGrammar {
+        name: "os.proc.stop",
+        rule: "proc-stop",
+        args: r#""{" ws "\"procId\"" ws ":" ws non-empty-string ( ws "," ws "\"signal\"" ws ":" ws ( "\"SIGTERM\"" | "\"SIGKILL\"" | "\"SIGINT\"" | "\"SIGHUP\"" ) )? ws "}""#,
+    },
+    ToolGrammar {
         name: "os.clipboard.read",
         rule: "clipboard-read",
         args: r#""{" ws "}""#,
@@ -199,8 +263,7 @@ const STATIC_TOOL_GRAMMARS: &[ToolGrammar] = &[
     },
 ];
 
-const JSON_RULES: &str = r##"tool-call-array ::= "[" ws tool-call ( ws "," ws tool-call ){0,15} ws "]"
-call-prefix ::= "{" ws "\"tool\"" ws ":" ws
+const JSON_RULES: &str = r##"call-prefix ::= "{" ws "\"tool\"" ws ":" ws
 args-prefix ::= ws "," ws "\"args\"" ws ":" ws
 call-suffix ::= ws "}"
 
@@ -252,6 +315,11 @@ pub const GRAMMAR_TOOL_NAMES: &[&str] = &[
     "os.http.request",
     "os.web.search",
     "os.web.fetch",
+    "docs.list",
+    "docs.retrieve",
+    "docs.chunks",
+    "os.media.transcribe",
+    "os.media.youtube",
     "vision.describe",
     "os.git.status",
     "os.git.log",
@@ -261,6 +329,13 @@ pub const GRAMMAR_TOOL_NAMES: &[&str] = &[
     "os.git.branch",
     "os.proc.list",
     "os.proc.kill",
+    "os.code.symbols",
+    "os.code.find",
+    "os.code.refs",
+    "os.proc.spawn",
+    "os.proc.read",
+    "os.proc.write",
+    "os.proc.stop",
     "os.clipboard.read",
     "os.clipboard.write",
     "os.notify",
@@ -271,36 +346,115 @@ pub const GRAMMAR_TOOL_NAMES: &[&str] = &[
 /// Build the tool-call grammar from the fixed tool catalog and the enabled,
 /// compatible skill registry visible to this turn.
 pub fn tool_call_grammar(skill_registry: &SkillRegistry) -> String {
-    tool_call_grammar_for_profile(skill_registry, AgentModelProfile::Plain)
+    tool_call_grammar_for_profile(skill_registry, AgentModelProfile::Plain, false)
 }
 
+/// Tags a generic thinking block is delimited by, for models whose profile has
+/// no native reasoning channel of its own. The pair is also what the llama.cpp
+/// reasoning-budget sampler is armed with, so the two must stay identical.
+pub const GENERIC_THINK_OPEN: &str = "<think>";
+pub const GENERIC_THINK_CLOSE: &str = "</think>";
+
+/// `thinking` asks for a reasoning prelude ahead of the tool-call array. It is
+/// ignored for `Gemma4Think`, whose channel prelude is native turn framing
+/// rather than an effort choice and is therefore always present.
 pub fn tool_call_grammar_for_profile(
     skill_registry: &SkillRegistry,
     profile: AgentModelProfile,
+    thinking: bool,
+) -> String {
+    tool_call_grammar_dynamic(
+        skill_registry,
+        profile,
+        thinking,
+        &[],
+        &std::collections::BTreeSet::new(),
+    )
+}
+
+/// The full dynamic form: `mcp_names` stitches the turn's MCP catalog into the
+/// grammar (generalizing the skill-name pattern), `disabled` removes built-in
+/// tools switched off for this turn (e.g. `os.web.*` when web search is off).
+pub fn tool_call_grammar_dynamic(
+    skill_registry: &SkillRegistry,
+    profile: AgentModelProfile,
+    thinking: bool,
+    mcp_names: &[String],
+    disabled: &std::collections::BTreeSet<String>,
 ) -> String {
     let skill_names = skill_registry
         .enabled()
         .map(|record| record.manifest.name.as_str())
         .collect::<Vec<_>>();
-    let mut call_rules = STATIC_TOOL_GRAMMARS
+    let enabled_static = STATIC_TOOL_GRAMMARS
+        .iter()
+        .filter(|grammar| !disabled.contains(grammar.name))
+        .collect::<Vec<_>>();
+    // Terminals get their own alternation so the array rule can pin them to the
+    // final position. Skills and MCP tools are always steps: neither ends a turn.
+    let (terminal_static, step_static): (Vec<&ToolGrammar>, Vec<&ToolGrammar>) = enabled_static
+        .iter()
+        .copied()
+        .partition(|grammar| resource_class_for(grammar.name) == ResourceClass::Terminal);
+    let mut step_rules = step_static
+        .iter()
+        .map(|grammar| format!("{}-call", grammar.rule))
+        .collect::<Vec<_>>();
+    let terminal_rules = terminal_static
         .iter()
         .map(|grammar| format!("{}-call", grammar.rule))
         .collect::<Vec<_>>();
     if !skill_names.is_empty() {
-        call_rules.insert(1, "skill-view-call".into());
-        call_rules.insert(2, "skill-run-script-call".into());
+        step_rules.insert(1, "skill-view-call".into());
+        step_rules.insert(2, "skill-run-script-call".into());
+    }
+    if !mcp_names.is_empty() {
+        step_rules.push("mcp-call".into());
     }
 
-    let root = if profile == AgentModelProfile::Gemma4Think {
-        "channel-prelude tool-call-array"
-    } else {
-        "tool-call-array"
+    // At most one prelude: emitting two would duplicate `prelude-trail-ws` and
+    // make the grammar unparseable.
+    let prelude = match (profile.reasoning_open_tag(), profile.reasoning_close_tag()) {
+        (Some(open), Some(close)) => Some(("channel", open, close)),
+        _ if thinking => Some(("think", GENERIC_THINK_OPEN, GENERIC_THINK_CLOSE)),
+        _ => None,
     };
-    let mut grammar = format!(
-        "root ::= {root}\ntool-call ::= {}\n",
-        call_rules.join(" | ")
-    );
-    for tool in STATIC_TOOL_GRAMMARS {
+    let root = match prelude {
+        Some((stem, _, _)) => format!("{stem}-prelude tool-call-array"),
+        None => "tool-call-array".to_string(),
+    };
+    // The two batch rules that are decidable from the shape alone are enforced
+    // here rather than left to `validate_batch`: at most `MAX_PARALLEL_TOOL_CALLS`
+    // calls, and at most one terminal, only as the last element. Small local
+    // models otherwise emit `[..., reply, reply]` often enough to kill turns —
+    // the repair completion tends to repeat the same mistake.
+    let tail = MAX_PARALLEL_TOOL_CALLS - 1;
+    let mut grammar = format!("root ::= {root}\n");
+    if step_rules.is_empty() || terminal_rules.is_empty() {
+        // Unreachable while `reply` and `finish` stay undisablable — the loop
+        // has no way to end without them — but an empty alternation would be
+        // unparseable GBNF, so degrade to the unpositioned form.
+        let call_rules = [step_rules.as_slice(), terminal_rules.as_slice()].concat();
+        writeln!(
+            grammar,
+            "tool-call-array ::= \"[\" ws tool-call ( ws \",\" ws tool-call ){{0,{tail}}} ws \"]\""
+        )
+        .expect("writing array grammar to String cannot fail");
+        writeln!(grammar, "tool-call ::= {}", call_rules.join(" | "))
+            .expect("writing tool grammar to String cannot fail");
+    } else {
+        writeln!(
+            grammar,
+            "tool-call-array ::= \"[\" ws ( step-call ws \",\" ws ){{0,{tail}}} ( step-call | \
+             terminal-call ) ws \"]\""
+        )
+        .expect("writing array grammar to String cannot fail");
+        writeln!(grammar, "step-call ::= {}", step_rules.join(" | "))
+            .expect("writing step grammar to String cannot fail");
+        writeln!(grammar, "terminal-call ::= {}", terminal_rules.join(" | "))
+            .expect("writing terminal grammar to String cannot fail");
+    }
+    for tool in &enabled_static {
         writeln!(
             grammar,
             "{}-call ::= call-prefix {} args-prefix {}-args call-suffix",
@@ -311,6 +465,32 @@ pub fn tool_call_grammar_for_profile(
         .expect("writing tool grammar to String cannot fail");
         writeln!(grammar, "{}-args ::= {}", tool.rule, tool.args)
             .expect("writing tool args grammar to String cannot fail");
+    }
+
+    if !mcp_names.is_empty() {
+        // MCP args are validated by the serving MCP server (and previewed for
+        // approval), so the grammar pins only "a JSON object" — the generic
+        // value rules exist solely for this branch.
+        grammar.push_str(
+            "mcp-call ::= call-prefix mcp-tool-name args-prefix json-object call-suffix\n",
+        );
+        writeln!(
+            grammar,
+            "mcp-tool-name ::= {}",
+            mcp_names
+                .iter()
+                .map(|name| gbnf_json_literal(name))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        )
+        .expect("writing mcp grammar to String cannot fail");
+        grammar.push_str(
+            "json-object ::= \"{\" ws ( json-member ( ws \",\" ws json-member )* )? ws \"}\"\n\
+             json-member ::= string ws \":\" ws json-value\n\
+             json-array-generic ::= \"[\" ws ( json-value ( ws \",\" ws json-value )* )? ws \"]\"\n\
+             json-value ::= string | json-number | json-object | json-array-generic | boolean | \"null\"\n\
+             json-number ::= \"-\"? ( \"0\" | [1-9] [0-9]* ) ( \".\" [0-9]+ )? ( [eE] [+-]? [0-9]+ )?\n",
+        );
     }
 
     if !skill_names.is_empty() {
@@ -332,10 +512,18 @@ pub fn tool_call_grammar_for_profile(
         .expect("writing skill grammar to String cannot fail");
     }
 
+    grammar.push_str(
+        "symbol-kind ::= \"\\\"class\\\"\" | \"\\\"struct\\\"\" | \"\\\"enum\\\"\" | \"\\\"trait\\\"\" | \"\\\"interface\\\"\" | \"\\\"method\\\"\" | \"\\\"function\\\"\" | \"\\\"macro\\\"\" | \"\\\"type\\\"\" | \"\\\"module\\\"\" | \"\\\"constant\\\"\"\n",
+    );
+
+    // MCP tools join the rare-name alternation so `tool.view` can load their
+    // full schemas into the variable tail on demand.
     let rare_tool_names = ITERATION_ONE_TOOLS
         .iter()
         .filter(|descriptor| descriptor.tier == ToolTier::Rare)
+        .filter(|descriptor| !disabled.contains(descriptor.name))
         .map(|descriptor| gbnf_json_literal(descriptor.name))
+        .chain(mcp_names.iter().map(|name| gbnf_json_literal(name)))
         .collect::<Vec<_>>();
     writeln!(
         grammar,
@@ -344,9 +532,8 @@ pub fn tool_call_grammar_for_profile(
     )
     .expect("writing rare tool grammar to String cannot fail");
     grammar.push_str(JSON_RULES);
-    if let (Some(open), Some(close)) = (profile.reasoning_open_tag(), profile.reasoning_close_tag())
-    {
-        write_reasoning_prelude(&mut grammar, "channel", open, close);
+    if let Some((stem, open, close)) = prelude {
+        write_reasoning_prelude(&mut grammar, stem, open, close);
     }
     grammar
 }
@@ -431,13 +618,182 @@ mod tests {
         let root = temp.path().join("skills");
         fs::create_dir_all(&root).unwrap();
         let registry = SkillRegistry::load(&root, &BTreeSet::new(), &BTreeSet::new()).unwrap();
-        let grammar = tool_call_grammar_for_profile(&registry, AgentModelProfile::Gemma4Think);
+        let grammar =
+            tool_call_grammar_for_profile(&registry, AgentModelProfile::Gemma4Think, false);
 
         assert!(grammar.starts_with("root ::= channel-prelude tool-call-array\n"));
         assert!(grammar.contains(
             "channel-prelude ::= \"<|channel>thought\\n\" channel-body \"<channel|>\" prelude-trail-ws"
         ));
         assert!(grammar.contains("prelude-trail-ws ::= ( [ \\t\\n\\r] ){0,8}"));
+    }
+
+    fn empty_registry(temp: &TempDir) -> SkillRegistry {
+        let root = temp.path().join("skills");
+        fs::create_dir_all(&root).unwrap();
+        SkillRegistry::load(&root, &BTreeSet::new(), &BTreeSet::new()).unwrap()
+    }
+
+    #[test]
+    fn plain_grammar_gets_a_think_prelude_when_thinking_is_on() {
+        let temp = TempDir::new().unwrap();
+        let registry = empty_registry(&temp);
+        let grammar = tool_call_grammar_for_profile(&registry, AgentModelProfile::Plain, true);
+
+        assert!(grammar.starts_with("root ::= think-prelude tool-call-array\n"));
+        assert!(grammar
+            .contains("think-prelude ::= \"<think>\" think-body \"</think>\" prelude-trail-ws"));
+        // The close tag is peeled one character at a time so the body can never
+        // swallow it.
+        assert!(grammar.contains("think-fragment ::= [^<]+ | \"<\" [^/]"));
+        assert!(grammar.contains("\"</think\" [^>]"));
+    }
+
+    #[test]
+    fn plain_grammar_stays_array_only_when_thinking_is_off() {
+        let temp = TempDir::new().unwrap();
+        let registry = empty_registry(&temp);
+        let grammar = tool_call_grammar_for_profile(&registry, AgentModelProfile::Plain, false);
+
+        assert!(grammar.starts_with("root ::= tool-call-array\n"));
+        assert!(!grammar.contains("think-prelude"));
+        assert!(!grammar.contains("prelude-trail-ws"));
+    }
+
+    /// The `mcp.` namespace is reserved for dynamic MCP tools; a built-in tool
+    /// using it would shadow the catalog's reverse mapping.
+    #[test]
+    fn no_builtin_tool_uses_the_mcp_namespace() {
+        for name in GRAMMAR_TOOL_NAMES {
+            assert!(
+                !name.starts_with("mcp."),
+                "built-in tool `{name}` uses the reserved mcp. namespace"
+            );
+        }
+        for descriptor in ITERATION_ONE_TOOLS {
+            assert!(!descriptor.name.starts_with("mcp."));
+        }
+    }
+
+    #[test]
+    fn mcp_names_get_an_alternation_and_generic_json_rules() {
+        let temp = TempDir::new().unwrap();
+        let registry = empty_registry(&temp);
+        let names = vec![
+            "mcp.github.create_issue".to_string(),
+            "mcp.linear.search".to_string(),
+        ];
+        let grammar = tool_call_grammar_dynamic(
+            &registry,
+            AgentModelProfile::Plain,
+            false,
+            &names,
+            &BTreeSet::new(),
+        );
+
+        assert!(grammar.contains("| mcp-call\n"));
+        assert!(grammar.contains(
+            "mcp-call ::= call-prefix mcp-tool-name args-prefix json-object call-suffix"
+        ));
+        assert!(grammar.contains(
+            r#"mcp-tool-name ::= "\"mcp.github.create_issue\"" | "\"mcp.linear.search\"""#
+        ));
+        assert!(grammar.contains("json-value ::="));
+        // `tool.view` can name an MCP tool.
+        assert!(grammar.contains(r#"rare-tool-name ::="#));
+        let rare_line = grammar
+            .lines()
+            .find(|line| line.starts_with("rare-tool-name ::="))
+            .expect("rare-tool-name rule");
+        assert!(rare_line.contains("mcp.github.create_issue"));
+    }
+
+    #[test]
+    fn empty_mcp_catalog_leaves_the_grammar_byte_identical() {
+        let temp = TempDir::new().unwrap();
+        let registry = empty_registry(&temp);
+        let baseline = tool_call_grammar_for_profile(&registry, AgentModelProfile::Plain, false);
+        let dynamic = tool_call_grammar_dynamic(
+            &registry,
+            AgentModelProfile::Plain,
+            false,
+            &[],
+            &BTreeSet::new(),
+        );
+        assert_eq!(baseline, dynamic);
+        assert!(!baseline.contains("json-value"));
+        assert!(!baseline.contains("mcp-call"));
+    }
+
+    #[test]
+    fn disabled_web_tools_leave_grammar_and_dispatch_rules() {
+        let temp = TempDir::new().unwrap();
+        let registry = empty_registry(&temp);
+        let disabled: BTreeSet<String> = ["os.web.search", "os.web.fetch"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let grammar =
+            tool_call_grammar_dynamic(&registry, AgentModelProfile::Plain, false, &[], &disabled);
+
+        assert!(!grammar.contains(r#""\"os.web.search\"""#));
+        assert!(!grammar.contains(r#""\"os.web.fetch\"""#));
+        // Unrelated tools survive the filter.
+        assert!(grammar.contains(r#""\"os.fs.read\"""#));
+        assert!(grammar.contains(r#""\"reply\"""#));
+    }
+
+    #[test]
+    fn disabled_docs_tools_leave_grammar_and_dispatch_rules() {
+        let temp = TempDir::new().unwrap();
+        let registry = empty_registry(&temp);
+        let disabled: BTreeSet<String> = ["docs.list", "docs.retrieve", "docs.chunks"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let grammar =
+            tool_call_grammar_dynamic(&registry, AgentModelProfile::Plain, false, &[], &disabled);
+
+        assert!(!grammar.contains(r#""\"docs.list\"""#));
+        assert!(!grammar.contains(r#""\"docs.retrieve\"""#));
+        assert!(!grammar.contains(r#""\"docs.chunks\"""#));
+        // Unrelated tools survive the filter.
+        assert!(grammar.contains(r#""\"os.fs.read\"""#));
+        assert!(grammar.contains(r#""\"reply\"""#));
+    }
+
+    #[test]
+    fn gemma4_keeps_its_channel_prelude_whatever_the_thinking_flag_says() {
+        let temp = TempDir::new().unwrap();
+        let registry = empty_registry(&temp);
+        let off = tool_call_grammar_for_profile(&registry, AgentModelProfile::Gemma4Think, false);
+        let on = tool_call_grammar_for_profile(&registry, AgentModelProfile::Gemma4Think, true);
+
+        // The channel prelude is native turn framing, not an effort choice.
+        assert_eq!(off, on);
+        assert!(!on.contains("think-prelude"));
+    }
+
+    #[test]
+    fn at_most_one_prelude_is_ever_emitted() {
+        let temp = TempDir::new().unwrap();
+        let registry = empty_registry(&temp);
+        for profile in [AgentModelProfile::Plain, AgentModelProfile::Gemma4Think] {
+            for thinking in [false, true] {
+                let grammar = tool_call_grammar_for_profile(&registry, profile, thinking);
+                // A duplicate rule definition would make the GBNF unparseable.
+                assert!(grammar.matches("prelude-trail-ws ::=").count() <= 1);
+            }
+        }
+    }
+
+    /// The body of a named GBNF rule, for assertions that care about one rule
+    /// rather than the whole grammar text.
+    fn rule<'a>(grammar: &'a str, name: &str) -> &'a str {
+        grammar
+            .lines()
+            .find_map(|line| line.strip_prefix(&format!("{name} ::= ")))
+            .unwrap_or_else(|| panic!("grammar defines no `{name}` rule"))
     }
 
     #[test]
@@ -477,6 +833,95 @@ mod tests {
                 !grammar.contains(excluded),
                 "grammar must not contain deferred category `{excluded}`"
             );
+        }
+    }
+
+    /// Split a GBNF body into the identifiers it *references*, ignoring string
+    /// literals and character classes where the same characters are data.
+    fn referenced_rules(body: &str) -> Vec<String> {
+        let bytes: Vec<char> = body.chars().collect();
+        let mut names = Vec::new();
+        let mut index = 0;
+        while index < bytes.len() {
+            match bytes[index] {
+                // A quoted literal: skip it whole, honouring backslash escapes.
+                '"' => {
+                    index += 1;
+                    while index < bytes.len() && bytes[index] != '"' {
+                        index += if bytes[index] == '\\' { 2 } else { 1 };
+                    }
+                    index += 1;
+                }
+                // A character class: same idea.
+                '[' => {
+                    index += 1;
+                    while index < bytes.len() && bytes[index] != ']' {
+                        index += if bytes[index] == '\\' { 2 } else { 1 };
+                    }
+                    index += 1;
+                }
+                character if character.is_ascii_alphabetic() => {
+                    let start = index;
+                    while index < bytes.len()
+                        && (bytes[index].is_ascii_alphanumeric() || bytes[index] == '-')
+                    {
+                        index += 1;
+                    }
+                    names.push(bytes[start..index].iter().collect::<String>());
+                }
+                _ => index += 1,
+            }
+        }
+        names
+    }
+
+    /// Every non-terminal the grammar mentions must also be defined.
+    ///
+    /// Nothing else checks this: llama.cpp only discovers a dangling rule when
+    /// it compiles the grammar mid-run, and the failure surfaces as a broken
+    /// agent on local models rather than a failing build. Adding a tool means
+    /// hand-writing GBNF, which is exactly where a typo lands.
+    #[test]
+    fn the_symbol_kind_rule_emits_quoted_json_literals() {
+        // The rule is built from a hand-escaped Rust string; a wrong number of
+        // backslashes yields GBNF that parses but matches the wrong bytes,
+        // which `every_referenced_grammar_rule_is_defined` would not catch.
+        let temp = TempDir::new().expect("temp dir");
+        let grammar =
+            tool_call_grammar_for_profile(&empty_registry(&temp), AgentModelProfile::Plain, false);
+        let line = grammar
+            .lines()
+            .find(|line| line.starts_with("symbol-kind ::="))
+            .expect("symbol-kind must be defined");
+        assert!(line.contains(r#""\"function\"""#), "{line}");
+        assert!(line.contains(r#""\"constant\"""#), "{line}");
+        assert_eq!(line.matches('|').count(), 10, "eleven alternatives: {line}");
+    }
+
+    #[test]
+    fn every_referenced_grammar_rule_is_defined() {
+        let temp = TempDir::new().expect("temp dir");
+        for thinking in [false, true] {
+            for profile in [AgentModelProfile::Plain, AgentModelProfile::Gemma4Think] {
+                let grammar =
+                    tool_call_grammar_for_profile(&empty_registry(&temp), profile, thinking);
+                let mut defined = std::collections::HashSet::new();
+                let mut referenced = Vec::new();
+                for line in grammar.lines() {
+                    let Some((head, body)) = line.split_once("::=") else {
+                        continue;
+                    };
+                    defined.insert(head.trim().to_owned());
+                    referenced.extend(referenced_rules(body));
+                }
+                for name in referenced {
+                    assert!(
+                        defined.contains(&name),
+                        "rule `{name}` is referenced but never defined \
+                         (profile {profile:?}, thinking={thinking})"
+                    );
+                }
+            }
         }
     }
 
@@ -571,10 +1016,46 @@ mod tests {
     #[test]
     fn omits_skill_calls_when_no_skill_is_available() {
         let grammar = grammar_with_skills(&[]);
-        let tool_call_rule = grammar.lines().nth(1).unwrap();
-        assert!(!tool_call_rule.contains("skill-view-call"));
-        assert!(!tool_call_rule.contains("skill-run-script-call"));
+        let step_call_rule = rule(&grammar, "step-call");
+        assert!(!step_call_rule.contains("skill-view-call"));
+        assert!(!step_call_rule.contains("skill-run-script-call"));
         assert!(!grammar.contains("skill-name ::="));
+    }
+
+    #[test]
+    fn a_terminal_can_only_be_the_last_call_in_the_array() {
+        // The batch rules `validate_batch` decides from the shape alone are
+        // enforced during sampling: a grammar-constrained model cannot emit the
+        // `[..., reply, reply]` that used to fail the turn through a repair.
+        let grammar = grammar_with_skills(&["pdf"]);
+        assert_eq!(rule(&grammar, "terminal-call"), "reply-call | finish-call");
+        let step_call_rule = rule(&grammar, "step-call");
+        assert!(!step_call_rule.contains("reply-call"));
+        assert!(!step_call_rule.contains("finish-call"));
+        assert_eq!(
+            rule(&grammar, "tool-call-array"),
+            format!(
+                "\"[\" ws ( step-call ws \",\" ws ){{0,{}}} ( step-call | terminal-call ) ws \"]\"",
+                MAX_PARALLEL_TOOL_CALLS - 1
+            )
+        );
+        // The unpositioned form is gone: nothing may reach a call except
+        // through `step-call` or the single trailing `terminal-call`.
+        assert!(!grammar.contains("tool-call ::="));
+    }
+
+    #[test]
+    fn the_array_never_admits_more_calls_than_the_runtime_executes() {
+        // A grammar that allows a longer batch than `validate_batch` accepts
+        // turns a legal sample into a repair round-trip, or a dead turn.
+        let grammar = grammar_with_skills(&[]);
+        let array = rule(&grammar, "tool-call-array");
+        let repeats = array
+            .split_once("){0,")
+            .and_then(|(_, tail)| tail.split_once('}'))
+            .map(|(count, _)| count.parse::<usize>().expect("repetition bound"))
+            .expect("bounded repetition");
+        assert_eq!(repeats + 1, MAX_PARALLEL_TOOL_CALLS);
     }
 
     #[test]

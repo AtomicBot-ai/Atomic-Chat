@@ -36,6 +36,10 @@ const { appState, localApiState, modelProviderState, startServer, stopServer } =
           provider: 'mlx',
           models: [{ id: 'broken-model' }],
         },
+        {
+          provider: 'llamacpp-upstream',
+          models: [{ id: 'shared-model' }],
+        },
       ],
       selectModelProvider: vi.fn(),
     },
@@ -82,6 +86,7 @@ vi.mock('@/hooks/useThreads', () => ({
 
 vi.mock('@/utils/registerRemoteProvider', () => ({
   isKeylessRemoteProvider: vi.fn(() => false),
+  isSubscriptionProvider: vi.fn((name: string) => name === 'chatgpt'),
   registerRemoteProvider: vi.fn(),
 }))
 
@@ -131,6 +136,7 @@ describe('switchToModel', () => {
     const models = {
       getActiveModels: vi.fn().mockResolvedValue([]),
       stopAllModels: vi.fn().mockResolvedValue(undefined),
+      stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
       startModel: vi
         .fn()
         .mockRejectedValue(new Error('missing vision weights')),
@@ -155,6 +161,66 @@ describe('switchToModel', () => {
     expect(appState.setServerStatus).toHaveBeenLastCalledWith('running')
   })
 
+  it('keeps the target engine running and only unloads copies in other providers', async () => {
+    // The same GGUF is loaded in both llama.cpp engines (post-download
+    // auto-start landed in TurboQuant while the chat loaded upstream). A
+    // switch to upstream must drop the TurboQuant copy only — never the
+    // upstream server, which may be streaming an answer right now.
+    const models = {
+      getActiveModels: vi.fn(async (provider?: string) =>
+        provider === 'llamacpp' || provider === 'llamacpp-upstream'
+          ? ['shared-model']
+          : []
+      ),
+      stopAllModels: vi.fn().mockResolvedValue(undefined),
+      stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
+      startModel: vi.fn().mockResolvedValue(undefined),
+    }
+    const serviceHub = {
+      app: () => ({
+        getServerStatus: vi.fn().mockResolvedValue(true),
+      }),
+      models: () => models,
+    } as unknown as ServiceHub
+
+    await switchToModel({
+      modelId: 'shared-model',
+      providerName: 'llamacpp-upstream',
+      serviceHub,
+    })
+
+    expect(models.stopAllModelsExcept).toHaveBeenCalledWith(
+      'shared-model',
+      'llamacpp-upstream'
+    )
+    expect(models.stopAllModels).not.toHaveBeenCalled()
+    expect(appState.setActiveModels).toHaveBeenCalledWith(['shared-model'])
+  })
+
+  it('still stops every local engine when switching to a cloud model', async () => {
+    const models = {
+      getActiveModels: vi.fn().mockResolvedValue([]),
+      stopAllModels: vi.fn().mockResolvedValue(undefined),
+      stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
+      startModel: vi.fn().mockResolvedValue(undefined),
+    }
+    const serviceHub = {
+      app: () => ({
+        getServerStatus: vi.fn().mockResolvedValue(false),
+      }),
+      models: () => models,
+    } as unknown as ServiceHub
+
+    await switchToModel({
+      modelId: 'gpt-x',
+      providerName: 'openai',
+      serviceHub,
+    }).catch(() => {})
+
+    expect(models.stopAllModels).toHaveBeenCalledOnce()
+    expect(models.stopAllModelsExcept).not.toHaveBeenCalled()
+  })
+
   it('blocks the auto-start path while an explicit switch for the same target is in flight', async () => {
     let releaseStart = () => {}
     const startModel = vi.fn(
@@ -166,6 +232,7 @@ describe('switchToModel', () => {
     const models = {
       getActiveModels: vi.fn().mockResolvedValue(['ready-model']),
       stopAllModels: vi.fn().mockResolvedValue(undefined),
+      stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
       startModel,
     }
     const serviceHub = {
@@ -200,6 +267,7 @@ describe('switchToModel', () => {
     const models = {
       getActiveModels: vi.fn().mockResolvedValue(['ready-model']),
       stopAllModels: vi.fn().mockResolvedValue(undefined),
+      stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
       startModel: vi.fn().mockResolvedValue(undefined),
     }
     const serviceHub = {
@@ -225,6 +293,7 @@ describe('switchToModel', () => {
     const models = {
       getActiveModels: vi.fn().mockResolvedValue([]),
       stopAllModels: vi.fn().mockResolvedValue(undefined),
+      stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
       startModel: vi.fn().mockResolvedValue(undefined),
     }
     const serviceHub = {

@@ -401,10 +401,7 @@ pub fn _convert_headers(
     Ok(header_map)
 }
 
-async fn head_file_size(
-    client: &reqwest::Client,
-    url: &str,
-) -> Result<u64, DownloadRequestError> {
+async fn head_file_size(client: &reqwest::Client, url: &str) -> Result<u64, DownloadRequestError> {
     // ATO-233: 30-second per-request timeout so a slow or unresponsive CDN
     // endpoint (e.g. a 404 redirect chain) fails fast rather than hanging.
     let resp = client

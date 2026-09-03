@@ -4,6 +4,7 @@ use serde_json::Value;
 use tokio::sync::Mutex;
 
 use super::required_string;
+use crate::core::agent::mcp_tools::{McpBridge, MCP_TOOL_PREFIX};
 use crate::core::agent::prompt::{ToolDescriptor, ToolTier, ITERATION_ONE_TOOLS};
 use crate::core::agent::types::ToolOutcome;
 
@@ -16,10 +17,15 @@ pub struct LoadedTools {
 }
 
 impl LoadedTools {
-    pub fn restore(names: &[String]) -> Self {
+    pub fn restore(names: &[String], mcp: Option<&dyn McpBridge>) -> Self {
         let names = names
             .iter()
             .filter(|name| {
+                if name.starts_with(MCP_TOOL_PREFIX) {
+                    // Keep only MCP tools still resolvable this turn — the
+                    // server may have disconnected between turns.
+                    return mcp.is_some_and(|bridge| bridge.resolve(name).is_some());
+                }
                 descriptor_for(name).is_some_and(|descriptor| descriptor.tier == ToolTier::Rare)
             })
             .take(LOADED_TOOLS_CAP)
@@ -31,13 +37,31 @@ impl LoadedTools {
     }
 
     pub async fn view(&self, name: &str) -> ToolOutcome {
-        let Some(descriptor) = descriptor_for(name) else {
-            return ToolOutcome::error(format!("Unknown tool: {name}"));
+        self.view_with(name, None).await
+    }
+
+    pub async fn view_with(&self, name: &str, mcp: Option<&dyn McpBridge>) -> ToolOutcome {
+        let mcp_summary = if name.starts_with(MCP_TOOL_PREFIX) {
+            let Some(descriptor) = mcp.and_then(|bridge| bridge.resolve(name)) else {
+                return ToolOutcome::error(format!("Unknown tool: {name}"));
+            };
+            Some(format!(
+                "{} {}
+{}",
+                descriptor.agent_name, descriptor.input_schema, descriptor.description
+            ))
+        } else {
+            None
         };
-        if descriptor.tier == ToolTier::Frequent {
-            return ToolOutcome::ok(format!(
-                "Tool `{name}` already has its full schema in the stable tool catalog"
-            ));
+        if mcp_summary.is_none() {
+            let Some(descriptor) = descriptor_for(name) else {
+                return ToolOutcome::error(format!("Unknown tool: {name}"));
+            };
+            if descriptor.tier == ToolTier::Frequent {
+                return ToolOutcome::ok(format!(
+                    "Tool `{name}` already has its full schema in the stable tool catalog"
+                ));
+            }
         }
 
         let mut names = self.names.lock().await;
@@ -56,6 +80,10 @@ impl LoadedTools {
         } else {
             "loaded"
         };
+        if let Some(summary) = mcp_summary {
+            return ToolOutcome::ok(format!("{state}: {summary}"));
+        }
+        let descriptor = descriptor_for(name).expect("checked above");
         ToolOutcome::ok(format!(
             "{state}: {} {}\n{}",
             descriptor.name, descriptor.args_schema, descriptor.summary
@@ -67,9 +95,13 @@ impl LoadedTools {
     }
 }
 
-pub async fn execute(args: &Value, loaded_tools: &LoadedTools) -> Result<ToolOutcome, ToolOutcome> {
+pub async fn execute(
+    args: &Value,
+    loaded_tools: &LoadedTools,
+    mcp: Option<&dyn McpBridge>,
+) -> Result<ToolOutcome, ToolOutcome> {
     let name = required_string(args, "name").map_err(ToolOutcome::error)?;
-    Ok(loaded_tools.view(&name).await)
+    Ok(loaded_tools.view_with(&name, mcp).await)
 }
 
 pub fn descriptor_for(name: &str) -> Option<&'static ToolDescriptor> {
@@ -111,12 +143,15 @@ mod tests {
 
     #[tokio::test]
     async fn restores_only_rare_tools_in_lru_order() {
-        let loaded = LoadedTools::restore(&[
-            "os.fs.archive.list".into(),
-            "os.fs.read".into(),
-            "missing.tool".into(),
-            "os.fs.hash".into(),
-        ]);
+        let loaded = LoadedTools::restore(
+            &[
+                "os.fs.archive.list".into(),
+                "os.fs.read".into(),
+                "missing.tool".into(),
+                "os.fs.hash".into(),
+            ],
+            None,
+        );
 
         assert_eq!(
             loaded.snapshot().await,

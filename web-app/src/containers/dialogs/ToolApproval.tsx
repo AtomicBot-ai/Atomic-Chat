@@ -42,7 +42,10 @@ export default function ToolApproval() {
 
   return (
     <Dialog open={isModalOpen} onOpenChange={handleDialogOpen}>
-      <DialogContent showCloseButton={false}>
+      <DialogContent
+        className="sm:max-w-lg lg:max-w-lg xl:max-w-lg"
+        showCloseButton={false}
+      >
         <DialogHeader>
           <div className="flex items-start gap-3">
             <div className="shrink-0 text-muted-foreground">
@@ -90,11 +93,7 @@ export default function ToolApproval() {
             {t('tools:toolApproval.deny')}
           </Button>
           <div className="flex flex-col sm:flex-row gap-2 items-center">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleAllowOnce}
-            >
+            <Button variant="ghost" size="sm" onClick={handleAllowOnce}>
               {t('tools:toolApproval.allowOnce')}
             </Button>
             <Button

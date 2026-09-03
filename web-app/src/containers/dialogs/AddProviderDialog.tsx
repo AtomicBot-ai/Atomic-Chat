@@ -14,17 +14,33 @@ import { Input } from '@/components/ui/input'
 
 interface AddProviderDialogProps {
   onCreateProvider: (name: string) => void
-  children: React.ReactNode
+  /**
+   * Trigger element. Omit it when driving the dialog with `open` — the Cloud
+   * page opens this from a dropdown item, which cannot also be the trigger
+   * (the menu unmounts as it closes, taking the dialog with it).
+   */
+  children?: React.ReactNode
+  /** Controlled open state. When provided, the internal state is not used. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 export function AddProviderDialog({
   onCreateProvider,
   children,
+  open,
+  onOpenChange,
 }: AddProviderDialogProps) {
   const { t } = useTranslation()
   const [name, setName] = useState('')
-  const [isOpen, setIsOpen] = useState(false)
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
   const createButtonRef = useRef<HTMLButtonElement>(null)
+  const isControlled = open !== undefined
+  const isOpen = isControlled ? open : uncontrolledOpen
+  const setIsOpen = (next: boolean) => {
+    if (!isControlled) setUncontrolledOpen(next)
+    onOpenChange?.(next)
+  }
 
   const handleCreate = () => {
     if (name.trim()) {
@@ -57,9 +73,8 @@ export function AddProviderDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>{children}</DialogTrigger>
+      {children && <DialogTrigger asChild>{children}</DialogTrigger>}
       <DialogContent
-        className="sm:max-w-[425px] max-w-[90vw]"
         onOpenAutoFocus={(e) => {
           e.preventDefault()
           createButtonRef.current?.focus()

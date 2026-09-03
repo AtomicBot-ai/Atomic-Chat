@@ -2,6 +2,15 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 
+export type ShowApprovalModalOptions = {
+  /**
+   * Prompt even while the global "Allow all MCP permissions" switch is on.
+   * Used when the thread's approval mode was explicitly set to manual — the
+   * composer select outranks the global switch there.
+   */
+  bypassGlobalAutoApprove?: boolean
+}
+
 export type ToolApprovalModalProps = {
   toolName: string
   threadId: string
@@ -22,7 +31,12 @@ type ToolApprovalState = {
   // Actions
   approveToolForThread: (threadId: string, toolName: string) => void
   isToolApproved: (threadId: string, toolName: string) => boolean
-  showApprovalModal: (toolName: string, threadId: string, toolParameters?: object) => Promise<boolean>
+  showApprovalModal: (
+    toolName: string,
+    threadId: string,
+    toolParameters?: object,
+    options?: ShowApprovalModalOptions
+  ) => Promise<boolean>
   closeModal: () => void
   setModalOpen: (open: boolean) => void
   setAllowAllMCPPermissions: (allow: boolean) => void
@@ -53,12 +67,20 @@ export const useToolApproval = create<ToolApprovalState>()(
         return state.approvedTools[threadId]?.includes(toolName) || false
       },
 
-      showApprovalModal: (toolName: string, threadId: string, toolParameters?: object) => {
+      showApprovalModal: (
+        toolName: string,
+        threadId: string,
+        toolParameters?: object,
+        options?: ShowApprovalModalOptions
+      ) => {
         return new Promise<boolean>((resolve) => {
           const state = get()
 
           // Auto-approve if the user has enabled auto-approval setting
-          if (state.allowAllMCPPermissions) {
+          if (
+            state.allowAllMCPPermissions &&
+            !options?.bypassGlobalAutoApprove
+          ) {
             resolve(true)
             return
           }

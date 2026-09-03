@@ -9,7 +9,10 @@ import {
   getModelCapabilities,
   ggufShardGroupKey,
   groupGgufShards,
+  isMtpCompanionFile,
+  isNonWeightGgufFile,
   mergeShardedQuants,
+  stripNonWeightQuants,
 } from '../models'
 import { ModelCapabilities } from '@/types/models'
 import type { CatalogModel } from '@/services/models/types'
@@ -41,12 +44,16 @@ vi.mock('token.js', () => ({
 describe('ggufShardGroupKey', () => {
   it('strips the shard suffix a split quant carries', () => {
     expect(
-      ggufShardGroupKey('UD-IQ4_XS/DeepSeek-V4-Flash-UD-IQ4_XS-00002-of-00004.gguf')
+      ggufShardGroupKey(
+        'UD-IQ4_XS/DeepSeek-V4-Flash-UD-IQ4_XS-00002-of-00004.gguf'
+      )
     ).toBe('UD-IQ4_XS/DeepSeek-V4-Flash-UD-IQ4_XS.gguf')
   })
 
   it('leaves a single-file quant alone', () => {
-    expect(ggufShardGroupKey('Bonsai-27B-Q1_0.gguf')).toBe('Bonsai-27B-Q1_0.gguf')
+    expect(ggufShardGroupKey('Bonsai-27B-Q1_0.gguf')).toBe(
+      'Bonsai-27B-Q1_0.gguf'
+    )
   })
 
   it('keeps a part count that is not a shard suffix', () => {
@@ -163,6 +170,113 @@ describe('mergeShardedQuants', () => {
     const empty = { num_quants: 0, quants: [] } as unknown as CatalogModel
 
     expect(mergeShardedQuants(empty)).toBe(empty)
+  })
+})
+
+describe('isNonWeightGgufFile', () => {
+  // Every name below is a real file from the published catalog.
+  it.each([
+    'imatrix_unsloth.gguf',
+    'imatrix-coding.gguf',
+    'imatrix-Qwen3.5-397B-A17B-BF16-mainline.gguf',
+    'qwen_qwen3.5-4b-imatrix.gguf',
+    'Ling-3.0-flash.imatrix.gguf',
+    'dflash-kquant.gguf',
+    'dflash-gemma-4-26b-a4b-it-q8_0.gguf',
+    'eagle3-gpt-oss-20b-q8_0.gguf',
+    'ggml-vocab-gemma-3.gguf',
+    'tokenizer-LFM2.5-Audio-1.5B-Q8_0.gguf',
+    'vocoder-LFM2.5-Audio-1.5B-f16.gguf',
+    'audiodecoder-LFM2-Audio-1.5B-q8_0.gguf',
+  ])('drops %s', (file) => {
+    expect(isNonWeightGgufFile(file)).toBe(true)
+  })
+
+  it.each([
+    'Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf',
+    // "imatrix" mid-name is part of the model's own name, and `-imat` marks a
+    // quant produced *with* an importance matrix — both are real weights.
+    'Qwen3.5-9B-The-Defiant-Fable-NEO-IMATRIX-MAX-MTP.Q4_K_M.gguf',
+    'mistral-7b-v0.2-iq3_s-imat.gguf',
+    'Qwen3.5-9B-DFlash.Q8_0.gguf',
+    'wavtokenizer-large-75-f16.gguf',
+    'UD-IQ1_M/Kimi-K3-UD-IQ1_M-00001-of-00003.gguf',
+  ])('keeps %s', (file) => {
+    expect(isNonWeightGgufFile(file)).toBe(false)
+  })
+})
+
+describe('isMtpCompanionFile', () => {
+  it('drops a dedicated MTP head', () => {
+    expect(isMtpCompanionFile('mtp/mtp-gemma-4-12B-it-Q8_0.gguf')).toBe(true)
+    expect(isMtpCompanionFile('mtp-Qwen3.8-27B-Q4_0.gguf')).toBe(true)
+  })
+
+  it('keeps weights that carry the MTP layers', () => {
+    // 21.6 GB of weights, not a head — a bare trailing-token rule hid the
+    // whole AtomicChat/Qwen3.6-27B-UDT-MTP-GGUF repo from the Hub.
+    expect(isMtpCompanionFile('Qwen3.6-27B-UDT-Q6_K_MTP.gguf')).toBe(false)
+    expect(isMtpCompanionFile('Qwen3.6-35B-A3B-UDT-Q8_K_XL_MTP.gguf')).toBe(
+      false
+    )
+  })
+})
+
+describe('stripNonWeightQuants', () => {
+  // Shape taken from the published catalog entry for unsloth/Qwen3.8-27B-GGUF.
+  const entry = () =>
+    ({
+      num_quants: 3,
+      quants: [
+        {
+          model_id: 'unsloth/Qwen3.8-27B-UD-Q4_K_XL',
+          path: 'https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-UD-Q4_K_XL.gguf',
+          file_size: '16.5 GB',
+        },
+        {
+          model_id: 'unsloth/imatrix_unsloth',
+          path: 'https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/imatrix_unsloth.gguf',
+          file_size: '13.0 MB',
+        },
+        {
+          model_id: 'unsloth/mtp/mtp-Qwen3.8-27B-Q4_0',
+          path: 'https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/mtp/mtp-Qwen3.8-27B-Q4_0.gguf',
+          file_size: '311.0 MB',
+        },
+      ],
+    }) as CatalogModel
+
+  it('leaves only the runnable weights, and recounts', () => {
+    const stripped = stripNonWeightQuants(entry())
+
+    expect(stripped.quants.map((quant) => quant.model_id)).toEqual([
+      'unsloth/Qwen3.8-27B-UD-Q4_K_XL',
+    ])
+    expect(stripped.num_quants).toBe(1)
+  })
+
+  it('returns a clean entry untouched', () => {
+    const clean = {
+      num_quants: 1,
+      quants: [
+        {
+          model_id: 'unsloth/Qwen3.8-27B-UD-Q4_K_XL',
+          path: 'https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-UD-Q4_K_XL.gguf',
+          file_size: '16.5 GB',
+        },
+      ],
+    } as CatalogModel
+
+    expect(stripNonWeightQuants(clean)).toBe(clean)
+  })
+
+  it('falls back to the quant id when the path is absent', () => {
+    const noPath = {
+      num_quants: 1,
+      quants: [{ model_id: 'unsloth/imatrix_unsloth', file_size: '13.0 MB' }],
+    } as unknown as CatalogModel
+
+    expect(stripNonWeightQuants(noPath).quants).toEqual([])
   })
 })
 

@@ -12,32 +12,42 @@ import {
   type ImperativePanelGroupHandle,
 } from 'react-resizable-panels'
 import { AnimatePresence, motion } from 'motion/react'
-import { PanelRight } from 'lucide-react'
+import { PanelRight, SlidersHorizontal } from 'lucide-react'
 import { AgentWorkspaceFiles } from './AgentWorkspaceFiles'
 import { AgentWorkspacePreview } from './AgentWorkspacePreview'
 import { ArtifactPanel } from './ArtifactPanel'
+import { RunSettingsPanel } from './RunSettingsPanel'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useDesktopScreen } from '@/hooks/useMediaQuery'
-import { listAgentWorkspace } from '@/services/agent/tauri'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useWorkspacePreviewStore } from '@/stores/workspace-preview-store'
-import type { AgentWorkspace, AgentWorkspaceRoot } from '@/hooks/useAgentMode'
+import { useHeaderOverlay } from '@/stores/header-overlay-store'
+import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
+import type { AgentWorkspace } from '@/hooks/useAgentMode'
 
 type AgentWorkspaceLayoutProps = {
   children: ReactNode
   threadId: string
-  agentModeActive: boolean
   workspace: AgentWorkspace
   onAddExternal: () => void
   refreshKey: number
   isGenerating?: boolean
+  /**
+   * Whether the files sidebar (and its corner toggle) may be offered at all.
+   * The home composer has no thread, hence no workspace to browse, and shows
+   * only the run settings in its right column. Even where allowed, the files
+   * sidebar only appears while agent mode is on — a plain chat has no agent
+   * workspace to look at.
+   */
+  filesEnabled?: boolean
 }
 
-function shouldUseAgentWorkspaceLayout(
-  agentModeActive: boolean,
-  isDesktop: boolean
-): boolean {
-  return agentModeActive && isDesktop
+// The 3-panel workspace layout is now universal — every thread runs on the
+// agent engine; only small screens fall back to a plain main.
+function shouldUseAgentWorkspaceLayout(isDesktop: boolean): boolean {
+  return isDesktop
 }
 
 function ResizeHandle({ hidden = false }: { hidden?: boolean }) {
@@ -47,6 +57,9 @@ function ResizeHandle({ hidden = false }: { hidden?: boolean }) {
     />
   )
 }
+
+const CORNER_BUTTON_CLASS =
+  'flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none ring-ring transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2'
 
 const RIGHT_PANEL_TRANSITION = {
   duration: 0.2,
@@ -70,25 +83,31 @@ function cssLengthToPixels(value: string): number | undefined {
 export function AgentWorkspaceLayout({
   children,
   threadId,
-  agentModeActive,
   workspace,
   onAddExternal,
   refreshKey,
   isGenerating = false,
+  filesEnabled = true,
 }: AgentWorkspaceLayoutProps) {
+  const { t } = useTranslation()
   const isDesktop = useDesktopScreen()
   const tabs = useWorkspacePreviewStore((state) => state.tabs)
   const artifactOpen = useArtifactStore((state) => state.isOpen)
   const artifactTitle = useArtifactStore((state) => state.title)
   const [filesOpen, setFilesOpen] = useState(false)
+  const agentModeEnabled = useGeneralSetting((state) => state.agentModeEnabled)
+  const filesAvailable = filesEnabled && agentModeEnabled
+  const settingsOpen = useRunSettingsPanel((state) => state.isOpen)
+  const openSettings = useRunSettingsPanel((state) => state.open)
+  const closeSettings = useRunSettingsPanel((state) => state.close)
   const panelGroupRef = useRef<ImperativePanelGroupHandle>(null)
   const workspaceRef = useRef<HTMLElement>(null)
   const sidebarWidth = useRef(useLeftPanel.getState().width)
   const workspaceKeyRef = useRef<string | undefined>(undefined)
-  const previousWorkspaceHasEntriesRef = useRef<boolean | undefined>(undefined)
+  const externalRootCountRef = useRef(0)
 
   useEffect(() => {
-    if (!agentModeActive || !isDesktop) {
+    if (!isDesktop) {
       useWorkspacePreviewStore.getState().removeArtifact()
       return
     }
@@ -97,67 +116,37 @@ export function AgentWorkspaceLayout({
     } else {
       useWorkspacePreviewStore.getState().removeArtifact()
     }
-  }, [agentModeActive, artifactOpen, artifactTitle, isDesktop])
+  }, [artifactOpen, artifactTitle, isDesktop])
 
   useEffect(() => {
     useWorkspacePreviewStore.getState().reset()
     useArtifactStore.getState().close()
   }, [threadId, workspace.primaryRoot?.rootId])
 
+  // The files sidebar stays closed until it is asked for: a chat opens at full
+  // width and keeps it, even once the agent has written files into the
+  // workspace. Switching threads (or swapping the primary root) drops it back
+  // to closed. Attaching an external folder is the exception — that is an
+  // explicit "here is my code" gesture, so the panel opens on the folder that
+  // was just added, wherever it was added from (the composer's "+" menu, an
+  // approval prompt, or the panel's own "+").
   useEffect(() => {
-    if (!agentModeActive || !isDesktop) return
-
-    const roots = [workspace.primaryRoot, ...workspace.externalRoots].filter(
-      (root): root is AgentWorkspaceRoot => Boolean(root)
-    )
-    const workspaceKey = `${threadId}\0${roots.map((root) => root.rootId).join('\0')}`
+    const workspaceKey = `${threadId}\0${workspace.primaryRoot?.rootId ?? ''}`
+    const externalCount = workspace.externalRoots.length
     if (workspaceKeyRef.current !== workspaceKey) {
       workspaceKeyRef.current = workspaceKey
-      previousWorkspaceHasEntriesRef.current = undefined
+      externalRootCountRef.current = externalCount
       setFilesOpen(false)
+      return
     }
-
-    let cancelled = false
-    void Promise.all(
-      roots.map((root) =>
-        listAgentWorkspace({
-          rootId: root.rootId,
-          rootPath: root.path,
-        }).catch(() => [])
-      )
-    ).then(
-      (rootEntries) => {
-        if (cancelled) return
-        const hasEntries =
-          workspace.externalRoots.length > 0 ||
-          rootEntries.some((entries) => entries.length > 0)
-        const previouslyHadEntries = previousWorkspaceHasEntriesRef.current
-
-        if (!hasEntries) {
-          setFilesOpen(false)
-        } else if (previouslyHadEntries !== true) {
-          setFilesOpen(true)
-        }
-        previousWorkspaceHasEntriesRef.current = hasEntries
-      },
-      () => {
-        if (cancelled || previousWorkspaceHasEntriesRef.current !== undefined)
-          return
-        setFilesOpen(false)
-      }
-    )
-
-    return () => {
-      cancelled = true
+    if (externalCount > externalRootCountRef.current) {
+      externalRootCountRef.current = externalCount
+      closeSettings()
+      setFilesOpen(true)
+      return
     }
-  }, [
-    agentModeActive,
-    isDesktop,
-    refreshKey,
-    threadId,
-    workspace.externalRoots,
-    workspace.primaryRoot,
-  ])
+    externalRootCountRef.current = externalCount
+  }, [threadId, workspace.externalRoots, workspace.primaryRoot, closeSettings])
 
   useEffect(
     () => () => {
@@ -168,13 +157,52 @@ export function AgentWorkspaceLayout({
   )
 
   const hasPreview = tabs.length > 0
-  const filesVisible = filesOpen
+  // Files and run settings share one right column: opening one closes the
+  // other. Files win the slot while open (a thread switch, or turning agent
+  // mode off, drops them, which then reveals run settings again if those were
+  // left open).
+  const filesVisible = filesAvailable && filesOpen
+  const rightPanel: 'files' | 'settings' | null = filesVisible
+    ? 'files'
+    : settingsOpen
+      ? 'settings'
+      : null
+  const showFiles = () => {
+    closeSettings()
+    setFilesOpen(true)
+  }
+  const showSettings = () => {
+    setFilesOpen(false)
+    openSettings()
+  }
+
+  // The corner buttons below float against the window's right edge instead of
+  // living in the header, so the header's own right-aligned controls have to be
+  // told when they land on top of it. That is only while the chat column runs
+  // the full width — with a preview panel open the buttons hang over that
+  // panel, not over the header.
+  const cornerButtonsOverHeader =
+    shouldUseAgentWorkspaceLayout(isDesktop) &&
+    rightPanel === null &&
+    !hasPreview
+  const cornerButtonCount = cornerButtonsOverHeader
+    ? filesAvailable
+      ? 2
+      : 1
+    : 0
+  const setRightOverlayButtons = useHeaderOverlay(
+    (state) => state.setRightOverlayButtons
+  )
+  useEffect(() => {
+    setRightOverlayButtons(cornerButtonCount)
+    return () => setRightOverlayButtons(0)
+  }, [cornerButtonCount, setRightOverlayButtons])
   const initialPreviewSize = hasPreview ? 24 : 0
-  const initialFilesSize = filesVisible ? 24 : 0
-  const initialChatSize = 100 - initialPreviewSize - initialFilesSize
+  const initialSidebarSize = rightPanel ? 24 : 0
+  const initialChatSize = 100 - initialPreviewSize - initialSidebarSize
 
   useLayoutEffect(() => {
-    if (!agentModeActive || !isDesktop) return
+    if (!isDesktop) return
 
     const previewSize = hasPreview ? 24 : 0
     const workspaceWidth = workspaceRef.current?.getBoundingClientRect().width
@@ -183,26 +211,22 @@ export function AgentWorkspaceLayout({
       workspaceWidth && sidebarWidthPx
         ? (sidebarWidthPx / workspaceWidth) * 100
         : 24
-    const filesSize = filesVisible
-      ? Math.min(40, Math.max(8, matchingSidebarSize))
-      : 0
+    // Files follow the left sidebar's width; run settings need room for
+    // their sliders, so they never go below a fifth of the workspace.
+    const sidebarSize =
+      rightPanel === 'files'
+        ? Math.min(40, Math.max(8, matchingSidebarSize))
+        : rightPanel === 'settings'
+          ? Math.min(40, Math.max(20, matchingSidebarSize))
+          : 0
     panelGroupRef.current?.setLayout([
-      100 - previewSize - filesSize,
+      100 - previewSize - sidebarSize,
       previewSize,
-      filesSize,
+      sidebarSize,
     ])
-  }, [agentModeActive, filesVisible, hasPreview, isDesktop])
+  }, [rightPanel, hasPreview, isDesktop])
 
-  if (!agentModeActive) {
-    return (
-      <main className="flex h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))] w-full min-w-0 overflow-hidden">
-        {children}
-        <ArtifactPanel />
-      </main>
-    )
-  }
-
-  if (!shouldUseAgentWorkspaceLayout(agentModeActive, isDesktop)) {
+  if (!shouldUseAgentWorkspaceLayout(isDesktop)) {
     return (
       <main className="flex h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))] w-full min-w-0 overflow-hidden">
         {children}
@@ -216,16 +240,32 @@ export function AgentWorkspaceLayout({
       ref={workspaceRef}
       className="relative flex h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))] w-full min-w-0 overflow-hidden"
     >
-      {!filesVisible && (
-        <button
-          type="button"
-          className="absolute top-[17px] right-3 z-30 flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none ring-ring transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2"
-          aria-label="Open files sidebar"
-          title="Open files sidebar"
-          onClick={() => setFilesOpen(true)}
-        >
-          <PanelRight className="size-4" />
-        </button>
+      {rightPanel === null && (
+        // top-3.5 centres these 32px buttons on the h-15 (60px) page header,
+        // so they line up with the header's own controls — the context gauge
+        // sits right beside them.
+        <div className="absolute top-3.5 right-3 z-30 flex items-center gap-2">
+          <button
+            type="button"
+            className={CORNER_BUTTON_CLASS}
+            aria-label={t('chat:runSettings.open')}
+            title={t('chat:runSettings.open')}
+            onClick={showSettings}
+          >
+            <SlidersHorizontal className="size-4" />
+          </button>
+          {filesAvailable && (
+            <button
+              type="button"
+              className={CORNER_BUTTON_CLASS}
+              aria-label="Open files sidebar"
+              title="Open files sidebar"
+              onClick={showFiles}
+            >
+              <PanelRight className="size-4" />
+            </button>
+          )}
+        </div>
       )}
       <PanelGroup
         ref={panelGroupRef}
@@ -266,11 +306,11 @@ export function AgentWorkspaceLayout({
             )}
           </AnimatePresence>
         </Panel>
-        <ResizeHandle hidden={!filesVisible} />
+        <ResizeHandle hidden={rightPanel === null} />
         <Panel
-          id="agent-files"
+          id="agent-sidebar"
           order={3}
-          defaultSize={initialFilesSize}
+          defaultSize={initialSidebarSize}
           minSize={8}
           maxSize={40}
           collapsedSize={0}
@@ -278,7 +318,7 @@ export function AgentWorkspaceLayout({
           className="overflow-hidden transition-[flex-grow] duration-200 ease-linear"
         >
           <AnimatePresence initial={false}>
-            {filesVisible && (
+            {rightPanel === 'files' && (
               <motion.div
                 key="agent-files"
                 className="h-full"
@@ -295,6 +335,18 @@ export function AgentWorkspaceLayout({
                   onClose={() => setFilesOpen(false)}
                   onAddExternal={onAddExternal}
                 />
+              </motion.div>
+            )}
+            {rightPanel === 'settings' && (
+              <motion.div
+                key="run-settings"
+                className="h-full"
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={RIGHT_PANEL_TRANSITION}
+              >
+                <RunSettingsPanel onClose={closeSettings} />
               </motion.div>
             )}
           </AnimatePresence>

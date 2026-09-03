@@ -38,7 +38,6 @@ export function FactoryResetDialog({
     <Dialog>
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent
-        className="sm:max-w-[425px] max-w-[90vw]"
         onOpenAutoFocus={(e) => {
           e.preventDefault()
           resetButtonRef.current?.focus()

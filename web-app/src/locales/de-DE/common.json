@@ -1,7 +1,11 @@
 {
+  "api": "API",
+  "cloud": "Cloud",
   "assistants": "Assistenten",
   "hardware": "Hardware",
   "mcp-servers": "Mcp Server",
+  "connectors": "Konnektoren",
+  "plugins": "Plugins",
   "local_api_server": "Lokaler API Server",
   "https_proxy": "HTTPS Proxy",
   "extensions": "Erweiterungen",
@@ -381,5 +385,11 @@
       "title": "Download abgeschlossen",
       "description": "Modell \"{{item}}\" erfolgreich heruntergeladen und verifiziert"
     }
+  },
+  "skills": "Skills",
+  "pluginsMenu": {
+    "title": "Plugins",
+    "emptySkills": "Noch keine Skills",
+    "manageSkills": "Skills verwalten"
   }
 }

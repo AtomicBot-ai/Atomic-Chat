@@ -1,4 +1,5 @@
 import { BaseExtension } from '../../extension'
+import { ReasoningControls } from '../../models/reasoning'
 import { EngineManager } from './EngineManager'
 
 /* AIEngine class types */
@@ -327,4 +328,14 @@ export abstract class AIEngine extends BaseExtension {
    * @param modelId
    */
   abstract isToolSupported(modelId: string): Promise<boolean>
+
+  /**
+   * Report which reasoning controls the model accepts, so the UI can offer an
+   * effort level only where the model actually understands one. Engines that
+   * cannot inspect a chat template keep the default.
+   * @param modelId
+   */
+  async getReasoningControls(_modelId: string): Promise<ReasoningControls> {
+    return { supportsThinking: false }
+  }
 }

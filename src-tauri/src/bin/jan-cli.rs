@@ -1102,13 +1102,34 @@ fn kill_process(pid: i32) {
 }
 
 /// Check if a command is available in PATH.
-fn is_command_installed(cmd: &str) -> bool {
+/// Whether `cmd` resolves on this process's PATH.
+fn is_on_path(cmd: &str) -> bool {
     let which = if cfg!(windows) { "where" } else { "which" };
     std::process::Command::new(which)
         .arg(cmd)
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+/// Whether an agent's launcher exists at all: on PATH, or in one of the prefix
+/// locations an installer can use without touching PATH (see
+/// [`integrations::off_path_candidates`] — OpenClaw's app-installed CLI is
+/// always one of those).
+fn is_command_installed(cmd: &str) -> bool {
+    is_on_path(cmd) || integrations::resolve_off_path(cmd).is_some()
+}
+
+/// The program to execute for an agent: the bare name when PATH resolves it
+/// (keeps the printed command readable), otherwise the absolute path to a
+/// prefix install.
+fn agent_program(bin: &str) -> std::ffi::OsString {
+    if is_on_path(bin) {
+        return bin.into();
+    }
+    integrations::resolve_off_path(bin)
+        .map(std::ffi::OsString::from)
+        .unwrap_or_else(|| bin.into())
 }
 
 // ── Launch handler ─────────────────────────────────────────────────────────
@@ -1128,6 +1149,22 @@ async fn handle_launch(args: LaunchArgs) {
         }),
         None => select_agent_interactively().await,
     };
+
+    // `launch` serves the model with llama-server directly, not through the
+    // desktop app's Local API Server. Muse Code fetches `/muse-code/models`
+    // before its first turn and exits when that 404s, so llama-server alone can
+    // never satisfy it -- say so here instead of loading a model and handing the
+    // user Muse's own opaque "failed to fetch model catalog".
+    if agent.id == "muse" {
+        eprintln!("Error: {} cannot be launched from the CLI.", agent.name);
+        eprintln!();
+        eprintln!("  Muse Code needs the desktop app's Local API Server, which serves the");
+        eprintln!("  `/muse-code/models` catalogue Muse requires at startup. `launch` runs a");
+        eprintln!("  bare llama-server, which does not.");
+        eprintln!();
+        eprintln!("  Start the server in Atomic Chat, then use Integrations \u{2192} Muse Code.");
+        std::process::exit(1);
+    }
 
     if !is_command_installed(agent.detect_bin) {
         eprintln!("Error: {} is not installed.", agent.name);
@@ -1195,7 +1232,7 @@ async fn handle_launch(args: LaunchArgs) {
     if agent.run_mode == RunMode::Gui {
         // A GUI launcher returns immediately, so exiting here would take the
         // model server down with it. Keep serving until the user stops us.
-        let mut cmd = std::process::Command::new(agent.detect_bin);
+        let mut cmd = std::process::Command::new(agent_program(agent.detect_bin));
         cmd.args(&argv)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
@@ -1214,10 +1251,15 @@ async fn handle_launch(args: LaunchArgs) {
         return;
     }
 
-    eprintln!("  → Launching: {} {}", agent.detect_bin, argv.join(" "));
+    let program = agent_program(agent.detect_bin);
+    eprintln!(
+        "  → Launching: {} {}",
+        program.to_string_lossy(),
+        argv.join(" ")
+    );
     eprintln!();
 
-    let mut cmd = std::process::Command::new(agent.detect_bin);
+    let mut cmd = std::process::Command::new(&program);
     cmd.args(&argv);
     apply_agent_env(&mut cmd, agent, &api_url, &model_id, &args.api_key);
     let status = cmd.status();

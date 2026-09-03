@@ -63,6 +63,7 @@ import {
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createXai } from '@ai-sdk/xai'
 import { invoke, Channel } from '@tauri-apps/api/core'
+import { isContextLimitError } from '@/utils/error'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
@@ -329,7 +330,7 @@ function createAudioInjectingFetch(
  * stream_local_http Tauri command + IPC Channel to relay response bytes
  * directly to a standard ReadableStream that the AI SDK can consume.
  */
-function createLocalStreamingFetch(
+export function createLocalStreamingFetch(
   fallbackFetch: typeof httpFetch,
   parameters: Record<string, unknown>
 ): typeof httpFetch {
@@ -477,13 +478,21 @@ function createLocalStreamingFetch(
     const currentError = error as string | null
     if (currentError && chunks.length === 0) {
       const m = currentError.match(/^HTTP (\d+):\s*([\s\S]*)$/)
-      return new Response(
-        m ? m[2] : JSON.stringify({ error: { message: currentError } }),
-        {
-          status: m ? parseInt(m[1]) : 502,
-          headers: { 'Content-Type': 'application/json' },
-        }
-      )
+      const body = m
+        ? m[2]
+        : JSON.stringify({ error: { message: currentError } })
+      let status = m ? parseInt(m[1]) : 502
+      // llama-server reports a prompt that does not fit the context window
+      // as HTTP 500. The AI SDK retries 5xx (3 attempts with backoff), which
+      // only hammers the same over-full prompt into the same window before
+      // the UI's context-growth path gets to see the error. Surface it as a
+      // client error so it is not retried; the message body is unchanged, so
+      // `isContextLimitError` still classifies it.
+      if (status >= 500 && isContextLimitError(body)) status = 400
+      return new Response(body, {
+        status,
+        headers: { 'Content-Type': 'application/json' },
+      })
     }
 
     const enc = new TextEncoder()
@@ -706,6 +715,57 @@ export class ModelFactory {
     ModelFactory.fmAvailabilityCache = null
   }
 
+  /**
+   * Exact prompt size for a llama.cpp session: render the request through
+   * the model's chat template (`/apply-template`, INCLUDING the tool
+   * schemas — the part a chars/token guess gets most wrong) and tokenize the
+   * result. Returns `null` on any failure so callers fall back to a
+   * heuristic; both calls are bounded by `timeoutSecs`.
+   */
+  static async countLocalPromptTokens(
+    engineName: 'llamacpp' | 'llamacpp-upstream',
+    modelId: string,
+    provider: ProviderObject | undefined,
+    body: {
+      messages: unknown[]
+      tools?: unknown[]
+      chat_template_kwargs?: Record<string, unknown>
+    },
+    timeoutSecs = 3
+  ): Promise<number | null> {
+    try {
+      const sessionInfo = await ModelFactory.resolveLocalSession(
+        engineName,
+        modelId,
+        provider
+      )
+      const baseUrl = `http://localhost:${sessionInfo.port}`
+      const headers = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${sessionInfo.api_key}`,
+      }
+      const applied = await invoke<string>('post_local_http', {
+        url: `${baseUrl}/apply-template`,
+        headers,
+        body: JSON.stringify(body),
+        timeoutSecs,
+      })
+      const prompt = (JSON.parse(applied) as { prompt?: unknown }).prompt
+      if (typeof prompt !== 'string') return null
+      const tokenized = await invoke<string>('post_local_http', {
+        url: `${baseUrl}/tokenize`,
+        headers,
+        body: JSON.stringify({ content: prompt }),
+        timeoutSecs,
+      })
+      const tokens = (JSON.parse(tokenized) as { tokens?: unknown }).tokens
+      return Array.isArray(tokens) ? tokens.length : null
+    } catch (error) {
+      console.debug('[ModelFactory] countLocalPromptTokens failed:', error)
+      return null
+    }
+  }
+
   static async getFoundationModelsAvailability(): Promise<string> {
     const now = Date.now()
     if (
@@ -782,10 +842,17 @@ export class ModelFactory {
       case 'perplexity':
       case 'moonshot':
       case 'minimax':
+      case 'meta':
       case 'openrouter':
       case 'huggingface':
       case 'nvidia':
       case 'ollama':
+      // `chatgpt` is the subscription. It speaks Responses upstream, but the
+      // local proxy translates that, so what reaches this client is ordinary
+      // Chat Completions — and the openai-compatible client also brings the
+      // `<think>` reasoning middleware that `createOpenAIModel` does not.
+      // eslint-disable-next-line no-fallthrough
+      case 'chatgpt':
         return this.createOpenAICompatibleModel(modelId, provider, override)
 
       case 'xai':

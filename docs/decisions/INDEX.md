@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-216 records, 2026-05-19 → 2026-08-25.
+231 records, 2026-05-19 → 2026-09-02.
 
 ---
 
@@ -33,8 +33,9 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Launch page & external coding agents (17)
+## Launch page & external coding agents (18)
 
+- **2026-09-01** — [Track OpenClaw 2026.8: detect the app-installed CLI, widen an existing `modelPolicy.allow`, and gate the npm/Node prerequisites](2026-09-01-track-openclaw-2026-8-detect-the-app-installed-cli-widen.md)
 - **2026-08-25** — [Add Atomic Agent as a one-click Launch-page assistant, configured by merging an `openai-compatible` provider into `~/.atomic-agent/config.json`](2026-08-25-add-atomic-agent-as-a-one-click-launch-page-assistant.md)
 - **2026-08-20** — [Narrow `atomic-chat-cli` to models / serve / launch / server status](2026-08-20-narrow-atomic-chat-cli-to-models-serve-launch-and-server-status.md)
 - **2026-08-18** — [Add DeepSeek Harness (`dsh`) as a one-click Launch-page coding agent, configured by merging a hand-declared `llm-pi-ai` route into `$DSH_HOME/settings.yaml`](2026-08-18-add-deepseek-harness-as-a-launch-page-coding-agent.md)
@@ -53,8 +54,12 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Add a `/v1/responses` translation shim to the local proxy so Codex CLI works on llama.cpp models](2026-06-02-add-a-v1-responses-translation-shim-to-the-local-proxy-so-codex.md)
 - **2026-06-01** — [Add a "Launch" page to install + configure external coding agents / assistants against the local OpenAI-compatible API](2026-06-01-add-a-launch-page-to-install-configure-external-coding-agents.md)
 
-## Agent mode — autonomous loop, tools, skills, workspace (40)
+## Agent mode — autonomous loop, tools, skills, workspace (44)
 
+- **2026-08-27** — [Give the agent native RAG tools over the existing vector collections](2026-08-27-native-agent-rag-tools.md)
+- **2026-08-27** — [Unify chat and agent on the agent engine](2026-08-27-unify-chat-and-agent-on-the-agent-engine.md)
+- **2026-08-18** — [Let Agent turns think, and apply the same thinking level chat uses](2026-08-18-let-agent-turns-think-and-apply-the-thinking-level.md)
+- **2026-08-18** — [Extend Agent mode to MLX and cloud tool providers](2026-08-18-extend-agent-mode-to-mlx-and-cloud-tool-providers.md)
 - **2026-07-31** — [Raise the Agent tool-step completion deadline to 600 seconds](2026-07-31-raise-agent-tool-step-completion-deadline-to-600-seconds.md)
 - **2026-07-27** — [Run Windows GAIA evaluation on the selected upstream GPU backend](2026-07-27-run-windows-gaia-evaluation-on-the-selected-upstream-gpu-backend.md)
 - **2026-07-27** — [Keep the GAIA evaluator out of desktop bundles](2026-07-27-keep-the-gaia-evaluator-out-of-desktop-bundles.md)
@@ -243,12 +248,21 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (23)
+## UI / UX (29)
 
+- **2026-09-02** — [Switch single MCP tools per connector from a tools dialog; a connector's per-chat on/off lives there too](2026-09-02-switch-single-mcp-tools-per-connector-from-a-tools-dialog.md)
+- **2026-09-02** — [Measure and surface MCP tool cost in chat; never trim or hide schemas](2026-09-02-measure-and-surface-mcp-tool-cost-in-chat.md)
+- **2026-08-27** — [Connect a ChatGPT subscription as a model provider](2026-08-27-connect-a-chatgpt-subscription-as-a-model-provider.md)
+- **2026-08-27** — [Move cloud providers out of Settings into a Cloud page](2026-08-27-move-cloud-providers-into-a-cloud-page.md)
+- **2026-08-24** — [GAIA L1: media tools, PDF-from-URL, and web recovery fallbacks](2026-08-24-gaia-l1-media-tools-and-web-recovery.md)
+- **2026-08-24** — [GAIA L1: answer contract, reformulator, and harness sampling](2026-08-24-gaia-l1-answer-contract-and-harness.md)
+- **2026-08-24** — [Spill oversized observations to the workspace instead of compressing them](2026-08-24-spill-oversized-observations-instead-of-compressing-them.md)
+- **2026-08-24** — [Dictate into the composer with a local Voxtral model on `llamacpp-upstream`](2026-08-24-dictate-into-the-composer-with-a-local-voxtral-model.md)
 - **2026-08-21** — [Never list TurboQuant next to upstream llama.cpp](2026-08-21-never-list-turboquant-next-to-upstream-llama-cpp.md)
 - **2026-08-21** — [Keep attachments when a message is edited in a chat thread](2026-08-21-keep-attachments-when-a-message-is-edited-in-a-chat-thread.md)
 - **2026-08-21** — [Edit messages inline in the transcript instead of in a modal dialog](2026-08-21-edit-messages-inline-in-the-transcript-instead-of-a-modal.md)
 - **2026-08-19** — [Let onboarding connect a cloud provider](2026-08-19-let-onboarding-connect-a-cloud-provider.md)
+- **2026-08-14** — [Offer a thinking level only where the chat template declares one](2026-08-14-offer-a-thinking-level-only-where-the-chat-template-declares-one.md)
 - **2026-08-14** — [Show the streaming code while an HTML artifact generates](2026-08-14-show-the-streaming-code-while-an-html-artifact-generates.md)
 - **2026-08-14** — [Collapse the engine log behind a toggle in the model-load toast](2026-08-14-collapse-the-engine-log-behind-a-toggle-in-the-model-load-toast.md)
 - **2026-08-13** — [Move sampling back onto each assistant (per-assistant sampler, popover stays the only editor)](2026-08-13-move-sampling-back-onto-each-assistant.md)

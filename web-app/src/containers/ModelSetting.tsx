@@ -23,9 +23,9 @@ type ModelSettingProps = {
   model: Model
 }
 
-// Sampling parameters are edited globally in the Sampling popover; their
-// legacy load-time twins under `model.settings.*` are hidden from this gear
-// to avoid two competing sources of truth. Data on disk is preserved.
+// Sampling parameters are edited globally in the chat's Run settings panel;
+// their legacy load-time twins under `model.settings.*` are hidden here to
+// avoid two competing sources of truth. Data on disk is preserved.
 const LEGACY_SAMPLING_KEYS = new Set<string>([
   'temperature',
   'top_p',
@@ -49,12 +49,24 @@ const RESTART_REQUIRED_SETTINGS = new Set([
   'no_kv_offload',
 ])
 
-export function ModelSetting({
+type ModelSettingsListProps = ModelSettingProps & {
+  /** Settings already surfaced elsewhere by the host (e.g. `ctx_len`). */
+  excludeKeys?: string[]
+  className?: string
+}
+
+/**
+ * The model's load-time settings as a plain list of controls, shared by the
+ * providers page gear sheet and the chat's Run settings panel. Restart-worthy
+ * changes restart the model when it is loaded.
+ */
+export function ModelSettingsList({
   model,
   provider,
-}: ModelSettingProps) {
+  excludeKeys = [],
+  className,
+}: ModelSettingsListProps) {
   const { updateProvider } = useModelProvider()
-  const { t } = useTranslation()
   const serviceHub = useServiceHub()
 
   const debouncedRestartModel = useMemo(
@@ -134,6 +146,77 @@ export function ModelSetting({
     }
   }
 
+  const excluded = new Set(excludeKeys)
+
+  return (
+    <div className={cn('space-y-8', className)}>
+      {Object.entries(model.settings || {})
+        .reduce<[string, unknown][]>((acc, entry) => {
+          if (entry[0] === 'auto_increase_ctx_len') return acc
+          if (entry[0] === 'ctx_len') {
+            const autoIncrease = Object.entries(model.settings || {}).find(
+              ([k]) => k === 'auto_increase_ctx_len'
+            )
+            if (autoIncrease) acc.push(autoIncrease)
+          }
+          acc.push(entry)
+          return acc
+        }, [])
+        .filter(([key]) => {
+          if (excluded.has(key)) return false
+          // Sampling lives solely in the Run settings panel. Hide the legacy
+          // load-time sampling controls here so there is exactly one place
+          // to tune sampling. The persisted `model.settings.*` values are
+          // left untouched on disk.
+          if (LEGACY_SAMPLING_KEYS.has(key)) return false
+          // MLX models only support context size setting
+          if (provider.provider === 'mlx') {
+            return key === 'ctx_len'
+          }
+          return true
+        })
+        .map(([key, value]) => {
+          const config = value as ProviderSetting
+          return (
+            <div key={key} className="space-y-2">
+              <div
+                className={cn(
+                  'flex items-start justify-between gap-8',
+                  (key === 'chat_template' ||
+                    key === 'override_tensor_buffer_t') &&
+                    'flex-col gap-1 w-full'
+                )}
+              >
+                <div className="mb-1 truncate">
+                  <span title={config.title} className="font-medium">
+                    {config.title}
+                  </span>
+                </div>
+                <DynamicControllerSetting
+                  key={config.key}
+                  title={config.title}
+                  description={config.description}
+                  controllerType={config.controller_type}
+                  controllerProps={{
+                    ...config.controller_props,
+                    value: config.controller_props?.value,
+                  }}
+                  onChange={(newValue) => handleSettingChange(key, newValue)}
+                />
+              </div>
+              <p className="text-muted-foreground leading-normal text-xs">
+                {config.description}
+              </p>
+            </div>
+          )
+        })}
+    </div>
+  )
+}
+
+export function ModelSetting({ model, provider }: ModelSettingProps) {
+  const { t } = useTranslation()
+
   return (
     <Sheet>
       <SheetTrigger asChild>
@@ -148,70 +231,16 @@ export function ModelSetting({
               modelId: getModelDisplayName(model),
             })}
           </SheetTitle>
-          <SheetDescription className='text-xs leading-normal'>
+          <SheetDescription className="text-xs leading-normal">
             {t('common:modelSettings.description')}
           </SheetDescription>
         </SheetHeader>
 
-        <div className="px-4 space-y-8 pb-4">
-          {Object.entries(model.settings || {})
-          .reduce<[string, unknown][]>((acc, entry) => {
-            if (entry[0] === 'auto_increase_ctx_len') return acc
-            if (entry[0] === 'ctx_len') {
-              const autoIncrease = Object.entries(model.settings || {}).find(
-                ([k]) => k === 'auto_increase_ctx_len'
-              )
-              if (autoIncrease) acc.push(autoIncrease)
-            }
-            acc.push(entry)
-            return acc
-          }, [])
-          .filter(([key]) => {
-            // Sampling now lives solely in the global Sampling popover
-            // (model bar). Hide the legacy load-time sampling controls here
-            // so there is exactly one place to tune sampling. The persisted
-            // `model.settings.*` values are left untouched on disk.
-            if (LEGACY_SAMPLING_KEYS.has(key)) return false
-            // MLX models only support context size setting
-            if (provider.provider === 'mlx') {
-              return key === 'ctx_len'
-            }
-            return true
-          })
-          .map(([key, value]) => {
-            const config = value as ProviderSetting
-            return (
-              <div key={key} className="space-y-2">
-                <div
-                  className={cn(
-                    'flex items-start justify-between gap-8',
-                    (key === 'chat_template' ||
-                      key === 'override_tensor_buffer_t') &&
-                      'flex-col gap-1 w-full'
-                  )}
-                >
-                  <div className="mb-1 truncate">
-                    <span title={config.title} className="font-medium">{config.title}</span>
-                  </div>
-                  <DynamicControllerSetting
-                    key={config.key}
-                    title={config.title}
-                    description={config.description}
-                    controllerType={config.controller_type}
-                    controllerProps={{
-                      ...config.controller_props,
-                      value: config.controller_props?.value,
-                    }}
-                    onChange={(newValue) => handleSettingChange(key, newValue)}
-                  />
-                </div>
-                <p className="text-muted-foreground leading-normal text-xs">
-                  {config.description}
-                </p>
-              </div>
-            )
-          })}
-        </div>
+        <ModelSettingsList
+          model={model}
+          provider={provider}
+          className="px-4 pb-4"
+        />
       </SheetContent>
     </Sheet>
   )

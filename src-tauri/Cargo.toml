@@ -82,10 +82,12 @@ futures-util = "0.3.31"
 hex = "0.4"
 hmac = "0.12"
 hyper = { version = "0.14", features = ["server"] }
+atomic-code-index = { path = "./code-index" }
 jan-utils = { path = "./utils" }
 libloading = "0.8.7"
 log = "0.4"
 png = "0.18"
+portable-pty = "0.9"
 rand = "0.8"
 rmcp = { version = "0.8.5", features = [
     "client",
@@ -96,7 +98,11 @@ rmcp = { version = "0.8.5", features = [
     "transport-child-process",
     "tower",
     "reqwest",
+    "auth",
 ] }
+# Same version rmcp's `auth` feature resolves to; direct dep only for the
+# `TokenResponse` trait methods on the token type rmcp hands back.
+oauth2 = "5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 json5 = "0.4"
@@ -112,6 +118,7 @@ tauri-plugin-mlx = { path = "./plugins/tauri-plugin-mlx", optional = true }
 tauri-plugin-foundation-models = { path = "./plugins/tauri-plugin-foundation-models", optional = true }
 tauri-plugin-vector-db = { path = "./plugins/tauri-plugin-vector-db" }
 tauri-plugin-rag = { path = "./plugins/tauri-plugin-rag" }
+tauri-plugin-atomic-audio = { path = "./plugins/tauri-plugin-atomic-audio" }
 tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
 tauri-plugin-log = "2.0.0-rc"
 tauri-plugin-notification = "2"

@@ -64,7 +64,9 @@
     "autoApproveTools": "ツール実行を自動承認",
     "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
     "desktopNotifications": "デスクトップ通知",
-    "desktopNotificationsDesc": "返信が完了し、ウィンドウが非アクティブなときにシステム通知を送信します。"
+    "desktopNotificationsDesc": "返信が完了し、ウィンドウが非アクティブなときにシステム通知を送信します。",
+    "legacyChatEngine": "従来のチャットエンジンを使用",
+    "legacyChatEngineDesc": "すべてのメッセージを従来のチャットパイプラインで処理し、エージェントモードを完全に無効にします。一時的な回避手段です。"
   },
   "threadNotifications": {
     "notificationTitle": "返信の準備ができました",

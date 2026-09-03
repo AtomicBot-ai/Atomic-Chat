@@ -786,6 +786,26 @@ export const providerModels = {
     supportsToolCalls: true,
     supportsN: true,
   },
+  // Meta Model API (https://api.meta.ai/v1). The Muse Spark family is one set
+  // of weights behind three ids — 1.1, 1.2 and the cheaper 1.2 contributor
+  // tier — all multimodal (text/image/video/PDF in) with tool calling.
+  'meta': {
+    models: ['muse-spark-1.2', 'muse-spark-1.2-contributor', 'muse-spark-1.1'],
+    supportsCompletion: true,
+    supportsStreaming: true,
+    supportsJSON: true,
+    supportsImages: [
+      'muse-spark-1.2',
+      'muse-spark-1.2-contributor',
+      'muse-spark-1.1',
+    ],
+    supportsToolCalls: [
+      'muse-spark-1.2',
+      'muse-spark-1.2-contributor',
+      'muse-spark-1.1',
+    ],
+    supportsN: true,
+  },
   'openai-compatible': {
     models: true,
     supportsCompletion: true,

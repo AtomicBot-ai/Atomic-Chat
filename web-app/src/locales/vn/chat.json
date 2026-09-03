@@ -8,5 +8,18 @@
   },
   "sendMessage": "Gửi tin nhắn",
   "newConversation": "Cuộc trò chuyện mới",
-  "clearHistory": "Xóa lịch sử"
+  "clearHistory": "Xóa lịch sử",
+  "agentMode": {
+    "menuItem": "Chế độ agent",
+    "agent": "Agent",
+    "turnOff": "Tắt chế độ agent",
+    "providerUnavailable": "Chế độ agent cần một mô hình cục bộ hoặc nhà cung cấp đám mây có khóa API.",
+    "providerKeyMissing": "Thêm khóa API cho nhà cung cấp này trong Cài đặt để dùng chế độ agent."
+  },
+  "agentErrors": {
+    "localModelRequired": "Hãy tải mô hình này trước khi chạy agent.",
+    "providerUnavailableDescription": "Chọn mô hình cục bộ, hoặc nhà cung cấp đám mây có khóa API.",
+    "providerKeyMissing": "Thêm khóa API cho nhà cung cấp này trong Cài đặt rồi thử lại.",
+    "localServerRequired": "Chế độ agent với mô hình đám mây cần Local API Server. Hãy khởi động trong Cài đặt."
+  }
 }

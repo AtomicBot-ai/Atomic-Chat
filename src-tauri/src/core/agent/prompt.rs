@@ -124,11 +124,13 @@ const DEFAULT_SYSTEM_PERSONA_LINES: &[&str] = &[
     "Operating principles:",
     "- Think, then act. Emit a small batch of tool calls, observe the results, then decide the next step. One inference = one JSON array of tool calls.",
     "- Prefer the cheapest tool that answers the question. Read before you write. Never guess a file's contents — read it.",
+    "- Not every message needs tools. When you can answer correctly from the conversation and your own knowledge — greetings, explanations, writing, or analysis of text already provided — respond immediately with a single `reply` call carrying the complete answer. Use tools only when the task needs fresh information, files, the web, or side effects.",
     "- Batch only independent calls. Approval-gated tools and calls that depend on another call's result must use a length-1 array. A terminal verb may appear only once and only last.",
     "- Be decisive. Do not narrate what you are about to do in prose — call the tool. Do not ask for confirmation unless a tool is approval-gated.",
     "- When the task is complete, call `reply` with the final answer. Only call `finish` if the user explicitly asked to end the session.",
-    "- Keep `reply` short and to the point. If the user asked for an exact value or marker, `reply.text` must be ONLY that bare value — no preamble, no restating the question, no extra commentary or markdown before or after.",
+    "- Match `reply` length to the request — conversational and complete for chat questions, short and direct for task reports. If the user asked for an exact value or marker, `reply.text` must be ONLY that bare value — no preamble, no restating the question, no extra commentary or markdown before or after.",
     "- Respect the loop guard. If you are told a call was denied as a loop, change your approach — do not repeat the same call.",
+    "- When a tool result says \"Full output saved to <path>\", the complete output is on disk: page through it with `os.fs.read { path, offset, limit }` or search it with `os.fs.grep { pattern, path }` before concluding the information is absent.",
     "- Rare tools are listed without argument schemas. Call `tool.view { name }` before using a rare tool whose exact arguments are not already loaded.",
     "- Skills are listed as summaries. Call `skill.view { name }` before applying a skill whose full instructions are not already under `### loaded-skills`.",
     "- `skill.run_script.script` is only an exact bundled filename listed as `scripts=` for that skill; put its arguments in `args`. Never put a shell command or external CLI invocation in `script`. Skills without `scripts=` must use their declared tools, typically `os.shell.run { cmd, args }` for external CLIs.",
@@ -335,6 +337,55 @@ pub const ITERATION_ONE_TOOLS: &[ToolDescriptor] = &[
         examples: &[],
     },
     ToolDescriptor {
+        name: "os.code.symbols",
+        summary: "List the definitions declared in one source file with their line numbers. Faster and more precise than reading the whole file when you only need its shape. Supports .rs, .ts, .tsx, .js, .jsx, .py. Read-only.",
+        args_schema: r#"{ path: string }"#,
+        tier: ToolTier::Frequent,
+        examples: &[],
+    },
+    ToolDescriptor {
+        name: "os.code.find",
+        summary: "Find where a symbol is defined across the workspace, by exact name. Prefer this over os.fs.grep when looking for a definition. Falls back to case-insensitive partial matches and says so when it does. Read-only.",
+        args_schema: r#"{ name: string, kind?: "class" | "struct" | "enum" | "trait" | "interface" | "method" | "function" | "macro" | "type" | "module" | "constant", limit?: number }"#,
+        tier: ToolTier::Frequent,
+        examples: &[],
+    },
+    ToolDescriptor {
+        name: "os.code.refs",
+        summary: "Find identifier occurrences of a name, skipping comments and string literals. This is not resolved reference lookup: same-named symbols from unrelated modules are included, so verify before editing. Read-only.",
+        args_schema: r#"{ name: string, path?: string, limit?: number }"#,
+        tier: ToolTier::Frequent,
+        examples: &[],
+    },
+    ToolDescriptor {
+        name: "os.proc.spawn",
+        summary: "Start a long-running or interactive command in a terminal and return its procId. Use this instead of os.shell.run when the command does not finish on its own (dev servers, watchers) or when it will prompt for input. Read its output with os.proc.read. Approval-gated.",
+        args_schema: r#"{ cmd: string, args?: string[], cwd?: string, cols?: number, rows?: number }"#,
+        tier: ToolTier::Rare,
+        examples: &[],
+    },
+    ToolDescriptor {
+        name: "os.proc.read",
+        summary: "Read new output from a process started with os.proc.spawn, and its exit status once it finishes. Each call returns only what arrived since the previous one; pass `since` to re-read from an earlier point. Read-only.",
+        args_schema: r#"{ procId: string, since?: number, maxChars?: number }"#,
+        tier: ToolTier::Rare,
+        examples: &[],
+    },
+    ToolDescriptor {
+        name: "os.proc.write",
+        summary: "Send text to the stdin of a process started with os.proc.spawn. Include a trailing newline to submit a line. Approval-gated.",
+        args_schema: r#"{ procId: string, data: string }"#,
+        tier: ToolTier::Rare,
+        examples: &[],
+    },
+    ToolDescriptor {
+        name: "os.proc.stop",
+        summary: "Signal a process started with os.proc.spawn. Its final output stays readable afterwards. Approval-gated.",
+        args_schema: r#"{ procId: string, signal?: "SIGTERM" | "SIGKILL" | "SIGINT" | "SIGHUP" }"#,
+        tier: ToolTier::Rare,
+        examples: &[],
+    },
+    ToolDescriptor {
         name: "os.http.request",
         summary: "Make a bounded HTTP request to a public http/https URL. Blocks private/local addresses but does not use a host allowlist. Approval-gated. Use for raw API/JSON or non-GET; for reading a web page use os.web.fetch.",
         args_schema: r#"{ url: string, method?: string, headers?: Record<string, string>, body?: string, timeoutMs?: number }"#,
@@ -359,6 +410,41 @@ pub const ITERATION_ONE_TOOLS: &[ToolDescriptor] = &[
             r#"{"url":"https://example.com/article"}"#,
             r#"{"url":"https://docs.example.com/guide","extractMode":"text","maxChars":20000}"#,
         ],
+    },
+    ToolDescriptor {
+        name: "docs.list",
+        summary: "List the indexed documents attached to this thread or its project (id, name, chunk_count, scope). Read-only.",
+        args_schema: r#"{ scope?: "thread" | "project" }"#,
+        tier: ToolTier::Frequent,
+        examples: &[],
+    },
+    ToolDescriptor {
+        name: "docs.retrieve",
+        summary: "Retrieve the most relevant snippets from the indexed documents. Pass a search query, never raw document content. Omitting scope searches every available collection. Read-only.",
+        args_schema: r#"{ query: string, top_k?: number, file_ids?: string[], scope?: "thread" | "project" }"#,
+        tier: ToolTier::Frequent,
+        examples: &[r#"{"query":"payment terms","top_k":3}"#],
+    },
+    ToolDescriptor {
+        name: "docs.chunks",
+        summary: "Read a contiguous range of chunks from one indexed document by file_id, in order (inclusive, 0-indexed). Use after docs.retrieve to expand context around a citation. Read-only.",
+        args_schema: r#"{ file_id: string, start_order: number, end_order: number, scope?: "thread" | "project" }"#,
+        tier: ToolTier::Frequent,
+        examples: &[],
+    },
+    ToolDescriptor {
+        name: "os.media.transcribe",
+        summary: "Transcribe a local audio file (mp3, wav, m4a, ...) to text with a local whisper CLI. Fails with an install hint when no whisper CLI is on PATH. Read-only.",
+        args_schema: r#"{ path: string, language?: string }"#,
+        tier: ToolTier::Frequent,
+        examples: &[r#"{"path":"/path/to/recording.mp3"}"#],
+    },
+    ToolDescriptor {
+        name: "os.media.youtube",
+        summary: "Read a YouTube video: mode \"transcript\" (default) returns its English subtitles via yt-dlp; mode \"frames\" samples up to 16 frames as images to inspect with vision.describe. Fails with an install hint when yt-dlp/ffmpeg are missing. Read-only.",
+        args_schema: r#"{ url: string, mode?: "transcript" | "frames", maxFrames?: number }"#,
+        tier: ToolTier::Frequent,
+        examples: &[r#"{"url":"https://www.youtube.com/watch?v=abc123"}"#],
     },
     ToolDescriptor {
         name: "vision.describe",
@@ -429,6 +515,34 @@ fn format_tool_rare(descriptor: &ToolDescriptor) -> String {
     format!("- {} — {}", descriptor.name, descriptor.summary)
 }
 
+/// Character budget for the `# mcp` block. Real servers (GitHub ≈ 40 tools)
+/// would otherwise swell the stable prefix; full schemas load on demand via
+/// `tool.view`.
+const MAX_MCP_CATALOG_CHARS: usize = 12_000;
+const MCP_DESCRIPTION_CHARS: usize = 160;
+
+/// One-line catalog entry for a dynamic MCP tool.
+fn format_tool_mcp(descriptor: &crate::core::agent::mcp_tools::McpToolDescriptor) -> String {
+    let mut description: String = descriptor
+        .description
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if description.chars().count() > MCP_DESCRIPTION_CHARS {
+        description = description.chars().take(MCP_DESCRIPTION_CHARS).collect();
+        description.push('…');
+    }
+    if description.is_empty() {
+        description = "(no description)".into();
+    }
+    let marker = if descriptor.read_only {
+        " [read-only]"
+    } else {
+        ""
+    };
+    format!("- {} — {description}{marker}", descriptor.agent_name)
+}
+
 /// Render the `### capabilities` body. Ported from `formatCapabilities`.
 fn format_capabilities(caps: &CapabilitiesSummary) -> String {
     let mut lines = vec![
@@ -484,7 +598,33 @@ pub fn build_stable_prefix(
         max_parallel_tool_calls,
         system_persona,
         crate::core::agent::model_profile::AgentModelProfile::Plain,
+        false,
     )
+}
+
+/// Character budget for the thread assistant's `### assistant` section. Keeps
+/// a runaway custom prompt from starving the conversation window.
+pub const MAX_ASSISTANT_INSTRUCTIONS_CHARS: usize = 8_000;
+
+/// Inputs of the stable prefix. A struct rather than positional arguments:
+/// the list keeps growing (assistant instructions, MCP catalog) and every
+/// addition would otherwise churn all call sites and tests.
+pub struct StablePrefixArgs<'a> {
+    pub tool_descriptors: &'a [ToolDescriptor],
+    pub skill_descriptors: &'a [SkillDescriptor],
+    pub capabilities: &'a CapabilitiesSummary,
+    pub max_parallel_tool_calls: usize,
+    pub system_persona: Option<&'a str>,
+    /// The thread assistant's rendered instructions — user data, rendered
+    /// last (after `### instructions`) so the common prefix stays
+    /// byte-identical across threads for KV-cache sharing.
+    pub assistant_instructions: Option<&'a str>,
+    /// This turn's MCP catalog, rendered as one-liners under `### tools`.
+    pub mcp_tools: &'a [crate::core::agent::mcp_tools::McpToolDescriptor],
+    /// Tools dropped by the catalog cap, surfaced as an omission marker.
+    pub mcp_omitted: usize,
+    pub profile: crate::core::agent::model_profile::AgentModelProfile,
+    pub thinking: bool,
 }
 
 pub fn build_stable_prefix_for_profile(
@@ -494,7 +634,36 @@ pub fn build_stable_prefix_for_profile(
     max_parallel_tool_calls: usize,
     system_persona: Option<&str>,
     profile: crate::core::agent::model_profile::AgentModelProfile,
+    thinking: bool,
 ) -> String {
+    build_stable_prefix_with(&StablePrefixArgs {
+        tool_descriptors,
+        skill_descriptors,
+        capabilities,
+        max_parallel_tool_calls,
+        system_persona,
+        assistant_instructions: None,
+        mcp_tools: &[],
+        mcp_omitted: 0,
+        profile,
+        thinking,
+    })
+}
+
+pub fn build_stable_prefix_with(args: &StablePrefixArgs<'_>) -> String {
+    let StablePrefixArgs {
+        tool_descriptors,
+        skill_descriptors,
+        capabilities,
+        max_parallel_tool_calls,
+        system_persona,
+        assistant_instructions,
+        mcp_tools,
+        mcp_omitted,
+        profile,
+        thinking,
+    } = *args;
+    let max_parallel_tool_calls = max_parallel_tool_calls;
     let persona = system_persona
         .map(str::to_string)
         .unwrap_or_else(default_system_persona);
@@ -520,7 +689,11 @@ pub fn build_stable_prefix_for_profile(
             "- Every response is a JSON array of tool calls: [{\"tool\": ..., \"args\": {...}}, ...].",
             "- A solo step is a length-1 array. Emit multiple calls only when they are independent.",
             "- Batch only independent calls. Approval-gated tools and dependent calls must use a length-1 array. A terminal verb (reply/finish) may appear only once and only as the LAST element.",
-            "- Never emit prose outside the JSON array. Never invent tool names or arguments.",
+            if thinking {
+                "- Think inside a single <think>...</think> block, then emit the JSON array. Never emit prose outside that block and the array. Never invent tool names or arguments."
+            } else {
+                "- Never emit prose outside the JSON array. Never invent tool names or arguments."
+            },
             "- Call `reply` to answer the user; call `finish` only to end the whole session.",
         ]
         .join("\n"),
@@ -553,6 +726,29 @@ pub fn build_stable_prefix_for_profile(
             tools_section.push_str(&format_tool_rare(descriptor));
         }
     }
+    if !mcp_tools.is_empty() {
+        tools_section.push_str(
+            "\n# mcp\nExternal integrations connected by the user. Load an `mcp.*` tool's full \
+             argument schema with `tool.view { name }` before first use unless it is already \
+             under ### loaded-tools.",
+        );
+        let mut used = 0usize;
+        let mut rendered = 0usize;
+        for descriptor in mcp_tools {
+            let entry = format_tool_mcp(descriptor);
+            if used + entry.len() > MAX_MCP_CATALOG_CHARS {
+                break;
+            }
+            used += entry.len();
+            rendered += 1;
+            tools_section.push('\n');
+            tools_section.push_str(&entry);
+        }
+        let omitted = mcp_omitted + (mcp_tools.len() - rendered);
+        if omitted > 0 {
+            tools_section.push_str(&format!("\n... [{omitted} mcp tools omitted]"));
+        }
+    }
     sections.push(tools_section);
 
     sections.push(format!(
@@ -573,7 +769,30 @@ pub fn build_stable_prefix_for_profile(
         .join("\n"),
     );
 
+    // Rendered last on purpose: the sections above are byte-identical across
+    // threads, so a shared llama.cpp slot re-ingests only from here down when
+    // the user switches threads.
+    if let Some(instructions) = assistant_instructions
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+    {
+        let bounded = bounded_chars(instructions, MAX_ASSISTANT_INSTRUCTIONS_CHARS);
+        sections.push(format!(
+            "### assistant\nThe user configured this assistant profile for this thread. Follow it \
+             where it does not conflict with the rules above.\n{bounded}"
+        ));
+    }
+
     sections.join("\n\n")
+}
+
+fn bounded_chars(text: &str, limit: usize) -> String {
+    if text.chars().count() <= limit {
+        return text.to_owned();
+    }
+    let mut bounded: String = text.chars().take(limit).collect();
+    bounded.push('…');
+    bounded
 }
 
 /// Assemble the full prompt: stable prefix + variable tail
@@ -615,6 +834,27 @@ pub fn build_prompt_for_profile(
     )
 }
 
+/// The two halves of a rendered prompt.
+///
+/// `system` is byte-stable across the steps of a session; `tail` carries
+/// everything that changes. llama.cpp's `/completion` takes the concatenation
+/// (see [`build_prompt_with_workspace_for_profile`]); chat transports send them
+/// as separate system and user messages so provider-side prefix caches can key
+/// on the stable half.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromptParts {
+    pub system: String,
+    pub tail: String,
+}
+
+impl PromptParts {
+    /// The flat form. Must stay byte-identical to what llama.cpp received
+    /// before the split existed.
+    pub fn rendered(&self) -> String {
+        format!("{}\n{}", self.system, self.tail)
+    }
+}
+
 pub fn build_prompt_with_workspace_for_profile(
     stable_prefix: &str,
     loaded_tool_names: &[String],
@@ -624,9 +864,85 @@ pub fn build_prompt_with_workspace_for_profile(
     notice: Option<&str>,
     profile: crate::core::agent::model_profile::AgentModelProfile,
 ) -> String {
+    build_prompt_parts_dynamic(
+        stable_prefix,
+        loaded_tool_names,
+        loaded_skills,
+        workspace,
+        conversation,
+        notice,
+        profile,
+        None,
+        None,
+    )
+    .rendered()
+}
+
+/// MCP-aware flat form used by the runner: loaded `mcp.*` descriptors render
+/// with their full input schema.
+#[allow(clippy::too_many_arguments)]
+pub fn build_prompt_dynamic(
+    stable_prefix: &str,
+    loaded_tool_names: &[String],
+    loaded_skills: &[crate::core::agent::skills::loaded::LoadedSkillState],
+    workspace: Option<&str>,
+    conversation: &str,
+    notice: Option<&str>,
+    profile: crate::core::agent::model_profile::AgentModelProfile,
+    mcp: Option<&dyn crate::core::agent::mcp_tools::McpBridge>,
+    documents: Option<&str>,
+) -> String {
+    build_prompt_parts_dynamic(
+        stable_prefix,
+        loaded_tool_names,
+        loaded_skills,
+        workspace,
+        conversation,
+        notice,
+        profile,
+        mcp,
+        documents,
+    )
+    .rendered()
+}
+
+pub fn build_prompt_parts_with_workspace_for_profile(
+    stable_prefix: &str,
+    loaded_tool_names: &[String],
+    loaded_skills: &[crate::core::agent::skills::loaded::LoadedSkillState],
+    workspace: Option<&str>,
+    conversation: &str,
+    notice: Option<&str>,
+    profile: crate::core::agent::model_profile::AgentModelProfile,
+) -> PromptParts {
+    build_prompt_parts_dynamic(
+        stable_prefix,
+        loaded_tool_names,
+        loaded_skills,
+        workspace,
+        conversation,
+        notice,
+        profile,
+        None,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn build_prompt_parts_dynamic(
+    stable_prefix: &str,
+    loaded_tool_names: &[String],
+    loaded_skills: &[crate::core::agent::skills::loaded::LoadedSkillState],
+    workspace: Option<&str>,
+    conversation: &str,
+    notice: Option<&str>,
+    profile: crate::core::agent::model_profile::AgentModelProfile,
+    mcp: Option<&dyn crate::core::agent::mcp_tools::McpBridge>,
+    documents: Option<&str>,
+) -> PromptParts {
     let mut tail: Vec<String> = Vec::new();
 
-    if let Some(loaded_tools) = render_loaded_tools(loaded_tool_names) {
+    if let Some(loaded_tools) = render_loaded_tools(loaded_tool_names, mcp) {
         tail.push("### loaded-tools".to_string());
         tail.push(loaded_tools);
         tail.push(String::new());
@@ -641,6 +957,12 @@ pub fn build_prompt_with_workspace_for_profile(
     if let Some(workspace) = workspace.filter(|value| !value.is_empty()) {
         tail.push("### workspace".to_string());
         tail.push(workspace.to_string());
+        tail.push(String::new());
+    }
+
+    if let Some(documents) = documents.filter(|value| !value.is_empty()) {
+        tail.push("### documents".to_string());
+        tail.push(documents.to_string());
         tail.push(String::new());
     }
 
@@ -665,7 +987,10 @@ pub fn build_prompt_with_workspace_for_profile(
         tail.push(String::new());
     }
 
-    format!("{stable_prefix}\n{}", tail.join("\n"))
+    PromptParts {
+        system: stable_prefix.to_string(),
+        tail: tail.join("\n"),
+    }
 }
 
 pub fn format_workspace(
@@ -716,16 +1041,45 @@ pub fn format_workspace(
 
 const LOADED_TOOLS_MAX_CHARS: usize = 8_000;
 
-fn render_loaded_tools(names: &[String]) -> Option<String> {
+/// Full entry for a loaded MCP tool: name, description, and its JSON input
+/// schema, bounded so one verbose server cannot monopolize the tail budget.
+fn format_loaded_mcp_tool(descriptor: &crate::core::agent::mcp_tools::McpToolDescriptor) -> String {
+    const MCP_LOADED_SCHEMA_CHARS: usize = 2_500;
+    let mut schema = descriptor.input_schema.to_string();
+    if schema.chars().count() > MCP_LOADED_SCHEMA_CHARS {
+        schema = schema.chars().take(MCP_LOADED_SCHEMA_CHARS).collect();
+        schema.push('…');
+    }
+    format!(
+        "- {} — {}\n  args schema: {schema}",
+        descriptor.agent_name,
+        if descriptor.description.is_empty() {
+            "(no description)"
+        } else {
+            &descriptor.description
+        }
+    )
+}
+
+fn render_loaded_tools(
+    names: &[String],
+    mcp: Option<&dyn crate::core::agent::mcp_tools::McpBridge>,
+) -> Option<String> {
     let mut rendered = String::new();
     for name in names {
-        let Some(descriptor) = ITERATION_ONE_TOOLS
+        let entry = if name.starts_with(crate::core::agent::mcp_tools::MCP_TOOL_PREFIX) {
+            let Some(descriptor) = mcp.and_then(|bridge| bridge.resolve(name)) else {
+                continue;
+            };
+            format_loaded_mcp_tool(descriptor)
+        } else if let Some(descriptor) = ITERATION_ONE_TOOLS
             .iter()
             .find(|descriptor| descriptor.name == name && descriptor.tier == ToolTier::Rare)
-        else {
+        {
+            format_tool_frequent(descriptor)
+        } else {
             continue;
         };
-        let entry = format_tool_frequent(descriptor);
         let separator = usize::from(!rendered.is_empty());
         if rendered.len() + separator + entry.len() > LOADED_TOOLS_MAX_CHARS {
             if !rendered.is_empty() {
@@ -781,6 +1135,55 @@ mod tests {
         assert!(skills < tools);
         assert!(tools < caps_idx);
         assert!(caps_idx < instructions);
+    }
+
+    /// The split exists only so chat transports can address the two halves
+    /// separately. llama.cpp must keep receiving the exact same bytes, or its
+    /// prompt cache stops hitting.
+    #[test]
+    fn prompt_parts_concatenate_to_the_legacy_prompt() {
+        use crate::core::agent::model_profile::AgentModelProfile;
+
+        let caps = test_caps("darwin");
+        let stable_prefix = build_stable_prefix(
+            ITERATION_ONE_TOOLS,
+            &[],
+            &caps,
+            DEFAULT_MAX_PARALLEL_TOOL_CALLS,
+            None,
+        );
+        let loaded = vec!["os.fs.patch".to_string()];
+
+        for profile in [AgentModelProfile::Plain, AgentModelProfile::Gemma4Think] {
+            for (workspace, notice) in [
+                (None, None),
+                (Some("primary: /tmp/work"), None),
+                (Some("primary: /tmp/work"), Some("repeated tool call")),
+            ] {
+                let parts = build_prompt_parts_with_workspace_for_profile(
+                    &stable_prefix,
+                    &loaded,
+                    &[],
+                    workspace,
+                    "user: hello",
+                    notice,
+                    profile,
+                );
+                let flat = build_prompt_with_workspace_for_profile(
+                    &stable_prefix,
+                    &loaded,
+                    &[],
+                    workspace,
+                    "user: hello",
+                    notice,
+                    profile,
+                );
+                assert_eq!(parts.rendered(), flat);
+                assert_eq!(parts.system, stable_prefix);
+                assert!(parts.tail.contains("### conversation"));
+                assert!(!parts.tail.contains("### system"));
+            }
+        }
     }
 
     #[test]
@@ -845,8 +1248,15 @@ mod tests {
     fn gemma4_prompt_uses_native_turn_and_channel_framing() {
         let caps = test_caps("linux");
         let profile = crate::core::agent::model_profile::AgentModelProfile::Gemma4Think;
-        let prefix =
-            build_stable_prefix_for_profile(ITERATION_ONE_TOOLS, &[], &caps, 8, None, profile);
+        let prefix = build_stable_prefix_for_profile(
+            ITERATION_ONE_TOOLS,
+            &[],
+            &caps,
+            8,
+            None,
+            profile,
+            false,
+        );
         let full = build_prompt_for_profile(&prefix, &[], &[], "USER: hello", None, profile);
 
         assert!(prefix.starts_with("<|turn>system\n<|think|>\n### system"));

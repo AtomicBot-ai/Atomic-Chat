@@ -7,10 +7,12 @@ type LeftPanelStoreState = {
   size: number
   width: string // Sidebar width in rem (e.g., "15rem")
   projectExpanded: Record<string, boolean>
+  pluginsExpanded: boolean
   setLeftPanel: (value: boolean) => void
   setLeftPanelSize: (value: number) => void
   setLeftPanelWidth: (value: string) => void
   setProjectExpanded: (projectId: string, expanded: boolean) => void
+  setPluginsExpanded: (expanded: boolean) => void
 }
 
 export const useLeftPanel = create<LeftPanelStoreState>()(
@@ -20,6 +22,7 @@ export const useLeftPanel = create<LeftPanelStoreState>()(
       size: 20, // Default size of 20%
       width: '15rem', // Default sidebar width
       projectExpanded: {},
+      pluginsExpanded: false,
       setLeftPanel: (value) => set({ open: value }),
       setLeftPanelSize: (value) => set({ size: value }),
       setLeftPanelWidth: (value) => set({ width: value }),
@@ -30,6 +33,7 @@ export const useLeftPanel = create<LeftPanelStoreState>()(
             [projectId]: expanded,
           },
         })),
+      setPluginsExpanded: (expanded) => set({ pluginsExpanded: expanded }),
     }),
     {
       name: localStorageKey.LeftPanel,

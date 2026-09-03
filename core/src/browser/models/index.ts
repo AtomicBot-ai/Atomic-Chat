@@ -8,3 +8,8 @@ export { ModelManager } from './manager'
  * Export all utils
  */
 export * from './utils'
+
+/**
+ * Export reasoning-control detection
+ */
+export * from './reasoning'

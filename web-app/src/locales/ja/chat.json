@@ -23,10 +23,11 @@
     "generating": "プレビューは生成完了後に利用可能になります。"
   },
   "agentMode": {
-    "chat": "チャット",
+    "menuItem": "エージェントモード",
     "agent": "エージェント",
-    "placeholder": "エージェントへのタスクを入力してください...",
-    "providerUnavailable": "エージェントモードはローカルの llama.cpp モデルでのみ利用できます。"
+    "turnOff": "エージェントモードをオフにする",
+    "providerUnavailable": "エージェントモードには、ローカルモデルまたは API キーを設定したクラウドプロバイダーが必要です。",
+    "providerKeyMissing": "エージェントモードを使うには、設定でこのプロバイダーの API キーを追加してください。"
   },
   "agentApprovals": {
     "manualSelected": "手動",
@@ -46,7 +47,9 @@
     "deny": "拒否",
     "alwaysAllow": "このアクションを常に許可",
     "approveOnce": "1回のみ承認",
-    "resolveFailed": "承認決定の送信に失敗しました。"
+    "resolveFailed": "承認決定の送信に失敗しました。",
+    "showDetails": "詳細を表示",
+    "hideDetails": "詳細を隠す"
   },
   "agentFolderAccess": {
     "title": "フォルダへのアクセスを許可",
@@ -71,17 +74,27 @@
     "makeViewOnly": "閲覧のみにする",
     "removeFolder": "エージェントから削除"
   },
+  "runSettings": {
+    "title": "実行設定",
+    "open": "実行設定を開く",
+    "close": "実行設定を閉じる",
+    "model": "モデル",
+    "advancedSettings": "詳細設定",
+    "advancedSettingsHint": "読み込み時のオプションです。変更すると実行中のモデルが再起動します。"
+  },
   "agentErrors": {
     "audioUnsupported": "エージェントモードは音声添付に対応していません。",
     "invalidAttachment": "1つ以上のファイルを添付できませんでした。ローカルファイルを選択して再試行してください。",
     "visionModelRequired": "画像を送信する前に、Vision（視覚）対応モデルを選択してください。",
-    "localLlamacppRequired": "エージェントモードにはアクティブなローカル llama.cpp モデルが必要です。",
     "providerUnavailableTitle": "このプロバイダーではエージェントモードを利用できません",
-    "providerUnavailableDescription": "ローカルの llama.cpp モデルに切り替えて再試行してください。",
+    "providerUnavailableDescription": "ローカルモデル、または API キーを設定したクラウドプロバイダーを選んでください。",
     "unsupportedTools": "エージェントモードは現在、MCP、RAG、ブラウザツールに対応していません。",
     "runFailed": "エージェントの実行開始に失敗しました。",
     "cancelFailed": "エージェントの実行をキャンセルできませんでした。",
-    "saveFailed": "エージェントの返答を保存できませんでした。"
+    "saveFailed": "エージェントの返答を保存できませんでした。",
+    "localModelRequired": "エージェントを実行する前にモデルを読み込んでください。",
+    "providerKeyMissing": "設定でこのプロバイダーの API キーを追加して、もう一度お試しください。",
+    "localServerRequired": "クラウドモデルでのエージェントモードにはローカル API サーバーが必要です。設定から起動してください。"
   },
   "agentTasks": {
     "title": "タスクの提案",

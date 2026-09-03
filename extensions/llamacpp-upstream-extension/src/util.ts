@@ -656,3 +656,39 @@ export function effectiveCtxSize(
   if (maxCtxTrain <= 0) return requested
   return Math.min(requested, maxCtxTrain)
 }
+
+/**
+ * Which modality an mmproj carries.
+ *
+ * `general.architecture` is `clip` for *every* projector — vision and audio
+ * alike — so the arch tells us nothing. The modality lives in the `clip.*` keys
+ * that `libmtmd` writes, and until now the extension simply assumed any mmproj
+ * meant vision. That is wrong for Voxtral, whose projector is a Whisper-style
+ * audio encoder.
+ *
+ * Unknown metadata falls back to vision, which is what the code did before this
+ * function existed — a projector we cannot classify must not silently lose its
+ * existing capability.
+ */
+export function classifyProjector(
+  metadata: Record<string, unknown> | undefined | null
+): { vision: boolean; audio: boolean } {
+  if (!metadata) return { vision: true, audio: false }
+
+  const truthy = (value: unknown): boolean =>
+    String(value ?? '')
+      .trim()
+      .toLowerCase() === 'true'
+  const present = (value: unknown): boolean =>
+    value !== undefined && value !== null && String(value).trim() !== ''
+
+  const vision =
+    truthy(metadata['clip.has_vision_encoder']) ||
+    present(metadata['clip.vision.projector_type'])
+  const audio =
+    truthy(metadata['clip.has_audio_encoder']) ||
+    present(metadata['clip.audio.projector_type'])
+
+  if (!vision && !audio) return { vision: true, audio: false }
+  return { vision, audio }
+}

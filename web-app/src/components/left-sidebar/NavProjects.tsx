@@ -11,6 +11,7 @@ import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
+  collapsiblePanelAnimation,
 } from '@/components/ui/collapsible'
 import {
   DropdownMenu,
@@ -184,7 +185,7 @@ const ProjectItem = memo(function ProjectItem({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          <CollapsibleContent>
+          <CollapsibleContent className={collapsiblePanelAnimation}>
             {threads.length > 0 && (
               <SidebarMenuSub>
                 <ThreadList threads={threads} subItem />

@@ -203,7 +203,7 @@ async fn read_body_limited(
     Ok((String::from_utf8_lossy(&bytes).into_owned(), truncated))
 }
 
-async fn validate_public_http_url(
+pub(super) async fn validate_public_http_url(
     url: Url,
 ) -> Result<(Url, Vec<std::net::SocketAddr>), ToolOutcome> {
     if !matches!(url.scheme(), "http" | "https") {

@@ -1,7 +1,11 @@
 {
+  "api": "API",
+  "cloud": "Cloud",
   "assistants": "Assistentes",
   "hardware": "Hardware",
   "mcp-servers": "Servidores MCP",
+  "connectors": "Conectores",
+  "plugins": "Plugins",
   "local_api_server": "Servidor de API Local",
   "https_proxy": "Proxy HTTPS",
   "extensions": "Extensões",
@@ -383,5 +387,11 @@
   "attachmentInjectedIndicator": "Injetado no chat",
   "attachmentEmbeddedIndicator": "Incorporado para RAG",
   "viewInjectedContent": "Ver conteúdo injetado",
-  "injectedContentTitle": "Conteúdo de arquivo injetado"
+  "injectedContentTitle": "Conteúdo de arquivo injetado",
+  "skills": "Habilidades",
+  "pluginsMenu": {
+    "title": "Plugins",
+    "emptySkills": "Nenhuma habilidade ainda",
+    "manageSkills": "Gerenciar habilidades"
+  }
 }

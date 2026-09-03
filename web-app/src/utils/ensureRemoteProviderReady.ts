@@ -5,6 +5,7 @@ import type { ServiceHub } from '@/services'
 import {
   isKeylessRemoteProvider,
   isLocalProvider,
+  isSubscriptionProvider,
   registerRemoteProvider,
 } from '@/utils/registerRemoteProvider'
 
@@ -22,7 +23,11 @@ async function reconcileRemoteProvider(
     )
   }
 
-  if (!provider.api_key?.trim() && !isKeylessRemoteProvider(provider)) {
+  if (
+    !provider.api_key?.trim() &&
+    !isKeylessRemoteProvider(provider) &&
+    !isSubscriptionProvider(provider.provider)
+  ) {
     throw new Error(
       `Remote provider "${provider.provider}" has no configured API key.`
     )

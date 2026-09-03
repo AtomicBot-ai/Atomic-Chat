@@ -1,0 +1,69 @@
+{
+  "title": "Connectors",
+  "addServer": "Add Server",
+  "importConfig": "Import Config",
+  "connectSection": "MCP Connectors",
+  "connectSectionDesc": "Connect new MCP servers and manage the ones you already have.",
+  "findMore": "Find more MCP servers at",
+  "advancedSection": "Advanced",
+  "setUp": "Set Up",
+  "connected": "Connected",
+  "statusError": "Error",
+  "statusInactive": "Inactive",
+  "by": "By {{name}}",
+  "featuredBadge": "Featured",
+  "serverActions": "Server actions",
+  "editJson": "Edit JSON",
+  "tools": "Tools",
+  "logs": {
+    "show": "Show logs",
+    "hide": "Hide logs"
+  },
+  "oauth": {
+    "signIn": "Sign in",
+    "cancel": "Cancel",
+    "failed": "Sign-in failed",
+    "comingSoon": "Browser sign-in is coming soon"
+  },
+  "secretDialog": {
+    "title": "Connect {{name}}",
+    "desc": "This connector needs a key to work. It is stored locally in your MCP configuration.",
+    "connect": "Connect",
+    "getKey": "Get your API key"
+  },
+  "secrets": {
+    "serperApiKey": "Serper API key",
+    "firecrawlApiKey": "Firecrawl API key",
+    "perplexityApiKey": "Perplexity API key",
+    "zapierToken": "Zapier MCP token",
+    "resendApiKey": "Resend API key"
+  },
+  "toast": {
+    "connected": "{{name}} connected"
+  },
+  "descriptions": {
+    "exa": "Web search and page crawling built for AI. Works out of the box, no key needed.",
+    "github": "Work with repositories, issues, pull requests, and code.",
+    "linear": "Find, create, and update issues, projects, and comments.",
+    "notion": "Search, read, and update pages and databases in your workspace.",
+    "sentry": "Investigate errors, traces, and application performance.",
+    "atlassian": "Work with Jira issues, Confluence pages, and team knowledge.",
+    "serper": "Google search results via the Serper API.",
+    "atomicmail": "Give your agent its own inbox: read, send, and manage email. No key needed.",
+    "stripe": "Read and manage customers, payments, subscriptions, and invoices.",
+    "supabase": "Query your database, manage projects, and read Supabase docs.",
+    "cloudflare": "Manage Workers, DNS, storage, and observability across your account.",
+    "posthog": "Query product analytics, feature flags, errors, and session data.",
+    "paypal": "Create invoices, track orders and payments, and manage disputes.",
+    "trello": "Read and update boards, lists, and cards.",
+    "granola": "Search and read your meeting notes and transcripts.",
+    "calcom": "Manage bookings, event types, and availability.",
+    "airtable": "Read, create, and update records in your bases.",
+    "webflow": "Manage sites, CMS collections, and pages.",
+    "firecrawl": "Scrape, crawl, search, and extract web pages into LLM-ready data.",
+    "perplexity": "Real-time web research with cited answers from Perplexity.",
+    "zapier": "Run actions across thousands of apps through your Zapier MCP server.",
+    "resend": "Send transactional emails through the Resend API.",
+    "shopify-dev": "Shopify developer docs and GraphQL schemas for building apps."
+  }
+}

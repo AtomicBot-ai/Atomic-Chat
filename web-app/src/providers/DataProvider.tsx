@@ -21,6 +21,8 @@ import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { switchToModel } from '@/utils/switchModel'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { consumeSilentImport } from '@/utils/backgroundImports'
+import { resolveImportedModelProvider } from '@/utils/resolveImportedModelProvider'
+import { isAnyChatBusy } from '@/stores/chat-session-store'
 import {
   isDev,
   LOCAL_LLAMACPP_PROVIDER,
@@ -44,6 +46,7 @@ import {
 import {
   isKeylessRemoteProvider,
   isLocalProvider,
+  isSubscriptionProvider,
   registerRemoteProvider,
   unregisterRemoteProvider,
 } from '@/utils/registerRemoteProvider'
@@ -74,10 +77,15 @@ const syncRemoteProviders = () => {
     // provider ids are packaged on every desktop platform.
     // The pre-fix check excluded only `'llamacpp'`, which silently leaked
     // `'llamacpp-upstream'` into the remote-registration path on Windows.
+    // Subscriptions (ChatGPT/Codex) hold no `api_key` on the provider object —
+    // the token lives in the Rust backend — so they register on the same
+    // footing as keyless self-hosted servers.
     if (
       provider.active &&
       !isLocalProvider(provider.provider) &&
-      (provider.api_key || isKeylessRemoteProvider(provider))
+      (provider.api_key ||
+        isKeylessRemoteProvider(provider) ||
+        isSubscriptionProvider(provider.provider))
     ) {
       safeRegisterRemoteProvider(provider)
       currentActive.add(provider.provider)
@@ -289,6 +297,15 @@ export function DataProvider() {
     const handleModelImported = async (eventData?: Record<string, unknown>) => {
       console.log('[LocalAPI] onModelImported fired, eventData:', eventData)
 
+      // Deleting a model tombstones its id so a stale engine listing cannot
+      // resurrect the row. Importing it again is the user undoing that, so
+      // lift the tombstone before the refresh below — otherwise `setProviders`
+      // filters the freshly downloaded model straight back out.
+      const importedId = eventData?.modelId as string | undefined
+      if (importedId) {
+        useModelProvider.getState().clearDeletedModel(importedId)
+      }
+
       try {
         const fetchedProviders = await serviceHub.providers().getProviders()
         setProviders(fetchedProviders)
@@ -301,7 +318,7 @@ export function DataProvider() {
         return
       }
 
-      const modelId = eventData?.modelId as string | undefined
+      const modelId = importedId
       if (!modelId) {
         console.warn(
           '[LocalAPI] onModelImported: no modelId in event data, skipping'
@@ -344,26 +361,17 @@ export function DataProvider() {
       // This keeps model/provider selection aligned with migrations and
       // persisted deletions before `switchToModel` runs.
       // Both llama.cpp providers list every GGUF from the shared models dir,
-      // so an array-order find could land on a deactivated provider (e.g.
-      // TurboQuant, disabled by default on fresh installs) — skip those.
-      const storeProviders = useModelProvider.getState().providers
-      let provider = storeProviders.find(
-        (p) =>
-          p?.active !== false &&
-          p?.models?.some((m: { id: string }) => m.id === modelId)
-      )
+      // so the lookup prefers the selected provider / the importing engine
+      // over array order — otherwise the auto-start can load the model in
+      // TurboQuant while the chat loads it in upstream (double load, and the
+      // later switch kills the engine that is streaming).
+      const { providers: storeProviders, selectedProvider } =
+        useModelProvider.getState()
+      const provider = resolveImportedModelProvider(modelId, storeProviders, {
+        selectedProvider,
+        eventProvider: eventData?.provider as string | undefined,
+      })
       if (!provider) {
-        const altId = modelId.replace(/\//g, '\\')
-        provider = storeProviders.find(
-          (p) =>
-            p?.active !== false &&
-            p?.models?.some((m: { id: string }) => m.id === altId)
-        )
-      }
-      if (!provider) {
-        provider = storeProviders.find(
-          (p) => p?.provider === LOCAL_LLAMACPP_PROVIDER
-        )
         console.warn(
           '[LocalAPI] Could not find provider for model',
           modelId,
@@ -372,6 +380,32 @@ export function DataProvider() {
       }
       const providerName = provider?.provider ?? LOCAL_LLAMACPP_PROVIDER
       console.log('[LocalAPI] Provider for model:', providerName)
+
+      // A download that finishes mid-conversation must not hijack the
+      // engine that is answering: `switchToModel` unloads other engines and
+      // restarts the proxy. The explicit "Use" button remains available.
+      if (isAnyChatBusy()) {
+        console.log(
+          '[LocalAPI] onModelImported: a chat is streaming, skipping auto-switch for',
+          modelId
+        )
+        return
+      }
+
+      // Already served by the resolved engine (e.g. the chat send path loaded
+      // it first) — nothing to switch.
+      const alreadyActive = await serviceHub
+        .models()
+        .getActiveModels(providerName)
+        .catch(() => [] as string[])
+      if (alreadyActive.includes(modelId)) {
+        console.log(
+          '[LocalAPI] onModelImported: model already active in',
+          providerName,
+          '— skipping auto-switch'
+        )
+        return
+      }
 
       console.log(
         '[LocalAPI] Current server status:',

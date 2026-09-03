@@ -54,7 +54,7 @@ export function LlamacppDflashDraftDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px] max-w-[90vw]">
+      <DialogContent className="sm:max-w-lg lg:max-w-lg xl:max-w-lg">
         <DialogHeader>
           <DialogTitle className="font-bold">
             {t('settings:llamacppDflashDraftTitle', {

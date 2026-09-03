@@ -5,6 +5,7 @@ import { getServiceHub } from '@/hooks/useServiceHub'
 import { modelSettings } from '@/lib/predefined'
 import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import { turboquantDefaultActive } from '@/lib/turboquantDefaultMigration'
+import { isCloudProvider, isProviderConnected } from '@/lib/cloud-providers'
 
 /**
  * Historical provider id retained for one-time migration logic. The
@@ -43,6 +44,7 @@ type ModelProviderState = {
   addProvider: (provider: ModelProvider) => void
   deleteProvider: (providerName: string) => void
   deleteModel: (modelId: string) => void
+  clearDeletedModel: (modelId: string) => void
 }
 
 export const useModelProvider = create<ModelProviderState>()(
@@ -288,6 +290,17 @@ export const useModelProvider = create<ModelProviderState>()(
             deletedModels: [...currentDeletedModels, modelId],
           }
         })
+      },
+      // Re-downloading a model has to lift its tombstone, or `setProviders`
+      // keeps filtering the fresh id out of every engine listing and the model
+      // stays invisible until the store is wiped.
+      clearDeletedModel: (modelId: string) => {
+        set((state) => ({
+          deletedModels: (Array.isArray(state.deletedModels)
+            ? state.deletedModels
+            : []
+          ).filter((id) => id !== modelId),
+        }))
       },
       addProvider: (provider: ModelProvider) => {
         set((state) => ({
@@ -682,9 +695,33 @@ export const useModelProvider = create<ModelProviderState>()(
           state.selectedProvider = LOCAL_LLAMACPP_PROVIDER
         }
 
+        // v15 — cloud providers first registered by a build that defaulted
+        // them to `active: false` stayed off forever: `setProviders` keeps
+        // whatever was persisted, so connecting one on the Cloud page left it
+        // out of the model picker *and* out of `syncRemoteProviders` (which
+        // registers the proxy route). The result was a provider the Cloud page
+        // calls connected and nothing else can use, with no UI saying why.
+        //
+        // Only providers the user actually connected are re-enabled — an
+        // untouched one keeps its flag, so nothing the user deliberately
+        // switched off before ever setting it up is resurrected. This runs
+        // once per install, so the Settings toggle still has the last word
+        // afterwards.
+        if (version <= 14 && state?.providers) {
+          state.providers.forEach((provider) => {
+            if (
+              !provider.active &&
+              isCloudProvider(provider) &&
+              isProviderConnected(provider)
+            ) {
+              provider.active = true
+            }
+          })
+        }
+
         return state
       },
-      version: 14,
+      version: 15,
     }
   )
 )

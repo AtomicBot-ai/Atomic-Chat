@@ -13,6 +13,7 @@ import {
   isCpuBackend,
   cpuHasAvx,
   isUnsupportedNoAvxCpu,
+  classifyProjector,
 } from './util'
 
 // Mock console.log and console.error to avoid noise in tests
@@ -954,5 +955,77 @@ describe('effectiveCtxSize', () => {
 
   it('passes through an unset request', () => {
     expect(effectiveCtxSize(undefined, 512)).toBeUndefined()
+  })
+})
+
+describe('classifyProjector', () => {
+  it('recognises an audio projector', () => {
+    // Voxtral's mmproj, as libmtmd writes it. `read_gguf_metadata` renders
+    // GGUF booleans as the strings "true"/"false".
+    expect(
+      classifyProjector({
+        'general.architecture': 'clip',
+        'clip.has_audio_encoder': 'true',
+        'clip.audio.projector_type': 'voxtral',
+      })
+    ).toEqual({ vision: false, audio: true })
+  })
+
+  it('recognises a vision projector', () => {
+    expect(
+      classifyProjector({
+        'general.architecture': 'clip',
+        'clip.has_vision_encoder': 'true',
+        'clip.vision.projector_type': 'gemma3',
+      })
+    ).toEqual({ vision: true, audio: false })
+  })
+
+  it('recognises a projector that carries both modalities', () => {
+    expect(
+      classifyProjector({
+        'clip.has_vision_encoder': 'true',
+        'clip.has_audio_encoder': 'true',
+      })
+    ).toEqual({ vision: true, audio: true })
+  })
+
+  it('falls back to vision for metadata it cannot classify', () => {
+    // Regression guard: before this function existed every mmproj was treated
+    // as vision, and a projector we fail to read must not lose that.
+    expect(classifyProjector({})).toEqual({ vision: true, audio: false })
+    expect(classifyProjector(undefined)).toEqual({ vision: true, audio: false })
+    expect(classifyProjector(null)).toEqual({ vision: true, audio: false })
+    expect(classifyProjector({ 'general.architecture': 'clip' })).toEqual({
+      vision: true,
+      audio: false,
+    })
+  })
+
+  it('does not treat a false flag as present', () => {
+    expect(
+      classifyProjector({
+        'clip.has_vision_encoder': 'true',
+        'clip.has_audio_encoder': 'false',
+      })
+    ).toEqual({ vision: true, audio: false })
+  })
+
+  it('tolerates real booleans as well as strings', () => {
+    expect(
+      classifyProjector({
+        'clip.has_audio_encoder': true,
+        'clip.has_vision_encoder': false,
+      })
+    ).toEqual({ vision: false, audio: true })
+  })
+
+  it('ignores an empty projector-type string', () => {
+    expect(
+      classifyProjector({
+        'clip.vision.projector_type': '',
+        'clip.audio.projector_type': '  ',
+      })
+    ).toEqual({ vision: true, audio: false })
   })
 })

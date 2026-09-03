@@ -24,7 +24,7 @@ import {
 } from '@/stores/model-catalog-store'
 import type { CatalogModel } from '@/services/models/types'
 import { sanitizeModelId } from '@/lib/utils'
-import { stripMtpCompanionQuants } from '@/lib/models'
+import { stripNonWeightQuants } from '@/lib/models'
 
 type ModelSourcesState = {
   sources: CatalogModel[]
@@ -44,9 +44,10 @@ const adaptCatalog = (
     // OS-agnostic so the same cache works for a user who later moves to
     // macOS.
     if (is_mlx && !IS_MACOS) continue
-    // Hide MTP companion GGUFs baked into the curated catalog — they are
-    // speculative-decoding heads, not standalone downloadable models.
-    const stripped = stripMtpCompanionQuants(entry)
+    // Hide the GGUFs the curated catalog carries that are not runnable weights
+    // (imatrix dumps, MTP/DFlash/EAGLE heads, vocab-only and audio-companion
+    // files) — they are part of a repo's file list, not downloadable models.
+    const stripped = stripNonWeightQuants(entry)
     out.push({
       ...stripped,
       quants: stripped.quants?.map((q) => ({

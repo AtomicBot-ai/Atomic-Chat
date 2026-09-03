@@ -24,10 +24,11 @@
     "generating": "Предпросмотр станет доступен после завершения генерации."
   },
   "agentMode": {
-    "chat": "Чат",
+    "menuItem": "Режим агента",
     "agent": "Агент",
-    "placeholder": "Опишите задачу для агента...",
-    "providerUnavailable": "Режим агента доступен только с локальной моделью llama.cpp."
+    "turnOff": "Выключить режим агента",
+    "providerUnavailable": "Режим агента работает с локальной моделью или облачным провайдером с API-ключом.",
+    "providerKeyMissing": "Добавьте API-ключ этого провайдера в настройках, чтобы включить режим агента."
   },
   "agentApprovals": {
     "manualSelected": "Вручную",
@@ -47,7 +48,9 @@
     "deny": "Отклонить",
     "alwaysAllow": "Всегда разрешать это действие",
     "approveOnce": "Разрешить один раз",
-    "resolveFailed": "Не удалось отправить решение."
+    "resolveFailed": "Не удалось отправить решение.",
+    "showDetails": "Показать детали",
+    "hideDetails": "Скрыть детали"
   },
   "agentFolderAccess": {
     "title": "Разрешить доступ к папке",
@@ -72,17 +75,27 @@
     "makeViewOnly": "Только просмотр",
     "removeFolder": "Убрать из Agent"
   },
+  "runSettings": {
+    "title": "Настройки запуска",
+    "open": "Открыть настройки запуска",
+    "close": "Закрыть настройки запуска",
+    "model": "Модель",
+    "advancedSettings": "Расширенные настройки",
+    "advancedSettingsHint": "Параметры загрузки. Их изменение перезапускает работающую модель."
+  },
   "agentErrors": {
     "audioUnsupported": "Agent-режим не поддерживает аудиовложения.",
     "invalidAttachment": "Не удалось прикрепить один или несколько файлов. Выберите локальные файлы и повторите попытку.",
     "visionModelRequired": "Перед отправкой изображений выберите модель с поддержкой vision.",
-    "localLlamacppRequired": "Agent-режиму нужна активная локальная llama.cpp-модель.",
     "providerUnavailableTitle": "Режим агента недоступен для этого провайдера",
-    "providerUnavailableDescription": "Переключитесь на локальную модель llama.cpp и попробуйте снова.",
+    "providerUnavailableDescription": "Выберите локальную модель или облачного провайдера с API-ключом.",
     "unsupportedTools": "Agent-режим пока не поддерживает MCP, RAG и browser tools.",
     "runFailed": "Не удалось запустить агента.",
     "cancelFailed": "Не удалось отменить запуск агента.",
-    "saveFailed": "Не удалось сохранить ответ агента."
+    "saveFailed": "Не удалось сохранить ответ агента.",
+    "localModelRequired": "Загрузите модель перед запуском агента.",
+    "providerKeyMissing": "Добавьте API-ключ этого провайдера в настройках и попробуйте снова.",
+    "localServerRequired": "Для режима агента с облачной моделью нужен локальный API-сервер. Запустите его в настройках."
   },
   "agentTasks": {
     "title": "Идеи для вас",

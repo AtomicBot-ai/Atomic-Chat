@@ -35,9 +35,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Switch } from '@/components/ui/switch'
-import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { route } from '@/constants/routes'
-import { useAgentMode } from '@/hooks/useAgentMode'
 import { useAgentSkills } from '@/hooks/useAgentSkills'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
@@ -51,8 +49,6 @@ export const Route = createFileRoute(route.skills.index as any)({
 export function SkillsPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const setSidebarMode = useAgentMode((state) => state.setSidebarMode)
-  const setAgentMode = useAgentMode((state) => state.setAgentMode)
   const {
     skills,
     selected,
@@ -81,8 +77,6 @@ export function SkillsPage() {
   }
 
   const tryInChat = (name: string) => {
-    setSidebarMode('agent')
-    setAgentMode(TEMPORARY_CHAT_ID, true)
     void navigate({
       to: route.home,
       search: { agentSkill: name },

@@ -7,6 +7,11 @@ import {
 } from '@/components/ui/popover'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
+import {
+  isCloudProvider,
+  isLocalEngineProvider,
+  isProviderConnected,
+} from '@/lib/cloud-providers'
 import { highlightFzfMatch } from '@/utils/highlight'
 import Capabilities from './Capabilities'
 import {
@@ -16,7 +21,6 @@ import {
 import { IconSettings, IconX, IconDownload } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
-import { SamplerPopover } from '@/containers/SamplerPopover'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { ModelSupportStatus } from '@/containers/ModelSupportStatus'
 import { Fzf } from 'fzf'
@@ -30,6 +34,24 @@ import { getLastUsedModel } from '@/utils/getModelToStart'
 import { switchToModel } from '@/utils/switchModel'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ChevronsUpDown } from 'lucide-react'
+
+/**
+ * Which providers earn a section in the picker.
+ *
+ * Local engines always do — they are the app's own runtimes, and an empty one
+ * still needs its header so the user can reach its settings. A cloud provider
+ * earns one only once it is actually connected: the registry ships every
+ * catalogue entry `active: true`, so without this the picker is a wall of
+ * empty headers for providers the user never set up (the ChatGPT subscription
+ * among them) burying the ones they did.
+ *
+ * Custom providers are judged on their models, as they are everywhere else:
+ * they may legitimately need no key.
+ */
+const isPickerSection = (provider: ModelProvider): boolean =>
+  isLocalEngineProvider(provider) ||
+  isProviderConnected(provider) ||
+  (!isKnownProvider(provider.provider) && provider.models.length > 0)
 
 interface SearchableModel {
   provider: ModelProvider
@@ -51,20 +73,13 @@ const setLastUsedModel = (provider: string, model: string) => {
   }
 }
 
-interface DropdownModelProviderProps {
-  /** Show the Sampling popover trigger inside the model bar (hidden for projects). */
-  showSampler?: boolean
-}
-
 // Vision detection asks the backend whether an mmproj sidecar exists next to the
 // model file. That answer cannot change while the app runs, so the result is
 // cached per model id: opening the model list must not re-probe the whole
 // llamacpp library every time.
 const visionProbeCache = new Map<string, boolean>()
 
-const DropdownModelProvider = memo(function DropdownModelProvider({
-  showSampler = true,
-}: DropdownModelProviderProps) {
+const DropdownModelProvider = memo(function DropdownModelProvider() {
   const providers = useModelProvider((state) => state.providers)
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
   const selectModelProvider = useModelProvider(
@@ -343,16 +358,12 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         // Skip embedding models - they can't be used for chat
         if (modelItem.embedding || modelItem.id === EMBEDDING_MODEL_ID) return
 
-        // Skip models that require API key but don't have one (except llamacpp)
-        // For custom providers, allow if they have at least one model loaded
-        const isPredefined = isKnownProvider(provider.provider)
-        if (
-          provider &&
-          provider.provider !== 'llamacpp' &&
-          !provider.api_key?.length &&
-          (isPredefined || provider.models.length === 0)
-        )
-          return
+        // Skip catalogue entries for providers the user has not set up.
+        // `isProviderConnected` is the check, not a bare `api_key` test: a
+        // subscription carries its token in the backend and a loopback server
+        // (Ollama, LM Studio) needs none, so keying off `api_key` alone hid
+        // their models even while they were signed in and serving.
+        if (!isPickerSection(provider)) return
 
         const capabilities = modelItem.capabilities || []
         const capabilitiesString = capabilities.join(' ')
@@ -428,18 +439,12 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     const groups: Record<string, SearchableModel[]> = {}
 
     if (!searchValue) {
-      const isLocalProvider = (name: string) =>
-        name === 'mlx' ||
-        name === 'llamacpp' ||
-        name === 'llamacpp-upstream' ||
-        name === 'foundation-models'
-
       const activeProviders = providers
-        .filter((p) => p.active)
+        .filter((p) => p.active && isPickerSection(p))
         .sort((a, b) => {
           // Local providers first, regardless of whether they have models
-          const aIsLocal = isLocalProvider(a.provider)
-          const bIsLocal = isLocalProvider(b.provider)
+          const aIsLocal = isLocalEngineProvider(a)
+          const bIsLocal = isLocalEngineProvider(b)
           if (aIsLocal !== bIsLocal) return aIsLocal ? -1 : 1
 
           // Within the same group, non-empty providers first
@@ -603,11 +608,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
             contextSize={getContextSize()}
             className="ml-0.5 shrink-0"
           />
-          {showSampler && (
-            <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-              <SamplerPopover />
-            </div>
-          )}
         </div>
       </PopoverTrigger>
 
@@ -748,10 +748,19 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                           className="size-6 cursor-pointer flex items-center justify-center rounded-sm bg-secondary-foreground/8 transition-all duration-200 ease-in-out"
                           onClick={(e) => {
                             e.stopPropagation()
-                            navigate({
-                              to: route.settings.providers,
-                              params: { providerName: providerInfo.provider },
-                            })
+                            // Cloud providers are set up on `/cloud`; local
+                            // engines keep their Settings detail page.
+                            if (isCloudProvider(providerInfo)) {
+                              navigate({
+                                to: route.cloud.index,
+                                search: { provider: providerInfo.provider },
+                              })
+                            } else {
+                              navigate({
+                                to: route.settings.providers,
+                                params: { providerName: providerInfo.provider },
+                              })
+                            }
                             setOpen(false)
                           }}
                         >

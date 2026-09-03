@@ -230,9 +230,7 @@ async fn spawn_connection_dropping_head_server(
             let mut buf = [0u8; 1024];
             let _ = socket.read(&mut buf).await;
             let _ = socket
-                .write_all(
-                    b"HTTP/1.1 200 OK\r\ncontent-length: 42\r\nconnection: close\r\n\r\n",
-                )
+                .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 42\r\nconnection: close\r\n\r\n")
                 .await;
         }
     });
@@ -333,7 +331,9 @@ async fn download_succeeds_when_preflight_head_always_fails() {
     .unwrap();
 
     let data_dir = get_jan_data_folder_path(app.handle().clone());
-    let saved = tokio::fs::read(data_dir.join(&item.save_path)).await.unwrap();
+    let saved = tokio::fs::read(data_dir.join(&item.save_path))
+        .await
+        .unwrap();
     assert_eq!(saved, b"abcdef");
     // Initial attempt plus MAX_STREAM_RETRIES retries, then the fallback.
     assert_eq!(head_count.load(Ordering::SeqCst), 6);

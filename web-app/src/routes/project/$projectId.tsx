@@ -88,8 +88,8 @@ function ProjectPageContent() {
   return (
     <div className="flex flex-col h-svh w-full min-w-0 overflow-hidden">
       <HeaderPage>
-        <div className="flex items-center justify-between w-full">
-          <DropdownModelProvider showSampler={false} />
+        <div className="flex items-center justify-between w-full pr-2">
+          <DropdownModelProvider />
         </div>
       </HeaderPage>
 

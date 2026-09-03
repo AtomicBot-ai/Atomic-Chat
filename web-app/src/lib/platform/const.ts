@@ -72,4 +72,12 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
   // File attachments/RAG UI and tooling - desktop platforms only
   [PlatformFeature.FILE_ATTACHMENTS]:
     isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
+
+  // Voice input / dictation - desktop platforms only
+  [PlatformFeature.VOICE_INPUT]:
+    isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
+
+  // ChatGPT subscription sign-in — see PlatformFeature.CHATGPT_SUBSCRIPTION.
+  [PlatformFeature.CHATGPT_SUBSCRIPTION]:
+    isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
 }

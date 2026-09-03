@@ -7,6 +7,7 @@
   "quickStartFailed": "Something went wrong. Please try again.",
   "downloading": "Downloading…",
   "downloadPreparing": "Starting download…",
+  "downloadStartedOpening": "Download started — opening chat…",
   "downloadingDescription": "Please wait while we download the model. This may take a few minutes.",
   "orDivider": "or",
   "localModel": "Set up local model",

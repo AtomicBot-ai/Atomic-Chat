@@ -8,5 +8,18 @@
   "newConversation": "新对话",
   "clearHistory": "清除历史记录",
   "temporaryChat": "临时聊天",
-  "temporaryChatDescription": "开始一个临时对话，不会保存到您的聊天历史记录中。"
+  "temporaryChatDescription": "开始一个临时对话，不会保存到您的聊天历史记录中。",
+  "agentMode": {
+    "menuItem": "智能体模式",
+    "agent": "智能体",
+    "turnOff": "关闭智能体模式",
+    "providerUnavailable": "智能体模式需要本地模型，或已配置 API 密钥的云端提供商。",
+    "providerKeyMissing": "请在设置中为该提供商添加 API 密钥后使用智能体模式。"
+  },
+  "agentErrors": {
+    "localModelRequired": "请先加载该模型，再运行智能体。",
+    "providerUnavailableDescription": "请选择本地模型，或已配置 API 密钥的云端提供商。",
+    "providerKeyMissing": "请在设置中为该提供商添加 API 密钥后重试。",
+    "localServerRequired": "使用云端模型运行智能体需要本地 API 服务器，请在设置中启动。"
+  }
 }

@@ -152,7 +152,7 @@ describe('Dialog Components', () => {
       'p-6',
       'shadow-lg',
       'duration-200',
-      'sm:max-w-lg'
+      'sm:max-w-md'
     )
   })
 

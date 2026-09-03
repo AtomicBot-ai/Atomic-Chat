@@ -15,7 +15,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as SkillsIndexRouteImport } from './routes/skills/index'
 import { Route as LaunchIndexRouteImport } from './routes/launch/index'
 import { Route as HubIndexRouteImport } from './routes/hub/index'
+import { Route as ConnectorsIndexRouteImport } from './routes/connectors/index'
+import { Route as CloudIndexRouteImport } from './routes/cloud/index'
+import { Route as ApiIndexRouteImport } from './routes/api/index'
 import { Route as ThreadsThreadIdRouteImport } from './routes/threads/$threadId'
+import { Route as SettingsVoiceRouteImport } from './routes/settings/voice'
 import { Route as SettingsShortcutsRouteImport } from './routes/settings/shortcuts'
 import { Route as SettingsPrivacyRouteImport } from './routes/settings/privacy'
 import { Route as SettingsMcpServersRouteImport } from './routes/settings/mcp-servers'
@@ -65,9 +69,29 @@ const HubIndexRoute = HubIndexRouteImport.update({
   path: '/hub/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ConnectorsIndexRoute = ConnectorsIndexRouteImport.update({
+  id: '/connectors/',
+  path: '/connectors/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CloudIndexRoute = CloudIndexRouteImport.update({
+  id: '/cloud/',
+  path: '/cloud/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiIndexRoute = ApiIndexRouteImport.update({
+  id: '/api/',
+  path: '/api/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ThreadsThreadIdRoute = ThreadsThreadIdRouteImport.update({
   id: '/threads/$threadId',
   path: '/threads/$threadId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsVoiceRoute = SettingsVoiceRouteImport.update({
+  id: '/settings/voice',
+  path: '/settings/voice',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsShortcutsRoute = SettingsShortcutsRouteImport.update({
@@ -182,7 +206,11 @@ export interface FileRoutesByFullPath {
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
+  '/settings/voice': typeof SettingsVoiceRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
+  '/api/': typeof ApiIndexRoute
+  '/cloud/': typeof CloudIndexRoute
+  '/connectors/': typeof ConnectorsIndexRoute
   '/hub/': typeof HubIndexRoute
   '/launch/': typeof LaunchIndexRoute
   '/skills/': typeof SkillsIndexRoute
@@ -209,7 +237,11 @@ export interface FileRoutesByTo {
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
+  '/settings/voice': typeof SettingsVoiceRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
+  '/api': typeof ApiIndexRoute
+  '/cloud': typeof CloudIndexRoute
+  '/connectors': typeof ConnectorsIndexRoute
   '/hub': typeof HubIndexRoute
   '/launch': typeof LaunchIndexRoute
   '/skills': typeof SkillsIndexRoute
@@ -237,7 +269,11 @@ export interface FileRoutesById {
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
+  '/settings/voice': typeof SettingsVoiceRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
+  '/api/': typeof ApiIndexRoute
+  '/cloud/': typeof CloudIndexRoute
+  '/connectors/': typeof ConnectorsIndexRoute
   '/hub/': typeof HubIndexRoute
   '/launch/': typeof LaunchIndexRoute
   '/skills/': typeof SkillsIndexRoute
@@ -266,7 +302,11 @@ export interface FileRouteTypes {
     | '/settings/mcp-servers'
     | '/settings/privacy'
     | '/settings/shortcuts'
+    | '/settings/voice'
     | '/threads/$threadId'
+    | '/api/'
+    | '/cloud/'
+    | '/connectors/'
     | '/hub/'
     | '/launch/'
     | '/skills/'
@@ -293,7 +333,11 @@ export interface FileRouteTypes {
     | '/settings/mcp-servers'
     | '/settings/privacy'
     | '/settings/shortcuts'
+    | '/settings/voice'
     | '/threads/$threadId'
+    | '/api'
+    | '/cloud'
+    | '/connectors'
     | '/hub'
     | '/launch'
     | '/skills'
@@ -320,7 +364,11 @@ export interface FileRouteTypes {
     | '/settings/mcp-servers'
     | '/settings/privacy'
     | '/settings/shortcuts'
+    | '/settings/voice'
     | '/threads/$threadId'
+    | '/api/'
+    | '/cloud/'
+    | '/connectors/'
     | '/hub/'
     | '/launch/'
     | '/skills/'
@@ -348,7 +396,11 @@ export interface RootRouteChildren {
   SettingsMcpServersRoute: typeof SettingsMcpServersRoute
   SettingsPrivacyRoute: typeof SettingsPrivacyRoute
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
+  SettingsVoiceRoute: typeof SettingsVoiceRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
+  ApiIndexRoute: typeof ApiIndexRoute
+  CloudIndexRoute: typeof CloudIndexRoute
+  ConnectorsIndexRoute: typeof ConnectorsIndexRoute
   HubIndexRoute: typeof HubIndexRoute
   LaunchIndexRoute: typeof LaunchIndexRoute
   SkillsIndexRoute: typeof SkillsIndexRoute
@@ -400,11 +452,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HubIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/connectors/': {
+      id: '/connectors/'
+      path: '/connectors'
+      fullPath: '/connectors/'
+      preLoaderRoute: typeof ConnectorsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cloud/': {
+      id: '/cloud/'
+      path: '/cloud'
+      fullPath: '/cloud/'
+      preLoaderRoute: typeof CloudIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/': {
+      id: '/api/'
+      path: '/api'
+      fullPath: '/api/'
+      preLoaderRoute: typeof ApiIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/threads/$threadId': {
       id: '/threads/$threadId'
       path: '/threads/$threadId'
       fullPath: '/threads/$threadId'
       preLoaderRoute: typeof ThreadsThreadIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/voice': {
+      id: '/settings/voice'
+      path: '/settings/voice'
+      fullPath: '/settings/voice'
+      preLoaderRoute: typeof SettingsVoiceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings/shortcuts': {
@@ -556,7 +636,11 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsMcpServersRoute: SettingsMcpServersRoute,
   SettingsPrivacyRoute: SettingsPrivacyRoute,
   SettingsShortcutsRoute: SettingsShortcutsRoute,
+  SettingsVoiceRoute: SettingsVoiceRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
+  ApiIndexRoute: ApiIndexRoute,
+  CloudIndexRoute: CloudIndexRoute,
+  ConnectorsIndexRoute: ConnectorsIndexRoute,
   HubIndexRoute: HubIndexRoute,
   LaunchIndexRoute: LaunchIndexRoute,
   SkillsIndexRoute: SkillsIndexRoute,

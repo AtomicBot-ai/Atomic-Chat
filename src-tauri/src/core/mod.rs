@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod app;
 pub mod artifact;
+pub mod auth;
 #[cfg(feature = "cli")]
 pub mod cli;
 pub mod downloads;

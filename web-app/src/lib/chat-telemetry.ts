@@ -38,6 +38,14 @@ import {
 
 export type ChatTurnSource = 'chat' | 'agent' | 'regenerate' | 'edit'
 
+/**
+ * Which pipeline actually served the turn. After the chat/agent merge the
+ * engine is a routing outcome, not a user choice — `route_reason` records why
+ * (see `RouteReason` in `lib/agent-route.ts`), so fallback traffic stays
+ * observable while the legacy pipeline is retired.
+ */
+export type ChatEngine = 'agent-ipc' | 'chat-transport'
+
 export type ChatOutcome =
   | 'success'
   | 'error'
@@ -328,6 +336,8 @@ export type ChatRequestProps = {
   turn_id: string
   thread_id: string
   source: ChatTurnSource
+  engine?: ChatEngine
+  route_reason?: string
   model_id?: string | null
   provider?: string | null
   turn_index?: number
@@ -335,6 +345,12 @@ export type ChatRequestProps = {
   is_agent_mode?: boolean
   agent_skill?: string | null
   tools_enabled_count?: number
+  /** Estimated token cost of the tool definitions actually sent. */
+  tools_tokens_estimate?: number | null
+  /** That cost as a fraction of the configured context window. */
+  tools_ctx_share?: number | null
+  /** How many MCP servers contribute an outsized share of that cost. */
+  tools_heavy_servers?: number
 } & Partial<AttachmentTelemetry> &
   Partial<ContextTelemetry> &
   Partial<Pick<ToolTelemetry, 'has_rag' | 'has_mcp'>>
@@ -358,6 +374,8 @@ export type ChatResponseProps = {
   turn_id: string
   thread_id: string
   source: ChatTurnSource
+  engine?: ChatEngine
+  route_reason?: string
   outcome: ChatOutcome
   finish_reason?: string | null
   error?: unknown

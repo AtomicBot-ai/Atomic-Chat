@@ -67,6 +67,34 @@ describe('useToolApproval', () => {
     )
   })
 
+  it('prompts despite allowAllMCPPermissions when the caller bypasses it', async () => {
+    // An explicit "Manually approve" on the composer select outranks the
+    // global switch — the call site passes bypassGlobalAutoApprove for that.
+    const { result } = renderHook(() => useToolApproval())
+    expect(result.current.allowAllMCPPermissions).toBe(true)
+
+    let approvalResult: boolean | undefined
+    act(() => {
+      void result.current
+        .showApprovalModal('new-tool', 'thread-manual', undefined, {
+          bypassGlobalAutoApprove: true,
+        })
+        .then((value) => {
+          approvalResult = value
+        })
+    })
+
+    expect(result.current.isModalOpen).toBe(true)
+    expect(result.current.modalProps?.toolName).toBe('new-tool')
+
+    await act(async () => {
+      result.current.modalProps?.onDeny()
+    })
+
+    expect(approvalResult).toBe(false)
+    expect(result.current.isModalOpen).toBe(false)
+  })
+
   describe('setAllowAllMCPPermissions', () => {
     it('should set allowAllMCPPermissions to true', () => {
       const { result } = renderHook(() => useToolApproval())

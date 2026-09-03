@@ -6,17 +6,18 @@ use std::time::{Duration, Instant};
 
 use tokio_util::sync::CancellationToken;
 
-use super::llm_client::{LlamaServerClient, LlamaSessionTarget};
+use super::llm_client::{LlamaServerClient, LlamaSessionTarget, SamplingOverrides};
 use super::path_policy::EditableRoots;
 use super::prompt::{
     build_stable_prefix, CapabilitiesSummary, DEFAULT_MAX_PARALLEL_TOOL_CALLS, ITERATION_ONE_TOOLS,
 };
+use super::pty::PtyRegistry;
 use super::runner::{run_turn, RunTurnInput};
 use super::session::AgentSessionState;
 use super::test_support::{
     collect_event, RecordingApproval, RecordingDesktop, RecordingFolderAccess, TestWorkspace,
 };
-use super::types::{AgentEvent, ToolStatus};
+use super::types::{AgentEvent, AgentReasoning, ToolStatus};
 
 const REQUIRED_MODEL_ID: &str = "unsloth/Qwen3_5-9B-GGUF-Qwen3_5-9B-IQ4_XS";
 
@@ -168,6 +169,13 @@ impl LiveHarness {
                     external_read_only_roots: &[],
                     trusted_read_roots: &[],
                     max_steps,
+                    reasoning: AgentReasoning::default(),
+                    sampling: &SamplingOverrides::default(),
+                    mcp: None,
+                    disabled_tools: &std::collections::BTreeSet::new(),
+                    auto_approve_mcp: true,
+                    docs: None,
+                    documents_note: None,
                     client: &self.client,
                     approval,
                     folder_access: &folder_access,
@@ -176,6 +184,8 @@ impl LiveHarness {
                     session: &mut session,
                     skill_registry: &skill_registry,
                     bundled_script_runtime: None,
+                    pty: &PtyRegistry::new(),
+                    cache_dir: &std::env::temp_dir(),
                 },
                 |event| collect_event(&mut events, event),
             ),

@@ -10,8 +10,6 @@ export enum ShortcutAction {
   TOGGLE_SIDEBAR = 'toggleSidebar',
   GO_TO_SETTINGS = 'goSettings',
   SEARCH = 'search',
-  ZOOM_IN = 'zoomIn',
-  ZOOM_OUT = 'zoomOut',
 }
 
 export interface ShortcutSpec {

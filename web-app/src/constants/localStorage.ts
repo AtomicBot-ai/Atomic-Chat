@@ -43,7 +43,6 @@ export const localStorageKey = {
   // dismissed. Survives a restart so the offer is not lost with the session.
   onboardingModelReminder: 'atomic-onboarding-model-reminder',
   agentMode: 'agent-mode',
-  agentModeAttentionSeen: 'agent-mode-attention-seen-v1',
   factoryResetPending: 'factory-reset-pending',
   lastSeenVersion: 'last-seen-version',
   threadNotifications: 'thread-notifications',
@@ -69,6 +68,11 @@ export const localStorageKey = {
   // the tier detection picked for this host. Written before the download starts
   // so a crash or a failure mid-download cannot retry on every launch.
   startupBackendUpgradeAttempt: 'startup-backend-upgrade-attempt',
+  // Voice input preferences: setup completion, input device, language hint
+  // and live-vs-on-stop transcription. One persisted bag rather than a raw
+  // flag, so the composer can read it reactively without the storage-event
+  // dance `useSetupCompleted` needs for `setup-completed`.
+  settingVoice: 'setting-voice',
 }
 
 export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24

@@ -1,6 +1,4 @@
-import {
-  CustomChatTransport,
-} from '@/lib/custom-chat-transport'
+import { CustomChatTransport } from '@/lib/custom-chat-transport'
 // import { useCapabilities } from "@/stores/capabilities-store";
 import {
   Chat,
@@ -8,31 +6,27 @@ import {
   type UseChatOptions,
   useChat as useChatSDK,
 } from '@ai-sdk/react'
-import {
-  type ChatInit,
-  type LanguageModelUsage,
-} from 'ai'
+import { type ChatInit, type LanguageModelUsage } from 'ai'
 import { useEffect, useMemo, useRef, useCallback } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { ttftMarkFromRust } from '@/lib/ttft-timing'
 import { createSafeUnlisten } from '@/lib/tauriEvent'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useAppState } from '@/hooks/useAppState'
+import { useToolAvailable } from '@/hooks/useToolAvailable'
 
 type CustomChatOptions = Omit<ChatInit<UIMessage>, 'transport'> &
   Pick<UseChatOptions<UIMessage>, 'experimental_throttle' | 'resume'> & {
     sessionId?: string
     sessionTitle?: string
     systemMessage?: string
-    onTokenUsage?: (usage: LanguageModelUsage, messageId: string) => void;
+    onTokenUsage?: (usage: LanguageModelUsage, messageId: string) => void
   }
 
 // This is a wrapper around the AI SDK's useChat hook
 // It implements model switching and uses the custom chat transport,
 // making a nice reusable hook for chat functionality.
-export function useChat(
-  options?: CustomChatOptions
-) {
+export function useChat(options?: CustomChatOptions) {
   const transportRef = useRef<CustomChatTransport | undefined>(undefined) // Using a ref here so we can update the model used in the transport without having to reload the page or recreate the transport
   const {
     sessionId,
@@ -48,6 +42,22 @@ export function useChat(
   // Get serviceHub and model metadata from app state
   const mcpToolNames = useAppState((state) => state.mcpToolNames)
   const ragToolNames = useAppState((state) => state.ragToolNames)
+  // Connectors muted for this chat change the tool set without any MCP
+  // event, so they are a refresh trigger of their own.
+  const mutedServersKey = useToolAvailable((state) =>
+    (sessionId
+      ? (state.mutedServers[sessionId] ?? state.defaultMutedServers)
+      : state.defaultMutedServers
+    ).join(',')
+  )
+  // Same for single tools switched off in the connector's tools dialog: the
+  // cost badge in the plugins menu is measured on what refreshTools builds.
+  const disabledToolsKey = useToolAvailable((state) =>
+    (sessionId
+      ? (state.disabledTools[sessionId] ?? state.defaultDisabledTools)
+      : state.defaultDisabledTools
+    ).join(',')
+  )
 
   const existingSessionTransport = sessionId
     ? useChatSessions.getState().sessions[sessionId]?.transport
@@ -131,7 +141,7 @@ export function useChat(
       transportRef.current.invalidateToolsCache()
       void transportRef.current.refreshTools(true)
     }
-  }, [mcpToolNames, ragToolNames])
+  }, [mcpToolNames, ragToolNames, mutedServersKey, disabledToolsKey])
 
   // The Rust proxy emits these unconditionally; collecting them is what makes
   // the proxy/backend split of TTFT visible in `chat_response_received`.

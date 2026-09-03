@@ -24,6 +24,8 @@ import {
   AppEvent,
   DownloadEvent,
   computeNextCtxLen,
+  detectReasoningControls,
+  ReasoningControls,
   ModelEvent,
 } from '@janhq/core'
 
@@ -1723,6 +1725,71 @@ export default class mlx_extension extends AIEngine {
         logger.warn(`Failed to read GGUF metadata: ${e}`)
         return false
       }
+    }
+  }
+
+  /**
+   * Report the reasoning controls declared by the model's chat template.
+   * Safetensors repos keep it in `chat_template.jinja` or in the
+   * `chat_template` field of `tokenizer_config.json`; GGUF keeps it in the
+   * header metadata.
+   */
+  async getReasoningControls(modelId: string): Promise<ReasoningControls> {
+    try {
+      const modelConfigPath = await joinPath([
+        this.providerPath,
+        'models',
+        modelId,
+        'model.yml',
+      ])
+      const modelConfig = await invoke<ModelConfig>('read_yaml', {
+        path: modelConfigPath,
+      })
+      const modelPath = await this.resolveModelPath(modelConfig.model_path)
+      if (!modelPath) return { supportsThinking: false }
+
+      if (!modelPath.endsWith('.safetensors')) {
+        const metadata = await readGgufMetadata(modelPath)
+        return detectReasoningControls(
+          metadata.metadata?.['tokenizer.chat_template']
+        )
+      }
+
+      const modelDir = modelPath.substring(0, modelPath.lastIndexOf('/'))
+
+      const chatTemplatePath = await joinPath([modelDir, 'chat_template.jinja'])
+      if (await fs.existsSync(chatTemplatePath)) {
+        const template = await invoke<string>('read_file_sync', {
+          args: [chatTemplatePath],
+        })
+        return detectReasoningControls(template)
+      }
+
+      const tokenizerConfigPath = await joinPath([
+        modelDir,
+        'tokenizer_config.json',
+      ])
+      if (await fs.existsSync(tokenizerConfigPath)) {
+        const raw = await invoke<string>('read_file_sync', {
+          args: [tokenizerConfigPath],
+        })
+        const template = JSON.parse(raw)?.chat_template
+        // Newer repos ship a list of named templates instead of one string.
+        if (typeof template === 'string') {
+          return detectReasoningControls(template)
+        }
+        if (Array.isArray(template)) {
+          return detectReasoningControls(
+            template.find((entry) => entry?.name === 'default')?.template ??
+              template[0]?.template
+          )
+        }
+      }
+
+      return { supportsThinking: false }
+    } catch (e) {
+      logger.warn(`Failed to detect reasoning controls for ${modelId}: ${e}`)
+      return { supportsThinking: false }
     }
   }
 

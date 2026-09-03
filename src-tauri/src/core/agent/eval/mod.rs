@@ -1,3 +1,4 @@
+mod answer;
 mod dataset;
 mod hooks;
 mod report;
@@ -15,11 +16,14 @@ use tokio_util::sync::CancellationToken;
 use self::dataset::{GaiaDatasetClient, GaiaFilters, GaiaTask};
 use self::hooks::{DenyFolderAccess, HeadlessDesktop, WorkspaceApproval};
 use self::report::{
-    aggregate_results, write_report, GaiaReport, GaiaTaskResult, GaiaTaskStatus, GaiaToolTrace,
+    aggregate_results, write_report, GaiaReport, GaiaSampleResult, GaiaTaskResult, GaiaTaskStatus,
+    GaiaToolTrace,
 };
 use self::scoring::score_answer;
 use self::server::{DedicatedLlamaServer, LlamaServerConfig};
-use super::llm_client::{LlamaBackend, LlamaServerClient, LlamaSessionTarget};
+use super::llm_client::{
+    AgentLlmClient, LlamaBackend, LlamaServerClient, LlamaSessionTarget, SamplingOverrides,
+};
 use super::model_profile::{detect_model_profile, AgentModelProfile};
 use super::path_policy::EditableRoots;
 use super::prompt::{
@@ -29,7 +33,7 @@ use super::prompt::{
 use super::runner::{run_turn, RunTurnInput};
 use super::session::AgentSessionState;
 use super::skills::{available_tool_names, SkillRegistry};
-use super::types::{AgentEvent, ToolStatus};
+use super::types::{AgentEvent, AgentReasoning, ToolStatus};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -63,6 +67,15 @@ pub struct GaiaEvalArgs {
     max_steps: u32,
     #[arg(long, env = "GAIA_SKILLS_DIR")]
     skills_dir: Option<PathBuf>,
+    /// Pre-extract entities/constraints/format hints into the task prompt.
+    #[arg(long, env = "GAIA_PLAN_HINTS", default_value_t = true, action = clap::ArgAction::Set)]
+    plan_hints: bool,
+    /// Independent samples per task, combined by normalized majority vote.
+    #[arg(long, env = "GAIA_SAMPLES", default_value_t = 1)]
+    samples: usize,
+    /// Thinking effort for the agent loop: unset|off|low|medium|high|xhigh.
+    #[arg(long, env = "GAIA_REASONING", default_value = "unset")]
+    reasoning: String,
     #[arg(long, env = "GAIA_CACHE_DIR", default_value = "target/gaia-eval/cache")]
     cache_dir: PathBuf,
     #[arg(long, env = "GAIA_OUTPUT_DIR", default_value = "target/gaia-eval")]
@@ -129,7 +142,12 @@ pub async fn run(args: GaiaEvalArgs) -> Result<PathBuf, String> {
             AgentModelProfile::Plain
         }
     };
-    let skill_registry = load_skills(args.skills_dir.as_deref(), &run_dir)?;
+    let skills_root = args
+        .skills_dir
+        .clone()
+        .unwrap_or_else(|| run_dir.join("skills"));
+    let skill_registry = load_skills(&skills_root)?;
+    let skills_root = skills_root.is_dir().then_some(skills_root);
 
     let progress = ProgressBar::new(tasks.len() as u64);
     progress.set_style(
@@ -139,6 +157,7 @@ pub async fn run(args: GaiaEvalArgs) -> Result<PathBuf, String> {
         .map_err(|error| error.to_string())?
         .progress_chars("=>-"),
     );
+    let reasoning = parse_reasoning(&args.reasoning)?;
     let mut results = Vec::with_capacity(tasks.len());
     for task in tasks {
         progress.set_message(format!("Level {} · {}", task.level, task.task_id));
@@ -149,8 +168,12 @@ pub async fn run(args: GaiaEvalArgs) -> Result<PathBuf, String> {
             &client,
             model_profile,
             &skill_registry,
+            skills_root.as_deref(),
             args.max_steps,
             Duration::from_secs(args.task_timeout_secs),
+            args.plan_hints,
+            args.samples,
+            reasoning.clone(),
         )
         .await;
         results.push(result);
@@ -174,18 +197,169 @@ pub async fn run(args: GaiaEvalArgs) -> Result<PathBuf, String> {
     Ok(report_path)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_task(
     task: &GaiaTask,
     dataset: &GaiaDatasetClient,
     run_dir: &Path,
-    client: &LlamaServerClient,
+    client: &dyn AgentLlmClient,
     model_profile: AgentModelProfile,
     skill_registry: &SkillRegistry,
+    skills_root: Option<&Path>,
     max_steps: u32,
     timeout: Duration,
+    plan_hints_enabled: bool,
+    samples: usize,
+    reasoning: AgentReasoning,
+) -> GaiaTaskResult {
+    if samples <= 1 {
+        return run_task_sample(
+            task,
+            dataset,
+            run_dir,
+            client,
+            model_profile,
+            skill_registry,
+            skills_root,
+            max_steps,
+            timeout,
+            plan_hints_enabled,
+            0,
+            reasoning,
+        )
+        .await;
+    }
+    let mut sample_results = Vec::with_capacity(samples);
+    for sample_index in 0..samples {
+        sample_results.push(
+            run_task_sample(
+                task,
+                dataset,
+                run_dir,
+                client,
+                model_profile,
+                skill_registry,
+                skills_root,
+                max_steps,
+                timeout,
+                plan_hints_enabled,
+                sample_index,
+                reasoning.clone(),
+            )
+            .await,
+        );
+    }
+    vote_on_samples(sample_results)
+}
+
+/// Canonical vote key, mirroring the scorer's branch selection so co-voting
+/// answers are exactly those the scorer would grade identically. A comma is
+/// the LIST branch (never a thousands separator): normalize each element the
+/// way the scorer does; a plain-parseable answer is a NUMBER; otherwise a
+/// whitespace/punctuation-normalized string.
+fn vote_key(prediction: &str) -> String {
+    let trimmed = prediction.trim();
+    if trimmed.contains(',') || trimmed.contains(';') {
+        let elements = trimmed
+            .split([',', ';'])
+            .map(scoring::normalize_element)
+            .collect::<Vec<_>>()
+            .join("|");
+        return format!("list:{elements}");
+    }
+    if let Some(number) = scoring::normalize_number(trimmed) {
+        return format!("num:{number}");
+    }
+    format!("str:{}", scoring::normalize_answer(trimmed))
+}
+
+/// Majority vote over per-sample predictions (ties break to the earliest
+/// sample). The winning sample's full result becomes the task result, with
+/// every sample summarized alongside for variance reporting.
+fn vote_on_samples(sample_results: Vec<GaiaTaskResult>) -> GaiaTaskResult {
+    let vote_size = sample_results.len();
+    let mut tallies: Vec<(String, usize, usize)> = Vec::new(); // key, count, first index
+    for (index, sample) in sample_results.iter().enumerate() {
+        let Some(prediction) = sample.prediction.as_deref() else {
+            continue;
+        };
+        let key = vote_key(prediction);
+        match tallies.iter_mut().find(|(existing, _, _)| *existing == key) {
+            Some((_, count, _)) => *count += 1,
+            None => tallies.push((key, 1, index)),
+        }
+    }
+    let winner_index = tallies
+        .iter()
+        .max_by(|a, b| a.1.cmp(&b.1).then(b.2.cmp(&a.2)))
+        .map(|(_, _, index)| *index)
+        .unwrap_or(0);
+    let total_duration: u128 = sample_results.iter().map(|sample| sample.duration_ms).sum();
+    let samples_summary = sample_results
+        .iter()
+        .enumerate()
+        .map(|(index, sample)| GaiaSampleResult {
+            sample_index: index,
+            prediction: sample.prediction.clone(),
+            normalized_prediction: sample.normalized_prediction.clone(),
+            correct: sample.correct,
+            status: sample.status.clone(),
+            terminal_reason: sample.terminal_reason.clone(),
+            step_count: sample.step_count,
+            duration_ms: sample.duration_ms,
+            error: sample.error.clone(),
+        })
+        .collect();
+    let mut result = sample_results
+        .into_iter()
+        .nth(winner_index)
+        .expect("winner index within sample results");
+    result.samples = samples_summary;
+    result.vote_size = Some(vote_size);
+    result.duration_ms = total_duration;
+    result
+}
+
+fn parse_reasoning(value: &str) -> Result<AgentReasoning, String> {
+    let budget = |tokens: u32| AgentReasoning::On {
+        budget_tokens: Some(tokens),
+        effort_value: None,
+    };
+    Ok(match value {
+        "unset" => AgentReasoning::Unset,
+        "off" => AgentReasoning::Off,
+        "low" => budget(256),
+        "medium" => budget(1_024),
+        "high" => budget(4_096),
+        "xhigh" => budget(8_192),
+        other => {
+            return Err(format!(
+                "GAIA_REASONING must be unset|off|low|medium|high|xhigh, got '{other}'"
+            ))
+        }
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_task_sample(
+    task: &GaiaTask,
+    dataset: &GaiaDatasetClient,
+    run_dir: &Path,
+    client: &dyn AgentLlmClient,
+    model_profile: AgentModelProfile,
+    skill_registry: &SkillRegistry,
+    skills_root: Option<&Path>,
+    max_steps: u32,
+    timeout: Duration,
+    plan_hints_enabled: bool,
+    sample_index: usize,
+    reasoning: AgentReasoning,
 ) -> GaiaTaskResult {
     let started = Instant::now();
-    let workspace = run_dir.join("tasks").join(safe_task_id(&task.task_id));
+    let workspace = run_dir
+        .join("tasks")
+        .join(safe_task_id(&task.task_id))
+        .join(format!("sample-{sample_index}"));
     let base = || GaiaTaskResult {
         task_id: task.task_id.clone(),
         level: task.level,
@@ -193,6 +367,12 @@ async fn run_task(
         prediction: None,
         normalized_prediction: None,
         gold_answer: task.gold_answer.clone(),
+        score_branch: None,
+        normalized_gold: None,
+        raw_prediction: None,
+        raw_prediction_correct: None,
+        samples: Vec::new(),
+        vote_size: None,
         correct: false,
         status: GaiaTaskStatus::Error,
         terminal_reason: None,
@@ -212,11 +392,11 @@ async fn run_task(
         Ok(roots) => roots,
         Err(error) => return task_error(base(), error),
     };
-    let approval = match WorkspaceApproval::new(&workspace) {
+    let approval = match WorkspaceApproval::new(&workspace, skills_root) {
         Ok(approval) => approval,
         Err(error) => return task_error(base(), error),
     };
-    let session_id = format!("gaia-{}", task.task_id);
+    let session_id = format!("gaia-{}-s{sample_index}", task.task_id);
     let run_id = format!("{session_id}-{}", uuid::Uuid::new_v4());
     let mut session = AgentSessionState::new(&session_id);
     let cancellation = CancellationToken::new();
@@ -240,13 +420,15 @@ async fn run_task(
             dangerous: record.manifest.dangerous,
         })
         .collect::<Vec<_>>();
+    let gaia_persona = answer::gaia_persona();
     let stable_prefix = build_stable_prefix_for_profile(
         ITERATION_ONE_TOOLS,
         &skill_descriptors,
         &capabilities,
         DEFAULT_MAX_PARALLEL_TOOL_CALLS,
-        None,
+        Some(&gaia_persona),
         model_profile,
+        false,
     );
     let attachment_instruction = attachment
         .as_ref()
@@ -254,10 +436,17 @@ async fn run_task(
         .and_then(|name| name.to_str())
         .map(|name| format!("\nThe task attachment is available at the relative path `{name}`."))
         .unwrap_or_default();
-    let question = format!(
+    let mut question = format!(
         "{}{}\nReturn only the final answer required by the question, without explanation.",
         task.question, attachment_instruction
     );
+    if plan_hints_enabled {
+        if let Some(hints) = answer::plan_hints(client, &task.question, &cancellation).await {
+            question.push_str(&format!(
+                "\n\nAnalysis hints (verify against sources; the output-format constraints are binding):\n{hints}"
+            ));
+        }
+    }
     let mut capture = TaskCapture::default();
     let future = run_turn(
         RunTurnInput {
@@ -272,6 +461,13 @@ async fn run_task(
             external_read_only_roots: &[],
             trusted_read_roots: &[],
             max_steps,
+            reasoning,
+            sampling: &SamplingOverrides::default(),
+            mcp: None,
+            disabled_tools: &std::collections::BTreeSet::new(),
+            auto_approve_mcp: true,
+            docs: None,
+            documents_note: None,
             client,
             approval: &approval,
             folder_access: &DenyFolderAccess,
@@ -286,52 +482,137 @@ async fn run_task(
             Ok(())
         },
     );
-    let run_result = tokio::time::timeout(timeout, future).await;
+    // Reserve part of the task budget so a timed-out run can still be forced
+    // into a scored best guess instead of an unanswered Timeout.
+    let reserve = (timeout / 4)
+        .min(Duration::from_secs(60))
+        .max(Duration::from_secs(1));
+    let inner_timeout = timeout.saturating_sub(reserve);
+    let run_result = tokio::time::timeout(inner_timeout, future).await;
     let duration_ms = started.elapsed().as_millis();
+
+    // Fill a scored result from the capture; used by every terminal path.
+    let scored = |prediction: String, capture: &TaskCapture, duration_ms: u128| {
+        let mut result = GaiaTaskResult::prediction(
+            task.task_id.clone(),
+            task.level,
+            task.question.clone(),
+            prediction,
+            task.gold_answer.clone(),
+        );
+        result.raw_prediction_correct = capture
+            .reply
+            .as_deref()
+            .map(|raw| score_answer(raw, &task.gold_answer));
+        result.raw_prediction = capture.reply.clone();
+        result.terminal_reason = capture.terminal_reason.clone();
+        result.step_count = capture.step_count;
+        result.tool_trace = capture.tool_trace.clone();
+        result.duration_ms = duration_ms;
+        result.error = capture.error.clone();
+        result
+    };
+
     match run_result {
         Err(_) => {
             cancellation.cancel();
-            let mut result = base();
-            result.status = GaiaTaskStatus::Timeout;
-            result.terminal_reason = Some("timeout".into());
-            result.step_count = capture.step_count;
-            result.tool_trace = capture.tool_trace;
-            result.duration_ms = duration_ms;
-            result.error = Some(format!("Task timed out after {timeout:?}"));
-            result
+            // The run's token is cancelled; the forced guess gets a fresh one.
+            let fresh = CancellationToken::new();
+            let forced = tokio::time::timeout(
+                reserve,
+                answer::reformulate(
+                    client,
+                    &question,
+                    &capture.tool_trace,
+                    capture.reply.as_deref(),
+                    &fresh,
+                ),
+            )
+            .await;
+            match forced {
+                Ok(Ok(prediction)) => {
+                    let mut result = scored(prediction, &capture, started.elapsed().as_millis());
+                    result.terminal_reason = Some("timeout".into());
+                    result.error = Some(format!(
+                        "Task timed out after {inner_timeout:?}; answer forced from the partial trace"
+                    ));
+                    result
+                }
+                _ => {
+                    let mut result = base();
+                    result.status = GaiaTaskStatus::Timeout;
+                    result.terminal_reason = Some("timeout".into());
+                    result.step_count = capture.step_count;
+                    result.tool_trace = capture.tool_trace;
+                    result.duration_ms = duration_ms;
+                    result.error = Some(format!("Task timed out after {inner_timeout:?}"));
+                    result
+                }
+            }
         }
         Ok(Err(error)) => {
-            let mut result = task_error(base(), error);
-            result.terminal_reason = capture.terminal_reason;
-            result.step_count = capture.step_count;
-            result.tool_trace = capture.tool_trace;
-            result.duration_ms = duration_ms;
-            result
+            if capture.tool_trace.is_empty() && capture.reply.is_none() {
+                let mut result = task_error(base(), error);
+                result.terminal_reason = capture.terminal_reason;
+                result.step_count = capture.step_count;
+                result.tool_trace = capture.tool_trace;
+                result.duration_ms = duration_ms;
+                return result;
+            }
+            // Evidence exists: force a best guess rather than submitting nothing.
+            match answer::reformulate(
+                client,
+                &question,
+                &capture.tool_trace,
+                capture.reply.as_deref(),
+                &cancellation,
+            )
+            .await
+            {
+                Ok(prediction) => {
+                    let mut result = scored(prediction, &capture, started.elapsed().as_millis());
+                    result.error = Some(format!("{error}; answer forced from the partial trace"));
+                    result
+                }
+                Err(_) => {
+                    let mut result = task_error(base(), error);
+                    result.terminal_reason = capture.terminal_reason;
+                    result.step_count = capture.step_count;
+                    result.tool_trace = capture.tool_trace;
+                    result.duration_ms = duration_ms;
+                    result
+                }
+            }
         }
         Ok(Ok(())) => {
-            let Some(prediction) = capture.reply else {
-                let mut result = task_error(base(), "Agent returned no final reply".into());
+            // A max_steps apology is a guaranteed-wrong draft; withhold it so
+            // the reformulator answers purely from the trace.
+            let draft = capture
+                .reply
+                .as_deref()
+                .filter(|_| capture.terminal_reason.as_deref() != Some("max_steps"));
+            let prediction = match answer::reformulate(
+                client,
+                &question,
+                &capture.tool_trace,
+                draft,
+                &cancellation,
+            )
+            .await
+            {
+                Ok(prediction) => Some(prediction),
+                Err(_) => draft.map(answer::postprocess),
+            };
+            let Some(prediction) = prediction else {
+                let mut result =
+                    task_error(base(), "Agent returned no scoreable final reply".into());
                 result.terminal_reason = capture.terminal_reason;
                 result.step_count = capture.step_count;
                 result.tool_trace = capture.tool_trace;
                 result.duration_ms = duration_ms;
                 return result;
             };
-            let correct = score_answer(&prediction, &task.gold_answer);
-            let mut result = GaiaTaskResult::prediction(
-                task.task_id.clone(),
-                task.level,
-                task.question.clone(),
-                prediction,
-                task.gold_answer.clone(),
-                correct,
-            );
-            result.terminal_reason = capture.terminal_reason;
-            result.step_count = capture.step_count;
-            result.tool_trace = capture.tool_trace;
-            result.duration_ms = duration_ms;
-            result.error = capture.error;
-            result
+            scored(prediction, &capture, started.elapsed().as_millis())
         }
     }
 }
@@ -368,7 +649,9 @@ impl TaskCapture {
             AgentEvent::StepError { message, category } => {
                 self.error = Some(format!("{category}: {message}"));
             }
-            AgentEvent::TurnFinished { reason, step_count } => {
+            AgentEvent::TurnFinished {
+                reason, step_count, ..
+            } => {
                 self.terminal_reason = Some(reason);
                 self.step_count = step_count;
             }
@@ -377,11 +660,12 @@ impl TaskCapture {
     }
 }
 
-fn load_skills(skills_dir: Option<&Path>, run_dir: &Path) -> Result<SkillRegistry, String> {
-    let root = skills_dir
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| run_dir.join("skills"));
-    SkillRegistry::load(root, &BTreeSet::new(), &available_tool_names())
+fn load_skills(skills_root: &Path) -> Result<SkillRegistry, String> {
+    SkillRegistry::load(
+        skills_root.to_path_buf(),
+        &BTreeSet::new(),
+        &available_tool_names(),
+    )
 }
 
 fn task_error(mut result: GaiaTaskResult, error: String) -> GaiaTaskResult {
@@ -408,6 +692,10 @@ fn validate_args(args: &GaiaEvalArgs) -> Result<(), String> {
     if args.limit == Some(0) {
         return Err("GAIA_LIMIT must be greater than zero".into());
     }
+    if args.samples == 0 {
+        return Err("GAIA_SAMPLES must be greater than zero".into());
+    }
+    parse_reasoning(&args.reasoning)?;
     Ok(())
 }
 
@@ -469,6 +757,86 @@ mod tests {
     use super::*;
     use crate::core::agent::types::{ToolCallPayload, ToolExecution, ToolOutcome};
 
+    fn sample(prediction: Option<&str>, gold: &str) -> GaiaTaskResult {
+        match prediction {
+            Some(prediction) => GaiaTaskResult::prediction(
+                "task".into(),
+                1,
+                "Q".into(),
+                prediction.into(),
+                gold.into(),
+            ),
+            None => {
+                let mut result = GaiaTaskResult::prediction(
+                    "task".into(),
+                    1,
+                    "Q".into(),
+                    String::new(),
+                    gold.into(),
+                );
+                result.prediction = None;
+                result
+            }
+        }
+    }
+
+    #[test]
+    fn vote_keys_collapse_number_formats_and_normalize_strings() {
+        // Comma-free number formats collapse.
+        assert_eq!(vote_key("89706"), vote_key("89706.00"));
+        assert_eq!(vote_key("$89706"), vote_key("89706"));
+        assert_eq!(vote_key("Saint Petersburg"), vote_key("saint petersburg"));
+        assert_ne!(vote_key("42"), vote_key("41"));
+        assert_ne!(vote_key("Paris"), vote_key("London"));
+        // A comma is the list branch, matching the scorer: `1,2` (two-element
+        // list) must NOT co-vote with `12` (number).
+        assert_ne!(vote_key("1,2"), vote_key("12"));
+        assert_eq!(vote_key("green, white"), vote_key("green,white"));
+        assert_ne!(vote_key("green, white"), vote_key("white, green"));
+    }
+
+    #[test]
+    fn majority_vote_picks_the_most_common_normalized_answer() {
+        let voted = vote_on_samples(vec![
+            sample(Some("42"), "42"),
+            sample(Some("41"), "42"),
+            sample(Some("42.0"), "42"),
+        ]);
+        assert_eq!(voted.prediction.as_deref(), Some("42"));
+        assert!(voted.correct);
+        assert_eq!(voted.vote_size, Some(3));
+        assert_eq!(voted.samples.len(), 3);
+        assert_eq!(voted.samples[1].prediction.as_deref(), Some("41"));
+    }
+
+    #[test]
+    fn vote_ties_break_to_the_earliest_sample_and_skip_missing_predictions() {
+        let voted = vote_on_samples(vec![
+            sample(None, "x"),
+            sample(Some("B"), "x"),
+            sample(Some("C"), "x"),
+        ]);
+        assert_eq!(voted.prediction.as_deref(), Some("B"));
+
+        let all_missing = vote_on_samples(vec![sample(None, "x"), sample(None, "x")]);
+        assert!(all_missing.prediction.is_none());
+        assert_eq!(all_missing.vote_size, Some(2));
+    }
+
+    #[test]
+    fn reasoning_levels_parse_to_budgets() {
+        assert_eq!(parse_reasoning("unset").unwrap(), AgentReasoning::Unset);
+        assert_eq!(parse_reasoning("off").unwrap(), AgentReasoning::Off);
+        assert_eq!(
+            parse_reasoning("medium").unwrap(),
+            AgentReasoning::On {
+                budget_tokens: Some(1_024),
+                effort_value: None
+            }
+        );
+        assert!(parse_reasoning("extreme").is_err());
+    }
+
     #[test]
     fn task_capture_records_reply_tools_errors_and_terminal_state() {
         let mut capture = TaskCapture::default();
@@ -496,6 +864,7 @@ mod tests {
         capture.observe(AgentEvent::TurnFinished {
             reason: "reply".into(),
             step_count: 2,
+            usage: None,
         });
 
         assert_eq!(capture.reply.as_deref(), Some("42"));

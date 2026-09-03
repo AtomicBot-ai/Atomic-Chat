@@ -9,5 +9,10 @@
     <!-- Bundled/native tools (e.g. llama-server) may dlopen dylibs by name; Hardened Runtime blocks that without this. -->
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
+    <!-- Voice input captures from the microphone via CoreAudio. Strictly required
+         only under App Sandbox, which this bundle does not use, but codesign
+         records it and Hardened Runtime is happier with it declared. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
 </dict>
 </plist>

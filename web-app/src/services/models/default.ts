@@ -7,6 +7,7 @@ import {
   ggufShardGroupKey,
   groupGgufShards,
   isMtpCompanionFile,
+  isNonWeightGgufFile,
 } from '@/lib/models'
 import {
   AIEngine,
@@ -320,11 +321,16 @@ export class DefaultModelsService implements ModelsService {
         file.rfilename.toLowerCase().endsWith('.gguf')
       ) || []
 
-    // Separate regular GGUF files from mmproj and MTP companion files
+    // Keep only files that are runnable weights: drop the projectors, the MTP
+    // heads, and everything else a repo ships alongside its quants (imatrix
+    // dumps, DFlash/EAGLE drafts, vocab-only and audio-companion GGUFs) — none
+    // of those load as a model, and offering them is a download the user has to
+    // throw away.
     const regularGgufFiles = ggufFiles.filter(
       (file) =>
         !file.rfilename.toLowerCase().includes('mmproj') &&
-        !isMtpCompanionFile(file.rfilename)
+        !isMtpCompanionFile(file.rfilename) &&
+        !isNonWeightGgufFile(file.rfilename)
     )
 
     const mmprojFiles = ggufFiles.filter((file) =>
@@ -654,6 +660,20 @@ export class DefaultModelsService implements ModelsService {
     await Promise.all(
       activeByProvider.flatMap(({ provider, models }) =>
         models.map((model) => this.stopModel(model, provider))
+      )
+    )
+  }
+
+  async stopAllModelsExcept(
+    modelId: string,
+    providerName: string
+  ): Promise<void> {
+    const activeByProvider = await this.getLocalActiveModelsByProvider()
+    await Promise.all(
+      activeByProvider.flatMap(({ provider, models }) =>
+        models
+          .filter((model) => !(provider === providerName && model === modelId))
+          .map((model) => this.stopModel(model, provider))
       )
     )
   }

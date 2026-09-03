@@ -31,17 +31,17 @@ pub fn compress_tool_result(tool: &str, status: ToolStatus, output: &str) -> Com
     )
 }
 
+/// Low-value listing output that is cheap to regenerate keeps the legacy
+/// tail compression. Content-bearing observations (fetched pages, parsed
+/// documents, shell output, search results, vision descriptions) are handled
+/// by the spill policy instead — see `super::spill` — and `os.fs.read` is
+/// fully exempt because its output is already bounded and model-paged.
 pub fn should_compress_tool(tool: &str) -> bool {
     matches!(
         tool,
-        "os.shell.run"
-            | "os.fs.read"
-            | "os.fs.list"
+        "os.fs.list"
             | "os.fs.glob"
-            | "os.fs.grep"
-            | "os.fs.read_document"
             | "os.fs.archive.list"
-            | "os.fs.archive.read_entry"
             | "os.fs.diff"
             | "os.git.status"
             | "os.git.log"
@@ -50,10 +50,6 @@ pub fn should_compress_tool(tool: &str) -> bool {
             | "os.git.blame"
             | "os.git.branch"
             | "os.proc.list"
-            | "os.http.request"
-            | "os.web.search"
-            | "os.web.fetch"
-            | "vision.describe"
     )
 }
 

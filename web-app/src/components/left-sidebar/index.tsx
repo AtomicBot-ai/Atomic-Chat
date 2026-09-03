@@ -3,20 +3,15 @@ import { NavChats } from './NavChats'
 import { NavMain } from './NavMain'
 import { NavProjects } from './NavProjects'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
-import { cn, isLlamacppProvider } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useAgentMode, type SidebarMode } from '@/hooks/useAgentMode'
-import { useModelProvider } from '@/hooks/useModelProvider'
-import { ChatAgentModeSwitch } from '@/containers/ChatAgentModeSwitch'
-import { TEMPORARY_CHAT_ID } from '@/constants/chat'
-import { localStorageKey } from '@/constants/localStorage'
 import { route } from '@/constants/routes'
-import { Link, useLocation, useNavigate } from '@tanstack/react-router'
+import { Link, useLocation } from '@tanstack/react-router'
 import {
   SettingsIcon,
   type SettingsIconHandle,
 } from '@/components/animated-icon/settings'
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 
 import {
   Sidebar,
@@ -33,28 +28,8 @@ import {
 export function LeftSidebar() {
   const { t } = useTranslation()
   const isLeftPanelOpen = useLeftPanel((state) => state.open)
-  const navigate = useNavigate()
   const { pathname } = useLocation()
-  const sidebarMode = useAgentMode((state) => state.sidebarMode)
-  const setSidebarMode = useAgentMode((state) => state.setSidebarMode)
-  const selectedProvider = useModelProvider((state) => state.selectedProvider)
-  const isAgentProviderSelected = isLlamacppProvider(selectedProvider)
   const settingsIconRef = useRef<SettingsIconHandle>(null)
-  const [showAgentAttention, setShowAgentAttention] = useState(
-    () =>
-      localStorage.getItem(localStorageKey.agentModeAttentionSeen) !== 'true'
-  )
-
-  const selectMode = (mode: SidebarMode) => {
-    if (mode === 'agent' && !isAgentProviderSelected) return
-    if (mode === 'agent' && showAgentAttention) {
-      localStorage.setItem(localStorageKey.agentModeAttentionSeen, 'true')
-      setShowAgentAttention(false)
-    }
-    setSidebarMode(mode)
-    useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, mode === 'agent')
-    navigate({ to: route.home })
-  }
 
   return (
     <div className="relative z-50">
@@ -183,22 +158,11 @@ export function LeftSidebar() {
               />
             </svg>
           </div>
-          <div className="mt-[6px] px-1">
-            <ChatAgentModeSwitch
-              isAgentMode={sidebarMode === 'agent'}
-              onChange={(isAgent) => selectMode(isAgent ? 'agent' : 'chat')}
-              chatLabel={t('chat:agentMode.chat')}
-              agentLabel={t('chat:agentMode.agent')}
-              agentDisabled={!isAgentProviderSelected}
-              agentDisabledTooltip={t('chat:agentMode.providerUnavailable')}
-              showAgentAttention={showAgentAttention}
-            />
-          </div>
         </SidebarHeader>
         <SidebarContent className="mask-b-from-95% mask-t-from-98%">
-          <NavMain mode={sidebarMode} />
-          {sidebarMode === 'chat' && <NavProjects />}
-          <NavChats mode={sidebarMode} />
+          <NavMain />
+          <NavProjects />
+          <NavChats />
         </SidebarContent>
         <SidebarFooter>
           <SidebarMenu>

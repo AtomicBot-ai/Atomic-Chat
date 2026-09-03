@@ -1,0 +1,159 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { describe, it, expect } from 'vitest'
+import {
+  HIDDEN_SERVER_KEYS,
+  MCP_CONNECTORS,
+  findInstalledServer,
+  buildConnectorConfig,
+} from '../mcp-connectors'
+import type { MCPServers } from '@/hooks/useMCPServers'
+
+const exa = MCP_CONNECTORS.find((c) => c.serverKey === 'exa')!
+const serper = MCP_CONNECTORS.find((c) => c.serverKey === 'serper')!
+const github = MCP_CONNECTORS.find((c) => c.serverKey === 'github')!
+
+describe('findInstalledServer', () => {
+  it('matches by exact key', () => {
+    const servers: MCPServers = {
+      exa: { command: '', args: [], env: {}, type: 'http', url: 'https://x' },
+    }
+    expect(findInstalledServer(exa, servers)?.key).toBe('exa')
+  })
+
+  it('matches by key case-insensitively', () => {
+    const servers: MCPServers = {
+      Exa: { command: '', args: [], env: {} },
+    }
+    expect(findInstalledServer(exa, servers)?.key).toBe('Exa')
+  })
+
+  it('matches by url substring when the key differs', () => {
+    const servers: MCPServers = {
+      'my search': {
+        command: '',
+        args: [],
+        env: {},
+        type: 'http',
+        url: 'https://mcp.exa.ai/mcp?key=abc',
+      },
+    }
+    expect(findInstalledServer(exa, servers)?.key).toBe('my search')
+  })
+
+  it('does not false-positive on unrelated servers', () => {
+    const servers: MCPServers = {
+      other: {
+        command: 'npx',
+        args: ['something'],
+        env: {},
+        type: 'http',
+        url: 'https://example.com/mcp',
+      },
+    }
+    expect(findInstalledServer(exa, servers)).toBeUndefined()
+    expect(findInstalledServer(github, servers)).toBeUndefined()
+  })
+})
+
+describe('buildConnectorConfig', () => {
+  it('injects an env secret without mutating the template', async () => {
+    const config = await buildConnectorConfig(serper, 'my-key')
+    expect(config.env.SERPER_API_KEY).toBe('my-key')
+    expect(serper.config.env.SERPER_API_KEY).toBeUndefined()
+  })
+
+  it('trims the secret and skips empty values', async () => {
+    const config = await buildConnectorConfig(serper, '  ')
+    expect(config.env.SERPER_API_KEY).toBeUndefined()
+  })
+
+  it('injects a header secret with formatting', async () => {
+    const connector = {
+      ...serper,
+      secret: {
+        kind: 'header' as const,
+        key: 'Authorization',
+        labelKey: 'x',
+        placeholder: '',
+        format: (v: string) => `Bearer ${v}`,
+      },
+    }
+    const config = await buildConnectorConfig(connector, 'tok')
+    expect(config.headers?.Authorization).toBe('Bearer tok')
+  })
+
+  it('returns a fresh clone for keyless connectors', async () => {
+    const config = await buildConnectorConfig(exa)
+    expect(config).toEqual(exa.config)
+    expect(config).not.toBe(exa.config)
+  })
+})
+
+describe('catalog hygiene', () => {
+  it('ships no placeholder sentinels', () => {
+    const raw = JSON.stringify(MCP_CONNECTORS.map((c) => c.config))
+    expect(raw).not.toMatch(/YOUR_.*_HERE/)
+  })
+
+  it('remote templates always carry an explicit transport type', () => {
+    for (const connector of MCP_CONNECTORS) {
+      if (connector.config.url) {
+        expect(connector.config.type).toMatch(/^(http|sse)$/)
+      }
+    }
+  })
+
+  it('oauth connectors are remote, recognizable by URL, and keyless', () => {
+    const oauth = MCP_CONNECTORS.filter((c) => c.auth !== undefined)
+    expect(oauth.length).toBeGreaterThan(0)
+    for (const connector of oauth) {
+      expect(connector.config.url).toBeTruthy()
+      expect(connector.config.type).toMatch(/^(http|sse)$/)
+      expect(connector.matchUrls?.length).toBeGreaterThan(0)
+      expect(connector.secret).toBeUndefined()
+    }
+  })
+
+  it('never lists a hidden server key in the catalog', () => {
+    for (const connector of MCP_CONNECTORS) {
+      expect(HIDDEN_SERVER_KEYS).not.toContain(connector.serverKey)
+    }
+  })
+
+  it('uses a unique server key per connector', () => {
+    const keys = MCP_CONNECTORS.map((c) => c.serverKey.toLowerCase())
+    expect(new Set(keys).size).toBe(keys.length)
+  })
+
+  it('injects header secrets only into remote templates and env secrets only into local ones', () => {
+    for (const connector of MCP_CONNECTORS) {
+      if (!connector.secret) continue
+      if (connector.secret.kind === 'header') {
+        expect(connector.config.url).toBeTruthy()
+        expect(connector.matchUrls?.length).toBeGreaterThan(0)
+      } else {
+        expect(connector.config.command).toBeTruthy()
+        expect(connector.config.url).toBeUndefined()
+      }
+    }
+  })
+
+  it('ships every referenced icon asset', () => {
+    const publicDir = join(__dirname, '..', '..', '..', 'public')
+    for (const connector of MCP_CONNECTORS) {
+      if (!connector.icon.src) continue
+      expect(connector.icon.src).toMatch(/^\/images\/connectors\//)
+      expect(
+        existsSync(join(publicDir, connector.icon.src)),
+        `${connector.serverKey}: ${connector.icon.src}`
+      ).toBe(true)
+    }
+  })
+
+  it('hides only entries whose sign-in cannot work yet', () => {
+    for (const connector of MCP_CONNECTORS.filter((c) => c.hidden)) {
+      expect(connector.auth).toBe('oauth-soon')
+    }
+  })
+})

@@ -65,7 +65,9 @@
     "autoApproveTools": "도구 호출 자동 승인",
     "autoApproveToolsDesc": "승인 팝업을 건너뛰고 모든 도구/MCP 호출을 자동으로 허용합니다. 비활성화하면 새 도구마다 확인을 요청합니다.",
     "desktopNotifications": "데스크톱 알림",
-    "desktopNotificationsDesc": "응답 생성이 완료되었고 창이 포커스되지 않았을 때 시스템 알림을 보냅니다."
+    "desktopNotificationsDesc": "응답 생성이 완료되었고 창이 포커스되지 않았을 때 시스템 알림을 보냅니다.",
+    "legacyChatEngine": "기존 채팅 엔진 사용",
+    "legacyChatEngineDesc": "모든 메시지를 이전 채팅 파이프라인으로 처리하고 에이전트 모드를 완전히 비활성화합니다. 임시 우회 수단입니다."
   },
   "threadNotifications": {
     "notificationTitle": "응답 준비됨",

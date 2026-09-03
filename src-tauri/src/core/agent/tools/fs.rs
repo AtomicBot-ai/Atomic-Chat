@@ -192,7 +192,7 @@ fn grep_sync(pattern: &str, path: &Path, working_dir: &Path) -> Result<String, S
             Err(_) if !direct_file => continue,
             Err(error) => return Err(error),
         };
-        let display_path = display_relative_path(file.strip_prefix(working_dir).unwrap_or(&file));
+        let display_path = observation_path_label(working_dir, &file);
         for (index, line) in text.lines().enumerate() {
             if regex.is_match(line) {
                 output.push_str(&format!("{display_path}:{}:{line}\n", index + 1));

@@ -25,6 +25,10 @@ const mocks = vi.hoisted(() => {
       reminder.pending = value
     }),
     refreshRegistry: vi.fn(() => Promise.resolve()),
+    pullModelWithMetadata: vi.fn(() => Promise.resolve()),
+    // Recommendation list the picker renders; mutable so a test can offer a
+    // downloadable model.
+    recommended: [] as unknown[],
     engine: { import: vi.fn() },
     // Mutable so a test can put the machine in the low-spec tier.
     hardwareTier: { tier: 'standard' as 'low' | 'standard', ready: true },
@@ -108,7 +112,7 @@ vi.mock('@/hooks/useModelSources', () => ({
 }))
 
 vi.mock('@/hooks/useResolvedRecommendedModels', () => ({
-  useResolvedRecommendedModels: () => [],
+  useResolvedRecommendedModels: () => mocks.recommended,
 }))
 
 // Also keeps the real module's import-time background fetch out of the tests.
@@ -214,7 +218,12 @@ describe('SetupScreen', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
-    seedServiceHub()
+    seedServiceHub({
+      models: {
+        pullModelWithMetadata: mocks.pullModelWithMetadata,
+      } as unknown as Parameters<typeof seedServiceHub>[0]['models'],
+    })
+    mocks.recommended = []
     mocks.leftPanel.open = false
     mocks.reminder.pending = false
     mocks.hardwareTier.tier = 'standard'
@@ -521,6 +530,100 @@ describe('SetupScreen', () => {
         ])
         unmount()
       })
+    })
+  })
+
+  describe('recommended download', () => {
+    const recommendation = {
+      rec: {
+        modelName: 'AtomicChat/Qwen3.5-4B-GGUF',
+        descriptionKey: 'hub:recEverydayUse',
+      },
+      model: {
+        model_name: 'AtomicChat/Qwen3.5-4B-GGUF',
+        developer: 'AtomicChat',
+        quants: [
+          {
+            model_id: 'Qwen3.5-4B-Q4_K_M',
+            path: 'https://hf.co/AtomicChat/Qwen3.5-4B-GGUF/q4_k_m.gguf',
+            file_size: '2.50 GB',
+          },
+        ],
+        mmproj_models: [],
+      },
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+      mocks.recommended = [recommendation]
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    const renderPicker = async () => {
+      mocks.scanLocalModels.mockResolvedValue([])
+      const rendered = render(<SetupScreen />)
+      await act(async () => {})
+      return rendered
+    }
+
+    it('names the model in plain language, without the packaging', async () => {
+      const { unmount } = await renderPicker()
+
+      expect(screen.getByText(/Qwen3\.5 4B/)).toBeInTheDocument()
+      // The repo id and the "Everyday use" blurb are both gone: neither tells a
+      // first-time user anything they can act on.
+      expect(screen.queryByText(/GGUF/)).not.toBeInTheDocument()
+      expect(screen.queryByText('hub:recEverydayUse')).not.toBeInTheDocument()
+      unmount()
+    })
+
+    it('holds the started download on screen for 3s before entering the chat', async () => {
+      const { unmount } = await renderPicker()
+
+      fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
+
+      expect(mocks.pullModelWithMetadata).toHaveBeenCalledOnce()
+      expect(
+        screen.getByText('setup:downloadStartedOpening')
+      ).toBeInTheDocument()
+
+      await act(async () => {
+        vi.advanceTimersByTime(2_999)
+      })
+      expect(mocks.navigate).not.toHaveBeenCalled()
+
+      await act(async () => {
+        vi.advanceTimersByTime(1)
+      })
+
+      expect(mocks.leftPanel.open).toBe(true)
+      expect(mocks.navigate.mock.calls).toHaveLength(1)
+      expect(mocks.navigate.mock.calls[0][0].search.threadModel.id).toBe(
+        'Qwen3.5-4B-Q4_K_M'
+      )
+      // A picked model is a finished setup — the reminder must stay disarmed.
+      expect(mocks.reminder.pending).toBe(false)
+      unmount()
+    })
+
+    it('does not let the 15s auto-exit overtake a started download', async () => {
+      const { unmount } = await renderPicker()
+
+      fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
+      await act(async () => {
+        vi.advanceTimersByTime(30_000)
+      })
+
+      expect(mocks.navigate.mock.calls).toHaveLength(1)
+      expect(
+        JSON.parse(localStorage.getItem(localStorageKey.lastUsedModel) ?? '{}')
+          .model
+      ).toBe('Qwen3.5-4B-Q4_K_M')
+      expect(mocks.reminder.pending).toBe(false)
+      unmount()
     })
   })
 

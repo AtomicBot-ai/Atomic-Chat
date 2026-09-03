@@ -2,12 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { DefaultThreadsService } from '../threads/default'
 import { ExtensionManager } from '@/lib/extension'
 import { ConversationalExtension, ExtensionTypeEnum } from '@janhq/core'
+import { killAgentSessionProcs } from '@/services/agent/tauri'
 
 // Mock ExtensionManager
 vi.mock('@/lib/extension', () => ({
   ExtensionManager: {
     getInstance: vi.fn(),
   },
+}))
+
+vi.mock('@/services/agent/tauri', () => ({
+  killAgentSessionProcs: vi.fn().mockResolvedValue(0),
 }))
 
 describe('DefaultThreadsService', () => {
@@ -227,14 +232,30 @@ describe('DefaultThreadsService', () => {
   })
 
   describe('deleteThread', () => {
-    it('should delete thread successfully', () => {
+    it('should delete thread successfully', async () => {
       const threadId = '1'
 
-      threadsService.deleteThread(threadId)
+      await threadsService.deleteThread(threadId)
 
       expect(mockConversationalExtension.deleteThread).toHaveBeenCalledWith(
         threadId
       )
+    })
+
+    it('should stop any agent processes the thread left running', async () => {
+      await threadsService.deleteThread('1')
+
+      expect(killAgentSessionProcs).toHaveBeenCalledWith('1')
+    })
+
+    it('should still delete the thread when stopping agent processes fails', async () => {
+      ;(killAgentSessionProcs as any).mockRejectedValueOnce(
+        new Error('not available')
+      )
+
+      await threadsService.deleteThread('1')
+
+      expect(mockConversationalExtension.deleteThread).toHaveBeenCalledWith('1')
     })
   })
 

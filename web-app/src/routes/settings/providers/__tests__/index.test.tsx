@@ -4,6 +4,7 @@ import { Route as ProvidersRoute } from '../index'
 import type { ModelsService } from '@/services/models/types'
 import type { ProvidersService } from '@/services/providers/types'
 import { seedServiceHub } from '@/test/service-hub'
+import { useModelProvider } from '@/hooks/useModelProvider'
 
 // Mock dependencies
 vi.mock('@/containers/SettingsMenu', () => ({
@@ -49,19 +50,19 @@ vi.mock('@/containers/Card', () => ({
 }))
 
 vi.mock('@/containers/ProvidersAvatar', () => ({
-  default: ({ provider }: { provider: string }) => (
-    <div data-testid="providers-avatar" data-provider={provider}>
-      Provider Avatar: {provider}
+  // The real component takes the whole provider object, not its name.
+  default: ({ provider }: { provider: { provider: string } }) => (
+    <div data-testid="providers-avatar" data-provider={provider.provider}>
+      Provider Avatar: {provider.provider}
     </div>
   ),
 }))
 
 vi.mock('@/hooks/useModelProvider', () => ({
-  useModelProvider: () => ({
+  useModelProvider: vi.fn(() => ({
     providers: [],
-    addProvider: vi.fn(),
     updateProvider: vi.fn(),
-  }),
+  })),
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -191,13 +192,43 @@ vi.mock('@/constants/routes', () => ({
   route: {
     settings: {
       model_providers: '/settings/providers',
+      providers: '/settings/providers/$providerName',
     },
+    cloud: { index: '/cloud/' },
   },
 }))
 
 describe('Providers Settings Route', () => {
+  const localAndCloud = [
+    { provider: 'llamacpp-upstream', active: true, models: [], persist: true },
+    { provider: 'llamacpp', active: true, models: [], persist: true },
+    { provider: 'openai', active: true, models: [{ id: 'gpt-5.4' }] },
+    {
+      provider: 'ollama',
+      active: true,
+      models: [],
+      base_url: 'http://localhost:11434/v1',
+    },
+    { provider: 'my-custom', active: true, models: [] },
+  ]
+
+  const mockProviders = (providers: unknown[], updateProvider = vi.fn()) => {
+    vi.mocked(useModelProvider).mockReturnValue({
+      providers,
+      updateProvider,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any)
+    return updateProvider
+  }
+
+  const renderPage = () => {
+    const Component = ProvidersRoute.component as React.ComponentType
+    return render(<Component />)
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
+    mockProviders([])
     seedServiceHub({
       providers: {
         getProviders: vi.fn().mockResolvedValue([]),
@@ -208,175 +239,72 @@ describe('Providers Settings Route', () => {
     })
   })
 
-  it('should render the providers settings page', () => {
-    const Component = ProvidersRoute.component as React.ComponentType
-    render(<Component />)
+  it('renders the page chrome', () => {
+    renderPage()
 
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
     expect(screen.getByTestId('settings-menu')).toBeInTheDocument()
     expect(screen.getByText('common:settings')).toBeInTheDocument()
-  })
-
-  it('should render providers card with header', () => {
-    const Component = ProvidersRoute.component as React.ComponentType
-    render(<Component />)
-
     expect(screen.getByTestId('card')).toBeInTheDocument()
     expect(screen.getByTestId('card-header')).toBeInTheDocument()
   })
 
-  it('should render list of providers', () => {
-    const Component = ProvidersRoute.component as React.ComponentType
-    render(<Component />)
+  it('lists local engines only', () => {
+    mockProviders(localAndCloud)
+    renderPage()
 
-    // With empty providers array, should still render the page structure
-    expect(screen.getByTestId('card')).toBeInTheDocument()
+    const titles = screen
+      .getAllByTestId('providers-avatar')
+      .map((el) => el.getAttribute('data-provider'))
+    expect(titles).toEqual(['llamacpp-upstream', 'llamacpp'])
   })
 
-  it('should render provider avatars', () => {
-    const Component = ProvidersRoute.component as React.ComponentType
-    render(<Component />)
+  it('does not offer the add-provider dialog', () => {
+    mockProviders(localAndCloud)
+    renderPage()
 
-    // With empty providers array, should still render the page structure
-    expect(screen.getByTestId('card')).toBeInTheDocument()
+    // Creating a custom OpenAI-compatible provider moved to `/cloud`.
+    expect(screen.queryByTestId('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dialog-trigger')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('input')).not.toBeInTheDocument()
   })
 
-  it('should render provider titles', () => {
-    const Component = ProvidersRoute.component as React.ComponentType
-    render(<Component />)
+  it('renders no header actions when nothing is listed', () => {
+    renderPage()
 
-    // With empty providers array, should still render the page structure
-    expect(screen.getByTestId('card')).toBeInTheDocument()
+    // The catalog refresh moved to `/cloud` with the providers it describes.
+    expect(screen.queryAllByTestId('button')).toHaveLength(0)
   })
 
-  it('should render provider switches', () => {
-    const Component = ProvidersRoute.component as React.ComponentType
-    render(<Component />)
+  it('renders a settings button and a switch per local engine', () => {
+    mockProviders(localAndCloud)
+    renderPage()
 
-    // With empty providers array, should still render the page structure
-    expect(screen.getByTestId('card')).toBeInTheDocument()
+    expect(screen.getAllByTestId('button')).toHaveLength(2)
+    expect(screen.getAllByTestId('switch')).toHaveLength(2)
   })
 
-  it('should render add provider dialog', () => {
-    const Component = ProvidersRoute.component as React.ComponentType
-    render(<Component />)
+  it('hides the settings button for a disabled engine', () => {
+    mockProviders([
+      { provider: 'llamacpp-upstream', active: true, models: [], persist: true },
+      { provider: 'llamacpp', active: false, models: [], persist: true },
+    ])
+    renderPage()
 
-    expect(screen.getByTestId('dialog')).toBeInTheDocument()
-    expect(screen.getByTestId('dialog-trigger')).toBeInTheDocument()
-    expect(screen.getByTestId('dialog-content')).toBeInTheDocument()
+    expect(screen.getAllByTestId('button')).toHaveLength(1)
+    expect(screen.getAllByTestId('switch')).toHaveLength(2)
   })
 
-  it('should render provider name input in dialog', () => {
-    const Component = ProvidersRoute.component as React.ComponentType
-    render(<Component />)
+  it('toggles a provider through the switch', () => {
+    const updateProvider = mockProviders([
+      { provider: 'llamacpp-upstream', active: true, models: [], persist: true },
+    ])
+    renderPage()
 
-    const input = screen.getByTestId('input')
-    expect(input).toBeInTheDocument()
-    expect(input).toHaveValue('')
-  })
+    fireEvent.click(screen.getByTestId('switch'))
 
-  it('should handle provider name input change', () => {
-    const Component = ProvidersRoute.component as React.ComponentType
-    render(<Component />)
-
-    const input = screen.getByTestId('input')
-    fireEvent.change(input, { target: { value: 'new-provider' } })
-    expect(input).toBeInTheDocument()
-  })
-
-  it('should handle provider switch toggle', () => {
-    const Component = ProvidersRoute.component as React.ComponentType
-    render(<Component />)
-
-    // With empty providers array, should still render the page structure
-    expect(screen.getByTestId('card')).toBeInTheDocument()
-  })
-
-  it('should handle add provider button click', () => {
-    const Component = ProvidersRoute.component as React.ComponentType
-    render(<Component />)
-
-    const input = screen.getByTestId('input')
-    fireEvent.change(input, { target: { value: 'new-provider' } })
-
-    const buttons = screen.getAllByTestId('button')
-    const addButton = buttons.find(
-      (button) =>
-        button.textContent?.includes('Add') ||
-        button.textContent?.includes('Create')
-    )
-    if (addButton) {
-      fireEvent.click(addButton)
-      expect(addButton).toBeInTheDocument()
-    }
-  })
-
-  it('should prevent adding duplicate providers', () => {
-    const Component = ProvidersRoute.component as React.ComponentType
-    render(<Component />)
-
-    const input = screen.getByTestId('input')
-    fireEvent.change(input, { target: { value: 'openai' } })
-
-    const buttons = screen.getAllByTestId('button')
-    const addButton = buttons.find(
-      (button) =>
-        button.textContent?.includes('Add') ||
-        button.textContent?.includes('Create')
-    )
-    if (addButton) {
-      fireEvent.click(addButton)
-      expect(addButton).toBeInTheDocument()
-    }
-  })
-
-  it('should have proper layout structure', () => {
-    const Component = ProvidersRoute.component as React.ComponentType
-    render(<Component />)
-
-    const container = screen.getByTestId('header-page')
-    expect(container).toBeInTheDocument()
-
-    const settingsMenu = screen.getByTestId('settings-menu')
-    expect(settingsMenu).toBeInTheDocument()
-  })
-
-  it('should render settings buttons for each provider', () => {
-    const Component = ProvidersRoute.component as React.ComponentType
-    render(<Component />)
-
-    const buttons = screen.getAllByTestId('button')
-    expect(buttons.length).toBeGreaterThan(0)
-  })
-
-  it('should call translation function with correct keys', () => {
-    const Component = ProvidersRoute.component as React.ComponentType
-    render(<Component />)
-
-    expect(screen.getByText('common:settings')).toBeInTheDocument()
-  })
-
-  it('should handle empty provider name', () => {
-    const Component = ProvidersRoute.component as React.ComponentType
-    render(<Component />)
-
-    const buttons = screen.getAllByTestId('button')
-    const addButton = buttons.find(
-      (button) =>
-        button.textContent?.includes('Add') ||
-        button.textContent?.includes('Create')
-    )
-    if (addButton) {
-      fireEvent.click(addButton)
-      expect(addButton).toBeInTheDocument()
-    }
-  })
-
-  it('should render provider with proper data structure', () => {
-    const Component = ProvidersRoute.component as React.ComponentType
-    render(<Component />)
-
-    // With empty providers array, should still render the page structure
-    expect(screen.getByTestId('card')).toBeInTheDocument()
+    const [name, patch] = updateProvider.mock.calls[0]
+    expect(name).toBe('llamacpp-upstream')
+    expect(patch).toMatchObject({ active: false })
   })
 })

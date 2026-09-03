@@ -181,6 +181,7 @@ export function reduceAgentRunState(
       return {
         ...state,
         finishedAtMs: nowMs,
+        usage: event.usage ?? state.usage,
         status,
         pendingApproval: undefined,
         pendingFolderAccess: undefined,

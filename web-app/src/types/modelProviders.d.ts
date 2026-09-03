@@ -33,6 +33,11 @@ type Model = {
   description?: string
   format?: string
   capabilities?: string[]
+  /**
+   * Reasoning knobs the model's chat template understands, detected from that
+   * template by the local backend extensions. Absent for remote providers.
+   */
+  reasoning?: import('@janhq/core').ReasoningControls
   settings?: Record<string, ProviderSetting>
   /** Whether this model is an embedding model (e.g., BERT-based) */
   embedding?: boolean

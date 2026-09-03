@@ -1,7 +1,11 @@
 {
+  "api": "API",
+  "cloud": "Cloud",
   "assistants": "助理",
   "hardware": "硬體",
   "mcp-servers": "MCP 伺服器",
+  "connectors": "連接器",
+  "plugins": "外掛程式",
   "local_api_server": "本地 API 伺服器",
   "https_proxy": "HTTPS 代理",
   "extensions": "擴充功能",
@@ -381,5 +385,11 @@
       "title": "執行緒已移除",
       "description": "執行緒已成功從「{{projectName}}」中移除"
     }
+  },
+  "skills": "技能",
+  "pluginsMenu": {
+    "title": "外掛程式",
+    "emptySkills": "尚無技能",
+    "manageSkills": "管理技能"
   }
 }

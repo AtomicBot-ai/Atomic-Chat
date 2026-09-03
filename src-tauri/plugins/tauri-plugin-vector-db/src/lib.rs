@@ -3,6 +3,7 @@ use tauri::{
     Manager, Runtime,
 };
 
+pub mod api;
 mod commands;
 mod db;
 mod error;

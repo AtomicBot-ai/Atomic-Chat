@@ -3,7 +3,6 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 
 export type AgentApprovalMode = 'manual' | 'skip'
-export type SidebarMode = 'chat' | 'agent'
 export type AgentWorkspaceRoot = {
   rootId: string
   path: string
@@ -15,14 +14,18 @@ export type AgentWorkspace = {
   externalRoots: AgentWorkspaceRoot[]
 }
 
+/**
+ * Per-thread agent state: approval mode and workspace roots.
+ *
+ * Historically this store also carried the chat/agent split
+ * (`agentThreads`, `sidebarMode`). Since the merge every thread runs on the
+ * agent engine, so v3 dropped both — routing now lives in
+ * `lib/agent-route.ts` and is provider-based, not mode-based.
+ */
 type AgentModeState = {
-  /** Map of threadId → agent mode enabled */
-  agentThreads: Record<string, boolean>
   approvalModes: Record<string, AgentApprovalMode>
   workspaces: Record<string, AgentWorkspace>
-  sidebarMode: SidebarMode
 
-  isAgentMode: (threadId: string) => boolean
   getApprovalMode: (threadId: string) => AgentApprovalMode
   getWorkingDir: (threadId: string) => string | undefined
   getWorkspace: (threadId: string) => AgentWorkspace
@@ -34,28 +37,24 @@ type AgentModeState = {
     canEdit: boolean
   ) => void
   removeExternalRoot: (threadId: string, rootId: string) => void
-  setSidebarMode: (mode: SidebarMode) => void
-  toggleAgentMode: (threadId: string) => void
-  setAgentMode: (threadId: string, enabled: boolean) => void
   setApprovalMode: (threadId: string, mode: AgentApprovalMode) => void
   setWorkingDir: (threadId: string, workingDir: string) => void
-  transferAgentMode: (fromThreadId: string, toThreadId: string) => void
+  /**
+   * Move the composer key's state (approval mode, workspace) onto the real
+   * thread once it exists — the TEMPORARY_CHAT_ID → thread id handoff.
+   * Unconditional: every thread is an agent thread now.
+   */
+  transferThreadState: (fromThreadId: string, toThreadId: string) => void
   removeThread: (threadId: string) => void
-  /** Clear agent mode for all threads. */
+  /** Clear per-thread agent state for all threads. */
   clearAll: () => void
 }
 
 export const useAgentMode = create<AgentModeState>()(
   persist(
     (set, get) => ({
-      agentThreads: {},
       approvalModes: {},
       workspaces: {},
-      sidebarMode: 'chat',
-
-      isAgentMode: (threadId) => {
-        return get().agentThreads[threadId] === true
-      },
 
       getApprovalMode: (threadId) => {
         return get().approvalModes[threadId] ?? 'manual'
@@ -141,32 +140,6 @@ export const useAgentMode = create<AgentModeState>()(
         })
       },
 
-      setSidebarMode: (mode) => {
-        // Opening a thread always re-asserts the mode. Without this guard every
-        // navigation notifies the whole sidebar tree for an unchanged value.
-        set((state) =>
-          state.sidebarMode === mode ? state : { sidebarMode: mode }
-        )
-      },
-
-      toggleAgentMode: (threadId) => {
-        set((state) => ({
-          agentThreads: {
-            ...state.agentThreads,
-            [threadId]: !state.agentThreads[threadId],
-          },
-        }))
-      },
-
-      setAgentMode: (threadId, enabled) => {
-        set((state) => ({
-          agentThreads: {
-            ...state.agentThreads,
-            [threadId]: enabled,
-          },
-        }))
-      },
-
       setApprovalMode: (threadId, mode) => {
         set((state) => ({
           approvalModes: {
@@ -195,61 +168,49 @@ export const useAgentMode = create<AgentModeState>()(
         }))
       },
 
-      transferAgentMode: (fromThreadId, toThreadId) => {
+      transferThreadState: (fromThreadId, toThreadId) => {
         set((state) => {
-          const isAgentMode = state.agentThreads[fromThreadId] === true
-          const approvalMode = state.approvalModes[fromThreadId] ?? 'manual'
+          const approvalMode = state.approvalModes[fromThreadId]
           const workspace = state.workspaces[fromThreadId]
-          const remainingThreads = { ...state.agentThreads }
-          const remainingApprovalModes = { ...state.approvalModes }
-          const remainingWorkspaces = { ...state.workspaces }
-          delete remainingThreads[fromThreadId]
-          delete remainingThreads[toThreadId]
-          delete remainingApprovalModes[fromThreadId]
-          delete remainingApprovalModes[toThreadId]
-          delete remainingWorkspaces[fromThreadId]
-          delete remainingWorkspaces[toThreadId]
-
-          return {
-            agentThreads: isAgentMode
-              ? { ...remainingThreads, [toThreadId]: true }
-              : remainingThreads,
-            approvalModes: isAgentMode
-              ? { ...remainingApprovalModes, [toThreadId]: approvalMode }
-              : remainingApprovalModes,
-            workspaces:
-              isAgentMode && workspace
-                ? { ...remainingWorkspaces, [toThreadId]: workspace }
-                : remainingWorkspaces,
+          const approvalModes = { ...state.approvalModes }
+          const workspaces = { ...state.workspaces }
+          delete approvalModes[fromThreadId]
+          delete workspaces[fromThreadId]
+          if (approvalMode !== undefined) {
+            approvalModes[toThreadId] = approvalMode
+          } else {
+            delete approvalModes[toThreadId]
           }
+          if (workspace !== undefined) {
+            workspaces[toThreadId] = workspace
+          } else {
+            delete workspaces[toThreadId]
+          }
+          return { approvalModes, workspaces }
         })
       },
 
       removeThread: (threadId) => {
         set((state) => {
-          const agentThreads = { ...state.agentThreads }
           const approvalModes = { ...state.approvalModes }
           const workspaces = { ...state.workspaces }
-          delete agentThreads[threadId]
           delete approvalModes[threadId]
           delete workspaces[threadId]
-          return { agentThreads, approvalModes, workspaces }
+          return { approvalModes, workspaces }
         })
       },
 
       clearAll: () => {
         set({
-          agentThreads: {},
           approvalModes: {},
           workspaces: {},
-          sidebarMode: 'chat',
         })
       },
     }),
     {
       name: localStorageKey.agentMode,
       storage: createJSONStorage(() => localStorage),
-      version: 2,
+      version: 3,
       migrate: (persistedState: unknown, version) => {
         const state = (persistedState ?? {}) as Record<string, unknown>
         let workspaces = state.workspaces as
@@ -272,10 +233,8 @@ export const useAgentMode = create<AgentModeState>()(
             ])
           )
         }
-        if (!workspaces) return state
-        return {
-          ...state,
-          workspaces: Object.fromEntries(
+        if (version < 2 && workspaces) {
+          workspaces = Object.fromEntries(
             Object.entries(workspaces).map(([threadId, workspace]) => [
               threadId,
               {
@@ -289,8 +248,18 @@ export const useAgentMode = create<AgentModeState>()(
                 })),
               },
             ])
-          ),
+          )
         }
+        if (workspaces) {
+          state.workspaces = workspaces
+        }
+        if (version < 3) {
+          // v3: the chat/agent split is gone — every thread runs on the agent
+          // engine. Approval modes and workspaces survive untouched.
+          delete state.agentThreads
+          delete state.sidebarMode
+        }
+        return state
       },
     }
   )

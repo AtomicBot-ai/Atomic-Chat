@@ -8,5 +8,18 @@
   },
   "sendMessage": "Enviar mensaje",
   "newConversation": "Nueva conversación",
-  "clearHistory": "Borrar historial"
+  "clearHistory": "Borrar historial",
+  "agentMode": {
+    "menuItem": "Modo agente",
+    "agent": "Agente",
+    "turnOff": "Desactivar el modo agente",
+    "providerUnavailable": "El modo agente necesita un modelo local o un proveedor en la nube con clave de API.",
+    "providerKeyMissing": "Añade una clave de API para este proveedor en Ajustes para usar el modo agente."
+  },
+  "agentErrors": {
+    "localModelRequired": "Carga este modelo antes de iniciar una ejecución del agente.",
+    "providerUnavailableDescription": "Elige un modelo local o un proveedor en la nube con clave de API.",
+    "providerKeyMissing": "Añade una clave de API para este proveedor en Ajustes e inténtalo de nuevo.",
+    "localServerRequired": "El modo agente con un modelo en la nube necesita el servidor API local. Inícialo en Ajustes."
+  }
 }

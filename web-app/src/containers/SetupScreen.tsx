@@ -49,9 +49,8 @@ import {
 import { useModelSources } from '@/hooks/useModelSources'
 import { useShallow } from 'zustand/shallow'
 import { HuggingFaceAuthorAvatar } from '@/components/HuggingFaceAuthorAvatar'
-import { RecommendedModelChip } from '@/components/RecommendedModelChip'
-import { chipVariantForRecommendedDescriptionKey } from '@/constants/recommendedModelChip'
 import { modelFamilyLogoSrc } from '@/lib/model-logo'
+import { prettyModelName } from '@/lib/model-display-name'
 import posthog from 'posthog-js'
 import { getAnalyticsPlatform } from '@/lib/telemetry'
 import {
@@ -160,6 +159,12 @@ type OnboardingStep = 'backend' | 'model'
 /// model step is left untouched for this long we enter the chat anyway and hand
 /// the recommendation over to the bottom-right reminder.
 const MODEL_STEP_AUTO_EXIT_MS = 15_000
+
+/// A download click used to swap the screen out instantly, which read as "did
+/// my click register?" — the row flipping to a progress readout was gone before
+/// it could be seen. The picker now holds for this long so the started download
+/// is visible, then hands over to the chat where the sidebar continues it.
+const DOWNLOAD_ENTER_DELAY_MS = 3_000
 
 /// Neither the on-disk scan nor the hardware enumeration may hold the picker
 /// hostage. Both are raced against this deadline; whatever has not answered by
@@ -281,6 +286,19 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     'idle' | 'running' | 'failed'
   >('idle')
   const autoRunFiredRef = useRef(false)
+
+  // Set while the picker holds on screen showing a just-started download (see
+  // DOWNLOAD_ENTER_DELAY_MS). The timer is kept so unmounting can cancel it.
+  const [downloadStartedId, setDownloadStartedId] = useState<string | null>(
+    null
+  )
+  const enterChatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(
+    () => () => {
+      if (enterChatTimerRef.current) clearTimeout(enterChatTimerRef.current)
+    },
+    []
+  )
 
   useEffect(() => {
     fetchSources()
@@ -737,6 +755,22 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     [navigate]
   )
 
+  // Download path: unlike "Run", which switches to a model that is ready, this
+  // one leaves the user waiting on bytes — so the row is held on screen long
+  // enough to show that the download actually started before the chat (and its
+  // sidebar progress) takes over.
+  const enterChatAfterDownloadStart = useCallback(
+    (modelId: string, providerName: LocalLlamacppProvider | 'mlx') => {
+      if (hasNavigatedRef.current || enterChatTimerRef.current) return
+      setDownloadStartedId(modelId)
+      enterChatTimerRef.current = setTimeout(() => {
+        enterChatTimerRef.current = null
+        enterChatForDownload(modelId, providerName)
+      }, DOWNLOAD_ENTER_DELAY_MS)
+    },
+    [enterChatForDownload]
+  )
+
   // Provider that runs a given candidate (MLX vs the upstream llama.cpp engine).
   const providerForCandidate = useCallback(
     (cand: LocalModelCandidate): LocalLlamacppProvider | 'mlx' =>
@@ -1012,6 +1046,9 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     if (importingLocalId !== null) return
     // Onboarding must not navigate out from under an open dialog.
     if (cloudDialogOpen) return
+    // A download is already on its way to the chat — don't race it with the
+    // empty-handed exit, which would arm the reminder for a chosen model.
+    if (downloadStartedId !== null) return
 
     const timer = setTimeout(() => {
       // Second layer, deliberately: the dependency above cancels a pending
@@ -1022,7 +1059,13 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     }, MODEL_STEP_AUTO_EXIT_MS)
 
     return () => clearTimeout(timer)
-  }, [step, pickerInputsPending, importingLocalId, cloudDialogOpen])
+  }, [
+    step,
+    pickerInputsPending,
+    importingLocalId,
+    cloudDialogOpen,
+    downloadStartedId,
+  ])
 
   // Unlike the previous full-screen onboarding, the model step lives inside the
   // chat area, so the sidebar is already there when the user lands in chat.
@@ -1059,7 +1102,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       ? t('common:loading')
       : autoRunState === 'running' && autoRunTarget
         ? t('setup:localStep.autoStarting', {
-            name: autoRunTarget.displayName,
+            name: prettyModelName(autoRunTarget.displayName),
           })
         : null
 
@@ -1152,7 +1195,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                   className="truncate text-sm font-medium leading-tight"
                                   title={cand.path}
                                 >
-                                  {cand.displayName}
+                                  {prettyModelName(cand.displayName)}
                                   {size ? (
                                     <span className="text-xs font-normal text-muted-foreground">
                                       {' '}
@@ -1239,7 +1282,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                 )}
                                 <div className="min-w-0 flex-1">
                                   <h2 className="truncate text-sm font-medium leading-tight">
-                                    {extractModelName(model.model_name)}
+                                    {prettyModelName(model.model_name)}
                                     {sizeLabel ? (
                                       <span className="text-xs font-normal text-muted-foreground">
                                         {' '}
@@ -1247,15 +1290,6 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                       </span>
                                     ) : null}
                                   </h2>
-                                  <RecommendedModelChip
-                                    className="mt-1 inline-flex max-w-full"
-                                    variant={chipVariantForRecommendedDescriptionKey(
-                                      rec.descriptionKey
-                                    )}
-                                    title={t(rec.descriptionKey)}
-                                  >
-                                    {t(rec.descriptionKey)}
-                                  </RecommendedModelChip>
                                 </div>
                               </div>
                               <div className="flex shrink-0 flex-col items-end gap-1">
@@ -1381,8 +1415,8 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                 <div className="min-w-0 flex-1">
                                   <h2 className="truncate text-sm font-medium leading-tight">
                                     {model
-                                      ? extractModelName(model.model_name)
-                                      : extractModelName(rec.modelName)}
+                                      ? prettyModelName(model.model_name)
+                                      : prettyModelName(rec.modelName)}
                                     {downloadSize ? (
                                       <span className="text-xs font-normal text-muted-foreground">
                                         {' '}
@@ -1390,15 +1424,6 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                       </span>
                                     ) : null}
                                   </h2>
-                                  <RecommendedModelChip
-                                    className="mt-1 inline-flex max-w-full"
-                                    variant={chipVariantForRecommendedDescriptionKey(
-                                      rec.descriptionKey
-                                    )}
-                                    title={t(rec.descriptionKey)}
-                                  >
-                                    {t(rec.descriptionKey)}
-                                  </RecommendedModelChip>
                                   {!model && (
                                     <p className="mt-1 text-xs text-muted-foreground">
                                       {sourcesLoading
@@ -1433,7 +1458,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                         position: index,
                                       })
                                       void startMlxDownload(model)
-                                      enterChatForDownload(
+                                      enterChatAfterDownloadStart(
                                         getMlxModelId(model),
                                         'mlx'
                                       )
@@ -1445,7 +1470,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                         position: index,
                                       })
                                       startDownload(model, variant, mmproj?.path)
-                                      enterChatForDownload(
+                                      enterChatAfterDownloadStart(
                                         variant.model_id,
                                         LOCAL_LLAMACPP_PROVIDER as LocalLlamacppProvider
                                       )
@@ -1493,6 +1518,14 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                     rowDownloadProgress.total > 0
                                       ? `${Math.round((rowDownloadProgress.progress ?? 0) * 100)}% · ${formatDownloadGb(rowDownloadProgress.current)} / ${formatDownloadGb(rowDownloadProgress.total)} GB`
                                       : t('setup:downloadPreparing')}
+                                  </p>
+                                ) : null}
+                                {/* Says where the download is about to go, so
+                                    the screen change three seconds later is
+                                    something the user was told about. */}
+                                {rowTrackId && downloadStartedId === rowTrackId ? (
+                                  <p className="text-right text-xs text-muted-foreground">
+                                    {t('setup:downloadStartedOpening')}
                                   </p>
                                 ) : null}
                               </div>

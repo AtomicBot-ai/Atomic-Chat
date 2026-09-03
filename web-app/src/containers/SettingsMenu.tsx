@@ -1,24 +1,18 @@
 import { Link } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useState, useEffect, useCallback } from 'react'
-import {
-  IconChevronDown,
-  IconChevronRight,
-  IconPlus,
-} from '@tabler/icons-react'
+import { useState, useEffect } from 'react'
+import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { useMatches, useNavigate } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getProviderTitle } from '@/lib/utils'
 import { sortProvidersForSettings } from '@/lib/providerOrder'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
-import { AddProviderDialog } from '@/containers/dialogs'
-import { openAIProviderSettings } from '@/constants/providers'
-import cloneDeep from 'lodash/cloneDeep'
-import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
+import { isLocalEngineProvider } from '@/lib/cloud-providers'
 
 const SettingsMenu = () => {
   const { t } = useTranslation()
@@ -27,37 +21,16 @@ const SettingsMenu = () => {
   const matches = useMatches()
   const navigate = useNavigate()
 
-  const { providers, addProvider, selectedProvider } = useModelProvider()
+  const { providers, selectedProvider } = useModelProvider()
 
-  const createProvider = useCallback(
-    (name: string) => {
-      if (
-        providers.some((e) => e.provider.toLowerCase() === name.toLowerCase())
-      ) {
-        toast.error(t('provider:providerAlreadyExists', { name }))
-        return
-      }
-      const newProvider: ProviderObject = {
-        provider: name,
-        active: true,
-        models: [],
-        settings: cloneDeep(openAIProviderSettings) as ProviderSetting[],
-        api_key: '',
-        base_url: 'https://api.openai.com/v1',
-      }
-      addProvider(newProvider)
-      setTimeout(() => {
-        navigate({
-          to: route.settings.providers,
-          params: { providerName: name },
-        })
-      }, 0)
-    },
-    [providers, addProvider, t, navigate]
-  )
+  // Settings owns the local inference engines only. Connecting a cloud
+  // provider — including Ollama and user-created OpenAI-compatible endpoints —
+  // lives on `/cloud`, and `isCloudProvider` is the exact complement of this
+  // filter, so nothing is listed in neither place.
+  const localProviders = providers.filter(isLocalEngineProvider)
 
   const activeProviders = sortProvidersForSettings(
-    providers.filter((provider) => {
+    localProviders.filter((provider) => {
       if (!provider.active) return false
       if (!IS_MACOS && provider.provider === 'mlx') return false
       return true
@@ -65,7 +38,7 @@ const SettingsMenu = () => {
   )
 
   const hiddenProviders = sortProvidersForSettings(
-    providers.filter((provider) => {
+    localProviders.filter((provider) => {
       if (provider.active) return false
       if (!IS_MACOS && provider.provider === 'mlx') return false
       return true
@@ -110,6 +83,12 @@ const SettingsMenu = () => {
       isEnabled: true,
     },
     {
+      title: 'common:voice',
+      route: route.settings.voice,
+      hasSubMenu: false,
+      isEnabled: PlatformFeatures[PlatformFeature.VOICE_INPUT],
+    },
+    {
       title: 'common:interface',
       route: route.settings.interface,
       hasSubMenu: false,
@@ -137,12 +116,6 @@ const SettingsMenu = () => {
     {
       title: 'common:hardware',
       route: route.settings.hardware,
-      hasSubMenu: false,
-      isEnabled: true,
-    },
-    {
-      title: 'common:mcp-servers',
-      route: route.settings.mcp_servers,
       hasSubMenu: false,
       isEnabled: true,
     },
@@ -253,11 +226,6 @@ const SettingsMenu = () => {
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {t('common:modelProviders')}
               </span>
-              <AddProviderDialog onCreateProvider={createProvider}>
-                <Button variant="ghost" size="icon-xs">
-                  <IconPlus size={12} />
-                </Button>
-              </AddProviderDialog>
             </div>
             <div className="mt-1 flex flex-col gap-0.5">
               {activeProviders.map((provider) => {

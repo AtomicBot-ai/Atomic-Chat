@@ -107,8 +107,21 @@ pub struct AgentTurnRequest {
     pub run_id: String,
     /// Durable session id. The frontend binds this to the owning thread id.
     pub session_id: String,
-    /// The `model_id` whose `llama-server` session the agent should target.
+    /// The `model_id` the agent should target.
     pub model_id: String,
+    /// Provider the frontend selected. `None` keeps the legacy behaviour of
+    /// scanning both llama.cpp session maps.
+    #[serde(default)]
+    pub provider: Option<String>,
+    /// The selected model's capabilities (`"tools"`, `"vision"`, …). This is
+    /// where `has_vision` comes from for every non-llama.cpp target, which has
+    /// no `mmproj` to inspect.
+    #[serde(default)]
+    pub capabilities: Vec<String>,
+    /// Context window as known to the frontend. `None` falls back to the
+    /// configured conversation cap.
+    #[serde(default)]
+    pub context_window: Option<usize>,
     /// The user's message for this turn.
     pub user_message: String,
     /// Optional enabled skill that must be loaded before the first inference.
@@ -130,6 +143,146 @@ pub struct AgentTurnRequest {
     /// actions wait for an explicit approval decision.
     #[serde(default)]
     pub auto_approve: bool,
+    /// Thinking intent for this turn. Absent leaves every transport default.
+    #[serde(default)]
+    pub reasoning: Option<AgentReasoningRequest>,
+    /// The thread assistant's rendered system prompt. The frontend resolves
+    /// templates (`{{current_date}}`, …) before sending; this side treats the
+    /// text as opaque and renders it into the stable prefix's `### assistant`
+    /// section, truncated to a fixed budget.
+    #[serde(default)]
+    pub assistant_instructions: Option<String>,
+    /// Sampling parameters of the thread assistant. Applied only when
+    /// `sampling_overridden` is true — otherwise the agent keeps its own tuned
+    /// defaults, which the tool-call discipline was calibrated against.
+    #[serde(default)]
+    pub sampling: Option<AgentSamplingRequest>,
+    /// True once the user explicitly tuned the assistant's sampling.
+    #[serde(default)]
+    pub sampling_overridden: bool,
+    /// Per-turn switch for the built-in web tools (`os.web.search`,
+    /// `os.web.fetch`). Off removes them from the prompt catalog, the grammar,
+    /// the JSON schema, and dispatch for this turn.
+    #[serde(default = "default_true")]
+    pub web_search: bool,
+    /// Expose the user's connected MCP servers as dynamic `mcp.*` tools.
+    #[serde(default = "default_true")]
+    pub mcp_enabled: bool,
+    /// Auto-approve MCP-origin tools regardless of their annotations. Carries
+    /// the legacy chat `allowAllMCPPermissions` setting; never widens approval
+    /// for built-in tools.
+    #[serde(default = "default_true")]
+    pub auto_approve_mcp: bool,
+    /// Per-thread disabled MCP tools as `server::tool` keys (the frontend's
+    /// `useToolAvailable` format). Filtered out of the turn's catalog.
+    #[serde(default)]
+    pub disabled_mcp_tools: Vec<String>,
+    /// Per-turn document-index (RAG) context. Absent disables the `docs.*`
+    /// tools for the turn, keeping the prompt prefix byte-stable for threads
+    /// without documents.
+    #[serde(default)]
+    pub rag: Option<AgentRagRequest>,
+}
+
+/// Per-turn RAG context. Collection names are computed frontend-side
+/// (`attachments_<threadId>` / `project_<projectId>` — the TypeScript naming
+/// in `extensions/vector-db-extension/src/index.ts` stays the single source
+/// of truth) and arrive verbatim.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AgentRagRequest {
+    pub thread_collection: String,
+    #[serde(default)]
+    pub project_collection: Option<String>,
+    /// Names of documents attached (indexed) on this turn, surfaced to the
+    /// model in the `### documents` note.
+    #[serde(default)]
+    pub attached_file_names: Vec<String>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Sampling overrides for one agent turn, mirroring the chat assistant's
+/// parameter bag. Every field is optional; absent fields keep the agent's
+/// tuned defaults.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AgentSamplingRequest {
+    #[serde(default)]
+    pub temperature: Option<f32>,
+    #[serde(default)]
+    pub top_p: Option<f32>,
+    #[serde(default)]
+    pub top_k: Option<i32>,
+    #[serde(default)]
+    pub min_p: Option<f32>,
+    #[serde(default)]
+    pub frequency_penalty: Option<f32>,
+    #[serde(default)]
+    pub presence_penalty: Option<f32>,
+    #[serde(default)]
+    pub repeat_penalty: Option<f32>,
+}
+
+/// Thinking intent for one turn, as the frontend resolved it.
+///
+/// The chat-template parsing that decides which knob a model understands lives
+/// in `core/src/browser/models/reasoning.ts`; shipping the resolved decision
+/// keeps this side free of template heuristics, exactly as `capabilities` and
+/// `context_window` already do.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AgentReasoningRequest {
+    /// Ask the model to think before it emits tool calls.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Thinking-token budget. `None` means no cap.
+    #[serde(default)]
+    pub budget_tokens: Option<u32>,
+    /// Template-native effort value, only ever one the template declared.
+    #[serde(default)]
+    pub effort_value: Option<String>,
+    /// Whether the model's chat template declares a thinking phase at all.
+    /// `false` means we know nothing about this model (every cloud model, for
+    /// one) and must leave the transport's own default alone.
+    #[serde(default)]
+    pub supports_thinking: bool,
+}
+
+/// The resolved intent the run loop and the transports act on.
+///
+/// `Unset` and `Off` are deliberately distinct: `Off` actively suppresses a
+/// thinking phase we know the model has, while `Unset` sends nothing at all.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum AgentReasoning {
+    #[default]
+    Unset,
+    Off,
+    On {
+        budget_tokens: Option<u32>,
+        effort_value: Option<String>,
+    },
+}
+
+impl AgentReasoning {
+    pub fn from_request(request: Option<&AgentReasoningRequest>) -> Self {
+        let Some(request) = request else {
+            return Self::Unset;
+        };
+        if !request.supports_thinking {
+            return Self::Unset;
+        }
+        if !request.enabled {
+            return Self::Off;
+        }
+        Self::On {
+            budget_tokens: request.budget_tokens,
+            effort_value: request.effort_value.clone(),
+        }
+    }
+
+    pub fn is_on(&self) -> bool {
+        matches!(self, Self::On { .. })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -285,5 +438,23 @@ pub enum AgentEvent {
         /// `"reply"` | `"finish"` | `"max_steps"` | `"cancelled"` | `"failed"`.
         reason: String,
         step_count: u32,
+        /// Aggregated model usage for the turn, when the transport reports it.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        usage: Option<AgentTurnUsage>,
     },
+}
+
+/// Token accounting for one finished turn, summed over its completions.
+/// Mirrors what the chat transport attaches as message metadata so the UI's
+/// token counters and speed indicator work on both engines.
+#[derive(Debug, Clone, Default, Serialize, PartialEq)]
+pub struct AgentTurnUsage {
+    pub tokens_in: f64,
+    pub tokens_out: f64,
+    /// Decode speed in tokens/second, from the final completion's timings.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tps: Option<f64>,
+    /// Milliseconds from turn start to the first streamed or completed output.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttft_ms: Option<f64>,
 }

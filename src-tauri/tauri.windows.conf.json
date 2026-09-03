@@ -10,7 +10,6 @@
         "minHeight": 740,
         "resizable": true,
         "fullscreen": false,
-        "zoomHotkeysEnabled": true,
         "center": true,
         "visible": false,
         "hiddenTitle": true,

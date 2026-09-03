@@ -71,14 +71,23 @@ describe('DeleteModelAction', () => {
   it('only deletes after the confirmation is accepted', async () => {
     render(<DeleteModelAction modelId="Qwen3-4B-Q4_K_M" provider="llamacpp" />)
 
-    expect(deleteModel).not.toHaveBeenCalled()
+    const listedModels = () =>
+      useModelProvider
+        .getState()
+        .providers.flatMap((provider) => provider.models)
+        .map((model) => model.id)
 
+    // Opening the dialog must not touch the model yet.
     const { user, confirm } = await openConfirm()
+    expect(deleteModel).not.toHaveBeenCalled()
+    expect(listedModels()).toEqual(['Qwen3-4B-Q4_K_M'])
+
     await user.click(confirm)
 
     await waitFor(() =>
       expect(deleteModel).toHaveBeenCalledWith('Qwen3-4B-Q4_K_M', 'llamacpp')
     )
+    await waitFor(() => expect(listedModels()).toEqual([]))
   })
 
   it('drops the model from the provider list and from favorites', async () => {

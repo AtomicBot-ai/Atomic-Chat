@@ -193,7 +193,7 @@ fn responses_input_item_to_chat(item: &Value) -> Option<Value> {
 
 /// Flatten Responses content (a string, or an array of typed parts) to plain
 /// text. Non-text parts (images/files) are ignored on the text-only Chat path.
-fn flatten_content_to_text(content: Option<&Value>) -> String {
+pub(crate) fn flatten_content_to_text(content: Option<&Value>) -> String {
     match content {
         Some(Value::String(s)) => s.clone(),
         Some(Value::Array(parts)) => {

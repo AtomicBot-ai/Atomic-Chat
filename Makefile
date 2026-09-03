@@ -379,6 +379,7 @@ endif
 test-rust: export TAURI_CONFIG := {"bundle":{"icon":["icons/icon.png"]}}
 test-rust: stub-resources
 	cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
+	cargo test --manifest-path src-tauri/plugins/tauri-plugin-atomic-audio/Cargo.toml
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp-upstream/Cargo.toml -- --test-threads=1
@@ -482,12 +483,15 @@ test-agent-model:
 	cargo test --manifest-path src-tauri/Cargo.toml -p Atomic-Chat \
 		managed_model_agent_scenarios -- --ignored --nocapture --test-threads=1
 
+GAIA_SKILLS_DIR ?= $(CURDIR)/src-tauri/resources/agent-skills
+
 .PHONY: gaia-eval
 gaia-eval:
 	@test -x "$(GAIA_LLAMA_SERVER)" || (echo "llama-server not found or not executable: $(GAIA_LLAMA_SERVER)" && exit 1)
 	@test -f "$(GAIA_MODEL)" || (echo "model not found: $(GAIA_MODEL)" && exit 1)
 	GAIA_LLAMA_SERVER="$(GAIA_LLAMA_SERVER)" \
 	GAIA_MODEL="$(GAIA_MODEL)" \
+	GAIA_SKILLS_DIR="$(GAIA_SKILLS_DIR)" \
 	cargo run --manifest-path src-tauri/Cargo.toml -p Atomic-Chat \
 		--features gaia-eval --example gaia-eval
 
@@ -523,7 +527,7 @@ test-all: install-and-build install-rust-targets
 # validation run; normal builds never resolve a moving latest release.
 # Example:
 #   make build-mlx-server MLXVLM_TAG=mlxvlm-macos-arm64-abc1234
-MLXVLM_TAG ?= mlxvlm-macos-arm64-89acca5
+MLXVLM_TAG ?= mlxvlm-macos-arm64-07ba5a1
 build-mlx-server:
 ifeq ($(shell uname -s),Darwin)
 	@mkdir -p src-tauri/resources/bin

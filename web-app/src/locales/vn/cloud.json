@@ -1,0 +1,47 @@
+{
+  "title": "Cloud",
+  "subtitle": "Connect the model providers that run on someone else's hardware.",
+  "connection": {
+    "title": "Connection",
+    "description": "OpenAI, Anthropic, or a compatible endpoint.",
+    "select": "Select a provider",
+    "groupSelfHosted": "Self-hosted",
+    "groupHosted": "Cloud providers",
+    "custom": "Custom (OpenAI-compatible)…",
+    "routing": "Requests reach this provider through the local API server at {{baseUrl}}, so every client configured against that address can use these models too.",
+    "apiKey": "API key",
+    "apiKeyPlaceholder": "Insert API key",
+    "baseUrl": "Base URL",
+    "connect": "Connect",
+    "save": "Save key",
+    "connected": "Connected",
+    "notConnected": "Not connected",
+    "keyless": "This endpoint runs on your machine and needs no API key.",
+    "disconnect": "Disconnect",
+    "disconnectTitle": "Disconnect {{provider}}",
+    "disconnectDescription": "The saved API key is deleted and this provider's models leave the model picker. Reconnect by entering the key again.",
+    "cancel": "Cancel",
+    "saved": "{{provider}} connected.",
+    "removed": "{{provider}} disconnected.",
+    "empty": "No cloud providers available. Refresh the catalog and try again.",
+    "placeholder": "Pick a connection above to set it up."
+  },
+  "subscription": {
+    "title": "ChatGPT subscription (Codex)",
+    "description": "Authorize in your system browser. Tokens never enter browser storage.",
+    "connectInBrowser": "Connect in browser",
+    "useDeviceCode": "Use device code",
+    "unavailable": "Not available yet.",
+    "connecting": "Waiting for the browser…",
+    "browserHint": "Finish signing in to ChatGPT in your browser, then come back.",
+    "modelCount": "{{count}} models available in the model picker"
+  },
+  "models": {
+    "count": "{{count}} models",
+    "countOne": "1 model",
+    "countNone": "No models",
+    "searchPlaceholder": "Search models",
+    "noResults": "No model matches this search.",
+    "reload": "Reload models"
+  }
+}

@@ -1,7 +1,11 @@
 {
+  "api": "API",
+  "cloud": "Cloud",
   "assistants": "Trợ lý",
   "hardware": "Phần cứng",
   "mcp-servers": "Máy chủ MCP",
+  "connectors": "Trình kết nối",
+  "plugins": "Plugin",
   "local_api_server": "Máy chủ API cục bộ",
   "https_proxy": "Proxy HTTPS",
   "extensions": "Tiện ích mở rộng",
@@ -381,5 +385,11 @@
       "title": "Chủ đề đã được xóa",
       "description": "Chủ đề đã được xóa khỏi \"{{projectName}}\" thành công"
     }
+  },
+  "skills": "Kỹ năng",
+  "pluginsMenu": {
+    "title": "Plugin",
+    "emptySkills": "Chưa có kỹ năng nào",
+    "manageSkills": "Quản lý kỹ năng"
   }
 }

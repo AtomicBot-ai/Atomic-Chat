@@ -98,7 +98,7 @@ describe('useToolAvailable', () => {
       expect(result.current.disabledTools['thread-3']).toEqual(['server-1::tool-c'])
     })
 
-    it('should add duplicate tools when disabling already disabled tool', () => {
+    it('should not duplicate a tool disabled twice', () => {
       const { result } = renderHook(() => useToolAvailable())
 
       act(() => {
@@ -106,7 +106,56 @@ describe('useToolAvailable', () => {
         result.current.setToolDisabledForThread('thread-1', 'server-1', 'tool-a', false)
       })
 
-      expect(result.current.disabledTools['thread-1']).toEqual(['server-1::tool-a', 'server-1::tool-a'])
+      expect(result.current.disabledTools['thread-1']).toEqual(['server-1::tool-a'])
+    })
+
+    it("starts a thread's first switch from the defaults it was running on", () => {
+      // Without its own entry the thread reads the defaults; its first switch
+      // must copy them, not drop them.
+      useToolAvailable.setState({ defaultDisabledTools: ['server-1::tool-a'] })
+      const { result } = renderHook(() => useToolAvailable())
+
+      act(() => {
+        result.current.setToolDisabledForThread('thread-1', 'server-1', 'tool-b', false)
+      })
+
+      expect(result.current.disabledTools['thread-1']).toEqual([
+        'server-1::tool-a',
+        'server-1::tool-b',
+      ])
+      expect(result.current.defaultDisabledTools).toEqual(['server-1::tool-a'])
+    })
+  })
+
+  describe('bulk switches', () => {
+    it('disables and enables many tools of a thread in one write', () => {
+      const { result } = renderHook(() => useToolAvailable())
+
+      act(() => {
+        result.current.setToolsDisabledForThread(
+          'thread-1',
+          ['s::a', 's::b', 's::c'],
+          true
+        )
+      })
+      expect(result.current.disabledTools['thread-1']).toEqual(['s::a', 's::b', 's::c'])
+
+      act(() => {
+        result.current.setToolsDisabledForThread('thread-1', ['s::a', 's::c'], false)
+      })
+      expect(result.current.disabledTools['thread-1']).toEqual(['s::b'])
+    })
+
+    it('edits the defaults the same way', () => {
+      const { result } = renderHook(() => useToolAvailable())
+
+      act(() => {
+        result.current.setDefaultToolsDisabled(['s::a', 's::b'], true)
+        result.current.setDefaultToolsDisabled(['s::a'], false)
+      })
+
+      expect(result.current.defaultDisabledTools).toEqual(['s::b'])
+      expect(result.current.disabledTools).toEqual({})
     })
 
     it('should handle enabling tool that was not disabled', () => {
@@ -205,7 +254,7 @@ describe('useToolAvailable', () => {
       expect(disabledTools).toEqual(['server-1::tool-default-1', 'server-1::tool-default-2'])
     })
 
-    it('should return thread-specific tools even when defaults exist', () => {
+    it('should return thread-specific tools on top of the defaults they started from', () => {
       const { result } = renderHook(() => useToolAvailable())
 
       act(() => {
@@ -214,7 +263,16 @@ describe('useToolAvailable', () => {
       })
 
       const disabledTools = result.current.getDisabledToolsForThread('thread-1')
-      expect(disabledTools).toEqual(['server-1::tool-specific'])
+      expect(disabledTools).toEqual(['server-1::tool-default', 'server-1::tool-specific'])
+
+      // Later default changes no longer reach a thread that has its own copy.
+      act(() => {
+        result.current.setDefaultDisabledTools([])
+      })
+      expect(result.current.getDisabledToolsForThread('thread-1')).toEqual([
+        'server-1::tool-default',
+        'server-1::tool-specific',
+      ])
     })
   })
 
@@ -314,7 +372,10 @@ describe('useToolAvailable', () => {
         result.current.initializeThreadTools('existing-thread', allTools)
       })
 
-      expect(result.current.disabledTools['existing-thread']).toEqual(['server-1::tool-2'])
+      expect(result.current.disabledTools['existing-thread']).toEqual([
+        'server-1::tool-1',
+        'server-1::tool-2',
+      ])
     })
 
     it('should filter default tools to only include existing tools', () => {
@@ -371,7 +432,10 @@ describe('useToolAvailable', () => {
       })
 
       expect(result2.current.defaultDisabledTools).toEqual(['server-1::tool-default'])
-      expect(result2.current.disabledTools['thread-1']).toEqual(['server-1::tool-specific'])
+      expect(result2.current.disabledTools['thread-1']).toEqual([
+        'server-1::tool-default',
+        'server-1::tool-specific',
+      ])
     })
   })
 
@@ -416,5 +480,51 @@ describe('useToolAvailable', () => {
       expect(result.current.isToolDisabled('thread-1', 'test-server', 'tool-b')).toBe(true)
       expect(result.current.isToolDisabled('thread-1', 'test-server', 'tool-c')).toBe(true)
     })
+  })
+})
+
+describe('per-chat muted connectors', () => {
+  beforeEach(() => {
+    useToolAvailable.setState({
+      mutedServers: {},
+      defaultMutedServers: [],
+    })
+  })
+
+  it('mutes a server for one thread only and falls back to the default elsewhere', () => {
+    const store = useToolAvailable.getState()
+    store.setServerMutedForThread('thread-1', 'linear', true)
+
+    expect(useToolAvailable.getState().getMutedServersForThread('thread-1')).toEqual([
+      'linear',
+    ])
+    expect(useToolAvailable.getState().isServerMutedForThread('thread-1', 'linear')).toBe(
+      true
+    )
+    expect(useToolAvailable.getState().getMutedServersForThread('thread-2')).toEqual([])
+
+    useToolAvailable.getState().setServerMutedForThread('thread-1', 'linear', false)
+    expect(useToolAvailable.getState().getMutedServersForThread('thread-1')).toEqual([])
+  })
+
+  it('seeds a thread from the defaults the first time it is touched', () => {
+    useToolAvailable.getState().setDefaultServerMuted('linear', true)
+    expect(useToolAvailable.getState().getMutedServersForThread('new-thread')).toEqual([
+      'linear',
+    ])
+
+    useToolAvailable.getState().setServerMutedForThread('new-thread', 'exa', true)
+    expect(useToolAvailable.getState().getMutedServersForThread('new-thread')).toEqual([
+      'linear',
+      'exa',
+    ])
+    // The default itself is untouched by a per-thread change.
+    expect(useToolAvailable.getState().getDefaultMutedServers()).toEqual(['linear'])
+  })
+
+  it('does not duplicate a server muted twice', () => {
+    useToolAvailable.getState().setServerMutedForThread('t', 'linear', true)
+    useToolAvailable.getState().setServerMutedForThread('t', 'linear', true)
+    expect(useToolAvailable.getState().getMutedServersForThread('t')).toEqual(['linear'])
   })
 })

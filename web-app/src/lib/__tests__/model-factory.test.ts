@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { ModelFactory } from '../model-factory'
+import { ModelFactory, createLocalStreamingFetch } from '../model-factory'
 import type { ProviderObject } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 import type { ModelsService } from '@/services/models/types'
@@ -8,6 +8,9 @@ import { seedServiceHub } from '@/test/service-hub'
 // Mock the Tauri invoke function
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
+  Channel: class {
+    onmessage: ((message: unknown) => void) | null = null
+  },
 }))
 
 // Mock the Tauri HTTP plugin
@@ -264,5 +267,96 @@ describe('ModelFactory', () => {
         {}
       )
     })
+  })
+})
+
+describe('countLocalPromptTokens', () => {
+  const session = { port: 4242, api_key: 'k', model_id: 'm' }
+
+  beforeEach(() => {
+    ModelFactory.invalidateLocalSessionCache('llamacpp-upstream', 'm')
+  })
+
+  it('renders the prompt through /apply-template WITH tools and tokenizes it', async () => {
+    mockedInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === 'plugin:llamacpp-upstream|find_session_by_model') return session
+      const { url } = args as { url: string; body: string }
+      if (url.endsWith('/apply-template')) {
+        const body = JSON.parse((args as { body: string }).body)
+        expect(body.tools).toHaveLength(1)
+        expect(body.messages[0]).toEqual({ role: 'user', content: 'yo' })
+        return JSON.stringify({ prompt: '<rendered prompt>' })
+      }
+      if (url.endsWith('/tokenize')) {
+        expect(JSON.parse((args as { body: string }).body)).toEqual({
+          content: '<rendered prompt>',
+        })
+        return JSON.stringify({ tokens: [1, 2, 3, 4, 5] })
+      }
+      throw new Error(`unexpected ${cmd} ${url}`)
+    })
+
+    const count = await ModelFactory.countLocalPromptTokens(
+      'llamacpp-upstream',
+      'm',
+      undefined,
+      {
+        messages: [{ role: 'user', content: 'yo' }],
+        tools: [{ type: 'function', function: { name: 't', parameters: {} } }],
+      }
+    )
+
+    expect(count).toBe(5)
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'post_local_http',
+      expect.objectContaining({
+        url: 'http://localhost:4242/apply-template',
+        timeoutSecs: 3,
+      })
+    )
+  })
+
+  it('returns null instead of throwing when the engine cannot answer', async () => {
+    mockedInvoke.mockImplementation(async (cmd) => {
+      if (cmd === 'plugin:llamacpp-upstream|find_session_by_model') return session
+      throw new Error('timeout')
+    })
+    expect(
+      await ModelFactory.countLocalPromptTokens('llamacpp-upstream', 'm', undefined, {
+        messages: [],
+      })
+    ).toBeNull()
+  })
+})
+
+describe('createLocalStreamingFetch error mapping', () => {
+  it('turns a context-overflow 500 into a non-retryable 400 with the same body', async () => {
+    const body = JSON.stringify({
+      error: {
+        code: 500,
+        message:
+          'the request exceeds the available context size. Try increasing context size or enable context shift',
+      },
+    })
+    mockedInvoke.mockRejectedValueOnce(`HTTP 500: ${body}`)
+    const localFetch = createLocalStreamingFetch(vi.fn(), {})
+
+    const response = await localFetch('http://localhost:4242/v1/chat/completions', {
+      method: 'POST',
+      body: JSON.stringify({ messages: [] }),
+    })
+
+    expect(response.status).toBe(400)
+    expect(await response.text()).toBe(body)
+  })
+
+  it('leaves other 5xx untouched', async () => {
+    mockedInvoke.mockRejectedValueOnce('HTTP 503: {"error":{"message":"loading"}}')
+    const localFetch = createLocalStreamingFetch(vi.fn(), {})
+    const response = await localFetch('http://localhost:4242/v1/chat/completions', {
+      method: 'POST',
+      body: '{}',
+    })
+    expect(response.status).toBe(503)
   })
 })
