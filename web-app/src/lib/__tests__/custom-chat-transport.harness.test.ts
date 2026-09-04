@@ -474,6 +474,61 @@ describe('CustomChatTransport per-turn state', () => {
     expect(transport.getTools()).toEqual({})
   })
 
+  it('uses grammar-safe MCP schemas only for llama.cpp providers', async () => {
+    const inputSchema = {
+      type: 'object',
+      properties: {
+        prompt: { type: 'string', maxLength: 10_000 },
+      },
+    }
+    useAppState.setState({
+      tools: [
+        {
+          name: 'firecrawl_search',
+          server: 'firecrawl',
+          description: 'Search the web',
+          inputSchema,
+        },
+      ],
+      mcpToolNames: new Set(['firecrawl_search']),
+    })
+    useModelProvider.setState((state) => ({
+      selectedProvider: 'llamacpp-upstream',
+      selectedModel: {
+        ...state.selectedModel!,
+        capabilities: ['tools'],
+      },
+    }))
+    const transport = new CustomChatTransport(undefined, 'thread-7')
+
+    await transport.updateRagToolsAvailability(false, true, false)
+
+    const localSchema = (
+      transport.getTools().firecrawl_search.inputSchema as {
+        jsonSchema: Record<string, unknown>
+      }
+    ).jsonSchema
+    expect(
+      (localSchema.properties as Record<string, Record<string, unknown>>).prompt
+    ).not.toHaveProperty('maxLength')
+
+    useModelProvider.setState({ selectedProvider: 'openai' })
+    await transport.updateRagToolsAvailability(false, true, false)
+
+    const cloudSchema = (
+      transport.getTools().firecrawl_search.inputSchema as {
+        jsonSchema: Record<string, unknown>
+      }
+    ).jsonSchema
+    expect(
+      (cloudSchema.properties as Record<string, Record<string, unknown>>).prompt
+        .maxLength
+    ).toBe(10_000)
+    expect(
+      (inputSchema.properties.prompt as Record<string, unknown>).maxLength
+    ).toBe(10_000)
+  })
+
   it('prefills the next request with the content to continue from', async () => {
     useGeneralSetting.setState({
       disableReasoning: false,
