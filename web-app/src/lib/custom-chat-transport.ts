@@ -16,6 +16,7 @@ import { repairToolCallArguments } from './repairToolCall'
 import { prepareToolResultImagesForModel } from './toolResultImages'
 import {
   buildToolsRecord,
+  makeLlamaGrammarSafeSchema,
   splitAnthropicSerialToolUse,
 } from './custom-chat-transport-helpers'
 import type { MCPTool } from '@/types/completion'
@@ -429,7 +430,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     disabledToolKeys: string[],
     hasDocuments: boolean,
     ragFeatureAvailable: boolean,
-    modelSupportsTools: boolean
+    modelSupportsTools: boolean,
+    providerId: string
   ): string {
     const mcp = [...useAppState.getState().mcpToolNames].sort().join(',')
     const rag = [...useAppState.getState().ragToolNames].sort().join(',')
@@ -439,6 +441,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const ctxLen = readModelCtxLen(useModelProvider.getState().selectedModel)
     return [
       this.threadId ?? '',
+      providerId,
       hasDocuments,
       ragFeatureAvailable,
       modelSupportsTools,
@@ -471,7 +474,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       ? getDisabledToolsForThread(this.threadId)
       : useToolAvailable.getState().getDefaultDisabledTools()
 
-    const selectedModel = useModelProvider.getState().selectedModel
+    const providerState = useModelProvider.getState()
+    const selectedModel = providerState.selectedModel
+    const providerId = providerState.selectedProvider
+    const llamaGrammarSafe =
+      providerId === 'llamacpp' || providerId === 'llamacpp-upstream'
     const modelSupportsTools =
       selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
 
@@ -490,7 +497,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       disabledToolKeys,
       hasDocuments,
       ragFeatureAvailable,
-      modelSupportsTools
+      modelSupportsTools,
+      providerId
     )
     if (!force && this.toolsCacheValid && cacheKey === this.toolsCacheKey) {
       return
@@ -562,7 +570,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     ])
     const audibleMcpTools = mcpTools.filter((tool) => !muted.has(tool.server))
 
-    this.tools = buildToolsRecord(ragTools, audibleMcpTools, disabledToolKeys)
+    this.tools = buildToolsRecord(ragTools, audibleMcpTools, disabledToolKeys, {
+      llamaGrammarSafe,
+    })
     this.toolsCacheKey = cacheKey
     this.toolsCacheValid = true
 
@@ -573,12 +583,18 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const sentTools = audibleMcpTools.filter(
       (tool) => !disabled.has(`${tool.server || 'unknown'}::${tool.name}`)
     )
+    const measuredTools = llamaGrammarSafe
+      ? sentTools.map((tool) => ({
+          ...tool,
+          inputSchema: makeLlamaGrammarSafeSchema(tool.inputSchema),
+        }))
+      : sentTools
     useAppState
       .getState()
       .setToolCostReport(
         this.threadId ?? '',
         summarizeToolCost(
-          modelSupportsTools ? sentTools : [],
+          modelSupportsTools ? measuredTools : [],
           readModelCtxLen(selectedModel)
         )
       )

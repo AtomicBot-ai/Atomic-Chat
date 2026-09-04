@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildToolsRecord,
+  makeLlamaGrammarSafeSchema,
   splitAnthropicSerialToolUse,
 } from '../custom-chat-transport-helpers'
 import type { MCPTool } from '@/types/completion'
@@ -122,5 +123,62 @@ describe('buildToolsRecord', () => {
     )
 
     expect(result.lookup.description).toBe('RAG version')
+  })
+})
+
+describe('makeLlamaGrammarSafeSchema', () => {
+  it('removes bounded grammar expansions without mutating tool structure', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        maxLength: { type: 'number', maximum: 10_000 },
+        query: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 10_000,
+          pattern: '^[a-z]+$',
+          format: 'hostname',
+        },
+        sources: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 100,
+          items: {
+            type: 'object',
+            properties: {
+              pattern: { type: 'string', maxLength: 2_000 },
+            },
+          },
+        },
+      },
+      patternProperties: {
+        '^x-': { type: 'string', maxLength: 10_000 },
+      },
+      required: ['query'],
+      examples: [{ maxLength: 50, query: 'docs' }],
+    }
+
+    const safe = makeLlamaGrammarSafeSchema(schema)
+    const properties = safe.properties as Record<
+      string,
+      Record<string, unknown>
+    >
+    const sources = properties.sources
+    const itemProperties = (sources.items as Record<string, unknown>)
+      .properties as Record<string, Record<string, unknown>>
+
+    expect(properties.maxLength).toEqual({
+      type: 'number',
+      maximum: 10_000,
+    })
+    expect(properties.query).toEqual({ type: 'string' })
+    expect(sources).not.toHaveProperty('minItems')
+    expect(sources).not.toHaveProperty('maxItems')
+    expect(itemProperties.pattern).toEqual({ type: 'string' })
+    expect(safe).not.toHaveProperty('patternProperties')
+    expect(safe.examples).toEqual([{ maxLength: 50, query: 'docs' }])
+    expect((schema.properties.query as Record<string, unknown>).maxLength).toBe(
+      10_000
+    )
   })
 })
