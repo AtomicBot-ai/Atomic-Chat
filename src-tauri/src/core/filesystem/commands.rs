@@ -123,6 +123,52 @@ pub fn read_file_sync<R: Runtime>(
     fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
+/// Upper bound on the bytes a single `read_file_chunk` call returns.
+///
+/// Every custom-protocol response — the asset protocol and the IPC channel
+/// alike — is materialised by WebView2 as one in-memory stream, and bodies
+/// past roughly 10 MB fail to arrive in the webview ("Failed to fetch" on a
+/// 200 response, #261). Callers page through a file well below that.
+const READ_FILE_CHUNK_MAX: u64 = 8 * 1024 * 1024;
+
+/// Read `length` bytes of `path` starting at `offset` and return them as a raw
+/// binary IPC response (an `ArrayBuffer` on the JS side, no base64 detour).
+/// Returns fewer bytes at end of file; an empty body means `offset` is at or
+/// past the end.
+#[tauri::command]
+pub fn read_file_chunk<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    path: String,
+    offset: u64,
+    length: u64,
+) -> Result<tauri::ipc::Response, String> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    if path.is_empty() || length == 0 {
+        return Err("read_file_chunk error: Invalid argument".to_string());
+    }
+
+    let path = resolve_path(app_handle, &path);
+    let mut file = fs::File::open(&path).map_err(|e| e.to_string())?;
+    let metadata = file.metadata().map_err(|e| e.to_string())?;
+    if metadata.is_dir() {
+        return Err("read_file_chunk error: path is a directory".to_string());
+    }
+
+    let to_read = length
+        .min(READ_FILE_CHUNK_MAX)
+        .min(metadata.len().saturating_sub(offset));
+    let mut buf = Vec::with_capacity(to_read as usize);
+    if to_read > 0 {
+        file.seek(SeekFrom::Start(offset))
+            .map_err(|e| e.to_string())?;
+        file.take(to_read)
+            .read_to_end(&mut buf)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(tauri::ipc::Response::new(buf))
+}
+
 #[tauri::command]
 pub fn write_file_sync<R: Runtime>(
     app_handle: tauri::AppHandle<R>,

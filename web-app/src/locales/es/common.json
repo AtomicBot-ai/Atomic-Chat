@@ -452,7 +452,9 @@
   },
   "errors": {
     "fileTooLarge": "Archivo demasiado grande",
-    "fileTooLargeDescription": "{{fileName}} excede el límite de {{maxFileSizeMB}}MB"
+    "fileTooLargeDescription": "{{fileName}} excede el límite de {{maxFileSizeMB}}MB",
+    "fileReadFailed": "No se pudo leer el archivo",
+    "fileReadFailedDescription": "No se pudo leer {{fileName}} desde el disco"
   },
   "files": {
     "chunksCount": "{{count}} fragmentos"

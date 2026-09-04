@@ -1,6 +1,4 @@
-import { convertFileSrc } from '@tauri-apps/api/core'
-import { fs } from '@janhq/core'
-
+import { readFileBytes } from '@/lib/readFileBytes'
 import { Attachment, createImageAttachment } from '@/types/attachment'
 
 const mimeTypeFromExtension = (name: string): string => {
@@ -33,42 +31,32 @@ const blobToDataUrl = (blob: Blob): Promise<string> =>
     reader.readAsDataURL(blob)
   })
 
+export type ReadAttachmentOptions = {
+  /**
+   * Raw file-size ceiling. Rejects with `FileTooLargeError` before any bytes
+   * are read, so the caller can report "too large" instead of a read failure.
+   */
+  maxBytes: number
+}
+
 /**
  * Read an image file by its filesystem path (Tauri only) and produce an
  * Attachment compatible with the existing image ingestion pipeline.
  *
- * Uses Tauri's asset protocol via `convertFileSrc`, which is enabled with a
- * permissive scope in `src-tauri/tauri.conf.json`. CSP `connect-src` already
- * allows `http://asset.localhost`, so `fetch()` against the converted URL
- * works without additional configuration.
+ * Reads through the `read_file_chunk` IPC command in pages rather than
+ * `fetch(convertFileSrc(path))`: WebView2 cannot deliver a large asset-protocol
+ * body, so anything past ~10 MB failed with "Failed to fetch" (#261).
  */
 export const readImageAttachmentFromPath = async (
-  path: string
+  path: string,
+  { maxBytes }: ReadAttachmentOptions
 ): Promise<Attachment> => {
   const name = path.split(/[\\/]/).pop() || path
+  const mimeType = mimeTypeFromExtension(name)
 
-  const url = convertFileSrc(path)
-  const response = await fetch(url)
-  if (!response.ok) {
-    throw new Error(
-      `Failed to read image (${response.status} ${response.statusText})`
-    )
-  }
-  const blob = await response.blob()
-  const dataUrl = await blobToDataUrl(blob)
+  const { bytes, size } = await readFileBytes(path, { maxBytes })
+  const dataUrl = await blobToDataUrl(new Blob([bytes], { type: mimeType }))
   const base64 = dataUrl.split(',')[1] ?? ''
-
-  const mimeType = blob.type || mimeTypeFromExtension(name)
-
-  let size = blob.size
-  if (!size) {
-    try {
-      const stat = await fs.fileStat(path)
-      if (stat?.size) size = Number(stat.size)
-    } catch (e) {
-      console.warn('Failed to read file size for', path, e)
-    }
-  }
 
   return createImageAttachment({
     name,
