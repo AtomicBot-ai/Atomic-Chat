@@ -33,6 +33,7 @@ use serde::{Deserialize, Serialize};
 use sysinfo::{Pid, ProcessesToUpdate, System};
 
 use super::output_buffer::{BufferSlice, OutputBuffer};
+use crate::core::process_env::sanitize_pty_command;
 
 /// Live processes one agent session may hold at once.
 pub const MAX_PROCS_PER_SESSION: usize = 4;
@@ -361,6 +362,7 @@ impl PtyRegistry {
         let mut command = CommandBuilder::new(&request.program);
         command.args(&request.args);
         command.cwd(&request.cwd);
+        sanitize_pty_command(&mut command);
         let child = slave
             .spawn_command(command)
             .map_err(|error| format!("Could not start `{}`: {error}", request.program))?;

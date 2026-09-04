@@ -4,6 +4,7 @@ use tokio::process::Command;
 use super::{command_outcome, required_string, resolve_path, ToolContext};
 use crate::core::agent::shell_guard::{join_command_stream, needs_shell_interpretation};
 use crate::core::agent::types::ToolOutcome;
+use crate::core::process_env::sanitize_tokio_command;
 
 pub(super) struct ShellInvocation {
     pub program: String,
@@ -64,6 +65,7 @@ pub async fn execute(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutc
     let (program, arguments) = resolve_program(&invocation);
     let mut command = Command::new(&program);
     command.args(&arguments);
+    sanitize_tokio_command(&mut command);
     command.current_dir(cwd).kill_on_drop(true);
     let output = tokio::select! {
         _ = context.cancellation.cancelled() => {

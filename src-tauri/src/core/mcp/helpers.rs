@@ -32,6 +32,7 @@ use crate::core::{
         constants::{default_mcp_config, DEFAULT_MCP_HANDSHAKE_TIMEOUT_SECS},
         models::{McpServerConfig, McpSettings},
     },
+    process_env::sanitize_tokio_command,
     state::{AppState, RunningServiceEnum, SharedMcpServers},
 };
 use jan_utils::{can_override_npx, can_override_uvx};
@@ -640,6 +641,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
         #[cfg(unix)]
         cmd.process_group(0);
 
+        sanitize_tokio_command(&mut cmd);
         cmd.kill_on_drop(true);
 
         // ATO-164 (defense-in-depth): launch the stdio server in its configured
