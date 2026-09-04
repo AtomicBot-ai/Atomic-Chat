@@ -7,7 +7,10 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { seedServiceHub } from '@/test/service-hub'
-import { CustomChatTransport } from '../custom-chat-transport'
+import {
+  CustomChatTransport,
+  resolveTokenSpeed,
+} from '../custom-chat-transport'
 import { loadChatSkillDetails } from '../chat-skill-injection'
 import { ModelFactory } from '../model-factory'
 
@@ -114,6 +117,38 @@ beforeEach(() => {
         settings: [],
       },
     ] as never,
+  })
+})
+
+describe('resolveTokenSpeed', () => {
+  it('does not invent TPS for ChatGPT subscription usage', () => {
+    expect(
+      resolveTokenSpeed({
+        providerId: 'chatgpt',
+        providerReportedSpeed: 0,
+        outputTokens: 1_116,
+        durationSec: 3.837,
+      })
+    ).toBe(0)
+  })
+
+  it('keeps provider timings and the existing fallback for other providers', () => {
+    expect(
+      resolveTokenSpeed({
+        providerId: 'mlx',
+        providerReportedSpeed: 72.5,
+        outputTokens: 500,
+        durationSec: 10,
+      })
+    ).toBe(72.5)
+    expect(
+      resolveTokenSpeed({
+        providerId: 'openai',
+        providerReportedSpeed: 0,
+        outputTokens: 540,
+        durationSec: 10,
+      })
+    ).toBe(54)
   })
 })
 

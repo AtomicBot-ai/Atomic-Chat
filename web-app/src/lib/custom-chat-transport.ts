@@ -89,7 +89,10 @@ import {
 import type { AgentSkillDetail } from '@/services/agent/skills'
 import type { ServiceHub } from '@/services'
 import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
-import { isLocalProvider as isLocalProviderName } from '@/utils/registerRemoteProvider'
+import {
+  isLocalProvider as isLocalProviderName,
+  isSubscriptionProvider,
+} from '@/utils/registerRemoteProvider'
 
 /// Local inference backends (mlx, llamacpp, llamacpp-upstream,
 /// foundation-models) get special handling at the `streamText` boundary:
@@ -308,6 +311,35 @@ export type StreamingTokenSpeedCallback = (
   tokenCount: number,
   elapsedMs: number
 ) => void
+
+export function resolveTokenSpeed({
+  providerId,
+  providerReportedSpeed,
+  outputTokens,
+  durationSec,
+}: {
+  providerId: string
+  providerReportedSpeed: number
+  outputTokens: number
+  durationSec: number
+}): number {
+  if (providerReportedSpeed > 0) return providerReportedSpeed
+
+  // The ChatGPT subscription bridge receives Responses API `output_tokens`,
+  // which may include hidden reasoning, but it can time only visible text or
+  // reasoning-summary deltas. Dividing those unlike values produced impossible
+  // rates for short or reasoning-heavy turns. The subscription endpoint does
+  // not expose decode timing, so leave TPS unavailable instead of fabricating
+  // a wall-clock estimate.
+  if (isSubscriptionProvider(providerId)) return 0
+
+  if (durationSec > 0 && outputTokens > 0) {
+    return outputTokens / durationSec
+  }
+
+  return 0
+}
+
 export type OnFinishCallback = (params: {
   message: UIMessage
   isAbort?: boolean
@@ -1083,18 +1115,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           // the timer ever started AND we actually produced tokens (e.g. a
           // pure tool-call response yields 0 tokens and no delta, so the
           // fallback would otherwise divide by zero).
-          let tokenSpeed: number
-          if (tokensPerSecond > 0) {
-            tokenSpeed = tokensPerSecond
-          } else if (
-            streamStartTime !== undefined &&
-            durationSec > 0 &&
-            outputTokens > 0
-          ) {
-            tokenSpeed = outputTokens / durationSec
-          } else {
-            tokenSpeed = 0
-          }
+          const tokenSpeed = resolveTokenSpeed({
+            providerId,
+            providerReportedSpeed: tokensPerSecond,
+            outputTokens,
+            durationSec: streamStartTime === undefined ? 0 : durationSec,
+          })
 
           return {
             finishReason: finishPart.finishReason,
@@ -1116,17 +1142,21 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
               totalTokens:
                 usage?.totalTokens ?? (inputTokens ?? 0) + outputTokens,
             },
-            tokenSpeed: {
-              tokenSpeed: Math.round(tokenSpeed * 10) / 10, // Round to 1 decimal
-              tokenCount: outputTokens,
-              durationMs,
-              ...(draftTokensTotal != null && draftTokensTotal > 0
-                ? {
-                    draftTokensTotal,
-                    draftTokensAccepted: draftTokensAccepted ?? 0,
-                  }
-                : {}),
-            },
+            ...(tokenSpeed > 0
+              ? {
+                  tokenSpeed: {
+                    tokenSpeed: Math.round(tokenSpeed * 10) / 10, // Round to 1 decimal
+                    tokenCount: outputTokens,
+                    durationMs,
+                    ...(draftTokensTotal != null && draftTokensTotal > 0
+                      ? {
+                          draftTokensTotal,
+                          draftTokensAccepted: draftTokensAccepted ?? 0,
+                        }
+                      : {}),
+                  },
+                }
+              : {}),
           }
         }
 

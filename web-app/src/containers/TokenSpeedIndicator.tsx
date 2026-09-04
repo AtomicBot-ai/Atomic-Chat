@@ -59,11 +59,8 @@ export const TokenSpeedIndicator = memo(
       ? streamingTokenCount
       : (usage?.outputTokens ?? persistedTokenCount)
 
-    // Hide the indicator if token speed is 0 and not streaming
-    if (displaySpeed === 0) return
-
     // Show indicator during streaming OR when we have persisted data
-    const shouldShow = streaming || (displaySpeed > 0 && displayTokenCount > 0)
+    const shouldShow = streaming || displaySpeed > 0 || displayTokenCount > 0
 
     if (!shouldShow) return
 
@@ -76,10 +73,12 @@ export const TokenSpeedIndicator = memo(
 
     return (
       <div className="flex items-center gap-2 text-muted-foreground text-xs">
-        <div className="flex items-center gap-1">
-          <Gauge size={16} />
-          <span>{displaySpeed} tok/sec</span>
-        </div>
+        {displaySpeed > 0 && (
+          <div className="flex items-center gap-1">
+            <Gauge size={16} />
+            <span>{displaySpeed} tok/sec</span>
+          </div>
+        )}
         {displayTokenCount > 0 && (
           <div className="flex items-center gap-1">
             <WholeWord size={16} />
