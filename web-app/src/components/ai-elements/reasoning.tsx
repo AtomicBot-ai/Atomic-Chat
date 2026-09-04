@@ -47,7 +47,12 @@ export type ReasoningProps = ComponentProps<typeof Collapsible> & {
 }
 
 const MS_IN_S = 1000
-const STREAMING_REASONING_VISIBLE_CHARS = 16_000
+// While a turn runs the panel is 128px tall — about eight lines — so the
+// window only has to cover scroll-back, not the trace. Cost of one streamed
+// delta at a 60k-character trace, measured in WebKit: 314ms for live
+// Markdown against 1ms for a plain-text window. Any bounded window fixes the
+// growth; this one keeps the per-frame layout down to a screenful of lines.
+const STREAMING_REASONING_VISIBLE_CHARS = 4_000
 const STREAMING_REASONING_TRUNCATED_PREFIX =
   '… earlier reasoning will appear when generation completes …\n\n'
 
@@ -87,6 +92,15 @@ export const Reasoning = memo(
       }
     }, [isStreaming, startTime, setDuration])
 
+    // The panel auto-closes when the turn ends. Committing that only from the
+    // effect below would first render the finished trace as Markdown and then
+    // unmount it on the very next commit — 657ms of frozen UI on an
+    // 80k-character trace in WebKit, for a subtree nobody ever sees. Deriving
+    // the closed state here keeps that render from happening at all; the
+    // effect still commits it.
+    const justFinishedStreaming = wasStreamingRef.current && !isStreaming
+    const openState = justFinishedStreaming ? false : isOpen
+
     // Auto-close when streaming ends (only when transitioning from streaming to not streaming)
     useEffect(() => {
       if (wasStreamingRef.current && !isStreaming) {
@@ -103,11 +117,11 @@ export const Reasoning = memo(
     const contextValue = useMemo(
       () => ({
         isStreaming,
-        isOpen,
+        isOpen: openState,
         setIsOpen,
         duration,
       }),
-      [isStreaming, isOpen, duration]
+      [isStreaming, openState, setIsOpen, duration]
     )
 
     return (
@@ -115,7 +129,7 @@ export const Reasoning = memo(
         <Collapsible
           className={cn('not-prose mb-4', className)}
           onOpenChange={handleOpenChange}
-          open={isOpen}
+          open={openState}
           {...props}
         >
           {children}
@@ -189,7 +203,12 @@ export const ReasoningContent = memo(
     isStreaming = false,
     ...props
   }: ReasoningContentProps) => {
-    const streamingText =
+    const { isOpen } = useReasoning()
+    // Radix keeps the content mounted for the collapse animation, so a panel
+    // that is on its way closed would still pay for the full Markdown parse.
+    // Only a panel a reader can actually read is worth parsing.
+    const showMarkdown = !isStreaming && isOpen
+    const plainText =
       children.length > STREAMING_REASONING_VISIBLE_CHARS
         ? STREAMING_REASONING_TRUNCATED_PREFIX +
           children.slice(-STREAMING_REASONING_VISIBLE_CHARS)
@@ -210,18 +229,18 @@ export const ReasoningContent = memo(
         list markers fall back to `outside` with zero padding and overlap the
         dotted border. */}
         <div className="markdown ml-2 pl-4 border-l-2 border-dotted">
-          {isStreaming ? (
+          {showMarkdown ? (
+            <Streamdown animate={false} {...props}>
+              {children}
+            </Streamdown>
+          ) : (
             <div
               className="whitespace-pre-wrap wrap-break-word"
               data-streaming-reasoning
               dir="auto"
             >
-              {streamingText}
+              {plainText}
             </div>
-          ) : (
-            <Streamdown animate={false} {...props}>
-              {children}
-            </Streamdown>
           )}
         </div>
       </CollapsibleContent>
