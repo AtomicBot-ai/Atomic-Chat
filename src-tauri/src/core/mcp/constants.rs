@@ -109,10 +109,15 @@ const DEFAULT_MCP_CONFIG_TEMPLATE: &str = r#"{
 
 /// Default sandbox directory exposed to the `filesystem` MCP server.
 /// Resolves to `~/Documents/Atomic_chat` (or the platform equivalent).
+///
+/// Always absolute: this path is persisted as the server's `cwd`, and a
+/// relative `./Atomic_chat` would be resolved against whatever the app was
+/// launched from and fail the spawn with "directory name is invalid" (#259).
 pub fn default_filesystem_root() -> PathBuf {
     let docs = dirs::document_dir()
         .or_else(|| dirs::home_dir().map(|h| h.join("Documents")))
-        .unwrap_or_else(|| PathBuf::from("."));
+        .or_else(dirs::data_dir)
+        .unwrap_or_else(std::env::temp_dir);
     docs.join("Atomic_chat")
 }
 

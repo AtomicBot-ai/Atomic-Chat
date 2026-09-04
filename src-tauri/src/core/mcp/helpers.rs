@@ -645,8 +645,22 @@ async fn schedule_mcp_start_task<R: Runtime>(
         // ATO-164 (defense-in-depth): launch the stdio server in its configured
         // working directory so relative paths resolve there rather than the
         // app's data dir. No-op when `cwd` is unset (inherits the app CWD).
+        //
+        // The directory has to exist: CreateProcess fails with ERROR_DIRECTORY
+        // (os error 267, "The directory name is invalid") for a missing one,
+        // which took every stdio server down with it once the sandbox folder
+        // was moved or never created (#259). Fall back to the inherited CWD
+        // with a warning instead.
         if let Some(cwd) = config_params.cwd.as_deref() {
-            cmd.current_dir(cwd);
+            let dir = std::path::Path::new(cwd);
+            if dir.is_dir() {
+                cmd.current_dir(dir);
+            } else {
+                log::warn!(
+                    "MCP server {name}: working directory {cwd:?} is not an existing \
+                     directory; starting from the app working directory instead"
+                );
+            }
         }
 
         config_params
@@ -842,6 +856,24 @@ fn emit_mcp_status_update_event<R: Runtime>(app: &AppHandle<R>, name: &str) {
     }
 }
 
+/// Clean up a user-entered working directory: trim whitespace and strip one
+/// pair of surrounding quotes (Windows users paste `"C:\path with spaces"`
+/// straight out of Explorer). `None` when nothing usable is left.
+fn normalize_cwd(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    let unquoted = trimmed
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .or_else(|| {
+            trimmed
+                .strip_prefix('\'')
+                .and_then(|s| s.strip_suffix('\''))
+        })
+        .unwrap_or(trimmed)
+        .trim();
+    (!unquoted.is_empty()).then(|| unquoted.to_string())
+}
+
 pub fn extract_command_args(config: &Value) -> Option<McpServerConfig> {
     let obj = config.as_object()?;
     let command = obj
@@ -873,8 +905,7 @@ pub fn extract_command_args(config: &Value) -> Option<McpServerConfig> {
     let cwd = obj
         .get("cwd")
         .and_then(|c| c.as_str())
-        .filter(|s| !s.is_empty())
-        .map(String::from);
+        .and_then(normalize_cwd);
     Some(McpServerConfig {
         timeout,
         transport_type,
@@ -1394,4 +1425,41 @@ pub fn add_server_config_with_path<R: Runtime>(
     .map_err(|e| format!("Failed to write config file: {e}"))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_cwd_trims_and_unquotes() {
+        assert_eq!(
+            normalize_cwd("  \"C:\\Users\\Marc\\Documents\\Test 1\"  ").as_deref(),
+            Some("C:\\Users\\Marc\\Documents\\Test 1")
+        );
+        assert_eq!(normalize_cwd("'/tmp/work'").as_deref(), Some("/tmp/work"));
+        assert_eq!(normalize_cwd("/tmp/work").as_deref(), Some("/tmp/work"));
+    }
+
+    #[test]
+    fn normalize_cwd_drops_empty_values() {
+        assert_eq!(normalize_cwd(""), None);
+        assert_eq!(normalize_cwd("   "), None);
+        assert_eq!(normalize_cwd("\"\""), None);
+    }
+
+    #[test]
+    fn extract_command_args_reads_cwd() {
+        let config = serde_json::json!({
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+            "cwd": " \"/some/dir\" "
+        });
+        let parsed = extract_command_args(&config).expect("config parses");
+        assert_eq!(parsed.cwd.as_deref(), Some("/some/dir"));
+
+        let config = serde_json::json!({ "command": "npx", "args": [], "cwd": "" });
+        let parsed = extract_command_args(&config).expect("config parses");
+        assert_eq!(parsed.cwd, None);
+    }
 }
