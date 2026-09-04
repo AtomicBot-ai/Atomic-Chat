@@ -150,6 +150,7 @@ import type {
   AgentRunState,
 } from '@/types/agent'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useReasoningAutoScroll } from '@/hooks/useReasoningAutoScroll'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -687,16 +688,16 @@ function ThreadDetail() {
     disabledTools, // Re-run when tools are enabled/disabled
   ])
 
-  // Ref for reasoning container auto-scroll
-  const reasoningContainerRef = useRef<HTMLDivElement>(null)
-
-  // Auto-scroll reasoning container to bottom during streaming
-  useEffect(() => {
-    if (status === 'streaming' && reasoningContainerRef.current) {
-      reasoningContainerRef.current.scrollTop =
-        reasoningContainerRef.current.scrollHeight
-    }
-  }, [status, chatMessages])
+  // Content growth does not emit a scroll event, so only actual reader
+  // scrolling may pause tail-following. Token updates remain coalesced to one
+  // layout write per animation frame.
+  const {
+    containerRef: reasoningContainerRef,
+    onScroll: onReasoningScroll,
+  } = useReasoningAutoScroll(
+    status === CHAT_STATUS.STREAMING,
+    chatMessages
+  )
 
   // Note: no unmount cleanup of the optimistic bubble store here. React
   // StrictMode in dev simulates mount → unmount → remount on initial mount;
@@ -1963,6 +1964,7 @@ function ThreadDetail() {
                         status={inputStatus}
                         requestActive={requestActive}
                         reasoningContainerRef={reasoningContainerRef}
+                        onReasoningScroll={onReasoningScroll}
                         onRegenerate={handleRegenerate}
                         onEdit={handleEditMessage}
                         onDelete={handleDeleteMessage}
@@ -1983,6 +1985,7 @@ function ThreadDetail() {
                         isLastMessage={true}
                         status={status}
                         reasoningContainerRef={reasoningContainerRef}
+                        onReasoningScroll={onReasoningScroll}
                         onRegenerate={handleRegenerate}
                         onEdit={handleEditMessage}
                         onDelete={handleDeleteMessage}
@@ -2006,6 +2009,7 @@ function ThreadDetail() {
                       // shimmer under "Growing the Mind...".
                       requestActive={false}
                       reasoningContainerRef={reasoningContainerRef}
+                      onReasoningScroll={onReasoningScroll}
                       onRegenerate={handleRegenerate}
                       onEdit={handleEditMessage}
                       onDelete={handleDeleteMessage}

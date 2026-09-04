@@ -248,8 +248,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (29)
+## UI / UX (30)
 
+- **2026-09-04** — [Bound streaming reasoning render cost](2026-09-04-bound-streaming-reasoning-render-cost.md)
 - **2026-09-02** — [Switch single MCP tools per connector from a tools dialog; a connector's per-chat on/off lives there too](2026-09-02-switch-single-mcp-tools-per-connector-from-a-tools-dialog.md)
 - **2026-09-02** — [Measure and surface MCP tool cost in chat; never trim or hide schemas](2026-09-02-measure-and-surface-mcp-tool-cost-in-chat.md)
 - **2026-08-27** — [Connect a ChatGPT subscription as a model provider](2026-08-27-connect-a-chatgpt-subscription-as-a-model-provider.md)
@@ -295,4 +296,3 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-07-28** — [Isolate the unstable Tauri IPC test API](2026-07-28-isolate-tauri-ipc-test-api.md)
 - **2026-07-23** — [Isolate the Windows Common Controls test manifest by feature](2026-07-23-isolate-the-windows-common-controls-test-manifest-by-feature.md)
 - **2026-07-20** — [Open Agent-referenced files from assistant summaries](2026-07-20-open-agent-referenced-files-from-assistant-summaries.md)
-

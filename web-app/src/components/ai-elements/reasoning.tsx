@@ -47,6 +47,9 @@ export type ReasoningProps = ComponentProps<typeof Collapsible> & {
 }
 
 const MS_IN_S = 1000
+const STREAMING_REASONING_VISIBLE_CHARS = 16_000
+const STREAMING_REASONING_TRUNCATED_PREFIX =
+  '… earlier reasoning will appear when generation completes …\n\n'
 
 export const Reasoning = memo(
   ({
@@ -176,30 +179,54 @@ export type ReasoningContentProps = ComponentProps<
   typeof CollapsibleContent
 > & {
   children: string
+  isStreaming?: boolean
 }
 
 export const ReasoningContent = memo(
-  ({ className, children, ...props }: ReasoningContentProps) => (
-    <CollapsibleContent
-      className={cn(
-        'mt-4 text-sm relative',
-        'data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-muted-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in',
-        className
-      )}
-      {...props}
-    >
-      {/* Streamdown's own utility classes (list-inside, pl-6, ...) are not
-      emitted by this build (Tailwind doesn't scan node_modules), so markdown
-      here must be styled by the app's `.markdown` stylesheet — without it,
-      list markers fall back to `outside` with zero padding and overlap the
-      dotted border. */}
-      <div className="markdown ml-2 pl-4 border-l-2 border-dotted">
-        <Streamdown animate={true} animationDuration={500} {...props}>
-          {children}
-        </Streamdown>
-      </div>
-    </CollapsibleContent>
-  )
+  ({
+    className,
+    children,
+    isStreaming = false,
+    ...props
+  }: ReasoningContentProps) => {
+    const streamingText =
+      children.length > STREAMING_REASONING_VISIBLE_CHARS
+        ? STREAMING_REASONING_TRUNCATED_PREFIX +
+          children.slice(-STREAMING_REASONING_VISIBLE_CHARS)
+        : children
+
+    return (
+      <CollapsibleContent
+        className={cn(
+          'mt-4 text-sm relative',
+          'data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-muted-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in',
+          className
+        )}
+        {...props}
+      >
+        {/* Streamdown's own utility classes (list-inside, pl-6, ...) are not
+        emitted by this build (Tailwind doesn't scan node_modules), so markdown
+        here must be styled by the app's `.markdown` stylesheet — without it,
+        list markers fall back to `outside` with zero padding and overlap the
+        dotted border. */}
+        <div className="markdown ml-2 pl-4 border-l-2 border-dotted">
+          {isStreaming ? (
+            <div
+              className="whitespace-pre-wrap wrap-break-word"
+              data-streaming-reasoning
+              dir="auto"
+            >
+              {streamingText}
+            </div>
+          ) : (
+            <Streamdown animate={false} {...props}>
+              {children}
+            </Streamdown>
+          )}
+        </div>
+      </CollapsibleContent>
+    )
+  }
 )
 
 Reasoning.displayName = 'Reasoning'
