@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { listen } from '@tauri-apps/api/event'
 import { SystemEvent } from '@/types/events'
+import { createSafeUnlisten } from '@/lib/tauriEvent'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import type { MCPServerStatus } from '@/services/mcp/types'
 
@@ -24,32 +26,28 @@ export function useMCPServerStatuses(): {
     refresh()
 
     let cancelled = false
-    let detachers: Array<() => void> = []
+    let detachers: Array<() => Promise<void>> = []
     const setupListeners = async () => {
-      // Subscribe through the service hub rather than `@tauri-apps/api/event`
-      // directly: the hub hands back an already-idempotent detacher, and on a
-      // platform without the Tauri bridge it resolves to the web no-op instead
-      // of throwing on `transformCallback`.
-      const safeDetachers = await Promise.all([
-        serviceHub.events().listen(SystemEvent.MCP_UPDATE, refresh),
-        serviceHub.events().listen(SystemEvent.MCP_STATUS_UPDATE, refresh),
+      const listeners = await Promise.all([
+        listen(SystemEvent.MCP_UPDATE, refresh),
+        listen(SystemEvent.MCP_STATUS_UPDATE, refresh),
       ])
+      const safeDetachers = listeners.map((unsubscribe) =>
+        createSafeUnlisten(unsubscribe)
+      )
       if (cancelled) {
-        safeDetachers.forEach((detach) => detach())
+        safeDetachers.forEach((detach) => void detach())
       } else {
         detachers = safeDetachers
       }
     }
-    // A rejected setup must not surface as an unhandled rejection.
-    void setupListeners().catch((error) => {
-      console.warn('Failed to subscribe to MCP status events', error)
-    })
+    void setupListeners()
 
     return () => {
       cancelled = true
-      detachers.splice(0).forEach((detach) => detach())
+      detachers.splice(0).forEach((detach) => void detach())
     }
-  }, [refresh, serviceHub])
+  }, [refresh])
 
   const statusByName = useMemo(
     () => new Map(statuses.map((status) => [status.name, status])),

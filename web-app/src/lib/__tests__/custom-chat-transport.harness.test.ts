@@ -27,6 +27,12 @@ vi.mock('../chat-skill-injection', async (importOriginal) => {
   return { ...actual, loadChatSkillDetails: vi.fn().mockResolvedValue([]) }
 })
 
+// Readiness for a remote provider pings the backend over Tauri, which vitest
+// has no bridge for. Local providers skip the call entirely.
+vi.mock('@/utils/ensureRemoteProviderReady', () => ({
+  ensureRemoteProviderReady: vi.fn().mockResolvedValue(undefined),
+}))
+
 type ModelStreamPart =
   | { type: 'stream-start'; warnings: [] }
   | { type: 'text-start'; id: string }
@@ -796,5 +802,128 @@ describe('CustomChatTransport muted connectors and tool cost', () => {
     )
     const report = useAppState.getState().toolCostReports['']
     expect(report.perServer.map((s) => s.server)).toEqual(['linear', 'exa'])
+  })
+})
+
+/**
+ * llama.cpp compiles the tool schemas into one GBNF grammar and samples
+ * against it, and `maxLength: 10000` becomes a literal `char{0,10000}` there —
+ * past what its grammar parser accepts, so the whole request dies with
+ * "failed to parse grammar" whether or not a tool is ever called. The bounds
+ * are therefore stripped on the way to a llama.cpp engine, and only there.
+ */
+describe('CustomChatTransport grammar-safe tool schemas', () => {
+  const boundedTool = {
+    name: 'firecrawl_scrape',
+    server: 'firecrawl',
+    description: 'Scrape a page',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', maxLength: 2000 },
+        prompt: { type: 'string', minLength: 1, maxLength: 10000 },
+        formats: {
+          type: 'array',
+          maxItems: 11,
+          items: { type: 'string', maxLength: 40 },
+        },
+      },
+      required: ['url'],
+    },
+  }
+
+  const useProvider = (provider: string) =>
+    useModelProvider.setState((state) => ({
+      selectedProvider: provider,
+      selectedModel: { ...state.selectedModel!, capabilities: ['tools'] },
+      providers: [
+        {
+          provider,
+          active: true,
+          api_key: '',
+          base_url: 'http://localhost',
+          models: [],
+          settings: [],
+        },
+      ] as never,
+    }))
+
+  beforeEach(() => {
+    useAppState.setState({
+      tools: [boundedTool],
+      mcpToolNames: new Set([boundedTool.name]),
+    })
+  })
+
+  const sendAndCaptureSchema = async () => {
+    const doStream = vi.fn(async () => ({
+      stream: new ReadableStream({
+        start(controller) {
+          controller.enqueue({ type: 'stream-start', warnings: [] })
+          controller.enqueue({
+            type: 'finish',
+            finishReason: 'stop',
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          })
+          controller.close()
+        },
+      }),
+    }))
+    vi.spyOn(ModelFactory, 'createModel').mockResolvedValue({
+      specificationVersion: 'v2',
+      provider: 'fixture',
+      modelId: 'fixture-model',
+      supportedUrls: {},
+      doGenerate: vi.fn(),
+      doStream,
+    } as unknown as LanguageModel)
+    const transport = new CustomChatTransport()
+    await readChunks(
+      (await transport.sendMessages({
+        chatId: 'chat-1',
+        messages: [userMessage],
+        abortSignal: undefined,
+        trigger: 'submit-message',
+        messageId: undefined,
+      })) as ReadableStream<Record<string, unknown>>
+    )
+    const call = doStream.mock.calls[0]?.[0] as
+      | { tools?: Array<{ name: string; inputSchema?: unknown }> }
+      | undefined
+    return call?.tools?.find((t) => t.name === boundedTool.name)?.inputSchema
+  }
+
+  it('strips the size bounds for a llama.cpp engine', async () => {
+    useProvider('llamacpp')
+
+    expect(await sendAndCaptureSchema()).toEqual({
+      type: 'object',
+      properties: {
+        url: { type: 'string' },
+        prompt: { type: 'string' },
+        formats: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['url'],
+    })
+  })
+
+  it('strips them for a self-hosted llama.cpp behind an OpenAI-compatible URL', async () => {
+    useProvider('llamacpp-server')
+
+    expect(await sendAndCaptureSchema()).toEqual({
+      type: 'object',
+      properties: {
+        url: { type: 'string' },
+        prompt: { type: 'string' },
+        formats: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['url'],
+    })
+  })
+
+  it('leaves the schema untouched for a cloud provider', async () => {
+    useProvider('anthropic')
+
+    expect(await sendAndCaptureSchema()).toEqual(boundedTool.inputSchema)
   })
 })

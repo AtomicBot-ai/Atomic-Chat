@@ -64,12 +64,6 @@ pub fn init() -> Option<ClientInitGuard> {
         .filter(|s| !s.is_empty())
         .unwrap_or("production")
         .to_string();
-    // A developer's local `.env` pairs a real DSN with
-    // SENTRY_ENVIRONMENT=development, which sent every `tauri dev` session into
-    // the production project. Stay off entirely on such builds.
-    if environment == "development" {
-        return None;
-    }
 
     let options = ClientOptions {
         release: Some(release.into()),
