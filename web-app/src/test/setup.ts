@@ -28,6 +28,14 @@ Object.defineProperty(window, 'matchMedia', {
   })),
 })
 
+// `isPlatformTauri()` now probes for the real IPC bridge instead of trusting a
+// build-time define, so the suite has to declare which platform it stands in.
+// This is the desktop app's test suite, so present the bridge; the handful of
+// specs that want the web branch mock `isPlatformTauri` directly. `clearMocks()`
+// only deletes properties inside this object, never the object itself, so one
+// assignment here survives every test.
+;(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ ??= {}
+
 // Mock globalThis.core.api for @janhq/core functions // cspell: disable-line
 ;(globalThis as Record<string, unknown>).core = {
   api: {

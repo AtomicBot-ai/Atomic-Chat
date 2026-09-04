@@ -11,6 +11,8 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { openUrl } from '@tauri-apps/plugin-opener'
 
+import { createSafeUnlisten } from '@/lib/tauriEvent'
+
 import { DefaultVoiceService } from './default'
 import type {
   MicPermission,
@@ -129,11 +131,17 @@ export class TauriVoiceService extends DefaultVoiceService {
       )
     }
 
+    let detached = false
     return () => {
       // A listener whose registration is still in flight must still be torn
-      // down, so wait for each promise rather than dropping it.
-      for (const promise of pending) {
-        promise.then((unlisten) => unlisten()).catch(() => {})
+      // down, so wait for each promise rather than dropping it. The flag keeps
+      // a second call (StrictMode, two consumers) from unlistening the same
+      // handler twice, which is what raises Tauri's
+      // `listeners[eventId].handlerId` TypeError.
+      if (detached) return
+      detached = true
+      for (const promise of pending.splice(0)) {
+        promise.then((unlisten) => createSafeUnlisten(unlisten)()).catch(() => {})
       }
     }
   }

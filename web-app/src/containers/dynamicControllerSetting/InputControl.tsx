@@ -5,6 +5,7 @@ import { ButtonGroup } from '@/components/ui/button-group'
 import { Copy, Eye, EyeOff, CopyCheck } from 'lucide-react'
 import { IconMinus, IconPlus } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
+import { copyToClipboard } from '@/lib/clipboard'
 
 type InputControl = {
   type?: string
@@ -33,14 +34,13 @@ export function InputControl({
   const [isCopied, setIsCopied] = useState(false)
   const hasInputActions = inputActions && inputActions.length > 0
 
-  const copyToClipboard = () => {
-    if (value) {
-      navigator.clipboard.writeText(String(value))
-      setIsCopied(true)
-      setTimeout(() => {
-        setIsCopied(false)
-      }, 1000)
-    }
+  const handleCopy = async () => {
+    if (!value) return
+    if (!(await copyToClipboard(String(value)))) return
+    setIsCopied(true)
+    setTimeout(() => {
+      setIsCopied(false)
+    }, 1000)
   }
 
   const inputType = type === 'password' && showPassword ? 'text' : type
@@ -125,7 +125,7 @@ export function InputControl({
           )}
         {hasInputActions && inputActions.includes('copy') && (
           <button
-            onClick={copyToClipboard}
+            onClick={handleCopy}
             className="p-1 rounded  text-muted-foreground"
           >
             {isCopied ? (

@@ -89,21 +89,24 @@ function subscribeToMcpUpdates(refresh: (snapshot: ToolSnapshot) => void) {
 
   return () => {
     refreshSubscribers.delete(refresh)
-    if (refreshSubscribers.size === 0) {
-      if (mcpUpdateUnsubscribe) {
-        mcpUpdateUnsubscribe()
-        mcpUpdateUnsubscribe = undefined
-        mcpUpdateListener = undefined
-      } else {
-        void mcpUpdateListener?.then((unsubscribe) => {
-          if (refreshSubscribers.size === 0) {
-            unsubscribe()
-            mcpUpdateUnsubscribe = undefined
-            mcpUpdateListener = undefined
-          }
-        })
-      }
+    if (refreshSubscribers.size > 0) return
+
+    // Claim the subscription before releasing it. Two components unsubscribing
+    // in the same tick both used to reach the pending-promise branch while
+    // `mcpUpdateUnsubscribe` was still undefined, and each then detached the
+    // same listener.
+    const pending = mcpUpdateListener
+    const resolved = mcpUpdateUnsubscribe
+    mcpUpdateListener = undefined
+    mcpUpdateUnsubscribe = undefined
+
+    if (resolved) {
+      resolved()
+      return
     }
+    void pending?.then((unsubscribe) => {
+      if (refreshSubscribers.size === 0) unsubscribe()
+    })
   }
 }
 

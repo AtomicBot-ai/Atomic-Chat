@@ -238,11 +238,25 @@ export function DataProvider() {
       .catch((error) => {
         console.warn('Failed to load assistants, keeping default:', error)
       })
+    let cancelled = false
+    let detachOpenUrl = () => {}
+    let unsubscribe = () => {}
+
     serviceHub.deeplink().getCurrent().then(handleDeepLink)
-    serviceHub.deeplink().onOpenUrl(handleDeepLink)
+    // `onOpenUrl` hands back a detacher; dropping it left the handler
+    // registered for the life of the process.
+    serviceHub
+      .deeplink()
+      .onOpenUrl(handleDeepLink)
+      .then((detach) => {
+        if (cancelled) detach()
+        else detachOpenUrl = detach
+      })
+      .catch((error) => {
+        console.warn('Failed to subscribe to deep links:', error)
+      })
 
     // Listen for deep link events
-    let unsubscribe = () => {}
     serviceHub
       .events()
       .listen(SystemEvent.DEEP_LINK, (event) => {
@@ -250,9 +264,12 @@ export function DataProvider() {
         handleDeepLink([deep_link])
       })
       .then((unsub) => {
-        unsubscribe = unsub
+        if (cancelled) unsub()
+        else unsubscribe = unsub
       })
     return () => {
+      cancelled = true
+      detachOpenUrl()
       unsubscribe()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

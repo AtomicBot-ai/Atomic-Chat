@@ -131,7 +131,7 @@ impl GpuInfo {
             };
 
             self.get_nvidia_memory_usage(index).unwrap_or_else(|e| {
-                log::error!("Failed to get memory usage for NVIDIA GPU {}: {}", index, e);
+                report_usage_failure(index, &e);
                 self.get_usage_unsupported()
             })
         }
@@ -150,6 +150,43 @@ impl GpuInfo {
                 total_memory: mem_info.total / (1024 * 1024), // bytes to MiB
             })
         })
+    }
+}
+
+/// Report a repeating poll failure once per GPU, then stay quiet.
+///
+/// `get_usage` runs on the System Monitor's ~5s tick for as long as the app is
+/// open, and the conditions that make it fail — a device the OS or a cgroup has
+/// blocked, a laptop dGPU powered down, an index that stopped resolving after a
+/// driver reset — last for the rest of the session. Logging every tick produced
+/// tens of thousands of identical records per user; since `log::error!` becomes
+/// a Sentry event, this single line was the loudest issue in the project.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn report_usage_failure(index: u32, error: &NvmlError) {
+    use std::collections::HashSet;
+    use std::sync::{Mutex, OnceLock};
+
+    static REPORTED: OnceLock<Mutex<HashSet<u32>>> = OnceLock::new();
+
+    let is_first = REPORTED
+        .get_or_init(|| Mutex::new(HashSet::new()))
+        .lock()
+        .map(|mut seen| seen.insert(index))
+        .unwrap_or(false);
+
+    if is_first {
+        log::warn!(
+            "Failed to get memory usage for NVIDIA GPU {}: {} \
+             (further failures for this GPU are logged at trace level)",
+            index,
+            error
+        );
+    } else {
+        log::trace!(
+            "Failed to get memory usage for NVIDIA GPU {}: {}",
+            index,
+            error
+        );
     }
 }
 
@@ -185,7 +222,10 @@ fn get_nvidia_gpus_internal() -> Vec<GpuInfo> {
         let (num_gpus, driver_version) = match (nvml.device_count(), nvml.sys_driver_version()) {
             (Ok(count), Ok(version)) => (count, version),
             (Err(e), _) | (_, Err(e)) => {
-                log::error!("Failed to get NVIDIA system info: {}", e);
+                // A driver that will not answer is an environment condition —
+                // the caller degrades to an empty GPU list. `warn!` keeps it as
+                // a breadcrumb instead of filing a crash.
+                log::warn!("Failed to get NVIDIA system info: {}", e);
                 return vec![];
             }
         };

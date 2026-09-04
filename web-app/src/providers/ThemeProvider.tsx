@@ -51,7 +51,8 @@ export function ThemeProvider() {
 
     // Listen to Tauri native theme events (fallback for platforms where
     // the media query listener may not fire)
-    let unlistenTauri: (() => void) | undefined
+    let cancelled = false
+    let unlistenTauri: (() => Promise<void>) | undefined
 
     if (isPlatformTauri()) {
       import('@tauri-apps/api/event')
@@ -64,7 +65,13 @@ export function ThemeProvider() {
           })
         })
         .then((unlisten) => {
-          unlistenTauri = createSafeUnlisten(unlisten)
+          const detach = createSafeUnlisten(unlisten)
+          // `activeTheme` is in this effect's deps, so the cleanup routinely
+          // wins the race against the dynamic import. Without this check the
+          // listener registered by the torn-down run was never detached and
+          // one leaked per theme change.
+          if (cancelled) void detach()
+          else unlistenTauri = detach
         })
         .catch((err) => {
           console.error('Failed to setup Tauri theme listener:', err)
@@ -73,6 +80,7 @@ export function ThemeProvider() {
 
     // Clean up
     return () => {
+      cancelled = true
       clearTimeout(timeoutId)
       mediaQuery.removeEventListener('change', handleMediaChange)
       if (unlistenTauri) {

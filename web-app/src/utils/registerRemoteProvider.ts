@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { isPlatformTauri } from '@/lib/platform/utils'
 
 type ProviderCustomHeaderPayload = {
   header: string
@@ -99,6 +100,13 @@ export async function registerRemoteProvider(
   provider: ModelProvider
 ): Promise<boolean> {
   if (isLocalProvider(provider.provider)) {
+    return false
+  }
+
+  // Registration lives entirely in the Rust proxy, so without the Tauri bridge
+  // there is nothing to register with. Say so once rather than letting every
+  // provider raise an undefined-`invoke` TypeError into the caller's catch.
+  if (!isPlatformTauri()) {
     return false
   }
 

@@ -62,17 +62,21 @@ pub fn get_vulkan_gpus() -> Vec<GpuInfo> {
         match get_vulkan_gpus_internal() {
             Ok(gpus) => gpus,
             Err(e) => {
-                // Already at `error!`. Keep the level but enrich the
-                // message — the most common cause is a missing
-                // `vulkan-1.dll` on Windows (no Vulkan loader installed
-                // by the GPU driver), which means AMD/Intel GPUs won't
-                // be enumerated at all.
-                log::error!(
-                    "Failed to enumerate Vulkan GPUs (most likely the Vulkan loader \
-                     is not installed — `vulkan-1.dll` on Windows / `libvulkan.so` \
-                     on Linux): {:?}",
-                    e
-                );
+                // A machine with no Vulkan loader installed is a supported
+                // configuration, not a defect: the most common cause is a
+                // missing `vulkan-1.dll` on Windows, which only means AMD/Intel
+                // GPUs are not enumerated. This runs again on every window
+                // focus (the hardware cache is invalidated there), so `error!`
+                // filed a fresh crash every time the user alt-tabbed back.
+                static LOG_FAILURE_ONCE: std::sync::Once = std::sync::Once::new();
+                LOG_FAILURE_ONCE.call_once(|| {
+                    log::warn!(
+                        "Failed to enumerate Vulkan GPUs (most likely the Vulkan loader \
+                         is not installed — `vulkan-1.dll` on Windows / `libvulkan.so` \
+                         on Linux): {:?}",
+                        e
+                    );
+                });
                 vec![]
             }
         }
