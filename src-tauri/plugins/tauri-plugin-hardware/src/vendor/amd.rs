@@ -15,7 +15,12 @@ impl GpuInfo {
         let device_id = match &self.vulkan_info {
             Some(vulkan_info) => vulkan_info.device_id,
             None => {
-                log::error!("get_usage_amd called without Vulkan info");
+                // Reached on every ~5s usage poll for a GPU that Vulkan never
+                // enumerated, so it must not be logged per tick.
+                static LOG_MISSING_ONCE: std::sync::Once = std::sync::Once::new();
+                LOG_MISSING_ONCE.call_once(|| {
+                    log::warn!("get_usage_amd called without Vulkan info");
+                });
                 return self.get_usage_unsupported();
             }
         };
@@ -64,11 +69,17 @@ impl GpuInfo {
         match closure() {
             Ok(usage) => usage,
             Err(e) => {
-                log::error!(
-                    "Failed to get memory usage for AMD GPU {:#x}: {}",
-                    device_id,
-                    e
-                );
+                // "GPU not found" simply means the sysfs walk matched no
+                // `amdgpu` node — an expected state on this host, re-tested
+                // every ~5s. Match the Windows branch above and report once.
+                static LOG_FAILURE_ONCE: std::sync::Once = std::sync::Once::new();
+                LOG_FAILURE_ONCE.call_once(|| {
+                    log::warn!(
+                        "Failed to get memory usage for AMD GPU {:#x}: {}",
+                        device_id,
+                        e
+                    );
+                });
                 self.get_usage_unsupported()
             }
         }

@@ -25,6 +25,7 @@ import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import Capabilities from '@/containers/Capabilities'
 import { getModelDisplayName, isLocalProvider } from '@/lib/utils'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
+import { copyToClipboard } from '@/lib/clipboard'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.hermes_agent as any)({
@@ -356,8 +357,8 @@ function CopyableField({
 }) {
   const [copied, setCopied] = useState(false)
 
-  const copy = () => {
-    navigator.clipboard.writeText(value)
+  const copy = async () => {
+    if (!(await copyToClipboard(value))) return
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
@@ -410,8 +411,8 @@ function ManualConfigPanel({
 
   const [yamlCopied, setYamlCopied] = useState(false)
 
-  const copyYaml = () => {
-    navigator.clipboard.writeText(yamlSnippet)
+  const copyYaml = async () => {
+    if (!(await copyToClipboard(yamlSnippet))) return
     setYamlCopied(true)
     setTimeout(() => setYamlCopied(false), 1500)
   }

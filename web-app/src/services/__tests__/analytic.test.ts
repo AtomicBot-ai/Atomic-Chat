@@ -154,16 +154,16 @@ describe('DefaultAnalyticService', () => {
       expect(result).toBe('')
     })
 
-    it('should handle null configuration', async () => {
+    it('should resolve to undefined for a null configuration', async () => {
       mockGetAppConfigurations.mockResolvedValue(null)
-      
-      await expect(analyticService.getAppDistinctId()).rejects.toThrow()
+
+      await expect(analyticService.getAppDistinctId()).resolves.toBeUndefined()
     })
 
-    it('should handle undefined configuration', async () => {
+    it('should resolve to undefined for an undefined configuration', async () => {
       mockGetAppConfigurations.mockResolvedValue(undefined)
-      
-      await expect(analyticService.getAppDistinctId()).rejects.toThrow()
+
+      await expect(analyticService.getAppDistinctId()).resolves.toBeUndefined()
     })
 
     it('should handle API errors', async () => {
@@ -227,17 +227,17 @@ describe('DefaultAnalyticService', () => {
   })
 
   describe('edge cases', () => {
-    it('should handle when window.core is undefined', async () => {
+    it('should stay quiet when window.core is undefined', async () => {
       const originalCore = window.core
-      
+
       // Temporarily remove core
       Object.defineProperty(window, 'core', {
         writable: true,
         value: undefined,
       })
-      
-      await expect(analyticService.updateDistinctId('test')).rejects.toThrow()
-      await expect(analyticService.getAppDistinctId()).rejects.toThrow()
+
+      await expect(analyticService.updateDistinctId('test')).resolves.toBeUndefined()
+      await expect(analyticService.getAppDistinctId()).resolves.toBeUndefined()
       
       // Restore core
       Object.defineProperty(window, 'core', {
@@ -246,17 +246,17 @@ describe('DefaultAnalyticService', () => {
       })
     })
 
-    it('should handle when window.core.api is undefined', async () => {
+    it('should stay quiet when window.core.api is undefined', async () => {
       const originalCore = window.core
-      
+
       // Set core without api
       Object.defineProperty(window, 'core', {
         writable: true,
         value: {},
       })
-      
-      await expect(analyticService.updateDistinctId('test')).rejects.toThrow()
-      await expect(analyticService.getAppDistinctId()).rejects.toThrow()
+
+      await expect(analyticService.updateDistinctId('test')).resolves.toBeUndefined()
+      await expect(analyticService.getAppDistinctId()).resolves.toBeUndefined()
       
       // Restore core
       Object.defineProperty(window, 'core', {

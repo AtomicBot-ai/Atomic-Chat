@@ -332,7 +332,11 @@ pub async fn load_llama_model_impl(
 
                 // Timeout check
                 if start_time.elapsed() > timeout_duration {
-                    log::error!("Timeout waiting for server to be ready");
+                    // warn! (not error!): a load that outran its budget is
+                    // usually a big model on a slow disk, and the structured
+                    // ModelLoadTimedOut below is reported once by the frontend
+                    // choke point. An error! here filed a duplicate crash.
+                    log::warn!("Timeout waiting for server to be ready");
                     health_task.abort();
                     let _ = child.kill().await;
                     let stderr_output = stderr_task.await.unwrap_or_default();

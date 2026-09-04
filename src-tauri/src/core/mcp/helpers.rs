@@ -773,7 +773,15 @@ async fn schedule_mcp_start_task<R: Runtime>(
                     }
                     remove_mcp_pid_if_matches(&app, &name, start_generation, pid).await;
                 }
-                log::error!("{error}");
+                // Log the service error alone. `error` additionally carries the
+                // server's captured stderr, which is what the UI needs but is
+                // also different for every user — pasting it into the log
+                // message made Sentry group one failure into a fresh issue per
+                // host. The stderr goes out as a preceding breadcrumb instead.
+                if !stderr_context.trim().is_empty() {
+                    log::warn!("MCP server {name} stderr (context):\n{stderr_context}");
+                }
+                log::error!("{service_error}");
                 return Err(error);
             }
         }

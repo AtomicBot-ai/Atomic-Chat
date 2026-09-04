@@ -187,7 +187,9 @@ describe('DataProvider', () => {
     getMCPConfig.mockResolvedValue(mcpConfig)
     getAssistants.mockResolvedValue(assistants)
     getCurrent.mockResolvedValue([])
-    onOpenUrl.mockReturnValue(undefined)
+    // `DeepLinkService.onOpenUrl` resolves to a detacher; the provider now
+    // keeps that detacher so the handler is released on unmount.
+    onOpenUrl.mockResolvedValue(vi.fn())
     listen.mockResolvedValue(vi.fn())
     fetchThreads.mockResolvedValue(threads)
     getServerStatus.mockResolvedValue(false)

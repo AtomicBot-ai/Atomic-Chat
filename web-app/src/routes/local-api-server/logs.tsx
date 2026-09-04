@@ -32,6 +32,7 @@ function LogsViewer() {
         scrollToBottom()
       }, 100)
     })
+    let cancelled = false
     let unsubscribe = () => {}
     serviceHub.events().listen(LOG_EVENT_NAME, (event) => {
       const { message } = event.payload as { message: string }
@@ -47,9 +48,14 @@ function LogsViewer() {
         })
       }
     }).then((unsub) => {
-      unsubscribe = unsub
+      // The subscription resolves after the effect may already have been torn
+      // down (StrictMode double-invoke, fast navigation). Detach right away in
+      // that case instead of leaking the listener.
+      if (cancelled) unsub()
+      else unsubscribe = unsub
     })
     return () => {
+      cancelled = true
       unsubscribe()
     }
   }, [serviceHub])
