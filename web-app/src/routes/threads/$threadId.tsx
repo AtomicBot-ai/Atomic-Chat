@@ -445,7 +445,15 @@ function ThreadDetail() {
     sessionId: threadId,
     sessionTitle: thread?.title,
     systemMessage,
-    experimental_throttle: 16,
+    // One re-render per frame means the answer's Markdown is re-parsed 62
+    // times a second, and each parse walks the whole answer: measured in
+    // WebKit at 13ms per update on a 10k-character answer, 41ms at 20k and
+    // 149ms at 40k. Twenty updates a second reads the same while streaming
+    // and is what keeps mid-length answers inside the frame budget. It only
+    // divides the cost — the parse is still superlinear in answer length, so
+    // a long enough answer still stalls. See
+    // docs/decisions/2026-09-04-bound-streaming-reasoning-render-cost.md.
+    experimental_throttle: 50,
     // The AI SDK's own error hook was never registered — failures only ever
     // surfaced through the reactive `error` value, so a failed turn produced no
     // telemetry at all. A user-initiated stop can surface here as an abort
