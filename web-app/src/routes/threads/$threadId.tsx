@@ -150,6 +150,7 @@ import type {
   AgentRunState,
 } from '@/types/agent'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useReasoningAutoScroll } from '@/hooks/useReasoningAutoScroll'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -444,7 +445,15 @@ function ThreadDetail() {
     sessionId: threadId,
     sessionTitle: thread?.title,
     systemMessage,
-    experimental_throttle: 16,
+    // One re-render per frame means the answer's Markdown is re-parsed 62
+    // times a second, and each parse walks the whole answer: measured in
+    // WebKit at 13ms per update on a 10k-character answer, 41ms at 20k and
+    // 149ms at 40k. Twenty updates a second reads the same while streaming
+    // and is what keeps mid-length answers inside the frame budget. It only
+    // divides the cost — the parse is still superlinear in answer length, so
+    // a long enough answer still stalls. See
+    // docs/decisions/2026-09-04-bound-streaming-reasoning-render-cost.md.
+    experimental_throttle: 50,
     // The AI SDK's own error hook was never registered — failures only ever
     // surfaced through the reactive `error` value, so a failed turn produced no
     // telemetry at all. A user-initiated stop can surface here as an abort
@@ -687,16 +696,16 @@ function ThreadDetail() {
     disabledTools, // Re-run when tools are enabled/disabled
   ])
 
-  // Ref for reasoning container auto-scroll
-  const reasoningContainerRef = useRef<HTMLDivElement>(null)
-
-  // Auto-scroll reasoning container to bottom during streaming
-  useEffect(() => {
-    if (status === 'streaming' && reasoningContainerRef.current) {
-      reasoningContainerRef.current.scrollTop =
-        reasoningContainerRef.current.scrollHeight
-    }
-  }, [status, chatMessages])
+  // Content growth does not emit a scroll event, so only actual reader
+  // scrolling may pause tail-following. Token updates remain coalesced to one
+  // layout write per animation frame.
+  const {
+    containerRef: reasoningContainerRef,
+    onScroll: onReasoningScroll,
+  } = useReasoningAutoScroll(
+    status === CHAT_STATUS.STREAMING,
+    chatMessages
+  )
 
   // Note: no unmount cleanup of the optimistic bubble store here. React
   // StrictMode in dev simulates mount → unmount → remount on initial mount;
@@ -1963,6 +1972,7 @@ function ThreadDetail() {
                         status={inputStatus}
                         requestActive={requestActive}
                         reasoningContainerRef={reasoningContainerRef}
+                        onReasoningScroll={onReasoningScroll}
                         onRegenerate={handleRegenerate}
                         onEdit={handleEditMessage}
                         onDelete={handleDeleteMessage}
@@ -1983,6 +1993,7 @@ function ThreadDetail() {
                         isLastMessage={true}
                         status={status}
                         reasoningContainerRef={reasoningContainerRef}
+                        onReasoningScroll={onReasoningScroll}
                         onRegenerate={handleRegenerate}
                         onEdit={handleEditMessage}
                         onDelete={handleDeleteMessage}
@@ -2006,6 +2017,7 @@ function ThreadDetail() {
                       // shimmer under "Growing the Mind...".
                       requestActive={false}
                       reasoningContainerRef={reasoningContainerRef}
+                      onReasoningScroll={onReasoningScroll}
                       onRegenerate={handleRegenerate}
                       onEdit={handleEditMessage}
                       onDelete={handleDeleteMessage}

@@ -1,7 +1,7 @@
-import { convertFileSrc } from '@tauri-apps/api/core'
-import { fs } from '@janhq/core'
-
+import { readFileBytes } from '@/lib/readFileBytes'
 import { Attachment, createAudioAttachment } from '@/types/attachment'
+
+import type { ReadAttachmentOptions } from './imageFromPath'
 
 /**
  * Map a filename extension to an audio MIME type. Restricted to mp3/wav — the
@@ -68,37 +68,21 @@ const blobToDataUrl = (blob: Blob): Promise<string> =>
  * Read an audio file by its filesystem path (Tauri only) and produce an
  * Attachment compatible with the chat attachment pipeline.
  *
- * Mirrors `readImageAttachmentFromPath`: uses Tauri's asset protocol via
- * `convertFileSrc`, then reads the blob as a data URL so the base64 payload can
- * be forwarded to the model as `input_audio`.
+ * Mirrors `readImageAttachmentFromPath`: pages the file in through the
+ * `read_file_chunk` IPC command (the asset protocol cannot deliver a large
+ * body on WebView2, #261), then reads the blob as a data URL so the base64
+ * payload can be forwarded to the model as `input_audio`.
  */
 export const readAudioAttachmentFromPath = async (
-  path: string
+  path: string,
+  { maxBytes }: ReadAttachmentOptions
 ): Promise<Attachment> => {
   const name = path.split(/[\\/]/).pop() || path
+  const mimeType = audioMimeTypeFromExtension(name)
 
-  const url = convertFileSrc(path)
-  const response = await fetch(url)
-  if (!response.ok) {
-    throw new Error(
-      `Failed to read audio (${response.status} ${response.statusText})`
-    )
-  }
-  const blob = await response.blob()
-  const dataUrl = await blobToDataUrl(blob)
+  const { bytes, size } = await readFileBytes(path, { maxBytes })
+  const dataUrl = await blobToDataUrl(new Blob([bytes], { type: mimeType }))
   const base64 = dataUrl.split(',')[1] ?? ''
-
-  const mimeType = audioMimeTypeFromExtension(name) || blob.type
-
-  let size = blob.size
-  if (!size) {
-    try {
-      const stat = await fs.fileStat(path)
-      if (stat?.size) size = Number(stat.size)
-    } catch (e) {
-      console.warn('Failed to read file size for', path, e)
-    }
-  }
 
   return createAudioAttachment({
     name,

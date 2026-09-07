@@ -17,6 +17,7 @@ import { prepareToolResultImagesForModel } from './toolResultImages'
 import {
   buildToolsRecord,
   splitAnthropicSerialToolUse,
+  withGrammarSafeToolSchemas,
 } from './custom-chat-transport-helpers'
 import type { MCPTool } from '@/types/completion'
 
@@ -113,6 +114,16 @@ const LOCAL_INFERENCE_PROVIDERS = new Set<string>([
   'llamacpp',
   'llamacpp-upstream',
   'foundation-models',
+])
+
+/// Engines that constrain sampling with a GBNF grammar compiled from the tool
+/// schemas — the ones that need `withGrammarSafeToolSchemas`. `llamacpp-server`
+/// is a self-hosted llama.cpp behind an OpenAI-compatible URL, so it builds the
+/// same grammar as the bundled engines and hits the same limits.
+const GRAMMAR_CONSTRAINED_PROVIDERS = new Set<string>([
+  'llamacpp',
+  'llamacpp-upstream',
+  'llamacpp-server',
 ])
 
 /// Map an audio MIME type to the `format` string expected by the OpenAI-style
@@ -983,6 +994,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     )
     const shouldEnableTools =
       hasTools && modelSupportsTools && !suppressToolsForDflash
+    const activeTools = !shouldEnableTools
+      ? undefined
+      : GRAMMAR_CONSTRAINED_PROVIDERS.has(effectiveProviderName)
+        ? withGrammarSafeToolSchemas(this.tools)
+        : this.tools
 
     // Skills invoked on this thread (via the composer's "/" menu, stamped on
     // user-message metadata) ride the system prompt — the chat counterpart of
@@ -1041,7 +1057,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         provider,
         system: effectiveSystemMessage,
         messages: finalModelMessages,
-        tools: shouldEnableTools ? this.tools : undefined,
+        tools: activeTools,
         maxOutputTokens,
         recreateModel,
         abortSignal: options.abortSignal,
@@ -1052,7 +1068,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       model: this.model,
       messages: finalModelMessages,
       abortSignal: options.abortSignal,
-      tools: shouldEnableTools ? this.tools : undefined,
+      tools: activeTools,
       toolChoice: shouldEnableTools ? 'auto' : undefined,
       system: effectiveSystemMessage,
       maxOutputTokens,

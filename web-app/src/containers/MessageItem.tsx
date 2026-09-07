@@ -3,6 +3,7 @@ import {
   useState,
   useCallback,
   type ComponentPropsWithoutRef,
+  type UIEventHandler,
 } from 'react'
 import type { UIMessage, ChatStatus } from 'ai'
 import { RenderMarkdown } from './RenderMarkdown'
@@ -66,6 +67,7 @@ export type MessageItemProps = {
   status: ChatStatus
   requestActive?: boolean
   reasoningContainerRef?: React.RefObject<HTMLDivElement | null>
+  onReasoningScroll?: UIEventHandler<HTMLDivElement>
   onRegenerate?: (messageId: string) => void
   onEdit?: (messageId: string, newText: string) => void
   onDelete?: (messageId: string) => void
@@ -85,6 +87,7 @@ export const MessageItem = memo(
     isAnimating,
     hideActions,
     reasoningContainerRef,
+    onReasoningScroll,
     onRegenerate,
     onEdit,
     onDelete,
@@ -393,6 +396,7 @@ export const MessageItem = memo(
           <ReasoningTrigger getThinkingMessage={getThinkingMessage} />
           <div
             ref={streaming ? reasoningContainerRef : null}
+            onScroll={streaming ? onReasoningScroll : undefined}
             className={twMerge(
               'relative w-full overflow-auto',
               streaming
@@ -401,7 +405,9 @@ export const MessageItem = memo(
             )}
           >
             {block.items.map((item) => (
-              <ReasoningContent key={item.key}>{item.text}</ReasoningContent>
+              <ReasoningContent key={item.key} isStreaming={streaming}>
+                {item.text}
+              </ReasoningContent>
             ))}
           </div>
         </Reasoning>
@@ -646,6 +652,7 @@ export const MessageItem = memo(
       prevProps.requestActive === nextProps.requestActive &&
       prevProps.showAssistant === nextProps.showAssistant &&
       prevProps.hideActions === nextProps.hideActions &&
+      prevProps.onReasoningScroll === nextProps.onReasoningScroll &&
       prevProps.agentAttachmentReferences ===
         nextProps.agentAttachmentReferences
     )
