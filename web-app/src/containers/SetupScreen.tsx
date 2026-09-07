@@ -70,7 +70,7 @@ import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
 //! Пин обязателен для LFM2.5-VL-450M (нужен Q8_0): репозиторий отдаёт и Q4_K_M,
 //! который матчится DEFAULT_MODEL_QUANTIZATIONS — без пина скачается рабочий,
 //! но не тот файл, и ошибка не всплывёт нигде.
-function pickPreferredVariant(
+export function pickPreferredVariant(
   model: CatalogModel,
   quantPin?: string
 ): ModelQuant | null {
@@ -89,7 +89,7 @@ function pickPreferredVariant(
 //! getPreferredMmprojModel ищет буквальный id 'mmproj-f16'. У LiquidAI id —
 //! 'mmproj-LFM2_5-VL-450m-F16', совпадения нет, и он падает на mmproj_models[0]
 //! = BF16 (181 MB) вместо Q8_0 (98 MB).
-function pickMmprojModel(
+export function pickMmprojModel(
   model: CatalogModel,
   quantPin?: string
 ): MMProjModel | undefined {
@@ -102,7 +102,7 @@ function formatDownloadGb(bytes: number): string {
 }
 
 //* Размер найденной на диске модели (байты → "4.50 GB" / "850 MB")
-function formatDetectedSize(bytes?: number): string | null {
+export function formatDetectedSize(bytes?: number): string | null {
   if (!bytes || bytes <= 0) return null
   const gb = bytes / 1024 ** 3
   if (gb >= 1) return `${gb.toFixed(2)} GB`
@@ -110,7 +110,7 @@ function formatDetectedSize(bytes?: number): string | null {
 }
 
 //* Числовой размер в ГБ из строки каталога ("4.5 GB" / "850 MB") для аналитики.
-function sizeStringToGb(size?: string): number | undefined {
+export function sizeStringToGb(size?: string): number | undefined {
   if (!size) return undefined
 
   const match = size.trim().match(/^([\d.]+)\s*(MB|GB)$/i)
@@ -129,7 +129,7 @@ const recommendedSetupModelIconSrc = modelFamilyLogoSrc
 // Auto-start picks the smallest runnable candidate: it loads fastest, so the
 // first launch feels instant. Candidates without a known size sort last, so a
 // measured model always wins over an unmeasured one.
-function pickAutoRunCandidate(
+export function pickAutoRunCandidate(
   cands: LocalModelCandidate[]
 ): LocalModelCandidate | null {
   let best: LocalModelCandidate | null = null
@@ -176,7 +176,7 @@ const DOWNLOAD_ENTER_DELAY_MS = 3_000
 /// then is treated as "nothing found" / "assume a standard machine".
 const PICKER_INPUT_DEADLINE_MS = 4_000
 
-function getInitialStep(): OnboardingStep {
+export function getInitialStep(): OnboardingStep {
   if (typeof window === 'undefined') return 'model'
   if (!IS_WINDOWS) return 'model'
   // Already completed the dedicated step in a previous session.
