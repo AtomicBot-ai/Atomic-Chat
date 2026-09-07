@@ -200,7 +200,7 @@ export function PromptVisionModel({
   if (isLoading) return null
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 p-4 shadow-lg bg-background w-4/5 md:w-100 border rounded-lg">
+    <div className="fixed bottom-[calc(1rem+var(--download-panel-offset,0px))] right-4 z-50 p-4 shadow-lg bg-background w-4/5 md:w-100 border rounded-lg transition-[bottom] duration-200">
       <div className="flex items-center gap-2">
         <img
           src="/images/transparent-logo.png"

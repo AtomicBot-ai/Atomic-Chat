@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { advanceSpeedSample, type SpeedSample } from '@/lib/downloadFormat'
 
 export interface DownloadProgressProps {
   id: string
@@ -6,6 +7,11 @@ export interface DownloadProgressProps {
   name: string
   current: number
   total: number
+  // ATO-462: speed and ETA are the two numbers the panel needs and the app
+  // never had. They live here rather than in the panel so the Hub card, the
+  // onboarding screen and the panel all quote the same figure, and so the
+  // estimate survives the panel being collapsed or unmounted.
+  speed: SpeedSample
 }
 
 // ATO-154: parameters needed to resume a paused model download from the
@@ -80,21 +86,26 @@ export const useDownloadStore = create<DownloadState>((set) => ({
     }),
 
   updateProgress: (id, progress, name, current, total) =>
-    set((state) => ({
-      downloads: {
-        ...state.downloads,
-        [id]: {
-          ...state.downloads[id],
-          // `??` (not `||`) so explicit zero values — e.g. a restarted or
-          // resumed transfer whose byte counter resets to 0 — are honored
-          // instead of being replaced by the stale previous value.
-          name: name ?? state.downloads[id]?.name ?? '',
-          progress,
-          current: current ?? state.downloads[id]?.current ?? 0,
-          total: total ?? state.downloads[id]?.total ?? 0,
+    set((state) => {
+      const previous = state.downloads[id]
+      // `??` (not `||`) so explicit zero values — e.g. a restarted or
+      // resumed transfer whose byte counter resets to 0 — are honored
+      // instead of being replaced by the stale previous value.
+      const nextCurrent = current ?? previous?.current ?? 0
+      return {
+        downloads: {
+          ...state.downloads,
+          [id]: {
+            ...previous,
+            name: name ?? previous?.name ?? '',
+            progress,
+            current: nextCurrent,
+            total: total ?? previous?.total ?? 0,
+            speed: advanceSpeedSample(previous?.speed, nextCurrent),
+          },
         },
-      },
-    })),
+      }
+    }),
 
   addLocalDownloadingModel: (modelId: string) =>
     set((state) => ({

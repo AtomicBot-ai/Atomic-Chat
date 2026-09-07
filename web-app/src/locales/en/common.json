@@ -603,6 +603,26 @@
     "attachmentsDisabledInfo": {
       "title": "Attachments Disabled",
       "description": "Attachments are disabled in Settings"
+    },
+    "downloadDiskFull": {
+      "title": "Not enough disk space",
+      "description": "Free up space on the drive holding your Jan data folder, then start the download again."
+    },
+    "downloadDiskPermission": {
+      "title": "No permission to write the model",
+      "description": "The app cannot write to the Jan data folder. Check the folder permissions, or move the data folder somewhere writable."
+    },
+    "downloadDiskLocked": {
+      "title": "The file is in use by another program",
+      "description": "Antivirus or backup software is holding the file while it is being written. Add the Jan data folder to its exclusions and retry."
+    },
+    "downloadDiskPathTooLong": {
+      "title": "File path is too long",
+      "description": "Windows limits paths to 260 characters. Move the Jan data folder closer to the drive root and retry."
+    },
+    "downloadDiskDeviceLost": {
+      "title": "The drive is no longer available",
+      "description": "The external or network drive holding the Jan data folder disconnected. Reconnect it and resume the download."
     }
   },
   "errors": {
@@ -655,5 +675,13 @@
     "body": "Connected connectors ({{servers}}) add their tool definitions to every request, so answers from a local model get slow. Turn the ones you do not need off for this chat.",
     "mute": "Turn off {{server}} for this chat",
     "dismiss": "Keep as is"
+  },
+  "downloadPanel": {
+    "collapse": "Collapse downloads",
+    "expand": "Show downloads",
+    "preparing": "Starting…",
+    "paused": "Paused",
+    "left": "{{eta}} left",
+    "appUpdate": "App update"
   }
 }

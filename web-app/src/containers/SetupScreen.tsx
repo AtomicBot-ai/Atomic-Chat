@@ -59,6 +59,8 @@ import {
   captureSetupScreenShown,
 } from '@/lib/onboarding-telemetry'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
+//* Формат прогресса общий с панелью закачек (ATO-462), чтобы не разъезжался
+import { formatProgressPair } from '@/lib/downloadFormat'
 
 //* Вариант загрузки: пин из манифеста, иначе приоритет квантов как в Hub.
 //! Пин обязателен для LFM2.5-VL-450M (нужен Q8_0): репозиторий отдаёт и Q4_K_M,
@@ -88,11 +90,6 @@ function pickMmprojModel(
   quantPin?: string
 ): MMProjModel | undefined {
   return findPinnedQuant(model.mmproj_models, quantPin) ?? getPreferredMmprojModel(model)
-}
-
-//* ГБ для строки прогресса (как в DownloadManagement)
-function formatDownloadGb(bytes: number): string {
-  return (bytes / 1024 ** 3).toFixed(2)
 }
 
 //* Размер найденной на диске модели (байты → "4.50 GB" / "850 MB")
@@ -1516,7 +1513,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                   >
                                     {rowDownloadProgress &&
                                     rowDownloadProgress.total > 0
-                                      ? `${Math.round((rowDownloadProgress.progress ?? 0) * 100)}% · ${formatDownloadGb(rowDownloadProgress.current)} / ${formatDownloadGb(rowDownloadProgress.total)} GB`
+                                      ? `${Math.round((rowDownloadProgress.progress ?? 0) * 100)}% · ${formatProgressPair(rowDownloadProgress.current, rowDownloadProgress.total)}`
                                       : t('setup:downloadPreparing')}
                                   </p>
                                 ) : null}

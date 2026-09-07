@@ -2626,7 +2626,14 @@ const ChatInput = memo(function ChatInput({
   const isStreaming = chatStatus === 'submitted' || chatStatus === 'streaming'
 
   return (
-    <div className="relative mx-auto w-full max-w-3xl">
+    // ATO-462: the download panel docks above this element when the composer is
+    // sitting at the bottom of the screen, so a running download never covers
+    // the send button. Writing to a model that is still downloading is the
+    // whole point of ATO-460, so the composer has to stay reachable.
+    <div
+      data-composer-anchor
+      className="relative mx-auto w-full max-w-3xl"
+    >
       {/* Pending approvals dock above the composer. Outside the streaming-
           disabled toolbar cluster: a run awaiting approval reports
           `submitted`, and an unclickable Approve button would deadlock it. */}

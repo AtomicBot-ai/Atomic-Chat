@@ -29,7 +29,7 @@ describe('useDownloadStore', () => {
         result.current.updateProgress('test-id', 50, 'test-model', 500, 1000)
       })
 
-      expect(result.current.downloads['test-id']).toEqual({
+      expect(result.current.downloads['test-id']).toMatchObject({
         name: 'test-model',
         progress: 50,
         current: 500,
@@ -50,7 +50,7 @@ describe('useDownloadStore', () => {
         result.current.updateProgress('test-id', 75, undefined, 750)
       })
 
-      expect(result.current.downloads['test-id']).toEqual({
+      expect(result.current.downloads['test-id']).toMatchObject({
         name: 'test-model',
         progress: 75,
         current: 750,
@@ -71,7 +71,7 @@ describe('useDownloadStore', () => {
         result.current.updateProgress('test-id', 75)
       })
 
-      expect(result.current.downloads['test-id']).toEqual({
+      expect(result.current.downloads['test-id']).toMatchObject({
         name: 'test-model',
         progress: 75,
         current: 250,
@@ -86,7 +86,7 @@ describe('useDownloadStore', () => {
         result.current.updateProgress('test-id', 50)
       })
 
-      expect(result.current.downloads['test-id']).toEqual({
+      expect(result.current.downloads['test-id']).toMatchObject({
         name: '',
         progress: 50,
         current: 0,
@@ -108,12 +108,96 @@ describe('useDownloadStore', () => {
         result.current.updateProgress('test-id', 0, 'test-model', 0, 0)
       })
 
-      expect(result.current.downloads['test-id']).toEqual({
+      expect(result.current.downloads['test-id']).toMatchObject({
         name: 'test-model',
         progress: 0,
         current: 0,
         total: 0,
       })
+    })
+  })
+
+  describe('speed sampling', () => {
+    it('starts with no speed estimate', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        result.current.updateProgress('test-id', 0.1, 'test-model', 100, 1000)
+      })
+
+      // One data point cannot give a rate; the panel omits speed and ETA
+      // rather than showing a number derived from a single sample.
+      expect(result.current.downloads['test-id'].speed.bytesPerSecond).toBe(0)
+      expect(result.current.downloads['test-id'].speed.atBytes).toBe(100)
+    })
+
+    it('estimates speed once two samples are far enough apart', () => {
+      vi.useFakeTimers()
+      try {
+        const { result } = renderHook(() => useDownloadStore())
+
+        act(() => {
+          result.current.updateProgress('test-id', 0.1, 'test-model', 0, 1000)
+        })
+        act(() => {
+          vi.advanceTimersByTime(1000)
+          result.current.updateProgress('test-id', 0.5, 'test-model', 500, 1000)
+        })
+
+        // 500 bytes in one second, and the first estimate is unsmoothed.
+        expect(result.current.downloads['test-id'].speed.bytesPerSecond).toBe(
+          500
+        )
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('ignores samples taken too close together', () => {
+      vi.useFakeTimers()
+      try {
+        const { result } = renderHook(() => useDownloadStore())
+
+        act(() => {
+          result.current.updateProgress('test-id', 0.1, 'test-model', 0, 1000)
+        })
+        act(() => {
+          vi.advanceTimersByTime(50)
+          result.current.updateProgress('test-id', 0.2, 'test-model', 200, 1000)
+        })
+
+        // A 50ms window would report 4 MB/s from a 200-byte chunk.
+        expect(result.current.downloads['test-id'].speed.bytesPerSecond).toBe(0)
+        expect(result.current.downloads['test-id'].current).toBe(200)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('resets the estimate when a transfer restarts from zero', () => {
+      vi.useFakeTimers()
+      try {
+        const { result } = renderHook(() => useDownloadStore())
+
+        act(() => {
+          result.current.updateProgress('test-id', 0.1, 'test-model', 0, 1000)
+        })
+        act(() => {
+          vi.advanceTimersByTime(1000)
+          result.current.updateProgress('test-id', 0.5, 'test-model', 500, 1000)
+        })
+        act(() => {
+          vi.advanceTimersByTime(1000)
+          result.current.updateProgress('test-id', 0, 'test-model', 0, 1000)
+        })
+
+        // Carrying the 500-byte baseline into a restarted transfer would make
+        // the next sample look like a huge burst.
+        expect(result.current.downloads['test-id'].speed.bytesPerSecond).toBe(0)
+        expect(result.current.downloads['test-id'].speed.atBytes).toBe(0)
+      } finally {
+        vi.useRealTimers()
+      }
     })
   })
 
