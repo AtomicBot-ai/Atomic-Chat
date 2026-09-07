@@ -18,9 +18,8 @@
  * keep the call sites to a single unconditional call.
  */
 
-import posthog from 'posthog-js'
-
 import type { Attachment } from '@/types/attachment'
+import { queuedCapture } from '@/lib/telemetry-queue'
 import {
   attachmentExt,
   chatHttpStatus,
@@ -30,6 +29,7 @@ import {
   finalizeChatTurnOnce,
   lengthBucket,
   loadBackendFromProvider,
+  normalizeModelId,
   shouldEmitChatFailure,
   sizeBucket,
   toolNameForAnalytics,
@@ -357,10 +357,11 @@ export type ChatRequestProps = {
 
 export function captureChatRequest(props: ChatRequestProps): void {
   try {
-    posthog.capture(
+    queuedCapture(
       'chat_request_sent',
       compact({
         ...props,
+        model_id: normalizeModelId(props.model_id),
         has_attachments: (props.attachment_count ?? 0) > 0,
         backend: loadBackendFromProvider(props.provider),
       })
@@ -427,10 +428,11 @@ export function captureChatResponse(props: ChatResponseProps): void {
     )
       return
 
-    posthog.capture(
+    queuedCapture(
       'chat_response_received',
       compact({
         ...rest,
+        model_id: normalizeModelId(props.model_id),
         error_kind: errorKind ?? null,
         http_status: errorKind !== undefined ? chatHttpStatus(error) : null,
         backend: loadBackendFromProvider(props.provider),

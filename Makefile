@@ -318,7 +318,7 @@ lint: install-and-build
 # Testing
 .PHONY: test test-all test-local test-web test-extensions test-rust stub-resources \
 	typecheck verify-fast verify test-quality test-hardening-contracts \
-	test-coverage-critical capture-capabilities capture-hw-profile \
+	test-telemetry-props test-coverage-critical capture-capabilities capture-hw-profile \
 	sync-upstream-baseline gen-amd-rocm-pci-ids test-live test-live-cloud mutants
 
 test-web:
@@ -418,9 +418,15 @@ test-coverage-critical:
 typecheck:
 	yarn workspace @janhq/web-app run tsc -b
 
+# Reserved PostHog property names. Cheap and independent of any build output,
+# so it runs before the suites that take minutes.
+test-telemetry-props:
+	node scripts/check-telemetry-props.mjs
+
 verify-fast:
 	yarn lint
 	"$(MAKE)" typecheck
+	"$(MAKE)" test-telemetry-props
 	"$(MAKE)" test-quality
 	"$(MAKE)" test-hardening-contracts
 	"$(MAKE)" test-coverage-critical

@@ -277,6 +277,22 @@ export function finalizeDownloadOnce(id: string): boolean {
   return true
 }
 
+/**
+ * Analytics-safe form of a model id.
+ *
+ * Local model ids are minted by slicing a filesystem path, so every Windows
+ * build older than 06eafa9f1 produced `unsloth\gemma-...` where every other
+ * platform produced `unsloth/gemma-...`. PostHog treats those as two different
+ * models: one real model's download success rate read 11.8% on one string and
+ * 95.1% on the other. Ids still arrive in the old shape from machines that
+ * imported before that fix, so normalize at the point of emission — every
+ * `model_id` property in the app goes through here.
+ */
+export function normalizeModelId(id?: string | null): string | null {
+  if (!id) return null
+  return id.replace(/\\/g, '/')
+}
+
 const downloadedModelKeys = new Set<string>()
 
 function normalizeModelKey(modelId?: string | null): string {

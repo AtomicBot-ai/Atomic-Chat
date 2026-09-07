@@ -31,14 +31,15 @@ import type {
 } from './types'
 import { getCatalogOrFallback } from '@/services/model-catalog-registry'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
-import posthog from 'posthog-js'
 import {
   isHfUrl,
   markDownloadStart,
+  normalizeModelId,
   quantFromModelId,
   sizeBucket,
   urlHost,
 } from '@/lib/telemetry'
+import { queuedCapture } from '@/lib/telemetry-queue'
 
 // Platform-active llama.cpp provider id. Windows registers only the
 // upstream extension ('llamacpp-upstream') after the 2026-05-22 ADR;
@@ -513,13 +514,13 @@ export class DefaultModelsService implements ModelsService {
     // DownloadManagement listeners; this records the start (+ duration anchor).
     try {
       markDownloadStart(id)
-      posthog.capture('model_download', {
+      queuedCapture('model_download', {
         // NOT `status` — globally typed numeric in PostHog by
         // `api_server_request.status`, which silently nulls string values.
         // Must stay in sync with the terminal event in DownloadManagement.
         download_status: 'started',
         download_kind: 'model',
-        model_id: id,
+        model_id: normalizeModelId(id),
         quant: quantFromModelId(id),
         size_bucket: sizeBucket(modelSize),
         is_hf_url: isHfUrl(modelPath),

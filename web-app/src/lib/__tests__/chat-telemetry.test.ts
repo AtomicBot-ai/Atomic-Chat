@@ -17,7 +17,9 @@ import {
 import type { Attachment } from '@/types/attachment'
 
 vi.mock('posthog-js', () => ({
-  default: { capture: vi.fn() },
+  // `has_opted_in_capturing` is what `queuedCapture` checks before sending;
+  // without it every event would sit in the startup queue instead.
+  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
 }))
 
 const captured = () => vi.mocked(posthog.capture).mock.calls

@@ -14,10 +14,10 @@ import {
   registerRemoteProvider,
 } from '@/utils/registerRemoteProvider'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
-import posthog from 'posthog-js'
 import {
   isRecoverableModelLoadCode,
   loadBackendFromProvider,
+  normalizeModelId,
   mmprojProjectorType,
   modelLoadSource,
   oomSubtype,
@@ -26,6 +26,7 @@ import {
   shouldCaptureModelLoadSentry,
   shouldEmitModelLoadFailure,
 } from '@/lib/telemetry'
+import { queuedCapture } from '@/lib/telemetry-queue'
 import { captureHandledError } from '@/lib/sentry'
 import {
   getProviderTitle,
@@ -86,7 +87,7 @@ function emitModelLoad(
       // the Models & Errors dashboard: ~42k events of success/failed were
       // unreadable. Keep this name event-specific.
       load_status: status,
-      model_id: args.modelId,
+      model_id: normalizeModelId(args.modelId),
       backend: loadBackendFromProvider(args.providerName),
       model_source: modelLoadSource(args.modelId),
       load_duration_ms: args.durationMs,
@@ -112,7 +113,7 @@ function emitModelLoad(
       props.mmproj_projector_type = mmprojProjectorType(haystack)
       props.stderr_tail = sanitizeStderrTail(haystack)
     }
-    posthog.capture('model_load', props)
+    queuedCapture('model_load', props)
   } catch (telemetryError) {
     console.debug('model_load telemetry failed:', telemetryError)
   }
@@ -728,7 +729,7 @@ async function doSwitchToModel(params: {
             backend: isLocal
               ? loadBackendFromProvider(providerName)
               : providerName,
-            model_id: modelId,
+            model_id: normalizeModelId(modelId),
             quant: quantFromModelId(modelId),
             context_length:
               settingNum(settings, 'ctx_len') ??

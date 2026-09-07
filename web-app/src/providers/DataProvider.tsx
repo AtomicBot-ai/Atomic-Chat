@@ -4,7 +4,10 @@ import {
 } from '@tauri-apps/plugin-autostart'
 import { invoke } from '@tauri-apps/api/core'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { localStorageKey } from '@/constants/localStorage'
+import {
+  BACKEND_PRESERVE_KEYS,
+  localStorageKey,
+} from '@/constants/localStorage'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 
 import { useServiceHub } from '@/hooks/useServiceHub'
@@ -116,12 +119,14 @@ export function DataProvider() {
 
   useEffect(() => {
     if (localStorage.getItem(localStorageKey.factoryResetPending) === 'true') {
-      const backendType = localStorage.getItem('llama_cpp_backend_type')
+      const preserved = BACKEND_PRESERVE_KEYS.map(
+        (key) => [key, localStorage.getItem(key)] as const
+      )
 
       localStorage.clear()
 
-      if (backendType) {
-        localStorage.setItem('llama_cpp_backend_type', backendType)
+      for (const [key, value] of preserved) {
+        if (value) localStorage.setItem(key, value)
       }
 
       console.log(

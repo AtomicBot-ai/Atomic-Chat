@@ -16,10 +16,9 @@
  * Same PII contract as `lib/telemetry.ts`: enums, ids, numbers, booleans.
  */
 
-import posthog from 'posthog-js'
-
 import { localStorageKey } from '@/constants/localStorage'
 import { getAnalyticsPlatform } from '@/lib/telemetry'
+import { queuedCapture } from '@/lib/telemetry-queue'
 
 /**
  * Whether this looks like the very first launch on this device.
@@ -53,15 +52,11 @@ export type OnboardingExitPath =
   | 'timeout'
 
 function capture(event: string, props: Record<string, unknown>): void {
-  try {
-    posthog.capture(event, {
-      ...props,
-      platform: getAnalyticsPlatform(),
-      app_version: VERSION,
-    })
-  } catch (err) {
-    console.debug(`${event} telemetry failed:`, err)
-  }
+  queuedCapture(event, {
+    ...props,
+    platform: getAnalyticsPlatform(),
+    app_version: VERSION,
+  })
 }
 
 /**

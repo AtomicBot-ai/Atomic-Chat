@@ -4,7 +4,6 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { type as osType } from '@tauri-apps/plugin-os'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import posthog from 'posthog-js'
 import { toast } from 'sonner'
 import {
   IconChevronDown,
@@ -15,6 +14,7 @@ import {
   IconTerminal2,
 } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
+import { queuedCapture } from '@/lib/telemetry-queue'
 import {
   INTEGRATION_AGENTS,
   type IntegrationAgent,
@@ -764,7 +764,7 @@ function LaunchPage() {
         return
       }
 
-      posthog.capture('agent_run', {
+      queuedCapture('agent_run', {
         agent_id: agent.id,
         agent_name: agent.name,
         agent_kind: agent.kind,
@@ -982,7 +982,7 @@ function LaunchPage() {
       const launchId = agent.editor?.launchId
       if (!launchId) return
 
-      posthog.capture('editor_launch', {
+      queuedCapture('editor_launch', {
         editor_id: agent.id,
         editor_name: agent.name,
       })

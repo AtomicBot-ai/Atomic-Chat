@@ -17,6 +17,7 @@ import {
   mapGpuVendor,
 } from '@/lib/telemetry'
 import { isFirstLaunch } from '@/lib/onboarding-telemetry'
+import { flushTelemetryQueue } from '@/lib/telemetry-queue'
 import {
   setSentryConsent,
   setSentryTags,
@@ -39,6 +40,7 @@ const SENTRY_TAG_KEYS = [
   'cuda_runtime_version',
   'vulkan_version',
   'active_backend',
+  'device_backend_pref',
   'recommended_backend',
   'installer_type',
 ] as const
@@ -79,6 +81,32 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 /**
+ * Version of the event schema this build emits.
+ *
+ * Bumped whenever event shapes change, so analysis can cut a denominator on one
+ * number instead of guessing which app version first carried a property.
+ * `rendered` and `hardware_tier` arriving in 2.0.19 is what made that guessing
+ * necessary — 73% of historical events simply do not have them.
+ *
+ * 2 — ATO-457/459/456/468: startup event buffering, normalized `model_id`,
+ * split onboarding / backend-step reasons, subscription events.
+ */
+const TELEMETRY_SCHEMA = 2
+
+/** First of `keys` that holds a value. Tolerates localStorage being unavailable. */
+function firstStoredValue(keys: string[]): string | null {
+  for (const key of keys) {
+    try {
+      const value = localStorage.getItem(key)
+      if (value) return value
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
+/**
  * ATO-111: build the hardware / OS / backend super-properties registered once
  * per launch. PII contract: never include GPU UUID/serial or the machine name;
  * RAM/VRAM are plain MiB integers. Slow IPC calls are time-boxed so `app_opened`
@@ -90,17 +118,38 @@ async function collectHardwareSuperProps(
   const props: Record<string, unknown> = {}
 
   // Backend ids come from extension-owned localStorage (no IPC, no side effects).
-  const activeBackend = localStorage.getItem('llama_cpp_backend_type')
-  if (activeBackend) props.active_backend = activeBackend
-  try {
-    const rec = localStorage.getItem('llama_cpp_better_backend_recommendation')
-    if (rec) {
-      const parsed = JSON.parse(rec) as { recommendedBackend?: string }
+  //
+  // ATO-468: `llama_cpp_backend_type` is dead. Both engines moved to their own
+  // keys and now read the shared one only to migrate off it, so nothing writes
+  // it any more and `active_backend` had been reporting whatever an old build
+  // happened to leave behind. Read the live keys, most specific first.
+  const backendPref = firstStoredValue([
+    'atomic_llamacpp_upstream_backend_type',
+    'atomic_llamacpp_turboquant_backend_type',
+    'llama_cpp_backend_type',
+  ])
+  if (backendPref) {
+    // The honest name: this is which build the device downloaded, not what
+    // executed a given response — `model_load.exec_backend` answers that.
+    props.device_backend_pref = backendPref
+    // Kept until the dashboards reading it have moved over.
+    props.active_backend = backendPref
+  }
+  // Same drift: only the upstream extension writes the unprefixed key.
+  const recommendation = firstStoredValue([
+    'llama_cpp_better_backend_recommendation',
+    'turboquant_better_backend_recommendation',
+  ])
+  if (recommendation) {
+    try {
+      const parsed = JSON.parse(recommendation) as {
+        recommendedBackend?: string
+      }
       if (parsed?.recommendedBackend)
         props.recommended_backend = parsed.recommendedBackend
+    } catch {
+      // malformed cache — ignore
     }
-  } catch {
-    // malformed cache — ignore
   }
 
   if (typeof IS_TAURI === 'undefined' || !IS_TAURI) return props
@@ -249,7 +298,11 @@ export function AnalyticProvider() {
       })
       // Register platform/version immediately so they attach to every event,
       // including any that fire before the async chain below resolves.
-      posthog.register({ app_version: VERSION, platform: osPlatform })
+      posthog.register({
+        app_version: VERSION,
+        platform: osPlatform,
+        telemetry_schema: TELEMETRY_SCHEMA,
+      })
       serviceHub
         .analytic()
         .getAppDistinctId()
@@ -258,7 +311,11 @@ export function AnalyticProvider() {
         })
         .finally(async () => {
           posthog.opt_in_capturing()
-          posthog.register({ app_version: VERSION, platform: osPlatform })
+          posthog.register({
+        app_version: VERSION,
+        platform: osPlatform,
+        telemetry_schema: TELEMETRY_SCHEMA,
+      })
           serviceHub.analytic().updateDistinctId(posthog.get_distinct_id())
 
           // ATO-111: register hardware/OS/backend super-properties BEFORE
@@ -279,6 +336,13 @@ export function AnalyticProvider() {
           } catch (err) {
             console.warn('Failed to collect hardware super-properties:', err)
           }
+
+          // Everything captured during startup was held back, because
+          // `opt_out_capturing_by_default` makes posthog-js drop rather than
+          // buffer. Replay it now: after the super-properties so replayed
+          // events carry them, and before the `cancelled` bail so a re-run of
+          // this effect cannot strand a whole first launch's worth of events.
+          flushTelemetryQueue()
 
           if (cancelled) return
 

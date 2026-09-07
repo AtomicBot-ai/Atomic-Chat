@@ -75,4 +75,21 @@ export const localStorageKey = {
   settingVoice: 'setting-voice',
 }
 
+/**
+ * Extension-owned keys that must survive a factory reset.
+ *
+ * Not part of `localStorageKey` because the app neither writes nor reads them
+ * for its own purposes — the llama.cpp extensions own them, and this list only
+ * exists so a reset does not force every user to re-download their GPU build.
+ *
+ * ATO-468: each engine moved to its own prefixed key and now reads the shared
+ * `llama_cpp_backend_type` only to migrate off it, so preserving the shared key
+ * alone had stopped preserving anything.
+ */
+export const BACKEND_PRESERVE_KEYS = [
+  'llama_cpp_backend_type',
+  'atomic_llamacpp_upstream_backend_type',
+  'atomic_llamacpp_turboquant_backend_type',
+] as const
+
 export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24
