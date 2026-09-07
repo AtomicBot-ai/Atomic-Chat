@@ -607,7 +607,9 @@
   },
   "errors": {
     "fileTooLarge": "File too large",
-    "fileTooLargeDescription": "{{fileName}} exceeds the {{maxFileSizeMB}}MB limit"
+    "fileTooLargeDescription": "{{fileName}} exceeds the {{maxFileSizeMB}}MB limit",
+    "fileReadFailed": "Could not read file",
+    "fileReadFailedDescription": "{{fileName}} could not be read from disk"
   },
   "files": {
     "chunksCount": "{{count}} chunks"

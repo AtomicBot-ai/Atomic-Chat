@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react'
+import { fireEvent, render, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import { RenderMarkdown } from '../RenderMarkdown'
 
@@ -411,5 +411,56 @@ describe('RenderMarkdown', () => {
       expect(katexContainer).toBeNull()
     })
   })
-})
+  describe('streaming code blocks under enableHtmlPreview (#263)', () => {
+    const bodyText = (container: HTMLElement) =>
+      container.querySelector('[data-streamdown="code-block-body"]')
+        ?.textContent ?? ''
 
+    it('re-renders a delegated code block when only its last line grows', async () => {
+      const { container, rerender } = render(
+        <RenderMarkdown content={'```js\nconst first = 100\nconst value = 1'} enableHtmlPreview isStreaming />
+      )
+      await waitFor(() => expect(bodyText(container)).toContain('const value = 1'))
+
+      // Same start/end line+column for the rebuilt closed fence: only the
+      // last line grew, which is exactly what the position memo ignored.
+      rerender(
+        <RenderMarkdown content={'```js\nconst first = 100\nconst value = 12'} enableHtmlPreview isStreaming />
+      )
+      await waitFor(() => expect(bodyText(container)).toContain('const value = 12'))
+
+      // Same-length replacement — the case upstream streamdown documents.
+      rerender(
+        <RenderMarkdown content={'```js\nconst first = 100\nconst value = 34'} enableHtmlPreview isStreaming />
+      )
+      await waitFor(() => expect(bodyText(container)).toContain('const value = 34'))
+    })
+
+    it('copies the latest text once the stream has finished', async () => {
+      const { container, rerender } = render(
+        <RenderMarkdown content={'```\n{AAAAAAAA}\n{BBBB},{BBBB}\n{CCC},{CCCCC}\n('} enableHtmlPreview isStreaming />
+      )
+      await waitFor(() => expect(bodyText(container)).toContain('('))
+
+      rerender(
+        <RenderMarkdown content={'```\n{AAAAAAAA}\n{BBBB},{BBBB}\n{CCC},{CCCCC}\n(DDDDDDDD)\n```\n'} enableHtmlPreview />
+      )
+      await waitFor(() => expect(bodyText(container)).toContain('(DDDDDDDD)'))
+
+      const copyButton = container.querySelector(
+        '[data-streamdown="code-block-copy-button"]'
+      )
+      expect(copyButton).toBeTruthy()
+      fireEvent.click(copyButton as Element)
+      await waitFor(() =>
+        // streamdown hands the copy button the fence body, trailing newline
+        // included; what matters is that the last line is no longer `(`.
+        expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+          expect.stringMatching(
+            /^\{AAAAAAAA\}\n\{BBBB\},\{BBBB\}\n\{CCC\},\{CCCCC\}\n\(DDDDDDDD\)\n*$/
+          )
+        )
+      )
+    })
+  })
+})

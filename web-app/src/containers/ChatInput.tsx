@@ -104,6 +104,7 @@ import {
   createAudioAttachment,
 } from '@/types/attachment'
 import { AttachmentChip } from '@/containers/AttachmentChip'
+import { FileTooLargeError } from '@/lib/readFileBytes'
 import { readImageAttachmentFromPath } from '@/containers/chatInput/imageFromPath'
 import {
   readAudioAttachmentFromPath,
@@ -1632,6 +1633,10 @@ const ChatInput = memo(function ChatInput({
 
   const IMAGE_MAX_SIZE_MB = 10
   const IMAGE_MAX_SIZE_BYTES = IMAGE_MAX_SIZE_MB * 1024 * 1024
+  // Raw on-disk ceiling for an image read by path. Deliberately above
+  // IMAGE_MAX_SIZE_BYTES: the limit applies after downscaling, and a big PNG
+  // often shrinks under it (the File path behaves the same way).
+  const IMAGE_MAX_READ_BYTES = 64 * 1024 * 1024
   const IMAGE_ALLOWED_MIME_TYPES = [
     'image/jpg',
     'image/jpeg',
@@ -1643,6 +1648,12 @@ const ChatInput = memo(function ChatInput({
     candidates: Attachment[]
     oversized: string[]
     invalidType: string[]
+    /**
+     * Files of an accepted type that could not be read from disk. Kept apart
+     * from `invalidType`: reporting a read failure as "invalid file type" sent
+     * people hunting for the wrong problem (#261).
+     */
+    readFailed: string[]
   }
 
   const prepareImageAttachmentsFromFiles = async (
@@ -1650,6 +1661,7 @@ const ChatInput = memo(function ChatInput({
   ): Promise<ImageValidationOutcome> => {
     const oversized: string[] = []
     const invalidType: string[] = []
+    const readFailed: string[] = []
     const validFiles: File[] = []
 
     for (const file of files) {
@@ -1703,7 +1715,7 @@ const ChatInput = memo(function ChatInput({
       )
     }
 
-    return { candidates, oversized, invalidType }
+    return { candidates, oversized, invalidType, readFailed }
   }
 
   const prepareImageAttachmentsFromPaths = async (
@@ -1711,6 +1723,7 @@ const ChatInput = memo(function ChatInput({
   ): Promise<ImageValidationOutcome> => {
     const oversized: string[] = []
     const invalidType: string[] = []
+    const readFailed: string[] = []
     const candidates: Attachment[] = []
 
     for (const p of paths) {
@@ -1720,7 +1733,9 @@ const ChatInput = memo(function ChatInput({
         continue
       }
       try {
-        const att = await readImageAttachmentFromPath(p)
+        const att = await readImageAttachmentFromPath(p, {
+          maxBytes: IMAGE_MAX_READ_BYTES,
+        })
         // Downscale oversized images so they don't flood the model's context.
         if (att.dataUrl) {
           const downscaled = await downscaleImageDataUrl(
@@ -1741,18 +1756,23 @@ const ChatInput = memo(function ChatInput({
         }
         candidates.push(att)
       } catch (e) {
+        const fileName = p.split(/[\\/]/).pop() || p
+        if (e instanceof FileTooLargeError) {
+          oversized.push(fileName)
+          continue
+        }
         console.error('Failed to read dropped image', p, e)
-        invalidType.push(p.split(/[\\/]/).pop() || p)
+        readFailed.push(fileName)
       }
     }
 
-    return { candidates, oversized, invalidType }
+    return { candidates, oversized, invalidType, readFailed }
   }
 
   const commitImageAttachments = async (
     outcome: ImageValidationOutcome
   ): Promise<void> => {
-    const { candidates, oversized, invalidType } = outcome
+    const { candidates, oversized, invalidType, readFailed } = outcome
 
     for (const att of candidates) {
       if (att.base64) {
@@ -1870,6 +1890,16 @@ const ChatInput = memo(function ChatInput({
     if (invalidType.length > 0) {
       errors.push(
         `Invalid file type${invalidType.length > 1 ? 's' : ''} (only JPEG, JPG, PNG, WEBP allowed): ${invalidType.join(', ')}`
+      )
+    }
+
+    if (readFailed.length > 0) {
+      errors.push(
+        readFailed
+          .map((fileName) =>
+            t('common:errors.fileReadFailedDescription', { fileName })
+          )
+          .join(', ')
       )
     }
 
@@ -2007,6 +2037,7 @@ const ChatInput = memo(function ChatInput({
   ): Promise<ImageValidationOutcome> => {
     const oversized: string[] = []
     const invalidType: string[] = []
+    const readFailed: string[] = []
     const candidates: Attachment[] = []
 
     for (const file of files) {
@@ -2042,7 +2073,7 @@ const ChatInput = memo(function ChatInput({
       )
     }
 
-    return { candidates, oversized, invalidType }
+    return { candidates, oversized, invalidType, readFailed }
   }
 
   const prepareAudioAttachmentsFromPaths = async (
@@ -2050,6 +2081,7 @@ const ChatInput = memo(function ChatInput({
   ): Promise<ImageValidationOutcome> => {
     const oversized: string[] = []
     const invalidType: string[] = []
+    const readFailed: string[] = []
     const candidates: Attachment[] = []
 
     for (const p of paths) {
@@ -2059,25 +2091,32 @@ const ChatInput = memo(function ChatInput({
         continue
       }
       try {
-        const att = await readAudioAttachmentFromPath(p)
+        const att = await readAudioAttachmentFromPath(p, {
+          maxBytes: AUDIO_MAX_SIZE_BYTES,
+        })
         if (typeof att.size === 'number' && att.size > AUDIO_MAX_SIZE_BYTES) {
           oversized.push(att.name)
           continue
         }
         candidates.push(att)
       } catch (e) {
+        const fileName = p.split(/[\\/]/).pop() || p
+        if (e instanceof FileTooLargeError) {
+          oversized.push(fileName)
+          continue
+        }
         console.error('Failed to read dropped audio', p, e)
-        invalidType.push(p.split(/[\\/]/).pop() || p)
+        readFailed.push(fileName)
       }
     }
 
-    return { candidates, oversized, invalidType }
+    return { candidates, oversized, invalidType, readFailed }
   }
 
   const commitAudioAttachments = async (
     outcome: ImageValidationOutcome
   ): Promise<void> => {
-    const { candidates, oversized, invalidType } = outcome
+    const { candidates, oversized, invalidType, readFailed } = outcome
 
     // Audio payloads are large (a 20MB FLAC is a ~27MB base64 string). Hashing
     // that on the main thread blocks the attach. Dedup by name+size instead —
@@ -2153,6 +2192,15 @@ const ChatInput = memo(function ChatInput({
     }
     if (invalidType.length > 0) {
       errors.push(`${invalidType.join(', ')} is not a supported audio file`)
+    }
+    if (readFailed.length > 0) {
+      errors.push(
+        readFailed
+          .map((fileName) =>
+            t('common:errors.fileReadFailedDescription', { fileName })
+          )
+          .join(', ')
+      )
     }
     if (duplicates.length > 0) {
       toast.info(

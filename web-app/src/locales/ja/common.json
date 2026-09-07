@@ -525,7 +525,9 @@
   "injectedContentTitle": "挿入されたファイルの内容",
   "errors": {
     "fileTooLarge": "ファイルサイズが大きすぎます",
-    "fileTooLargeDescription": "{{fileName}} は制限の {{maxFileSizeMB}}MB を超えています"
+    "fileTooLargeDescription": "{{fileName}} は制限の {{maxFileSizeMB}}MB を超えています",
+    "fileReadFailed": "ファイルを読み込めませんでした",
+    "fileReadFailedDescription": "{{fileName}} をディスクから読み込めませんでした"
   },
   "files": {
     "chunksCount": "{{count}} チャンク"
