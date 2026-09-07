@@ -36,11 +36,34 @@ export type DownloadFailureReason =
   | 'http_other'
   | 'checksum_mismatch'
   | 'size_mismatch'
+  // ATO-467: `disk_io` was the single largest failure cause (647 devices) and
+  // covered at least five unrelated faults. The Rust downloader now names the
+  // subcause; `disk_io` stays as the catch-all, so old clients and unmapped
+  // errors keep landing where they always did.
+  | 'disk_full'
+  | 'disk_permission'
+  | 'disk_file_locked'
+  | 'disk_path_too_long'
+  | 'disk_device_lost'
   | 'disk_io'
   | 'network'
   | 'cancelled'
   | 'path_guard'
   | 'unknown'
+
+/**
+ * Subcause tags emitted by `src-tauri/src/core/downloads/disk.rs`. Kept as an
+ * explicit allowlist so a malformed or unknown tag degrades to the heuristics
+ * below instead of inventing a new enum value in PostHog.
+ */
+const DISK_FAULT_TAGS = new Set<DownloadFailureReason>([
+  'disk_full',
+  'disk_permission',
+  'disk_file_locked',
+  'disk_path_too_long',
+  'disk_device_lost',
+  'disk_io',
+])
 
 export type OomSubtype = 'cuda' | 'vulkan' | 'metal' | 'host_ram' | 'unknown'
 
@@ -86,12 +109,31 @@ export function parseHttpStatus(err?: string | null): number | null {
   return match ? parseInt(match[1], 10) : null
 }
 
+/**
+ * Read the `[disk_*]` subcause tag the Rust downloader prefixes onto every
+ * filesystem error (see `downloads/disk.rs`). Returns null for untagged errors
+ * — legacy clients, and every non-filesystem failure.
+ */
+function diskFaultTag(err: string): DownloadFailureReason | null {
+  const match = err.match(/\[(disk_[a-z_]+)\]/)
+  if (!match) return null
+  const tag = match[1] as DownloadFailureReason
+  return DISK_FAULT_TAGS.has(tag) ? tag : null
+}
+
 /** Classify a stringly-typed download error into a stable enum. */
-export function classifyDownloadFailure(err?: string | null): DownloadFailureReason {
+export function classifyDownloadFailure(
+  err?: string | null
+): DownloadFailureReason {
   if (!err) return 'unknown'
   const e = err.toLowerCase()
   if (/\b(abort|aborted|cancel|cancelled|canceled|stopped|interrupt)\b/.test(e))
     return 'cancelled'
+
+  // The downloader's own tag beats every heuristic below: it was derived from
+  // the OS error code, not from guessing at the message text.
+  const tagged = diskFaultTag(err)
+  if (tagged) return tagged
 
   const status = parseHttpStatus(err)
   if (status === 404) return 'http_404'
@@ -146,8 +188,13 @@ export function oomSubtype(details?: string | null): OomSubtype {
   const d = details.toLowerCase()
   if (d.includes('cuda')) return 'cuda'
   if (d.includes('vulkan') || d.includes('vk_error')) return 'vulkan'
-  if (d.includes('metal') || d.includes('iogpu') || d.includes('mtl')) return 'metal'
-  if (d.includes('host') || d.includes('system memory') || d.includes('requires more ram'))
+  if (d.includes('metal') || d.includes('iogpu') || d.includes('mtl'))
+    return 'metal'
+  if (
+    d.includes('host') ||
+    d.includes('system memory') ||
+    d.includes('requires more ram')
+  )
     return 'host_ram'
   return 'unknown'
 }
@@ -186,7 +233,9 @@ export function scrubPii(text: string): string {
 }
 
 /** Last ~2KB of an error's details, PII-scrubbed, for `model_load.stderr_tail`. */
-export function sanitizeStderrTail(details?: string | null): string | undefined {
+export function sanitizeStderrTail(
+  details?: string | null
+): string | undefined {
   if (!details) return undefined
   const tail =
     details.length > STDERR_TAIL_BYTES
@@ -293,7 +342,9 @@ export function markModelDownloaded(modelId?: string | null): void {
   if (downloadedModelKeys.size > 500) downloadedModelKeys.clear()
 }
 
-export function modelLoadSource(modelId?: string | null): 'download' | 'local_disk' {
+export function modelLoadSource(
+  modelId?: string | null
+): 'download' | 'local_disk' {
   return downloadedModelKeys.has(normalizeModelKey(modelId))
     ? 'download'
     : 'local_disk'
