@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ChatInput from '../ChatInput'
 import { useChatAttachments } from '@/hooks/useChatAttachments'
@@ -14,6 +14,10 @@ const mocks = vi.hoisted(() => ({
   downscaleImageDataUrl: vi.fn(),
   switchToModel: vi.fn(),
   chatBusy: false,
+  replyGateProps: null as {
+    onResolved: (resolution: unknown) => void
+    onDismissed: (resolution: unknown) => void
+  } | null,
 }))
 
 vi.mock('@/utils/switchModel', () => ({
@@ -145,6 +149,20 @@ vi.mock('@/containers/PromptVisionModel', () => ({
   PromptVisionModel: () => null,
 }))
 
+// Stubbed to a marker that also hands the composer's callbacks back to the
+// test: the widget's own suite covers its branches, and its real body fetches
+// the recommended model's card from Hugging Face.
+vi.mock('@/containers/ReplyModelGate', () => ({
+  ReplyModelGate: (props: {
+    open: boolean
+    onResolved: (resolution: unknown) => void
+    onDismissed: (resolution: unknown) => void
+  }) => {
+    mocks.replyGateProps = props
+    return props.open ? <div data-testid="reply-model-gate" /> : null
+  },
+}))
+
 vi.mock('@/containers/AgentApprovalModeSelect', () => ({
   // A marker: the project-composer test asserts the agent affordances render.
   AgentApprovalModeSelect: () => <span data-test-id="approval-mode-select" />,
@@ -247,7 +265,7 @@ describe('ChatInput', () => {
     unmount()
   })
 
-  it('asks for a model instead of sending when none is selected', async () => {
+  it('opens the reply-model widget instead of sending when none is selected', async () => {
     // With model preloading off by default, this is the state of every cold
     // launch until the user picks a model in the selector.
     useModelProvider.setState({ selectedProvider: '', selectedModel: null })
@@ -260,10 +278,110 @@ describe('ChatInput', () => {
       document.querySelector('[data-test-id="send-message-button"]')!
     )
 
-    expect(await screen.findByText('chat:selectModelToChat')).toBeVisible()
+    expect(await screen.findByTestId('reply-model-gate')).toBeVisible()
     expect(onSubmit).not.toHaveBeenCalled()
-    // The typed prompt survives so the user can send it once a model is picked.
+    // The typed prompt survives so it can go out once a model is ready.
     expect(input).toHaveValue('Invoke the machine spirit')
+    unmount()
+  })
+
+  it('sends the held message by itself once a model can answer', async () => {
+    useModelProvider.setState({ selectedProvider: '', selectedModel: null })
+    const onSubmit = vi.fn()
+    const { unmount } = render(<ChatInput onSubmit={onSubmit} />)
+    const input = screen.getByTestId('chat-input')
+
+    fireEvent.change(input, { target: { value: 'Invoke the machine spirit' } })
+    fireEvent.click(
+      document.querySelector('[data-test-id="send-message-button"]')!
+    )
+    await screen.findByTestId('reply-model-gate')
+
+    // The widget resolved: something is on its way, but not up yet.
+    act(() => {
+      mocks.replyGateProps!.onResolved({
+        outcome: 'picked',
+        branch: 'pick',
+        decidedInMs: 5,
+        openedAtMs: Date.now() - 5,
+      })
+    })
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(screen.getByTestId('reply-gate-queued-notice')).toBeVisible()
+
+    // …and now it is. The message goes out unchanged, with nobody pressing
+    // anything, and the widget gets out of the way.
+    act(() => {
+      useModelProvider.setState({
+        selectedProvider: 'openai',
+        selectedModel: { id: 'test-model', capabilities: [], settings: {} } as Model,
+      })
+    })
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        'Invoke the machine spirit',
+        undefined,
+        undefined
+      )
+    )
+    expect(screen.queryByTestId('reply-model-gate')).toBeNull()
+    unmount()
+  })
+
+  it('drops the held message when the widget is dismissed', async () => {
+    useModelProvider.setState({ selectedProvider: '', selectedModel: null })
+    const onSubmit = vi.fn()
+    const { unmount } = render(<ChatInput onSubmit={onSubmit} />)
+
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: 'Invoke the machine spirit' },
+    })
+    fireEvent.click(
+      document.querySelector('[data-test-id="send-message-button"]')!
+    )
+    await screen.findByTestId('reply-model-gate')
+
+    act(() => {
+      mocks.replyGateProps!.onDismissed({
+        outcome: 'dismissed',
+        branch: 'pick',
+        decidedInMs: 5,
+        openedAtMs: Date.now() - 5,
+      })
+    })
+    act(() => {
+      useModelProvider.setState({
+        selectedProvider: 'openai',
+        selectedModel: { id: 'test-model', capabilities: [], settings: {} } as Model,
+      })
+    })
+
+    // Giving up is not a deferred send: nothing goes out behind the user's
+    // back, and the text they typed is still theirs to edit.
+    await waitFor(() =>
+      expect(screen.queryByTestId('reply-model-gate')).toBeNull()
+    )
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(screen.getByTestId('chat-input')).toHaveValue(
+      'Invoke the machine spirit'
+    )
+    unmount()
+  })
+
+  it('marks Send as needing a model before it is pressed', () => {
+    useModelProvider.setState({ selectedProvider: '', selectedModel: null })
+    const { unmount } = render(<ChatInput onSubmit={vi.fn()} />)
+
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: 'Invoke the machine spirit' },
+    })
+
+    // The state is on the button itself, so the user learns about it without
+    // pressing — the red line only ever appeared afterwards.
+    expect(
+      document.querySelector('[data-test-id="send-message-button"]')
+    ).toHaveAttribute('data-needs-model', 'true')
     unmount()
   })
 

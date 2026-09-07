@@ -7,6 +7,22 @@
     "empty": "チャットが見つかりません"
   },
   "sendMessage": "メッセージを送信",
+  "replyGate": {
+    "sendHint": "返信に使うモデルを選択",
+    "startingTitle": "{{name}} を起動しています…",
+    "startingDescription": "準備ができ次第、メッセージを送信します。",
+    "pickTitle": "何で返信しますか？",
+    "pickDescription": "モデルを選ぶと、メッセージがすぐに送信されます。",
+    "emptyTitle": "まだ返信に使えるモデルがありません",
+    "emptyDescription": "この端末に合うモデルをダウンロードするか、クラウドのモデルを接続してください。メッセージはどちらの場合も保持されます。",
+    "recommendedForDevice": "お使いの端末におすすめ",
+    "download": "ダウンロード",
+    "downloading": "ダウンロード中…",
+    "downloadingPercent": "ダウンロード中… {{percent}}%",
+    "connectCloud": "クラウドプロバイダーを接続",
+    "connectSubscription": "ChatGPT サブスクリプションを接続",
+    "queuedNotice": "モデルの準備ができ次第、メッセージを送信します。"
+  },
   "newConversation": "新しい会話",
   "clearHistory": "履歴を消去",
   "activity": {
