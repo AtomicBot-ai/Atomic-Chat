@@ -460,7 +460,9 @@
   },
   "errors": {
     "fileTooLarge": "파일이 너무 큽니다",
-    "fileTooLargeDescription": "{{fileName}}이(가) {{maxFileSizeMB}}MB 제한을 초과합니다"
+    "fileTooLargeDescription": "{{fileName}}이(가) {{maxFileSizeMB}}MB 제한을 초과합니다",
+    "fileReadFailed": "파일을 읽을 수 없음",
+    "fileReadFailedDescription": "{{fileName}}을(를) 디스크에서 읽을 수 없습니다"
   },
   "files": {
     "chunksCount": "{{count}}개 청크"
