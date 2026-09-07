@@ -343,6 +343,111 @@ export function classifySubscriptionFailure(
 }
 
 /**
+ * The executing backend of the last successful load, per model.
+ *
+ * Cached so `chat_response_received` can name it without an IPC on the
+ * response path. Session-scoped on purpose: a stale value from a previous run
+ * would be exactly the kind of claim that made `active_backend` untrustworthy.
+ */
+const execBackendByModel = new Map<string, string>()
+
+export function rememberExecBackend(
+  modelId: string,
+  backend: string | null
+): void {
+  const key = normalizeModelId(modelId)
+  if (!key) return
+  if (!backend) {
+    execBackendByModel.delete(key)
+    return
+  }
+  execBackendByModel.set(key, backend)
+  if (execBackendByModel.size > 200) {
+    const oldest = execBackendByModel.keys().next().value
+    if (oldest !== undefined) execBackendByModel.delete(oldest)
+  }
+}
+
+/**
+ * What computed this response, or `null` when nothing local did.
+ *
+ * The null case is the point: `active_backend` was a device super-property, so
+ * it rode along on responses from Pollinations (44 of 44) and OpenAI (31 of
+ * 49) too. Before remote providers were filtered out "CPU" showed 44.1 tps and
+ * beat CUDA — the comparison was inverted, not merely noisy.
+ */
+export function execBackendForModel(
+  modelId?: string | null,
+  provider?: string | null
+): string | null {
+  if (loadBackendFromProvider(provider) === 'unknown') return null
+  const key = normalizeModelId(modelId)
+  return key ? (execBackendByModel.get(key) ?? null) : null
+}
+
+/** Test seam — the cache is module state and outlives a single test. */
+export function resetExecBackendsForTests(): void {
+  execBackendByModel.clear()
+}
+
+/** What the plugin parsed out of the llama-server startup log. */
+export type RuntimeDeviceSnapshot = {
+  loaded_backends?: string[] | null
+  primary_device?: string | null
+  gpu_layers_offloaded?: number | null
+  total_layers?: number | null
+  cuda_runtime_missing?: boolean | null
+  device_init_error?: string | null
+}
+
+/**
+ * How much of the model actually reached the GPU.
+ *
+ * The question ATO-468 exists to answer — "what share of devices run on GPU
+ * versus CPU" — could not be asked at all: `n_gpu_layers` reports the
+ * requested value, which is the `100` "offload everything" sentinel on 98.3%
+ * of events, and nothing recorded the outcome. A CUDA build that silently
+ * degrades to CPU (missing cudart, parked dGPU, driver mismatch) was
+ * indistinguishable from one that worked.
+ */
+export type GpuOffloadBucket = 'none' | 'partial' | 'full' | 'unknown'
+
+export function gpuOffloadBucket(
+  device?: RuntimeDeviceSnapshot | null
+): GpuOffloadBucket {
+  const offloaded = device?.gpu_layers_offloaded
+  const total = device?.total_layers
+  if (typeof offloaded !== 'number' || offloaded < 0) return 'unknown'
+  if (offloaded === 0) return 'none'
+  if (typeof total !== 'number' || total <= 0) return 'partial'
+  return offloaded >= total ? 'full' : 'partial'
+}
+
+/**
+ * The backend that actually computed, as opposed to the build the device
+ * downloaded.
+ *
+ * `active_backend` was a device-level super-property read from localStorage,
+ * so it was attached even to responses from Pollinations and OpenAI, where no
+ * local backend is involved at all — before remote providers were filtered
+ * out, "CPU" showed 44.1 tps and beat CUDA, i.e. the metric was inverted.
+ */
+export function execBackend(
+  device?: RuntimeDeviceSnapshot | null
+): string | null {
+  const primary = device?.primary_device
+  if (typeof primary === 'string' && primary) {
+    // `CUDA0` / `Vulkan0` / `Metal` / `CPU` — drop the device index so the
+    // values group.
+    return primary.replace(/\d+$/, '').toLowerCase() || null
+  }
+  const loaded = device?.loaded_backends
+  return Array.isArray(loaded) && loaded.length > 0
+    ? loaded[0].toLowerCase()
+    : null
+}
+
+/**
  * Analytics-safe form of a model id.
  *
  * Local model ids are minted by slicing a filesystem path, so every Windows

@@ -25,6 +25,7 @@ import {
   chatHttpStatus,
   ctxUsedBucket,
   ctxUsedPercent,
+  execBackendForModel,
   classifyChatFailure,
   finalizeChatTurnOnce,
   lengthBucket,
@@ -483,6 +484,11 @@ export function captureChatResponse(props: ChatResponseProps): void {
       compact({
         ...rest,
         model_id: normalizeModelId(props.model_id),
+        // What computed the answer. Null for remote providers — the whole
+        // reason `active_backend`, a device-level super-property, could not be
+        // used for this: it rode along on Pollinations and OpenAI responses
+        // too, and inverted the CPU-versus-GPU comparison.
+        exec_backend: execBackendForModel(props.model_id, props.provider),
         error_kind: errorKind ?? null,
         http_status: errorKind !== undefined ? chatHttpStatus(error) : null,
         backend: loadBackendFromProvider(props.provider),

@@ -7,12 +7,17 @@ import {
   classifyModelLoadFailure,
   ctxUsedBucket,
   ctxUsedPercent,
+  execBackend,
+  execBackendForModel,
+  gpuOffloadBucket,
   finalizeChatTurnOnce,
   lengthBucket,
   markModelDownloaded,
   modelLoadSource,
   normalizeModelId,
+  rememberExecBackend,
   resetDownloadedModelsForTests,
+  resetExecBackendsForTests,
   resetModelLoadThrottlesForTests,
   shouldEmitChatFailure,
   shouldEmitModelLoadSuccess,
@@ -379,5 +384,76 @@ describe('shouldEmitModelLoadSuccess', () => {
     // entries are still held.
     expect(shouldEmitModelLoadSuccess('filler-499', 'llamacpp')).toBe(false)
     vi.useRealTimers()
+  })
+})
+
+describe('gpuOffloadBucket', () => {
+  it('reports what actually reached the GPU, not what was asked for', () => {
+    // `n_gpu_layers` reads 100 on 98.3% of events — the "offload everything"
+    // sentinel — so this is the only field that answers "GPU or CPU".
+    expect(gpuOffloadBucket({ gpu_layers_offloaded: 33, total_layers: 33 })).toBe(
+      'full'
+    )
+    expect(gpuOffloadBucket({ gpu_layers_offloaded: 12, total_layers: 33 })).toBe(
+      'partial'
+    )
+    // A CUDA build that silently degraded to CPU. Previously indistinguishable
+    // from a healthy GPU load.
+    expect(gpuOffloadBucket({ gpu_layers_offloaded: 0, total_layers: 33 })).toBe(
+      'none'
+    )
+  })
+
+  it('says unknown rather than guessing when the log said nothing', () => {
+    expect(gpuOffloadBucket(null)).toBe('unknown')
+    expect(gpuOffloadBucket({})).toBe('unknown')
+    // Offloaded but no total: still definitely on the GPU, extent unknown.
+    expect(gpuOffloadBucket({ gpu_layers_offloaded: 20 })).toBe('partial')
+  })
+})
+
+describe('execBackend', () => {
+  it('groups device indices together', () => {
+    expect(execBackend({ primary_device: 'CUDA0' })).toBe('cuda')
+    expect(execBackend({ primary_device: 'Vulkan0' })).toBe('vulkan')
+    expect(execBackend({ primary_device: 'Metal' })).toBe('metal')
+    expect(execBackend({ primary_device: 'CPU' })).toBe('cpu')
+  })
+
+  it('falls back to the loaded libraries, then to nothing', () => {
+    expect(execBackend({ loaded_backends: ['CUDA', 'CPU'] })).toBe('cuda')
+    expect(execBackend({})).toBeNull()
+    expect(execBackend(null)).toBeNull()
+  })
+})
+
+describe('execBackendForModel', () => {
+  beforeEach(() => {
+    resetExecBackendsForTests()
+  })
+
+  it('names the backend that computed, for a local provider', () => {
+    rememberExecBackend('unsloth/gemma', 'cuda')
+
+    expect(execBackendForModel('unsloth/gemma', 'llamacpp')).toBe('cuda')
+    // Same model, Windows spelling.
+    expect(execBackendForModel('unsloth\\gemma', 'llamacpp')).toBe('cuda')
+  })
+
+  it('says nothing for a remote provider', () => {
+    rememberExecBackend('gpt-5', 'cuda')
+
+    // The bug this replaces: `active_backend` was a device super-property, so
+    // it rode along on Pollinations (44/44) and OpenAI (31/49) responses and
+    // inverted the CPU-versus-GPU speed comparison.
+    expect(execBackendForModel('gpt-5', 'openai')).toBeNull()
+    expect(execBackendForModel('gpt-5', 'pollinations')).toBeNull()
+  })
+
+  it('forgets a model whose load reported no device', () => {
+    rememberExecBackend('m', 'cuda')
+    rememberExecBackend('m', null)
+
+    expect(execBackendForModel('m', 'llamacpp')).toBeNull()
   })
 })

@@ -19,7 +19,10 @@ import {
   loadBackendFromProvider,
   normalizeModelId,
   classifyModelLoadFailure,
+  execBackend,
+  gpuOffloadBucket,
   mmprojProjectorType,
+  rememberExecBackend,
   modelLoadSource,
   oomSubtype,
   quantFromModelId,
@@ -28,8 +31,10 @@ import {
   shouldEmitModelLoadFailure,
   shouldEmitModelLoadSuccess,
   sizeBucket,
+  type RuntimeDeviceSnapshot,
 } from '@/lib/telemetry'
 import { queuedCapture } from '@/lib/telemetry-queue'
+import { ExtensionManager } from '@/lib/extension'
 import { captureHandledError } from '@/lib/sentry'
 import {
   getProviderTitle,
@@ -74,6 +79,35 @@ function settingStr(
  * providers do not load weights). PII contract: only ids/enums/numbers; the
  * stderr tail is byte-capped and PII-scrubbed by `sanitizeStderrTail`.
  */
+/**
+ * Ask the engine what the loaded model actually ran on.
+ *
+ * Resolved through `ExtensionManager` rather than the service hub because
+ * only the llama.cpp engines can answer — MLX and foundation-models have no
+ * equivalent, and an older bundled extension will not have the method at all,
+ * so both degrade to `null`. Never throws: telemetry must not break a load.
+ */
+async function readRuntimeDevice(
+  modelId: string
+): Promise<RuntimeDeviceSnapshot | null> {
+  try {
+    const engines = ExtensionManager.getInstance().listExtensions()
+    for (const ext of engines) {
+      const reader = (
+        ext as unknown as {
+          getRuntimeDeviceInfo?: (id: string) => Promise<unknown>
+        }
+      ).getRuntimeDeviceInfo
+      if (typeof reader !== 'function') continue
+      const info = await reader.call(ext, modelId)
+      if (info) return info as RuntimeDeviceSnapshot
+    }
+  } catch (err) {
+    console.debug('runtime device read failed:', err)
+  }
+  return null
+}
+
 function emitModelLoad(
   status: 'success' | 'failed',
   args: {
@@ -83,6 +117,7 @@ function emitModelLoad(
     model?: LoadableModel
     error?: unknown
     isAutoStart?: boolean
+    runtimeDevice?: RuntimeDeviceSnapshot | null
   }
 ): void {
   try {
@@ -124,6 +159,18 @@ function emitModelLoad(
       n_gpu_layers:
         settingNum(settings, 'ngl') ?? settingNum(settings, 'n_gpu_layers'),
       size_bucket: sizeBucket(args.model?.sizeBytes),
+      // What actually happened, as opposed to what was asked for. This is the
+      // field "what share of devices run on GPU versus CPU" is counted on.
+      gpu_offload_bucket: gpuOffloadBucket(args.runtimeDevice),
+      gpu_layers_offloaded: args.runtimeDevice?.gpu_layers_offloaded ?? null,
+      gpu_layers_total: args.runtimeDevice?.total_layers ?? null,
+      // The backend that computed, not the build the device downloaded — the
+      // distinction `active_backend` never made.
+      exec_backend: execBackend(args.runtimeDevice),
+      // A CUDA build that cannot find its runtime silently falls back to CPU;
+      // without this that is indistinguishable from a healthy CPU load.
+      cuda_runtime_missing: args.runtimeDevice?.cuda_runtime_missing ?? null,
+      has_device_init_error: Boolean(args.runtimeDevice?.device_init_error),
       is_multimodal:
         (args.model?.capabilities || []).includes('vision') ||
         settingStr(settings, 'mmproj_path') != null,
@@ -639,12 +686,19 @@ async function doSwitchToModel(params: {
         MODEL_LOAD_WATCHDOG_MS,
         `Timed out waiting for model "${modelId}" to finish loading.`
       )
+      // Awaited rather than fired-and-forgotten: the event has to carry it,
+      // and the read is a single IPC against an already-running process.
+      const runtimeDevice = await readRuntimeDevice(modelId)
+      // Cached so chat responses can name the executing backend without an
+      // IPC on the response path.
+      rememberExecBackend(modelId, execBackend(runtimeDevice))
       emitModelLoad('success', {
         modelId,
         providerName,
         durationMs: Date.now() - loadStartTs,
         model: modelConfig,
         isAutoStart,
+        runtimeDevice,
       })
       console.log('[switchToModel] Local model started:', modelId)
       await settleAfterLocalStart(serviceHub, providerName, modelId)

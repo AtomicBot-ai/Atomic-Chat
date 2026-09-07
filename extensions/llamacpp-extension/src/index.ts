@@ -96,6 +96,7 @@ import {
   isCudaInstalledFromRust,
   copyBackendDlls,
 } from '../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
+import type { RuntimeDeviceInfo } from '../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/types'
 
 // Error message constant - matches web-app/src/utils/error.ts
 const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
@@ -4878,6 +4879,30 @@ export default class llamacpp_extension extends AIEngine {
         if (streamError) throw streamError
         break
       }
+    }
+  }
+
+  /// Which device the loaded model actually ran on.
+  ///
+  /// Parsed from the llama-server startup log by the plugin and, until now,
+  /// used only to warn about a backend mismatch. The web-app needs it for
+  /// `model_load`: `n_gpu_layers` there is the requested value — the "offload
+  /// everything" sentinel on 98.3% of events — so how many layers reached the
+  /// GPU, and whether a CUDA build quietly ran on CPU, was recorded nowhere.
+  ///
+  /// Never throws: telemetry must not be able to break a load.
+  async getRuntimeDeviceInfo(
+    modelId: string
+  ): Promise<RuntimeDeviceInfo | null> {
+    try {
+      const sInfo = await this.findSessionByModel(modelId)
+      if (!sInfo) return null
+      // `load_tensors` normally precedes "listening on", but on a slow mmap
+      // the snapshot taken at readiness can still be empty — re-ask.
+      return sInfo.runtime_device ?? (await getRuntimeDevice(sInfo.pid))
+    } catch (e) {
+      logger.debug('getRuntimeDeviceInfo failed (continuing):', e)
+      return null
     }
   }
 

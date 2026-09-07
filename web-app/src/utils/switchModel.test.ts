@@ -94,7 +94,11 @@ vi.mock('@/utils/activeModelsSync', () => ({
   syncActiveModelsFromEngines: vi.fn(),
 }))
 
-vi.mock('@/lib/telemetry', () => ({
+// Partial mock: only the pieces this suite needs to pin down. Listing every
+// export instead meant each new telemetry property broke these tests with a
+// missing-export error rather than a real failure.
+vi.mock('@/lib/telemetry', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/telemetry')>()),
   isRecoverableModelLoadCode: vi.fn(() => true),
   loadBackendFromProvider: vi.fn(() => 'mlx'),
   mmprojProjectorType: vi.fn(() => null),
