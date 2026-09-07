@@ -4,7 +4,13 @@ import posthog from 'posthog-js'
 import { localStorageKey } from '@/constants/localStorage'
 import {
   buildRecommendedImpressions,
+  captureBackendStepResolved,
   captureBackendStepShown,
+  classifyDetectionFailure,
+  clearBackendRestartIntent,
+  markBackendRestartIntent,
+  readRecheckOutcome,
+  reportBackendRestartIntent,
   captureOnboardingCompleted,
   captureOnboardingModelReminder,
   captureProviderKeyConfigured,
@@ -319,5 +325,108 @@ describe('picker impressions', () => {
     // Same normalization as every other model_id, or the Windows spelling
     // would fail to join with the click.
     expect(calls[0][1]).toMatchObject({ model_id: 'a/b', position: 0 })
+  })
+})
+
+describe('backend step resolution', () => {
+  it('never names a property `status`', () => {
+    captureBackendStepResolved({ stepStatus: 'downloaded' })
+
+    const props = lastCall()[1]
+    expect(props).toHaveProperty('step_status', 'downloaded')
+    // `status` is globally typed numeric in PostHog by
+    // `api_server_request.status`; a string written to it reads back as null.
+    expect(props).not.toHaveProperty('status')
+  })
+
+  it('splits the two values that hid four cases each', () => {
+    captureBackendStepResolved({
+      stepStatus: 'no_recommendation',
+      noRecommendationReason: 'already_optimal',
+      currentBackend: 'b9800/win-cuda-13.3-x64',
+      durationMs: 1200,
+    })
+
+    expect(lastCall()[1]).toMatchObject({
+      step_status: 'no_recommendation',
+      no_recommendation_reason: 'already_optimal',
+      current_backend: 'b9800/win-cuda-13.3-x64',
+      duration_ms: 1200,
+      replayed: false,
+    })
+  })
+
+  it('tells a hung detection apart from a broken one', () => {
+    expect(classifyDetectionFailure(new Error('BACKEND_DETECTION_FAILED'))).toBe(
+      'detection_unavailable'
+    )
+    expect(classifyDetectionFailure(new Error('kaboom'))).toBe('threw')
+    expect(classifyDetectionFailure('not an error')).toBe('threw')
+  })
+})
+
+describe('readRecheckOutcome', () => {
+  it('reads the reason the extension recorded', () => {
+    expect(
+      readRecheckOutcome({ getLastRecheckOutcome: () => 'cpu_optimal' })
+    ).toBe('cpu_optimal')
+  })
+
+  it('degrades quietly on an older extension that cannot answer', () => {
+    expect(readRecheckOutcome({})).toBeNull()
+    expect(readRecheckOutcome(undefined)).toBeNull()
+    expect(
+      readRecheckOutcome({
+        getLastRecheckOutcome: () => {
+          throw new Error('nope')
+        },
+      })
+    ).toBeNull()
+  })
+})
+
+describe('restart intent', () => {
+  const intent = {
+    step_status: 'downloaded' as const,
+    recommended_backend: 'b10205/win-cuda-13.3-x64',
+    recommended_category: 'CUDA 13',
+    current_backend: 'b9800/win-cpu-x64',
+    duration_ms: 4200,
+  }
+
+  it('reports a resolve the relaunch cut short, marked as replayed', () => {
+    markBackendRestartIntent(intent)
+
+    reportBackendRestartIntent()
+
+    const [event, props] = lastCall()
+    expect(event).toBe('backend_step_resolved')
+    expect(props).toMatchObject({
+      step_status: 'downloaded',
+      recommended_backend: 'b10205/win-cuda-13.3-x64',
+      duration_ms: 4200,
+      replayed: true,
+    })
+  })
+
+  it('reports it once, not on every subsequent launch', () => {
+    markBackendRestartIntent(intent)
+    reportBackendRestartIntent()
+    vi.mocked(posthog.capture).mockClear()
+
+    reportBackendRestartIntent()
+
+    expect(posthog.capture).not.toHaveBeenCalled()
+  })
+
+  it('stays quiet when the relaunch never happened', () => {
+    // The IPC threw, so the component reports the resolve itself and this
+    // record must not duplicate it next launch.
+    markBackendRestartIntent(intent)
+    clearBackendRestartIntent()
+
+    reportBackendRestartIntent()
+
+    expect(posthog.capture).not.toHaveBeenCalled()
   })
 })

@@ -2469,6 +2469,27 @@ export default class llamacpp_upstream_extension extends AIEngine {
    * Returns the recommendation payload, or `null` when the device is already
    * on the optimal backend category (or detection couldn't decide).
    */
+  /**
+   * Why the last `recheckOptimalBackend()` returned null.
+   *
+   * The method returns `null` for four unrelated reasons — this is a Mac, CPU
+   * genuinely is the best this hardware can do, the optimal build is already
+   * installed, or the catalog has no entry for the detected type — and the
+   * return type cannot distinguish them. All four arrived in telemetry as the
+   * single value `no_recommendation`, so "46% of users who reach the Windows
+   * backend step get no recommendation" could not be read: `already_optimal`
+   * is a healthy outcome and is probably the most common of the four.
+   *
+   * Recorded rather than returned because the method has three callers and is
+   * not worth an API break for telemetry. Read via `getLastRecheckOutcome()`.
+   */
+  private lastRecheckOutcome: string | null = null
+
+  /** See `lastRecheckOutcome`. */
+  getLastRecheckOutcome(): string | null {
+    return this.lastRecheckOutcome
+  }
+
   async recheckOptimalBackend(): Promise<{
     currentBackend: string
     recommendedBackend: string
@@ -2478,8 +2499,10 @@ export default class llamacpp_upstream_extension extends AIEngine {
     backendId: string
   } | null> {
     if (IS_MAC) {
+      this.lastRecheckOutcome = 'mac'
       return null
     }
+    this.lastRecheckOutcome = null
     try {
       logger.info('recheckOptimalBackend: detecting ideal backend type')
       // ATO-104: bound the whole hardware/backend detection so the
@@ -2519,6 +2542,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
         )
         this.persistOptimalBackendCache(detection, currentBackend)
         localStorage.removeItem('llama_cpp_better_backend_recommendation')
+        this.lastRecheckOutcome = 'cpu_optimal'
         return null
       }
 
@@ -2539,6 +2563,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
           currentBackend
         )
         localStorage.removeItem('llama_cpp_better_backend_recommendation')
+        this.lastRecheckOutcome = 'already_optimal'
         return null
       }
 
@@ -2557,6 +2582,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
         recommendedBackend
       )
       if (!recommendedBackend) {
+        // The catalog has nothing for the type detection picked — a gap on our
+        // side, not a property of the machine.
+        this.lastRecheckOutcome = 'no_catalog_entry'
         localStorage.removeItem('llama_cpp_better_backend_recommendation')
         return null
       }
@@ -2565,6 +2593,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
           `recheckOptimalBackend: latest resolved backend is already active (${currentBackend})`
         )
         localStorage.removeItem('llama_cpp_better_backend_recommendation')
+        this.lastRecheckOutcome = 'already_optimal'
         return null
       }
 
@@ -2597,6 +2626,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
         throw err
       }
       logger.warn('recheckOptimalBackend failed:', err)
+      this.lastRecheckOutcome = 'threw'
       return null
     }
   }

@@ -19,6 +19,7 @@ import {
 import {
   isFirstLaunch,
   reportAbandonedOnboarding,
+  reportBackendRestartIntent,
 } from '@/lib/onboarding-telemetry'
 import { flushTelemetryQueue } from '@/lib/telemetry-queue'
 import {
@@ -351,6 +352,8 @@ export function AnalyticProvider() {
           // here rather than from a close handler, which the renderer is not
           // reliably given.
           reportAbandonedOnboarding()
+          // A backend step whose resolve was cut short by "Restart now".
+          reportBackendRestartIntent()
 
           if (cancelled) return
 

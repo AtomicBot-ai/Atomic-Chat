@@ -381,6 +381,166 @@ export function captureRecommendedModelClicked(params: {
 }
 
 /**
+ * Outcome of the Windows-only GPU-backend step.
+ *
+ * `no_recommendation` and `detection_failed` each hide several unrelated
+ * cases, which is why "46% of users who reach the step get one of them" could
+ * not be read as a problem: `already_optimal` is the healthy outcome and is
+ * probably the most common one. The two `*_reason` properties below split
+ * them; these values stay as they are so the existing series survives.
+ */
+export type BackendStepStatus =
+  | 'downloaded'
+  | 'cpu'
+  | 'skipped'
+  | 'no_recommendation'
+  | 'detection_failed'
+
+/** Why detection produced nothing usable. */
+export type BackendDetectionFailure =
+  /** The llama.cpp extension was not registered in this build. */
+  | 'no_extension'
+  /** The extension's own sentinel: release stream unreachable, hardware probe
+   *  threw, or the lookup timed out. Not the same as "CPU is best". */
+  | 'detection_unavailable'
+  /** Anything else the call threw. */
+  | 'threw'
+  /** Never left the spinner inside the watchdog window. */
+  | 'watchdog'
+
+const BACKEND_DETECTION_FAILED = 'BACKEND_DETECTION_FAILED'
+
+/**
+ * Classify a thrown detection error.
+ *
+ * Lives here, not in `SetupBackendStep`, because that component is a shell
+ * whose branch-coverage floor is satisfied by never executing: the moment a
+ * conditional lands in it, it has to be exercised or the floor breaks. So the
+ * call site stays `ref.current = classifyDetectionFailure(err)`.
+ */
+export function classifyDetectionFailure(err: unknown): BackendDetectionFailure {
+  if (err instanceof Error && err.message === BACKEND_DETECTION_FAILED) {
+    return 'detection_unavailable'
+  }
+  return 'threw'
+}
+
+/**
+ * Why `recheckOptimalBackend()` returned nothing, read from the extension.
+ *
+ * The method returns `null` for four unrelated reasons and the return type
+ * cannot say which — it has three callers and is not worth breaking for
+ * telemetry, so the extension records the reason and this reads it back.
+ * Optional-called, so a build carrying an older extension degrades to `null`
+ * rather than throwing.
+ */
+export function readRecheckOutcome(ext: unknown): string | null {
+  try {
+    const getter = (ext as { getLastRecheckOutcome?: () => string | null })
+      ?.getLastRecheckOutcome
+    return typeof getter === 'function' ? (getter.call(ext) ?? null) : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The backend step ended. Was emitted inline; moved here so the reason splits
+ * and the duration have somewhere to live that is actually tested.
+ */
+export function captureBackendStepResolved(params: {
+  stepStatus: BackendStepStatus
+  recommendedBackend?: string | null
+  recommendedCategory?: string | null
+  /** What the device was already running, so `already_optimal` can be told
+   *  apart from "we had nothing to offer this machine". */
+  currentBackend?: string | null
+  detectionFailureReason?: BackendDetectionFailure | null
+  noRecommendationReason?: string | null
+  /** Mount to resolve. Answers how many people sit out the 30s watchdog. */
+  durationMs?: number | null
+  /** Replayed from a previous launch: the app relaunched before it could be
+   *  sent. See `markBackendRestartIntent`. */
+  replayed?: boolean
+}): void {
+  capture('backend_step_resolved', {
+    // NOT `status` — globally typed numeric in PostHog by
+    // `api_server_request.status`, which is why this tile read empty and was
+    // written off as an instrumentation bug for six weeks.
+    step_status: params.stepStatus,
+    recommended_backend: params.recommendedBackend ?? null,
+    recommended_category: params.recommendedCategory ?? null,
+    current_backend: params.currentBackend ?? null,
+    detection_failure_reason: params.detectionFailureReason ?? null,
+    no_recommendation_reason: params.noRecommendationReason ?? null,
+    duration_ms: params.durationMs ?? null,
+    replayed: params.replayed ?? false,
+  })
+}
+
+/** What a pending restart owes the next launch. */
+export type BackendRestartIntent = {
+  step_status: BackendStepStatus
+  recommended_backend: string | null
+  recommended_category: string | null
+  current_backend: string | null
+  duration_ms: number | null
+}
+
+/**
+ * Record a resolve that is about to be cut short by a relaunch.
+ *
+ * "Restart now" kills the process before `finish` runs, so the success path
+ * emitted nothing and only the `catch` — a *failed* relaunch — ever reported.
+ * In the data that reads as "restarting always fails", when in fact those were
+ * the only restarts anyone could see.
+ */
+export function markBackendRestartIntent(intent: BackendRestartIntent): void {
+  try {
+    localStorage.setItem(
+      localStorageKey.backendStepRestartIntent,
+      JSON.stringify(intent)
+    )
+  } catch {
+    // localStorage unavailable — the restart simply goes unreported.
+  }
+}
+
+/** Drop a pending intent — the relaunch it was written for did not happen. */
+export function clearBackendRestartIntent(): void {
+  try {
+    localStorage.removeItem(localStorageKey.backendStepRestartIntent)
+  } catch {
+    // localStorage unavailable — worst case one duplicated resolve event.
+  }
+}
+
+/** Send and clear a restart intent left by the previous launch, if any. */
+export function reportBackendRestartIntent(): void {
+  let raw: string | null = null
+  try {
+    raw = localStorage.getItem(localStorageKey.backendStepRestartIntent)
+    if (raw) localStorage.removeItem(localStorageKey.backendStepRestartIntent)
+  } catch {
+    return
+  }
+  if (!raw) return
+  try {
+    const intent = JSON.parse(raw) as Partial<BackendRestartIntent>
+    captureBackendStepResolved({
+      stepStatus: intent.step_status ?? 'downloaded',
+      recommendedBackend: intent.recommended_backend ?? null,
+      recommendedCategory: intent.recommended_category ?? null,
+      currentBackend: intent.current_backend ?? null,
+      durationMs: intent.duration_ms ?? null,
+      replayed: true,
+    })
+  } catch {
+    // malformed record — nothing worth reporting
+  }
+}
+
+/**
  * Entry into the Windows-only GPU backend step. Only `backend_step_resolved`
  * existed, so a user who quit during GPU detection was invisible: pairing this
  * with the resolve event gives the step's drop-off rate.

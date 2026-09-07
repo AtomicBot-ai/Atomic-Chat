@@ -74,6 +74,11 @@ export const localStorageKey = {
   // means the app was closed mid-flow — the only way to see that at all, since
   // a window close gives the renderer no reliable chance to report it.
   onboardingInFlight: 'onboarding-in-flight',
+  // A `backend_step_resolved` that a relaunch is about to interrupt. Written
+  // just before "Restart now" kills the process and sent on the next launch —
+  // otherwise a successful restart reports nothing at all and the data shows
+  // only the failures.
+  backendStepRestartIntent: 'backend-step-restart-intent',
   // Voice input preferences: setup completion, input device, language hint
   // and live-vs-on-stop transcription. One persisted bag rather than a raw
   // flag, so the composer can read it reactively without the storage-event

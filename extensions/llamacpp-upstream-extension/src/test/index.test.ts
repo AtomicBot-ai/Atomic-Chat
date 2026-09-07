@@ -2010,6 +2010,8 @@ describe('llamacpp_extension', () => {
           AppEvent.onBetterBackendDetected,
           result
         )
+        // A recommendation was produced, so there is no "why nothing" to give.
+        expect(extension.getLastRecheckOutcome()).toBeNull()
       })
 
       it('returns nothing and forgets any stale recommendation when already optimal', async () => {
@@ -2035,6 +2037,10 @@ describe('llamacpp_extension', () => {
           'llama_cpp_better_backend_recommendation',
           expect.anything()
         )
+        // The healthy outcome, and almost certainly the most common one. It
+        // used to reach telemetry as the same `no_recommendation` as a genuine
+        // gap in the catalog, which is why that number could not be read.
+        expect(extension.getLastRecheckOutcome()).toBe('already_optimal')
       })
 
       it('returns nothing when CPU genuinely is the best this host can do', async () => {
@@ -2048,6 +2054,25 @@ describe('llamacpp_extension', () => {
           OPTIMAL_BACKEND_CACHE_KEY,
           expect.any(String)
         )
+        expect(extension.getLastRecheckOutcome()).toBe('cpu_optimal')
+      })
+
+      it('says the catalog had nothing for the detected type', async () => {
+        vi.spyOn(extension as any, 'detectIdealBackendType').mockResolvedValue({
+          kind: 'gpu',
+          backend: 'win-cuda-13.3-x64',
+        })
+        // Detection picked a tier the catalog cannot serve.
+        vi.spyOn(
+          extension as any,
+          'resolveConcreteOptimalBackend'
+        ).mockResolvedValue(null)
+
+        await expect(extension.recheckOptimalBackend()).resolves.toBeNull()
+
+        // A gap on our side, not a property of the machine — the distinction
+        // the single `no_recommendation` value used to erase.
+        expect(extension.getLastRecheckOutcome()).toBe('no_catalog_entry')
       })
 
       it('raises a distinct signal when detection could not complete', async () => {

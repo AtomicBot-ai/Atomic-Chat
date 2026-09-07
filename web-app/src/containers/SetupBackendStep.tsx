@@ -8,25 +8,27 @@ import {
   IconRocket,
 } from '@tabler/icons-react'
 
-import posthog from 'posthog-js'
-
 import { Button } from '@/components/ui/button'
 import { ExtensionManager } from '@/lib/extension'
 import HeaderPage from '@/containers/HeaderPage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useBackendUpdater } from '@/hooks/useBackendUpdater'
 import { cn, LOCAL_LLAMACPP_EXTENSION_NAME } from '@/lib/utils'
-import { getAnalyticsPlatform } from '@/lib/telemetry'
-import { captureBackendStepShown } from '@/lib/onboarding-telemetry'
+import {
+  captureBackendStepResolved,
+  captureBackendStepShown,
+  classifyDetectionFailure,
+  clearBackendRestartIntent,
+  markBackendRestartIntent,
+  readRecheckOutcome,
+  type BackendDetectionFailure,
+  type BackendStepStatus,
+} from '@/lib/onboarding-telemetry'
+import { localStorageKey } from '@/constants/localStorage'
 
-/// Outcome of the Windows-only GPU-backend onboarding step, reported to
-/// PostHog so the onboarding funnel covers this fork too.
-type BackendStepStatus =
-  | 'downloaded'
-  | 'cpu'
-  | 'skipped'
-  | 'no_recommendation'
-  | 'detection_failed'
+/// The watchdog window. Module scope so a test can reason about it without
+/// reaching inside the effect that arms it.
+const WATCHDOG_MS = 30_000
 
 /// Mirrors the public `recheckOptimalBackend()` method on
 /// `extensions/llamacpp-extension/src/index.ts`. We only depend on the public
@@ -37,6 +39,9 @@ type LlamacppLikeExtension = {
     recommendedBackend: string
     recommendedCategory: string
   } | null>
+  /// Why the last `recheckOptimalBackend()` returned null. Optional: an older
+  /// bundled extension will not have it.
+  getLastRecheckOutcome?: () => string | null
 }
 
 /// Local UI phases for the onboarding step. We intentionally do NOT couple
@@ -102,6 +107,17 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
   /// `recommendationPhase` resets to 'recommend' on download failure, and we
   /// don't want to silently regress the UI.
   const downloadAttemptedRef = useRef(false)
+  /// Mount → resolve, so "how many people sit out the watchdog" is answerable.
+  const mountedAtRef = useRef(Date.now())
+  /// Why detection produced nothing. All four cases used to arrive as the
+  /// single value `detection_failed`, so "detection is broken" and "detection
+  /// is merely slow" were the same number.
+  const detectionFailureRef = useRef<BackendDetectionFailure | null>(null)
+  /// Why the recommendation was null, read off the extension. Four unrelated
+  /// cases — one of them the healthy "already on the optimal build".
+  const noRecommendationReasonRef = useRef<string | null>(null)
+  /// What the device was already running, for the same reason.
+  const currentBackendRef = useRef<string | null>(null)
 
   /// Entry counterpart to `backend_step_resolved`: without it, users who quit
   /// during GPU detection never appeared in the funnel at all.
@@ -113,21 +129,16 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
     (status: 'downloaded' | 'skipped', resolved?: BackendStepStatus) => {
       if (finishedRef.current) return
       finishedRef.current = true
-      try {
-        posthog.capture('backend_step_resolved', {
-          // NOT `status` — globally typed numeric in PostHog by
-          // `api_server_request.status`, which is why this tile read empty and
-          // was written off as an instrumentation bug for six weeks.
-          step_status:
-            resolved ?? (status === 'downloaded' ? 'downloaded' : 'skipped'),
-          recommended_backend: recommendation?.recommendedBackend ?? null,
-          recommended_category: recommendation?.recommendedCategory ?? null,
-          platform: getAnalyticsPlatform(),
-          app_version: VERSION,
-        })
-      } catch (err) {
-        console.debug('backend_step_resolved telemetry failed:', err)
-      }
+      captureBackendStepResolved({
+        stepStatus:
+          resolved ?? (status === 'downloaded' ? 'downloaded' : 'skipped'),
+        recommendedBackend: recommendation?.recommendedBackend,
+        recommendedCategory: recommendation?.recommendedCategory,
+        currentBackend: currentBackendRef.current,
+        detectionFailureReason: detectionFailureRef.current,
+        noRecommendationReason: noRecommendationReasonRef.current,
+        durationMs: Date.now() - mountedAtRef.current,
+      })
       // Drop any persisted recommendation so the post-onboarding
       // BackendUpdater (mounted only after setupCompleted) does not
       // restore a stale dialog on the next mount. The Download path
@@ -159,11 +170,16 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
       try {
         const ext = getLlamacppExtension()
         if (!ext?.recheckOptimalBackend) {
+          detectionFailureRef.current = 'no_extension'
           if (!cancelled) setUiPhase('detection-failed')
           return
         }
         const result = await ext.recheckOptimalBackend()
         if (cancelled) return
+        currentBackendRef.current = result?.currentBackend ?? null
+        // Null means one of four unrelated things; only the extension knows
+        // which, and the return type cannot say.
+        noRecommendationReasonRef.current = readRecheckOutcome(ext)
         if (!result) {
           setUiPhase('no-recommendation')
         } else {
@@ -171,6 +187,7 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
         }
       } catch (err) {
         console.warn('[SetupBackendStep] detection failed', err)
+        detectionFailureRef.current = classifyDetectionFailure(err)
         if (!cancelled) setUiPhase('detection-failed')
       }
     }
@@ -186,13 +203,15 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
   // treat it as a failed detection (auto-advances to the model step via the
   // effect below). CPU remains a usable fallback, so skipping is safe.
   useEffect(() => {
-    const WATCHDOG_MS = 30_000
     const timer = setTimeout(() => {
       if (finishedRef.current) return
       if (uiPhaseRef.current === 'detecting') {
         console.warn(
           '[SetupBackendStep] detection watchdog fired; advancing past hardware detection'
         )
+        // Distinct from a detection that threw: this one is still running, and
+        // "detection hangs" is a different problem from "detection breaks".
+        detectionFailureRef.current = 'watchdog'
         setUiPhase('detection-failed')
       }
     }, WATCHDOG_MS)
@@ -264,15 +283,35 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
   }, [finish])
 
   const handleRestartNow = useCallback(async () => {
+    // The relaunch kills the process before `finish` can run, so the outcome
+    // has to be written down first: without this only the `catch` below ever
+    // reported, and the data said restarting always fails.
+    markBackendRestartIntent({
+      step_status: 'downloaded',
+      recommended_backend: recommendation?.recommendedBackend ?? null,
+      recommended_category: recommendation?.recommendedCategory ?? null,
+      current_backend: currentBackendRef.current,
+      duration_ms: Date.now() - mountedAtRef.current,
+    })
+    // Same reason: `onDone` never runs, so the flag that stops this step from
+    // reappearing was never set and a successful restart showed it again.
+    try {
+      localStorage.setItem(localStorageKey.llamacppOnboardingDone, 'downloaded')
+    } catch (err) {
+      console.warn('[SetupBackendStep] failed to persist onboarding flag', err)
+    }
     try {
       await window.core?.api?.relaunch()
     } catch (err) {
       console.error('[SetupBackendStep] relaunch failed', err)
+      // The process survived, so `finish` will report this for real — drop the
+      // record that would otherwise report it a second time next launch.
+      clearBackendRestartIntent()
       // If the relaunch IPC blew up there's not much we can do — just
       // continue to the model step so the user isn't trapped here.
       finish('downloaded', 'downloaded')
     }
-  }, [finish])
+  }, [finish, recommendation])
 
   return (
     <div className="relative flex h-svh w-full flex-col overflow-hidden">
