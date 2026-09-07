@@ -16,7 +16,10 @@ import {
   getAnalyticsPlatform,
   mapGpuVendor,
 } from '@/lib/telemetry'
-import { isFirstLaunch } from '@/lib/onboarding-telemetry'
+import {
+  isFirstLaunch,
+  reportAbandonedOnboarding,
+} from '@/lib/onboarding-telemetry'
 import { flushTelemetryQueue } from '@/lib/telemetry-queue'
 import {
   setSentryConsent,
@@ -343,6 +346,11 @@ export function AnalyticProvider() {
           // events carry them, and before the `cancelled` bail so a re-run of
           // this effect cannot strand a whole first launch's worth of events.
           flushTelemetryQueue()
+
+          // An onboarding run left on screen when the app closed. Reported
+          // here rather than from a close handler, which the renderer is not
+          // reliably given.
+          reportAbandonedOnboarding()
 
           if (cancelled) return
 

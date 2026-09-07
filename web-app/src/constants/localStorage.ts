@@ -68,6 +68,12 @@ export const localStorageKey = {
   // the tier detection picked for this host. Written before the download starts
   // so a crash or a failure mid-download cannot retry on every launch.
   startupBackendUpgradeAttempt: 'startup-backend-upgrade-attempt',
+  // An onboarding run that is currently on screen: `{started_at, step,
+  // app_version}`. Written while SetupScreen is mounted and dropped by
+  // `captureOnboardingCompleted`, so a record still present at the next launch
+  // means the app was closed mid-flow — the only way to see that at all, since
+  // a window close gives the renderer no reliable chance to report it.
+  onboardingInFlight: 'onboarding-in-flight',
   // Voice input preferences: setup completion, input device, language hint
   // and live-vs-on-stop transcription. One persisted bag rather than a raw
   // flag, so the composer can read it reactively without the storage-event

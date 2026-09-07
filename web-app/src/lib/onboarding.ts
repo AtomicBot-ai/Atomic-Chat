@@ -9,6 +9,18 @@ type ProviderLike = {
 }
 
 /**
+ * Providers whose models are files on this machine. `mlx` is here even though
+ * `hasValidProviders` does not list it: that gate predates the MLX engine and
+ * MLX models still occupy disk exactly like llama.cpp ones.
+ */
+const LOCAL_MODEL_PROVIDERS = new Set([
+  'llamacpp',
+  'llamacpp-upstream',
+  'mlx',
+  'jan',
+])
+
+/**
  * Whether the user already has at least one usable provider: a configured API
  * key, or a local llama.cpp / Jan provider with models, or any custom provider
  * with models. Mirrors the gate the home route uses to decide whether to show
@@ -30,6 +42,41 @@ export function hasValidProviders(providers: ProviderLike[]): boolean {
         (provider.provider === 'jan' && provider.models.length)
     )
   })
+}
+
+/**
+ * What the user actually had when they left onboarding.
+ *
+ * `onboarding_completed.had_any_model` never answered this. Three of its four
+ * call sites hardcode `true`, and the fourth computes
+ * `models.length > 0 || !!api_key` — "the picker had something to show", which
+ * is true for almost every install, including ones that leave with nothing on
+ * disk. Splitting it means "does a model exist locally" and "is a cloud
+ * provider configured" can finally be asked separately.
+ *
+ * `gateValidProviders` is deliberately the gate's own predicate rather than a
+ * third opinion: the two have always been able to disagree about whether
+ * onboarding is in play, and shipping both makes that disagreement visible as
+ * `had_any_model != gate_valid_providers` instead of a suspicion.
+ */
+export function describeProviderState(providers: ProviderLike[]): {
+  hadLocalModelOnDisk: boolean
+  hadCloudKey: boolean
+  gateValidProviders: boolean
+} {
+  return {
+    hadLocalModelOnDisk: providers.some(
+      (provider) =>
+        LOCAL_MODEL_PROVIDERS.has(provider.provider) &&
+        provider.models.length > 0
+    ),
+    hadCloudKey: providers.some(
+      (provider) =>
+        !LOCAL_MODEL_PROVIDERS.has(provider.provider) &&
+        Boolean(provider.api_key?.length)
+    ),
+    gateValidProviders: hasValidProviders(providers),
+  }
 }
 
 function isSetupCompleted(): boolean {

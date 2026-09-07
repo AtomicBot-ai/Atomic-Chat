@@ -332,6 +332,56 @@ function compact(props: Record<string, unknown>): Record<string, unknown> {
   return out
 }
 
+/**
+ * Why a send never became a request.
+ *
+ * Only `no_model` is emitted today. The other early returns in the composer are
+ * either noise (an empty prompt is a stray Enter) or already visible elsewhere,
+ * and this event exists to size one specific wall.
+ */
+export type ChatBlockReason = 'no_model'
+
+const blockThrottle = new Map<ChatBlockReason, number>()
+const BLOCK_THROTTLE_MS = 60_000
+
+/**
+ * A user reached the chat, typed, pressed Enter, and got a hint instead of a
+ * response — because there is no model to answer with.
+ *
+ * This path emitted nothing at all: the composer returns before anything
+ * downstream captures a turn, so the single most common first-run dead end was
+ * invisible. Pairing it with what the user does next is the point.
+ *
+ * Throttled per reason: holding Enter must not turn one user into a spike.
+ */
+export function captureChatSendBlocked(props: {
+  reason: ChatBlockReason
+  thread_id?: string | null
+  is_agent_mode?: boolean
+  had_local_model_on_disk?: boolean
+  had_cloud_key?: boolean
+}): void {
+  try {
+    const now = Date.now()
+    const last = blockThrottle.get(props.reason)
+    if (last !== undefined && now - last < BLOCK_THROTTLE_MS) return
+    blockThrottle.set(props.reason, now)
+
+    const { reason, ...rest } = props
+    queuedCapture(
+      'chat_send_blocked',
+      compact({ ...rest, block_reason: reason })
+    )
+  } catch (err) {
+    console.debug('chat_send_blocked telemetry failed:', err)
+  }
+}
+
+/** Test seam — the throttle is module state and outlives a single test. */
+export function resetChatSendBlockThrottleForTests(): void {
+  blockThrottle.clear()
+}
+
 export type ChatRequestProps = {
   turn_id: string
   thread_id: string

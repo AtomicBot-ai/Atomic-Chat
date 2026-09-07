@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import posthog from 'posthog-js'
 import {
@@ -8,6 +8,8 @@ import {
   beginChatTurn,
   captureChatRequest,
   captureChatResponse,
+  captureChatSendBlocked,
+  resetChatSendBlockThrottleForTests,
   codeBlockCount,
   contextTelemetry,
   currentChatTurn,
@@ -440,5 +442,49 @@ describe('PII contract', () => {
         }
       }
     }
+  })
+})
+
+describe('captureChatSendBlocked', () => {
+  beforeEach(() => {
+    resetChatSendBlockThrottleForTests()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('records the wall a user hits when nothing can answer', () => {
+    captureChatSendBlocked({
+      reason: 'no_model',
+      is_agent_mode: false,
+      had_local_model_on_disk: false,
+      had_cloud_key: false,
+    })
+
+    const [event, props] = captured()[0] as [string, Record<string, unknown>]
+    expect(event).toBe('chat_send_blocked')
+    // Not `status`, and not `reason` either — the payload key is explicit.
+    expect(props).toMatchObject({
+      block_reason: 'no_model',
+      had_local_model_on_disk: false,
+      had_cloud_key: false,
+    })
+  })
+
+  it('throttles so holding Enter cannot become a spike', () => {
+    captureChatSendBlocked({ reason: 'no_model' })
+    captureChatSendBlocked({ reason: 'no_model' })
+    vi.advanceTimersByTime(30_000)
+    captureChatSendBlocked({ reason: 'no_model' })
+
+    expect(captured()).toHaveLength(1)
+
+    vi.advanceTimersByTime(31_000)
+    captureChatSendBlocked({ reason: 'no_model' })
+
+    expect(captured()).toHaveLength(2)
   })
 })

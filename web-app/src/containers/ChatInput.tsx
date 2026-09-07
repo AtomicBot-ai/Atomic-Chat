@@ -49,6 +49,8 @@ import {
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { captureChatSendBlocked } from '@/lib/chat-telemetry'
+import { describeProviderState } from '@/lib/onboarding'
 
 import { useAppState } from '@/hooks/useAppState'
 import { useModelLoad } from '@/hooks/useModelLoad'
@@ -854,6 +856,13 @@ const ChatInput = memo(function ChatInput({
       // normal state on every launch and this hint is now routine rather than
       // an edge case — it has to be translated like the rest of the UI.
       setMessage(t('chat:selectModelToChat'))
+      // Everything downstream captures a turn; this returns before any of it,
+      // so until now the most common first-run dead end produced no event.
+      captureChatSendBlocked({
+        reason: 'no_model',
+        is_agent_mode: agentRouteActive,
+        ...describeProviderState(useModelProvider.getState().providers),
+      })
       return
     }
     if (!prompt.trim()) {

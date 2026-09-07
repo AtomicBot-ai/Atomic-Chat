@@ -51,13 +51,19 @@ import { useShallow } from 'zustand/shallow'
 import { HuggingFaceAuthorAvatar } from '@/components/HuggingFaceAuthorAvatar'
 import { modelFamilyLogoSrc } from '@/lib/model-logo'
 import { prettyModelName } from '@/lib/model-display-name'
-import posthog from 'posthog-js'
-import { getAnalyticsPlatform } from '@/lib/telemetry'
 import {
+  buildRecommendedImpressions,
   captureOnboardingCompleted,
+  captureRecommendedModelClicked,
+  captureRecommendedModelsShown,
+  captureSetupLocalModelAutostarted,
   captureSetupLocalModelRun,
   captureSetupScreenShown,
+  captureSetupSkipped,
+  markOnboardingInFlight,
+  type OnboardingStep,
 } from '@/lib/onboarding-telemetry'
+import { describeProviderState } from '@/lib/onboarding'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
 
 //* Вариант загрузки: пин из манифеста, иначе приоритет квантов как в Hub.
@@ -153,7 +159,6 @@ type SetupScreenProps = {
 ///     the local scanner — LM Studio / HF cache / Unsloth / Ollama) are listed
 ///     at the top with a "Run" button (one-click import, no re-download); the
 ///     recommended catalog models follow below with a "Download" button.
-type OnboardingStep = 'backend' | 'model'
 
 /// Onboarding must never trap the user behind a multi-gigabyte decision: if the
 /// model step is left untouched for this long we enter the chat anyway and hand
@@ -188,6 +193,10 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     useModelProvider()
 
   const [step, setStep] = useState<OnboardingStep>(getInitialStep)
+  // Read at exit rather than derived from `step`, so an exit that races a step
+  // transition still reports the screen the user was actually on.
+  const stepReachedRef = useRef<OnboardingStep>(step)
+  stepReachedRef.current = step
 
   const handleBackendStepDone = useCallback(
     (status: 'downloaded' | 'skipped') => {
@@ -385,58 +394,13 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     [detectedRunnable]
   )
 
-  //* P0 онбординг-аналитика: фиксируем показ экрана выбора модели один раз,
-  //* дождавшись резолва списка рекомендаций (иначе recommended_count = 0).
-  const setupShownFiredRef = useRef(false)
+  // A window close gives the renderer nothing to hang an exit event on, so the
+  // run is recorded here and reported as abandoned at the next launch if it is
+  // still there. Re-runs on step change so `step_reached` is the real one.
   useEffect(() => {
-    if (step !== 'model' || setupShownFiredRef.current) return
-    if (pickerInputsPending) return
-    // A pending auto-start means the picker is never rendered. It used to
-    // suppress the event entirely, which dropped those sessions out of the
-    // funnel; now it is reported with `rendered: false`.
-    const rendered = !(autoRunTarget && autoRunState !== 'failed')
-    if (rendered && recommendedItems.length === 0 && sourcesLoading) return
-    setupShownFiredRef.current = true
-    captureSetupScreenShown({
-      recommendedCount: recommendedItems.length,
-      rendered,
-      hardwareTier,
-      hardwareTierResolved: hardwareTierReady,
-    })
-  }, [
-    step,
-    pickerInputsPending,
-    autoRunTarget,
-    autoRunState,
-    recommendedItems.length,
-    sourcesLoading,
-    hardwareTier,
-    hardwareTierReady,
-  ])
+    markOnboardingInFlight(step, onboardingStartedAtRef.current)
+  }, [step])
 
-  //* P0: клик «Download» на рекомендованной карточке (до старта загрузки).
-  const captureRecommendedClick = useCallback(
-    (params: {
-      modelId: string
-      format: 'GGUF' | 'MLX'
-      sizeGb?: number
-      position: number
-    }) => {
-      try {
-        posthog.capture('recommended_model_clicked', {
-          model_id: params.modelId,
-          size_gb: params.sizeGb ?? null,
-          format: params.format,
-          position: params.position,
-          platform: getAnalyticsPlatform(),
-          app_version: VERSION,
-        })
-      } catch (err) {
-        console.debug('recommended_model_clicked telemetry failed:', err)
-      }
-    },
-    []
-  )
 
   const downloadProcesses = useMemo(
     () =>
@@ -498,7 +462,9 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       provider: LocalLlamacppProvider | 'mlx'
       sizeLabel: string | null | undefined
     }> = []
-    const pending: typeof recommendedItems = []
+    const pending: Array<
+      (typeof recommendedItems)[number] & { startId?: string }
+    > = []
 
     for (const item of recommendedItems) {
       const { model } = item
@@ -531,12 +497,56 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
               ),
         })
       } else {
-        pending.push(item)
+        // The id a click on this row would attribute to, resolved here so the
+        // impression event can name the same model the click will.
+        pending.push({ ...item, startId: isMlx ? getMlxModelId(model) : variant?.model_id })
       }
     }
 
     return { installedRecommended: installed, pendingRecommended: pending }
   }, [recommendedItems, isMlxDownloaded, isVariantDownloaded, getMlxModelId])
+
+  //* P0 онбординг-аналитика: фиксируем показ экрана выбора модели один раз,
+  //* дождавшись резолва списка рекомендаций (иначе recommended_count = 0).
+  const setupShownFiredRef = useRef(false)
+  useEffect(() => {
+    if (step !== 'model' || setupShownFiredRef.current) return
+    if (pickerInputsPending) return
+    // A pending auto-start means the picker is never rendered. It used to
+    // suppress the event entirely, which dropped those sessions out of the
+    // funnel; now it is reported with `rendered: false`.
+    const rendered = !(autoRunTarget && autoRunState !== 'failed')
+    if (rendered && recommendedItems.length === 0 && sourcesLoading) return
+    setupShownFiredRef.current = true
+    captureSetupScreenShown({
+      recommendedCount: recommendedItems.length,
+      rendered,
+      hardwareTier,
+      hardwareTierResolved: hardwareTierReady,
+    })
+    // Clicks have always carried a `position`; impressions never did, so a
+    // row's conversion — and whether the list is read past the first entry —
+    // could not be computed at all.
+    captureRecommendedModelsShown(
+      buildRecommendedImpressions({
+        pending: pendingRecommended,
+        installed: installedRecommended,
+        detected: detectedRunnable,
+      })
+    )
+  }, [
+    step,
+    pickerInputsPending,
+    autoRunTarget,
+    autoRunState,
+    recommendedItems.length,
+    sourcesLoading,
+    hardwareTier,
+    hardwareTierReady,
+    pendingRecommended,
+    installedRecommended,
+    detectedRunnable,
+  ])
 
   const startDownload = useCallback(
     (catalog: CatalogModel, variant: ModelQuant, mmprojPath?: string) => {
@@ -641,7 +651,10 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       captureOnboardingCompleted({
         exitPath: 'imported',
         hadAnyModel: true,
-        stepReached: 'model',
+        providerState: describeProviderState(
+          useModelProvider.getState().providers
+        ),
+        stepReached: stepReachedRef.current,
         startedAtMs: onboardingStartedAtRef.current,
       })
       trackedImportIdsRef.current.delete(importedId)
@@ -732,7 +745,10 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       captureOnboardingCompleted({
         exitPath: 'download_started',
         hadAnyModel: true,
-        stepReached: 'model',
+        providerState: describeProviderState(
+          useModelProvider.getState().providers
+        ),
+        stepReached: stepReachedRef.current,
         startedAtMs: onboardingStartedAtRef.current,
       })
       localStorage.setItem(localStorageKey.setupCompleted, 'true')
@@ -880,20 +896,12 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
 
     autoRunFiredRef.current = true
     setAutoRunState('running')
-    try {
-      posthog.capture('setup_local_model_autostarted', {
-        source: autoRunTarget.source,
-        format: autoRunTarget.format,
-        size_gb: autoRunTarget.sizeBytes
-          ? Math.round((autoRunTarget.sizeBytes / 1024 ** 3) * 100) / 100
-          : null,
-        detected_count: detectedRunnable.length,
-        platform: getAnalyticsPlatform(),
-        app_version: VERSION,
-      })
-    } catch (err) {
-      console.debug('setup_local_model_autostarted telemetry failed:', err)
-    }
+    captureSetupLocalModelAutostarted({
+      scanSource: autoRunTarget.source,
+      format: autoRunTarget.format,
+      sizeBytes: autoRunTarget.sizeBytes,
+      detectedCount: detectedRunnable.length,
+    })
 
     void onRunLocalModel(autoRunTarget).then((started) => {
       if (!started) setAutoRunState('failed')
@@ -918,7 +926,13 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       captureOnboardingCompleted({
         exitPath: 'cloud_provider',
         hadAnyModel: true,
-        stepReached: 'model',
+        providerState: describeProviderState(
+          useModelProvider.getState().providers
+        ),
+        // Without this a ChatGPT subscription and a pasted API key are the
+        // same exit.
+        exitProvider: providerName,
+        stepReached: stepReachedRef.current,
         startedAtMs: onboardingStartedAtRef.current,
       })
 
@@ -985,25 +999,21 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
 
       // Still import every detected model (no launch) before leaving onboarding.
       importCandidatesInBackground(localCandidates ?? [])
-      try {
-        const hadAnyModel = providers.some(
-          (p) => (p.models?.length ?? 0) > 0 || !!p.api_key
-        )
-        posthog.capture('setup_skipped', {
-          had_any_model: hadAnyModel,
-          reason,
-          platform: getAnalyticsPlatform(),
-          app_version: VERSION,
-        })
-        captureOnboardingCompleted({
-          exitPath: reason,
-          hadAnyModel,
-          stepReached: 'model',
-          startedAtMs: onboardingStartedAtRef.current,
-        })
-      } catch (err) {
-        console.debug('setup_skipped telemetry failed:', err)
-      }
+      // Legacy predicate, kept verbatim so `had_any_model` stays comparable
+      // with its own history. It means "the picker had something to show" —
+      // `providerState` below is what actually answers "did they leave with a
+      // model", and the two disagreeing is itself worth seeing.
+      const hadAnyModel = providers.some(
+        (p) => (p.models?.length ?? 0) > 0 || !!p.api_key
+      )
+      captureSetupSkipped({ hadAnyModel, reason })
+      captureOnboardingCompleted({
+        exitPath: reason,
+        hadAnyModel,
+        providerState: describeProviderState(providers),
+        stepReached: stepReachedRef.current,
+        startedAtMs: onboardingStartedAtRef.current,
+      })
       localStorage.setItem(localStorageKey.setupCompleted, 'true')
       // Same-tab signal — see useSetupCompleted in routes/__root.tsx.
       window.dispatchEvent(new Event('app:setup-completed'))
@@ -1215,7 +1225,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                 onClick={() => {
                                   captureSetupLocalModelRun({
                                     trigger: 'manual',
-                                    source: cand.source,
+                                    scanSource: cand.source,
                                     format: cand.format,
                                     sizeBytes: cand.sizeBytes,
                                     detectedCount: detectedRunnable.length,
@@ -1299,7 +1309,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                   onClick={() => {
                                     captureSetupLocalModelRun({
                                       trigger: 'installed_recommended',
-                                      source: provider,
+                                      providerId: provider,
                                       format: model.is_mlx ? 'mlx' : 'gguf',
                                     })
                                     importCandidatesInBackground(
@@ -1451,7 +1461,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                       localCandidates ?? []
                                     )
                                     if (isMlx) {
-                                      captureRecommendedClick({
+                                      captureRecommendedModelClicked({
                                         modelId: getMlxModelId(model),
                                         format: 'MLX',
                                         sizeGb: sizeStringToGb(downloadSize),
@@ -1463,7 +1473,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                         'mlx'
                                       )
                                     } else if (variant) {
-                                      captureRecommendedClick({
+                                      captureRecommendedModelClicked({
                                         modelId: variant.model_id,
                                         format: 'GGUF',
                                         sizeGb: sizeStringToGb(downloadSize),
