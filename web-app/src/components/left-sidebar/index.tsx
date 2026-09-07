@@ -1,8 +1,6 @@
-import { DownloadManagement } from '@/containers/DownloadManegement'
 import { NavChats } from './NavChats'
 import { NavMain } from './NavMain'
 import { NavProjects } from './NavProjects'
-import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { route } from '@/constants/routes'
@@ -27,7 +25,6 @@ import {
 
 export function LeftSidebar() {
   const { t } = useTranslation()
-  const isLeftPanelOpen = useLeftPanel((state) => state.open)
   const { pathname } = useLocation()
   const settingsIconRef = useRef<SettingsIconHandle>(null)
 
@@ -46,8 +43,8 @@ export function LeftSidebar() {
           below the traffic-light band, so it doesn't collide.
         */}
         <SidebarHeader className="flex flex-col gap-1 px-1 pb-0">
-          {/* SidebarTrigger and DownloadManagement are <button> elements that
-              Tauri's drag handler explicitly excludes, so they remain clickable. */}
+          {/* SidebarTrigger is a <button> element that Tauri's drag handler
+              explicitly excludes, so it remains clickable. */}
           <div
             className={cn(
               'flex w-full items-center',
@@ -61,7 +58,6 @@ export function LeftSidebar() {
               </span>
             )}
             <div className="flex items-center">
-              {isLeftPanelOpen && <DownloadManagement />}
               <SidebarTrigger className="text-muted-foreground rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 relative z-50 ml-0.5" />
             </div>
           </div>

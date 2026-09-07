@@ -5,7 +5,6 @@ import {
 } from '@tabler/icons-react'
 import { ReactNode, memo } from 'react'
 import { Button } from "@/components/ui/button"
-import { DownloadManagement } from '@/containers/DownloadManegement'
 
 type HeaderPageProps = {
   children?: ReactNode
@@ -42,7 +41,6 @@ const HeaderPage = memo(function HeaderPage({
       >
         {!open && !hideControls && (
           <>
-            <DownloadManagement />
             <Button
               variant="ghost"
               size="icon-sm"

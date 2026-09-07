@@ -7,7 +7,22 @@
     "empty": "Нет чатов"
   },
   "sendMessage": "Отправить сообщение",
-  "selectModelToChat": "Выберите модель, чтобы начать чат.",
+  "replyGate": {
+    "sendHint": "Выберите, чем отвечать",
+    "startingTitle": "Запускаю {{name}}…",
+    "startingDescription": "Сообщение уйдёт, как только модель будет готова.",
+    "pickTitle": "Чем отвечать?",
+    "pickDescription": "Выберите модель — сообщение уйдёт сразу.",
+    "emptyTitle": "Пока нечем отвечать",
+    "emptyDescription": "Скачайте модель под ваше устройство или подключите облачную. Сообщение сохранится в любом случае.",
+    "recommendedForDevice": "Рекомендуем для вашего устройства",
+    "download": "Скачать",
+    "downloading": "Скачиваю…",
+    "downloadingPercent": "Скачиваю… {{percent}}%",
+    "connectCloud": "Подключить облачного провайдера",
+    "connectSubscription": "Подключить подписку ChatGPT",
+    "queuedNotice": "Сообщение уйдёт, как только модель будет готова."
+  },
   "newConversation": "Новый диалог",
   "clearHistory": "Очистить историю",
   "activity": {

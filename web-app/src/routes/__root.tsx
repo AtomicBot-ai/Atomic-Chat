@@ -16,6 +16,7 @@ import { ToasterProvider } from '@/providers/ToasterProvider'
 // import { PromptAnalytic } from '@/containers/analytics/PromptAnalytic'
 import { useOnboardingModelReminder } from '@/hooks/useOnboardingModelReminder'
 import { PromptOnboardingModel } from '@/containers/PromptOnboardingModel'
+import { DownloadManagement } from '@/containers/DownloadManegement'
 import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useTrayStatusSync } from '@/hooks/useTrayStatusSync'
@@ -86,6 +87,13 @@ const AppLayout = () => {
         {/* Попап согласия на аналитику отключён; настройки → Privacy по-прежнему доступны */}
         {/* {productAnalyticPrompt && <PromptAnalytic />} */}
         {showOnboardingModelReminder && <PromptOnboardingModel />}
+        {/* ATO-462: mounted once at the root, not inside the sidebar or the
+            header. It used to render in one of two places depending on whether
+            the left panel was open, so a download's progress moved around the
+            screen — or vanished — as the user toggled the sidebar. This is also
+            the component that registers the download event listeners, so a
+            single mount keeps them registered exactly once. */}
+        <DownloadManagement />
       </SidebarProvider>
     </div>
   )

@@ -7,7 +7,22 @@
     "empty": "No Chats Found"
   },
   "sendMessage": "Send Message",
-  "selectModelToChat": "Select a model to start chatting.",
+  "replyGate": {
+    "sendHint": "Choose what to reply with",
+    "startingTitle": "Starting {{name}}…",
+    "startingDescription": "Your message will be sent as soon as it's ready.",
+    "pickTitle": "What should I reply with?",
+    "pickDescription": "Pick a model and your message goes out right away.",
+    "emptyTitle": "Nothing to reply with yet",
+    "emptyDescription": "Download a model for this device, or connect one in the cloud. Your message is kept either way.",
+    "recommendedForDevice": "Recommended for your device",
+    "download": "Download",
+    "downloading": "Downloading…",
+    "downloadingPercent": "Downloading… {{percent}}%",
+    "connectCloud": "Connect cloud provider",
+    "connectSubscription": "Connect ChatGPT subscription",
+    "queuedNotice": "Your message will be sent once the model is ready."
+  },
   "newConversation": "New Conversation",
   "clearHistory": "Clear History",
   "activity": {
