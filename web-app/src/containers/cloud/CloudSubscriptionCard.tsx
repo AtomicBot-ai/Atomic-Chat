@@ -1,7 +1,13 @@
+import { useEffect } from 'react'
+
 import { Button } from '@/components/ui/button'
 import { Card, CardItem } from '@/containers/Card'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { ChatGptConnectionState } from '@/hooks/useChatGptAuth'
+import {
+  captureSubscriptionCardShown,
+  type SubscriptionSurface,
+} from '@/lib/subscription-telemetry'
 
 export type CloudSubscriptionCardProps = {
   state?: ChatGptConnectionState
@@ -14,8 +20,8 @@ export type CloudSubscriptionCardProps = {
   onConnectBrowser?: () => void
   onCancel?: () => void
   onDisconnect?: () => void
-  /** Device-code grant is not implemented; see the ADR. */
-  onDeviceCode?: () => void
+  /** Where this card is rendered, for the impression event. */
+  surface?: SubscriptionSurface
 }
 
 /**
@@ -25,9 +31,10 @@ export type CloudSubscriptionCardProps = {
  * a "Codex CLI" card pointing that tool *at* our local server, which is the
  * opposite direction.
  *
- * The device-code button stays disabled until we can confirm the provider's
- * OAuth client implements RFC 8628 — a control that looks live and does nothing
- * is worse than one that is honestly labelled.
+ * There was a second "Use device code" button here, permanently disabled: the
+ * grant is not implemented and no caller ever passed `onDeviceCode`. An
+ * honestly-labelled dead control is better than a live-looking one, but no
+ * control at all is better still, so it is gone.
  */
 export function CloudSubscriptionCard({
   state = 'unavailable',
@@ -37,9 +44,14 @@ export function CloudSubscriptionCard({
   onConnectBrowser,
   onCancel,
   onDisconnect,
-  onDeviceCode,
+  surface = 'settings',
 }: CloudSubscriptionCardProps) {
   const { t } = useTranslation()
+  // The denominator: without it, "nobody connects a subscription" cannot be
+  // told apart from "nobody is ever shown one".
+  useEffect(() => {
+    captureSubscriptionCardShown({ provider: 'chatgpt', surface })
+  }, [surface])
   const available = state !== 'unavailable'
   const connected = state === 'connected'
   const connecting = state === 'connecting'
@@ -107,23 +119,13 @@ export function CloudSubscriptionCard({
                 {t('cloud:connection.cancel')}
               </Button>
             ) : (
-              <>
-                <Button
-                  size="sm"
-                  disabled={!available || state === 'loading'}
-                  onClick={onConnectBrowser}
-                >
-                  {t('cloud:subscription.connectInBrowser')}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!available || !onDeviceCode}
-                  onClick={onDeviceCode}
-                >
-                  {t('cloud:subscription.useDeviceCode')}
-                </Button>
-              </>
+              <Button
+                size="sm"
+                disabled={!available || state === 'loading'}
+                onClick={onConnectBrowser}
+              >
+                {t('cloud:subscription.connectInBrowser')}
+              </Button>
             )}
           </div>
         }

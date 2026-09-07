@@ -278,6 +278,71 @@ export function finalizeDownloadOnce(id: string): boolean {
 }
 
 /**
+ * How a subscription sign-in ended, from the backend's message.
+ *
+ * The Rust side reports failures as bare strings (`Result<_, String>`), and a
+ * user cancelling in the browser comes back through the same rejected promise
+ * as a real failure — so without this, "changed their mind" and "the flow is
+ * broken" were the same number. Ordered like `classifyDownloadFailure`: the
+ * specific causes first, `unknown` only when nothing matched.
+ *
+ * Strings are matched against `src-tauri/src/core/auth/chatgpt.rs` and
+ * `commands.rs`; a message that drifts degrades to `unknown` rather than
+ * being mislabelled.
+ */
+export type SubscriptionFailureReason =
+  | 'cancelled'
+  | 'timeout'
+  | 'port_busy'
+  | 'browser_open_failed'
+  | 'state_mismatch'
+  | 'provider_rejected'
+  | 'token_rejected'
+  | 'reauthorization_required'
+  | 'network'
+  | 'unknown'
+
+export function classifySubscriptionFailure(
+  error: unknown
+): SubscriptionFailureReason {
+  const raw =
+    typeof error === 'string'
+      ? error
+      : error instanceof Error
+        ? error.message
+        : ''
+  const e = raw.toLowerCase()
+  if (!e) return 'unknown'
+
+  // The user closed the browser tab or hit Cancel — not a failure at all.
+  if (e.includes('sign-in cancelled') || e.includes('callback channel closed'))
+    return 'cancelled'
+  if (e.includes('timed out waiting for the browser')) return 'timeout'
+  // The callback port is fixed by the provider's redirect URI, so this is
+  // usually the Codex CLI holding it mid-login.
+  if (e.includes('cannot listen on')) return 'port_busy'
+  if (e.includes('cannot open the browser')) return 'browser_open_failed'
+  if (e.includes('state did not match')) return 'state_mismatch'
+  if (e.includes('reauthorization required')) return 'reauthorization_required'
+  if (e.includes('token request rejected')) return 'token_rejected'
+  if (
+    e.includes('token request failed') ||
+    e.includes('cannot build http client') ||
+    e.includes('cannot read token response')
+  )
+    return 'network'
+  // The provider reported its own `{error}: {description}`, e.g. the user
+  // declined the consent screen.
+  if (
+    e.includes('access_denied') ||
+    e.includes('carried no authorization code') ||
+    e.includes('sign-in returned no refresh token')
+  )
+    return 'provider_rejected'
+  return 'unknown'
+}
+
+/**
  * Analytics-safe form of a model id.
  *
  * Local model ids are minted by slicing a filesystem path, so every Windows

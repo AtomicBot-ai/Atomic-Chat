@@ -53,7 +53,7 @@ export function CloudPage() {
   const { providers, addProvider, updateProvider, setProviders } =
     useModelProvider()
 
-  const subscription = useChatGptAuth()
+  const subscription = useChatGptAuth('settings')
 
   const [customOpen, setCustomOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
@@ -219,6 +219,7 @@ export function CloudPage() {
               onConnectBrowser={() => void subscription.connect()}
               onCancel={() => void subscription.cancel()}
               onDisconnect={() => void subscription.disconnect()}
+    surface="settings"
             />
           )}
 

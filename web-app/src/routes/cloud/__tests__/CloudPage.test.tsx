@@ -214,7 +214,7 @@ describe('CloudPage', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('offers browser sign-in and keeps device code disabled', async () => {
+  it('offers browser sign-in as the only way in', async () => {
     searchState.current = { provider: 'chatgpt' }
     render(<CloudPage />)
     await waitFor(() =>
@@ -224,10 +224,11 @@ describe('CloudPage', () => {
     expect(
       screen.getByText('cloud:subscription.connectInBrowser').closest('button')
     ).toBeEnabled()
-    // Device-code grant is unverified against OpenAI's client; see the ADR.
+    // The device-code button is gone: the grant is not implemented and no
+    // caller ever passed a handler, so it only ever rendered dead.
     expect(
-      screen.getByText('cloud:subscription.useDeviceCode').closest('button')
-    ).toBeDisabled()
+      screen.queryByText('cloud:subscription.useDeviceCode')
+    ).not.toBeInTheDocument()
   })
 
   it('shows the connected account once signed in', async () => {

@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { useChatGptAuth } from '@/hooks/useChatGptAuth'
+import { captureSubscriptionCardShown } from '@/lib/subscription-telemetry'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { PlatformFeatures } from '@/lib/platform/const'
@@ -139,11 +140,23 @@ function SubscriptionStep({
   onConnected: (result: CloudProviderSaveResult) => void
 }) {
   const { t } = useTranslation()
-  const { state, error, connect, cancel } = useChatGptAuth()
+  // The dialog is the onboarding entry point as well as the settings one; the
+  // whole point of ATO-456 is knowing which of them people actually use.
+  const { state, error, connect, cancel } = useChatGptAuth('onboarding')
 
   // Held in a ref so the effect below depends on the connection state alone.
   // The callback is rebuilt on every parent render, and re-running the exit for
   // that would navigate out of onboarding twice.
+  // This step renders its own UI rather than `CloudSubscriptionCard`, so the
+  // impression has to be emitted here or the onboarding surface would have a
+  // conversion rate with no denominator.
+  useEffect(() => {
+    captureSubscriptionCardShown({
+      provider: provider.provider,
+      surface: 'onboarding',
+    })
+  }, [provider.provider])
+
   const onConnectedRef = useRef(onConnected)
   useEffect(() => {
     onConnectedRef.current = onConnected

@@ -30,7 +30,6 @@
     "title": "ChatGPT subscription (Codex)",
     "description": "Authorize in your system browser. Tokens never enter browser storage.",
     "connectInBrowser": "Connect in browser",
-    "useDeviceCode": "Use device code",
     "unavailable": "Not available yet.",
     "connecting": "Waiting for the browser…",
     "browserHint": "Finish signing in to ChatGPT in your browser, then come back.",
