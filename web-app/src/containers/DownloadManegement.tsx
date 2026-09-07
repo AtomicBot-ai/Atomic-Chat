@@ -1,21 +1,15 @@
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
-import { Progress } from '@/components/ui/progress'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { DownloadEvent, DownloadState, events, AppEvent } from '@janhq/core'
-import { IconX, IconPlayerPause, IconPlayerPlay } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
-import { DownloadIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { DownloadPanel } from '@/containers/downloads/DownloadPanel'
+import type { DownloadRowProps } from '@/containers/downloads/DownloadProgressRow'
+import { advanceSpeedSample, newSpeedSample } from '@/lib/downloadFormat'
 import {
   clearDownloadCancellationRequested,
   markDownloadCancellationRequested,
@@ -35,9 +29,6 @@ import {
 } from '@/lib/telemetry'
 import { queuedCapture } from '@/lib/telemetry-queue'
 import { captureHandledError } from '@/lib/sentry'
-
-//* Полупрозрачная зелень: текст % и ГБ остаётся читаемым в светлой и тёмной теме
-const DOWNLOAD_PROGRESS_INDICATOR = 'bg-emerald-400/50 dark:bg-emerald-400/45'
 
 function isCancellationLikeError(error?: string): boolean {
   if (!error) return false
@@ -87,11 +78,17 @@ function captureDownloadTerminal(
 export function DownloadManagement() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [isPopoverOpen, setIsPopoverOpen] = useState(false)
   const prevDownloadCount = useRef(0)
-  const autoHidePopoverTimer = useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  )
+  // ATO-462 verification: how long the panel actually stayed expanded while
+  // something was downloading. Accumulated here (the panel owns the collapsed
+  // flag but not the download lifecycle) and reported once per download run.
+  const panelTiming = useRef({
+    collapsed: false,
+    since: 0,
+    expandedMs: 0,
+    collapsedMs: 0,
+    peakDownloads: 0,
+  })
   const serviceHub = useServiceHub()
   const {
     downloads,
@@ -116,6 +113,25 @@ export function DownloadManagement() {
     downloadedBytes: 0,
     totalBytes: 0,
   })
+
+  // The app updater keeps its progress in component state rather than in the
+  // download store, so its speed is sampled here — with the same estimator, so
+  // the two kinds of row cannot report speed differently.
+  const appUpdateSample = useRef(newSpeedSample())
+  const [appUpdateBps, setAppUpdateBps] = useState(0)
+
+  useEffect(() => {
+    if (!appUpdateState.isDownloading) {
+      appUpdateSample.current = newSpeedSample()
+      setAppUpdateBps(0)
+      return
+    }
+    appUpdateSample.current = advanceSpeedSample(
+      appUpdateSample.current,
+      appUpdateState.downloadedBytes
+    )
+    setAppUpdateBps(appUpdateSample.current.bytesPerSecond)
+  }, [appUpdateState.isDownloading, appUpdateState.downloadedBytes])
 
   useEffect(() => {
     setAppUpdateState({
@@ -172,6 +188,7 @@ export function DownloadManagement() {
       progress: download.progress,
       current: download.current,
       total: download.total,
+      bytesPerSecond: download.speed?.bytesPerSecond ?? 0,
     }))
 
     // Add local downloading models that don't have progress data yet
@@ -183,6 +200,7 @@ export function DownloadManagement() {
         progress: 0,
         current: 0,
         total: 0,
+        bytesPerSecond: 0,
       }))
 
     return [...downloadsWithProgress, ...localDownloadsWithoutProgress]
@@ -195,61 +213,55 @@ export function DownloadManagement() {
     return total
   }, [downloadProcesses, appUpdateState.isDownloading])
 
+  // ATO-462: the panel no longer opens itself and no longer hides itself. What
+  // is measured instead is how much of a download run the user actually kept it
+  // expanded, which is the number this redesign is meant to move.
+  const settlePanelTiming = useCallback(() => {
+    const timing = panelTiming.current
+    if (!timing.since) return
+    const elapsed = Date.now() - timing.since
+    if (timing.collapsed) timing.collapsedMs += elapsed
+    else timing.expandedMs += elapsed
+    timing.since = Date.now()
+  }, [])
+
+  const onPanelCollapsedChange = useCallback(
+    (collapsed: boolean) => {
+      settlePanelTiming()
+      panelTiming.current.collapsed = collapsed
+    },
+    [settlePanelTiming]
+  )
+
   useEffect(() => {
     const prev = prevDownloadCount.current
     prevDownloadCount.current = downloadCount
+
+    const timing = panelTiming.current
+    timing.peakDownloads = Math.max(timing.peakDownloads, downloadCount)
+
     if (downloadCount > 0 && prev === 0) {
-      setIsPopoverOpen(true)
-      if (autoHidePopoverTimer.current) {
-        clearTimeout(autoHidePopoverTimer.current)
-      }
-      autoHidePopoverTimer.current = setTimeout(() => {
-        setIsPopoverOpen(false)
-        autoHidePopoverTimer.current = null
-      }, 3500)
-    } else if (downloadCount === 0 && prev > 0) {
-      if (autoHidePopoverTimer.current) {
-        clearTimeout(autoHidePopoverTimer.current)
-        autoHidePopoverTimer.current = null
-      }
-      setIsPopoverOpen(false)
+      timing.since = Date.now()
+      timing.expandedMs = 0
+      timing.collapsedMs = 0
+      timing.peakDownloads = downloadCount
+      return
     }
-  }, [downloadCount])
 
-  useEffect(() => {
-    return () => {
-      if (autoHidePopoverTimer.current) {
-        clearTimeout(autoHidePopoverTimer.current)
-      }
+    if (downloadCount === 0 && prev > 0) {
+      settlePanelTiming()
+      queuedCapture('download_panel_visibility', {
+        expanded_ms: Math.round(timing.expandedMs),
+        collapsed_ms: Math.round(timing.collapsedMs),
+        collapsed_at_end: timing.collapsed,
+        peak_downloads: timing.peakDownloads,
+      })
+      timing.since = 0
+      timing.expandedMs = 0
+      timing.collapsedMs = 0
+      timing.peakDownloads = 0
     }
-  }, [])
-
-  const overallProgress = useMemo(() => {
-    const modelTotal = downloadProcesses.reduce((acc, download) => {
-      return acc + download.total
-    }, 0)
-    const modelCurrent = downloadProcesses.reduce((acc, download) => {
-      return acc + download.current
-    }, 0)
-
-    // Include app update progress in overall calculation
-    const appUpdateTotal = appUpdateState.isDownloading
-      ? appUpdateState.totalBytes
-      : 0
-    const appUpdateCurrent = appUpdateState.isDownloading
-      ? appUpdateState.downloadedBytes
-      : 0
-
-    const total = modelTotal + appUpdateTotal
-    const current = modelCurrent + appUpdateCurrent
-
-    return total > 0 ? current / total : 0
-  }, [
-    downloadProcesses,
-    appUpdateState.isDownloading,
-    appUpdateState.totalBytes,
-    appUpdateState.downloadedBytes,
-  ])
+  }, [downloadCount, settlePanelTiming])
 
   const onFileDownloadUpdate = useCallback(
     async (state: DownloadState) => {
@@ -282,11 +294,15 @@ export function DownloadManagement() {
       const cancelled =
         wasDownloadCancellationRequested(state.modelId) ||
         isCancellationLikeError(err)
-      captureDownloadTerminal(cancelled ? 'cancelled' : 'failed', state.modelId, {
-        downloadType: anyState?.downloadType,
-        error: err,
-        totalBytes: state.size?.total,
-      })
+      captureDownloadTerminal(
+        cancelled ? 'cancelled' : 'failed',
+        state.modelId,
+        {
+          downloadType: anyState?.downloadType,
+          error: err,
+          totalBytes: state.size?.total,
+        }
+      )
 
       if (cancelled) {
         markResumableDownload(state.modelId)
@@ -344,6 +360,28 @@ export function DownloadManagement() {
             label: 'Open Settings',
             onClick: () => navigate({ to: route.settings.general }),
           },
+        })
+        return
+      }
+
+      // ATO-467: a filesystem failure now says which one it was. The generic
+      // "download failed" toast told 647 devices nothing they could act on,
+      // and disk faults are the single largest failure cause.
+      const diskReason = classifyDownloadFailure(err)
+      const diskToastKey: Record<string, string> = {
+        disk_full: 'common:toast.downloadDiskFull',
+        disk_permission: 'common:toast.downloadDiskPermission',
+        disk_file_locked: 'common:toast.downloadDiskLocked',
+        disk_path_too_long: 'common:toast.downloadDiskPathTooLong',
+        disk_device_lost: 'common:toast.downloadDiskDeviceLost',
+      }
+      const diskKey = diskToastKey[diskReason]
+      if (diskKey) {
+        markResumableDownload(state.modelId)
+        toast.error(t(`${diskKey}.title`), {
+          id: 'download-failed',
+          description: t(`${diskKey}.description`),
+          duration: 30000,
         })
         return
       }
@@ -610,11 +648,6 @@ export function DownloadManagement() {
     onAppUpdateDownloadError,
   ])
 
-  function renderGB(bytes: number): string {
-    const gb = bytes / 1024 ** 3
-    return ((gb * 100) / 100).toFixed(2)
-  }
-
   // ATO-154: pause/resume is only offered for resumable model (GGUF) downloads.
   // Backend-binary downloads (`llamacpp*`) and MLX repos (`mlx-community/*`,
   // which start with `mlx`) get cancel-only, matching Jan's gating.
@@ -665,197 +698,74 @@ export function DownloadManagement() {
           console.error('[DownloadManagement] resume failed:', error)
         })
     },
-    [
-      resumeParams,
-      clearPausedDownload,
-      markResumableDownload,
-      serviceHub,
-      t,
-    ]
+    [resumeParams, clearPausedDownload, markResumableDownload, serviceHub, t]
   )
 
-  return (
-    <>
-      <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-muted-foreground z-50 rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 size-7 relative"
-          >
-            <DownloadIcon className="text-muted-foreground size-4" />
-            {downloadCount > 0 && (
-              <svg
-                className="absolute inset-0 size-7 -rotate-90"
-                viewBox="0 0 36 36"
-              >
-                <path
-                  className="text-primary/30"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  fill="none"
-                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                />
-                <path
-                  className="text-primary"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  fill="none"
-                  strokeLinecap="round"
-                  strokeDasharray={`${overallProgress * 100}, 100`}
-                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                />
-              </svg>
-            )}
-          </Button>
-        </PopoverTrigger>
+  const handleCancelDownload = useCallback(
+    (download: { id: string; name: string }) => {
+      markDownloadCancellationRequested(download.name)
+      markResumableDownload(download.name)
+      clearPausedDownload(download.name)
+      clearResumeParams(download.name)
+      if (download.id !== download.name) {
+        markDownloadCancellationRequested(download.id)
+        markResumableDownload(download.id)
+        clearPausedDownload(download.id)
+        clearResumeParams(download.id)
+      }
+      if (download.id.startsWith('llamacpp') || download.id.startsWith('mlx')) {
+        const downloadManager = window.core.extensionManager.getByName(
+          '@janhq/download-extension'
+        )
+        downloadManager.cancelDownload(download.id)
+      } else {
+        serviceHub.models().abortDownload(download.name)
+      }
+    },
+    [markResumableDownload, clearPausedDownload, clearResumeParams, serviceHub]
+  )
 
-        <PopoverContent
-          side="bottom"
-          align="start"
-          className="p-0 overflow-hidden text-sm select-none rounded-2xl"
-          sideOffset={6}
-          collisionPadding={8}
-          onOpenAutoFocus={(e) => e.preventDefault()}
-        >
-          <div className="flex flex-col">
-            {appUpdateState.isDownloading || downloadProcesses.length > 0 ? (
-              <>
-                <div className="px-3 pt-2 flex items-center justify-between">
-                  <p>{t('downloading')}</p>
-                </div>
-                <div className="p-2 max-h-[300px] overflow-y-auto space-y-2">
-                  {appUpdateState.isDownloading && (
-                    <div className="rounded-lg p-2 bg-secondary">
-                      <div className="flex items-center justify-between">
-                        <p className="truncate">App Update</p>
-                      </div>
-                      <div className="relative z-40 my-2 h-6">
-                        <Progress
-                          value={appUpdateState.downloadProgress * 100}
-                          indicatorClassName={DOWNLOAD_PROGRESS_INDICATOR}
-                          className="absolute inset-0 h-full bg-muted-foreground/15 dark:bg-muted-foreground/20 rounded-md"
-                        />
-                        <div className="pointer-events-none absolute inset-0 z-1 flex items-center justify-between px-2">
-                          <p className="text-xs font-medium tabular-nums text-foreground">
-                            {Math.round(appUpdateState.downloadProgress * 100)}%
-                          </p>
-                          <p className="text-xs font-medium tabular-nums text-foreground">
-                            {`${renderGB(appUpdateState.downloadedBytes)} / ${renderGB(appUpdateState.totalBytes)}`}{' '}
-                            GB
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  {downloadProcesses.map((download) => (
-                    <div
-                      key={download.id}
-                      className="rounded-lg p-2 bg-secondary"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="truncate">{download.name}</p>
-                        <div className="shrink-0 flex items-center space-x-0.5">
-                          {isPausableDownload(download.id) &&
-                            (pausedDownloads.has(download.id) ? (
-                              <Button
-                                variant="secondary"
-                                size="icon-xs"
-                                onClick={() => handleResumeDownload(download)}
-                              >
-                                <IconPlayerPlay
-                                  size={16}
-                                  className="text-muted-foreground cursor-pointer"
-                                  title={t('resumeDownload')}
-                                />
-                              </Button>
-                            ) : (
-                              <Button
-                                variant="secondary"
-                                size="icon-xs"
-                                onClick={() => handlePauseDownload(download)}
-                              >
-                                <IconPlayerPause
-                                  size={16}
-                                  className="text-muted-foreground cursor-pointer"
-                                  title={t('pauseDownload')}
-                                />
-                              </Button>
-                            ))}
-                          <Button
-                            variant="secondary"
-                            size="icon-xs"
-                            onClick={() => {
-                              markDownloadCancellationRequested(download.name)
-                              markResumableDownload(download.name)
-                              clearPausedDownload(download.name)
-                              clearResumeParams(download.name)
-                              if (download.id !== download.name) {
-                                markDownloadCancellationRequested(download.id)
-                                markResumableDownload(download.id)
-                                clearPausedDownload(download.id)
-                                clearResumeParams(download.id)
-                              }
-                              if (
-                                download.id.startsWith('llamacpp') ||
-                                download.id.startsWith('mlx')
-                              ) {
-                                const downloadManager =
-                                  window.core.extensionManager.getByName(
-                                    '@janhq/download-extension'
-                                  )
-                                downloadManager.cancelDownload(download.id)
-                              } else {
-                                serviceHub.models().abortDownload(download.name)
-                                if (downloadProcesses.length === 0) {
-                                  setIsPopoverOpen(false)
-                                }
-                              }
-                              setIsPopoverOpen(false)
-                            }}
-                          >
-                            <IconX
-                              size={16}
-                              className="text-muted-foreground cursor-pointer"
-                              title={t('cancelDownload')}
-                            />
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="relative z-40 my-2 h-6">
-                        <Progress
-                          value={download.progress * 100}
-                          indicatorClassName={DOWNLOAD_PROGRESS_INDICATOR}
-                          className="absolute inset-0 h-full bg-muted-foreground/15 dark:bg-muted-foreground/20 rounded-md"
-                        />
-                        <div className="pointer-events-none absolute inset-0 z-1 flex items-center justify-between px-2">
-                          <p className="text-xs font-medium tabular-nums text-foreground">
-                            {download.total > 0
-                              ? `${Math.round(download.progress * 100)}%`
-                              : 'Initializing download...'}
-                          </p>
-                          <p className="text-xs font-medium tabular-nums text-foreground">
-                            {download.total > 0
-                              ? `${renderGB(download.current)} / ${renderGB(download.total)} GB`
-                              : ''}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <div className="px-3 py-8 flex flex-col items-center justify-center text-center space-y-2">
-                <DownloadIcon className="text-muted-foreground/50 size-6" />
-                <p className="text-muted-foreground leading-normal">
-                  Your download progress <br /> will appear here
-                </p>
-              </div>
-            )}
-          </div>
-        </PopoverContent>
-      </Popover>
-    </>
+  const panelItems = useMemo<DownloadRowProps[]>(() => {
+    const rows: DownloadRowProps[] = []
+
+    if (appUpdateState.isDownloading) {
+      rows.push({
+        id: 'app-update',
+        name: t('common:downloadPanel.appUpdate'),
+        progress: appUpdateState.downloadProgress,
+        current: appUpdateState.downloadedBytes,
+        total: appUpdateState.totalBytes,
+        bytesPerSecond: appUpdateBps,
+      })
+    }
+
+    for (const download of downloadProcesses) {
+      rows.push({
+        ...download,
+        paused: pausedDownloads.has(download.id),
+        pausable: isPausableDownload(download.id),
+        onPause: () => handlePauseDownload(download),
+        onResume: () => handleResumeDownload(download),
+        onCancel: () => handleCancelDownload(download),
+      })
+    }
+
+    return rows
+  }, [
+    appUpdateState,
+    appUpdateBps,
+    downloadProcesses,
+    pausedDownloads,
+    handlePauseDownload,
+    handleResumeDownload,
+    handleCancelDownload,
+    t,
+  ])
+
+  return (
+    <DownloadPanel
+      items={panelItems}
+      onCollapsedChange={onPanelCollapsedChange}
+    />
   )
 }

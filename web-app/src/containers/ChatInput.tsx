@@ -53,6 +53,11 @@ import { captureChatSendBlocked } from '@/lib/chat-telemetry'
 import { describeProviderState } from '@/lib/onboarding'
 
 import { useAppState } from '@/hooks/useAppState'
+import {
+  ReplyModelGate,
+  type ReplyModelGateResolution,
+} from '@/containers/ReplyModelGate'
+import { captureReplyGateReady } from '@/lib/reply-gate-telemetry'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 import type { ChatStatus } from 'ai'
@@ -384,6 +389,7 @@ const ChatInput = memo(function ChatInput({
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
   const [showVisionModelPrompt, setShowVisionModelPrompt] = useState(false)
+  const [replyGateOpen, setReplyGateOpen] = useState(false)
   const [isPreparingDocumentAttachments, setIsPreparingDocumentAttachments] =
     useState(false)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
@@ -546,6 +552,19 @@ const ChatInput = memo(function ChatInput({
 
   const blockSendUntilModelReady =
     (isLocalModelNotReady && !!onSubmit) || selectedModelLoadFailed
+
+  /**
+   * Nothing is selected, so there is nothing to send with.
+   *
+   * This is the normal state of every cold launch, not an edge case:
+   * `preloadModelOnStartup` is off by default and `main.tsx` clears the
+   * persisted selection on boot. Pressing Send here used to produce a red line;
+   * it now opens the "what do I reply with?" widget.
+   */
+  const needsReplyModel = !selectedModel
+
+  /** A model that can answer right now — a loaded local one, or a cloud one. */
+  const canSendToSelectedModel = !!selectedModel && !isLocalModelNotReady
 
   const selectedAssistant = useAssistant((state) => state.pendingAssistant)
   const setSelectedAssistant = useAssistant(
@@ -851,21 +870,24 @@ const ChatInput = memo(function ChatInput({
         setPrompt(prompt)
       }
     }
+    if (!prompt.trim()) {
+      return
+    }
     if (!selectedModel) {
-      // Model preloading is off by default, so "nothing selected yet" is the
-      // normal state on every launch and this hint is now routine rather than
-      // an edge case — it has to be translated like the rest of the UI.
-      setMessage(t('chat:selectModelToChat'))
+      // The composer cannot answer this, but the user can still be given the
+      // answer. Open the widget and hold the message: it is sent, unchanged,
+      // the moment something is ready to answer with.
+      setPrompt(prompt)
+      setReplyGateOpen(true)
       // Everything downstream captures a turn; this returns before any of it,
-      // so until now the most common first-run dead end produced no event.
+      // so the most common first-run dead end produced no event at all. Now
+      // that ATO-453 answers it with a widget, this is also the baseline the
+      // widget's effect is measured against.
       captureChatSendBlocked({
         reason: 'no_model',
         is_agent_mode: agentRouteActive,
         ...describeProviderState(useModelProvider.getState().providers),
       })
-      return
-    }
-    if (!prompt.trim()) {
       return
     }
     if (isAttachmentPipelineBusy) {
@@ -1129,6 +1151,56 @@ const ChatInput = memo(function ChatInput({
       }
     }
   }
+
+  // Held in a ref so the queued-send effect below can depend on readiness
+  // alone. `handleSendMessage` is a plain function rebuilt on every render, and
+  // depending on it would re-fire the queued send on any unrelated keystroke.
+  const sendMessageRef = useRef(handleSendMessage)
+  sendMessageRef.current = handleSendMessage
+
+  /**
+   * The message the user typed before there was anything to answer with.
+   *
+   * Armed when the widget resolves — a model is starting, downloading, or a
+   * cloud provider was just connected — and consumed the moment that model can
+   * actually answer. Survives the widget closing: a download is minutes long,
+   * and holding a modal open for it would be worse than useless.
+   */
+  const [queuedSend, setQueuedSend] =
+    useState<ReplyModelGateResolution | null>(null)
+
+  const handleReplyGateResolved = useCallback(
+    (resolution: ReplyModelGateResolution) => {
+      setQueuedSend(resolution)
+    },
+    []
+  )
+
+  const handleReplyGateDismissed = useCallback(() => {
+    setQueuedSend(null)
+    setReplyGateOpen(false)
+  }, [])
+
+  useEffect(() => {
+    if (!queuedSend) return
+    if (!canSendToSelectedModel) return
+
+    setQueuedSend(null)
+    setReplyGateOpen(false)
+
+    // The user may have cleared or rewritten the field while the model came up.
+    // Whatever is in it now is what they meant; an empty field means they
+    // changed their mind, and re-sending the old text would put words in.
+    const pending = usePrompt.getState().prompt
+    captureReplyGateReady({
+      branch: queuedSend.branch,
+      outcome: queuedSend.outcome,
+      readyInMs: Date.now() - queuedSend.openedAtMs,
+      queuedMessageSent: pending.trim().length > 0,
+    })
+    if (!pending.trim()) return
+    void sendMessageRef.current(pending)
+  }, [queuedSend, canSendToSelectedModel])
 
   useEffect(() => {
     const handleFocusIn = () => {
@@ -2565,7 +2637,14 @@ const ChatInput = memo(function ChatInput({
   const isStreaming = chatStatus === 'submitted' || chatStatus === 'streaming'
 
   return (
-    <div className="relative mx-auto w-full max-w-3xl">
+    // ATO-462: the download panel docks above this element when the composer is
+    // sitting at the bottom of the screen, so a running download never covers
+    // the send button. Writing to a model that is still downloading is the
+    // whole point of ATO-460, so the composer has to stay reachable.
+    <div
+      data-composer-anchor
+      className="relative mx-auto w-full max-w-3xl"
+    >
       {/* Pending approvals dock above the composer. Outside the streaming-
           disabled toolbar cluster: a run awaiting approval reports
           `submitted`, and an unclickable Approve button would deadlock it. */}
@@ -3278,6 +3357,30 @@ const ChatInput = memo(function ChatInput({
                   >
                     <IconPlayerStopFilled />
                   </Button>
+                ) : needsReplyModel ? (
+                  // Nothing to answer with yet. The button says so before it is
+                  // pressed — the old behaviour let it look ready and answered
+                  // with a red line afterwards — but stays live, because
+                  // pressing it is how the user gets a model.
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="secondary"
+                        size="icon-sm"
+                        disabled={!prompt.trim() || isAttachmentPipelineBusy}
+                        data-test-id="send-message-button"
+                        data-needs-model="true"
+                        aria-label={t('chat:replyGate.sendHint')}
+                        onClick={() => handleSendMessage(prompt)}
+                        className="rounded-full mr-1 mb-1"
+                      >
+                        <ArrowRight />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {t('chat:replyGate.sendHint')}
+                    </TooltipContent>
+                  </Tooltip>
                 ) : (
                   <Button
                     variant="default"
@@ -3317,6 +3420,26 @@ const ChatInput = memo(function ChatInput({
           </div>
         </div>
       )}
+
+      {/* The promise the widget made, kept visible after it closes: the message
+          in the field is not lost, and nobody has to sit and watch a modal. */}
+      {queuedSend && (
+        <div
+          className="-mt-0.5 mx-2 pb-2 px-3 pt-1.5 rounded-b-lg text-xs text-muted-foreground flex items-center gap-1.5"
+          data-testid="reply-gate-queued-notice"
+          aria-live="polite"
+        >
+          <IconLoader2 className="size-3 shrink-0 animate-spin" />
+          {t('chat:replyGate.queuedNotice')}
+        </div>
+      )}
+
+      <ReplyModelGate
+        open={replyGateOpen}
+        onOpenChange={setReplyGateOpen}
+        onResolved={handleReplyGateResolved}
+        onDismissed={handleReplyGateDismissed}
+      />
 
       {isLlamacppProvider(selectedProvider) &&
         isModelActive &&

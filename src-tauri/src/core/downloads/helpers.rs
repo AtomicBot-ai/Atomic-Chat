@@ -1,10 +1,13 @@
+use super::disk::{
+    disk_err_to_string, ensure_free_space, ensure_path_within_limit, remaining_bytes,
+};
 use super::models::{DownloadEvent, DownloadItem, ProgressTracker, ProxyConfig};
 use crate::core::app::commands::get_jan_data_folder_path;
 use futures_util::StreamExt;
 use jan_utils::{canonicalize_existing_prefix, normalize_path};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, CONTENT_RANGE, RANGE};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tauri::{Emitter, Runtime};
 use tokio::fs::File;
@@ -16,6 +19,21 @@ use url::Url;
 
 pub fn err_to_string<E: std::fmt::Display>(e: E) -> String {
     format!("Error: {e}")
+}
+
+/// Sidecar path for an in-flight download: `model.gguf` -> `model.gguf.tmp`.
+///
+/// The extension is appended rather than replaced so two files that differ only
+/// by extension keep distinct partials. Shared with the preflight checks, which
+/// have to reason about the partial's length and size before it exists.
+pub fn sidecar_path(save_path: &Path, ext: &str) -> PathBuf {
+    let current = save_path.extension().unwrap_or_default().to_string_lossy();
+    let appended = if current.is_empty() {
+        ext.to_string()
+    } else {
+        format!("{current}.{ext}")
+    };
+    save_path.with_extension(appended)
 }
 
 const MAX_STREAM_RETRIES: u32 = 5;
@@ -542,6 +560,24 @@ pub async fn _download_files_internal(
     // save file under Jan data folder
     let jan_data_folder = get_jan_data_folder_path(app.clone());
 
+    // ATO-467: `disk_io` is the largest failure cause, and two of its subcauses
+    // are knowable before the first byte is fetched — the volume cannot hold
+    // the download, and the save path overflows the Windows limit. Checking
+    // them here turns a write error at 80% of a 20 GB transfer into an upfront
+    // message that names the actual problem.
+    let mut partial_paths = Vec::new();
+    for item in items.iter() {
+        let save_path = normalize_path(&jan_data_folder.join(&item.save_path));
+        ensure_path_within_limit(&save_path)?;
+        if resume {
+            partial_paths.push(sidecar_path(&save_path, "tmp"));
+        }
+    }
+    ensure_free_space(
+        &jan_data_folder,
+        remaining_bytes(total_size, &partial_paths),
+    )?;
+
     // Collect download tasks for parallel execution
     let mut download_tasks = Vec::new();
 
@@ -701,20 +737,12 @@ async fn download_single_file(
         if !parent.exists() {
             tokio::fs::create_dir_all(parent)
                 .await
-                .map_err(err_to_string)?;
+                .map_err(|error| disk_err_to_string(&error))?;
         }
     }
 
-    let current_extension = save_path.extension().unwrap_or_default().to_string_lossy();
-    let append_extension = |ext: &str| {
-        if current_extension.is_empty() {
-            ext.to_string()
-        } else {
-            format!("{current_extension}.{ext}")
-        }
-    };
-    let tmp_save_path = save_path.with_extension(append_extension("tmp"));
-    let url_save_path = save_path.with_extension(append_extension("url"));
+    let tmp_save_path = sidecar_path(save_path, "tmp");
+    let url_save_path = sidecar_path(save_path, "url");
 
     let mut should_resume = resume
         && tmp_save_path.exists()
@@ -725,7 +753,7 @@ async fn download_single_file(
 
     tokio::fs::write(&url_save_path, item.url.clone())
         .await
-        .map_err(err_to_string)?;
+        .map_err(|error| disk_err_to_string(&error))?;
 
     // Decode URL for better readability in logs
     let decoded_url = url::Url::parse(&item.url)
@@ -738,14 +766,17 @@ async fn download_single_file(
     let mut initial_progress = 0u64;
 
     let (resp, _actual_url) = if should_resume {
-        let downloaded_size = tmp_save_path.metadata().map_err(err_to_string)?.len();
+        let downloaded_size = tmp_save_path
+            .metadata()
+            .map_err(|error| disk_err_to_string(&error))?
+            .len();
         if expected_size > 0 && downloaded_size == expected_size {
             progress_tracker
                 .update_progress(&file_id, downloaded_size)
                 .await;
             tokio::fs::rename(&tmp_save_path, save_path)
                 .await
-                .map_err(err_to_string)?;
+                .map_err(|error| disk_err_to_string(&error))?;
             let _ = tokio::fs::remove_file(&url_save_path).await;
             log::info!("Completed download was already present for '{}'", item.url);
             return Ok(save_path.to_path_buf());
@@ -841,10 +872,12 @@ async fn download_single_file(
             .append(true)
             .open(&tmp_save_path)
             .await
-            .map_err(err_to_string)?
+            .map_err(|error| disk_err_to_string(&error))?
     } else {
         // start new download, create a new file
-        File::create(&tmp_save_path).await.map_err(err_to_string)?
+        File::create(&tmp_save_path)
+            .await
+            .map_err(|error| disk_err_to_string(&error))?
     };
     let mut writer = tokio::io::BufWriter::new(file);
     let mut total_transferred = initial_progress;
@@ -869,7 +902,10 @@ async fn download_single_file(
                     return Err("Download cancelled".to_string());
                 }
 
-                writer.write_all(&chunk).await.map_err(err_to_string)?;
+                writer
+                    .write_all(&chunk)
+                    .await
+                    .map_err(|error| disk_err_to_string(&error))?;
                 download_delta += chunk.len() as u64;
                 total_transferred += chunk.len() as u64;
                 progress_since_retry_reset += chunk.len() as u64;
@@ -902,15 +938,19 @@ async fn download_single_file(
         };
 
         if let Some(stream_error) = stream_error {
+            // A buffered write only reaches the filesystem here, so a full disk
+            // usually surfaces at this flush rather than at `write_all` — it
+            // has to carry the subcause tag too.
             writer.flush().await.map_err(|error| {
+                let tagged = disk_err_to_string(&error);
                 format!(
-                    "Failed to flush partial download before retrying '{}': {error}",
+                    "{tagged} (failed to flush partial download before retrying '{}')",
                     item.url
                 )
             })?;
             let durable_offset = tokio::fs::metadata(&tmp_save_path)
                 .await
-                .map_err(err_to_string)?
+                .map_err(|error| disk_err_to_string(&error))?
                 .len();
             if durable_offset != total_transferred {
                 return Err(format!(
@@ -953,8 +993,9 @@ async fn download_single_file(
                         match request_download_response(&client, &item.url, 0, expected_size).await
                         {
                             Ok(response) => {
-                                let new_file =
-                                    File::create(&tmp_save_path).await.map_err(err_to_string)?;
+                                let new_file = File::create(&tmp_save_path)
+                                    .await
+                                    .map_err(|error| disk_err_to_string(&error))?;
                                 writer = tokio::io::BufWriter::new(new_file);
                                 progress_tracker.update_progress(&file_id, 0).await;
                                 total_transferred = 0;
@@ -993,10 +1034,13 @@ async fn download_single_file(
         }
     }
 
-    writer.flush().await.map_err(err_to_string)?;
+    writer
+        .flush()
+        .await
+        .map_err(|error| disk_err_to_string(&error))?;
     let persisted_size = tokio::fs::metadata(&tmp_save_path)
         .await
-        .map_err(err_to_string)?
+        .map_err(|error| disk_err_to_string(&error))?
         .len();
     if persisted_size != total_transferred {
         return Err(format!(
@@ -1027,10 +1071,10 @@ async fn download_single_file(
     // rename tmp file to final file
     tokio::fs::rename(&tmp_save_path, &save_path)
         .await
-        .map_err(err_to_string)?;
+        .map_err(|error| disk_err_to_string(&error))?;
     tokio::fs::remove_file(&url_save_path)
         .await
-        .map_err(err_to_string)?;
+        .map_err(|error| disk_err_to_string(&error))?;
 
     // Decode URL for better readability in logs
     let decoded_url = url::Url::parse(&item.url)

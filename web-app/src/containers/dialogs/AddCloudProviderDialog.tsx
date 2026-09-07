@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight, Eye, EyeOff, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -120,6 +120,21 @@ type AddCloudProviderDialogProps = {
   onOpenChange: (open: boolean) => void
   /** Fired once the key is persisted. */
   onKeySaved: (result: CloudProviderSaveResult) => void
+  /**
+   * Skip the gallery and open straight on this provider's step.
+   *
+   * The composer's "what do I reply with?" widget offers the ChatGPT
+   * subscription as a named alternative beside the model list, so clicking it
+   * must land on the sign-in — not on a gallery where the user has to find it
+   * again. Ignored when the provider is not one the gallery offers.
+   */
+  initialProviderName?: string
+  /**
+   * Whether this connection is happening inside first-run onboarding. Only
+   * reaches `provider_key_configured` — the funnel needs to tell a key pasted
+   * during setup from one pasted later, at a blocked send.
+   */
+  duringOnboarding?: boolean
 }
 
 /**
@@ -265,6 +280,8 @@ export function AddCloudProviderDialog({
   open,
   onOpenChange,
   onKeySaved,
+  initialProviderName,
+  duringOnboarding = true,
 }: AddCloudProviderDialogProps) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
@@ -281,8 +298,40 @@ export function AddCloudProviderDialog({
     [providers]
   )
 
+  const stepForProvider = useCallback(
+    (provider: ModelProvider): Step =>
+      isGallerySubscription(provider.provider)
+        ? { name: 'subscription', provider }
+        : { name: 'key', provider },
+    []
+  )
+
+  /**
+   * Where an opening starts. `initialProviderName` jumps past the gallery;
+   * anything else — including a name the gallery does not offer on this
+   * platform — falls back to it rather than to a dead end.
+   */
+  const openingStep = useCallback((): Step => {
+    if (!initialProviderName) return { name: 'gallery' }
+    const provider = cloudProviders.find(
+      (candidate) => candidate.provider === initialProviderName
+    )
+    return provider ? stepForProvider(provider) : { name: 'gallery' }
+  }, [initialProviderName, cloudProviders, stepForProvider])
+
+  // Re-applied on every opening, not just the first: the same mounted dialog is
+  // reopened for a different entry point (cloud button vs subscription button).
+  useEffect(() => {
+    if (!open) return
+    setStep(openingStep())
+    // `openingStep` changes with the provider list, which keeps updating while
+    // the dialog is open — re-running then would throw the user back to the
+    // step they just navigated away from.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
   const reset = () => {
-    setStep({ name: 'gallery' })
+    setStep(openingStep())
     setApiKey('')
     setRevealed(false)
   }
@@ -324,7 +373,7 @@ export function AddCloudProviderDialog({
       saveProviderApiKey({
         provider: step.provider,
         apiKey: key,
-        duringOnboarding: true,
+        duringOnboarding,
         updateProvider,
         serviceHub,
       })
@@ -366,11 +415,7 @@ export function AddCloudProviderDialog({
                     <button
                       key={provider.provider}
                       type="button"
-                      onClick={() =>
-                        isGallerySubscription(provider.provider)
-                          ? setStep({ name: 'subscription', provider })
-                          : setStep({ name: 'key', provider })
-                      }
+                      onClick={() => setStep(stepForProvider(provider))}
                       className={cn(
                         'flex items-center gap-3 rounded-lg border bg-secondary/50 p-3 text-left',
                         'hover:bg-secondary focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none'
