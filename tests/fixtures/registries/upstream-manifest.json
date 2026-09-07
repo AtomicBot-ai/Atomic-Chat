@@ -1,17 +1,17 @@
 {
   "$schema": "./schema.json",
-  "updated_at": "2026-08-14T18:14:21Z",
-  "tag_name": "b10431",
+  "updated_at": "2026-09-07T14:27:56Z",
+  "tag_name": "b10809",
   "download_base": "https://github.com/AtomicBot-ai/atomic-chat-conf/releases/download",
   "assets": [
-    { "name": "llama-b10431-bin-macos-arm64.tar.gz", "sha256": "a57fcf1808a3e05f34faa97cb6e77fce966af1140c8ebf6d65583a3f735f2507", "size": 11193229 },
-    { "name": "llama-b10431-bin-ubuntu-vulkan-x64.tar.gz", "sha256": "c953ae06ddf8305b20d754402c1ec07522b578500aad1935537005bcaacb80c9", "size": 33004188 },
-    { "name": "llama-b10431-bin-ubuntu-x64.tar.gz", "sha256": "876757d3699f3332becb9cd76988b176a7de9531075c2fac58f242e014cf389f", "size": 16618545 },
-    { "name": "llama-b10431-bin-win-cpu-x64.zip", "sha256": "631c8f7b237ca901e2b7b07680791a27c4fc23104f1640409e6c0e7c55f57fcf", "size": 18853706 },
-    { "name": "llama-b10431-bin-win-cuda-12.4-x64.zip", "sha256": "394e12e9151080efe588ba2e6f3609cdfefd5f2f28b7382d784bbceaf32382c9", "size": 250659321 },
-    { "name": "llama-b10431-bin-win-cuda-13.3-x64.zip", "sha256": "b35f71eeb25c3891ae1ea6d28c6a474b1f79a7071785ee974addfd9c2f77fabc", "size": 146578939 },
-    { "name": "llama-b10431-bin-win-rocm-7.14-x64.zip", "sha256": "7442913fa74b98c96f9fb54dcbee2e1cbe4e26ebcdc6bf3518bb8ec7832fa9cb", "size": 196791416 },
-    { "name": "llama-b10431-bin-win-vulkan-x64.zip", "sha256": "17b7e5042b1da3e870963b7495c1fadb877e79892be2cc9a6b1e3c431639c4c0", "size": 34442382 },
+    { "name": "llama-b10809-bin-macos-arm64.tar.gz", "sha256": "60bd20e22dcaee096da9147f3ab49eee37020191faafd636af398e099930b753", "size": 11224595 },
+    { "name": "llama-b10809-bin-ubuntu-vulkan-x64.tar.gz", "sha256": "07f029cef440c82c3cff5310641eb6347e5cbcd865a5d88990215058aa049e93", "size": 33799345 },
+    { "name": "llama-b10809-bin-ubuntu-x64.tar.gz", "sha256": "5e34434ddc6d03cd1584f403201aff0d4bd1a5793a72ff7e286532dfd1e4b941", "size": 16734586 },
+    { "name": "llama-b10809-bin-win-cpu-x64.zip", "sha256": "e1bb4c011f07258d5a9097f30bc7a146c218f7277a379a4c6cd3a387ee4f2365", "size": 18795766 },
+    { "name": "llama-b10809-bin-win-cuda-12.4-x64.zip", "sha256": "a6bd974afd54d0944c7b2fbb852ccf6edb24c6d52cf2dc1be1b1e5ff15fc16f0", "size": 253794542 },
+    { "name": "llama-b10809-bin-win-cuda-13.3-x64.zip", "sha256": "71b040eec949e91d2e4845b7a6977169f1978d6b93b0b8f5c81251f7f738d11f", "size": 149413981 },
+    { "name": "llama-b10809-bin-win-rocm-10.0-x64.zip", "sha256": "a2f7668e4ae1d63eef635e2d2748f3b3c053fe9733ae902056fddb3911e063a3", "size": 244117554 },
+    { "name": "llama-b10809-bin-win-vulkan-x64.zip", "sha256": "caa5ea1e4b642260116f7f7bb36ef18e69d9cc00888516f8f71a454023672f7a", "size": 35079269 },
     { "name": "cudart-llama-bin-win-cuda-12.4-x64.zip" },
     { "name": "cudart-llama-bin-win-cuda-13.3-x64.zip" }
   ]

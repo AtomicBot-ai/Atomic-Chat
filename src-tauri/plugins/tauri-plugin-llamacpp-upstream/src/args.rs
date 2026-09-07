@@ -114,6 +114,12 @@ const GEMMA_MTP_MIN_BUILD: u32 = 9553;
 /// First upstream release containing `--reasoning-preserve` (PR #25105).
 const REASONING_PRESERVE_MIN_BUILD: u32 = 9837;
 
+/// First upstream release where the `preserve_reasoning` template kwarg is
+/// enabled by default when no flag is passed (PR #28174, first tagged release
+/// b10762). From this build on silence means "on", so the user's "off" only
+/// survives as an explicit `--no-reasoning-preserve`.
+const REASONING_PRESERVE_DEFAULT_ON_MIN_BUILD: u32 = 10762;
+
 pub struct ArgumentBuilder {
     args: Vec<String>,
     config: LlamacppConfig,
@@ -611,15 +617,29 @@ impl ArgumentBuilder {
         }
     }
 
+    /// Emits the reasoning-preservation flag in whichever direction the backend
+    /// needs.
+    ///
+    /// Upstream flipped the default to enabled in b10762, so on a newer backend
+    /// an unspoken preference reads as "on" and the toggle's off state has to be
+    /// spelled out. Older backends keep the old meaning: silence is the template
+    /// default, and forcing the negative flag there would override templates
+    /// that ask for preservation themselves — so nothing is emitted.
     fn add_reasoning_preserve_flag(&mut self) {
-        if !self.config.reasoning_preserve || self.is_embedding {
+        if self.is_embedding {
             return;
         }
 
-        if !self
-            .parse_build_number()
-            .is_some_and(|build| build >= REASONING_PRESERVE_MIN_BUILD)
-        {
+        let build = self.parse_build_number();
+
+        if !self.config.reasoning_preserve {
+            if build.is_some_and(|build| build >= REASONING_PRESERVE_DEFAULT_ON_MIN_BUILD) {
+                self.args.push("--no-reasoning-preserve".to_string());
+            }
+            return;
+        }
+
+        if !build.is_some_and(|build| build >= REASONING_PRESERVE_MIN_BUILD) {
             log::warn!(
                 "Reasoning preservation requested but backend build {}/{} predates upstream support (b{}); skipping --reasoning-preserve",
                 self.version,
@@ -2062,6 +2082,66 @@ mod tests {
 
         assert_no_flag(&old_args, "--reasoning-preserve");
         assert_no_flag(&embedding_args, "--reasoning-preserve");
+    }
+
+    #[test]
+    fn test_reasoning_preserve_off_is_spelled_out_once_upstream_defaults_it_on() {
+        let mut config = default_config();
+        config.version_backend = "b10762/standard".to_string();
+        config.reasoning_preserve = false;
+
+        let args = ArgumentBuilder::new(config, false)
+            .unwrap()
+            .build("test", "/path", 8080, None);
+
+        assert_has_flag(&args, "--no-reasoning-preserve");
+        assert_no_flag(&args, "--reasoning-preserve");
+    }
+
+    /// Below b10762 an unspoken preference is the template's own default, so the
+    /// toggle staying off must not be turned into a forced override.
+    #[test]
+    fn test_reasoning_preserve_off_stays_silent_on_older_backends() {
+        for version in ["b10761", "b10431", "b9837", "b9836"] {
+            let mut config = default_config();
+            config.version_backend = format!("{version}/standard");
+            config.reasoning_preserve = false;
+
+            let args = ArgumentBuilder::new(config, false)
+                .unwrap()
+                .build("test", "/path", 8080, None);
+
+            assert_no_flag(&args, "--no-reasoning-preserve");
+            assert_no_flag(&args, "--reasoning-preserve");
+        }
+    }
+
+    #[test]
+    fn test_reasoning_preserve_off_emits_nothing_for_embeddings() {
+        let mut config = default_config();
+        config.version_backend = "b10809/standard".to_string();
+        config.reasoning_preserve = false;
+
+        let args = ArgumentBuilder::new(config, true)
+            .unwrap()
+            .build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--no-reasoning-preserve");
+        assert_no_flag(&args, "--reasoning-preserve");
+    }
+
+    #[test]
+    fn test_reasoning_preserve_on_never_pairs_with_the_negative_flag() {
+        let mut config = default_config();
+        config.version_backend = "b10809/standard".to_string();
+        config.reasoning_preserve = true;
+
+        let args = ArgumentBuilder::new(config, false)
+            .unwrap()
+            .build("test", "/path", 8080, None);
+
+        assert_has_flag(&args, "--reasoning-preserve");
+        assert_no_flag(&args, "--no-reasoning-preserve");
     }
 
     #[test]

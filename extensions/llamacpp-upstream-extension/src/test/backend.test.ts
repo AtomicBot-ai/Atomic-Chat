@@ -167,11 +167,23 @@ describe('Backend functions', () => {
           { version: 'b10405', backend: 'win-rocm-7.14-x64', order: 0 },
         ])
       ).toBe('b10405/win-rocm-7.14-x64')
+
+      // The b10431 -> b10809 bump moves the family from HIP 7.14 to 10.0, so
+      // the comparison has to be numeric rather than lexicographic.
+      expect(
+        resolveGpuFamilyConcrete('win-rocm-x64', [
+          { version: 'b10431', backend: 'win-rocm-7.14-x64', order: 0 },
+          { version: 'b10809', backend: 'win-rocm-10.0-x64', order: 0 },
+        ])
+      ).toBe('b10809/win-rocm-10.0-x64')
     })
 
     it('labels the ROCm variants with their weight', () => {
       expect(friendlyBackendLabel('win-rocm-7.14-x64')).toBe(
         'ROCm 7.14 (~1 GB)'
+      )
+      expect(friendlyBackendLabel('win-rocm-10.0-x64')).toBe(
+        'ROCm 10.0 (~1 GB)'
       )
       expect(friendlyBackendLabel('win-rocm-x64')).toBe('ROCm (~1 GB)')
       expect(friendlyBackendLabel('win-vulkan-x64')).toBe('Vulkan')
@@ -179,19 +191,20 @@ describe('Backend functions', () => {
   })
 
   describe('requiredDiskSpaceForBackend', () => {
-    it('demands room for the archive plus the ~980 MB unpacked HIP tree', () => {
-      const archive = 196 * 1024 * 1024
-      const required = requiredDiskSpaceForBackend('win-rocm-7.14-x64', archive)
+    it('demands room for the archive plus the ~1 GB unpacked HIP tree', () => {
+      // The real b10809 `win-rocm-10.0-x64` archive.
+      const archive = 232.9 * 1024 * 1024
+      const required = requiredDiskSpaceForBackend('win-rocm-10.0-x64', archive)
 
       expect(required).not.toBeNull()
-      expect(required!).toBeGreaterThan(archive + 980 * 1024 * 1024)
-      // Still under 1.5 GB, so the check does not turn into a de-facto ban.
-      expect(required!).toBeLessThan(1.5 * 1024 ** 3)
+      expect(required!).toBeGreaterThan(archive + 1072 * 1024 * 1024)
+      // Still under 1.6 GB, so the check does not turn into a de-facto ban.
+      expect(required!).toBeLessThan(1.6 * 1024 ** 3)
     })
 
     it('falls back to a measured archive size for an unmirrored tag', () => {
-      expect(requiredDiskSpaceForBackend('win-rocm-7.14-x64')).toBe(
-        requiredDiskSpaceForBackend('win-rocm-7.14-x64', 200 * 1024 * 1024)
+      expect(requiredDiskSpaceForBackend('win-rocm-10.0-x64')).toBe(
+        requiredDiskSpaceForBackend('win-rocm-10.0-x64', 250 * 1024 * 1024)
       )
     })
 

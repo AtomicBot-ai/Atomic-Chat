@@ -74,6 +74,12 @@ const FLASH_ATTN_STRING_ARG_MIN_BUILD: u32 = 6325;
 /// First upstream release containing `--reasoning-preserve` (PR #25105).
 const REASONING_PRESERVE_MIN_BUILD: u32 = 9837;
 
+/// First upstream release where the `preserve_reasoning` template kwarg is
+/// enabled by default when no flag is passed (PR #28174, first tagged release
+/// b10762). From this build on silence means "on", so the user's "off" only
+/// survives as an explicit `--no-reasoning-preserve`.
+const REASONING_PRESERVE_DEFAULT_ON_MIN_BUILD: u32 = 10762;
+
 /// True when a version string names a build from the TurboQuant fork's release
 /// train, in either shape the fork has published:
 ///
@@ -419,15 +425,29 @@ impl ArgumentBuilder {
         }
     }
 
+    /// Emits the reasoning-preservation flag in whichever direction the backend
+    /// needs.
+    ///
+    /// Upstream flipped the default to enabled in b10762, so on a newer backend
+    /// an unspoken preference reads as "on" and the toggle's off state has to be
+    /// spelled out. Older backends keep the old meaning: silence is the template
+    /// default, and forcing the negative flag there would override templates
+    /// that ask for preservation themselves — so nothing is emitted.
     fn add_reasoning_preserve_flag(&mut self) {
-        if !self.config.reasoning_preserve || self.is_embedding {
+        if self.is_embedding {
             return;
         }
 
-        if !self
-            .parse_build_number()
-            .is_some_and(|build| build >= REASONING_PRESERVE_MIN_BUILD)
-        {
+        let build = self.parse_build_number();
+
+        if !self.config.reasoning_preserve {
+            if build.is_some_and(|build| build >= REASONING_PRESERVE_DEFAULT_ON_MIN_BUILD) {
+                self.args.push("--no-reasoning-preserve".to_string());
+            }
+            return;
+        }
+
+        if !build.is_some_and(|build| build >= REASONING_PRESERVE_MIN_BUILD) {
             log::warn!(
                 "Reasoning preservation requested but backend build {}/{} does not prove upstream support (b{}+); skipping --reasoning-preserve",
                 self.version,
@@ -1566,6 +1586,39 @@ mod tests {
             .build("test", "/path", 8080, None);
 
         assert_no_flag(&args, "--reasoning-preserve");
+    }
+
+    /// The fork tags as `b<upstream-build>-<fork-semver>`, so the upstream
+    /// default flip is readable straight off the tag once it rebases past
+    /// b10762.
+    #[test]
+    fn test_reasoning_preserve_off_is_spelled_out_once_upstream_defaults_it_on() {
+        let mut config = default_config();
+        config.version_backend = "b10809-1.6.0/standard".to_string();
+        config.reasoning_preserve = false;
+
+        let args = ArgumentBuilder::new(config, false)
+            .unwrap()
+            .build("test", "/path", 8080, None);
+
+        assert_has_flag(&args, "--no-reasoning-preserve");
+        assert_no_flag(&args, "--reasoning-preserve");
+    }
+
+    #[test]
+    fn test_reasoning_preserve_off_stays_silent_without_a_new_enough_build() {
+        for version in ["b10269-1.5.1", "turboquant-macos-arm64-abc123"] {
+            let mut config = default_config();
+            config.version_backend = format!("{version}/standard");
+            config.reasoning_preserve = false;
+
+            let args = ArgumentBuilder::new(config, false)
+                .unwrap()
+                .build("test", "/path", 8080, None);
+
+            assert_no_flag(&args, "--no-reasoning-preserve");
+            assert_no_flag(&args, "--reasoning-preserve");
+        }
     }
 
     #[test]

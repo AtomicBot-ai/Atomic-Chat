@@ -743,17 +743,19 @@ export function friendlyBackendLabel(backend: string): string {
   return id
 }
 
-/// Unpacked size of the Windows HIP tree, measured from the b10405 archive's
-/// zip central directory: ~980 MB, of which `ggml-hip.dll` alone is 924 MB
-/// because the whole HIP runtime is linked into it. By far the largest backend
-/// in the product, and the reason a free-space precondition exists at all.
-const WIN_ROCM_UNPACKED_BYTES = 980 * 1024 * 1024
+/// Unpacked size of the Windows HIP tree, measured from the archive's zip
+/// central directory: 1072 MB on b10809 (ROCm 10.0), up from 936 MB on b10431
+/// (ROCm 7.14). `ggml-hip.dll` alone is 896 MB because the whole HIP runtime is
+/// linked into it, and ROCm 10 adds a 116 MB `amd_comgr.dll` beside it. By far
+/// the largest backend in the product, and the reason a free-space precondition
+/// exists at all. Re-measure on the next HIP major — the tree only grows.
+const WIN_ROCM_UNPACKED_BYTES = 1080 * 1024 * 1024
 /// Headroom over archive + unpacked so the check does not green-light an
 /// install that lands the volume at zero free bytes.
 const BACKEND_INSTALL_HEADROOM_BYTES = 200 * 1024 * 1024
 /// Used when the manifest carries no size for the archive (an unmirrored tag).
-/// Measured at 196.6 MB for `win-rocm-7.14-x64` in b10405.
-const WIN_ROCM_ARCHIVE_BYTES_FALLBACK = 200 * 1024 * 1024
+/// Measured at 232.9 MB for `win-rocm-10.0-x64` in b10809.
+const WIN_ROCM_ARCHIVE_BYTES_FALLBACK = 250 * 1024 * 1024
 
 /**
  * Bytes that must be free before downloading `backend`, or `null` when the
