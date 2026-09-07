@@ -214,8 +214,14 @@ export class TauriProvidersService extends DefaultProvidersService {
                 capabilities,
                 reasoning,
                 embedding: model.embedding, // Preserve embedding flag for filtering in UI
-                // Origin of an imported model, for the UI badge.
+                // Origin of an imported model, for the UI badge — and for
+                // `model_load.import_source`, which is the only way to tell an
+                // imported model from a re-load of one downloaded earlier.
                 source: (model as { source?: Model['source'] }).source,
+                // On-disk size, summed across shards when the engine imported
+                // it. Dropped here until now, which is why `model_load` had no
+                // size at all and `size_bucket` existed only on downloads.
+                sizeBytes: (model as { sizeBytes?: number }).sizeBytes,
                 // Broken-link flag: keep out of auto-start, flag in the UI.
                 missing: (model as { missing?: boolean }).missing,
                 // Absolute weights path, for deduping scan candidates.

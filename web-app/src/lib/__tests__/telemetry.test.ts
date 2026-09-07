@@ -1,14 +1,21 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   attachmentExt,
   chatHttpStatus,
   classifyChatFailure,
+  classifyModelLoadFailure,
   ctxUsedBucket,
   ctxUsedPercent,
   finalizeChatTurnOnce,
   lengthBucket,
+  markModelDownloaded,
+  modelLoadSource,
+  normalizeModelId,
+  resetDownloadedModelsForTests,
+  resetModelLoadThrottlesForTests,
   shouldEmitChatFailure,
+  shouldEmitModelLoadSuccess,
   toolNameForAnalytics,
 } from '@/lib/telemetry'
 
@@ -233,5 +240,144 @@ describe('shouldEmitChatFailure', () => {
   it('keys a missing model id consistently', () => {
     expect(shouldEmitChatFailure(null, 'unknown')).toBe(true)
     expect(shouldEmitChatFailure(undefined, 'unknown')).toBe(false)
+  })
+})
+
+describe('normalizeModelId', () => {
+  it('makes one model one string across platforms', () => {
+    // Local ids are minted by slicing a filesystem path, so Windows builds
+    // older than 06eafa9f1 produced the backslash spelling — and PostHog read
+    // the two as different models, one at 11.8% download success and the
+    // other at 95.1%.
+    expect(normalizeModelId('unsloth\\gemma-4-E4B-it-IQ4_XS')).toBe(
+      'unsloth/gemma-4-E4B-it-IQ4_XS'
+    )
+    expect(normalizeModelId('unsloth/gemma-4-E4B-it-IQ4_XS')).toBe(
+      'unsloth/gemma-4-E4B-it-IQ4_XS'
+    )
+  })
+
+  it('handles nested paths and absent ids', () => {
+    expect(normalizeModelId('a\\b\\c')).toBe('a/b/c')
+    expect(normalizeModelId(null)).toBeNull()
+    expect(normalizeModelId('')).toBeNull()
+  })
+})
+
+describe('classifyModelLoadFailure', () => {
+  it('calls a macOS Metal OOM an OOM', () => {
+    // 2251 events across 124 devices arrive as LLAMA_CPP_PROCESS_ERROR with
+    // the cause only in the stderr tail, against 16 carrying OUT_OF_MEMORY —
+    // so anything keyed on the code alone was blind to the platform.
+    expect(
+      classifyModelLoadFailure(
+        'LLAMA_CPP_PROCESS_ERROR',
+        'ggml_metal_graph_compute: command buffer 0 failed',
+        true
+      )
+    ).toBe('oom')
+  })
+
+  it('trusts the code when there is one', () => {
+    expect(classifyModelLoadFailure('BINARY_NOT_FOUND', null, false)).toBe(
+      'binary_missing'
+    )
+    expect(
+      classifyModelLoadFailure('LOCAL_API_SERVER_START_TIMEOUT', null, false)
+    ).toBe('timeout')
+    expect(
+      classifyModelLoadFailure('MODEL_ARCH_NOT_SUPPORTED', null, false)
+    ).toBe('arch_unsupported')
+  })
+
+  it('still classifies the 68% of failures that carry no code', () => {
+    expect(
+      classifyModelLoadFailure(null, 'llama-server: no such file', false)
+    ).toBe('binary_missing')
+    expect(
+      classifyModelLoadFailure(null, 'model.gguf: no such file', false)
+    ).toBe('model_file_missing')
+    expect(
+      classifyModelLoadFailure(null, 'unknown projector type: foo', false)
+    ).toBe('arch_unsupported')
+    expect(classifyModelLoadFailure(null, 'process exited with 139', false)).toBe(
+      'process_crash'
+    )
+  })
+
+  it('says unknown rather than guessing', () => {
+    expect(classifyModelLoadFailure(null, null, false)).toBe('unknown')
+    expect(classifyModelLoadFailure('SOMETHING_NEW', 'odd', false)).toBe(
+      'unknown'
+    )
+  })
+})
+
+describe('model_source', () => {
+  beforeEach(() => {
+    resetDownloadedModelsForTests()
+  })
+
+  it('remembers a download across app restarts', () => {
+    markModelDownloaded('unsloth/gemma-4-E4B-it-IQ4_XS')
+
+    // The marker used to live in memory only, so a model downloaded yesterday
+    // reported `local_disk` today and `local_disk` could not be read as "the
+    // user imported this".
+    expect(modelLoadSource('unsloth/gemma-4-E4B-it-IQ4_XS')).toBe('download')
+    expect(
+      JSON.parse(localStorage.getItem('telemetry-downloaded-models') ?? '[]')
+    ).toHaveLength(1)
+  })
+
+  it('matches the same model across path separators', () => {
+    markModelDownloaded('unsloth/gemma-4-E4B-it-IQ4_XS')
+
+    expect(modelLoadSource('unsloth\\gemma-4-E4B-it-IQ4_XS')).toBe('download')
+  })
+
+  it('reports anything unseen as already on disk', () => {
+    expect(modelLoadSource('never/downloaded')).toBe('local_disk')
+  })
+})
+
+describe('shouldEmitModelLoadSuccess', () => {
+  beforeEach(() => {
+    resetModelLoadThrottlesForTests()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+  })
+
+  it('bounds an oscillating load that keeps succeeding', () => {
+    // Only failures were throttled, which is how one device came to produce
+    // 62.9% of every model_load event in the project.
+    expect(shouldEmitModelLoadSuccess('m', 'llamacpp')).toBe(true)
+    expect(shouldEmitModelLoadSuccess('m', 'llamacpp')).toBe(false)
+
+    vi.advanceTimersByTime(61_000)
+    expect(shouldEmitModelLoadSuccess('m', 'llamacpp')).toBe(true)
+    vi.useRealTimers()
+  })
+
+  it('keeps a different model or backend separate', () => {
+    expect(shouldEmitModelLoadSuccess('m', 'llamacpp')).toBe(true)
+    expect(shouldEmitModelLoadSuccess('other', 'llamacpp')).toBe(true)
+    expect(shouldEmitModelLoadSuccess('m', 'mlx')).toBe(true)
+    vi.useRealTimers()
+  })
+
+  it('evicts oldest-first instead of forgetting everything at once', () => {
+    // The old `clear()` on overflow meant a device with many models wiped its
+    // whole window and started emitting freely — the exact devices the
+    // throttle exists to bound.
+    expect(shouldEmitModelLoadSuccess('first', 'llamacpp')).toBe(true)
+    for (let i = 0; i < 500; i += 1) {
+      shouldEmitModelLoadSuccess(`filler-${i}`, 'llamacpp')
+    }
+
+    // `first` was evicted, so it is emittable again — but the most recent
+    // entries are still held.
+    expect(shouldEmitModelLoadSuccess('filler-499', 'llamacpp')).toBe(false)
+    vi.useRealTimers()
   })
 })

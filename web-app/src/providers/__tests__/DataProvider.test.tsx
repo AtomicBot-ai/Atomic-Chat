@@ -6,6 +6,9 @@ import { seedServiceHub } from '@/test/service-hub'
 
 const mocks = vi.hoisted(() => ({
   switchToModel: vi.fn(),
+  // WS2 backoff gate. Default-allow so the existing cases keep exercising the
+  // auto-switch itself; the suppression case sets it false explicitly.
+  shouldAttemptAutoStart: vi.fn(() => true),
   chatBusy: false,
   checkForUpdate: vi.fn(),
   initializeWithLastUsed: vi.fn(),
@@ -132,6 +135,7 @@ vi.mock('@/utils/activeModelsSync', () => ({
 
 vi.mock('@/utils/switchModel', () => ({
   switchToModel: mocks.switchToModel,
+  shouldAttemptAutoStart: mocks.shouldAttemptAutoStart,
 }))
 
 vi.mock('@/stores/chat-session-store', () => ({
@@ -320,6 +324,48 @@ describe('DataProvider', () => {
       })
     )
 
+    state.providers = []
+    unmount()
+  })
+
+  it('respects the auto-start backoff after a model has already failed', async () => {
+    // This path calls switchToModel with `isAutoStart: true` but never asked
+    // the gate, so a model that cannot load could be retried from here on
+    // every import event — one of the ways a single device produced 62.9% of
+    // every model_load in the project.
+    const { useModelProvider } = await import('@/hooks/useModelProvider')
+    const { events } = await import('@janhq/core')
+    const state = useModelProvider.getState() as unknown as {
+      providers: unknown[]
+    }
+    state.providers = [
+      {
+        provider: 'llamacpp-upstream',
+        active: true,
+        models: [{ id: 'broken-model' }],
+        settings: [],
+      },
+    ]
+    mocks.shouldAttemptAutoStart.mockReturnValue(false)
+
+    const { unmount } = render(<DataProvider />)
+    await waitFor(() => {
+      expect(events.on).toHaveBeenCalledWith(
+        'onModelImported',
+        expect.any(Function)
+      )
+    })
+
+    const handler = vi
+      .mocked(events.on)
+      .mock.calls.find(([event]) => event === 'onModelImported')?.[1] as (
+      data?: Record<string, unknown>
+    ) => Promise<void>
+    await handler({ modelId: 'broken-model' })
+
+    expect(mocks.switchToModel).not.toHaveBeenCalled()
+
+    mocks.shouldAttemptAutoStart.mockReturnValue(true)
     state.providers = []
     unmount()
   })

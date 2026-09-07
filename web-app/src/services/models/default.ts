@@ -522,6 +522,10 @@ export class DefaultModelsService implements ModelsService {
         download_kind: 'model',
         model_id: normalizeModelId(id),
         quant: quantFromModelId(id),
+        // Usually `unknown` here: the byte count comes from HuggingFace
+        // metadata that is only fetched when `skipVerification` is false, and
+        // it defaults to true. The terminal event carries the real size from
+        // the downloader, so read `size_bucket` off that.
         size_bucket: sizeBucket(modelSize),
         is_hf_url: isHfUrl(modelPath),
         resolved_asset_url_host: urlHost(modelPath),

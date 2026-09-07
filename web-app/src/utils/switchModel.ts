@@ -18,6 +18,7 @@ import {
   isRecoverableModelLoadCode,
   loadBackendFromProvider,
   normalizeModelId,
+  classifyModelLoadFailure,
   mmprojProjectorType,
   modelLoadSource,
   oomSubtype,
@@ -25,6 +26,8 @@ import {
   sanitizeStderrTail,
   shouldCaptureModelLoadSentry,
   shouldEmitModelLoadFailure,
+  shouldEmitModelLoadSuccess,
+  sizeBucket,
 } from '@/lib/telemetry'
 import { queuedCapture } from '@/lib/telemetry-queue'
 import { captureHandledError } from '@/lib/sentry'
@@ -41,6 +44,10 @@ type LoadableModel = {
   id: string
   capabilities?: string[]
   settings?: Record<string, ModelSettingEntry>
+  /** Scanner that found an imported model (ollama / lmstudio / unsloth / …). */
+  source?: string
+  /** On-disk size, summed across shards by the engine at import time. */
+  sizeBytes?: number
 }
 
 function settingNum(
@@ -75,10 +82,17 @@ function emitModelLoad(
     durationMs: number
     model?: LoadableModel
     error?: unknown
+    isAutoStart?: boolean
   }
 ): void {
   try {
     const settings = args.model?.settings
+    const backend = loadBackendFromProvider(args.providerName)
+    // ATO-468: successes were never throttled, so a stop/start oscillation
+    // that keeps working emitted without limit. One device produced 62.9% of
+    // every `model_load` event in the project.
+    if (status === 'success' && !shouldEmitModelLoadSuccess(args.modelId, backend))
+      return
     const props: Record<string, unknown> = {
       // NOT `status`. PostHog types a property globally by its observed values,
       // and `api_server_request.status` (an HTTP code) already claimed that
@@ -88,13 +102,28 @@ function emitModelLoad(
       // unreadable. Keep this name event-specific.
       load_status: status,
       model_id: normalizeModelId(args.modelId),
-      backend: loadBackendFromProvider(args.providerName),
+      backend,
       model_source: modelLoadSource(args.modelId),
+      // Where an imported model came from — the scanner that found it
+      // (ollama / lmstudio / unsloth / hf cache). Persisted in `model.yml` and
+      // already on the store model; `model_source: 'local_disk'` on its own
+      // cannot tell an import from a re-load of something downloaded earlier.
+      import_source: args.model?.source ?? null,
+      // ATO-468: separates loop traffic from loads a user asked for, without
+      // any heuristic — the flag is already on the call.
+      is_auto_start: args.isAutoStart ?? false,
       load_duration_ms: args.durationMs,
       backend_version: settingStr(settings, 'version_backend'),
       ctx: settingNum(settings, 'ctx_len') ?? settingNum(settings, 'ctx_size'),
+      // The UI setting, i.e. what was *asked for*. 98.3% of events read 100,
+      // the "offload everything" sentinel that is set on every model of every
+      // engine — including MLX, where the concept does not apply. How many
+      // layers actually landed on the GPU is not known here; see ATO-468.
+      n_gpu_layers_requested:
+        settingNum(settings, 'ngl') ?? settingNum(settings, 'n_gpu_layers'),
       n_gpu_layers:
         settingNum(settings, 'ngl') ?? settingNum(settings, 'n_gpu_layers'),
+      size_bucket: sizeBucket(args.model?.sizeBytes),
       is_multimodal:
         (args.model?.capabilities || []).includes('vision') ||
         settingStr(settings, 'mmproj_path') != null,
@@ -108,7 +137,24 @@ function emitModelLoad(
       // and over; drop duplicates within the throttle window so event-weighted
       // metrics aren't dominated by a handful of stuck devices.
       if (!shouldEmitModelLoadFailure(args.modelId, errorCode)) return
+      // The actual OOM flag, from the same predicate the Sentry severity
+      // already uses. On macOS a Metal OOM arrives as
+      // `LLAMA_CPP_PROCESS_ERROR` with the cause only in the stderr tail —
+      // 2251 events across 124 devices, against 16 carrying `OUT_OF_MEMORY` —
+      // so every alert built on `error_code = 'OUT_OF_MEMORY'` was blind to
+      // the whole platform.
+      const isOom = isOutOfMemoryError(err)
       props.error_code = errorCode
+      // Null on 68% of failures, which is why `load_failure_kind` exists.
+      props.load_failure_kind = classifyModelLoadFailure(
+        errorCode,
+        haystack,
+        isOom
+      )
+      props.is_oom = isOom
+      // What `oom_subtype` always was: a memory-domain tag written on every
+      // failure with a default of 'unknown', not a sign of running out.
+      props.memory_domain = oomSubtype(haystack)
       props.oom_subtype = oomSubtype(haystack)
       props.mmproj_projector_type = mmprojProjectorType(haystack)
       props.stderr_tail = sanitizeStderrTail(haystack)
@@ -598,6 +644,7 @@ async function doSwitchToModel(params: {
         providerName,
         durationMs: Date.now() - loadStartTs,
         model: modelConfig,
+        isAutoStart,
       })
       console.log('[switchToModel] Local model started:', modelId)
       await settleAfterLocalStart(serviceHub, providerName, modelId)
@@ -703,6 +750,7 @@ async function doSwitchToModel(params: {
         durationMs: loadStartTs ? Date.now() - loadStartTs : 0,
         model: modelConfig,
         error,
+        isAutoStart,
       })
     }
     // ATO-113 / WS1.5: explicit Sentry capture at the model-load choke point with

@@ -21,7 +21,7 @@ import { ensureProjectsLoaded } from '@/hooks/useThreadManagement'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
-import { switchToModel } from '@/utils/switchModel'
+import { shouldAttemptAutoStart, switchToModel } from '@/utils/switchModel'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { consumeSilentImport } from '@/utils/backgroundImports'
 import { resolveImportedModelProvider } from '@/utils/resolveImportedModelProvider'
@@ -461,6 +461,16 @@ export function DataProvider() {
           )
           return
         }
+      }
+
+      // WS2 backoff applies here too. This path calls `switchToModel` with
+      // `isAutoStart: true` but never consulted the gate, so a model that
+      // fails terminally could be retried from here on every import event —
+      // one of the ways a single device came to produce 62.9% of every
+      // `model_load` in the project.
+      if (!shouldAttemptAutoStart(providerName, modelId)) {
+        console.log('[LocalAPI] Auto-start suppressed after a prior failure')
+        return
       }
 
       // switchToModel handles stopAllModels, start the new model, start/restart

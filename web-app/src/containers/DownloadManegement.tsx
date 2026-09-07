@@ -395,6 +395,11 @@ export function DownloadManagement() {
       captureDownloadTerminal('failed', event.modelId, {
         downloadType: 'Model',
         error: event.error || event.reason,
+        // The only terminal site that reported no size, so every
+        // validation failure landed in `size_bucket: 'unknown'` — and size is
+        // exactly what a hash/size mismatch is about. The transfer finished
+        // before validation ran, so the store still has the total.
+        totalBytes: useDownloadStore.getState().downloads[event.modelId]?.total,
       })
 
       clearResumableDownload(event.modelId)

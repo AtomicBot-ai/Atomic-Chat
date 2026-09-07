@@ -358,6 +358,103 @@ export function normalizeModelId(id?: string | null): string | null {
   return id.replace(/\\/g, '/')
 }
 
+/**
+ * What a model-load failure actually was.
+ *
+ * `error_code` is null on 68% of failure events — most paths never reach the
+ * extension's `codedLoadError`, and the watchdog timeout never had a code at
+ * all — which made the event-level failure taxonomy unusable and forced every
+ * analysis onto device-level counts. This derives a kind from the code when
+ * there is one and from the message otherwise, so the taxonomy works without
+ * waiting for every path to grow a code.
+ *
+ * Ordered: `oom` first, because a memory failure that also mentions a missing
+ * file is still a memory failure.
+ */
+export type ModelLoadFailureKind =
+  | 'oom'
+  | 'binary_missing'
+  | 'model_file_missing'
+  | 'shards_incomplete'
+  | 'arch_unsupported'
+  | 'os_unsupported'
+  | 'timeout'
+  | 'device_init'
+  | 'process_crash'
+  | 'unknown'
+
+const LOAD_FAILURE_BY_CODE: Record<string, ModelLoadFailureKind> = {
+  OUT_OF_MEMORY: 'oom',
+  BINARY_NOT_FOUND: 'binary_missing',
+  MODEL_FILE_NOT_FOUND: 'model_file_missing',
+  MODEL_FILE_CORRUPT: 'model_file_missing',
+  MODEL_SHARDS_INCOMPLETE: 'shards_incomplete',
+  MODEL_ARCH_NOT_SUPPORTED: 'arch_unsupported',
+  OS_VERSION_UNSUPPORTED: 'os_unsupported',
+  LOCAL_API_SERVER_START_TIMEOUT: 'timeout',
+  OPERATION_TIMED_OUT: 'timeout',
+  DEVICE_LIST_PARSE_FAILED: 'device_init',
+  LLAMA_CPP_PROCESS_ERROR: 'process_crash',
+}
+
+export function classifyModelLoadFailure(
+  errorCode: string | null | undefined,
+  haystack: string | null | undefined,
+  /** The caller's OOM verdict. Passed in rather than recomputed so `is_oom`
+   *  and `load_failure_kind` can never disagree about the same failure. */
+  isOom: boolean
+): ModelLoadFailureKind {
+  // Checked before the code map, because on macOS a Metal OOM arrives as
+  // `LLAMA_CPP_PROCESS_ERROR` with the real cause only in the stderr tail —
+  // 2251 events across 124 devices, against 16 that carried `OUT_OF_MEMORY`.
+  if (isOom) return 'oom'
+
+  const byCode = errorCode ? LOAD_FAILURE_BY_CODE[errorCode] : undefined
+  if (byCode) return byCode
+
+  const e = (haystack ?? '').toLowerCase()
+  if (!e) return 'unknown'
+  if (e.includes('unknown projector type') || e.includes('unknown model architecture'))
+    return 'arch_unsupported'
+  if (e.includes('no such file') || e.includes('not found')) {
+    return e.includes('llama-server') || e.includes('binary')
+      ? 'binary_missing'
+      : 'model_file_missing'
+  }
+  if (e.includes('missing shard') || e.includes('incomplete')) return 'shards_incomplete'
+  if (e.includes('timed out') || e.includes('timeout')) return 'timeout'
+  if (
+    e.includes('failed to initialize') ||
+    e.includes('no device') ||
+    e.includes('driver')
+  )
+    return 'device_init'
+  if (e.includes('exited') || e.includes('signal') || e.includes('crash'))
+    return 'process_crash'
+  return 'unknown'
+}
+
+/**
+ * Models known to have been downloaded on this device.
+ *
+ * Persisted, unlike the in-memory set this replaced: a model downloaded
+ * yesterday and loaded today reported `local_disk`, so `model_source` only
+ * ever said `download` for a download and a load inside the same app run.
+ * That is also why `local_disk` could not be read as "the user imported this".
+ */
+const DOWNLOADED_MODELS_KEY = 'telemetry-downloaded-models'
+const MAX_DOWNLOADED_KEYS = 500
+
+function readDownloadedKeys(): string[] {
+  try {
+    const raw = localStorage.getItem(DOWNLOADED_MODELS_KEY)
+    const parsed: unknown = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? parsed.filter((k) => typeof k === 'string') : []
+  } catch {
+    return []
+  }
+}
+
 const downloadedModelKeys = new Set<string>()
 
 function normalizeModelKey(modelId?: string | null): string {
@@ -366,18 +463,68 @@ function normalizeModelKey(modelId?: string | null): string {
   return tail.toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
-/** Mark a model as freshly downloaded this session (call on download success). */
+/** Mark a model as downloaded by this device (call on download success). */
 export function markModelDownloaded(modelId?: string | null): void {
   const key = normalizeModelKey(modelId)
   if (!key) return
-  downloadedModelKeys.add(key)
-  if (downloadedModelKeys.size > 500) downloadedModelKeys.clear()
+  const keys = readDownloadedKeys().filter((k) => k !== key)
+  keys.push(key)
+  // Oldest-first eviction rather than the wholesale `clear()` this used to do,
+  // which made a device with many models forget everything at once.
+  const trimmed = keys.slice(-MAX_DOWNLOADED_KEYS)
+  downloadedModelKeys.clear()
+  for (const k of trimmed) downloadedModelKeys.add(k)
+  try {
+    localStorage.setItem(DOWNLOADED_MODELS_KEY, JSON.stringify(trimmed))
+  } catch {
+    // localStorage unavailable — falls back to session-only behaviour.
+  }
 }
 
 export function modelLoadSource(modelId?: string | null): 'download' | 'local_disk' {
-  return downloadedModelKeys.has(normalizeModelKey(modelId))
+  const key = normalizeModelKey(modelId)
+  if (!key) return 'local_disk'
+  return downloadedModelKeys.has(key) || readDownloadedKeys().includes(key)
     ? 'download'
     : 'local_disk'
+}
+
+/** Test seam — drops the persisted download markers. */
+export function resetDownloadedModelsForTests(): void {
+  downloadedModelKeys.clear()
+  try {
+    localStorage.removeItem(DOWNLOADED_MODELS_KEY)
+  } catch {
+    // nothing to clear
+  }
+}
+
+/**
+ * Shared time-window throttle.
+ *
+ * Evicts oldest-first at the cap. The three throttles here used to `clear()`
+ * on overflow, so a device with more distinct keys than the cap wiped its
+ * whole window and started emitting freely again — exactly the devices whose
+ * event volume the throttle exists to bound.
+ */
+const THROTTLE_MAX_KEYS = 500
+
+function throttle(
+  seen: Map<string, number>,
+  key: string,
+  windowMs: number
+): boolean {
+  const now = Date.now()
+  const last = seen.get(key)
+  if (last !== undefined && now - last < windowMs) return false
+  seen.delete(key)
+  seen.set(key, now)
+  while (seen.size > THROTTLE_MAX_KEYS) {
+    const oldest = seen.keys().next().value
+    if (oldest === undefined) break
+    seen.delete(oldest)
+  }
+  return true
 }
 
 const modelLoadFailureThrottle = new Map<string, number>()
@@ -394,15 +541,39 @@ export function shouldEmitModelLoadFailure(
   modelId: string,
   errorCode: string | null
 ): boolean {
-  const key = `${modelId}::${errorCode ?? 'unknown'}`
-  const now = Date.now()
-  const last = modelLoadFailureThrottle.get(key)
-  if (last !== undefined && now - last < MODEL_LOAD_FAILURE_THROTTLE_MS) {
-    return false
-  }
-  modelLoadFailureThrottle.set(key, now)
-  if (modelLoadFailureThrottle.size > 500) modelLoadFailureThrottle.clear()
-  return true
+  return throttle(
+    modelLoadFailureThrottle,
+    `${modelId}::${errorCode ?? 'unknown'}`,
+    MODEL_LOAD_FAILURE_THROTTLE_MS
+  )
+}
+
+const modelLoadSuccessThrottle = new Map<string, number>()
+const MODEL_LOAD_SUCCESS_THROTTLE_MS = 60_000
+
+/**
+ * ATO-468: throttle repeated identical `model_load` successes.
+ *
+ * Only failures were throttled, so a stop/start oscillation that keeps
+ * succeeding emitted without limit — one device produced 278,751 `model_load`
+ * events in three months, 62.9% of every such event in the project. Any
+ * event-weighted metric was therefore wrong by default.
+ */
+export function shouldEmitModelLoadSuccess(
+  modelId: string,
+  backend: string | null
+): boolean {
+  return throttle(
+    modelLoadSuccessThrottle,
+    `${modelId}::${backend ?? 'unknown'}`,
+    MODEL_LOAD_SUCCESS_THROTTLE_MS
+  )
+}
+
+/** Test seam — the throttles are module state and outlive a single test. */
+export function resetModelLoadThrottlesForTests(): void {
+  modelLoadFailureThrottle.clear()
+  modelLoadSuccessThrottle.clear()
 }
 
 const modelLoadSentryThrottle = new Map<string, number>()
@@ -419,15 +590,11 @@ export function shouldCaptureModelLoadSentry(
   modelId: string,
   errorCode: string | null
 ): boolean {
-  const key = `${modelId}::${errorCode ?? 'unknown'}`
-  const now = Date.now()
-  const last = modelLoadSentryThrottle.get(key)
-  if (last !== undefined && now - last < MODEL_LOAD_FAILURE_THROTTLE_MS) {
-    return false
-  }
-  modelLoadSentryThrottle.set(key, now)
-  if (modelLoadSentryThrottle.size > 500) modelLoadSentryThrottle.clear()
-  return true
+  return throttle(
+    modelLoadSentryThrottle,
+    `${modelId}::${errorCode ?? 'unknown'}`,
+    MODEL_LOAD_FAILURE_THROTTLE_MS
+  )
 }
 
 /**
@@ -696,12 +863,9 @@ export function shouldEmitChatFailure(
   modelId: string | null | undefined,
   errorKind: ChatFailureKind
 ): boolean {
-  const key = `${modelId ?? 'unknown'}::${errorKind}`
-  const now = Date.now()
-  const last = chatFailureThrottle.get(key)
-  if (last !== undefined && now - last < MODEL_LOAD_FAILURE_THROTTLE_MS)
-    return false
-  chatFailureThrottle.set(key, now)
-  if (chatFailureThrottle.size > 500) chatFailureThrottle.clear()
-  return true
+  return throttle(
+    chatFailureThrottle,
+    `${modelId ?? 'unknown'}::${errorKind}`,
+    MODEL_LOAD_FAILURE_THROTTLE_MS
+  )
 }
