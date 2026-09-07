@@ -10,6 +10,9 @@ use crate::core::app::commands::{
 use crate::core::app::constants::{JAN_DATA_FILES, JAN_DATA_SUBDIRS};
 use crate::core::app::models::AppConfiguration;
 use crate::core::mcp::helpers::{stop_mcp_servers_with_context, ShutdownContext};
+use crate::core::process_env::sanitize_std_command;
+#[cfg(any(target_os = "linux", test))]
+use crate::core::process_env::{strip_appimage_std_command, APPIMAGE_RUNTIME_ENV_VARS};
 use crate::core::state::AppState;
 
 fn is_safe_to_delete(path: &std::path::Path) -> bool {
@@ -203,38 +206,10 @@ pub async fn factory_reset<R: Runtime>(
 }
 
 #[cfg(any(target_os = "linux", test))]
-const APPIMAGE_RUNTIME_ENV_VARS: &[&str] = &[
-    "APPDIR",
-    "APPIMAGE",
-    "ARGV0",
-    "OWD",
-    "LD_LIBRARY_PATH",
-    "LD_PRELOAD",
-    "GDK_PIXBUF_MODULE_FILE",
-    "GDK_PIXBUF_MODULEDIR",
-    "GIO_EXTRA_MODULES",
-    "GIO_MODULE_DIR",
-    "GSETTINGS_SCHEMA_DIR",
-    "GST_PLUGIN_SCANNER",
-    "GST_PLUGIN_SYSTEM_PATH",
-    "GST_PLUGIN_SYSTEM_PATH_1_0",
-    "GTK_DATA_PREFIX",
-    "GTK_EXE_PREFIX",
-    "GTK_IM_MODULE_FILE",
-    "GTK_PATH",
-    "PERLLIB",
-    "PYTHONHOME",
-    "PYTHONPATH",
-    "QT_PLUGIN_PATH",
-];
-
-#[cfg(any(target_os = "linux", test))]
 fn sanitized_appimage_restart_command(appimage: &std::ffi::OsStr) -> std::process::Command {
     let mut command = std::process::Command::new(appimage);
     command.args(std::env::args_os().skip(1));
-    for variable in APPIMAGE_RUNTIME_ENV_VARS {
-        command.env_remove(variable);
-    }
+    strip_appimage_std_command(&mut command);
     command
 }
 
@@ -1789,6 +1764,9 @@ fn node_meets_openclaw_engines((major, minor, patch): (u64, u64, u64)) -> bool {
 ///   - Claude Code / Codex / OpenCode / OpenClaw ship as global npm packages.
 ///   - Hermes is a Python project installed via its official shell / PowerShell
 ///     bootstrap script (NOT npm).
+///
+/// Unix installers that pipe `curl` into a shell use Bash `pipefail`; otherwise
+/// a download failure is hidden by the trailing shell's successful empty input.
 fn agent_install_spec(
     agent_id: &str,
 ) -> Result<(String, Vec<String>, &'static str, &'static str), String> {
@@ -1924,10 +1902,10 @@ fn agent_install_spec(
                 )
             } else {
                 (
-                    "sh".to_string(),
+                    "bash".to_string(),
                     vec![
                         "-c".to_string(),
-                        "curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash".to_string(),
+                        "set -o pipefail; curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash".to_string(),
                     ],
                 )
             };
@@ -1952,10 +1930,11 @@ fn agent_install_spec(
                 )
             } else {
                 (
-                    "sh".to_string(),
+                    "bash".to_string(),
                     vec![
                         "-c".to_string(),
-                        "curl -fsSL https://atomicagent.io/install | sh".to_string(),
+                        "set -o pipefail; curl -fsSL https://atomicagent.io/install | sh"
+                            .to_string(),
                     ],
                 )
             };
@@ -1985,10 +1964,10 @@ fn agent_install_spec(
                 )
             } else {
                 (
-                    "sh".to_string(),
+                    "bash".to_string(),
                     vec![
                         "-c".to_string(),
-                        "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup --non-interactive".to_string(),
+                        "set -o pipefail; curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup --non-interactive".to_string(),
                     ],
                 )
             };
@@ -2034,10 +2013,10 @@ fn agent_install_spec(
                 )
             } else {
                 (
-                    "sh".to_string(),
+                    "bash".to_string(),
                     vec![
                         "-c".to_string(),
-                        "curl -fsSL https://downloads.poolside.ai/pool/install.sh | POOL_INSTALL_ACCEPT_EULA=1 POOL_INSTALL_UPDATE_PATH=1 sh".to_string(),
+                        "set -o pipefail; curl -fsSL https://downloads.poolside.ai/pool/install.sh | POOL_INSTALL_ACCEPT_EULA=1 POOL_INSTALL_UPDATE_PATH=1 sh".to_string(),
                     ],
                 )
             };
@@ -2064,10 +2043,10 @@ fn agent_install_spec(
                 ))
             } else {
                 Ok((
-                    "sh".to_string(),
+                    "bash".to_string(),
                     vec![
                         "-c".to_string(),
-                        "curl -fsSL https://zed.dev/install.sh | sh".to_string(),
+                        "set -o pipefail; curl -fsSL https://zed.dev/install.sh | sh".to_string(),
                     ],
                     "curl",
                     "https://zed.dev/docs/getting-started",
@@ -2089,10 +2068,10 @@ fn agent_install_spec(
                 );
             }
             Ok((
-                "sh".to_string(),
+                "bash".to_string(),
                 vec![
                     "-c".to_string(),
-                    "curl -fsSL https://dev.meta.ai/install.sh | sh".to_string(),
+                    "set -o pipefail; curl -fsSL https://dev.meta.ai/install.sh | sh".to_string(),
                 ],
                 "curl",
                 "https://developer.meta.com/ai/products/muse-code/",
@@ -2123,10 +2102,10 @@ fn login_shell_path() -> Option<String> {
             // `-l` sources login files (.zprofile/.bash_profile, where Homebrew
             // shellenv usually lives); `-i` sources interactive rc files
             // (.zshrc/.bashrc, where nvm usually lives).
-            let out = std::process::Command::new(&shell)
-                .args(["-lic", "printf '__OCPATH__%s__OCEND__' \"$PATH\""])
-                .output()
-                .ok()?;
+            let mut command = std::process::Command::new(&shell);
+            command.args(["-lic", "printf '__OCPATH__%s__OCEND__' \"$PATH\""]);
+            sanitize_std_command(&mut command);
+            let out = command.output().ok()?;
             if !out.status.success() {
                 return None;
             }
@@ -2148,6 +2127,7 @@ fn login_shell_path() -> Option<String> {
 /// on Windows, where processes inherit the registry (user/system) PATH.
 #[cfg(not(windows))]
 fn apply_login_path(cmd: &mut std::process::Command) {
+    sanitize_std_command(cmd);
     if let Some(path) = login_shell_path() {
         cmd.env("PATH", path);
     }
@@ -5520,6 +5500,24 @@ mod tests {
             assert!(
                 !removed.iter().any(|key| key == variable),
                 "{variable} must be preserved"
+            );
+        }
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn curl_agent_installers_propagate_download_failures() {
+        for agent_id in ["goose", "atomic-agent", "hermes", "poolside", "zed", "muse"] {
+            let (program, arguments, prerequisite, _) =
+                agent_install_spec(agent_id).expect("known install spec");
+            assert_eq!(program, "bash", "{agent_id} must support pipefail");
+            assert_eq!(prerequisite, "curl");
+            assert_eq!(arguments.first().map(String::as_str), Some("-c"));
+            assert!(
+                arguments
+                    .get(1)
+                    .is_some_and(|argument| argument.starts_with("set -o pipefail; curl -fsSL ")),
+                "{agent_id} must fail when curl fails: {arguments:?}"
             );
         }
     }
