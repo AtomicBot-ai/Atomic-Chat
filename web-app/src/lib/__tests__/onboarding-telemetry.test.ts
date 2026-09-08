@@ -168,7 +168,9 @@ describe('emitter resilience', () => {
     vi.mocked(posthog.capture).mockImplementationOnce(() => {
       throw new Error('posthog exploded')
     })
-    expect(() => captureOnboardingCompleted({ exitPath: 'skipped' })).not.toThrow()
+    expect(() =>
+      captureOnboardingCompleted({ exitPath: 'skipped' })
+    ).not.toThrow()
   })
 })
 
@@ -294,9 +296,24 @@ describe('picker impressions', () => {
     })
 
     expect(impressions).toEqual([
-      { modelId: 'unsloth/gemma', position: 0, format: 'GGUF', section: 'pending' },
-      { modelId: 'mlx-community/qwen', position: 1, format: 'MLX', section: 'pending' },
-      { modelId: 'already/here', position: 0, format: 'MLX', section: 'installed' },
+      {
+        modelId: 'unsloth/gemma',
+        position: 0,
+        format: 'GGUF',
+        section: 'pending',
+      },
+      {
+        modelId: 'mlx-community/qwen',
+        position: 1,
+        format: 'MLX',
+        section: 'pending',
+      },
+      {
+        modelId: 'already/here',
+        position: 0,
+        format: 'MLX',
+        section: 'installed',
+      },
       { modelId: 'on/disk', position: 0, format: 'GGUF', section: 'detected' },
     ])
   })
@@ -311,6 +328,25 @@ describe('picker impressions', () => {
         detected: [],
       })
     ).toEqual([])
+  })
+
+  it('offsets the rows revealed by "other options" to their real positions', () => {
+    // The picker reports impressions in two batches now: the offer at paint,
+    // and the rest when the disclosure is opened. Without the offset the second
+    // batch would restart at 0 and every row would look like the offer, which
+    // is precisely the conversion figure this event exists to produce.
+    expect(
+      buildRecommendedImpressions({
+        pending: [
+          { startId: 'a/second', model: { is_mlx: false } },
+          { startId: 'a/third', model: { is_mlx: false } },
+        ],
+        pendingOffset: 1,
+      })
+    ).toEqual([
+      { modelId: 'a/second', position: 1, format: 'GGUF', section: 'pending' },
+      { modelId: 'a/third', position: 2, format: 'GGUF', section: 'pending' },
+    ])
   })
 
   it('emits one event per row so impressions divide by clicks', () => {
@@ -357,9 +393,9 @@ describe('backend step resolution', () => {
   })
 
   it('tells a hung detection apart from a broken one', () => {
-    expect(classifyDetectionFailure(new Error('BACKEND_DETECTION_FAILED'))).toBe(
-      'detection_unavailable'
-    )
+    expect(
+      classifyDetectionFailure(new Error('BACKEND_DETECTION_FAILED'))
+    ).toBe('detection_unavailable')
     expect(classifyDetectionFailure(new Error('kaboom'))).toBe('threw')
     expect(classifyDetectionFailure('not an error')).toBe('threw')
   })

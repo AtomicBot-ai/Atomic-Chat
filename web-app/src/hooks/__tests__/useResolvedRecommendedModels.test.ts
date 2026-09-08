@@ -1,5 +1,6 @@
 import { renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { BASELINE_TIER_RECOMMENDATIONS } from '@/constants/models'
 import type { CatalogModel } from '@/services/models/types'
 
 vi.hoisted(() => {
@@ -34,28 +35,34 @@ type StoreRecommendation = {
   mmproj_quant?: string
 }
 
+const OVERRIDDEN_TIER = 'vram_8'
+const BARE_TIER = 'vram_2'
+
 vi.mock('@/stores/recommended-models-registry-store', () => ({
   useRecommendedModelsRegistryStore: (
     selector: (state: {
       recommendations: StoreRecommendation[]
-      lowSpecRecommendations: StoreRecommendation[]
+      tiers: Record<string, StoreRecommendation[]>
     }) => unknown
   ) =>
     selector({
+      // The flat list is the "other options" pool, not the lead offer.
       recommendations: [
         {
-          model_name: 'AtomicChat/remount-model-GGUF',
+          model_name: 'AtomicChat/other-option-GGUF',
           description_key: 'hub:recEverydayUse',
         },
       ],
-      lowSpecRecommendations: [
-        {
-          model_name: 'LiquidAI/LFM2.5-VL-450M-GGUF',
-          description_key: 'hub:recVisionKnowledge',
-          quant: 'Q8_0',
-          mmproj_quant: 'Q8_0',
-        },
-      ],
+      tiers: {
+        [OVERRIDDEN_TIER]: [
+          {
+            model_name: 'AtomicChat/remount-model-GGUF',
+            description_key: 'hub:recVisionKnowledge',
+            quant: 'Q8_0',
+            mmproj_quant: 'Q8_0',
+          },
+        ],
+      },
     }),
 }))
 
@@ -83,26 +90,28 @@ describe('useResolvedRecommendedModels', () => {
     mocks.fetchHuggingFaceRepo.mockResolvedValue({ id: model.model_name })
     mocks.convertHfRepoToCatalogModel.mockReturnValue(model)
 
-    const first = renderHook(() => useResolvedRecommendedModels([]))
+    const first = renderHook(() =>
+      useResolvedRecommendedModels([], OVERRIDDEN_TIER)
+    )
 
-    await waitFor(() => {
-      expect(mocks.fetchHuggingFaceRepo).toHaveBeenCalledOnce()
-    })
     await waitFor(() => {
       expect(first.result.current[0]?.model).toEqual({
         ...model,
         is_mlx: false,
       })
     })
+    const fetchCount = mocks.fetchHuggingFaceRepo.mock.calls.length
     first.unmount()
 
-    const second = renderHook(() => useResolvedRecommendedModels([]))
+    const second = renderHook(() =>
+      useResolvedRecommendedModels([], OVERRIDDEN_TIER)
+    )
 
     expect(second.result.current[0]?.model).toEqual({
       ...model,
       is_mlx: false,
     })
-    expect(mocks.fetchHuggingFaceRepo).toHaveBeenCalledOnce()
+    expect(mocks.fetchHuggingFaceRepo).toHaveBeenCalledTimes(fetchCount)
   })
 })
 
@@ -113,34 +122,52 @@ describe('useResolvedRecommendedModels hardware tiers', () => {
     mocks.fetchHuggingFaceRepo.mockResolvedValue(null)
   })
 
-  it('defaults to the standard list', () => {
-    const { result } = renderHook(() => useResolvedRecommendedModels([]))
-
-    expect(result.current.map((i) => i.rec.modelName)).toEqual([
-      'AtomicChat/remount-model-GGUF',
-    ])
-  })
-
-  it('replaces the list entirely on a low-spec machine', () => {
-    // Replace, not supplement: a machine that cannot run the standard pair is
-    // not helped by seeing them alongside the small ones.
+  it('leads with the tier the manifest overrides, then the other options', () => {
+    // Order is the contract: the first screen renders index 0 as the offer and
+    // hides the rest behind a disclosure.
     const { result } = renderHook(() =>
-      useResolvedRecommendedModels([], 'low')
+      useResolvedRecommendedModels([], OVERRIDDEN_TIER)
     )
 
     expect(result.current.map((i) => i.rec.modelName)).toEqual([
-      'LiquidAI/LFM2.5-VL-450M-GGUF',
+      'AtomicChat/remount-model-GGUF',
+      'AtomicChat/other-option-GGUF',
     ])
   })
 
-  it('carries the quant pins onto the resolved recommendation', () => {
-    // Both are needed downstream: the repo also ships Q4_K_M weights and a
-    // BF16 projector, so a dropped pin downloads the wrong files silently.
+  it('falls back to the bundled ladder for a tier the manifest omits', () => {
+    // A manifest may override one rung and leave the rest alone; the omitted
+    // rungs must still lead with a real model rather than with the flat list.
     const { result } = renderHook(() =>
-      useResolvedRecommendedModels([], 'low')
+      useResolvedRecommendedModels([], BARE_TIER)
+    )
+
+    expect(result.current[0].rec.modelName).toBe(
+      BASELINE_TIER_RECOMMENDATIONS[BARE_TIER][0].model_name
+    )
+    expect(result.current.map((i) => i.rec.modelName)).toContain(
+      'AtomicChat/other-option-GGUF'
+    )
+  })
+
+  it('carries the quant pins onto the resolved recommendation', () => {
+    // Both are needed downstream: repos routinely ship several four-bit quants
+    // and more than one projector, so a dropped pin downloads a
+    // working-but-wrong file and fails nowhere.
+    const { result } = renderHook(() =>
+      useResolvedRecommendedModels([], OVERRIDDEN_TIER)
     )
 
     expect(result.current[0].rec.quant).toBe('Q8_0')
     expect(result.current[0].rec.mmprojQuant).toBe('Q8_0')
+  })
+
+  it('never repeats a model between the offer and the other options', () => {
+    const { result } = renderHook(() =>
+      useResolvedRecommendedModels([], BARE_TIER)
+    )
+
+    const names = result.current.map((i) => i.rec.modelName)
+    expect(new Set(names).size).toBe(names.length)
   })
 })

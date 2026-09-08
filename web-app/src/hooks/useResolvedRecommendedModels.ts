@@ -6,7 +6,7 @@ import { findCatalogModelForRecommendedRepo } from '@/lib/models'
 import { sanitizeModelId } from '@/lib/utils'
 import {
   filterRecommendationsForPlatform,
-  selectRecommendationsForTier,
+  selectTierRecommendations,
   type Recommendation,
   type RecommendationPlatform,
 } from '@/services/recommended-models-registry'
@@ -14,8 +14,8 @@ import type { HardwareTier } from '@/lib/hardware-tier'
 import { useRecommendedModelsRegistryStore } from '@/stores/recommended-models-registry-store'
 import type { CatalogModel } from '@/services/models/types'
 
-//* Стабильная ссылка: иначе селектор возвращал бы новый [] на каждый рендер.
-const EMPTY_RECOMMENDATIONS: Recommendation[] = []
+//* Стабильная ссылка: иначе селектор возвращал бы новый {} на каждый рендер.
+const EMPTY_TIERS: Partial<Record<HardwareTier, Recommendation[]>> = {}
 
 const currentOs: RecommendationPlatform = IS_MACOS
   ? 'macos'
@@ -46,34 +46,43 @@ const resolvedModels: Record<string, CatalogModel> = {
 }
 const pendingModels = new Map<string, Promise<CatalogModel | null>>()
 
-//* Рекомендации: каталог; если репо ещё не в индексе — один запрос к HF API
+/**
+ * Recommendations for this machine, **primary first**.
+ *
+ * Index 0 is the one model onboarding leads with — the rung of the ladder this
+ * tier sits on. Everything after it is the "other options" pool: the manifest's
+ * flat `recommendations` list, minus anything the tier already offered.
+ *
+ * Ordering is the contract, not a coincidence: the first screen renders
+ * `items[0]` as the offer and the rest behind a disclosure, and
+ * `recommended_model_shown.position` is this index.
+ */
 export function useResolvedRecommendedModels(
   sources: CatalogModel[],
-  tier: HardwareTier = 'standard'
+  tier: HardwareTier
 ) {
   const serviceHub = useServiceHub()
   const huggingfaceToken = useGeneralSetting((s) => s.huggingfaceToken)
   const remoteRecommendations = useRecommendedModelsRegistryStore(
     (s) => s.recommendations
   )
-  //* `?? []` — персистнутый/замоканный стор может быть без нового поля.
-  const lowSpecRecommendations = useRecommendedModelsRegistryStore(
-    (s) => s.lowSpecRecommendations ?? EMPTY_RECOMMENDATIONS
-  )
+  //* `?? {}` — персистнутый/замоканный стор может быть без нового поля.
+  const tiers = useRecommendedModelsRegistryStore((s) => s.tiers ?? EMPTY_TIERS)
 
-  const recommendations = useMemo<LegacyRecommendation[]>(
-    () =>
-      filterRecommendationsForPlatform(
-        //* Тир выбирает список целиком, платформа затем фильтрует внутри него.
-        selectRecommendationsForTier(
-          remoteRecommendations,
-          lowSpecRecommendations,
-          tier
-        ),
-        currentOs
-      ).map(toLegacy),
-    [remoteRecommendations, lowSpecRecommendations, tier]
-  )
+  const recommendations = useMemo<LegacyRecommendation[]>(() => {
+    const forTier = filterRecommendationsForPlatform(
+      selectTierRecommendations(tiers, tier),
+      currentOs
+    )
+    const rest = filterRecommendationsForPlatform(
+      remoteRecommendations,
+      currentOs
+    )
+    const seen = new Set(forTier.map((r) => r.model_name))
+    return [...forTier, ...rest.filter((r) => !seen.has(r.model_name))].map(
+      toLegacy
+    )
+  }, [remoteRecommendations, tiers, tier])
 
   const [fetched, setFetched] = useState<Record<string, CatalogModel>>(() => ({
     ...resolvedModels,

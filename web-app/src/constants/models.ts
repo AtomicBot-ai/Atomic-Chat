@@ -9,12 +9,189 @@ import type { HardwareTier } from '@/lib/hardware-tier'
 export const EMBEDDING_MODEL_ID = 'sentence-transformer-mini'
 
 /**
- * Model offered by the bottom-right reminder that appears when onboarding is
- * left without picking anything. Must stay in sync with the first entry of the
- * onboarding manifest (`atomic-chat-conf/models/recommended.json`) so the
- * reminder repeats the same recommendation the setup screen showed.
+ * One rung of the recommendation ladder: the single model onboarding offers to
+ * a machine on that tier, and what the "why this one" line needs to say before
+ * the catalog entry has resolved.
  */
-export const ONBOARDING_REMINDER_MODEL_HF_REPO = 'AtomicChat/Qwen3.5-4B-GGUF'
+export type LadderEntry = {
+  /** Hugging Face repo id. */
+  repo: string
+  /** Display name — this line is not translated, matching its siblings. */
+  title: string
+  /** Quant pin; see `findPinnedQuant`. Every rung pins one deliberately. */
+  quant: string
+  /** Vision models only: projector pin. */
+  mmprojQuant?: string
+  /** Total download (weights + projector) in GiB, for the pre-resolve line. */
+  sizeGb: number
+  /** Hub category label, shared with the manifest's `description_key`. */
+  descriptionKey: string
+}
+
+/**
+ * What we recommend, per hardware tier (ATO-463).
+ *
+ * The principle, set by product: **optimize the speed of the first decent
+ * answer, not the largest model that fits.** Even on a 128 GiB machine the
+ * offer is light and fast; anything heavier lives behind "other options".
+ *
+ * Three measurements decided the contents:
+ *
+ *  - **27B is out on every tier.** It is the most-used model in the whole
+ *    dataset (105 devices) and sits on the edge of unusable: 15.1 tok/s median,
+ *    5.4 at the lower quartile, after a 15 GB download. It stays in the catalog
+ *    for anyone who wants it; it is not a default.
+ *  - **`gemma-4-E2B-it` is out.** Its name is MatFormer effective parameters,
+ *    not file size: it weighs 3.19 GB, more than `Qwen3.5-4B` at 2.52, which is
+ *    both measured faster and smaller. It was in the `standard` tier as the
+ *    "light" option, which was simply wrong.
+ *  - **12B enters at the top as the QAT build.** `unsloth/gemma-4-12B-it-qat`
+ *    UD-Q4_K_XL is 6.26 GiB — the same as a plain Q4_0 and lighter than Q4_K_M
+ *    — but quantization-aware training keeps four-bit quality close to the
+ *    unquantized model. Measured at 37.8 tok/s median. A free upgrade.
+ *
+ * Everything is `Q4_K_M` (or the QAT repo's single UD-Q4_K_XL) rather than
+ * `IQ4_XS`, which is ~0.5 GiB lighter: i-quants need more compute per weight
+ * and are markedly slower on CPU and on some Vulkan backends, and a large part
+ * of the base is exactly there (ATO-464).
+ *
+ * `AtomicChat/*` mirrors are preferred wherever they carry the quant we want —
+ * third-party mirrors fail downloads more often (ATO-467). Only the 12B QAT has
+ * no mirror of ours.
+ *
+ * Composition can be overridden without a release through the manifest's
+ * `tiers` key; the tier vocabulary itself is a release-time contract.
+ */
+export const RECOMMENDATION_LADDER: Readonly<
+  Record<HardwareTier, LadderEntry>
+> = {
+  // Under 2.5 GiB of VRAM is 741 Windows devices — integrated graphics and
+  // pre-Turing cards. Even LFM2.5-2.6B (1.56 GiB) plus its KV cache is tight
+  // there, so this rung goes a size lower.
+  vram_2: {
+    repo: 'LiquidAI/LFM2.5-1.2B-Instruct-GGUF',
+    title: 'LFM2.5 1.2B Instruct',
+    quant: 'Q4_K_M',
+    sizeGb: 0.68,
+    descriptionKey: 'hub:recEverydayUse',
+  },
+  // No accelerator at all: throughput is bound by the CPU, and more system
+  // RAM does not buy any of it back. The lightest rung, whatever the RAM.
+  cpu_only: {
+    repo: 'LiquidAI/LFM2.5-1.2B-Instruct-GGUF',
+    title: 'LFM2.5 1.2B Instruct',
+    quant: 'Q4_K_M',
+    sizeGb: 0.68,
+    descriptionKey: 'hub:recEverydayUse',
+  },
+  vram_4: {
+    repo: 'LiquidAI/LFM2.5-2.6B-GGUF',
+    title: 'LFM2.5 2.6B',
+    quant: 'Q4_K_M',
+    sizeGb: 1.56,
+    descriptionKey: 'hub:recEverydayUse',
+  },
+  // 5–9 GiB of VRAM is the most populated bucket in the base (~2750 devices).
+  vram_8: {
+    repo: 'AtomicChat/Qwen3.5-4B-GGUF',
+    title: 'Qwen3.5 4B',
+    quant: 'Q4_K_M',
+    sizeGb: 2.52,
+    descriptionKey: 'hub:recEverydayUse',
+  },
+  // Fastest model in our own measurement: 87 tok/s median, 0.89 s to first
+  // token. Vision-capable, hence the projector pin.
+  vram_12: {
+    repo: 'AtomicChat/gemma-4-E4B-it-GGUF',
+    title: 'Gemma 4 E4B',
+    quant: 'Q4_K_M',
+    mmprojQuant: 'F16',
+    sizeGb: 5.89,
+    descriptionKey: 'hub:recVisionKnowledge',
+  },
+  vram_16: {
+    repo: 'AtomicChat/Qwen3.5-9B-GGUF',
+    title: 'Qwen3.5 9B',
+    quant: 'Q4_K_M',
+    sizeGb: 5.24,
+    descriptionKey: 'hub:recEverydayUse',
+  },
+  vram_16_plus: {
+    repo: 'unsloth/gemma-4-12B-it-qat-GGUF',
+    title: 'Gemma 4 12B (QAT)',
+    quant: 'Q4_K_XL',
+    mmprojQuant: 'F16',
+    sizeGb: 6.42,
+    descriptionKey: 'hub:recVisionKnowledge',
+  },
+  // Macs get a rung lighter than a PC with the same number on it: the Metal
+  // ceiling is hard, and unified memory is shared with everything else the
+  // machine is doing, whereas VRAM on a card is the model's alone.
+  unified_8: {
+    repo: 'LiquidAI/LFM2.5-2.6B-GGUF',
+    title: 'LFM2.5 2.6B',
+    quant: 'Q4_K_M',
+    sizeGb: 1.56,
+    descriptionKey: 'hub:recEverydayUse',
+  },
+  unified_16: {
+    repo: 'AtomicChat/Qwen3.5-4B-GGUF',
+    title: 'Qwen3.5 4B',
+    quant: 'Q4_K_M',
+    sizeGb: 2.52,
+    descriptionKey: 'hub:recEverydayUse',
+  },
+  unified_32: {
+    repo: 'AtomicChat/gemma-4-E4B-it-GGUF',
+    title: 'Gemma 4 E4B',
+    quant: 'Q4_K_M',
+    mmprojQuant: 'F16',
+    sizeGb: 5.89,
+    descriptionKey: 'hub:recVisionKnowledge',
+  },
+  unified_32_plus: {
+    repo: 'unsloth/gemma-4-12B-it-qat-GGUF',
+    title: 'Gemma 4 12B (QAT)',
+    quant: 'Q4_K_XL',
+    mmprojQuant: 'F16',
+    sizeGb: 6.42,
+    descriptionKey: 'hub:recVisionKnowledge',
+  },
+}
+
+/**
+ * The tier a machine gets when hardware never resolved.
+ *
+ * Conservative on purpose: `PICKER_INPUT_DEADLINE_MS` gives enumeration four
+ * seconds, and whatever has not answered by then still needs a default. An
+ * over-light recommendation downloads fast and runs; an over-heavy one on an
+ * unknown machine is the exact failure this ladder exists to remove.
+ */
+export const FALLBACK_HARDWARE_TIER: HardwareTier = 'vram_8'
+
+const ladderToRecommendation = (entry: LadderEntry): Recommendation => ({
+  model_name: entry.repo,
+  description_key: entry.descriptionKey,
+  quant: entry.quant,
+  ...(entry.mmprojQuant ? { mmproj_quant: entry.mmprojQuant } : {}),
+})
+
+/**
+ * Bundled per-tier fallback for the recommended-models registry, mirroring the
+ * manifest's `tiers` key so the picker can paint on the very first launch and
+ * when the network is unavailable.
+ *
+ * Derived from {@link RECOMMENDATION_LADDER} rather than written out again, so
+ * the offer and the reminder below cannot drift apart.
+ */
+export const BASELINE_TIER_RECOMMENDATIONS: Readonly<
+  Record<HardwareTier, Recommendation[]>
+> = Object.fromEntries(
+  Object.entries(RECOMMENDATION_LADDER).map(([tier, entry]) => [
+    tier,
+    [ladderToRecommendation(entry)],
+  ])
+) as Record<HardwareTier, Recommendation[]>
 
 /** What the bottom-right reminder offers, keyed by hardware tier. */
 export type OnboardingReminderModel = {
@@ -29,29 +206,32 @@ export type OnboardingReminderModel = {
 }
 
 /**
- * The reminder must offer what the machine can actually run, or it repeats the
- * mistake the low-spec tier exists to fix: a weak device that skipped
- * onboarding got nudged toward a 2.5 GB model it would struggle with.
- *
- * Keep the `standard` entry in sync with the first entry of
- * `recommendations` in the onboarding manifest, and `low` with the first entry
- * of `low_spec_recommendations`.
+ * The reminder and the composer's "what do I reply with?" widget must offer the
+ * same model the first screen did — a second opinion that drifts from it is
+ * worse than no second surface. Both read this, and it is the ladder.
  */
 export const ONBOARDING_REMINDER_MODELS: Record<
   HardwareTier,
   OnboardingReminderModel
-> = {
-  standard: {
-    repo: ONBOARDING_REMINDER_MODEL_HF_REPO,
-    title: 'Qwen3.5 4B',
-  },
-  low: {
-    repo: 'LiquidAI/LFM2.5-VL-450M-GGUF',
-    title: 'LFM2.5 VL 450M',
-    quant: 'Q8_0',
-    mmprojQuant: 'Q8_0',
-  },
-}
+> = Object.fromEntries(
+  Object.entries(RECOMMENDATION_LADDER).map(([tier, entry]) => [
+    tier,
+    {
+      repo: entry.repo,
+      title: entry.title,
+      quant: entry.quant,
+      ...(entry.mmprojQuant ? { mmprojQuant: entry.mmprojQuant } : {}),
+    },
+  ])
+) as Record<HardwareTier, OnboardingReminderModel>
+
+/**
+ * Repo the reminder falls back to when the tier is unknown. Kept as a named
+ * export because other call sites reference the "house default" repo directly.
+ */
+export const ONBOARDING_REMINDER_MODEL_HF_REPO =
+  RECOMMENDATION_LADDER[FALLBACK_HARDWARE_TIER].repo
+
 export const JAN_CODE_HF_REPO = 'janhq/Jan-Code-4b-Gguf'
 export const DEFAULT_MODEL_QUANTIZATIONS = ['iq4_xs', 'q4_k_m']
 
@@ -62,10 +242,12 @@ export const DEFAULT_MODEL_QUANTIZATIONS = ['iq4_xs', 'q4_k_m']
 export const SETUP_SCREEN_QUANTIZATIONS = ['q4_k_m']
 
 /**
- * Bundled fallback for the recommended-models registry. Mirrors the contents
- * of `atomic-chat-conf/models/recommended.json` so the client can render the
- * Recommended section on the very first launch (before the manifest fetch
- * resolves) and when the network is unavailable.
+ * Bundled fallback for the manifest's flat `recommendations` list.
+ *
+ * Since ATO-463 this list is no longer what the first screen leads with — that
+ * is {@link RECOMMENDATION_LADDER}, chosen by hardware. It is the pool behind
+ * "other options", and it is what a client too old to know about `tiers` still
+ * shows, so it stays a curated, generally-runnable set.
  *
  * Platform filtering happens at runtime in
  * `recommended-models-registry-store.ts` — keep `platforms` declarative here
@@ -76,44 +258,35 @@ export const BASELINE_RECOMMENDED_MODELS: ReadonlyArray<Recommendation> = [
   {
     model_name: 'AtomicChat/Qwen3.5-4B-GGUF',
     description_key: 'hub:recEverydayUse',
+    quant: 'Q4_K_M',
   },
   {
-    model_name: 'AtomicChat/gemma-4-E2B-it-GGUF',
+    model_name: 'AtomicChat/Qwen3.5-9B-GGUF',
     description_key: 'hub:recEverydayUse',
+    quant: 'Q4_K_M',
+  },
+  {
+    model_name: 'AtomicChat/gemma-4-E4B-it-GGUF',
+    description_key: 'hub:recVisionKnowledge',
+    quant: 'Q4_K_M',
+    mmproj_quant: 'F16',
   },
 ]
 
-/**
- * Mirror of the manifest's `low_spec_recommendations` array. Shown INSTEAD of
- * {@link BASELINE_RECOMMENDED_MODELS} on machines `classifyHardwareTier` calls
- * low-spec, so the first model a weak machine downloads is one it can run.
- *
- * Same rule as above: keep this declarative and identical to the manifest —
- * no `IS_MACOS` ternaries, no computed quants. The `quant` pins are required,
- * not cosmetic: both repos also ship a Q4_K_M, so a dropped pin downloads a
- * working-but-wrong file and fails silently.
- */
-export const BASELINE_LOW_SPEC_RECOMMENDED_MODELS: ReadonlyArray<Recommendation> =
-  [
-    {
-      model_name: 'LiquidAI/LFM2.5-2.6B-GGUF',
-      description_key: 'hub:recEverydayUse',
-      quant: 'Q4_K_M',
-    },
-    {
-      model_name: 'LiquidAI/LFM2.5-VL-450M-GGUF',
-      description_key: 'hub:recVisionKnowledge',
-      quant: 'Q8_0',
-      mmproj_quant: 'Q8_0',
-    },
-  ]
-
 const ATOMIC_GEMMA4_E4B_HF =
-  'https://huggingface.co/AtomicChat/gemma4-e4b-it-GGUF/resolve/main'
+  'https://huggingface.co/AtomicChat/gemma-4-E4B-it-GGUF/resolve/main'
 const ATOMIC_QWEN35_4B_HF =
-  'https://huggingface.co/AtomicChat/qwen35-4b-GGUF/resolve/main'
+  'https://huggingface.co/AtomicChat/Qwen3.5-4B-GGUF/resolve/main'
+const ATOMIC_QWEN35_9B_HF =
+  'https://huggingface.co/AtomicChat/Qwen3.5-9B-GGUF/resolve/main'
 const ATOMIC_QWEN3_CODER_HF =
   'https://huggingface.co/AtomicChat/qwen3-coder-30b-a3b-GGUF/resolve/main'
+const LFM_1_2B_HF =
+  'https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF/resolve/main'
+const LFM_2_6B_HF =
+  'https://huggingface.co/LiquidAI/LFM2.5-2.6B-GGUF/resolve/main'
+const GEMMA4_12B_QAT_HF =
+  'https://huggingface.co/unsloth/gemma-4-12B-it-qat-GGUF/resolve/main'
 const QWEN_MLX_HF =
   'https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-4bit/resolve/main'
 
@@ -138,11 +311,24 @@ const MLX_QWEN_FALLBACK: CatalogModel = {
   readme: `${QWEN_MLX_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
 }
 
+/**
+ * Catalog cards for the repos onboarding can offer, so the first screen paints
+ * a real model with a real size before any network call resolves — and still
+ * paints one if none ever does.
+ *
+ * Every rung of {@link RECOMMENDATION_LADDER} has an entry here. Sizes are the
+ * actual LFS sizes read from Hugging Face (2026-09-08), in GiB, which is what
+ * `parseFileSizeToBytes` assumes a "GB" suffix means.
+ *
+ * Only the quant each rung pins is listed for the single-quant entries; the
+ * full ladder is kept for `gemma-4-E4B-it` because the Hub model page reads
+ * this map too and that card is the one users open.
+ */
 export const RECOMMENDED_MODEL_FALLBACKS: Readonly<
   Record<string, CatalogModel>
 > = {
-  'AtomicChat/gemma4-e4b-it-GGUF': {
-    model_name: 'AtomicChat/gemma4-e4b-it-GGUF',
+  'AtomicChat/gemma-4-E4B-it-GGUF': {
+    model_name: 'AtomicChat/gemma-4-E4B-it-GGUF',
     developer: 'AtomicChat',
     description:
       '**Tags**: Image-Text-to-Text, GGUF, gemma4, atomic-chat, google, imatrix, conversational',
@@ -150,91 +336,179 @@ export const RECOMMENDED_MODEL_FALLBACKS: Readonly<
     num_quants: 12,
     quants: [
       {
-        model_id: 'AtomicChat/gemma4-e4b-it-Q8_0',
-        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-Q8_0.gguf`,
+        model_id: 'AtomicChat/gemma-4-E4B-it-Q8_0',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma-4-E4B-it-Q8_0.gguf`,
         file_size: '8.0 GB',
       },
       {
-        model_id: 'AtomicChat/gemma4-e4b-it-Q6_K',
-        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-Q6_K.gguf`,
+        model_id: 'AtomicChat/gemma-4-E4B-it-Q6_K',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma-4-E4B-it-Q6_K.gguf`,
         file_size: '7.0 GB',
       },
       {
-        model_id: 'AtomicChat/gemma4-e4b-it-Q5_K_M',
-        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-Q5_K_M.gguf`,
+        model_id: 'AtomicChat/gemma-4-E4B-it-Q5_K_M',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma-4-E4B-it-Q5_K_M.gguf`,
         file_size: '5.5 GB',
       },
       {
-        model_id: 'AtomicChat/gemma4-e4b-it-Q5_K_S',
-        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-Q5_K_S.gguf`,
+        model_id: 'AtomicChat/gemma-4-E4B-it-Q5_K_S',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma-4-E4B-it-Q5_K_S.gguf`,
         file_size: '5.4 GB',
       },
       {
-        model_id: 'AtomicChat/gemma4-e4b-it-UD-Q4_K_XL',
-        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-UD-Q4_K_XL.gguf`,
-        file_size: '5.1 GB',
+        model_id: 'AtomicChat/gemma-4-E4B-it-UD-Q4_K_XL',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma-4-E4B-it-UD-Q4_K_XL.gguf`,
+        file_size: '5.76 GB',
       },
       {
-        model_id: 'AtomicChat/gemma4-e4b-it-Q4_K_M',
-        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-Q4_K_M.gguf`,
-        file_size: '4.9 GB',
+        model_id: 'AtomicChat/gemma-4-E4B-it-Q4_K_M',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma-4-E4B-it-Q4_K_M.gguf`,
+        file_size: '4.97 GB',
       },
       {
-        model_id: 'AtomicChat/gemma4-e4b-it-Q4_K_S',
-        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-Q4_K_S.gguf`,
+        model_id: 'AtomicChat/gemma-4-E4B-it-Q4_K_S',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma-4-E4B-it-Q4_K_S.gguf`,
         file_size: '4.7 GB',
       },
       {
-        model_id: 'AtomicChat/gemma4-e4b-it-IQ4_XS',
-        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-IQ4_XS.gguf`,
+        model_id: 'AtomicChat/gemma-4-E4B-it-IQ4_XS',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma-4-E4B-it-IQ4_XS.gguf`,
         file_size: '4.5 GB',
       },
       {
-        model_id: 'AtomicChat/gemma4-e4b-it-Q3_K_L',
-        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-Q3_K_L.gguf`,
+        model_id: 'AtomicChat/gemma-4-E4B-it-Q3_K_L',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma-4-E4B-it-Q3_K_L.gguf`,
         file_size: '4.4 GB',
       },
       {
-        model_id: 'AtomicChat/gemma4-e4b-it-Q3_K_M',
-        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-Q3_K_M.gguf`,
+        model_id: 'AtomicChat/gemma-4-E4B-it-Q3_K_M',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma-4-E4B-it-Q3_K_M.gguf`,
         file_size: '4.1 GB',
       },
       {
-        model_id: 'AtomicChat/gemma4-e4b-it-IQ3_M',
-        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-IQ3_M.gguf`,
+        model_id: 'AtomicChat/gemma-4-E4B-it-IQ3_M',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma-4-E4B-it-IQ3_M.gguf`,
         file_size: '3.8 GB',
       },
       {
-        model_id: 'AtomicChat/gemma4-e4b-it-Q2_K',
-        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-Q2_K.gguf`,
+        model_id: 'AtomicChat/gemma-4-E4B-it-Q2_K',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma-4-E4B-it-Q2_K.gguf`,
         file_size: '3.3 GB',
       },
     ],
     num_mmproj: 1,
     mmproj_models: [
       {
+        //! Не переименован вместе с весами — имя файла в репозитории именно такое.
         model_id: 'mmproj-gemma4-e4b-it-f16',
         path: `${ATOMIC_GEMMA4_E4B_HF}/mmproj-gemma4-e4b-it-f16.gguf`,
-        file_size: '1.0 GB',
+        file_size: '0.92 GB',
       },
     ],
     readme: `${ATOMIC_GEMMA4_E4B_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
   },
-  'AtomicChat/qwen35-4b-GGUF': {
-    model_name: 'AtomicChat/qwen35-4b-GGUF',
+  'AtomicChat/Qwen3.5-4B-GGUF': {
+    model_name: 'AtomicChat/Qwen3.5-4B-GGUF',
     developer: 'AtomicChat',
-    description: '**Tags**: text-generation, GGUF, qwen3, atomic-chat, imatrix, conversational',
+    description:
+      '**Tags**: text-generation, GGUF, qwen3, atomic-chat, imatrix, conversational',
     downloads: 0,
-    num_quants: 0,
-    quants: [],
+    num_quants: 1,
+    quants: [
+      {
+        model_id: 'AtomicChat/qwen35-4b-Q4_K_M',
+        path: `${ATOMIC_QWEN35_4B_HF}/qwen35-4b-Q4_K_M.gguf`,
+        file_size: '2.52 GB',
+      },
+    ],
     num_mmproj: 0,
     mmproj_models: [],
     readme: `${ATOMIC_QWEN35_4B_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
   },
+  'AtomicChat/Qwen3.5-9B-GGUF': {
+    model_name: 'AtomicChat/Qwen3.5-9B-GGUF',
+    developer: 'AtomicChat',
+    description:
+      '**Tags**: text-generation, GGUF, qwen3, atomic-chat, imatrix, conversational',
+    downloads: 0,
+    num_quants: 1,
+    quants: [
+      {
+        model_id: 'AtomicChat/qwen35-9b-Q4_K_M',
+        path: `${ATOMIC_QWEN35_9B_HF}/qwen35-9b-Q4_K_M.gguf`,
+        file_size: '5.24 GB',
+      },
+    ],
+    num_mmproj: 0,
+    mmproj_models: [],
+    readme: `${ATOMIC_QWEN35_9B_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
+  },
+  'LiquidAI/LFM2.5-1.2B-Instruct-GGUF': {
+    model_name: 'LiquidAI/LFM2.5-1.2B-Instruct-GGUF',
+    developer: 'LiquidAI',
+    description:
+      '**Tags**: text-generation, GGUF, lfm2, liquidai, conversational',
+    downloads: 0,
+    num_quants: 1,
+    quants: [
+      {
+        model_id: 'LiquidAI/LFM2.5-1.2B-Instruct-Q4_K_M',
+        path: `${LFM_1_2B_HF}/LFM2.5-1.2B-Instruct-Q4_K_M.gguf`,
+        file_size: '0.68 GB',
+      },
+    ],
+    num_mmproj: 0,
+    mmproj_models: [],
+    readme: `${LFM_1_2B_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
+  },
+  'LiquidAI/LFM2.5-2.6B-GGUF': {
+    model_name: 'LiquidAI/LFM2.5-2.6B-GGUF',
+    developer: 'LiquidAI',
+    description:
+      '**Tags**: text-generation, GGUF, lfm2, liquidai, conversational',
+    downloads: 0,
+    num_quants: 1,
+    quants: [
+      {
+        model_id: 'LiquidAI/LFM2.5-2.6B-Q4_K_M',
+        path: `${LFM_2_6B_HF}/LFM2.5-2.6B-Q4_K_M.gguf`,
+        file_size: '1.56 GB',
+      },
+    ],
+    num_mmproj: 0,
+    mmproj_models: [],
+    readme: `${LFM_2_6B_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
+  },
+  'unsloth/gemma-4-12B-it-qat-GGUF': {
+    model_name: 'unsloth/gemma-4-12B-it-qat-GGUF',
+    developer: 'unsloth',
+    description:
+      '**Tags**: Image-Text-to-Text, GGUF, gemma4, unsloth, qat, conversational',
+    downloads: 0,
+    num_quants: 1,
+    quants: [
+      {
+        //! Единственный квант в QAT-репозитории — лестницы там нет, берём что есть.
+        model_id: 'unsloth/gemma-4-12B-it-qat-UD-Q4_K_XL',
+        path: `${GEMMA4_12B_QAT_HF}/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf`,
+        file_size: '6.26 GB',
+      },
+    ],
+    num_mmproj: 1,
+    mmproj_models: [
+      {
+        model_id: 'mmproj-F16',
+        path: `${GEMMA4_12B_QAT_HF}/mmproj-F16.gguf`,
+        file_size: '0.16 GB',
+      },
+    ],
+    readme: `${GEMMA4_12B_QAT_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
+  },
   'AtomicChat/qwen3-coder-30b-a3b-GGUF': {
     model_name: 'AtomicChat/qwen3-coder-30b-a3b-GGUF',
     developer: 'AtomicChat',
-    description: '**Tags**: text-generation, GGUF, qwen3, qwen3-coder, atomic-chat, imatrix, conversational',
+    description:
+      '**Tags**: text-generation, GGUF, qwen3, qwen3-coder, atomic-chat, imatrix, conversational',
     downloads: 0,
     num_quants: 0,
     quants: [],
@@ -261,7 +535,7 @@ export const RECOMMENDED_MODEL_FALLBACKS: Readonly<
  */
 export const BASELINE_MODEL_CATALOG: ReadonlyArray<CatalogModel> = [
   {
-    model_name: 'AtomicChat/gemma4-e4b-it-GGUF',
+    model_name: 'AtomicChat/gemma-4-E4B-it-GGUF',
     developer: 'AtomicChat',
     description:
       '**Tags**: gguf, gemma4, atomic-chat, google, imatrix, conversational, image-text-to-text',
@@ -269,9 +543,9 @@ export const BASELINE_MODEL_CATALOG: ReadonlyArray<CatalogModel> = [
     num_quants: 1,
     quants: [
       {
-        model_id: 'AtomicChat/gemma4-e4b-it-Q4_K_M',
-        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma4-e4b-it-Q4_K_M.gguf`,
-        file_size: '4.9 GB',
+        model_id: 'AtomicChat/gemma-4-E4B-it-Q4_K_M',
+        path: `${ATOMIC_GEMMA4_E4B_HF}/gemma-4-E4B-it-Q4_K_M.gguf`,
+        file_size: '4.97 GB',
       },
     ],
     num_mmproj: 1,
@@ -279,7 +553,7 @@ export const BASELINE_MODEL_CATALOG: ReadonlyArray<CatalogModel> = [
       {
         model_id: 'mmproj-gemma4-e4b-it-f16',
         path: `${ATOMIC_GEMMA4_E4B_HF}/mmproj-gemma4-e4b-it-f16.gguf`,
-        file_size: '1.0 GB',
+        file_size: '0.92 GB',
       },
     ],
     num_safetensors: 0,
@@ -288,7 +562,7 @@ export const BASELINE_MODEL_CATALOG: ReadonlyArray<CatalogModel> = [
     readme: `${ATOMIC_GEMMA4_E4B_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
   },
   {
-    model_name: 'AtomicChat/qwen35-4b-GGUF',
+    model_name: 'AtomicChat/Qwen3.5-4B-GGUF',
     developer: 'AtomicChat',
     description: '**Tags**: gguf, qwen3, atomic-chat, imatrix, conversational',
     downloads: 0,
@@ -313,12 +587,14 @@ export const BASELINE_MODEL_CATALOG: ReadonlyArray<CatalogModel> = [
     num_safetensors: 0,
     safetensors_files: [],
     is_mlx: false,
-    readme: 'https://huggingface.co/AtomicChat/qwen36-27b-GGUF/resolve/main/README.md',
+    readme:
+      'https://huggingface.co/AtomicChat/qwen36-27b-GGUF/resolve/main/README.md',
   },
   {
     model_name: 'AtomicChat/qwen3-coder-30b-a3b-GGUF',
     developer: 'AtomicChat',
-    description: '**Tags**: gguf, qwen3, qwen3-coder, atomic-chat, imatrix, conversational',
+    description:
+      '**Tags**: gguf, qwen3, qwen3-coder, atomic-chat, imatrix, conversational',
     downloads: 0,
     num_quants: 0,
     quants: [],

@@ -24,17 +24,17 @@ import {
   type RegistryFetchResult,
   type RegistrySource,
 } from '@/services/recommended-models-registry'
-import {
-  BASELINE_LOW_SPEC_RECOMMENDED_MODELS,
-  BASELINE_RECOMMENDED_MODELS,
-} from '@/constants/models'
+import { BASELINE_RECOMMENDED_MODELS } from '@/constants/models'
+import type { HardwareTier } from '@/lib/hardware-tier'
 
 export type RegistryStatus = 'idle' | 'loading' | 'success' | 'error'
 
 type RegistryState = {
   recommendations: Recommendation[]
-  /** Shown INSTEAD of `recommendations` on low-spec machines. May be empty. */
-  lowSpecRecommendations: Recommendation[]
+  /** Per-tier overrides from the manifest. Partial by design — a tier the
+   *  manifest omits falls back to the bundled ladder in
+   *  `selectTierRecommendations`. */
+  tiers: Partial<Record<HardwareTier, Recommendation[]>>
   status: RegistryStatus
   source: RegistrySource
   fetchedAt: number | null
@@ -47,28 +47,26 @@ type RegistryState = {
 
 const seedRecommendations = (): {
   recommendations: Recommendation[]
-  lowSpecRecommendations: Recommendation[]
+  tiers: Partial<Record<HardwareTier, Recommendation[]>>
 } => {
   const cached = getCachedManifest()
   if (cached) {
     return {
       recommendations: cached.manifest.recommendations.slice(),
-      // A cache entry written before the manifest gained its low-spec list has
-      // none; `selectRecommendationsForTier` falls back to the standard pair.
-      lowSpecRecommendations: (
-        cached.manifest.low_spec_recommendations ?? []
-      ).slice(),
+      // A cache entry written before the manifest gained its tier lists has
+      // none; `selectTierRecommendations` falls back to the bundled ladder.
+      tiers: { ...(cached.manifest.tiers ?? {}) },
     }
   }
   return {
     recommendations: BASELINE_RECOMMENDED_MODELS.slice(),
-    lowSpecRecommendations: BASELINE_LOW_SPEC_RECOMMENDED_MODELS.slice(),
+    tiers: {},
   }
 }
 
 const baselineFallback = (message: string): RegistryFetchResult => ({
   recommendations: BASELINE_RECOMMENDED_MODELS.slice(),
-  lowSpecRecommendations: BASELINE_LOW_SPEC_RECOMMENDED_MODELS.slice(),
+  tiers: {},
   source: 'baseline',
   fetchedAt: null,
   manifestUpdatedAt: null,
@@ -82,7 +80,7 @@ const seed = seedRecommendations()
 export const useRecommendedModelsRegistryStore = create<RegistryState>()(
   (set) => ({
     recommendations: seed.recommendations,
-    lowSpecRecommendations: seed.lowSpecRecommendations,
+    tiers: seed.tiers,
     status: 'idle',
     source: getCachedManifest() ? 'cache' : 'baseline',
     fetchedAt: getCachedManifest()?.fetchedAt ?? null,
@@ -112,7 +110,7 @@ export const useRecommendedModelsRegistryStore = create<RegistryState>()(
 
       set({
         recommendations: result.recommendations,
-        lowSpecRecommendations: result.lowSpecRecommendations,
+        tiers: result.tiers,
         source: result.source,
         fetchedAt: result.fetchedAt,
         manifestUpdatedAt: result.manifestUpdatedAt,

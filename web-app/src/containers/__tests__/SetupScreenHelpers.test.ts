@@ -8,18 +8,25 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  describeRecommendationFit,
   formatDetectedSize,
+  formatMemoryGb,
   getInitialStep,
   pickAutoRunCandidate,
   pickMmprojModel,
   pickPreferredVariant,
   sizeStringToGb,
 } from '@/containers/SetupScreen'
+import type { HardwareProfile } from '@/lib/hardware-tier'
 import type { CatalogModel, ModelQuant } from '@/services/models/types'
 import type { LocalModelCandidate } from '@/services/models/localScan'
 
 const quant = (model_id: string): ModelQuant =>
-  ({ model_id, path: `https://example.test/${model_id}`, file_size: '1 GB' }) as ModelQuant
+  ({
+    model_id,
+    path: `https://example.test/${model_id}`,
+    file_size: '1 GB',
+  }) as ModelQuant
 
 const catalog = (quants: ModelQuant[]): CatalogModel =>
   ({ model_name: 'vendor/model', quants }) as CatalogModel
@@ -40,9 +47,9 @@ describe('pickPreferredVariant', () => {
         ?.model_id
     ).toBe('model-Q4_K_M')
 
-    expect(
-      pickPreferredVariant(catalog([quant('model-F16')]))?.model_id
-    ).toBe('model-F16')
+    expect(pickPreferredVariant(catalog([quant('model-F16')]))?.model_id).toBe(
+      'model-F16'
+    )
 
     expect(pickPreferredVariant(catalog([]))).toBeNull()
   })
@@ -99,8 +106,7 @@ describe('pickAutoRunCandidate', () => {
     id: string,
     runnable: boolean,
     sizeBytes?: number
-  ): LocalModelCandidate =>
-    ({ id, runnable, sizeBytes }) as LocalModelCandidate
+  ): LocalModelCandidate => ({ id, runnable, sizeBytes }) as LocalModelCandidate
 
   it('picks the smallest runnable model, so the first launch feels instant', () => {
     expect(
@@ -144,5 +150,99 @@ describe('getInitialStep', () => {
   it('goes straight to the picker everywhere else', () => {
     vi.stubGlobal('IS_WINDOWS', false)
     expect(getInitialStep()).toBe('model')
+  })
+})
+
+describe('formatMemoryGb', () => {
+  it('rounds to what the owner would call their machine', () => {
+    expect(formatMemoryGb(16 * 1024)).toBe('16 GB')
+    // A 16 GB Mac that reports a little under its badge still reads as 16.
+    expect(formatMemoryGb(15 * 1024 + 900)).toBe('16 GB')
+    expect(formatMemoryGb(0)).toBeNull()
+    expect(formatMemoryGb(undefined)).toBeNull()
+  })
+})
+
+describe('describeRecommendationFit', () => {
+  const profile = (over: Partial<HardwareProfile>): HardwareProfile => ({
+    tier: 'unified_16',
+    memoryKind: 'unified',
+    budgetMib: 16 * 1024,
+    systemRamMib: 16 * 1024,
+    vramMib: 0,
+    hardCeiling: true,
+    ...over,
+  })
+
+  it('names the pool, because 16 GB of VRAM is not 16 GB of RAM', () => {
+    expect(
+      describeRecommendationFit({
+        sizeLabel: '2.52 GB',
+        sizeBytes: 2.52 * 1024 ** 3,
+        profile: profile({}),
+      })
+    ).toEqual({
+      key: 'setup:recommend.whyComfortable',
+      values: { size: '2.52 GB', budget: '16 GB' },
+      poolKey: 'setup:recommend.pool.unified',
+    })
+  })
+
+  it('reads a CPU-only machine by its CPU, not by its RAM', () => {
+    // Quoting "fits your 128 GB" here would explain the wrong constraint: what
+    // binds a machine with no accelerator is token throughput.
+    expect(
+      describeRecommendationFit({
+        sizeLabel: '0.68 GB',
+        sizeBytes: 0.68 * 1024 ** 3,
+        profile: profile({ memoryKind: 'system', budgetMib: 128 * 1024 }),
+      })
+    ).toEqual({
+      key: 'setup:recommend.whyCpuOnly',
+      values: { size: '0.68 GB' },
+    })
+  })
+
+  it('says the model will not load past the measured macOS ceiling', () => {
+    expect(
+      describeRecommendationFit({
+        sizeLabel: '15.00 GB',
+        sizeBytes: 15 * 1024 ** 3,
+        profile: profile({}),
+      })?.key
+    ).toBe('setup:recommend.whyWontLoad')
+  })
+
+  it('calls the same overshoot a slowdown on a card', () => {
+    expect(
+      describeRecommendationFit({
+        sizeLabel: '15.00 GB',
+        sizeBytes: 15 * 1024 ** 3,
+        profile: profile({
+          memoryKind: 'vram',
+          hardCeiling: false,
+          budgetMib: 8 * 1024,
+        }),
+      })?.key
+    ).toBe('setup:recommend.whySpills')
+  })
+
+  it('falls back to a claim it can actually support when hardware is unknown', () => {
+    expect(
+      describeRecommendationFit({
+        sizeLabel: '0.68 GB',
+        sizeBytes: 0.68 * 1024 ** 3,
+        profile: null,
+      })
+    ).toEqual({
+      key: 'setup:recommend.whyUnknown',
+      values: { size: '0.68 GB' },
+    })
+  })
+
+  it('says nothing at all without a size', () => {
+    expect(
+      describeRecommendationFit({ sizeLabel: null, profile: profile({}) })
+    ).toBeNull()
   })
 })

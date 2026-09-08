@@ -258,6 +258,60 @@ test('recommended models conform to the loader schema contract', () => {
   }
 })
 
+/**
+ * The per-tier lists are what the first screen actually leads with (ATO-463),
+ * and the tier vocabulary is the one part of the manifest that a release owns:
+ * a key this client cannot name is silently dropped, leaving that machine on
+ * its bundled ladder. So the fixture is checked against the shipped union
+ * rather than against a copy of it that could drift.
+ */
+test('recommended-model tiers name tiers the client knows', () => {
+  const source = readFileSync(
+    new URL('../web-app/src/lib/hardware-tier.ts', import.meta.url),
+    'utf8'
+  )
+  const block = source.match(
+    /export const HARDWARE_TIERS: readonly HardwareTier\[\] = \[([^\]]*)\]/
+  )
+  assert.ok(block, 'HARDWARE_TIERS must stay a plain array literal')
+  const known = new Set([...block[1].matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]))
+  assert.ok(known.size > 0, 'HARDWARE_TIERS must not be empty')
+
+  const manifest = fixture('recommended-models')
+  const tiers = manifest.tiers ?? {}
+  // Every rung, or the omitted ones quietly fall back to the bundled ladder and
+  // the manifest stops being the place recommendations are changed.
+  assert.deepEqual(
+    [...known].filter((tier) => !(tier in tiers)),
+    [],
+    'every tier must be present in the manifest'
+  )
+
+  for (const [tier, list] of Object.entries(tiers)) {
+    assert.ok(known.has(tier), `${tier} is not a tier this client knows`)
+    assert.ok(Array.isArray(list) && list.length > 0, `${tier} must not be empty`)
+    unique(
+      list.map(({ model_name }) => model_name),
+      `${tier} entries must be unique`
+    )
+    for (const recommendation of list) {
+      assert.match(recommendation.model_name, /^[^/]+\/[^/]+$/)
+      assert.match(recommendation.description_key, /^hub:/)
+      // Unattended downloads: without a pin the client falls back to its house
+      // quant preference, which picks a different file than the one the ladder
+      // was measured on.
+      assert.match(
+        recommendation.quant ?? '',
+        /^[A-Za-z0-9_]{2,16}$/,
+        `${tier} entries must pin a quant`
+      )
+      if (recommendation.mmproj_quant !== undefined) {
+        assert.match(recommendation.mmproj_quant, /^[A-Za-z0-9_]{2,16}$/)
+      }
+    }
+  }
+})
+
 test('provider registry contains safe provider and model contracts', () => {
   const manifest = fixture('provider-registry')
   assert.equal(manifest.schema_version, 1)

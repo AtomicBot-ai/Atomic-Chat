@@ -89,6 +89,9 @@ const WORD_CASING: Record<string, string> = {
   omni: 'Omni',
   preview: 'Preview',
   pro: 'Pro',
+  //* Quantization-aware training — an acronym, and now part of a shipped
+  //* recommendation's name (`unsloth/gemma-4-12B-it-qat-GGUF`), so "Qat" shows.
+  qat: 'QAT',
   reasoning: 'Reasoning',
   small: 'Small',
   thinking: 'Thinking',

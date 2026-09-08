@@ -35,7 +35,7 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 
 // Unmocked, the real store reports no RAM and no GPU on a test host.
 vi.mock('@/hooks/useHardwareTier', () => ({
-  useHardwareTier: () => ({ tier: 'standard', ready: true }),
+  useHardwareTier: () => ({ tier: 'vram_8', profile: null, ready: true }),
 }))
 
 vi.mock('@/hooks/useGeneralSetting', () => ({
@@ -272,7 +272,7 @@ describe('ReplyModelGate', () => {
       local_model_count: 2,
       cloud_provider_count: 1,
       has_cloud_connection: true,
-      hardware_tier: 'standard',
+      hardware_tier: 'vram_8',
     })
     // `status` is typed as a number globally in PostHog; a string written there
     // is ingested as null.
