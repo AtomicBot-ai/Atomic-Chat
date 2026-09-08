@@ -532,6 +532,13 @@ describe('getModelCapabilities', () => {
     expect(capabilities).not.toContain(ModelCapabilities.VISION)
   })
 
+  it('handles orcarouter like other OpenAI-compatible providers', () => {
+    const capabilities = getModelCapabilities('orcarouter', 'orcarouter/auto')
+    expect(capabilities).toEqual([ModelCapabilities.COMPLETION])
+    expect(capabilities).not.toContain(ModelCapabilities.TOOLS)
+    expect(capabilities).not.toContain(ModelCapabilities.VISION)
+  })
+
   it('handles model not in capability list', () => {
     const capabilities = getModelCapabilities('xai', 'grok-2-vision-1212')
     expect(capabilities).toContain(ModelCapabilities.COMPLETION)

@@ -844,6 +844,7 @@ export class ModelFactory {
       case 'minimax':
       case 'meta':
       case 'openrouter':
+      case 'orcarouter':
       case 'huggingface':
       case 'nvidia':
       case 'ollama':
