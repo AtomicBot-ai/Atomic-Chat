@@ -8,6 +8,52 @@ import {
 } from '@/lib/model-logo'
 
 /**
+ * A bundled brand mark on its own, without `ModelLogo`'s tile.
+ *
+ * Single-color marks are drawn with `fill="currentColor"`, so a plain <img>
+ * paints them black and loses them on a dark background — which is how the
+ * onboarding recommendation showed Liquid's LFM mark as a black square. Tinting
+ * through a CSS mask makes them inherit the theme-aware text color instead.
+ */
+export function FamilyLogoMark({
+  src,
+  className,
+}: {
+  src: string
+  className?: string
+}) {
+  if (isMonochromeFamilyLogo(src)) {
+    return (
+      <span
+        aria-hidden
+        className={cn('text-foreground', className)}
+        style={{
+          backgroundColor: 'currentColor',
+          maskImage: `url(${src})`,
+          WebkitMaskImage: `url(${src})`,
+          maskRepeat: 'no-repeat',
+          WebkitMaskRepeat: 'no-repeat',
+          maskPosition: 'center',
+          WebkitMaskPosition: 'center',
+          maskSize: 'contain',
+          WebkitMaskSize: 'contain',
+        }}
+      />
+    )
+  }
+
+  return (
+    <img
+      src={src}
+      alt=""
+      aria-hidden
+      draggable={false}
+      className={cn('object-contain', className)}
+    />
+  )
+}
+
+/**
  * Publisher logo for a model. Resolution order:
  *   1. an explicit `icon` key from the staff-picks manifest,
  *   2. the bundled brand logo for the model family (Gemma, Qwen, …),

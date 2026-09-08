@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { ModelLogo } from '@/containers/ModelLogo'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import {
   AddCloudProviderDialog,
@@ -22,7 +23,6 @@ import { useRecommendedLocalModel } from '@/hooks/useRecommendedLocalModel'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { isProviderConnected } from '@/lib/cloud-providers'
-import { HUGGINGFACE_LOGO_SRC, modelFamilyLogoSrc } from '@/lib/model-logo'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import {
@@ -388,7 +388,14 @@ function ReplyModelRow({
         disabled && !starting && 'opacity-50'
       )}
     >
-      {provider ? (
+      {/* The mark has to match the line beside it. A local row is named after
+          the model, so a Qwen GGUF ran under llama.cpp put a llama next to the
+          word "Qwen" — and the engine is already spelled out in the sublabel.
+          A cloud row is named after the provider, where the provider mark is
+          the brand. */}
+      {option.kind === 'local' ? (
+        <ModelLogo name={option.modelId} className="size-8 rounded-lg" />
+      ) : provider ? (
         <ProvidersAvatar provider={provider} className="size-8 shrink-0" />
       ) : (
         <span className="size-8 shrink-0" />
@@ -437,11 +444,13 @@ function RecommendedDownload({ onStarted }: { onStarted: () => void }) {
 
   return (
     <div className="flex items-center gap-3 rounded-lg border bg-secondary/50 p-3">
-      <img
-        src={modelFamilyLogoSrc(reminder.repo) ?? HUGGINGFACE_LOGO_SRC}
-        alt=""
-        className="size-8 shrink-0 object-contain"
-        aria-hidden
+      {/* Through `ModelLogo` for the same reason as the rows above: it tints
+          single-color marks (Liquid's LFM among them) so they survive a dark
+          background, where a plain <img> paints them black. */}
+      <ModelLogo
+        name={reminder.repo}
+        fallback="huggingface"
+        className="size-8 rounded-lg"
       />
       <div className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium leading-tight">

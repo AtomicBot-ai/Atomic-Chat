@@ -84,8 +84,6 @@
       "unified": "unified memory",
       "vram": "graphics memory",
       "system": "system memory"
-    },
-    "hideOtherOptions": "Hide other options",
-    "otherOptions": "Other options ({{count}})"
+    }
   }
 }

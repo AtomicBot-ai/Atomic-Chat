@@ -622,23 +622,6 @@ export function captureSetupScreenShown(params: {
   })
 }
 
-/**
- * The "other options" disclosure was opened.
- *
- * The screen now leads with one model instead of a list, which is only the
- * right trade if the list was mostly noise. This is the measurement: how often
- * the single offer is not enough, split by tier.
- */
-export function captureOtherOptionsOpened(params: {
-  hardwareTier?: string | null
-  optionCount?: number | null
-}): void {
-  capture('setup_other_options_opened', {
-    hardware_tier: params.hardwareTier ?? null,
-    option_count: params.optionCount ?? 0,
-  })
-}
-
 /** The post-onboarding "you have no model" nudge, previously untracked. */
 export function captureOnboardingModelReminder(
   action: 'shown' | 'download' | 'later'

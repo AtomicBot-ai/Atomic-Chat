@@ -730,20 +730,19 @@ describe('SetupScreen', () => {
       mocks.recommended = [ladderModel, otherModel]
     })
 
-    it('leads with one model and hides the rest', async () => {
+    it('leads with one model and drops the rest', async () => {
       // The manifest used to serve two per tier plus whatever the scanners
       // found; shipped launches have shown 6, 10 and 11 rows. A first screen
-      // whose job is "start chatting" should not open with a comparison table.
+      // whose job is "start chatting" should not open with a comparison table,
+      // and no longer offers a way back to one — the Hub is where the ladder
+      // gets compared.
       const { unmount } = await renderPicker()
 
       expect(screen.getByText(/Qwen3\.5 4B/)).toBeInTheDocument()
       expect(screen.queryByText(/Qwen3\.5 9B/)).not.toBeInTheDocument()
-
-      fireEvent.click(
-        screen.getByRole('button', { name: /setup:recommend\.otherOptions/ })
-      )
-
-      expect(screen.getByText(/Qwen3\.5 9B/)).toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: /setup:recommend\.otherOptions/ })
+      ).not.toBeInTheDocument()
       unmount()
     })
 

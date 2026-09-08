@@ -8,7 +8,7 @@ import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useMemo, useCallback, useRef, useState } from 'react'
 import { AppEvent, DownloadEvent, EngineManager, events } from '@janhq/core'
-import { ChevronDown, Cloud } from 'lucide-react'
+import { Cloud } from 'lucide-react'
 import type {
   CatalogModel,
   MMProjModel,
@@ -17,6 +17,7 @@ import type {
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { FamilyLogoMark } from '@/containers/ModelLogo'
 import { cn, sanitizeModelId, LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import {
   extractModelName,
@@ -32,7 +33,6 @@ import {
   type CloudProviderSaveResult,
 } from '@/containers/dialogs/AddCloudProviderDialog'
 import { findPinnedQuant, parseFileSizeToBytes } from '@/lib/model-card'
-import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { isProviderConnected } from '@/lib/cloud-providers'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
@@ -59,7 +59,6 @@ import { prettyModelName } from '@/lib/model-display-name'
 import {
   buildRecommendedImpressions,
   captureOnboardingCompleted,
-  captureOtherOptionsOpened,
   captureRecommendedModelClicked,
   captureRecommendedModelsShown,
   captureSetupLocalModelAutostarted,
@@ -355,11 +354,6 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     setCloudDialogOpen(true)
   }, [])
 
-  // Опции сверх основной рекомендации: скрыты, пока их не попросят.
-  const [otherOptionsOpen, setOtherOptionsOpen] = useState(false)
-  // Показы этих строк уходят один раз за экран — на первом раскрытии.
-  const otherOptionsShownRef = useRef(false)
-
   const [tierDeadlineElapsed, setTierDeadlineElapsed] = useState(false)
   useEffect(() => {
     const timer = setTimeout(
@@ -599,17 +593,13 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   // ladder rung for this machine first, so the hero is simply the first entry
   // the user does not already have — anything already on disk has moved up into
   // "On your device" with a Run button, which is a better offer than a
-  // re-download. Everything else waits behind "other options".
+  // re-download. The rest of the ladder is what the Hub is for.
   //
   // Why one and not the previous list of two-to-eleven: the manifest served two
   // per tier plus whatever the scanners found, and historical launches shipped
   // 6, 10 and 11 rows. A first screen whose job is "start chatting" should not
   // open with a comparison table.
   const heroRecommendation = pendingRecommended[0] ?? null
-  const otherRecommendations = useMemo(
-    () => pendingRecommended.slice(1),
-    [pendingRecommended]
-  )
 
   //* P0 онбординг-аналитика: фиксируем показ экрана выбора модели один раз,
   //* дождавшись резолва списка рекомендаций (иначе recommended_count = 0).
@@ -637,8 +627,8 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     // could not be computed at all.
     captureRecommendedModelsShown(
       buildRecommendedImpressions({
-        // Only the offer: the rest sit behind the disclosure and are reported
-        // when it is opened, so a row nobody saw never gets a denominator.
+        // Only the offer: it is the sole row the screen paints, so a row
+        // nobody saw never gets a denominator.
         pending: heroRecommendation ? [heroRecommendation] : [],
         installed: installedRecommended,
         detected: detectedRunnable,
@@ -1227,11 +1217,8 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   /**
    * One downloadable recommendation.
    *
-   * The same markup serves the hero and the "other options" rows — a second
-   * copy for the hero would be a second place for the download wiring, the
-   * MLX/GGUF split and the progress readout to drift apart. `hero` changes only
-   * the emphasis: a card instead of a list row, the "why this one" line, and a
-   * full-width primary button.
+   * `hero` changes the emphasis: a card instead of a list row, the "why this
+   * one" line, and a full-width primary button.
    *
    * `index` is the row's position in `pendingRecommended`, which is what
    * `recommended_model_shown` reports, so clicks and impressions divide.
@@ -1315,12 +1302,9 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     }
 
     const icon = brandIconSrc ? (
-      <img
+      <FamilyLogoMark
         src={brandIconSrc}
-        alt=""
-        className={cn('shrink-0 object-contain', hero ? 'size-10' : 'size-8')}
-        draggable={false}
-        aria-hidden
+        className={cn('shrink-0', hero ? 'size-10' : 'size-8')}
       />
     ) : (
       <HuggingFaceAuthorAvatar
@@ -1544,12 +1528,9 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                           >
                             <div className="flex min-w-0 flex-1 items-center gap-3">
                               {brandIconSrc ? (
-                                <img
+                                <FamilyLogoMark
                                   src={brandIconSrc}
-                                  alt=""
-                                  className="size-8 shrink-0 object-contain"
-                                  draggable={false}
-                                  aria-hidden
+                                  className="size-8 shrink-0"
                                 />
                               ) : (
                                 <HuggingFaceAuthorAvatar
@@ -1634,12 +1615,9 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                             >
                               <div className="flex min-w-0 flex-1 items-center gap-3">
                                 {brandIconSrc ? (
-                                  <img
+                                  <FamilyLogoMark
                                     src={brandIconSrc}
-                                    alt=""
-                                    className="size-8 shrink-0 object-contain"
-                                    draggable={false}
-                                    aria-hidden
+                                    className="size-8 shrink-0"
                                   />
                                 ) : (
                                   <HuggingFaceAuthorAvatar
@@ -1701,72 +1679,6 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                   </>
                 )}
 
-                {/* Everything heavier, lighter or simply different. Collapsed
-                    by default: the screen's job is to get one model running,
-                    and the comparison is what the Hub is for. */}
-                {otherRecommendations.length > 0 && (
-                  <div className="flex flex-col gap-2">
-                    <button
-                      type="button"
-                      aria-expanded={otherOptionsOpen}
-                      onClick={() => {
-                        // Only the opening is worth an event: how often one
-                        // offer is not enough is the measurement that says
-                        // whether leading with one model was the right trade.
-                        if (!otherOptionsOpen) {
-                          captureOtherOptionsOpened({
-                            hardwareTier,
-                            optionCount: otherRecommendations.length,
-                          })
-                          // These rows become visible now, not at paint. Fired
-                          // once per screen even if the user toggles the
-                          // disclosure again — an impression is a row being
-                          // seen, not a row being re-rendered.
-                          if (!otherOptionsShownRef.current) {
-                            otherOptionsShownRef.current = true
-                            captureRecommendedModelsShown(
-                              buildRecommendedImpressions({
-                                pending: otherRecommendations,
-                                // Row 0 is the offer, reported at paint.
-                                pendingOffset: 1,
-                              })
-                            )
-                          }
-                        }
-                        setOtherOptionsOpen((open) => !open)
-                      }}
-                      className="flex shrink-0 items-center justify-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                    >
-                      {otherOptionsOpen
-                        ? t('setup:recommend.hideOtherOptions')
-                        : t('setup:recommend.otherOptions', {
-                            count: otherRecommendations.length,
-                          })}
-                      <ChevronDown
-                        aria-hidden
-                        className={cn(
-                          'size-3.5 transition-transform',
-                          otherOptionsOpen && 'rotate-180'
-                        )}
-                      />
-                    </button>
-                    {otherOptionsOpen && (
-                      <div
-                        className={cn(
-                          'w-full shrink-0 rounded-lg border bg-secondary/50 px-3 py-2',
-                          'max-h-[min(40vh,22rem)] overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable]'
-                        )}
-                      >
-                        <div className="flex flex-col divide-y divide-border/60">
-                          {otherRecommendations.map((item, index) =>
-                            renderPendingRow(item, index + 1)
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
                 {/* Peers of the model, not a footnote under an "or".
                     Connecting a cloud provider during onboarding is the single
                     strongest activation signal we have, and it had happened on
@@ -1794,15 +1706,6 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                         onClick={openSubscription}
                         className="relative z-60 flex-1 rounded-full px-4"
                       >
-                        {/* Decorative: the label already names the route, and
-                            the avatar's own alt text would otherwise be read as
-                            part of the button's name. */}
-                        <span aria-hidden className="flex">
-                          <ProvidersAvatar
-                            provider={subscriptionProvider}
-                            className="size-4 shrink-0"
-                          />
-                        </span>
                         {t('setup:cloudStep.subscriptionTrigger')}
                       </Button>
                     )}

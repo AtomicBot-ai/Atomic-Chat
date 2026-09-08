@@ -205,6 +205,30 @@ describe('ReplyModelGate', () => {
     )
   })
 
+  it('marks a local row with the model brand, not the engine', async () => {
+    // A local row is named after the model, so "Qwen3.5 4B" under a llama.cpp
+    // provider used to sit beside a llama — while the engine it runs on is
+    // already spelled out on the second line.
+    renderGate([
+      localProvider([model('Qwen3.5-4B-Q4_K_M'), model('other')]),
+      cloudProvider(),
+    ])
+
+    const rows = await screen.findAllByTestId('reply-gate-option')
+    expect(rows[0].querySelector('img')).toHaveAttribute(
+      'src',
+      '/svg/qwen-color.svg'
+    )
+
+    // A cloud row is named after the provider, where the provider mark is the
+    // brand, so it keeps the avatar.
+    const cloudRow = rows.find((row) => row.textContent?.includes('gpt-a'))
+    expect(cloudRow?.querySelector('img')).toHaveAttribute(
+      'alt',
+      'openai - Logo'
+    )
+  })
+
   it('recommends a download when the device has nothing', async () => {
     const { onResolved } = renderGate([unconnectedCloud()])
 
