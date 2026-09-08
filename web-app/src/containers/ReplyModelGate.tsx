@@ -147,18 +147,21 @@ export function ReplyModelGate({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  const resolve = useCallback((outcome: ReplyGateOutcome) => {
-    if (!session) return
-    resolvedRef.current = true
-    const resolution = {
-      outcome,
-      branch: session.branch,
-      decidedInMs: Date.now() - openedAtRef.current,
-      openedAtMs: openedAtRef.current,
-    }
-    captureReplyGateOutcome(resolution)
-    callbacksRef.current.onResolved(resolution)
-  }, [session])
+  const resolve = useCallback(
+    (outcome: ReplyGateOutcome) => {
+      if (!session) return
+      resolvedRef.current = true
+      const resolution = {
+        outcome,
+        branch: session.branch,
+        decidedInMs: Date.now() - openedAtRef.current,
+        openedAtMs: openedAtRef.current,
+      }
+      captureReplyGateOutcome(resolution)
+      callbacksRef.current.onResolved(resolution)
+    },
+    [session]
+  )
 
   // A resolved widget closes because its work is under way, or because the
   // composer closed it once the model came up — not because the user gave up.
@@ -420,7 +423,9 @@ function RecommendedDownload({ onStarted }: { onStarted: () => void }) {
 
   const progress = useMemo(() => {
     if (!variant) return null
-    const entry = Object.values(downloads).find((d) => d.id === variant.model_id)
+    const entry = Object.values(downloads).find(
+      (d) => d.id === variant.model_id
+    )
     if (!entry || entry.total <= 0) return null
     return Math.round((entry.progress ?? 0) * 100)
   }, [downloads, variant])
@@ -442,7 +447,10 @@ function RecommendedDownload({ onStarted }: { onStarted: () => void }) {
         <span className="block truncate text-sm font-medium leading-tight">
           {reminder.title}
           {variant && (
-            <span className="text-muted-foreground"> ({variant.file_size})</span>
+            <span className="text-muted-foreground">
+              {' '}
+              ({variant.file_size})
+            </span>
           )}
         </span>
         <span className="text-muted-foreground block truncate text-xs">
@@ -489,15 +497,17 @@ function CloudAlternatives({
     [providers]
   )
 
-  const showSubscription = useMemo(() => {
-    if (!PlatformFeatures[PlatformFeature.CHATGPT_SUBSCRIPTION]) return false
-    const provider = providers.find(
-      (p) => p.provider === SUBSCRIPTION_PROVIDER
-    )
-    return !!provider && !isProviderConnected(provider)
+  // Kept as the provider object rather than a boolean: the button wears the
+  // subscription's own mark, so the named route is recognisable at a glance
+  // beside the generic cloud one.
+  const subscriptionProvider = useMemo(() => {
+    if (!PlatformFeatures[PlatformFeature.CHATGPT_SUBSCRIPTION])
+      return undefined
+    const provider = providers.find((p) => p.provider === SUBSCRIPTION_PROVIDER)
+    return provider && !isProviderConnected(provider) ? provider : undefined
   }, [providers])
 
-  if (!hasCloudProviders && !showSubscription) return null
+  if (!hasCloudProviders && !subscriptionProvider) return null
 
   return (
     <div className="flex flex-col gap-3">
@@ -521,7 +531,7 @@ function CloudAlternatives({
             {t('chat:replyGate.connectCloud')}
           </Button>
         )}
-        {showSubscription && (
+        {subscriptionProvider && (
           <Button
             type="button"
             variant="secondary"
@@ -529,6 +539,15 @@ function CloudAlternatives({
             className="flex-1"
             onClick={onConnectSubscription}
           >
+            {/* Decorative: the label already names the route, and the
+                avatar's own alt text would otherwise be read as part of the
+                button's name. */}
+            <span aria-hidden className="flex">
+              <ProvidersAvatar
+                provider={subscriptionProvider}
+                className="size-4 shrink-0"
+              />
+            </span>
             {t('chat:replyGate.connectSubscription')}
           </Button>
         )}
