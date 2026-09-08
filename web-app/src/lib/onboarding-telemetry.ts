@@ -45,7 +45,17 @@ export type OnboardingExitPath =
   | 'download_started'
   /** Connected a cloud provider's API key or subscription instead. */
   | 'cloud_provider'
-  /** The 15s auto-exit fired with the picker untouched. */
+  /**
+   * The user pressed Skip and entered the chat empty-handed. The composer's
+   * "what do I reply with?" widget picks it up from there (ATO-453).
+   */
+  | 'dismissed'
+  /**
+   * Legacy: the 15s auto-exit fired with the picker untouched. No longer
+   * emitted — the timeout was removed in ATO-454 after it turned out to be 60 %
+   * of all onboarding exits, at a 16.2 s median, i.e. people were sitting there
+   * waiting for it. Kept in the union so historical queries still type-check.
+   */
   | 'timeout'
 
 /**
@@ -176,7 +186,10 @@ export type OnboardingInFlight = {
   app_version: string
 }
 
-export function markOnboardingInFlight(step: OnboardingStep, startedAt: number): void {
+export function markOnboardingInFlight(
+  step: OnboardingStep,
+  startedAt: number
+): void {
   try {
     localStorage.setItem(
       localStorageKey.onboardingInFlight,
@@ -209,18 +222,24 @@ export function reportAbandonedOnboarding(): void {
     captureOnboardingAbandoned({
       stepReached: record.step === 'backend' ? 'backend' : 'model',
       abandonedAppVersion: record.app_version ?? null,
-      startedAtMs: typeof record.started_at === 'number' ? record.started_at : null,
+      startedAtMs:
+        typeof record.started_at === 'number' ? record.started_at : null,
     })
   } catch {
     // malformed record — nothing worth reporting
   }
 }
 
-/** The empty-handed exit. Superseded by `onboarding_completed` with
- *  `exit_path: 'timeout'`, kept so its dashboard series does not break. */
+/** The empty-handed exit. Superseded by `onboarding_completed` with the same
+ *  `exit_path`, kept so its dashboard series does not break.
+ *
+ *  `reason` moved from `'timeout'` to `'dismissed'` rather than reusing either
+ *  that value or the older `'skipped'`: the two are different user acts —
+ *  running out the clock and pressing a button — and a series that silently
+ *  changes meaning is worse than one that visibly splits. */
 export function captureSetupSkipped(params: {
   hadAnyModel: boolean
-  reason: 'timeout'
+  reason: 'dismissed'
 }): void {
   capture('setup_skipped', {
     had_any_model: params.hadAnyModel,
@@ -306,10 +325,21 @@ export type RecommendedModelImpression = {
  */
 export function buildRecommendedImpressions(lists: {
   pending: { startId?: string | null; model?: { is_mlx?: boolean } | null }[]
-  installed: { startId: string; provider: string }[]
-  detected: { id: string; format: string }[]
+  installed?: { startId: string; provider: string }[]
+  detected?: { id: string; format: string }[]
+  /**
+   * Index the first `pending` row sits at on screen.
+   *
+   * The picker no longer renders its download list in one go: the offer is row
+   * 0 and the rest arrive only when "other options" is opened, as a second call
+   * with the offset that keeps their `position` matching the `position` a click
+   * on them reports. Without it the second batch would restart at 0 and every
+   * row would appear to be the offer.
+   */
+  pendingOffset?: number
 }): RecommendedModelImpression[] {
   const impressions: RecommendedModelImpression[] = []
+  const offset = lists.pendingOffset ?? 0
 
   lists.pending.forEach((row, position) => {
     // A row whose catalog entry has not resolved yet renders as a placeholder
@@ -317,13 +347,12 @@ export function buildRecommendedImpressions(lists: {
     if (!row.startId) return
     impressions.push({
       modelId: row.startId,
-      position,
+      position: position + offset,
       format: row.model?.is_mlx ? 'MLX' : 'GGUF',
       section: 'pending',
     })
   })
-
-  lists.installed.forEach((row, position) => {
+  ;(lists.installed ?? []).forEach((row, position) => {
     impressions.push({
       modelId: row.startId,
       position,
@@ -331,8 +360,7 @@ export function buildRecommendedImpressions(lists: {
       section: 'installed',
     })
   })
-
-  lists.detected.forEach((row, position) => {
+  ;(lists.detected ?? []).forEach((row, position) => {
     impressions.push({
       modelId: row.id,
       position,
@@ -345,12 +373,17 @@ export function buildRecommendedImpressions(lists: {
 }
 
 /**
- * Every row the picker put in front of the user, once per screen.
+ * Every row the picker actually put in front of the user.
  *
  * Clicks have always been tracked with a `position`; impressions never were, so
  * a row's conversion — and whether the list is read at all past the first
  * entry — could not be computed. Emitted per row rather than as one array
  * event so it divides directly by `recommended_model_clicked`.
+ *
+ * Called more than once per screen since the picker gained its disclosure: the
+ * rows behind "other options" have not been shown to anybody until it is
+ * opened, and counting them at paint would put a denominator under rows nobody
+ * saw — exactly the miscount this event was added to fix.
  */
 export function captureRecommendedModelsShown(
   items: RecommendedModelImpression[]
@@ -418,7 +451,9 @@ const BACKEND_DETECTION_FAILED = 'BACKEND_DETECTION_FAILED'
  * conditional lands in it, it has to be exercised or the floor breaks. So the
  * call site stays `ref.current = classifyDetectionFailure(err)`.
  */
-export function classifyDetectionFailure(err: unknown): BackendDetectionFailure {
+export function classifyDetectionFailure(
+  err: unknown
+): BackendDetectionFailure {
   if (err instanceof Error && err.message === BACKEND_DETECTION_FAILED) {
     return 'detection_unavailable'
   }
@@ -558,16 +593,49 @@ export function captureBackendStepShown(): void {
 export function captureSetupScreenShown(params: {
   recommendedCount?: number | null
   rendered: boolean
-  /** Which recommendation list was shown — see `classifyHardwareTier`. */
-  hardwareTier?: 'low' | 'standard'
-  /** False when the tier deadline elapsed and 'standard' was assumed. */
+  /**
+   * Which rung of the ladder this machine landed on — see `describeHardware`.
+   * Was `'low' | 'standard'`; since ATO-463 it is one of eleven values, which
+   * is the point: the old distribution could only ever be two-valued, so no
+   * amount of staring at it could show a mis-tiered machine.
+   */
+  hardwareTier?: string | null
+  /** False when the tier deadline elapsed and the fallback was assumed. */
   hardwareTierResolved?: boolean
+  /** Which memory pool the tier was decided on: unified / vram / system. */
+  memoryKind?: string | null
+  /** The budget that decision used, in MiB. Coarse enough not to fingerprint. */
+  memoryBudgetMib?: number | null
+  /** The single model the screen led with, so impressions have a subject. */
+  primaryModelId?: string | null
 }): void {
   capture('setup_screen_shown', {
     recommended_count: params.recommendedCount ?? 0,
     rendered: params.rendered,
     hardware_tier: params.hardwareTier ?? null,
     hardware_tier_resolved: params.hardwareTierResolved ?? null,
+    memory_kind: params.memoryKind ?? null,
+    memory_budget_mib: params.memoryBudgetMib ?? null,
+    primary_model_id: params.primaryModelId
+      ? normalizeModelId(params.primaryModelId)
+      : null,
+  })
+}
+
+/**
+ * The "other options" disclosure was opened.
+ *
+ * The screen now leads with one model instead of a list, which is only the
+ * right trade if the list was mostly noise. This is the measurement: how often
+ * the single offer is not enough, split by tier.
+ */
+export function captureOtherOptionsOpened(params: {
+  hardwareTier?: string | null
+  optionCount?: number | null
+}): void {
+  capture('setup_other_options_opened', {
+    hardware_tier: params.hardwareTier ?? null,
+    option_count: params.optionCount ?? 0,
   })
 }
 

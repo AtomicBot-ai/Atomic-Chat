@@ -62,6 +62,36 @@ function galleryLabel(providerName: string): string {
 }
 
 /**
+ * Gallery order, most-wanted first — measured from `provider_key_configured`,
+ * not from anybody's sense of which brand is the flagship.
+ *
+ * Keys configured to date: openrouter 72, gemini 54, huggingface 45, nvidia 37,
+ * ollama 32, openai 30, groq 19, mistral 18, anthropic 17. Until now the
+ * gallery rendered in registry order, which put the providers people actually
+ * connect below the fold.
+ *
+ * Anything not listed keeps its registry position, after the ranked ones: a new
+ * provider has no demand figure yet, and guessing one would be worse than
+ * leaving it where the registry put it.
+ */
+const GALLERY_DEMAND_ORDER: readonly string[] = [
+  'openrouter',
+  'gemini',
+  'huggingface',
+  'nvidia',
+  'ollama',
+  'openai',
+  'groq',
+  'mistral',
+  'anthropic',
+]
+
+const demandRank = (providerName: string): number => {
+  const index = GALLERY_DEMAND_ORDER.indexOf(providerName)
+  return index === -1 ? GALLERY_DEMAND_ORDER.length : index
+}
+
+/**
  * The cloud providers worth offering during onboarding: everything that talks
  * to somebody else's server and can be connected from this dialog.
  *
@@ -70,8 +100,8 @@ function galleryLabel(providerName: string): string {
  * so offering a card the store has never heard of would save nothing, with no
  * error anywhere.
  *
- * Order is the registry's own (flagship-first), deliberately not sorted, with
- * subscriptions lifted to the front.
+ * Ordered by {@link GALLERY_DEMAND_ORDER}, with subscriptions lifted to the
+ * front.
  */
 export function selectCloudGalleryProviders(
   providers: ModelProvider[]
@@ -90,17 +120,26 @@ export function selectCloudGalleryProviders(
         p.settings?.some((s) => s.key === 'api-key'))
   )
 
+  // Stable sort on the demand rank: providers sharing a rank (i.e. everything
+  // unranked) keep the registry's relative order.
+  const ranked = offered
+    .map((provider, position) => ({ provider, position }))
+    .sort(
+      (a, b) =>
+        demandRank(a.provider.provider) - demandRank(b.provider.provider) ||
+        a.position - b.position
+    )
+    .map(({ provider }) => provider)
+
   // Subscriptions first. Signing in is the shortest way out of onboarding —
   // there is no dashboard to go and find a key on — yet `BASELINE_PROVIDERS` is
   // seeded after everything the registry carries, so the one provider that
   // needs nothing but a click would otherwise be the one to scroll for.
-  const subscriptions = offered.filter((p) =>
-    isSubscriptionProvider(p.provider)
-  )
-  if (subscriptions.length === 0) return offered
+  const subscriptions = ranked.filter((p) => isSubscriptionProvider(p.provider))
+  if (subscriptions.length === 0) return ranked
   return [
     ...subscriptions,
-    ...offered.filter((p) => !isSubscriptionProvider(p.provider)),
+    ...ranked.filter((p) => !isSubscriptionProvider(p.provider)),
   ]
 }
 

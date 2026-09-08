@@ -32,14 +32,20 @@ describe('prettyModelName', () => {
   })
 
   it('names every model onboarding offers', () => {
-    // The two tiers of `recommended.json`: standard, then low-spec.
-    expect(prettyModelName('AtomicChat/Qwen3.5-4B-GGUF')).toBe('Qwen3.5 4B')
-    expect(prettyModelName('AtomicChat/gemma-4-E2B-it-GGUF')).toBe(
-      'Gemma 4 E2B'
+    // Every rung of `RECOMMENDATION_LADDER`, which is what the first screen
+    // puts in front of a user who has never downloaded a local model.
+    expect(prettyModelName('LiquidAI/LFM2.5-1.2B-Instruct-GGUF')).toBe(
+      'LFM2.5 1.2B'
     )
     expect(prettyModelName('LiquidAI/LFM2.5-2.6B-GGUF')).toBe('LFM2.5 2.6B')
-    expect(prettyModelName('LiquidAI/LFM2.5-VL-450M-GGUF')).toBe(
-      'LFM2.5 VL 450M'
+    expect(prettyModelName('AtomicChat/Qwen3.5-4B-GGUF')).toBe('Qwen3.5 4B')
+    expect(prettyModelName('AtomicChat/Qwen3.5-9B-GGUF')).toBe('Qwen3.5 9B')
+    expect(prettyModelName('AtomicChat/gemma-4-E4B-it-GGUF')).toBe(
+      'Gemma 4 E4B'
+    )
+    // QAT is an acronym; without the casing entry this reads "Gemma 4 12B Qat".
+    expect(prettyModelName('unsloth/gemma-4-12B-it-qat-GGUF')).toBe(
+      'Gemma 4 12B QAT'
     )
   })
 

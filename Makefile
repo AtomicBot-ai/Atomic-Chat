@@ -102,13 +102,22 @@ dev-onboarding: install-and-build
 #   make dev-onboarding-low-spec ATOMIC_CHAT_CONF=~/work/atomic-chat-conf
 ATOMIC_CHAT_CONF ?= ../atomic-chat-conf
 
-# Онбординг глазами пользователя со слабой машиной: FORCE_HARDWARE_TIER=low
-# минует определение железа, и пикер показывает low-spec рекомендации (LFM)
-# на любом компьютере.
+# Ступень лестницы, под которую смотрим онбординг. Переопределяется:
+#   make dev-onboarding-low-spec FORCE_HARDWARE_TIER=unified_8
+FORCE_HARDWARE_TIER ?= vram_2
+
+# Онбординг глазами пользователя со слабой машиной: FORCE_HARDWARE_TIER
+# минует определение железа, и первый экран показывает рекомендацию заданной
+# ступени лестницы на любом компьютере.
 #
-# Манифест берём из локального чекаута conf, пока правка туда не влита: в
-# удалённом ещё нет `low_spec_recommendations`, а без него клиент штатно
-# откатывается на стандартную пару, и низкий тир было бы не увидеть.
+# Значение — любой id из `HardwareTier` (`web-app/src/lib/hardware-tier.ts`):
+# cpu_only, vram_2, vram_4, vram_8, vram_12, vram_16, vram_16_plus,
+# unified_8, unified_16, unified_32, unified_32_plus. Прежние `low` и
+# `standard` тоже принимаются и мапятся на ближайшую ступень.
+#
+# Манифест берём из локального чекаута conf, если он есть: ключа `tiers` в
+# удалённом может ещё не быть, но это не мешает — без него клиент штатно
+# берёт встроенную лестницу, которая и есть нужная рекомендация.
 dev-onboarding-low-spec: install-and-build
 	yarn download:bin
 	make download-llamacpp-backend
@@ -119,11 +128,11 @@ dev-onboarding-low-spec: install-and-build
 	@if [ -f "$(ATOMIC_CHAT_CONF)/models/recommended.json" ]; then \
 		cp "$(ATOMIC_CHAT_CONF)/models/recommended.json" web-app/public/dev-recommended.json; \
 		echo "[dev] манифест: $(ATOMIC_CHAT_CONF)/models/recommended.json"; \
-		FORCE_ONBOARDING=true FORCE_HARDWARE_TIER=low \
+		FORCE_ONBOARDING=true FORCE_HARDWARE_TIER=$(FORCE_HARDWARE_TIER) \
 			VITE_RECOMMENDED_MODELS_REGISTRY_URL=/dev-recommended.json yarn dev; \
 	else \
 		echo "[dev] $(ATOMIC_CHAT_CONF) не найден — манифест из сети (задайте ATOMIC_CHAT_CONF=...)"; \
-		FORCE_ONBOARDING=true FORCE_HARDWARE_TIER=low yarn dev; \
+		FORCE_ONBOARDING=true FORCE_HARDWARE_TIER=$(FORCE_HARDWARE_TIER) yarn dev; \
 	fi
 
 # ──────────────────────────────────────────────────────────────

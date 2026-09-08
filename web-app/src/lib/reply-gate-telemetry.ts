@@ -61,7 +61,10 @@ export function captureReplyGateShown(params: {
   localModelCount: number
   cloudProviderCount: number
   hasCloudConnection: boolean
-  hardwareTier: 'low' | 'standard'
+  /** A `HardwareTier` — one of eleven rungs since ATO-463, not the old
+   *  two-valued split. Typed loosely so the vocabulary can grow without
+   *  touching this module. */
+  hardwareTier: string
 }): void {
   capture('reply_model_gate_shown', {
     branch: params.branch,

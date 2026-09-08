@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   convertHfRepoToCatalogModel: vi.fn(),
   pullModelWithMetadata: vi.fn(),
   localDownloadingModels: new Set<string>(),
-  hardwareTier: { tier: 'standard' as 'low' | 'standard', ready: true },
+  hardwareTier: { tier: 'vram_8' as string, profile: null, ready: true },
 }))
 
 // Unmocked, the real store reports no RAM and no GPU on a test host.
@@ -35,8 +35,9 @@ vi.mock('@/hooks/useDownloadStore', () => ({
 }))
 
 vi.mock('@/hooks/useGeneralSetting', () => ({
-  useGeneralSetting: (selector: (state: { huggingfaceToken: string }) => unknown) =>
-    selector({ huggingfaceToken: '' }),
+  useGeneralSetting: (
+    selector: (state: { huggingfaceToken: string }) => unknown
+  ) => selector({ huggingfaceToken: '' }),
 }))
 
 import { PromptOnboardingModel } from '../PromptOnboardingModel'
@@ -137,36 +138,54 @@ describe('PromptOnboardingModel', () => {
 })
 
 describe('PromptOnboardingModel hardware tiers', () => {
-  const VL_REPO = 'LiquidAI/LFM2.5-VL-450M-GGUF'
+  const LFM_REPO = 'LiquidAI/LFM2.5-1.2B-Instruct-GGUF'
 
-  // Mirrors the real repo: it ships a Q4_K_M alongside the Q8_0 the manifest
-  // pins, and a BF16 projector ahead of the Q8_0 one.
-  const vlModel: CatalogModel = {
-    model_name: VL_REPO,
+  // Mirrors the real repo: several quants, of which the ladder pins one.
+  const lfmModel: CatalogModel = {
+    model_name: LFM_REPO,
     developer: 'LiquidAI',
     downloads: 0,
     quants: [
       {
-        model_id: 'LiquidAI/LFM2_5-VL-450M-Q4_K_M',
-        path: 'https://example.test/LFM2.5-VL-450M-Q4_K_M.gguf',
-        file_size: '279.0 MB',
+        model_id: 'LiquidAI/LFM2.5-1.2B-Instruct-Q8_0',
+        path: 'https://example.test/LFM2.5-1.2B-Instruct-Q8_0.gguf',
+        file_size: '1.3 GB',
       },
       {
-        model_id: 'LiquidAI/LFM2_5-VL-450M-Q8_0',
-        path: 'https://example.test/LFM2.5-VL-450M-Q8_0.gguf',
-        file_size: '361.6 MB',
+        model_id: 'LiquidAI/LFM2.5-1.2B-Instruct-Q4_K_M',
+        path: 'https://example.test/LFM2.5-1.2B-Instruct-Q4_K_M.gguf',
+        file_size: '0.68 GB',
+      },
+    ],
+    mmproj_models: [],
+  }
+
+  const QAT_REPO = 'unsloth/gemma-4-12B-it-qat-GGUF'
+
+  // The top rung. Its pin is the whole point: the repo's only weights file is
+  // a UD-Q4_K_XL, which the house quant preference (`iq4_xs` / `q4_k_m`) does
+  // not match, and its projector list leads with BF16.
+  const qatModel: CatalogModel = {
+    model_name: QAT_REPO,
+    developer: 'unsloth',
+    downloads: 0,
+    quants: [
+      {
+        model_id: 'unsloth/gemma-4-12B-it-qat-UD-Q4_K_XL',
+        path: 'https://example.test/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf',
+        file_size: '6.26 GB',
       },
     ],
     mmproj_models: [
       {
-        model_id: 'mmproj-LFM2_5-VL-450m-BF16',
+        model_id: 'mmproj-BF16',
         path: 'https://example.test/mmproj-BF16.gguf',
-        file_size: '181.0 MB',
+        file_size: '0.16 GB',
       },
       {
-        model_id: 'mmproj-LFM2_5-VL-450m-Q8_0',
-        path: 'https://example.test/mmproj-Q8_0.gguf',
-        file_size: '98.0 MB',
+        model_id: 'mmproj-F16',
+        path: 'https://example.test/mmproj-F16.gguf',
+        file_size: '0.16 GB',
       },
     ],
   }
@@ -174,9 +193,6 @@ describe('PromptOnboardingModel hardware tiers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.localDownloadingModels = new Set()
-    mocks.hardwareTier.tier = 'low'
-    mocks.fetchHuggingFaceRepo.mockResolvedValue({ id: VL_REPO })
-    mocks.convertHfRepoToCatalogModel.mockReturnValue(vlModel)
     seedServiceHub({
       models: {
         fetchHuggingFaceRepo: mocks.fetchHuggingFaceRepo,
@@ -187,28 +203,36 @@ describe('PromptOnboardingModel hardware tiers', () => {
     })
   })
 
-  it('offers the small model on a weak device', async () => {
+  it('offers the lightest model on a card with under 2.5 GB of VRAM', async () => {
+    // 741 Windows devices sit in this bucket. Nudging one toward the default
+    // rung's Qwen3.5 4B is the mis-recommendation the ladder exists to remove.
+    mocks.hardwareTier.tier = 'vram_2'
+    mocks.fetchHuggingFaceRepo.mockResolvedValue({ id: LFM_REPO })
+    mocks.convertHfRepoToCatalogModel.mockReturnValue(lfmModel)
+
     render(<PromptOnboardingModel />)
 
-    // Nudging a low-spec machine toward Qwen3.5 4B would undo the whole point
-    // of the low-spec onboarding tier.
     const heading = await screen.findByRole('heading', { level: 2 })
     expect(heading.textContent?.replace(/\s+/g, ' ')).toBe(
-      'LFM2.5 VL 450M (361.6 MB)'
+      'LFM2.5 1.2B Instruct (0.68 GB)'
     )
     expect(screen.queryByText(/Qwen3.5 4B/)).not.toBeInTheDocument()
-    expect(mocks.fetchHuggingFaceRepo).toHaveBeenCalledWith(VL_REPO, '')
+    expect(mocks.fetchHuggingFaceRepo).toHaveBeenCalledWith(LFM_REPO, '')
   })
 
   it('downloads the pinned quant and its matching projector', async () => {
+    mocks.hardwareTier.tier = 'unified_32_plus'
+    mocks.fetchHuggingFaceRepo.mockResolvedValue({ id: QAT_REPO })
+    mocks.convertHfRepoToCatalogModel.mockReturnValue(qatModel)
+
     render(<PromptOnboardingModel />)
     fireEvent.click(await screen.findByRole('button', { name: 'Download' }))
 
     const [modelId, path, mmprojPath] =
       mocks.pullModelWithMetadata.mock.calls[0]
-    expect(modelId).toBe('LiquidAI/LFM2_5-VL-450M-Q8_0')
-    expect(path).toContain('Q8_0.gguf')
+    expect(modelId).toBe('unsloth/gemma-4-12B-it-qat-UD-Q4_K_XL')
+    expect(path).toContain('UD-Q4_K_XL.gguf')
     // Not the BF16 projector, which is what the default preference returns.
-    expect(mmprojPath).toBe('https://example.test/mmproj-Q8_0.gguf')
+    expect(mmprojPath).toBe('https://example.test/mmproj-F16.gguf')
   })
 })

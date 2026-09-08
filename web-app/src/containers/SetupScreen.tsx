@@ -8,7 +8,7 @@ import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useMemo, useCallback, useRef, useState } from 'react'
 import { AppEvent, DownloadEvent, EngineManager, events } from '@janhq/core'
-import { Cloud } from 'lucide-react'
+import { ChevronDown, Cloud } from 'lucide-react'
 import type {
   CatalogModel,
   MMProjModel,
@@ -31,7 +31,12 @@ import {
   selectCloudGalleryProviders,
   type CloudProviderSaveResult,
 } from '@/containers/dialogs/AddCloudProviderDialog'
-import { findPinnedQuant } from '@/lib/model-card'
+import { findPinnedQuant, parseFileSizeToBytes } from '@/lib/model-card'
+import ProvidersAvatar from '@/containers/ProvidersAvatar'
+import { isProviderConnected } from '@/lib/cloud-providers'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
+import { judgeMemoryFit, type HardwareProfile } from '@/lib/hardware-tier'
 import { useRecommendedModelsRegistryStore } from '@/stores/recommended-models-registry-store'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelLoad } from '@/hooks/useModelLoad'
@@ -54,6 +59,7 @@ import { prettyModelName } from '@/lib/model-display-name'
 import {
   buildRecommendedImpressions,
   captureOnboardingCompleted,
+  captureOtherOptionsOpened,
   captureRecommendedModelClicked,
   captureRecommendedModelsShown,
   captureSetupLocalModelAutostarted,
@@ -95,7 +101,10 @@ export function pickMmprojModel(
   model: CatalogModel,
   quantPin?: string
 ): MMProjModel | undefined {
-  return findPinnedQuant(model.mmproj_models, quantPin) ?? getPreferredMmprojModel(model)
+  return (
+    findPinnedQuant(model.mmproj_models, quantPin) ??
+    getPreferredMmprojModel(model)
+  )
 }
 
 //* Размер найденной на диске модели (байты → "4.50 GB" / "850 MB")
@@ -157,10 +166,10 @@ type SetupScreenProps = {
 ///     at the top with a "Run" button (one-click import, no re-download); the
 ///     recommended catalog models follow below with a "Download" button.
 
-/// Onboarding must never trap the user behind a multi-gigabyte decision: if the
-/// model step is left untouched for this long we enter the chat anyway and hand
-/// the recommendation over to the bottom-right reminder.
-const MODEL_STEP_AUTO_EXIT_MS = 15_000
+/// The subscription this screen offers by name, beside the API-key gallery.
+/// Signing in is not "a cloud provider whose key happens to be a login" — it is
+/// the shortest exit from onboarding there is, so it gets its own button.
+const SUBSCRIPTION_PROVIDER = 'chatgpt'
 
 /// A download click used to swap the screen out instantly, which read as "did
 /// my click register?" — the row flipping to a progress readout was gone before
@@ -170,8 +179,71 @@ const DOWNLOAD_ENTER_DELAY_MS = 3_000
 
 /// Neither the on-disk scan nor the hardware enumeration may hold the picker
 /// hostage. Both are raced against this deadline; whatever has not answered by
-/// then is treated as "nothing found" / "assume a standard machine".
+/// then is treated as "nothing found" / `FALLBACK_HARDWARE_TIER`.
 const PICKER_INPUT_DEADLINE_MS = 4_000
+
+/// Whole-GB rendering of a MiB figure, for the "why this one" line. Rounded to
+/// what the user would call their machine ("16 GB"), not to a decimal place
+/// nobody reads off a spec sheet.
+export function formatMemoryGb(mib?: number): string | null {
+  if (!mib || mib <= 0) return null
+  return `${Math.round(mib / 1024)} GB`
+}
+
+/**
+ * The one line under the recommendation that says why it is this model.
+ *
+ * Returns the i18n key and its interpolation values rather than a string, so
+ * the component stays a single `t()` call and the wording lives in the locale
+ * files with the rest.
+ *
+ * The tiers deliberately say different things: a machine with no accelerator is
+ * not memory-bound at all — it is bound by CPU throughput, and telling its owner
+ * "fits your 64 GB" would explain the wrong constraint. Everything else is
+ * judged by {@link judgeMemoryFit}, whose macOS ceiling is a hard one.
+ */
+export type RecommendationFitCopy = {
+  key: string
+  values: Record<string, string>
+  /**
+   * Name of the memory pool, as its own key so the caller resolves it before
+   * interpolating. "16 GB" on a Mac and "16 GB" on a graphics card are not the
+   * same 16 GB, and a line that omits which one reads as a claim about RAM.
+   */
+  poolKey?: string
+}
+
+export function describeRecommendationFit(args: {
+  sizeLabel?: string | null
+  sizeBytes?: number
+  profile: HardwareProfile | null
+}): RecommendationFitCopy | null {
+  const { sizeLabel, sizeBytes, profile } = args
+  if (!sizeLabel) return null
+  const values: Record<string, string> = { size: sizeLabel }
+
+  if (profile?.memoryKind === 'system') {
+    return { key: 'setup:recommend.whyCpuOnly', values }
+  }
+
+  const budget = formatMemoryGb(profile?.budgetMib)
+  const fit = judgeMemoryFit(sizeBytes, profile)
+  if (!budget || !fit || !profile) {
+    return { key: 'setup:recommend.whyUnknown', values }
+  }
+
+  const key = {
+    comfortable: 'setup:recommend.whyComfortable',
+    tight: 'setup:recommend.whyTight',
+    spills: 'setup:recommend.whySpills',
+    wont_load: 'setup:recommend.whyWontLoad',
+  }[fit]
+  return {
+    key,
+    values: { ...values, budget },
+    poolKey: `setup:recommend.pool.${profile.memoryKind}`,
+  }
+}
 
 export function getInitialStep(): OnboardingStep {
   if (typeof window === 'undefined') return 'model'
@@ -263,18 +335,30 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   >(null)
   const [importingLocalId, setImportingLocalId] = useState<string | null>(null)
 
-  // The tier decides which two models the picker advertises, so rendering
-  // before it is known would swap the whole list under the user. Hardware
+  // The tier decides which single model the screen leads with, so rendering
+  // before it is known would swap the offer under the user. Hardware
   // enumeration starts at app boot and is normally done well before onboarding
   // paints, so this deadline is a backstop, not a routine wait.
-  // Open state is mirrored into a ref because the auto-exit timeout callback
-  // below closes over its own render's value.
   const [cloudDialogOpen, setCloudDialogOpen] = useState(false)
-  const cloudDialogOpenRef = useRef(false)
-  const setCloudDialog = useCallback((open: boolean) => {
-    cloudDialogOpenRef.current = open
-    setCloudDialogOpen(open)
+  // Which entry point opened the dialog: the gallery of API keys, or the named
+  // subscription button, which has to land on the sign-in rather than send the
+  // user back to a gallery to find it again.
+  const [cloudEntry, setCloudEntry] = useState<'gallery' | 'subscription'>(
+    'gallery'
+  )
+  const openCloudGallery = useCallback(() => {
+    setCloudEntry('gallery')
+    setCloudDialogOpen(true)
   }, [])
+  const openSubscription = useCallback(() => {
+    setCloudEntry('subscription')
+    setCloudDialogOpen(true)
+  }, [])
+
+  // Опции сверх основной рекомендации: скрыты, пока их не попросят.
+  const [otherOptionsOpen, setOtherOptionsOpen] = useState(false)
+  // Показы этих строк уходят один раз за экран — на первом раскрытии.
+  const otherOptionsShownRef = useRef(false)
 
   const [tierDeadlineElapsed, setTierDeadlineElapsed] = useState(false)
   useEffect(() => {
@@ -371,7 +455,11 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     }
   }, [])
 
-  const { tier: hardwareTier, ready: hardwareTierReady } = useHardwareTier()
+  const {
+    tier: hardwareTier,
+    profile: hardwareProfile,
+    ready: hardwareTierReady,
+  } = useHardwareTier()
   const recommendedItems = useResolvedRecommendedModels(sources, hardwareTier)
 
   // Every input the picker needs before it can paint a stable list.
@@ -397,7 +485,6 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   useEffect(() => {
     markOnboardingInFlight(step, onboardingStartedAtRef.current)
   }, [step])
-
 
   const downloadProcesses = useMemo(
     () =>
@@ -470,7 +557,9 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         continue
       }
       const isMlx = !!model.is_mlx
-      const variant = !isMlx ? pickPreferredVariant(model, item.rec.quant) : null
+      const variant = !isMlx
+        ? pickPreferredVariant(model, item.rec.quant)
+        : null
       const downloaded = isMlx
         ? isMlxDownloaded(model)
         : variant
@@ -496,12 +585,31 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       } else {
         // The id a click on this row would attribute to, resolved here so the
         // impression event can name the same model the click will.
-        pending.push({ ...item, startId: isMlx ? getMlxModelId(model) : variant?.model_id })
+        pending.push({
+          ...item,
+          startId: isMlx ? getMlxModelId(model) : variant?.model_id,
+        })
       }
     }
 
     return { installedRecommended: installed, pendingRecommended: pending }
   }, [recommendedItems, isMlxDownloaded, isVariantDownloaded, getMlxModelId])
+
+  // The screen leads with ONE model. `useResolvedRecommendedModels` returns the
+  // ladder rung for this machine first, so the hero is simply the first entry
+  // the user does not already have — anything already on disk has moved up into
+  // "On your device" with a Run button, which is a better offer than a
+  // re-download. Everything else waits behind "other options".
+  //
+  // Why one and not the previous list of two-to-eleven: the manifest served two
+  // per tier plus whatever the scanners found, and historical launches shipped
+  // 6, 10 and 11 rows. A first screen whose job is "start chatting" should not
+  // open with a comparison table.
+  const heroRecommendation = pendingRecommended[0] ?? null
+  const otherRecommendations = useMemo(
+    () => pendingRecommended.slice(1),
+    [pendingRecommended]
+  )
 
   //* P0 онбординг-аналитика: фиксируем показ экрана выбора модели один раз,
   //* дождавшись резолва списка рекомендаций (иначе recommended_count = 0).
@@ -520,13 +628,18 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       rendered,
       hardwareTier,
       hardwareTierResolved: hardwareTierReady,
+      memoryKind: hardwareProfile?.memoryKind ?? null,
+      memoryBudgetMib: hardwareProfile?.budgetMib ?? null,
+      primaryModelId: heroRecommendation?.startId ?? null,
     })
     // Clicks have always carried a `position`; impressions never did, so a
     // row's conversion — and whether the list is read past the first entry —
     // could not be computed at all.
     captureRecommendedModelsShown(
       buildRecommendedImpressions({
-        pending: pendingRecommended,
+        // Only the offer: the rest sit behind the disclosure and are reported
+        // when it is opened, so a row nobody saw never gets a denominator.
+        pending: heroRecommendation ? [heroRecommendation] : [],
         installed: installedRecommended,
         detected: detectedRunnable,
       })
@@ -540,7 +653,8 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     sourcesLoading,
     hardwareTier,
     hardwareTierReady,
-    pendingRecommended,
+    hardwareProfile,
+    heroRecommendation,
     installedRecommended,
     detectedRunnable,
   ])
@@ -957,7 +1071,9 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       if (modelId) {
         // Registers the remote provider and starts the local proxy.
         // Fire-and-forget so navigation is not blocked on it.
-        void switchToModel({ modelId, providerName, serviceHub }).catch(() => {})
+        void switchToModel({ modelId, providerName, serviceHub }).catch(
+          () => {}
+        )
       }
 
       void navigate({
@@ -984,13 +1100,35 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     [providers]
   )
 
-  // Leaving onboarding empty-handed. Since the Skip link was removed this is
-  // reachable only through the auto-exit timeout — the `reason` is kept on the
-  // event so the existing `setup_skipped` funnel stays comparable across the
-  // change. Picking a model takes a different route (handleImportedId /
+  // The ChatGPT subscription, promoted out of the key gallery into a button of
+  // its own. It is not a key you paste, it is a sign-in — and connecting *any*
+  // cloud provider during onboarding is close to a guaranteed activation (144
+  // of 153 who did it activated; day-2 return 58.3 % against 36.7 %), while
+  // `provider_key_configured.during_onboarding = true` has fired for seven
+  // devices in the product's history. That gap is the whole reason these two
+  // buttons now sit beside the model rather than under an "or".
+  //
+  // Kept as the provider object, not a boolean: the button wears the
+  // subscription's own mark so the named route is recognisable at a glance.
+  const subscriptionProvider = useMemo(() => {
+    if (!PlatformFeatures[PlatformFeature.CHATGPT_SUBSCRIPTION])
+      return undefined
+    const provider = providers.find((p) => p.provider === SUBSCRIPTION_PROVIDER)
+    return provider && !isProviderConnected(provider) ? provider : undefined
+  }, [providers])
+
+  // Leaving onboarding empty-handed, by pressing Skip.
+  //
+  // This used to be a 15-second timer with no visible control: 60 % of all
+  // onboarding exits took it, at a 16.2 s median — people were sitting through
+  // it, not being rescued by it. The reason it had no button was that leaving
+  // without a model was a dead end; ATO-453's composer widget removed the dead
+  // end, so the honest control can exist.
+  //
+  // Picking a model takes a different route (handleImportedId /
   // enterChatForDownload) and must not arm the bottom-right reminder.
   const leaveWithoutModel = useCallback(
-    (reason: 'timeout') => {
+    (reason: 'dismissed') => {
       if (hasNavigatedRef.current) return
       hasNavigatedRef.current = true
 
@@ -1037,43 +1175,6 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     ]
   )
 
-  // Read through a ref so the timeout below is armed once per model step
-  // instead of being restarted every time a background import refreshes the
-  // provider list.
-  const leaveWithoutModelRef = useRef(leaveWithoutModel)
-  useEffect(() => {
-    leaveWithoutModelRef.current = leaveWithoutModel
-  }, [leaveWithoutModel])
-
-  // Armed only once the picker is actually on screen, and disarmed while an
-  // import is in flight so a slow local model can't be cut short.
-  useEffect(() => {
-    // Do not start the 15s exit clock behind the loading screen.
-    if (step !== 'model' || pickerInputsPending) return
-    if (importingLocalId !== null) return
-    // Onboarding must not navigate out from under an open dialog.
-    if (cloudDialogOpen) return
-    // A download is already on its way to the chat — don't race it with the
-    // empty-handed exit, which would arm the reminder for a chosen model.
-    if (downloadStartedId !== null) return
-
-    const timer = setTimeout(() => {
-      // Second layer, deliberately: the dependency above cancels a pending
-      // timer when the dialog opens, but a click at t≈14.99s can fire this
-      // callback before React commits that state update.
-      if (cloudDialogOpenRef.current) return
-      leaveWithoutModelRef.current('timeout')
-    }, MODEL_STEP_AUTO_EXIT_MS)
-
-    return () => clearTimeout(timer)
-  }, [
-    step,
-    pickerInputsPending,
-    importingLocalId,
-    cloudDialogOpen,
-    downloadStartedId,
-  ])
-
   // Unlike the previous full-screen onboarding, the model step lives inside the
   // chat area, so the sidebar is already there when the user lands in chat.
   useEffect(() => {
@@ -1104,14 +1205,13 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   // Two states that replace the picker entirely: the brief scan (so detected
   // models don't pop in and shove the list down) and the auto-start of a model
   // found on disk, which needs feedback rather than a decision.
-  const statusMessage =
-    pickerInputsPending
-      ? t('common:loading')
-      : autoRunState === 'running' && autoRunTarget
-        ? t('setup:localStep.autoStarting', {
-            name: prettyModelName(autoRunTarget.displayName),
-          })
-        : null
+  const statusMessage = pickerInputsPending
+    ? t('common:loading')
+    : autoRunState === 'running' && autoRunTarget
+      ? t('setup:localStep.autoStarting', {
+          name: prettyModelName(autoRunTarget.displayName),
+        })
+      : null
 
   if (statusMessage) {
     return (
@@ -1119,6 +1219,267 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         <HeaderPage />
         <div className="flex flex-1 items-center justify-center">
           <div className="text-muted-foreground text-sm">{statusMessage}</div>
+        </div>
+      </div>
+    )
+  }
+
+  /**
+   * One downloadable recommendation.
+   *
+   * The same markup serves the hero and the "other options" rows — a second
+   * copy for the hero would be a second place for the download wiring, the
+   * MLX/GGUF split and the progress readout to drift apart. `hero` changes only
+   * the emphasis: a card instead of a list row, the "why this one" line, and a
+   * full-width primary button.
+   *
+   * `index` is the row's position in `pendingRecommended`, which is what
+   * `recommended_model_shown` reports, so clicks and impressions divide.
+   */
+  const renderPendingRow = (
+    item: (typeof pendingRecommended)[number],
+    index: number,
+    hero = false
+  ) => {
+    const { rec, model } = item
+    const isMlx = !!model?.is_mlx
+    const variant =
+      model && !isMlx ? pickPreferredVariant(model, rec.quant) : null
+    //* Тот же проектор, что уйдёт в загрузку, — иначе строка покажет размер
+    //* одного файла, а скачается другой.
+    const mmproj =
+      model && !isMlx ? pickMmprojModel(model, rec.mmprojQuant) : undefined
+    //* MLX: суммируем все safetensors-шарды; GGUF: quant + mmproj
+    const downloadSize = isMlx
+      ? getMlxTotalFileSize(model!)
+      : model && variant
+        ? getTotalDownloadFileSize(model, variant, mmproj)
+        : variant?.file_size
+    //* id, по которому опрашиваем downloadStore (GGUF → quant.id, MLX → mlxId)
+    const rowTrackId = isMlx
+      ? model
+        ? getMlxModelId(model)
+        : null
+      : (variant?.model_id ?? null)
+    const rowDownloading = rowTrackId ? isVariantDownloading(rowTrackId) : false
+    const rowDownloaded = isMlx
+      ? model
+        ? isMlxDownloaded(model)
+        : false
+      : model && variant
+        ? isVariantDownloaded(model, variant)
+        : false
+    const hfAuthor =
+      model?.developer?.trim() || rec.modelName.split('/')[0]?.trim() || ''
+    const nameForInitials =
+      extractModelName(rec.modelName) || rec.modelName || '?'
+    const rowInitials =
+      nameForInitials
+        .replace(/\.(gguf|GGUF)$/i, '')
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .slice(0, 2) ||
+      hfAuthor.slice(0, 2) ||
+      '?'
+    const brandIconSrc = recommendedSetupModelIconSrc(rec.modelName)
+    const rowDownloadProgress = rowTrackId
+      ? downloadProcesses.find((p) => p.id === rowTrackId)
+      : undefined
+
+    const onDownload = () => {
+      if (!model) return
+      // Detected-on-disk models still land in the library even when the user
+      // downloads a catalog model instead of running them.
+      importCandidatesInBackground(localCandidates ?? [])
+      if (isMlx) {
+        captureRecommendedModelClicked({
+          modelId: getMlxModelId(model),
+          format: 'MLX',
+          sizeGb: sizeStringToGb(downloadSize),
+          position: index,
+        })
+        void startMlxDownload(model)
+        enterChatAfterDownloadStart(getMlxModelId(model), 'mlx')
+      } else if (variant) {
+        captureRecommendedModelClicked({
+          modelId: variant.model_id,
+          format: 'GGUF',
+          sizeGb: sizeStringToGb(downloadSize),
+          position: index,
+        })
+        startDownload(model, variant, mmproj?.path)
+        enterChatAfterDownloadStart(
+          variant.model_id,
+          LOCAL_LLAMACPP_PROVIDER as LocalLlamacppProvider
+        )
+      }
+    }
+
+    const icon = brandIconSrc ? (
+      <img
+        src={brandIconSrc}
+        alt=""
+        className={cn('shrink-0 object-contain', hero ? 'size-10' : 'size-8')}
+        draggable={false}
+        aria-hidden
+      />
+    ) : (
+      <HuggingFaceAuthorAvatar
+        author={hfAuthor}
+        initials={rowInitials}
+        className={cn('shrink-0', hero ? 'size-10' : 'size-8')}
+      />
+    )
+
+    const title = model
+      ? prettyModelName(model.model_name)
+      : prettyModelName(rec.modelName)
+
+    const buttonLabel = rowDownloaded
+      ? t('hub:downloaded')
+      : rowDownloading
+        ? t('setup:downloading')
+        : t('hub:download')
+
+    const progressLine =
+      rowDownloading && rowTrackId ? (
+        <p
+          className={cn(
+            'text-xs text-muted-foreground tabular-nums',
+            hero ? 'text-center' : 'text-right'
+          )}
+          aria-live="polite"
+        >
+          {rowDownloadProgress && rowDownloadProgress.total > 0
+            ? `${Math.round((rowDownloadProgress.progress ?? 0) * 100)}% · ${formatProgressPair(rowDownloadProgress.current, rowDownloadProgress.total)}`
+            : t('setup:downloadPreparing')}
+        </p>
+      ) : null
+
+    // Says where the download is about to go, so the screen change three
+    // seconds later is something the user was told about.
+    const handoffLine =
+      rowTrackId && downloadStartedId === rowTrackId ? (
+        <p
+          className={cn(
+            'text-xs text-muted-foreground',
+            hero ? 'text-center' : 'text-right'
+          )}
+        >
+          {t('setup:downloadStartedOpening')}
+        </p>
+      ) : null
+
+    const disabled =
+      !model || (!isMlx && !variant) || rowDownloading || rowDownloaded
+
+    if (hero) {
+      //* «Почему эта»: размер против бюджета памяти этой машины, а не
+      //* абстрактное «рекомендуем» — см. describeRecommendationFit.
+      const fit = describeRecommendationFit({
+        sizeLabel: downloadSize,
+        sizeBytes: parseFileSizeToBytes(downloadSize ?? undefined),
+        profile: hardwareProfile,
+      })
+
+      return (
+        <div
+          key={`${rec.modelName}-${rec.descriptionKey}`}
+          className="flex w-full shrink-0 flex-col gap-3 rounded-lg border bg-secondary/50 p-4"
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            {icon}
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate text-sm font-medium leading-tight">
+                {title}
+              </h2>
+              <p className="mt-0.5 text-xs leading-snug text-muted-foreground">
+                {fit
+                  ? t(fit.key, {
+                      ...fit.values,
+                      ...(fit.poolKey ? { pool: t(fit.poolKey) } : {}),
+                    })
+                  : !model && sourcesLoading
+                    ? t('hub:loadingModels')
+                    : !model
+                      ? t('setup:modelUnavailable')
+                      : t(rec.descriptionKey)}
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            disabled={disabled}
+            onClick={onDownload}
+            className="w-full rounded-full"
+          >
+            {buttonLabel}
+          </Button>
+          {progressLine}
+          {handoffLine}
+        </div>
+      )
+    }
+
+    return (
+      <div
+        key={`${rec.modelName}-${rec.descriptionKey}`}
+        className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          {icon}
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-sm font-medium leading-tight">
+              {title}
+              {downloadSize ? (
+                <span className="text-xs font-normal text-muted-foreground">
+                  {' '}
+                  · {downloadSize}
+                </span>
+              ) : null}
+            </h2>
+            {!model && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {sourcesLoading
+                  ? t('hub:loadingModels')
+                  : t('setup:modelUnavailable')}
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <Button
+            size="sm"
+            disabled={disabled}
+            onClick={onDownload}
+            className="shrink-0 rounded-full px-4"
+          >
+            {/* Reserve width for the widest possible label so the button
+                doesn't reflow when its state flips between Download /
+                Downloading… / Downloaded. */}
+            <span className="grid">
+              <span
+                aria-hidden="true"
+                className="invisible col-start-1 row-start-1"
+              >
+                {t('setup:downloading')}
+              </span>
+              <span
+                aria-hidden="true"
+                className="invisible col-start-1 row-start-1"
+              >
+                {t('hub:downloaded')}
+              </span>
+              <span
+                aria-hidden="true"
+                className="invisible col-start-1 row-start-1"
+              >
+                {t('hub:download')}
+              </span>
+              <span className="col-start-1 row-start-1">{buttonLabel}</span>
+            </span>
+          </Button>
+          {progressLine}
+          {handoffLine}
         </div>
       </div>
     )
@@ -1328,251 +1689,140 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                 </div>
               )}
 
-              <div className="flex flex-col gap-2">
-                {pendingRecommended.length > 0 && (
+              <div className="flex flex-col gap-3">
+                {/* One offer, not a list. The rung of the ladder this machine
+                    sits on — see `useResolvedRecommendedModels`. */}
+                {heroRecommendation && (
                   <>
                     <span className="shrink-0 text-left text-xs font-medium text-muted-foreground">
-                      {t('hub:recTitle')}
+                      {t('setup:recommend.title')}
                     </span>
-                    <div
-                      className={cn(
-                        'w-full shrink-0 rounded-lg border bg-secondary/50 px-3 py-2',
-                        'max-h-[min(70vh,36rem)] overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable]'
-                      )}
-                    >
-                      <div className="flex flex-col divide-y divide-border/60">
-                        {pendingRecommended.map(({ rec, model }, index) => {
-                          const isMlx = !!model?.is_mlx
-                          const variant =
-                            model && !isMlx
-                              ? pickPreferredVariant(model, rec.quant)
-                              : null
-                          //* Тот же проектор, что уйдёт в загрузку, — иначе
-                          //* строка покажет размер одного файла, а скачается другой.
-                          const mmproj =
-                            model && !isMlx
-                              ? pickMmprojModel(model, rec.mmprojQuant)
-                              : undefined
-                          //* MLX: суммируем все safetensors-шарды; GGUF: quant + mmproj
-                          const downloadSize = isMlx
-                            ? getMlxTotalFileSize(model!)
-                            : model && variant
-                              ? getTotalDownloadFileSize(model, variant, mmproj)
-                              : variant?.file_size
-                          //* id, по которому опрашиваем downloadStore (GGUF → quant.id, MLX → mlxId)
-                          const rowTrackId = isMlx
-                            ? model
-                              ? getMlxModelId(model)
-                              : null
-                            : (variant?.model_id ?? null)
-                          const rowDownloading = rowTrackId
-                            ? isVariantDownloading(rowTrackId)
-                            : false
-                          const rowDownloaded = isMlx
-                            ? model
-                              ? isMlxDownloaded(model)
-                              : false
-                            : model && variant
-                              ? isVariantDownloaded(model, variant)
-                              : false
-                          const hfAuthor =
-                            model?.developer?.trim() ||
-                            rec.modelName.split('/')[0]?.trim() ||
-                            ''
-                          const nameForInitials =
-                            extractModelName(rec.modelName) ||
-                            rec.modelName ||
-                            '?'
-                          const rowInitials =
-                            nameForInitials
-                              .replace(/\.(gguf|GGUF)$/i, '')
-                              .replace(/[^a-zA-Z0-9]/g, '')
-                              .slice(0, 2) ||
-                            hfAuthor.slice(0, 2) ||
-                            '?'
-
-                          const brandIconSrc = recommendedSetupModelIconSrc(
-                            rec.modelName
-                          )
-                          const rowDownloadProgress = rowTrackId
-                            ? downloadProcesses.find((p) => p.id === rowTrackId)
-                            : undefined
-
-                          return (
-                            <div
-                              key={`${rec.modelName}-${rec.descriptionKey}`}
-                              className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
-                            >
-                              <div className="flex min-w-0 flex-1 items-center gap-3">
-                                {brandIconSrc ? (
-                                  <img
-                                    src={brandIconSrc}
-                                    alt=""
-                                    className="size-8 shrink-0 object-contain"
-                                    draggable={false}
-                                    aria-hidden
-                                  />
-                                ) : (
-                                  <HuggingFaceAuthorAvatar
-                                    author={hfAuthor}
-                                    initials={rowInitials}
-                                    className="size-8 shrink-0"
-                                  />
-                                )}
-                                <div className="min-w-0 flex-1">
-                                  <h2 className="truncate text-sm font-medium leading-tight">
-                                    {model
-                                      ? prettyModelName(model.model_name)
-                                      : prettyModelName(rec.modelName)}
-                                    {downloadSize ? (
-                                      <span className="text-xs font-normal text-muted-foreground">
-                                        {' '}
-                                        · {downloadSize}
-                                      </span>
-                                    ) : null}
-                                  </h2>
-                                  {!model && (
-                                    <p className="mt-1 text-xs text-muted-foreground">
-                                      {sourcesLoading
-                                        ? t('hub:loadingModels')
-                                        : t('setup:modelUnavailable')}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex shrink-0 flex-col items-end gap-1">
-                                <Button
-                                  size="sm"
-                                  disabled={
-                                    !model ||
-                                    (!isMlx && !variant) ||
-                                    rowDownloading ||
-                                    rowDownloaded
-                                  }
-                                  onClick={() => {
-                                    if (!model) return
-                                    // Detected-on-disk models still land in the
-                                    // library even when the user downloads a
-                                    // catalog model instead of running them.
-                                    importCandidatesInBackground(
-                                      localCandidates ?? []
-                                    )
-                                    if (isMlx) {
-                                      captureRecommendedModelClicked({
-                                        modelId: getMlxModelId(model),
-                                        format: 'MLX',
-                                        sizeGb: sizeStringToGb(downloadSize),
-                                        position: index,
-                                      })
-                                      void startMlxDownload(model)
-                                      enterChatAfterDownloadStart(
-                                        getMlxModelId(model),
-                                        'mlx'
-                                      )
-                                    } else if (variant) {
-                                      captureRecommendedModelClicked({
-                                        modelId: variant.model_id,
-                                        format: 'GGUF',
-                                        sizeGb: sizeStringToGb(downloadSize),
-                                        position: index,
-                                      })
-                                      startDownload(model, variant, mmproj?.path)
-                                      enterChatAfterDownloadStart(
-                                        variant.model_id,
-                                        LOCAL_LLAMACPP_PROVIDER as LocalLlamacppProvider
-                                      )
-                                    }
-                                  }}
-                                  className="shrink-0 rounded-full px-4"
-                                >
-                                  {/* Reserve width for the widest possible label so the
-                                  button doesn't reflow when its state flips between
-                                  Download / Downloading… / Downloaded. */}
-                                  <span className="grid">
-                                    <span
-                                      aria-hidden="true"
-                                      className="invisible col-start-1 row-start-1"
-                                    >
-                                      {t('setup:downloading')}
-                                    </span>
-                                    <span
-                                      aria-hidden="true"
-                                      className="invisible col-start-1 row-start-1"
-                                    >
-                                      {t('hub:downloaded')}
-                                    </span>
-                                    <span
-                                      aria-hidden="true"
-                                      className="invisible col-start-1 row-start-1"
-                                    >
-                                      {t('hub:download')}
-                                    </span>
-                                    <span className="col-start-1 row-start-1">
-                                      {rowDownloaded
-                                        ? t('hub:downloaded')
-                                        : rowDownloading
-                                          ? t('setup:downloading')
-                                          : t('hub:download')}
-                                    </span>
-                                  </span>
-                                </Button>
-                                {rowDownloading && rowTrackId ? (
-                                  <p
-                                    className="text-right text-xs text-muted-foreground tabular-nums"
-                                    aria-live="polite"
-                                  >
-                                    {rowDownloadProgress &&
-                                    rowDownloadProgress.total > 0
-                                      ? `${Math.round((rowDownloadProgress.progress ?? 0) * 100)}% · ${formatProgressPair(rowDownloadProgress.current, rowDownloadProgress.total)}`
-                                      : t('setup:downloadPreparing')}
-                                  </p>
-                                ) : null}
-                                {/* Says where the download is about to go, so
-                                    the screen change three seconds later is
-                                    something the user was told about. */}
-                                {rowTrackId && downloadStartedId === rowTrackId ? (
-                                  <p className="text-right text-xs text-muted-foreground">
-                                    {t('setup:downloadStartedOpening')}
-                                  </p>
-                                ) : null}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
+                    {renderPendingRow(heroRecommendation, 0, true)}
                   </>
                 )}
 
-                {/* No Skip link: leaving empty-handed is handled by the
-                    `MODEL_STEP_AUTO_EXIT_MS` timeout, so the screen offers only
-                    the two ways to finish setup rather than a way to dodge it. */}
-                <div className="relative z-60 flex shrink-0 flex-col items-center gap-3 pt-3">
-                  {/* A user with no machine for local inference, or an existing
-                      cloud subscription, would otherwise have nothing to pick.
-                      The divider frames the two as alternatives rather than a
-                      primary and an afterthought. */}
-                  {hasCloudProviders && (
-                    <>
-                      <div className="flex w-full shrink-0 items-center gap-3">
-                        <span className="bg-border h-px flex-1" />
-                        <span className="text-muted-foreground text-xs">
-                          {t('setup:orDivider')}
-                        </span>
-                        <span className="bg-border h-px flex-1" />
+                {/* Everything heavier, lighter or simply different. Collapsed
+                    by default: the screen's job is to get one model running,
+                    and the comparison is what the Hub is for. */}
+                {otherRecommendations.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      aria-expanded={otherOptionsOpen}
+                      onClick={() => {
+                        // Only the opening is worth an event: how often one
+                        // offer is not enough is the measurement that says
+                        // whether leading with one model was the right trade.
+                        if (!otherOptionsOpen) {
+                          captureOtherOptionsOpened({
+                            hardwareTier,
+                            optionCount: otherRecommendations.length,
+                          })
+                          // These rows become visible now, not at paint. Fired
+                          // once per screen even if the user toggles the
+                          // disclosure again — an impression is a row being
+                          // seen, not a row being re-rendered.
+                          if (!otherOptionsShownRef.current) {
+                            otherOptionsShownRef.current = true
+                            captureRecommendedModelsShown(
+                              buildRecommendedImpressions({
+                                pending: otherRecommendations,
+                                // Row 0 is the offer, reported at paint.
+                                pendingOffset: 1,
+                              })
+                            )
+                          }
+                        }
+                        setOtherOptionsOpen((open) => !open)
+                      }}
+                      className="flex shrink-0 items-center justify-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      {otherOptionsOpen
+                        ? t('setup:recommend.hideOtherOptions')
+                        : t('setup:recommend.otherOptions', {
+                            count: otherRecommendations.length,
+                          })}
+                      <ChevronDown
+                        aria-hidden
+                        className={cn(
+                          'size-3.5 transition-transform',
+                          otherOptionsOpen && 'rotate-180'
+                        )}
+                      />
+                    </button>
+                    {otherOptionsOpen && (
+                      <div
+                        className={cn(
+                          'w-full shrink-0 rounded-lg border bg-secondary/50 px-3 py-2',
+                          'max-h-[min(40vh,22rem)] overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable]'
+                        )}
+                      >
+                        <div className="flex flex-col divide-y divide-border/60">
+                          {otherRecommendations.map((item, index) =>
+                            renderPendingRow(item, index + 1)
+                          )}
+                        </div>
                       </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Peers of the model, not a footnote under an "or".
+                    Connecting a cloud provider during onboarding is the single
+                    strongest activation signal we have, and it had happened on
+                    seven devices in the product's history because it lived
+                    below a divider that framed it as the consolation prize. */}
+                {(hasCloudProviders || subscriptionProvider) && (
+                  <div className="relative z-60 flex shrink-0 flex-col gap-2 pt-1 sm:flex-row">
+                    {hasCloudProviders && (
                       <Button
                         type="button"
                         variant="secondary"
                         size="sm"
-                        onClick={() => setCloudDialog(true)}
-                        className="relative z-60 shrink-0 rounded-full px-4"
+                        onClick={openCloudGallery}
+                        className="relative z-60 flex-1 rounded-full px-4"
                       >
                         <Cloud />
                         {t('setup:cloudStep.trigger')}
                       </Button>
-                    </>
-                  )}
+                    )}
+                    {subscriptionProvider && (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={openSubscription}
+                        className="relative z-60 flex-1 rounded-full px-4"
+                      >
+                        {/* Decorative: the label already names the route, and
+                            the avatar's own alt text would otherwise be read as
+                            part of the button's name. */}
+                        <span aria-hidden className="flex">
+                          <ProvidersAvatar
+                            provider={subscriptionProvider}
+                            className="size-4 shrink-0"
+                          />
+                        </span>
+                        {t('setup:cloudStep.subscriptionTrigger')}
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {/* The honest way out, replacing a 15-second timer that took
+                    60 % of all onboarding exits without ever showing itself.
+                    Safe to offer now that the composer asks the question again
+                    at the moment it matters (ATO-453). */}
+                <div className="flex shrink-0 justify-center pt-1">
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="sm"
+                    onClick={() => leaveWithoutModel('dismissed')}
+                    className="text-muted-foreground hover:text-foreground h-auto py-1 text-xs hover:no-underline"
+                  >
+                    {t('setup:skip')}
+                  </Button>
                 </div>
               </div>
             </div>
@@ -1582,8 +1832,13 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
 
       <AddCloudProviderDialog
         open={cloudDialogOpen}
-        onOpenChange={setCloudDialog}
+        onOpenChange={setCloudDialogOpen}
         onKeySaved={enterChatWithCloudProvider}
+        // The subscription button must land on the sign-in, not on a gallery
+        // the user then has to find it in again.
+        initialProviderName={
+          cloudEntry === 'subscription' ? SUBSCRIPTION_PROVIDER : undefined
+        }
       />
     </div>
   )

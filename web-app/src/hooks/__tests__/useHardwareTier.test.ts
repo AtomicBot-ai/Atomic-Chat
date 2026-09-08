@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
     gpus: [] as Array<{ total_memory?: number }>,
     os_type: 'macos',
     os_name: 'macOS',
-    total_memory: 64 * 1024, // comfortably standard
+    total_memory: 64 * 1024, // a 64 GiB Mac — the top unified rung
   },
 }))
 
@@ -39,31 +39,60 @@ describe('useHardwareTier', () => {
     const useHardwareTier = await loadHook()
     const { result } = renderHook(() => useHardwareTier())
 
-    expect(result.current).toEqual({ tier: 'standard', ready: true })
+    expect(result.current.tier).toBe('unified_32_plus')
+    expect(result.current.ready).toBe(true)
+    expect(result.current.profile).toMatchObject({
+      memoryKind: 'unified',
+      hardCeiling: true,
+    })
   })
 
   it('pins the tier to the dev override, ignoring real hardware', async () => {
-    // 64 GB would detect as 'standard'; the whole point of the flag is to
-    // review the low-spec picker on a machine that is not low-spec.
+    const useHardwareTier = await loadHook('vram_2')
+    const { result } = renderHook(() => useHardwareTier())
+
+    expect(result.current.tier).toBe('vram_2')
+    expect(result.current.ready).toBe(true)
+  })
+
+  it('keeps accepting the two values the flag used to take', async () => {
+    // `make dev-onboarding-low-spec` passes FORCE_HARDWARE_TIER=low, and so
+    // does anyone's shell history. Aliased onto the nearest rung rather than
+    // rejected, which would silently show the real machine's recommendation.
     const useHardwareTier = await loadHook('low')
     const { result } = renderHook(() => useHardwareTier())
 
-    expect(result.current).toEqual({ tier: 'low', ready: true })
+    expect(result.current.tier).toBe('vram_2')
+  })
+
+  it('reports the real machine even under an override', async () => {
+    // The flag changes which model is offered; it must not fabricate hardware,
+    // or the "why this one" line would quote memory the machine does not have.
+    const useHardwareTier = await loadHook('vram_2')
+    const { result } = renderHook(() => useHardwareTier())
+
+    expect(result.current.profile?.budgetMib).toBe(64 * 1024)
+    expect(result.current.profile?.memoryKind).toBe('unified')
   })
 
   it('ignores a junk override rather than pinning to it', async () => {
     const useHardwareTier = await loadHook('potato')
     const { result } = renderHook(() => useHardwareTier())
 
-    expect(result.current.tier).toBe('standard')
+    expect(result.current.tier).toBe('unified_32_plus')
   })
 
-  it('falls back to standard while hardware is still unknown', async () => {
+  it('falls back to a conservative tier while hardware is still unknown', async () => {
     mocks.hardwareData.total_memory = 0
     const useHardwareTier = await loadHook()
     const { result } = renderHook(() => useHardwareTier())
 
-    // `ready: false` is what holds the picker behind its short deadline.
-    expect(result.current).toEqual({ tier: 'standard', ready: false })
+    // `ready: false` is what holds the picker behind its short deadline; the
+    // tier is the one the picker uses if that deadline elapses first.
+    expect(result.current).toEqual({
+      tier: 'vram_8',
+      profile: null,
+      ready: false,
+    })
   })
 })

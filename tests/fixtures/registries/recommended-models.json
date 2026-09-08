@@ -1,10 +1,24 @@
 {
   "$schema": "./schema.json",
   "schema_version": 1,
-  "updated_at": "2026-08-19T09:00:00Z",
+  "updated_at": "2026-09-08T12:00:00Z",
   "recommendations": [
-    { "model_name": "AtomicChat/Qwen3.5-4B-GGUF", "description_key": "hub:recEverydayUse" },
-    { "model_name": "AtomicChat/gemma-4-E2B-it-GGUF", "description_key": "hub:recEverydayUse" }
+    {
+      "model_name": "AtomicChat/Qwen3.5-4B-GGUF",
+      "description_key": "hub:recEverydayUse",
+      "quant": "Q4_K_M"
+    },
+    {
+      "model_name": "AtomicChat/Qwen3.5-9B-GGUF",
+      "description_key": "hub:recEverydayUse",
+      "quant": "Q4_K_M"
+    },
+    {
+      "model_name": "AtomicChat/gemma-4-E4B-it-GGUF",
+      "description_key": "hub:recVisionKnowledge",
+      "quant": "Q4_K_M",
+      "mmproj_quant": "F16"
+    }
   ],
   "low_spec_recommendations": [
     {
@@ -18,5 +32,88 @@
       "quant": "Q8_0",
       "mmproj_quant": "Q8_0"
     }
-  ]
+  ],
+  "tiers": {
+    "cpu_only": [
+      {
+        "model_name": "LiquidAI/LFM2.5-1.2B-Instruct-GGUF",
+        "description_key": "hub:recEverydayUse",
+        "quant": "Q4_K_M"
+      }
+    ],
+    "vram_2": [
+      {
+        "model_name": "LiquidAI/LFM2.5-1.2B-Instruct-GGUF",
+        "description_key": "hub:recEverydayUse",
+        "quant": "Q4_K_M"
+      }
+    ],
+    "vram_4": [
+      {
+        "model_name": "LiquidAI/LFM2.5-2.6B-GGUF",
+        "description_key": "hub:recEverydayUse",
+        "quant": "Q4_K_M"
+      }
+    ],
+    "vram_8": [
+      {
+        "model_name": "AtomicChat/Qwen3.5-4B-GGUF",
+        "description_key": "hub:recEverydayUse",
+        "quant": "Q4_K_M"
+      }
+    ],
+    "vram_12": [
+      {
+        "model_name": "AtomicChat/gemma-4-E4B-it-GGUF",
+        "description_key": "hub:recVisionKnowledge",
+        "quant": "Q4_K_M",
+        "mmproj_quant": "F16"
+      }
+    ],
+    "vram_16": [
+      {
+        "model_name": "AtomicChat/Qwen3.5-9B-GGUF",
+        "description_key": "hub:recEverydayUse",
+        "quant": "Q4_K_M"
+      }
+    ],
+    "vram_16_plus": [
+      {
+        "model_name": "unsloth/gemma-4-12B-it-qat-GGUF",
+        "description_key": "hub:recVisionKnowledge",
+        "quant": "Q4_K_XL",
+        "mmproj_quant": "F16"
+      }
+    ],
+    "unified_8": [
+      {
+        "model_name": "LiquidAI/LFM2.5-2.6B-GGUF",
+        "description_key": "hub:recEverydayUse",
+        "quant": "Q4_K_M"
+      }
+    ],
+    "unified_16": [
+      {
+        "model_name": "AtomicChat/Qwen3.5-4B-GGUF",
+        "description_key": "hub:recEverydayUse",
+        "quant": "Q4_K_M"
+      }
+    ],
+    "unified_32": [
+      {
+        "model_name": "AtomicChat/gemma-4-E4B-it-GGUF",
+        "description_key": "hub:recVisionKnowledge",
+        "quant": "Q4_K_M",
+        "mmproj_quant": "F16"
+      }
+    ],
+    "unified_32_plus": [
+      {
+        "model_name": "unsloth/gemma-4-12B-it-qat-GGUF",
+        "description_key": "hub:recVisionKnowledge",
+        "quant": "Q4_K_XL",
+        "mmproj_quant": "F16"
+      }
+    ]
+  }
 }
