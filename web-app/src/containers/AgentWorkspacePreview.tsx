@@ -18,12 +18,25 @@ import {
   readAgentWorkspaceText,
   statAgentWorkspaceFile,
 } from '@/services/agent/tauri'
-import { classifyWorkspacePreview } from '@/lib/workspace-preview-kind'
+import {
+  classifyWorkspacePreview,
+  workspacePreviewMediaType,
+} from '@/lib/workspace-preview-kind'
 import { cn } from '@/lib/utils'
+import { AudioPlayer } from './AudioPlayer'
 import { HtmlArtifact } from './HtmlArtifact'
 
 type AgentWorkspacePreviewProps = {
   isGenerating?: boolean
+}
+
+function MediaUnplayable() {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
+      <IconFileOff className="size-8" />
+      <p className="text-sm">This media format cannot be played here.</p>
+    </div>
+  )
 }
 
 function FilePreview({ tab }: { tab: WorkspaceFilePreviewTab }) {
@@ -31,11 +44,18 @@ function FilePreview({ tab }: { tab: WorkspaceFilePreviewTab }) {
     () => classifyWorkspacePreview(tab.relativePath),
     [tab.relativePath]
   )
+  const mediaType = useMemo(
+    () => workspacePreviewMediaType(tab.relativePath),
+    [tab.relativePath]
+  )
   const isHtml = tab.relativePath.toLowerCase().endsWith('.html')
   const [assetUrl, setAssetUrl] = useState<string>()
   const [text, setText] = useState<string>()
   const [truncated, setTruncated] = useState(false)
   const [error, setError] = useState<string>()
+  // The webview can refuse a codec inside a container it otherwise supports
+  // (e.g. HEVC in .mp4), so keep playback failures separate from read errors.
+  const [mediaError, setMediaError] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -43,6 +63,7 @@ function FilePreview({ tab }: { tab: WorkspaceFilePreviewTab }) {
     setText(undefined)
     setTruncated(false)
     setError(undefined)
+    setMediaError(false)
 
     const load = async () => {
       try {
@@ -52,7 +73,12 @@ function FilePreview({ tab }: { tab: WorkspaceFilePreviewTab }) {
           relativePath: tab.relativePath,
         })
         if (cancelled) return
-        if (kind === 'image' || kind === 'pdf') {
+        if (
+          kind === 'image' ||
+          kind === 'pdf' ||
+          kind === 'video' ||
+          kind === 'audio'
+        ) {
           setAssetUrl(convertFileSrc(file.absolutePath))
           return
         }
@@ -95,7 +121,7 @@ function FilePreview({ tab }: { tab: WorkspaceFilePreviewTab }) {
     )
   }
 
-  if ((kind === 'image' || kind === 'pdf') && assetUrl) {
+  if (assetUrl) {
     if (kind === 'image') {
       return (
         <div className="flex h-full items-center justify-center overflow-auto bg-muted/20 p-6">
@@ -107,13 +133,44 @@ function FilePreview({ tab }: { tab: WorkspaceFilePreviewTab }) {
         </div>
       )
     }
-    return (
-      <iframe
-        src={assetUrl}
-        title={tab.name}
-        className="h-full w-full border-0 bg-white"
-      />
-    )
+    if (kind === 'video') {
+      if (mediaError) return <MediaUnplayable />
+      return (
+        <div className="flex h-full items-center justify-center bg-black/90 p-4">
+          <video
+            key={assetUrl}
+            src={assetUrl}
+            controls
+            playsInline
+            preload="metadata"
+            className="max-h-full max-w-full rounded-md shadow-sm"
+            onError={() => setMediaError(true)}
+          />
+        </div>
+      )
+    }
+    if (kind === 'audio') {
+      // AudioPlayer renders its own decode-failure fallback.
+      return (
+        <div className="flex h-full items-center justify-center p-6">
+          <AudioPlayer
+            src={assetUrl}
+            mediaType={mediaType ?? 'audio/mpeg'}
+            filename={tab.name}
+            className="w-full max-w-md"
+          />
+        </div>
+      )
+    }
+    if (kind === 'pdf') {
+      return (
+        <iframe
+          src={assetUrl}
+          title={tab.name}
+          className="h-full w-full border-0 bg-white"
+        />
+      )
+    }
   }
 
   if (kind === 'text' && text !== undefined) {
