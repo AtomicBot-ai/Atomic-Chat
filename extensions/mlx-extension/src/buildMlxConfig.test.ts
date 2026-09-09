@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { buildMlxConfig, selectMlxDraftSettings } from './buildMlxConfig'
+import {
+  asNumber,
+  buildMlxConfig,
+  MLX_DEFAULT_CTX_CAP,
+  MLX_DEFAULT_CTX_FALLBACK,
+  resolveMlxCtxSize,
+  selectMlxDraftSettings,
+} from './buildMlxConfig'
 
 describe('selectMlxDraftSettings', () => {
   it.each([
@@ -82,4 +89,63 @@ describe('buildMlxConfig', () => {
       expect(result.kv_bits).toBe(expectedBits)
     }
   )
+})
+
+describe('numeric settings that arrive as strings', () => {
+  it('reads kv_bits as settings.json ships it, so --kv-bits actually goes out', () => {
+    // The default was the string "3.5" and the check was
+    // `typeof === 'number'`: KV-cache quantisation could never switch on.
+    const result = buildMlxConfig(
+      { kv_quant_scheme: 'turboquant', kv_bits: '3.5' },
+      { draftKind: 'dflash', draftPath: '', blockSize: 0 }
+    )
+    expect(result.kv_bits).toBe(3.5)
+    expect(result.kv_quant_scheme).toBe('turboquant')
+  })
+
+  it('reads the drafter block sizes the same way', () => {
+    expect(
+      selectMlxDraftSettings({
+        dflash_enabled: true,
+        draft_model_path: 'draft/dflash',
+        block_size: '24',
+      }).blockSize
+    ).toBe(24)
+  })
+
+  it('treats an unparseable value as unset', () => {
+    expect(asNumber('')).toBeUndefined()
+    expect(asNumber('abc')).toBeUndefined()
+    expect(asNumber(NaN)).toBeUndefined()
+    expect(asNumber('8')).toBe(8)
+  })
+})
+
+describe('resolveMlxCtxSize', () => {
+  it('defaults to the training maximum, capped', () => {
+    expect(resolveMlxCtxSize(undefined, 8192)).toBe(8192)
+    expect(resolveMlxCtxSize(undefined, 262_144)).toBe(MLX_DEFAULT_CTX_CAP)
+  })
+
+  it('falls back small when the training maximum is unknown', () => {
+    expect(resolveMlxCtxSize(undefined, undefined)).toBe(MLX_DEFAULT_CTX_FALLBACK)
+  })
+
+  it('keeps an explicit value, clamped to what the model was trained for', () => {
+    // MLX never clamped, unlike llama.cpp, so it could ask for a window the
+    // model was not trained to hold.
+    expect(resolveMlxCtxSize(32_768, 131_072)).toBe(32_768)
+    expect(resolveMlxCtxSize('32768', 8192)).toBe(8192)
+    expect(resolveMlxCtxSize(32_768, undefined)).toBe(32_768)
+  })
+
+  it('is what buildMlxConfig loads with', () => {
+    expect(
+      buildMlxConfig(
+        {},
+        { draftKind: 'dflash', draftPath: '', blockSize: 0 },
+        { maxCtxTrain: 40_960 }
+      ).ctx_size
+    ).toBe(MLX_DEFAULT_CTX_CAP)
+  })
 })

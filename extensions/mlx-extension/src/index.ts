@@ -42,7 +42,7 @@ import { resolveDflashDraft, DraftResolution } from './dflashRegistry'
 import { resolveMtpDraft } from './mtpRegistry'
 import { resolveEagle3Draft } from './eagle3Registry'
 import { classifyMlxVisionCapability } from './visionCapability'
-import { buildMlxConfig, selectMlxDraftSettings } from './buildMlxConfig'
+import { asNumber, buildMlxConfig, selectMlxDraftSettings } from './buildMlxConfig'
 import { mlxMainWeightFileName } from './weightFileName'
 import { planMlxShardRepair, repointLegacyWeightPath } from './shardRepair'
 
@@ -158,8 +158,11 @@ export default class mlx_extension extends AIEngine {
     }
     this.config = loadedConfig
 
-    this.timeout = this.config.timeout ?? 600
-    this.autoUnload = this.config.auto_unload ?? true
+    this.timeout = asNumber(this.config.timeout) ?? 600
+    this.autoUnload =
+      typeof this.config.auto_unload === 'boolean'
+        ? this.config.auto_unload
+        : true
 
     void this.detectBackendVersion().catch((err) => {
       logger.warn('Failed to detect MLX backend version:', err)
@@ -230,7 +233,11 @@ export default class mlx_extension extends AIEngine {
     this.config[key] = value
 
     if (key === 'timeout') {
-      this.timeout = value as number
+      this.timeout = asNumber(value) ?? 600
+      return
+    }
+    if (key === 'auto_unload') {
+      this.autoUnload = value === true || value === 'true'
       return
     }
 
@@ -646,11 +653,17 @@ export default class mlx_extension extends AIEngine {
       }
     }
 
-    const mlxConfig = buildMlxConfig(cfg, {
-      draftKind,
-      draftPath,
-      blockSize,
-    })
+    const mlxConfig = buildMlxConfig(
+      cfg,
+      {
+        draftKind,
+        draftPath,
+        blockSize,
+      },
+      // Clamps an explicit context to what the model was trained for, and
+      // sizes an unset one from it (ADR 2026-06-15).
+      { maxCtxTrain: this.modelMaxCtxTrain.get(modelId) }
+    )
 
     logger.info(
       'Loading MLX model:',
@@ -2127,6 +2140,9 @@ export default class mlx_extension extends AIEngine {
         logger.warn(`enableDflash: unload failed for ${modelId}: ${e}`)
       }
       await this.load(modelId, {
+        // Every drafter reload used to omit this, so `buildMlxConfig` fell
+        // to its default and a session at 32K came back at 4K (ATO-466).
+        ctx_size: this.modelCtxSize.get(modelId),
         dflash_enabled: true,
         mtp_enabled: false,
         eagle3_enabled: false,
@@ -2159,6 +2175,9 @@ export default class mlx_extension extends AIEngine {
         logger.warn(`disableDflash: unload failed for ${modelId}: ${e}`)
       }
       await this.load(modelId, {
+        // Every drafter reload used to omit this, so `buildMlxConfig` fell
+        // to its default and a session at 32K came back at 4K (ATO-466).
+        ctx_size: this.modelCtxSize.get(modelId),
         dflash_enabled: false,
         draft_model_path: '',
         block_size: 0,
@@ -2282,6 +2301,9 @@ export default class mlx_extension extends AIEngine {
         logger.warn(`enableMtp: unload failed for ${modelId}: ${e}`)
       }
       await this.load(modelId, {
+        // Every drafter reload used to omit this, so `buildMlxConfig` fell
+        // to its default and a session at 32K came back at 4K (ATO-466).
+        ctx_size: this.modelCtxSize.get(modelId),
         dflash_enabled: false,
         mtp_enabled: true,
         eagle3_enabled: false,
@@ -2311,6 +2333,9 @@ export default class mlx_extension extends AIEngine {
         logger.warn(`disableMtp: unload failed for ${modelId}: ${e}`)
       }
       await this.load(modelId, {
+        // Every drafter reload used to omit this, so `buildMlxConfig` fell
+        // to its default and a session at 32K came back at 4K (ATO-466).
+        ctx_size: this.modelCtxSize.get(modelId),
         mtp_enabled: false,
         draft_model_path: '',
         mtp_block_size: 0,
@@ -2438,6 +2463,9 @@ export default class mlx_extension extends AIEngine {
         logger.warn(`enableEagle3: unload failed for ${modelId}: ${e}`)
       }
       await this.load(modelId, {
+        // Every drafter reload used to omit this, so `buildMlxConfig` fell
+        // to its default and a session at 32K came back at 4K (ATO-466).
+        ctx_size: this.modelCtxSize.get(modelId),
         dflash_enabled: false,
         mtp_enabled: false,
         eagle3_enabled: true,
@@ -2467,6 +2495,9 @@ export default class mlx_extension extends AIEngine {
         logger.warn(`disableEagle3: unload failed for ${modelId}: ${e}`)
       }
       await this.load(modelId, {
+        // Every drafter reload used to omit this, so `buildMlxConfig` fell
+        // to its default and a session at 32K came back at 4K (ATO-466).
+        ctx_size: this.modelCtxSize.get(modelId),
         eagle3_enabled: false,
         draft_model_path: '',
         eagle3_block_size: 0,

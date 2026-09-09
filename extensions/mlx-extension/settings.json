@@ -26,7 +26,7 @@
     "controllerType": "input",
     "controllerProps": {
       "placeholder": "16",
-      "value": "16",
+      "value": 16,
       "type": "number",
       "min": 0,
       "max": 64
@@ -48,7 +48,7 @@
     "controllerType": "input",
     "controllerProps": {
       "placeholder": "4",
-      "value": "4",
+      "value": 4,
       "type": "number",
       "min": 1,
       "max": 16
@@ -70,7 +70,7 @@
     "controllerType": "input",
     "controllerProps": {
       "placeholder": "0",
-      "value": "0",
+      "value": 0,
       "type": "number",
       "min": 0,
       "max": 16
@@ -84,9 +84,18 @@
     "controllerProps": {
       "value": "off",
       "options": [
-        { "value": "off", "name": "Off" },
-        { "value": "turboquant", "name": "TurboQuant" },
-        { "value": "uniform", "name": "Uniform" }
+        {
+          "value": "off",
+          "name": "Off"
+        },
+        {
+          "value": "turboquant",
+          "name": "TurboQuant"
+        },
+        {
+          "value": "uniform",
+          "name": "Uniform"
+        }
       ]
     }
   },
@@ -97,10 +106,31 @@
     "controllerType": "input",
     "controllerProps": {
       "placeholder": "3.5",
-      "value": "3.5",
+      "value": 3.5,
       "type": "number",
       "min": 0,
       "max": 8
+    }
+  },
+  {
+    "key": "timeout",
+    "title": "Timeout for MLX",
+    "description": "MLX connection and load timeout in seconds.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 600,
+      "placeholder": "e.g 600",
+      "type": "number",
+      "textAlign": "right"
+    }
+  },
+  {
+    "key": "auto_unload",
+    "title": "Auto-unload old models",
+    "description": "Unload the previous model when a new one is loaded, so only one MLX model holds memory at a time.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": true
     }
   }
 ]

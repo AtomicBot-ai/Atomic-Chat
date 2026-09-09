@@ -72,5 +72,9 @@ title: "Raise the MLX default load context to `min(train-max, 16384)` + surface 
   [`web-app/src/routes/threads/$threadId.tsx`](web-app/src/routes/threads/$threadId.tsx),
   [`src-tauri/src/core/server/proxy.rs`](src-tauri/src/core/server/proxy.rs)
   (`is_context_limit_error`).
+- **Status:** #1 was recorded but never landed — `MLX_DEFAULT_CTX_CAP` did
+  not exist in the tree until 2026-09-09, when ATO-466 implemented it as
+  `resolveMlxCtxSize` in `extensions/mlx-extension/src/buildMlxConfig.ts`,
+  with the clamp of an explicit `ctx_size` to the training maximum added.
 
 ---

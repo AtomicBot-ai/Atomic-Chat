@@ -169,9 +169,12 @@ export function ModelSettingsList({
           // to tune sampling. The persisted `model.settings.*` values are
           // left untouched on disk.
           if (LEGACY_SAMPLING_KEYS.has(key)) return false
-          // MLX models only support context size setting
+          // MLX loads with a context size and honours the auto-increase
+          // ladder; nothing else in a model's settings reaches it. The
+          // ladder's checkbox used to be filtered out here, so an MLX user
+          // could not turn it off (ATO-466).
           if (provider.provider === 'mlx') {
-            return key === 'ctx_len'
+            return key === 'ctx_len' || key === 'auto_increase_ctx_len'
           }
           return true
         })
