@@ -10,6 +10,9 @@ const allowlist = existsSync(allowlistPath)
 
 const ignoredDirectories = new Set([
   '.git',
+  // Detached worktrees of other sessions live here; their tests are copies
+  // of older trees and were being counted as if they were this one's.
+  '.claude',
   '.yarn',
   'coverage',
   'dist',

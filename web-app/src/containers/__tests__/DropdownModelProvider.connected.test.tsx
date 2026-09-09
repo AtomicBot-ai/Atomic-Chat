@@ -229,13 +229,25 @@ describe('DropdownModelProvider - connected providers only', () => {
     }
 
     it('keeps it while the provider is still connected', () => {
-      expect(renderSelected([local, openaiKeyed])).not.toHaveBeenCalled()
+      const selectModelProvider = renderSelected([local, openaiKeyed])
+
+      expect(selectModelProvider).not.toHaveBeenCalled()
+      // The kept selection is what the picker shows: its provider has a
+      // section and the model is listed in it.
+      expect(providerHeaders()).toEqual(['llamacpp-upstream', 'openai'])
+      // Once in the trigger, once in the list: the selection survived.
+      expect(screen.getAllByText('gpt-4o').length).toBeGreaterThanOrEqual(1)
     })
 
     it('drops it once the key is gone, so Send cannot aim at a wall', () => {
-      expect(
-        renderSelected([local, { ...openaiKeyed, api_key: '' }])
-      ).toHaveBeenCalledWith('', '')
+      const selectModelProvider = renderSelected([
+        local,
+        { ...openaiKeyed, api_key: '' },
+      ])
+
+      expect(selectModelProvider).toHaveBeenCalledWith('', '')
+      // Nothing to select from either: a keyless provider gets no section.
+      expect(providerHeaders()).toEqual(['llamacpp-upstream'])
     })
   })
 })

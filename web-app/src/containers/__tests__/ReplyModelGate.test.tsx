@@ -336,9 +336,17 @@ describe('ReplyModelGate', () => {
     folderMocks.scanLocalModels.mockResolvedValue([])
     const { onResolved } = renderGate([unconnectedCloud()])
 
-    fireEvent.click(await screen.findByTestId('reply-gate-add-folder'))
+    const button = await screen.findByTestId('reply-gate-add-folder')
+    fireEvent.click(button)
 
     await waitFor(() => expect(folderMocks.scanLocalModels).toHaveBeenCalled())
+    // The widget stays open on its empty branch, and the button is back to
+    // its idle label so the user can try another folder.
+    await waitFor(() =>
+      expect(button).toHaveTextContent('chat:replyGate.addFolder')
+    )
+    expect(button).toBeEnabled()
+    expect(screen.getByText('chat:replyGate.emptyTitle')).toBeInTheDocument()
     expect(folderMocks.importScannedModel).not.toHaveBeenCalled()
     expect(onResolved).not.toHaveBeenCalled()
   })
