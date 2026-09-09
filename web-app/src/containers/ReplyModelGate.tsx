@@ -36,6 +36,7 @@ import {
   replyGateContext,
   type ReplyGateBranch,
   type ReplyModelOption,
+  type ReplyResolution,
 } from '@/lib/reply-model-gate'
 import { cn } from '@/lib/utils'
 import { getLastUsedModel } from '@/utils/getModelToStart'
@@ -53,6 +54,11 @@ export type ReplyModelGateResolution = {
   /** Wall clock of the opening, so the composer can time the wait that follows
    *  the decision — a download outlives this component's state. */
   openedAtMs: number
+  /** Set when the composer resolved the model itself, without this widget
+   *  (see `useReplyModelAutoStart`). */
+  resolution?: ReplyResolution
+  /** The model being started, for the composer's status line. */
+  modelLabel?: string
 }
 
 type ReplyModelGateProps = {

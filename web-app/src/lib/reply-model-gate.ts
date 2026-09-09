@@ -198,3 +198,83 @@ export function replyGateContext(providers: ModelProvider[]): {
     hasCloudConnection: cloudProviderCount > 0,
   }
 }
+
+/**
+ * How a send with nothing selected was answered without asking.
+ *
+ *  - `last_used` — the model from the previous session, local or cloud. For a
+ *    cloud model this is session restore; for a local one, start on demand.
+ *  - `cloud` — a connected cloud provider: costs no memory, answers at once.
+ *  - `single_local` — the only model on the device.
+ *  - `smallest_local` — several local models, no history: the lightest loads
+ *    fastest.
+ */
+export type ReplyResolution =
+  | 'last_used'
+  | 'cloud'
+  | 'single_local'
+  | 'smallest_local'
+
+/**
+ * Parameter count named in a model id, in billions, or `undefined`.
+ *
+ * `Qwen3.5-4B-Q4_K_M` → 4, `LFM2.5-1.2B` → 1.2, `gemma-4-E4B-it` → 4 (the
+ * MatFormer "effective" prefix is dropped: it still says which of two builds
+ * is lighter). The provider store carries no file size, and a stat per model
+ * on every send is not worth what it would tell us; the name is the one size
+ * signal that is always there.
+ */
+export function estimateParamsB(modelId: string): number | undefined {
+  const seg = modelId.split('/').pop() ?? modelId
+  const match = seg.match(/(?:^|[-_.\s])E?(\d+(?:\.\d+)?)[bB](?=$|[-_.\s])/)
+  if (!match) return undefined
+  const value = Number(match[1])
+  return Number.isFinite(value) && value > 0 ? value : undefined
+}
+
+/**
+ * What to answer with when nothing is selected — decided silently, before
+ * any UI, in the order the product set (ATO-461):
+ *
+ *   1. the last used model, if it is still there;
+ *   2. otherwise a connected cloud provider — no memory, instant;
+ *   3. otherwise the only local model;
+ *   4. otherwise the lightest of several, by the size in its name.
+ *
+ * `null` means the widget has to ask: nothing at all on the device, or
+ * several local models whose names give no size to rank by — starting one at
+ * random would be a guess made on the user's behalf.
+ *
+ * `options` is {@link collectReplyModels}' output, which already puts the
+ * last used model first.
+ */
+export function resolveReplyModel(
+  options: readonly ReplyModelOption[],
+  lastUsed: LastUsedModel = null
+): { option: ReplyModelOption; resolution: ReplyResolution } | null {
+  if (options.length === 0) return null
+
+  if (lastUsed) {
+    const lastKey = optionKey(lastUsed.provider, lastUsed.model)
+    const last = options.find((option) => option.key === lastKey)
+    if (last) return { option: last, resolution: 'last_used' }
+  }
+
+  const cloud = options.find((option) => option.kind === 'cloud')
+  if (cloud) return { option: cloud, resolution: 'cloud' }
+
+  const locals = options.filter((option) => option.kind === 'local')
+  if (locals.length === 1) {
+    return { option: locals[0], resolution: 'single_local' }
+  }
+
+  let smallest: { option: ReplyModelOption; params: number } | null = null
+  for (const option of locals) {
+    const params = estimateParamsB(option.modelId)
+    if (params === undefined) continue
+    if (!smallest || params < smallest.params) smallest = { option, params }
+  }
+  return smallest
+    ? { option: smallest.option, resolution: 'smallest_local' }
+    : null
+}

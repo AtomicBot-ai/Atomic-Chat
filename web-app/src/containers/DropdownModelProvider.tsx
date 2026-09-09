@@ -31,6 +31,7 @@ import { isKnownProvider } from '@/stores/provider-registry-store'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
+import { isLocalProvider } from '@/utils/registerRemoteProvider'
 import { switchToModel } from '@/utils/switchModel'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ChevronsUpDown } from 'lucide-react'
@@ -100,6 +101,18 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Helper function to check if a model exists in providers
+  // The persisted cloud selection is usable when its provider is on, still
+  // connected, and still lists the model.
+  const isCloudSelectionUsable = useCallback(
+    (providerName: string, modelId: string) => {
+      const provider = providers.find((p) => p.provider === providerName)
+      if (!provider || provider.active === false) return false
+      if (!isProviderConnected(provider)) return false
+      return provider.models.some((m) => m.id === modelId)
+    },
+    [providers]
+  )
+
   const checkModelExists = useCallback(
     (providerName: string, modelId: string) => {
       const provider = providers.find(
@@ -184,6 +197,15 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
   useEffect(() => {
     const initializeModel = async () => {
       if (selectedProvider && selectedModel) {
+        // A cloud selection survives a launch with preload off (main.tsx). It
+        // is only worth keeping while the provider can still answer: a key
+        // removed in the meantime would let the composer send into a wall.
+        if (
+          !isLocalProvider(selectedProvider) &&
+          !isCloudSelectionUsable(selectedProvider, selectedModel.id)
+        ) {
+          selectModelProvider('', '')
+        }
         return
       }
 

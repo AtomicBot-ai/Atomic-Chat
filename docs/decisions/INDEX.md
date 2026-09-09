@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-234 records, 2026-05-19 → 2026-09-07.
+235 records, 2026-05-19 → 2026-09-09.
 
 ---
 
@@ -249,8 +249,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (32)
+## UI / UX (33)
 
+- **2026-09-09** — [Resolve the reply model on send instead of asking (ATO-461)](2026-09-09-resolve-the-reply-model-on-send-instead-of-asking.md)
 - **2026-09-07** — [Answer a blocked send with a widget, not a red line (ATO-453)](2026-09-07-answer-a-blocked-send-with-a-widget-not-a-red-line.md)
 - **2026-09-04** — [Do not estimate ChatGPT subscription token speed](2026-09-04-do-not-estimate-chatgpt-subscription-token-speed.md)
 - **2026-09-04** — [Bound streaming reasoning render cost](2026-09-04-bound-streaming-reasoning-render-cost.md)

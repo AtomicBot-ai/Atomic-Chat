@@ -21,7 +21,8 @@
     "downloadingPercent": "ダウンロード中… {{percent}}%",
     "connectCloud": "クラウドプロバイダーを接続",
     "connectSubscription": "ChatGPT サブスクリプションを接続",
-    "queuedNotice": "モデルの準備ができ次第、メッセージを送信します。"
+    "queuedNotice": "モデルの準備ができ次第、メッセージを送信します。",
+    "startingNotice": "{{name}} を起動しています… 準備ができ次第、メッセージを送信します。"
   },
   "newConversation": "新しい会話",
   "clearHistory": "履歴を消去",

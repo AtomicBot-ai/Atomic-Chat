@@ -21,7 +21,8 @@
     "downloadingPercent": "Скачиваю… {{percent}}%",
     "connectCloud": "Подключить облачного провайдера",
     "connectSubscription": "Подключить подписку ChatGPT",
-    "queuedNotice": "Сообщение уйдёт, как только модель будет готова."
+    "queuedNotice": "Сообщение уйдёт, как только модель будет готова.",
+    "startingNotice": "Запускаю {{name}}… сообщение уйдёт, как только модель будет готова."
   },
   "newConversation": "Новый диалог",
   "clearHistory": "Очистить историю",

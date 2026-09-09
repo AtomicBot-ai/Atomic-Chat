@@ -19,6 +19,7 @@ import { initSentryFrontend } from './lib/sentry'
 import { resetForcedOnboardingRun } from './lib/onboarding'
 import { useGeneralSetting } from './hooks/useGeneralSetting'
 import { useModelProvider } from './hooks/useModelProvider'
+import { isLocalProvider } from '@/utils/registerRemoteProvider'
 import GlobalError from './containers/GlobalError'
 
 // ATO-113: arm Sentry before anything else so the React ErrorBoundary and the
@@ -172,16 +173,25 @@ runTurboquantDefaultMigration()
 // No-op in every shipped build.
 resetForcedOnboardingRun()
 
-// When "Preload model on startup" is disabled, don't let a model selection
-// persisted from a previous session flash into the topbar or trigger
-// `ChatInput`'s local-model auto-start effect before we've confirmed
+// When "Preload model on startup" is disabled, don't let a *local* model
+// selection persisted from a previous session flash into the topbar or
+// trigger `ChatInput`'s local-model auto-start effect before we've confirmed
 // whether that model is actually still running. Both `useModelProvider`
 // and `useGeneralSetting` are synchronous localStorage-backed stores, so
 // they are already rehydrated at this point (well before React mounts).
 // `DropdownModelProvider`'s startup effect re-populates the selection from
 // the live engine state if a model turns out to still be active.
+//
+// A cloud selection is kept: it holds no memory and nothing has to start, so
+// the setting's reason ("open fast") does not apply, and clearing it made
+// every launch begin with "what do I reply with?" for a user whose answer was
+// already known (ATO-461). `DropdownModelProvider` still drops it if the
+// provider has since been disconnected.
 if (!useGeneralSetting.getState().preloadModelOnStartup) {
-  useModelProvider.setState({ selectedProvider: '', selectedModel: null })
+  const { selectedProvider } = useModelProvider.getState()
+  if (!selectedProvider || isLocalProvider(selectedProvider)) {
+    useModelProvider.setState({ selectedProvider: '', selectedModel: null })
+  }
 }
 
 // Tauri webviews ignore the HTML5 `download` attribute, so streamdown's

@@ -200,4 +200,42 @@ describe('DropdownModelProvider - connected providers only', () => {
     expect(providerHeaders()).toEqual(['llamacpp-upstream', 'anthropic'])
     expect(screen.getByText('claude-opus-5')).toBeInTheDocument()
   })
+
+  describe('a cloud selection kept across launches', () => {
+    // main.tsx keeps a cloud selection when preload is off (ATO-461); this is
+    // the check that it is still worth keeping.
+    const openaiKeyed = {
+      provider: 'openai',
+      active: true,
+      api_key: 'sk-test',
+      models: [{ id: 'gpt-4o', capabilities: ['completion'] }],
+      settings: [{ key: 'api-key' }],
+    }
+    const renderSelected = (providers: Record<string, unknown>[]) => {
+      const selectModelProvider = vi.fn()
+      mockModelProvider({
+        providers,
+        selectedProvider: 'openai',
+        selectedModel: openaiKeyed.models[0],
+        getProviderByName: vi.fn((name: string) =>
+          providers.find((p) => p.provider === name)
+        ),
+        selectModelProvider,
+        getModelBy: vi.fn(),
+        updateProvider: vi.fn(),
+      })
+      render(<DropdownModelProvider />)
+      return selectModelProvider
+    }
+
+    it('keeps it while the provider is still connected', () => {
+      expect(renderSelected([local, openaiKeyed])).not.toHaveBeenCalled()
+    })
+
+    it('drops it once the key is gone, so Send cannot aim at a wall', () => {
+      expect(
+        renderSelected([local, { ...openaiKeyed, api_key: '' }])
+      ).toHaveBeenCalledWith('', '')
+    })
+  })
 })

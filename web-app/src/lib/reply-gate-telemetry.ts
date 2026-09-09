@@ -18,7 +18,7 @@
 import posthog from 'posthog-js'
 
 import { getAnalyticsPlatform } from '@/lib/telemetry'
-import type { ReplyGateBranch } from '@/lib/reply-model-gate'
+import type { ReplyGateBranch, ReplyResolution } from '@/lib/reply-model-gate'
 
 /**
  * How the user got out of the widget.
@@ -76,6 +76,30 @@ export function captureReplyGateShown(params: {
 }
 
 /**
+ * A send with nothing selected was answered without the widget: the composer
+ * resolved a model itself and started it (ATO-461).
+ *
+ * The sibling of `reply_model_gate_shown`, not a variant of it — the two
+ * together are every send that met an empty selection, and their ratio is
+ * how often the product could decide for the user versus had to ask.
+ */
+export function captureReplyModelAutoResolved(params: {
+  resolution: ReplyResolution
+  localModelCount: number
+  cloudProviderCount: number
+  hasCloudConnection: boolean
+  hardwareTier: string
+}): void {
+  capture('reply_model_auto_resolved', {
+    resolution: params.resolution,
+    local_model_count: params.localModelCount,
+    cloud_provider_count: params.cloudProviderCount,
+    has_cloud_connection: params.hasCloudConnection,
+    hardware_tier: params.hardwareTier,
+  })
+}
+
+/**
  * The exit the user took, and how long they spent deciding.
  *
  * Fires once per opening — including `dismissed`, which is the one outcome the
@@ -107,14 +131,17 @@ export function captureReplyGateOutcome(params: {
 export function captureReplyGateReady(params: {
   branch: ReplyGateBranch
   outcome: ReplyGateOutcome
-  /** Widget open → model ready to answer. */
+  /** Widget open (or silent resolution) → model ready to answer. */
   readyInMs: number
   queuedMessageSent: boolean
+  /** Set when the composer resolved the model itself, without the widget. */
+  resolution?: ReplyResolution
 }): void {
   capture('reply_model_gate_ready', {
     branch: params.branch,
     outcome: params.outcome,
     ready_in_ms: Math.max(0, Math.round(params.readyInMs)),
     queued_message_sent: params.queuedMessageSent,
+    resolution: params.resolution ?? null,
   })
 }

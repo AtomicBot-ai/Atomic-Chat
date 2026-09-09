@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import {
   collectReplyModels,
+  estimateParamsB,
   replyGateBranch,
   replyGateContext,
+  resolveReplyModel,
 } from '@/lib/reply-model-gate'
 
 const model = (id: string, extra: Partial<Model> = {}): Model =>
@@ -193,5 +195,98 @@ describe('replyGateContext', () => {
       cloudProviderCount: 0,
       hasCloudConnection: false,
     })
+  })
+})
+
+describe('estimateParamsB', () => {
+  it('reads the parameter count out of the id', () => {
+    expect(estimateParamsB('AtomicChat/Qwen3.5-4B-Q4_K_M')).toBe(4)
+    expect(estimateParamsB('LFM2.5-1.2B-Instruct-Q4_K_M.gguf')).toBe(1.2)
+    expect(estimateParamsB('gemma-4-E4B-it-Q4_K_M')).toBe(4)
+    expect(estimateParamsB('qwen3_8-27b-q8_0')).toBe(27)
+  })
+
+  it('does not mistake a quant or a version for a size', () => {
+    expect(estimateParamsB('some-model-Q8_0')).toBeUndefined()
+    expect(estimateParamsB('mistral-v0.3')).toBeUndefined()
+    expect(estimateParamsB('plain-model')).toBeUndefined()
+  })
+})
+
+describe('resolveReplyModel', () => {
+  const lastUsed = { provider: 'llamacpp-upstream', model: 'Qwen3.5-9B-Q4_K_M' }
+
+  it('answers with the last used model when it is still there', () => {
+    const options = collectReplyModels(
+      [
+        local([model('Qwen3.5-4B-Q4_K_M'), model('Qwen3.5-9B-Q4_K_M')]),
+        cloud('openai', [model('gpt-a')]),
+      ],
+      lastUsed
+    )
+
+    expect(resolveReplyModel(options, lastUsed)).toMatchObject({
+      resolution: 'last_used',
+      option: { modelId: 'Qwen3.5-9B-Q4_K_M' },
+    })
+  })
+
+  it('prefers a connected cloud provider over starting a local model', () => {
+    // No memory to pay for and nothing to wait on; the local model is one
+    // click away in the dropdown once the reply is on screen.
+    const options = collectReplyModels([
+      local([model('Qwen3.5-4B-Q4_K_M')]),
+      cloud('openai', [model('gpt-a')]),
+    ])
+
+    expect(resolveReplyModel(options)).toMatchObject({
+      resolution: 'cloud',
+      option: { kind: 'cloud', providerName: 'openai' },
+    })
+  })
+
+  it('starts the only local model without asking', () => {
+    const options = collectReplyModels([local([model('only-model')])])
+
+    expect(resolveReplyModel(options)).toMatchObject({
+      resolution: 'single_local',
+      option: { modelId: 'only-model' },
+    })
+  })
+
+  it('picks the lightest of several by the size in its name', () => {
+    const options = collectReplyModels([
+      local([
+        model('Qwen3.5-9B-Q4_K_M'),
+        model('LFM2.5-1.2B-Q4_K_M'),
+        model('gemma-4-E4B-it-Q4_K_M'),
+      ]),
+    ])
+
+    expect(resolveReplyModel(options)).toMatchObject({
+      resolution: 'smallest_local',
+      option: { modelId: 'LFM2.5-1.2B-Q4_K_M' },
+    })
+  })
+
+  it('asks rather than guess when several models give no size to rank by', () => {
+    const options = collectReplyModels([local([model('alpha'), model('beta')])])
+
+    expect(resolveReplyModel(options)).toBeNull()
+  })
+
+  it('asks when there is nothing on the device', () => {
+    expect(resolveReplyModel([])).toBeNull()
+  })
+
+  it('falls through when the last used model is gone', () => {
+    const options = collectReplyModels([local([model('survivor')])], {
+      provider: 'llamacpp-upstream',
+      model: 'deleted',
+    })
+
+    expect(
+      resolveReplyModel(options, { provider: 'llamacpp-upstream', model: 'deleted' })
+    ).toMatchObject({ resolution: 'single_local' })
   })
 })

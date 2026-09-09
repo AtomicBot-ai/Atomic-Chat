@@ -58,6 +58,7 @@ import {
   type ReplyModelGateResolution,
 } from '@/containers/ReplyModelGate'
 import { captureReplyGateReady } from '@/lib/reply-gate-telemetry'
+import { useReplyModelAutoStart } from '@/hooks/useReplyModelAutoStart'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 import type { ChatStatus } from 'ai'
@@ -390,6 +391,18 @@ const ChatInput = memo(function ChatInput({
   const [hasMmproj, setHasMmproj] = useState(false)
   const [showVisionModelPrompt, setShowVisionModelPrompt] = useState(false)
   const [replyGateOpen, setReplyGateOpen] = useState(false)
+  /**
+   * The message the user typed before there was anything to answer with.
+   *
+   * Armed when a model is on its way — resolved silently by
+   * `useReplyModelAutoStart`, or chosen in the widget: starting, downloading,
+   * or a cloud provider just connected — and consumed the moment that model
+   * can actually answer. Survives the widget closing: a download is minutes
+   * long, and holding a modal open for it would be worse than useless.
+   */
+  const [queuedSend, setQueuedSend] =
+    useState<ReplyModelGateResolution | null>(null)
+  const { tryAutoStart } = useReplyModelAutoStart()
   const [isPreparingDocumentAttachments, setIsPreparingDocumentAttachments] =
     useState(false)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
@@ -874,10 +887,17 @@ const ChatInput = memo(function ChatInput({
       return
     }
     if (!selectedModel) {
-      // The composer cannot answer this, but the user can still be given the
-      // answer. Open the widget and hold the message: it is sent, unchanged,
-      // the moment something is ready to answer with.
+      // The composer cannot answer this, but the device often can: a model
+      // from last time, a connected cloud provider, the only model on disk.
+      // Decide silently first, and hold the message — it is sent, unchanged,
+      // the moment something is ready to answer with (ATO-461).
       setPrompt(prompt)
+      const auto = tryAutoStart()
+      if (auto) {
+        setQueuedSend(auto)
+        return
+      }
+      // Nothing to decide with: ask.
       setReplyGateOpen(true)
       // Everything downstream captures a turn; this returns before any of it,
       // so the most common first-run dead end produced no event at all. Now
@@ -1165,16 +1185,6 @@ const ChatInput = memo(function ChatInput({
   const sendMessageRef = useRef(handleSendMessage)
   sendMessageRef.current = handleSendMessage
 
-  /**
-   * The message the user typed before there was anything to answer with.
-   *
-   * Armed when the widget resolves — a model is starting, downloading, or a
-   * cloud provider was just connected — and consumed the moment that model can
-   * actually answer. Survives the widget closing: a download is minutes long,
-   * and holding a modal open for it would be worse than useless.
-   */
-  const [queuedSend, setQueuedSend] =
-    useState<ReplyModelGateResolution | null>(null)
 
   const handleReplyGateResolved = useCallback(
     (resolution: ReplyModelGateResolution) => {
@@ -1204,10 +1214,18 @@ const ChatInput = memo(function ChatInput({
       outcome: queuedSend.outcome,
       readyInMs: Date.now() - queuedSend.openedAtMs,
       queuedMessageSent: pending.trim().length > 0,
+      resolution: queuedSend.resolution,
     })
     if (!pending.trim()) return
     void sendMessageRef.current(pending)
   }, [queuedSend, canSendToSelectedModel])
+
+  // A model that failed to come up will never satisfy the queued send. Drop
+  // the promise rather than leave "starting…" on screen forever; the load
+  // error toast says what happened, and the text is still in the field.
+  useEffect(() => {
+    if (queuedSend && selectedModelLoadFailed) setQueuedSend(null)
+  }, [queuedSend, selectedModelLoadFailed])
 
   useEffect(() => {
     const handleFocusIn = () => {
@@ -3437,7 +3455,11 @@ const ChatInput = memo(function ChatInput({
           aria-live="polite"
         >
           <IconLoader2 className="size-3 shrink-0 animate-spin" />
-          {t('chat:replyGate.queuedNotice')}
+          {queuedSend.modelLabel
+            ? t('chat:replyGate.startingNotice', {
+                name: queuedSend.modelLabel,
+              })
+            : t('chat:replyGate.queuedNotice')}
         </div>
       )}
 

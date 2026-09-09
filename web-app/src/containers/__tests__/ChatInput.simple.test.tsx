@@ -5,6 +5,7 @@ import { useChatAttachments } from '@/hooks/useChatAttachments'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useAppState } from '@/hooks/useAppState'
 import { usePrompt } from '@/hooks/usePrompt'
 import { seedServiceHub } from '@/test/service-hub'
 import type { ServiceHub } from '@/services'
@@ -365,6 +366,104 @@ describe('ChatInput', () => {
     expect(onSubmit).not.toHaveBeenCalled()
     expect(screen.getByTestId('chat-input')).toHaveValue(
       'Invoke the machine spirit'
+    )
+    unmount()
+  })
+
+  it('answers with a connected cloud provider itself, without the widget', async () => {
+    // The device already knows what to reply with; asking would be a
+    // question with one answer (ATO-461).
+    const model = { id: 'gpt-a', capabilities: [], settings: {} } as Model
+    useModelProvider.setState({
+      providers: [
+        {
+          provider: 'openai',
+          active: true,
+          api_key: 'sk-test',
+          models: [model],
+          settings: [
+            {
+              key: 'api-key',
+              title: 'API key',
+              description: '',
+              controller_type: 'input',
+              controller_props: { value: 'sk-test' },
+            },
+          ],
+        } as ModelProvider,
+      ],
+      selectedProvider: '',
+      selectedModel: null,
+    })
+    mocks.switchToModel.mockResolvedValue(undefined)
+    const onSubmit = vi.fn()
+    const { unmount } = render(<ChatInput onSubmit={onSubmit} />)
+
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: 'Invoke the machine spirit' },
+    })
+    fireEvent.click(
+      document.querySelector('[data-test-id="send-message-button"]')!
+    )
+
+    expect(screen.queryByTestId('reply-model-gate')).toBeNull()
+    expect(mocks.switchToModel).toHaveBeenCalledWith(
+      expect.objectContaining({ providerName: 'openai', modelId: 'gpt-a' })
+    )
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        'Invoke the machine spirit',
+        undefined,
+        undefined
+      )
+    )
+    unmount()
+  })
+
+  it('starts the only local model on send and holds the message until it is up', async () => {
+    const model = { id: 'Qwen3.5-4B-Q4_K_M', capabilities: [], settings: {} } as Model
+    useModelProvider.setState({
+      providers: [
+        {
+          provider: 'llamacpp-upstream',
+          active: true,
+          models: [model],
+          settings: [],
+        } as ModelProvider,
+      ],
+      selectedProvider: '',
+      selectedModel: null,
+    })
+    useAppState.setState({ activeModels: [] })
+    mocks.switchToModel.mockResolvedValue(undefined)
+    const onSubmit = vi.fn()
+    const { unmount } = render(<ChatInput onSubmit={onSubmit} />)
+
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: 'Invoke the machine spirit' },
+    })
+    fireEvent.click(
+      document.querySelector('[data-test-id="send-message-button"]')!
+    )
+
+    // No modal: the status lives in the composer, and says which model.
+    expect(screen.queryByTestId('reply-model-gate')).toBeNull()
+    expect(screen.getByTestId('reply-gate-queued-notice')).toHaveTextContent(
+      'chat:replyGate.startingNotice'
+    )
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(useModelProvider.getState().selectedModel?.id).toBe(model.id)
+
+    // The engine reports it up; the message goes out by itself.
+    act(() => {
+      useAppState.setState({ activeModels: [model.id] })
+    })
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        'Invoke the machine spirit',
+        undefined,
+        undefined
+      )
     )
     unmount()
   })
