@@ -18,6 +18,28 @@ const mocks = vi.hoisted(() => ({
   chatgptSubscriptionAvailable: true,
 }))
 
+const folderMocks = vi.hoisted(() => ({
+  pickScanFolder: vi.fn(),
+  scanLocalModels: vi.fn(),
+  importScannedModel: vi.fn(),
+}))
+
+vi.mock('@/hooks/useLocalScanFolder', () => ({
+  useLocalScanFolder: () => ({ pickScanFolder: folderMocks.pickScanFolder }),
+}))
+
+vi.mock('@/services/models/localScan', () => ({
+  scanLocalModels: folderMocks.scanLocalModels,
+  collectImportedModelPaths: () => [],
+}))
+
+vi.mock('@/lib/scanned-model-import', async () => {
+  const actual = await vi.importActual<
+    typeof import('@/lib/scanned-model-import')
+  >('@/lib/scanned-model-import')
+  return { ...actual, importScannedModel: folderMocks.importScannedModel }
+})
+
 vi.mock('@/utils/switchModel', () => ({
   switchToModel: mocks.switchToModel,
 }))
@@ -252,6 +274,73 @@ describe('ReplyModelGate', () => {
       outcome: 'download',
       branch: 'none',
     })
+  })
+
+  it('lets the empty-handed point the scanner at their own folder', async () => {
+    // A third of onboarding exits are imports of models other apps left on
+    // disk. The scanner only knows those apps' default stores; the folder the
+    // user actually keeps weights in was reachable only from Settings.
+    folderMocks.pickScanFolder.mockResolvedValue('/Volumes/models')
+    folderMocks.scanLocalModels.mockResolvedValue([
+      {
+        id: 'big',
+        displayName: 'big.gguf',
+        path: '/Volumes/models/big.gguf',
+        format: 'gguf',
+        source: 'local',
+        runnable: true,
+        sizeBytes: 9e9,
+      },
+      {
+        id: 'small',
+        displayName: 'small.gguf',
+        path: '/Volumes/models/small.gguf',
+        format: 'gguf',
+        source: 'local',
+        runnable: true,
+        sizeBytes: 1e9,
+      },
+    ])
+    folderMocks.importScannedModel.mockResolvedValue({
+      providerName: 'llamacpp-upstream',
+      modelId: 'small',
+    })
+    mocks.switchToModel.mockResolvedValue(undefined)
+    const { onResolved } = renderGate([unconnectedCloud()])
+
+    fireEvent.click(await screen.findByTestId('reply-gate-add-folder'))
+
+    // Scanned where the user pointed, and the lightest model found was the
+    // one imported and started — the rule onboarding applies.
+    await waitFor(() =>
+      expect(folderMocks.importScannedModel).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'small' }),
+        expect.anything()
+      )
+    )
+    expect(folderMocks.scanLocalModels).toHaveBeenCalledWith(
+      expect.objectContaining({ extraRoots: ['/Volumes/models'] })
+    )
+    await waitFor(() =>
+      expect(mocks.switchToModel).toHaveBeenCalledWith(
+        expect.objectContaining({ modelId: 'small' })
+      )
+    )
+    expect(onResolved).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'folder', branch: 'none' })
+    )
+  })
+
+  it('says so, and resolves nothing, when the folder holds no model', async () => {
+    folderMocks.pickScanFolder.mockResolvedValue('/Volumes/empty')
+    folderMocks.scanLocalModels.mockResolvedValue([])
+    const { onResolved } = renderGate([unconnectedCloud()])
+
+    fireEvent.click(await screen.findByTestId('reply-gate-add-folder'))
+
+    await waitFor(() => expect(folderMocks.scanLocalModels).toHaveBeenCalled())
+    expect(folderMocks.importScannedModel).not.toHaveBeenCalled()
+    expect(onResolved).not.toHaveBeenCalled()
   })
 
   it('offers both cloud routes even to a user who already has local models', async () => {

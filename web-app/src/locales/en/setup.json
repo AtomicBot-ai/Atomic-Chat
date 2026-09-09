@@ -26,6 +26,8 @@
     "run": "Run",
     "running": "Importing…",
     "autoStarting": "Starting {{name}}…",
+    "foundFrom": "Found {{name}} from {{source}} — it's ready.",
+    "foundLocal": "Found {{name}} on this device — it's ready.",
     "requiresBaseModel": "Requires base model",
     "browseInstead": "Browse the catalog instead",
     "importFailed": "Couldn't import model"

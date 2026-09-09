@@ -108,6 +108,23 @@ describe('captureSetupScreenShown', () => {
     captureSetupScreenShown({ rendered: true })
     expect(lastCall()[1].recommended_count).toBe(0)
   })
+
+  it('reports what the on-disk scan found, hit or miss', () => {
+    // `detected_count` lived only on the autostart event, so installs that
+    // scanned and found nothing were never counted at all.
+    captureSetupScreenShown({
+      rendered: true,
+      detectedLocalModelsCount: 2,
+      detectedSources: ['lmstudio', 'ollama'],
+    })
+    expect(lastCall()[1]).toMatchObject({
+      detected_local_models_count: 2,
+      detected_sources: ['lmstudio', 'ollama'],
+    })
+
+    captureSetupScreenShown({ rendered: true, detectedLocalModelsCount: 0 })
+    expect(lastCall()[1].detected_local_models_count).toBe(0)
+  })
 })
 
 describe('captureBackendStepShown', () => {

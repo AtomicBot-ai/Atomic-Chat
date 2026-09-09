@@ -1,5 +1,4 @@
 import { useCallback, useState } from 'react'
-import { EngineManager } from '@janhq/core'
 import { toast } from 'sonner'
 import { IconFolderPlus, IconX, IconRefresh } from '@tabler/icons-react'
 import { Card, CardItem } from '@/containers/Card'
@@ -7,10 +6,11 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { ModelSourceBadge } from '@/components/ModelSourceBadge'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { useLocalScanFolder } from '@/hooks/useLocalScanFolder'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
+import { importScannedModel } from '@/lib/scanned-model-import'
 import {
   scanLocalModels,
   collectImportedModelPaths,
@@ -35,28 +35,17 @@ export default function LocalModelLocationsCard() {
   const scanEnabled = useGeneralSetting((s) => s.scanLocalModels)
   const setScanEnabled = useGeneralSetting((s) => s.setScanLocalModels)
   const folders = useGeneralSetting((s) => s.localScanFolders)
-  const addFolder = useGeneralSetting((s) => s.addLocalScanFolder)
   const removeFolder = useGeneralSetting((s) => s.removeLocalScanFolder)
-  const setProviders = useModelProvider((s) => s.setProviders)
+  const { pickScanFolder } = useLocalScanFolder()
 
   const [scanning, setScanning] = useState(false)
   const [scanned, setScanned] = useState(false)
   const [candidates, setCandidates] = useState<LocalModelCandidate[]>([])
   const [importingId, setImportingId] = useState<string | null>(null)
 
-  const handleAddFolder = useCallback(async () => {
-    try {
-      const selected = await serviceHub.dialog().open({
-        multiple: false,
-        directory: true,
-      })
-      if (typeof selected === 'string' && selected.length > 0) {
-        addFolder(selected)
-      }
-    } catch (error) {
-      console.error('Failed to pick scan folder:', error)
-    }
-  }, [serviceHub, addFolder])
+  const handleAddFolder = useCallback(() => {
+    void pickScanFolder()
+  }, [pickScanFolder])
 
   const handleScan = useCallback(async () => {
     setScanning(true)
@@ -85,24 +74,9 @@ export default function LocalModelLocationsCard() {
   const handleImport = useCallback(
     async (cand: LocalModelCandidate) => {
       if (!cand.runnable || importingId) return
-      const providerName = cand.format === 'mlx' ? 'mlx' : LOCAL_LLAMACPP_PROVIDER
-      const engine = EngineManager.instance().get(providerName)
-      if (!engine) {
-        toast.error('Import failed', {
-          description: `Engine ${providerName} not available`,
-        })
-        return
-      }
       setImportingId(cand.id)
       try {
-        await engine.import(cand.id, {
-          modelPath: cand.path,
-          mmprojPath: cand.mmprojPath,
-          source: cand.source,
-        })
-        // Refresh providers so the new model shows up with its badge.
-        const fetched = await serviceHub.providers().getProviders()
-        setProviders(fetched)
+        await importScannedModel(cand, serviceHub)
         setCandidates((prev) => prev.filter((c) => c.id !== cand.id))
         toast.success('Model imported', { description: cand.displayName })
       } catch (error) {
@@ -113,14 +87,14 @@ export default function LocalModelLocationsCard() {
         setImportingId(null)
       }
     },
-    [importingId, serviceHub, setProviders]
+    [importingId, serviceHub]
   )
 
   return (
     <Card title="Detected model locations">
       <CardItem
         title="Scan for local models"
-        description="Find models already downloaded by Ollama, LM Studio, the Hugging Face cache, or Unsloth, and import them without re-downloading."
+        description="Find models already downloaded by Ollama, LM Studio, the Hugging Face cache, Unsloth, GPT4All, Jan, Msty or llama.cpp, and import them without re-downloading."
         actions={
           <Switch checked={scanEnabled} onCheckedChange={setScanEnabled} />
         }

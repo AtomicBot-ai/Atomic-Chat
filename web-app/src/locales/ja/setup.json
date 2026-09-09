@@ -26,6 +26,8 @@
     "run": "実行",
     "running": "インポート中…",
     "autoStarting": "{{name}} を起動中…",
+    "foundFrom": "{{source}} の {{name}} が見つかりました — 準備完了です。",
+    "foundLocal": "このデバイスで {{name}} が見つかりました — 準備完了です。",
     "requiresBaseModel": "ベースモデルが必要です",
     "browseInstead": "代わりにカタログを見る",
     "importFailed": "モデルをインポートできませんでした"

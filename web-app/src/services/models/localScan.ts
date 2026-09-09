@@ -1,12 +1,17 @@
 /**
- * Local model scanner: detects models already downloaded by other apps
- * (LM Studio / Hugging Face cache / Unsloth / Ollama) so the user can run them
- * in Atomic Chat WITHOUT re-downloading. The engine `import()` already accepts
- * an absolute path and skips the download (it writes a `model.yml` pointing at
- * the existing file); this module only finds the candidates.
+ * Local model scanner: detects models already downloaded by other apps so the
+ * user can run them in Atomic Chat WITHOUT re-downloading. The engine
+ * `import()` already accepts an absolute path and skips the download (it
+ * writes a `model.yml` pointing at the existing file); this module only finds
+ * the candidates.
  *
- * Scope: LM Studio, HF cache, Unsloth (exports/ runnable + outputs/ marked),
- * and Ollama (manifest → blob, exposed as a `.gguf` symlink without copying).
+ * Scope: LM Studio, the Hugging Face cache, Unsloth (exports/ runnable +
+ * outputs/ marked), Ollama (manifest → blob, exposed as a `.gguf` symlink
+ * without copying), GPT4All, Jan, Msty and llama.cpp's own `-hf` cache. Each
+ * store's location honours the environment variable that relocates it
+ * (`OLLAMA_MODELS`, `HF_HOME`, …) — read through the `get_env_vars` command,
+ * since the renderer cannot see the process environment — and the per-OS
+ * app-data folder (`%LOCALAPPDATA%`, `~/Library/Application Support`, XDG).
  * Only text-generation models are returned — embedding/reranker weights live in
  * the same caches but crash `llama-server` when loaded as a chat model.
  *
@@ -48,6 +53,46 @@ const MAX_WALK_DEPTH = 6
 
 function core() {
   return getServiceHub().core()
+}
+
+/**
+ * The environment variables the scanner honours. Mirrors the allow-list in
+ * `src-tauri/src/core/filesystem/commands.rs` (`SCAN_ENV_KEYS`); a key missing
+ * from either side simply reads as unset.
+ */
+export const SCAN_ENV_KEYS = [
+  'OLLAMA_MODELS',
+  'HF_HOME',
+  'HF_HUB_CACHE',
+  'TRANSFORMERS_CACHE',
+  'UNSLOTH_STUDIO_HOME',
+  'STUDIO_HOME',
+  'LLAMA_CACHE',
+  'LOCALAPPDATA',
+  'APPDATA',
+  'XDG_DATA_HOME',
+  'XDG_CONFIG_HOME',
+  'XDG_CACHE_HOME',
+] as const
+
+export type ScanEnvKey = (typeof SCAN_ENV_KEYS)[number]
+export type ScanEnv = Partial<Record<ScanEnvKey, string>>
+
+/** The host OS, as the root resolvers see it. */
+export type ScanOs = 'macos' | 'windows' | 'linux'
+
+const currentScanOs = (): ScanOs =>
+  IS_MACOS ? 'macos' : IS_WINDOWS ? 'windows' : 'linux'
+
+async function scanEnv(): Promise<ScanEnv> {
+  try {
+    const env = await core().invoke<Record<string, string>>('get_env_vars', {
+      keys: [...SCAN_ENV_KEYS],
+    })
+    return env ?? {}
+  } catch {
+    return {}
+  }
 }
 
 async function osHomeDir(): Promise<string | null> {
@@ -322,6 +367,114 @@ function dirOf(path: string): string {
   return parts.join(SEP)
 }
 
+// --- Where each app keeps its models ---------------------------------------
+//
+// Pure functions of (home, env, os) so the locations can be tested without a
+// filesystem. An env override always comes first; the platform default follows
+// so a user who set the variable *and* left files at the default still sees
+// both.
+
+/** `%LOCALAPPDATA%` / `~/Library/Application Support` / `$XDG_DATA_HOME`. */
+function appDataDir(home: string, env: ScanEnv, os: ScanOs): string {
+  if (os === 'windows') {
+    return env.LOCALAPPDATA ?? joinPath(home, 'AppData', 'Local')
+  }
+  if (os === 'macos') return joinPath(home, 'Library', 'Application Support')
+  return env.XDG_DATA_HOME ?? joinPath(home, '.local', 'share')
+}
+
+/** `%APPDATA%` / `~/Library/Application Support` / `$XDG_CONFIG_HOME`. */
+function configDir(home: string, env: ScanEnv, os: ScanOs): string {
+  if (os === 'windows') {
+    return env.APPDATA ?? joinPath(home, 'AppData', 'Roaming')
+  }
+  if (os === 'macos') return joinPath(home, 'Library', 'Application Support')
+  return env.XDG_CONFIG_HOME ?? joinPath(home, '.config')
+}
+
+/** `%LOCALAPPDATA%` / `~/Library/Caches` / `$XDG_CACHE_HOME`. */
+function cacheDir(home: string, env: ScanEnv, os: ScanOs): string {
+  if (os === 'windows') {
+    return env.LOCALAPPDATA ?? joinPath(home, 'AppData', 'Local')
+  }
+  if (os === 'macos') return joinPath(home, 'Library', 'Caches')
+  return env.XDG_CACHE_HOME ?? joinPath(home, '.cache')
+}
+
+const unique = (paths: string[]): string[] => [
+  ...new Set(paths.filter((p) => p.length > 0)),
+]
+
+/**
+ * Hugging Face hub caches. `HF_HUB_CACHE` names the hub directly, `HF_HOME`
+ * its parent; `TRANSFORMERS_CACHE` is the pre-2023 spelling of the hub and is
+ * still set in plenty of shells.
+ */
+export function hfCacheRoots(home: string, env: ScanEnv): string[] {
+  return unique([
+    env.HF_HUB_CACHE ?? '',
+    env.HF_HOME ? joinPath(env.HF_HOME, 'hub') : '',
+    env.TRANSFORMERS_CACHE ?? '',
+    joinPath(home, '.cache', 'huggingface', 'hub'),
+  ])
+}
+
+export function unslothRoot(home: string, env: ScanEnv): string {
+  return (
+    env.UNSLOTH_STUDIO_HOME ?? env.STUDIO_HOME ?? joinPath(home, '.unsloth', 'studio')
+  )
+}
+
+export function ollamaRoot(home: string, env: ScanEnv): string {
+  return env.OLLAMA_MODELS ?? joinPath(home, '.ollama', 'models')
+}
+
+/** GPT4All keeps downloads under its app-data folder on every OS. */
+export function gpt4allRoots(home: string, env: ScanEnv, os: ScanOs): string[] {
+  return unique([joinPath(appDataDir(home, env, os), 'nomic.ai', 'GPT4All')])
+}
+
+/**
+ * Jan defaults its data folder to `~/jan`; older builds and some installs use
+ * the app-data folder instead. Both are checked.
+ */
+export function janRoots(home: string, env: ScanEnv, os: ScanOs): string[] {
+  return unique([
+    joinPath(home, 'jan', 'models'),
+    joinPath(configDir(home, env, os), 'Jan', 'data', 'models'),
+  ])
+}
+
+export function mstyRoots(home: string, env: ScanEnv, os: ScanOs): string[] {
+  return unique([joinPath(configDir(home, env, os), 'Msty', 'models')])
+}
+
+/** Where `llama-cli -hf …` and `llama-server -hf …` put what they fetch. */
+export function llamaCppCacheRoots(
+  home: string,
+  env: ScanEnv,
+  os: ScanOs
+): string[] {
+  return unique([
+    env.LLAMA_CACHE ?? '',
+    joinPath(cacheDir(home, env, os), 'llama.cpp'),
+    // llama.cpp on Linux/macOS writes to ~/.cache regardless of XDG_CACHE_HOME
+    // in older builds; keep the plain default too.
+    os === 'windows' ? '' : joinPath(home, '.cache', 'llama.cpp'),
+  ])
+}
+
+async function scanRoots(
+  roots: string[],
+  source: LocalModelSource
+): Promise<LocalModelCandidate[]> {
+  const out: LocalModelCandidate[] = []
+  for (const root of roots) {
+    out.push(...(await scanGenericRoot(root, source, IS_MACOS)))
+  }
+  return out
+}
+
 // --- LM Studio ------------------------------------------------------------
 
 async function lmStudioRoots(home: string): Promise<string[]> {
@@ -412,23 +565,24 @@ async function scanHfCacheRoot(
   return out
 }
 
-async function scanHfCache(home: string): Promise<LocalModelCandidate[]> {
-  return scanHfCacheRoot(
-    joinPath(home, '.cache', 'huggingface', 'hub'),
-    'huggingface-cache'
-  )
+async function scanHfCache(
+  home: string,
+  env: ScanEnv
+): Promise<LocalModelCandidate[]> {
+  const out: LocalModelCandidate[] = []
+  for (const hub of hfCacheRoots(home, env)) {
+    out.push(...(await scanHfCacheRoot(hub, 'huggingface-cache')))
+  }
+  return out
 }
 
 // --- Unsloth --------------------------------------------------------------
 
-function unslothRoot(home: string): string {
-  // Env override (UNSLOTH_STUDIO_HOME / STUDIO_HOME) is a phase-2 nicety; the
-  // renderer can't read arbitrary env, so MVP uses the default location.
-  return joinPath(home, '.unsloth', 'studio')
-}
-
-async function scanUnsloth(home: string): Promise<LocalModelCandidate[]> {
-  const root = unslothRoot(home)
+async function scanUnsloth(
+  home: string,
+  env: ScanEnv
+): Promise<LocalModelCandidate[]> {
+  const root = unslothRoot(home, env)
   if (!(await pathExists(root))) return []
   const out: LocalModelCandidate[] = []
 
@@ -507,9 +661,11 @@ function digestToBlobPath(blobsDir: string, digest: string): string {
  * expose it as a runnable `*.gguf` via a symlink in `<ollama>/.studio_links/`
  * (never copying the blob). Models whose link can't be created are skipped.
  */
-async function scanOllama(home: string): Promise<LocalModelCandidate[]> {
-  // Default store; OLLAMA_MODELS env override is phase 2 (no renderer env).
-  const root = joinPath(home, '.ollama', 'models')
+async function scanOllama(
+  home: string,
+  env: ScanEnv
+): Promise<LocalModelCandidate[]> {
+  const root = ollamaRoot(home, env)
   const manifestsDir = joinPath(root, 'manifests')
   const blobsDir = joinPath(root, 'blobs')
   const linksDir = joinPath(root, '.studio_links')
@@ -756,6 +912,8 @@ export async function scanLocalModels(
 
   const home = await osHomeDir()
   if (!home) return []
+  const env = await scanEnv()
+  const os = currentScanOs()
 
   // Custom folders are scanned as generic roots (GGUF + MLX), labeled 'local'.
   const customGroups = await Promise.all(
@@ -766,9 +924,15 @@ export async function scanLocalModels(
 
   const groups = await Promise.all([
     scanLmStudio(home).catch(() => []),
-    scanHfCache(home).catch(() => []),
-    scanUnsloth(home).catch(() => []),
-    scanOllama(home).catch(() => []),
+    scanHfCache(home, env).catch(() => []),
+    scanUnsloth(home, env).catch(() => []),
+    scanOllama(home, env).catch(() => []),
+    scanRoots(gpt4allRoots(home, env, os), 'gpt4all').catch(() => []),
+    scanRoots(janRoots(home, env, os), 'jan').catch(() => []),
+    scanRoots(mstyRoots(home, env, os), 'msty').catch(() => []),
+    scanRoots(llamaCppCacheRoots(home, env, os), 'llamacpp-cache').catch(
+      () => []
+    ),
   ])
 
   const importedKeys = new Set<string>()

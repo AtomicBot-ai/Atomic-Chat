@@ -22,7 +22,10 @@
     "connectCloud": "Connect cloud provider",
     "connectSubscription": "Connect ChatGPT subscription",
     "queuedNotice": "Your message will be sent once the model is ready.",
-    "startingNotice": "Starting {{name}}… your message will be sent once it's ready."
+    "startingNotice": "Starting {{name}}… your message will be sent once it's ready.",
+    "addFolder": "Add a folder with models",
+    "folderScanning": "Looking for models…",
+    "folderEmpty": "No compatible models found in that folder."
   },
   "newConversation": "New Conversation",
   "clearHistory": "Clear History",

@@ -26,6 +26,8 @@ import type { ReplyGateBranch, ReplyResolution } from '@/lib/reply-model-gate'
  *  - `auto_start` — the single-model branch started one without asking.
  *  - `picked` — chose one of several already on the device.
  *  - `download` — started downloading the recommendation.
+ *  - `folder` — pointed the scanner at a folder of their own, and a model
+ *    found there was imported and started.
  *  - `cloud_key` — connected a cloud provider with an API key.
  *  - `subscription` — signed in with a ChatGPT subscription.
  *  - `dismissed` — closed it, still with nothing to answer with.
@@ -34,6 +36,7 @@ export type ReplyGateOutcome =
   | 'auto_start'
   | 'picked'
   | 'download'
+  | 'folder'
   | 'cloud_key'
   | 'subscription'
   | 'dismissed'

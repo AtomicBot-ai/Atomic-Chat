@@ -44,7 +44,8 @@ import { switchToModel } from '@/utils/switchModel'
 import { markSilentImport } from '@/utils/backgroundImports'
 import HeaderPage from './HeaderPage'
 import SetupBackendStep from './SetupBackendStep'
-import { ModelSourceBadge } from '@/components/ModelSourceBadge'
+import { ModelSourceBadge, modelSourceLabel } from '@/components/ModelSourceBadge'
+import { pickSmallestRunnable } from '@/lib/scanned-model-import'
 import {
   scanLocalModels,
   collectImportedModelPaths,
@@ -131,24 +132,10 @@ export function sizeStringToGb(size?: string): number | undefined {
 const recommendedSetupModelIconSrc = modelFamilyLogoSrc
 
 // Auto-start picks the smallest runnable candidate: it loads fastest, so the
-// first launch feels instant. Candidates without a known size sort last, so a
-// measured model always wins over an unmeasured one.
-export function pickAutoRunCandidate(
-  cands: LocalModelCandidate[]
-): LocalModelCandidate | null {
-  let best: LocalModelCandidate | null = null
-  for (const cand of cands) {
-    if (!cand.runnable) continue
-    if (!best) {
-      best = cand
-      continue
-    }
-    const size = cand.sizeBytes ?? Number.POSITIVE_INFINITY
-    const bestSize = best.sizeBytes ?? Number.POSITIVE_INFINITY
-    if (size < bestSize) best = cand
-  }
-  return best
-}
+// first launch feels instant. The rule is shared with the composer widget's
+// "add a folder" route, so a folder added there starts the same model this
+// screen would have.
+export const pickAutoRunCandidate = pickSmallestRunnable
 
 type SetupScreenProps = {
   onSkipped?: () => void
@@ -413,29 +400,12 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       useModelProvider.getState().providers
     )
 
-    // TEMP debug: see exactly what the onboarding scan returns + dedup inputs.
-    console.debug('[SetupScreen] local scan start', {
-      enabled,
-      localScanFolders,
-      importedPaths,
-    })
-
     void scanLocalModels({
       enabled,
       extraRoots: localScanFolders,
       importedPaths,
     })
       .then((found) => {
-        console.debug('[SetupScreen] local scan result', {
-          total: found.length,
-          runnable: found.filter((c) => c.runnable).length,
-          candidates: found.map((c) => ({
-            id: c.id,
-            source: c.source,
-            runnable: c.runnable,
-            path: c.path,
-          })),
-        })
         if (!cancelled) setLocalCandidates(found)
       })
       .catch((err) => {
@@ -471,10 +441,12 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     [localCandidates]
   )
 
+  const autoRunTargetRef = useRef<LocalModelCandidate | null>(null)
   const autoRunTarget = useMemo(
     () => pickAutoRunCandidate(detectedRunnable),
     [detectedRunnable]
   )
+  autoRunTargetRef.current = autoRunTarget
 
   // A window close gives the renderer nothing to hang an exit event on, so the
   // run is recorded here and reported as abandoned at the next launch if it is
@@ -624,6 +596,10 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       memoryKind: hardwareProfile?.memoryKind ?? null,
       memoryBudgetMib: hardwareProfile?.budgetMib ?? null,
       primaryModelId: heroRecommendation?.startId ?? null,
+      // Reported on every session, found or not: `detected_count` on the
+      // autostart event only ever counted the installs where the scan hit.
+      detectedLocalModelsCount: detectedRunnable.length,
+      detectedSources: [...new Set(detectedRunnable.map((c) => c.source))],
     })
     // Clicks have always carried a `position`; impressions never did, so a
     // row's conversion — and whether the list is read past the first entry —
@@ -776,6 +752,19 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       )
       const modelId = found ? found.id : catalogId
       selectModelProvider(providerName, modelId)
+
+      // A model another app left on disk was picked up and started without a
+      // screen of its own. Say so once, in the chat the user is about to see,
+      // rather than adding a wizard step for it.
+      const autoRun = autoRunTargetRef.current
+      if (autoRun && autoRun.id === importedId) {
+        const source = modelSourceLabel(autoRun.source)
+        toast.success(
+          source
+            ? t('setup:foundFrom', { name: autoRun.displayName, source })
+            : t('setup:foundLocal', { name: autoRun.displayName })
+        )
+      }
 
       toast.dismiss(`model-validation-started-${catalogId}`)
       localStorage.setItem(localStorageKey.setupCompleted, 'true')

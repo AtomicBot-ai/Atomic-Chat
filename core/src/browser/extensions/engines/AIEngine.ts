@@ -167,6 +167,10 @@ export type ImportedModelSource =
   | 'unsloth'
   | 'local'
   | 'huggingface-cache'
+  | 'gpt4all'
+  | 'jan'
+  | 'msty'
+  | 'llamacpp-cache'
 
 // Shared model metadata
 export interface modelInfo {

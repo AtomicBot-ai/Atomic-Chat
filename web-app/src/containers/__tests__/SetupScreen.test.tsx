@@ -5,6 +5,7 @@ import SetupScreen from '../SetupScreen'
 import { localStorageKey } from '@/constants/localStorage'
 import { seedServiceHub } from '@/test/service-hub'
 import { toast } from 'sonner'
+import { events } from '@janhq/core'
 
 const mocks = vi.hoisted(() => {
   // Mirrors of the two persisted stores SetupScreen writes to, so tests can
@@ -336,6 +337,37 @@ describe('SetupScreen', () => {
       expect(mocks.engine.import.mock.calls).toEqual([
         expectedImport(detectedModel),
       ])
+      unmount()
+    })
+
+    it('tells the user which app the started model came from', async () => {
+      // Not a wizard step: one line, in the chat they are about to see.
+      seedServiceHub({
+        models: {
+          pullModelWithMetadata: mocks.pullModelWithMetadata,
+        } as unknown as Parameters<typeof seedServiceHub>[0]['models'],
+        providers: {
+          getProviders: vi.fn().mockResolvedValue([]),
+        } as unknown as Parameters<typeof seedServiceHub>[0]['providers'],
+      })
+      const finishLocalScan = deferLocalScan([detectedModel])
+      const { unmount } = render(<SetupScreen />)
+      await finishLocalScan()
+      await screen.findByText('setup:localStep.autoStarting')
+
+      const onImported = vi
+        .mocked(events.on)
+        .mock.calls.find(([name]) => name === 'onModelImported')?.[1] as
+        | ((payload: { modelId: string }) => void)
+        | undefined
+      expect(onImported).toBeDefined()
+      await act(async () => {
+        onImported!({ modelId: detectedModel.id })
+      })
+
+      await waitFor(() =>
+        expect(toast.success).toHaveBeenCalledWith('setup:foundFrom')
+      )
       unmount()
     })
 

@@ -597,8 +597,18 @@ export function captureSetupScreenShown(params: {
   memoryBudgetMib?: number | null
   /** The single model the screen led with, so impressions have a subject. */
   primaryModelId?: string | null
+  /**
+   * What the on-disk scan found, whether or not anything was started. The
+   * autostart event carried a count only for the sessions where it fired, so
+   * "how many installs scanned and found nothing" had no answer.
+   */
+  detectedLocalModelsCount?: number
+  /** Distinct sources among the runnable candidates (`ollama`, `lmstudio`…). */
+  detectedSources?: string[]
 }): void {
   capture('setup_screen_shown', {
+    detected_local_models_count: params.detectedLocalModelsCount ?? null,
+    detected_sources: params.detectedSources ?? null,
     recommended_count: params.recommendedCount ?? 0,
     rendered: params.rendered,
     hardware_tier: params.hardwareTier ?? null,

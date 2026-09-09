@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Cloud, Download, Loader2 } from 'lucide-react'
+import { Cloud, Download, FolderPlus, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -18,11 +19,17 @@ import {
 } from '@/containers/dialogs/AddCloudProviderDialog'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useHardwareTier } from '@/hooks/useHardwareTier'
+import { useLocalScanFolder } from '@/hooks/useLocalScanFolder'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useRecommendedLocalModel } from '@/hooks/useRecommendedLocalModel'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { isProviderConnected } from '@/lib/cloud-providers'
+import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
+import {
+  importScannedModel,
+  pickSmallestRunnable,
+} from '@/lib/scanned-model-import'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import {
@@ -39,6 +46,10 @@ import {
   type ReplyResolution,
 } from '@/lib/reply-model-gate'
 import { cn } from '@/lib/utils'
+import {
+  collectImportedModelPaths,
+  scanLocalModels,
+} from '@/services/models/localScan'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 import { isSubscriptionProvider } from '@/utils/registerRemoteProvider'
 import { switchToModel } from '@/utils/switchModel'
@@ -354,7 +365,13 @@ function ReplyModelGateBody({
       )}
 
       {branch === 'none' && (
-        <RecommendedDownload onStarted={() => onResolve('download')} />
+        <>
+          <RecommendedDownload onStarted={() => onResolve('download')} />
+          <AddFolderRoute
+            onStarted={(option) => start(option, 'folder')}
+            disabled={startingKey !== null}
+          />
+        </>
       )}
 
       <CloudAlternatives
@@ -486,6 +503,86 @@ function RecommendedDownload({ onStarted }: { onStarted: () => void }) {
         {t('chat:replyGate.download')}
       </Button>
     </div>
+  )
+}
+
+/**
+ * "My models are in a folder of my own."
+ *
+ * A third of onboarding exits are imports of models other apps left on disk,
+ * and they activate best of any mass path. The scanner only knows the apps'
+ * default stores; a user who keeps weights somewhere else could add the
+ * folder in Settings, if they knew to look. Here the offer is made at the
+ * moment it matters: pick a folder, the scanner reads it, and the lightest
+ * model found is imported and started — the same rule onboarding applies.
+ */
+function AddFolderRoute({
+  onStarted,
+  disabled,
+}: {
+  onStarted: (option: ReplyModelOption) => void
+  disabled: boolean
+}) {
+  const { t } = useTranslation()
+  const serviceHub = useServiceHub()
+  const { pickScanFolder } = useLocalScanFolder()
+  const [scanning, setScanning] = useState(false)
+
+  const handlePick = async () => {
+    const folder = await pickScanFolder()
+    if (!folder) return
+    setScanning(true)
+    try {
+      const found = await scanLocalModels({
+        enabled: true,
+        extraRoots: [folder],
+        importedPaths: collectImportedModelPaths(
+          useModelProvider.getState().providers
+        ),
+      })
+      const cand = pickSmallestRunnable(found)
+      if (!cand) {
+        toast.info(t('chat:replyGate.folderEmpty'))
+        return
+      }
+      const { providerName, modelId } = await importScannedModel(
+        cand,
+        serviceHub
+      )
+      onStarted({
+        key: `${providerName}:${modelId}`,
+        kind: 'local',
+        providerName,
+        modelId,
+        label: cand.displayName,
+      })
+    } catch (error) {
+      console.error('[ReplyModelGate] folder import failed', error)
+      toast.error(extractModelErrorMessage(error))
+    } finally {
+      setScanning(false)
+    }
+  }
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="w-full"
+      disabled={disabled || scanning}
+      onClick={() => void handlePick()}
+      data-testid="reply-gate-add-folder"
+    >
+      {scanning ? (
+        <Loader2 className="size-4 animate-spin" />
+      ) : (
+        <FolderPlus className="size-4" />
+      )}
+      {scanning
+        ? t('chat:replyGate.folderScanning')
+        : t('chat:replyGate.addFolder')}
+    </Button>
   )
 }
 

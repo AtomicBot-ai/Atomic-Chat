@@ -48,6 +48,10 @@ type Model = {
     | 'unsloth'
     | 'local'
     | 'huggingface-cache'
+    | 'gpt4all'
+    | 'jan'
+    | 'msty'
+    | 'llamacpp-cache'
   // Runtime-computed: weights file (or Ollama symlink target) is gone — a "broken link".
   missing?: boolean
   // Resolved absolute weights path; used to dedupe scan candidates vs imported models.

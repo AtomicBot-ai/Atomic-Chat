@@ -26,6 +26,8 @@
     "run": "Запустить",
     "running": "Импорт…",
     "autoStarting": "Запускаем {{name}}…",
+    "foundFrom": "Нашли {{name}} из {{source}} — модель готова.",
+    "foundLocal": "Нашли {{name}} на этом устройстве — модель готова.",
     "requiresBaseModel": "Нужна базовая модель",
     "browseInstead": "Открыть каталог",
     "importFailed": "Не удалось импортировать модель"

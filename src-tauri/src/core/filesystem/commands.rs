@@ -193,6 +193,45 @@ pub fn get_os_home_dir() -> Result<String, String> {
         .ok_or_else(|| "Could not resolve OS home directory".to_string())
 }
 
+/// Environment variables that name where other apps keep their models.
+///
+/// The renderer cannot read the process environment, and the local-model
+/// scanner used to hardcode every store's default location — a user whose
+/// `OLLAMA_MODELS` or `HF_HOME` points at a second disk was invisible to it.
+/// Only this list is readable: it is the full set of keys the scanner uses,
+/// and nothing else about the environment has any business in the webview.
+const SCAN_ENV_KEYS: &[&str] = &[
+    "OLLAMA_MODELS",
+    "HF_HOME",
+    "HF_HUB_CACHE",
+    "TRANSFORMERS_CACHE",
+    "UNSLOTH_STUDIO_HOME",
+    "STUDIO_HOME",
+    "LLAMA_CACHE",
+    "LOCALAPPDATA",
+    "APPDATA",
+    "XDG_DATA_HOME",
+    "XDG_CONFIG_HOME",
+    "XDG_CACHE_HOME",
+];
+
+/// Returns the subset of `keys` that are both on the scanner's allow-list and
+/// set to a non-empty value. Unknown keys are silently dropped rather than
+/// rejected, so an older renderer asking for a key a newer build no longer
+/// exposes degrades to "not set".
+#[tauri::command]
+pub fn get_env_vars(keys: Vec<String>) -> std::collections::HashMap<String, String> {
+    keys.into_iter()
+        .filter(|key| SCAN_ENV_KEYS.contains(&key.as_str()))
+        .filter_map(|key| {
+            std::env::var(&key)
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .map(|value| (key, value))
+        })
+        .collect()
+}
+
 /// Creates a filesystem link from `link` to an existing `target`, WITHOUT
 /// copying data. Used to expose Ollama's content-addressed blobs as runnable
 /// `*.gguf` files under `<ollama>/.studio_links/`. Prefers a symlink; falls back
