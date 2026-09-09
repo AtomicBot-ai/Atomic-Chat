@@ -42,6 +42,10 @@
   "samplingTrigger": "Sampling — {{name}}",
   "contextSize": "Context Size",
   "contextSizeHint": "Size of the prompt context. Changing it restarts a running model.",
+  "contextSizeFit": "Fit to device memory",
+  "contextSizeFitHint": "Let the engine pick the largest context that fits this device. Off: set it by hand.",
+  "contextSizeFitOn": "Chosen by the engine to fit this device's memory. Turn off to set it by hand.",
+  "contextSizeFitAtMax": "The context is fitted to this device's memory. Turn off \"Fit to device memory\" in the model settings to set it by hand.",
   "paramCategory": {
     "sampling": "Sampling",
     "penalties": "Penalties",

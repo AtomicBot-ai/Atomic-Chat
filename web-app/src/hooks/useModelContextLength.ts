@@ -4,6 +4,7 @@ import { EngineManager, type AIEngine } from '@janhq/core'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { readProviderFit } from '@/lib/provider-fit'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 
 /** Providers whose models expose a `ctx_len` knob the app can restart with. */
@@ -32,6 +33,11 @@ export function formatContextSize(value: number): string {
  * it reports one), and `commit`, which persists the value and restarts the
  * model if it is loaded. `available` is false for providers with no context
  * knob, in which case the rest is inert.
+ *
+ * `fitAvailable` / `fitEnabled` / `setFit` expose llama.cpp's `--fit`: while
+ * it is on the engine sizes the context itself, the slider is disabled and
+ * shows the value the engine settled on (mirrored back from `/props` after
+ * each load), and `setFit(false)` hands the slider back (ATO-465).
  */
 export function useModelContextLength() {
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
@@ -118,9 +124,14 @@ export function useModelContextLength() {
     }
   }, [configuredMax, fallbackMaxContext, selectedModel, selectedProvider])
 
-  const provider = selectedProvider
-    ? getProviderByName(selectedProvider)
-    : undefined
+  // Subscribed to the provider list rather than read through
+  // `getProviderByName` (a stable function, so a settings change would not
+  // re-render): the fit switch flips a provider setting and must reflect it.
+  const provider = useModelProvider((state) =>
+    selectedProvider
+      ? state.providers.find((p) => p.provider === selectedProvider)
+      : undefined
+  )
   const contextSetting = selectedModel?.settings?.ctx_len as
     | ProviderSetting
     | undefined
@@ -131,6 +142,34 @@ export function useModelContextLength() {
       provider &&
       contextSetting
   )
+
+  const fitValue = readProviderFit(provider)
+  const fitAvailable = available && fitValue !== null
+  const fitEnabled = fitAvailable && fitValue === true
+
+  /** Flip the engine's fit flag; a loaded model restarts so it takes effect. */
+  const setFit = (next: boolean) => {
+    if (!fitAvailable || !provider || !selectedModel) return
+    const settings = provider.settings.map((s) =>
+      s.key === 'fit'
+        ? { ...s, controller_props: { ...s.controller_props, value: next } }
+        : s
+    )
+    void serviceHub.providers().updateSettings(provider.provider, settings)
+    updateProvider(provider.provider, { settings })
+
+    serviceHub
+      .models()
+      .getActiveModels()
+      .then((activeModels) => {
+        if (activeModels.includes(selectedModel.id)) {
+          restartModel(selectedModel.id, provider.provider)
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to check active models:', error)
+      })
+  }
 
   const contextControllerProps = (contextSetting?.controller_props ??
     {}) as NumericControllerProps
@@ -187,5 +226,8 @@ export function useModelContextLength() {
     sliderMin,
     sliderMax,
     sliderStep,
+    fitAvailable,
+    fitEnabled,
+    setFit,
   }
 }

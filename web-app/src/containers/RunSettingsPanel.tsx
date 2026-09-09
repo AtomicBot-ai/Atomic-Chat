@@ -205,9 +205,22 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
                         {formatContextSize(context.draft)}
                       </span>
                     </div>
+                    {context.fitAvailable && (
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs text-muted-foreground">
+                          {t('assistants:contextSizeFit')}
+                        </span>
+                        <Switch
+                          aria-label={t('assistants:contextSizeFit')}
+                          checked={context.fitEnabled}
+                          onCheckedChange={context.setFit}
+                        />
+                      </div>
+                    )}
                     <Slider
                       aria-label={t('assistants:contextSize')}
                       className="w-full"
+                      disabled={context.fitEnabled}
                       value={[
                         Math.min(
                           Math.max(context.draft, context.sliderMin),
@@ -221,7 +234,9 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
                       onValueCommit={([value]) => context.commit(value)}
                     />
                     <p className="text-xs leading-normal text-muted-foreground">
-                      {t('assistants:contextSizeHint')}
+                      {context.fitEnabled
+                        ? t('assistants:contextSizeFitOn')
+                        : t('assistants:contextSizeHint')}
                     </p>
                   </div>
                   <div className="flex items-center justify-between gap-3">

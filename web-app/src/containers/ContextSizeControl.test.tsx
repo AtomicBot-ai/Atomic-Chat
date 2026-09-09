@@ -38,7 +38,15 @@ vi.mock('@/utils/activeModelsSync', () => ({
     syncActiveModelsFromEngines(...args),
 }))
 
-function setSelectedModel(providerName: string) {
+const fitSetting = (value: boolean) => ({
+  key: 'fit',
+  title: 'Fit context to device memory',
+  description: '',
+  controller_type: 'checkbox',
+  controller_props: { value },
+})
+
+function setSelectedModel(providerName: string, fit?: boolean) {
   const model = {
     id: 'test-model',
     name: 'Test model',
@@ -61,6 +69,7 @@ function setSelectedModel(providerName: string) {
   const provider = {
     provider: providerName,
     models: [model],
+    settings: fit === undefined ? [] : [fitSetting(fit)],
   } as ModelProvider
 
   useModelProvider.setState({
@@ -244,5 +253,69 @@ describe('ContextSizeControl', () => {
     )
     expect(syncActiveModelsFromEngines).toHaveBeenCalled()
     vi.useRealTimers()
+  })
+
+  describe('fit to device memory', () => {
+    it('shows the fit switch for a llama.cpp engine and disables the slider while it is on', () => {
+      // Under fit the slider used to be ignored silently (`--ctx-size` is
+      // not emitted); now it says so by being disabled.
+      setSelectedModel('llamacpp-upstream', true)
+      render(<ContextSizeControl />)
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Context usage: 1.0%' })
+      )
+
+      expect(
+        screen.getByRole('switch', { name: 'assistants:contextSizeFit' })
+      ).toBeChecked()
+      expect(screen.getByRole('slider')).toHaveAttribute('data-disabled')
+    })
+
+    it('hands the slider back when fit is switched off', async () => {
+      const updateSettings = vi.fn().mockResolvedValue(undefined)
+      seedServiceHub({
+        models: {
+          stopModel,
+          startModel,
+          getActiveModels,
+        } as unknown as ModelsService,
+        providers: {
+          updateSettings,
+        } as unknown as Parameters<typeof seedServiceHub>[0]['providers'],
+      })
+      setSelectedModel('llamacpp-upstream', true)
+      render(<ContextSizeControl />)
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Context usage: 1.0%' })
+      )
+
+      fireEvent.click(
+        screen.getByRole('switch', { name: 'assistants:contextSizeFit' })
+      )
+
+      await waitFor(() =>
+        expect(screen.getByRole('slider')).not.toHaveAttribute('data-disabled')
+      )
+      expect(updateSettings).toHaveBeenCalledWith(
+        'llamacpp-upstream',
+        expect.arrayContaining([
+          expect.objectContaining({
+            key: 'fit',
+            controller_props: expect.objectContaining({ value: false }),
+          }),
+        ])
+      )
+    })
+
+    it('offers no fit switch for an engine without the flag', () => {
+      setSelectedModel('mlx')
+      render(<ContextSizeControl />)
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Context usage: 1.0%' })
+      )
+
+      expect(screen.queryByRole('switch')).toBeNull()
+      expect(screen.getByRole('slider')).not.toHaveAttribute('data-disabled')
+    })
   })
 })

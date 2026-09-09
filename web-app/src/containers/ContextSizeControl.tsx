@@ -9,11 +9,13 @@ import {
 } from '@/components/ui/popover'
 import { Progress } from '@/components/ui/progress'
 import { Slider } from '@/components/ui/slider'
+import { Switch } from '@/components/ui/switch'
 import {
   formatContextSize,
   useModelContextLength,
 } from '@/hooks/useModelContextLength'
 import { useTokensCount } from '@/hooks/useTokensCount'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
 
 interface ContextSizeControlProps {
@@ -114,7 +116,11 @@ export function ContextSizeControl({
     sliderMin,
     sliderMax,
     sliderStep,
+    fitAvailable,
+    fitEnabled,
+    setFit,
   } = useModelContextLength()
+  const { t } = useTranslation()
 
   if (!available || !contextSetting) return null
 
@@ -214,15 +220,37 @@ export function ContextSizeControl({
                 {formatContextSize(draftContext)}
               </div>
             </div>
-            {contextSetting.description && (
+            {contextSetting.description && !fitEnabled && (
               <div className="text-xs text-muted-foreground">
                 {contextSetting.description}
               </div>
             )}
           </div>
+          {fitAvailable && (
+            <label className="flex items-center justify-between gap-3 text-xs">
+              <span className="min-w-0">
+                <span className="block font-medium">
+                  {t('assistants:contextSizeFit')}
+                </span>
+                <span className="block text-muted-foreground">
+                  {fitEnabled
+                    ? t('assistants:contextSizeFitOn')
+                    : t('assistants:contextSizeFitHint')}
+                </span>
+              </span>
+              <Switch
+                aria-label={t('assistants:contextSizeFit')}
+                checked={fitEnabled}
+                onCheckedChange={setFit}
+              />
+            </label>
+          )}
+          {/* Under fit the slider is not ignored silently, as it was: it is
+              disabled, and the number above it is the one the engine chose. */}
           <Slider
             aria-label={contextSetting.title}
             className="w-full"
+            disabled={fitEnabled}
             value={[Math.min(Math.max(draftContext, sliderMin), sliderMax)]}
             min={sliderMin}
             max={sliderMax}

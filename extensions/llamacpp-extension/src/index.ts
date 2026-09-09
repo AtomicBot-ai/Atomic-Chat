@@ -567,8 +567,8 @@ export default class llamacpp_extension extends AIEngine {
     // f16 / q8_0 choice as well as the default; turbo3 is the settings.json
     // default and existing profiles have long since been moved (ATO-465).
 
-    // Migration v3: disable fit by default
-    await this.migrateFitDefault()
+    // Fit on by default; undo the migration that once forced it off.
+    await this.migrateFitDefaultOn()
 
     this.timeout = this.config.timeout
     this.llamacpp_env = this.config.llamacpp_env
@@ -692,24 +692,41 @@ export default class llamacpp_extension extends AIEngine {
   }
 
 
-  private async migrateFitDefault(): Promise<void> {
-    const MIGRATION_KEY = 'llamacpp_fit_disabled_v1'
+  /**
+   * Fit is on by default (ATO-465). A one-shot migration used to force it
+   * OFF for everyone — including users who had turned it on — so a profile
+   * that went through it carries `fit: false` without anyone having chosen
+   * that. Undo it once, but only where nothing else about fit was touched:
+   * a non-default floor or target says the user configured fit on purpose,
+   * and their `false` stands.
+   */
+  private async migrateFitDefaultOn(): Promise<void> {
+    const MIGRATION_KEY = 'llamacpp_fit_enabled_v2'
+    const FORCED_OFF_KEY = 'llamacpp_fit_disabled_v1'
     if (localStorage.getItem(MIGRATION_KEY)) return
 
-    if (this.config.fit === true) {
+    const forcedOff = localStorage.getItem(FORCED_OFF_KEY) !== null
+    const fitCtx = String(this.config.fit_ctx ?? '').trim()
+    const fitTarget = String(this.config.fit_target ?? '').trim()
+    const untouched =
+      (fitCtx === '' || fitCtx === '4096') &&
+      (fitTarget === '' || fitTarget === '1024')
+
+    if (forcedOff && this.config.fit === false && untouched) {
       const settings = await this.getSettings()
       await this.updateSettings(
         settings.map((item) => {
           if (item.key === 'fit') {
-            item.controllerProps.value = false
+            item.controllerProps.value = true
           }
           return item
         })
       )
-      this.config.fit = false
-      logger.info('Migrated fit setting: disabled by default')
+      this.config.fit = true
+      logger.info('Re-enabled fit: it had been forced off by a migration')
     }
 
+    localStorage.removeItem(FORCED_OFF_KEY)
     localStorage.setItem(MIGRATION_KEY, '1')
   }
 
@@ -4032,6 +4049,18 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     try {
+      // With fit on, the context is what llama.cpp found room for at load.
+      // Reloading with a bigger `ctx_size` would be dropped by the argument
+      // builder (`--ctx-size` is not emitted under fit) and fit would size it
+      // again — a reload that changes nothing. The ladder is fit-off only.
+      if (this.config?.fit === true) {
+        await sendDone({ ok: false, reason: 'fit' })
+        logger.info(
+          `auto_increase_ctx: fit is on for ${model_id}; the engine sizes the context itself`
+        )
+        return
+      }
+
       const currentCtxLen =
         this.modelCtxSize.get(model_id) ??
         this.config?.ctx_size ??

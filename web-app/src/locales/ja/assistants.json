@@ -42,6 +42,10 @@
   "samplingTrigger": "サンプリング — {{name}}",
   "contextSize": "コンテキストサイズ",
   "contextSizeHint": "プロンプトのコンテキストサイズです。変更すると実行中のモデルが再起動されます。",
+  "contextSizeFit": "デバイスのメモリに合わせる",
+  "contextSizeFitHint": "エンジンがこのデバイスに収まる最大のコンテキストを選びます。オフにすると手動で設定できます。",
+  "contextSizeFitOn": "このデバイスのメモリに合わせてエンジンが選択しました。オフにすると手動で設定できます。",
+  "contextSizeFitAtMax": "コンテキストはデバイスのメモリに合わせて調整されています。手動で設定するには、モデル設定の「デバイスのメモリに合わせる」をオフにしてください。",
   "paramCategory": {
     "sampling": "サンプリング",
     "penalties": "ペナルティ",

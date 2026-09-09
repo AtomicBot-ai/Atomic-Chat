@@ -1778,6 +1778,10 @@ function ThreadDetail() {
         toast.error('Model reached its maximum context, auto-expand stopped', {
           id: `ctx-at-max-${selectedProvider}-${selectedModel.id}`,
         })
+      } else if (result.reason === 'fit') {
+        toast.info(t('assistants:contextSizeFitAtMax'), {
+          id: `ctx-fit-${selectedProvider}-${selectedModel.id}`,
+        })
       }
       return
     }

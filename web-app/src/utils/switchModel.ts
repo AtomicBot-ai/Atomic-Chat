@@ -3,6 +3,7 @@ import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { readProviderFit } from '@/lib/provider-fit'
 import { useThreads } from '@/hooks/useThreads'
 import { localStorageKey } from '@/constants/localStorage'
 import { showModelLoadErrorToast } from '@/containers/ModelLoadErrorToast'
@@ -150,6 +151,12 @@ function emitModelLoad(
       load_duration_ms: args.durationMs,
       backend_version: settingStr(settings, 'version_backend'),
       ctx: settingNum(settings, 'ctx_len') ?? settingNum(settings, 'ctx_size'),
+      // Under fit the engine sizes the context itself and `ctx` is what the
+      // *previous* load settled on (mirrored back from `/props`), not a
+      // request. Read from the provider, where the flag lives.
+      fit_enabled: readProviderFit(
+        useModelProvider.getState().getProviderByName(args.providerName)
+      ),
       // The UI setting, i.e. what was *asked for*. 98.3% of events read 100,
       // the "offload everything" sentinel that is set on every model of every
       // engine — including MLX, where the concept does not apply. How many

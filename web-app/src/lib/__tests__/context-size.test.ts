@@ -131,6 +131,35 @@ describe('growModelContext', () => {
     expect(stopModel).toHaveBeenCalledTimes(1)
   })
 
+  it('does not climb the ladder while the engine fits the context itself', async () => {
+    // With `--fit` on, a bigger `ctx_size` is dropped by the argument builder
+    // and the engine sizes the window again — a reload that changes nothing.
+    seedModel(16384)
+    const provider = useModelProvider
+      .getState()
+      .getProviderByName('llamacpp-upstream')!
+    useModelProvider.getState().updateProvider('llamacpp-upstream', {
+      settings: [
+        {
+          key: 'fit',
+          title: 'Fit',
+          description: '',
+          controller_type: 'checkbox',
+          controller_props: { value: true },
+        },
+        ...(provider.settings ?? []),
+      ],
+    })
+
+    const result = await growModelContext({
+      providerId: 'llamacpp-upstream',
+      modelId: 'm',
+      serviceHub,
+    })
+    expect(result).toEqual({ ok: false, reason: 'fit', from: 16384 })
+    expect(stopModel).not.toHaveBeenCalled()
+  })
+
   it('falls back to the default window when the model has no ctx_len', async () => {
     seedModel(undefined)
     const result = await growModelContext({

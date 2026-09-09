@@ -1034,86 +1034,80 @@ describe('llamacpp_extension', () => {
     })
   })
 
-  describe('migrateFitDefault', () => {
+  describe('migrateFitDefaultOn', () => {
+    const FORCED_OFF_KEY = 'llamacpp_fit_disabled_v1'
+    const MIGRATION_KEY = 'llamacpp_fit_enabled_v2'
+    const storage = (values: Record<string, string>) =>
+      vi
+        .mocked(localStorage.getItem)
+        .mockImplementation((key: string) => values[key] ?? null)
+
     beforeEach(() => {
-      vi.mocked(localStorage.getItem).mockReturnValue(null)
+      storage({})
     })
 
-    it('should skip migration if already migrated', async () => {
-      vi.mocked(localStorage.getItem).mockReturnValue('1')
-      extension['config'] = { fit: true } as any
+    it('runs once', async () => {
+      storage({ [MIGRATION_KEY]: '1', [FORCED_OFF_KEY]: '1' })
+      extension['config'] = { fit: false } as any
       extension['getSettings'] = vi.fn()
 
-      await extension['migrateFitDefault']()
+      await extension['migrateFitDefaultOn']()
 
       expect(extension['getSettings']).not.toHaveBeenCalled()
     })
 
-    it('should set migration key without calling updateSettings when fit is already false', async () => {
+    it('leaves a profile alone that the old migration never touched', async () => {
       extension['config'] = { fit: false } as any
       extension['getSettings'] = vi.fn()
       extension['updateSettings'] = vi.fn()
 
-      await extension['migrateFitDefault']()
+      await extension['migrateFitDefaultOn']()
 
-      expect(extension['getSettings']).not.toHaveBeenCalled()
       expect(extension['updateSettings']).not.toHaveBeenCalled()
-      expect(localStorage.setItem).toHaveBeenCalledWith(
-        'llamacpp_fit_disabled_v1',
-        '1'
-      )
+      expect(extension['config'].fit).toBe(false)
+      expect(localStorage.setItem).toHaveBeenCalledWith(MIGRATION_KEY, '1')
     })
 
-    it('should disable fit when it is true', async () => {
-      extension['config'] = { fit: true } as any
+    it('re-enables fit where the old migration forced it off', async () => {
+      // Nobody chose `false` on such a profile: the v1 migration wrote it for
+      // everyone. Fit is the default again, so the profile follows.
+      storage({ [FORCED_OFF_KEY]: '1' })
+      extension['config'] = { fit: false, fit_ctx: 4096, fit_target: '1024' } as any
       extension['getSettings'] = vi.fn().mockResolvedValue([
-        { key: 'fit', controllerProps: { value: true } },
+        { key: 'fit', controllerProps: { value: false } },
         { key: 'ctx_size', controllerProps: { value: 2048 } },
       ])
       extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
 
-      await extension['migrateFitDefault']()
+      await extension['migrateFitDefaultOn']()
 
-      const updatedSettings = vi.mocked(extension['updateSettings']).mock
-        .calls[0][0]
-      expect(
-        updatedSettings.find((s: any) => s.key === 'fit').controllerProps.value
-      ).toBe(false)
-      expect(
-        updatedSettings.find((s: any) => s.key === 'ctx_size').controllerProps
-          .value
-      ).toBe(2048)
-      expect(extension['config'].fit).toBe(false)
-      expect(localStorage.setItem).toHaveBeenCalledWith(
-        'llamacpp_fit_disabled_v1',
-        '1'
+      const updated = vi.mocked(extension['updateSettings']).mock.calls[0][0]
+      expect(updated.find((s: any) => s.key === 'fit').controllerProps.value).toBe(
+        true
       )
+      expect(
+        updated.find((s: any) => s.key === 'ctx_size').controllerProps.value
+      ).toBe(2048)
+      expect(extension['config'].fit).toBe(true)
+      expect(localStorage.removeItem).toHaveBeenCalledWith(FORCED_OFF_KEY)
+      expect(localStorage.setItem).toHaveBeenCalledWith(MIGRATION_KEY, '1')
     })
 
-    it('should not modify other settings during fit migration', async () => {
-      extension['config'] = { fit: true } as any
-      extension['getSettings'] = vi.fn().mockResolvedValue([
-        { key: 'fit', controllerProps: { value: true } },
-        { key: 'fit_target', controllerProps: { value: '1024' } },
-        { key: 'fit_ctx', controllerProps: { value: '' } },
-      ])
-      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+    it('respects a user who configured fit themselves', async () => {
+      // A non-default floor or target says fit was set up on purpose; their
+      // `false` is a choice, not the old migration's leftover.
+      storage({ [FORCED_OFF_KEY]: '1' })
+      extension['config'] = { fit: false, fit_ctx: 8192, fit_target: '1024' } as any
+      extension['getSettings'] = vi.fn()
+      extension['updateSettings'] = vi.fn()
 
-      await extension['migrateFitDefault']()
+      await extension['migrateFitDefaultOn']()
 
-      const updatedSettings = vi.mocked(extension['updateSettings']).mock
-        .calls[0][0]
-      expect(
-        updatedSettings.find((s: any) => s.key === 'fit_target').controllerProps
-          .value
-      ).toBe('1024')
-      expect(
-        updatedSettings.find((s: any) => s.key === 'fit_ctx').controllerProps
-          .value
-      ).toBe('')
+      expect(extension['updateSettings']).not.toHaveBeenCalled()
+      expect(extension['config'].fit).toBe(false)
+      expect(localStorage.setItem).toHaveBeenCalledWith(MIGRATION_KEY, '1')
     })
   })
-
   describe('getLoadedModels', () => {
     it('should return list of loaded models', async () => {
       const { invoke } = await import('@tauri-apps/api/core')

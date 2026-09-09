@@ -740,6 +740,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           `${OUT_OF_CONTEXT_SIZE} The prompt needs about ${needed} tokens (${this.lastPromptSize.toolTokens} of them are tool definitions) but the model's maximum context is ${result.max ?? result.from}. Disable some connectors for this chat or shorten the conversation.`
         )
       }
+      if (result.reason === 'fit') {
+        throw new Error(
+          `${OUT_OF_CONTEXT_SIZE} The prompt needs about ${needed} tokens (${this.lastPromptSize.toolTokens} of them are tool definitions) but the context this device has room for is ${result.from}. Disable some connectors for this chat, shorten the conversation, or turn off "Fit to device memory" in the model settings to set the context by hand.`
+        )
+      }
       return
     }
     if (args.abortSignal?.aborted) return

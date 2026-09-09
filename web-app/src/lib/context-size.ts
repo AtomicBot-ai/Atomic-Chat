@@ -5,6 +5,7 @@ import {
   type AIEngine,
 } from '@janhq/core'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { readProviderFit } from '@/lib/provider-fit'
 import type { ServiceHub } from '@/services'
 
 /** Re-exported so web-app callers have one import for the one default. */
@@ -14,7 +15,12 @@ export type GrowContextResult =
   | { ok: true; from: number; to: number }
   | {
       ok: false
-      reason: 'at_max' | 'no_model' | 'no_provider'
+      /**
+       * `fit` — the engine sizes the context itself (`--fit`); there is no
+       * knob to turn, and a reload with a bigger `ctx_size` would be sized
+       * straight back down.
+       */
+      reason: 'at_max' | 'no_model' | 'no_provider' | 'fit'
       from: number
       max?: number
     }
@@ -100,6 +106,9 @@ export async function growModelContext(args: {
   const model = provider.models[modelIndex]
 
   const from = readModelCtxLen(model as ModelLike) ?? DEFAULT_CTX_LEN
+  if (readProviderFit(provider) === true) {
+    return { ok: false, reason: 'fit', from }
+  }
   const maxCtxLen = await getModelMaxCtxTrain(providerId, modelId)
 
   let to = from
