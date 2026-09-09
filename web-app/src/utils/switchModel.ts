@@ -382,12 +382,6 @@ function clearModelLoadError() {
   useModelLoad.getState().setModelLoadError(undefined)
 }
 
-/**
- * Legacy event name retained for the dormant once-ever Turboquant dialog.
- * Startup detection now feeds the shared chat mismatch prompt instead.
- */
-export const TURBOQUANT_OPTIMAL_PROMPT_EVENT = 'turboquant:offer-optimal-backend'
-
 function syncModelSelection(providerName: string, modelId: string) {
   const serverState = useLocalApiServer.getState()
 

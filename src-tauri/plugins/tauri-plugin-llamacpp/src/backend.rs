@@ -30,6 +30,7 @@ pub fn map_old_backend_to_new(old_backend: String) -> String {
         | "linux-x64-cuda-13.3"
         | "linux-x64-rocm"
         | "linux-x64-vulkan"
+        | "linux-arm64-cuda-13.3"
         | "macos-arm64"
         | "macos-x64" => return b,
         _ => {}
@@ -248,8 +249,13 @@ pub fn determine_supported_backends(
             supported_backends.push("linux-x64-vulkan".to_string());
         }
         "linux-aarch64" | "linux-arm64" => {
-            // No TurboQuant Linux arm64 build.
-            supported_backends.push("linux-arm64".to_string());
+            // The only TurboQuant Linux arm64 archive is the CUDA 13 one
+            // (DGX Spark / GH200). This used to advertise a bare
+            // `linux-arm64` that matched no asset — a guaranteed 404 — and
+            // hid the build that does exist.
+            if features.cuda13 {
+                supported_backends.push("linux-arm64-cuda-13.3".to_string());
+            }
         }
         "macos-x86_64" | "macos-x86" => {
             supported_backends.push("macos-x64".to_string());
@@ -1749,6 +1755,37 @@ mod tests {
         // The Vulkan build carries a portable CPU path and is what the
         // installer bundles, so it stays offered even with no GPU at all.
         assert_eq!(result, vec!["linux-x64-cpu", "linux-x64-vulkan"]);
+    }
+
+    #[test]
+    fn test_determine_supported_backends_linux_arm64_offers_only_the_cuda13_build() {
+        // A DGX Spark / GH200 has exactly one published archive; a bare
+        // `linux-arm64` matched none and was a 404 at download time.
+        let with_cuda = SystemFeatures {
+            cuda11: false,
+            cuda12: false,
+            cuda13: true,
+            vulkan: false,
+            rocm: false,
+        };
+        assert_eq!(
+            determine_supported_backends("linux".to_string(), "aarch64".to_string(), with_cuda)
+                .unwrap(),
+            vec!["linux-arm64-cuda-13.3"]
+        );
+
+        let without = SystemFeatures {
+            cuda11: false,
+            cuda12: false,
+            cuda13: false,
+            vulkan: true,
+            rocm: false,
+        };
+        assert!(
+            determine_supported_backends("linux".to_string(), "aarch64".to_string(), without)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

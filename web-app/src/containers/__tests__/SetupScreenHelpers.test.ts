@@ -139,6 +139,7 @@ describe('getInitialStep', () => {
 
   it('opens on the backend step only on a first Windows launch', () => {
     vi.stubGlobal('IS_WINDOWS', true)
+    vi.stubGlobal('IS_LINUX', false)
     expect(getInitialStep()).toBe('backend')
 
     // Set by `handleBackendStepDone` — and, since ATO-459, before a
@@ -147,8 +148,20 @@ describe('getInitialStep', () => {
     expect(getInitialStep()).toBe('model')
   })
 
-  it('goes straight to the picker everywhere else', () => {
+  it('opens on the backend step on a first Linux launch too', () => {
+    // Linux installs on the CPU build with a Vulkan build to offer, exactly
+    // the situation the step exists for (ATO-464).
     vi.stubGlobal('IS_WINDOWS', false)
+    vi.stubGlobal('IS_LINUX', true)
+    expect(getInitialStep()).toBe('backend')
+
+    localStorage.setItem('llama_cpp_onboarding_done', 'skipped')
+    expect(getInitialStep()).toBe('model')
+  })
+
+  it('goes straight to the picker on macOS', () => {
+    vi.stubGlobal('IS_WINDOWS', false)
+    vi.stubGlobal('IS_LINUX', false)
     expect(getInitialStep()).toBe('model')
   })
 })

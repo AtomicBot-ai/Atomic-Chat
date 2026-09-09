@@ -232,7 +232,10 @@ export function describeRecommendationFit(args: {
 
 export function getInitialStep(): OnboardingStep {
   if (typeof window === 'undefined') return 'model'
-  if (!IS_WINDOWS) return 'model'
+  // Windows and Linux both install on a CPU build and both have a GPU build
+  // to offer; the step used to be Windows-only, so a Linux host met its
+  // Vulkan build only if the silent startup upgrade happened to fire.
+  if (!IS_WINDOWS && !IS_LINUX) return 'model'
   // Already completed the dedicated step in a previous session.
   if (localStorage.getItem(localStorageKey.llamacppOnboardingDone)) {
     return 'model'

@@ -7,6 +7,7 @@ import {
   LOCAL_LLAMACPP_PROVIDER,
 } from '@/lib/utils'
 import { WINDOWS_RECHECK_PENDING_KEY } from '@/lib/windowsProviderMigration'
+import { captureBackendRecommendationDismissed } from '@/lib/backend-telemetry'
 
 /// Maximum time we wait for a `app:backend-hotswapped` window event after the
 /// backend archive download finishes. If the extension's `applyBackendLive()`
@@ -170,6 +171,32 @@ export type RecommendationPhase =
   | 'completed'
   | 'restart-required'
 
+/// How long "Not now" keeps the recommendation dialog down.
+export const RECOMMENDATION_SNOOZE_DAYS = 7
+
+export function isRecommendationSnoozed(now = Date.now()): boolean {
+  try {
+    const raw = localStorage.getItem(
+      localStorageKey.backendRecommendationSnoozedUntil
+    )
+    const until = raw ? Number(raw) : NaN
+    return Number.isFinite(until) && until > now
+  } catch {
+    return false
+  }
+}
+
+function snoozeRecommendation(now = Date.now()): void {
+  try {
+    localStorage.setItem(
+      localStorageKey.backendRecommendationSnoozedUntil,
+      String(now + RECOMMENDATION_SNOOZE_DAYS * 24 * 60 * 60 * 1000)
+    )
+  } catch {
+    // Storage unavailable: the dialog simply returns next launch, as before.
+  }
+}
+
 export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
   const extensionName = config.extensionName ?? LOCAL_LLAMACPP_EXTENSION_NAME
   const providerId = config.providerId ?? LOCAL_LLAMACPP_PROVIDER
@@ -245,7 +272,7 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
         if (payload.recommendedBackend && payload.recommendedCategory) {
           console.log('Better backend recommendation restored from localStorage:', payload)
           setRecommendation(payload)
-          setRecommendationPhase('recommend')
+          if (!isRecommendationSnoozed()) setRecommendationPhase('recommend')
         }
       }
     } catch {
@@ -271,6 +298,9 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
       if (!isOurEvent(payload)) return
       console.log('Better backend detected (event):', payload)
       setRecommendation(payload)
+      // Kept as state either way so the settings button can still act on
+      // it; only the unasked-for prompt respects the snooze.
+      if (isRecommendationSnoozed()) return
       setRecommendationPhase((prev) => {
         if (prev === 'downloading' || prev === 'restart-required') return prev
         return 'recommend'
@@ -447,10 +477,21 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
     []
   )
 
+  /// "Not now" means not for a while, not "ask me again at the next launch":
+  /// the dialog used to return every single start for anyone who declined.
+  /// The recommendation itself is kept, so the settings page's "Find optimal
+  /// backend" and the startup upgrade are unaffected.
   const dismissRecommendation = useCallback(() => {
     setRecommendationPhase('idle')
-    // Don't remove from localStorage — popup should reappear on next launch
-  }, [])
+    snoozeRecommendation()
+    captureBackendRecommendationDismissed({
+      provider: providerId,
+      backendFrom: null,
+      backendTo: recommendation?.recommendedBackend ?? null,
+      trigger: 'dialog',
+      snoozedForDays: RECOMMENDATION_SNOOZE_DAYS,
+    })
+  }, [providerId, recommendation])
 
   /// `overrideBackend` lets callers bypass the closure-captured
   /// `recommendation` state. Necessary when the trigger fires

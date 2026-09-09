@@ -1,4 +1,5 @@
 import { CACHE_EXPIRY_MS, localStorageKey } from '@/constants/localStorage'
+import { captureBackendRecommendationApplied } from '@/lib/backend-telemetry'
 import type { BackendRuntimeEvent } from '@/hooks/useBackendMismatch'
 import type { OptimalBackendCacheRecord } from '@/hooks/useBackendUpdater'
 
@@ -183,6 +184,12 @@ export async function applyStartupBackendUpgrade(
       localStorageKey.startupBackendUpgradeAttempt,
       JSON.stringify({ target, attemptedAt: now } satisfies StartupUpgradeAttempt)
     )
+    captureBackendRecommendationApplied({
+      provider: 'llamacpp-upstream',
+      backendFrom: records['llamacpp-upstream']?.currentBackend ?? null,
+      backendTo: target,
+      trigger: 'startup',
+    })
     await extension.downloadRecommendedBackend(target)
     return target
   } catch (error) {

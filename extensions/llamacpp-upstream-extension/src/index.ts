@@ -506,6 +506,11 @@ export type OptimalBackendCacheRecord =
  */
 export const BACKEND_DETECTION_FAILED = 'BACKEND_DETECTION_FAILED'
 
+/// Smallest Vulkan device worth moving a Linux host off the CPU build for.
+/// Below this the KV cache of even the lightest recommended model does not
+/// fit beside the weights, and Vulkan would spill straight back to RAM.
+const LINUX_VULKAN_MIN_VRAM_MIB = 2 * 1024
+
 export default class llamacpp_upstream_extension extends AIEngine {
   provider: string = 'llamacpp-upstream'
   autoUnload: boolean = false
@@ -1909,17 +1914,28 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // a 404 at download time. `determine_supported_backends` in the
       // Rust plugin mirrors this matrix.
       if (sysInfo.os_type === 'linux') {
-        if (
-          features.vulkan &&
-          hasEnoughVram &&
-          archSuffix === 'x64' &&
-          !integratedGpuOnly
-        ) {
+        // Linux installs on the CPU build, and Vulkan is the only GPU build
+        // there is to upgrade to. The gate used to demand a discrete card
+        // with 6 GiB, and a host that failed it was `cpu-optimal` for good —
+        // nothing ever asked again. Measured on this platform Vulkan is a
+        // third of CUDA's throughput and radically more than the CPU
+        // fallback, so a 4 GB card or a capable integrated GPU is worth it
+        // (ATO-464). Only a device the loader can actually see qualifies:
+        // `features.vulkan` means libvulkan.so.1 loaded AND enumerated it.
+        const anyVulkanDevice = sysInfo.gpus.some(
+          (g) => g.total_memory >= LINUX_VULKAN_MIN_VRAM_MIB
+        )
+        if (features.vulkan && archSuffix === 'x64' && anyVulkanDevice) {
           return { kind: 'gpu', backend: 'linux-vulkan-x64' }
         }
-        // Linux detection consults no network stream (the Vulkan recommend
-        // is derived purely from the Rust libvulkan probe), so a non-GPU
-        // outcome here is genuinely CPU-optimal, never a fetch failure.
+        // The hardware plugin sees a GPU but the Vulkan loader does not: a
+        // fresh install without libvulkan1, or a driver still settling.
+        // Not a verdict — ask again next launch instead of pinning the host
+        // to CPU for the life of the profile.
+        if (!features.vulkan && archSuffix === 'x64' && sysInfo.gpus.length > 0) {
+          return { kind: 'detection-failed' }
+        }
+        // No accelerator at all: the CPU build is the right build.
         return { kind: 'cpu-optimal' }
       }
 

@@ -321,7 +321,10 @@ describe('llamacpp_extension', () => {
       })
     })
 
-    it('keeps an integrated-only Vulkan host on CPU', async () => {
+    it('offers Vulkan to an integrated-only Linux host the loader can see', async () => {
+      // Linux installs on the CPU build; Vulkan is the only GPU build it can
+      // move to, and a capable iGPU beats the CPU fallback. The discrete-card
+      // requirement kept such hosts on CPU for good (ATO-464).
       vi.mocked(getSystemInfo).mockResolvedValue({
         os_type: 'linux',
         os_name: 'Linux',
@@ -341,6 +344,70 @@ describe('llamacpp_extension', () => {
         cuda12: false,
         cuda13: false,
         vulkan: true,
+      })
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'gpu',
+        backend: 'linux-vulkan-x64',
+      })
+    })
+
+    it('offers Vulkan to a small Linux card the 6 GiB bar used to exclude', async () => {
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'linux',
+        os_name: 'Linux',
+        total_memory: 16 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [{ ...discreteGpu, total_memory: 4 * 1024 }],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: false,
+        cuda12: false,
+        cuda13: false,
+        vulkan: true,
+      })
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'gpu',
+        backend: 'linux-vulkan-x64',
+      })
+    })
+
+    it('asks again later when a Linux GPU is present but the Vulkan loader is not', async () => {
+      // libvulkan1 missing on a fresh install: not a verdict, and the old
+      // `cpu-optimal` answer was cached as one, so nothing ever re-checked.
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'linux',
+        os_name: 'Linux',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [{ ...discreteGpu, nvidia_info: {} }],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: false,
+        cuda12: true,
+        cuda13: true,
+        vulkan: false,
+      })
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'detection-failed',
+      })
+    })
+
+    it('keeps a Linux host with no accelerator at all on CPU', async () => {
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'linux',
+        os_name: 'Linux',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: false,
+        cuda12: false,
+        cuda13: false,
+        vulkan: false,
       })
 
       await expect(extension['detectIdealBackendType']()).resolves.toEqual({

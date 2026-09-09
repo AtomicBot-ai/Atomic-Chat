@@ -68,6 +68,10 @@ export const localStorageKey = {
   // the tier detection picked for this host. Written before the download starts
   // so a crash or a failure mid-download cannot retry on every launch.
   startupBackendUpgradeAttempt: 'startup-backend-upgrade-attempt',
+  // Epoch ms until which the GPU-backend recommendation dialog stays down after
+  // "Not now". It used to be session-only, so the dialog came back on every
+  // launch for anyone who had declined it.
+  backendRecommendationSnoozedUntil: 'backend-recommendation-snoozed-until',
   // An onboarding run that is currently on screen: `{started_at, step,
   // app_version}`. Written while SetupScreen is mounted and dropped by
   // `captureOnboardingCompleted`, so a record still present at the next launch

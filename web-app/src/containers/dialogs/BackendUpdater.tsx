@@ -19,7 +19,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
+import {
+  captureBackendRecommendationApplied,
+  captureBackendRecommendationShown,
+} from '@/lib/backend-telemetry'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { toast } from 'sonner'
 import { getProviderTitle, LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
@@ -68,6 +72,14 @@ const BackendUpdater = () => {
   }
 
   const handleDownloadRecommended = async () => {
+    if (recommendation) {
+      captureBackendRecommendationApplied({
+        provider: recommendation.provider ?? LOCAL_LLAMACPP_PROVIDER,
+        backendFrom: null,
+        backendTo: recommendation.recommendedBackend,
+        trigger: 'dialog',
+      })
+    }
     try {
       await downloadRecommendedBackend()
     } catch (error) {
@@ -131,6 +143,22 @@ const BackendUpdater = () => {
     recommendationPhase === 'downloading' ||
     recommendationPhase === 'hotswapping' ||
     recommendationPhase === 'restart-required'
+
+  // One impression per offer: the phase walks recommend → downloading → …
+  // inside a single opening, and only the first frame is the offer.
+  const shownForRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (recommendationPhase !== 'recommend' || !recommendation) return
+    const key = recommendation.recommendedBackend
+    if (shownForRef.current === key) return
+    shownForRef.current = key
+    captureBackendRecommendationShown({
+      provider: recommendation.provider ?? LOCAL_LLAMACPP_PROVIDER,
+      backendFrom: null,
+      backendTo: recommendation.recommendedBackend,
+      trigger: 'dialog',
+    })
+  }, [recommendationPhase, recommendation])
 
   /// Both providers download without being asked: each reconciles its release
   /// tag after an app update, and upstream additionally applies the tier that

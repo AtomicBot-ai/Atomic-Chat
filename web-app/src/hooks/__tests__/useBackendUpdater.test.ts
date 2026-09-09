@@ -41,6 +41,10 @@ vi.mock('@janhq/core', () => {
   }
 })
 
+vi.mock('posthog-js', () => ({
+  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+}))
+
 vi.mock('@/lib/extension', () => ({
   ExtensionManager: {
     getInstance: () => ({
@@ -81,6 +85,50 @@ describe('useBackendUpdater', () => {
 
     expect(result.current.recommendationPhase).toBe('idle')
     expect(result.current.recommendation).toBeNull()
+  })
+
+  describe('"Not now"', () => {
+    it('keeps the dialog down for a week, and remembers the offer', () => {
+      // It used to come back on every single launch for anyone who declined.
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-09-09T12:00:00Z'))
+      const { result } = renderHook(() => useBackendUpdater())
+      detect()
+      expect(result.current.recommendationPhase).toBe('recommend')
+
+      act(() => {
+        result.current.dismissRecommendation()
+      })
+      expect(result.current.recommendationPhase).toBe('idle')
+      expect(result.current.recommendation).toEqual(RECOMMENDATION)
+
+      // A fresh detection within the week stays quiet…
+      detect()
+      expect(result.current.recommendationPhase).toBe('idle')
+
+      // …and one after it is offered again.
+      vi.setSystemTime(new Date('2026-09-17T12:00:00Z'))
+      detect()
+      expect(result.current.recommendationPhase).toBe('recommend')
+    })
+
+    it('does not restore a snoozed offer as a prompt at the next launch', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-09-09T12:00:00Z'))
+      localStorage.setItem(
+        localStorageKey.backendRecommendationSnoozedUntil,
+        String(new Date('2026-09-16T12:00:00Z').getTime())
+      )
+      localStorage.setItem(
+        'llama_cpp_better_backend_recommendation',
+        JSON.stringify(RECOMMENDATION)
+      )
+
+      const { result } = renderHook(() => useBackendUpdater())
+
+      expect(result.current.recommendationPhase).toBe('idle')
+      expect(result.current.recommendation).toEqual(RECOMMENDATION)
+    })
   })
 
   describe('surfacing a recommendation', () => {
