@@ -34,6 +34,9 @@ const summaryRoots = [
 const targetPaths = [
   'web-app/src/lib/custom-chat-transport.ts',
   'web-app/src/containers/SetupScreen.tsx',
+  // The first-run auto-start rule, extracted from SetupScreen (ATO-458) and
+  // shared with the composer widget; guarded here so the move keeps its cover.
+  'web-app/src/lib/scanned-model-import.ts',
   'web-app/src/containers/SetupBackendStep.tsx',
   'web-app/src/utils/getModelToStart.ts',
   'web-app/src/hooks/useModelProvider.ts',
