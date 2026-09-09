@@ -85,8 +85,12 @@ export class DefaultMCPService implements MCPService {
     return false
   }
 
-  async mcpOauthLogin(name: string, url: string): Promise<void> {
-    console.log('mcpOauthLogin called:', { name, url })
+  async mcpOauthLogin(
+    name: string,
+    url: string,
+    scopes?: string[]
+  ): Promise<void> {
+    console.log('mcpOauthLogin called:', { name, url, scopes })
     // Throws (unlike the other no-ops) so the card surfaces something real —
     // same convention as DefaultAuthService.chatgptLogin.
     throw new Error('MCP sign-in requires the desktop app')

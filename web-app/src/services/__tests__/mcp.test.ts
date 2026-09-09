@@ -174,11 +174,24 @@ describe('TauriMCPService', () => {
 
   it('invokes the MCP OAuth commands', async () => {
     await mcpService.mcpOauthLogin('linear', 'https://mcp.linear.app/mcp')
+    await mcpService.mcpOauthLogin(
+      'higgsfield',
+      'https://mcp.higgsfield.ai/mcp',
+      ['openid', 'email', 'offline_access']
+    )
     await mcpService.mcpOauthCancel()
     await mcpService.mcpOauthLogout('linear')
 
     expect(ipcHandler.mock.calls).toEqual([
       ['mcp_oauth_login', { name: 'linear', url: 'https://mcp.linear.app/mcp' }],
+      [
+        'mcp_oauth_login',
+        {
+          name: 'higgsfield',
+          url: 'https://mcp.higgsfield.ai/mcp',
+          scopes: ['openid', 'email', 'offline_access'],
+        },
+      ],
       ['mcp_oauth_cancel', {}],
       ['mcp_oauth_logout', { name: 'linear' }],
     ])

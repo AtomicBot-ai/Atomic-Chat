@@ -44,6 +44,7 @@
   "descriptions": {
     "exa": "Web search and page crawling built for AI. Works out of the box, no key needed.",
     "github": "Work with repositories, issues, pull requests, and code.",
+    "higgsfield": "Generate images and videos from a prompt with your Higgsfield account. Uses your own Higgsfield credits.",
     "linear": "Find, create, and update issues, projects, and comments.",
     "notion": "Search, read, and update pages and databases in your workspace.",
     "sentry": "Investigate errors, traces, and application performance.",

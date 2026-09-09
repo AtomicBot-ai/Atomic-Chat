@@ -130,8 +130,12 @@ export class TauriMCPService extends DefaultMCPService {
     return await invoke('check_jan_browser_extension_connected')
   }
 
-  async mcpOauthLogin(name: string, url: string): Promise<void> {
-    return await invoke('mcp_oauth_login', { name, url })
+  async mcpOauthLogin(
+    name: string,
+    url: string,
+    scopes?: string[]
+  ): Promise<void> {
+    return await invoke('mcp_oauth_login', { name, url, scopes })
   }
 
   async mcpOauthCancel(): Promise<void> {

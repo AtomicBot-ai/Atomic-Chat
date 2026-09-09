@@ -132,6 +132,24 @@ describe('ConnectorsPage', () => {
     expect(screen.queryByText('browsermcp')).not.toBeInTheDocument()
   })
 
+  it('pins Higgsfield to the first card, ahead of installed servers', () => {
+    seedServers({
+      exa: {
+        command: '',
+        args: [],
+        env: {},
+        type: 'http',
+        url: 'https://mcp.exa.ai/mcp',
+      },
+      'my server': { command: 'npx', args: ['-y', 'some-mcp'], env: {} },
+    })
+    const { container } = render(<ConnectorsPage />)
+
+    const cards = container.querySelectorAll('div.bg-card')
+    expect(cards[0].textContent).toContain('Higgsfield')
+    expect(cards[1].textContent).toContain('Exa')
+  })
+
   it('renders every visible catalog connector', () => {
     render(<ConnectorsPage />)
 
@@ -187,7 +205,8 @@ describe('ConnectorsPage', () => {
     await waitFor(() =>
       expect(mcpOauthLogin).toHaveBeenCalledWith(
         'linear',
-        'https://mcp.linear.app/mcp'
+        'https://mcp.linear.app/mcp',
+        undefined
       )
     )
     await waitFor(() =>

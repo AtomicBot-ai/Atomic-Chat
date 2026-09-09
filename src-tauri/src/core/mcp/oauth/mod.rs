@@ -133,9 +133,17 @@ impl McpOAuthState {
     }
 
     /// Run the full browser sign-in and persist the resulting session.
-    pub async fn login(&self, data_dir: &Path, name: &str, url: &str) -> Result<(), String> {
+    /// `scopes` is what the authorize request asks for; empty means the
+    /// provider's defaults.
+    pub async fn login(
+        &self,
+        data_dir: &Path,
+        name: &str,
+        url: &str,
+        scopes: &[String],
+    ) -> Result<(), String> {
         let cancel = self.arm_cancel();
-        let result = flow::run_login(name, url, cancel).await;
+        let result = flow::run_login(name, url, scopes, cancel).await;
         self.disarm_cancel();
         let entry = result?;
 
@@ -307,9 +315,13 @@ pub async fn mcp_oauth_login<R: Runtime>(
     state: State<'_, AppState>,
     name: String,
     url: String,
+    scopes: Option<Vec<String>>,
 ) -> Result<(), String> {
     let data_dir = data_dir_for(&app);
-    state.mcp_oauth.login(&data_dir, &name, &url).await
+    state
+        .mcp_oauth
+        .login(&data_dir, &name, &url, scopes.as_deref().unwrap_or(&[]))
+        .await
 }
 
 /// Abandon a sign-in that is still waiting on the browser.

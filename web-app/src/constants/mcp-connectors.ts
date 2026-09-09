@@ -35,6 +35,12 @@ export type MCPConnector = {
   icon: { bg: string; src?: string }
   /** Featured connector: badge + sorts first. */
   featured?: boolean
+  /**
+   * Pinned to the top of the Connectors grid, ahead of the user's installed
+   * servers, whether or not it is set up yet. For the connector we are
+   * currently pushing; keep it to one.
+   */
+  pinned?: boolean
   docsUrl?: string
   /** Static config template; `active` and secrets are injected on install. */
   config: MCPServerConfig
@@ -51,6 +57,13 @@ export type MCPConnector = {
    * real so a hand-added server (e.g. with a PAT header) is still recognized.
    */
   auth?: 'oauth' | 'oauth-soon'
+  /**
+   * Scopes to request at the authorize step of an `'oauth'` sign-in. Omit for
+   * the provider's defaults. Name them when the provider advertises them in
+   * its 401 challenge (Higgsfield: `openid email offline_access`) so
+   * `offline_access` — the refresh token — is asked for rather than assumed.
+   */
+  oauthScopes?: string[]
   /**
    * Not listed in the Connectors grid or the plugins dropdown. The entry
    * stays in the catalog so `findInstalledServer` still recognizes a server
@@ -116,6 +129,31 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     config: {
       command: 'npx',
       args: ['-y', '@atomicmail/mcp-github'],
+      env: {},
+    },
+  },
+  {
+    serverKey: 'higgsfield',
+    name: 'Higgsfield',
+    author: 'Higgsfield',
+    descriptionKey: 'mcp-connectors:descriptions.higgsfield',
+    // Official app icon: the black mark on the brand lime; the tile matches.
+    icon: { bg: '#D1FE17', src: '/images/connectors/higgsfield.png' },
+    featured: true,
+    pinned: true,
+    docsUrl: 'https://higgsfield.ai/mcp',
+    matchUrls: ['mcp.higgsfield.ai'],
+    auth: 'oauth',
+    // The MCP host publishes its own authorization-server metadata
+    // (/oauth2/register|authorize|token, PKCE S256, public client) in front
+    // of Clerk, so rmcp's discovery lands there first. Generation is billed to
+    // the user's own Higgsfield credits; results are CDN URLs.
+    oauthScopes: ['openid', 'email', 'offline_access'],
+    config: {
+      type: 'http',
+      url: 'https://mcp.higgsfield.ai/mcp',
+      command: '',
+      args: [],
       env: {},
     },
   },

@@ -161,6 +161,7 @@ pub(crate) fn start_callback_server() -> Result<(u16, CallbackWaiter), String> {
 pub(crate) async fn run_login(
     name: &str,
     url: &str,
+    scopes: &[String],
     cancel: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<McpOAuthEntry, String> {
     let (port, waiter) = start_callback_server()?;
@@ -174,9 +175,12 @@ pub(crate) async fn run_login(
     let mut oauth = OAuthState::new(url, Some(http))
         .await
         .map_err(|e| format!("{name}: authorization discovery failed: {e}"))?;
-    // Empty scopes: the provider's defaults. Discovery + DCR happen here.
+    // Discovery + DCR happen here. Empty scopes mean the provider's defaults;
+    // a connector that names its scopes (Higgsfield asks for `offline_access`
+    // so a refresh token is issued) gets exactly those on the authorize URL.
+    let scope_refs: Vec<&str> = scopes.iter().map(String::as_str).collect();
     oauth
-        .start_authorization(&[], &redirect_uri, Some("Atomic Chat"))
+        .start_authorization(&scope_refs, &redirect_uri, Some("Atomic Chat"))
         .await
         .map_err(|e| format!("{name}: cannot start the browser sign-in: {e}"))?;
 

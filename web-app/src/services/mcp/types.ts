@@ -50,8 +50,11 @@ export interface MCPService {
   checkJanBrowserExtensionConnected(): Promise<boolean>
 
   // MCP OAuth browser sign-in (desktop only; tokens never reach the frontend)
-  /** Opens the system browser and resolves once the callback is exchanged. */
-  mcpOauthLogin(name: string, url: string): Promise<void>
+  /**
+   * Opens the system browser and resolves once the callback is exchanged.
+   * `scopes` replaces the provider's default scopes at the authorize step.
+   */
+  mcpOauthLogin(name: string, url: string, scopes?: string[]): Promise<void>
   /** Abandons a sign-in that is still waiting on the browser. */
   mcpOauthCancel(): Promise<void>
   /** Forgets the stored session for a server. Missing is success. */

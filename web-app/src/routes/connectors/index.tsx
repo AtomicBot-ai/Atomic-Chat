@@ -139,8 +139,9 @@ function ConnectorsPage() {
     return map
   }, [installedByConnector])
 
-  // One grid for everything: installed servers first (their stored order,
-  // catalog or hand-added alike), then the catalog connectors left to set up.
+  // One grid for everything: pinned catalog connectors first, then installed
+  // servers (their stored order, catalog or hand-added alike), then the
+  // catalog connectors left to set up.
   const gridItems = useMemo(() => {
     const installed = visibleServerEntries.map(([key, config]) => ({
       key,
@@ -155,7 +156,11 @@ function ConnectorsPage() {
       connector: connector as MCPConnector | undefined,
       installed: undefined,
     }))
-    return [...installed, ...available]
+    const items = [...installed, ...available]
+    return [
+      ...items.filter((item) => item.connector?.pinned),
+      ...items.filter((item) => !item.connector?.pinned),
+    ]
   }, [connectorByServerKey, installedByConnector, visibleServerEntries])
 
   const updateToolCallTimeout = (rawValue: string) => {
@@ -256,7 +261,9 @@ function ConnectorsPage() {
     setBusy(key, true)
     try {
       const config = await buildConnectorConfig(connector)
-      await serviceHub.mcp().mcpOauthLogin(key, config.url ?? '')
+      await serviceHub
+        .mcp()
+        .mcpOauthLogin(key, config.url ?? '', connector.oauthScopes)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       // A cancelled sign-in is the user closing the door themselves.
