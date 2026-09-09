@@ -70,6 +70,9 @@ vi.mock('@janhq/core', () => ({
   ModelEvent: {
     OnAutoIncreasedCtxLen: 'OnAutoIncreasedCtxLen',
   },
+  // Read at module load by `buildMlxConfig` / the ctx fallbacks, so a
+  // factory mock without it throws before any test runs.
+  DEFAULT_CTX_LEN: 16384,
   computeNextCtxLen: (current: number, max?: number) => {
     let next: number
     if (current < 8192) next = 8192
