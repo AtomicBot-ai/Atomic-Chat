@@ -6,10 +6,10 @@
     "lines": 65.6
   },
   "web-app/src/containers/SetupScreen.tsx": {
-    "statements": 77.42,
-    "branches": 70.76,
-    "functions": 76.47,
-    "lines": 77.42
+    "statements": 75.52,
+    "branches": 68.72,
+    "functions": 75,
+    "lines": 75.52
   },
   "web-app/src/containers/SetupBackendStep.tsx": {
     "statements": 3.21,

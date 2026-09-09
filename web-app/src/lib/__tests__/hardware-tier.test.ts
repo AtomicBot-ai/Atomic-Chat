@@ -6,6 +6,7 @@ import {
   isHardwareTier,
   judgeMemoryFit,
   memoryCeilingBytes,
+  stepDownTier,
   MACOS_LOAD_CEILING,
   type HardwareProfile,
 } from '../hardware-tier'
@@ -277,5 +278,22 @@ describe('memoryCeilingBytes', () => {
       budgetMib * 1024 * 1024
     )
     expect(memoryCeilingBytes(null)).toBe(0)
+  })
+})
+
+describe('stepDownTier', () => {
+  it('walks a card down through the VRAM buckets to cpu_only', () => {
+    expect(stepDownTier('vram_16_plus')).toBe('vram_16')
+    expect(stepDownTier('vram_4')).toBe('vram_2')
+    expect(stepDownTier('vram_2')).toBe('cpu_only')
+    expect(stepDownTier('cpu_only')).toBeNull()
+  })
+
+  it('keeps a Mac inside the unified pool and stops at 8 GiB', () => {
+    // There is no lighter pool to fall into, and the 8 GiB rung already
+    // offers the smallest model on the ladder.
+    expect(stepDownTier('unified_32_plus')).toBe('unified_32')
+    expect(stepDownTier('unified_16')).toBe('unified_8')
+    expect(stepDownTier('unified_8')).toBeNull()
   })
 })

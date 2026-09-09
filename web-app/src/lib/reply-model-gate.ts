@@ -12,7 +12,7 @@
  * DOM, a service hub or a hardware probe.
  */
 
-import { EMBEDDING_MODEL_ID } from '@/constants/models'
+import { isAnswerableModel } from '@/lib/answerable-model'
 import { isProviderConnected } from '@/lib/cloud-providers'
 import { prettyModelName } from '@/lib/model-display-name'
 import { getProviderTitle } from '@/lib/utils'
@@ -54,11 +54,28 @@ const optionKey = (providerName: string, modelId: string) =>
   `${providerName}:${modelId}`
 
 /**
+ * The quantization token in a model id, or `undefined` when there is none.
+ *
+ * Unlike `quantLabel` in `model-card.ts` this never falls back to "the last
+ * segment": a row for `my-model` must not be captioned "MY-MODEL".
+ */
+function detectQuant(modelId: string): string | undefined {
+  const seg = modelId.split('/').pop() ?? modelId
+  const bare = seg.replace(/\.gguf$/i, '')
+  const mlx = bare.match(/(\d+)\s*bit$/i)
+  if (mlx) return `${mlx[1]}-bit`
+  const gguf = bare.match(/[-_.]((?:[IT]?Q\d[0-9A-Za-z_]*)|BF16|F16|F32)$/i)
+  return gguf ? gguf[1].toUpperCase() : undefined
+}
+
+/**
  * Models on disk that can actually be loaded.
  *
  * Same three exclusions the startup auto-start applies (`getModelToStart`): a
  * deactivated provider must not be resurrected, a broken-link model only
  * crashes the engine, and the embedding model is not something to chat with.
+ * The model-level half of that is {@link isAnswerableModel}, shared with the
+ * onboarding gate.
  */
 function localOptions(providers: ModelProvider[]): ReplyModelOption[] {
   const options: ReplyModelOption[] = []
@@ -66,15 +83,19 @@ function localOptions(providers: ModelProvider[]): ReplyModelOption[] {
     if (!isLocalProvider(provider.provider)) continue
     if (provider.active === false) continue
     for (const model of provider.models ?? []) {
-      if (model.id === EMBEDDING_MODEL_ID) continue
-      if (model.missing) continue
+      if (!isAnswerableModel(model)) continue
+      // The quant is the one fact that separates two builds of the same
+      // model on a pick list, and it is the only size signal the provider
+      // store carries — a file size would need a stat per row.
+      const quant = detectQuant(model.id)
+      const engine = getProviderTitle(provider.provider)
       options.push({
         key: optionKey(provider.provider, model.id),
         kind: 'local',
         providerName: provider.provider,
         modelId: model.id,
         label: prettyModelName(model.id),
-        sublabel: getProviderTitle(provider.provider),
+        sublabel: quant ? `${engine} · ${quant}` : engine,
       })
     }
   }

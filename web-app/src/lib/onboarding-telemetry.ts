@@ -327,19 +327,8 @@ export function buildRecommendedImpressions(lists: {
   pending: { startId?: string | null; model?: { is_mlx?: boolean } | null }[]
   installed?: { startId: string; provider: string }[]
   detected?: { id: string; format: string }[]
-  /**
-   * Index the first `pending` row sits at on screen.
-   *
-   * The picker no longer renders its download list in one go: the offer is row
-   * 0 and the rest arrive only when "other options" is opened, as a second call
-   * with the offset that keeps their `position` matching the `position` a click
-   * on them reports. Without it the second batch would restart at 0 and every
-   * row would appear to be the offer.
-   */
-  pendingOffset?: number
 }): RecommendedModelImpression[] {
   const impressions: RecommendedModelImpression[] = []
-  const offset = lists.pendingOffset ?? 0
 
   lists.pending.forEach((row, position) => {
     // A row whose catalog entry has not resolved yet renders as a placeholder
@@ -347,7 +336,7 @@ export function buildRecommendedImpressions(lists: {
     if (!row.startId) return
     impressions.push({
       modelId: row.startId,
-      position: position + offset,
+      position,
       format: row.model?.is_mlx ? 'MLX' : 'GGUF',
       section: 'pending',
     })

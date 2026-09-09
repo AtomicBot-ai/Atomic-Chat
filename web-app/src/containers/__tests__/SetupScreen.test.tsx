@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import posthog from 'posthog-js'
 import SetupScreen from '../SetupScreen'
 import { localStorageKey } from '@/constants/localStorage'
 import { seedServiceHub } from '@/test/service-hub'
@@ -370,8 +371,9 @@ describe('SetupScreen', () => {
     expect(localStorage.getItem(localStorageKey.setupCompleted)).toBe('true')
     expect(localStorage.getItem(localStorageKey.lastUsedModel)).toBeNull()
     // The composer's widget takes over from here, which is what makes leaving
-    // empty-handed a defensible thing to offer at all.
-    expect(mocks.reminder.pending).toBe(true)
+    // empty-handed a defensible thing to offer at all — and why the corner
+    // reminder stays down: it would offer the same download twice.
+    expect(mocks.reminder.pending).toBe(false)
     expect(mocks.leftPanel.open).toBe(true)
     expect(mocks.onSkipped).toHaveBeenCalledOnce()
     expect(mocks.navigate.mock.calls).toEqual([
@@ -678,7 +680,7 @@ describe('SetupScreen', () => {
     })
   })
 
-  describe('one offer, everything else behind a disclosure', () => {
+  describe('one offer, nothing else on the first screen', () => {
     const ladderModel = {
       rec: {
         modelName: 'AtomicChat/Qwen3.5-4B-GGUF',
@@ -861,14 +863,20 @@ describe('SetupScreen', () => {
       unmount()
     })
 
-    it('enters the chat and arms the reminder when Skip is pressed', async () => {
+    it('enters the chat without arming the reminder when Skip is pressed', async () => {
       const { unmount } = await renderPastLocalScan()
 
       fireEvent.click(screen.getByRole('button', { name: 'setup:skip' }))
 
       expect(localStorage.getItem(localStorageKey.setupCompleted)).toBe('true')
       expect(localStorage.getItem(localStorageKey.lastUsedModel)).toBeNull()
-      expect(mocks.reminder.pending).toBe(true)
+      expect(mocks.reminder.pending).toBe(false)
+      // Pressing a button and running out a clock are different acts; the
+      // legacy `skipped` and the retired `timeout` must not be reused.
+      expect(vi.mocked(posthog.capture)).toHaveBeenCalledWith(
+        'onboarding_completed',
+        expect.objectContaining({ exit_path: 'dismissed' })
+      )
       expect(mocks.leftPanel.open).toBe(true)
       expect(mocks.navigate.mock.calls).toEqual([
         [{ to: '/', replace: true, search: {} }],

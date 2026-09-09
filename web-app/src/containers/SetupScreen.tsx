@@ -40,7 +40,6 @@ import { judgeMemoryFit, type HardwareProfile } from '@/lib/hardware-tier'
 import { useRecommendedModelsRegistryStore } from '@/stores/recommended-models-registry-store'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelLoad } from '@/hooks/useModelLoad'
-import { useOnboardingModelReminderStore } from '@/hooks/useOnboardingModelReminder'
 import { switchToModel } from '@/utils/switchModel'
 import { markSilentImport } from '@/utils/backgroundImports'
 import HeaderPage from './HeaderPage'
@@ -454,7 +453,11 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     profile: hardwareProfile,
     ready: hardwareTierReady,
   } = useHardwareTier()
-  const recommendedItems = useResolvedRecommendedModels(sources, hardwareTier)
+  const recommendedItems = useResolvedRecommendedModels(
+    sources,
+    hardwareTier,
+    hardwareProfile
+  )
 
   // Every input the picker needs before it can paint a stable list.
   const pickerInputsPending =
@@ -1115,8 +1118,9 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   // without a model was a dead end; ATO-453's composer widget removed the dead
   // end, so the honest control can exist.
   //
-  // Picking a model takes a different route (handleImportedId /
-  // enterChatForDownload) and must not arm the bottom-right reminder.
+  // The bottom-right reminder is deliberately NOT armed here: the composer's
+  // widget already recommends the same model at the moment of the blocked
+  // send, and two surfaces offering one download is nagging, not help.
   const leaveWithoutModel = useCallback(
     (reason: 'dismissed') => {
       if (hasNavigatedRef.current) return
@@ -1143,7 +1147,6 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       // Same-tab signal — see useSetupCompleted in routes/__root.tsx.
       window.dispatchEvent(new Event('app:setup-completed'))
       localStorage.removeItem(localStorageKey.lastUsedModel)
-      useOnboardingModelReminderStore.getState().setPending(true)
       onSkipped?.()
 
       // Already open for the model step; kept so the main app is never entered

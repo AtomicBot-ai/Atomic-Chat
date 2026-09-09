@@ -94,6 +94,36 @@ export const isHardwareTier = (value: unknown): value is HardwareTier =>
   (HARDWARE_TIERS as readonly string[]).includes(value)
 
 /**
+ * The next rung down the ladder, within the same memory pool.
+ *
+ * A card steps down through the VRAM buckets to `cpu_only`; a Mac steps down
+ * through the unified buckets and stops at `unified_8` — there is no lighter
+ * pool to fall into, and the 8 GiB rung already offers the smallest model. Used
+ * when the rung's own recommendation fails {@link judgeMemoryFit}, so the
+ * first screen never leads with a model this machine cannot load.
+ */
+export function stepDownTier(tier: HardwareTier): HardwareTier | null {
+  const vram: readonly HardwareTier[] = [
+    'cpu_only',
+    'vram_2',
+    'vram_4',
+    'vram_8',
+    'vram_12',
+    'vram_16',
+    'vram_16_plus',
+  ]
+  const unified: readonly HardwareTier[] = [
+    'unified_8',
+    'unified_16',
+    'unified_32',
+    'unified_32_plus',
+  ]
+  const ladder = unified.includes(tier) ? unified : vram
+  const index = ladder.indexOf(tier)
+  return index > 0 ? ladder[index - 1] : null
+}
+
+/**
  * Which pool the weights are budgeted against.
  *
  * `unified` — one pool shared by CPU and GPU (Apple Silicon, ARM hosts).

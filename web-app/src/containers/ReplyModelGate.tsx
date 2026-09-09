@@ -518,15 +518,12 @@ function CloudAlternatives({
 
   if (!hasCloudProviders && !subscriptionProvider) return null
 
+  // No "or" divider above these: it framed cloud as the fallback for people
+  // with nothing, and the point of showing it in every branch is that it is a
+  // peer of the local model. SetupScreen dropped the same divider for the same
+  // reason (ATO-454).
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex w-full items-center gap-3">
-        <span className="bg-border h-px flex-1" />
-        <span className="text-muted-foreground text-xs">
-          {t('setup:orDivider')}
-        </span>
-        <span className="bg-border h-px flex-1" />
-      </div>
       <div className="flex flex-col gap-2 sm:flex-row">
         {hasCloudProviders && (
           <Button

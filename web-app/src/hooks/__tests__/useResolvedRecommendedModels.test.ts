@@ -66,6 +66,7 @@ vi.mock('@/stores/recommended-models-registry-store', () => ({
     }),
 }))
 
+import type { HardwareProfile } from '@/lib/hardware-tier'
 import { useResolvedRecommendedModels } from '../useResolvedRecommendedModels'
 
 describe('useResolvedRecommendedModels', () => {
@@ -169,5 +170,114 @@ describe('useResolvedRecommendedModels hardware tiers', () => {
 
     const names = result.current.map((i) => i.rec.modelName)
     expect(new Set(names).size).toBe(names.length)
+  })
+})
+
+describe('useResolvedRecommendedModels memory ceiling', () => {
+  const GIB = 1024
+  const mac16: HardwareProfile = {
+    tier: 'unified_16',
+    memoryKind: 'unified',
+    budgetMib: 16 * GIB,
+    systemRamMib: 16 * GIB,
+    vramMib: 0,
+    hardCeiling: true,
+  }
+
+  /** A catalog card for a rung's lead, with its pinned quant at `size`. */
+  const cardFor = (tier: 'unified_16' | 'unified_8', size: string) => {
+    const lead = BASELINE_TIER_RECOMMENDATIONS[tier][0]
+    const model: CatalogModel = {
+      model_name: lead.model_name,
+      developer: 'AtomicChat',
+      downloads: 1,
+      quants: [
+        {
+          model_id: `${lead.model_name.split('/')[1]}-${lead.quant}`,
+          path: 'https://example.com/model.gguf',
+          file_size: size,
+        },
+      ],
+    }
+    return model
+  }
+
+  beforeEach(() => {
+    mocks.fetchHuggingFaceRepo.mockReset()
+    mocks.convertHfRepoToCatalogModel.mockReset()
+    mocks.fetchHuggingFaceRepo.mockResolvedValue(null)
+  })
+
+  it('steps down a rung when its own model would not load here', () => {
+    // 15 GB on a 16 GiB Mac is past the measured 0.85 ceiling: Metal refuses
+    // the allocation, so leading with it would be a warning, not an offer.
+    const { result } = renderHook(() =>
+      useResolvedRecommendedModels(
+        [cardFor('unified_16', '15 GB'), cardFor('unified_8', '1.5 GB')],
+        'unified_16',
+        mac16
+      )
+    )
+
+    expect(result.current[0].rec.modelName).toBe(
+      BASELINE_TIER_RECOMMENDATIONS.unified_8[0].model_name
+    )
+  })
+
+  it('keeps the rung when the model fits', () => {
+    const { result } = renderHook(() =>
+      useResolvedRecommendedModels(
+        [cardFor('unified_16', '2.5 GB')],
+        'unified_16',
+        mac16
+      )
+    )
+
+    expect(result.current[0].rec.modelName).toBe(
+      BASELINE_TIER_RECOMMENDATIONS.unified_16[0].model_name
+    )
+  })
+
+  it('does not demote on a guess: an unresolved card keeps its rung', () => {
+    const { result } = renderHook(() =>
+      useResolvedRecommendedModels([], 'unified_16', mac16)
+    )
+
+    expect(result.current[0].rec.modelName).toBe(
+      BASELINE_TIER_RECOMMENDATIONS.unified_16[0].model_name
+    )
+  })
+
+  it('never demotes a card, where overshoot is a slowdown rather than a wall', () => {
+    const pc: HardwareProfile = {
+      ...mac16,
+      tier: 'vram_16',
+      memoryKind: 'vram',
+      vramMib: 16 * GIB,
+      hardCeiling: false,
+    }
+    const lead = BASELINE_TIER_RECOMMENDATIONS.vram_16[0]
+    const { result } = renderHook(() =>
+      useResolvedRecommendedModels(
+        [
+          {
+            model_name: lead.model_name,
+            developer: 'AtomicChat',
+            downloads: 1,
+            quants: [
+              {
+                model_id: `x-${lead.quant}`,
+                path: 'https://example.com/model.gguf',
+                file_size: '40 GB',
+              },
+            ],
+          },
+        ],
+        'vram_16',
+        pc
+      )
+    )
+
+    expect(result.current[0].rec.modelName).toBe(lead.model_name)
   })
 })

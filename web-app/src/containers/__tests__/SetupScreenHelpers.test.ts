@@ -204,6 +204,9 @@ describe('describeRecommendationFit', () => {
   })
 
   it('says the model will not load past the measured macOS ceiling', () => {
+    // The offer itself steps down a rung before this can show (see
+    // useResolvedRecommendedModels); the caption is the last line of defence
+    // for a card whose size resolved after the rung was chosen.
     expect(
       describeRecommendationFit({
         sizeLabel: '15.00 GB',

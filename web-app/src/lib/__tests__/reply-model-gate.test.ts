@@ -59,6 +59,22 @@ describe('collectReplyModels', () => {
     expect(options[0].label).toBe('Qwen3.5 4B')
   })
 
+  it('captions a local row with its engine and quant, so two builds differ', () => {
+    const options = collectReplyModels([
+      local([
+        model('Qwen3.5-4B-Q4_K_M'),
+        model('Qwen3.5-4B-Q8_0.gguf'),
+        model('plain-model'),
+      ]),
+    ])
+
+    expect(options.map((o) => o.sublabel)).toEqual([
+      expect.stringMatching(/ · Q4_K_M$/),
+      expect.stringMatching(/ · Q8_0$/),
+      expect.not.stringContaining('·'),
+    ])
+  })
+
   it('skips what cannot answer: broken links, embeddings, dead providers', () => {
     const options = collectReplyModels([
       local([

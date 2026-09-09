@@ -883,10 +883,17 @@ const ChatInput = memo(function ChatInput({
       // so the most common first-run dead end produced no event at all. Now
       // that ATO-453 answers it with a widget, this is also the baseline the
       // widget's effect is measured against.
+      // Mapped by hand: `describeProviderState` is camelCase and a spread
+      // would ship its keys verbatim, leaving the documented snake_case
+      // properties permanently empty in PostHog.
+      const providerState = describeProviderState(
+        useModelProvider.getState().providers
+      )
       captureChatSendBlocked({
         reason: 'no_model',
         is_agent_mode: agentRouteActive,
-        ...describeProviderState(useModelProvider.getState().providers),
+        had_local_model_on_disk: providerState.hadLocalModelOnDisk,
+        had_cloud_key: providerState.hadCloudKey,
       })
       return
     }

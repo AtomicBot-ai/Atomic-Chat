@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
+import { HARDWARE_TIERS } from '@/lib/hardware-tier'
 
 const repositoryRoot = process.cwd().endsWith('/web-app')
   ? resolve(process.cwd(), '..')
@@ -58,15 +59,29 @@ const turboquantManifestSchema = z.object({
     .min(1),
 })
 
+const recommendationEntrySchema = z.object({
+  model_name: z.string().regex(/^[^/]+\/[^/]+$/),
+  description_key: z.string().startsWith('hub:'),
+})
+
+/** A rung's entry may pin the quant (and projector) the ladder was measured on. */
+const tierEntrySchema = recommendationEntrySchema.extend({
+  quant: z.string().min(1).optional(),
+  mmproj_quant: z.string().min(1).optional(),
+})
+
 const recommendationSchema = z.object({
   schema_version: z.literal(1),
   updated_at: z.iso.datetime(),
-  recommendations: z.array(
-    z.object({
-      model_name: z.string().regex(/^[^/]+\/[^/]+$/),
-      description_key: z.string().startsWith('hub:'),
-    })
-  ),
+  recommendations: z.array(recommendationEntrySchema),
+  /**
+   * Per-rung offers keyed by `HardwareTier`. Optional and partial — a manifest
+   * may override one rung — but a key outside the ladder is a typo the client
+   * would silently drop, and a rung with no entries would fall back unnoticed.
+   */
+  tiers: z
+    .partialRecord(z.enum(HARDWARE_TIERS), z.array(tierEntrySchema).min(1))
+    .optional(),
 })
 
 /**

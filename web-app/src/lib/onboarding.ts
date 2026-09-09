@@ -1,18 +1,20 @@
 import { localStorageKey } from '@/constants/localStorage'
+import {
+  isAnswerableModel,
+  type AnswerableModelLike,
+} from '@/lib/answerable-model'
 import { isKnownProvider } from '@/stores/provider-registry-store'
 import { isSubscriptionProvider } from '@/utils/registerRemoteProvider'
 
 type ProviderLike = {
   provider: string
   api_key?: string
-  models: unknown[]
+  /** `false` when the user switched the provider off; absent means on. */
+  active?: boolean
+  models: ReadonlyArray<AnswerableModelLike>
 }
 
-/**
- * Providers whose models are files on this machine. `mlx` is here even though
- * `hasValidProviders` does not list it: that gate predates the MLX engine and
- * MLX models still occupy disk exactly like llama.cpp ones.
- */
+/** Providers whose models are files on this machine. */
 const LOCAL_MODEL_PROVIDERS = new Set([
   'llamacpp',
   'llamacpp-upstream',
@@ -21,25 +23,39 @@ const LOCAL_MODEL_PROVIDERS = new Set([
 ])
 
 /**
+ * A local provider that could answer a message right now: switched on, and
+ * holding at least one model that is neither a broken link nor the embedding
+ * model. Counting `models.length` instead let a catalog entry, a deleted file
+ * or the bundled embedder satisfy the onboarding gate — the mechanism behind
+ * the 801 installs that skipped onboarding with nothing to answer with
+ * (ATO-452).
+ */
+const hasAnswerableLocalModel = (provider: ProviderLike): boolean =>
+  provider.active !== false && provider.models.some(isAnswerableModel)
+
+/**
  * Whether the user already has at least one usable provider: a configured API
- * key, or a local llama.cpp / Jan provider with models, or any custom provider
- * with models. Mirrors the gate the home route uses to decide whether to show
- * onboarding. Single source of truth so the startup auto-start and the route
- * can never disagree about whether onboarding is in play.
+ * key, a signed-in subscription, a local provider with a loadable model, or
+ * any custom provider with a loadable model. Mirrors the gate the home route
+ * uses to decide whether to show onboarding. Single source of truth so the
+ * startup auto-start and the route can never disagree about whether
+ * onboarding is in play.
  */
 export function hasValidProviders(providers: ProviderLike[]): boolean {
   return providers.some((provider) => {
+    if (LOCAL_MODEL_PROVIDERS.has(provider.provider)) {
+      return hasAnswerableLocalModel(provider)
+    }
     if (!isKnownProvider(provider.provider)) {
-      return provider.models.length > 0
+      // Custom providers from the remote registry: judged by the same
+      // "could this answer" rule, not by the length of the list.
+      return hasAnswerableLocalModel(provider)
     }
     return Boolean(
       provider.api_key?.length ||
         // A subscription carries no key; its models are only present while it
         // is signed in, so their presence is the connected signal.
-        (isSubscriptionProvider(provider.provider) && provider.models.length) ||
-        (provider.provider === 'llamacpp' && provider.models.length) ||
-        (provider.provider === 'llamacpp-upstream' && provider.models.length) ||
-        (provider.provider === 'jan' && provider.models.length)
+        (isSubscriptionProvider(provider.provider) && provider.models.length)
     )
   })
 }
@@ -68,7 +84,7 @@ export function describeProviderState(providers: ProviderLike[]): {
     hadLocalModelOnDisk: providers.some(
       (provider) =>
         LOCAL_MODEL_PROVIDERS.has(provider.provider) &&
-        provider.models.length > 0
+        provider.models.some(isAnswerableModel)
     ),
     hadCloudKey: providers.some(
       (provider) =>

@@ -63,7 +63,7 @@ describe('captureOnboardingCompleted', () => {
   })
 
   it('attaches platform and app version like the sibling events', () => {
-    captureOnboardingCompleted({ exitPath: 'skipped' })
+    captureOnboardingCompleted({ exitPath: 'dismissed' })
     const [, props] = lastCall()
     expect(props.app_version).toBe('test')
     expect(props.platform).toBeDefined()
@@ -169,7 +169,7 @@ describe('emitter resilience', () => {
       throw new Error('posthog exploded')
     })
     expect(() =>
-      captureOnboardingCompleted({ exitPath: 'skipped' })
+      captureOnboardingCompleted({ exitPath: 'dismissed' })
     ).not.toThrow()
   })
 })
@@ -328,25 +328,6 @@ describe('picker impressions', () => {
         detected: [],
       })
     ).toEqual([])
-  })
-
-  it('offsets the rows revealed by "other options" to their real positions', () => {
-    // The picker reports impressions in two batches now: the offer at paint,
-    // and the rest when the disclosure is opened. Without the offset the second
-    // batch would restart at 0 and every row would look like the offer, which
-    // is precisely the conversion figure this event exists to produce.
-    expect(
-      buildRecommendedImpressions({
-        pending: [
-          { startId: 'a/second', model: { is_mlx: false } },
-          { startId: 'a/third', model: { is_mlx: false } },
-        ],
-        pendingOffset: 1,
-      })
-    ).toEqual([
-      { modelId: 'a/second', position: 1, format: 'GGUF', section: 'pending' },
-      { modelId: 'a/third', position: 2, format: 'GGUF', section: 'pending' },
-    ])
   })
 
   it('emits one event per row so impressions divide by clicks', () => {
