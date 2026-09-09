@@ -563,8 +563,9 @@ export default class llamacpp_extension extends AIEngine {
     // Migration v1: upgrade f16 KV cache defaults to q8_0
     await this.migrateKvCacheDefaults()
 
-    // Migration v2: upgrade KV cache defaults to turbo3 (turboquant)
-    await this.migrateKvCacheToTurbo3()
+    // The one-shot "migrate to turbo3" that lived here overwrote an explicit
+    // f16 / q8_0 choice as well as the default; turbo3 is the settings.json
+    // default and existing profiles have long since been moved (ATO-465).
 
     // Migration v3: disable fit by default
     await this.migrateFitDefault()
@@ -690,38 +691,6 @@ export default class llamacpp_extension extends AIEngine {
     localStorage.setItem(MIGRATION_KEY, '1')
   }
 
-  private async migrateKvCacheToTurbo3(): Promise<void> {
-    const MIGRATION_KEY = 'llamacpp_kv_cache_migrated_turbo3_v2'
-    if (localStorage.getItem(MIGRATION_KEY)) return
-
-    const keysToMigrate = ['cache_type_k', 'cache_type_v'] as const
-    const needsMigration = keysToMigrate.some(
-      (k) => this.config[k] !== 'turbo3'
-    )
-
-    if (needsMigration) {
-      const settings = await this.getSettings()
-      await this.updateSettings(
-        settings.map((item) => {
-          if (
-            keysToMigrate.includes(
-              item.key as (typeof keysToMigrate)[number]
-            ) &&
-            item.controllerProps.value !== 'turbo3'
-          ) {
-            item.controllerProps.value = 'turbo3'
-          }
-          return item
-        })
-      )
-      for (const k of keysToMigrate) {
-        if (this.config[k] !== 'turbo3') this.config[k] = 'turbo3'
-      }
-      logger.info('Migrated KV cache types to turbo3')
-    }
-
-    localStorage.setItem(MIGRATION_KEY, '1')
-  }
 
   private async migrateFitDefault(): Promise<void> {
     const MIGRATION_KEY = 'llamacpp_fit_disabled_v1'
@@ -5321,7 +5290,14 @@ export default class llamacpp_extension extends AIEngine {
     ctxSize?: number
   ): Promise<'RED' | 'YELLOW' | 'GREEN'> {
     try {
-      const result = await isModelSupported(path, Number(ctxSize))
+      // The cache types this engine loads with: the estimate used to assume
+      // fp16 and went red on models a quantised cache fits comfortably.
+      const result = await isModelSupported(
+        path,
+        Number(ctxSize),
+        this.config.cache_type_k,
+        this.config.cache_type_v
+      )
       return result
     } catch (e) {
       throw new Error(String(e))

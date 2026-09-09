@@ -7160,7 +7160,14 @@ export default class llamacpp_upstream_extension extends AIEngine {
     ctxSize?: number
   ): Promise<'RED' | 'YELLOW' | 'GREEN'> {
     try {
-      const result = await isModelSupported(path, Number(ctxSize))
+      // The cache types this engine loads with: the estimate used to assume
+      // fp16 and went red on models a quantised cache fits comfortably.
+      const result = await isModelSupported(
+        path,
+        Number(ctxSize),
+        this.config.cache_type_k,
+        this.config.cache_type_v
+      )
       return result
     } catch (e) {
       throw new Error(String(e))

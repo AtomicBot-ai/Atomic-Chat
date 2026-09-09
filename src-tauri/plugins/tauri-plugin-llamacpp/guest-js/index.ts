@@ -181,11 +181,15 @@ export async function readGgufMetadata(path: string): Promise<GgufMetadata> {
 
 export async function estimateKVCacheSize(
   meta: Record<string, string>,
-  ctxSize?: number
+  ctxSize?: number,
+  cacheTypeK?: string,
+  cacheTypeV?: string
 ): Promise<{ size: number; per_token_size: number }> {
   return await invoke('plugin:llamacpp|estimate_kv_cache_size', {
     meta,
     ctxSize,
+    cacheTypeK,
+    cacheTypeV,
   })
 }
 
@@ -193,13 +197,22 @@ export async function getModelSize(path: string): Promise<number> {
   return await invoke('plugin:llamacpp|get_model_size', { path })
 }
 
+/**
+ * `cacheTypeK` / `cacheTypeV` are the KV cache types the model will load
+ * with; without them the estimate assumes fp16, which overstates a quantised
+ * cache several-fold.
+ */
 export async function isModelSupported(
   path: string,
-  ctxSize?: number
+  ctxSize?: number,
+  cacheTypeK?: string,
+  cacheTypeV?: string
 ): Promise<'RED' | 'YELLOW' | 'GREEN'> {
   return await invoke('plugin:llamacpp|is_model_supported', {
     path,
     ctxSize,
+    cacheTypeK,
+    cacheTypeV,
   })
 }
 
