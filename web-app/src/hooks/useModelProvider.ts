@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { modelSettings } from '@/lib/predefined'
+import { DEFAULT_CTX_LEN } from '@janhq/core'
 import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import { turboquantDefaultActive } from '@/lib/turboquantDefaultMigration'
 import { isCloudProvider, isProviderConnected } from '@/lib/cloud-providers'
@@ -626,14 +627,15 @@ export const useModelProvider = create<ModelProviderState>()(
                 if (model.settings?.ctx_len?.controller_props) {
                   const current = model.settings.ctx_len.controller_props.value
                   if (current === 8192 || current === '8192') {
-                    model.settings.ctx_len.controller_props.value = 16384
+                    model.settings.ctx_len.controller_props.value =
+                      DEFAULT_CTX_LEN
                   }
                   if (
                     model.settings.ctx_len.controller_props.placeholder ===
                     '8192'
                   ) {
                     model.settings.ctx_len.controller_props.placeholder =
-                      '16384'
+                      String(DEFAULT_CTX_LEN)
                   }
                 }
               })

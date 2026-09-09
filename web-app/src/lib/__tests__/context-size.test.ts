@@ -19,6 +19,7 @@ vi.mock('@janhq/core', async (importOriginal) => {
 })
 
 import {
+  DEFAULT_CTX_LEN,
   growModelContext,
   readAutoIncreaseCtx,
   readModelCtxLen,
@@ -137,7 +138,8 @@ describe('growModelContext', () => {
       modelId: 'm',
       serviceHub,
     })
-    expect(result).toEqual({ ok: true, from: 8192, to: 32768 })
+    // The default is the one constant every fallback reads (ATO-465).
+    expect(result).toEqual({ ok: true, from: DEFAULT_CTX_LEN, to: 32768 })
   })
 
   it('reports missing provider / model without touching the engine', async () => {

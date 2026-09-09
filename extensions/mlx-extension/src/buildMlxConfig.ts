@@ -1,3 +1,4 @@
+import { DEFAULT_CTX_LEN } from '@janhq/core'
 import type { MlxConfig } from '../../../src-tauri/plugins/tauri-plugin-mlx/guest-js/index'
 
 export type MlxDraftKind = 'dflash' | 'mtp' | 'eagle3'
@@ -68,7 +69,7 @@ export function buildMlxConfig(
       : 0
 
   return {
-    ctx_size: config.ctx_size ?? 4096,
+    ctx_size: config.ctx_size ?? DEFAULT_CTX_LEN,
     draft_model_path: draftPath,
     block_size: draftPath ? draft.blockSize : 0,
     draft_kind: draftPath ? draft.draftKind : 'dflash',

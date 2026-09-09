@@ -16,7 +16,6 @@ describe('useAppState', () => {
         abortControllers: {},
         tokenSpeed: undefined,
         currentToolCall: undefined,
-        showOutOfContextDialog: false
       })
     })
   })
@@ -31,7 +30,6 @@ describe('useAppState', () => {
     expect(result.current.abortControllers).toEqual({})
     expect(result.current.tokenSpeed).toBeUndefined()
     expect(result.current.currentToolCall).toBeUndefined()
-    expect(result.current.showOutOfContextDialog).toBe(false)
   })
 
   it('should update streaming content', () => {
@@ -107,22 +105,6 @@ describe('useAppState', () => {
     })
 
     expect(result.current.abortControllers['thread-123']).toBe(controller)
-  })
-
-  it('should set out of context dialog', () => {
-    const { result } = renderHook(() => useAppState())
-
-    act(() => {
-      result.current.setOutOfContextDialog(true)
-    })
-
-    expect(result.current.showOutOfContextDialog).toBe(true)
-
-    act(() => {
-      result.current.setOutOfContextDialog(false)
-    })
-
-    expect(result.current.showOutOfContextDialog).toBe(false)
   })
 
   it('should update token speed', () => {

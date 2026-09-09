@@ -23,6 +23,7 @@ import {
   DownloadEvent,
   chatCompletionRequestMessage,
   computeNextCtxLen,
+  DEFAULT_CTX_LEN,
   detectReasoningControls,
   ReasoningControls,
   ModelEvent,
@@ -4063,7 +4064,9 @@ export default class llamacpp_extension extends AIEngine {
 
     try {
       const currentCtxLen =
-        this.modelCtxSize.get(model_id) ?? this.config?.ctx_size ?? 8192
+        this.modelCtxSize.get(model_id) ??
+        this.config?.ctx_size ??
+        DEFAULT_CTX_LEN
       const maxCtxLen = this.modelMaxCtxTrain.get(model_id)
       const newCtxLen = computeNextCtxLen(currentCtxLen, maxCtxLen)
 

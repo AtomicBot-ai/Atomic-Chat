@@ -1,3 +1,5 @@
+import { DEFAULT_CTX_LEN } from '@janhq/core'
+
 export const modelSettings = {
   auto_increase_ctx_len: {
     key: 'auto_increase_ctx_len',
@@ -15,8 +17,8 @@ export const modelSettings = {
     description: 'Size of the prompt context (0 = loaded from model).',
     controller_type: 'input',
     controller_props: {
-      value: 16384,
-      placeholder: '16384',
+      value: DEFAULT_CTX_LEN,
+      placeholder: String(DEFAULT_CTX_LEN),
       type: 'number',
     },
   },

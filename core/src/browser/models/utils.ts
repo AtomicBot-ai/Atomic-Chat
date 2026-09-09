@@ -190,6 +190,18 @@ export const extractModelLoadParams = (
  * @param currentCtxLen Current context window used by the running session.
  * @param maxCtxLen Optional upper bound derived from the model metadata.
  */
+/**
+ * Context window assumed when nothing else says otherwise.
+ *
+ * The one value every fallback reads. Before it existed the tree carried
+ * five: 16384 in the provider loader and the model dropdown, 8192 in the
+ * thread route's helper and both llama.cpp extensions, 32768 in the thread
+ * route itself and 4096 in MLX — so "the default context" depended on which
+ * file asked (ATO-465). The number itself is the pre-existing llama.cpp
+ * default; the point is that there is one.
+ */
+export const DEFAULT_CTX_LEN = 16384
+
 export const computeNextCtxLen = (
   currentCtxLen: number,
   maxCtxLen?: number

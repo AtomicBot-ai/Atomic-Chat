@@ -29,6 +29,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 import { isKnownProvider } from '@/stores/provider-registry-store'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
+import { DEFAULT_CTX_LEN } from '@/lib/context-size'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 import { isLocalProvider } from '@/utils/registerRemoteProvider'
@@ -126,7 +127,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
   // Helper function to get context size from model settings
   const getContextSize = useCallback((): number => {
     if (!selectedModel?.settings?.ctx_len?.controller_props?.value) {
-      return 16384 // Default context size
+      return DEFAULT_CTX_LEN
     }
     return selectedModel.settings.ctx_len.controller_props.value as number
   }, [selectedModel?.settings?.ctx_len?.controller_props?.value])

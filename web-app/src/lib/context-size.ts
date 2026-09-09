@@ -1,12 +1,14 @@
-import { computeNextCtxLen, EngineManager, type AIEngine } from '@janhq/core'
+import {
+  computeNextCtxLen,
+  DEFAULT_CTX_LEN,
+  EngineManager,
+  type AIEngine,
+} from '@janhq/core'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import type { ServiceHub } from '@/services'
 
-/**
- * Default context window assumed when a model carries no `ctx_len` setting.
- * Matches the fallback the thread route used before this module existed.
- */
-export const DEFAULT_CTX_LEN = 8192
+/** Re-exported so web-app callers have one import for the one default. */
+export { DEFAULT_CTX_LEN }
 
 export type GrowContextResult =
   | { ok: true; from: number; to: number }

@@ -28,7 +28,6 @@ type AppState = {
   serverStatus: 'running' | 'stopped' | 'pending'
   abortControllers: Record<string, AbortController>
   tokenSpeed?: TokenSpeed
-  showOutOfContextDialog?: boolean
   errorMessage?: AppErrorMessage
   promptProgress?: PromptProgress
   activeModels: string[]
@@ -48,7 +47,6 @@ type AppState = {
   ) => void
   resetTokenSpeed: () => void
   clearAppState: () => void
-  setOutOfContextDialog: (show: boolean) => void
   setCancelToolCall: (cancel: (() => void) | undefined) => void
   setErrorMessage: (error: AppErrorMessage | undefined) => void
   updatePromptProgress: (progress: PromptProgress | undefined) => void
@@ -155,13 +153,7 @@ export const useAppState = create<AppState>()((set) => ({
       tokenSpeed: undefined,
       cancelToolCall: undefined,
       errorMessage: undefined,
-      showOutOfContextDialog: false,
     }),
-  setOutOfContextDialog: (show) => {
-    set(() => ({
-      showOutOfContextDialog: show,
-    }))
-  },
   setCancelToolCall: (cancel) => {
     set(() => ({
       cancelToolCall: cancel,

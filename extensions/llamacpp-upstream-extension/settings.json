@@ -248,9 +248,18 @@
     "controllerProps": {
       "value": "layer",
       "options": [
-        { "value": "none", "name": "None" },
-        { "value": "layer", "name": "Layer" },
-        { "value": "row", "name": "Row" }
+        {
+          "value": "none",
+          "name": "None"
+        },
+        {
+          "value": "layer",
+          "name": "Layer"
+        },
+        {
+          "value": "row",
+          "name": "Row"
+        }
       ]
     }
   },
@@ -274,9 +283,18 @@
     "controllerProps": {
       "value": "auto",
       "options": [
-        { "value": "auto", "name": "Auto" },
-        { "value": "on", "name": "On" },
-        { "value": "off", "name": "Off" }
+        {
+          "value": "auto",
+          "name": "Auto"
+        },
+        {
+          "value": "on",
+          "name": "On"
+        },
+        {
+          "value": "off",
+          "name": "Off"
+        }
       ]
     }
   },
@@ -306,15 +324,42 @@
     "controllerProps": {
       "value": "f16",
       "options": [
-        { "value": "f32", "name": "f32" },
-        { "value": "f16", "name": "f16" },
-        { "value": "bf16", "name": "bf16" },
-        { "value": "q8_0", "name": "q8_0" },
-        { "value": "q4_0", "name": "q4_0" },
-        { "value": "q4_1", "name": "q4_1" },
-        { "value": "iq4_nl", "name": "iq4_nl" },
-        { "value": "q5_0", "name": "q5_0" },
-        { "value": "q5_1", "name": "q5_1" }
+        {
+          "value": "f32",
+          "name": "f32"
+        },
+        {
+          "value": "f16",
+          "name": "f16"
+        },
+        {
+          "value": "bf16",
+          "name": "bf16"
+        },
+        {
+          "value": "q8_0",
+          "name": "q8_0"
+        },
+        {
+          "value": "q4_0",
+          "name": "q4_0"
+        },
+        {
+          "value": "q4_1",
+          "name": "q4_1"
+        },
+        {
+          "value": "iq4_nl",
+          "name": "iq4_nl"
+        },
+        {
+          "value": "q5_0",
+          "name": "q5_0"
+        },
+        {
+          "value": "q5_1",
+          "name": "q5_1"
+        }
       ]
     }
   },
@@ -326,15 +371,42 @@
     "controllerProps": {
       "value": "f16",
       "options": [
-        { "value": "f32", "name": "f32" },
-        { "value": "f16", "name": "f16" },
-        { "value": "bf16", "name": "bf16" },
-        { "value": "q8_0", "name": "q8_0" },
-        { "value": "q4_0", "name": "q4_0" },
-        { "value": "q4_1", "name": "q4_1" },
-        { "value": "iq4_nl", "name": "iq4_nl" },
-        { "value": "q5_0", "name": "q5_0" },
-        { "value": "q5_1", "name": "q5_1" }
+        {
+          "value": "f32",
+          "name": "f32"
+        },
+        {
+          "value": "f16",
+          "name": "f16"
+        },
+        {
+          "value": "bf16",
+          "name": "bf16"
+        },
+        {
+          "value": "q8_0",
+          "name": "q8_0"
+        },
+        {
+          "value": "q4_0",
+          "name": "q4_0"
+        },
+        {
+          "value": "q4_1",
+          "name": "q4_1"
+        },
+        {
+          "value": "iq4_nl",
+          "name": "iq4_nl"
+        },
+        {
+          "value": "q5_0",
+          "name": "q5_0"
+        },
+        {
+          "value": "q5_1",
+          "name": "q5_1"
+        }
       ]
     }
   },
@@ -359,9 +431,18 @@
     "controllerProps": {
       "value": "none",
       "options": [
-        { "value": "none", "name": "None" },
-        { "value": "linear", "name": "Linear" },
-        { "value": "yarn", "name": "YaRN" }
+        {
+          "value": "none",
+          "name": "None"
+        },
+        {
+          "value": "linear",
+          "name": "Linear"
+        },
+        {
+          "value": "yarn",
+          "name": "YaRN"
+        }
       ]
     }
   },
@@ -403,70 +484,6 @@
       "textAlign": "right",
       "min": 0,
       "step": 0.01
-    }
-  },
-  {
-    "key": "mirostat",
-    "title": "Mirostat Mode",
-    "description": "Use Mirostat sampling (0: disabled, 1: Mirostat V1, 2: Mirostat V2).",
-    "controllerType": "dropdown",
-    "controllerProps": {
-      "value": 0,
-      "options": [
-        { "value": 0, "name": "Disabled" },
-        { "value": 1, "name": "Mirostat V1" },
-        { "value": 2, "name": "Mirostat V2" }
-      ]
-    }
-  },
-  {
-    "key": "mirostat_lr",
-    "title": "Mirostat Learning Rate",
-    "description": "Mirostat learning rate (eta).",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": 0.1,
-      "placeholder": "0.1",
-      "type": "number",
-      "textAlign": "right",
-      "min": 0,
-      "step": 0.01
-    }
-  },
-  {
-    "key": "mirostat_ent",
-    "title": "Mirostat Target Entropy",
-    "description": "Mirostat target entropy (tau).",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": 5.0,
-      "placeholder": "5.0",
-      "type": "number",
-      "textAlign": "right",
-      "min": 0,
-      "step": 0.01
-    }
-  },
-  {
-    "key": "grammar_file",
-    "title": "Grammar File",
-    "description": "Path to a BNF-like grammar file to constrain generations.",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": "",
-      "placeholder": "path/to/grammar.gbnf",
-      "type": "text"
-    }
-  },
-  {
-    "key": "json_schema_file",
-    "title": "JSON Schema File",
-    "description": "Path to a JSON schema file to constrain generations.",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": "",
-      "placeholder": "path/to/schema.json",
-      "type": "text"
     }
   }
 ]

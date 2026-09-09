@@ -107,7 +107,8 @@ import {
   isContextLimitError,
   isOutOfMemoryError,
 } from '@/utils/error'
-import { growModelContext } from '@/lib/context-size'
+import {
+  DEFAULT_CTX_LEN, growModelContext } from '@/lib/context-size'
 import { captureHandledError } from '@/lib/sentry'
 import { Button } from '@/components/ui/button'
 import { LinkifiedText } from '@/components/LinkifiedText'
@@ -491,7 +492,7 @@ function ThreadDetail() {
           (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0)
         const ctxLen =
           (selectedModelState?.settings?.ctx_len?.controller_props
-            ?.value as number) ?? 32768
+            ?.value as number) ?? DEFAULT_CTX_LEN
         const isContextLimit = totalTokens >= ctxLen * 0.9
 
         if (isContextLimit) {

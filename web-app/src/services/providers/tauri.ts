@@ -3,6 +3,7 @@
  */
 
 import { ensureRegistryLoaded } from '@/stores/provider-registry-store'
+import { DEFAULT_CTX_LEN } from '@janhq/core'
 import { providerModels } from '@/constants/models'
 import {
   EngineManager,
@@ -99,6 +100,12 @@ function extractModelIds(rawText: string, providerLabel: string): string[] {
   // Some aggregators (e.g. AIML API) list the same model id more than once —
   // dedupe so the UI doesn't show identical rows. Preserve first-seen order.
   return Array.from(new Set(ids))
+}
+
+/** A context length worth keeping: a positive number, or a string of one. */
+const isUsableCtxLen = (value: unknown): boolean => {
+  const n = typeof value === 'string' ? parseInt(value, 10) : value
+  return typeof n === 'number' && Number.isFinite(n) && n > 0
 }
 
 export class TauriProvidersService extends DefaultProvidersService {
@@ -230,8 +237,12 @@ export class TauriProvidersService extends DefaultProvidersService {
                 settings: Object.values(modelSettings).reduce(
                   (acc, setting) => {
                     let value = setting.controller_props.value
-                    if (setting.key === 'ctx_len') {
-                      value = 16384 // Default context length for Llama.cpp models
+                    // A missing or unusable context length gets the default;
+                    // a value the user set is theirs. This used to overwrite
+                    // every model's `ctx_len` with 16384 on every load, so
+                    // the setting could be edited but never kept (ATO-465).
+                    if (setting.key === 'ctx_len' && !isUsableCtxLen(value)) {
+                      value = DEFAULT_CTX_LEN
                     }
                     acc[setting.key] = {
                       ...setting,

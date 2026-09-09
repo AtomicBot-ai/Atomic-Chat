@@ -25,7 +25,6 @@ import AgentApprovalDialog from '@/containers/dialogs/AgentApprovalDialog'
 import AgentFolderAccessDialog from '@/containers/dialogs/AgentFolderAccessDialog'
 import VoiceSetupDialog from '@/containers/dialogs/VoiceSetupDialog'
 import { TranslationProvider } from '@/i18n/TranslationContext'
-import OutOfContextPromiseModal from '@/containers/dialogs/OutOfContextDialog'
 import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionDialog'
 import WhatsNewDialog from '@/containers/dialogs/WhatsNewDialog'
 import { useEffect } from 'react'
@@ -170,7 +169,6 @@ function RootLayout() {
           <AgentFolderAccessDialog />
           <VoiceSetupDialog />
           <AttachmentIngestionDialog />
-          <OutOfContextPromiseModal />
         </TranslationProvider>
       </ServiceHubProvider>
     </Fragment>

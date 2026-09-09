@@ -285,6 +285,12 @@ impl ArgumentBuilder {
         if let Some(path) = mmproj_path.filter(|p| !p.is_empty()) {
             self.args.push("--mmproj".to_string());
             self.args.push(path);
+            // The "Offload mmproj" checkbox has always reached this struct
+            // and never the binary: the projector went to the GPU whatever
+            // the user chose.
+            if !self.config.offload_mmproj {
+                self.args.push("--no-mmproj-offload".to_string());
+            }
         }
     }
 
@@ -1040,6 +1046,24 @@ mod tests {
         let args = builder.build("test", "/path", 8080, Some("/path/to/mmproj".to_string()));
 
         assert_arg_pair(&args, "--mmproj", "/path/to/mmproj");
+    }
+
+    #[test]
+    fn test_mmproj_offload_off_keeps_projector_on_cpu() {
+        let mut config = default_config();
+        config.offload_mmproj = false;
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, Some("/path/to/mmproj".to_string()));
+
+        assert_arg_pair(&args, "--mmproj", "/path/to/mmproj");
+        assert!(args.contains(&"--no-mmproj-offload".to_string()));
+
+        // And not without a projector: the flag would be meaningless.
+        let mut config = default_config();
+        config.offload_mmproj = false;
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+        assert!(!args.contains(&"--no-mmproj-offload".to_string()));
     }
 
     #[test]

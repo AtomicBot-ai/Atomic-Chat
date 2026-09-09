@@ -363,6 +363,12 @@ impl ArgumentBuilder {
         if let Some(path) = mmproj_path.filter(|p| !p.is_empty()) {
             self.args.push("--mmproj".to_string());
             self.args.push(path);
+            // The "Offload mmproj" checkbox has always reached this struct
+            // and never the binary: the projector went to the GPU whatever
+            // the user chose.
+            if !self.config.offload_mmproj {
+                self.args.push("--no-mmproj-offload".to_string());
+            }
         }
     }
 
