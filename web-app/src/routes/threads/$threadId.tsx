@@ -1981,6 +1981,7 @@ function ThreadDetail() {
                         agentAttachmentReferences={agentAttachmentReferencesByMessageId.get(
                           message.id
                         )}
+                        agentWorkingDir={agentWorkspace?.primaryRoot?.path}
                       />
                     )
                   })}

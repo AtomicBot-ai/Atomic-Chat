@@ -2,6 +2,34 @@ import { describe, expect, it } from 'vitest'
 import type { UIMessage } from 'ai'
 import { buildTraceBlocks } from './message-trace-parts'
 
+describe('buildTraceBlocks media parts', () => {
+  it('turns a video file part into a video block', () => {
+    const message = {
+      id: 'assistant-2',
+      role: 'assistant',
+      parts: [
+        { type: 'text', text: 'Here is the clip.' },
+        {
+          type: 'file',
+          url: 'https://cdn.example.com/spot.mp4',
+          mediaType: 'video/mp4',
+          filename: 'spot.mp4',
+        },
+      ],
+    } as UIMessage
+
+    const blocks = buildTraceBlocks(message, false)
+
+    expect(blocks).toHaveLength(2)
+    expect(blocks[1]).toMatchObject({
+      kind: 'video',
+      url: 'https://cdn.example.com/spot.mp4',
+      mediaType: 'video/mp4',
+      filename: 'spot.mp4',
+    })
+  })
+})
+
 describe('buildTraceBlocks activity projection', () => {
   it('renders reasoning above the compact activity block', () => {
     const message = {

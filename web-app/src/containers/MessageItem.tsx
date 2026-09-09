@@ -21,6 +21,11 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { IconPencil, IconRefresh } from '@tabler/icons-react'
 import { AudioPlayer } from '@/containers/AudioPlayer'
+import {
+  AgentLocalMedia,
+  InlineVideo,
+} from '@/components/ai-elements/tools/tool-media'
+import { extractTextVideos } from '@/lib/tool-media'
 import { InlineMessageEditor } from '@/containers/InlineMessageEditor'
 import { DeleteMessageDialog } from '@/containers/dialogs/DeleteMessageDialog'
 import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
@@ -38,9 +43,11 @@ import {
 } from '@/components/ai-elements/agent-activity'
 import {
   agentFilePathFromHref,
+  agentMediaPathFromHref,
   type AgentFileReference,
   extractAgentToolPaths,
   linkAgentFileReferences,
+  linkAgentLocalMedia,
 } from '@/lib/agent-file-links'
 import { useServiceHub } from '@/hooks/useServiceHub'
 
@@ -57,6 +64,7 @@ const CONTENT_TYPE = {
 type TextTraceBlock = Extract<TraceBlock, { kind: 'text' }>
 type FileTraceBlock = Extract<TraceBlock, { kind: 'file' }>
 type AudioTraceBlock = Extract<TraceBlock, { kind: 'audio' }>
+type VideoTraceBlock = Extract<TraceBlock, { kind: 'video' }>
 type ActivityTraceBlock = Extract<TraceBlock, { kind: 'activity' }>
 type ReasoningTraceBlock = Extract<TraceBlock, { kind: 'reasoning' }>
 
@@ -76,6 +84,8 @@ export type MessageItemProps = {
   isAnimating?: boolean
   hideActions?: boolean
   agentAttachmentReferences?: readonly AgentFileReference[]
+  /** The thread's primary workspace root; agent-written relative paths resolve against it. */
+  agentWorkingDir?: string
 }
 
 export const MessageItem = memo(
@@ -92,6 +102,7 @@ export const MessageItem = memo(
     onEdit,
     onDelete,
     agentAttachmentReferences = [],
+    agentWorkingDir,
   }: MessageItemProps) => {
     const { t } = useTranslation('chat')
     const serviceHub = useServiceHub()
@@ -170,6 +181,10 @@ export const MessageItem = memo(
                 children,
                 ...props
               }: ComponentPropsWithoutRef<'a'>) => {
+                const mediaPath = href ? agentMediaPathFromHref(href) : null
+                if (mediaPath) {
+                  return <AgentLocalMedia path={mediaPath} label={children} />
+                }
                 const filePath = href ? agentFilePathFromHref(href) : null
                 if (!filePath) {
                   return (
@@ -318,10 +333,17 @@ export const MessageItem = memo(
               </div>
             </div>
           ) : (
+            <>
             <RenderMarkdown
               content={
                 isAgentMessage
-                  ? linkAgentFileReferences(block.text, agentFileReferences)
+                  ? linkAgentFileReferences(
+                      linkAgentLocalMedia(block.text, {
+                        workingDir: agentWorkingDir,
+                        references: agentFileReferences,
+                      }),
+                      agentFileReferences
+                    )
                   : block.text
               }
               components={agentMarkdownComponents}
@@ -333,6 +355,16 @@ export const MessageItem = memo(
               isAnimating={isAnimating}
               enableHtmlPreview
             />
+            {/* A video the model links in prose plays under the text, the
+                way a generation result does under its tool card. */}
+            {extractTextVideos(block.text).map((video) => (
+              <InlineVideo
+                key={`${block.key}-${video.url}`}
+                url={video.url}
+                className="mt-2"
+              />
+            ))}
+            </>
           )}
         </div>
       )
@@ -379,6 +411,20 @@ export const MessageItem = memo(
             filename={block.filename}
             className="w-80 max-w-[80%]"
           />
+        </div>
+      )
+    }
+
+    const renderVideoBlock = (block: VideoTraceBlock) => {
+      return (
+        <div
+          key={block.key}
+          className={cn(
+            'flex w-full mt-2 mb-2',
+            message.role === 'user' ? 'justify-end' : 'justify-start'
+          )}
+        >
+          <InlineVideo url={block.url} className="max-w-[80%]" />
         </div>
       )
     }
@@ -513,6 +559,8 @@ export const MessageItem = memo(
               return renderFileBlock(block)
             case 'audio':
               return renderAudioBlock(block)
+            case 'video':
+              return renderVideoBlock(block)
             case 'reasoning':
               return renderReasoningBlock(block)
             case 'activity':

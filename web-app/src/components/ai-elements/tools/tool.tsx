@@ -21,6 +21,8 @@ import {
 import { StickToBottom } from 'use-stick-to-bottom'
 import { CodeBlock, highlightCode } from '../code-block'
 import { guessBlockLanguage, splitToolInput } from '@/lib/toolParamPreview'
+import { extractToolMedia } from '@/lib/tool-media'
+import { ToolMediaGallery } from './tool-media'
 
 type ToolContextValue = {
   isOpen: boolean
@@ -574,6 +576,11 @@ export const ToolOutput = memo(
       return <div>{output as ReactNode}</div>
     }, [output, errorText, resolver])
 
+    // Remote images and videos the result points at (generation CDN URLs,
+    // typed job records) get a player above the raw text, which stays
+    // available underneath for the URLs and the rest of the payload.
+    const media = useMemo(() => extractToolMedia(output), [output])
+
     if (!(output || errorText)) {
       return null
     }
@@ -589,6 +596,7 @@ export const ToolOutput = memo(
               {errorText}
             </div>
           )}
+          {media.length > 0 && <ToolMediaGallery media={media} className="mb-2" />}
           {Output}
         </div>
       </div>

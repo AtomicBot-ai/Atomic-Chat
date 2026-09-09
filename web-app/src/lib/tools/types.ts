@@ -62,6 +62,13 @@ export type TraceBlock =
       filename?: string
     }
   | {
+      kind: 'video'
+      key: string
+      url: string
+      mediaType: string
+      filename?: string
+    }
+  | {
       kind: 'reasoning'
       key: string
       streaming: boolean

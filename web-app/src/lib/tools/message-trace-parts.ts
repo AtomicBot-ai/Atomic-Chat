@@ -75,6 +75,14 @@ export function buildTraceBlocks(
           mediaType: filePart.mediaType,
           filename: filePart.filename,
         })
+      } else if (filePart.url && filePart.mediaType?.startsWith('video/')) {
+        blocks.push({
+          kind: 'video',
+          key: `${message.id}-${i}`,
+          url: filePart.url,
+          mediaType: filePart.mediaType,
+          filename: filePart.filename,
+        })
       }
       continue
     }

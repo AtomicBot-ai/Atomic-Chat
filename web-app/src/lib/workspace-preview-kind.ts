@@ -96,6 +96,22 @@ export function classifyWorkspacePreview(path: string): WorkspacePreviewKind {
 }
 
 /**
+ * Image or video kind of a remote URL, judged by the path's extension (query
+ * string and fragment ignored). Undefined for anything the webview could not
+ * show inline, including URLs without an extension.
+ */
+export function classifyMediaUrl(url: string): 'image' | 'video' | undefined {
+  let path: string
+  try {
+    path = new URL(url).pathname
+  } catch {
+    return undefined
+  }
+  const kind = classifyWorkspacePreview(path)
+  return kind === 'image' || kind === 'video' ? kind : undefined
+}
+
+/**
  * MIME type for a previewable audio/video file, so the media element can pick
  * a decoder without sniffing the asset URL. Undefined for every other kind.
  */
