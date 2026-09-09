@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServiceHub } from '@/services'
 import {
   isExplicitSwitchPending,
+  planOomRetry,
   shouldAttemptAutoStart,
   splitModelLoadError,
   switchToModel,
@@ -39,9 +40,18 @@ const { appState, localApiState, modelProviderState, startServer, stopServer } =
         {
           provider: 'llamacpp-upstream',
           models: [{ id: 'shared-model' }],
+          settings: [] as unknown[],
         },
-      ],
+      ] as Array<Record<string, unknown>>,
       selectModelProvider: vi.fn(),
+      // Mirrors the store: a partial update replaces the listed fields.
+      updateProvider: (name: string, data: Record<string, unknown>) => {
+        const list = modelProviderState.providers as Array<
+          Record<string, unknown>
+        >
+        const index = list.findIndex((p) => p.provider === name)
+        if (index !== -1) list[index] = { ...list[index], ...data }
+      },
     },
     startServer: vi.fn(),
     stopServer: vi.fn(),
@@ -51,6 +61,7 @@ vi.mock('sonner', () => ({
   toast: {
     dismiss: vi.fn(),
     error: vi.fn(),
+    info: vi.fn(),
   },
 }))
 
@@ -362,5 +373,185 @@ describe('splitModelLoadError', () => {
       summary: 'Model file not found.',
       details: undefined,
     })
+  })
+})
+
+describe('OOM retry ladder', () => {
+  const oom = () =>
+    Object.assign(new Error('failed to allocate buffer'), {
+      code: 'OUT_OF_MEMORY',
+    })
+
+  const upstreamWith = (
+    settings: Record<string, unknown>,
+    providerSettings: unknown[] = []
+  ) => {
+    const list = modelProviderState.providers as Array<Record<string, unknown>>
+    list[1] = {
+      provider: 'llamacpp-upstream',
+      settings: providerSettings,
+      models: [
+        {
+          id: 'shared-model',
+          settings: Object.fromEntries(
+            Object.entries(settings).map(([key, value]) => [
+              key,
+              { key, controller_props: { value } },
+            ])
+          ),
+        },
+      ],
+    }
+    return list[1] as never
+  }
+
+  const modelSetting = (key: string) =>
+    (
+      (modelProviderState.providers[1] as Record<string, unknown>)
+        .models as Array<{
+        settings: Record<string, { controller_props: { value: unknown } }>
+      }>
+    )[0].settings[key]?.controller_props.value
+
+  describe('planOomRetry', () => {
+    it('halves the context down to the floor, then goes to the CPU, then gives up', () => {
+      const provider = upstreamWith({ ctx_len: 16384, ngl: 100 })
+      expect(planOomRetry(provider, 'shared-model', 0)).toEqual({
+        kind: 'ctx',
+        from: 16384,
+        to: 8192,
+      })
+      expect(
+        planOomRetry(
+          upstreamWith({ ctx_len: 6000, ngl: 100 }),
+          'shared-model',
+          1
+        )
+      ).toEqual({ kind: 'ctx', from: 6000, to: 4096 })
+      expect(
+        planOomRetry(
+          upstreamWith({ ctx_len: 4096, ngl: 100 }),
+          'shared-model',
+          2
+        )
+      ).toEqual({ kind: 'ngl', from: 100, to: 0 })
+      expect(
+        planOomRetry(upstreamWith({ ctx_len: 4096, ngl: 0 }), 'shared-model', 3)
+      ).toBeNull()
+    })
+
+    it('under fit, widens the margin once and then stops', () => {
+      // The engine already sized the context; fighting it re-OOMs.
+      const fitOn = [
+        { key: 'fit', controller_props: { value: true } },
+        { key: 'fit_target', controller_props: { value: '1024' } },
+      ]
+      expect(
+        planOomRetry(upstreamWith({ ctx_len: 16384 }, fitOn), 'shared-model', 0)
+      ).toEqual({ kind: 'fit_target', from: 1024, to: 2048 })
+      expect(
+        planOomRetry(upstreamWith({ ctx_len: 16384 }, fitOn), 'shared-model', 1)
+      ).toBeNull()
+    })
+  })
+
+  it('reloads with a smaller context after an out-of-memory failure, and says so', async () => {
+    upstreamWith({ ctx_len: 16384, ngl: 100 })
+    const startModel = vi
+      .fn()
+      .mockRejectedValueOnce(oom())
+      .mockRejectedValueOnce(oom())
+      .mockResolvedValue(undefined)
+    const models = {
+      getActiveModels: vi.fn().mockResolvedValue(['shared-model']),
+      stopAllModels: vi.fn().mockResolvedValue(undefined),
+      stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
+      startModel,
+    }
+    const serviceHub = {
+      app: () => ({ getServerStatus: vi.fn().mockResolvedValue(false) }),
+      models: () => models,
+      providers: () => ({ updateSettings: vi.fn() }),
+    } as unknown as ServiceHub
+
+    await switchToModel({
+      modelId: 'shared-model',
+      providerName: 'llamacpp-upstream',
+      serviceHub,
+    })
+
+    expect(startModel).toHaveBeenCalledTimes(3)
+    // 16384 → 8192 → 4096, persisted on the model so the next launch starts
+    // from what worked.
+    expect(modelSetting('ctx_len')).toBe(4096)
+    const posthog = (await import('posthog-js')).default
+    const retries = vi
+      .mocked(posthog.capture)
+      .mock.calls.filter(([event]) => event === 'model_load_retry')
+      .map(([, props]) => props as Record<string, unknown>)
+    expect(retries.map((r) => [r.retry_step, r.retry_outcome])).toEqual([
+      ['ctx', 'retrying'],
+      ['ctx', 'retrying'],
+      ['ctx', 'recovered'],
+    ])
+    expect(retries[0]).toMatchObject({ ctx_before: 16384, ctx_after: 8192 })
+    const { toast } = await import('sonner')
+    expect(toast.info).toHaveBeenCalledWith(
+      'model-errors:oomRetryRecoveredTitle',
+      expect.objectContaining({
+        description: 'model-errors:oomRetryRecoveredContext',
+      })
+    )
+  })
+
+  it('gives up honestly once the ladder is spent', async () => {
+    upstreamWith({ ctx_len: 4096, ngl: 0 })
+    const startModel = vi.fn().mockRejectedValue(oom())
+    const models = {
+      getActiveModels: vi.fn().mockResolvedValue([]),
+      stopAllModels: vi.fn().mockResolvedValue(undefined),
+      stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
+      startModel,
+    }
+    const serviceHub = {
+      app: () => ({ getServerStatus: vi.fn().mockResolvedValue(false) }),
+      models: () => models,
+      providers: () => ({ updateSettings: vi.fn() }),
+    } as unknown as ServiceHub
+
+    await expect(
+      switchToModel({
+        modelId: 'shared-model',
+        providerName: 'llamacpp-upstream',
+        serviceHub,
+      })
+    ).rejects.toThrow('failed to allocate buffer')
+    expect(startModel).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not retry a failure that is not memory', async () => {
+    upstreamWith({ ctx_len: 16384, ngl: 100 })
+    const startModel = vi.fn().mockRejectedValue(new Error('unsupported arch'))
+    const models = {
+      getActiveModels: vi.fn().mockResolvedValue([]),
+      stopAllModels: vi.fn().mockResolvedValue(undefined),
+      stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
+      startModel,
+    }
+    const serviceHub = {
+      app: () => ({ getServerStatus: vi.fn().mockResolvedValue(false) }),
+      models: () => models,
+      providers: () => ({ updateSettings: vi.fn() }),
+    } as unknown as ServiceHub
+
+    await expect(
+      switchToModel({
+        modelId: 'shared-model',
+        providerName: 'llamacpp-upstream',
+        serviceHub,
+      })
+    ).rejects.toThrow('unsupported arch')
+    expect(startModel).toHaveBeenCalledTimes(1)
+    expect(modelSetting('ctx_len')).toBe(16384)
   })
 })

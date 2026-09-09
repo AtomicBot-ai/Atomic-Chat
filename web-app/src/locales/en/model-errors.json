@@ -1,6 +1,10 @@
 {
   "outOfMemoryTitle": "Not enough memory to load the model",
   "outOfMemoryDescription": "The model requires more RAM or VRAM than is currently available. Try closing other applications, picking a smaller / more quantized model, or reducing the context size.",
+  "oomRetryRecoveredTitle": "Loaded with less memory",
+  "oomRetryRecoveredContext": "The model did not fit at its previous settings, so the context was reduced to {{context}} tokens. You can change it in the model settings.",
+  "oomRetryRecoveredCpu": "The model did not fit in graphics memory, so it is running on the CPU. Expect slower replies.",
+  "oomRetryRecoveredFit": "The model did not fit at its previous settings, so a wider memory margin was left for the engine.",
   "modelLoadFailedTitle": "Failed to load the model",
   "modelLoadFailedDescription": "The model could not be started. {{message}}",
   "showDetails": "Show details",

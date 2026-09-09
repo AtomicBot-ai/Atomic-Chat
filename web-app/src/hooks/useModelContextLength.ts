@@ -43,9 +43,6 @@ export function useModelContextLength() {
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const updateProvider = useModelProvider((state) => state.updateProvider)
-  const getProviderByName = useModelProvider(
-    (state) => state.getProviderByName
-  )
   const serviceHub = useServiceHub()
 
   const contextValue = Number(

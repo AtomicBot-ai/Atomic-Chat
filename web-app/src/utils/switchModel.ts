@@ -4,6 +4,7 @@ import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { readProviderFit } from '@/lib/provider-fit'
+import { DEFAULT_CTX_LEN } from '@/lib/context-size'
 import { useThreads } from '@/hooks/useThreads'
 import { localStorageKey } from '@/constants/localStorage'
 import { showModelLoadErrorToast } from '@/containers/ModelLoadErrorToast'
@@ -686,13 +687,15 @@ async function doSwitchToModel(params: {
       | undefined
 
     if (isLocal) {
-      // 4a. Local branch — load the model into its engine.
+      // 4a. Local branch — load the model into its engine. An out-of-memory
+      //     failure is retried down a ladder (smaller context, then CPU)
+      //     rather than surfaced as a dead end; see `planOomRetry`.
       loadStartTs = Date.now()
-      await taggedWithTimeout(
-        serviceHub.models().startModel(provider, modelId, true),
-        MODEL_LOAD_WATCHDOG_MS,
-        `Timed out waiting for model "${modelId}" to finish loading.`
-      )
+      modelConfig = await loadLocalModelWithOomRetry({
+        serviceHub,
+        providerName,
+        modelId,
+      })
       // Awaited rather than fired-and-forgotten: the event has to carry it,
       // and the read is a single IPC against an already-running process.
       const runtimeDevice = await readRuntimeDevice(modelId)
@@ -853,6 +856,232 @@ async function doSwitchToModel(params: {
   } finally {
     useAppState.getState().updateLoadingModel(false)
   }
+}
+
+/**
+ * Out-of-memory retry ladder (ATO-465).
+ *
+ * A load that ran out of memory used to be the end of the road: a toast
+ * saying "pick a smaller model or reduce the context", and nothing tried
+ * either. With fit off the ladder halves the context down to
+ * {@link OOM_RETRY_CTX_FLOOR}, then sends the model to the CPU; each rung is
+ * persisted on the model so the next launch starts from what worked. With
+ * fit on the engine already sized the context, so the one thing worth
+ * trying is a wider fit margin. Partial GPU offload is not a rung: the
+ * layer count is only known to the engine, and fit covers that case.
+ */
+const OOM_RETRY_MAX_ATTEMPTS = 4
+const OOM_RETRY_CTX_FLOOR = 4096
+const OOM_RETRY_DEFAULT_FIT_TARGET_MIB = 1024
+
+export type OomRetryStep =
+  | { kind: 'ctx'; from: number; to: number }
+  | { kind: 'ngl'; from: number; to: number }
+  | { kind: 'fit_target'; from: number; to: number }
+
+function modelSettingNumber(
+  model: { settings?: Record<string, { controller_props?: { value?: unknown } }> } | undefined,
+  key: string
+): number | undefined {
+  const raw = model?.settings?.[key]?.controller_props?.value
+  const n = typeof raw === 'string' ? Number(raw) : raw
+  return typeof n === 'number' && Number.isFinite(n) ? n : undefined
+}
+
+function providerFitTargetMib(provider: ModelProvider): number {
+  const raw = provider.settings?.find((s) => s.key === 'fit_target')
+    ?.controller_props?.value
+  const first = String(raw ?? '')
+    .split(',')[0]
+    .trim()
+  const n = Number(first)
+  return Number.isFinite(n) && n > 0 ? n : OOM_RETRY_DEFAULT_FIT_TARGET_MIB
+}
+
+/**
+ * The next thing to try after an OOM, or `null` when the ladder is spent.
+ * Pure: reads the provider as it is now, so a rung already taken is not
+ * taken twice.
+ */
+export function planOomRetry(
+  provider: ModelProvider,
+  modelId: string,
+  attempt: number
+): OomRetryStep | null {
+  const model = provider.models?.find((m) => m.id === modelId)
+  if (readProviderFit(provider) === true) {
+    // The engine chose the context; ask it to leave more room, once.
+    if (attempt > 0) return null
+    const from = providerFitTargetMib(provider)
+    return { kind: 'fit_target', from, to: from * 2 }
+  }
+  const ctx = modelSettingNumber(model, 'ctx_len') ?? DEFAULT_CTX_LEN
+  if (ctx > OOM_RETRY_CTX_FLOOR) {
+    return {
+      kind: 'ctx',
+      from: ctx,
+      to: Math.max(OOM_RETRY_CTX_FLOOR, Math.floor(ctx / 2)),
+    }
+  }
+  const ngl = modelSettingNumber(model, 'ngl') ?? 100
+  if (ngl !== 0) return { kind: 'ngl', from: ngl, to: 0 }
+  return null
+}
+
+function applyOomRetryStep(
+  serviceHub: ServiceHub,
+  provider: ModelProvider,
+  modelId: string,
+  step: OomRetryStep
+): void {
+  const { updateProvider } = useModelProvider.getState()
+  if (step.kind === 'fit_target') {
+    const settings = (provider.settings ?? []).map((s) =>
+      s.key === 'fit_target'
+        ? {
+            ...s,
+            controller_props: { ...s.controller_props, value: String(step.to) },
+          }
+        : s
+    )
+    void serviceHub.providers().updateSettings(provider.provider, settings)
+    updateProvider(provider.provider, { settings })
+    return
+  }
+  const key = step.kind === 'ctx' ? 'ctx_len' : 'ngl'
+  const models = (provider.models ?? []).map((m) =>
+    m.id === modelId
+      ? {
+          ...m,
+          settings: {
+            ...m.settings,
+            [key]: {
+              ...(m.settings?.[key] ?? { key }),
+              controller_props: {
+                ...(m.settings?.[key]?.controller_props ?? {}),
+                value: step.to,
+              },
+            },
+          },
+        }
+      : m
+  )
+  updateProvider(provider.provider, { models: models as Model[] })
+}
+
+function emitModelLoadRetry(args: {
+  modelId: string
+  providerName: string
+  attempt: number
+  step: OomRetryStep
+  outcome: 'retrying' | 'recovered' | 'exhausted'
+  fitEnabled: boolean | null
+}): void {
+  try {
+    queuedCapture('model_load_retry', {
+      model_id: normalizeModelId(args.modelId),
+      backend: loadBackendFromProvider(args.providerName),
+      retry_attempt: args.attempt,
+      retry_reason: 'oom',
+      retry_step: args.step.kind,
+      retry_outcome: args.outcome,
+      fit_enabled: args.fitEnabled,
+      ctx_before: args.step.kind === 'ctx' ? args.step.from : null,
+      ctx_after: args.step.kind === 'ctx' ? args.step.to : null,
+      ngl_before: args.step.kind === 'ngl' ? args.step.from : null,
+      ngl_after: args.step.kind === 'ngl' ? args.step.to : null,
+      fit_target_before: args.step.kind === 'fit_target' ? args.step.from : null,
+      fit_target_after: args.step.kind === 'fit_target' ? args.step.to : null,
+    })
+  } catch (telemetryError) {
+    console.debug('model_load_retry telemetry failed:', telemetryError)
+  }
+}
+
+/**
+ * Load a local model, walking the OOM ladder on each out-of-memory failure.
+ * Resolves to the model as it was finally loaded (its settings may have
+ * changed); rethrows the last error when the ladder is spent or the failure
+ * is not memory.
+ */
+async function loadLocalModelWithOomRetry(args: {
+  serviceHub: ServiceHub
+  providerName: string
+  modelId: string
+}): Promise<LoadableModel | undefined> {
+  const { serviceHub, providerName, modelId } = args
+  let lastStep: OomRetryStep | null = null
+  for (let attempt = 0; attempt < OOM_RETRY_MAX_ATTEMPTS; attempt++) {
+    const provider = useModelProvider
+      .getState()
+      .providers.find((p) => p.provider === providerName)
+    if (!provider) throw new Error(`Provider '${providerName}' not found`)
+    const fitEnabled = readProviderFit(provider)
+    try {
+      await taggedWithTimeout(
+        serviceHub.models().startModel(provider, modelId, true),
+        MODEL_LOAD_WATCHDOG_MS,
+        `Timed out waiting for model "${modelId}" to finish loading.`
+      )
+      if (lastStep) {
+        emitModelLoadRetry({
+          modelId,
+          providerName,
+          attempt,
+          step: lastStep,
+          outcome: 'recovered',
+          fitEnabled,
+        })
+        toast.info(i18n.t('model-errors:oomRetryRecoveredTitle'), {
+          id: `oom-retry-${providerName}-${modelId}`,
+          description:
+            lastStep.kind === 'ctx'
+              ? i18n.t('model-errors:oomRetryRecoveredContext', {
+                  context: lastStep.to,
+                })
+              : lastStep.kind === 'ngl'
+                ? i18n.t('model-errors:oomRetryRecoveredCpu')
+                : i18n.t('model-errors:oomRetryRecoveredFit'),
+        })
+      }
+      return provider.models?.find((m) => m.id === modelId) as
+        | LoadableModel
+        | undefined
+    } catch (error) {
+      if (!isOutOfMemoryError(toErrorObject(error))) throw error
+      const step =
+        attempt < OOM_RETRY_MAX_ATTEMPTS - 1
+          ? planOomRetry(provider, modelId, attempt)
+          : null
+      if (!step) {
+        if (lastStep) {
+          emitModelLoadRetry({
+            modelId,
+            providerName,
+            attempt,
+            step: lastStep,
+            outcome: 'exhausted',
+            fitEnabled,
+          })
+        }
+        throw error
+      }
+      console.warn(
+        `[switchToModel] ${modelId} ran out of memory; retrying with ${step.kind} ${step.from} → ${step.to}`
+      )
+      applyOomRetryStep(serviceHub, provider, modelId, step)
+      emitModelLoadRetry({
+        modelId,
+        providerName,
+        attempt: attempt + 1,
+        step,
+        outcome: 'retrying',
+        fitEnabled,
+      })
+      lastStep = step
+    }
+  }
+  return undefined
 }
 
 const OOM_CODES = new Set([

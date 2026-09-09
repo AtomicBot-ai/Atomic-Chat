@@ -1,6 +1,10 @@
 {
   "outOfMemoryTitle": "モデルを読み込むためのメモリが不足しています",
   "outOfMemoryDescription": "モデルに必要な RAM または VRAM が現在利用可能な容量を超えています。他のアプリケーションを終了するか、より小さい／量子化されたモデルを選択するか、コンテキストサイズを小さくしてみてください。",
+  "oomRetryRecoveredTitle": "メモリを減らして読み込みました",
+  "oomRetryRecoveredContext": "以前の設定ではモデルが収まらなかったため、コンテキストを {{context}} トークンに減らしました。モデル設定で変更できます。",
+  "oomRetryRecoveredCpu": "モデルがグラフィックスメモリに収まらなかったため、CPU で実行しています。応答は遅くなります。",
+  "oomRetryRecoveredFit": "以前の設定ではモデルが収まらなかったため、エンジンに広めのメモリ余裕を残しました。",
   "modelLoadFailedTitle": "モデルの読み込みに失敗しました",
   "modelLoadFailedDescription": "モデルを開始できませんでした。{{message}}",
   "showDetails": "詳細を表示",
