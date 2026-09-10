@@ -1,0 +1,260 @@
+import { useCallback, useEffect, useState } from 'react'
+import { cn } from '@/lib/utils'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { getJanDataFolderPath, joinPath, fs } from '@janhq/core'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import { useAppState } from '@/hooks/useAppState'
+import { useModelLoad } from '@/hooks/useModelLoad'
+import { useShallow } from 'zustand/react/shallow'
+
+interface ModelSupportStatusProps {
+  modelId: string | undefined
+  provider: string | undefined
+  contextSize: number
+  className?: string
+}
+
+export const ModelSupportStatus = ({
+  modelId,
+  provider,
+  contextSize,
+  className,
+}: ModelSupportStatusProps) => {
+  const [modelSupportStatus, setModelSupportStatus] = useState<
+    'RED' | 'YELLOW' | 'GREEN' | 'LOADING' | null | 'GREY'
+  >(null)
+  const serviceHub = useServiceHub()
+  const { activeModels, loadingModel } = useAppState(
+    useShallow((state) => ({
+      activeModels: state.activeModels,
+      loadingModel: state.loadingModel,
+    }))
+  )
+  const modelLoadError = useModelLoad((state) => state.modelLoadError)
+  const modelLoadErrorModelId = useModelLoad(
+    (state) => state.modelLoadErrorModelId
+  )
+
+  // A running model works on this device regardless of the static ctx-size
+  // estimate (the user may set ctx 16k but only ever reach 2k). Runtime
+  // context overflow is surfaced separately via an error, so never show the
+  // "doesn't work" red dot while the model is actually loaded.
+  const isModelRunning = !!modelId && activeModels.includes(modelId)
+
+  // This model's load failed terminally — outranks the memory-fit estimate so
+  // a model that fits RAM but the backend can't parse isn't shown green.
+  const loadFailed =
+    !!modelId &&
+    modelLoadErrorModelId === modelId &&
+    !!modelLoadError &&
+    !loadingModel &&
+    !isModelRunning
+
+  // Helper function to check model support with proper path resolution
+  const checkModelSupportWithPath = useCallback(
+    async (
+      id: string,
+      ctxSize: number
+    ): Promise<'RED' | 'YELLOW' | 'GREEN' | 'GREY' | null> => {
+      try {
+        const janDataFolder = await getJanDataFolderPath()
+
+        // First try the standard downloaded model path
+        const ggufModelPath = await joinPath([
+          janDataFolder,
+          'llamacpp',
+          'models',
+          id,
+          'model.gguf',
+        ])
+
+        // Check if the standard model.gguf file exists
+        if (await fs.existsSync(ggufModelPath)) {
+          return await serviceHub.models().isModelSupported(ggufModelPath, ctxSize)
+        }
+
+        // If model.gguf doesn't exist, try reading from model.yml (for imported models)
+        const modelConfigPath = await joinPath([
+          janDataFolder,
+          'llamacpp',
+          'models',
+          id,
+          'model.yml',
+        ])
+
+        if (!(await fs.existsSync(modelConfigPath))) {
+          console.error(
+            `Neither model.gguf nor model.yml found for model: ${id}`
+          )
+          return null
+        }
+
+        // Read the model configuration to get the actual model path
+        const modelConfig = await serviceHub.app().readYaml<{ model_path: string }>(
+          `llamacpp/models/${id}/model.yml`
+        )
+
+        // Handle both absolute and relative paths
+        const actualModelPath =
+          modelConfig.model_path.startsWith('/') ||
+          modelConfig.model_path.match(/^[A-Za-z]:/)
+            ? modelConfig.model_path // absolute path, use as-is
+            : await joinPath([janDataFolder, modelConfig.model_path]) // relative path, join with data folder
+
+        return await serviceHub.models().isModelSupported(actualModelPath, ctxSize)
+      } catch (error) {
+        console.error(
+          'Error checking model support with path resolution:',
+          error
+        )
+        // If path construction or model support check fails, assume not supported
+        return null
+      }
+    },
+    [serviceHub]
+  )
+
+  // Helper function to get icon color based on model support status
+  const getStatusColor = (): string => {
+    switch (modelSupportStatus) {
+      case 'GREEN':
+        return 'bg-green-500'
+      case 'YELLOW':
+        return 'bg-yellow-500'
+      case 'RED':
+        return 'bg-red-500'
+      case 'LOADING':
+        return 'bg-secondary'
+      default:
+        return 'bg-secondary'
+    }
+  }
+
+  const getStatusTooltip = (): string => {
+    // Not a memory/ctx problem, so outrank the per-provider wording below.
+    if (loadFailed) return 'Model failed to load on this backend'
+    if (provider === 'mlx') {
+      switch (modelSupportStatus) {
+        case 'GREEN':
+          return 'Model is running'
+        case 'LOADING':
+          return 'Starting model…'
+        case 'GREY':
+          return 'Model is not running'
+        default:
+          return 'Unknown'
+      }
+    }
+    switch (modelSupportStatus) {
+      case 'GREEN':
+        return isModelRunning
+          ? 'Model is running'
+          : `Works Well on your device (ctx: ${contextSize})`
+      case 'YELLOW':
+        return `Might work on your device (ctx: ${contextSize})`
+      case 'RED':
+        return `Doesn't work on your device  (ctx: ${contextSize})`
+      case 'LOADING':
+        return 'Checking device compatibility...'
+      default:
+        return 'Unknown'
+    }
+  }
+
+  // Check model support when model changes (llama.cpp hardware compatibility).
+  // Both the TurboQuant fork ('llamacpp') and the upstream build
+  // ('llamacpp-upstream') consume the same GGUF tree under
+  // <jan>/llamacpp/models/ — see `getModelsRootPath()` in the
+  // llamacpp-upstream extension — so the same probe applies to both.
+  useEffect(() => {
+    const checkModelSupport = async () => {
+      if (
+        modelId &&
+        (provider === 'llamacpp' || provider === 'llamacpp-upstream')
+      ) {
+        // Running model → always green; skip the static ctx-size probe.
+        if (activeModels.includes(modelId)) {
+          setModelSupportStatus('GREEN')
+          return
+        }
+        if (loadFailed) {
+          setModelSupportStatus('RED')
+          return
+        }
+        setModelSupportStatus('LOADING')
+        try {
+          const supportStatus = await checkModelSupportWithPath(
+            modelId,
+            contextSize
+          )
+          setModelSupportStatus(supportStatus)
+        } catch (error) {
+          console.error('Error checking model support:', error)
+          setModelSupportStatus('RED')
+        }
+      } else if (provider !== 'mlx') {
+        setModelSupportStatus(null)
+      }
+    }
+
+    checkModelSupport()
+  }, [
+    modelId,
+    provider,
+    contextSize,
+    checkModelSupportWithPath,
+    activeModels,
+    loadFailed,
+  ])
+
+  // Track MLX model running status (activeModels takes priority over loadingModel
+  // to avoid showing "Starting…" when the model has already finished loading)
+  useEffect(() => {
+    if (provider !== 'mlx' || !modelId) return
+
+    if (activeModels.includes(modelId)) {
+      setModelSupportStatus('GREEN')
+    } else if (loadFailed) {
+      setModelSupportStatus('RED')
+    } else if (loadingModel) {
+      setModelSupportStatus('LOADING')
+    } else {
+      setModelSupportStatus('GREY')
+    }
+  }, [provider, modelId, loadingModel, activeModels, loadFailed])
+
+  if (
+    !modelSupportStatus ||
+    (provider !== 'llamacpp' &&
+      provider !== 'llamacpp-upstream' &&
+      provider !== 'mlx')
+  ) {
+    return null
+  }
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div
+            className={cn(
+              'size-2 flex items-center justify-center rounded-full',
+              modelSupportStatus === 'LOADING'
+                ? 'size-2.5 border border-t-transparent animate-spin'
+                : getStatusColor(),
+              className
+            )}
+          />
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>{getStatusTooltip()}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}

@@ -1,0 +1,418 @@
+import { type ClassValue, clsx } from 'clsx'
+import { twMerge } from 'tailwind-merge'
+import type { Node, Position } from 'unist'
+import type { Code, Paragraph, Parent, Text } from 'mdast'
+import { visit } from 'unist-util-visit'
+import { ExtensionManager } from './extension'
+import path from 'path'
+import type { VFile } from 'vfile'
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
+}
+
+export function basenameNoExt(filePath: string): string {
+  const base = path.basename(filePath)
+  const VALID_EXTENSIONS = ['.tar.gz', '.zip']
+
+  // handle VALID extensions first
+  for (const ext of VALID_EXTENSIONS) {
+    if (base.toLowerCase().endsWith(ext)) {
+      return base.slice(0, -ext.length)
+    }
+  }
+
+  // fallback: remove only the last extension
+  const ext = path.extname(base)
+  if (ext) {
+    return base.slice(0, -ext.length)
+  }
+  return base
+}
+
+/**
+ * Remark plugin that disables indented code block syntax.
+ * Converts indented code blocks to plain text paragraphs,
+ * while preserving fenced code blocks with backticks.
+ */
+export function disableIndentedCodeBlockPlugin() {
+  return (tree: Node, file: VFile) => {
+    visit(tree, 'code', (node: Code, index, parent: Parent | undefined) => {
+      // Convert indented code blocks (nodes without lang / meta property,
+      // and are not surrounded by backticks) to plain text
+      // Check if the parent exists so we can replace the node safely
+      if (
+        node.lang === null &&
+        node.meta === null &&
+        parent &&
+        typeof index === 'number'
+      ) {
+        const nodePosition: Position | undefined = node.position
+        if (
+          nodePosition !== undefined &&
+          file.value.at(nodePosition.start.offset!) !== '`'
+        ) {
+          const textNode: Text = {
+            type: 'text',
+            value: node.value,
+            position: nodePosition,
+          }
+          const paragraphNode: Paragraph = {
+            type: 'paragraph',
+            children: [textNode],
+            position: nodePosition,
+          }
+          parent.children[index] = paragraphNode
+        }
+      }
+    })
+  }
+}
+
+/**
+ * Get the display name for a model, falling back to the model ID if no display name is set
+ */
+export function getModelDisplayName(model: Model): string {
+  return model.displayName || model.id
+}
+
+export function getProviderLogo(provider: string) {
+  switch (provider) {
+    case 'jan':
+      return '/images/model-provider/jan.png'
+    // Both engines the app starts, plus the `llama-server` the user starts and
+    // we merely connect to — same engine, so the same mark.
+    case 'llamacpp':
+    case 'llamacpp-upstream':
+    case 'llamacpp-server':
+      return '/images/model-provider/llamacpp.svg'
+    case 'mlx':
+      return '/images/model-provider/mlx.png'
+    case 'anthropic':
+      return '/images/model-provider/anthropic.svg'
+    case 'huggingface':
+      return '/images/model-provider/huggingface.svg'
+    case 'mistral':
+      return '/images/model-provider/mistral.svg'
+    case 'openrouter':
+      return '/images/model-provider/open-router.svg'
+    case 'groq':
+      return '/images/model-provider/groq.svg'
+    case 'cohere':
+      return '/images/model-provider/cohere.svg'
+    case 'gemini':
+      return '/images/model-provider/gemini.svg'
+    case 'openai':
+      return '/images/model-provider/openai.svg'
+    // Meta Model API — the same mark the Llama/Muse model families already use.
+    case 'meta':
+      return '/svg/meta-color.svg'
+    // The subscription is reached through the Codex backend, and the Codex app
+    // mark keeps it apart from the API-key OpenAI provider in the same list.
+    case 'chatgpt':
+      return '/images/model-provider/codex.svg'
+    case 'azure':
+      return '/images/model-provider/azure.svg'
+    case 'xai':
+      return '/images/model-provider/xai.svg'
+    case 'minimax':
+      return '/svg/minimax.svg'
+    case 'nvidia':
+      return '/images/model-provider/nvidia.svg'
+    case 'moonshot':
+      return '/images/model-provider/moonshot.svg'
+    case 'qwen':
+      return '/images/model-provider/qwen.svg'
+    // The same whale mark the DeepSeek model family already resolves to via
+    // `model-logo.ts`, so the provider row and its models read as one brand.
+    case 'deepseek':
+      return '/svg/deepseek-color.svg'
+    case 'ollama':
+      return '/images/model-provider/ollama.svg'
+    default:
+      return undefined
+  }
+}
+
+/**
+ * The DEFAULT local llama.cpp provider id for THIS platform.
+ *   - Windows and Linux ship upstream plus the optional TurboQuant provider;
+ *     upstream remains the default.
+ *   - macOS defaults to `llamacpp-upstream` too — see ADR
+ *     2026-06-09 (ATO-116). The vanilla upstream backend understands the
+ *     full Gemma 4 projector set (`gemma4uv`/`gemma4ua`), so the bundled
+ *     "Recommended" Gemma 4 vision model loads out of the box. The
+ *     turboquant fork (`llamacpp`) is NOT removed on macOS — it stays a
+ *     parallel provider the user can select manually for its turbo3
+ *     KV-cache memory savings (2026-05-19 dual-provider ADR).
+ *
+ * This only governs the default for fresh downloads / empty state. Users
+ * with `llamacpp` (turboquant) explicitly selected keep it (zustand-persist),
+ * and existing models on disk under `<data>/llamacpp/models/` are untouched.
+ *
+ * Use this whenever the UI needs to address "the local llama.cpp engine
+ * that runs models" without forking call sites per OS.
+ */
+export const LOCAL_LLAMACPP_PROVIDER = 'llamacpp-upstream'
+
+/**
+ * Extension name (`@janhq/...`) that drives the DEFAULT llama.cpp provider
+ * on THIS platform. Mirrors `LOCAL_LLAMACPP_PROVIDER` — the extension
+ * manager resolves the upstream extension on every platform. The TurboQuant
+ * extension is also packaged on every desktop OS and is reached when the user
+ * selects that provider explicitly.
+ */
+export const LOCAL_LLAMACPP_EXTENSION_NAME = '@janhq/llamacpp-upstream-extension'
+
+/**
+ * Returns true for either llamacpp provider id ('llamacpp' = turboquant,
+ * 'llamacpp-upstream' = upstream ggml-org build). Both providers support
+ * client-side token counting via their respective getTokensCount() methods.
+ */
+export const isLlamacppProvider = (provider: string) =>
+  provider === 'llamacpp' || provider === 'llamacpp-upstream'
+
+export const getProviderTitle = (provider: string) => {
+  switch (provider) {
+    case 'jan':
+      return 'Atomic Chat'
+    case 'llamacpp':
+      // TurboQuant now ships on Windows and Linux as a second provider
+      // side-by-side with `llamacpp-upstream` (which stays the default),
+      // so the `llamacpp` provider carries its real Turboquant name on
+      // every platform.
+      return 'llama.cpp turboquant'
+    case 'llamacpp-upstream':
+      return 'llama.cpp'
+    // Named for what it is from here: a llama.cpp server the user runs and
+    // connects to, as opposed to the two engines the app starts itself.
+    case 'llamacpp-server':
+      return 'llama.cpp server'
+    case 'mlx':
+      return 'MLX'
+    case 'openai':
+      return 'OpenAI'
+    case 'chatgpt':
+      return 'ChatGPT subscription (Codex)'
+    case 'openrouter':
+      return 'OpenRouter'
+    case 'gemini':
+      return 'Gemini'
+    case 'huggingface':
+      return 'Hugging Face'
+    case 'xai':
+      return 'xAI'
+    case 'minimax':
+      return 'MiniMax'
+    case 'nvidia':
+      return 'NVIDIA NIM'
+    case 'moonshot':
+      return 'Moonshot'
+    case 'qwen':
+      return 'Qwen'
+    case 'deepseek':
+      return 'DeepSeek'
+    case 'ollama':
+      return 'Ollama'
+    default:
+      return provider.charAt(0).toUpperCase() + provider.slice(1)
+  }
+}
+
+export function getReadableLanguageName(language: string): string {
+  const languageMap: Record<string, string> = {
+    js: 'JavaScript',
+    jsx: 'React JSX',
+    ts: 'TypeScript',
+    tsx: 'React TSX',
+    html: 'HTML',
+    css: 'CSS',
+    scss: 'SCSS',
+    json: 'JSON',
+    md: 'Markdown',
+    py: 'Python',
+    rb: 'Ruby',
+    java: 'Java',
+    c: 'C',
+    cpp: 'C++',
+    cs: 'C#',
+    go: 'Go',
+    rust: 'Rust',
+    php: 'PHP',
+    swift: 'Swift',
+    kotlin: 'Kotlin',
+    sql: 'SQL',
+    sh: 'Shell',
+    bash: 'Bash',
+    ps1: 'PowerShell',
+    yaml: 'YAML',
+    yml: 'YAML',
+    xml: 'XML',
+    // Add more languages as needed
+  }
+
+  return (
+    languageMap[language] ||
+    language.charAt(0).toUpperCase() + language.slice(1)
+  )
+}
+
+export const isLocalProvider = (provider: string) => {
+  const extension = ExtensionManager.getInstance().getEngine(provider)
+  return extension && 'load' in extension
+}
+
+export const toGigabytes = (
+  input: number,
+  options?: { hideUnit?: boolean; toFixed?: number }
+) => {
+  if (!input) return ''
+  if (input > 1024 ** 3) {
+    return (
+      (input / 1024 ** 3).toFixed(options?.toFixed ?? 2) +
+      (options?.hideUnit ? '' : 'GB')
+    )
+  } else if (input > 1024 ** 2) {
+    return (
+      (input / 1024 ** 2).toFixed(options?.toFixed ?? 2) +
+      (options?.hideUnit ? '' : 'MB')
+    )
+  } else if (input > 1024) {
+    return (
+      (input / 1024).toFixed(options?.toFixed ?? 2) +
+      (options?.hideUnit ? '' : 'KB')
+    )
+  } else {
+    return input + (options?.hideUnit ? '' : 'B')
+  }
+}
+
+export const formatBytes = (bytes?: number): string => {
+  if (!bytes || bytes <= 0) return ''
+  const units = ['B', 'KB', 'MB', 'GB']
+  let i = 0
+  let val = bytes
+  while (val >= 1024 && i < units.length - 1) {
+    val /= 1024
+    i++
+  }
+  return `${val.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+}
+
+export function formatMegaBytes(mb: number) {
+  const tb = mb / (1024 * 1024)
+  if (tb >= 1) {
+    return `${tb.toFixed(2)} TB`
+  } else {
+    const gb = mb / 1024
+    return `${gb.toFixed(2)} GB`
+  }
+}
+
+export function isDev() {
+  return window.location.host.startsWith('localhost:')
+}
+
+export function formatDuration(startTime: number, endTime?: number): string {
+  const end = endTime || Date.now()
+  const durationMs = end - startTime
+
+  if (durationMs < 0) {
+    return 'Invalid duration (start time is in the future)'
+  }
+
+  const seconds = Math.floor(durationMs / 1000)
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+
+  if (days > 0) {
+    return `${days}d ${hours % 24}h ${minutes % 60}m ${seconds % 60}s`
+  } else if (hours > 0) {
+    return `${hours}h ${minutes % 60}m ${seconds % 60}s`
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds % 60}s`
+  } else if (seconds > 0) {
+    return `${seconds}s`
+  } else {
+    return `${durationMs}ms`
+  }
+}
+
+export function sanitizeModelId(modelId: string): string {
+  return modelId.replace(/[^a-zA-Z0-9/_\-.]/g, '').replace(/\./g, '_')
+}
+
+export const extractThinkingContent = (text: string) => {
+  return text
+    .replace(/<\/?think>/g, '')
+    .replace(/<\|channel\|>analysis<\|message\|>/g, '')
+    .replace(/<\|start\|>assistant<\|channel\|>final<\|message\|>/g, '')
+    .replace(/assistant<\|channel\|>final<\|message\|>/g, '')
+    .replace(/<\|channel\|>/g, '') // remove any remaining channel markers
+    .replace(/<\|message\|>/g, '') // remove any remaining message markers
+    .replace(/<\|start\|>/g, '') // remove any remaining start markers
+    .trim()
+}
+
+/**
+ * Error code attached to the `Error` thrown by `withTimeout` on expiry, so
+ * callers can distinguish "this step took too long" from every other
+ * rejection (ATO-270).
+ */
+export const OPERATION_TIMED_OUT_CODE = 'OPERATION_TIMED_OUT'
+
+/**
+ * Safety-net ceiling for the native `startServer` invoke (bind a listener,
+ * register the routing table). It's a lightweight native call with no
+ * legitimate reason to take more than a few seconds; used to guard the
+ * Local API Server start/auto-start chains against hanging forever if the
+ * IPC bridge or the Rust-side start lock never returns (ATO-270).
+ */
+export const SERVER_START_WATCHDOG_MS = 60 * 1000
+
+/**
+ * Safety-net ceiling for a local model load kicked off as part of starting
+ * the Local API Server (auto-start on launch, or the manual "Start server"
+ * toggle). Set comfortably above the llama.cpp extensions' own 30-minute
+ * model-load-readiness floor so a legitimately slow/large load is never cut
+ * off early — this only guards against a step with NO timeout of its own
+ * (e.g. an un-timeboxed backend-preparation network call) hanging forever
+ * and leaving the "Starting Server" UI stuck indefinitely (ATO-270).
+ */
+export const MODEL_LOAD_WATCHDOG_MS = 35 * 60 * 1000
+
+/**
+ * Resolves `promise`, but rejects with a timeout error after `ms` if it
+ * hasn't settled by then. The underlying `promise` is left to keep running
+ * in the background — a plain JS `Promise` cannot be cancelled — this only
+ * stops the *caller* from waiting on it forever, which is the best
+ * available recovery for a step that has no timeout of its own.
+ *
+ * Used to guard the Local API Server auto-start / manual-start chains
+ * (model load + server bind) against hanging indefinitely on an
+ * un-timeboxed network call somewhere in backend preparation (ATO-270).
+ */
+export function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  message: string
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const err = new Error(message) as Error & { code?: string }
+      err.code = OPERATION_TIMED_OUT_CODE
+      reject(err)
+    }, ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      }
+    )
+  })
+}

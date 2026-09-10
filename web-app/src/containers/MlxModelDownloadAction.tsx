@@ -1,0 +1,278 @@
+import { Button } from '@/components/ui/button'
+import { route } from '@/constants/routes'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import { useTranslation } from '@/i18n'
+import { DeleteModelAction } from '@/containers/hub/DeleteModelAction'
+import { markDownloadCancellationRequested } from '@/lib/downloadCancellation'
+import {
+  findInstalledLocalModel,
+  MLX_PROVIDER,
+  mlxModelIds,
+} from '@/lib/hub-installed'
+import { CatalogModel } from '@/services/models/types'
+import { cn } from '@/lib/utils'
+import { switchToModel } from '@/utils/switchModel'
+import { IconX } from '@tabler/icons-react'
+import { DownloadEvent, EngineManager, events } from '@janhq/core'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { toast } from 'sonner'
+import { useNavigate } from '@tanstack/react-router'
+
+export const MlxModelDownloadAction = memo(
+  ({
+    model,
+    deletable = false,
+  }: {
+    model: CatalogModel
+    // Offer a trash button next to "New chat" once the repo is on disk.
+    deletable?: boolean
+  }) => {
+    const serviceHub = useServiceHub()
+    const { t } = useTranslation()
+    const huggingfaceToken = useGeneralSetting(
+      (state) => state.huggingfaceToken
+    )
+
+    const navigate = useNavigate()
+
+    // `justDownloaded` is set by the download-success event: the provider list
+    // is only re-listed a moment later, and the button must flip immediately.
+    const [justDownloaded, setDownloaded] = useState(false)
+
+    const {
+      downloads,
+      localDownloadingModels,
+      resumableDownloads,
+      addLocalDownloadingModel,
+      removeLocalDownloadingModel,
+      markResumableDownload,
+      clearResumableDownload,
+    } = useDownloadStore()
+
+    // Construct the model ID - use just the sanitized model name if developer is same as org
+    // e.g., "mlx-community/Qwen3-VL-2B-Thinking-4bit" -> "Qwen3-VL-2B-Thinking-4bit"
+    const modelName = model.model_name.split('/').pop() ?? model.model_name
+    const modelId = sanitizeModelId(modelName)
+
+    const downloadProcesses = useMemo(
+      () =>
+        Object.values(downloads).map((download) => ({
+          id: download.name,
+          name: download.name,
+          progress: download.progress,
+          current: download.current,
+          total: download.total,
+        })),
+      [downloads]
+    )
+
+    const isDownloading =
+      localDownloadingModels.has(modelId) ||
+      downloadProcesses.some((e) => e.id === modelId)
+
+    const downloadProgress =
+      downloadProcesses.find((e) => e.id === modelId)?.progress || 0
+
+    // Read the MLX provider reactively so the row reflects a download or a
+    // deletion that happened elsewhere in the app.
+    const providers = useModelProvider((state) => state.providers)
+    const installed = useMemo(
+      () =>
+        findInstalledLocalModel(providers, mlxModelIds(model), [MLX_PROVIDER]),
+      [providers, model]
+    )
+    const isDownloaded = installed !== null || justDownloaded
+
+    // The id the engine registered (with or without the developer prefix).
+    const downloadedModelId = installed?.modelId ?? modelId
+
+    // Listen for download success
+    useEffect(() => {
+      const onDownloadSuccess = (state: { modelId: string }) => {
+        if (state.modelId === modelId) {
+          setDownloaded(true)
+        }
+      }
+      events.on(
+        DownloadEvent.onFileDownloadAndVerificationSuccess,
+        onDownloadSuccess
+      )
+      return () => {
+        events.off(
+          DownloadEvent.onFileDownloadAndVerificationSuccess,
+          onDownloadSuccess
+        )
+      }
+    }, [modelId])
+
+    const handleUseModel = useCallback(() => {
+      useModelProvider.getState().selectModelProvider('mlx', downloadedModelId)
+      switchToModel({
+        modelId: downloadedModelId,
+        providerName: 'mlx',
+        serviceHub,
+      }).catch((error) => {
+        console.error('[MlxModelDownloadAction] switchToModel failed:', error)
+      })
+      navigate({
+        to: route.home,
+        params: {},
+        search: {
+          threadModel: {
+            id: downloadedModelId,
+            provider: 'mlx',
+          },
+        },
+      })
+    }, [navigate, downloadedModelId, serviceHub])
+
+    const handleDownloadMlxModel = useCallback(async () => {
+      clearResumableDownload(modelId)
+      addLocalDownloadingModel(modelId)
+
+      const modelPath = `${model.developer}/${modelName}`
+      try {
+        // Fetch repository info to get all files
+        const repoInfo = await serviceHub
+          .models()
+          .fetchHuggingFaceRepo(modelPath, huggingfaceToken)
+
+        if (!repoInfo || !repoInfo.siblings) {
+          throw new Error('Failed to fetch repository files')
+        }
+
+        // Filter relevant model files for MLX
+        const modelFiles = repoInfo.siblings
+
+        if (modelFiles.length === 0) {
+          throw new Error('No MLX model files found in repository')
+        }
+
+        // Get the MLX engine and import
+        const engine = EngineManager.instance().get('mlx')
+        if (!engine) {
+          throw new Error('MLX engine not found')
+        }
+
+        // For MLX, we download the first safetensors file as the main model
+        // and the extension will download all related files
+        const mainSafetensorsFile = modelFiles.find((f) =>
+          f.rfilename.toLowerCase().endsWith('.safetensors')
+        )
+
+        if (!mainSafetensorsFile) {
+          throw new Error('No safetensors file found in repository')
+        }
+
+        const modelUrl = `https://huggingface.co/${modelPath}/resolve/main/${mainSafetensorsFile.rfilename}`
+
+        // Prepare additional files to download (all model files except main safetensors)
+        // Don't pass sha256/size to skip verification for MLX models
+        const extraFiles = modelFiles
+          .filter((f) => f.rfilename !== mainSafetensorsFile.rfilename)
+          .map((file) => ({
+            url: `https://huggingface.co/${modelPath}/resolve/main/${file.rfilename}`,
+            filename: file.rfilename,
+          }))
+
+        // `await` is load-bearing: a bare `return engine.import(...)` inside
+        // try{} lets the rejection escape the catch — the download then fails
+        // with no toast, no console.error and a button stuck in "downloading".
+        return await engine.import(modelId, {
+          modelPath: modelUrl,
+          files: extraFiles,
+          resume: resumableDownloads.has(modelId),
+        })
+      } catch (error) {
+        console.error('Error downloading MLX model:', error)
+        markResumableDownload(modelId)
+        removeLocalDownloadingModel(modelId)
+        toast.error('Failed to download MLX model', {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+      }
+    }, [
+      serviceHub,
+      model,
+      huggingfaceToken,
+      addLocalDownloadingModel,
+      removeLocalDownloadingModel,
+      clearResumableDownload,
+      markResumableDownload,
+      resumableDownloads,
+      modelId,
+      modelName,
+    ])
+
+    const handleCancelDownload = useCallback(() => {
+      markResumableDownload(modelId)
+      markDownloadCancellationRequested(modelId)
+      void serviceHub.models().abortDownload(modelId)
+    }, [modelId, markResumableDownload, serviceHub])
+
+    return (
+      <div className="flex items-center">
+        {isDownloading && !isDownloaded && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleCancelDownload}
+            title={t('common:cancelDownload')}
+            aria-label={t('common:cancelDownload')}
+            className="group relative w-24 justify-center overflow-hidden font-semibold"
+          >
+            <span
+              aria-hidden
+              className="absolute inset-y-0 left-0 z-0 bg-primary/20 transition-[width] duration-200"
+              style={{ width: `${Math.round(downloadProgress * 100)}%` }}
+            />
+            <span className="relative z-1 tabular-nums transition-opacity group-hover:opacity-0">
+              {Math.round(downloadProgress * 100)}%
+            </span>
+            <span className="absolute inset-0 z-1 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+              <IconX size={14} />
+            </span>
+          </Button>
+        )}
+        {isDownloaded ? (
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              variant="default"
+              size="sm"
+              onClick={handleUseModel}
+              data-test-id={`hub-model-${modelId}`}
+            >
+              {t('hub:newChat')}
+            </Button>
+            {deletable && installed && (
+              <DeleteModelAction
+                modelId={installed.modelId}
+                provider={installed.provider}
+                onDeleted={() => setDownloaded(false)}
+              />
+            )}
+          </div>
+        ) : (
+          <Button
+            data-test-id={`hub-model-${modelId}`}
+            variant="outline"
+            size="sm"
+            onClick={handleDownloadMlxModel}
+            className={cn('font-semibold', isDownloading && 'hidden')}
+          >
+            {t('hub:download')}
+          </Button>
+        )}
+      </div>
+    )
+  }
+)
+
+// Helper function to sanitize model ID
+function sanitizeModelId(id: string): string {
+  return id.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-_./]/g, '')
+}

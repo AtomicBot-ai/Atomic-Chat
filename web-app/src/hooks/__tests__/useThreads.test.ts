@@ -1,0 +1,360 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { act, renderHook } from '@testing-library/react'
+import { useThreads } from '../useThreads'
+import { useAgentMode } from '../useAgentMode'
+import type { PathService } from '@/services/path/types'
+import type { ThreadsService } from '@/services/threads/types'
+import { seedServiceHub } from '@/test/service-hub'
+
+const { deleteCollectionSpy } = vi.hoisted(() => ({
+  deleteCollectionSpy: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('@/lib/extension', () => ({
+  ExtensionManager: {
+    getInstance: () => ({
+      get: () => ({ deleteCollection: deleteCollectionSpy }),
+    }),
+  },
+}))
+
+// Mock ulid
+vi.mock('ulidx', () => ({
+  ulid: vi.fn(() => 'test-ulid-123'),
+}))
+
+// Mock fzf
+vi.mock('fzf', () => ({
+  Fzf: vi.fn(() => ({
+    find: vi.fn(() => []),
+  })),
+}))
+global.__TAURI_INTERNALS__ = {
+  plugins: {
+    path: {
+      sep: '/',
+    },
+  },
+}
+
+describe('useThreads', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    seedServiceHub({
+      path: {
+        sep: () => '/',
+      } as PathService,
+      threads: {
+        createThread: vi.fn().mockResolvedValue(undefined),
+        deleteThread: vi.fn().mockResolvedValue(undefined),
+        updateThread: vi.fn().mockResolvedValue(undefined),
+      } as unknown as ThreadsService,
+    })
+    // Reset Zustand store
+    act(() => {
+      useThreads.setState({
+        threads: {},
+        currentThreadId: undefined,
+        searchIndex: null,
+      })
+    })
+  })
+
+  it('should initialize with default state', () => {
+    const { result } = renderHook(() => useThreads())
+
+    expect(result.current.threads).toEqual({})
+    expect(result.current.currentThreadId).toBeUndefined()
+    expect(result.current.getCurrentThread()).toBeUndefined()
+  })
+
+  it('should set threads', () => {
+    const { result } = renderHook(() => useThreads())
+
+    const threads = [
+      { id: 'thread1', title: 'Thread 1', messages: [] },
+      { id: 'thread2', title: 'Thread 2', messages: [] },
+    ]
+
+    act(() => {
+      result.current.setThreads(threads)
+    })
+
+    expect(Object.keys(result.current.threads)).toHaveLength(2)
+    expect(result.current.threads['thread1']).toEqual(threads[0])
+    expect(result.current.threads['thread2']).toEqual(threads[1])
+  })
+  it('should set threads with cortex model migrated', () => {
+    const { result } = renderHook(() => useThreads())
+
+    const threads = [
+      {
+        id: 'thread1',
+        title: 'Thread 1',
+        messages: [],
+        model: { provider: 'llama.cpp', id: 'thread1:free' },
+      },
+      {
+        id: 'thread2',
+        title: 'Thread 2',
+        messages: [],
+        model: { provider: 'llama.cpp', id: 'thread2:test' },
+      },
+    ]
+
+    act(() => {
+      result.current.setThreads(threads)
+    })
+
+    expect(Object.keys(result.current.threads)).toHaveLength(2)
+    expect(result.current.threads['thread1'].model.id).toEqual('thread1/free')
+    expect(result.current.threads['thread1'].model.provider).toEqual('llamacpp')
+    expect(result.current.threads['thread2'].model.id).toEqual('thread2/test')
+    expect(result.current.threads['thread2'].model.provider).toEqual('llamacpp')
+  })
+
+  it('should set current thread ID', () => {
+    const { result } = renderHook(() => useThreads())
+
+    act(() => {
+      result.current.setCurrentThreadId('thread-123')
+    })
+
+    expect(result.current.currentThreadId).toBe('thread-123')
+  })
+
+  it('should get current thread', () => {
+    const { result } = renderHook(() => useThreads())
+
+    const thread = { id: 'thread1', title: 'Thread 1', messages: [] }
+
+    act(() => {
+      result.current.setThreads([thread])
+      result.current.setCurrentThreadId('thread1')
+    })
+
+    expect(result.current.getCurrentThread()).toEqual(thread)
+  })
+
+  it('should return undefined when getting current thread with no ID', () => {
+    const { result } = renderHook(() => useThreads())
+
+    expect(result.current.getCurrentThread()).toBeUndefined()
+  })
+
+  it('should get thread by ID', () => {
+    const { result } = renderHook(() => useThreads())
+
+    const thread = { id: 'thread1', title: 'Thread 1', messages: [] }
+
+    act(() => {
+      result.current.setThreads([thread])
+    })
+
+    expect(result.current.getThreadById('thread1')).toEqual(thread)
+    expect(result.current.getThreadById('nonexistent')).toBeUndefined()
+  })
+
+  it('should delete thread', () => {
+    const { result } = renderHook(() => useThreads())
+
+    const threads = [
+      { id: 'thread1', title: 'Thread 1', messages: [] },
+      { id: 'thread2', title: 'Thread 2', messages: [] },
+    ]
+
+    act(() => {
+      result.current.setThreads(threads)
+    })
+
+    expect(Object.keys(result.current.threads)).toHaveLength(2)
+
+    act(() => {
+      result.current.deleteThread('thread1')
+    })
+
+    expect(Object.keys(result.current.threads)).toHaveLength(1)
+    expect(result.current.threads['thread1']).toBeUndefined()
+    expect(result.current.threads['thread2']).toBeDefined()
+  })
+
+  it('should rename thread', () => {
+    const { result } = renderHook(() => useThreads())
+
+    const thread = { id: 'thread1', title: 'Original Title', messages: [] }
+
+    act(() => {
+      result.current.setThreads([thread])
+    })
+
+    act(() => {
+      result.current.renameThread('thread1', 'New Title')
+    })
+
+    expect(result.current.threads['thread1'].title).toBe('New Title')
+  })
+
+  it('should toggle favorite', () => {
+    const { result } = renderHook(() => useThreads())
+
+    const thread = {
+      id: 'thread1',
+      title: 'Thread 1',
+      messages: [],
+      starred: false,
+    }
+
+    act(() => {
+      result.current.setThreads([thread])
+    })
+
+    act(() => {
+      result.current.toggleFavorite('thread1')
+    })
+
+    // Just test that the toggle function exists and can be called
+    expect(typeof result.current.toggleFavorite).toBe('function')
+  })
+
+  it('should get favorite threads', () => {
+    const { result } = renderHook(() => useThreads())
+
+    // Just test that the function exists
+    expect(typeof result.current.getFavoriteThreads).toBe('function')
+    const favorites = result.current.getFavoriteThreads()
+    expect(Array.isArray(favorites)).toBe(true)
+  })
+
+  it('should delete all threads', () => {
+    const { result } = renderHook(() => useThreads())
+
+    const threads = [
+      { id: 'thread1', title: 'Thread 1', messages: [] },
+      { id: 'thread2', title: 'Thread 2', messages: [] },
+    ]
+
+    act(() => {
+      result.current.setThreads(threads)
+    })
+
+    expect(Object.keys(result.current.threads)).toHaveLength(2)
+
+    act(() => {
+      result.current.deleteAllThreads()
+    })
+
+    expect(result.current.threads).toEqual({})
+  })
+
+  it('deep-merges metadata updates instead of clobbering siblings', () => {
+    const { result } = renderHook(() => useThreads())
+
+    act(() => {
+      result.current.setThreads([
+        {
+          id: 'thread1',
+          title: 'Thread 1',
+          messages: [],
+          metadata: { project: { id: 'p1', name: 'P1', updated_at: 1 } },
+        },
+      ])
+    })
+
+    act(() => {
+      result.current.updateThread('thread1', {
+        metadata: { hasDocuments: true },
+      })
+    })
+
+    // The partial update must not evict the thread from its project.
+    expect(result.current.threads['thread1'].metadata).toMatchObject({
+      hasDocuments: true,
+      project: { id: 'p1' },
+    })
+  })
+
+  it('cleans up the vector collection with the bare thread id', () => {
+    const { result } = renderHook(() => useThreads())
+
+    act(() => {
+      result.current.setThreads([{ id: 'thread1', title: 'T', messages: [] }])
+    })
+    act(() => {
+      result.current.deleteThread('thread1')
+    })
+
+    // The extension prefixes `attachments_` itself; a pre-prefixed id used to
+    // double up and the real collection was never deleted.
+    expect(deleteCollectionSpy).toHaveBeenCalledWith('thread1')
+  })
+
+  it('clears per-thread agent state on bulk deletes', () => {
+    const removeThread = vi.fn()
+    const originalRemove = useAgentMode.getState().removeThread
+    useAgentMode.setState({ removeThread })
+    const { result } = renderHook(() => useThreads())
+
+    act(() => {
+      result.current.setThreads([
+        {
+          id: 'projectThread',
+          title: 'In project',
+          messages: [],
+          metadata: { project: { id: 'p1', name: 'P1', updated_at: 1 } },
+        },
+        { id: 'looseThread', title: 'Loose', messages: [] },
+      ])
+    })
+
+    act(() => {
+      result.current.deleteAllThreadsByProject('p1')
+    })
+    expect(removeThread).toHaveBeenCalledWith('projectThread')
+
+    act(() => {
+      result.current.deleteAllThreads()
+    })
+    expect(removeThread).toHaveBeenCalledWith('looseThread')
+
+    useAgentMode.setState({ removeThread: originalRemove })
+  })
+
+  it('should unstar all threads', () => {
+    const { result } = renderHook(() => useThreads())
+
+    // Just test that the function exists and can be called
+    expect(typeof result.current.unstarAllThreads).toBe('function')
+
+    act(() => {
+      result.current.unstarAllThreads()
+    })
+
+    // Function executed without error
+    expect(true).toBe(true)
+  })
+
+  it('should filter threads by search term', () => {
+    const { result } = renderHook(() => useThreads())
+
+    // Just test that the function exists
+    expect(typeof result.current.getFilteredThreads).toBe('function')
+    const filtered = result.current.getFilteredThreads('test')
+    expect(Array.isArray(filtered)).toBe(true)
+  })
+
+  it('should return all threads when no search term', () => {
+    const { result } = renderHook(() => useThreads())
+
+    const threads = [
+      { id: 'thread1', title: 'Thread 1', messages: [] },
+      { id: 'thread2', title: 'Thread 2', messages: [] },
+    ]
+
+    act(() => {
+      result.current.setThreads(threads)
+    })
+
+    const filtered = result.current.getFilteredThreads('')
+    expect(filtered).toHaveLength(2)
+  })
+})

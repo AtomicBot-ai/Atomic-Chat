@@ -1,0 +1,13 @@
+[default]
+description = "Default permissions for the Atomic audio capture plugin"
+permissions = [
+    "allow-list-input-devices",
+    "allow-get-microphone-permission",
+    "allow-request-microphone-permission",
+    "allow-start-dictation",
+    "allow-stop-dictation",
+    "allow-cancel-dictation",
+    "allow-get-dictation-status",
+    "allow-set-transcription-target",
+    "allow-transcribe-wav"
+]

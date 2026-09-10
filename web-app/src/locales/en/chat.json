@@ -1,0 +1,138 @@
+{
+  "welcome": "Hi, how are you?",
+  "description": "How can I help you today?",
+  "temporaryChat": "Temporary Chat",
+  "temporaryChatDescription": "Start a temporary conversation that won't be saved to your chat history.",
+  "status": {
+    "empty": "No Chats Found"
+  },
+  "sendMessage": "Send Message",
+  "replyGate": {
+    "sendHint": "Choose what to reply with",
+    "startingTitle": "Starting {{name}}…",
+    "startingDescription": "Your message will be sent as soon as it's ready.",
+    "pickTitle": "What should I reply with?",
+    "pickDescription": "Pick a model and your message goes out right away.",
+    "emptyTitle": "Nothing to reply with yet",
+    "emptyDescription": "Download a model for this device, or connect one in the cloud. Your message is kept either way.",
+    "recommendedForDevice": "Recommended for your device",
+    "download": "Download",
+    "downloading": "Downloading…",
+    "downloadingPercent": "Downloading… {{percent}}%",
+    "connectCloud": "Connect cloud provider",
+    "connectSubscription": "Connect ChatGPT subscription",
+    "queuedNotice": "Your message will be sent once the model is ready.",
+    "startingNotice": "Starting {{name}}… your message will be sent once it's ready.",
+    "addFolder": "Add a folder with models",
+    "folderScanning": "Looking for models…",
+    "folderEmpty": "No compatible models found in that folder."
+  },
+  "newConversation": "New Conversation",
+  "clearHistory": "Clear History",
+  "activity": {
+    "working": "Working...",
+    "reading": "Reading: {{count}}%",
+    "workedFor": "Worked for {{count}}s",
+    "calledTool": "Called {{count}} tool",
+    "calledTools": "Called {{count}} tools",
+    "reasoned": "Reasoned",
+    "thinking": "Thinking...",
+    "thoughtFor": "Thought for {{count}}s"
+  },
+  "workspacePreview": {
+    "generating": "Preview will be available after generation finishes."
+  },
+  "agentMode": {
+    "menuItem": "Agent mode",
+    "agent": "Agent",
+    "turnOff": "Turn off Agent mode",
+    "providerUnavailable": "Agent mode needs a local model, or a cloud provider with an API key.",
+    "providerKeyMissing": "Add an API key for this provider in Settings to use Agent mode."
+  },
+  "agentApprovals": {
+    "manualSelected": "Manually",
+    "manual": "Manually approve",
+    "manualDescription": "Pause before sensitive actions.",
+    "skipSelected": "Skip",
+    "skip": "Skip all approvals",
+    "skipDescription": "Run without asking."
+  },
+  "agentApproval": {
+    "title": "Agent approval required",
+    "description": "{{tool}} is waiting for your decision.",
+    "reason": "Reason",
+    "preview": "Action preview",
+    "resources": "Affected resources",
+    "timeoutNotice": "If you do not respond, this request will be denied automatically after the backend timeout.",
+    "deny": "Deny",
+    "alwaysAllow": "Always allow this action",
+    "approveOnce": "Approve once",
+    "resolveFailed": "Failed to send the approval decision.",
+    "showDetails": "Show details",
+    "hideDetails": "Hide details"
+  },
+  "agentFolderAccess": {
+    "title": "Allow folder access",
+    "description": "{{tool}} needs access to this folder.",
+    "canEditNotice": "Allowing adds this folder to External with CAN EDIT access for this Agent thread.",
+    "deny": "Deny",
+    "allow": "Allow folder",
+    "resolveFailed": "Failed to send the folder access decision."
+  },
+  "agentWorkspace": {
+    "choose": "Choose workspace",
+    "change": "Change agent workspace",
+    "default": "Default",
+    "defaultDescription": "Uses the agent-workspace folder inside the Atomic Chat data folder.",
+    "projectFiles": "Project Files",
+    "external": "External",
+    "canEdit": "CAN EDIT",
+    "viewOnly": "VIEW ONLY",
+    "addFolder": "Add external folder",
+    "folderOptions": "Folder options",
+    "allowEditing": "Can edit",
+    "makeViewOnly": "View only",
+    "removeFolder": "Remove from Agent"
+  },
+  "runSettings": {
+    "title": "Run settings",
+    "open": "Open run settings",
+    "close": "Close run settings",
+    "model": "Model",
+    "advancedSettings": "Advanced settings",
+    "advancedSettingsHint": "Load-time options. Changing them restarts a running model."
+  },
+  "agentErrors": {
+    "audioUnsupported": "Agent mode does not support audio attachments.",
+    "invalidAttachment": "One or more files could not be attached. Choose local files and try again.",
+    "visionModelRequired": "Select a vision-capable model before sending images.",
+    "providerUnavailableTitle": "Agent mode is unavailable for this provider",
+    "providerUnavailableDescription": "Pick a local model, or a cloud provider with an API key.",
+    "unsupportedTools": "Agent mode does not support MCP, RAG, or browser tools yet.",
+    "runFailed": "The agent run failed to start.",
+    "cancelFailed": "The agent run could not be cancelled.",
+    "saveFailed": "The agent reply could not be saved.",
+    "localModelRequired": "Load this model before starting an agent run.",
+    "providerKeyMissing": "Add an API key for this provider in Settings and try again.",
+    "localServerRequired": "Agent mode on a cloud model needs the Local API Server. Start it in Settings and try again."
+  },
+  "agentTasks": {
+    "title": "Ideas for you",
+    "findLatestNews": {
+      "title": "Find the latest news",
+      "prompt": "Find the latest news and summarize the most important recent developments with links to the sources."
+    },
+    "inspectFolder": {
+      "title": "Organize my Desktop",
+      "prompt": "Sort through my Desktop files and folders. Do not delete, overwrite, replace, rename, or modify any files or folders."
+    },
+    "findLargeFiles": {
+      "title": "Find large files",
+      "prompt": "Find the largest files in my Downloads folder and suggest safe cleanup candidates. Do not delete anything."
+    }
+  },
+  "threadType": {
+    "chat": "Chat thread",
+    "agent": "Agent thread"
+  }
+}

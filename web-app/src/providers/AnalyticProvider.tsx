@@ -1,0 +1,434 @@
+import posthog from 'posthog-js'
+import { useEffect } from 'react'
+
+import { useServiceHub } from '@/hooks/useServiceHub'
+import { createSafeUnlisten } from '@/lib/tauriEvent'
+import { useAnalytic } from '@/hooks/useAnalytic'
+import {
+  API_SERVER_REQUEST_EVENT,
+  API_SERVER_SESSION_SUMMARY_EVENT,
+  type ApiServerRequestEvent,
+  type ApiServerSessionSummaryEvent,
+} from '@/types/analytics'
+import type { ServiceHub } from '@/services'
+import {
+  cpuAvxLevel,
+  getAnalyticsPlatform,
+  mapGpuVendor,
+} from '@/lib/telemetry'
+import {
+  isFirstLaunch,
+  reportAbandonedOnboarding,
+  reportBackendRestartIntent,
+} from '@/lib/onboarding-telemetry'
+import { flushTelemetryQueue } from '@/lib/telemetry-queue'
+import {
+  setSentryConsent,
+  setSentryTags,
+  setSentryUser,
+  setRustSentryContext,
+  setRustSentryUser,
+} from '@/lib/sentry'
+
+/** Zero-PII hardware/backend super-props promoted to Sentry tags. */
+const SENTRY_TAG_KEYS = [
+  'os',
+  'os_build',
+  'arch',
+  'cpu_avx',
+  'gpu_vendor',
+  'gpu_model',
+  'vram_mb',
+  'system_ram_mb',
+  'nvidia_driver_version',
+  'cuda_runtime_version',
+  'vulkan_version',
+  'active_backend',
+  'device_backend_pref',
+  'recommended_backend',
+  'installer_type',
+] as const
+
+function toSentryTags(
+  hwProps: Record<string, unknown>,
+  appVersion: string,
+  platform: string
+): Record<string, string> {
+  const tags: Record<string, string> = {
+    app_version: appVersion,
+    platform,
+  }
+  for (const key of SENTRY_TAG_KEYS) {
+    const value = hwProps[key]
+    if (value !== undefined && value !== null && value !== '') {
+      tags[key] = String(value)
+    }
+  }
+  return tags
+}
+
+/** Resolve a promise but reject after `ms` so a slow IPC never blocks startup. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const id = setTimeout(() => reject(new Error('timeout')), ms)
+    promise.then(
+      (value) => {
+        clearTimeout(id)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(id)
+        reject(error)
+      }
+    )
+  })
+}
+
+/**
+ * Version of the event schema this build emits.
+ *
+ * Bumped whenever event shapes change, so analysis can cut a denominator on one
+ * number instead of guessing which app version first carried a property.
+ * `rendered` and `hardware_tier` arriving in 2.0.19 is what made that guessing
+ * necessary — 73% of historical events simply do not have them.
+ *
+ * 2 — ATO-457/459/456/468: startup event buffering, normalized `model_id`,
+ * split onboarding / backend-step reasons, subscription events.
+ */
+const TELEMETRY_SCHEMA = 2
+
+/** First of `keys` that holds a value. Tolerates localStorage being unavailable. */
+function firstStoredValue(keys: string[]): string | null {
+  for (const key of keys) {
+    try {
+      const value = localStorage.getItem(key)
+      if (value) return value
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
+/**
+ * ATO-111: build the hardware / OS / backend super-properties registered once
+ * per launch. PII contract: never include GPU UUID/serial or the machine name;
+ * RAM/VRAM are plain MiB integers. Slow IPC calls are time-boxed so `app_opened`
+ * is not delayed.
+ */
+async function collectHardwareSuperProps(
+  serviceHub: ServiceHub
+): Promise<Record<string, unknown>> {
+  const props: Record<string, unknown> = {}
+
+  // Backend ids come from extension-owned localStorage (no IPC, no side effects).
+  //
+  // ATO-468: `llama_cpp_backend_type` is dead. Both engines moved to their own
+  // keys and now read the shared one only to migrate off it, so nothing writes
+  // it any more and `active_backend` had been reporting whatever an old build
+  // happened to leave behind. Read the live keys, most specific first.
+  const backendPref = firstStoredValue([
+    'atomic_llamacpp_upstream_backend_type',
+    'atomic_llamacpp_turboquant_backend_type',
+    'llama_cpp_backend_type',
+  ])
+  if (backendPref) {
+    // The honest name: this is which build the device downloaded, not what
+    // executed a given response — `model_load.exec_backend` answers that.
+    props.device_backend_pref = backendPref
+    // Kept until the dashboards reading it have moved over.
+    props.active_backend = backendPref
+  }
+  // Same drift: only the upstream extension writes the unprefixed key.
+  const recommendation = firstStoredValue([
+    'llama_cpp_better_backend_recommendation',
+    'turboquant_better_backend_recommendation',
+  ])
+  if (recommendation) {
+    try {
+      const parsed = JSON.parse(recommendation) as {
+        recommendedBackend?: string
+      }
+      if (parsed?.recommendedBackend)
+        props.recommended_backend = parsed.recommendedBackend
+    } catch {
+      // malformed cache — ignore
+    }
+  }
+
+  if (typeof IS_TAURI === 'undefined' || !IS_TAURI) return props
+
+  try {
+    const installerType = await withTimeout(
+      serviceHub.app().getInstallerType(),
+      1500
+    )
+    if (installerType) props.installer_type = installerType
+  } catch {
+    // best-effort — installer type unavailable
+  }
+
+  const hw = await withTimeout(
+    serviceHub.hardware().getHardwareInfo(),
+    3000
+  ).catch(() => null)
+  if (!hw) return props
+
+  props.os = hw.os_type || 'unknown'
+  props.os_build = hw.os_name || ''
+  const arch = (hw.cpu?.arch || '').toLowerCase()
+  props.arch = arch.includes('arm') || arch.includes('aarch') ? 'arm64' : 'x64'
+  props.cpu_avx = cpuAvxLevel(hw.cpu?.extensions)
+  props.system_ram_mb = hw.total_memory ?? null
+
+  const gpus = hw.gpus || []
+  const primary = gpus[0]
+  props.gpu_detected = gpus.length > 0
+  props.gpu_vendor = mapGpuVendor(primary?.vendor, IS_MACOS)
+  props.gpu_model = primary?.name || null
+  props.vram_mb = primary?.total_memory ?? null
+
+  const nvidia = gpus.find((g) =>
+    (g.vendor || '').toLowerCase().includes('nvidia')
+  )
+  if (nvidia) {
+    props.nvidia_driver_version = nvidia.driver_version || null
+    // Exact CUDA runtime string is not exposed by tauri-plugin-hardware;
+    // surface compute capability as a best-effort proxy (see ATO-111).
+    props.cuda_runtime_version = nvidia.nvidia_info?.compute_capability || null
+  }
+  const vk = gpus.find((g) => g.vulkan_info?.api_version)
+  if (vk) props.vulkan_version = vk.vulkan_info.api_version
+
+  const usage = await withTimeout(
+    serviceHub.hardware().getSystemUsage(),
+    1500
+  ).catch(() => null)
+  if (usage && primary) {
+    const u =
+      usage.gpus?.find((g) => g.uuid === primary.uuid) ?? usage.gpus?.[0]
+    if (u)
+      props.vram_free_mb = Math.max(
+        0,
+        (u.total_memory ?? 0) - (u.used_memory ?? 0)
+      )
+  }
+
+  return props
+}
+
+/**
+ * ATO-111: `device_parse_ok` reflects whether `llama-server --list-devices`
+ * could be parsed (the `DeviceListParseFailed` flag). The probe spawns the
+ * backend binary and can be slow, so it runs detached from `app_opened`.
+ */
+async function collectDeviceParseOk(
+  serviceHub: ServiceHub
+): Promise<boolean | undefined> {
+  if (typeof IS_TAURI === 'undefined' || !IS_TAURI) return undefined
+  try {
+    await withTimeout(serviceHub.hardware().getLlamacppDevices(), 8000)
+    return true
+  } catch (error) {
+    const code = (error as { code?: string } | undefined)?.code
+    const message = (
+      (error as { message?: string } | undefined)?.message ?? ''
+    ).toLowerCase()
+    if (
+      code === 'DEVICE_LIST_PARSE_FAILED' ||
+      code === 'DeviceListParseFailed' ||
+      message.includes('available devices')
+    )
+      return false
+    return undefined
+  }
+}
+
+export function AnalyticProvider() {
+  const { productAnalytic } = useAnalytic()
+  const serviceHub = useServiceHub()
+
+  // ATO-113: keep both Sentry SDKs (frontend gate + Rust gate) in sync with the
+  // productAnalytic consent. Runs independently of PostHog config so consent is
+  // honoured even when PostHog keys are absent.
+  useEffect(() => {
+    setSentryConsent(productAnalytic)
+  }, [productAnalytic])
+
+  useEffect(() => {
+    if (!POSTHOG_KEY || !POSTHOG_HOST) {
+      console.warn(
+        'PostHog not initialized: Missing POSTHOG_KEY or POSTHOG_HOST environment variables'
+      )
+      return
+    }
+
+    let unlistenApiServerRequest: (() => void) | undefined
+    let unlistenApiServerSummary: (() => void) | undefined
+    let cancelled = false
+
+    const osPlatform = getAnalyticsPlatform()
+
+    if (productAnalytic) {
+      posthog.init(POSTHOG_KEY, {
+        api_host: POSTHOG_HOST,
+        autocapture: false,
+        capture_pageview: false,
+        capture_pageleave: false,
+        disable_session_recording: true,
+        person_profiles: 'always',
+        persistence: 'localStorage',
+        opt_out_capturing_by_default: true,
+
+        sanitize_properties: function (properties) {
+          const denylist = [
+            '$pathname',
+            '$initial_pathname',
+            '$current_url',
+            '$initial_current_url',
+            '$host',
+            '$initial_host',
+            '$initial_person_info',
+          ]
+
+          denylist.forEach((key) => {
+            if (properties[key]) {
+              properties[key] = null
+            }
+          })
+
+          return properties
+        },
+      })
+      // Register platform/version immediately so they attach to every event,
+      // including any that fire before the async chain below resolves.
+      posthog.register({
+        app_version: VERSION,
+        platform: osPlatform,
+        telemetry_schema: TELEMETRY_SCHEMA,
+      })
+      serviceHub
+        .analytic()
+        .getAppDistinctId()
+        .then((id) => {
+          if (id) posthog.identify(id)
+        })
+        .finally(async () => {
+          posthog.opt_in_capturing()
+          posthog.register({
+        app_version: VERSION,
+        platform: osPlatform,
+        telemetry_schema: TELEMETRY_SCHEMA,
+      })
+          serviceHub.analytic().updateDistinctId(posthog.get_distinct_id())
+
+          // ATO-111: register hardware/OS/backend super-properties BEFORE
+          // app_opened so they attach to it and every subsequent event. Bounded
+          // by internal timeouts; failures degrade to fewer properties.
+          try {
+            const hwProps = await collectHardwareSuperProps(serviceHub)
+            if (Object.keys(hwProps).length > 0) posthog.register(hwProps)
+
+            // ATO-113: promote the same zero-PII hardware/backend context to
+            // Sentry (frontend tags + Rust scope) and set the anonymous device
+            // id as the Sentry user.
+            const sentryTags = toSentryTags(hwProps, VERSION, osPlatform)
+            setSentryTags(sentryTags)
+            setRustSentryContext(sentryTags)
+            setSentryUser(posthog.get_distinct_id())
+            setRustSentryUser(posthog.get_distinct_id())
+          } catch (err) {
+            console.warn('Failed to collect hardware super-properties:', err)
+          }
+
+          // Everything captured during startup was held back, because
+          // `opt_out_capturing_by_default` makes posthog-js drop rather than
+          // buffer. Replay it now: after the super-properties so replayed
+          // events carry them, and before the `cancelled` bail so a re-run of
+          // this effect cannot strand a whole first launch's worth of events.
+          flushTelemetryQueue()
+
+          // An onboarding run left on screen when the app closed. Reported
+          // here rather than from a close handler, which the renderer is not
+          // reliably given.
+          reportAbandonedOnboarding()
+          // A backend step whose resolve was cut short by "Restart now".
+          reportBackendRestartIntent()
+
+          if (cancelled) return
+
+          // Pass platform/version explicitly too, so the funnel's first event
+          // carries them even if super-prop merging races on this capture.
+          posthog.capture('app_opened', {
+            platform: osPlatform,
+            app_version: VERSION,
+            // Lets the onboarding funnel be filtered to genuine first sessions.
+            // Derived from persisted state rather than a counter so it stays
+            // correct for users who upgraded from a build without it.
+            is_first_launch: isFirstLaunch(),
+          })
+
+          // Detached: the device-list probe spawns the backend and can be slow,
+          // so it must never delay app_opened. It attaches to later events.
+          void collectDeviceParseOk(serviceHub).then((value) => {
+            if (value !== undefined && !cancelled)
+              posthog.register({ device_parse_ok: value })
+          })
+
+          // Forward Local API Server proxy telemetry emitted by the Rust
+          // backend. Loaded dynamically so the web-app build stays usable in
+          // non-Tauri environments. PostHog consent is already enforced via
+          // `opt_in_capturing`; the extra `productAnalytic` guard is defensive
+          // in case the provider effect reruns after toggling the setting.
+          if (IS_TAURI) {
+            import('@tauri-apps/api/event')
+              .then(({ listen }) =>
+                Promise.all([
+                  listen<ApiServerRequestEvent>(
+                    API_SERVER_REQUEST_EVENT,
+                    (evt) => {
+                      if (!productAnalytic) return
+                      posthog.capture('api_server_request', evt.payload)
+                    }
+                  ),
+                  listen<ApiServerSessionSummaryEvent>(
+                    API_SERVER_SESSION_SUMMARY_EVENT,
+                    (evt) => {
+                      if (!productAnalytic) return
+                      posthog.capture('api_server_session_summary', evt.payload)
+                    }
+                  ),
+                ])
+              )
+              .then(([unlistenRequest, unlistenSummary]) => {
+                const detachRequest = createSafeUnlisten(unlistenRequest)
+                const detachSummary = createSafeUnlisten(unlistenSummary)
+                if (cancelled) {
+                  void detachRequest()
+                  void detachSummary()
+                } else {
+                  unlistenApiServerRequest = detachRequest
+                  unlistenApiServerSummary = detachSummary
+                }
+              })
+              .catch((err) => {
+                console.warn(
+                  'Failed to register API server analytics listeners:',
+                  err
+                )
+              })
+          }
+        })
+    } else {
+      posthog.opt_out_capturing()
+    }
+
+    return () => {
+      cancelled = true
+      void unlistenApiServerRequest?.()
+      void unlistenApiServerSummary?.()
+    }
+  }, [productAnalytic, serviceHub])
+
+  return null
+}

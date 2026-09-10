@@ -1,0 +1,25 @@
+{
+  "welcome": "Hai, apa kabar?",
+  "description": "Ada yang bisa saya bantu hari ini?",
+  "temporaryChat": "Obrolan Sementara",
+  "temporaryChatDescription": "Mulai percakapan sementara yang tidak akan disimpan ke riwayat obrolan Anda.",
+  "status": {
+    "empty": "Tidak Ada Obrolan Ditemukan"
+  },
+  "sendMessage": "Kirim Pesan",
+  "newConversation": "Percakapan Baru",
+  "clearHistory": "Hapus Riwayat",
+  "agentMode": {
+    "menuItem": "Mode agen",
+    "agent": "Agen",
+    "turnOff": "Matikan mode agen",
+    "providerUnavailable": "Mode agen memerlukan model lokal atau penyedia cloud dengan kunci API.",
+    "providerKeyMissing": "Tambahkan kunci API untuk penyedia ini di Pengaturan untuk memakai mode agen."
+  },
+  "agentErrors": {
+    "localModelRequired": "Muat model ini sebelum menjalankan agen.",
+    "providerUnavailableDescription": "Pilih model lokal, atau penyedia cloud dengan kunci API.",
+    "providerKeyMissing": "Tambahkan kunci API untuk penyedia ini di Pengaturan lalu coba lagi.",
+    "localServerRequired": "Mode agen dengan model cloud memerlukan Local API Server. Jalankan dari Pengaturan."
+  }
+}

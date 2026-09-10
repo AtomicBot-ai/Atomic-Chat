@@ -1,0 +1,181 @@
+import { useEffect, useRef } from 'react'
+import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
+import { useShallow } from 'zustand/react/shallow'
+
+import { useAppState } from '@/hooks/useAppState'
+import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { createSafeUnlisten } from '@/lib/tauriEvent'
+import { setLocalApiServerRunning } from '@/utils/localApiServerControl'
+
+type SystemUsage = {
+  cpu: number
+  used_memory: number
+  total_memory: number
+}
+
+type MlxSession = {
+  pid: number
+  port: number
+  model_id: string
+  model_path: string
+  is_embedding: boolean
+  api_key: string
+}
+
+type TrayStatusPayload = {
+  server_running: boolean
+  server_url: string
+  model_label: string
+  ram_used_mb: number
+  ram_total_mb: number
+  ram_percent: number
+}
+
+const TRAY_REFRESH_MS = 5000
+
+/**
+ * Push live status into the desktop system tray every 5 s.
+ *
+ * The backing Rust command ({@link ../../../src-tauri/src/core/tray_status.rs `update_tray_status`})
+ * is a no-op when the tray was never installed (desktop builds without the
+ * `ENABLE_SYSTEM_TRAY_ICON` env gate), so this hook is safe to mount unconditionally
+ * inside Tauri — but we still short-circuit on web, mobile, and Linux to avoid
+ * unnecessary IPC chatter.
+ */
+export function useTrayStatusSync(): void {
+  const { serverStatus, activeModels } = useAppState(
+    useShallow((state) => ({
+      serverStatus: state.serverStatus,
+      activeModels: state.activeModels,
+    }))
+  )
+  const { serverPort, apiPrefix } = useLocalApiServer(
+    useShallow((state) => ({
+      serverPort: state.serverPort,
+      apiPrefix: state.apiPrefix,
+    }))
+  )
+
+  // Ref so the interval callback always observes the latest values without
+  // restarting the timer on every dependency change.
+  const latest = useRef({ serverStatus, activeModels, serverPort, apiPrefix })
+  latest.current = { serverStatus, activeModels, serverPort, apiPrefix }
+
+  useEffect(() => {
+    if (!IS_TAURI || !(IS_MACOS || IS_WINDOWS)) return
+
+    let cancelled = false
+
+    const push = async () => {
+      if (cancelled) return
+      try {
+        const current = latest.current
+        const [usage, sessions] = await Promise.all([
+          invoke<SystemUsage>('plugin:hardware|get_system_usage').catch(
+            () => null
+          ),
+          invoke<MlxSession[]>('plugin:mlx|get_mlx_all_sessions').catch(
+            () => [] as MlxSession[]
+          ),
+        ])
+
+        // Prefer an active MLX session (authoritative: a running inference process),
+        // fall back to `activeModels` which also tracks non-MLX engines.
+        const modelLabel = (() => {
+          const nonEmbedding = sessions.filter((s) => !s.is_embedding)
+          if (nonEmbedding.length === 1) return nonEmbedding[0].model_id
+          if (nonEmbedding.length > 1)
+            return `${nonEmbedding.length} models loaded`
+          if (current.activeModels.length === 1) return current.activeModels[0]
+          if (current.activeModels.length > 1)
+            return `${current.activeModels.length} models loaded`
+          return ''
+        })()
+
+        const ramUsed = usage?.used_memory ?? 0
+        const ramTotal = usage?.total_memory ?? 0
+        const ramPercent =
+          ramTotal > 0 ? Math.round((ramUsed / ramTotal) * 100) : 0
+
+        const payload: TrayStatusPayload = {
+          server_running: current.serverStatus === 'running',
+          server_url: `http://127.0.0.1:${current.serverPort}${current.apiPrefix}`,
+          model_label: modelLabel,
+          ram_used_mb: ramUsed,
+          ram_total_mb: ramTotal,
+          ram_percent: ramPercent,
+        }
+
+        await invoke('update_tray_status', { payload })
+      } catch (err) {
+        // Tray is optional UI; never surface errors to the user.
+        if (IS_DEV) console.debug('[tray] update failed', err)
+      }
+    }
+
+    push()
+    const id = setInterval(push, TRAY_REFRESH_MS)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+    // Re-run whenever any of the status inputs change so the tray reflects
+    // transitions (server start/stop, model switch) without waiting up to 5 s.
+  }, [serverStatus, activeModels, serverPort, apiPrefix])
+
+  // Listen for "Stop Server" / "Start Server" clicks dispatched from the
+  // desktop tray menu. Centralising the dispatch here (instead of calling the
+  // proxy directly from Rust) keeps `serverStatus` in the React store in
+  // sync with the actual server state without having to push state changes
+  // back from Rust, and reuses the same `startServer` / `stopServer` service
+  // calls the Local API Server settings page already uses.
+  //
+  // Note: this deliberately calls the plain `setLocalApiServerRunning`
+  // util rather than `useLocalApiServerControl`, so it skips the
+  // `ensureModelForServer(...)` step. Auto-loading a default model from a
+  // tray-only context would surface UI (toasts, error dialogs) that the user
+  // can't see without opening the app first; the assumption is that anyone
+  // toggling the server from the tray has already configured a model. If
+  // start fails because no model is loaded the frontend will surface the
+  // error the next time the user opens the app.
+  useEffect(() => {
+    if (!IS_TAURI || !(IS_MACOS || IS_WINDOWS)) return
+    const unlisteners: Array<() => Promise<void>> = []
+    let cancelled = false
+    const register = (promise: Promise<() => void>): void => {
+      promise
+        .then((fn) => {
+          const detach = createSafeUnlisten(fn)
+          if (cancelled) void detach()
+          else unlisteners.push(detach)
+        })
+        .catch((error: unknown) => {
+          console.warn('[tray] failed to attach listener', error)
+        })
+    }
+
+    register(
+      listen<unknown>('tray-stop-server', () => {
+        // `setLocalApiServerRunning` also resets the status to 'stopped' on
+        // failure, so the tray button can't get stuck permanently pending.
+        setLocalApiServerRunning(false).catch((error: unknown) => {
+          console.error('[tray] stop server failed', error)
+        })
+      })
+    )
+
+    register(
+      listen<unknown>('tray-start-server', () => {
+        setLocalApiServerRunning(true).catch((error: unknown) => {
+          console.error('[tray] start server failed', error)
+        })
+      })
+    )
+
+    return () => {
+      cancelled = true
+      unlisteners.splice(0).forEach((detach) => void detach())
+    }
+  }, [])
+}

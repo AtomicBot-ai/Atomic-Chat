@@ -1,0 +1,128 @@
+import { getModelToStart } from './getModelToStart'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
+
+export type EnsureModelResult =
+  | { status: 'already_loaded'; modelId: string; providerName: string }
+  | { status: 'loaded'; modelId: string; providerName: string }
+  | { status: 'no_model_available' }
+
+export interface EnsureModelDeps {
+  /** Models service — typically `serviceHub.models()` */
+  modelsService: {
+    getActiveModels(provider?: string): Promise<string[]>
+    stopModel(model: string, provider?: string): Promise<unknown>
+    startModel(
+      provider: ModelProvider,
+      model: string,
+      bypassAutoUnload?: boolean
+    ): Promise<unknown>
+  }
+  /** Override the model to load (e.g. user-configured default model). */
+  modelOverride?: { model: string; provider: string } | null
+  onLoadStart?: () => void
+  onLoadEnd?: () => void
+}
+
+/**
+ * Find the provider that owns a given model ID. Both llama.cpp providers list
+ * every GGUF from the shared models dir, so prefer an active provider before
+ * settling for a deactivated one (e.g. TurboQuant, disabled on fresh installs).
+ */
+function findProviderForModel(modelId: string): ModelProvider | undefined {
+  const { providers } = useModelProvider.getState()
+  const owns = (p: ModelProvider) =>
+    p?.models?.some((m: { id: string }) => m.id === modelId)
+  return (
+    providers.find((p) => p?.active !== false && owns(p)) ??
+    providers.find(owns)
+  )
+}
+
+/**
+ * Ensure a model is loaded for the local API server.
+ *
+ * - If a model is already loaded, returns immediately.
+ * - If no model is loaded, picks one via {@link getModelToStart} and loads it.
+ *
+ * The model is started with its existing context size settings (no enforcement).
+ */
+export async function ensureModelForServer(
+  deps: EnsureModelDeps
+): Promise<EnsureModelResult> {
+  const { modelsService, modelOverride, onLoadStart, onLoadEnd } = deps
+
+  const loadedModels = await modelsService.getActiveModels()
+
+  if (modelOverride) {
+    const requestedProvider =
+      useModelProvider.getState().getProviderByName(modelOverride.provider)
+    const requestedIsLoaded = loadedModels.includes(modelOverride.model)
+
+    if (requestedProvider && loadedModels.length > 0) {
+      const modelsToStop = requestedIsLoaded
+        ? loadedModels.filter((modelId) => modelId !== modelOverride.model)
+        : loadedModels
+
+      if (modelsToStop.length > 0) {
+        await Promise.all(
+          modelsToStop.map((modelId) => modelsService.stopModel(modelId))
+        )
+      }
+    }
+
+    if (requestedProvider && requestedIsLoaded) {
+      return {
+        status: 'already_loaded',
+        modelId: modelOverride.model,
+        providerName: requestedProvider.provider,
+      }
+    }
+  }
+
+  if (loadedModels && loadedModels.length > 0 && !modelOverride) {
+    const modelId = loadedModels[0]
+    const providerName =
+      findProviderForModel(modelId)?.provider ?? LOCAL_LLAMACPP_PROVIDER
+    return { status: 'already_loaded', modelId, providerName }
+  }
+
+  // No model loaded — pick one (prefer user-configured default, then auto-pick)
+  const { selectedModel, selectedProvider, getProviderByName } =
+    useModelProvider.getState()
+
+  let modelToStart: { model: string; provider: ModelProvider } | null = null
+
+  if (modelOverride) {
+    const provider = getProviderByName(modelOverride.provider)
+    if (provider && provider.models.some((m) => m.id === modelOverride.model)) {
+      modelToStart = { model: modelOverride.model, provider }
+    }
+  }
+
+  if (!modelToStart) {
+    modelToStart = getModelToStart({
+      selectedModel,
+      selectedProvider,
+      getProviderByName,
+    })
+  }
+
+  if (!modelToStart) {
+    return { status: 'no_model_available' }
+  }
+
+  onLoadStart?.()
+  try {
+    await modelsService.startModel(modelToStart.provider, modelToStart.model, true)
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  } finally {
+    onLoadEnd?.()
+  }
+
+  return {
+    status: 'loaded',
+    modelId: modelToStart.model,
+    providerName: modelToStart.provider.provider,
+  }
+}

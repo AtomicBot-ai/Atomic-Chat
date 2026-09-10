@@ -1,0 +1,7 @@
+[default]
+description = "Default permissions for the hardware plugin"
+permissions = [
+    "allow-get-system-info",
+    "allow-get-system-usage",
+    "allow-refresh-system-info"
+]

@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-04T20:59:00Z",
+  "latest": "b10269-1.4.0",
+  "releases": [
+    {
+      "tag": "b10269-1.4.0",
+      "published_at": "2026-08-04T20:59:00Z",
+      "commit": "074bf826e",
+      "prerelease": false,
+      "min_app_version": "2.0.0",
+      "title": "TurboQuant b10269-1.4.0",
+      "highlights": [
+        "DeepSeek V4 Flash 0731 support and speedup",
+        "Kimi K3 with full vision support",
+        "RDNA2-4 and CDNA support for AMD GPUs on Linux"
+      ],
+      "variants": [
+        {
+          "id": "windows-x64-cpu",
+          "asset": "llama-turboquant-windows-x64-cpu.zip"
+        },
+        {
+          "id": "windows-x64-cuda-12.4",
+          "asset": "llama-turboquant-windows-x64-cuda-12.4.zip"
+        },
+        {
+          "id": "windows-x64-cuda-13.3",
+          "asset": "llama-turboquant-windows-x64-cuda-13.3.zip"
+        },
+        {
+          "id": "windows-x64-vulkan",
+          "asset": "llama-turboquant-windows-x64-vulkan.zip"
+        },
+        {
+          "id": "linux-x64-cpu",
+          "asset": "llama-turboquant-linux-x64-cpu.tar.gz",
+          "sha256": "7ee89f4670e164a48b86b01996b77f0200f960cca0d78e2f003cf452d129c5ef"
+        },
+        {
+          "id": "linux-x64-cuda-12.4",
+          "asset": "llama-turboquant-linux-x64-cuda-12.4.tar.gz",
+          "sha256": "90be3b8de6d378b3afabcaef5d747eb0f15edabbf86111ebff56d9b697fc5e42"
+        },
+        {
+          "id": "linux-x64-cuda-13.3",
+          "asset": "llama-turboquant-linux-x64-cuda-13.3.tar.gz",
+          "sha256": "badd25c4297cd3f73b515b201b079bc2d26a2d07c23cee8c6b5e7ced9f8cfed8"
+        },
+        {
+          "id": "linux-x64-rocm",
+          "asset": "llama-turboquant-linux-x64-rocm.tar.gz",
+          "sha256": "7015fa41361d907699a7760aaf91ef6914a8ba46a86f9fa7d95d748c6b632c01"
+        },
+        {
+          "id": "linux-x64-vulkan",
+          "asset": "llama-turboquant-linux-x64-vulkan.tar.gz",
+          "sha256": "50ec8a3da5ad69b24cf2c90e3cd2d353bba3f46d2c92377644a21fb21e7c18f0"
+        },
+        {
+          "id": "macos-arm64",
+          "asset": "llama-turboquant-macos-arm64.tar.gz"
+        }
+      ]
+    },
+    {
+      "tag": "b10018-1.3.0",
+      "published_at": "2026-07-27T17:40:00Z",
+      "commit": "5bc5c248d",
+      "prerelease": false,
+      "title": "TurboQuant b10018-1.3.0",
+      "highlights": [
+        "First Linux CPU-only and CUDA 12.4 archives",
+        "AMD ROCm archive covering RDNA2 through RDNA4"
+      ],
+      "variants": [
+        {
+          "id": "windows-x64-cpu",
+          "asset": "llama-turboquant-windows-x64-cpu.zip"
+        },
+        {
+          "id": "windows-x64-cuda-12.4",
+          "asset": "llama-turboquant-windows-x64-cuda-12.4.zip"
+        },
+        {
+          "id": "windows-x64-cuda-13.3",
+          "asset": "llama-turboquant-windows-x64-cuda-13.3.zip"
+        },
+        {
+          "id": "windows-x64-vulkan",
+          "asset": "llama-turboquant-windows-x64-vulkan.zip"
+        },
+        {
+          "id": "linux-x64-cpu",
+          "asset": "llama-turboquant-linux-x64-cpu.tar.gz"
+        },
+        {
+          "id": "linux-x64-cuda-12.4",
+          "asset": "llama-turboquant-linux-x64-cuda-12.4.tar.gz"
+        },
+        {
+          "id": "linux-x64-cuda-13.3",
+          "asset": "llama-turboquant-linux-x64-cuda-13.3.tar.gz"
+        },
+        {
+          "id": "linux-x64-rocm",
+          "asset": "llama-turboquant-linux-x64-rocm.tar.gz"
+        },
+        {
+          "id": "linux-x64-vulkan",
+          "asset": "llama-turboquant-linux-x64-vulkan.tar.gz"
+        },
+        {
+          "id": "macos-arm64",
+          "asset": "llama-turboquant-macos-arm64.tar.gz"
+        }
+      ]
+    },
+    {
+      "tag": "dev-latest",
+      "published_at": "2026-08-04T20:52:00Z",
+      "commit": "6c9f05d8a",
+      "prerelease": true,
+      "title": "Dev latest (6c9f05d8a, 2026-08-04)",
+      "highlights": ["Rolling staging build, overwritten on every push to dev"],
+      "variants": [
+        {
+          "id": "windows-x64-cuda-13.3",
+          "asset": "llama-turboquant-windows-x64-cuda-13.3.zip"
+        },
+        {
+          "id": "linux-x64-vulkan",
+          "asset": "llama-turboquant-linux-x64-vulkan.tar.gz"
+        },
+        {
+          "id": "macos-arm64",
+          "asset": "llama-turboquant-macos-arm64.tar.gz"
+        }
+      ]
+    }
+  ]
+}

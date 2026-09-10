@@ -1,0 +1,346 @@
+import { providerModels as models } from '@/constants/models'
+import type {
+  CatalogModel,
+  MMProjModel,
+  ModelQuant,
+} from '@/services/models/types'
+import { ModelCapabilities } from '@/types/models'
+
+export const defaultModel = (provider?: string) => {
+  if (!provider || !Object.keys(models).includes(provider)) {
+    return models.openai.models[0]
+  }
+  return (
+    models[provider as unknown as keyof typeof models]
+      .models as unknown as string[]
+  )[0]
+}
+
+/**
+ * Determines model capabilities based on provider configuration from token.js
+ * @param providerName - The provider name (e.g., 'openai', 'anthropic', 'openrouter')
+ * @param modelId - The model ID to check capabilities for
+ * @returns Array of model capabilities
+ */
+export const getModelCapabilities = (
+  providerName: string,
+  modelId: string
+): string[] => {
+  const providerConfig = models[providerName as unknown as keyof typeof models]
+
+  const supportsToolCalls = Array.isArray(
+    providerConfig?.supportsToolCalls as unknown
+  )
+    ? (providerConfig.supportsToolCalls as unknown as string[])
+    : []
+
+  const supportsImages = Array.isArray(
+    providerConfig?.supportsImages as unknown
+  )
+    ? (providerConfig.supportsImages as unknown as string[])
+    : []
+
+  return [
+    ModelCapabilities.COMPLETION,
+    supportsToolCalls.includes(modelId) ? ModelCapabilities.TOOLS : undefined,
+    supportsImages.includes(modelId) ? ModelCapabilities.VISION : undefined,
+  ].filter(Boolean) as string[]
+}
+
+/**
+ * This utility is to extract cortexso model description from README.md file
+ * @returns
+ */
+export const extractDescription = (text?: string) => {
+  if (!text) return text
+  const normalizedText = removeYamlFrontMatter(text)
+  const overviewPattern = /(?:##\s*Overview\s*\n)([\s\S]*?)(?=\n\s*##|$)/
+  const matches = normalizedText?.match(overviewPattern)
+  let extractedText =
+    matches && matches[1]
+      ? matches[1].trim()
+      : normalizedText?.slice(0, 500).trim()
+
+  // Remove image markdown syntax ![alt text](image-url)
+  extractedText = extractedText?.replace(/!\[.*?\]\(.*?\)/g, '')
+
+  // Remove <img> HTML tags
+  extractedText = extractedText?.replace(/<img[^>]*>/g, '')
+
+  return extractedText
+}
+/**
+ * Remove YAML (HF metadata) front matter from content
+ * @param content
+ * @returns
+ */
+export const removeYamlFrontMatter = (content: string): string => {
+  return content.replace(/^---\n([\s\S]*?)\n---\n/, '')
+}
+
+/**
+ * Extract model name from repo path, e.g. cortexso/tinyllama -> tinyllama
+ * @param modelId
+ * @returns
+ */
+export const extractModelName = (model?: string) => {
+  return model?.split('/')[1] ?? model
+}
+
+const FILE_SIZE_TO_BYTES: Record<'MB' | 'GB', number> = {
+  MB: 1024 ** 2,
+  GB: 1024 ** 3,
+}
+
+function parseCatalogFileSize(fileSize?: string): number | undefined {
+  if (!fileSize) return undefined
+
+  const match = fileSize.trim().match(/^([\d.]+)\s*(MB|GB)$/i)
+  if (!match) return undefined
+
+  const value = Number(match[1])
+  const unit = match[2].toUpperCase() as keyof typeof FILE_SIZE_TO_BYTES
+  if (!Number.isFinite(value)) return undefined
+
+  return value * FILE_SIZE_TO_BYTES[unit]
+}
+
+function formatCatalogFileSize(bytes?: number): string | undefined {
+  if (!bytes || !Number.isFinite(bytes)) return undefined
+
+  if (bytes < 1024 ** 3) {
+    return `${(bytes / 1024 ** 2).toFixed(1)} MB`
+  }
+
+  return `${(bytes / 1024 ** 3).toFixed(1)} GB`
+}
+
+// MTP (Multi-Token Prediction) companion GGUFs are speculative-decoding heads,
+// not standalone models, so we keep them out of the downloadable quant list.
+// Match only dedicated MTP files: an `MTP/` folder, or `mtp` as a leading/trailing
+// filename token. `mtp` mid-name (e.g. Qwen built-in-MTP full models) is left intact.
+export function isMtpCompanionFile(rfilename: string): boolean {
+  const lower = rfilename.toLowerCase()
+  if (/(^|\/)mtp\//.test(lower)) return true
+  const base = (lower.split('/').pop() ?? lower).replace(/\.gguf$/, '')
+  if (/^mtp[-_.]/.test(base)) return true
+  // A trailing `MTP` right after a quant token names a full set of weights with
+  // the MTP layers baked in (`Qwen3.6-27B-UDT-Q6_K_MTP.gguf`, 21.6 GB), not a
+  // head — reading it as a companion hid those repos from the Hub entirely.
+  if (/[-_]mtp$/.test(base)) return !QUANT_BEFORE_MTP.test(base)
+  return false
+}
+
+const QUANT_BEFORE_MTP =
+  /[-_](?:i?q\d[0-9a-z_]*|bf16|f16|f32|mxfp\d[0-9a-z_]*)[-_]mtp$/
+
+/**
+ * GGUF files a repository ships next to its weights that llama.cpp cannot run
+ * on its own: importance matrices, vocab-only dumps, speculative-decoding
+ * drafts, and the tokenizer/vocoder halves of an audio stack. Offering them as
+ * download options is how a user ends up with a 1.4 GB `imatrix_unsloth.gguf`
+ * and a model that never loads.
+ *
+ * Matching is anchored to the start or the end of the file name, never taken as
+ * a substring: `…-NEO-IMATRIX-MAX-MTP.Q4_K_M.gguf` is an ordinary quant of a
+ * model whose *name* mentions imatrix, and a loose test would hide the repo.
+ */
+const NON_WEIGHT_GGUF_PREFIX =
+  /^(?:imatrix|ggml-vocab|vocab|dflash|eagle3|tokenizer|vocoder|audio(?:de|en)coder)(?:[-_.]|$)/
+
+export function isNonWeightGgufFile(rfilename: string): boolean {
+  const lower = rfilename.toLowerCase()
+  const base = (lower.split('/').pop() ?? lower).replace(/\.gguf$/, '')
+  // `<model>.imatrix.gguf` / `<model>-imatrix.gguf` (mradermacher, bartowski).
+  return NON_WEIGHT_GGUF_PREFIX.test(base) || /[-_.]imatrix$/.test(base)
+}
+
+// A quant too large for one file is published as `-00001-of-000NN` shards, and
+// the repo listing carries each shard as a file of its own. Taken at face value
+// they enter the Hub as separate quants: the first shard is a few-megabyte
+// header, so a 156 GB variant advertises itself as a 5 MB "Good fit" and its
+// badge degrades to "00001". Everything a shard set shares -- id, size, quant
+// label -- comes from the name with this suffix removed.
+// The marker also has to be recognised mid-path, because a shard downloaded by
+// this app lands in a directory named after it (`.../M-00002-of-00003/model.gguf`).
+const GGUF_SHARD_SUFFIX = /-\d{5}-of-\d{5}(?=\.gguf$|\/|$)/i
+
+/** Name a shard set is known by: the filename without its `-NNNNN-of-NNNNN`. */
+export function ggufShardGroupKey(rfilename: string): string {
+  return rfilename.replace(GGUF_SHARD_SUFFIX, '')
+}
+
+/** Whether this path is one part of a multi-part GGUF. */
+export function isGgufShard(rfilename: string): boolean {
+  return GGUF_SHARD_SUFFIX.test(rfilename)
+}
+
+/**
+ * The shard llama.cpp has to be handed for this set — the first one. Any other
+ * shard is refused outright ("model must be loaded with the first split"), so
+ * this is what a model entry must point at. Unsharded paths pass through.
+ */
+export function firstGgufShardPath(rfilename: string): string {
+  return rfilename.replace(GGUF_SHARD_SUFFIX, (marker) =>
+    marker.replace(/^-\d{5}/, '-00001')
+  )
+}
+
+/** Group files by the quant they belong to, preserving repository order. */
+export function groupGgufShards<T extends { rfilename: string }>(
+  files: readonly T[]
+): T[][] {
+  const groups = new Map<string, T[]>()
+  for (const file of files) {
+    const key = ggufShardGroupKey(file.rfilename)
+    const group = groups.get(key)
+    if (group) group.push(file)
+    else groups.set(key, [file])
+  }
+  // Repositories list shards in order, but nothing guarantees it, and the first
+  // shard is the one a download has to start from.
+  return [...groups.values()].map((group) =>
+    [...group].sort((left, right) =>
+      left.rfilename.localeCompare(right.rfilename)
+    )
+  )
+}
+
+/**
+ * Fold the shards of a quant back into the single variant they form.
+ *
+ * The curated catalog mirrors the repository file list, so a sharded quant
+ * arrives as one entry per shard — the Hub would otherwise offer `unsloth`
+ * MoE repos as dozens of `00001`-badged variants, most of them 5 MB headers.
+ * The download keeps pointing at the first shard; only the quoted size changes,
+ * to that of the whole set.
+ */
+export function mergeShardedQuants<
+  T extends Pick<CatalogModel, 'quants' | 'num_quants'>,
+>(model: T): T {
+  if (!model.quants?.length) return model
+
+  const groups = groupGgufShards(
+    model.quants.map((quant) => ({
+      rfilename: quant.path || quant.model_id,
+      quant,
+    }))
+  )
+  if (groups.length === model.quants.length) return model
+
+  const quants = groups.map(([first, ...rest]) => {
+    const totalBytes = [first, ...rest].reduce(
+      (sum, entry) => sum + (parseCatalogFileSize(entry.quant.file_size) ?? 0),
+      0
+    )
+    return {
+      ...first.quant,
+      model_id: ggufShardGroupKey(first.quant.model_id),
+      file_size: formatCatalogFileSize(totalBytes) ?? first.quant.file_size,
+    }
+  })
+
+  return { ...model, quants, num_quants: quants.length }
+}
+
+/**
+ * Drop the quants of a catalog entry that are not runnable weights — MTP heads
+ * and everything {@link isNonWeightGgufFile} covers. Keys off the file path
+ * (the real HF filename), falling back to the quant id when absent.
+ *
+ * The curated catalog mirrors each repository's file list verbatim, so without
+ * this an `imatrix` sits in the download list next to the real quants, sorted
+ * to the top by size and preselected as the one that fits — which is how a user
+ * downloads 1.4 GB of importance matrix and reports the model as broken.
+ */
+export function stripNonWeightQuants<
+  T extends Pick<CatalogModel, 'quants' | 'num_quants'>,
+>(model: T): T {
+  if (!model.quants?.length) return model
+  const quants = model.quants.filter((q) => {
+    const file = q.path || q.model_id
+    return !isMtpCompanionFile(file) && !isNonWeightGgufFile(file)
+  })
+  if (quants.length === model.quants.length) return model
+  return { ...model, quants, num_quants: quants.length }
+}
+
+export function getPreferredMmprojModel(
+  model: Pick<CatalogModel, 'mmproj_models'>
+): MMProjModel | undefined {
+  return (
+    model.mmproj_models?.find(
+      (mmproj) => mmproj.model_id.toLowerCase() === 'mmproj-f16'
+    ) ?? model.mmproj_models?.[0]
+  )
+}
+
+/**
+ * Quoted download size: the weights plus whichever projector will be fetched.
+ *
+ * `mmproj` overrides the default projector choice — pass the same one the
+ * download will use, or the row quotes one file's size while fetching another
+ * (the LFM VL projectors range from 98 MB to 359 MB).
+ */
+export function getTotalDownloadFileSize(
+  model: Pick<CatalogModel, 'mmproj_models'>,
+  variant?: Pick<ModelQuant, 'file_size'> | null,
+  mmproj?: Pick<MMProjModel, 'file_size'> | null
+): string | undefined {
+  const modelBytes = parseCatalogFileSize(variant?.file_size)
+  const mmprojBytes = parseCatalogFileSize(
+    (mmproj !== undefined ? mmproj : getPreferredMmprojModel(model))?.file_size
+  )
+
+  if (modelBytes === undefined) {
+    return variant?.file_size
+  }
+
+  return formatCatalogFileSize(modelBytes + (mmprojBytes ?? 0))
+}
+
+//* MLX: суммируем размер всех safetensors-шардов (HF часто режет на 00001-of-0000N)
+export function getMlxTotalFileSize(
+  model: Pick<CatalogModel, 'safetensors_files'>
+): string | undefined {
+  const files = model.safetensors_files
+  if (!files || files.length === 0) return undefined
+
+  let totalBytes = 0
+  let parsedAny = false
+  for (const file of files) {
+    const bytes = parseCatalogFileSize(file.file_size)
+    if (bytes !== undefined) {
+      totalBytes += bytes
+      parsedAny = true
+    }
+  }
+
+  if (!parsedAny) {
+    return files[0]?.file_size
+  }
+
+  return formatCatalogFileSize(totalBytes)
+}
+
+//* Hub / setup: рекомендованный repo id ↔ запись каталога.
+//* Совпадение строго по полному `org/repo` (case-insensitive). Без fallback
+//* по «хвосту» — иначе при коллизии (`unsloth/X` vs `lmstudio-community/X`)
+//* recommended из одной орги молча резолвится в чужую модель.
+export function findCatalogModelForRecommendedRepo(
+  sources: readonly CatalogModel[],
+  recommendedRepoId: string
+): CatalogModel | undefined {
+  if (!recommendedRepoId) return undefined
+  const target = recommendedRepoId.toLowerCase()
+  return sources.find((s) => s.model_name.toLowerCase() === target)
+}
+
+/**
+ * Extract model name from repo path, e.g. https://huggingface.co/cortexso/tinyllama -> cortexso/tinyllama
+ * @param modelId
+ * @returns
+ */
+export const extractModelRepo = (model?: string) => {
+  return model?.replace('https://huggingface.co/', '')
+}

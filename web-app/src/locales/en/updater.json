@@ -1,0 +1,11 @@
+{
+  "newVersion": "New Version {{version}}",
+  "updateAvailable": "Update Available",
+  "nightlyBuild": "Nightly Build",
+  "showReleaseNotes": "Show Release Notes",
+  "hideReleaseNotes": "Hide Release Notes",
+  "remindMeLater": "Remind Me Later",
+  "downloading": "Downloading...",
+  "updateNow": "Update Now",
+  "relaunchingWindows": "Update installed. The app will restart automatically."
+}

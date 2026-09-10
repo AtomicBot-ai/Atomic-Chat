@@ -1,0 +1,27 @@
+name: Notify Cursor on new issue
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST to Cursor automation webhook
+        env:
+          CURSOR_WEBHOOK_URL: ${{ secrets.CURSOR_WEBHOOK_URL }}
+          CURSOR_WEBHOOK_API_KEY: ${{ secrets.CURSOR_WEBHOOK_API_KEY }}
+          ISSUE_PAYLOAD: ${{ toJSON(github.event.issue) }}
+        run: |
+          http_code=$(curl -sS -o response.txt -w "%{http_code}" -X POST "$CURSOR_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $CURSOR_WEBHOOK_API_KEY" \
+            -d "$ISSUE_PAYLOAD")
+          echo "HTTP status: $http_code"
+          echo "Response body:"
+          cat response.txt
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "::error::Cursor webhook rejected the request (HTTP $http_code)"
+            exit 1
+          fi

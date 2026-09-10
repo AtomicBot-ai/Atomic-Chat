@@ -1,0 +1,922 @@
+use rmcp::model::{CallToolRequestParam, CallToolResult};
+use rmcp::{service::Peer, RoleClient};
+use serde_json::{json, Map, Value};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State};
+use tokio::sync::oneshot;
+use tokio::time::timeout;
+
+use super::{
+    constants::{
+        default_filesystem_root, default_mcp_config, filesystem_mcp_pinned_spec,
+        DEFAULT_MCP_TOOL_LIST_TIMEOUT_SECS, FILESYSTEM_MCP_PACKAGE, LEGACY_FILESYSTEM_PLACEHOLDER,
+    },
+    helpers::{kill_process_tree_by_pid, restart_active_mcp_servers, start_mcp_server},
+};
+use crate::core::{
+    app::commands::get_jan_data_folder_path,
+    mcp::models::{
+        McpServerStatus, McpServerStatusKind, McpSettings, McpToolsResponse, ToolWithServer,
+    },
+    state::{AppState, RunningServiceEnum, SharedMcpServers},
+};
+use std::{collections::BTreeSet, fs, time::Duration};
+
+async fn tool_call_timeout(state: &State<'_, AppState>) -> Duration {
+    state.mcp_settings.lock().await.tool_call_timeout_duration()
+}
+
+#[tauri::command]
+pub async fn activate_mcp_server<R: Runtime>(
+    app: tauri::AppHandle<R>,
+    state: State<'_, AppState>,
+    name: String,
+    config: Value,
+) -> Result<(), String> {
+    let servers: SharedMcpServers = state.mcp_servers.clone();
+
+    // Use the modified start_mcp_server that returns first attempt result
+    start_mcp_server(app, servers, name, config).await
+}
+
+#[tauri::command]
+pub async fn deactivate_mcp_server<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<(), String> {
+    log::info!("Deactivating MCP server: {name}");
+
+    // Get port from config before removing (for lock file cleanup later)
+    let bridge_port = if name == "Jan Browser MCP" {
+        let active_servers = state.mcp_active_servers.lock().await;
+        active_servers.get(&name).and_then(|config| {
+            config
+                .get("envs")
+                .and_then(|envs| envs.get("BRIDGE_PORT"))
+                .and_then(|port| port.as_str())
+                .and_then(|port_str| port_str.parse::<u16>().ok())
+        })
+    } else {
+        None
+    };
+
+    // First, mark server as manually deactivated
+    // Remove from active servers list
+    {
+        let mut active_servers = state.mcp_active_servers.lock().await;
+        active_servers.remove(&name);
+        log::info!("Removed MCP server {name} from active servers list");
+    }
+    // Now remove and stop the server
+    let servers = state.mcp_servers.clone();
+    let mut servers_map = servers.lock().await;
+
+    let service = servers_map.remove(&name);
+    let mut start_generations = state.mcp_start_generations.lock().await;
+    let start_generation = start_generations.entry(name.clone()).or_default();
+    *start_generation = start_generation.wrapping_add(1);
+    let mut generations = state.mcp_server_generations.lock().await;
+    let generation = generations.entry(name.clone()).or_default();
+    *generation = generation.wrapping_add(1);
+    state.mcp_server_errors.lock().await.remove(&name);
+    let process_pids = {
+        let mut pids = state.mcp_server_pids.lock().await;
+        pids.remove(&name)
+            .map(|server_pids| server_pids.into_values().collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
+
+    // Release the lock before calling cancel
+    drop(generations);
+    drop(start_generations);
+    drop(servers_map);
+
+    let cancel_result = match service {
+        Some(RunningServiceEnum::NoInit(service)) => {
+            log::info!("Stopping server {name}...");
+            service
+                .cancel()
+                .await
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
+        Some(RunningServiceEnum::WithInit(service)) => {
+            log::info!("Stopping server {name} with initialization...");
+            service
+                .cancel()
+                .await
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
+        None => {
+            log::info!("MCP server {name} was not running");
+            Ok(())
+        }
+    };
+
+    for pid in process_pids {
+        if let Err(error) = kill_process_tree_by_pid(pid).await {
+            log::warn!("Failed to clean up MCP server {name} process tree: {error}");
+        }
+    }
+    cancel_result?;
+    // Delete lock file if this is Jan Browser MCP and we have a port
+    if name == "Jan Browser MCP" {
+        if let Some(port) = bridge_port {
+            use crate::core::mcp::lockfile::delete_lock_file;
+
+            if let Err(e) = delete_lock_file(&app, port) {
+                log::warn!("Failed to delete lock file for port {}: {}", port, e);
+            }
+        }
+    }
+
+    log::info!("Server {name} stopped successfully and marked as deactivated.");
+
+    // Emit mcp-update event so frontend can refresh tools list
+    if let Err(e) = app.emit(
+        "mcp-update",
+        serde_json::json!({
+            "server": name
+        }),
+    ) {
+        log::error!("Failed to emit mcp-update event: {e}");
+    }
+    if let Err(e) = app.emit(
+        "mcp-status-update",
+        serde_json::json!({
+            "server": name
+        }),
+    ) {
+        log::error!("Failed to emit mcp-status-update event: {e}");
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn restart_mcp_servers<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    use super::helpers::{stop_mcp_servers_with_context, ShutdownContext};
+
+    let servers = state.mcp_servers.clone();
+
+    stop_mcp_servers_with_context(&app, &state, ShutdownContext::ManualRestart).await?;
+
+    // Restart only previously active servers (like cortex)
+    restart_active_mcp_servers(&app, servers).await?;
+
+    app.emit("mcp-update", "MCP servers updated")
+        .map_err(|e| format!("Failed to emit event: {e}"))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_connected_servers(
+    _app: AppHandle<impl Runtime>,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    let servers = state.mcp_servers.clone();
+    let servers_map = servers.lock().await;
+    Ok(servers_map.keys().cloned().collect())
+}
+
+/// Retrieves all available tools from all MCP servers with server information
+///
+/// # Arguments
+/// * `state` - Application state containing MCP server connections
+///
+/// # Returns
+/// * `Result<McpToolsResponse, String>` - Tools and per-server listing status
+///
+/// This function:
+/// 1. Locks the MCP servers mutex to access server connections
+/// 2. Iterates through all connected servers
+/// 3. Gets the list of tools from each server
+/// 4. Associates each tool with its parent server name
+/// 5. Combines all tools into a single vector
+/// 6. Returns the combined list of all available tools with server information
+#[tauri::command]
+pub async fn get_tools(
+    app: AppHandle<impl Runtime>,
+    state: State<'_, AppState>,
+) -> Result<McpToolsResponse, String> {
+    // Short, dedicated listing timeout — NOT the 30s tool-call timeout. Listing
+    // is a metadata round-trip; a healthy server answers in ms.
+    let list_timeout = Duration::from_secs(DEFAULT_MCP_TOOL_LIST_TIMEOUT_SECS);
+
+    // Snapshot cloneable client handles under the lock, then release it. Holding
+    // `mcp_servers` across the (potentially slow / hanging) network listing was
+    // the root of the freeze: a single unresponsive server (e.g. a dead remote
+    // MCP) blocked the lock for its full timeout, stalling every other consumer
+    // that needs the map — chat send, model-switch re-init, the tools UI. With
+    // the lock dropped here, listing runs entirely outside the critical section
+    // (ATO-271).
+    let handles: Vec<(String, u64, Peer<RoleClient>)> = {
+        let servers = state.mcp_servers.lock().await;
+        let generations = state.mcp_server_generations.lock().await;
+        servers
+            .iter()
+            .map(|(name, service)| {
+                (
+                    name.clone(),
+                    generations.get(name).copied().unwrap_or_default(),
+                    service.peer(),
+                )
+            })
+            .collect()
+    };
+
+    // List every server concurrently, each capped by its own short timeout, so
+    // one slow/dead server delays only itself — total latency is bounded by
+    // `list_timeout`, not the sum across servers.
+    let per_server = handles
+        .into_iter()
+        .map(|(server_name, generation, peer)| async move {
+            match timeout(list_timeout, peer.list_all_tools()).await {
+                Ok(Ok(tools)) => (server_name, generation, Ok(tools)),
+                Ok(Err(e)) => {
+                    let error = format!("Failed to list tools: {e}");
+                    log::warn!("MCP server {server_name} {error}");
+                    (server_name, generation, Err(error))
+                }
+                Err(_) => {
+                    let error = format!("Tool listing timed out after {}s", list_timeout.as_secs());
+                    log::warn!("MCP server {server_name}: {error}");
+                    (server_name, generation, Err(error))
+                }
+            }
+        });
+
+    let results = futures_util::future::join_all(per_server).await;
+    let mut all_tools: Vec<ToolWithServer> = Vec::new();
+    {
+        let connected_servers = state.mcp_servers.lock().await;
+        let generations = state.mcp_server_generations.lock().await;
+        let mut errors = state.mcp_server_errors.lock().await;
+        for (server_name, generation, result) in results {
+            if !connected_servers.contains_key(&server_name)
+                || generations.get(&server_name).copied().unwrap_or_default() != generation
+            {
+                continue;
+            }
+            match result {
+                Ok(tools) => {
+                    errors.remove(&server_name);
+                    for tool in tools {
+                        all_tools.push(ToolWithServer {
+                            name: tool.name.to_string(),
+                            description: tool.description.as_ref().map(|d| d.to_string()),
+                            input_schema: serde_json::Value::Object((*tool.input_schema).clone()),
+                            server: server_name.clone(),
+                            annotations: tool
+                                .annotations
+                                .as_ref()
+                                .and_then(|annotations| serde_json::to_value(annotations).ok()),
+                        });
+                    }
+                }
+                Err(error) => {
+                    errors.insert(server_name, error);
+                }
+            }
+        }
+    }
+
+    let servers = collect_mcp_server_statuses(&state).await;
+    if let Err(e) = app.emit("mcp-status-update", &servers) {
+        log::error!("Failed to emit mcp-status-update event: {e}");
+    }
+
+    Ok(McpToolsResponse {
+        tools: all_tools,
+        servers,
+    })
+}
+
+#[tauri::command]
+pub async fn get_mcp_server_statuses(
+    state: State<'_, AppState>,
+) -> Result<Vec<McpServerStatus>, String> {
+    Ok(collect_mcp_server_statuses(&state).await)
+}
+
+pub(crate) async fn collect_mcp_server_statuses(state: &AppState) -> Vec<McpServerStatus> {
+    let connected: BTreeSet<String> = state.mcp_servers.lock().await.keys().cloned().collect();
+    let errors = state.mcp_server_errors.lock().await.clone();
+    let names: BTreeSet<String> = connected
+        .iter()
+        .cloned()
+        .chain(errors.keys().cloned())
+        .collect();
+
+    names
+        .into_iter()
+        .map(|name| {
+            if let Some(error) = errors.get(&name) {
+                McpServerStatus {
+                    name,
+                    status: McpServerStatusKind::Error,
+                    error: Some(error.clone()),
+                }
+            } else {
+                McpServerStatus {
+                    name,
+                    status: McpServerStatusKind::Connected,
+                    error: None,
+                }
+            }
+        })
+        .collect()
+}
+
+/// Calls a tool on an MCP server by name with optional arguments
+///
+/// # Arguments
+/// * `state` - Application state containing MCP server connections
+/// * `tool_name` - Name of the tool to call
+/// * `server_name` - Optional name of the server to call the tool from (for disambiguation)
+/// * `arguments` - Optional map of argument names to values
+/// * `cancellation_token` - Optional token to allow cancellation from JS side
+///
+/// # Returns
+/// * `Result<CallToolResult, String>` - Result of the tool call if successful, or error message if failed
+///
+/// This function:
+/// 1. Locks the MCP servers mutex to access server connections
+/// 2. If server_name is provided, looks for the tool in that specific server
+/// 3. Otherwise, searches through all servers for one containing the named tool
+/// 4. When found, calls the tool on that server with the provided arguments
+/// 5. Supports cancellation via cancellation_token
+/// 6. Returns error if no server has the requested tool or if specified server not found
+#[tauri::command]
+pub async fn call_tool<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    tool_name: String,
+    server_name: Option<String>,
+    arguments: Option<Map<String, Value>>,
+    cancellation_token: Option<String>,
+) -> Result<CallToolResult, String> {
+    let timeout_duration = tool_call_timeout(&state).await;
+    let data_dir = get_jan_data_folder_path(app.clone());
+    match server_name.as_deref() {
+        Some(server) => log::info!(
+            "MCP server {server}: calling tool {tool_name} (timeout {}s)",
+            timeout_duration.as_secs()
+        ),
+        None => log::info!(
+            "MCP: calling tool {tool_name} (server unspecified, timeout {}s)",
+            timeout_duration.as_secs()
+        ),
+    }
+
+    let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
+
+    if let Some(token) = &cancellation_token {
+        let mut cancellations = state.tool_call_cancellations.lock().await;
+        cancellations.insert(token.clone(), cancel_tx);
+    }
+
+    let servers = state.mcp_servers.lock().await;
+
+    // If server_name is provided, only check that specific server
+    let servers_to_check: Vec<(&String, &crate::core::state::RunningServiceEnum)> =
+        if let Some(ref server) = server_name {
+            servers.iter().filter(|(name, _)| *name == server).collect()
+        } else {
+            servers.iter().collect()
+        };
+
+    if servers_to_check.is_empty() {
+        if let Some(server) = server_name {
+            log::error!("MCP server {server} not connected, cannot call tool {tool_name}");
+            return Err(format!("Server '{server}' not found"));
+        }
+    }
+
+    // When a signed-in server rejects the call as unauthorized, the session is
+    // refreshed and the server restarted for one retry — set inside the loop,
+    // acted on after the servers lock is released.
+    let mut auth_retry: Option<(String, String)> = None;
+
+    // Iterate through servers and find the one that contains the tool
+    for (srv_name, service) in servers_to_check.iter() {
+        let tools = match service.list_all_tools().await {
+            Ok(tools) => tools,
+            Err(e) => {
+                log::warn!(
+                    "MCP server {srv_name}: failed to list tools while resolving {tool_name}: {e}"
+                );
+                continue;
+            }
+        };
+
+        if !tools.iter().any(|t| t.name == tool_name) {
+            continue;
+        }
+
+        log::info!("MCP server {srv_name}: dispatching tool {tool_name}");
+
+        // rmcp's own expiry check never fires (it compares the static
+        // `expires_in`), so a near-expiry session is refreshed here, in place.
+        // A cheap no-op for servers without an OAuth session.
+        if let Err(e) = state
+            .mcp_oauth
+            .refresh_if_stale(&data_dir, srv_name, false)
+            .await
+        {
+            log::warn!("MCP server {srv_name}: pre-call token refresh failed: {e}");
+        }
+
+        let tool_call = service.call_tool(CallToolRequestParam {
+            name: tool_name.clone().into(),
+            arguments: arguments.clone(),
+        });
+
+        // Race between timeout, tool call, and cancellation
+        let result = if cancellation_token.is_some() {
+            tokio::select! {
+                result = timeout(timeout_duration, tool_call) => {
+                    match result {
+                        Ok(call_result) => call_result.map_err(|e| e.to_string()),
+                        Err(_) => Err(format!(
+                            "Tool call '{tool_name}' timed out after {} seconds",
+                            timeout_duration.as_secs()
+                        )),
+                    }
+                }
+                _ = cancel_rx => {
+                    Err(format!("Tool call '{tool_name}' was cancelled"))
+                }
+            }
+        } else {
+            match timeout(timeout_duration, tool_call).await {
+                Ok(call_result) => call_result.map_err(|e| e.to_string()),
+                Err(_) => Err(format!(
+                    "Tool call '{tool_name}' timed out after {} seconds",
+                    timeout_duration.as_secs()
+                )),
+            }
+        };
+
+        if let Some(token) = &cancellation_token {
+            let mut cancellations = state.tool_call_cancellations.lock().await;
+            cancellations.remove(token);
+        }
+
+        match &result {
+            Ok(_) => {
+                log::info!("MCP server {srv_name}: tool {tool_name} completed");
+            }
+            Err(e) => {
+                log::error!("MCP server {srv_name}: tool {tool_name} failed: {e}");
+                if crate::core::mcp::oauth::is_auth_error(e)
+                    && state.mcp_oauth.has_entry(&data_dir, srv_name).await
+                {
+                    auth_retry = Some((srv_name.to_string(), e.clone()));
+                    break;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    if let Some((srv, original_error)) = auth_retry {
+        drop(servers);
+        log::warn!(
+            "MCP server {srv}: auth failure on tool {tool_name}; refreshing the sign-in \
+             and reconnecting for one retry"
+        );
+        state
+            .mcp_oauth
+            .refresh_if_stale(&data_dir, &srv, true)
+            .await?;
+        let config = state
+            .mcp_active_servers
+            .lock()
+            .await
+            .get(&srv)
+            .cloned()
+            .ok_or_else(|| original_error.clone())?;
+        start_mcp_server(app.clone(), state.mcp_servers.clone(), srv.clone(), config).await?;
+
+        let servers = state.mcp_servers.lock().await;
+        let Some(service) = servers.get(&srv) else {
+            return Err(original_error);
+        };
+        let retry = timeout(
+            timeout_duration,
+            service.call_tool(CallToolRequestParam {
+                name: tool_name.clone().into(),
+                arguments,
+            }),
+        )
+        .await;
+        return match retry {
+            Ok(call_result) => {
+                call_result.map_err(|e| format!("{srv}: {e} — open Connectors and sign in again"))
+            }
+            Err(_) => Err(format!(
+                "Tool call '{tool_name}' timed out after {} seconds",
+                timeout_duration.as_secs()
+            )),
+        };
+    }
+
+    log::warn!("MCP: tool {tool_name} not found on any connected server");
+    Err(format!("Tool {tool_name} not found"))
+}
+
+/// Cancels a running tool call by its cancellation token
+///
+/// # Arguments
+/// * `state` - Application state containing cancellation tokens
+/// * `cancellation_token` - Token identifying the tool call to cancel
+///
+/// # Returns
+/// * `Result<(), String>` - Success if token found and cancelled, error otherwise
+#[tauri::command]
+pub async fn cancel_tool_call(
+    state: State<'_, AppState>,
+    cancellation_token: String,
+) -> Result<(), String> {
+    let mut cancellations = state.tool_call_cancellations.lock().await;
+
+    if let Some(cancel_tx) = cancellations.remove(&cancellation_token) {
+        let _ = cancel_tx.send(());
+        log::info!("MCP: tool call cancelled (token {cancellation_token})");
+        Ok(())
+    } else {
+        log::warn!("MCP: cancellation token {cancellation_token} not found");
+        Err(format!("Cancellation token {cancellation_token} not found"))
+    }
+}
+
+fn parse_mcp_settings(value: Option<&Value>) -> McpSettings {
+    value
+        .and_then(|v| serde_json::from_value::<McpSettings>(v.clone()).ok())
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub async fn get_mcp_configs<R: Runtime>(app: AppHandle<R>) -> Result<String, String> {
+    let mut path = get_jan_data_folder_path(app.clone());
+    path.push("mcp_config.json");
+
+    // Create default empty config if file doesn't exist
+    if !path.exists() {
+        log::info!("mcp_config.json not found, creating default empty config");
+        fs::write(&path, default_mcp_config())
+            .map_err(|e| format!("Failed to create default MCP config: {e}"))?;
+    }
+
+    let config_string = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+
+    let mut config_value: Value = if config_string.trim().is_empty() {
+        json!({})
+    } else {
+        serde_json::from_str(&config_string).unwrap_or_else(|error| {
+            log::error!("Failed to parse existing MCP config, regenerating defaults: {error}");
+            json!({})
+        })
+    };
+
+    if !config_value.is_object() {
+        config_value = json!({});
+    }
+
+    let mut mutated = false;
+    let config_object = config_value.as_object_mut().unwrap();
+
+    let settings = parse_mcp_settings(config_object.get("mcpSettings"));
+    if !config_object.contains_key("mcpSettings") {
+        config_object.insert(
+            "mcpSettings".to_string(),
+            serde_json::to_value(&settings)
+                .map_err(|e| format!("Failed to serialize MCP settings: {e}"))?,
+        );
+        mutated = true;
+    }
+
+    if !config_object.contains_key("mcpServers") {
+        config_object.insert("mcpServers".to_string(), json!({}));
+        mutated = true;
+    }
+
+    // Migration: Add Jan Browser MCP if not present
+    let mcp_servers = config_object
+        .get_mut("mcpServers")
+        .and_then(|v| v.as_object_mut())
+        .ok_or("mcpServers is not an object")?;
+
+    if !mcp_servers.contains_key("Jan Browser MCP") {
+        log::info!("Migrating config: Adding 'Jan Browser MCP' server");
+        mcp_servers.insert(
+            "Jan Browser MCP".to_string(),
+            json!({
+                "command": "npx",
+                "args": ["-y", "search-mcp-server@latest"],
+                "env": {
+                    "BRIDGE_HOST": "127.0.0.1",
+                    "BRIDGE_PORT": "17389"
+                },
+                "active": false,
+                "official": true
+            }),
+        );
+        mutated = true;
+    }
+
+    // Migration: replace legacy filesystem placeholder path with the per-user
+    // default sandbox. Affects only configs that still hold our own original
+    // placeholder; user-edited paths are left untouched.
+    if let Some(fs_server) = mcp_servers
+        .get_mut("filesystem")
+        .and_then(|v| v.as_object_mut())
+    {
+        if let Some(args) = fs_server.get_mut("args").and_then(|v| v.as_array_mut()) {
+            let mut replaced = false;
+            for arg in args.iter_mut() {
+                if arg.as_str() == Some(LEGACY_FILESYSTEM_PLACEHOLDER) {
+                    let root = default_filesystem_root();
+                    if let Err(e) = fs::create_dir_all(&root) {
+                        log::warn!(
+                            "Failed to pre-create default MCP filesystem sandbox at {}: {e}",
+                            root.display()
+                        );
+                    }
+                    *arg = Value::String(root.to_string_lossy().into_owned());
+                    replaced = true;
+                }
+            }
+            if replaced {
+                log::info!(
+                    "Migrating config: replaced legacy filesystem placeholder with default sandbox"
+                );
+                mutated = true;
+            }
+        }
+    }
+
+    // Migration (ATO-164): pin an unversioned `@modelcontextprotocol/
+    // server-filesystem` arg to a concrete, known-good version. Unversioned
+    // installs let `bun x` serve a stale cached build that resolved relative
+    // paths against the app's CWD (upstream servers#2526), so relative writes
+    // failed with "outside allowed directories". Pinning a concrete version
+    // forces a fresh fetch (cache miss) of the fixed build (servers#2609).
+    //
+    // We scan every server's args (not just the one named "filesystem") so
+    // custom-named entries are covered, and only rewrite the *bare* package
+    // token — an explicit user pin (`...@<ver>`) is left untouched. The check
+    // is idempotent: once rewritten, the arg equals the pinned spec and never
+    // re-triggers.
+    let pinned_spec = filesystem_mcp_pinned_spec();
+    if let Some(servers) = config_object
+        .get_mut("mcpServers")
+        .and_then(|v| v.as_object_mut())
+    {
+        for server in servers.values_mut() {
+            if let Some(args) = server.get_mut("args").and_then(|v| v.as_array_mut()) {
+                for arg in args.iter_mut() {
+                    if arg.as_str() == Some(FILESYSTEM_MCP_PACKAGE) {
+                        *arg = Value::String(pinned_spec.clone());
+                        log::info!(
+                            "Migrating config: pinned filesystem MCP server to {pinned_spec}"
+                        );
+                        mutated = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // Migration: Linear retired its SSE endpoint (mcp.linear.app/sse now
+    // 404s) in favour of streamable HTTP at /mcp. Rewrite only the exact
+    // retired URL — any other user-edited URL is left untouched. Idempotent:
+    // once rewritten the URL no longer matches.
+    if let Some(servers) = config_object
+        .get_mut("mcpServers")
+        .and_then(|v| v.as_object_mut())
+    {
+        for server in servers.values_mut() {
+            let Some(server_obj) = server.as_object_mut() else {
+                continue;
+            };
+            if server_obj.get("url").and_then(|v| v.as_str()) == Some("https://mcp.linear.app/sse")
+            {
+                server_obj.insert(
+                    "url".to_string(),
+                    Value::String("https://mcp.linear.app/mcp".to_string()),
+                );
+                server_obj.insert("type".to_string(), Value::String("http".to_string()));
+                log::info!(
+                    "Migrating config: moved Linear MCP off the retired /sse endpoint to /mcp"
+                );
+                mutated = true;
+            }
+        }
+    }
+
+    // Persist any mutations back to disk
+    if mutated {
+        fs::write(
+            &path,
+            serde_json::to_string_pretty(&config_value)
+                .map_err(|e| format!("Failed to serialize MCP config: {e}"))?,
+        )
+        .map_err(|e| format!("Failed to write MCP config: {e}"))?;
+    }
+
+    // Update in-memory state with latest settings
+    {
+        let state = app.state::<AppState>();
+        let mut settings_guard = state.mcp_settings.lock().await;
+        *settings_guard = settings.clone();
+    }
+
+    serde_json::to_string_pretty(&config_value)
+        .map_err(|e| format!("Failed to serialize MCP config: {e}"))
+}
+
+/// Check if error indicates extension not connected
+pub(crate) fn is_extension_not_connected_error(text: &str) -> bool {
+    const PATTERNS: &[&str] = &[
+        "not connected to bridge",
+        "not responding to ping",
+        "extension not connected",
+    ];
+    const KEYWORD_PAIRS: &[(&str, &str)] = &[
+        ("browser", "not connected"),
+        ("browser", "not responding"),
+        ("tool", "not found"),
+    ];
+
+    let text_lower = text.to_lowercase();
+    PATTERNS.iter().any(|p| text_lower.contains(p))
+        || KEYWORD_PAIRS
+            .iter()
+            .any(|(a, b)| text_lower.contains(a) && text_lower.contains(b))
+}
+
+/// Extract text response from tool result
+fn get_result_text(result: &rmcp::model::CallToolResult) -> Option<&str> {
+    result
+        .content
+        .first()
+        .and_then(|c| c.as_text())
+        .map(|t| t.text.as_str())
+}
+
+/// Check if Jan Browser extension is connected via MCP
+#[tauri::command]
+pub async fn check_jan_browser_extension_connected(
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let servers = state.mcp_servers.lock().await;
+    let service = match servers.get("Jan Browser MCP") {
+        Some(s) => s,
+        None => return Ok(false),
+    };
+
+    // Check available tools
+    let tools = match timeout(Duration::from_secs(2), service.list_all_tools()).await {
+        Ok(Ok(tools)) if !tools.is_empty() => tools,
+        _ => return Ok(false),
+    };
+
+    let has_ping = tools.iter().any(|t| t.name == "ping");
+
+    // Try simple ping first if available
+    if has_ping {
+        match try_ping_tool(service).await {
+            PingResult::Connected => return Ok(true),
+            PingResult::NotConnected => return Ok(false),
+            PingResult::ToolNotAvailable => {
+                log::debug!("ping unavailable, trying browser_snapshot");
+            }
+        }
+    }
+
+    // Fallback to browser_snapshot
+    try_browser_snapshot_tool(service).await
+}
+
+enum PingResult {
+    Connected,
+    NotConnected,
+    ToolNotAvailable,
+}
+
+async fn try_ping_tool(service: &RunningServiceEnum) -> PingResult {
+    let result = timeout(
+        Duration::from_secs(3),
+        service.call_tool(CallToolRequestParam {
+            name: "ping".into(),
+            arguments: Some(Map::new()),
+        }),
+    )
+    .await;
+
+    match result {
+        Ok(Ok(res)) => {
+            if let Some(text) = get_result_text(&res) {
+                if text == "pong" {
+                    return PingResult::Connected;
+                }
+                if is_extension_not_connected_error(text) {
+                    return PingResult::NotConnected;
+                }
+            }
+            if res.is_error == Some(true) {
+                return PingResult::NotConnected;
+            }
+            PingResult::Connected
+        }
+        Ok(Err(e)) => {
+            if is_extension_not_connected_error(&e.to_string()) {
+                PingResult::NotConnected
+            } else {
+                PingResult::ToolNotAvailable
+            }
+        }
+        Err(_) => PingResult::NotConnected,
+    }
+}
+
+async fn try_browser_snapshot_tool(service: &RunningServiceEnum) -> Result<bool, String> {
+    let result = timeout(
+        // Snapshot tool is very time-consuming
+        // Extend timeout to make sure the tool call has enough time to succeed
+        Duration::from_secs(20),
+        service.call_tool(CallToolRequestParam {
+            name: "browser_snapshot".into(),
+            arguments: Some(Map::new()),
+        }),
+    )
+    .await;
+
+    match result {
+        Ok(Ok(res)) => {
+            if res.is_error == Some(true) {
+                if let Some(text) = get_result_text(&res) {
+                    if is_extension_not_connected_error(text) {
+                        return Ok(false);
+                    }
+                }
+            }
+            Ok(true)
+        }
+        Ok(Err(_)) | Err(_) => Ok(false),
+    }
+}
+
+#[tauri::command]
+pub async fn save_mcp_configs<R: Runtime>(
+    app: AppHandle<R>,
+    configs: String,
+) -> Result<(), String> {
+    let mut path = get_jan_data_folder_path(app.clone());
+    path.push("mcp_config.json");
+    log::info!("save mcp configs, path: {path:?}");
+
+    let mut config_value: Value =
+        serde_json::from_str(&configs).map_err(|e| format!("Invalid MCP config payload: {e}"))?;
+
+    if !config_value.is_object() {
+        return Err("MCP config must be a JSON object".to_string());
+    }
+
+    let config_object = config_value.as_object_mut().unwrap();
+    let settings = parse_mcp_settings(config_object.get("mcpSettings"));
+
+    if !config_object.contains_key("mcpSettings") {
+        config_object.insert(
+            "mcpSettings".to_string(),
+            serde_json::to_value(&settings).expect("Failed to serialize MCP settings"),
+        );
+    }
+
+    if !config_object.contains_key("mcpServers") {
+        config_object.insert("mcpServers".to_string(), json!({}));
+    }
+
+    fs::write(
+        &path,
+        serde_json::to_string_pretty(&config_value)
+            .map_err(|e| format!("Failed to serialize MCP config: {e}"))?,
+    )
+    .map_err(|e| e.to_string())?;
+
+    {
+        let state = app.state::<AppState>();
+        let mut settings_guard = state.mcp_settings.lock().await;
+        *settings_guard = settings;
+    }
+
+    Ok(())
+}

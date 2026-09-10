@@ -1,0 +1,84 @@
+use std::time::Duration;
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+/// Configuration parameters extracted from MCP server config
+#[derive(Debug, Clone)]
+pub struct McpServerConfig {
+    pub transport_type: Option<String>,
+    pub url: Option<String>,
+    pub command: String,
+    pub args: Vec<Value>,
+    pub envs: serde_json::Map<String, Value>,
+    pub timeout: Option<Duration>,
+    pub headers: serde_json::Map<String, Value>,
+    /// Working directory for a spawned stdio server (ATO-164, defense-in-depth).
+    /// When set, the child process is launched with this CWD so relative paths
+    /// resolve there instead of the app's data dir. `None` inherits the app CWD.
+    pub cwd: Option<String>,
+}
+
+fn default_tool_call_timeout_seconds() -> u64 {
+    super::constants::DEFAULT_MCP_TOOL_CALL_TIMEOUT_SECS
+}
+
+/// Runtime MCP settings that can be adjusted via UI
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpSettings {
+    #[serde(default = "default_tool_call_timeout_seconds")]
+    pub tool_call_timeout_seconds: u64,
+}
+
+impl Default for McpSettings {
+    fn default() -> Self {
+        Self {
+            tool_call_timeout_seconds: super::constants::DEFAULT_MCP_TOOL_CALL_TIMEOUT_SECS,
+        }
+    }
+}
+
+impl McpSettings {
+    /// Returns the tool call timeout duration, enforcing a minimum of 1 second to avoid zero-duration timeouts.
+    pub fn tool_call_timeout_duration(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.tool_call_timeout_seconds.max(1))
+    }
+}
+
+/// Tool with server information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolWithServer {
+    pub name: String,
+    pub description: Option<String>,
+    #[serde(rename = "inputSchema")]
+    pub input_schema: serde_json::Value,
+    pub server: String,
+    /// Raw MCP `ToolAnnotations` (`readOnlyHint`, …) when the server sends
+    /// them. Additive and optional — older consumers ignore it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum McpServerStatusKind {
+    Connected,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerStatus {
+    pub name: String,
+    pub status: McpServerStatusKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpToolsResponse {
+    pub tools: Vec<ToolWithServer>,
+    pub servers: Vec<McpServerStatus>,
+}

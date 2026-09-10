@@ -1,0 +1,34 @@
+{
+  "manifest_version": 1,
+  "schema_version": 1,
+  "updated_at": "2026-07-14T00:00:00Z",
+  "orgs": ["AtomicChat"],
+  "stats": {
+    "total_models": 1,
+    "by_org": { "AtomicChat": 1 },
+    "mlx_models": 0,
+    "gguf_models": 1
+  },
+  "models": [
+    {
+      "model_name": "AtomicChat/Qwen3.5-4B-GGUF",
+      "developer": "AtomicChat",
+      "downloads": 0,
+      "description": "Qwen3.5 GGUF",
+      "num_quants": 1,
+      "quants": [
+        {
+          "model_id": "AtomicChat/Qwen3.5-4B-GGUF-Q4_K_M",
+          "path": "https://huggingface.co/AtomicChat/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf",
+          "file_size": "2.5 GB"
+        }
+      ],
+      "num_mmproj": 0,
+      "mmproj_models": [],
+      "num_safetensors": 0,
+      "safetensors_files": [],
+      "is_mlx": false,
+      "tags_normalized": ["gguf", "qwen3.5", "q4_k_m"]
+    }
+  ]
+}

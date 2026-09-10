@@ -1,0 +1,625 @@
+{
+  "api": "API",
+  "assistants": "Ассистенты",
+  "hardware": "Оборудование",
+  "mcp-servers": "Серверы MCP",
+  "connectors": "Коннекторы",
+  "plugins": "Плагины",
+  "local_api_server": "Локальный API-сервер",
+  "https_proxy": "HTTPS-прокси",
+  "extensions": "Расширения",
+  "experimental": "Экспериментально",
+  "attachments": "Вложения",
+  "voice": "Голос",
+  "general": "Общие",
+  "settings": "Настройки",
+  "modelProviders": "Поставщики моделей",
+  "manageProviders": "Manage providers",
+  "hiddenProviders": "{{count}} disabled",
+  "interface": "Интерфейс",
+  "privacy": "Конфиденциальность",
+  "keyboardShortcuts": "Сочетания клавиш",
+  "newChat": "Новый чат",
+  "newBadge": "Новое",
+  "newAgentChat": "Новый чат агента",
+  "chats": "Чаты",
+  "agentChats": "Чаты агента",
+  "searchChats": "Поиск по чатам",
+  "searchAgentChats": "Поиск по чатам агента",
+  "favorites": "Избранное",
+  "recents": "Недавние",
+  "hub": "Хаб",
+  "models": "Модели",
+  "skills": "Навыки",
+  "cloud": "Cloud",
+  "agentSkill": {
+    "selected": "Навык: {{name}}",
+    "remove": "Убрать выбранный навык",
+    "loading": "Загрузка навыков…",
+    "noMatches": "Подходящие включённые навыки не найдены"
+  },
+  "skillsEmpty": "Установленные навыки отсутствуют.",
+  "selectSkill": "Выберите навык, чтобы посмотреть его инструкции.",
+  "enableSkill": "Включить навык",
+  "skillEnabled": "Включён",
+  "skillDisabled": "Отключён",
+  "bundled": "Встроенный",
+  "incompatible": "Несовместим",
+  "dangerous": "Чувствительный",
+  "scriptsCount": "{{count}} скрипт",
+  "scriptsCount_few": "{{count}} скрипта",
+  "scriptsCount_many": "{{count}} скриптов",
+  "refresh": "Обновить",
+  "createNewSkill": "Создать",
+  "writeSkillInstructions": "Написать инструкции навыка",
+  "uploadASkill": "Загрузить навык",
+  "uploadSkill": "Загрузка навыка",
+  "uploadSkillDescription": "Загрузите определение навыка.",
+  "dropSkillToUpload": "Перетащите файл или нажмите для загрузки",
+  "uploadingSkill": "Загрузка навыка…",
+  "uploadOneSkill": "Загружайте по одному навыку",
+  "skillFiles": "Файлы навыков",
+  "skillFileRequirements": "Требования к файлу",
+  "skillMarkdownRequirement": "Файл .md должен содержать название и описание навыка в формате YAML",
+  "skillArchiveRequirement": "Файл .zip или .skill должен содержать SKILL.md",
+  "createSkillDescription": "Создайте переиспользуемый сценарий для режима агента.",
+  "skillName": "Название навыка",
+  "skillNamePlaceholder": "еженедельный-отчёт",
+  "description": "Описание",
+  "skillDescriptionPlaceholder": "Создаёт еженедельные отчёты по недавней работе. Используйте для обновлений или сводок о прогрессе.",
+  "instructions": "Инструкции",
+  "skillInstructionsPlaceholder": "Суммируй мою недавнюю работу в трёх разделах: успехи, блокеры и следующие шаги. Тон — профессиональный, но не сухой…",
+  "skillActions": "Действия с навыком",
+  "downloadSkill": "Скачать",
+  "skillExported": "Навык экспортирован",
+  "tryInChat": "Попробовать в чате",
+  "editSkill": "Редактировать навык",
+  "editSkillDescription": "Измените описание и инструкции. Название навыка изменить нельзя.",
+  "uninstallSkill": "Удалить",
+  "skillUnavailable": "Недоступно",
+  "skillError": "Ошибка навыка",
+  "skillInstructions": "Инструкции",
+  "deleteSkill": "Удалить навык",
+  "deleteSkillDescription": "Удалить пользовательский навык «{{name}}»? Это действие нельзя отменить.",
+  "helpSupport": "Справка и поддержка",
+  "helpUsImproveJan": "Помогите нам улучшить Atomic Bot",
+  "unstarAll": "Очистить избранное",
+  "unstar": "Удалить из избранного",
+  "deleteAll": "Удалить все",
+  "star": "В избранное",
+  "openInNewWindow": "Открыть в новом окне",
+  "openInNewWindowFailed": "Не удалось открыть этот чат в новом окне",
+  "rename": "Переименовать",
+  "delete": "Удалить",
+  "copied": "Скопировано",
+  "dataFolder": "Папка данных",
+  "others": "Другое",
+  "language": "Язык",
+  "login": "Войти",
+  "loginWith": "Войти через {{provider}}",
+  "loginFailed": "Не удалось войти в систему",
+  "logout": "Выйти",
+  "loggingOut": "Выход из системы…",
+  "loggedOut": "Выход выполнен успешно",
+  "logoutFailed": "Не удалось выйти из системы",
+  "profile": "Профиль",
+  "reset": "Сбросить",
+  "search": "Поиск",
+  "name": "Имя",
+  "cancel": "Отмена",
+  "create": "Создать",
+  "save": "Сохранить",
+  "edit": "Редактировать",
+  "copy": "Копировать",
+  "back": "Назад",
+  "close": "Закрыть",
+  "done": "Готово",
+  "next": "Далее",
+  "finish": "Готово",
+  "skip": "Пропустить",
+  "allow": "Разрешить",
+  "deny": "Запретить",
+  "start": "Начать",
+  "stop": "Остановить",
+  "preview": "Предварительный просмотр",
+  "compactWidth": "Компактная ширина",
+  "fullWidth": "Полная ширина",
+  "dark": "Тёмная",
+  "light": "Светлая",
+  "system": "Системная",
+  "auto": "Авто",
+  "english": "Английский",
+  "medium": "Средний",
+  "newThread": "Новое обсуждение",
+  "noResultsFound": "Результаты не найдены",
+  "noThreadsYet": "Обсуждений пока нет",
+  "noThreadsYetDesc": "Начните новый диалог, чтобы увидеть историю ваших обсуждений.",
+  "downloads": "Загрузки",
+  "downloading": "Загрузка",
+  "cancelDownload": "Отменить загрузку",
+  "pauseDownload": "Приостановить загрузку",
+  "resumeDownload": "Возобновить загрузку",
+  "downloadCancelled": "Загрузка отменена",
+  "downloadComplete": "Загрузка завершена",
+  "thinking": "Размышление...",
+  "working": "Работает...",
+  "thought": "Размышление",
+  "callingTool": "Вызов инструмента",
+  "completed": "Завершено",
+  "image": "Изображение",
+  "vision": "Зрение",
+  "embeddings": "Эмбеддинги",
+  "tools": "Инструменты",
+  "webSearch": "Веб-поиск",
+  "reasoning": "Рассуждение",
+  "webSearchToggleEnabled": "Веб-поиск включён",
+  "webSearchToggleDisabled": "Веб-поиск выключен",
+  "webSearchToggleFailed": "Не удалось включить веб-поиск ({{server}})",
+  "reasoningToggleEnabled": "Ризонинг включён",
+  "reasoningToggleDisabled": "Ризонинг выключен",
+  "reasoningEffort": {
+    "title": "Усилие",
+    "ariaLabel": "Уровень мышления: {{level}}",
+    "faster": "Быстрее",
+    "smarter": "Умнее",
+    "low": "Низкое",
+    "medium": "Среднее",
+    "high": "Высокое",
+    "xhigh": "Очень высокое",
+    "max": "Максимум"
+  },
+  "voiceInput": {
+    "start": "Голосовой ввод",
+    "stop": "Остановить и вставить",
+    "cancel": "Отменить запись",
+    "listening": "Слушаю…",
+    "preparing": "Готовим голосовой ввод…",
+    "starting": "Запускаем голосовую модель…",
+    "transcribing": "Расшифровываем…",
+    "placeholder": "Слушаю — говорите",
+    "level": "Уровень микрофона",
+    "elapsed": "Время записи",
+    "unavailableWhileStreaming": "Голосовой ввод недоступен, пока идёт ответ",
+    "keptOnCancel": "Запись остановлена. Уже вставленный текст сохранён.",
+    "deviceFallback": "Выбранный микрофон недоступен, используется системный по умолчанию.",
+    "errors": {
+      "permission": "Atomic Chat не может использовать микрофон",
+      "noDevice": "Микрофон не найден",
+      "deviceBusy": "Микрофон занят другим приложением",
+      "deviceDisconnected": "Микрофон был отключён",
+      "modelMissing": "Голосовая модель ещё не установлена",
+      "engineFailed": "Не удалось запустить голосовую модель",
+      "transcriptionFailed": "Не удалось расшифровать фразу",
+      "transcriptionUnsupported": "Эта сборка llama.cpp не может запустить голосовую модель",
+      "transcriptionTimeout": "Голосовая модель слишком долго отвечала",
+      "internal": "В голосовом вводе произошёл сбой"
+    },
+    "setup": {
+      "step": "Шаг {{current}} из {{total}}",
+      "back": "Назад",
+      "next": "Далее",
+      "done": "Готово",
+      "intro": {
+        "title": "Говорите вместо того, чтобы печатать",
+        "description": "Диктуйте в поле ввода — текст появляется по мере речи.",
+        "bulletLive": "Фраза появляется, как только вы её договорили.",
+        "bulletLocal": "Работает локально — звук никуда не уходит.",
+        "bulletAnywhere": "Работает в чате и в режиме агента."
+      },
+      "permission": {
+        "title": "Разрешите доступ к микрофону",
+        "description": "Запись начнётся только после нажатия на кнопку микрофона.",
+        "allow": "Разрешить микрофон",
+        "requesting": "Ждём вашего ответа…",
+        "allowed": "Разрешено",
+        "denied": "Доступ к микрофону запрещён",
+        "deniedHelp": "Включите микрофон для Atomic Chat в настройках приватности.",
+        "openSystemSettings": "Открыть системные настройки",
+        "checkAgain": "Проверить ещё раз",
+        "restartNote": "В macOS после изменения может потребоваться перезапуск Atomic Chat.",
+        "unsupported": "В этой системе доступ к микрофону настраивается вне приложения.",
+        "rowTitle": "Микрофон",
+        "rowDescription": "Нужен, чтобы захватывать речь для распознавания.",
+        "deniedShort": "Запрещён",
+        "unsupportedShort": "Настраивается в системе",
+        "privacyNote": "Отозвать доступ можно в любой момент в настройках приватности системы.",
+        "allowShort": "Разрешить"
+      },
+      "model": {
+        "title": "Установите голосовую модель",
+        "description": "Voxtral Mini расшифровывает речь локально. Загружается один раз.",
+        "meta": "{{size}} · llama.cpp · разовая загрузка",
+        "installed": "Установлена",
+        "progress": "{{percent}}% · {{current}} / {{total}} ГБ",
+        "failed": "Не удалось загрузить голосовую модель",
+        "diskNote": "Нужно около {{gb}} ГБ свободного места.",
+        "tagline": "Мультиязычное распознавание в реальном времени",
+        "sizeGb": "{{size}} ГБ"
+      },
+      "doneBlocked": "Разрешите микрофон и установите модель, чтобы завершить."
+    }
+  },
+  "proactive": "Проактивность",
+  "selectAModel": "Выберите модель",
+  "downloadModel": "Скачать модель",
+  "noToolsAvailable": "Нет доступных инструментов",
+  "noModelsFoundFor": "Не найдены модели для \"{{searchValue}}\"",
+  "failedToLoadModels": "Не удалось загрузить модели",
+  "failedToLoadModelsTimeout": "Не удалось загрузить модели (превышено время ожидания)",
+  "retry": "Повторить",
+  "noModels": "Модели не найдены",
+  "customAvatar": "Свой аватар",
+  "editAssistant": "Редактировать ассистента",
+  "jan": "Atomic Bot",
+  "metadata": "Метаданные",
+  "regenerate": "Сгенерировать заново",
+  "threadImage": "Изображение обсуждения",
+  "editMessage": "Редактировать сообщение",
+  "deleteMessage": "Удалить сообщение",
+  "deleteThread": "Удалить обсуждение",
+  "renameThread": "Переименовать обсуждение",
+  "threadTitle": "Заголовок обсуждения",
+  "deleteAllThreads": "Удалить все обсуждения",
+  "allThreadsUnfavorited": "Все обсуждения удалены из избранного",
+  "deleteAllThreadsConfirm": "Вы уверены, что хотите удалить все обсуждения? Это действие нельзя отменить.",
+  "addProvider": "Добавить поставщика",
+  "addOpenAIProvider": "Добавить поставщика OpenAI",
+  "enterNameForProvider": "Введите имя для вашего поставщика",
+  "providerAlreadyExists": "Поставщик с именем \"{{name}}\" уже существует. Пожалуйста, выберите другое имя.",
+  "adjustFontSize": "Изменить размер шрифта",
+  "changeLanguage": "Изменить язык",
+  "editTheme": "Редактировать тему",
+  "editCodeBlockStyle": "Редактировать стиль блока кода",
+  "editServerHost": "Редактировать адрес хоста",
+  "pickColorWindowBackground": "Выберите цвет фона окна",
+  "pickColorAppMainView": "Выберите цвет главного окна",
+  "pickColorAppPrimary": "Выберите основной цвет приложения",
+  "pickColorAppAccent": "Выберите цвет акцента приложения",
+  "pickColorAppDestructive": "Выберите цвет опасных действий",
+  "apiKeyRequired": "Необходим ключ API",
+  "enterTrustedHosts": "Введите доверенные хосты",
+  "placeholder": {
+    "chatInput": "Спрашивайте что угодно…"
+  },
+  "confirm": "Подтвердить",
+  "ok": "ОК",
+  "continue": "Продолжить",
+  "loading": "Загрузка…",
+  "error": "Ошибка",
+  "success": "Успешно",
+  "warning": "Предупреждение",
+  "conversationNotAvailable": "Диалог недоступен",
+  "conversationNotAvailableDescription": "Диалог, к которому вы пытаетесь получить доступ, недоступен или был удалён.",
+  "temporaryChat": "Временный чат",
+  "temporaryChatTooltip": "Временный чат не появится в вашей истории",
+  "noResultsFoundDesc": "Мы не смогли найти чаты по вашему запросу. Попробуйте другое ключевое слово.",
+  "searchModels": "Поиск моделей…",
+  "searchStyles": "Поиск стилей…",
+  "createAssistant": "Создать ассистента",
+  "enterApiKey": "Введите ключ API",
+  "scrollToBottom": "Прокрутить вниз",
+  "generateAiResponse": "Сгенерировать ответ ИИ",
+  "continueAiResponse": "Продолжить с ответом ИИ",
+  "addModel": {
+    "title": "Добавить модель",
+    "modelId": "ID модели",
+    "enterModelId": "Введите ID модели",
+    "addModel": "Добавить модель",
+    "description": "Добавить новую модель к поставщику",
+    "exploreModels": "Список моделей от поставщика"
+  },
+  "mcpServers": {
+    "editServer": "Редактировать сервер",
+    "addServer": "Добавить сервер",
+    "serverName": "Имя сервера",
+    "enterServerName": "Введите имя сервера",
+    "command": "Команда",
+    "enterCommand": "Введите команду",
+    "arguments": "Аргументы",
+    "argument": "Аргумент {{index}}",
+    "envVars": "Переменные окружения",
+    "key": "Ключ",
+    "value": "Значение",
+    "save": "Сохранить"
+  },
+  "deleteServer": {
+    "title": "Удалить сервер",
+    "delete": "Удалить"
+  },
+  "editJson": {
+    "errorParse": "Не удалось разобрать JSON",
+    "errorPaste": "Не удалось вставить JSON",
+    "errorFormat": "Неверный формат JSON",
+    "titleAll": "Редактировать конфигурацию всех серверов",
+    "placeholder": "Введите конфигурацию JSON",
+    "save": "Сохранить"
+  },
+  "editModel": {
+    "title": "Редактирование модели: {{modelId}}",
+    "description": "Настройте возможности модели, переключив нужные параметры ниже.",
+    "capabilities": "Возможности",
+    "tools": "Инструменты",
+    "vision": "Зрение",
+    "embeddings": "Эмбеддинги",
+    "notAvailable": "Пока недоступно"
+  },
+  "outOfContextError": {
+    "truncateInput": "Обрезка ввода",
+    "title": "Ошибка: выход за пределы контекста",
+    "description": "Этот чат достигает лимита памяти ИИ, подобно тому как заканчивается место на доске. Мы можем расширить окно памяти (размер контекста), чтобы он запоминал больше, но это потребует больше оперативной памяти вашего компьютера. Мы также можем обрезать ввод: часть истории чата будет забыта, чтобы освободить место для новых сообщений.",
+    "increaseContextSizeDescription": "Вы хотите увеличить размер контекста?",
+    "increaseContextSize": "Увеличить размер контекста"
+  },
+  "toolApproval": {
+    "title": "Запрос разрешения на использование инструмента",
+    "description": "Ассистент хочет использовать <strong>{{toolName}}</strong>",
+    "securityNotice": "Разрешайте только проверенные инструменты. Инструменты могут получить доступ к вашей системе и данным.",
+    "deny": "Запретить",
+    "allowOnce": "Разрешить один раз",
+    "alwaysAllow": "Всегда разрешать"
+  },
+  "deleteModel": {
+    "title": "Удаление модели: {{modelId}}",
+    "description": "Вы уверены, что хотите удалить эту модель? Это действие нельзя отменить.",
+    "success": "Модель {{modelId}} удалена безвозвратно.",
+    "cancel": "Отмена",
+    "delete": "Удалить"
+  },
+  "deleteProvider": {
+    "title": "Удалить поставщика",
+    "description": "Удалить этого поставщика и все его модели. Это действие нельзя отменить.",
+    "success": "Поставщик {{provider}} удалён безвозвратно.",
+    "confirmTitle": "Удаление поставщика: {{provider}}",
+    "confirmDescription": "Вы уверены, что хотите удалить этого поставщика? Это действие нельзя отменить.",
+    "cancel": "Отмена",
+    "delete": "Удалить"
+  },
+  "modelSettings": {
+    "title": "Настройки модели - {{modelId}}",
+    "description": "Настройте параметры модели для оптимизации производительности и поведения."
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "Изменение папки с данными",
+      "description": "Вы уверены, что хотите изменить расположение папки данных? Это переместит все ваши данные в новое место и перезапустит приложение.",
+      "currentLocation": "Текущее расположение:",
+      "newLocation": "Новое расположение:",
+      "cancel": "Отмена",
+      "changeLocation": "Изменить расположение"
+    },
+    "deleteAllThreads": {
+      "title": "Удаление всех обсуждений",
+      "description": "Все обсуждения будут удалены. Это действие нельзя отменить."
+    },
+    "deleteAllAgentThreads": {
+      "title": "Удаление всех чатов агента",
+      "description": "Все чаты агента будут удалены. Это действие нельзя отменить."
+    },
+    "deleteThread": {
+      "description": "Вы уверены, что хотите удалить это обсуждение? Это действие нельзя отменить."
+    },
+    "messageMetadata": {
+      "title": "Метаданные сообщения"
+    }
+  },
+  "projects": {
+    "title": "Проекты",
+    "new": "Новый проект",
+    "addProject": "Добавить проект",
+    "addToProject": "Добавить в проект",
+    "removeFromProject": "Удалить из проекта",
+    "createNewProject": "Создать новый проект",
+    "editProject": "Редактировать проект",
+    "deleteProject": "Удалить проект",
+    "projectName": "Название проекта",
+    "enterProjectName": "Введите название проекта...",
+    "noProjectsAvailable": "Нет доступных проектов",
+    "noProjectsYet": "Проектов пока нет",
+    "noProjectsYetDesc": "Начните новый проект, нажав кнопку Добавить проект.",
+    "projectNotFound": "Проект не найден",
+    "projectNotFoundDesc": "Проект, который вы ищете, не существует или был удалён.",
+    "deleteProjectDialog": {
+      "title": "Удалить проект",
+      "permanentDelete": "Это навсегда удалит все обсуждения.",
+      "permanentDeleteWarning": "Это действие навсегда удалит ВСЕ обсуждения в проекте!",
+      "deleteEmptyProject": "Это действие удалит проект \"{{projectName}}\".",
+      "saveThreadsAdvice": "Чтобы сохранить обсуждения, переместите их в общий список или в другой проект перед удалением.",
+      "starredWarning": "В этом проекте остались избранные обсуждения.",
+      "deleteButton": "Удалить",
+      "successWithName": "Проект \"{{projectName}}\" успешно удалён",
+      "successWithoutName": "Проект успешно удалён",
+      "error": "Не удалось удалить проект. Пожалуйста, попробуйте ещё раз.",
+      "ariaLabel": "Удалить {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "Создать новый проект",
+      "editTitle": "Редактировать проект",
+      "nameLabel": "Название проекта",
+      "namePlaceholder": "Введите название проекта...",
+      "createButton": "Создать",
+      "updateButton": "Обновить",
+      "alreadyExists": "Проект \"{{projectName}}\" уже существует",
+      "createSuccess": "Проект \"{{projectName}}\" успешно создан",
+      "renameSuccess": "Проект переименован с \"{{oldName}}\" на \"{{newName}}\""
+    },
+    "noConversationsIn": "В проекте {{projectName}} нет диалогов",
+    "startNewConversation": "Начните новый диалог с {{projectName}} ниже",
+    "conversationsIn": "Диалоги в {{projectName}}",
+    "conversationsDescription": "Нажмите на любой диалог, чтобы продолжить общение, или начните новый ниже.",
+    "thread": "обсуждение",
+    "threads": "обсуждения",
+    "updated": "Обновлено:",
+    "collapseProject": "Свернуть проект",
+    "expandProject": "Развернуть проект",
+    "update": "Обновить",
+    "searchProjects": "Поиск проектов...",
+    "noProjectsFound": "Проекты не найдены",
+    "tryDifferentSearch": "Попробуйте другой поисковый запрос"
+  },
+  "attachmentsIngestion": {
+    "title": "Выберите способ обработки вложений",
+    "description": "Выберите, вставить содержимое файлов непосредственно в чат или индексировать их как эмбеддинги.",
+    "inline": "Вставить в чат",
+    "embeddings": "Использовать эмбеддинги"
+  },
+  "attachmentInjectedIndicator": "Вставлено в чат",
+  "attachmentEmbeddedIndicator": "Эмбеддинг для RAG",
+  "viewInjectedContent": "Просмотреть вставленный контент",
+  "injectedContentTitle": "Содержимое файла",
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "Все обсуждения удалены из избранного",
+      "description": "Все обсуждения удалены из избранного."
+    },
+    "deleteAllThreads": {
+      "title": "Удаление всех обсуждений",
+      "description": "Все обсуждения были удалены безвозвратно."
+    },
+    "deleteAllAgentThreads": {
+      "title": "Удаление всех чатов агента",
+      "description": "Все чаты агента были удалены безвозвратно."
+    },
+    "renameThread": {
+      "title": "Переименование обсуждения",
+      "description": "Заголовок обсуждения переименован в '{{title}}'"
+    },
+    "deleteThread": {
+      "title": "Удаление обсуждения",
+      "description": "Это обсуждение было удалено безвозвратно."
+    },
+    "editMessage": {
+      "title": "Редактирование сообщения",
+      "description": "Сообщение успешно отредактировано. Пожалуйста, подождите ответа модели."
+    },
+    "appUpdateDownloaded": {
+      "title": "Обновление приложения загружено",
+      "description": "Обновление приложения успешно загружено."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "Ошибка загрузки обновления приложения",
+      "description": "Не удалось загрузить обновление приложения. Пожалуйста, попробуйте ещё раз."
+    },
+    "downloadComplete": {
+      "title": "Загрузка завершена",
+      "description": "Загружено: {{item}}"
+    },
+    "downloadCancelled": {
+      "title": "Загрузка отменена",
+      "description": "Процесс загрузки был отменен."
+    },
+    "downloadFailed": {
+      "title": "Ошибка загрузки",
+      "description": "Не удалось загрузить {{item}}"
+    },
+    "modelValidationStarted": {
+      "title": "Проверка модели",
+      "description": "Модель \"{{modelId}}\" успешно загружена. Проверка целостности…"
+    },
+    "modelValidationFailed": {
+      "title": "Проверка модели не пройдена",
+      "description": "Загруженная модель \"{{modelId}}\" не прошла проверку целостности и была удалена. Файл может быть повреждён или изменён."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "Загрузка завершена",
+      "description": "Модель \"{{item}}\" успешно загружена и проверена."
+    },
+    "projectCreated": {
+      "title": "Проект создан",
+      "description": "Проект \"{{projectName}}\" успешно создан"
+    },
+    "projectRenamed": {
+      "title": "Проект переименован",
+      "description": "Проект переименован с \"{{oldName}}\" на \"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "Проект удалён",
+      "description": "Проект \"{{projectName}}\" успешно удалён."
+    },
+    "projectAlreadyExists": {
+      "title": "Проект уже существует",
+      "description": "Проект \"{{projectName}}\" уже существует"
+    },
+    "projectDeleteFailed": {
+      "title": "Не удалось удалить",
+      "description": "Не удалось удалить проект. Пожалуйста, попробуйте ещё раз."
+    },
+    "threadAssignedToProject": {
+      "title": "Обсуждение назначено",
+      "description": "Обсуждение успешно назначено проекту \"{{projectName}}\""
+    },
+    "threadRemovedFromProject": {
+      "title": "Обсуждение удалено",
+      "description": "Обсуждение успешно удалено из проекта \"{{projectName}}\""
+    },
+    "downloadDiskFull": {
+      "title": "Не хватает места на диске",
+      "description": "Освободите место на диске с папкой данных Jan и начните закачку заново."
+    },
+    "downloadDiskPermission": {
+      "title": "Нет прав на запись модели",
+      "description": "Приложение не может писать в папку данных Jan. Проверьте права на папку или перенесите её туда, где запись разрешена."
+    },
+    "downloadDiskLocked": {
+      "title": "Файл занят другой программой",
+      "description": "Антивирус или программа резервного копирования держит файл во время записи. Добавьте папку данных Jan в исключения и повторите."
+    },
+    "downloadDiskPathTooLong": {
+      "title": "Слишком длинный путь к файлу",
+      "description": "Windows ограничивает путь 260 символами. Перенесите папку данных Jan ближе к корню диска и повторите."
+    },
+    "downloadDiskDeviceLost": {
+      "title": "Диск больше недоступен",
+      "description": "Внешний или сетевой диск с папкой данных Jan отключился. Подключите его и продолжите закачку."
+    }
+  },
+  "pluginsMenu": {
+    "title": "Плагины",
+    "emptySkills": "Навыков пока нет",
+    "manageSkills": "Управление навыками"
+  },
+  "connectorsMenu": {
+    "title": "Коннекторы",
+    "empty": "Коннекторов пока нет",
+    "manage": "Управление коннекторами",
+    "toolCount": "Инструментов: {{count}}",
+    "toggleFailed": "Не удалось запустить {{server}}",
+    "cost": "Инструментов: {{count}} · ≈{{tokens}} токенов",
+    "costShare": "Инструментов: {{count}} · ≈{{tokens}} токенов ({{share}}% контекста)",
+    "heavy": "Тяжёлый: одни описания этих инструментов занимают {{share}}% контекста в {{ctx}} токенов в каждом запросе.",
+    "muteForChat": "Выключить для этого чата",
+    "unmuteForChat": "Включить для этого чата",
+    "mutedForChat": "Выключен для этого чата",
+    "toolCountPartial": "Инструментов: {{enabled}} из {{count}}",
+    "costPartial": "Инструментов: {{enabled}} из {{count}} · ≈{{tokens}} токенов",
+    "costSharePartial": "Инструментов: {{enabled}} из {{count}} · ≈{{tokens}} токенов ({{share}}% контекста)",
+    "configureTools": "Инструменты"
+  },
+  "connectorTools": {
+    "title": "Инструменты {{name}}",
+    "scopeChat": "Изменения действуют только в этом чате.",
+    "scopeDefault": "Значения по умолчанию для новых чатов. Чат со своими настройками инструментов сохраняет их.",
+    "summary": "Включено {{enabled}} из {{count}}",
+    "onForChat": "Включён для этого чата",
+    "onByDefault": "Включён для новых чатов",
+    "mutedHint": "Включите коннектор, чтобы настраивать его инструменты.",
+    "search": "Поиск инструментов",
+    "enableAll": "Включить все",
+    "disableAll": "Выключить все",
+    "noTools": "Список инструментов пуст. Подключите сервер, чтобы загрузить их.",
+    "noMatches": "Ничего не найдено"
+  },
+  "toolCostHint": {
+    "title": "Описания инструментов занимают ≈{{tokens}} из {{ctx}} токенов контекста",
+    "body": "Подключённые коннекторы ({{servers}}) добавляют описания своих инструментов в каждый запрос, поэтому локальная модель отвечает медленно. Выключите ненужные для этого чата.",
+    "mute": "Выключить {{server}} для этого чата",
+    "dismiss": "Оставить как есть"
+  },
+  "downloadPanel": {
+    "collapse": "Свернуть закачки",
+    "expand": "Показать закачки",
+    "preparing": "Начинаем…",
+    "paused": "Пауза",
+    "left": "осталось {{eta}}",
+    "appUpdate": "Обновление приложения"
+  }
+}

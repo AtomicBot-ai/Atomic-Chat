@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Скачать Jan</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    p { color: #666; margin-bottom: 1.5rem; }
+    .links { display: flex; flex-direction: column; gap: 0.75rem; }
+    a.dl { display: block; padding: 0.75rem 1rem; background: #111; color: #fff; text-decoration: none; border-radius: 8px; text-align: center; }
+    a.dl:hover { background: #333; }
+    .meta { font-size: 0.875rem; color: #999; margin-top: 0.25rem; }
+  </style>
+</head>
+<body>
+  <h1>Скачать Jan</h1>
+  <p>Выберите версию для вашей ОС. После нажатия начнётся загрузка.</p>
+  <div class="links">
+    <!-- Подставь свои URL и имена файлов после загрузки артефактов на сервер -->
+    <a class="dl" href="releases/Jan.dmg" download>macOS (Apple Silicon / Intel)</a>
+    <span class="meta">.dmg</span>
+    <a class="dl" href="releases/Jan_x64-setup.nsis.exe" download>Windows (x64)</a>
+    <span class="meta">.exe</span>
+    <a class="dl" href="releases/Jan_amd64.AppImage" download>Linux (AppImage)</a>
+    <span class="meta">.AppImage</span>
+  </div>
+</body>
+</html>

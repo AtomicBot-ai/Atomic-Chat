@@ -1,0 +1,687 @@
+{
+  "assistants": "Assistants",
+  "hardware": "Hardware",
+  "mcp-servers": "MCP Servers",
+  "connectors": "Connectors",
+  "plugins": "Plugins",
+  "local_api_server": "Local API Server",
+  "remote_access": "Remote Access",
+  "integrations": "Integrations",
+  "experimental": "Experimental",
+  "claude_code": "Claude Code",
+  "hermes_agent": "Hermes Agent",
+  "https_proxy": "HTTPS Proxy",
+  "extensions": "Extensions",
+  "attachments": "Attachments",
+  "voice": "Voice",
+  "general": "General",
+  "settings": "Settings",
+  "modelProviders": "Model Providers",
+  "manageProviders": "Manage providers",
+  "hiddenProviders": "{{count}} disabled",
+  "hideProvider": "Hide provider",
+  "showProvider": "Show provider",
+  "interface": "Interface",
+  "privacy": "Privacy",
+  "keyboardShortcuts": "Shortcuts",
+  "newChat": "New Chat",
+  "newTask": "New Task",
+  "newBadge": "New",
+  "newAgentChat": "New Agent Chat",
+  "chats": "Chats",
+  "agentChats": "Agent chats",
+  "searchChats": "Search chats",
+  "searchAgentChats": "Search agent chats",
+  "favorites": "Favorites",
+  "recents": "Recents",
+  "hub": "Hub",
+  "models": "Models",
+  "launch": "Integrations",
+  "api": "API",
+  "skills": "Skills",
+  "cloud": "Cloud",
+  "agentSkill": {
+    "selected": "Skill: {{name}}",
+    "remove": "Remove selected skill",
+    "loading": "Loading skills…",
+    "noMatches": "No matching enabled skills"
+  },
+  "skillsEmpty": "No skills are installed.",
+  "selectSkill": "Select a skill to view its instructions.",
+  "enableSkill": "Enable skill",
+  "skillEnabled": "Enabled",
+  "skillDisabled": "Disabled",
+  "bundled": "Bundled",
+  "incompatible": "Incompatible",
+  "dangerous": "Sensitive",
+  "scriptsCount": "{{count}} script",
+  "scriptsCount_other": "{{count}} scripts",
+  "refresh": "Refresh",
+  "createNewSkill": "Create new",
+  "writeSkillInstructions": "Write skill instructions",
+  "uploadASkill": "Upload a skill",
+  "uploadSkill": "Upload skill",
+  "uploadSkillDescription": "Upload a skill definition.",
+  "dropSkillToUpload": "Drag and drop or click to upload",
+  "uploadingSkill": "Uploading skill…",
+  "uploadOneSkill": "Upload one skill at a time",
+  "skillFiles": "Skill files",
+  "skillFileRequirements": "File requirements",
+  "skillMarkdownRequirement": ".md file must contain skill name and description formatted in YAML",
+  "skillArchiveRequirement": ".zip or .skill file must include a SKILL.md file",
+  "createSkillDescription": "Create a reusable workflow for Agent mode.",
+  "skillName": "Skill name",
+  "skillNamePlaceholder": "weekly-status-report",
+  "description": "Description",
+  "skillDescriptionPlaceholder": "Generate weekly status reports from recent work. Use when asked for updates or progress summaries.",
+  "instructions": "Instructions",
+  "skillInstructionsPlaceholder": "Summarize my recent work in three sections: wins, blockers, and next steps. Keep the tone professional but not stiff…",
+  "skillActions": "Skill actions",
+  "downloadSkill": "Download",
+  "skillExported": "Skill exported",
+  "tryInChat": "Try in chat",
+  "editSkill": "Edit skill",
+  "editSkillDescription": "Update the description and instructions. The skill name cannot be changed.",
+  "uninstallSkill": "Uninstall",
+  "skillUnavailable": "Unavailable",
+  "skillError": "Skill error",
+  "skillInstructions": "Instructions",
+  "deleteSkill": "Delete skill",
+  "deleteSkillDescription": "Delete the custom skill “{{name}}”? This cannot be undone.",
+  "helpSupport": "Help & Support",
+  "helpUsImproveJan": "Help Us Improve Atomic Bot",
+  "unstarAll": "Unstar All",
+  "unstar": "Unstar",
+  "deleteAll": "Delete All",
+  "star": "Star",
+  "openInNewWindow": "Open in new window",
+  "openInNewWindowFailed": "Couldn't open this chat in a new window",
+  "rename": "Rename",
+  "delete": "Delete",
+  "copied": "Copied!",
+  "dataFolder": "Data Folder",
+  "others": "Other",
+  "language": "Language",
+  "login": "Log In",
+  "loginWith": "Log In With {{provider}}",
+  "loginFailed": "Failed To Log In",
+  "logout": "Log Out",
+  "loggingOut": "Logging Out...",
+  "loggedOut": "Successfully Logged Out",
+  "logoutFailed": "Failed To Log Out",
+  "profile": "Profile",
+  "reset": "Reset",
+  "search": "Search",
+  "searchThreads": "Search threads...",
+  "toNavigate": "to navigate",
+  "toSelect": "to select",
+  "toClose": "to close",
+  "clearRecent": "Clear",
+  "name": "Name",
+  "cancel": "Cancel",
+  "create": "Create",
+  "save": "Save",
+  "edit": "Edit",
+  "copy": "Copy",
+  "back": "Back",
+  "close": "Close",
+  "done": "Done",
+  "next": "Next",
+  "finish": "Finish",
+  "skip": "Skip",
+  "allow": "Allow",
+  "deny": "Deny",
+  "start": "Start",
+  "stop": "Stop",
+  "preview": "Preview",
+  "compactWidth": "Compact Width",
+  "fullWidth": "Full Width",
+  "dark": "Dark",
+  "light": "Light",
+  "system": "System",
+  "auto": "Auto",
+  "english": "English",
+  "medium": "Medium",
+  "newThread": "New Thread",
+  "noResultsFound": "No results found",
+  "noThreadsYet": "No threads yet",
+  "noThreadsYetDesc": "Start a new conversation to see your thread history here.",
+  "downloads": "Downloads",
+  "downloading": "Downloading",
+  "cancelDownload": "Cancel download",
+  "pauseDownload": "Pause download",
+  "resumeDownload": "Resume download",
+  "downloadCancelled": "Download Cancelled",
+  "downloadComplete": "Download Complete",
+  "thinking": "Thinking...",
+  "working": "Working...",
+  "thought": "Thought",
+  "callingTool": "Calling tool",
+  "completed": "Completed",
+  "image": "Image",
+  "vision": "Vision",
+  "embeddings": "Embeddings",
+  "tools": "Tools",
+  "webSearch": "Web Search",
+  "reasoning": "Reasoning",
+  "webSearchToggleEnabled": "Web search enabled",
+  "webSearchToggleDisabled": "Web search disabled",
+  "webSearchToggleFailed": "Couldn't start web search ({{server}})",
+  "reasoningToggleEnabled": "Reasoning enabled",
+  "reasoningToggleDisabled": "Reasoning disabled",
+  "reasoningEffort": {
+    "title": "Effort",
+    "ariaLabel": "Thinking effort: {{level}}",
+    "faster": "Faster",
+    "smarter": "Smarter",
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "xhigh": "Extra High",
+    "max": "Max"
+  },
+  "voiceInput": {
+    "start": "Start voice input",
+    "stop": "Stop and insert",
+    "cancel": "Discard recording",
+    "listening": "Listening…",
+    "preparing": "Preparing voice input…",
+    "starting": "Starting the voice model…",
+    "transcribing": "Transcribing…",
+    "placeholder": "Listening — start speaking",
+    "level": "Microphone level",
+    "elapsed": "Recording time",
+    "unavailableWhileStreaming": "Voice input is unavailable while a reply is streaming",
+    "keptOnCancel": "Recording stopped. The text already inserted was kept.",
+    "deviceFallback": "That microphone wasn't available, so the system default is being used.",
+    "errors": {
+      "permission": "Atomic Chat can't use the microphone",
+      "noDevice": "No microphone was found",
+      "deviceBusy": "The microphone is in use by another app",
+      "deviceDisconnected": "The microphone was disconnected",
+      "modelMissing": "The voice model isn't installed yet",
+      "engineFailed": "The voice model couldn't be started",
+      "transcriptionFailed": "That phrase couldn't be transcribed",
+      "transcriptionUnsupported": "This llama.cpp build can't run the voice model",
+      "transcriptionTimeout": "The voice model took too long to answer",
+      "internal": "Voice input ran into a problem"
+    },
+    "setup": {
+      "step": "Step {{current}} of {{total}}",
+      "back": "Back",
+      "next": "Next",
+      "done": "Done",
+      "intro": {
+        "title": "Talk instead of typing",
+        "description": "Dictate into the message box and your words appear as you speak.",
+        "bulletLive": "Each phrase lands as soon as you finish it.",
+        "bulletLocal": "Runs on this computer — audio never leaves it.",
+        "bulletAnywhere": "Works in chat and in agent mode."
+      },
+      "permission": {
+        "title": "Allow microphone access",
+        "description": "Nothing is recorded until you press the microphone button.",
+        "allow": "Allow microphone",
+        "requesting": "Waiting for your answer…",
+        "allowed": "Allowed",
+        "denied": "Microphone access was denied",
+        "deniedHelp": "Re-enable the microphone for Atomic Chat in your privacy settings.",
+        "openSystemSettings": "Open System Settings",
+        "checkAgain": "Check again",
+        "restartNote": "On macOS you may need to restart Atomic Chat after changing this.",
+        "unsupported": "This system handles microphone access outside the app.",
+        "rowTitle": "Microphone",
+        "rowDescription": "Required to capture your speech for transcription.",
+        "deniedShort": "Denied",
+        "unsupportedShort": "System-managed",
+        "privacyNote": "You can revoke access at any time in your system privacy settings.",
+        "allowShort": "Allow"
+      },
+      "model": {
+        "title": "Install the voice model",
+        "description": "Voxtral Mini transcribes locally. It is downloaded once.",
+        "meta": "{{size}} · llama.cpp · one-time download",
+        "installed": "Installed",
+        "progress": "{{percent}}% · {{current}} / {{total}} GB",
+        "failed": "The voice model download failed",
+        "diskNote": "Needs about {{gb}} GB of free disk space.",
+        "tagline": "Realtime multilingual transcription",
+        "sizeGb": "{{size}} GB"
+      },
+      "doneBlocked": "Allow the microphone and install the voice model to finish."
+    }
+  },
+  "proactive": "Proactive",
+  "selectAModel": "Select a model",
+  "downloadModel": "Download a model",
+  "noToolsAvailable": "No tools available",
+  "noModelsFoundFor": "No models found for \"{{searchValue}}\"",
+  "failedToLoadModels": "Failed to load models",
+  "failedToLoadModelsTimeout": "Couldn't load models (timed out)",
+  "retry": "Retry",
+  "noModels": "No models found",
+  "customAvatar": "Custom avatar",
+  "editAssistant": "Edit Assistant",
+  "jan": "Atomic Bot",
+  "metadata": "Metadata",
+  "regenerate": "Regenerate",
+  "threadImage": "Thread image",
+  "editMessage": "Edit Message",
+  "deleteMessage": "Delete Message",
+  "deleteThread": "Delete Thread",
+  "renameThread": "Rename Thread",
+  "threadTitle": "Thread Title",
+  "deleteAllThreads": "Delete All Threads",
+  "allThreadsUnfavorited": "All Threads Unfavorited",
+  "deleteAllThreadsConfirm": "Are you sure you want to delete all threads? This action cannot be undone.",
+  "addProvider": "Add Provider",
+  "addOpenAIProvider": "Add OpenAI Provider",
+  "enterNameForProvider": "Enter a name for your provider",
+  "providerAlreadyExists": "Provider with name \"{{name}}\" already exists. Please choose a different name.",
+  "adjustFontSize": "Adjust Font Size",
+  "changeLanguage": "Change Language",
+  "editTheme": "Edit Theme",
+  "editCodeBlockStyle": "Edit Code Block Style",
+  "editServerHost": "Edit Server Host",
+  "pickColorWindowBackground": "Pick Color Window Background",
+  "pickColorAppMainView": "Pick Color App Main View",
+  "pickColorAppPrimary": "Pick Color App Primary",
+  "pickColorAppAccent": "Pick Color App Accent",
+  "pickColorAppDestructive": "Pick Color App Destructive",
+  "apiKeyRequired": "API Key is required",
+  "enterTrustedHosts": "This server's address, e.g. 192.168.1.100, my-host (or * for all)",
+  "placeholder": {
+    "chatInput": "Ask me anything..."
+  },
+  "confirm": "Confirm",
+  "ok": "OK",
+  "continue": "Continue",
+  "loading": "Loading...",
+  "error": "Error",
+  "success": "Success",
+  "warning": "Warning",
+  "conversationNotAvailable": "Conversation not available",
+  "conversationNotAvailableDescription": "The conversation you are trying to access is not available or has been deleted.",
+  "temporaryChat": "Temporary Chat",
+  "temporaryChatTooltip": "Temporary chat won't appear in your history",
+  "noResultsFoundDesc": "We couldn't find any chats matching your search. Try a different keyword.",
+  "searchModels": "Search models...",
+  "searchStyles": "Search styles...",
+  "createAssistant": "Create Assistant",
+  "enterApiKey": "Enter API Key",
+  "scrollToBottom": "Scroll to bottom",
+  "generateAiResponse": "Generate AI Response",
+  "continueAiResponse": "Continue with AI Response",
+  "addModel": {
+    "title": "Add Model",
+    "modelId": "Model ID",
+    "enterModelId": "Enter Model ID",
+    "addModel": "Add Model",
+    "description": "Add a new model to the provider",
+    "exploreModels": "See model list from provider"
+  },
+  "mcpServers": {
+    "editServer": "Edit Server",
+    "addServer": "Add Server",
+    "serverName": "Server Name",
+    "enterServerName": "Enter server name",
+    "command": "Command",
+    "enterCommand": "Enter command",
+    "arguments": "Arguments",
+    "argument": "Argument {{index}}",
+    "envVars": "Environment Variables",
+    "key": "Key",
+    "value": "Value",
+    "save": "Save"
+  },
+  "deleteServer": {
+    "title": "Delete Server",
+    "delete": "Delete"
+  },
+  "editJson": {
+    "errorParse": "Failed to parse JSON",
+    "errorPaste": "Failed to paste JSON",
+    "errorFormat": "Invalid JSON format",
+    "titleAll": "Edit All Servers Configuration",
+    "placeholder": "Enter JSON configuration...",
+    "save": "Save"
+  },
+  "editModel": {
+    "title": "Edit Model: {{modelId}}",
+    "description": "Configure model capabilities by toggling the options below.",
+    "capabilities": "Capabilities",
+    "tools": "Tools",
+    "vision": "Vision",
+    "embeddings": "Embeddings",
+    "notAvailable": "Not available yet"
+  },
+  "outOfContextError": {
+    "truncateInput": "Truncate Input",
+    "title": "Out of context error",
+    "description": "This chat is reaching the AI's memory limit, like a whiteboard filling up. We can expand the memory window (called context size) so it remembers more, but it may use more of your computer's memory. We can also truncate the input, which means it will forget some of the chat history to make room for new messages.",
+    "increaseContextSizeDescription": "Do you want to increase the context size?",
+    "increaseContextSize": "Increase Context Size"
+  },
+  "toolApproval": {
+    "title": "Tool Permission Request",
+    "description": "The assistant wants to use <strong>{{toolName}}</strong>",
+    "securityNotice": "Only allow tools you trust. Tools can access your system and data.",
+    "deny": "Deny",
+    "allowOnce": "Allow Once",
+    "alwaysAllow": "Always Allow"
+  },
+  "deleteModel": {
+    "title": "Delete Model: {{modelId}}",
+    "description": "Are you sure you want to delete this model? This action cannot be undone.",
+    "success": "Model {{modelId}} has been permanently deleted.",
+    "cancel": "Cancel",
+    "delete": "Delete"
+  },
+  "deleteProvider": {
+    "title": "Delete Provider",
+    "description": "Delete this provider and all its models. This action cannot be undone.",
+    "success": "Provider {{provider}} has been permanently deleted.",
+    "confirmTitle": "Delete Provider: {{provider}}",
+    "confirmDescription": "Are you sure you want to delete this provider? This action cannot be undone.",
+    "cancel": "Cancel",
+    "delete": "Delete"
+  },
+  "modelSettings": {
+    "title": "Model Settings - {{modelId}}",
+    "description": "Configure model settings to optimize performance and behavior."
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "Change Data Folder Location",
+      "description": "Are you sure you want to change the data folder location? This will move all your data to the new location and restart the application.",
+      "currentLocation": "Current Location:",
+      "newLocation": "New Location:",
+      "cancel": "Cancel",
+      "changeLocation": "Change Location"
+    },
+    "deleteAllThreads": {
+      "title": "Delete All Threads",
+      "description": "All threads will be deleted. This action cannot be undone."
+    },
+    "deleteAllAgentThreads": {
+      "title": "Delete All Agent Chats",
+      "description": "All Agent chats will be deleted. This action cannot be undone."
+    },
+    "deleteAllThreadsInProject": {
+      "title": "Delete All Conversations",
+      "description": "{{count}} conversations in \"{{projectName}}\" will be deleted. This action cannot be undone."
+    },
+    "deleteThread": {
+      "description": "Are you sure you want to delete this thread? This action cannot be undone."
+    },
+    "messageMetadata": {
+      "title": "Message Metadata"
+    }
+  },
+  "projects": {
+    "title": "Projects",
+    "new": "New Project",
+    "addProject": "Add Project",
+    "addToProject": "Add to project",
+    "removeFromProject": "Remove from project",
+    "createNewProject": "Create New Project",
+    "editProject": "Edit Project",
+    "deleteProject": "Delete Project",
+    "projectName": "Project Name",
+    "enterProjectName": "Enter project name...",
+    "noProjectsAvailable": "No projects available",
+    "noProjectsYet": "No Projects Yet",
+    "noProjectsYetDesc": "Start a new project by clicking the Add Project button.",
+    "projectNotFound": "Project Not Found",
+    "projectNotFoundDesc": "The project you're looking for doesn't exist or has been deleted.",
+    "selectAssistant": "Select assistant",
+    "noAssistantAssigned": "No assistant assigned to this project",
+    "files": "Files",
+    "filesDescription": "Add PDFs, documents, or other text to reference in this project.",
+    "deleteProjectDialog": {
+      "title": "Delete Project",
+      "permanentDelete": "This will permanently delete all threads.",
+      "permanentDeleteWarning": "This action will permanently delete ALL threads within the project!",
+      "deleteEmptyProject": "This action will delete project \"{{projectName}}\".",
+      "saveThreadsAdvice": "To save threads, move them to your thread list or another project before deleting.",
+      "starredWarning": "You still have starred threads within the project.",
+      "deleteButton": "Delete",
+      "successWithName": "Project \"{{projectName}}\" deleted successfully",
+      "successWithoutName": "Project deleted successfully",
+      "error": "Failed to delete project. Please try again.",
+      "ariaLabel": "Delete {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "Create New Project",
+      "editTitle": "Edit Project",
+      "nameLabel": "Project Name",
+      "namePlaceholder": "Enter project name...",
+      "assistant": "Assistant",
+      "selectAssistant": "Select an assistant (optional)",
+      "noAssistant": "No assistant",
+      "addAssistant": "Add Assistant",
+      "createButton": "Create",
+      "updateButton": "Update",
+      "alreadyExists": "Project \"{{projectName}}\" already exists",
+      "createSuccess": "Project \"{{projectName}}\" created successfully",
+      "updateSuccess": "Project \"{{projectName}}\" updated successfully"
+    },
+    "noConversationsIn": "No Conversations in {{projectName}}",
+    "startNewConversation": "Start a new conversation with {{projectName}} below",
+    "conversationsIn": "Conversations in {{projectName}}",
+    "conversationsDescription": "Click on any conversation to continue chatting, or start a new one below.",
+    "conversation": "Conversation",
+    "instructions": "Instructions",
+    "setup": "Setup",
+    "instructionsDescription": "Customize tone and style of response",
+    "manageInstructions": "Manage Instructions",
+    "thread": "thread",
+    "threads": "threads",
+    "updated": "Updated:",
+    "collapseProject": "Collapse project",
+    "expandProject": "Expand project",
+    "update": "Update",
+    "searchProjects": "Search projects...",
+    "noProjectsFound": "No projects found",
+    "tryDifferentSearch": "Try a different search term"
+  },
+  "attachmentsIngestion": {
+    "title": "Choose how to ingest attachments",
+    "description": "Choose whether to include these files directly in the chat or index them as embeddings instead.",
+    "inline": "Inject into chat",
+    "embeddings": "Use embeddings"
+  },
+  "attachmentInjectedIndicator": "Injected into chat",
+  "attachmentEmbeddedIndicator": "Embedded for RAG",
+  "viewInjectedContent": "View injected content",
+  "injectedContentTitle": "Injected file content",
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "All Threads Unfavorited",
+      "description": "All threads have been removed from your favorites."
+    },
+    "deleteAllThreads": {
+      "title": "Delete All Threads",
+      "description": "All threads have been permanently deleted."
+    },
+    "deleteAllAgentThreads": {
+      "title": "Delete All Agent Chats",
+      "description": "All Agent chats have been permanently deleted."
+    },
+    "renameThread": {
+      "title": "Rename Thread",
+      "description": "Thread title has been renamed to '{{title}}'"
+    },
+    "deleteThread": {
+      "title": "Delete Thread",
+      "description": "This thread has been permanently deleted."
+    },
+    "editMessage": {
+      "title": "Edit Message",
+      "description": "Message edited successfully. Please wait for the model to respond."
+    },
+    "appUpdateDownloaded": {
+      "title": "App Update Downloaded",
+      "description": "The app update has been downloaded successfully."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "App Update Download Failed",
+      "description": "Failed to download the app update. Please try again."
+    },
+    "downloadComplete": {
+      "title": "Download Complete",
+      "description": "{{item}} has been downloaded"
+    },
+    "downloadCancelled": {
+      "title": "Download Cancelled",
+      "description": "The download process was cancelled"
+    },
+    "downloadFailed": {
+      "title": "Download Failed",
+      "description": "{{item}} download failed"
+    },
+    "modelValidationStarted": {
+      "title": "Validating Model",
+      "description": "Downloaded model \"{{modelId}}\" successfully. Verifying integrity..."
+    },
+    "modelValidationFailed": {
+      "title": "Model Validation Failed",
+      "description": "The downloaded model \"{{modelId}}\" failed integrity verification and was removed. The file may be corrupted or tampered with."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "Download Complete",
+      "description": "Model \"{{item}}\" downloaded and verified successfully"
+    },
+    "projectCreated": {
+      "title": "Project Created",
+      "description": "Project \"{{projectName}}\" created successfully"
+    },
+    "projectRenamed": {
+      "title": "Project Renamed",
+      "description": "Project renamed from \"{{oldName}}\" to \"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "Project Deleted",
+      "description": "Project \"{{projectName}}\" deleted successfully"
+    },
+    "projectAlreadyExists": {
+      "title": "Project Already Exists",
+      "description": "Project \"{{projectName}}\" already exists"
+    },
+    "projectDeleteFailed": {
+      "title": "Delete Failed",
+      "description": "Failed to delete project. Please try again."
+    },
+    "threadAssignedToProject": {
+      "title": "Thread Assigned",
+      "description": "Thread assigned to \"{{projectName}}\" successfully"
+    },
+    "threadRemovedFromProject": {
+      "title": "Thread Removed",
+      "description": "Thread removed from \"{{projectName}}\" successfully"
+    },
+    "fileUploaded": {
+      "title": "File Uploaded",
+      "description": "File has been uploaded and indexed successfully"
+    },
+    "uploadFailed": {
+      "title": "Upload Failed",
+      "description": "Failed to upload file"
+    },
+    "fileDeleted": {
+      "title": "File Deleted",
+      "description": "File has been removed from the project"
+    },
+    "deleteFailed": {
+      "title": "Delete Failed",
+      "description": "Failed to delete file"
+    },
+    "fileAlreadyExists": {
+      "title": "File Already Exists",
+      "description": "File is already attached to this project"
+    },
+    "attachmentsDisabledInfo": {
+      "title": "Attachments Disabled",
+      "description": "Attachments are disabled in Settings"
+    },
+    "downloadDiskFull": {
+      "title": "Not enough disk space",
+      "description": "Free up space on the drive holding your Jan data folder, then start the download again."
+    },
+    "downloadDiskPermission": {
+      "title": "No permission to write the model",
+      "description": "The app cannot write to the Jan data folder. Check the folder permissions, or move the data folder somewhere writable."
+    },
+    "downloadDiskLocked": {
+      "title": "The file is in use by another program",
+      "description": "Antivirus or backup software is holding the file while it is being written. Add the Jan data folder to its exclusions and retry."
+    },
+    "downloadDiskPathTooLong": {
+      "title": "File path is too long",
+      "description": "Windows limits paths to 260 characters. Move the Jan data folder closer to the drive root and retry."
+    },
+    "downloadDiskDeviceLost": {
+      "title": "The drive is no longer available",
+      "description": "The external or network drive holding the Jan data folder disconnected. Reconnect it and resume the download."
+    }
+  },
+  "errors": {
+    "fileTooLarge": "File too large",
+    "fileTooLargeDescription": "{{fileName}} exceeds the {{maxFileSizeMB}}MB limit",
+    "fileReadFailed": "Could not read file",
+    "fileReadFailedDescription": "{{fileName}} could not be read from disk"
+  },
+  "files": {
+    "chunksCount": "{{count}} chunks"
+  },
+  "connectorsMenu": {
+    "title": "Connectors",
+    "empty": "No connectors yet",
+    "manage": "Manage connectors",
+    "toolCount": "{{count}} tools",
+    "toggleFailed": "Couldn't start {{server}}",
+    "cost": "{{count}} tools · ≈{{tokens}} tokens",
+    "costShare": "{{count}} tools · ≈{{tokens}} tokens ({{share}}% of context)",
+    "heavy": "Heavy: these tool definitions alone take {{share}}% of the {{ctx}}-token context on every request.",
+    "muteForChat": "Turn off for this chat",
+    "unmuteForChat": "Turn on for this chat",
+    "mutedForChat": "Off for this chat",
+    "toolCountPartial": "{{enabled}} of {{count}} tools",
+    "costPartial": "{{enabled}} of {{count}} tools · ≈{{tokens}} tokens",
+    "costSharePartial": "{{enabled}} of {{count}} tools · ≈{{tokens}} tokens ({{share}}% of context)",
+    "configureTools": "Tools"
+  },
+  "connectorTools": {
+    "title": "{{name}} tools",
+    "scopeChat": "Changes apply to this chat only.",
+    "scopeDefault": "Defaults for new chats. A chat with its own tool settings keeps them.",
+    "summary": "{{enabled}} of {{count}} tools on",
+    "onForChat": "On for this chat",
+    "onByDefault": "On for new chats",
+    "mutedHint": "Turn the connector on to switch its tools.",
+    "search": "Search tools",
+    "enableAll": "Turn all on",
+    "disableAll": "Turn all off",
+    "noTools": "No tools listed. Connect the server to load its tools.",
+    "noMatches": "No tools match"
+  },
+  "pluginsMenu": {
+    "title": "Plugins",
+    "emptySkills": "No skills yet",
+    "manageSkills": "Manage skills"
+  },
+  "toolCostHint": {
+    "title": "Tool definitions take ≈{{tokens}} of {{ctx}} context tokens",
+    "body": "Connected connectors ({{servers}}) add their tool definitions to every request, so answers from a local model get slow. Turn the ones you do not need off for this chat.",
+    "mute": "Turn off {{server}} for this chat",
+    "dismiss": "Keep as is"
+  },
+  "downloadPanel": {
+    "collapse": "Collapse downloads",
+    "expand": "Show downloads",
+    "preparing": "Starting…",
+    "paused": "Paused",
+    "left": "{{eta}} left",
+    "appUpdate": "App update"
+  }
+}

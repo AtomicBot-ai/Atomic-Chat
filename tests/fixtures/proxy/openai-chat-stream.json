@@ -1,0 +1,57 @@
+[
+  {
+    "id": "<id>",
+    "object": "chat.completion.chunk",
+    "created": 0,
+    "model": "<model>",
+    "choices": [
+      {
+        "index": 0,
+        "delta": {
+          "role": "assistant"
+        },
+        "finish_reason": null
+      }
+    ]
+  },
+  {
+    "id": "<id>",
+    "object": "chat.completion.chunk",
+    "created": 0,
+    "model": "<model>",
+    "choices": [
+      {
+        "index": 0,
+        "delta": {
+          "content": "fixture"
+        },
+        "finish_reason": null
+      }
+    ]
+  },
+  {
+    "id": "<id>",
+    "object": "chat.completion.chunk",
+    "created": 0,
+    "model": "<model>",
+    "choices": [
+      {
+        "index": 0,
+        "delta": {},
+        "finish_reason": "stop"
+      }
+    ]
+  },
+  {
+    "id": "<id>",
+    "object": "chat.completion.chunk",
+    "created": 0,
+    "model": "<model>",
+    "choices": [],
+    "usage": {
+      "prompt_tokens": 1,
+      "completion_tokens": 1,
+      "total_tokens": 2
+    }
+  }
+]

@@ -1,0 +1,31 @@
+{
+  "id": "<id>",
+  "object": "chat.completion",
+  "created": 0,
+  "model": "<model>",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "<call_id>",
+            "type": "function",
+            "function": {
+              "name": "get_temperature",
+              "arguments": "{\"location\":\"Paris\"}"
+            }
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 1,
+    "completion_tokens": 1,
+    "total_tokens": 2
+  }
+}

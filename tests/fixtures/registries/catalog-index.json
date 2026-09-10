@@ -1,0 +1,22 @@
+{
+  "index_version": 1,
+  "catalog_updated_at": "2026-07-14T00:00:00Z",
+  "catalog_total_models": 1,
+  "minisearch": {
+    "documentCount": 1,
+    "nextId": 1,
+    "documentIds": { "0": "AtomicChat/Qwen3.5-4B-GGUF" },
+    "fieldIds": {
+      "model_name": 0,
+      "developer": 1,
+      "tags_normalized": 2,
+      "description": 3
+    },
+    "fieldLength": {},
+    "averageFieldLength": [],
+    "storedFields": {},
+    "dirtCount": 0,
+    "index": [],
+    "serializationVersion": 2
+  }
+}

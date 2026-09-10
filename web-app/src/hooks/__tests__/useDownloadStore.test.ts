@@ -1,0 +1,411 @@
+import { renderHook, act } from '@testing-library/react'
+import { useDownloadStore } from '../useDownloadStore'
+
+describe('useDownloadStore', () => {
+  beforeEach(() => {
+    // Reset the store before each test
+    useDownloadStore.setState({
+      downloads: {},
+      localDownloadingModels: new Set(),
+      resumableDownloads: new Set(),
+    })
+  })
+
+  describe('initial state', () => {
+    it('should have empty downloads, localDownloadingModels, and resumableDownloads', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      expect(result.current.downloads).toEqual({})
+      expect(result.current.localDownloadingModels).toEqual(new Set())
+      expect(result.current.resumableDownloads).toEqual(new Set())
+    })
+  })
+
+  describe('updateProgress', () => {
+    it('should add new download progress', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        result.current.updateProgress('test-id', 50, 'test-model', 500, 1000)
+      })
+
+      expect(result.current.downloads['test-id']).toMatchObject({
+        name: 'test-model',
+        progress: 50,
+        current: 500,
+        total: 1000,
+      })
+    })
+
+    it('should update existing download progress', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      // Add initial download
+      act(() => {
+        result.current.updateProgress('test-id', 25, 'test-model', 250, 1000)
+      })
+
+      // Update progress
+      act(() => {
+        result.current.updateProgress('test-id', 75, undefined, 750)
+      })
+
+      expect(result.current.downloads['test-id']).toMatchObject({
+        name: 'test-model',
+        progress: 75,
+        current: 750,
+        total: 1000,
+      })
+    })
+
+    it('should preserve existing values when not provided', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      // Add initial download
+      act(() => {
+        result.current.updateProgress('test-id', 25, 'test-model', 250, 1000)
+      })
+
+      // Update only progress
+      act(() => {
+        result.current.updateProgress('test-id', 75)
+      })
+
+      expect(result.current.downloads['test-id']).toMatchObject({
+        name: 'test-model',
+        progress: 75,
+        current: 250,
+        total: 1000,
+      })
+    })
+
+    it('should use default values for new download when values not provided', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        result.current.updateProgress('test-id', 50)
+      })
+
+      expect(result.current.downloads['test-id']).toMatchObject({
+        name: '',
+        progress: 50,
+        current: 0,
+        total: 0,
+      })
+    })
+
+    it('should honor explicit zero current/total after a non-zero value', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      // A download in progress reports a non-zero byte count.
+      act(() => {
+        result.current.updateProgress('test-id', 50, 'test-model', 500, 1000)
+      })
+
+      // A restarted/resumed transfer resets the counters to 0 — the store
+      // must not keep the stale 500/1000 from the previous transfer.
+      act(() => {
+        result.current.updateProgress('test-id', 0, 'test-model', 0, 0)
+      })
+
+      expect(result.current.downloads['test-id']).toMatchObject({
+        name: 'test-model',
+        progress: 0,
+        current: 0,
+        total: 0,
+      })
+    })
+  })
+
+  describe('speed sampling', () => {
+    it('starts with no speed estimate', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        result.current.updateProgress('test-id', 0.1, 'test-model', 100, 1000)
+      })
+
+      // One data point cannot give a rate; the panel omits speed and ETA
+      // rather than showing a number derived from a single sample.
+      expect(result.current.downloads['test-id'].speed.bytesPerSecond).toBe(0)
+      expect(result.current.downloads['test-id'].speed.atBytes).toBe(100)
+    })
+
+    it('estimates speed once two samples are far enough apart', () => {
+      vi.useFakeTimers()
+      try {
+        const { result } = renderHook(() => useDownloadStore())
+
+        act(() => {
+          result.current.updateProgress('test-id', 0.1, 'test-model', 0, 1000)
+        })
+        act(() => {
+          vi.advanceTimersByTime(1000)
+          result.current.updateProgress('test-id', 0.5, 'test-model', 500, 1000)
+        })
+
+        // 500 bytes in one second, and the first estimate is unsmoothed.
+        expect(result.current.downloads['test-id'].speed.bytesPerSecond).toBe(
+          500
+        )
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('ignores samples taken too close together', () => {
+      vi.useFakeTimers()
+      try {
+        const { result } = renderHook(() => useDownloadStore())
+
+        act(() => {
+          result.current.updateProgress('test-id', 0.1, 'test-model', 0, 1000)
+        })
+        act(() => {
+          vi.advanceTimersByTime(50)
+          result.current.updateProgress('test-id', 0.2, 'test-model', 200, 1000)
+        })
+
+        // A 50ms window would report 4 MB/s from a 200-byte chunk.
+        expect(result.current.downloads['test-id'].speed.bytesPerSecond).toBe(0)
+        expect(result.current.downloads['test-id'].current).toBe(200)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('resets the estimate when a transfer restarts from zero', () => {
+      vi.useFakeTimers()
+      try {
+        const { result } = renderHook(() => useDownloadStore())
+
+        act(() => {
+          result.current.updateProgress('test-id', 0.1, 'test-model', 0, 1000)
+        })
+        act(() => {
+          vi.advanceTimersByTime(1000)
+          result.current.updateProgress('test-id', 0.5, 'test-model', 500, 1000)
+        })
+        act(() => {
+          vi.advanceTimersByTime(1000)
+          result.current.updateProgress('test-id', 0, 'test-model', 0, 1000)
+        })
+
+        // Carrying the 500-byte baseline into a restarted transfer would make
+        // the next sample look like a huge burst.
+        expect(result.current.downloads['test-id'].speed.bytesPerSecond).toBe(0)
+        expect(result.current.downloads['test-id'].speed.atBytes).toBe(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+
+  describe('removeDownload', () => {
+    it('should remove download from downloads object', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      // Add download
+      act(() => {
+        result.current.updateProgress('test-id', 50, 'test-model', 500, 1000)
+      })
+
+      expect(result.current.downloads['test-id']).toBeDefined()
+
+      // Remove download
+      act(() => {
+        result.current.removeDownload('test-id')
+      })
+
+      expect(result.current.downloads['test-id']).toBeUndefined()
+      expect(Object.keys(result.current.downloads)).toHaveLength(0)
+    })
+
+    it('should not affect other downloads when removing one', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      // Add multiple downloads
+      act(() => {
+        result.current.updateProgress('test-id-1', 50, 'model-1', 500, 1000)
+        result.current.updateProgress('test-id-2', 75, 'model-2', 750, 1000)
+      })
+
+      expect(Object.keys(result.current.downloads)).toHaveLength(2)
+
+      // Remove one download
+      act(() => {
+        result.current.removeDownload('test-id-1')
+      })
+
+      expect(result.current.downloads['test-id-1']).toBeUndefined()
+      expect(result.current.downloads['test-id-2']).toBeDefined()
+      expect(Object.keys(result.current.downloads)).toHaveLength(1)
+    })
+
+    it('should handle removing non-existent download gracefully', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      expect(() => {
+        act(() => {
+          result.current.removeDownload('non-existent-id')
+        })
+      }).not.toThrow()
+
+      expect(result.current.downloads).toEqual({})
+    })
+  })
+
+  describe('localDownloadingModels management', () => {
+    it('should add model to localDownloadingModels', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        result.current.addLocalDownloadingModel('model-1')
+      })
+
+      expect(result.current.localDownloadingModels.has('model-1')).toBe(true)
+    })
+
+    it('should add multiple models to localDownloadingModels', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        result.current.addLocalDownloadingModel('model-1')
+        result.current.addLocalDownloadingModel('model-2')
+      })
+
+      expect(result.current.localDownloadingModels.has('model-1')).toBe(true)
+      expect(result.current.localDownloadingModels.has('model-2')).toBe(true)
+      expect(result.current.localDownloadingModels.size).toBe(2)
+    })
+
+    it('should not add duplicate models to localDownloadingModels', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        result.current.addLocalDownloadingModel('model-1')
+        result.current.addLocalDownloadingModel('model-1')
+      })
+
+      expect(result.current.localDownloadingModels.size).toBe(1)
+    })
+
+    it('should remove model from localDownloadingModels', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      // Add model first
+      act(() => {
+        result.current.addLocalDownloadingModel('model-1')
+      })
+
+      expect(result.current.localDownloadingModels.has('model-1')).toBe(true)
+
+      // Remove model
+      act(() => {
+        result.current.removeLocalDownloadingModel('model-1')
+      })
+
+      expect(result.current.localDownloadingModels.has('model-1')).toBe(false)
+      expect(result.current.localDownloadingModels.size).toBe(0)
+    })
+
+    it('should handle removing non-existent model gracefully', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      expect(() => {
+        act(() => {
+          result.current.removeLocalDownloadingModel('non-existent-model')
+        })
+      }).not.toThrow()
+
+      expect(result.current.localDownloadingModels.size).toBe(0)
+    })
+
+    it('should not affect other models when removing one', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      // Add multiple models
+      act(() => {
+        result.current.addLocalDownloadingModel('model-1')
+        result.current.addLocalDownloadingModel('model-2')
+      })
+
+      expect(result.current.localDownloadingModels.size).toBe(2)
+
+      // Remove one model
+      act(() => {
+        result.current.removeLocalDownloadingModel('model-1')
+      })
+
+      expect(result.current.localDownloadingModels.has('model-1')).toBe(false)
+      expect(result.current.localDownloadingModels.has('model-2')).toBe(true)
+      expect(result.current.localDownloadingModels.size).toBe(1)
+    })
+  })
+
+  describe('resumableDownloads management', () => {
+    it('should add model to resumableDownloads', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        result.current.markResumableDownload('model-1')
+      })
+
+      expect(result.current.resumableDownloads.has('model-1')).toBe(true)
+    })
+
+    it('should remove model from resumableDownloads', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        result.current.markResumableDownload('model-1')
+      })
+
+      expect(result.current.resumableDownloads.has('model-1')).toBe(true)
+
+      act(() => {
+        result.current.clearResumableDownload('model-1')
+      })
+
+      expect(result.current.resumableDownloads.has('model-1')).toBe(false)
+    })
+
+    it('should keep resumableDownloads independent from localDownloadingModels', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        result.current.markResumableDownload('model-1')
+        result.current.addLocalDownloadingModel('model-1')
+        result.current.clearResumableDownload('model-1')
+      })
+
+      expect(result.current.resumableDownloads.has('model-1')).toBe(false)
+      expect(result.current.localDownloadingModels.has('model-1')).toBe(true)
+    })
+  })
+
+  describe('integration tests', () => {
+    it('should work with both downloads and localDownloadingModels simultaneously', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        // Add download progress
+        result.current.updateProgress('download-1', 50, 'model-1', 500, 1000)
+
+        // Add local downloading model
+        result.current.addLocalDownloadingModel('model-1')
+      })
+
+      expect(result.current.downloads['download-1']).toBeDefined()
+      expect(result.current.localDownloadingModels.has('model-1')).toBe(true)
+
+      act(() => {
+        // Remove download but keep local downloading model
+        result.current.removeDownload('download-1')
+      })
+
+      expect(result.current.downloads['download-1']).toBeUndefined()
+      expect(result.current.localDownloadingModels.has('model-1')).toBe(true)
+    })
+  })
+})

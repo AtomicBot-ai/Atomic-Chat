@@ -1,0 +1,44 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Atomic Chat",
+        "width": 1200,
+        "minWidth": 1024,
+        "height": 800,
+        "minHeight": 740,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "visible": false,
+        "hiddenTitle": true,
+        "transparent": false,
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "windowEffects": {
+          "effects": ["fullScreenUI", "mica", "tabbed", "blur", "acrylic"],
+          "state": "active"
+        },
+        "dragDropEnabled": true
+      }
+    ]
+  },
+  "bundle": {
+    "targets": ["nsis", "msi"],
+    "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/agent-skills/**/*", "resources/bin/jan-cli.exe", "resources/llamacpp-backend-upstream/**/*", "resources/llamacpp-backend/**/*"],
+    "externalBin": ["resources/bin/bun", "resources/bin/uv"],
+    "windows": {
+      "wix": {
+        "upgradeCode": "b75dd42f-800c-57cb-8c5c-ed7fcbef13a0"
+      },
+      "nsis": {
+        "installerHooks": "./windows/hooks.nsh"
+      },
+      "webviewInstallMode": {
+        "silent": true,
+        "type": "downloadBootstrapper"
+      }
+    }
+  }
+}

@@ -1,0 +1,414 @@
+import {
+  Folder,
+  MoreHorizontal,
+  Pencil,
+  SquareArrowOutUpRight,
+  Trash2,
+  X,
+} from 'lucide-react'
+import { useThreads } from '@/hooks/useThreads'
+import { useMessages } from '@/hooks/useMessages'
+import { useThreadManagementStore } from '@/hooks/useThreadManagement'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import { useEffect, useRef } from 'react'
+
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
+  SidebarMenuAction,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+  useSidebar,
+} from '@/components/ui/sidebar'
+import { useTranslation } from '@/i18n/react-i18next-compat'
+import { memo, useMemo, useState, type MouseEvent } from 'react'
+import { Link, useParams } from '@tanstack/react-router'
+import { RenameThreadDialog, DeleteThreadDialog } from '@/containers/dialogs'
+import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
+import { ThreadMessage } from '@janhq/core'
+import { useChatSessions, isSessionBusy } from '@/stores/chat-session-store'
+import { useThreadReadStatus } from '@/stores/thread-read-store'
+import { ThreadStatusDot } from '@/components/left-sidebar/ThreadStatusDot'
+import { isPlatformTauri } from '@/lib/platform/utils'
+
+//* Заголовок приветственного треда: новый бренд и старая строка из прошлых версий
+const WELCOME_THREAD_TITLES = new Set([
+  'What is Atomic Bot?',
+  'What is Overchat?',
+])
+
+const ThreadItem = memo(
+  ({
+    thread,
+    isActive,
+    isMobile,
+    currentProjectId,
+    subItem,
+  }: {
+    thread: Thread
+    isActive: boolean
+    isMobile: boolean
+    currentProjectId?: string
+    subItem?: boolean
+  }) => {
+    const deleteThread = useThreads((state) => state.deleteThread)
+    const renameThread = useThreads((state) => state.renameThread)
+    const updateThread = useThreads((state) => state.updateThread)
+    const getFolderById = useThreadManagementStore(
+      (state) => state.getFolderById
+    )
+    const folders = useThreadManagementStore((state) => state.folders)
+    const { t } = useTranslation()
+    const [renameOpen, setRenameOpen] = useState(false)
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+    // Controlled so a right-click can open it. Without this the row is a plain
+    // <a> and the WebView shows its own native link menu, whose "Open link in
+    // new window" the embedding WebView silently drops (issue #254).
+    const [menuOpen, setMenuOpen] = useState(false)
+
+    const serviceHub = useServiceHub()
+    const getMessages = useMessages((state) => state.getMessages)
+    const setMessages = useMessages((state) => state.setMessages)
+
+    // Only the project cards render a message preview. History rows are titles,
+    // so hydrating their message history would be N pointless round-trips.
+    const showPreview = Boolean(currentProjectId)
+
+    // Use a ref to track if messages have been loaded
+    const messagesLoadedRef = useRef(false)
+    // Track current messages for comparison
+    const messagesLengthRef = useRef(0)
+
+    // Get messages reactively via ref tracking (to avoid infinite re-renders)
+    const [messages, setLocalMessages] = useState<ThreadMessage[]>(() =>
+      showPreview ? getMessages(thread.id) : []
+    )
+
+    // Fetch messages if not loaded yet
+    useEffect(() => {
+      if (!showPreview) return
+
+      const currentMessages = getMessages(thread.id)
+
+      // Initial load: no messages yet, fetch them
+      if (currentMessages.length === 0 && !messagesLoadedRef.current) {
+        messagesLoadedRef.current = true
+        serviceHub
+          .messages()
+          .fetchMessages(thread.id)
+          .then((fetchedMessages) => {
+            if (fetchedMessages) {
+              setMessages(thread.id, fetchedMessages)
+              setLocalMessages(fetchedMessages)
+              messagesLengthRef.current = fetchedMessages.length
+            }
+          })
+          .catch(() => {
+            messagesLoadedRef.current = false
+          })
+        return
+      }
+
+      // Only update local state if messages length changed (prevents re-renders during streaming)
+      if (currentMessages.length !== messagesLengthRef.current) {
+        setLocalMessages(currentMessages)
+        messagesLengthRef.current = currentMessages.length
+      }
+    }, [thread.id, serviceHub, getMessages, setMessages, showPreview])
+
+    const lastUserMessageText = useMemo(() => {
+      const userMessages = messages.filter((m) => m.role === 'user')
+      const lastUserMessage = userMessages[userMessages.length - 1]
+      if (!lastUserMessage) return undefined
+      const textContent = lastUserMessage.content?.find(
+        (c) => c.type === 'text'
+      )
+      return textContent?.text?.value
+    }, [messages])
+
+    const plainTitleForRename = useMemo(() => {
+      return (thread.title || '').replace(/<span[^>]*>|<\/span>/g, '')
+    }, [thread.title])
+
+    const availableProjects = useMemo(() => {
+      return folders
+        .filter((f) => {
+          if (f.id === currentProjectId) return false
+          if (f.id === thread.metadata?.project?.id) return false
+          return true
+        })
+        .sort((a, b) => b.updated_at - a.updated_at)
+    }, [folders, currentProjectId, thread.metadata?.project?.id])
+
+    const assignThreadToProject = (threadId: string, projectId: string) => {
+      const project = getFolderById(projectId)
+      if (project && updateThread) {
+        const projectMetadata = {
+          id: project.id,
+          name: project.name,
+          updated_at: project.updated_at,
+        }
+
+        updateThread(threadId, {
+          metadata: {
+            ...thread.metadata,
+            project: projectMetadata,
+          },
+        })
+
+        toast.success(`Thread assigned to "${project.name}" successfully`)
+      }
+    }
+
+    // Tauri window labels only accept alphanumerics, `-`, `_`, `/` and `:`.
+    const openInNewWindow = () => {
+      serviceHub
+        .window()
+        .openWindow({
+          url: `/threads/${thread.id}`,
+          label: `thread-${thread.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`,
+          title: thread.title || 'Atomic Chat',
+          width: 1000,
+          height: 800,
+          resizable: true,
+          center: true,
+        })
+        .catch((error) => {
+          console.error('Failed to open thread in a new window:', error)
+          toast.error(t('common:openInNewWindowFailed'))
+        })
+    }
+
+    const isBusy = useChatSessions((state) =>
+      isSessionBusy(state.sessions[thread.id])
+    )
+    const isUnread = useThreadReadStatus(
+      (state) => thread.id in state.unreadThreads
+    )
+    const showStatusDot = isBusy || isUnread
+    const threadTitle = thread.title || t('common:newThread')
+
+    const MenuItemWrapper = subItem ? SidebarMenuSubItem : SidebarMenuItem
+    const MenuButtonWrapper = subItem ? SidebarMenuSubButton : SidebarMenuButton
+
+    return (
+      // SidebarMenuSubItem is a bare <li>; give it its OWN positioning + hover
+      // group (distinct from the parent project's group/menu-item) so the "..."
+      // action anchors to this row and reveals only when THIS chat is hovered —
+      // not when hovering the project or sibling chats.
+      <MenuItemWrapper
+        className={cn(subItem && 'group/menu-sub-item relative')}
+        onContextMenu={(event: MouseEvent<HTMLLIElement>) => {
+          event.preventDefault()
+          setMenuOpen(true)
+        }}
+      >
+        {currentProjectId ? (
+          <Link
+            to="/threads/$threadId"
+            params={{ threadId: thread.id }}
+            className={cn(
+              'bg-card dark:bg-secondary/20 mb-2 px-4 py-4 border hover:dark:bg-secondary/30 rounded-lg block',
+              isActive && 'bg-secondary dark:bg-secondary/80'
+            )}
+          >
+            <span className="flex items-center gap-2 pr-8 min-w-0">
+              {showStatusDot && <ThreadStatusDot pulsing={isBusy} />}
+              <span className="truncate flex-1 min-w-0">{threadTitle}</span>
+            </span>
+            {currentProjectId && lastUserMessageText && (
+              <div className="text-muted-foreground text-xs mt-1 line-clamp-1 pr-10">
+                {lastUserMessageText}
+              </div>
+            )}
+          </Link>
+        ) : (
+          <MenuButtonWrapper
+            asChild
+            isActive={isActive}
+            className="data-[active=true]:bg-sidebar-foreground/15"
+          >
+            <Link to="/threads/$threadId" params={{ threadId: thread.id }}>
+              <span className="flex w-full items-center gap-2 min-w-0">
+                {showStatusDot && <ThreadStatusDot pulsing={isBusy} />}
+                <span className="truncate flex-1 min-w-0">{threadTitle}</span>
+              </span>
+            </Link>
+          </MenuButtonWrapper>
+        )}
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+          <DropdownMenuTrigger asChild>
+            <SidebarMenuAction
+              showOnHover={!subItem}
+              className={cn(
+                'hover:bg-sidebar-foreground/8',
+                currentProjectId && 'mt-4 mr-2',
+                subItem &&
+                  'top-1 transition-opacity group-hover/menu-sub-item:opacity-100 group-focus-within/menu-sub-item:opacity-100 data-[state=open]:opacity-100 md:opacity-0'
+              )}
+            >
+              <MoreHorizontal />
+              <span className="sr-only">More</span>
+            </SidebarMenuAction>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            className="w-48"
+            side={isMobile ? 'bottom' : 'right'}
+            align={isMobile ? 'end' : 'start'}
+          >
+            {/* The browser build has no second window to open — its window
+                service is a no-op, which would reproduce the very "nothing
+                happens" this menu item exists to fix. */}
+            {isPlatformTauri() && (
+              <DropdownMenuItem onSelect={openInNewWindow}>
+                <SquareArrowOutUpRight className="size-4" />
+                <span>{t('common:openInNewWindow')}</span>
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onSelect={() => setRenameOpen(true)}>
+              <Pencil className="size-4" />
+              <span>{t('common:rename')}</span>
+            </DropdownMenuItem>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className="gap-2">
+                <Folder className="size-4" />
+                <span>{t('common:projects.addToProject')}</span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="max-h-60 min-w-44 overflow-y-auto">
+                {availableProjects.length === 0 ? (
+                  <DropdownMenuItem disabled>
+                    <span className="text-muted-foreground">
+                      {t('common:projects.noProjectsAvailable')}
+                    </span>
+                  </DropdownMenuItem>
+                ) : (
+                  availableProjects.map((folder) => (
+                    <DropdownMenuItem
+                      key={folder.id}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        assignThreadToProject(thread.id, folder.id)
+                      }}
+                    >
+                      <Folder className="size-4" />
+                      <span className="truncate max-w-[200px]">
+                        {folder.name}
+                      </span>
+                    </DropdownMenuItem>
+                  ))
+                )}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            {thread.metadata?.project && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const projectName = thread.metadata?.project?.name
+                    updateThread(thread.id, {
+                      metadata: {
+                        ...thread.metadata,
+                        project: undefined,
+                      },
+                    })
+                    toast.success(
+                      `Thread removed from "${projectName}" successfully`
+                    )
+                  }}
+                >
+                  <X className="size-4" />
+                  <span>Remove from project</span>
+                </DropdownMenuItem>
+              </>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={
+                WELCOME_THREAD_TITLES.has(thread.title) &&
+                !localStorage.getItem('setup-completed')
+              }
+              onSelect={() => {
+                if (
+                  !WELCOME_THREAD_TITLES.has(thread.title) ||
+                  localStorage.getItem('setup-completed')
+                ) {
+                  setDeleteConfirmOpen(true)
+                }
+              }}
+            >
+              <Trash2 className="size-4" />
+              <span>{t('common:delete')}</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <RenameThreadDialog
+          thread={thread}
+          plainTitleForRename={plainTitleForRename}
+          onRename={renameThread}
+          open={renameOpen}
+          onOpenChange={setRenameOpen}
+          withoutTrigger
+        />
+
+        <DeleteThreadDialog
+          thread={thread}
+          onDelete={deleteThread}
+          open={deleteConfirmOpen}
+          onOpenChange={setDeleteConfirmOpen}
+          withoutTrigger
+        />
+      </MenuItemWrapper>
+    )
+  }
+)
+
+type ThreadListProps = {
+  threads: Thread[]
+  currentProjectId?: string
+  subItem?: boolean
+}
+
+function ThreadList({ threads, currentProjectId, subItem }: ThreadListProps) {
+  const { isMobile } = useSidebar()
+  // The open thread is the source of truth for "selected", read straight from
+  // the route params. Computed once here (not per row) so only the previously
+  // and newly active rows re-render when navigating between threads.
+  const { threadId: activeThreadId } = useParams({ strict: false })
+
+  const sortedThreads = useMemo(() => {
+    return [...threads].sort((a, b) => {
+      return (b.updated || 0) - (a.updated || 0)
+    })
+  }, [threads])
+
+  return (
+    <>
+      {sortedThreads.map((thread) => (
+        <ThreadItem
+          key={thread.id}
+          thread={thread}
+          isActive={thread.id === activeThreadId}
+          isMobile={isMobile}
+          currentProjectId={currentProjectId}
+          subItem={subItem}
+        />
+      ))}
+    </>
+  )
+}
+
+export default memo(ThreadList)

@@ -1,0 +1,20 @@
+/**
+ * Default Opener Service - Generic implementation with minimal returns
+ */
+
+import type { OpenerService } from './types'
+
+export class DefaultOpenerService implements OpenerService {
+  async open(target: string): Promise<void> {
+    window.open(target, '_blank')
+  }
+
+  async openPath(path: string): Promise<void> {
+    window.open(`file://${path}`, '_blank')
+  }
+
+  async revealItemInDir(path: string): Promise<void> {
+    console.log('revealItemInDir called with path:', path)
+    // No-op - not implemented in default service
+  }
+}

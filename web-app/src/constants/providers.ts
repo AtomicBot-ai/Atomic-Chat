@@ -1,0 +1,151 @@
+/**
+ * Bundled baseline of provider definitions.
+ *
+ * Most cloud providers (OpenAI, Anthropic, OpenRouter, Mistral, Groq, xAI,
+ * Gemini, MiniMax, Hugging Face, NVIDIA, ...) are no longer hard-coded here.
+ * They are loaded at runtime from the `atomic-chat-conf` registry — see
+ * `web-app/src/services/provider-registry.ts` and the
+ * `web-app/src/services/AGENTS.md` feature notes.
+ *
+ * This file keeps a minimal in-app baseline used as:
+ *   1. A bootstrap value before the first registry refresh resolves.
+ *   2. A permanent fallback when the network or registry is unavailable.
+ *   3. The shape used to build a custom provider via `Settings > Providers`
+ *      ({@link openAIProviderSettings}).
+ *
+ * Add a provider here ONLY if it cannot live in the remote registry
+ * (e.g. it requires per-user resource configuration like Azure OpenAI).
+ * Do NOT re-introduce providers that already exist in
+ * `atomic-chat-conf/providers/registry.json`.
+ */
+
+export const openAIProviderSettings = [
+  {
+    key: 'api-key',
+    title: 'API Key',
+    description:
+      "The OpenAI API uses API keys for authentication. Visit your [API Keys](https://platform.openai.com/account/api-keys) page to retrieve the API key you'll use in your requests.",
+    controller_type: 'input',
+    controller_props: {
+      placeholder: 'Insert API Key',
+      value: '',
+      type: 'password',
+      input_actions: ['unobscure', 'copy'],
+    },
+  },
+  {
+    key: 'base-url',
+    title: 'Base URL',
+    description:
+      'The base endpoint to use. See the [OpenAI API documentation](https://platform.openai.com/docs/api-reference/chat/create) for more information.',
+    controller_type: 'input',
+    controller_props: {
+      placeholder: 'https://api.openai.com/v1',
+      value: 'https://api.openai.com/v1',
+    },
+  },
+]
+
+/** Base of the subscription API. No trailing slash — the Rust proxy joins
+ *  `/chat/completions` onto provider base URLs without trimming one. */
+export const CHATGPT_BASE_URL = 'https://chatgpt.com/backend-api/codex'
+
+/**
+ * In-app baseline of providers that cannot (or should not) live in the remote
+ * registry. The registry-store seeds itself from this list on first load.
+ */
+export const BASELINE_PROVIDERS: ProviderObject[] = [
+  {
+    // Authorised by signing in, not by a key: it declares no `api-key`
+    // setting, and the bearer token lives in the Rust backend. That is exactly
+    // the "cannot live in the remote registry" case this file is for.
+    active: true,
+    api_key: '',
+    base_url: CHATGPT_BASE_URL,
+    provider: 'chatgpt',
+    settings: [],
+    // Filled in from the account's own catalogue on sign-in and emptied on
+    // sign-out, so a model is only ever listed while it can be served — and so
+    // `hasValidProviders` can read "has models" as "is connected".
+    models: [],
+    // The subscription has no OpenAI-style `/v1/models`; its catalogue comes
+    // from a dedicated backend command instead.
+    supports_model_listing: false,
+  },
+  {
+    // The user's own `llama-server`. It cannot live in the remote registry for
+    // the same reason Azure cannot: the endpoint is per-user configuration —
+    // there is no shared address to publish, only the one they started.
+    //
+    // The key is optional: llama.cpp serves unauthenticated unless started
+    // with `--api-key`. `isKeylessRemoteProvider` knows this id, so the proxy
+    // registers the provider with or without one — on loopback or on a
+    // LAN/VPS host.
+    active: true,
+    api_key: '',
+    base_url: 'http://localhost:8080/v1',
+    explore_models_url: 'https://github.com/ggml-org/llama.cpp',
+    provider: 'llamacpp-server',
+    settings: [
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'Address of your own `llama-server`. Start it with `llama-server -m model.gguf --host 0.0.0.0 --port 8080`, then point this at `http://<host>:8080/v1`. See the [llama.cpp server docs](https://github.com/ggml-org/llama.cpp/tree/master/tools/server).',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'http://localhost:8080/v1',
+          value: 'http://localhost:8080/v1',
+        },
+      },
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          'Optional. Only needed when you started `llama-server` with `--api-key`.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Leave empty for an unauthenticated server',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1',
+    explore_models_url: 'https://oai.azure.com/deployments',
+    provider: 'azure',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          'The Azure OpenAI API uses API keys for authentication. Visit your [Azure OpenAI Studio](https://oai.azure.com/) to retrieve the API key from your resource.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'Your Azure OpenAI resource endpoint. See the [Azure OpenAI documentation](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/latest) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1',
+          value: 'https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1',
+        },
+      },
+    ],
+    models: [],
+  },
+]

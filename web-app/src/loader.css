@@ -1,0 +1,60 @@
+/* Critical CSS for initial loader - loaded inline to prevent FOUC */
+#initial-loader {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: hsl(0, 0%, 100%);
+  z-index: 9999;
+  opacity: 1;
+  transition: opacity 0.3s ease-in-out;
+}
+
+/* Light mode (default) */
+@media (prefers-color-scheme: light) {
+  #initial-loader {
+    background: rgb(255, 255, 255);
+  }
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  #initial-loader {
+    background: rgb(25, 25, 25);
+  }
+
+  #initial-loader .loader-logo-spin img {
+    filter: invert(1);
+  }
+}
+
+/* Вращение логотипа (без «помахивания»); инверсия только на img внутри */
+#initial-loader .loader-logo-spin {
+  width: 5rem;
+  height: 5rem;
+  animation: loader-logo-rotate 1.1s linear infinite;
+}
+
+#initial-loader .loader-logo-spin img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+@keyframes loader-logo-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loaded #initial-loader {
+  opacity: 0;
+  pointer-events: none;
+}

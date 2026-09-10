@@ -1,0 +1,176 @@
+import { createRootRoute, Outlet } from '@tanstack/react-router'
+// import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
+
+import DialogAppUpdater from '@/containers/dialogs/AppUpdater'
+import BackendUpdater from '@/containers/dialogs/BackendUpdater'
+import SuboptimalBackendDialog from '@/containers/dialogs/SuboptimalBackendDialog'
+import { Fragment } from 'react/jsx-runtime'
+import { ThemeProvider } from '@/providers/ThemeProvider'
+import { InterfaceProvider } from '@/providers/InterfaceProvider'
+import { KeyboardShortcutsProvider } from '@/providers/KeyboardShortcuts'
+import { DataProvider } from '@/providers/DataProvider'
+import { route } from '@/constants/routes'
+import { ExtensionProvider } from '@/providers/ExtensionProvider'
+import { ToasterProvider } from '@/providers/ToasterProvider'
+// import { useAnalytic } from '@/hooks/useAnalytic'
+// import { PromptAnalytic } from '@/containers/analytics/PromptAnalytic'
+import { useOnboardingModelReminder } from '@/hooks/useOnboardingModelReminder'
+import { PromptOnboardingModel } from '@/containers/PromptOnboardingModel'
+import { DownloadManagement } from '@/containers/DownloadManegement'
+import { AnalyticProvider } from '@/providers/AnalyticProvider'
+import { useLeftPanel } from '@/hooks/useLeftPanel'
+import { useTrayStatusSync } from '@/hooks/useTrayStatusSync'
+import ToolApproval from '@/containers/dialogs/ToolApproval'
+import AgentApprovalDialog from '@/containers/dialogs/AgentApprovalDialog'
+import AgentFolderAccessDialog from '@/containers/dialogs/AgentFolderAccessDialog'
+import VoiceSetupDialog from '@/containers/dialogs/VoiceSetupDialog'
+import { TranslationProvider } from '@/i18n/TranslationContext'
+import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionDialog'
+import WhatsNewDialog from '@/containers/dialogs/WhatsNewDialog'
+import { useEffect } from 'react'
+import { useSetupCompleted } from '@/hooks/useSetupCompleted'
+import GlobalError from '@/containers/GlobalError'
+import * as Sentry from '@sentry/react'
+import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
+import { StartupBackendCoordinator } from '@/providers/StartupBackendCoordinator'
+import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
+import { LeftSidebar } from '@/components/left-sidebar'
+
+export const Route = createRootRoute({
+  component: RootLayout,
+  errorComponent: ({ error }) => {
+    // ATO-113: router-level errors also reach Sentry (the ErrorBoundary in
+    // main.tsx wraps RouterProvider, but TanStack renders this component
+    // itself, so capture explicitly here too).
+    Sentry.captureException(error)
+    return <GlobalError error={error} />
+  },
+})
+
+const AppLayout = () => {
+  const { showOnboardingModelReminder } = useOnboardingModelReminder()
+  const isLeftPanelOpen = useLeftPanel((state) => state.open)
+  const setLeftPanel = useLeftPanel((state) => state.setLeftPanel)
+  const sidebarWidth = useLeftPanel((state) => state.width)
+  const setLeftPanelWidth = useLeftPanel((state) => state.setLeftPanelWidth)
+  // Feeds live server / model / RAM state into the desktop system tray.
+  // No-op outside macOS and Windows Tauri builds (see hook implementation).
+  useTrayStatusSync()
+  const isSetupCompleted = useSetupCompleted()
+
+  return (
+    <div className="bg-neutral-50 dark:bg-background size-full relative">
+      <SidebarProvider
+        open={isLeftPanelOpen}
+        onOpenChange={setLeftPanel}
+        defaultWidth={sidebarWidth}
+        onWidthChange={setLeftPanelWidth}
+      >
+        <AnalyticProvider />
+        <KeyboardShortcutsProvider />
+        <DialogAppUpdater />
+        {isSetupCompleted && <BackendUpdater />}
+        {/* Unlike the recommendation dialogs above, this dialog only opens
+            after ChatInput dispatches a mismatch prompt. Keep it mounted for
+            upgraded/legacy users whose setup-completed flag is absent. */}
+        <SuboptimalBackendDialog />
+        <WhatsNewDialog />
+        <LeftSidebar />
+        <SidebarInset>
+          <div className="bg-neutral-50 dark:bg-background size-full">
+            <Outlet />
+          </div>
+        </SidebarInset>
+
+        {/* Попап согласия на аналитику отключён; настройки → Privacy по-прежнему доступны */}
+        {/* {productAnalyticPrompt && <PromptAnalytic />} */}
+        {showOnboardingModelReminder && <PromptOnboardingModel />}
+        {/* ATO-462: mounted once at the root, not inside the sidebar or the
+            header. It used to render in one of two places depending on whether
+            the left panel was open, so a download's progress moved around the
+            screen — or vanished — as the user toggled the sidebar. This is also
+            the component that registers the download event listeners, so a
+            single mount keeps them registered exactly once. */}
+        <DownloadManagement />
+      </SidebarProvider>
+    </div>
+  )
+}
+
+const LogsLayout = () => {
+  return (
+    <Fragment>
+      <main className="relative h-svh text-sm antialiased select-text bg-app">
+        <div className="flex h-full">
+          {/* Main content panel */}
+          <div className="h-full flex w-full">
+            <div className="bg-background text-foreground border w-full overflow-hidden">
+              <Outlet />
+            </div>
+          </div>
+        </div>
+      </main>
+    </Fragment>
+  )
+}
+
+function RootLayout() {
+  const getInitialLayoutType = () => {
+    const pathname = window.location.pathname
+    return (
+      pathname === route.localApiServerlogs ||
+      pathname === route.systemMonitor ||
+      pathname === route.appLogs
+    )
+  }
+
+  useEffect(() => {
+    // Wait for the UI to be fully rendered before hiding the loader
+    const hideLoader = () => {
+      requestAnimationFrame(() => {
+        // Hide the HTML loader
+        document.body.classList.add('loaded')
+
+        // Remove the HTML loader element after transition
+        const loader = document.getElementById('initial-loader')
+        if (loader) {
+          setTimeout(() => {
+            loader.remove()
+          }, 300)
+        }
+      })
+    }
+
+    // Give providers time to initialize and paint
+    const timer = setTimeout(hideLoader, 200)
+
+    return () => clearTimeout(timer)
+  }, [])
+
+  const IS_LOGS_ROUTE = getInitialLayoutType()
+
+  return (
+    <Fragment>
+      <ServiceHubProvider>
+        <ThemeProvider />
+        <InterfaceProvider />
+        <ToasterProvider />
+        <TranslationProvider>
+          <ExtensionProvider>
+            <DataProvider />
+            <GlobalEventHandler />
+            <StartupBackendCoordinator />
+            {IS_LOGS_ROUTE ? <LogsLayout /> : <AppLayout />}
+          </ExtensionProvider>
+          {/* <TanStackRouterDevtools position="bottom-right" /> */}
+          <ToolApproval />
+          <AgentApprovalDialog />
+          <AgentFolderAccessDialog />
+          <VoiceSetupDialog />
+          <AttachmentIngestionDialog />
+        </TranslationProvider>
+      </ServiceHubProvider>
+    </Fragment>
+  )
+}

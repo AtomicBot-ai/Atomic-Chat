@@ -1,0 +1,39 @@
+{
+  "get-started-separator": {
+    "title": "Get started",
+    "type": "separator"
+  },
+  "index": "Overview",
+  "quickstart": "Quickstart",
+  "install": "Install 👋 Jan",
+  "jan-models": "Models",
+  "integrations": "Integrations",
+  "coreconcepts-separator": {
+    "title": "Core concepts",
+    "type": "separator"
+  },
+  "agents": "Agents",
+  "projects": "Projects",
+  "assistants": "Assistants",
+  "file-upload": "File Upload",
+  "manage-models": "Hub",
+  "api-server": "Local API Server",
+  "settings": "App Settings",
+  "local-engine": "Local AI Engine",
+  "model-parameters": "Model Parameters",
+  "privacy-policy": {
+    "type": "page",
+    "display": "hidden",
+    "title": "Privacy Policy"
+  },
+  "reference-separator": {
+    "title": "Reference",
+    "type": "separator"
+  },
+  "api-preference": "API Reference",
+  "cli": "CLI",
+  "mcp": "Model Context Protocol",
+  "remote-models": "Cloud Providers",
+  "data-folder": "Jan Data Folder",
+  "troubleshooting": "Troubleshooting"
+}

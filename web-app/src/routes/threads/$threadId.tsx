@@ -1,0 +1,2147 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createFileRoute, useParams, useSearch } from '@tanstack/react-router'
+import { cn } from '@/lib/utils'
+import {
+  agentContextWindow,
+  agentProviderBlockReason,
+  isAgentLocalProvider,
+} from '@/lib/agent-provider'
+import { buildAgentReasoningRequest } from '@/lib/reasoning-effort'
+import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
+
+import HeaderPage from '@/containers/HeaderPage'
+import HeaderContextSize from '@/containers/HeaderContextSize'
+import { useThreads } from '@/hooks/useThreads'
+import ChatInput from '@/containers/ChatInput'
+import { useShallow } from 'zustand/react/shallow'
+import { MessageItem } from '@/containers/MessageItem'
+
+import { useMessages } from '@/hooks/useMessages'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import { useAssistant } from '@/hooks/useAssistant'
+import { useTools } from '@/hooks/useTools'
+import { useAppState } from '@/hooks/useAppState'
+import {
+  InitialMessageFile,
+  useInitialMessage,
+} from '@/hooks/useInitialMessage'
+import { useOptimisticUserMessage } from '@/hooks/useOptimisticUserMessage'
+import { buildOptimisticUserMessage } from '@/lib/optimisticUserMessage'
+import { useChat } from '@/hooks/use-chat'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { renderInstructions } from '@/lib/instructionTemplate'
+import {
+  Conversation,
+  ConversationAutoScroll,
+  ConversationContent,
+  ConversationScrollButton,
+} from '@/components/ai-elements/conversation'
+import { generateId } from 'ai'
+import type { UIMessage } from '@ai-sdk/react'
+import { useChatSessions } from '@/stores/chat-session-store'
+import { useThreadReadStatus } from '@/stores/thread-read-store'
+import {
+  convertThreadMessagesToUIMessages,
+  extractContentPartsFromUIMessage,
+} from '@/lib/messages'
+import { newUserThreadContent } from '@/lib/completion'
+import { rebuildEditedContent, rebuildEditedParts } from '@/lib/message-edit'
+import {
+  ttftBegin,
+  ttftMark,
+  ttftPreBegin,
+  ttftSnapshot,
+} from '@/lib/ttft-timing'
+import {
+  agentOutcome,
+  agentResponseShape,
+  attachmentTelemetry,
+  beginChatTurn,
+  captureChatRequest,
+  captureChatResponse,
+  contextTelemetry,
+  currentChatTurn,
+  responseShapeFromMessage,
+  type AttachmentTelemetry,
+  type ChatEngine,
+  type ChatOutcome,
+  type ChatTurnSource,
+} from '@/lib/chat-telemetry'
+import { type RouteReason } from '@/lib/agent-route'
+import { classifyChatFailure, lengthBucket } from '@/lib/telemetry'
+import {
+  ThreadMessage,
+  MessageStatus,
+  ChatCompletionRole,
+  ContentType,
+} from '@janhq/core'
+import { toast } from 'sonner'
+import {
+  Attachment,
+  createImageAttachment,
+  createAudioAttachment,
+} from '@/types/attachment'
+import {
+  useChatAttachments,
+  NEW_THREAD_ATTACHMENT_KEY,
+} from '@/hooks/useChatAttachments'
+import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
+import { downscaleToolResultContent } from '@/lib/toolResultImages'
+import {
+  executeChatToolCalls,
+  shouldSendToolFollowUp,
+} from '@/lib/execute-chat-tool-calls'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { useAttachments } from '@/hooks/useAttachments'
+import { PromptProgress } from '@/components/PromptProgress'
+import { useToolAvailable } from '@/hooks/useToolAvailable'
+import {
+  OUT_OF_CONTEXT_SIZE,
+  MODEL_ACCESS_DENIED_TITLE,
+  MODEL_ACCESS_DENIED_MESSAGE,
+  CONTEXT_OVERFLOW_TITLE,
+  CONTEXT_OVERFLOW_MESSAGE,
+  OUT_OF_MEMORY_TITLE,
+  OUT_OF_MEMORY_MESSAGE,
+  isModelAccessError,
+  isContextLimitError,
+  isOutOfMemoryError,
+} from '@/utils/error'
+import {
+  DEFAULT_CTX_LEN, growModelContext } from '@/lib/context-size'
+import { captureHandledError } from '@/lib/sentry'
+import { Button } from '@/components/ui/button'
+import { LinkifiedText } from '@/components/LinkifiedText'
+import { IconAlertCircle, IconRefresh } from '@tabler/icons-react'
+import { useToolApproval } from '@/hooks/useToolApproval'
+import { resolveMcpAutoApprove } from '@/lib/mcp-approval'
+import DropdownModelProvider from '@/containers/DropdownModelProvider'
+import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
+import { ExtensionManager } from '@/lib/extension'
+import { buildAgentRagRequest } from '@/lib/agent-rag-request'
+import { ensureEmbeddingsReady } from '@/lib/ensure-embeddings'
+import { Shimmer } from '@/components/ai-elements/shimmer'
+import { useAgentMode } from '@/hooks/useAgentMode'
+import { AgentWorkspaceLayout } from '@/containers/AgentWorkspaceLayout'
+import { useArtifactStore } from '@/stores/artifact-store'
+import { useAgentRun } from '@/hooks/useAgentRun'
+import { readAgentSkillName } from '@/lib/agent-skill-selection'
+import {
+  buildAgentUIMessage,
+  claimAgentRunPersistence,
+} from '@/lib/agent-run-message'
+import { resolveThreadExecutionRoute } from '@/lib/thread-execution-route'
+import {
+  extractAgentAttachmentReferences,
+  type AgentFileReference,
+} from '@/lib/agent-file-links'
+import {
+  cancelAgentTurn,
+  reseedAgentSession,
+  resolveAgentWorkspaceRoot,
+  runAgentTurn,
+} from '@/services/agent/tauri'
+import { buildAgentSessionSyncMessages } from '@/lib/agent-session-sync'
+import { getSamplingParamsForThread } from '@/lib/samplingParams'
+import { useMCPServers } from '@/hooks/useMCPServers'
+import { findWebSearchServer } from '@/lib/web-search'
+import type {
+  AgentAttachment as AgentIpcAttachment,
+  AgentEvent,
+  AgentRunState,
+} from '@/types/agent'
+import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useReasoningAutoScroll } from '@/hooks/useReasoningAutoScroll'
+
+const CHAT_STATUS = {
+  STREAMING: 'streaming',
+  SUBMITTED: 'submitted',
+} as const
+
+type ThreadModel = {
+  id: string
+  provider: string
+}
+
+const agentAttachmentsFromMessage = (
+  message: ThreadMessage
+): {
+  text: string
+  files: InitialMessageFile[]
+  documents: Attachment[]
+  agentSkillName?: string
+} => {
+  const metadata = (message.metadata ?? {}) as Record<string, unknown>
+  const storedText = metadata.agent_input_text
+  const text =
+    typeof storedText === 'string'
+      ? storedText
+      : message.content
+          .filter((content) => content.type === ContentType.Text)
+          .map((content) => content.text?.value ?? '')
+          .join('')
+
+  const imageNames = Array.isArray(metadata.image_attachment_names)
+    ? metadata.image_attachment_names
+    : []
+  let imageIndex = 0
+  const files = message.content.flatMap((content) => {
+    if (content.type !== ContentType.Image || !content.image_url?.url) return []
+    const url = content.image_url.url
+    const mediaType = /^data:([^;,]+)[;,]/.exec(url)?.[1] ?? 'image/jpeg'
+    const storedName = imageNames[imageIndex]
+    const name =
+      typeof storedName === 'string' && storedName
+        ? storedName
+        : `image-${imageIndex + 1}`
+    imageIndex += 1
+    return [{ type: 'file', name, mediaType, url }]
+  })
+
+  const storedFiles = Array.isArray(metadata.file_attachments)
+    ? metadata.file_attachments
+    : []
+  const documents = storedFiles.flatMap((value) => {
+    if (
+      typeof value !== 'object' ||
+      value === null ||
+      typeof (value as { name?: unknown }).name !== 'string' ||
+      typeof (value as { path?: unknown }).path !== 'string'
+    ) {
+      return []
+    }
+    const file = value as {
+      name: string
+      path: string
+      mediaType?: string
+      size?: number
+      fileType?: string
+    }
+    return [
+      {
+        type: 'document' as const,
+        name: file.name,
+        path: file.path,
+        mimeType: file.mediaType,
+        size: file.size,
+        fileType: file.fileType,
+      },
+    ]
+  })
+
+  const agentSkillName = readAgentSkillName(metadata)
+
+  return { text, files, documents, agentSkillName }
+}
+
+type SearchParams = {
+  threadModel?: ThreadModel
+}
+
+// as route.threadsDetail
+export const Route = createFileRoute('/threads/$threadId')({
+  component: ThreadDetail,
+  validateSearch: (search: Record<string, unknown>): SearchParams => {
+    return {
+      threadModel: search.threadModel as ThreadModel | undefined,
+    }
+  },
+})
+
+function ThreadDetail() {
+  const { t } = useTranslation()
+  const serviceHub = useServiceHub()
+  const { threadId } = useParams({ from: Route.id })
+  const search = useSearch({ from: Route.id })
+  const searchThreadModel = search.threadModel
+  const setCurrentThreadId = useThreads((state) => state.setCurrentThreadId)
+  const setCurrentAssistant = useAssistant((state) => state.setCurrentAssistant)
+  const assistants = useAssistant((state) => state.assistants)
+  const setMessages = useMessages((state) => state.setMessages)
+  const addMessage = useMessages((state) => state.addMessage)
+  const updateMessage = useMessages((state) => state.updateMessage)
+  const deleteMessage = useMessages((state) => state.deleteMessage)
+  const currentThread = useRef<string | undefined>(undefined)
+
+  useTools()
+
+  // Get attachments for this thread
+  const attachmentsKey = threadId ?? NEW_THREAD_ATTACHMENT_KEY
+  const getAttachments = useChatAttachments((state) => state.getAttachments)
+  const clearAttachmentsForThread = useChatAttachments(
+    (state) => state.clearAttachments
+  )
+
+  // Session data for tool call tracking
+  const getSessionData = useChatSessions((state) => state.getSessionData)
+  const sessionData = getSessionData(threadId)
+
+  // AbortController for cancelling tool calls
+  const toolCallAbortController = useRef<AbortController | null>(null)
+
+  // Check if we should follow up with tool calls (respects abort signal)
+  const followUpMessage = useCallback(
+    ({ messages }: { messages: UIMessage[] }) => {
+      return shouldSendToolFollowUp(messages, toolCallAbortController.current)
+    },
+    []
+  )
+
+  // Subscribe directly to the thread data to ensure updates when model changes
+  const thread = useThreads(useShallow((state) => state.threads[threadId]))
+
+  // Get model and provider for useChat
+  const selectedModel = useModelProvider((state) => state.selectedModel)
+  const selectedProvider = useModelProvider((state) => state.selectedProvider)
+  const getProviderByName = useModelProvider((state) => state.getProviderByName)
+  const agentRun = useAgentRun((state) => state.runs[threadId])
+  const persistedAgentRunsRef = useRef(new Set<string>())
+  const chatMessagesRef = useRef<UIMessage[]>([])
+
+  // Get system message from the thread's assigned assistant instructions.
+  // The thread stores an assistant *snapshot* taken at creation time, so
+  // instructions edited afterwards would never reach the model for that
+  // thread. Prefer the *live* assistant (looked up by id) so edits to the
+  // system prompt apply immediately — including to already-open threads —
+  // and fall back to the snapshot if the assistant was since deleted.
+  const threadAssistant = thread?.assistants?.[0]
+  const liveAssistant = useAssistant((state) =>
+    threadAssistant?.id
+      ? state.assistants.find((a) => a.id === threadAssistant.id)
+      : undefined
+  )
+  const effectiveInstructions =
+    liveAssistant?.instructions ?? threadAssistant?.instructions
+  const systemMessage = effectiveInstructions
+    ? renderInstructions(effectiveInstructions)
+    : undefined
+
+  // Holds the partial assistant message while the model reloads after a
+  // context-limit hit, so the user sees it instead of a blank gap.
+  const [pendingContinueMessage, setPendingContinueMessage] =
+    useState<UIMessage | null>(null)
+  const [isAutoIncreasingContext, setIsAutoIncreasingContext] = useState(false)
+  const [contextLimitError, setContextLimitError] = useState<Error | null>(null)
+  const [isChatRequestActive, setIsChatRequestActive] = useState(false)
+
+  // Optimistic user message shown while the home → new thread initial-message
+  // path indexes attachments. Lives in a shared Zustand store published by
+  // ChatInput **before** navigation, so the bubble is visible on the very
+  // first paint of ThreadDetail (no empty-conversation flash) and survives
+  // React StrictMode's mount → unmount → remount dev cycle. Cleared
+  // synchronously right before sendMessage queues the real UIMessage so
+  // there is no visual jump.
+  const pendingInitialUserMessage = useOptimisticUserMessage(
+    (s) => s.byThread[threadId]
+  )
+
+  // Refs so onFinish (captured in closure) always calls the latest callbacks
+  const handleContextSizeIncreaseRef = useRef<(() => void) | null>(null)
+  const setContinueFromContentRef = useRef<((content: string) => void) | null>(
+    null
+  )
+
+  // What the in-flight turn was started by, and what was attached to it, so
+  // `chat_response_received` can be attributed back to the send that caused it.
+  // Set on every send path; the response arrives long after those locals are
+  // gone, hence a ref rather than threading it through the AI SDK.
+  const turnContextRef = useRef<{
+    source: ChatTurnSource
+    attachments: AttachmentTelemetry
+    engine?: ChatEngine
+    routeReason?: RouteReason
+  }>({ source: 'chat', attachments: attachmentTelemetry([]) })
+
+  /**
+   * A retry reuses the previous turn's prompt and attachments, so only the
+   * source changes. Regenerate and edit previously emitted nothing at all,
+   * which left the send count — the funnel's denominator — short.
+   */
+  const captureRetryRequest = useCallback(
+    (source: 'regenerate' | 'edit', routeReason?: RouteReason) => {
+      turnContextRef.current = {
+        ...turnContextRef.current,
+        source,
+        engine: 'chat-transport',
+        routeReason: routeReason ?? turnContextRef.current.routeReason,
+      }
+      captureChatRequest({
+        ...turnContextRef.current.attachments,
+        turn_id: beginChatTurn(threadId),
+        thread_id: threadId,
+        source,
+        engine: turnContextRef.current.engine,
+        route_reason: turnContextRef.current.routeReason,
+        model_id: useModelProvider.getState().selectedModel?.id,
+        provider: useModelProvider.getState().selectedProvider,
+        turn_index: chatMessagesRef.current.length,
+      })
+    },
+    [threadId]
+  )
+
+  /**
+   * Emit the single terminal event for a chat turn. Deduped inside
+   * `captureChatResponse` (onFinish fires more than once per message and can
+   * race the error path), so callers may fire optimistically.
+   */
+  const captureTurnOutcome = useCallback(
+    (
+      outcome: ChatOutcome,
+      message?: Parameters<typeof responseShapeFromMessage>[0],
+      error?: unknown
+    ) => {
+      const shape = responseShapeFromMessage(
+        message,
+        useAppState.getState().ragToolNames,
+        useAppState.getState().mcpToolNames
+      )
+      const meta = (message?.metadata ?? {}) as Record<string, unknown>
+      const ctxLen =
+        (useModelProvider.getState().selectedModel?.settings?.ctx_len
+          ?.controller_props?.value as number) ?? null
+      const { source, attachments } = turnContextRef.current
+
+      captureChatResponse({
+        ...shape,
+        ...attachments,
+        ...contextTelemetry(shape.tokens_total as number | null, ctxLen),
+        ...ttftSnapshot(),
+        turn_id: currentChatTurn(threadId),
+        thread_id: threadId,
+        source,
+        engine: turnContextRef.current.engine,
+        route_reason: turnContextRef.current.routeReason,
+        outcome,
+        error,
+        model_id:
+          (meta.modelId as string | undefined) ??
+          useModelProvider.getState().selectedModel?.id ??
+          null,
+        provider:
+          (meta.providerId as string | undefined) ??
+          useModelProvider.getState().selectedProvider ??
+          null,
+        turn_index: chatMessagesRef.current.length,
+        ctx_overflow: outcome.startsWith('truncated'),
+        ctx_auto_increased: outcome === 'truncated_continued',
+      })
+    },
+    [threadId]
+  )
+
+  // Use the AI SDK chat hook
+  const {
+    messages: chatMessages,
+    status,
+    error,
+    sendMessage,
+    regenerate,
+    setMessages: setChatMessages,
+    stop,
+    addToolOutput,
+    updateRagToolsAvailability,
+    setContinueFromContent,
+  } = useChat({
+    sessionId: threadId,
+    sessionTitle: thread?.title,
+    systemMessage,
+    // One re-render per frame means the answer's Markdown is re-parsed 62
+    // times a second, and each parse walks the whole answer: measured in
+    // WebKit at 13ms per update on a 10k-character answer, 41ms at 20k and
+    // 149ms at 40k. Twenty updates a second reads the same while streaming
+    // and is what keeps mid-length answers inside the frame budget. It only
+    // divides the cost — the parse is still superlinear in answer length, so
+    // a long enough answer still stalls. See
+    // docs/decisions/2026-09-04-bound-streaming-reasoning-render-cost.md.
+    experimental_throttle: 50,
+    // The AI SDK's own error hook was never registered — failures only ever
+    // surfaced through the reactive `error` value, so a failed turn produced no
+    // telemetry at all. A user-initiated stop can surface here as an abort
+    // error and race `onFinish`; whichever lands first wins the dedup, so it
+    // must not report a cancellation as a failure.
+    onError: (err) => {
+      captureTurnOutcome(
+        classifyChatFailure(err) === 'aborted' ? 'aborted' : 'error',
+        undefined,
+        err
+      )
+    },
+    onFinish: ({ message, isAbort }) => {
+      const msgMeta = message.metadata as Record<string, unknown> | undefined
+      const finishReason = msgMeta?.finishReason as string | undefined
+
+      if (isAbort) {
+        setIsChatRequestActive(false)
+        // Stop during an auto-continue never reaches the non-abort clear
+        // below, and a stale placeholder would flip the indicator row to
+        // "Growing the Mind..." on every later send in this thread.
+        setPendingContinueMessage(null)
+        captureTurnOutcome('aborted', message)
+      }
+
+      // Context limit hit: send partial content as prefill so the model continues
+      // from where it stopped. The stream wrapper injects it as the first text-delta
+      // of the new message, so the user sees the partial text immediately.
+      if (!isAbort && finishReason === 'length') {
+        let willContinue = false
+        const selectedModelState = useModelProvider.getState().selectedModel
+        const usage = msgMeta?.usage as
+          { inputTokens?: number; outputTokens?: number } | undefined
+        const totalTokens =
+          (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0)
+        const ctxLen =
+          (selectedModelState?.settings?.ctx_len?.controller_props
+            ?.value as number) ?? DEFAULT_CTX_LEN
+        const isContextLimit = totalTokens >= ctxLen * 0.9
+
+        if (isContextLimit) {
+          const autoIncrease =
+            selectedModelState?.settings?.auto_increase_ctx_len
+              ?.controller_props?.value ?? true
+          if (autoIncrease) {
+            const partialText = message.parts
+              .filter((p) => p.type === 'text')
+              .map((p) => (p as { type: 'text'; text: string }).text)
+              .join('')
+            if (partialText) {
+              setContinueFromContentRef.current?.(partialText)
+              // Keep the partial message visible while the model reloads
+              setPendingContinueMessage(message)
+              willContinue = true
+            }
+            handleContextSizeIncreaseRef.current?.()
+          } else {
+            setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
+            // ATO-113: surface context-overflow (auto-increase disabled) to
+            // Sentry as a warning with zero-PII numeric context.
+            captureHandledError(new Error(OUT_OF_CONTEXT_SIZE), 'warning', {
+              feature: 'context_overflow',
+              model_id: selectedModelState?.id,
+              context_length: ctxLen,
+              total_tokens: totalTokens,
+            })
+          }
+        }
+        if (!willContinue) {
+          setIsChatRequestActive(false)
+        }
+        // A continuation is a second model call, so this event closes the
+        // first one; `captureChatResponse` releases the turn id and the
+        // continuation's own finish gets a fresh one. `finishReason: 'length'`
+        // without a context hit is just max_output_tokens — an ordinary
+        // completion, not a truncation.
+        captureTurnOutcome(
+          willContinue
+            ? 'truncated_continued'
+            : isContextLimit
+              ? 'truncated_stopped'
+              : 'success',
+          message
+        )
+        return
+      }
+
+      if (!isAbort && message.parts.length) setPendingContinueMessage(null)
+
+      if (!isAbort && sessionData.tools.length === 0) {
+        setIsChatRequestActive(false)
+        // Terminal only when no tool calls are queued: with tools, onFinish
+        // fires once per step and the turn continues after they resolve.
+        captureTurnOutcome('success', message)
+      }
+
+      // Persist assistant message to backend (skip if aborted).
+      // For continuations, message.parts already contains partial + new content
+      // because the stream wrapper prepended the partial text as the first delta.
+      if (!isAbort && message.role === 'assistant') {
+        const contentParts = extractContentPartsFromUIMessage(message)
+
+        if (contentParts.length > 0) {
+          const messageMetadata = (message.metadata || {}) as Record<
+            string,
+            unknown
+          >
+
+          const assistantMessage: ThreadMessage = {
+            type: 'text',
+            role: ChatCompletionRole.Assistant,
+            content: contentParts,
+            id: message.id,
+            object: 'thread.message',
+            thread_id: threadId,
+            status: MessageStatus.Ready,
+            created_at: Date.now(),
+            completed_at: Date.now(),
+            metadata: messageMetadata,
+          }
+
+          // Check if message with this ID already exists (onFinish can be called multiple times)
+          const existingMessages = useMessages.getState().getMessages(threadId)
+          const existingMessage = existingMessages.find(
+            (m) => m.id === message.id
+          )
+
+          if (existingMessage) {
+            updateMessage(assistantMessage)
+          } else {
+            addMessage(assistantMessage)
+          }
+        }
+      }
+
+      // Create a new AbortController for tool calls
+      toolCallAbortController.current = new AbortController()
+      const signal = toolCallAbortController.current.signal
+
+      // Get cached tool names from store (initialized in useTools hook)
+      const ragToolNames = useAppState.getState().ragToolNames
+      const mcpToolNames = useAppState.getState().mcpToolNames
+
+      // Process tool calls sequentially, requesting approval for each if needed
+      ;(async () => {
+        await executeChatToolCalls({
+          toolCalls: sessionData.tools,
+          signal,
+          threadId,
+          ragToolNames,
+          mcpToolNames,
+          // The composer's approval select governs chat tool calls too: an
+          // explicit "skip" runs them silently, an explicit "manual" prompts
+          // even while the global MCP auto-approve switch is on.
+          approve: (toolName, currentThreadId, input) =>
+            resolveMcpAutoApprove(currentThreadId)
+              ? Promise.resolve(true)
+              : useToolApproval
+                  .getState()
+                  .showApprovalModal(toolName, currentThreadId, input, {
+                    bypassGlobalAutoApprove: true,
+                  }),
+          callRagTool: (args) => serviceHub.rag().callTool(args),
+          callMcpTool: (args) => serviceHub.mcp().callTool(args),
+          // Resolve project scope from the live route-keyed thread record.
+          getProjectId: () =>
+            useThreads.getState().threads[threadId]?.metadata?.project?.id,
+          processOutput: (content) =>
+            downscaleToolResultContent(
+              content,
+              useGeneralSetting.getState().maxImageSizePx
+            ),
+          addToolOutput,
+        })
+
+        // Clear tools after processing all
+        sessionData.tools = []
+        toolCallAbortController.current = null
+      })().catch((error) => {
+        // Ignore abort errors
+        if (error.name !== 'AbortError') {
+          console.error('Tool call error:', error)
+        }
+        sessionData.tools = []
+        toolCallAbortController.current = null
+      })
+    },
+    onToolCall: ({ toolCall }) => {
+      sessionData.tools.push(toolCall)
+    },
+    sendAutomaticallyWhen: followUpMessage,
+  })
+  chatMessagesRef.current = chatMessages
+
+  // Get disabled tools for this thread to trigger re-render when they change
+  const disabledTools = useToolAvailable((state) =>
+    state.getDisabledToolsForThread(threadId)
+  )
+
+  // Update RAG tools availability when documents, model, or tool availability changes
+  useEffect(() => {
+    const checkDocumentsAvailability = async () => {
+      const hasThreadDocuments = Boolean(thread?.metadata?.hasDocuments)
+      let hasProjectDocuments = false
+
+      // Check if thread belongs to a project and if that project has files
+      const projectId = thread?.metadata?.project?.id
+      if (projectId) {
+        try {
+          const ext = ExtensionManager.getInstance().get<VectorDBExtension>(
+            ExtensionTypeEnum.VectorDB
+          )
+          if (ext?.listAttachmentsForProject) {
+            const projectFiles = await ext.listAttachmentsForProject(projectId)
+            hasProjectDocuments = projectFiles.length > 0
+          }
+        } catch (error) {
+          console.warn('Failed to check project files:', error)
+        }
+      }
+
+      const hasDocuments = hasThreadDocuments || hasProjectDocuments
+      const ragFeatureAvailable = Boolean(useAttachments.getState().enabled)
+      const modelSupportsTools =
+        selectedModel?.capabilities?.includes('tools') ?? false
+
+      updateRagToolsAvailability(
+        hasDocuments,
+        modelSupportsTools,
+        ragFeatureAvailable
+      )
+    }
+
+    checkDocumentsAvailability()
+  }, [
+    thread?.metadata?.hasDocuments,
+    thread?.metadata?.project?.id,
+    selectedModel?.capabilities,
+    updateRagToolsAvailability,
+    disabledTools, // Re-run when tools are enabled/disabled
+  ])
+
+  // Content growth does not emit a scroll event, so only actual reader
+  // scrolling may pause tail-following. Token updates remain coalesced to one
+  // layout write per animation frame.
+  const {
+    containerRef: reasoningContainerRef,
+    onScroll: onReasoningScroll,
+  } = useReasoningAutoScroll(
+    status === CHAT_STATUS.STREAMING,
+    chatMessages
+  )
+
+  // Note: no unmount cleanup of the optimistic bubble store here. React
+  // StrictMode in dev simulates mount → unmount → remount on initial mount;
+  // clearing on unmount would wipe the entry between the two mounts and
+  // produce the "white screen during indexing" symptom. The store entry is
+  // cleared explicitly inside processAndSendMessage (success or error).
+
+  useEffect(() => {
+    setCurrentThreadId(threadId)
+    useThreadReadStatus.getState().markRead(threadId)
+    const assistant = assistants.find(
+      (assistant) => assistant.id === thread?.assistants?.[0]?.id
+    )
+    if (assistant) setCurrentAssistant(assistant)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadId, assistants])
+
+  // Load messages on first mount
+  useEffect(() => {
+    // Skip if chat already has messages (e.g., returning to a streaming conversation)
+    const existingSession = useChatSessions.getState().sessions[threadId]
+    if (
+      existingSession?.chat.messages.length > 0 ||
+      existingSession?.isStreaming ||
+      currentThread.current === threadId
+    ) {
+      return
+    }
+
+    serviceHub
+      .messages()
+      .fetchMessages(threadId)
+      .then((fetchedMessages) => {
+        if (fetchedMessages && fetchedMessages.length > 0) {
+          const currentLocalMessages = useMessages
+            .getState()
+            .getMessages(threadId)
+
+          let messagesToSet = fetchedMessages
+
+          // Merge with local-only messages if needed
+          if (currentLocalMessages && currentLocalMessages.length > 0) {
+            const fetchedIds = new Set(fetchedMessages.map((m) => m.id))
+            const localOnlyMessages = currentLocalMessages.filter(
+              (m) => !fetchedIds.has(m.id)
+            )
+
+            if (localOnlyMessages.length > 0) {
+              messagesToSet = [...fetchedMessages, ...localOnlyMessages].sort(
+                (a, b) => (a.created_at || 0) - (b.created_at || 0)
+              )
+            }
+          }
+
+          // Update the legacy store
+          setMessages(threadId, messagesToSet)
+
+          // Convert and set messages for AI SDK chat
+          const uiMessages = convertThreadMessagesToUIMessages(messagesToSet)
+          setChatMessages(uiMessages)
+          currentThread.current = threadId
+        }
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadId, serviceHub])
+
+  useEffect(() => {
+    return () => {
+      // Clear the current thread ID when the component unmounts
+      setCurrentThreadId(undefined)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Close the artifact side panel when switching threads or leaving the page
+  // so a preview from one conversation never lingers in another.
+  useEffect(() => {
+    const close = useArtifactStore.getState().close
+    close()
+    return () => close()
+  }, [threadId])
+
+  const persistAgentRun = useCallback(
+    (run: AgentRunState) => {
+      if (!claimAgentRunPersistence(persistedAgentRunsRef.current, run.runId)) {
+        return
+      }
+      const uiMessage = buildAgentUIMessage(run)
+      const assistantMessage: ThreadMessage = {
+        type: 'text',
+        role: ChatCompletionRole.Assistant,
+        content: extractContentPartsFromUIMessage(uiMessage),
+        id: uiMessage.id,
+        object: 'thread.message',
+        thread_id: threadId,
+        status:
+          run.status === 'cancelled'
+            ? MessageStatus.Stopped
+            : run.status === 'failed'
+              ? MessageStatus.Error
+              : MessageStatus.Ready,
+        created_at: Date.now(),
+        completed_at: Date.now(),
+        metadata: uiMessage.metadata as Record<string, unknown>,
+      }
+      addMessage(assistantMessage)
+      useChatSessions.getState().upsertMessage(threadId, uiMessage)
+    },
+    [addMessage, threadId]
+  )
+
+  const applyAgentEvent = useCallback(
+    (event: AgentEvent) => {
+      useAgentRun.getState().applyEvent(threadId, event)
+      const run = useAgentRun.getState().getRun(threadId)
+      if (event.type === 'turn_finished') {
+        persistAgentRun(run)
+        const shape = agentResponseShape(
+          run,
+          useAppState.getState().ragToolNames,
+          useAppState.getState().mcpToolNames
+        )
+        captureChatResponse({
+          ...shape,
+          ...turnContextRef.current.attachments,
+          turn_id: currentChatTurn(threadId),
+          thread_id: threadId,
+          source: turnContextRef.current.source,
+          engine: turnContextRef.current.engine,
+          route_reason: turnContextRef.current.routeReason,
+          outcome: agentOutcome(event.reason),
+          error: run.trace.error,
+          model_id: useModelProvider.getState().selectedModel?.id ?? null,
+          provider: useModelProvider.getState().selectedProvider ?? null,
+          turn_index: chatMessagesRef.current.length,
+        })
+        return
+      }
+      if (!run.runId) return
+      const uiMessage = buildAgentUIMessage(run)
+      useChatSessions.getState().upsertMessage(threadId, uiMessage)
+    },
+    [persistAgentRun, threadId]
+  )
+
+  // Tracks whether the durable Rust transcript is known to match this
+  // thread's history. `dirty` is per-thread (this component survives thread
+  // switches) and is set by history mutations; `synced` caches the last
+  // verified thread and is dropped whenever a turn bypasses the agent engine.
+  const agentSessionSyncedRef = useRef<string | null>(null)
+  const agentSessionDirtyRef = useRef<Set<string>>(new Set())
+  const syncAgentSessionIfNeeded = useCallback(
+    async (excludeTrailingUserMessage: boolean) => {
+      const force = agentSessionDirtyRef.current.has(threadId)
+      if (!force && agentSessionSyncedRef.current === threadId) return
+      const history = useMessages.getState().getMessages(threadId)
+      const lastAssistant = [...history]
+        .reverse()
+        .find((message) => message.role === 'assistant')
+      const lastAssistantFromAgent = Boolean(
+        (lastAssistant?.metadata as { agent_run?: unknown } | undefined)
+          ?.agent_run
+      )
+      // Legacy chat threads and fallback-engine turns leave history the agent
+      // session never saw; explicit mutations force a rebuild.
+      const needsSync = force || (history.length > 0 && !lastAssistantFromAgent)
+      if (needsSync) {
+        const messages = buildAgentSessionSyncMessages(history)
+        // On a regenerate the retained user message is re-sent as this turn's
+        // input and the loop pushes it itself — keeping it in the reseed list
+        // would duplicate the user turn in the transcript.
+        if (excludeTrailingUserMessage && messages.at(-1)?.role === 'user') {
+          messages.pop()
+        }
+        try {
+          await reseedAgentSession(threadId, messages)
+        } catch (error) {
+          // An older backend without the command: regenerate still works, the
+          // transcript just keeps its previous shape.
+          console.warn('[agent] session reseed skipped:', error)
+        }
+      }
+      agentSessionDirtyRef.current.delete(threadId)
+      agentSessionSyncedRef.current = threadId
+    },
+    [threadId]
+  )
+
+  const processAndRunAgent = useCallback(
+    async (
+      text: string,
+      files?: InitialMessageFile[],
+      documentsFromPayload?: Attachment[],
+      agentSkillName?: string,
+      persistUserMessage = true,
+      // Distinguishes a fresh send from a retry of the same prompt, so the
+      // funnel does not read regenerations as new conversations.
+      source: ChatTurnSource = 'agent',
+      routeReason: RouteReason = 'user-selected-agent'
+    ) => {
+      const agentProvider = getProviderByName(selectedProvider)
+      const blockReason = agentProviderBlockReason(agentProvider)
+      if (blockReason) {
+        toast.error(t('chat:agentErrors.providerUnavailableTitle'), {
+          description: t(
+            blockReason === 'missing-api-key'
+              ? 'chat:agentErrors.providerKeyMissing'
+              : 'chat:agentErrors.providerUnavailableDescription'
+          ),
+        })
+        return
+      }
+      const documentAttachments =
+        documentsFromPayload ??
+        getAttachments(attachmentsKey).filter(
+          (attachment) => attachment.type === 'document'
+        )
+      if (files?.some((file) => file.mediaType.startsWith('audio/'))) {
+        toast.error(t('chat:agentErrors.audioUnsupported'))
+        return
+      }
+      if (
+        documentAttachments.some(
+          (attachment) => !attachment.path || !attachment.name
+        )
+      ) {
+        toast.error(t('chat:agentErrors.invalidAttachment'))
+        return
+      }
+      const mediaAttachments =
+        files?.map((file) => {
+          const base64 = file.url.split(',')[1] || ''
+          return createImageAttachment({
+            name: file.name,
+            mimeType: file.mediaType,
+            dataUrl: file.url,
+            base64,
+            size: Math.ceil((base64.length * 3) / 4),
+          })
+        }) ?? []
+      const combinedAttachments = [...mediaAttachments, ...documentAttachments]
+      // Documents already embedded into the vector index stay out of file
+      // staging — the model reaches them through the docs.* tools — while
+      // still appearing in combinedAttachments for chips and history.
+      const embeddedDocuments = documentAttachments.filter(
+        (attachment) =>
+          attachment.processed && attachment.injectionMode === 'embeddings'
+      )
+      const stagedDocuments = documentAttachments.filter(
+        (attachment) =>
+          !(attachment.processed && attachment.injectionMode === 'embeddings')
+      )
+      const ipcAttachments: AgentIpcAttachment[] = [
+        ...mediaAttachments.map((attachment) => ({
+          kind: 'image' as const,
+          name: attachment.name,
+          media_type: attachment.mimeType,
+          data_url: attachment.dataUrl,
+        })),
+        ...stagedDocuments.map((attachment) => ({
+          kind: 'file' as const,
+          name: attachment.name,
+          media_type: attachment.mimeType,
+          path: attachment.path,
+        })),
+      ]
+      const workspace = useAgentMode.getState().getWorkspace(threadId)
+      const workingDir = workspace.primaryRoot?.path
+      // Local engines must have the model actually loaded — the backend
+      // resolves a live session by id. Cloud models have no local session; the
+      // Local API Server proxy is started on demand below instead.
+      if (isAgentLocalProvider(selectedProvider)) {
+        if (!selectedModel) {
+          toast.error(t('chat:agentErrors.localModelRequired'))
+          return
+        }
+        const providerActiveModels = await serviceHub
+          .models()
+          .getActiveModels(selectedProvider)
+          .catch((): string[] => [])
+        if (!providerActiveModels.includes(selectedModel.id)) {
+          // Auto-start on the same path the chat transport uses instead of
+          // bouncing the send with a "load a model" toast.
+          try {
+            if (!agentProvider) throw new Error('provider not found')
+            await serviceHub.models().startModel(agentProvider, selectedModel.id)
+          } catch (error) {
+            console.error('Failed to start the local model for the agent', error)
+            toast.error(t('chat:agentErrors.localModelRequired'))
+            return
+          }
+        }
+      } else if (agentProvider) {
+        // Same readiness path the chat transport uses for remote providers:
+        // registers the provider with the backend and starts the proxy.
+        try {
+          await ensureRemoteProviderReady(agentProvider, serviceHub)
+        } catch (error) {
+          console.error(
+            'Failed to prepare the remote provider for agent mode',
+            error
+          )
+          toast.error(t('chat:agentErrors.localServerRequired'))
+          return
+        }
+      }
+      if (!selectedModel) {
+        toast.error(t('chat:agentErrors.localModelRequired'))
+        return
+      }
+      const currentRun = useAgentRun.getState().getRun(threadId)
+      if (
+        currentRun.status === 'running' ||
+        currentRun.status === 'awaiting_approval' ||
+        currentRun.status === 'awaiting_folder_access'
+      ) {
+        return
+      }
+
+      await useThreads.getState().awaitThreadPersistence(threadId)
+      await syncAgentSessionIfNeeded(!persistUserMessage)
+
+      // Document-index context: the sticky per-thread flag plus a per-send
+      // probe of the project's collection (over-inclusion is harmless — an
+      // empty or missing collection answers with empty results).
+      if (embeddedDocuments.length > 0) {
+        useThreads.getState().updateThread(threadId, {
+          metadata: { hasDocuments: true },
+        })
+      }
+      const threadMetadata = useThreads.getState().threads[threadId]?.metadata
+      const ragProjectId = threadMetadata?.project?.id
+      let projectHasFiles = false
+      if (ragProjectId) {
+        try {
+          const vectorDb = ExtensionManager.getInstance().get<VectorDBExtension>(
+            ExtensionTypeEnum.VectorDB
+          )
+          projectHasFiles =
+            ((await vectorDb?.listAttachmentsForProject?.(ragProjectId)) ?? [])
+              .length > 0
+        } catch {
+          projectHasFiles = false
+        }
+      }
+      const rag = buildAgentRagRequest({
+        threadId,
+        projectId: ragProjectId,
+        threadHasDocuments: Boolean(threadMetadata?.hasDocuments),
+        projectHasFiles,
+        embeddedAttachmentNames: embeddedDocuments.map(
+          (attachment) => attachment.name
+        ),
+      })
+      // The Rust tools only find a running embedding session; make sure one
+      // exists before the model's first docs.retrieve. Never throws.
+      if (rag) await ensureEmbeddingsReady()
+      if (persistUserMessage) {
+        const messageId =
+          useOptimisticUserMessage.getState().byThread[threadId]?.id ??
+          generateId()
+        const userMessage = newUserThreadContent(
+          threadId,
+          text,
+          combinedAttachments,
+          messageId
+        )
+        userMessage.metadata = {
+          ...(userMessage.metadata ?? {}),
+          agent_input_text: text,
+          ...(agentSkillName ? { agent_skill_name: agentSkillName } : {}),
+          image_attachment_names: mediaAttachments.map(
+            (attachment) => attachment.name
+          ),
+        }
+        addMessage(userMessage)
+        const userUiMessage = convertThreadMessagesToUIMessages([
+          userMessage,
+        ])[0]
+        const messages = [...chatMessagesRef.current, userUiMessage]
+        chatMessagesRef.current = messages
+        setChatMessages(messages)
+        useOptimisticUserMessage.getState().clear(threadId)
+        clearAttachmentsForThread(attachmentsKey)
+      }
+
+      const runId = generateId()
+      useAgentRun.getState().startRun(threadId, runId)
+      const agentAttachments = attachmentTelemetry(combinedAttachments)
+      turnContextRef.current = {
+        source,
+        attachments: agentAttachments,
+        engine: 'agent-ipc',
+        routeReason,
+      }
+      captureChatRequest({
+        ...agentAttachments,
+        turn_id: beginChatTurn(threadId),
+        thread_id: threadId,
+        source,
+        engine: 'agent-ipc',
+        route_reason: routeReason,
+        model_id: selectedModel.id,
+        provider: selectedProvider,
+        turn_index: chatMessagesRef.current.length,
+        prompt_len_bucket: lengthBucket(text.length),
+        is_agent_mode: true,
+        agent_skill: agentSkillName ?? null,
+      })
+
+      // The Agent backend has no chat-template parser of its own, so the
+      // thinking level is resolved here and shipped as a decision.
+      const { disableReasoning, reasoningBudget } = useGeneralSetting.getState()
+      const reasoning = buildAgentReasoningRequest(
+        reasoningBudget,
+        disableReasoning,
+        selectedModel.reasoning
+      )
+
+      // Assistant sampling, exactly as the chat transport resolves it; the
+      // backend applies it only when the user explicitly tuned it.
+      const sampling = getSamplingParamsForThread(threadId)
+      // The composer's globe drives the same web-search state for both
+      // engines: MCP server activation for the chat transport, this per-turn
+      // flag for the agent's built-in web tools. No configured server means
+      // no globe to turn it off with, so web access stays off — an existing
+      // chat setup without a search server never made web requests.
+      const webSearchServer = findWebSearchServer(
+        useMCPServers.getState().mcpServers
+      )
+      try {
+        await runAgentTurn(
+          {
+            run_id: runId,
+            session_id: threadId,
+            model_id: selectedModel.id,
+            provider: selectedProvider,
+            capabilities: selectedModel.capabilities ?? [],
+            context_window: agentContextWindow(selectedModel),
+            reasoning,
+            user_message: text,
+            selected_skill: agentSkillName,
+            attachments: ipcAttachments,
+            working_dir: workingDir,
+            external_roots: workspace.externalRoots.map((root) => ({
+              path: root.path,
+              can_edit: root.canEdit,
+            })),
+            auto_approve:
+              useAgentMode.getState().getApprovalMode(threadId) === 'skip',
+            assistant_instructions: systemMessage,
+            sampling: sampling.params,
+            sampling_overridden: sampling.overridden,
+            web_search: Boolean(webSearchServer?.config.active),
+            mcp_enabled: true,
+            auto_approve_mcp: resolveMcpAutoApprove(threadId),
+            disabled_mcp_tools: useToolAvailable
+              .getState()
+              .getDisabledToolsForThread(threadId),
+            rag,
+          },
+          applyAgentEvent
+        )
+      } catch (error) {
+        if (persistedAgentRunsRef.current.has(runId)) return
+        applyAgentEvent({
+          type: 'step_error',
+          category: 'ipc',
+          message: String(error),
+        })
+        applyAgentEvent({
+          type: 'turn_finished',
+          reason: 'failed',
+          step_count: 0,
+        })
+        const message = String(error)
+        if (message.includes('AGENT_VISION_MODEL_REQUIRED')) {
+          toast.error(t('chat:agentErrors.visionModelRequired'))
+        } else if (message.includes('AGENT_LOCAL_SERVER_REQUIRED')) {
+          toast.error(t('chat:agentErrors.localServerRequired'))
+        } else if (message.includes('AGENT_PROVIDER_UNSUPPORTED')) {
+          toast.error(t('chat:agentErrors.providerUnavailableDescription'))
+        } else {
+          toast.error(t('chat:agentErrors.runFailed'))
+        }
+      }
+    },
+    [
+      addMessage,
+      applyAgentEvent,
+      attachmentsKey,
+      clearAttachmentsForThread,
+      getAttachments,
+      getProviderByName,
+      selectedModel,
+      selectedProvider,
+      serviceHub,
+      setChatMessages,
+      syncAgentSessionIfNeeded,
+      systemMessage,
+      t,
+      threadId,
+    ]
+  )
+
+  // Consolidated function to process and send a message
+  const processAndSendMessage = useCallback(
+    async (
+      text: string,
+      files?: InitialMessageFile[],
+      documentsFromPayload?: Attachment[],
+      agentSkillName?: string
+    ) => {
+      // Documents may be passed explicitly via the initial-message payload
+      // (home → new thread flow). In that case the store has already been
+      // cleared synchronously on send to avoid the chip lingering in the
+      // input. For in-thread sends no payload is provided and we read the
+      // attachments from the store as before.
+      const documentAttachments =
+        documentsFromPayload ??
+        getAttachments(attachmentsKey).filter((a) => a.type === 'document')
+      const executionRoute = resolveThreadExecutionRoute(threadId, {
+        hasAudioAttachment: files?.some((file) =>
+          file.mediaType?.startsWith('audio/')
+        ),
+      })
+      if (executionRoute.route === 'agent-ipc') {
+        await processAndRunAgent(
+          text,
+          files,
+          documentsFromPayload,
+          agentSkillName,
+          true,
+          'agent',
+          executionRoute.reason
+        )
+        return
+      }
+      ttftBegin()
+      // This turn bypasses the agent engine; its exchange must be reseeded
+      // into the durable transcript before the next agent turn.
+      if (agentSessionSyncedRef.current === threadId) {
+        agentSessionSyncedRef.current = null
+      }
+      const persistReady = useThreads
+        .getState()
+        .awaitThreadPersistence(threadId)
+      console.log(
+        '[processAndSendMessage] attachmentsKey:',
+        attachmentsKey,
+        'docsSource:',
+        documentsFromPayload ? 'payload' : 'store',
+        'docs:',
+        documentAttachments.length
+      )
+
+      // Convert image/audio files to attachments for persistence. Audio is
+      // identified by its `audio/*` media type and persisted separately (see
+      // newUserThreadContent → metadata.input_audio) so it round-trips when the
+      // thread is reloaded.
+      const mediaAttachments = files?.map((file) => {
+        const base64 = file.url.split(',')[1] || ''
+        const size = Math.ceil((base64.length * 3) / 4) // Estimate from base64
+        if (file.mediaType?.startsWith('audio/')) {
+          return createAudioAttachment({
+            name: file.name,
+            mimeType: file.mediaType,
+            dataUrl: file.url,
+            base64,
+            size,
+          })
+        }
+        return createImageAttachment({
+          name: file.name,
+          mimeType: file.mediaType,
+          dataUrl: file.url,
+          base64,
+          size,
+        })
+      })
+
+      // Combine image/audio attachments with document attachments
+      const combinedAttachments = [
+        ...(mediaAttachments || []),
+        ...documentAttachments,
+      ]
+
+      // Reuse the messageId reserved by the optimistic bubble (published by
+      // ChatInput before navigation) if available; otherwise mint a fresh
+      // one. Sharing the id ensures the real UIMessage queued via
+      // sendMessage replaces the optimistic bubble in-place without a
+      // visual jump.
+      const reservedMessage =
+        useOptimisticUserMessage.getState().byThread[threadId]
+      const messageId = reservedMessage?.id ?? generateId()
+
+      // Safety net: if the optimistic bubble wasn't published (e.g. the
+      // user submitted from inside the thread page rather than via
+      // ChatInput on home, but it's still the very first message and there
+      // are attachments), publish one now so the user doesn't stare at an
+      // empty conversation while the document is being indexed.
+      const showOptimisticBubble =
+        chatMessages.length === 0 && combinedAttachments.length > 0
+      if (showOptimisticBubble && !reservedMessage) {
+        const optimisticUIMessage = buildOptimisticUserMessage({
+          threadId,
+          text,
+          documents: combinedAttachments,
+          messageId,
+        })
+        if (optimisticUIMessage) {
+          useOptimisticUserMessage.getState().set(threadId, optimisticUIMessage)
+        }
+      }
+
+      // Process attachments (ingest images, parse/index documents)
+      let processedAttachments = combinedAttachments
+      const projectId = thread?.metadata?.project?.id
+      if (combinedAttachments.length > 0) {
+        try {
+          const parsePreference = useAttachments.getState().parseMode
+          const result = await processAttachmentsForSend({
+            attachments: combinedAttachments,
+            threadId,
+            projectId,
+            serviceHub,
+            selectedProvider,
+            parsePreference,
+          })
+          processedAttachments = result.processedAttachments
+
+          // Update thread metadata if documents were embedded
+          if (result.hasEmbeddedDocuments) {
+            useThreads.getState().updateThread(threadId, {
+              metadata: { hasDocuments: true },
+            })
+          }
+        } catch (error) {
+          console.error('Failed to process attachments:', error)
+          useOptimisticUserMessage.getState().clear(threadId)
+          // Don't send message if attachment processing failed
+          return
+        }
+      }
+      ttftMark('beta')
+
+      // Thread row is optimistic on home → new-thread; persistence may still
+      // be in flight. Resolves immediately for in-thread sends.
+      await persistReady
+
+      // Create and persist the user message to the backend with all processed attachments
+      const userMessage = newUserThreadContent(
+        threadId,
+        text,
+        processedAttachments,
+        messageId
+      )
+      // A selected skill rides on message metadata (same key as the agent
+      // path) — CustomChatTransport reads it back from the message list, so
+      // send, regenerate, edit and app-restart replay it uniformly.
+      if (agentSkillName) {
+        userMessage.metadata = {
+          ...(userMessage.metadata ?? {}),
+          agent_skill_name: agentSkillName,
+        }
+      }
+      addMessage(userMessage)
+
+      // Build parts for AI SDK (only images are sent as file parts)
+      const parts: Array<
+        | { type: 'text'; text: string }
+        | { type: 'file'; mediaType: string; url: string }
+      > = [
+        {
+          type: 'text',
+          text: userMessage.content[0].text?.value ?? text,
+        },
+      ]
+
+      if (files) {
+        files.forEach((file) => {
+          parts.push({
+            type: 'file',
+            mediaType: file.mediaType,
+            url: file.url,
+          })
+        })
+      }
+
+      console.log(
+        '[processAndSendMessage] Calling sendMessage with parts:',
+        parts.length,
+        'messageId:',
+        messageId
+      )
+      // Hide the optimistic bubble in the same synchronous block as
+      // sendMessage so React 18 batches both updates and the user sees the
+      // real bubble appear in the same position without a flicker.
+      useOptimisticUserMessage.getState().clear(threadId)
+      setIsChatRequestActive(true)
+      sendMessage({
+        parts,
+        id: messageId,
+        metadata: userMessage.metadata,
+      })
+      console.log('[processAndSendMessage] sendMessage called successfully')
+
+      const chatAttachments = attachmentTelemetry(processedAttachments)
+      turnContextRef.current = {
+        source: 'chat',
+        attachments: chatAttachments,
+        engine: 'chat-transport',
+        routeReason: executionRoute.reason,
+      }
+      const ragToolNames = useAppState.getState().ragToolNames
+      const mcpToolNames = useAppState.getState().mcpToolNames
+      const toolCost = useAppState.getState().toolCostReports[threadId]
+      captureChatRequest({
+        ...chatAttachments,
+        engine: 'chat-transport',
+        route_reason: executionRoute.reason,
+        // Only the configured context length is known at send time; how full
+        // the window actually was comes from real `usage` on the response.
+        ...contextTelemetry(
+          null,
+          (selectedModel?.settings?.ctx_len?.controller_props
+            ?.value as number) ?? null
+        ),
+        turn_id: beginChatTurn(threadId),
+        thread_id: threadId,
+        source: 'chat',
+        model_id: selectedModel?.id,
+        provider: selectedProvider,
+        turn_index: chatMessagesRef.current.length,
+        prompt_len_bucket: lengthBucket(text.length),
+        is_agent_mode: false,
+        agent_skill: agentSkillName ?? null,
+        tools_enabled_count: ragToolNames.size + mcpToolNames.size,
+        has_rag: ragToolNames.size > 0,
+        has_mcp: mcpToolNames.size > 0,
+        // Cost of the tool definitions actually sent (muted/disabled ones
+        // excluded), from the transport's last refresh.
+        tools_tokens_estimate: toolCost?.totalTokens ?? null,
+        tools_ctx_share:
+          toolCost?.ctxShare !== undefined
+            ? Math.round(toolCost.ctxShare * 100) / 100
+            : null,
+        tools_heavy_servers: toolCost?.heavyServers.length ?? 0,
+      })
+
+      // Clear attachments after sending
+      clearAttachmentsForThread(attachmentsKey)
+    },
+    [
+      sendMessage,
+      processAndRunAgent,
+      threadId,
+      thread,
+      addMessage,
+      getAttachments,
+      attachmentsKey,
+      clearAttachmentsForThread,
+      serviceHub,
+      selectedProvider,
+      selectedModel,
+      chatMessages.length,
+    ]
+  )
+
+  // Consume the initial message handed off from the home screen via the
+  // in-memory useInitialMessage store (avoids sessionStorage size limits for
+  // attachments).
+  const initialMessageSentRef = useRef(false)
+
+  useEffect(() => {
+    // #region agent log
+    ttftPreBegin('threadDetail-mount-or-effect', {
+      threadId,
+      hasInitialMessage:
+        useInitialMessage.getState().byThread[threadId] !== undefined,
+      alreadySent: initialMessageSentRef.current,
+    })
+    // #endregion
+    if (initialMessageSentRef.current) return
+
+    const message = useInitialMessage.getState().consume(threadId)
+    if (!message) return
+
+    // #region agent log
+    ttftPreBegin('consume-initial-message', { threadId })
+    // #endregion
+    initialMessageSentRef.current = true
+    ;(async () => {
+      try {
+        await processAndSendMessage(
+          message.text,
+          message.files,
+          message.documents,
+          message.agentSkillName
+        )
+      } catch (error) {
+        console.error('[ThreadPage] Failed to process initial message:', error)
+      }
+    })()
+  }, [threadId, processAndSendMessage])
+
+  // Handle submit from ChatInput
+  const handleSubmit = useCallback(
+    async (
+      text: string,
+      files?: InitialMessageFile[],
+      agentSkillName?: string
+    ) => {
+      await processAndSendMessage(text, files, undefined, agentSkillName)
+    },
+    [processAndSendMessage]
+  )
+
+  // Handle regenerate from any message (user or assistant)
+  // - For user messages: keeps the user message, deletes all after, regenerates assistant response
+  // - For assistant messages: finds the closest preceding user message, deletes from there
+  const handleRegenerate = useCallback(
+    async (messageId?: string) => {
+      // Mutating history under an active agent run would wipe the streaming
+      // UI and then bail on the run guard, losing messages for nothing.
+      const activeRun = useAgentRun.getState().getRun(threadId)
+      if (
+        activeRun.status === 'running' ||
+        activeRun.status === 'awaiting_approval' ||
+        activeRun.status === 'awaiting_folder_access'
+      ) {
+        return
+      }
+      const currentLocalMessages = useMessages.getState().getMessages(threadId)
+      let isAgentThread =
+        resolveThreadExecutionRoute(threadId).route === 'agent-ipc'
+
+      if (isAgentThread) {
+        let userMessageIndex = messageId
+          ? currentLocalMessages.findIndex(
+              (message) => message.id === messageId
+            )
+          : currentLocalMessages.findLastIndex(
+              (message) => message.role === 'user'
+            )
+
+        if (
+          userMessageIndex >= 0 &&
+          currentLocalMessages[userMessageIndex].role === 'assistant'
+        ) {
+          userMessageIndex = currentLocalMessages
+            .slice(0, userMessageIndex)
+            .findLastIndex((message) => message.role === 'user')
+        }
+        if (
+          userMessageIndex < 0 ||
+          currentLocalMessages[userMessageIndex].role !== 'user'
+        ) {
+          return
+        }
+
+        const userMessage = currentLocalMessages[userMessageIndex]
+        // A turn that carried audio was served by the chat transport; the
+        // agent loop cannot replay it, so its regenerate stays there too.
+        const turnHasAudio = Boolean(
+          (userMessage.metadata as { input_audio?: unknown } | undefined)
+            ?.input_audio
+        )
+        if (turnHasAudio) {
+          isAgentThread = false
+        }
+        if (isAgentThread) {
+        const {
+          text,
+          files: agentFiles,
+          documents: agentDocuments,
+          agentSkillName,
+        } = agentAttachmentsFromMessage(userMessage)
+        const retainedMessages = currentLocalMessages.slice(
+          0,
+          userMessageIndex + 1
+        )
+
+        currentLocalMessages
+          .slice(userMessageIndex + 1)
+          .forEach((message) => deleteMessage(threadId, message.id))
+        // The durable agent transcript still holds the deleted turns.
+        agentSessionDirtyRef.current.add(threadId)
+
+        const retainedUiMessages =
+          convertThreadMessagesToUIMessages(retainedMessages)
+        chatMessagesRef.current = retainedUiMessages
+        setChatMessages(retainedUiMessages)
+        await processAndRunAgent(
+          text,
+          agentFiles,
+          agentDocuments,
+          agentSkillName,
+          false,
+          'regenerate'
+        )
+        return
+        }
+      }
+
+      // If regenerating from a specific message, delete all messages after it
+      if (messageId) {
+        // Find the message in the current chat messages
+        const messageIndex = currentLocalMessages.findIndex(
+          (m) => m.id === messageId
+        )
+
+        if (messageIndex !== -1) {
+          const selectedMessage = currentLocalMessages[messageIndex]
+
+          // If it's an assistant message, find the closest preceding user message
+          let deleteFromIndex = messageIndex
+          if (selectedMessage.role === 'assistant') {
+            // Look backwards to find the closest user message
+            for (let i = messageIndex - 1; i >= 0; i--) {
+              if (currentLocalMessages[i].role === 'user') {
+                deleteFromIndex = i
+                break
+              }
+            }
+          }
+
+          // Get all messages after the delete point
+          const messagesToDelete = currentLocalMessages.slice(
+            deleteFromIndex + 1
+          )
+
+          // Delete from backend storage
+          if (messagesToDelete.length > 0) {
+            messagesToDelete.forEach((msg) => {
+              deleteMessage(threadId, msg.id)
+            })
+            agentSessionDirtyRef.current.add(threadId)
+          }
+        }
+      }
+
+      // Call the AI SDK regenerate function - it will handle truncating the UI messages
+      // and generating a new response from the selected message
+      setIsChatRequestActive(true)
+      captureRetryRequest('regenerate')
+      regenerate(messageId ? { messageId } : undefined)
+    },
+    [
+      captureRetryRequest,
+      deleteMessage,
+      processAndRunAgent,
+      regenerate,
+      setChatMessages,
+      threadId,
+    ]
+  )
+
+  // Handle edit message - updates the message and regenerates from it
+  const handleEditMessage = useCallback(
+    async (messageId: string, newText: string) => {
+      const activeRun = useAgentRun.getState().getRun(threadId)
+      if (
+        activeRun.status === 'running' ||
+        activeRun.status === 'awaiting_approval' ||
+        activeRun.status === 'awaiting_folder_access'
+      ) {
+        return
+      }
+      const currentLocalMessages = useMessages.getState().getMessages(threadId)
+      const messageIndex = currentLocalMessages.findIndex(
+        (m) => m.id === messageId
+      )
+
+      if (messageIndex === -1) return
+
+      const originalMessage = currentLocalMessages[messageIndex]
+      const isAgentThread =
+        resolveThreadExecutionRoute(threadId).route === 'agent-ipc'
+
+      // Update the message content. Attachments are kept for every thread, not
+      // just Agent ones: images live only in `content`, so dropping them here
+      // destroys them permanently (audio and documents survive in `metadata`,
+      // which is preserved below).
+      const updatedMessage = {
+        ...originalMessage,
+        content: rebuildEditedContent(originalMessage.content, newText),
+        metadata: isAgentThread
+          ? {
+              ...(originalMessage.metadata ?? {}),
+              agent_input_text: newText,
+            }
+          : originalMessage.metadata,
+      }
+      updateMessage(updatedMessage)
+      agentSessionDirtyRef.current.add(threadId)
+
+      // Update chat messages for UI
+      const updatedChatMessages = chatMessages.map((msg) => {
+        if (msg.id === messageId) {
+          return {
+            ...msg,
+            parts: rebuildEditedParts(msg.parts, newText),
+          }
+        }
+        return msg
+      })
+      setChatMessages(updatedChatMessages)
+
+      // Only regenerate if the edited message is from the user
+      if (updatedMessage.role === 'assistant') return
+
+      if (isAgentThread) {
+        await handleRegenerate(messageId)
+        return
+      }
+
+      // Delete all messages after this one and regenerate
+      const messagesToDelete = currentLocalMessages.slice(messageIndex + 1)
+      messagesToDelete.forEach((msg) => {
+        deleteMessage(threadId, msg.id)
+      })
+
+      // Regenerate from the edited message
+      setIsChatRequestActive(true)
+      captureRetryRequest('edit')
+      regenerate({ messageId })
+    },
+    [
+      threadId,
+      updateMessage,
+      deleteMessage,
+      chatMessages,
+      captureRetryRequest,
+      handleRegenerate,
+      setChatMessages,
+      regenerate,
+    ]
+  )
+
+  // Handle delete message
+  const handleDeleteMessage = useCallback(
+    (messageId: string) => {
+      deleteMessage(threadId, messageId)
+      agentSessionDirtyRef.current.add(threadId)
+
+      // Update chat messages for UI
+      const updatedChatMessages = chatMessages.filter(
+        (msg) => msg.id !== messageId
+      )
+      setChatMessages(updatedChatMessages)
+    },
+    [threadId, deleteMessage, chatMessages, setChatMessages]
+  )
+
+  // Handler for increasing context size
+  const handleContextSizeIncrease = useCallback(async () => {
+    if (!selectedModel) return
+
+    // The ladder itself lives in `growModelContext` (shared with the chat
+    // transport's pre-flight); this reactive path only adds the regenerate.
+    const result = await growModelContext({
+      providerId: selectedProvider,
+      modelId: selectedModel.id,
+      serviceHub,
+    })
+    if (!result.ok) {
+      if (result.reason === 'at_max') {
+        toast.error('Model reached its maximum context, auto-expand stopped', {
+          id: `ctx-at-max-${selectedProvider}-${selectedModel.id}`,
+        })
+      } else if (result.reason === 'fit') {
+        toast.info(t('assistants:contextSizeFitAtMax'), {
+          id: `ctx-fit-${selectedProvider}-${selectedModel.id}`,
+        })
+      }
+      return
+    }
+
+    setTimeout(() => {
+      handleRegenerate()
+    }, 1000)
+  }, [selectedModel, selectedProvider, serviceHub, handleRegenerate])
+
+  // Keep refs in sync so onFinish always calls the latest versions
+  handleContextSizeIncreaseRef.current = handleContextSizeIncrease
+  setContinueFromContentRef.current = setContinueFromContent
+
+  const agentWorkspace = useAgentMode((s) => s.workspaces[threadId])
+  // Every thread lazily resolves a primary workspace root (the app-data
+  // agent-workspace folder by default) — this is how migrated chat threads
+  // acquire a workspace.
+  useEffect(() => {
+    const currentRoot = agentWorkspace?.primaryRoot
+    if (currentRoot && !currentRoot.rootId.startsWith('legacy:')) return
+    void resolveAgentWorkspaceRoot(currentRoot?.path)
+      .then((root) => {
+        useAgentMode.getState().setPrimaryRoot(threadId, {
+          ...root,
+          canEdit: true,
+        })
+      })
+      .catch((resolveError) => {
+        console.error(
+          'Failed to resolve the Agent primary workspace',
+          resolveError
+        )
+      })
+  }, [agentWorkspace?.primaryRoot, threadId])
+
+  const addExternalAgentRoot = useCallback(async () => {
+    const selected = await serviceHub.dialog().open({
+      multiple: false,
+      directory: true,
+    })
+    if (typeof selected !== 'string') return
+    const root = await resolveAgentWorkspaceRoot(selected)
+    useAgentMode.getState().addExternalRoot(threadId, {
+      ...root,
+      canEdit: true,
+    })
+  }, [serviceHub, threadId])
+  const isAgentRunning =
+    agentRun?.status === 'running' ||
+    agentRun?.status === 'awaiting_approval' ||
+    agentRun?.status === 'awaiting_folder_access'
+  useEffect(() => {
+    // The Rust engine has its own context-recovery ladder; the frontend one
+    // only serves the chat transport.
+    if (!error || isAgentRunning) return
+    const autoIncrease =
+      selectedModel?.settings?.auto_increase_ctx_len?.controller_props?.value ??
+      true
+    if (!autoIncrease) return
+    if (isContextLimitError(error)) {
+      setIsAutoIncreasingContext(true)
+      handleContextSizeIncrease()
+    }
+  }, [error]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    // #region agent log
+    ttftPreBegin('chat-status-change', { threadId, status })
+    // #endregion
+    if (status === 'streaming' || status === 'submitted') {
+      setContextLimitError(null)
+    }
+    if (
+      isAutoIncreasingContext &&
+      (status === 'streaming' || status === 'error')
+    ) {
+      setIsAutoIncreasingContext(false)
+    }
+    if (status === 'error' && pendingContinueMessage) {
+      setPendingContinueMessage(null)
+    }
+    if (
+      status === 'error' &&
+      !(
+        error &&
+        isContextLimitError(error) &&
+        (selectedModel?.settings?.auto_increase_ctx_len?.controller_props
+          ?.value ??
+          true)
+      )
+    ) {
+      setIsChatRequestActive(false)
+    }
+  }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const threadModel = useMemo(
+    () => searchThreadModel ?? thread?.model,
+    [searchThreadModel, thread]
+  )
+  const handleStop = useCallback(() => {
+    // Decide by live run state, not by routing: a chat-transport stream must
+    // survive a provider flip mid-generation.
+    if (!isAgentRunning || !agentRun?.runId) {
+      toolCallAbortController.current?.abort()
+      toolCallAbortController.current = null
+      sessionData.tools = []
+      setIsChatRequestActive(false)
+      stop()
+      return
+    }
+    if (agentRun.pendingApproval) {
+      useAgentRun
+        .getState()
+        .clearPendingApproval(threadId, agentRun.pendingApproval.approval_id)
+    }
+    void cancelAgentTurn(agentRun.runId).catch(() => {
+      toast.error(t('chat:agentErrors.cancelFailed'))
+    })
+  }, [
+    agentRun?.pendingApproval,
+    agentRun?.runId,
+    isAgentRunning,
+    sessionData,
+    stop,
+    t,
+    threadId,
+  ])
+  const requestActive = isAgentRunning || isChatRequestActive
+  const inputStatus = requestActive ? CHAT_STATUS.SUBMITTED : status
+  const lastChatMessage = chatMessages[chatMessages.length - 1]
+  const hasActiveAssistantMessage = lastChatMessage?.role === 'assistant'
+  const latestUserMessageId = useMemo(() => {
+    for (let index = chatMessages.length - 1; index >= 0; index -= 1) {
+      if (chatMessages[index].role === 'user') {
+        return chatMessages[index].id
+      }
+    }
+    return undefined
+  }, [chatMessages])
+  const agentAttachmentReferencesByMessageId = useMemo(() => {
+    const referencesByMessageId = new Map<string, AgentFileReference[]>()
+    const references: AgentFileReference[] = []
+
+    for (const message of chatMessages) {
+      if (message.role === 'user') {
+        references.push(...extractAgentAttachmentReferences(message.parts))
+      }
+      if (
+        (message.metadata as { agent_run?: unknown } | undefined)?.agent_run
+      ) {
+        referencesByMessageId.set(message.id, [...references])
+      }
+    }
+
+    return referencesByMessageId
+  }, [chatMessages])
+
+  return (
+    <AgentWorkspaceLayout
+      threadId={threadId}
+      workspace={agentWorkspace ?? { externalRoots: [] }}
+      onAddExternal={() => void addExternalAgentRoot()}
+      refreshKey={agentRun?.finishedAtMs ?? 0}
+      isGenerating={requestActive}
+    >
+      <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+        <HeaderPage>
+          <div className="flex items-center justify-between w-full pr-2">
+            <DropdownModelProvider />
+            <div className="shrink-0">
+              {/* The context gauge appears once the conversation has begun. */}
+              {chatMessages.length > 0 && <HeaderContextSize />}
+            </div>
+          </div>
+        </HeaderPage>
+        <div className="flex flex-1 overflow-hidden">
+          <div className="flex flex-1 flex-col h-full overflow-hidden min-w-0">
+            {/* Messages Area */}
+            <div className="flex-1 relative">
+              <Conversation className="absolute inset-0 text-start">
+                <ConversationContent
+                  className={cn('mx-auto w-full max-w-3xl md:w-4/5 xl:w-4/6')}
+                >
+                  {chatMessages.map((message, index) => {
+                    const isLastMessage = index === chatMessages.length - 1
+                    const isFirstMessage = index === 0
+                    return (
+                      <MessageItem
+                        key={message.id}
+                        message={message}
+                        isFirstMessage={isFirstMessage}
+                        isLastMessage={isLastMessage}
+                        status={inputStatus}
+                        requestActive={requestActive}
+                        reasoningContainerRef={reasoningContainerRef}
+                        onReasoningScroll={onReasoningScroll}
+                        onRegenerate={handleRegenerate}
+                        onEdit={handleEditMessage}
+                        onDelete={handleDeleteMessage}
+                        isAnimating={!pendingContinueMessage}
+                        hideActions={!!pendingContinueMessage}
+                        agentAttachmentReferences={agentAttachmentReferencesByMessageId.get(
+                          message.id
+                        )}
+                      />
+                    )
+                  })}
+                  {pendingInitialUserMessage && (
+                    <>
+                      <MessageItem
+                        key={`pending-user-${pendingInitialUserMessage.id}`}
+                        message={pendingInitialUserMessage}
+                        isFirstMessage={chatMessages.length === 0}
+                        isLastMessage={true}
+                        status={status}
+                        reasoningContainerRef={reasoningContainerRef}
+                        onReasoningScroll={onReasoningScroll}
+                        onRegenerate={handleRegenerate}
+                        onEdit={handleEditMessage}
+                        onDelete={handleDeleteMessage}
+                        hideActions
+                        isAnimating={false}
+                      />
+                      <div className="flex flex-row items-center gap-2 mt-2">
+                        <Shimmer duration={1}>Indexing attachments...</Shimmer>
+                      </div>
+                    </>
+                  )}
+                  {pendingContinueMessage && status === 'submitted' && (
+                    <MessageItem
+                      key={`continue-placeholder-${pendingContinueMessage.id}`}
+                      message={pendingContinueMessage}
+                      isFirstMessage={false}
+                      isLastMessage={true}
+                      status={status}
+                      // The placeholder is a frozen snapshot: its activity must
+                      // read "Worked for Xs", not add a second live "Working"
+                      // shimmer under "Growing the Mind...".
+                      requestActive={false}
+                      reasoningContainerRef={reasoningContainerRef}
+                      onReasoningScroll={onReasoningScroll}
+                      onRegenerate={handleRegenerate}
+                      onEdit={handleEditMessage}
+                      onDelete={handleDeleteMessage}
+                      hideActions
+                      isAnimating={false}
+                    />
+                  )}
+                  {(inputStatus === CHAT_STATUS.SUBMITTED ||
+                    isAutoIncreasingContext) && (
+                    <div className="flex flex-row items-center gap-2">
+                      {/* One indicator at a time: the context-growth shimmer
+                      replaces the generic "Working" progress, never joins it. */}
+                      {pendingContinueMessage || isAutoIncreasingContext ? (
+                        <Shimmer duration={1}>Growing the Mind...</Shimmer>
+                      ) : (
+                        inputStatus === CHAT_STATUS.SUBMITTED &&
+                        !isAgentRunning &&
+                        !hasActiveAssistantMessage && <PromptProgress />
+                      )}
+                    </div>
+                  )}
+                  {(error || contextLimitError) &&
+                    !isAutoIncreasingContext &&
+                    (() => {
+                      const activeError = error ?? contextLimitError
+                      const rawMessage = activeError?.message
+                      const isContextError = isContextLimitError(activeError)
+                      const isAccessError =
+                        !isContextError && isModelAccessError(activeError)
+                      // ATO-197: a fatal Metal/compute failure (GPU OOM) surfaces
+                      // as the opaque "Compute error" / the proxy's
+                      // `insufficient_memory` envelope — show clear OOM guidance.
+                      const isOomError =
+                        !isContextError &&
+                        !isAccessError &&
+                        isOutOfMemoryError(activeError)
+                      // ATO-170: replace the raw engine 400 body (e.g. mlx-vlm's
+                      // "... but MAX_KV_SIZE is N") with a clear, actionable message
+                      // instead of the generic "Error generating response".
+                      const title = isContextError
+                        ? CONTEXT_OVERFLOW_TITLE
+                        : isAccessError
+                          ? MODEL_ACCESS_DENIED_TITLE
+                          : isOomError
+                            ? OUT_OF_MEMORY_TITLE
+                            : 'Error generating response'
+                      const body = isContextError
+                        ? CONTEXT_OVERFLOW_MESSAGE
+                        : isAccessError
+                          ? MODEL_ACCESS_DENIED_MESSAGE
+                          : isOomError
+                            ? OUT_OF_MEMORY_MESSAGE
+                            : rawMessage
+                      return (
+                        <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
+                          <div className="flex items-start gap-3">
+                            <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-destructive mb-1">
+                                {title}
+                              </p>
+                              <div className="table table-fixed w-full">
+                                <span
+                                  className="text-sm text-muted-foreground table-cell align-middle"
+                                  style={{ wordWrap: 'break-word' }}
+                                >
+                                  {/* The raw provider message can embed links
+                                  (e.g. the model-policy banner's "Open
+                                  dashboard" / "View agreement"); render them
+                                  clickable instead of as dead text. */}
+                                  <LinkifiedText text={body ?? ''} />
+                                </span>
+                              </div>
+                              {isContextError ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="mt-3"
+                                  onClick={handleContextSizeIncrease}
+                                >
+                                  <IconAlertCircle className="size-4 mr-2" />
+                                  Increase Context Size
+                                </Button>
+                              ) : (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="mt-3"
+                                  onClick={() => handleRegenerate()}
+                                >
+                                  <IconRefresh className="size-4 mr-2" />
+                                  Retry
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })()}
+                </ConversationContent>
+                <ConversationAutoScroll
+                  trigger={requestActive ? latestUserMessageId : undefined}
+                />
+                <ConversationScrollButton />
+              </Conversation>
+            </div>
+
+            {/* Chat Input - Fixed at bottom */}
+            <div className="py-4 mx-auto w-full md:w-4/5 xl:w-4/6">
+              <ChatInput
+                model={threadModel}
+                onSubmit={handleSubmit}
+                onStop={handleStop}
+                chatStatus={inputStatus}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </AgentWorkspaceLayout>
+  )
+}

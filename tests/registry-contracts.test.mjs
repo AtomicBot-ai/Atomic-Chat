@@ -1,0 +1,369 @@
+import assert from 'node:assert/strict'
+import { readdirSync, readFileSync } from 'node:fs'
+import test from 'node:test'
+
+const fixture = (name) =>
+  JSON.parse(
+    readFileSync(
+      new URL(`./fixtures/registries/${name}.json`, import.meta.url),
+      'utf8'
+    )
+  )
+
+const nonEmpty = (value, label) =>
+  assert.equal(typeof value === 'string' && value.length > 0, true, label)
+const unique = (values, label) =>
+  assert.equal(new Set(values).size, values.length, label)
+
+test('upstream manifest preserves the pinned release asset contract', () => {
+  const manifest = fixture('upstream-manifest')
+  assert.match(manifest.tag_name, /^b\d+$/)
+  assert.ok(Date.parse(manifest.updated_at))
+  assert.ok(manifest.assets.length > 0)
+  unique(
+    manifest.assets.map(({ name }) => name),
+    'upstream assets must be unique'
+  )
+  for (const { name } of manifest.assets) {
+    assert.match(name, /\.(zip|tar\.gz)$/)
+  }
+})
+
+// `download_base` is what points the app at our signed mirror instead of the
+// ggml-org CDN, and the per-asset hash is what makes the mirrored archive
+// verifiable. The two travel together: a mirrored tag must carry both, and a tag
+// we have not mirrored must carry neither, so the app's fallback to ggml-org
+// stays the only unhashed path.
+test('upstream manifest ties the mirror base to per-asset integrity data', () => {
+  const manifest = fixture('upstream-manifest')
+  const mirrored = manifest.download_base !== undefined
+
+  if (mirrored) {
+    const base = new URL(manifest.download_base)
+    assert.equal(base.protocol, 'https:')
+    assert.equal(
+      base.pathname.endsWith('/'),
+      false,
+      'download_base must not end in a slash — the app joins with one'
+    )
+  }
+
+  for (const asset of manifest.assets) {
+    // The cudart companions are NVIDIA's own DLLs, already signed by NVIDIA and
+    // deliberately left on the upstream CDN, so they carry no hash even in a
+    // mirrored tag. Everything the mirror actually hosts is named `llama-*`.
+    const hosted = mirrored && asset.name.startsWith('llama-')
+
+    if (!hosted) {
+      assert.equal(
+        asset.sha256,
+        undefined,
+        `${asset.name} carries a hash without a mirror to serve it from`
+      )
+      continue
+    }
+    assert.match(
+      asset.sha256 ?? '',
+      /^[0-9a-f]{64}$/,
+      `${asset.name} must carry a sha256`
+    )
+    assert.equal(
+      Number.isInteger(asset.size) && asset.size > 0,
+      true,
+      `${asset.name} must carry a positive size`
+    )
+  }
+})
+
+test('TurboQuant manifest ships one unified release for every backend', () => {
+  const manifest = fixture('turboquant-manifest')
+  assert.match(manifest.commit, /^[0-9a-f]{7,40}$/)
+  unique(
+    manifest.backends.map(({ id }) => id),
+    'TurboQuant backend ids must be unique'
+  )
+  // The fork now cuts a single `b<upstream-build>-<fork-semver>` release that
+  // carries every platform, replacing the per-backend `turboquant-<id>-<sha>`
+  // tags. A split tag means the manifest was assembled from two releases.
+  const [{ tag: unifiedTag }] = manifest.backends
+  assert.match(unifiedTag, /^b\d+-\d+\.\d+\.\d+$/)
+  for (const backend of manifest.backends) {
+    nonEmpty(backend.id, 'backend id')
+    assert.equal(backend.tag, unifiedTag)
+    assert.ok(backend.asset.includes(backend.id))
+    assert.match(
+      backend.asset,
+      backend.id.startsWith('windows-') ? /\.zip$/ : /\.tar\.gz$/
+    )
+  }
+})
+
+test('TurboQuant manifest covers the full Linux backend matrix', () => {
+  const manifest = fixture('turboquant-manifest')
+  const ids = new Set(manifest.backends.map(({ id }) => id))
+  for (const id of [
+    'linux-x64-cpu',
+    'linux-x64-cuda-12.4',
+    'linux-x64-cuda-13.3',
+    'linux-x64-rocm',
+    'linux-x64-vulkan',
+  ]) {
+    assert.ok(ids.has(id), `manifest must publish ${id}`)
+  }
+})
+
+// The release index is what removed every hardcoded tag from the app: it is
+// published as an asset of each fork release and read at runtime, so a new
+// engine reaches users without an Atomic Chat release. The app must be able to
+// tell stable releases from prereleases and to refuse a build that needs a
+// newer app, all from this document alone.
+test('TurboQuant release index describes stable releases the app can install', () => {
+  const index = fixture('turboquant-index')
+  assert.equal(index.schema_version, 1)
+  assert.ok(Date.parse(index.generated_at))
+  unique(
+    index.releases.map(({ tag }) => tag),
+    'release tags must be unique'
+  )
+
+  const stable = index.releases.filter((release) => release.prerelease !== true)
+  assert.ok(stable.length > 0, 'index must carry at least one stable release')
+  assert.equal(index.latest, stable[0].tag)
+  assert.match(index.latest, /^b\d+-\d+\.\d+\.\d+$/)
+
+  for (const release of index.releases) {
+    nonEmpty(release.tag, 'release tag')
+    assert.equal(typeof release.prerelease, 'boolean')
+    // Only the unified scheme is installable; dev-latest and the legacy
+    // per-variant tags must be marked as prereleases so the app skips them.
+    if (release.prerelease !== true) {
+      assert.match(release.tag, /^b\d+-\d+\.\d+\.\d+$/)
+    }
+    if (release.min_app_version !== undefined) {
+      assert.match(release.min_app_version, /^\d+\.\d+\.\d+$/)
+    }
+    assert.ok(release.variants.length > 0)
+    unique(
+      release.variants.map(({ id }) => id),
+      `${release.tag} variant ids must be unique`
+    )
+    for (const variant of release.variants) {
+      nonEmpty(variant.id, 'variant id')
+      nonEmpty(variant.asset, 'variant asset')
+      assert.ok(variant.asset.includes(variant.id))
+      assert.match(
+        variant.asset,
+        variant.id.startsWith('windows-') ? /\.zip$/ : /\.tar\.gz$/
+      )
+      if (variant.sha256 !== undefined) {
+        assert.match(variant.sha256, /^[0-9a-f]{64}$/)
+      }
+    }
+  }
+})
+
+test('release index and legacy manifest agree on the newest stable release', () => {
+  const index = fixture('turboquant-index')
+  const manifest = fixture('turboquant-manifest')
+  const latest = index.releases.find(({ tag }) => tag === index.latest)
+  const indexIds = new Set(latest.variants.map(({ id }) => id))
+  // The conf manifest stays the last-resort fallback, so it must not offer a
+  // narrower matrix than the index it is standing in for.
+  for (const { id, tag } of manifest.backends) {
+    assert.equal(tag, index.latest)
+    assert.ok(indexIds.has(id), `release index must publish ${id}`)
+  }
+})
+
+// The whole point of the release index is that no tag lives in the app. A
+// literal that creeps back in silently re-pins users to one engine build.
+test('the TurboQuant provider hardcodes no release tag', () => {
+  const root = new URL('../extensions/llamacpp-extension/src/', import.meta.url)
+  const offenders = []
+
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const child = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, dir)
+      if (entry.isDirectory()) {
+        if (entry.name !== 'test') walk(child)
+        continue
+      }
+      if (!entry.name.endsWith('.ts')) continue
+
+      const source = readFileSync(child, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .split('\n')
+        .filter((line) => {
+          const trimmed = line.trimStart()
+          return !trimmed.startsWith('//') && !trimmed.startsWith('*')
+        })
+        .join('\n')
+
+      if (/b\d+-\d+\.\d+\.\d+/.test(source)) {
+        offenders.push(entry.name)
+      }
+    }
+  }
+
+  walk(root)
+  assert.deepEqual(
+    offenders,
+    [],
+    `release tags must be resolved at runtime, not written into ${offenders.join(', ')}`
+  )
+})
+
+test('recommended models conform to the loader schema contract', () => {
+  const manifest = fixture('recommended-models')
+  // Must stay 1: bumping it makes every shipped client reject the manifest and
+  // fall back to its bundled baseline permanently.
+  assert.equal(manifest.schema_version, 1)
+
+  const lowSpec = manifest.low_spec_recommendations ?? []
+
+  for (const [label, list] of [
+    ['recommendations', manifest.recommendations],
+    ['low_spec_recommendations', lowSpec],
+  ]) {
+    unique(
+      list.map(({ model_name }) => model_name),
+      `${label} must be unique`
+    )
+    for (const recommendation of list) {
+      assert.match(recommendation.model_name, /^[^/]+\/[^/]+$/)
+      assert.match(recommendation.description_key, /^hub:/)
+      for (const key of ['quant', 'mmproj_quant']) {
+        if (recommendation[key] !== undefined) {
+          assert.match(
+            recommendation[key],
+            /^[A-Za-z0-9_]{2,16}$/,
+            `${label}.${key} must be a quant token`
+          )
+        }
+      }
+    }
+  }
+
+  if (manifest.low_spec_recommendations !== undefined) {
+    assert.ok(lowSpec.length > 0, 'low_spec_recommendations must not be empty')
+    // The low-spec list REPLACES the standard one, so an entry in both would
+    // mean a model is offered on hardware the other list says it is wrong for.
+    const standard = new Set(manifest.recommendations.map((r) => r.model_name))
+    for (const { model_name } of lowSpec) {
+      assert.ok(
+        !standard.has(model_name),
+        `${model_name} appears in both recommendation lists`
+      )
+    }
+  }
+})
+
+/**
+ * The per-tier lists are what the first screen actually leads with (ATO-463),
+ * and the tier vocabulary is the one part of the manifest that a release owns:
+ * a key this client cannot name is silently dropped, leaving that machine on
+ * its bundled ladder. So the fixture is checked against the shipped union
+ * rather than against a copy of it that could drift.
+ */
+test('recommended-model tiers name tiers the client knows', () => {
+  const source = readFileSync(
+    new URL('../web-app/src/lib/hardware-tier.ts', import.meta.url),
+    'utf8'
+  )
+  const block = source.match(
+    /export const HARDWARE_TIERS: readonly HardwareTier\[\] = \[([^\]]*)\]/
+  )
+  assert.ok(block, 'HARDWARE_TIERS must stay a plain array literal')
+  const known = new Set([...block[1].matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]))
+  assert.ok(known.size > 0, 'HARDWARE_TIERS must not be empty')
+
+  const manifest = fixture('recommended-models')
+  const tiers = manifest.tiers ?? {}
+  // Every rung, or the omitted ones quietly fall back to the bundled ladder and
+  // the manifest stops being the place recommendations are changed.
+  assert.deepEqual(
+    [...known].filter((tier) => !(tier in tiers)),
+    [],
+    'every tier must be present in the manifest'
+  )
+
+  for (const [tier, list] of Object.entries(tiers)) {
+    assert.ok(known.has(tier), `${tier} is not a tier this client knows`)
+    assert.ok(Array.isArray(list) && list.length > 0, `${tier} must not be empty`)
+    unique(
+      list.map(({ model_name }) => model_name),
+      `${tier} entries must be unique`
+    )
+    for (const recommendation of list) {
+      assert.match(recommendation.model_name, /^[^/]+\/[^/]+$/)
+      assert.match(recommendation.description_key, /^hub:/)
+      // Unattended downloads: without a pin the client falls back to its house
+      // quant preference, which picks a different file than the one the ladder
+      // was measured on.
+      assert.match(
+        recommendation.quant ?? '',
+        /^[A-Za-z0-9_]{2,16}$/,
+        `${tier} entries must pin a quant`
+      )
+      if (recommendation.mmproj_quant !== undefined) {
+        assert.match(recommendation.mmproj_quant, /^[A-Za-z0-9_]{2,16}$/)
+      }
+    }
+  }
+})
+
+test('provider registry contains safe provider and model contracts', () => {
+  const manifest = fixture('provider-registry')
+  assert.equal(manifest.schema_version, 1)
+  unique(
+    manifest.providers.map(({ provider }) => provider),
+    'provider ids must be unique'
+  )
+  for (const provider of manifest.providers) {
+    nonEmpty(provider.provider, 'provider id')
+    assert.equal(provider.api_key, '')
+    assert.doesNotThrow(() => new URL(provider.base_url))
+    unique(
+      provider.models.map(({ id }) => id),
+      `${provider.provider} model ids must be unique`
+    )
+    for (const model of provider.models) {
+      nonEmpty(model.name, 'model name')
+      assert.ok(model.capabilities.includes('completion'))
+    }
+  }
+})
+
+test('catalog and index remain mutually consistent', () => {
+  const catalog = fixture('catalog')
+  const index = fixture('catalog-index')
+  assert.equal(catalog.manifest_version, 1)
+  assert.equal(catalog.schema_version, 1)
+  assert.equal(index.index_version, 1)
+  assert.equal(index.catalog_updated_at, catalog.updated_at)
+  assert.equal(index.catalog_total_models, catalog.models.length)
+  assert.equal(catalog.stats.total_models, catalog.models.length)
+  unique(
+    catalog.models.map(({ model_name }) => model_name),
+    'catalog model ids must be unique'
+  )
+  for (const model of catalog.models) {
+    assert.match(model.model_name, /^[^/]+\/[^/]+$/)
+    assert.ok(Number.isInteger(model.downloads) && model.downloads >= 0)
+    assert.equal(model.num_quants, model.quants.length)
+    for (const quant of model.quants) {
+      assert.match(
+        quant.path,
+        /^https:\/\/huggingface\.co\/.+\/resolve\/main\/.+$/
+      )
+    }
+  }
+  assert.equal(index.minisearch.serializationVersion, 2)
+})
+
+test('fixture provenance is pinned to immutable revisions', () => {
+  const sources = fixture('sources')
+  for (const source of Object.values(sources)) {
+    assert.match(source.revision, /^[0-9a-f]{40}$/)
+  }
+})

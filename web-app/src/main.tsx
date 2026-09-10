@@ -1,0 +1,226 @@
+// Dev-only fresh-install mode (`make dev-fresh`). MUST be the first import:
+// it wipes/restores localStorage before any zustand store module rehydrates.
+import './lib/freshInstallBoot'
+import { StrictMode } from 'react'
+import ReactDOM from 'react-dom/client'
+import { RouterProvider, createRouter } from '@tanstack/react-router'
+import * as Sentry from '@sentry/react'
+
+// Import the generated route tree
+import { routeTree } from './routeTree.gen'
+
+import './index.css'
+import './i18n'
+import { installCodeBlockDownloadHandler } from './lib/codeBlockDownload'
+import { runWindowsLlamacppProviderMigration } from './lib/windowsProviderMigration'
+import { runMacosLlamacppDefaultMigration } from './lib/macosLlamacppDefaultMigration'
+import { runTurboquantDefaultMigration } from './lib/turboquantDefaultMigration'
+import { initSentryFrontend } from './lib/sentry'
+import { resetForcedOnboardingRun } from './lib/onboarding'
+import { useGeneralSetting } from './hooks/useGeneralSetting'
+import { useModelProvider } from './hooks/useModelProvider'
+import { isLocalProvider } from '@/utils/registerRemoteProvider'
+import GlobalError from './containers/GlobalError'
+
+// ATO-113: arm Sentry before anything else so the React ErrorBoundary and the
+// global window.onerror / unhandledrejection handlers catch the earliest
+// errors. No-op when no DSN was baked in or outside Tauri.
+initSentryFrontend()
+
+// Mobile-specific viewport and styling setup
+const setupMobileViewport = () => {
+  // Check if running on mobile platform (iOS/Android via Tauri)
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
+                   window.matchMedia('(max-width: 768px)').matches
+
+  if (isMobile) {
+    // Update viewport meta tag to disable zoom
+    const viewportMeta = document.querySelector('meta[name="viewport"]')
+    if (viewportMeta) {
+      viewportMeta.setAttribute('content',
+        'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover'
+      )
+    }
+
+    // Add mobile-specific styles for status bar
+    const style = document.createElement('style')
+    style.textContent = `
+      body {
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+      }
+
+      #root {
+        min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+      }
+
+      /* Prevent zoom on input focus */
+      input, textarea, select {
+        font-size: 16px !important;
+      }
+    `
+    document.head.appendChild(style)
+  }
+}
+
+// Prevent browser from opening dropped files
+const preventDefaultFileDrop = () => {
+  document.addEventListener('dragover', (e) => {
+    e.preventDefault()
+  })
+  document.addEventListener('drop', (e) => {
+    e.preventDefault()
+  })
+}
+
+//* Запрет зума страницы: клавиатурные сочетания, Ctrl/Cmd+колесо, жесты трекпада/пальцев
+const disablePageZoom = () => {
+  const isZoomKey = (key: string) =>
+    key === '+' ||
+    key === '-' ||
+    key === '=' ||
+    key === '0' ||
+    key === 'Add' ||
+    key === 'Subtract'
+
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if ((e.ctrlKey || e.metaKey) && isZoomKey(e.key)) {
+        e.preventDefault()
+      }
+    },
+    { capture: true }
+  )
+
+  window.addEventListener(
+    'wheel',
+    (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault()
+      }
+    },
+    { passive: false, capture: true }
+  )
+
+  const preventGesture = (e: Event) => e.preventDefault()
+  window.addEventListener('gesturestart', preventGesture, { passive: false })
+  window.addEventListener('gesturechange', preventGesture, { passive: false })
+  window.addEventListener('gestureend', preventGesture, { passive: false })
+
+  document.addEventListener(
+    'touchmove',
+    (e) => {
+      if (e.touches.length > 1) {
+        e.preventDefault()
+      }
+    },
+    { passive: false }
+  )
+
+  let lastTouchEnd = 0
+  document.addEventListener(
+    'touchend',
+    (e) => {
+      const now = Date.now()
+      if (now - lastTouchEnd <= 300) {
+        e.preventDefault()
+      }
+      lastTouchEnd = now
+    },
+    { passive: false }
+  )
+}
+
+// Initialize mobile setup
+setupMobileViewport()
+
+// Prevent files from opening when dropped
+preventDefaultFileDrop()
+
+// Prevent user-initiated zoom across the app
+disablePageZoom()
+
+// One-time, Windows-only migration of localStorage entries that point at
+// the now-excised turboquant `llamacpp` provider (ADR 2026-05-22). Must
+// run BEFORE React mounts so the very first paint of `DataProvider` /
+// `ChatInput` / `SetupScreen` sees the rewritten `'llamacpp-upstream'`
+// value in `lastUsedModel`. No-op on macOS / Linux and on second launch.
+runWindowsLlamacppProviderMigration()
+
+// One-time, macOS-only migration of the `lastUsedModel` localStorage entry
+// that still points at the turboquant `llamacpp` provider (ATO-136 / ADR
+// 2026-06-09). Pairs with the zustand v14 `selectedProvider` redirect in
+// `useModelProvider`. Must run BEFORE React mounts so the first auto-start
+// in `DataProvider` resolves the model on `'llamacpp-upstream'`. No-op on
+// Windows / Linux and on second launch.
+runMacosLlamacppDefaultMigration()
+
+// One-time classification of this profile as fresh-install vs existing, which
+// decides whether the TurboQuant `llamacpp` provider registers active (existing
+// users) or disabled-but-toggleable (fresh installs). Must run BEFORE React
+// mounts AND before the `preloadModelOnStartup` reset below — that
+// `useModelProvider.setState` call creates the persisted `model-provider`
+// blob, which would misclassify a fresh install as an existing profile.
+runTurboquantDefaultMigration()
+
+// Dev-only (`make dev-onboarding`): drop the persisted onboarding completion
+// flag so the forced run replays the whole flow — picker, 15s auto-exit, chat
+// handoff, model reminder — on every launch, without a factory reset. Must run
+// before React mounts so the very first render of `routes/index.tsx` sees it.
+// No-op in every shipped build.
+resetForcedOnboardingRun()
+
+// When "Preload model on startup" is disabled, don't let a *local* model
+// selection persisted from a previous session flash into the topbar or
+// trigger `ChatInput`'s local-model auto-start effect before we've confirmed
+// whether that model is actually still running. Both `useModelProvider`
+// and `useGeneralSetting` are synchronous localStorage-backed stores, so
+// they are already rehydrated at this point (well before React mounts).
+// `DropdownModelProvider`'s startup effect re-populates the selection from
+// the live engine state if a model turns out to still be active.
+//
+// A cloud selection is kept: it holds no memory and nothing has to start, so
+// the setting's reason ("open fast") does not apply, and clearing it made
+// every launch begin with "what do I reply with?" for a user whose answer was
+// already known (ATO-461). `DropdownModelProvider` still drops it if the
+// provider has since been disconnected.
+if (!useGeneralSetting.getState().preloadModelOnStartup) {
+  const { selectedProvider } = useModelProvider.getState()
+  if (!selectedProvider || isLocalProvider(selectedProvider)) {
+    useModelProvider.setState({ selectedProvider: '', selectedModel: null })
+  }
+}
+
+// Tauri webviews ignore the HTML5 `download` attribute, so streamdown's
+// code-block download button needs to go through Tauri's save dialog.
+if (IS_TAURI) {
+  installCodeBlockDownloadHandler()
+}
+
+// Create a new router instance
+const router = createRouter({ routeTree })
+
+// Register the router instance for type safety
+declare module '@tanstack/react-router' {
+  interface Register {
+    router: typeof router
+  }
+}
+
+// Render the app
+const rootElement = document.getElementById('root')!
+if (!rootElement.innerHTML) {
+  const root = ReactDOM.createRoot(rootElement)
+  root.render(
+    <StrictMode>
+      <Sentry.ErrorBoundary
+        fallback={({ error }) => <GlobalError error={error} />}
+      >
+        <RouterProvider router={router} />
+      </Sentry.ErrorBoundary>
+    </StrictMode>
+  )
+}

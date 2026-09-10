@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>chat.atomic.app</string>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>Atomic Chat needs local network access to connect to model servers running on your local network (e.g. a vLLM, Ollama, or LM Studio endpoint on your LAN).</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Atomic Chat uses your microphone to transcribe what you say into the chat box. Audio is processed entirely on this device and is never uploaded.</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>chat.atomic.app</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>atomic-chat</string>
+      </array>
+    </dict>
+  </array>
+</dict>
+</plist>

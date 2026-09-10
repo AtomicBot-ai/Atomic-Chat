@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-check-spec-type-support"
+description = "Enables the check_spec_type_support command without any pre-configured scope."
+commands.allow = ["check_spec_type_support"]
+
+[[permission]]
+identifier = "deny-check-spec-type-support"
+description = "Denies the check_spec_type_support command without any pre-configured scope."
+commands.deny = ["check_spec_type_support"]

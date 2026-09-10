@@ -1,0 +1,110 @@
+export const localStorageKey = {
+  LeftPanel: 'left-panel',
+  threads: 'threads',
+  messages: 'messages',
+  theme: 'theme',
+  modelProvider: 'model-provider',
+  modelSources: 'model-sources',
+  settingInterface: 'setting-appearance',
+  settingGeneral: 'setting-general',
+  settingCodeBlock: 'setting-code-block',
+  settingLocalApiServer: 'setting-local-api-server',
+  settingProxyConfig: 'setting-proxy-config',
+  settingHardware: 'setting-hardware',
+  settingVulkan: 'setting-vulkan',
+  productAnalyticPrompt: 'productAnalyticPrompt',
+  productAnalytic: 'productAnalytic',
+  toolApproval: 'tool-approval',
+  toolAvailability: 'tool-availability',
+  mcpGlobalPermissions: 'mcp-global-permissions',
+  lastUsedModel: 'last-used-model',
+  lastUsedAssistant: 'last-used-assistant',
+  defaultAssistantId: 'default-assistant-id',
+  // Former app-wide sampling bag (temperature/top_p/top_k/min_p/penalties).
+  // Sampling is per-assistant again; this entry is only read once by the
+  // migration below and then kept for rollback.
+  samplingSettings: 'sampling-settings',
+  // Marks that the app-wide sampling bag has been moved onto the assistants
+  // that had none of their own. Set even when there was nothing to migrate.
+  samplingMigratedPerAssistant: 'sampling-migrated-per-assistant',
+  favoriteModels: 'favorite-models',
+  setupCompleted: 'setup-completed',
+  // Marks that the user has completed (either Skip or Download) the dedicated
+  // Windows-only llama.cpp backend onboarding step. Once set, the extension
+  // stops emitting `onBetterBackendDetected` events automatically — the
+  // recommendation can still be surfaced manually via the "Find optimal
+  // backend" button in provider settings.
+  llamacppOnboardingDone: 'llama_cpp_onboarding_done',
+  threadManagement: 'thread-management',
+  modelSupportCache: 'jan_model_support_cache',
+  recentSearches: 'recent-searches',
+  // Set when onboarding is left without a model (Skip or the auto-exit
+  // timeout) and cleared once the bottom-right reminder has been acted on or
+  // dismissed. Survives a restart so the offer is not lost with the session.
+  onboardingModelReminder: 'atomic-onboarding-model-reminder',
+  agentMode: 'agent-mode',
+  factoryResetPending: 'factory-reset-pending',
+  lastSeenVersion: 'last-seen-version',
+  threadNotifications: 'thread-notifications',
+  // macOS only: marks the one-time migration of the autostart launcher from the
+  // legacy LaunchAgent plist to a real AppleScript Login Item. Preserves prior
+  // state — users who had autostart ON keep it; those who had it off stay off.
+  autostartAppleScriptMigrated: 'autostart-applescript-migrated',
+  // Per-integration manual binary-path overrides for the Launch page. Lets a
+  // user fix a wrong "Not installed" status for agents installed in a
+  // non-standard location that PATH/WSL detection misses.
+  launchCustomPaths: 'launch-custom-paths',
+  // Windows/Linux only: marks that the once-ever "find optimal backend" prompt
+  // for the turboquant (`llamacpp`) provider has been shown after the first
+  // model launch on that backend. Set on Skip OR Find so the popup never
+  // reappears; the optimal-backend recommendation stays reachable via the
+  // manual button in provider settings.
+  turboquantOptimalPromptShown: 'turboquant-optimal-prompt-shown',
+  // Backend pairs ("<configured>→<effective-or-ideal>") the user chose never to
+  // be reminded about again. Suppression is per pair, not global, so a later
+  // hardware or backend change still surfaces a fresh mismatch.
+  backendMismatchSuppressed: 'backend-mismatch-suppressed',
+  // Last startup attempt to silently upgrade the upstream llama.cpp backend to
+  // the tier detection picked for this host. Written before the download starts
+  // so a crash or a failure mid-download cannot retry on every launch.
+  startupBackendUpgradeAttempt: 'startup-backend-upgrade-attempt',
+  // Epoch ms until which the GPU-backend recommendation dialog stays down after
+  // "Not now". It used to be session-only, so the dialog came back on every
+  // launch for anyone who had declined it.
+  backendRecommendationSnoozedUntil: 'backend-recommendation-snoozed-until',
+  // An onboarding run that is currently on screen: `{started_at, step,
+  // app_version}`. Written while SetupScreen is mounted and dropped by
+  // `captureOnboardingCompleted`, so a record still present at the next launch
+  // means the app was closed mid-flow — the only way to see that at all, since
+  // a window close gives the renderer no reliable chance to report it.
+  onboardingInFlight: 'onboarding-in-flight',
+  // A `backend_step_resolved` that a relaunch is about to interrupt. Written
+  // just before "Restart now" kills the process and sent on the next launch —
+  // otherwise a successful restart reports nothing at all and the data shows
+  // only the failures.
+  backendStepRestartIntent: 'backend-step-restart-intent',
+  // Voice input preferences: setup completion, input device, language hint
+  // and live-vs-on-stop transcription. One persisted bag rather than a raw
+  // flag, so the composer can read it reactively without the storage-event
+  // dance `useSetupCompleted` needs for `setup-completed`.
+  settingVoice: 'setting-voice',
+}
+
+/**
+ * Extension-owned keys that must survive a factory reset.
+ *
+ * Not part of `localStorageKey` because the app neither writes nor reads them
+ * for its own purposes — the llama.cpp extensions own them, and this list only
+ * exists so a reset does not force every user to re-download their GPU build.
+ *
+ * ATO-468: each engine moved to its own prefixed key and now reads the shared
+ * `llama_cpp_backend_type` only to migrate off it, so preserving the shared key
+ * alone had stopped preserving anything.
+ */
+export const BACKEND_PRESERVE_KEYS = [
+  'llama_cpp_backend_type',
+  'atomic_llamacpp_upstream_backend_type',
+  'atomic_llamacpp_turboquant_backend_type',
+] as const
+
+export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24

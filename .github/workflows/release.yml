@@ -1,0 +1,1189 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version number (e.g. 1.1.37)"
+        required: true
+        default: "0.0.0-test"
+      build_macos:
+        description: "Build macOS"
+        type: boolean
+        default: false
+      build_windows:
+        description: "Build Windows (temporarily disabled)"
+        type: boolean
+        default: false
+      build_linux:
+        description: "Build Linux x86_64 (AppImage)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  create-draft-release:
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create Draft Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+          name: "Atomic Chat v${{ steps.get_version.outputs.version }}"
+          draft: true
+          prerelease: ${{ github.event_name == 'workflow_dispatch' }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ──────────────────────────────────────────────────────────────
+  # Polished release notes (LLM-generated from git log between tags)
+  # On failure: warning only — default GitHub-generated notes remain.
+  # ──────────────────────────────────────────────────────────────
+  enrich-release-notes:
+    needs: create-draft-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history + tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Resolve previous published release tag
+        id: prev
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURR_TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+        run: |
+          set +e
+          PREV_TAG=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name 2>/dev/null)
+          set -e
+          if [ -z "$PREV_TAG" ] || [ "$PREV_TAG" = "null" ] || [ "$PREV_TAG" = "$CURR_TAG" ]; then
+            echo "No previous published release found (or equals current tag); will fall back to git history"
+            PREV_TAG=""
+          fi
+          echo "Previous published release: ${PREV_TAG:-<none>}"
+          echo "prev_tag=$PREV_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes via OpenAI
+        id: gen
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.RELEASE_NOTES_MODEL || 'gpt-5-mini' }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || 'https://api.openai.com/v1' }}
+          CURR_TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+          PREV_TAG: ${{ steps.prev.outputs.prev_tag }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          python3 scripts/release-notes/generate.py > /tmp/release-notes.md
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] || [ ! -s /tmp/release-notes.md ]; then
+            echo "::warning::LLM release notes generation failed (rc=$rc); keeping default GitHub-generated notes"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "===== Generated notes ====="
+          cat /tmp/release-notes.md
+          echo "==========================="
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+
+      - name: Update draft release body
+        if: steps.gen.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+        run: |
+          # The GitHub API occasionally returns a transient 401 for
+          # GITHUB_TOKEN requests, so retry a few times. Applying the polished
+          # notes is best-effort: the default GitHub-generated notes already
+          # exist, so a persistent failure is a warning, never a job failure
+          # (per this job's "on failure: warning only" contract).
+          for attempt in 1 2 3 4 5; do
+            if gh release edit "$TAG" --notes-file /tmp/release-notes.md; then
+              echo "Release notes applied (attempt ${attempt})."
+              exit 0
+            fi
+            echo "::warning::gh release edit failed (attempt ${attempt}); retrying in $((attempt * 5))s"
+            sleep $((attempt * 5))
+          done
+          echo "::warning::Could not update the release body after retries; keeping default GitHub-generated notes"
+
+  # ──────────────────────────────────────────────────────────────
+  # macOS  (universal binary — arm64 + x86_64)
+  # ──────────────────────────────────────────────────────────────
+  build-macos:
+    if: github.event_name == 'push' || inputs.build_macos
+    runs-on: macos-latest-xlarge
+    timeout-minutes: 75
+    needs: create-draft-release
+    outputs:
+      mac_sig: ${{ steps.metadata.outputs.mac_sig }}
+      tar_name: ${{ steps.metadata.outputs.tar_name }}
+      dmg_name: ${{ steps.metadata.outputs.dmg_name }}
+      zip_name: ${{ steps.metadata.outputs.zip_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+
+      - name: Cache Yarn
+        uses: actions/cache@v4
+        with:
+          path: .yarn/cache
+          key: yarn-macos-${{ hashFiles('yarn.lock') }}
+          restore-keys: yarn-macos-
+
+      - name: Install jq
+        run: brew install jq
+
+      - name: Install Python dependencies
+        run: pip3 install --break-system-packages Pillow
+
+      - name: Set Xcode version
+        run: |
+          if [ -d "/Applications/Xcode_26.2.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+          elif [ -d "/Applications/Xcode_26.1.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_26.1.app/Contents/Developer
+          else
+            sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          fi
+          swift --version
+
+      - name: Update version in project files
+        env:
+          NEW_VERSION: ${{ needs.create-draft-release.outputs.version }}
+        run: |
+          jq --arg v "$NEW_VERSION" \
+            '.version = $v | .bundle.createUpdaterArtifacts = true' \
+            src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          mv /tmp/tauri.conf.json src-tauri/tauri.conf.json
+
+          jq --arg v "$NEW_VERSION" '.version = $v' web-app/package.json > /tmp/package.json
+          mv /tmp/package.json web-app/package.json
+
+          cargo install ctoml || true
+          ctoml src-tauri/Cargo.toml package.version "$NEW_VERSION"
+
+      - name: Import code signing certificate
+        uses: apple-actions/import-codesign-certs@v2
+        continue-on-error: true
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      - name: Configure Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn config set -H enableImmutableInstalls false
+
+      - name: Download llamacpp backend
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make download-llamacpp-backend
+
+      - name: Download upstream llama.cpp backend
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make download-llamacpp-upstream-backend
+
+      - name: Download MLX server (mlx-vlm)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make build-mlx-server
+
+      - name: Install dependencies and build core
+        run: |
+          make install-and-build
+          make install-rust-targets
+
+      - name: Build web app and generate icons
+        env:
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          # ATO-113: Sentry frontend DSN baked into the bundle; SENTRY_RELEASE =
+          # git SHA shared with the desktop project. The auth-token/org/project
+          # trio additionally arms the @sentry/vite-plugin source-map upload.
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_ENVIRONMENT: production
+          SENTRY_RELEASE: ${{ github.sha }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT_FRONTEND: ${{ secrets.SENTRY_PROJECT_FRONTEND }}
+          # ATO-113: source-map generation + @sentry/vite-plugin push peak heap
+          # past Node's ~2GB default, so raise it for the web build too.
+          NODE_OPTIONS: "--max-old-space-size=8192"
+        run: |
+          yarn build:web
+          yarn build:icon
+
+      - name: Restore DMG background after icon generation
+        run: |
+          mkdir -p src-tauri/icons/dmg
+          git checkout -- src-tauri/icons/dmg/background.png
+          echo "=== DMG background restored ==="
+          file src-tauri/icons/dmg/background.png
+          ls -la src-tauri/icons/dmg/background.png
+
+      - name: Build app (universal binary)
+        env:
+          TAURI_BUNDLER_DMG_IGNORE_CI: "true"
+          NODE_OPTIONS: "--max-old-space-size=4196"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          # ATO-113: bake the Rust desktop DSN (option_env!) + matching release.
+          SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
+          # `tauri build` re-runs `beforeBuildCommand` (`yarn build:web`), which
+          # rebuilds the bundle produced by the earlier web step. Without the
+          # frontend DSN here that rebuild silently overwrites it with a build
+          # where `initSentryFrontend()` bails on an empty DSN — which is why
+          # the frontend project saw no production events at all.
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_ENVIRONMENT: production
+          SENTRY_RELEASE: ${{ github.sha }}
+        run: |
+          yarn copy:assets:tauri
+
+          echo "=== Pre-build DMG verification ==="
+          file src-tauri/icons/dmg/background.png
+          grep -A2 '"background"' src-tauri/tauri.macos.conf.json
+          echo "=== Building ==="
+
+          yarn download:bin
+          yarn build:foundation-models-server
+          yarn build:cli
+          # Универсальная macOS-сборка + переименование VOLNAME с версией + ресигн/нотаризация DMG
+          make build-mac
+
+      - name: Upload Rust debug files to Sentry (macOS)
+        continue-on-error: true
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT_DESKTOP: ${{ secrets.SENTRY_PROJECT_DESKTOP }}
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ] || [ -z "$SENTRY_ORG" ] || [ -z "$SENTRY_PROJECT_DESKTOP" ]; then
+            echo "Sentry secrets absent — skipping debug-file upload."
+            exit 0
+          fi
+          # split-debuginfo=packed emits .dSYM bundles next to each per-arch
+          # binary; sentry-cli scans recursively and dedupes by debug-id.
+          npx @sentry/cli@^2 debug-files upload \
+            --org "$SENTRY_ORG" --project "$SENTRY_PROJECT_DESKTOP" \
+            src-tauri/target/aarch64-apple-darwin/release \
+            src-tauri/target/x86_64-apple-darwin/release
+
+      - name: Collect artifact metadata
+        id: metadata
+        env:
+          VERSION: ${{ needs.create-draft-release.outputs.version }}
+        run: |
+          cd src-tauri/target/universal-apple-darwin/release/bundle/macos
+
+          zip -r "atomic-chat-mac-universal-${VERSION}.zip" "Atomic Chat.app"
+
+          MAC_SIG=$(cat "Atomic Chat.app.tar.gz.sig")
+          TAR_NAME="Atomic Chat.app.tar.gz"
+          ZIP_NAME="atomic-chat-mac-universal-${VERSION}.zip"
+
+          echo "mac_sig=${MAC_SIG}" >> "$GITHUB_OUTPUT"
+          echo "tar_name=${TAR_NAME}" >> "$GITHUB_OUTPUT"
+          echo "zip_name=${ZIP_NAME}" >> "$GITHUB_OUTPUT"
+
+          cd ../../bundle/dmg
+          DMG_NAME=$(ls *.dmg | head -1)
+          echo "dmg_name=${DMG_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload .zip to release
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./src-tauri/target/universal-apple-darwin/release/bundle/macos/${{ steps.metadata.outputs.zip_name }}
+          asset_name: ${{ steps.metadata.outputs.zip_name }}
+          asset_content_type: application/zip
+
+      - name: Upload .dmg to release
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./src-tauri/target/universal-apple-darwin/release/bundle/dmg/${{ steps.metadata.outputs.dmg_name }}
+          asset_name: ${{ steps.metadata.outputs.dmg_name }}
+          asset_content_type: application/octet-stream
+
+      - name: Upload .tar.gz (for updater) to release
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./src-tauri/target/universal-apple-darwin/release/bundle/macos/${{ steps.metadata.outputs.tar_name }}
+          asset_name: ${{ steps.metadata.outputs.tar_name }}
+          asset_content_type: application/gzip
+
+  # ──────────────────────────────────────────────────────────────
+  # Windows  (x86_64 — NSIS + MSI, DigiCert KeyLocker code signing)
+  # ──────────────────────────────────────────────────────────────
+  build-windows:
+    if: github.event_name == 'push' || inputs.build_windows
+    # Pinned to windows-2022 — DigiCert KSP is incompatible with Server 2025
+    runs-on: windows-2022
+    # A green run is ~40min. The ceiling exists so a hung step fails the job in
+    # an hour instead of running to GitHub's 6h default.
+    timeout-minutes: 75
+    needs: create-draft-release
+    outputs:
+      win_sig: ${{ steps.metadata.outputs.win_sig }}
+      exe_name: ${{ steps.metadata.outputs.exe_name }}
+      msi_name: ${{ steps.metadata.outputs.msi_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: pip install Pillow
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          # Releases are tag pushes, and an Actions cache written under
+          # `refs/tags/vX.Y.Z` is readable only by that same tag — the next
+          # release restores nothing from it. Saving it costs ~2.5min per job
+          # and evicts caches that *are* reachable, so only the default branch
+          # writes. Restore still reads main's cache from any ref.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Cache Yarn
+        uses: actions/cache@v4
+        with:
+          path: .yarn/cache
+          key: yarn-windows-${{ hashFiles('yarn.lock') }}
+          restore-keys: yarn-windows-
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Update version in project files
+        shell: bash
+        env:
+          NEW_VERSION: ${{ needs.create-draft-release.outputs.version }}
+        run: |
+          jq --arg v "$NEW_VERSION" \
+            '.version = $v | .bundle.createUpdaterArtifacts = true' \
+            src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          mv /tmp/tauri.conf.json src-tauri/tauri.conf.json
+
+          jq --arg v "$NEW_VERSION" '.version = $v' web-app/package.json > /tmp/package.json
+          mv /tmp/package.json web-app/package.json
+
+          cargo install ctoml || true
+          ctoml src-tauri/Cargo.toml package.version "$NEW_VERSION"
+
+      # ── DigiCert KeyLocker setup ──────────────────────────────
+      - name: Setup DigiCert KeyLocker
+        shell: pwsh
+        env:
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE_B64: ${{ secrets.SM_CLIENT_CERT_FILE_B64 }}
+        run: |
+          $headers = @{ "x-api-key" = $env:SM_API_KEY }
+          $msi = "$env:TEMP\smtools.msi"
+          $maxAttempts = 5
+          for ($i = 1; $i -le $maxAttempts; $i++) {
+            try {
+              Invoke-WebRequest -Uri "https://one.digicert.com/signingmanager/api-ui/v1/releases/smtools-windows-x64.msi/download" `
+                -Headers $headers -OutFile $msi
+              if ((Get-Item $msi).Length -gt 0) { break }
+              throw "Downloaded file is empty"
+            } catch {
+              Write-Host "smtools download attempt $i/$maxAttempts failed: $($_.Exception.Message)"
+              if ($i -eq $maxAttempts) { throw }
+              Start-Sleep -Seconds ($i * 10)
+            }
+          }
+          Start-Process msiexec.exe -ArgumentList "/i", $msi, "/quiet", "/norestart" -Wait
+          Remove-Item $msi
+
+          $smctlDir = "C:\Program Files\DigiCert\DigiCert One Signing Manager Tools"
+          echo "$smctlDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+          $certBytes = [Convert]::FromBase64String($env:SM_CLIENT_CERT_FILE_B64)
+          $certPath = "$env:RUNNER_TEMP\digicert_client_cert.p12"
+          [IO.File]::WriteAllBytes($certPath, $certBytes)
+          echo "SM_CLIENT_CERT_FILE=$certPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Verify DigiCert KeyLocker
+        shell: pwsh
+        env:
+          SM_HOST: https://clientauth.one.digicert.com
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+        run: |
+          smctl healthcheck
+
+      - name: Sync certificates to Windows store
+        shell: pwsh
+        env:
+          SM_HOST: https://clientauth.one.digicert.com
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+        run: |
+          $output = smctl windows certsync 2>&1
+          $output | ForEach-Object { Write-Host $_ }
+          if ($LASTEXITCODE -ne 0) { throw "smctl windows certsync failed" }
+
+          # smctl does not pass a cert selector to signtool, so capture the
+          # synced code-signing certificate's SHA1 fingerprint and hand it to
+          # signtool explicitly in the signing step (via /sha1).
+          $m = [regex]::Match(($output -join "`n"), '(?i)fingerprint[^0-9A-Fa-f]*([0-9A-Fa-f]{40})')
+          if (-not $m.Success) { throw "Could not extract SHA1 fingerprint from certsync output" }
+          $fingerprint = $m.Groups[1].Value
+          echo "SM_CODE_SIGNING_CERT_SHA1_HASH=$fingerprint" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Captured code-signing certificate SHA1: $fingerprint"
+
+      - name: Setup Windows SDK signtool
+        shell: pwsh
+        run: |
+          $signtoolPath = Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin" `
+            -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -like "*\x64\*" } |
+            Sort-Object { [version]($_.FullName -replace '.*\\(\d+\.\d+\.\d+\.\d+)\\.*', '$1') } -Descending |
+            Select-Object -First 1
+          if ($signtoolPath) {
+            Write-Host "Found signtool at: $($signtoolPath.DirectoryName)"
+            echo "$($signtoolPath.DirectoryName)" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          } else {
+            Write-Error "signtool.exe not found in Windows SDK"
+            exit 1
+          }
+
+      # ── Build (without code signing — signing happens post-build) ──
+      - name: Configure Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn config set -H enableImmutableInstalls false
+
+      - name: Install dependencies and build core
+        run: |
+          yarn install
+          yarn build:tauri:plugin:api
+          yarn build:core
+          yarn build:extensions
+
+      - name: Download binaries (bun, uv)
+        run: yarn download:bin
+
+      - name: Download upstream llamacpp backend (manifest resolver)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Upstream remains the Windows default provider. Per ATO-199 its
+          # backend INDEX is resolved from the static atomic-chat-conf manifest
+          # (raw.githubusercontent.com, no api.github.com rate limit), and the
+          # archive comes from our signed mirror when that tag was mirrored.
+          # scripts/resolve-upstream-backend.mjs owns both decisions and is
+          # shared with the Makefile — do not re-derive them here.
+          # Inline bash (not `make ...-win-cpu`) because that make target is a
+          # PowerShell one-liner whose `$(...)` is mangled by make's
+          # /usr/bin/sh under `shell: bash`.
+          DIR="src-tauri/resources/llamacpp-backend-upstream"
+          rm -rf "$DIR"
+          mkdir -p "$DIR"
+          # Two steps, not eval "$(...)": under `set -e` a failing command
+          # substitution inside eval does not abort the step.
+          RESOLVED="$(node scripts/resolve-upstream-backend.mjs --backend win-cpu-x64)"
+          eval "$RESOLVED"
+          echo "$TAG" > "$DIR/version.txt"
+          echo "$BACKEND" > "$DIR/backend.txt"
+          echo "Release: $TAG  Backend: $BACKEND"
+          echo "Downloading: $URL"
+          curl -fSL --retry 5 --retry-delay 3 "$URL" -o /tmp/llamacpp-upstream-backend.zip
+          if [ -n "$SHA256" ]; then
+            ACTUAL="$(sha256sum /tmp/llamacpp-upstream-backend.zip | cut -d' ' -f1)"
+            if [ "$ACTUAL" != "$SHA256" ]; then
+              echo "Error: sha256 mismatch for $ASSET (expected $SHA256, got $ACTUAL)"
+              exit 1
+            fi
+            echo "sha256 verified: $ASSET"
+          else
+            echo "No sha256 published for $ASSET; skipping integrity check"
+          fi
+          unzip -o /tmp/llamacpp-upstream-backend.zip -d "$DIR"
+          rm -f /tmp/llamacpp-upstream-backend.zip
+          if [ ! -f "$DIR/build/bin/llama-server.exe" ] && [ -f "$DIR/llama-server.exe" ]; then
+            echo "Relocating flat-extracted binaries into build/bin/..."
+            mkdir -p "$DIR/build/bin"
+            find "$DIR" -maxdepth 1 -type f ! -name version.txt ! -name backend.txt -exec mv {} "$DIR/build/bin/" \;
+          fi
+          if [ ! -f "$DIR/build/bin/llama-server-impl.dll" ]; then
+            echo "Error: upstream backend is missing build/bin/llama-server-impl.dll"
+            exit 1
+          fi
+          echo "CPU backend ($BACKEND) downloaded successfully. App will auto-download GPU backend at runtime."
+
+      - name: Download TurboQuant llamacpp backend (manifest resolver)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # TurboQuant ships on Windows as the SECOND provider alongside
+          # llamacpp-upstream. Bundle the offline-fallback `windows-x64-cpu`
+          # build into the turboquant resource dir; the app auto-downloads the
+          # optimal CUDA/Vulkan backend at runtime via the llamacpp-extension.
+          # No tag is pinned: scripts/resolve-turboquant-release.sh asks the
+          # fork's own releases/latest which stable release is current, so a
+          # new fork release ships without a commit here. Set TURBOQUANT_TAG to
+          # pin one for a reproducible build. The archive itself comes from the
+          # AtomicBot-ai releases CDN. Inline bash (not `make ...-win-cpu`)
+          # because that make target is a PowerShell one-liner whose `$(...)`
+          # is mangled by make's /usr/bin/sh.
+          DIR="src-tauri/resources/llamacpp-backend"
+          BACKEND="windows-x64-cpu"
+          rm -rf "$DIR"
+          mkdir -p "$DIR"
+          RESOLVED="$(./scripts/resolve-turboquant-release.sh "$BACKEND" "${TURBOQUANT_TAG:-}")"
+          TAG="${RESOLVED%% *}"
+          ASSET="${RESOLVED#* }"
+          URL="https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/${TAG}/${ASSET}"
+          echo "$TAG" > "$DIR/version.txt"
+          echo "$BACKEND" > "$DIR/backend.txt"
+          echo "Release: $TAG  Backend: $BACKEND"
+          echo "Downloading: $URL"
+          curl -fSL --retry 5 --retry-delay 3 "$URL" -o /tmp/llamacpp-turboquant-backend.zip
+          unzip -o /tmp/llamacpp-turboquant-backend.zip -d "$DIR"
+          rm -f /tmp/llamacpp-turboquant-backend.zip
+          if [ ! -f "$DIR/build/bin/llama-server.exe" ] && [ -f "$DIR/llama-server.exe" ]; then
+            echo "Relocating flat-extracted binaries into build/bin/..."
+            mkdir -p "$DIR/build/bin"
+            # Move ALL top-level files (exe + DLLs incl. llama-server-impl.dll),
+            # not just *.exe; keep the meta files (version.txt/backend.txt) at
+            # the resource root where install_bundled_backend expects them.
+            find "$DIR" -maxdepth 1 -type f ! -name version.txt ! -name backend.txt -exec mv {} "$DIR/build/bin/" \;
+          fi
+          echo "TurboQuant CPU backend ($BACKEND) downloaded successfully. App will auto-download GPU backend at runtime."
+
+      - name: Build web app and generate icons
+        env:
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          # ATO-113: Sentry frontend DSN + source-map upload (see macOS job).
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_ENVIRONMENT: production
+          SENTRY_RELEASE: ${{ github.sha }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT_FRONTEND: ${{ secrets.SENTRY_PROJECT_FRONTEND }}
+          # ATO-113: source-map build needs more heap than Node's ~2GB default.
+          NODE_OPTIONS: "--max-old-space-size=8192"
+        run: |
+          yarn build:web
+          yarn build:icon
+
+      - name: Copy assets to Tauri
+        run: yarn copy:assets:tauri
+
+      - name: Build CLI
+        shell: bash
+        run: |
+          mkdir -p src-tauri/resources/bin
+          cd src-tauri && cargo build --release --features cli --bin jan-cli
+          cp target/release/jan-cli.exe resources/bin/jan-cli.exe
+
+      # Runs after Build CLI: the tauri build script requires
+      # resources/bin/jan-cli.exe to exist, and `shell: bash` (-e -o pipefail)
+      # makes a cargo test failure actually fail the step — the default pwsh
+      # shell only reports the last command's exit code.
+      - name: Gate Agent checks (Windows)
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib --features test-tauri core::agent::
+          yarn workspace @janhq/web-app vitest --run src/lib/agent-path.test.ts src/lib/agent-file-links.test.ts src/stores/workspace-preview-store.test.ts
+
+      - name: Build app (unsigned)
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4196"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          # ATO-113: bake the Rust desktop DSN (option_env!) + matching release.
+          SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
+          # `tauri build` re-runs `beforeBuildCommand` (`yarn build:web`), which
+          # rebuilds the bundle produced by the earlier web step. Without the
+          # frontend DSN here that rebuild silently overwrites it with a build
+          # where `initSentryFrontend()` bails on an empty DSN — which is why
+          # the frontend project saw no production events at all.
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_ENVIRONMENT: production
+          SENTRY_RELEASE: ${{ github.sha }}
+        run: yarn tauri build
+
+      - name: Upload Rust debug files to Sentry (Windows)
+        continue-on-error: true
+        shell: bash
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT_DESKTOP: ${{ secrets.SENTRY_PROJECT_DESKTOP }}
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ] || [ -z "$SENTRY_ORG" ] || [ -z "$SENTRY_PROJECT_DESKTOP" ]; then
+            echo "Sentry secrets absent — skipping debug-file upload."
+            exit 0
+          fi
+          # MSVC emits a .pdb next to the binary; debug=1 keeps it populated.
+          npx @sentry/cli@^2 debug-files upload \
+            --org "$SENTRY_ORG" --project "$SENTRY_PROJECT_DESKTOP" \
+            src-tauri/target/release
+
+      # ── Post-build code signing (DigiCert KeyLocker via signtool KSP) ──
+      # certsync installs the DigiCert KeyLocker KSP and the code-signing cert
+      # into the Windows store; we sign with signtool directly, selecting the
+      # cert by the SHA1 fingerprint captured from certsync
+      # (SM_CODE_SIGNING_CERT_SHA1_HASH). The KSP authenticates to DigiCert at
+      # sign time via SM_API_KEY / SM_CLIENT_CERT_FILE / SM_CLIENT_CERT_PASSWORD.
+      - name: Sign Windows binaries with DigiCert
+        shell: pwsh
+        env:
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+          SM_HOST: https://clientauth.one.digicert.com
+        run: |
+          $bundleBase = "src-tauri\target\release\bundle"
+
+          if (-not $env:SM_CODE_SIGNING_CERT_SHA1_HASH) {
+            throw "SM_CODE_SIGNING_CERT_SHA1_HASH is not set (certsync did not capture a fingerprint)"
+          }
+
+          function Sign-File($path) {
+            Write-Host "Signing: $path"
+            signtool sign /sha1 "$env:SM_CODE_SIGNING_CERT_SHA1_HASH" `
+              /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "$path"
+            if ($LASTEXITCODE -ne 0) { throw "signtool sign failed for $path" }
+            signtool verify /pa "$path"
+            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $path" }
+            Write-Host "Signed and verified: $path"
+          }
+
+          # Sign NSIS installer(s)
+          $nsisPath = Join-Path $bundleBase "nsis"
+          if (Test-Path $nsisPath) {
+            foreach ($exe in (Get-ChildItem -Path $nsisPath -Filter "*.exe")) {
+              Sign-File $exe.FullName
+            }
+          }
+
+          # Sign MSI installer(s)
+          $msiPath = Join-Path $bundleBase "msi"
+          if (Test-Path $msiPath) {
+            foreach ($msi in (Get-ChildItem -Path $msiPath -Filter "*.msi")) {
+              Sign-File $msi.FullName
+            }
+          }
+
+      - name: Recreate updater signature after code signing
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          for exe in src-tauri/target/release/bundle/nsis/*-setup.exe; do
+            [ -f "$exe" ] || continue
+            sigfile="${exe}.sig"
+            if [ -f "$sigfile" ]; then
+              rm "$sigfile"
+              echo "Removed old .sig: $sigfile"
+            fi
+            echo "Recreating updater signature for: $(basename "$exe")"
+            yarn tauri signer sign --private-key "$TAURI_SIGNING_PRIVATE_KEY" --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" "$exe"
+            echo "Created new .sig for: $(basename "$exe")"
+          done
+
+      # ── Collect metadata & upload (after signing) ─────────────
+      - name: Collect artifact metadata
+        id: metadata
+        shell: bash
+        run: |
+          cd src-tauri/target/release/bundle
+
+          cd nsis
+          EXE_NAME=$(ls *.exe | head -1)
+          WIN_SIG=$(cat "${EXE_NAME}.sig" 2>/dev/null || echo "")
+          echo "exe_name=${EXE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "win_sig=${WIN_SIG}" >> "$GITHUB_OUTPUT"
+
+          cd ../msi
+          MSI_NAME=$(ls *.msi | head -1)
+          echo "msi_name=${MSI_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload NSIS installer to release
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./src-tauri/target/release/bundle/nsis/${{ steps.metadata.outputs.exe_name }}
+          asset_name: ${{ steps.metadata.outputs.exe_name }}
+          asset_content_type: application/octet-stream
+
+      - name: Upload MSI installer to release
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./src-tauri/target/release/bundle/msi/${{ steps.metadata.outputs.msi_name }}
+          asset_name: ${{ steps.metadata.outputs.msi_name }}
+          asset_content_type: application/octet-stream
+
+      - name: Upload NSIS updater signature to release
+        if: steps.metadata.outputs.win_sig != ''
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./src-tauri/target/release/bundle/nsis/${{ steps.metadata.outputs.exe_name }}.sig
+          asset_name: ${{ steps.metadata.outputs.exe_name }}.sig
+          asset_content_type: text/plain
+
+  # ──────────────────────────────────────────────────────────────
+  # Linux  (x86_64 — AppImage, upstream ggml-org/llama.cpp, CPU-only bundled)
+  # ──────────────────────────────────────────────────────────────
+  build-linux-x64:
+    if: github.event_name == 'push' || inputs.build_linux
+    # Pinned to ubuntu-22.04 (glibc 2.35) so the produced AppImage stays
+    # compatible with Ubuntu 22.04 / 24.04 / Debian 12 / Fedora 40 /
+    # Mint / Pop!_OS / Arch. Upstream remains the Linux default while the
+    # TurboQuant Vulkan build ships as the optional second provider.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 75
+    needs: create-draft-release
+    outputs:
+      linux_sig: ${{ steps.metadata.outputs.linux_sig }}
+      appimage_name: ${{ steps.metadata.outputs.appimage_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          # Releases are tag pushes, and an Actions cache written under
+          # `refs/tags/vX.Y.Z` is readable only by that same tag — the next
+          # release restores nothing from it. Saving it costs ~2.5min per job
+          # and evicts caches that *are* reachable, so only the default branch
+          # writes. Restore still reads main's cache from any ref.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Cache Yarn
+        uses: actions/cache@v4
+        with:
+          path: .yarn/cache
+          key: yarn-linux-${{ hashFiles('yarn.lock') }}
+          restore-keys: yarn-linux-
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Install Linux system dependencies
+        # WebKitGTK 4.1 stack + Tauri AppImage build deps. Ubuntu 22.04
+        # ships `libwebkit2gtk-4.1-dev` as expected by Tauri 2.x.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libgtk-3-dev \
+            libglib2.0-dev \
+            libsoup-3.0-dev \
+            libwebkit2gtk-4.1-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libasound2-dev \
+            pkg-config \
+            patchelf \
+            squashfs-tools \
+            unzip
+
+      - name: Install Python dependencies
+        # `yarn build:icon` calls scripts/build-macos-app-icon.py which
+        # imports PIL — same as macOS / Windows jobs. On ubuntu-22.04 the
+        # system `pip` writes to /usr/lib/python3/dist-packages (root-only),
+        # so we install into the runner user's ~/.local site via --user.
+        # Pip 22.0.2 doesn't know `--break-system-packages` (added in 23),
+        # and PEP 668 isn't enforced on the runner image yet, so --user is
+        # the portable choice that survives future pip upgrades.
+        run: python3 -m pip install --user Pillow
+
+      - name: Update version in project files
+        env:
+          NEW_VERSION: ${{ needs.create-draft-release.outputs.version }}
+        run: |
+          jq --arg v "$NEW_VERSION" \
+            '.version = $v | .bundle.createUpdaterArtifacts = true' \
+            src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          mv /tmp/tauri.conf.json src-tauri/tauri.conf.json
+
+          jq --arg v "$NEW_VERSION" '.version = $v' web-app/package.json > /tmp/package.json
+          mv /tmp/package.json web-app/package.json
+
+          cargo install ctoml || true
+          ctoml src-tauri/Cargo.toml package.version "$NEW_VERSION"
+
+      - name: Configure Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn config set -H enableImmutableInstalls false
+
+      - name: Install dependencies and build core
+        run: |
+          yarn install
+          yarn build:tauri:plugin:api
+          yarn build:core
+          yarn build:extensions
+
+      - name: Download binaries (bun, uv, sqlite-vec)
+        run: yarn download:bin
+
+      - name: Assert sqlite-vec was bundled
+        # `scripts/download-bin.mjs` treats sqlite-vec as non-fatal (it
+        # logs and continues if the GitHub release lookup or download
+        # fails). Once it's listed in `tauri.linux.conf.json :: resources`
+        # though, `tauri build` fails with an opaque path-not-found if
+        # the file is missing — so fail fast here with a clear message
+        # instead of letting the bundler surface a confusing error 200
+        # lines deeper.
+        run: |
+          if [ ! -f src-tauri/resources/bin/sqlite-vec.so ]; then
+            echo "::error::sqlite-vec.so not found after yarn download:bin."
+            echo "          Vector DB ANN acceleration would be missing from the AppImage."
+            echo "          Check the previous step's logs for the sqlite-vec download failure."
+            exit 1
+          fi
+          echo "sqlite-vec.so present: $(ls -l src-tauri/resources/bin/sqlite-vec.so)"
+
+      - name: Download upstream llamacpp backend (ggml-org/llama.cpp, linux-cpu-x64)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Per 2026-05-28 ADR: Linux installer ships the CPU-only build.
+        # Vulkan GPU backend is fetched at runtime by the user via
+        # "Find optimal backend" when `tauri-plugin-hardware` reports a
+        # working Vulkan loader.
+        run: make download-llamacpp-upstream-backend
+
+      - name: Download TurboQuant llamacpp backend (linux-x64-vulkan)
+        # TurboQuant ships on Linux as the SECOND provider alongside
+        # llamacpp-upstream. The single linux-x64-vulkan build serves both CPU
+        # and GPU via GGML_BACKEND_DL, so it is the offline-fallback bundle.
+        # The make target resolves the backend index from the static turboquant
+        # manifest in atomic-chat-conf (raw.githubusercontent.com — no
+        # api.github.com rate limit); the archive comes from the AtomicBot-ai
+        # releases CDN.
+        run: make download-llamacpp-backend
+
+      - name: Build web app and generate icons
+        env:
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          # ATO-113: Sentry frontend DSN + source-map upload (see macOS job).
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_ENVIRONMENT: production
+          SENTRY_RELEASE: ${{ github.sha }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT_FRONTEND: ${{ secrets.SENTRY_PROJECT_FRONTEND }}
+          # ATO-113: source-map build needs more heap than Node's ~2GB default.
+          NODE_OPTIONS: "--max-old-space-size=8192"
+        run: |
+          yarn build:web
+          yarn build:icon
+
+      - name: Copy assets to Tauri
+        run: yarn copy:assets:tauri
+
+      - name: Build CLI (Linux)
+        run: |
+          mkdir -p src-tauri/resources/bin
+          cd src-tauri && cargo build --release --features cli --bin jan-cli
+          cp target/release/jan-cli resources/bin/jan-cli
+          chmod +x resources/bin/jan-cli
+
+      # The agent's pty/process contract is Unix-only (see contract_tests.rs):
+      # ConPTY never EOFs the output pipe on child exit, so those cases cannot
+      # run in the Windows gate. This is where they actually execute. Runs after
+      # Build CLI for the same reason as on Windows — the tauri build script
+      # wants resources/bin/jan-cli to exist.
+      - name: Gate Agent checks (Linux)
+        timeout-minutes: 20
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib --features test-tauri core::agent::
+
+      - name: Build app (AppImage)
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4196"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          # ATO-113: bake the Rust desktop DSN (option_env!) + matching release.
+          SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
+          # `tauri build` re-runs `beforeBuildCommand` (`yarn build:web`), which
+          # rebuilds the bundle produced by the earlier web step. Without the
+          # frontend DSN here that rebuild silently overwrites it with a build
+          # where `initSentryFrontend()` bails on an empty DSN — which is why
+          # the frontend project saw no production events at all.
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_ENVIRONMENT: production
+          SENTRY_RELEASE: ${{ github.sha }}
+          # NO_STRIP=1 keeps `linuxdeploy` from stripping symbols that
+          # the bundled `bun` runtime needs; see the existing
+          # `build:tauri:linux` script in package.json.
+          NO_STRIP: "1"
+        run: yarn build:tauri:linux
+
+      - name: Upload Rust debug files to Sentry (Linux)
+        continue-on-error: true
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT_DESKTOP: ${{ secrets.SENTRY_PROJECT_DESKTOP }}
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ] || [ -z "$SENTRY_ORG" ] || [ -z "$SENTRY_PROJECT_DESKTOP" ]; then
+            echo "Sentry secrets absent — skipping debug-file upload."
+            exit 0
+          fi
+          # split-debuginfo=packed emits a .dwp; ELF binaries also carry a
+          # build-id sentry-cli matches on. Upload before the AppImage repack
+          # strips nothing extra (NO_STRIP=1), so symbols remain resolvable.
+          npx @sentry/cli@^2 debug-files upload \
+            --org "$SENTRY_ORG" --project "$SENTRY_PROJECT_DESKTOP" \
+            src-tauri/target/release
+
+      - name: Recreate updater signature after AppImage repackage
+        # `buildAppImage.sh` deletes the AppImage that `tauri build`
+        # produced and repacks a new one with bun bundled in. The
+        # original `.AppImage.sig` was signed against the deleted
+        # AppImage, so we must re-sign the post-repackage file or the
+        # Tauri updater will reject it as invalid. Symmetric to the
+        # Windows job's "Recreate updater signature after code signing"
+        # step.
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          for app in src-tauri/target/release/bundle/appimage/*.AppImage; do
+            [ -f "$app" ] || continue
+            sigfile="${app}.sig"
+            if [ -f "$sigfile" ]; then
+              rm "$sigfile"
+              echo "Removed stale .sig: $sigfile"
+            fi
+            echo "Recreating updater signature for: $(basename "$app")"
+            yarn tauri signer sign \
+              --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
+              --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
+              "$app"
+            echo "Created new .sig for: $(basename "$app")"
+          done
+
+      - name: Collect artifact metadata
+        id: metadata
+        run: |
+          cd src-tauri/target/release/bundle/appimage
+          echo "=== bundle/appimage/ contents ==="
+          ls -la
+          APPIMAGE_NAME=$(ls *.AppImage | head -1)
+          if [ -z "$APPIMAGE_NAME" ]; then
+            echo "ERROR: no .AppImage produced"
+            exit 1
+          fi
+          LINUX_SIG=""
+          if [ -f "${APPIMAGE_NAME}.sig" ]; then
+            LINUX_SIG=$(cat "${APPIMAGE_NAME}.sig")
+          else
+            echo "Warning: no ${APPIMAGE_NAME}.sig (Tauri updater signature missing)"
+          fi
+          echo "appimage_name=${APPIMAGE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "linux_sig=${LINUX_SIG}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload .AppImage to release
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./src-tauri/target/release/bundle/appimage/${{ steps.metadata.outputs.appimage_name }}
+          asset_name: ${{ steps.metadata.outputs.appimage_name }}
+          asset_content_type: application/octet-stream
+
+      - name: Upload .AppImage updater signature to release
+        if: steps.metadata.outputs.linux_sig != ''
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./src-tauri/target/release/bundle/appimage/${{ steps.metadata.outputs.appimage_name }}.sig
+          asset_name: ${{ steps.metadata.outputs.appimage_name }}.sig
+          asset_content_type: text/plain
+
+  # ──────────────────────────────────────────────────────────────
+  # Tauri updater manifest  (macOS + Windows + Linux; tolerant of any being skipped)
+  # ──────────────────────────────────────────────────────────────
+  publish-latest-json:
+    if: |
+      always() && needs.create-draft-release.result == 'success' &&
+      (needs.build-macos.result == 'success' || needs.build-windows.result == 'success' || needs.build-linux-x64.result == 'success')
+    runs-on: ubuntu-latest
+    needs: [create-draft-release, build-macos, build-windows, build-linux-x64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate latest.json for Tauri updater
+        env:
+          VERSION: ${{ needs.create-draft-release.outputs.version }}
+          MAC_SIG: ${{ needs.build-macos.outputs.mac_sig }}
+          TAR_NAME: ${{ needs.build-macos.outputs.tar_name }}
+          MAC_RESULT: ${{ needs.build-macos.result }}
+          WIN_SIG: ${{ needs.build-windows.outputs.win_sig }}
+          EXE_NAME: ${{ needs.build-windows.outputs.exe_name }}
+          WIN_RESULT: ${{ needs.build-windows.result }}
+          LINUX_SIG: ${{ needs.build-linux-x64.outputs.linux_sig }}
+          APPIMAGE_NAME: ${{ needs.build-linux-x64.outputs.appimage_name }}
+          LINUX_RESULT: ${{ needs.build-linux-x64.result }}
+        run: |
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+          DARWIN_URL="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v${VERSION}/${TAR_NAME// /.}"
+          WIN_URL="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v${VERSION}/${EXE_NAME// /.}"
+          LINUX_URL="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v${VERSION}/${APPIMAGE_NAME// /.}"
+
+          # Fill in the platform blocks only for jobs that actually
+          # succeeded; delete the others so Tauri's updater doesn't see a
+          # half-populated entry and try to fetch an empty URL.
+          jq --arg version "$VERSION" \
+             --arg pub_date "$PUB_DATE" \
+             --arg darwin_sig "$MAC_SIG" \
+             --arg darwin_url "$DARWIN_URL" \
+             --arg win_sig "$WIN_SIG" \
+             --arg win_url "$WIN_URL" \
+             --arg linux_sig "$LINUX_SIG" \
+             --arg linux_url "$LINUX_URL" \
+             --arg mac_result "$MAC_RESULT" \
+             --arg win_result "$WIN_RESULT" \
+             --arg linux_result "$LINUX_RESULT" \
+             '.version = $version
+              | .pub_date = $pub_date
+              | (if $mac_result == "success" then
+                  .platforms["darwin-aarch64"].signature = $darwin_sig
+                  | .platforms["darwin-aarch64"].url = $darwin_url
+                  | .platforms["darwin-x86_64"].signature = $darwin_sig
+                  | .platforms["darwin-x86_64"].url = $darwin_url
+                else
+                  del(.platforms["darwin-aarch64"])
+                  | del(.platforms["darwin-x86_64"])
+                end)
+              | (if $win_result == "success" then
+                  .platforms["windows-x86_64"].signature = $win_sig
+                  | .platforms["windows-x86_64"].url = $win_url
+                else
+                  del(.platforms["windows-x86_64"])
+                end)
+              | (if $linux_result == "success" then
+                  .platforms["linux-x86_64"].signature = $linux_sig
+                  | .platforms["linux-x86_64"].url = $linux_url
+                else
+                  del(.platforms["linux-x86_64"])
+                end)' \
+             src-tauri/latest.json.template > latest.json
+
+          cat latest.json
+
+      - name: Upload latest.json to release
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./latest.json
+          asset_name: latest.json
+          asset_content_type: application/json

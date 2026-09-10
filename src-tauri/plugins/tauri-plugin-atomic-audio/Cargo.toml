@@ -1,0 +1,47 @@
+[package]
+name = "tauri-plugin-atomic-audio"
+version = "0.6.599"
+authors = ["Atomic Chat <service@atomic.chat>"]
+description = "Tauri plugin for microphone capture and on-device speech transcription"
+license = "MIT"
+repository = "https://github.com/AtomicBot-ai/Atomic-Chat"
+edition = "2021"
+rust-version = "1.77.2"
+exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules"]
+links = "tauri-plugin-atomic-audio"
+
+[dependencies]
+log = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tauri = { version = "2.5.0", default-features = false, features = [] }
+thiserror = "2.0.12"
+tokio = { version = "1", features = ["full"] }
+
+# Desktop-only. `cpal` is the one genuinely new dependency this plugin adds.
+# On macOS it resolves to the pure-Rust `objc2-core-audio` bindings (as of
+# `coreaudio-rs` 0.14.2 there is no `coreaudio-sys`/bindgen in the tree), on
+# Windows to the `windows` crate, and on Linux to `alsa-sys`, which needs
+# `libasound2-dev` + `pkg-config` at build time.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+cpal = "0.18"
+reqwest = { version = "0.11", default-features = false, features = [
+    "json",
+    "native-tls",
+] }
+
+[build-dependencies]
+tauri-plugin = { version = "2.3.1", features = ["build"] }
+
+# macOS microphone permission is queried through AVFoundation. CoreAudio hands
+# back *silence* rather than an error when access is denied, so a probe-by-
+# recording cannot tell "denied" from "quiet room" — the real API is the only
+# way to know. All three crates are already in the workspace lockfile via
+# tauri/wry, so this adds no new downloads.
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString"] }
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"

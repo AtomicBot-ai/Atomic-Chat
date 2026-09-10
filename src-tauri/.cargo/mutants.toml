@@ -1,0 +1,8 @@
+timeout_multiplier = 3.0
+
+exclude_globs = [
+  "src/main.rs",
+  "src/bin/**",
+  "build.rs",
+  "plugins/**/build.rs",
+]
