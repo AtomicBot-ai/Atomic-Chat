@@ -7,6 +7,7 @@ import {
   formatMemoryBudget,
   hasLikeData,
   HUB_FILTERS_STORAGE_KEY,
+  huggingFaceQueries,
   modelDownloadSizeText,
   modelFitsBudget,
   normalizeHubFilters,
@@ -85,6 +86,7 @@ describe('normalizeHubFilters', () => {
       formats: ['mlx'],
       sort: 'downloads',
       onlyFitting: false,
+      uncensored: true,
     }
     expect(normalizeHubFilters(state)).toEqual(state)
   })
@@ -100,6 +102,7 @@ describe('hub filter persistence', () => {
       formats: ['mlx'],
       sort: 'last-modified',
       onlyFitting: false,
+      uncensored: true,
     }
     writeHubFilters(state)
     expect(readHubFilters()).toEqual(state)
@@ -123,6 +126,7 @@ describe('hub filter persistence', () => {
       formats: ['mlx'],
       sort: DEFAULT_HUB_FILTERS.sort,
       onlyFitting: DEFAULT_HUB_FILTERS.onlyFitting,
+      uncensored: DEFAULT_HUB_FILTERS.uncensored,
     })
   })
 
@@ -359,7 +363,7 @@ describe('applyHubFilters', () => {
   it('applies format filter, fit filter and sort together', () => {
     const result = applyHubFilters(
       models,
-      { formats: ['gguf'], sort: 'downloads', onlyFitting: true },
+      { formats: ['gguf'], sort: 'downloads', onlyFitting: true, uncensored: false },
       { budgetBytes: 20 * GB }
     )
     expect(result.map((m) => m.model_name)).toEqual(['a/small'])
@@ -368,7 +372,7 @@ describe('applyHubFilters', () => {
   it('skips the fit filter when the caller opts out', () => {
     const result = applyHubFilters(
       models,
-      { formats: ['gguf'], sort: 'downloads', onlyFitting: true },
+      { formats: ['gguf'], sort: 'downloads', onlyFitting: true, uncensored: false },
       { budgetBytes: 20 * GB, applyFitFilter: false }
     )
     expect(result.map((m) => m.model_name)).toEqual(['a/huge', 'a/small'])
@@ -379,6 +383,7 @@ describe('applyHubFilters', () => {
       formats: ['gguf', 'mlx'],
       sort: 'recommended',
       onlyFitting: true,
+      uncensored: false,
     })
     expect(result).toHaveLength(3)
   })
@@ -386,10 +391,59 @@ describe('applyHubFilters', () => {
   it('skips the fit filter when the user turned it off', () => {
     const result = applyHubFilters(
       models,
-      { formats: ['gguf'], sort: 'recommended', onlyFitting: false },
+      {
+        formats: ['gguf'],
+        sort: 'recommended',
+        onlyFitting: false,
+        uncensored: false,
+      },
       { budgetBytes: 20 * GB }
     )
     expect(result.map((m) => m.model_name)).toEqual(['a/small', 'a/huge'])
+  })
+
+  it('narrows to uncensored builds by repo name', () => {
+    const result = applyHubFilters(
+      [
+        gguf('a/plain-GGUF', '4 GB'),
+        gguf('a/Qwen3-8B-Uncensored-GGUF', '4 GB'),
+        gguf('a/gemma-4-12b-it-abliterated-GGUF', '4 GB'),
+      ],
+      {
+        formats: ['gguf'],
+        sort: 'recommended',
+        onlyFitting: false,
+        uncensored: true,
+      }
+    )
+    expect(result.map((m) => m.model_name)).toEqual([
+      'a/Qwen3-8B-Uncensored-GGUF',
+      'a/gemma-4-12b-it-abliterated-GGUF',
+    ])
+  })
+})
+
+describe('huggingFaceQueries', () => {
+  it('sends the query as typed when the uncensored filter is off', () => {
+    expect(huggingFaceQueries('  qwen ', false)).toEqual(['qwen'])
+    expect(huggingFaceQueries('', false)).toEqual([])
+  })
+
+  it('appends each uncensored term out of sight, one query per term', () => {
+    expect(huggingFaceQueries('qwen', true)).toEqual([
+      'qwen uncensored',
+      'qwen abliterated',
+    ])
+  })
+
+  it('still searches with an empty box', () => {
+    expect(huggingFaceQueries('', true)).toEqual(['uncensored', 'abliterated'])
+  })
+
+  it('does not stack a term the user already typed', () => {
+    expect(huggingFaceQueries('qwen Abliterated', true)).toEqual([
+      'qwen Abliterated',
+    ])
   })
 })
 

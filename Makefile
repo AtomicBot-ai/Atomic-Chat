@@ -111,8 +111,9 @@ FORCE_HARDWARE_TIER ?= vram_2
 # ступени лестницы на любом компьютере.
 #
 # Значение — любой id из `HardwareTier` (`web-app/src/lib/hardware-tier.ts`):
-# cpu_only, vram_2, vram_4, vram_8, vram_12, vram_16, vram_16_plus,
-# unified_8, unified_16, unified_32, unified_32_plus. Прежние `low` и
+# cpu_only, vram_2, vram_4, vram_8, vram_12, vram_16, vram_24, vram_32,
+# vram_48, vram_64, vram_64_plus, unified_8, unified_16, unified_24,
+# unified_32, unified_48, unified_64, unified_64_plus. Прежние `low` и
 # `standard` тоже принимаются и мапятся на ближайшую ступень.
 #
 # Манифест берём из локального чекаута conf, если он есть: ключа `tiers` в

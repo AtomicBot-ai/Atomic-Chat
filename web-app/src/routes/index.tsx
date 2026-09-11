@@ -12,7 +12,6 @@ import { route } from '@/constants/routes'
 import { isOnboardingPending } from '@/lib/onboarding'
 import { useCallback, useEffect, useState } from 'react'
 import { useThreads } from '@/hooks/useThreads'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { AgentWorkspaceLayout } from '@/containers/AgentWorkspaceLayout'
@@ -99,11 +98,9 @@ function Index() {
       filesEnabled={(agentWorkspace?.externalRoots.length ?? 0) > 0}
     >
       <div className="flex h-full w-full min-w-0 flex-col justify-center">
-        <HeaderPage>
-          <div className="flex items-center gap-2 w-full pr-2">
-            <DropdownModelProvider />
-          </div>
-        </HeaderPage>
+        {/* The model is picked from the composer; the header only frames
+            the page. */}
+        <HeaderPage />
         <div
           className={cn(
             'h-full overflow-y-auto inline-flex flex-col gap-2 justify-center px-3'

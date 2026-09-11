@@ -67,7 +67,7 @@ describe('describeHardware', () => {
       })
 
       expect(profile).toMatchObject({
-        tier: 'unified_32_plus',
+        tier: 'unified_64_plus',
         memoryKind: 'unified',
         budgetMib: 128 * GIB,
         hardCeiling: true,
@@ -77,10 +77,14 @@ describe('describeHardware', () => {
     it('walks the unified buckets', () => {
       expect(mac(8)).toBe('unified_8')
       expect(mac(16)).toBe('unified_16')
-      expect(mac(18)).toBe('unified_32')
+      expect(mac(18)).toBe('unified_24')
+      expect(mac(24)).toBe('unified_24')
       expect(mac(32)).toBe('unified_32')
-      expect(mac(36)).toBe('unified_32_plus')
-      expect(mac(128)).toBe('unified_32_plus')
+      expect(mac(36)).toBe('unified_48')
+      expect(mac(48)).toBe('unified_48')
+      expect(mac(64)).toBe('unified_64')
+      expect(mac(96)).toBe('unified_64_plus')
+      expect(mac(128)).toBe('unified_64_plus')
     })
 
     it('keeps a machine that under-reports its badge in the bucket its owner would name', () => {
@@ -111,7 +115,12 @@ describe('describeHardware', () => {
       expect(pc(8)).toBe('vram_8')
       expect(pc(12)).toBe('vram_12')
       expect(pc(16)).toBe('vram_16')
-      expect(pc(24)).toBe('vram_16_plus')
+      expect(pc(20)).toBe('vram_24')
+      expect(pc(24)).toBe('vram_24')
+      expect(pc(32)).toBe('vram_32')
+      expect(pc(48)).toBe('vram_48')
+      expect(pc(64)).toBe('vram_64')
+      expect(pc(80)).toBe('vram_64_plus')
     })
 
     it('splits the weak cards at 2.5 GiB rather than lumping them under 4', () => {
@@ -140,7 +149,7 @@ describe('describeHardware', () => {
           total_memory: 64 * GIB,
           gpus: [{ total_memory: 6 * GIB }, { total_memory: 24 * GIB }],
         })
-      ).toBe('vram_16_plus')
+      ).toBe('vram_24')
     })
 
     it('leaves the ceiling soft off macOS, because llama.cpp spills into RAM', () => {
@@ -283,7 +292,8 @@ describe('memoryCeilingBytes', () => {
 
 describe('stepDownTier', () => {
   it('walks a card down through the VRAM buckets to cpu_only', () => {
-    expect(stepDownTier('vram_16_plus')).toBe('vram_16')
+    expect(stepDownTier('vram_64_plus')).toBe('vram_64')
+    expect(stepDownTier('vram_24')).toBe('vram_16')
     expect(stepDownTier('vram_4')).toBe('vram_2')
     expect(stepDownTier('vram_2')).toBe('cpu_only')
     expect(stepDownTier('cpu_only')).toBeNull()
@@ -292,7 +302,8 @@ describe('stepDownTier', () => {
   it('keeps a Mac inside the unified pool and stops at 8 GiB', () => {
     // There is no lighter pool to fall into, and the 8 GiB rung already
     // offers the smallest model on the ladder.
-    expect(stepDownTier('unified_32_plus')).toBe('unified_32')
+    expect(stepDownTier('unified_64_plus')).toBe('unified_64')
+    expect(stepDownTier('unified_24')).toBe('unified_16')
     expect(stepDownTier('unified_16')).toBe('unified_8')
     expect(stepDownTier('unified_8')).toBeNull()
   })

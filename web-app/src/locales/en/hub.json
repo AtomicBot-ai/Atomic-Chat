@@ -44,6 +44,8 @@
   "sortLastModified": "Last modified",
   "onlyFitting": "Only include recommended models that fit on this device",
   "fitFilterLabel": "Only show models that fit",
+  "uncensored": "Uncensored",
+  "uncensoredHint": "Only models with refusals removed (uncensored or abliterated builds)",
   "basedOnDevice": "Based on {{device}}: {{memory}}",
   "noFittingPicks": "No recommended models fit this device. Turn off the device filter to see them all.",
   "downloadOptions": "Download Options",
@@ -56,5 +58,8 @@
   "context": "Context",
   "capabilities": "Capabilities",
   "readme": "README",
-  "readmeUnavailable": "README is not available for this model."
+  "readmeUnavailable": "README is not available for this model.",
+  "tooLargeTitle": "This model may not run on this device",
+  "tooLargeDescription": "It needs more memory than this device has, so it may fail to load or run slowly.",
+  "downloadAnyway": "Download anyway"
 }

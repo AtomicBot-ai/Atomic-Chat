@@ -23,8 +23,8 @@ import type { ReplyGateBranch, ReplyResolution } from '@/lib/reply-model-gate'
 /**
  * How the user got out of the widget.
  *
- *  - `auto_start` — the single-model branch started one without asking.
- *  - `picked` — chose one of several already on the device.
+ *  - `auto_start` — the widget found something to answer with and started it
+ *    without asking.
  *  - `download` — started downloading the recommendation.
  *  - `folder` — pointed the scanner at a folder of their own, and a model
  *    found there was imported and started.
@@ -34,7 +34,6 @@ import type { ReplyGateBranch, ReplyResolution } from '@/lib/reply-model-gate'
  */
 export type ReplyGateOutcome =
   | 'auto_start'
-  | 'picked'
   | 'download'
   | 'folder'
   | 'cloud_key'

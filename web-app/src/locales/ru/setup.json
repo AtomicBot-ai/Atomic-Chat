@@ -13,8 +13,7 @@
   "localModel": "Настроить локальную модель",
   "remoteProvider": "Настроить удалённого поставщика",
   "turboQuantTagline": "Локальные ИИ-модели на вашем устройстве — высокая скорость на обычном железе.",
-  "welcomeTitle": "Привет, добро пожаловать в Atomic Chat!",
-  "welcomeSubtitle": "Для начала работы нужна модель. Давайте её настроим.",
+  "welcomeTitle": "Добро пожаловать в Atomic Chat!",
   "skip": "Пропустить",
   "modelUnavailable": "Пока нет в каталоге — откройте Hub после подключения.",
   "localStep": {
@@ -39,7 +38,7 @@
     "modelCountOne": "1 модель",
     "modelCountOther": "Моделей: {{count}}",
     "keyOnly": "Подключение по API-ключу",
-    "subscriptionOnly": "Вход в аккаунт — без API-ключа",
+    "subscriptionOnly": "Подписка — вход в аккаунт, без API-ключа",
     "subscriptionDescription": "Войдите в аккаунт ChatGPT вместо ввода API-ключа.",
     "subscriptionConnect": "Войти в браузере",
     "subscriptionWaiting": "Завершите вход в ChatGPT в браузере и вернитесь сюда.",
@@ -55,10 +54,11 @@
     "saveKey": "Сохранить ключ",
     "saveFailed": "Не удалось сохранить API-ключ",
     "saved": "{{provider}} подключён",
-    "subscriptionTrigger": "Подключить ChatGPT"
+    "subscriptionTrigger": "Подключить подписку ChatGPT"
   },
   "recommend": {
-    "title": "Рекомендуем для вашего компьютера",
+    "title": "Рекомендуемые модели",
+    "badge": "Лучший вариант для вашего устройства",
     "whyComfortable": "{{size}} — помещается в {{budget}} {{pool}} с запасом на длинный контекст.",
     "whyTight": "{{size}} — помещается в {{budget}} {{pool}}, но на длинные диалоги места останется мало.",
     "whySpills": "{{size}} — больше, чем {{budget}} {{pool}}: запустится, но медленнее.",

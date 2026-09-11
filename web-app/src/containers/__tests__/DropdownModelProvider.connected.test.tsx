@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import DropdownModelProvider from '../DropdownModelProvider'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -100,7 +100,7 @@ const renderWith = (providers: Record<string, unknown>[]) => {
     getModelBy: vi.fn(),
     updateProvider: vi.fn(),
   })
-  render(<DropdownModelProvider />)
+  renderPicker()
 }
 
 const providerHeaders = () =>
@@ -109,6 +109,18 @@ const providerHeaders = () =>
       .getByTestId('popover-content')
       .querySelectorAll('[data-testid^="provider-avatar-"]')
   ).map((el) => el.getAttribute('data-testid')?.replace('provider-avatar-', ''))
+
+/**
+ * Renders the picker and steps from the model row into the list. The panel
+ * opens on the row whenever a model is selected — the list is one click in —
+ * and the list is what these tests are about.
+ */
+const renderPicker = () => {
+  const result = render(<DropdownModelProvider />)
+  const row = screen.queryByRole('button', { name: 'common:changeModel' })
+  if (row) fireEvent.click(row)
+  return result
+}
 
 describe('DropdownModelProvider - connected providers only', () => {
   beforeEach(() => {
@@ -224,7 +236,7 @@ describe('DropdownModelProvider - connected providers only', () => {
         getModelBy: vi.fn(),
         updateProvider: vi.fn(),
       })
-      render(<DropdownModelProvider />)
+      renderPicker()
       return selectModelProvider
     }
 

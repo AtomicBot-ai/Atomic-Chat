@@ -5,6 +5,7 @@ import {
   planOomRetry,
   shouldAttemptAutoStart,
   splitModelLoadError,
+  stopAllLocalModelsByUser,
   switchToModel,
 } from './switchModel'
 
@@ -13,8 +14,13 @@ const { appState, localApiState, modelProviderState, startServer, stopServer } =
     appState: {
       serverStatus: 'running' as 'running' | 'stopped' | 'pending',
       activeModels: [] as string[],
+      userStoppedModels: [] as string[],
       setServerStatus: vi.fn(),
       setActiveModels: vi.fn(),
+      // Mirrors the store: the stop record is what the auto-start gate reads.
+      setUserStoppedModels: vi.fn((keys: string[]) => {
+        appState.userStoppedModels = keys
+      }),
       updateLoadingModel: vi.fn(),
     },
     localApiState: {
@@ -66,6 +72,8 @@ vi.mock('sonner', () => ({
 }))
 
 vi.mock('@/hooks/useAppState', () => ({
+  modelStopKey: (providerName: string, modelId: string) =>
+    `${providerName}::${modelId}`,
   useAppState: {
     getState: () => appState,
   },
@@ -236,6 +244,77 @@ describe('switchToModel', () => {
 
     expect(models.stopAllModels).toHaveBeenCalledOnce()
     expect(models.stopAllModelsExcept).not.toHaveBeenCalled()
+  })
+
+  it('leaves a model the user stopped down until it is asked for again', async () => {
+    appState.userStoppedModels = []
+    const models = {
+      getActiveModels: vi.fn(async (provider?: string) =>
+        provider === 'llamacpp-upstream' ? ['shared-model'] : []
+      ),
+      stopAllModels: vi.fn().mockResolvedValue(undefined),
+    }
+    const serviceHub = { models: () => models } as unknown as ServiceHub
+
+    await stopAllLocalModelsByUser(serviceHub)
+
+    expect(models.stopAllModels).toHaveBeenCalled()
+    // Opening a chat must not load it straight back.
+    expect(shouldAttemptAutoStart('llamacpp-upstream', 'shared-model')).toBe(
+      false
+    )
+    // Only what was running is held down.
+    expect(shouldAttemptAutoStart('llamacpp-upstream', 'other-model')).toBe(
+      true
+    )
+    appState.userStoppedModels = []
+  })
+
+  it('records the stop before unloading, so an auto-start racing it stays out', async () => {
+    appState.userStoppedModels = []
+    let autoStartAllowedDuringUnload: boolean | undefined
+    const models = {
+      getActiveModels: vi.fn(async (provider?: string) =>
+        provider === 'mlx' ? ['ready-model'] : []
+      ),
+      stopAllModels: vi.fn(async () => {
+        autoStartAllowedDuringUnload = shouldAttemptAutoStart(
+          'mlx',
+          'ready-model'
+        )
+      }),
+    }
+    const serviceHub = { models: () => models } as unknown as ServiceHub
+
+    await stopAllLocalModelsByUser(serviceHub)
+
+    expect(autoStartAllowedDuringUnload).toBe(false)
+    appState.userStoppedModels = []
+  })
+
+  it('lifts a hand stop when the user picks the model again', async () => {
+    appState.userStoppedModels = ['mlx::ready-model']
+    const models = {
+      getActiveModels: vi.fn().mockResolvedValue(['ready-model']),
+      stopAllModels: vi.fn().mockResolvedValue(undefined),
+      stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
+      startModel: vi.fn().mockResolvedValue(undefined),
+    }
+    const serviceHub = {
+      app: () => ({
+        getServerStatus: vi.fn().mockResolvedValue(false),
+      }),
+      models: () => models,
+    } as unknown as ServiceHub
+
+    await switchToModel({
+      modelId: 'ready-model',
+      providerName: 'mlx',
+      serviceHub,
+    })
+
+    expect(appState.userStoppedModels).toEqual([])
+    expect(shouldAttemptAutoStart('mlx', 'ready-model')).toBe(true)
   })
 
   it('blocks the auto-start path while an explicit switch for the same target is in flight', async () => {

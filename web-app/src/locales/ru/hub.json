@@ -37,6 +37,8 @@
   "sortLastModified": "Дата обновления",
   "onlyFitting": "Только рекомендованные модели, подходящие этому устройству",
   "fitFilterLabel": "Показывать только подходящие модели",
+  "uncensored": "Без цензуры",
+  "uncensoredHint": "Только модели со снятыми отказами (сборки uncensored и abliterated)",
   "basedOnDevice": "На основе {{device}}: {{memory}}",
   "noFittingPicks": "Ни одна рекомендованная модель не подходит этому устройству. Отключите фильтр, чтобы увидеть все.",
   "downloadOptions": "Варианты загрузки",
@@ -49,5 +51,8 @@
   "context": "Контекст",
   "capabilities": "Возможности",
   "readme": "README",
-  "readmeUnavailable": "README недоступен для этой модели."
+  "readmeUnavailable": "README недоступен для этой модели.",
+  "tooLargeTitle": "Модель может не запуститься на этом устройстве",
+  "tooLargeDescription": "Ей нужно больше памяти, чем есть на этом устройстве, поэтому она может не загрузиться или работать медленно.",
+  "downloadAnyway": "Всё равно скачать"
 }

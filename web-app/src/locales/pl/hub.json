@@ -45,5 +45,8 @@
   "context": "Kontekst",
   "capabilities": "Możliwości",
   "readme": "README",
-  "readmeUnavailable": "Dla tego modelu nie ma pliku README."
+  "readmeUnavailable": "Dla tego modelu nie ma pliku README.",
+  "tooLargeTitle": "Ten model może nie działać na tym urządzeniu",
+  "tooLargeDescription": "Wymaga więcej pamięci, niż ma to urządzenie, więc może się nie wczytać lub działać wolno.",
+  "downloadAnyway": "Pobierz mimo to"
 }

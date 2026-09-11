@@ -45,5 +45,8 @@
   "context": "Konteks",
   "capabilities": "Kemampuan",
   "readme": "README",
-  "readmeUnavailable": "README tidak tersedia untuk model ini."
+  "readmeUnavailable": "README tidak tersedia untuk model ini.",
+  "tooLargeTitle": "Model ini mungkin tidak berjalan di perangkat ini",
+  "tooLargeDescription": "Model ini membutuhkan lebih banyak memori daripada yang dimiliki perangkat ini, sehingga mungkin gagal dimuat atau berjalan lambat.",
+  "downloadAnyway": "Tetap unduh"
 }

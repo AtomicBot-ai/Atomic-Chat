@@ -129,3 +129,19 @@ describe('isMonochromeFamilyLogo', () => {
     expect(isMonochromeFamilyLogo('/svg/ai2-color.svg')).toBe(false)
   })
 })
+
+describe('bundled Google mark', () => {
+  it('ships the 2025 gradient "G", not the flat four-colour one', async () => {
+    // Google redrew the "G" in May 2025: the four flat segments became one
+    // continuous gradient. The resolver keeps the old path so nothing else
+    // changes; the file behind it is what has to be current.
+    const { readFileSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    const svg = readFileSync(
+      resolve(__dirname, '../../../public/svg/google-color.svg'),
+      'utf8'
+    )
+    expect(svg).toContain('<linearGradient')
+    expect(svg).not.toMatch(/#EA4335|#4285F4|#FBBC05|#34A853/i)
+  })
+})

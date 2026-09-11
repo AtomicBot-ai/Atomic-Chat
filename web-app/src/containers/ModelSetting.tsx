@@ -16,38 +16,16 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { cn, getModelDisplayName } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import {
+  LEGACY_SAMPLING_KEYS,
+  RESTART_REQUIRED_SETTINGS,
+} from '@/lib/model-settings-defaults'
 import { restartLocalModel } from '@/utils/restartLocalModel'
 
 type ModelSettingProps = {
   provider: ProviderObject
   model: Model
 }
-
-// Sampling parameters are edited globally in the chat's Run settings panel;
-// their legacy load-time twins under `model.settings.*` are hidden here to
-// avoid two competing sources of truth. Data on disk is preserved.
-const LEGACY_SAMPLING_KEYS = new Set<string>([
-  'temperature',
-  'top_p',
-  'top_k',
-  'min_p',
-  'repeat_penalty',
-  'repeat_last_n',
-  'presence_penalty',
-  'frequency_penalty',
-])
-
-const RESTART_REQUIRED_SETTINGS = new Set([
-  'ctx_len',
-  'ngl',
-  'chat_template',
-  'offload_mmproj',
-  'batch_size',
-  'cpu_moe',
-  'n_cpu_moe',
-  'override_tensor_buffer_t',
-  'no_kv_offload',
-])
 
 type ModelSettingsListProps = ModelSettingProps & {
   /** Settings already surfaced elsewhere by the host (e.g. `ctx_len`). */

@@ -6,6 +6,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
 import { DeleteModelAction } from '@/containers/hub/DeleteModelAction'
+import { LargeModelWarningDialog } from '@/containers/hub/LargeModelWarningDialog'
 import { markDownloadCancellationRequested } from '@/lib/downloadCancellation'
 import {
   findInstalledLocalModel,
@@ -16,7 +17,7 @@ import { CatalogModel } from '@/services/models/types'
 import { switchToModel } from '@/utils/switchModel'
 import { IconDownload, IconX } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 export const ModelDownloadAction = ({
@@ -24,17 +25,22 @@ export const ModelDownloadAction = ({
   model,
   asButton = false,
   deletable = false,
+  warnTooLarge = false,
 }: {
   variant: { model_id: string; path: string }
   model: CatalogModel
-  // Render the idle state as a labelled outline "Download" button (Hub v12
+  // Render the idle state as a labelled primary "Download" button (Hub v12
   // variant rows) instead of the compact icon used elsewhere (SetupScreen).
   asButton?: boolean
   // Offer a trash button next to "New chat" once the variant is on disk. Opt-in
   // so the onboarding screens keep a single, unambiguous action.
   deletable?: boolean
+  // The hardware-fit estimate calls this variant too large for the device:
+  // Download asks first instead of starting (see LargeModelWarningDialog).
+  warnTooLarge?: boolean
 }) => {
   const serviceHub = useServiceHub()
+  const [warningOpen, setWarningOpen] = useState(false)
 
   const { t } = useTranslation()
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
@@ -180,6 +186,14 @@ export const ModelDownloadAction = ({
     t,
   ])
 
+  const requestDownload = useCallback(() => {
+    if (warnTooLarge) {
+      setWarningOpen(true)
+      return
+    }
+    void handleDownloadModel()
+  }, [warnTooLarge, handleDownloadModel])
+
   const handleCancelDownload = useCallback(() => {
     markResumableDownload(variant.model_id)
     markDownloadCancellationRequested(variant.model_id)
@@ -261,32 +275,48 @@ export const ModelDownloadAction = ({
     )
   }
 
+  const warningDialog = (
+    <LargeModelWarningDialog
+      open={warningOpen}
+      onOpenChange={setWarningOpen}
+      onConfirm={() => {
+        setWarningOpen(false)
+        void handleDownloadModel()
+      }}
+    />
+  )
+
   if (asButton) {
     return (
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={handleDownloadModel}
-        title={t('hub:downloadModel')}
-        className="font-semibold"
-      >
-        {t('hub:download')}
-      </Button>
+      <>
+        <Button
+          type="button"
+          variant="default"
+          size="sm"
+          onClick={requestDownload}
+          title={t('hub:downloadModel')}
+        >
+          {t('hub:download')}
+        </Button>
+        {warningDialog}
+      </>
     )
   }
 
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon-sm"
-      aria-label={t('hub:downloadModel')}
-      title={t('hub:downloadModel')}
-      onClick={handleDownloadModel}
-      className="size-6"
-    >
-      <IconDownload size={16} className="text-muted-foreground" />
-    </Button>
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        aria-label={t('hub:downloadModel')}
+        title={t('hub:downloadModel')}
+        onClick={requestDownload}
+        className="size-6"
+      >
+        <IconDownload size={16} className="text-muted-foreground" />
+      </Button>
+      {warningDialog}
+    </>
   )
 }

@@ -46,6 +46,12 @@ import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
 import { FavoriteModelAction } from '@/containers/FavoriteModelAction'
 import { route } from '@/constants/routes'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
+import { ResetEngineSettings } from '@/containers/dialogs/ResetEngineSettings'
+import {
+  customEngineSettingKeys,
+  hasEngineSettingDefaults,
+  withDefaultEngineSettings,
+} from '@/lib/engine-settings-defaults'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -78,7 +84,7 @@ import { isKnownProvider } from '@/stores/provider-registry-store'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { getModelCapabilities } from '@/lib/models'
 import { useModelLoad } from '@/hooks/useModelLoad'
-import { switchToModel } from '@/utils/switchModel'
+import { stopAllLocalModelsByUser, switchToModel } from '@/utils/switchModel'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 import {
   useBackendUpdater,
@@ -133,6 +139,7 @@ function ProviderDetail() {
     useShallow((state) => [state.activeModels, state.setActiveModels])
   )
   const [loadingModels, setLoadingModels] = useState<string[]>([])
+  const [stoppingModels, setStoppingModels] = useState<string[]>([])
   const [refreshingModels, setRefreshingModels] = useState(false)
   const [isInstallingBackend, setIsInstallingBackend] = useState(false)
   const [isRecheckingBackend, setIsRecheckingBackend] = useState(false)
@@ -337,6 +344,30 @@ function ProviderDetail() {
     },
     [debouncedRestartLlamacppModel]
   )
+
+  // "Reset settings" for a local engine (see `engine-settings-defaults`),
+  // written like any other change here: queued behind earlier writes, then a
+  // loaded model restarts to pick the values up.
+  const customEngineKeys = provider
+    ? customEngineSettingKeys(provider.provider, provider.settings)
+    : []
+  const handleResetEngineSettings = () => {
+    if (!provider || customEngineKeys.length === 0) return
+    const settings = withDefaultEngineSettings(
+      provider.provider,
+      provider.settings
+    )
+    updateProvider(provider.provider, { settings })
+    providerSettingsWriteRef.current = providerSettingsWriteRef.current
+      .catch((error) => {
+        console.error('Previous provider settings update failed:', error)
+      })
+      .then(() =>
+        serviceHub.providers().updateSettings(provider.provider, settings)
+      )
+    debouncedRestartLlamacppModel(provider.provider)
+    toast.success(t('providers:resetEngineSettings.success'))
+  }
 
   const hasDownloadedModels =
     (provider?.models.filter((m) => m.id !== EMBEDDING_MODEL_ID).length ?? 0) >
@@ -750,12 +781,17 @@ function ProviderDetail() {
     }
   }
 
-  const handleStopModel = async () => {
+  const handleStopModel = async (modelId: string) => {
     if (!provider) return
+    // The unload waits for the engine process to exit; without a pending
+    // state the button looked dead and a second click queued behind the first.
+    setStoppingModels((prev) => [...prev, modelId])
+    const isLocalEngine = isLocalProvider(provider.provider)
     try {
-      const isLocalEngine = isLocalProvider(provider.provider)
       if (isLocalEngine) {
-        await serviceHub.models().stopAllModels()
+        // Recorded as a user stop, so the composer's auto-start does not load
+        // the model straight back when a chat is opened.
+        await stopAllLocalModelsByUser(serviceHub)
       } else {
         // Cloud "stop": drop the proxy registration so incoming chat requests
         // for this provider's models stop being routed upstream. Local engines
@@ -764,12 +800,7 @@ function ProviderDetail() {
       }
       await window.core?.api?.stopServer()
       useAppState.getState().setServerStatus('stopped')
-      if (isLocalEngine) {
-        const models = await serviceHub
-          .models()
-          .getActiveModels(provider.provider)
-        syncActiveModelsFromEngines(models || [])
-      } else {
+      if (!isLocalEngine) {
         // Remove any of this cloud provider's models from the active list
         // while leaving other providers' active entries intact.
         const providerModelIds = new Set(provider.models.map((m) => m.id))
@@ -780,6 +811,21 @@ function ProviderDetail() {
       }
     } catch (error) {
       console.error('Error stopping model:', error)
+      toast.error(
+        t('providers:stopFailed', { defaultValue: 'Could not stop the model' }),
+        { description: error instanceof Error ? error.message : String(error) }
+      )
+    } finally {
+      // Re-read the engines whatever happened above: a failure halfway through
+      // used to leave the row on "Stop" for a model that was already gone.
+      if (isLocalEngine) {
+        const models = await serviceHub
+          .models()
+          .getActiveModels()
+          .catch(() => null)
+        if (models) syncActiveModelsFromEngines(models)
+      }
+      setStoppingModels((prev) => prev.filter((id) => id !== modelId))
     }
   }
 
@@ -1898,7 +1944,21 @@ function ProviderDetail() {
               )}
             >
               {/* Settings */}
-              <Card>
+              <Card
+                header={
+                  provider && hasEngineSettingDefaults(provider.provider) ? (
+                    <div className="flex items-center justify-between mb-4">
+                      <h1 className="text-foreground font-medium text-base">
+                        {t('providers:engineSettings')}
+                      </h1>
+                      <ResetEngineSettings
+                        disabled={customEngineKeys.length === 0}
+                        onReset={handleResetEngineSettings}
+                      />
+                    </div>
+                  ) : undefined
+                }
+              >
                 {provider?.settings.map((setting, settingIndex) => {
                   // Concurrent Mode acts as a master toggle over `parallel`,
                   // `cont_batching` and `expose_metrics`. When it's on, those
@@ -2766,15 +2826,31 @@ function ProviderDetail() {
                                     model.id
                                   )
 
+                                  const isStopping = stoppingModels.includes(
+                                    model.id
+                                  )
+
                                   if (isActive) {
                                     return (
                                       <div className="ml-2">
                                         <Button
                                           size="sm"
                                           variant="destructive"
-                                          onClick={() => handleStopModel()}
+                                          disabled={isStopping}
+                                          onClick={() =>
+                                            handleStopModel(model.id)
+                                          }
                                         >
-                                          {t('providers:stop')}
+                                          {isStopping ? (
+                                            <div className="flex items-center gap-2">
+                                              <IconLoader
+                                                size={16}
+                                                className="animate-spin"
+                                              />
+                                            </div>
+                                          ) : (
+                                            t('providers:stop')
+                                          )}
                                         </Button>
                                       </div>
                                     )

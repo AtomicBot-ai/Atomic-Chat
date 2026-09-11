@@ -14,7 +14,6 @@
   "remoteProvider": "リモートプロバイダーをセットアップ",
   "turboQuantTagline": "お使いのデバイス上のローカル AI モデル — 一般的な環境でも高速に動作します。",
   "welcomeTitle": "Atomic Chat へようこそ！",
-  "welcomeSubtitle": "Atomic Chat を開始するにはモデルが必要です。セットアップしましょう。",
   "skip": "スキップ",
   "modelUnavailable": "まだカタログにありません — 接続後に Hub を開いてください。",
   "localStep": {

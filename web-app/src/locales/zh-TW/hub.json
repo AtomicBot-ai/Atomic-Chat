@@ -45,5 +45,8 @@
   "context": "上下文",
   "capabilities": "能力",
   "readme": "README",
-  "readmeUnavailable": "此模型沒有可用的 README。"
+  "readmeUnavailable": "此模型沒有可用的 README。",
+  "tooLargeTitle": "此模型可能無法在此裝置上執行",
+  "tooLargeDescription": "它需要的記憶體超過此裝置的容量，可能無法載入或執行緩慢。",
+  "downloadAnyway": "仍要下載"
 }

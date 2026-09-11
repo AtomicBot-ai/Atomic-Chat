@@ -45,5 +45,8 @@
   "context": "Ngữ cảnh",
   "capabilities": "Khả năng",
   "readme": "README",
-  "readmeUnavailable": "Mô hình này không có README."
+  "readmeUnavailable": "Mô hình này không có README.",
+  "tooLargeTitle": "Mô hình này có thể không chạy được trên thiết bị này",
+  "tooLargeDescription": "Mô hình cần nhiều bộ nhớ hơn thiết bị này có, nên có thể không tải được hoặc chạy chậm.",
+  "downloadAnyway": "Vẫn tải xuống"
 }

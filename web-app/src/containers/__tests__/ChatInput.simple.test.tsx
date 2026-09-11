@@ -5,7 +5,7 @@ import { useChatAttachments } from '@/hooks/useChatAttachments'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { useAppState } from '@/hooks/useAppState'
+import { modelStopKey, useAppState } from '@/hooks/useAppState'
 import { usePrompt } from '@/hooks/usePrompt'
 import { seedServiceHub } from '@/test/service-hub'
 import type { ServiceHub } from '@/services'
@@ -137,9 +137,9 @@ vi.mock('@/containers/chatInput/VoiceRecordingBar', () => ({
   default: () => null,
 }))
 
-vi.mock('@/containers/ReasoningToggle', () => ({
-  // A marker rather than null: its place in the right-hand cluster is asserted.
-  default: () => <button data-test-id="reasoning-toggle" />,
+vi.mock('@/containers/DropdownModelProvider', () => ({
+  // The model pill; likewise only its place in the cluster matters here.
+  default: () => <button data-test-id="model-picker-trigger" />,
 }))
 
 vi.mock('@/containers/dialogs/JanBrowserExtensionDialog', () => ({
@@ -216,25 +216,26 @@ describe('ChatInput', () => {
     unmount()
   })
 
-  it('puts reasoning and the microphone beside Send', () => {
+  it('puts the model and the microphone beside Send', () => {
     const { unmount } = render(<ChatInput />)
 
-    const reasoning = document.querySelector(
-      '[data-test-id="reasoning-toggle"]'
+    const model = document.querySelector(
+      '[data-test-id="model-picker-trigger"]'
     )
     const mic = document.querySelector('[data-test-id="voice-input-toggle"]')
     const send = document.querySelector('[data-test-id="send-message-button"]')
-    expect(reasoning).toBeInTheDocument()
+    expect(model).toBeInTheDocument()
     expect(mic).toBeInTheDocument()
     expect(send).toBeInTheDocument()
 
     // One cluster on the right...
-    expect(reasoning!.parentElement).toBe(send!.parentElement)
+    expect(model!.parentElement).toBe(send!.parentElement)
     expect(mic!.parentElement).toBe(send!.parentElement)
-    // ...reading [reasoning] [mic] [send].
+    // ...reading [model] [mic] [send], with nothing ahead of the pill: the
+    // reasoning bulb is gone, thinking is switched off on the effort slider.
+    expect(send!.parentElement!.firstElementChild).toBe(model)
     expect(
-      reasoning!.compareDocumentPosition(mic!) &
-        Node.DOCUMENT_POSITION_FOLLOWING
+      model!.compareDocumentPosition(mic!) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
     expect(
       mic!.compareDocumentPosition(send!) & Node.DOCUMENT_POSITION_FOLLOWING
@@ -301,8 +302,8 @@ describe('ChatInput', () => {
     // The widget resolved: something is on its way, but not up yet.
     act(() => {
       mocks.replyGateProps!.onResolved({
-        outcome: 'picked',
-        branch: 'pick',
+        outcome: 'download',
+        branch: 'none',
         decidedInMs: 5,
         openedAtMs: Date.now() - 5,
       })
@@ -346,7 +347,7 @@ describe('ChatInput', () => {
     act(() => {
       mocks.replyGateProps!.onDismissed({
         outcome: 'dismissed',
-        branch: 'pick',
+        branch: 'none',
         decidedInMs: 5,
         openedAtMs: Date.now() - 5,
       })
@@ -457,6 +458,66 @@ describe('ChatInput', () => {
     // The engine reports it up; the message goes out by itself.
     act(() => {
       useAppState.setState({ activeModels: [model.id] })
+    })
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        'Invoke the machine spirit',
+        undefined,
+        undefined
+      )
+    )
+    unmount()
+  })
+
+  it('brings a model the user stopped back up on send, instead of blocking Send', async () => {
+    const model = { id: 'Qwen3.5-4B-Q4_K_M', capabilities: [], settings: {} } as Model
+    useModelProvider.setState({
+      providers: [
+        {
+          provider: 'llamacpp-upstream',
+          active: true,
+          models: [model],
+          settings: [],
+        } as ModelProvider,
+      ],
+      selectedProvider: 'llamacpp-upstream',
+      selectedModel: model,
+    })
+    useAppState.setState({
+      activeModels: [],
+      loadingModel: false,
+      userStoppedModels: [modelStopKey('llamacpp-upstream', model.id)],
+    })
+    mocks.switchToModel.mockResolvedValue(undefined)
+    const onSubmit = vi.fn()
+    const { unmount } = render(<ChatInput onSubmit={onSubmit} />)
+
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: 'Invoke the machine spirit' },
+    })
+    const send = document.querySelector('[data-test-id="send-message-button"]')!
+    // Nothing else is going to start a model the user stopped, so waiting for
+    // it to come up would leave Send dead for good.
+    expect(send).not.toBeDisabled()
+    fireEvent.click(send)
+
+    await waitFor(() =>
+      expect(mocks.switchToModel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          modelId: model.id,
+          providerName: 'llamacpp-upstream',
+        })
+      )
+    )
+    // An explicit start, like a pick in the dropdown — not a silent auto-start.
+    expect(mocks.switchToModel.mock.calls[0][0].isAutoStart).toBeUndefined()
+    expect(screen.getByTestId('reply-gate-queued-notice')).toHaveTextContent(
+      'chat:replyGate.startingNotice'
+    )
+    expect(onSubmit).not.toHaveBeenCalled()
+
+    act(() => {
+      useAppState.setState({ activeModels: [model.id], userStoppedModels: [] })
     })
     await waitFor(() =>
       expect(onSubmit).toHaveBeenCalledWith(

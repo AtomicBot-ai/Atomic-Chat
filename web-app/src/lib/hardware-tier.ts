@@ -49,6 +49,10 @@
  * The vocabulary is a release-time contract: the manifest keys its per-tier
  * lists by these strings (see `recommended-models-registry.ts`). Which models
  * each tier offers can change without a release; the tier set cannot.
+ *
+ * The top of both ladders used to end at `vram_16_plus` / `unified_32_plus`;
+ * they were split into the 24–64+ rungs so the larger models can be offered by
+ * size. A manifest that still carries the old keys has them dropped on parse.
  */
 export type HardwareTier =
   /** No accelerator enumerated at all. Inference runs on the CPU. */
@@ -63,16 +67,30 @@ export type HardwareTier =
   | 'vram_12'
   /** 13–17 GiB. */
   | 'vram_16'
-  /** 17 GiB and up. */
-  | 'vram_16_plus'
+  /** 17–25 GiB: the 20 and 24 GiB cards. */
+  | 'vram_24'
+  /** 25–33 GiB. */
+  | 'vram_32'
+  /** 33–49 GiB. */
+  | 'vram_48'
+  /** 49–65 GiB. */
+  | 'vram_64'
+  /** 65 GiB and up. */
+  | 'vram_64_plus'
   /** Unified memory up to ~8 GiB. */
   | 'unified_8'
   /** ~9–16 GiB. */
   | 'unified_16'
-  /** ~17–32 GiB. */
+  /** ~17–24 GiB: the 18 and 24 GB Macs. */
+  | 'unified_24'
+  /** ~25–32 GiB. */
   | 'unified_32'
-  /** 33 GiB and up. */
-  | 'unified_32_plus'
+  /** ~33–48 GiB: the 36 and 48 GB Macs. */
+  | 'unified_48'
+  /** ~49–64 GiB. */
+  | 'unified_64'
+  /** 65 GiB and up. */
+  | 'unified_64_plus'
 
 /** Every tier, in ladder order. Used to validate manifest keys and dev flags. */
 export const HARDWARE_TIERS: readonly HardwareTier[] = [
@@ -82,11 +100,18 @@ export const HARDWARE_TIERS: readonly HardwareTier[] = [
   'vram_8',
   'vram_12',
   'vram_16',
-  'vram_16_plus',
+  'vram_24',
+  'vram_32',
+  'vram_48',
+  'vram_64',
+  'vram_64_plus',
   'unified_8',
   'unified_16',
+  'unified_24',
   'unified_32',
-  'unified_32_plus',
+  'unified_48',
+  'unified_64',
+  'unified_64_plus',
 ] as const
 
 export const isHardwareTier = (value: unknown): value is HardwareTier =>
@@ -103,21 +128,9 @@ export const isHardwareTier = (value: unknown): value is HardwareTier =>
  * first screen never leads with a model this machine cannot load.
  */
 export function stepDownTier(tier: HardwareTier): HardwareTier | null {
-  const vram: readonly HardwareTier[] = [
-    'cpu_only',
-    'vram_2',
-    'vram_4',
-    'vram_8',
-    'vram_12',
-    'vram_16',
-    'vram_16_plus',
-  ]
-  const unified: readonly HardwareTier[] = [
-    'unified_8',
-    'unified_16',
-    'unified_32',
-    'unified_32_plus',
-  ]
+  // Derived from the vocabulary so a new rung cannot be left off either ladder.
+  const unified = HARDWARE_TIERS.filter((t) => t.startsWith('unified_'))
+  const vram = HARDWARE_TIERS.filter((t) => !t.startsWith('unified_'))
   const ladder = unified.includes(tier) ? unified : vram
   const index = ladder.indexOf(tier)
   return index > 0 ? ladder[index - 1] : null
@@ -192,6 +205,10 @@ export const VRAM_TIER_BOUNDS: ReadonlyArray<readonly [number, HardwareTier]> =
     [9 * GIB, 'vram_8'],
     [13 * GIB, 'vram_12'],
     [17 * GIB, 'vram_16'],
+    [25 * GIB, 'vram_24'],
+    [33 * GIB, 'vram_32'],
+    [49 * GIB, 'vram_48'],
+    [65 * GIB, 'vram_64'],
   ] as const
 
 /**
@@ -206,7 +223,10 @@ export const UNIFIED_TIER_BOUNDS: ReadonlyArray<
 > = [
   [8.5 * GIB, 'unified_8'],
   [16.5 * GIB, 'unified_16'],
+  [24.5 * GIB, 'unified_24'],
   [32.5 * GIB, 'unified_32'],
+  [48.5 * GIB, 'unified_48'],
+  [64.5 * GIB, 'unified_64'],
 ] as const
 
 /** Matches `arm64`, `aarch64`. Mirrors the check in `AnalyticProvider.tsx`. */
@@ -270,7 +290,7 @@ export function describeHardware(
   if (hw.os_type === 'macos') {
     if (ram <= 0) return null
     return {
-      tier: bucket(ram, UNIFIED_TIER_BOUNDS, 'unified_32_plus'),
+      tier: bucket(ram, UNIFIED_TIER_BOUNDS, 'unified_64_plus'),
       memoryKind: 'unified',
       budgetMib: ram,
       systemRamMib: ram,
@@ -282,7 +302,7 @@ export function describeHardware(
   // 2. A real accelerator was enumerated (discrete or integrated).
   if (vram > 0) {
     return {
-      tier: bucket(vram, VRAM_TIER_BOUNDS, 'vram_16_plus'),
+      tier: bucket(vram, VRAM_TIER_BOUNDS, 'vram_64_plus'),
       memoryKind: 'vram',
       budgetMib: vram,
       systemRamMib: ram,
@@ -297,7 +317,7 @@ export function describeHardware(
   // 3. ARM without a discrete GPU: unified memory, same buckets as macOS.
   if (isArmArch(hw.cpu?.arch)) {
     return {
-      tier: bucket(ram, UNIFIED_TIER_BOUNDS, 'unified_32_plus'),
+      tier: bucket(ram, UNIFIED_TIER_BOUNDS, 'unified_64_plus'),
       memoryKind: 'unified',
       budgetMib: ram,
       systemRamMib: ram,

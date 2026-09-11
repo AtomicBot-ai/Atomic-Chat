@@ -11,8 +11,6 @@
     "sendHint": "Choose what to reply with",
     "startingTitle": "Starting {{name}}…",
     "startingDescription": "Your message will be sent as soon as it's ready.",
-    "pickTitle": "What should I reply with?",
-    "pickDescription": "Pick a model and your message goes out right away.",
     "emptyTitle": "Nothing to reply with yet",
     "emptyDescription": "Download a model for this device, or connect one in the cloud. Your message is kept either way.",
     "recommendedForDevice": "Recommended for your device",
@@ -22,7 +20,7 @@
     "connectCloud": "Connect cloud provider",
     "connectSubscription": "Connect ChatGPT subscription",
     "queuedNotice": "Your message will be sent once the model is ready.",
-    "startingNotice": "Starting {{name}}… your message will be sent once it's ready.",
+    "startingNotice": "Starting",
     "addFolder": "Add a folder with models",
     "folderScanning": "Looking for models…",
     "folderEmpty": "No compatible models found in that folder."
@@ -50,12 +48,12 @@
     "providerKeyMissing": "Add an API key for this provider in Settings to use Agent mode."
   },
   "agentApprovals": {
-    "manualSelected": "Manually",
-    "manual": "Manually approve",
-    "manualDescription": "Pause before sensitive actions.",
-    "skipSelected": "Skip",
-    "skip": "Skip all approvals",
-    "skipDescription": "Run without asking."
+    "manualSelected": "Ask for approval",
+    "manual": "Ask for approval",
+    "manualDescription": "Always ask to edit external files and use the internet",
+    "skipSelected": "Full access",
+    "skip": "Full access",
+    "skipDescription": "Unrestricted access to the internet and any file on your computer"
   },
   "agentApproval": {
     "title": "Agent approval required",
@@ -100,7 +98,10 @@
     "close": "Close run settings",
     "model": "Model",
     "advancedSettings": "Advanced settings",
-    "advancedSettingsHint": "Load-time options. Changing them restarts a running model."
+    "advancedSettingsHint": "Load-time options. Changing them restarts a running model.",
+    "reset": "Reset",
+    "resetSampling": "Reset sampling",
+    "resetModel": "Reset model settings to defaults"
   },
   "agentErrors": {
     "audioUnsupported": "Agent mode does not support audio attachments.",

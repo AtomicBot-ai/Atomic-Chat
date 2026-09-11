@@ -22,11 +22,12 @@ import { switchToModel } from '@/utils/switchModel'
  * routing them through a widget to confirm what the device already knows is
  * a question with one answer (ATO-461).
  *
- * The chain is `resolveReplyModel`: last used → connected cloud → the only
- * local model → the lightest of several. When it finds something, this
- * selects it, starts it, and hands the composer a resolution to queue the
- * message on. When it finds nothing to decide with, it returns `null` and the
- * composer opens the widget as before.
+ * The chain is `resolveReplyModel`: last used → connected cloud → the most
+ * compact local model on upstream llama.cpp, or on MLX when llama.cpp holds
+ * none.
+ * When it finds something, this selects it, starts it, and hands the composer
+ * a resolution to queue the message on. Only a device with nothing at all
+ * returns `null`, and the composer opens the widget to offer a download.
  *
  * A local model is started here, on the send, and never at launch: that is
  * the line the product drew — a local model costs memory, and only an

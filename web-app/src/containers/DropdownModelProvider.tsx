@@ -13,12 +13,21 @@ import {
   isProviderConnected,
 } from '@/lib/cloud-providers'
 import { highlightFzfMatch } from '@/utils/highlight'
-import Capabilities from './Capabilities'
 import {
   ModelSourceBadge,
   MissingModelBadge,
 } from '@/components/ModelSourceBadge'
-import { IconSettings, IconX, IconDownload } from '@tabler/icons-react'
+import {
+  IconChevronDown,
+  IconChevronLeft,
+  IconChevronRight,
+  IconDownload,
+  IconSettings,
+  IconX,
+} from '@tabler/icons-react'
+import { Button } from '@/components/ui/button'
+import ReasoningEffortPanel from '@/containers/ReasoningEffortPanel'
+import { useReasoningEffort } from '@/hooks/useReasoningEffort'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
@@ -35,20 +44,22 @@ import { getLastUsedModel } from '@/utils/getModelToStart'
 import { isLocalProvider } from '@/utils/registerRemoteProvider'
 import { switchToModel } from '@/utils/switchModel'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
-import { ChevronsUpDown } from 'lucide-react'
+import { useLeftPanel } from '@/hooks/useLeftPanel'
+import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
 
 /**
- * Which providers earn a section in the picker.
+ * Which providers may list models in the picker.
  *
- * Local engines always do — they are the app's own runtimes, and an empty one
- * still needs its header so the user can reach its settings. A cloud provider
- * earns one only once it is actually connected: the registry ships every
- * catalogue entry `active: true`, so without this the picker is a wall of
- * empty headers for providers the user never set up (the ChatGPT subscription
- * among them) burying the ones they did.
+ * Local engines may — they are the app's own runtimes. A cloud provider only
+ * once it is actually connected: the registry ships every catalogue entry
+ * `active: true`, so without this the picker is a wall of providers the user
+ * never set up (the ChatGPT subscription among them) burying the ones they did.
  *
  * Custom providers are judged on their models, as they are everywhere else:
  * they may legitimately need no key.
+ *
+ * Eligible is not enough for a section: one is rendered only when it has a
+ * model to pick (see `groupedItems`).
  */
 const isPickerSection = (provider: ModelProvider): boolean =>
   isLocalEngineProvider(provider) ||
@@ -81,7 +92,20 @@ const setLastUsedModel = (provider: string, model: string) => {
 // llamacpp library every time.
 const visionProbeCache = new Map<string, boolean>()
 
-const DropdownModelProvider = memo(function DropdownModelProvider() {
+type DropdownModelProviderProps = {
+  className?: string
+}
+
+/**
+ * What the panel shows. `main` is the model row with the effort slider under
+ * it; `models` is the searchable list the row leads to. With nothing selected
+ * yet the row would only say "Select a model", so the list opens straight away.
+ */
+type PickerView = 'main' | 'models'
+
+const DropdownModelProvider = memo(function DropdownModelProvider({
+  className,
+}: DropdownModelProviderProps) {
   const providers = useModelProvider((state) => state.providers)
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
   const selectModelProvider = useModelProvider(
@@ -100,6 +124,27 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
   const [open, setOpen] = useState(false)
   const [searchValue, setSearchValue] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const [view, setView] = useState<PickerView>(() =>
+    selectedModel?.id ? 'main' : 'models'
+  )
+  const { levelLabel: effortLabel } = useReasoningEffort()
+  // The pill holds its level while the panel is open: the slider inside
+  // changes it on every step, and a label that follows makes the pill under
+  // the panel twitch — and, since the panel hangs off the pill, the panel
+  // with it. The row and heading inside track the drag; the pill catches up
+  // on close.
+  const [settledEffortLabel, setSettledEffortLabel] = useState(effortLabel)
+  useEffect(() => {
+    if (!open) setSettledEffortLabel(effortLabel)
+  }, [open, effortLabel])
+
+  // With the sidebar and run settings both open the composer is at its
+  // narrowest, so the pill folds down to the model's mark; the name stays on
+  // hover and in the panel. With nothing selected there is no mark to fold
+  // down to, so "Select a model" stays.
+  const leftBarOpen = useLeftPanel((state) => state.open)
+  const rightBarOpen = useRunSettingsPanel((state) => state.isOpen)
+  const compact = leftBarOpen && rightBarOpen && !!selectedModel?.id
 
   // Helper function to check if a model exists in providers
   // The persisted cloud selection is usable when its provider is on, still
@@ -342,17 +387,28 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
   }, [open, visionSweepIdsKey, probeVisionCapability, applyVisionCapabilities])
 
   // Reset search value when dropdown closes
-  const onOpenChange = useCallback((open: boolean) => {
-    setOpen(open)
-    if (!open) {
-      requestAnimationFrame(() => setSearchValue(''))
-    } else {
-      // Focus search input when opening
-      setTimeout(() => {
-        searchInputRef.current?.focus()
-      }, 100)
-    }
-  }, [])
+  const onOpenChange = useCallback(
+    (open: boolean) => {
+      setOpen(open)
+      if (!open) {
+        requestAnimationFrame(() => setSearchValue(''))
+      } else {
+        // Every opening starts from the model row; the list is a step in.
+        setView(selectedModel?.id ? 'main' : 'models')
+      }
+    },
+    [selectedModel?.id]
+  )
+
+  // The search field takes focus whenever the list comes into view — on an
+  // opening that lands on it directly as well as on a step in from the row.
+  useEffect(() => {
+    if (!open || view !== 'models') return
+    const timer = setTimeout(() => {
+      searchInputRef.current?.focus()
+    }, 100)
+    return () => clearTimeout(timer)
+  }, [open, view])
 
   // Clear search and focus input
   const onClearSearch = useCallback(() => {
@@ -430,7 +486,10 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
     const byId = new Map<string, SearchableModel>()
     for (const item of matched) {
       const existing = byId.get(item.model.id)
-      if (!existing || (!existing.model.displayName && item.model.displayName)) {
+      if (
+        !existing ||
+        (!existing.model.displayName && item.model.displayName)
+      ) {
         byId.set(item.model.id, item)
       }
     }
@@ -465,15 +524,11 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
       const activeProviders = providers
         .filter((p) => p.active && isPickerSection(p))
         .sort((a, b) => {
-          // Local providers first, regardless of whether they have models
+          // Local providers first. Empty sections are dropped below, so this
+          // only ever orders engines that have something to pick.
           const aIsLocal = isLocalEngineProvider(a)
           const bIsLocal = isLocalEngineProvider(b)
           if (aIsLocal !== bIsLocal) return aIsLocal ? -1 : 1
-
-          // Within the same group, non-empty providers first
-          const aHasModels = a.models.length > 0
-          const bHasModels = b.models.length > 0
-          if (aHasModels !== bHasModels) return aHasModels ? -1 : 1
 
           // Custom providers without API key but with models should be treated like "have API key"
           const aIsPredefined = isKnownProvider(a.provider)
@@ -517,11 +572,18 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
     // duplicate entry. Moving the key here (rather than in the sort above)
     // keeps it at the bottom while searching too.
     const { llamacpp: turboquantGroup, ...otherGroups } = groups
-    if (turboquantGroup) {
-      return { ...otherGroups, llamacpp: turboquantGroup }
-    }
+    const ordered = turboquantGroup
+      ? { ...otherGroups, llamacpp: turboquantGroup }
+      : groups
 
-    return groups
+    // A section is there to pick a model from. An engine with nothing to list
+    // — MLX before its first download, a connected provider with an empty
+    // catalogue, one whose only model sits in Favorites — is a bare header
+    // pushing the engines that do have models down the list. Its settings
+    // stay reachable from Settings.
+    return Object.fromEntries(
+      Object.entries(ordered).filter(([, items]) => items.length > 0)
+    )
   }, [filteredItems, providers, searchValue, favoriteModels])
 
   const handleSelect = useCallback(
@@ -596,216 +658,256 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <div
-          className="border relative z-20 px-4 py-1.5 flex items-center gap-1.5 rounded-full"
-          // Prevent the mousedown event from bubbling up to the HeaderPage's
-          // data-tauri-drag-region so that clicking or hovering on the model
-          // selector pill does not accidentally start a window-drag on macOS.
-          // The Popover uses pointerdown / click events internally so this does
-          // not affect its open/close behaviour.
-          onMouseDown={(e) => e.stopPropagation()}
+        {/* The composer pill: the model, with the reasoning level as its
+            subtitle. Its width follows the label, and the panel anchors to its
+            right edge so the mic and Send beside it hold still. */}
+        <button
+          type="button"
+          title={selectedModel?.id ?? displayModel}
+          aria-label={compact ? displayModel : undefined}
+          data-test-id="model-picker-trigger"
+          className={cn(
+            'inline-flex h-7 max-w-64 shrink items-center gap-1.5 rounded-full border bg-secondary/40 pr-2 pl-1.5 text-xs transition-colors duration-200 hover:bg-secondary/70',
+            className
+          )}
         >
-          <button
-            type="button"
-            title={selectedModel?.id ?? displayModel}
-            className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20 max-w-50"
-          >
-            {provider && (
-              <div className="shrink-0">
-                <ProvidersAvatar provider={provider} />
-              </div>
-            )}
+          {provider && (
+            <div className="shrink-0">
+              <ProvidersAvatar provider={provider} className="size-4" />
+            </div>
+          )}
+          {!compact && (
             <span
               className={cn(
-                'text-foreground truncate leading-normal',
+                'truncate font-medium',
                 !selectedModel?.id && 'text-muted-foreground'
               )}
             >
               {displayModel}
             </span>
-            <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
-          </button>
-          <ModelSupportStatus
-            modelId={selectedModel?.id}
-            provider={selectedProvider}
-            contextSize={getContextSize()}
-            className="ml-0.5 shrink-0"
+          )}
+          {settledEffortLabel && (
+            <span className="text-muted-foreground shrink-0">
+              {settledEffortLabel}
+            </span>
+          )}
+          <IconChevronDown
+            size={14}
+            className={cn(
+              'text-muted-foreground shrink-0 transition-transform duration-200 ease-out',
+              open && 'rotate-180'
+            )}
           />
-        </div>
+        </button>
       </PopoverTrigger>
 
       <PopoverContent
         className={cn(
           'w-70 p-0 backdrop-blur-2xl bg-background/95 border',
-          searchValue.length === 0 && 'h-80'
+          view === 'models' && searchValue.length === 0 && 'h-80'
         )}
-        align="start"
-        // sideOffset={16}
-        // alignOffset={-10}
-        side="bottom"
-        avoidCollisions={searchValue.length === 0 ? true : false}
+        align="end"
+        side="top"
+        sideOffset={8}
+        avoidCollisions={view === 'main' || searchValue.length === 0}
       >
-        <div className="flex flex-col size-full">
-          {/* Search input */}
-          <div className="relative p-2 border-b">
-            <input
-              ref={searchInputRef}
-              value={searchValue}
-              onChange={(e) => setSearchValue(e.target.value)}
-              placeholder={t('common:searchModels')}
-              className="text-sm font-normal outline-0"
-            />
-            {searchValue.length > 0 && (
-              <div className="absolute right-2 top-0 bottom-0 flex items-center justify-center">
-                <IconX
-                  size={16}
-                  className="text-muted-foreground cursor-pointer"
-                  onClick={onClearSearch}
-                />
-              </div>
-            )}
+        {view === 'main' ? (
+          <div className="flex flex-col p-1.5">
+            {/* The model row: what is selected, and the way into the list. */}
+            <button
+              type="button"
+              aria-label={t('common:changeModel')}
+              data-test-id="model-picker-change"
+              onClick={() => setView('models')}
+              className="flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors duration-200 hover:bg-secondary/40"
+            >
+              {provider && (
+                <div className="shrink-0">
+                  <ProvidersAvatar provider={provider} />
+                </div>
+              )}
+              <span
+                className={cn(
+                  'truncate font-medium',
+                  !selectedModel?.id && 'text-muted-foreground'
+                )}
+              >
+                {displayModel}
+              </span>
+              {/* No level here: the effort heading right below says it. */}
+              <ModelSupportStatus
+                modelId={selectedModel?.id}
+                provider={selectedProvider}
+                contextSize={getContextSize()}
+                className="shrink-0"
+              />
+              <IconChevronRight
+                size={16}
+                className="text-muted-foreground ml-auto shrink-0"
+              />
+            </button>
+            {/* Mounted with the panel, so a fresh open always starts settled. */}
+            <ReasoningEffortPanel className="mt-1 border-t px-2 pt-2 pb-1" />
           </div>
+        ) : (
+          <div className="flex flex-col size-full">
+            {/* Search input, with the way back to the model row. */}
+            <div className="relative flex items-center gap-1 p-1.5 border-b">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label={t('common:back')}
+                onClick={() => setView('main')}
+              >
+                <IconChevronLeft size={16} className="text-muted-foreground" />
+              </Button>
+              <input
+                ref={searchInputRef}
+                value={searchValue}
+                onChange={(e) => setSearchValue(e.target.value)}
+                placeholder={t('common:searchModels')}
+                className="min-w-0 flex-1 text-sm font-normal outline-0"
+              />
+              {searchValue.length > 0 && (
+                <div className="absolute right-2 top-0 bottom-0 flex items-center justify-center">
+                  <IconX
+                    size={16}
+                    className="text-muted-foreground cursor-pointer"
+                    onClick={onClearSearch}
+                  />
+                </div>
+              )}
+            </div>
 
-          {/* Model list */}
-          <div className="max-h-80 overflow-y-auto">
-            {Object.keys(groupedItems).length === 0 && searchValue ? (
-              <div className="py-3 px-4 text-sm ">
-                {t('common:noModelsFoundFor', { searchValue })}
-              </div>
-            ) : (
-              <div className="py-1">
-                {/* Favorites section - only show when not searching */}
-                {!searchValue && favoriteItems.length > 0 && (
-                  <div className="bg-secondary/30 rounded-sm m-2 py-1">
-                    {/* Favorites header */}
-                    <div className="flex items-center gap-1.5 px-2 py-1">
-                      <span className="text-sm font-medium text-muted-foreground">
-                        {t('common:favorites')}
-                      </span>
-                    </div>
-
-                    {/* Favorite models */}
-                    {favoriteItems.map((searchableModel) => {
-                      const isSelected =
-                        selectedModel?.id === searchableModel.model.id &&
-                        selectedProvider === searchableModel.provider.provider
-                      const capabilities =
-                        searchableModel.model.capabilities || []
-
-                      return (
-                        <div
-                          key={`fav-${searchableModel.value}`}
-                          title={searchableModel.model.id}
-                          onClick={() => handleSelect(searchableModel)}
-                          className={cn(
-                            'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
-                            'hover:bg-secondary/40',
-                            isSelected && 'bg-secondary/50'
-                          )}
-                        >
-                          <div className="flex items-center gap-1 flex-1 min-w-0">
-                            <div className="shrink-0 -ml-1">
-                              <ProvidersAvatar
-                                provider={searchableModel.provider}
-                              />
-                            </div>
-                            <span className="text-sm truncate">
-                              {getModelDisplayName(searchableModel.model)}
-                            </span>
-                            {searchableModel.model.source && (
-                              <ModelSourceBadge
-                                source={searchableModel.model.source}
-                                className="shrink-0"
-                              />
-                            )}
-                            {searchableModel.model.missing && (
-                              <MissingModelBadge
-                                source={searchableModel.model.source}
-                                className="shrink-0"
-                              />
-                            )}
-                            <div className="flex-1"></div>
-                            {capabilities.length > 0 && (
-                              <div className="shrink-0 -mr-1.5">
-                                <Capabilities capabilities={capabilities} />
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-
-                {/* Divider between favorites and regular providers */}
-                {favoriteItems.length > 0 && (
-                  <div className="border-b mx-2"></div>
-                )}
-
-                {/* Regular provider sections */}
-                {Object.entries(groupedItems).map(([providerKey, models]) => {
-                  const providerInfo = providers.find(
-                    (p) => p.provider === providerKey
-                  )
-
-                  if (!providerInfo) return null
-
-                  return (
-                    <div
-                      key={providerKey}
-                      className="bg-secondary/30 first:mt-0 rounded-sm my-1.5 mx-1.5 first:mb-0 py-1"
-                    >
-                      {/* Provider header */}
-                      <div className="flex items-center justify-between px-2 py-1">
-                        <div className="flex items-center gap-1.5">
-                          <ProvidersAvatar provider={providerInfo} />
-                          <span className="text-sm font-medium text-muted-foreground">
-                            {getProviderTitle(providerInfo.provider)}
-                          </span>
-                          {providerInfo.provider === selectedProvider && (
-                            <span className="size-2 rounded-full bg-green-500 shrink-0" />
-                          )}
-                        </div>
-
-                        <div
-                          className="size-6 cursor-pointer flex items-center justify-center rounded-sm bg-secondary-foreground/8 transition-all duration-200 ease-in-out"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            // Cloud providers are set up on `/cloud`; local
-                            // engines keep their Settings detail page.
-                            if (isCloudProvider(providerInfo)) {
-                              navigate({
-                                to: route.cloud.index,
-                                search: { provider: providerInfo.provider },
-                              })
-                            } else {
-                              navigate({
-                                to: route.settings.providers,
-                                params: { providerName: providerInfo.provider },
-                              })
-                            }
-                            setOpen(false)
-                          }}
-                        >
-                          <IconSettings
-                            size={16}
-                            className="text-muted-foreground"
-                          />
-                        </div>
+            {/* Model list */}
+            <div className="max-h-80 overflow-y-auto">
+              {Object.keys(groupedItems).length === 0 && searchValue ? (
+                <div className="py-3 px-4 text-sm ">
+                  {t('common:noModelsFoundFor', { searchValue })}
+                </div>
+              ) : (
+                <div className="py-1">
+                  {/* Favorites section - only show when not searching */}
+                  {!searchValue && favoriteItems.length > 0 && (
+                    <div className="bg-secondary/30 rounded-sm m-2 py-1">
+                      {/* Favorites header */}
+                      <div className="flex items-center gap-1.5 px-2 py-1">
+                        <span className="text-sm font-medium text-muted-foreground">
+                          {t('common:favorites')}
+                        </span>
                       </div>
 
-                      {/* Models for this provider */}
-                      {models.length === 0 ? (
-                        // Show message when provider has no available models
-                        <></>
-                      ) : (
-                        models.map((searchableModel) => {
+                      {/* Favorite models */}
+                      {favoriteItems.map((searchableModel) => {
+                        const isSelected =
+                          selectedModel?.id === searchableModel.model.id &&
+                          selectedProvider === searchableModel.provider.provider
+
+                        return (
+                          <div
+                            key={`fav-${searchableModel.value}`}
+                            title={searchableModel.model.id}
+                            onClick={() => handleSelect(searchableModel)}
+                            className={cn(
+                              'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
+                              'hover:bg-secondary/40',
+                              isSelected && 'bg-secondary/50'
+                            )}
+                          >
+                            <div className="flex items-center gap-1 flex-1 min-w-0">
+                              <div className="shrink-0 -ml-1">
+                                <ProvidersAvatar
+                                  provider={searchableModel.provider}
+                                />
+                              </div>
+                              <span className="text-sm truncate">
+                                {getModelDisplayName(searchableModel.model)}
+                              </span>
+                              {searchableModel.model.source && (
+                                <ModelSourceBadge
+                                  source={searchableModel.model.source}
+                                  className="shrink-0"
+                                />
+                              )}
+                              {searchableModel.model.missing && (
+                                <MissingModelBadge
+                                  source={searchableModel.model.source}
+                                  className="shrink-0"
+                                />
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {/* Divider between favorites and regular providers */}
+                  {favoriteItems.length > 0 && (
+                    <div className="border-b mx-2"></div>
+                  )}
+
+                  {/* Regular provider sections */}
+                  {Object.entries(groupedItems).map(([providerKey, models]) => {
+                    const providerInfo = providers.find(
+                      (p) => p.provider === providerKey
+                    )
+
+                    if (!providerInfo) return null
+
+                    return (
+                      <div
+                        key={providerKey}
+                        className="bg-secondary/30 first:mt-0 rounded-sm my-1.5 mx-1.5 first:mb-0 py-1"
+                      >
+                        {/* Provider header */}
+                        <div className="flex items-center justify-between px-2 py-1">
+                          <div className="flex items-center gap-1.5">
+                            <ProvidersAvatar provider={providerInfo} />
+                            <span className="text-sm font-medium text-muted-foreground">
+                              {getProviderTitle(providerInfo.provider)}
+                            </span>
+                            {providerInfo.provider === selectedProvider && (
+                              <span className="size-2 rounded-full bg-green-500 shrink-0" />
+                            )}
+                          </div>
+
+                          <div
+                            className="size-6 cursor-pointer flex items-center justify-center rounded-sm bg-secondary-foreground/8 transition-all duration-200 ease-in-out"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              // Cloud providers are set up on `/cloud`; local
+                              // engines keep their Settings detail page.
+                              if (isCloudProvider(providerInfo)) {
+                                navigate({
+                                  to: route.cloud.index,
+                                  search: { provider: providerInfo.provider },
+                                })
+                              } else {
+                                navigate({
+                                  to: route.settings.providers,
+                                  params: {
+                                    providerName: providerInfo.provider,
+                                  },
+                                })
+                              }
+                              setOpen(false)
+                            }}
+                          >
+                            <IconSettings
+                              size={16}
+                              className="text-muted-foreground"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Models for this provider */}
+                        {models.map((searchableModel) => {
                           const isSelected =
                             selectedModel?.id === searchableModel.model.id &&
                             selectedProvider ===
                               searchableModel.provider.provider
-                          const capabilities =
-                            searchableModel.model.capabilities || []
 
                           return (
                             <div
@@ -838,37 +940,31 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
                                     className="shrink-0"
                                   />
                                 )}
-                                <div className="flex-1"></div>
-                                {capabilities.length > 0 && (
-                                  <div className="shrink-0 -mr-1.5">
-                                    <Capabilities capabilities={capabilities} />
-                                  </div>
-                                )}
                               </div>
                             </div>
                           )
-                        })
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
+                        })}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
 
-          {/* Download CTA — shortcut into the Hub so users can grab a local
+            {/* Download CTA — shortcut into the Hub so users can grab a local
               model without leaving the selector first. */}
-          <div className="border-t p-1.5 mt-auto">
-            <button
-              type="button"
-              onClick={onDownloadModel}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm cursor-pointer text-sm text-muted-foreground transition-colors duration-200 hover:bg-secondary/40 hover:text-foreground"
-            >
-              <IconDownload size={16} className="shrink-0" />
-              <span>{t('common:downloadModel')}</span>
-            </button>
+            <div className="border-t p-1.5 mt-auto">
+              <button
+                type="button"
+                onClick={onDownloadModel}
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm cursor-pointer text-sm text-muted-foreground transition-colors duration-200 hover:bg-secondary/40 hover:text-foreground"
+              >
+                <IconDownload size={16} className="shrink-0" />
+                <span>{t('common:downloadModel')}</span>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </PopoverContent>
     </Popover>
   )

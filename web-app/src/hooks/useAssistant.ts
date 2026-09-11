@@ -22,6 +22,11 @@ interface AssistantState {
    * since a slider drag emits a change per frame.
    */
   updateAssistantParam: (id: string, key: string, value: unknown) => void
+  /**
+   * Set one assistant's system prompt. Same store-now, disk-on-debounce path
+   * as `updateAssistantParam`, since a textarea emits a change per keystroke.
+   */
+  updateAssistantInstructions: (id: string, instructions: string) => void
   deleteAssistant: (id: string) => void
   setCurrentAssistant: (assistant: Assistant, saveToStorage?: boolean) => void
   setDefaultAssistant: (id: string) => void
@@ -117,7 +122,7 @@ const schedulePersistParams = (
         .assistants()
         .createAssistant(assistant as unknown as CoreAssistant)
         .catch((error) => {
-          console.error('Failed to persist assistant sampling:', error)
+          console.error('Failed to persist assistant:', error)
         })
     }, PARAM_PERSIST_DEBOUNCE_MS)
   )
@@ -170,6 +175,23 @@ export const useAssistant = create<AssistantState>((set, get) => ({
       parameters: { ...target.parameters, [key]: value },
       sampling_overridden: true,
     }
+    set({
+      assistants: state.assistants.map((a) => (a.id === id ? updated : a)),
+      currentAssistant:
+        state.currentAssistant?.id === id ? updated : state.currentAssistant,
+      pendingAssistant:
+        state.pendingAssistant?.id === id ? updated : state.pendingAssistant,
+    })
+    schedulePersistParams(id, () =>
+      get().assistants.find((a) => a.id === id)
+    )
+  },
+  updateAssistantInstructions: (id, instructions) => {
+    const state = get()
+    const target = state.assistants.find((a) => a.id === id)
+    if (!target) return
+
+    const updated: Assistant = { ...target, instructions }
     set({
       assistants: state.assistants.map((a) => (a.id === id ? updated : a)),
       currentAssistant:

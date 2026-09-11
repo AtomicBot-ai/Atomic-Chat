@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
     gpus: [] as Array<{ total_memory?: number }>,
     os_type: 'macos',
     os_name: 'macOS',
-    total_memory: 64 * 1024, // a 64 GiB Mac — the top unified rung
+    total_memory: 64 * 1024, // a 64 GiB Mac
   },
 }))
 
@@ -39,7 +39,7 @@ describe('useHardwareTier', () => {
     const useHardwareTier = await loadHook()
     const { result } = renderHook(() => useHardwareTier())
 
-    expect(result.current.tier).toBe('unified_32_plus')
+    expect(result.current.tier).toBe('unified_64')
     expect(result.current.ready).toBe(true)
     expect(result.current.profile).toMatchObject({
       memoryKind: 'unified',
@@ -79,7 +79,7 @@ describe('useHardwareTier', () => {
     const useHardwareTier = await loadHook('potato')
     const { result } = renderHook(() => useHardwareTier())
 
-    expect(result.current.tier).toBe('unified_32_plus')
+    expect(result.current.tier).toBe('unified_64')
   })
 
   it('falls back to a conservative tier while hardware is still unknown', async () => {

@@ -44,6 +44,8 @@
   "sortLastModified": "更新日",
   "onlyFitting": "このデバイスに収まるおすすめモデルのみ表示",
   "fitFilterLabel": "収まるモデルのみ表示",
+  "uncensored": "検閲なし",
+  "uncensoredHint": "拒否応答を取り除いたモデルのみ（uncensored / abliterated ビルド）",
   "basedOnDevice": "{{device}} に基づく: {{memory}}",
   "noFittingPicks": "このデバイスに収まるおすすめモデルはありません。デバイスフィルターをオフにするとすべて表示されます。",
   "downloadOptions": "ダウンロードオプション",
@@ -56,5 +58,8 @@
   "context": "コンテキスト",
   "capabilities": "機能",
   "readme": "README",
-  "readmeUnavailable": "このモデルには README がありません。"
+  "readmeUnavailable": "このモデルには README がありません。",
+  "tooLargeTitle": "このモデルはこのデバイスで動作しない可能性があります",
+  "tooLargeDescription": "このデバイスのメモリを超える容量が必要なため、読み込めないか、動作が遅くなる可能性があります。",
+  "downloadAnyway": "それでもダウンロード"
 }

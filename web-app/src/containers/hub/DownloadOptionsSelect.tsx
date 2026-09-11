@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import { IconChevronDown, IconChevronUp } from '@tabler/icons-react'
-import { Button } from '@/components/ui/button'
 import {
   Tooltip,
   TooltipContent,
@@ -131,7 +130,11 @@ export function DownloadOptionsSelect({
               </span>
             )}
           </div>
-          <MlxModelDownloadAction model={model} deletable />
+          <MlxModelDownloadAction
+            model={model}
+            deletable
+            warnTooLarge={fit === 'no'}
+          />
         </div>
       </section>
     )
@@ -178,33 +181,16 @@ export function DownloadOptionsSelect({
           )}
         </button>
 
-        {selectedFit === 'no' &&
-        selected.model_id !== installedQuant?.model_id ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="shrink-0 cursor-not-allowed">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled
-                  className="pointer-events-none font-semibold"
-                >
-                  {t('hub:download')}
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{HARDWARE_FIT.no.tip}</p>
-            </TooltipContent>
-          </Tooltip>
-        ) : (
-          <ModelDownloadAction
-            variant={selected}
-            model={model}
-            asButton
-            deletable
-          />
-        )}
+        {/* A quant the estimate calls too large still downloads, past a
+            warning: the estimate is size against memory, not a measurement.
+            An installed quant never warns — its button is "New chat". */}
+        <ModelDownloadAction
+          variant={selected}
+          model={model}
+          asButton
+          deletable
+          warnTooLarge={selectedFit === 'no'}
+        />
       </div>
 
       {expanded && (

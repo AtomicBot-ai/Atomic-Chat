@@ -13,8 +13,7 @@
   "localModel": "Set up local model",
   "remoteProvider": "Set up remote provider",
   "turboQuantTagline": "Local AI models on your device — blazing fast on average hardware.",
-  "welcomeTitle": "Hey, welcome to Atomic Chat!",
-  "welcomeSubtitle": "Atomic Chat needs a model to begin. Let's set it up.",
+  "welcomeTitle": "Welcome to Atomic Chat!",
   "skip": "Skip",
   "modelUnavailable": "Not in catalog yet — open Hub after connection.",
   "localStep": {
@@ -50,13 +49,13 @@
     "restartNow": "Restart now"
   },
   "cloudStep": {
-    "trigger": "Add cloud provider",
+    "trigger": "Add a cloud provider",
     "galleryTitle": "Add a cloud provider",
     "galleryDescription": "Connect an API key and start chatting right away — nothing to download.",
     "modelCountOne": "1 model",
     "modelCountOther": "{{count}} models",
     "keyOnly": "Connect with your API key",
-    "subscriptionOnly": "Sign in — no API key",
+    "subscriptionOnly": "Subscription — sign in, no API key",
     "subscriptionDescription": "Sign in with your ChatGPT account instead of pasting an API key.",
     "subscriptionConnect": "Connect in browser",
     "subscriptionWaiting": "Finish signing in to ChatGPT in your browser, then come back.",
@@ -72,10 +71,11 @@
     "saveKey": "Save key",
     "saveFailed": "Couldn't save the API key",
     "saved": "{{provider}} connected",
-    "subscriptionTrigger": "Connect ChatGPT"
+    "subscriptionTrigger": "Connect ChatGPT subscription"
   },
   "recommend": {
-    "title": "Recommended for your computer",
+    "title": "Recommended models",
+    "badge": "Best fit for your device",
     "whyComfortable": "{{size}} — fits your {{budget}} of {{pool}} with room for a long context.",
     "whyTight": "{{size}} — fits your {{budget}} of {{pool}}, but leaves little room for long chats.",
     "whySpills": "{{size}} — larger than your {{budget}} of {{pool}}, so it will run, just slower.",

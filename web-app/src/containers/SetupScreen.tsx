@@ -44,7 +44,10 @@ import { switchToModel } from '@/utils/switchModel'
 import { markSilentImport } from '@/utils/backgroundImports'
 import HeaderPage from './HeaderPage'
 import SetupBackendStep from './SetupBackendStep'
-import { ModelSourceBadge, modelSourceLabel } from '@/components/ModelSourceBadge'
+import {
+  ModelSourceBadge,
+  modelSourceLabel,
+} from '@/components/ModelSourceBadge'
 import { pickSmallestRunnable } from '@/lib/scanned-model-import'
 import {
   scanLocalModels,
@@ -54,7 +57,12 @@ import {
 import { useModelSources } from '@/hooks/useModelSources'
 import { useShallow } from 'zustand/shallow'
 import { HuggingFaceAuthorAvatar } from '@/components/HuggingFaceAuthorAvatar'
-import { modelFamilyLogoSrc } from '@/lib/model-logo'
+import { iconKeyLogoSrc, modelFamilyLogoSrc } from '@/lib/model-logo'
+import { useStaffPicks } from '@/hooks/useStaffPicks'
+import { useStaffPicksStore } from '@/stores/staff-picks-store'
+import type { StaffPick } from '@/services/staff-picks-registry'
+import { ChatGptMark } from '@/components/icons/chatgpt-mark'
+import { AppLogo } from '@/components/AppLogo'
 import { prettyModelName } from '@/lib/model-display-name'
 import {
   buildRecommendedImpressions,
@@ -131,6 +139,47 @@ export function sizeStringToGb(size?: string): number | undefined {
 //* Иконка бренда по id репозитория HF (см. modelFamilyLogoSrc)
 const recommendedSetupModelIconSrc = modelFamilyLogoSrc
 
+/**
+ * Who a row is "from", for the purpose of not seating two of them together:
+ * the brand mark the row wears (so `gemma`/`google` and `llama`/`meta`/`muse`
+ * are one publisher each), else the repo owner. The repo owner alone would
+ * not do — most picks are our own `AtomicChat/…` repacks of other people's
+ * models.
+ */
+export function publisherKey(modelName: string, iconKey?: string): string {
+  return (
+    iconKeyLogoSrc(iconKey) ??
+    modelFamilyLogoSrc(modelName) ??
+    modelName.split('/')[0]?.toLowerCase() ??
+    modelName.toLowerCase()
+  )
+}
+
+/**
+ * Reorders rows so no two neighbours share a publisher, and otherwise keeps
+ * the order it was given: each slot takes the earliest remaining row whose
+ * publisher differs from the previous slot's — starting from `previous`, the
+ * publisher of whatever row sits above the list. When only one publisher is
+ * left its rows follow each other, which is the best any order can do.
+ * Deterministic on purpose: the list must not reshuffle between renders.
+ */
+export function interleaveByPublisher<T>(
+  rows: readonly T[],
+  keyOf: (row: T) => string,
+  previous?: string
+): T[] {
+  const remaining = [...rows]
+  const out: T[] = []
+  let last = previous
+  while (remaining.length > 0) {
+    const index = remaining.findIndex((row) => keyOf(row) !== last)
+    const [next] = remaining.splice(index === -1 ? 0 : index, 1)
+    out.push(next)
+    last = keyOf(next)
+  }
+  return out
+}
+
 // Auto-start picks the smallest runnable candidate: it loads fastest, so the
 // first launch feels instant. The rule is shared with the composer widget's
 // "add a folder" route, so a folder added there starts the same model this
@@ -155,6 +204,12 @@ type SetupScreenProps = {
 /// Signing in is not "a cloud provider whose key happens to be a login" — it is
 /// the shortest exit from onboarding there is, so it gets its own button.
 const SUBSCRIPTION_PROVIDER = 'chatgpt'
+
+/// A hover the eye can catch on the two cloud buttons. `secondary`'s own
+/// `hover:bg-secondary/80` moves the fill by a fifth of a shade towards the
+/// page background, which on this screen is no move at all.
+const CLOUD_BUTTON_HOVER =
+  'transition-colors hover:bg-neutral-200 dark:hover:bg-neutral-600'
 
 /// A download click used to swap the screen out instantly, which read as "did
 /// my click register?" — the row flipping to a progress readout was gone before
@@ -431,6 +486,10 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     hardwareTier,
     hardwareProfile
   )
+  // The Hub's curated list, in the Hub's own order. GGUF is the format the
+  // Hub opens on and the one every platform runs; the MLX twins stay behind
+  // the Hub's format filter, where a user who wants them knows to look.
+  const staffPickItems = useStaffPicks(sources, 'gguf')
 
   // Every input the picker needs before it can paint a stable list.
   const pickerInputsPending =
@@ -567,21 +626,109 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     return { installedRecommended: installed, pendingRecommended: pending }
   }, [recommendedItems, isMlxDownloaded, isVariantDownloaded, getMlxModelId])
 
-  // The screen leads with ONE model. `useResolvedRecommendedModels` returns the
-  // ladder rung for this machine first, so the hero is simply the first entry
+  // The screen leads with ONE offer. `useResolvedRecommendedModels` returns the
+  // ladder rung for this machine first, so the offer is simply the first entry
   // the user does not already have — anything already on disk has moved up into
   // "On your device" with a Run button, which is a better offer than a
-  // re-download. The rest of the ladder is what the Hub is for.
-  //
-  // Why one and not the previous list of two-to-eleven: the manifest served two
-  // per tier plus whatever the scanners found, and historical launches shipped
-  // 6, 10 and 11 rows. A first screen whose job is "start chatting" should not
-  // open with a comparison table.
+  // re-download. The rest of the registry ladder is not rendered: what follows
+  // the offer is the Hub's curated list (see `popularPicks`).
   const heroRecommendation = pendingRecommended[0] ?? null
+
+  // The hook types `model` as always present (its `?? null` tail is
+  // unreachable for the compiler), but a card can be unresolved at runtime —
+  // the rows below say so explicitly.
+  type PendingRow = Omit<(typeof pendingRecommended)[number], 'model'> & {
+    model: CatalogModel | null
+  }
+
+  /**
+   * The list under the offer: every one of the Hub's curated picks, in the
+   * Hub's order, each with a secondary Download — the same rows Models opens
+   * on, so a user who wants something other than the offer does not have to
+   * leave onboarding to find it.
+   *
+   * The offer used to stand alone (d29b99b85): the manifest had served two per
+   * tier plus whatever the scanners found, and 6-to-11-row launches read as a
+   * comparison table. This is not that list. The offer keeps the badge and the
+   * primary button; the picks come in the Hub's own order, plainly secondary,
+   * in a box that scrolls so the cloud buttons never move.
+   *
+   * Only two things are left out, and both are already on screen elsewhere:
+   * the offer itself and anything already installed. A pick whose card has
+   * not resolved yet keeps its row as a placeholder, as the registry rows
+   * always have, so the list is complete from the first paint and fills in.
+   * Nothing is hidden for size — the list is the Hub's, not a second
+   * recommender.
+   *
+   * The one liberty taken with the Hub's order: rows are dealt so that no two
+   * neighbours come from the same publisher (see `interleaveByPublisher`).
+   * The manifest groups a family's sizes together, which in a scrolling list
+   * reads as five Gemma rows, then five Qwen rows — a catalogue, not a choice.
+   */
+  const popularPicks = useMemo(() => {
+    const taken = new Set<string>()
+    if (heroRecommendation) {
+      taken.add(heroRecommendation.rec.modelName.toLowerCase())
+    }
+    for (const { rec } of installedRecommended) {
+      taken.add(rec.modelName.toLowerCase())
+    }
+
+    const rows: Array<PendingRow & { pick: StaffPick }> = []
+    for (const { pick, model } of staffPickItems) {
+      const key = pick.model_name.toLowerCase()
+      if (taken.has(key)) continue
+      const isMlx = !!model?.is_mlx
+      const variant = model && !isMlx ? pickPreferredVariant(model) : null
+      const downloaded = model
+        ? isMlx
+          ? isMlxDownloaded(model)
+          : variant
+            ? isVariantDownloaded(model, variant)
+            : false
+        : false
+      if (downloaded) continue
+      taken.add(key)
+      rows.push({
+        rec: {
+          modelName: pick.model_name,
+          descriptionKey: pick.description_key ?? 'hub:recEverydayUse',
+        },
+        model,
+        pick,
+        startId: model
+          ? isMlx
+            ? getMlxModelId(model)
+            : variant?.model_id
+          : undefined,
+      })
+    }
+    return interleaveByPublisher(
+      rows,
+      (row) => publisherKey(row.rec.modelName, row.pick.icon),
+      heroRecommendation
+        ? publisherKey(heroRecommendation.rec.modelName)
+        : undefined
+    )
+  }, [
+    staffPickItems,
+    heroRecommendation,
+    installedRecommended,
+    isMlxDownloaded,
+    isVariantDownloaded,
+    getMlxModelId,
+  ])
+
+  // `recommended_model_shown.position` is the row's index in the painted list:
+  // the offer at 0, the picks after it. Clicks report the same index.
+  const pickPositionOffset = heroRecommendation ? 1 : 0
 
   //* P0 онбординг-аналитика: фиксируем показ экрана выбора модели один раз,
   //* дождавшись резолва списка рекомендаций (иначе recommended_count = 0).
   const setupShownFiredRef = useRef(false)
+  // State, not only the ref: the impressions effect below has to run once the
+  // screen has been reported, whatever its own inputs did in that render.
+  const [setupShownReported, setSetupShownReported] = useState(false)
   useEffect(() => {
     if (step !== 'model' || setupShownFiredRef.current) return
     if (pickerInputsPending) return
@@ -604,18 +751,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       detectedLocalModelsCount: detectedRunnable.length,
       detectedSources: [...new Set(detectedRunnable.map((c) => c.source))],
     })
-    // Clicks have always carried a `position`; impressions never did, so a
-    // row's conversion — and whether the list is read past the first entry —
-    // could not be computed at all.
-    captureRecommendedModelsShown(
-      buildRecommendedImpressions({
-        // Only the offer: it is the sole row the screen paints, so a row
-        // nobody saw never gets a denominator.
-        pending: heroRecommendation ? [heroRecommendation] : [],
-        installed: installedRecommended,
-        detected: detectedRunnable,
-      })
-    )
+    setSetupShownReported(true)
   }, [
     step,
     pickerInputsPending,
@@ -627,6 +763,46 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     hardwareTierReady,
     hardwareProfile,
     heroRecommendation,
+    installedRecommended,
+    detectedRunnable,
+  ])
+
+  // Clicks have always carried a `position`; impressions never did, so a row's
+  // conversion — and whether the list is read past the first entry — could not
+  // be computed at all. Every row the screen paints gets one, once per
+  // position: a pick whose card resolves after the first paint is reported
+  // when it appears, and since it slots into the Hub's order above rows
+  // already reported, those rows are reported again at the index a click on
+  // them would now carry. A row nobody saw never gets a denominator.
+  //
+  // Painted, not merely reported: the auto-start of a model found on disk
+  // replaces the picker with a status line (`setup_screen_shown` says so with
+  // `rendered: false`), and a row behind a status line was not seen.
+  const pickerRendered =
+    !pickerInputsPending && !(autoRunTarget && autoRunState !== 'failed')
+  const reportedImpressionsRef = useRef(new Set<string>())
+  useEffect(() => {
+    if (step !== 'model' || !setupShownReported || !pickerRendered) return
+    const fresh = buildRecommendedImpressions({
+      pending: [
+        ...(heroRecommendation ? [heroRecommendation] : []),
+        ...popularPicks,
+      ],
+      installed: installedRecommended,
+      detected: detectedRunnable,
+    }).filter((item) => {
+      const key = `${item.section}:${item.modelId}:${item.position}`
+      if (reportedImpressionsRef.current.has(key)) return false
+      reportedImpressionsRef.current.add(key)
+      return true
+    })
+    if (fresh.length > 0) captureRecommendedModelsShown(fresh)
+  }, [
+    step,
+    setupShownReported,
+    pickerRendered,
+    heroRecommendation,
+    popularPicks,
     installedRecommended,
     detectedRunnable,
   ])
@@ -1178,6 +1354,9 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     if (step !== 'model' || forcedRegistryRefreshRef.current) return
     forcedRegistryRefreshRef.current = true
     void useRecommendedModelsRegistryStore.getState().refresh({ force: true })
+    // Same reasoning for the list under the offer: it is the Hub's manifest,
+    // and its store bootstraps from a cache that may predate the change.
+    void useStaffPicksStore.getState().refresh({ force: true })
   }, [step])
 
   // Windows: dedicated llama.cpp backend step runs first. Once the user
@@ -1210,20 +1389,23 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   }
 
   /**
-   * One downloadable recommendation.
+   * One downloadable row: the offer, or a Hub pick under it. Same layout for
+   * both — mark, name, one line, button — so the list reads as one list.
    *
-   * `hero` changes the emphasis: a card instead of a list row, the "why this
-   * one" line, and a full-width primary button.
+   * `hero` is the offer: it wears the "best fit" badge, its line says why it
+   * fits this machine rather than what the model is for, and its button is
+   * the primary one, a size up. A pick brings the Hub's own title, summary
+   * and mark, and gets a secondary button.
    *
-   * `index` is the row's position in `pendingRecommended`, which is what
+   * `index` is the row's position in the painted list, which is what
    * `recommended_model_shown` reports, so clicks and impressions divide.
    */
   const renderPendingRow = (
-    item: (typeof pendingRecommended)[number],
+    item: PendingRow & { pick?: StaffPick },
     index: number,
     hero = false
   ) => {
-    const { rec, model } = item
+    const { rec, model, pick } = item
     const isMlx = !!model?.is_mlx
     const variant =
       model && !isMlx ? pickPreferredVariant(model, rec.quant) : null
@@ -1262,7 +1444,9 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         .slice(0, 2) ||
       hfAuthor.slice(0, 2) ||
       '?'
-    const brandIconSrc = recommendedSetupModelIconSrc(rec.modelName)
+    // A curated pick names its mark; a registry row is matched by family.
+    const brandIconSrc =
+      iconKeyLogoSrc(pick?.icon) ?? recommendedSetupModelIconSrc(rec.modelName)
     const rowDownloadProgress = rowTrackId
       ? downloadProcesses.find((p) => p.id === rowTrackId)
       : undefined
@@ -1296,22 +1480,26 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       }
     }
 
+    // Raster marks (Ornith's, say) arrive as full squares; the corner radius
+    // is what keeps them in step with the vector marks around them.
     const icon = brandIconSrc ? (
       <FamilyLogoMark
         src={brandIconSrc}
-        className={cn('shrink-0', hero ? 'size-10' : 'size-8')}
+        className="size-8 shrink-0 rounded-md"
       />
     ) : (
       <HuggingFaceAuthorAvatar
         author={hfAuthor}
         initials={rowInitials}
-        className={cn('shrink-0', hero ? 'size-10' : 'size-8')}
+        className="size-8 shrink-0"
       />
     )
 
-    const title = model
-      ? prettyModelName(model.model_name)
-      : prettyModelName(rec.modelName)
+    const title =
+      pick?.title ??
+      (model
+        ? prettyModelName(model.model_name)
+        : prettyModelName(rec.modelName))
 
     const buttonLabel = rowDownloaded
       ? t('hub:downloaded')
@@ -1322,10 +1510,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     const progressLine =
       rowDownloading && rowTrackId ? (
         <p
-          className={cn(
-            'text-xs text-muted-foreground tabular-nums',
-            hero ? 'text-center' : 'text-right'
-          )}
+          className="text-right text-xs text-muted-foreground tabular-nums"
           aria-live="polite"
         >
           {rowDownloadProgress && rowDownloadProgress.total > 0
@@ -1338,12 +1523,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     // seconds later is something the user was told about.
     const handoffLine =
       rowTrackId && downloadStartedId === rowTrackId ? (
-        <p
-          className={cn(
-            'text-xs text-muted-foreground',
-            hero ? 'text-center' : 'text-right'
-          )}
-        >
+        <p className="text-right text-xs text-muted-foreground">
           {t('setup:downloadStartedOpening')}
         </p>
       ) : null
@@ -1351,53 +1531,33 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     const disabled =
       !model || (!isMlx && !variant) || rowDownloading || rowDownloaded
 
-    if (hero) {
-      //* «Почему эта»: размер против бюджета памяти этой машины, а не
-      //* абстрактное «рекомендуем» — см. describeRecommendationFit.
-      const fit = describeRecommendationFit({
-        sizeLabel: downloadSize,
-        sizeBytes: parseFileSizeToBytes(downloadSize ?? undefined),
-        profile: hardwareProfile,
-      })
+    //* «Почему эта»: размер против бюджета памяти этой машины, а не
+    //* абстрактное «рекомендуем» — см. describeRecommendationFit.
+    const fit = hero
+      ? describeRecommendationFit({
+          sizeLabel: downloadSize,
+          sizeBytes: parseFileSizeToBytes(downloadSize ?? undefined),
+          profile: hardwareProfile,
+        })
+      : null
 
-      return (
-        <div
-          key={`${rec.modelName}-${rec.descriptionKey}`}
-          className="flex w-full shrink-0 flex-col gap-3 rounded-lg border bg-secondary/50 p-4"
-        >
-          <div className="flex min-w-0 items-center gap-3">
-            {icon}
-            <div className="min-w-0 flex-1">
-              <h2 className="truncate text-sm font-medium leading-tight">
-                {title}
-              </h2>
-              <p className="mt-0.5 text-xs leading-snug text-muted-foreground">
-                {fit
-                  ? t(fit.key, {
-                      ...fit.values,
-                      ...(fit.poolKey ? { pool: t(fit.poolKey) } : {}),
-                    })
-                  : !model && sourcesLoading
-                    ? t('hub:loadingModels')
-                    : !model
-                      ? t('setup:modelUnavailable')
-                      : t(rec.descriptionKey)}
-              </p>
-            </div>
-          </div>
-          <Button
-            size="sm"
-            disabled={disabled}
-            onClick={onDownload}
-            className="w-full rounded-full"
-          >
-            {buttonLabel}
-          </Button>
-          {progressLine}
-          {handoffLine}
-        </div>
-      )
-    }
+    // The line under the offer says why it is this model; under a pick it is
+    // the Hub's own summary; a row without either falls back to its category,
+    // so the line is never blank. A card that has not resolved says so.
+    const summary = !model
+      ? sourcesLoading
+        ? t('hub:loadingModels')
+        : t('setup:modelUnavailable')
+      : fit
+        ? t(fit.key, {
+            ...fit.values,
+            ...(fit.poolKey ? { pool: t(fit.poolKey) } : {}),
+          })
+        : (pick?.summary ?? t(rec.descriptionKey))
+
+    // The offer's line already opens with the size, so the title does not
+    // repeat it.
+    const showSizeInTitle = !!downloadSize && !(hero && fit)
 
     return (
       <div
@@ -1407,30 +1567,36 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         <div className="flex min-w-0 flex-1 items-center gap-3">
           {icon}
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-sm font-medium leading-tight">
-              {title}
-              {downloadSize ? (
-                <span className="text-xs font-normal text-muted-foreground">
-                  {' '}
-                  · {downloadSize}
+            {/* The badge wraps under the name when the two do not fit on one
+                line; the name is what has to survive. */}
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              <h2 className="min-w-0 max-w-full truncate text-sm font-medium leading-tight">
+                {title}
+                {showSizeInTitle ? (
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {' '}
+                    · {downloadSize}
+                  </span>
+                ) : null}
+              </h2>
+              {hero && (
+                <span className="shrink-0 rounded-[5px] border border-emerald-200 bg-emerald-50 px-1.5 py-px text-[10px] font-bold uppercase tracking-wider text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/45 dark:text-emerald-200">
+                  {t('setup:recommend.badge')}
                 </span>
-              ) : null}
-            </h2>
-            {!model && (
-              <p className="mt-1 text-xs text-muted-foreground">
-                {sourcesLoading
-                  ? t('hub:loadingModels')
-                  : t('setup:modelUnavailable')}
-              </p>
-            )}
+              )}
+            </div>
+            <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
+              {summary}
+            </p>
           </div>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           <Button
-            size="sm"
+            variant={hero ? 'default' : 'secondary'}
+            size={hero ? 'default' : 'sm'}
             disabled={disabled}
             onClick={onDownload}
-            className="shrink-0 rounded-full px-4"
+            className={cn('shrink-0 rounded-full', hero ? 'px-5' : 'px-4')}
           >
             {/* Reserve width for the widest possible label so the button
                 doesn't reflow when its state flips between Download /
@@ -1472,22 +1638,12 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <div className="pointer-events-auto mx-auto my-auto flex w-full max-w-[520px] flex-col px-6 py-8 sm:py-10">
             <div className="mb-5 flex shrink-0 flex-col items-center gap-3 text-center">
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-neutral-950 p-1 shadow-sm dark:bg-white dark:shadow-none">
-                <img
-                  src="/images/transparent-logo.png"
-                  alt=""
-                  className="size-full min-h-0 min-w-0 object-contain invert dark:invert-0"
-                  draggable={false}
-                />
-              </div>
-              <div>
-                <h1 className="text-xl font-semibold leading-snug tracking-tight">
-                  {t('setup:welcomeTitle')}
-                </h1>
-                <p className="text-muted-foreground mt-1 text-sm">
-                  {t('setup:welcomeSubtitle')}
-                </p>
-              </div>
+              {/* The sidebar's own lockup, not a copy of its tile: the same
+                  element is the only thing that reads as the same size. */}
+              <AppLogo wordmarkClassName="text-foreground" />
+              <h1 className="text-xl font-semibold leading-snug tracking-tight">
+                {t('setup:welcomeTitle')}
+              </h1>
             </div>
 
             <div className="relative z-50 flex flex-col gap-4">
@@ -1525,7 +1681,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                               {brandIconSrc ? (
                                 <FamilyLogoMark
                                   src={brandIconSrc}
-                                  className="size-8 shrink-0"
+                                  className="size-8 shrink-0 rounded-md"
                                 />
                               ) : (
                                 <HuggingFaceAuthorAvatar
@@ -1612,7 +1768,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                 {brandIconSrc ? (
                                   <FamilyLogoMark
                                     src={brandIconSrc}
-                                    className="size-8 shrink-0"
+                                    className="size-8 shrink-0 rounded-md"
                                   />
                                 ) : (
                                   <HuggingFaceAuthorAvatar
@@ -1663,15 +1819,30 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
               )}
 
               <div className="flex flex-col gap-3">
-                {/* One offer, not a list. The rung of the ladder this machine
-                    sits on — see `useResolvedRecommendedModels`. */}
-                {heroRecommendation && (
-                  <>
+                {/* The offer — the rung of the ladder this machine sits on,
+                    see `useResolvedRecommendedModels` — with the Hub's picks
+                    under it in a box that scrolls, so the buttons below stay
+                    put however long the list is. */}
+                {(heroRecommendation || popularPicks.length > 0) && (
+                  <div className="flex flex-col gap-2">
                     <span className="shrink-0 text-left text-xs font-medium text-muted-foreground">
                       {t('setup:recommend.title')}
                     </span>
-                    {renderPendingRow(heroRecommendation, 0, true)}
-                  </>
+                    <div
+                      className={cn(
+                        'w-full shrink-0 rounded-lg border bg-secondary/50 px-3 py-2',
+                        'max-h-[min(50vh,26rem)] overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable]'
+                      )}
+                    >
+                      <div className="flex flex-col divide-y divide-border/60">
+                        {heroRecommendation &&
+                          renderPendingRow(heroRecommendation, 0, true)}
+                        {popularPicks.map((item, index) =>
+                          renderPendingRow(item, index + pickPositionOffset)
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 )}
 
                 {/* Peers of the model, not a footnote under an "or".
@@ -1680,14 +1851,23 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                     seven devices in the product's history because it lived
                     below a divider that framed it as the consolation prize. */}
                 {(hasCloudProviders || subscriptionProvider) && (
-                  <div className="relative z-60 flex shrink-0 flex-col gap-2 pt-1 sm:flex-row">
+                  <div className="relative z-60 flex shrink-0 flex-wrap justify-center gap-2 pt-1">
+                    {/* Sized to their labels and centred, not stretched to
+                        the column: a pill as wide as the list above it reads
+                        as the primary action, and neither of these is. The
+                        theme's secondary hover is a fifth of a shade in either
+                        direction — invisible on this background — so the
+                        hover here is an explicit step. */}
                     {hasCloudProviders && (
                       <Button
                         type="button"
                         variant="secondary"
                         size="sm"
                         onClick={openCloudGallery}
-                        className="relative z-60 flex-1 rounded-full px-4"
+                        className={cn(
+                          'relative z-60 rounded-full px-4',
+                          CLOUD_BUTTON_HOVER
+                        )}
                       >
                         <Cloud />
                         {t('setup:cloudStep.trigger')}
@@ -1699,8 +1879,12 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                         variant="secondary"
                         size="sm"
                         onClick={openSubscription}
-                        className="relative z-60 flex-1 rounded-full px-4"
+                        className={cn(
+                          'relative z-60 rounded-full px-4',
+                          CLOUD_BUTTON_HOVER
+                        )}
                       >
+                        <ChatGptMark />
                         {t('setup:cloudStep.subscriptionTrigger')}
                       </Button>
                     )}

@@ -11,8 +11,6 @@
     "sendHint": "返信に使うモデルを選択",
     "startingTitle": "{{name}} を起動しています…",
     "startingDescription": "準備ができ次第、メッセージを送信します。",
-    "pickTitle": "何で返信しますか？",
-    "pickDescription": "モデルを選ぶと、メッセージがすぐに送信されます。",
     "emptyTitle": "まだ返信に使えるモデルがありません",
     "emptyDescription": "この端末に合うモデルをダウンロードするか、クラウドのモデルを接続してください。メッセージはどちらの場合も保持されます。",
     "recommendedForDevice": "お使いの端末におすすめ",
@@ -22,7 +20,7 @@
     "connectCloud": "クラウドプロバイダーを接続",
     "connectSubscription": "ChatGPT サブスクリプションを接続",
     "queuedNotice": "モデルの準備ができ次第、メッセージを送信します。",
-    "startingNotice": "{{name}} を起動しています… 準備ができ次第、メッセージを送信します。",
+    "startingNotice": "起動中",
     "addFolder": "モデルのフォルダを追加",
     "folderScanning": "モデルを探しています…",
     "folderEmpty": "そのフォルダに対応するモデルはありません。"
@@ -50,12 +48,12 @@
     "providerKeyMissing": "エージェントモードを使うには、設定でこのプロバイダーの API キーを追加してください。"
   },
   "agentApprovals": {
-    "manualSelected": "手動",
-    "manual": "手動で承認",
-    "manualDescription": "機密性の高いアクションの前に一時停止します。",
-    "skipSelected": "スキップ",
-    "skip": "すべての承認をスキップ",
-    "skipDescription": "確認なしで実行します。"
+    "manualSelected": "承認を求める",
+    "manual": "承認を求める",
+    "manualDescription": "外部ファイルの編集やインターネットの使用前に必ず確認します",
+    "skipSelected": "フルアクセス",
+    "skip": "フルアクセス",
+    "skipDescription": "インターネットとコンピューター上のすべてのファイルに無制限にアクセスします"
   },
   "agentApproval": {
     "title": "エージェントの承認が必要です",
@@ -100,7 +98,10 @@
     "close": "実行設定を閉じる",
     "model": "モデル",
     "advancedSettings": "詳細設定",
-    "advancedSettingsHint": "読み込み時のオプションです。変更すると実行中のモデルが再起動します。"
+    "advancedSettingsHint": "読み込み時のオプションです。変更すると実行中のモデルが再起動します。",
+    "reset": "リセット",
+    "resetSampling": "サンプリングをリセット",
+    "resetModel": "モデル設定をデフォルトにリセット"
   },
   "agentErrors": {
     "audioUnsupported": "エージェントモードは音声添付に対応していません。",

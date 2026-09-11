@@ -28,19 +28,52 @@ export type LadderEntry = {
   descriptionKey: string
 }
 
+// The three rungs from 16 GiB up, each shared by several tiers below.
+const GEMMA_4_12B_QAT: LadderEntry = {
+  repo: 'unsloth/gemma-4-12B-it-qat-GGUF',
+  title: 'Gemma 4 12B (QAT)',
+  quant: 'Q4_K_XL',
+  mmprojQuant: 'F16',
+  sizeGb: 6.42,
+  descriptionKey: 'hub:recVisionKnowledge',
+}
+
+const QWEN_3_6_27B: LadderEntry = {
+  repo: 'AtomicChat/Qwen3.6-27B-GGUF',
+  title: 'Qwen3.6 27B',
+  quant: 'Q4_K_M',
+  sizeGb: 15.41,
+  descriptionKey: 'hub:recCoding',
+}
+
+const QWEN_3_6_35B_A3B: LadderEntry = {
+  repo: 'AtomicChat/Qwen3.6-35B-A3B-GGUF',
+  title: 'Qwen3.6 35B A3B',
+  quant: 'Q4_K_M',
+  sizeGb: 19.71,
+  descriptionKey: 'hub:recMathReasoning',
+}
+
 /**
  * What we recommend, per hardware tier (ATO-463).
  *
- * The principle, set by product: **optimize the speed of the first decent
- * answer, not the largest model that fits.** Even on a 128 GiB machine the
- * offer is light and fast; anything heavier lives behind "other options".
+ * Up to 12 GiB the principle, set by product, is **optimize the speed of the
+ * first decent answer, not the largest model that fits.** From 16 GiB up the
+ * offer scales with memory instead (product decision, 2026-09-11), the same on
+ * a card and on unified memory: Gemma 4 12B at 16, Qwen3.6 27B at 24, and
+ * Qwen3.6 35B A3B from 32 up — sparse, 3B active per token, so it answers at a
+ * small model's per-token cost despite the larger download.
  *
- * Three measurements decided the contents:
+ * An 18 GB Mac lands on `unified_24`, where the 27B (15.4 GiB) is past the
+ * Metal ceiling; `useResolvedRecommendedModels` steps it down to the 16 GiB
+ * rung once the card's size is known.
  *
- *  - **27B is out on every tier.** It is the most-used model in the whole
+ * Three measurements decided the lower rungs:
+ *
+ *  - **27B is slow for its size.** It is the most-used model in the whole
  *    dataset (105 devices) and sits on the edge of unusable: 15.1 tok/s median,
- *    5.4 at the lower quartile, after a 15 GB download. It stays in the catalog
- *    for anyone who wants it; it is not a default.
+ *    5.4 at the lower quartile, after a 15 GB download. It is kept off every
+ *    rung below 24 GiB.
  *  - **`gemma-4-E2B-it` is out.** Its name is MatFormer effective parameters,
  *    not file size: it weighs 3.19 GB, more than `Qwen3.5-4B` at 2.52, which is
  *    both measured faster and smaller. It was in the `standard` tier as the
@@ -109,24 +142,16 @@ export const RECOMMENDATION_LADDER: Readonly<
     sizeGb: 5.89,
     descriptionKey: 'hub:recVisionKnowledge',
   },
-  vram_16: {
-    repo: 'AtomicChat/Qwen3.5-9B-GGUF',
-    title: 'Qwen3.5 9B',
-    quant: 'Q4_K_M',
-    sizeGb: 5.24,
-    descriptionKey: 'hub:recEverydayUse',
-  },
-  vram_16_plus: {
-    repo: 'unsloth/gemma-4-12B-it-qat-GGUF',
-    title: 'Gemma 4 12B (QAT)',
-    quant: 'Q4_K_XL',
-    mmprojQuant: 'F16',
-    sizeGb: 6.42,
-    descriptionKey: 'hub:recVisionKnowledge',
-  },
-  // Macs get a rung lighter than a PC with the same number on it: the Metal
-  // ceiling is hard, and unified memory is shared with everything else the
-  // machine is doing, whereas VRAM on a card is the model's alone.
+  vram_16: GEMMA_4_12B_QAT,
+  vram_24: QWEN_3_6_27B,
+  vram_32: QWEN_3_6_35B_A3B,
+  vram_48: QWEN_3_6_35B_A3B,
+  vram_64: QWEN_3_6_35B_A3B,
+  vram_64_plus: QWEN_3_6_35B_A3B,
+  // Below 16 GiB a Mac gets a rung lighter than a PC with the same number on
+  // it: the Metal ceiling is hard, and unified memory is shared with
+  // everything else the machine is doing, whereas VRAM on a card is the
+  // model's alone.
   unified_8: {
     repo: 'LiquidAI/LFM2.5-2.6B-GGUF',
     title: 'LFM2.5 2.6B',
@@ -134,29 +159,12 @@ export const RECOMMENDATION_LADDER: Readonly<
     sizeGb: 1.56,
     descriptionKey: 'hub:recEverydayUse',
   },
-  unified_16: {
-    repo: 'AtomicChat/Qwen3.5-4B-GGUF',
-    title: 'Qwen3.5 4B',
-    quant: 'Q4_K_M',
-    sizeGb: 2.52,
-    descriptionKey: 'hub:recEverydayUse',
-  },
-  unified_32: {
-    repo: 'AtomicChat/gemma-4-E4B-it-GGUF',
-    title: 'Gemma 4 E4B',
-    quant: 'Q4_K_M',
-    mmprojQuant: 'F16',
-    sizeGb: 5.89,
-    descriptionKey: 'hub:recVisionKnowledge',
-  },
-  unified_32_plus: {
-    repo: 'unsloth/gemma-4-12B-it-qat-GGUF',
-    title: 'Gemma 4 12B (QAT)',
-    quant: 'Q4_K_XL',
-    mmprojQuant: 'F16',
-    sizeGb: 6.42,
-    descriptionKey: 'hub:recVisionKnowledge',
-  },
+  unified_16: GEMMA_4_12B_QAT,
+  unified_24: QWEN_3_6_27B,
+  unified_32: QWEN_3_6_35B_A3B,
+  unified_48: QWEN_3_6_35B_A3B,
+  unified_64: QWEN_3_6_35B_A3B,
+  unified_64_plus: QWEN_3_6_35B_A3B,
 }
 
 /**

@@ -12,9 +12,11 @@ import {
   formatDetectedSize,
   formatMemoryGb,
   getInitialStep,
+  interleaveByPublisher,
   pickAutoRunCandidate,
   pickMmprojModel,
   pickPreferredVariant,
+  publisherKey,
   sizeStringToGb,
 } from '@/containers/SetupScreen'
 import type { HardwareProfile } from '@/lib/hardware-tier'
@@ -260,5 +262,56 @@ describe('describeRecommendationFit', () => {
     expect(
       describeRecommendationFit({ sizeLabel: null, profile: profile({}) })
     ).toBeNull()
+  })
+})
+
+describe('publisherKey', () => {
+  it('names the brand a row will wear, whatever repo it ships from', () => {
+    // Most picks are our own repacks, so the repo owner says nothing about
+    // who made the model; the brand mark does.
+    expect(publisherKey('AtomicChat/gemma-4-12B-it-GGUF', 'gemma')).toBe(
+      publisherKey('google/gemma-4-E2B-it-GGUF', 'google')
+    )
+    expect(publisherKey('AtomicChat/Qwen3.6-27B-GGUF')).toBe(
+      publisherKey('unsloth/Qwen3.5-35B-A3B-GGUF', 'qwen')
+    )
+    expect(publisherKey('AtomicChat/Muse-Glimmer-30B-GGUF', 'meta')).toBe(
+      publisherKey('unsloth/Llama-3.2-3B-Instruct-GGUF')
+    )
+  })
+
+  it('falls back to the repo owner for a brand it has no mark for', () => {
+    expect(publisherKey('SomeLab/Foo-7B-GGUF')).toBe('somelab')
+  })
+})
+
+describe('interleaveByPublisher', () => {
+  const key = (row: string) => row[0]
+
+  it('keeps the given order except to part two neighbours from one publisher', () => {
+    expect(interleaveByPublisher(['a1', 'a2', 'b1', 'a3', 'c1'], key)).toEqual([
+      'a1',
+      'b1',
+      'a2',
+      'c1',
+      'a3',
+    ])
+  })
+
+  it('starts away from the publisher of the row above the list', () => {
+    expect(interleaveByPublisher(['a1', 'a2', 'b1'], key, 'a')).toEqual([
+      'b1',
+      'a1',
+      'a2',
+    ])
+  })
+
+  it('lets one publisher run on only when nothing else is left', () => {
+    expect(interleaveByPublisher(['a1', 'a2', 'a3'], key)).toEqual([
+      'a1',
+      'a2',
+      'a3',
+    ])
+    expect(interleaveByPublisher([], key)).toEqual([])
   })
 })

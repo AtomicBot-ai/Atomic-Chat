@@ -27,10 +27,13 @@ const mocks = vi.hoisted(() => {
       reminder.pending = value
     }),
     refreshRegistry: vi.fn(() => Promise.resolve()),
+    refreshStaffPicks: vi.fn(() => Promise.resolve()),
     pullModelWithMetadata: vi.fn(() => Promise.resolve()),
     // Recommendation list the picker renders; mutable so a test can offer a
     // downloadable model.
     recommended: [] as unknown[],
+    // The Hub's curated picks, listed under the offer; mutable per test.
+    staffPicks: [] as unknown[],
     engine: { import: vi.fn() },
     // Mutable so a test can move the machine to another rung of the ladder.
     // `profile` is what the "why this one" line reads its memory figure from.
@@ -154,6 +157,17 @@ vi.mock('@/stores/recommended-models-registry-store', () => ({
   },
 }))
 
+vi.mock('@/hooks/useStaffPicks', () => ({
+  useStaffPicks: () => mocks.staffPicks,
+}))
+
+// Same import-time fetch as the registry store, kept out of the tests.
+vi.mock('@/stores/staff-picks-store', () => ({
+  useStaffPicksStore: {
+    getState: () => ({ refresh: mocks.refreshStaffPicks }),
+  },
+}))
+
 vi.mock('@/services/models/localScan', () => ({
   scanLocalModels: mocks.scanLocalModels,
   collectImportedModelPaths: () => new Set(),
@@ -258,6 +272,7 @@ describe('SetupScreen', () => {
       } as unknown as Parameters<typeof seedServiceHub>[0]['models'],
     })
     mocks.recommended = []
+    mocks.staffPicks = []
     mocks.leftPanel.open = false
     mocks.reminder.pending = false
     mocks.hardwareTier.tier = 'vram_8'
@@ -283,7 +298,6 @@ describe('SetupScreen', () => {
     expect(screen.getByText('common:loading')).toBeInTheDocument()
     await finishLocalScan()
     expect(await screen.findByText('setup:welcomeTitle')).toBeInTheDocument()
-    expect(screen.getByText('setup:welcomeSubtitle')).toBeInTheDocument()
     expect(mocks.fetchSources).toHaveBeenCalledOnce()
     expect(mocks.scanLocalModels).toHaveBeenCalledWith({
       enabled: true,
@@ -313,8 +327,10 @@ describe('SetupScreen', () => {
 
     // `force` is the whole point: a cache written before the manifest changed
     // is served without any network call, so onboarding would offer models the
-    // manifest no longer lists.
+    // manifest no longer lists. The list under the offer is the Hub's
+    // manifest, so it gets the same treatment.
     expect(mocks.refreshRegistry.mock.calls).toEqual([[{ force: true }]])
+    expect(mocks.refreshStaffPicks.mock.calls).toEqual([[{ force: true }]])
     unmount()
   })
 
@@ -712,7 +728,7 @@ describe('SetupScreen', () => {
     })
   })
 
-  describe('one offer, nothing else on the first screen', () => {
+  describe('the offer, then the Hub picks', () => {
     const ladderModel = {
       rec: {
         modelName: 'AtomicChat/Qwen3.5-4B-GGUF',
@@ -733,6 +749,8 @@ describe('SetupScreen', () => {
       },
     }
 
+    // A further rung of the registry ladder: stepped down to when the offer
+    // does not fit, never a second row on the screen.
     const otherModel = {
       rec: {
         modelName: 'AtomicChat/Qwen3.5-9B-GGUF',
@@ -753,6 +771,51 @@ describe('SetupScreen', () => {
       },
     }
 
+    // A Hub staff pick as `useStaffPicks` resolves it: the manifest entry
+    // plus the catalog card, with one quant.
+    const staffPick = (
+      repo: string,
+      card: { title: string; size: string; summary?: string; icon?: string }
+    ) => {
+      const [developer, name] = repo.split('/')
+      return {
+        pick: {
+          model_name: repo,
+          title: card.title,
+          summary: card.summary,
+          icon: card.icon,
+          format: 'gguf',
+        },
+        model: {
+          model_name: repo,
+          developer,
+          quants: [
+            {
+              model_id: `${name}-Q4_K_M`,
+              path: `https://hf.co/${repo}/q4_k_m.gguf`,
+              file_size: card.size,
+            },
+          ],
+          mmproj_models: [],
+        },
+      }
+    }
+
+    const gemma = staffPick('AtomicChat/gemma-4-12B-it-GGUF', {
+      title: 'Gemma 4 12B',
+      size: '7.30 GB',
+      summary: 'Mid-size Gemma 4 with vision and long-context support.',
+      icon: 'gemma',
+    })
+    const nemotron = staffPick(
+      'AtomicChat/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF',
+      {
+        title: 'Nemotron 3.5 Lightning',
+        size: '19.70 GB',
+        icon: 'nvidia',
+      }
+    )
+
     const renderPicker = async () => {
       mocks.scanLocalModels.mockResolvedValue([])
       const rendered = render(<SetupScreen />)
@@ -760,23 +823,270 @@ describe('SetupScreen', () => {
       return rendered
     }
 
+    const downloadButtons = () =>
+      screen.getAllByRole('button', { name: /hub:download/ })
+
     beforeEach(() => {
       mocks.recommended = [ladderModel, otherModel]
+      mocks.staffPicks = [gemma, nemotron]
     })
 
-    it('leads with one model and drops the rest', async () => {
-      // The manifest used to serve two per tier plus whatever the scanners
-      // found; shipped launches have shown 6, 10 and 11 rows. A first screen
-      // whose job is "start chatting" should not open with a comparison table,
-      // and no longer offers a way back to one — the Hub is where the ladder
-      // gets compared.
+    it('leads with the offer and lists the Hub picks under it, plainly secondary', async () => {
+      // The offer alone (d29b99b85) left a user who wanted anything else with
+      // Skip and an empty chat. The Hub's picks come back under it — but as
+      // the Hub's rows with a secondary button, not as a second offer.
       const { unmount } = await renderPicker()
 
       expect(screen.getByText(/Qwen3\.5 4B/)).toBeInTheDocument()
-      expect(screen.queryByText(/Qwen3\.5 9B/)).not.toBeInTheDocument()
+      // One heading over one list; one badge, on the offer; the offer's
+      // button is the only primary one and a size up from the rest.
+      expect(screen.getAllByText('setup:recommend.title')).toHaveLength(1)
+      expect(screen.getAllByText('setup:recommend.badge')).toHaveLength(1)
+      const buttons = downloadButtons()
+      expect(buttons).toHaveLength(3)
+      expect(buttons[0]).toHaveAttribute('data-variant', 'default')
+      expect(buttons[0]).toHaveAttribute('data-size', 'default')
+
+      // The picks read as the Hub shows them: its title and its summary.
+      expect(screen.getByText('Gemma 4 12B')).toBeInTheDocument()
       expect(
-        screen.queryByRole('button', { name: /setup:recommend\.otherOptions/ })
+        screen.getByText(
+          'Mid-size Gemma 4 with vision and long-context support.'
+        )
+      ).toBeInTheDocument()
+      expect(screen.getByText('Nemotron 3.5 Lightning')).toBeInTheDocument()
+      expect(buttons[1]).toHaveAttribute('data-variant', 'secondary')
+      expect(buttons[1]).toHaveAttribute('data-size', 'sm')
+      expect(buttons[2]).toHaveAttribute('data-variant', 'secondary')
+      unmount()
+    })
+
+    it('keeps the rest of the registry ladder out of the list', async () => {
+      // The list is the Hub's, not the manifest's tail. The manifest's other
+      // rungs are what the recommender steps down through when the offer
+      // does not fit; shown as rows they were the 6-to-11-row comparison
+      // table the single offer replaced.
+      const { unmount } = await renderPicker()
+
+      expect(screen.queryByText(/Qwen3\.5 9B/)).not.toBeInTheDocument()
+      unmount()
+    })
+
+    it('does not list the offer a second time when it is also a Hub pick', async () => {
+      mocks.staffPicks = [
+        staffPick('AtomicChat/Qwen3.5-4B-GGUF', {
+          title: 'Qwen3.5 4B',
+          size: '2.52 GB',
+        }),
+        gemma,
+      ]
+      const { unmount } = await renderPicker()
+
+      expect(screen.getAllByText(/Qwen3\.5 4B/)).toHaveLength(1)
+      expect(downloadButtons()).toHaveLength(2)
+      unmount()
+    })
+
+    it('deals the picks so two from one publisher never sit together', async () => {
+      // The manifest groups a family's sizes; a scrolling list of five Gemma
+      // rows then five Qwen rows reads as a catalogue, not a choice. The
+      // offer counts as the row above the list: it is Qwen here, so the
+      // first pick may not be.
+      mocks.staffPicks = [
+        staffPick('AtomicChat/Qwen3.6-27B-GGUF', {
+          title: 'Qwen3.6 27B',
+          size: '14.0 GB',
+          icon: 'qwen',
+        }),
+        gemma,
+        staffPick('unsloth/Qwen3.5-35B-A3B-GGUF', {
+          title: 'Qwen3.5 35B A3B',
+          size: '21.3 GB',
+          icon: 'qwen',
+        }),
+      ]
+      const { unmount } = await renderPicker()
+
+      const names = screen
+        .getAllByRole('heading', { level: 2 })
+        .map((heading) => heading.textContent?.replace(/ ·.*$/, '').trim())
+      expect(names).toEqual([
+        'Qwen3.5 4B',
+        'Gemma 4 12B',
+        'Qwen3.6 27B',
+        'Qwen3.5 35B A3B',
+      ])
+      unmount()
+    })
+
+    it('lists every Hub pick, however large, and holds a place for one still resolving', async () => {
+      // The list is the Hub's, not a second recommender: a pick this Mac
+      // cannot load stays listed, as it is in Models. A pick whose card has
+      // not come back yet keeps its row too, so the list is complete from the
+      // first paint and fills in — as the registry rows always have.
+      mocks.hardwareTier.tier = 'unified_16'
+      mocks.hardwareTier.profile = {
+        tier: 'unified_16',
+        memoryKind: 'unified',
+        budgetMib: 18 * 1024,
+        systemRamMib: 18 * 1024,
+        vramMib: 18 * 1024,
+        hardCeiling: true,
+      }
+      mocks.staffPicks = [
+        gemma,
+        nemotron,
+        {
+          pick: {
+            model_name: 'unsloth/DeepSeek-V4-Flash-GGUF',
+            title: 'DeepSeek V4 Flash',
+            format: 'gguf',
+          },
+          model: null,
+        },
+      ]
+      const { unmount } = await renderPicker()
+
+      expect(screen.getByText('Gemma 4 12B')).toBeInTheDocument()
+      // 19.7 GB on an 18 GiB Mac: listed all the same.
+      expect(screen.getByText('Nemotron 3.5 Lightning')).toBeInTheDocument()
+      expect(screen.getByText('DeepSeek V4 Flash')).toBeInTheDocument()
+      expect(screen.getByText('setup:modelUnavailable')).toBeInTheDocument()
+      const buttons = downloadButtons()
+      expect(buttons).toHaveLength(4)
+      expect(buttons[3]).toBeDisabled()
+      unmount()
+    })
+
+    it('starts a listed pick the way it starts the offer', async () => {
+      vi.useFakeTimers()
+      try {
+        const { unmount } = await renderPicker()
+
+        fireEvent.click(downloadButtons()[1])
+
+        expect(mocks.pullModelWithMetadata).toHaveBeenCalledOnce()
+        expect(mocks.pullModelWithMetadata.mock.calls[0][0]).toBe(
+          'gemma-4-12B-it-GGUF-Q4_K_M'
+        )
+        expect(
+          screen.getByText('setup:downloadStartedOpening')
+        ).toBeInTheDocument()
+        // Position 1: the row after the offer, the same index its impression
+        // carried.
+        expect(vi.mocked(posthog.capture)).toHaveBeenCalledWith(
+          'recommended_model_clicked',
+          expect.objectContaining({ position: 1 })
+        )
+
+        await act(async () => {
+          vi.advanceTimersByTime(3_000)
+        })
+
+        expect(mocks.navigate.mock.calls).toHaveLength(1)
+        expect(mocks.navigate.mock.calls[0][0].search.threadModel.id).toBe(
+          'gemma-4-12B-it-GGUF-Q4_K_M'
+        )
+        unmount()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('reports every row it paints as an impression, in the order painted', async () => {
+      const { unmount } = await renderPicker()
+
+      const shown = vi
+        .mocked(posthog.capture)
+        .mock.calls.filter(([event]) => event === 'recommended_model_shown')
+        .map(([, props]) => props as Record<string, unknown>)
+      expect(shown.map((props) => [props.position, props.section])).toEqual([
+        [0, 'pending'],
+        [1, 'pending'],
+        [2, 'pending'],
+      ])
+      unmount()
+    })
+
+    it('reports a pick that resolves after the first paint, once', async () => {
+      // The Hub resolves picks the seed catalog does not carry with one
+      // Hugging Face round-trip each, so a row can sit as a placeholder after
+      // the screen painted. It gets its impression when its card lands — a
+      // placeholder has no id to attribute a click to — and only then.
+      const lfm = staffPick('LiquidAI/LFM2.5-1.2B-Instruct-GGUF', {
+        title: 'LFM2.5 1.2B',
+        size: '697 MB',
+      })
+      mocks.staffPicks = [gemma, nemotron, { pick: lfm.pick, model: null }]
+      const { rerender, unmount } = await renderPicker()
+      expect(screen.getByText('LFM2.5 1.2B')).toBeInTheDocument()
+      vi.mocked(posthog.capture).mockClear()
+      const shown = () =>
+        vi
+          .mocked(posthog.capture)
+          .mock.calls.filter(([event]) => event === 'recommended_model_shown')
+          .map(([, props]) => props as Record<string, unknown>)
+
+      mocks.staffPicks = [gemma, nemotron, lfm]
+      rerender(<SetupScreen />)
+      await act(async () => {})
+
+      expect(shown().map((props) => [props.position, props.section])).toEqual([
+        [3, 'pending'],
+      ])
+
+      // Painting the same list again is not a new impression.
+      rerender(<SetupScreen />)
+      await act(async () => {})
+      expect(shown()).toHaveLength(1)
+      unmount()
+    })
+
+    it('lists the picks on their own when the registry has no offer', async () => {
+      // No manifest, or every rung already installed, used to mean nothing to
+      // download at all: Skip and an empty chat. The picks stand on their own
+      // under the list's own heading, with nothing promoted above them.
+      mocks.recommended = []
+      const { unmount } = await renderPicker()
+
+      expect(
+        screen.queryByText('setup:recommend.badge')
       ).not.toBeInTheDocument()
+      expect(screen.getAllByText('setup:recommend.title')).toHaveLength(1)
+      const buttons = downloadButtons()
+      expect(buttons).toHaveLength(2)
+      expect(buttons[0]).toHaveAttribute('data-variant', 'secondary')
+      expect(buttons[1]).toHaveAttribute('data-variant', 'secondary')
+
+      // Positions start at 0: there is no offer to leave room for.
+      const positions = vi
+        .mocked(posthog.capture)
+        .mock.calls.filter(([event]) => event === 'recommended_model_shown')
+        .map(([, props]) => (props as Record<string, unknown>).position)
+      expect(positions).toEqual([0, 1])
+
+      fireEvent.click(buttons[0])
+      expect(vi.mocked(posthog.capture)).toHaveBeenCalledWith(
+        'recommended_model_clicked',
+        expect.objectContaining({ position: 0 })
+      )
+      unmount()
+    })
+
+    it('reports no impressions while an auto-start hides the picker', async () => {
+      // A model found on disk is started without the picker ever painting.
+      // Rows behind the status line were not seen, so they get no impression
+      // for a click to divide by.
+      const finishLocalScan = deferLocalScan([detectedModel])
+      const { unmount } = render(<SetupScreen />)
+      await finishLocalScan()
+      expect(
+        await screen.findByText('setup:localStep.autoStarting')
+      ).toBeInTheDocument()
+
+      expect(
+        vi.mocked(posthog.capture).mock.calls.map(([event]) => event)
+      ).not.toContain('recommended_model_shown')
       unmount()
     })
 
@@ -808,7 +1118,7 @@ describe('SetupScreen', () => {
       const { unmount } = await renderPicker()
 
       expect(screen.getByText(/setup:recommend\.whySpills/)).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /hub:download/ })).toBeEnabled()
+      expect(downloadButtons()[0]).toBeEnabled()
       unmount()
     })
 
@@ -833,7 +1143,7 @@ describe('SetupScreen', () => {
       unmount()
     })
 
-    it('offers the subscription as its own button, not as a key in the gallery', async () => {
+    it('offers the subscription as its own button, wearing the ChatGPT mark', async () => {
       // Signing in is not a key you paste. Of 153 users who connected any
       // cloud provider, 144 activated — and `during_onboarding = true` had
       // fired for seven devices in the product's history, because this route
@@ -850,11 +1160,13 @@ describe('SetupScreen', () => {
       ] as unknown as ModelProvider[]
       const { unmount } = await renderPicker()
 
-      fireEvent.click(
-        screen.getByRole('button', {
-          name: /setup:cloudStep\.subscriptionTrigger/,
-        })
-      )
+      const trigger = screen.getByRole('button', {
+        name: /setup:cloudStep\.subscriptionTrigger/,
+      })
+      // The brand mark is what makes the named route recognisable at a glance.
+      expect(trigger.querySelector('svg')).not.toBeNull()
+
+      fireEvent.click(trigger)
 
       // Straight to the sign-in, not to a gallery the user has to search.
       expect(

@@ -33,18 +33,31 @@ vi.mock('@/containers/ModelDownloadAction', () => ({
   ModelDownloadAction: ({
     variant,
     deletable,
+    warnTooLarge,
   }: {
     variant: { model_id: string }
     deletable?: boolean
+    warnTooLarge?: boolean
   }) => (
-    <button type="button" data-deletable={deletable ? 'true' : 'false'}>
+    <button
+      type="button"
+      data-deletable={deletable ? 'true' : 'false'}
+      data-warn-too-large={warnTooLarge ? 'true' : 'false'}
+    >
       download {variant.model_id}
     </button>
   ),
 }))
 
 vi.mock('@/containers/MlxModelDownloadAction', () => ({
-  MlxModelDownloadAction: () => <button type="button">download mlx</button>,
+  MlxModelDownloadAction: ({ warnTooLarge }: { warnTooLarge?: boolean }) => (
+    <button
+      type="button"
+      data-warn-too-large={warnTooLarge ? 'true' : 'false'}
+    >
+      download mlx
+    </button>
+  ),
 }))
 
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -88,6 +101,20 @@ const exoticQuantModel = (): CatalogModel =>
       { model_id: 'Bonsai-27B-BF16', path: 'bf16.gguf', file_size: '7.70 GB' },
     ],
   }) as CatalogModel
+
+const mlxModel = (): CatalogModel =>
+  ({
+    model_name: 'mlx-community/Qwen3.5-9B-MLX-4bit',
+    developer: 'mlx-community',
+    is_mlx: true,
+    num_quants: 0,
+    quants: [],
+    mmproj_models: [],
+    safetensors_files: [
+      { rfilename: 'model-00001-of-00002.safetensors', file_size: '3.00 GB' },
+      { rfilename: 'model-00002-of-00002.safetensors', file_size: '2.00 GB' },
+    ],
+  }) as unknown as CatalogModel
 
 const installQuant = (modelId: string) =>
   useModelProvider.setState({
@@ -170,21 +197,19 @@ describe('DownloadOptionsSelect', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('refuses to download a quant that cannot fit the device', async () => {
+  it('warns about, rather than refuses, a quant that cannot fit the device', async () => {
     const user = userEvent.setup()
     render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={8 * GB} />)
 
     await user.click(screen.getByRole('button', { expanded: false }))
     await user.click(screen.getByText('Q8_0'))
 
-    const download = screen.getByRole('button', { name: 'hub:download' })
-    expect(download).toBeDisabled()
+    // The fit estimate is size against memory, not a measurement: the user
+    // gets a live button with a warning behind it, not a dead end.
+    const download = screen.getByText('download Qwen3.5-4B-Q8_0')
+    expect(download).toBeEnabled()
+    expect(download).toHaveAttribute('data-warn-too-large', 'true')
     expect(screen.getByLabelText('Too large')).toBeInTheDocument()
-    await user.hover(download.parentElement!)
-    expect(await screen.findByRole('tooltip')).toHaveTextContent(
-      'This model is probably too large for your hardware'
-    )
-    expect(screen.queryByText(/^download /)).not.toBeInTheDocument()
   })
 
   it('shows only the fit dot for a comfortably small quant', () => {
@@ -192,6 +217,10 @@ describe('DownloadOptionsSelect', () => {
 
     expect(screen.getByLabelText('Good fit')).toBeInTheDocument()
     expect(screen.queryByText('Good fit')).not.toBeInTheDocument()
+    expect(screen.getByText('download Qwen3.5-4B-Q4_K_M')).toHaveAttribute(
+      'data-warn-too-large',
+      'false'
+    )
   })
 
   it('shows only the fit dot for a quant that should run', () => {
@@ -211,20 +240,7 @@ describe('DownloadOptionsSelect', () => {
   })
 
   it('sends an MLX repo straight to the MLX download action', () => {
-    const mlx = {
-      model_name: 'mlx-community/Qwen3.5-9B-MLX-4bit',
-      developer: 'mlx-community',
-      is_mlx: true,
-      num_quants: 0,
-      quants: [],
-      mmproj_models: [],
-      safetensors_files: [
-        { rfilename: 'model-00001-of-00002.safetensors', file_size: '3.00 GB' },
-        { rfilename: 'model-00002-of-00002.safetensors', file_size: '2.00 GB' },
-      ],
-    } as unknown as CatalogModel
-
-    render(<DownloadOptionsSelect model={mlx} budgetBytes={16 * GB} />)
+    render(<DownloadOptionsSelect model={mlxModel()} budgetBytes={16 * GB} />)
 
     expect(screen.getByText('download mlx')).toBeInTheDocument()
     expect(screen.getByText('MLX')).toBeInTheDocument()
@@ -232,6 +248,21 @@ describe('DownloadOptionsSelect', () => {
     expect(screen.getByText('5.0 GB')).toBeInTheDocument()
     expect(screen.getByLabelText('Good fit')).toBeInTheDocument()
     expect(screen.queryByText('Good fit')).not.toBeInTheDocument()
+    expect(screen.getByText('download mlx')).toHaveAttribute(
+      'data-warn-too-large',
+      'false'
+    )
+  })
+
+  it('warns before downloading an MLX repo too large for the device', () => {
+    // 5 GB of safetensors against a 4 GB budget.
+    render(<DownloadOptionsSelect model={mlxModel()} budgetBytes={4 * GB} />)
+
+    expect(screen.getByLabelText('Too large')).toBeInTheDocument()
+    expect(screen.getByText('download mlx')).toHaveAttribute(
+      'data-warn-too-large',
+      'true'
+    )
   })
 })
 

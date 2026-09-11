@@ -17,6 +17,9 @@ export function useEffectiveAssistant() {
   const updateAssistantParam = useAssistant(
     (state) => state.updateAssistantParam
   )
+  const updateAssistantInstructions = useAssistant(
+    (state) => state.updateAssistantInstructions
+  )
 
   const currentThreadId = useThreads((state) => state.currentThreadId)
   const threadAssistantId = useThreads((state) =>
@@ -55,5 +58,19 @@ export function useEffectiveAssistant() {
     [activeAssistant, updateAssistantParam]
   )
 
-  return { assistants, activeAssistant, selectAssistant, updateParam }
+  const updateInstructions = useCallback(
+    (instructions: string) => {
+      if (!activeAssistant) return
+      updateAssistantInstructions(activeAssistant.id, instructions)
+    },
+    [activeAssistant, updateAssistantInstructions]
+  )
+
+  return {
+    assistants,
+    activeAssistant,
+    selectAssistant,
+    updateParam,
+    updateInstructions,
+  }
 }

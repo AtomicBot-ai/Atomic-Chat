@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { ModelSettingsList } from '@/containers/ModelSetting'
 import { ParametersSection } from '@/containers/ParametersSection'
@@ -27,22 +28,38 @@ import {
   formatContextSize,
   useModelContextLength,
 } from '@/hooks/useModelContextLength'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { paramGroups } from '@/lib/predefinedParams'
+import {
+  customModelSettingKeys,
+  RESTART_REQUIRED_SETTINGS,
+  withDefaultModelSettings,
+} from '@/lib/model-settings-defaults'
+import {
+  hasCustomSampling,
+  RUN_SETTINGS_SAMPLING_KEYS,
+  withDefaultSampling,
+} from '@/lib/sampling-defaults'
 import { cn } from '@/lib/utils'
+import { restartLocalModel } from '@/utils/restartLocalModel'
 
 type RunSettingsPanelProps = {
   onClose: () => void
 }
 
-const SAMPLING_KEYS = [...paramGroups.sampling, ...paramGroups.penalties]
+const HEADER_ICON_BUTTON =
+  'flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-foreground/70 outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-foreground/8 hover:text-sidebar-foreground focus-visible:ring-2'
 
 function Section({
   title,
+  action,
   children,
   defaultOpen = true,
 }: {
   title: string
+  /** Shown at the right of the header, next to the chevron. */
+  action?: ReactNode
   children: ReactNode
   defaultOpen?: boolean
 }) {
@@ -51,12 +68,51 @@ function Section({
       defaultOpen={defaultOpen}
       className="border-t border-sidebar-border/60 pt-3"
     >
-      <CollapsibleTrigger className="group flex w-full items-center justify-between rounded-md text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70 hover:text-foreground">
-        <span>{title}</span>
-        <ChevronDown className="size-3.5 transition-transform group-data-[state=closed]:-rotate-90" />
-      </CollapsibleTrigger>
+      {/* The action sits over the trigger row rather than inside it: the
+          trigger is a button, and a button cannot hold another. */}
+      <div className="relative">
+        <CollapsibleTrigger className="group flex w-full items-center justify-between rounded-md text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70 hover:text-foreground">
+          <span>{title}</span>
+          <ChevronDown className="size-3.5 transition-transform group-data-[state=closed]:-rotate-90" />
+        </CollapsibleTrigger>
+        {action && (
+          <div className="absolute right-5 top-1/2 -translate-y-1/2">
+            {action}
+          </div>
+        )}
+      </div>
       <CollapsibleContent className="pt-3">{children}</CollapsibleContent>
     </Collapsible>
+  )
+}
+
+/**
+ * A section's "Reset", in words rather than a circular arrow, which read as
+ * "refresh". `label` says what it resets, for screen readers and the tooltip.
+ * Always shown, so it can be found before it is needed; disabled while the
+ * section is already on its defaults.
+ */
+function ResetButton({
+  label,
+  disabled,
+  onClick,
+}: {
+  label: string
+  disabled: boolean
+  onClick: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <button
+      type="button"
+      className="cursor-pointer rounded px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-foreground/8 hover:text-foreground focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-40"
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {t('chat:runSettings.reset')}
+    </button>
   )
 }
 
@@ -69,9 +125,17 @@ function Section({
  */
 export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
   const { t } = useTranslation()
-  const { assistants, activeAssistant, selectAssistant, updateParam } =
-    useEffectiveAssistant()
+  const {
+    assistants,
+    activeAssistant,
+    selectAssistant,
+    updateParam,
+    updateInstructions,
+  } = useEffectiveAssistant()
   const addAssistant = useAssistant((state) => state.addAssistant)
+  const updateAssistant = useAssistant((state) => state.updateAssistant)
+  const updateProvider = useModelProvider((state) => state.updateProvider)
+  const serviceHub = useServiceHub()
   const context = useModelContextLength()
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [createAssistantOpen, setCreateAssistantOpen] = useState(false)
@@ -84,25 +148,92 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
     setCreateAssistantOpen(false)
   }
 
+  // Back to what a new assistant starts with, for when the sliders have been
+  // dragged somewhere that no longer answers well. Sampling only: the
+  // assistant, its prompt and the model's load options stay as they are.
+  const canResetSampling = activeAssistant
+    ? hasCustomSampling(activeAssistant)
+    : false
+  const handleResetSampling = () => {
+    if (!activeAssistant) return
+    updateAssistant({
+      ...activeAssistant,
+      parameters: withDefaultSampling(activeAssistant.parameters),
+      sampling_overridden: false,
+    })
+  }
+
+  // Back to the load options a newly listed model starts with. Model only:
+  // sampling stays as it is. With `--fit` on the engine sizes the context
+  // itself, so that value is not the user's to reset.
+  const customModelKeys = customModelSettingKeys(
+    context.selectedModel?.settings
+  ).filter((key) => !(context.fitEnabled && key === 'ctx_len'))
+  const handleResetModel = () => {
+    const { provider, selectedModel } = context
+    if (!provider || !selectedModel || customModelKeys.length === 0) return
+    updateProvider(provider.provider, {
+      models: provider.models.map((model) =>
+        model.id === selectedModel.id
+          ? {
+              ...model,
+              settings: withDefaultModelSettings(
+                model.settings,
+                customModelKeys
+              ),
+            }
+          : model
+      ),
+    })
+
+    if (!customModelKeys.some((key) => RESTART_REQUIRED_SETTINGS.has(key))) {
+      return
+    }
+    serviceHub
+      .models()
+      .getActiveModels(provider.provider)
+      .then((activeModels) =>
+        activeModels.includes(selectedModel.id)
+          ? restartLocalModel(serviceHub, provider.provider, selectedModel.id)
+          : undefined
+      )
+      .catch((error) => {
+        console.error('Failed to restart model after settings reset:', error)
+      })
+  }
+
   const closeLabel = t('chat:runSettings.close')
 
   return (
     <div className="h-full p-2 pl-0">
       <aside className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-sidebar-border bg-clip-padding bg-linear-to-b from-sidebar to-background text-sidebar-foreground shadow dark:from-sidebar/70">
         <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
-          <div className="flex h-8 items-center justify-between">
-            <h2 className="text-sm font-medium">
-              {t('chat:runSettings.title')}
-            </h2>
-            <button
-              type="button"
-              className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-foreground/70 outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-foreground/8 hover:text-sidebar-foreground focus-visible:ring-2"
-              aria-label={closeLabel}
-              title={closeLabel}
-              onClick={onClose}
+          <div className="space-y-2">
+            <div className="flex h-8 items-center justify-between gap-2">
+              <h2 className="min-w-0 truncate text-sm font-medium">
+                {t('chat:runSettings.title')}
+              </h2>
+              <button
+                type="button"
+                className={HEADER_ICON_BUTTON}
+                aria-label={closeLabel}
+                title={closeLabel}
+                onClick={onClose}
+              >
+                <PanelRight className="size-4" />
+              </button>
+            </div>
+            {/* In words, and on its own row: a circular-arrow icon here read
+                as "refresh", and the label does not fit beside the title. */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 w-full border-secondary bg-secondary/30 text-xs"
+              disabled={!canResetSampling}
+              onClick={handleResetSampling}
             >
-              <PanelRight className="size-4" />
-            </button>
+              {t('chat:runSettings.resetSampling')}
+            </Button>
           </div>
 
           {/* Assistant: whose persona and sampling this chat uses. */}
@@ -189,12 +320,42 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
             />
           </div>
 
+          {/* System prompt of the active assistant; the next message sends it. */}
+          <div className="space-y-1.5">
+            <label
+              htmlFor="run-settings-system-prompt"
+              className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70"
+            >
+              {t('assistants:instructions')}
+            </label>
+            <Textarea
+              id="run-settings-system-prompt"
+              value={activeAssistant?.instructions ?? ''}
+              onChange={(event) => updateInstructions(event.target.value)}
+              placeholder={t('assistants:enterInstructions')}
+              disabled={!activeAssistant}
+              className="max-h-48 min-h-20 resize-none border-secondary bg-secondary/30 px-2.5 py-1.5 text-xs md:text-xs"
+            />
+            <p className="text-xs leading-normal text-muted-foreground">
+              {t('assistants:instructionsDateHint')}
+            </p>
+          </div>
+
           {/* Model: only local engines expose a context knob and load options. */}
           {context.available &&
             context.contextSetting &&
             context.provider &&
             context.selectedModel && (
-              <Section title={t('chat:runSettings.model')}>
+              <Section
+                title={t('chat:runSettings.model')}
+                action={
+                  <ResetButton
+                    label={t('chat:runSettings.resetModel')}
+                    disabled={customModelKeys.length === 0}
+                    onClick={handleResetModel}
+                  />
+                }
+              >
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-3">
@@ -271,7 +432,7 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
             <ParametersSection
               parameters={activeAssistant?.parameters ?? {}}
               onChange={updateParam}
-              paramKeys={SAMPLING_KEYS}
+              paramKeys={RUN_SETTINGS_SAMPLING_KEYS}
               className={cn(
                 '[&>div:first-child>div:first-child]:hidden',
                 !activeAssistant && 'pointer-events-none opacity-50'

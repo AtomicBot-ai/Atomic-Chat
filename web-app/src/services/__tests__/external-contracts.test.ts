@@ -255,6 +255,10 @@ describe('pinned external registry contracts', () => {
    * `schema_version` they do not know. Staff picks exist precisely so that the
    * Hub can evolve without touching that file, so the separation is asserted
    * rather than left to reviewer discipline.
+   *
+   * The screen may list staff picks (ADR 2026-09-11 puts the Hub's picks under
+   * the onboarding offer, through their own store); what must not change is
+   * where the offer comes from and what the recommended loader reads.
    */
   it('keeps the onboarding manifest independent of staff picks', () => {
     const recommended = recommendationSchema.parse(fixture('recommended-models'))
@@ -271,7 +275,6 @@ describe('pinned external registry contracts', () => {
       'utf8'
     )
     expect(setupScreen).toContain('useResolvedRecommendedModels')
-    expect(setupScreen).not.toMatch(/staff-?picks/i)
 
     const recommendedLoader = readFileSync(
       resolve(

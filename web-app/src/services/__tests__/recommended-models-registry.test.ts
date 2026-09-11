@@ -298,7 +298,7 @@ describe('per-tier recommendations and quant pins', () => {
             quant: 'Q4_K_M',
           },
         ],
-        vram_16_plus: [
+        vram_64_plus: [
           {
             model_name: 'unsloth/gemma-4-12B-it-qat-GGUF',
             description_key: 'hub:recVisionKnowledge',
@@ -317,8 +317,8 @@ describe('per-tier recommendations and quant pins', () => {
     expect(result.tiers.unified_8?.map((r) => r.model_name)).toEqual([
       'LiquidAI/LFM2.5-2.6B-GGUF',
     ])
-    expect(result.tiers.vram_16_plus?.[0].quant).toBe('Q4_K_XL')
-    expect(result.tiers.vram_16_plus?.[0].mmproj_quant).toBe('F16')
+    expect(result.tiers.vram_64_plus?.[0].quant).toBe('Q4_K_XL')
+    expect(result.tiers.vram_64_plus?.[0].mmproj_quant).toBe('F16')
   })
 
   it('survives the cache round-trip', async () => {
@@ -326,7 +326,7 @@ describe('per-tier recommendations and quant pins', () => {
     await getRecommendationsOrFallback({ url: REMOTE_URL })
 
     const cached = getCachedManifest()
-    expect(cached?.manifest.tiers?.vram_16_plus?.[0].quant).toBe('Q4_K_XL')
+    expect(cached?.manifest.tiers?.vram_64_plus?.[0].quant).toBe('Q4_K_XL')
   })
 
   it('reports no tier lists when the manifest has none', async () => {
