@@ -62,7 +62,6 @@ import { useStaffPicks } from '@/hooks/useStaffPicks'
 import { useStaffPicksStore } from '@/stores/staff-picks-store'
 import type { StaffPick } from '@/services/staff-picks-registry'
 import { ChatGptMark } from '@/components/icons/chatgpt-mark'
-import { AppLogo } from '@/components/AppLogo'
 import { prettyModelName } from '@/lib/model-display-name'
 import {
   buildRecommendedImpressions,
@@ -205,11 +204,39 @@ type SetupScreenProps = {
 /// the shortest exit from onboarding there is, so it gets its own button.
 const SUBSCRIPTION_PROVIDER = 'chatgpt'
 
-/// A hover the eye can catch on the two cloud buttons. `secondary`'s own
+/// A hover the eye can catch on the secondary row buttons. `secondary`'s own
 /// `hover:bg-secondary/80` moves the fill by a fifth of a shade towards the
-/// page background, which on this screen is no move at all.
-const CLOUD_BUTTON_HOVER =
+/// card behind it, which on this screen is no move at all.
+const ROW_BUTTON_HOVER =
   'transition-colors hover:bg-neutral-200 dark:hover:bg-neutral-600'
+
+/// Every row on this screen ends in one button, and the buttons read as a
+/// column only if they are one width. Each reserves room for the widest label
+/// any of them can wear — measured in the current language, not guessed as a
+/// fixed width — and shows its own on top. It also keeps a button from
+/// reflowing when its state flips between Download / Downloading… / Downloaded.
+function RowActionLabel({
+  label,
+  reserve,
+}: {
+  label: string
+  reserve: readonly string[]
+}) {
+  return (
+    <span className="grid">
+      {reserve.map((text, i) => (
+        <span
+          key={i}
+          aria-hidden="true"
+          className="invisible col-start-1 row-start-1"
+        >
+          {text}
+        </span>
+      ))}
+      <span className="col-start-1 row-start-1">{label}</span>
+    </span>
+  )
+}
 
 /// A download click used to swap the screen out instantly, which read as "did
 /// my click register?" — the row flipping to a progress readout was gone before
@@ -1541,23 +1568,26 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         })
       : null
 
-    // The line under the offer says why it is this model; under a pick it is
-    // the Hub's own summary; a row without either falls back to its category,
-    // so the line is never blank. A card that has not resolved says so.
+    // The offer's reason, in full, is its badge's tooltip. As a line under the
+    // name it pushed the offer's row taller than every row under it and said
+    // again what the badge already says.
+    const fitLine = fit
+      ? t(fit.key, {
+          ...fit.values,
+          ...(fit.poolKey ? { pool: t(fit.poolKey) } : {}),
+        })
+      : undefined
+
+    // Under a pick, the Hub's own summary, falling back to its category so the
+    // line is never blank. The offer has none — its badge stands in that line.
+    // A card that has not resolved says so on either.
     const summary = !model
       ? sourcesLoading
         ? t('hub:loadingModels')
         : t('setup:modelUnavailable')
-      : fit
-        ? t(fit.key, {
-            ...fit.values,
-            ...(fit.poolKey ? { pool: t(fit.poolKey) } : {}),
-          })
+      : hero
+        ? null
         : (pick?.summary ?? t(rec.descriptionKey))
-
-    // The offer's line already opens with the size, so the title does not
-    // repeat it.
-    const showSizeInTitle = !!downloadSize && !(hero && fit)
 
     return (
       <div
@@ -1572,7 +1602,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
               <h2 className="min-w-0 max-w-full truncate text-sm font-medium leading-tight">
                 {title}
-                {showSizeInTitle ? (
+                {downloadSize ? (
                   <span className="text-xs font-normal text-muted-foreground">
                     {' '}
                     · {downloadSize}
@@ -1580,48 +1610,35 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                 ) : null}
               </h2>
               {hero && (
-                <span className="shrink-0 rounded-[5px] border border-emerald-200 bg-emerald-50 px-1.5 py-px text-[10px] font-bold uppercase tracking-wider text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/45 dark:text-emerald-200">
+                <span
+                  title={fitLine}
+                  className="shrink-0 rounded-[5px] border border-emerald-200 bg-emerald-50 px-1.5 py-px text-[10px] font-bold uppercase tracking-wider text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/45 dark:text-emerald-200"
+                >
                   {t('setup:recommend.badge')}
                 </span>
               )}
             </div>
-            <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
-              {summary}
-            </p>
+            {summary ? (
+              <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
+                {summary}
+              </p>
+            ) : null}
           </div>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
+          {/* The offer keeps the primary fill, not a bigger pill: a taller
+              button broke the column of buttons it heads. */}
           <Button
             variant={hero ? 'default' : 'secondary'}
-            size={hero ? 'default' : 'sm'}
+            size="sm"
             disabled={disabled}
             onClick={onDownload}
-            className={cn('shrink-0 rounded-full', hero ? 'px-5' : 'px-4')}
+            className={cn(
+              'shrink-0 rounded-full px-4',
+              !hero && ROW_BUTTON_HOVER
+            )}
           >
-            {/* Reserve width for the widest possible label so the button
-                doesn't reflow when its state flips between Download /
-                Downloading… / Downloaded. */}
-            <span className="grid">
-              <span
-                aria-hidden="true"
-                className="invisible col-start-1 row-start-1"
-              >
-                {t('setup:downloading')}
-              </span>
-              <span
-                aria-hidden="true"
-                className="invisible col-start-1 row-start-1"
-              >
-                {t('hub:downloaded')}
-              </span>
-              <span
-                aria-hidden="true"
-                className="invisible col-start-1 row-start-1"
-              >
-                {t('hub:download')}
-              </span>
-              <span className="col-start-1 row-start-1">{buttonLabel}</span>
-            </span>
+            <RowActionLabel label={buttonLabel} reserve={rowActionLabels} />
           </Button>
           {progressLine}
           {handoffLine}
@@ -1630,6 +1647,68 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     )
   }
 
+  // Every label a row button on this screen can wear; see RowActionLabel.
+  const rowActionLabels = [
+    t('hub:download'),
+    t('setup:downloading'),
+    t('hub:downloaded'),
+    t('setup:localStep.run'),
+    t('setup:localStep.running'),
+    t('setup:cloudStep.connect'),
+    t('setup:cloudStep.add'),
+  ]
+
+  /**
+   * A cloud route, laid out as a model row — mark, name, one line, button —
+   * so the card reads as a second list rather than a pair of links. The
+   * button shows only the verb; its accessible name is the whole action,
+   * since "Add" alone says nothing to a screen reader.
+   */
+  const renderCloudRow = ({
+    icon,
+    title,
+    hint,
+    action,
+    label,
+    onClick,
+  }: {
+    icon: React.ReactNode
+    title: string
+    hint: string
+    action: string
+    label: string
+    onClick: () => void
+  }) => (
+    <div className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <span
+          aria-hidden="true"
+          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-foreground [&_svg]:size-4"
+        >
+          {icon}
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-sm font-medium leading-tight">
+            {title}
+          </h2>
+          <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
+            {hint}
+          </p>
+        </div>
+      </div>
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        aria-label={label}
+        onClick={onClick}
+        className={cn('shrink-0 rounded-full px-4', ROW_BUTTON_HOVER)}
+      >
+        <RowActionLabel label={action} reserve={rowActionLabels} />
+      </Button>
+    </div>
+  )
+
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden">
       <div className="flex h-full min-h-0 w-full flex-col">
@@ -1637,11 +1716,10 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
 
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <div className="pointer-events-auto mx-auto my-auto flex w-full max-w-[520px] flex-col px-6 py-8 sm:py-10">
-            <div className="mb-5 flex shrink-0 flex-col items-center gap-3 text-center">
-              {/* The sidebar's own lockup, not a copy of its tile: the same
-                  element is the only thing that reads as the same size. */}
-              <AppLogo wordmarkClassName="text-foreground" />
-              <h1 className="text-xl font-semibold leading-snug tracking-tight">
+            {/* No logo over the title: the sidebar already wears the lockup a
+                hand's width away, and two of them read as a splash screen. */}
+            <div className="mb-6 flex shrink-0 flex-col items-center text-center">
+              <h1 className="text-3xl font-semibold leading-tight tracking-tight">
                 {t('setup:welcomeTitle')}
               </h1>
             </div>
@@ -1724,19 +1802,14 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                 }}
                                 className="shrink-0 rounded-full px-4"
                               >
-                                <span className="grid">
-                                  <span
-                                    aria-hidden="true"
-                                    className="invisible col-start-1 row-start-1"
-                                  >
-                                    {t('setup:localStep.running')}
-                                  </span>
-                                  <span className="col-start-1 row-start-1">
-                                    {isImporting
+                                <RowActionLabel
+                                  label={
+                                    isImporting
                                       ? t('setup:localStep.running')
-                                      : t('setup:localStep.run')}
-                                  </span>
-                                </span>
+                                      : t('setup:localStep.run')
+                                  }
+                                  reserve={rowActionLabels}
+                                />
                               </Button>
                             </div>
                           </div>
@@ -1806,7 +1879,10 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                   }}
                                   className="shrink-0 rounded-full px-4"
                                 >
-                                  {t('setup:localStep.run')}
+                                  <RowActionLabel
+                                    label={t('setup:localStep.run')}
+                                    reserve={rowActionLabels}
+                                  />
                                 </Button>
                               </div>
                             </div>
@@ -1845,49 +1921,41 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                   </div>
                 )}
 
-                {/* Peers of the model, not a footnote under an "or".
-                    Connecting a cloud provider during onboarding is the single
-                    strongest activation signal we have, and it had happened on
-                    seven devices in the product's history because it lived
-                    below a divider that framed it as the consolation prize. */}
-                {(hasCloudProviders || subscriptionProvider) && (
-                  <div className="relative z-60 flex shrink-0 flex-wrap justify-center gap-2 pt-1">
-                    {/* Sized to their labels and centred, not stretched to
-                        the column: a pill as wide as the list above it reads
-                        as the primary action, and neither of these is. The
-                        theme's secondary hover is a fifth of a shade in either
-                        direction — invisible on this background — so the
-                        hover here is an explicit step. */}
-                    {hasCloudProviders && (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={openCloudGallery}
-                        className={cn(
-                          'relative z-60 rounded-full px-4',
-                          CLOUD_BUTTON_HOVER
-                        )}
-                      >
-                        <Cloud />
-                        {t('setup:cloudStep.trigger')}
-                      </Button>
-                    )}
-                    {subscriptionProvider && (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={openSubscription}
-                        className={cn(
-                          'relative z-60 rounded-full px-4',
-                          CLOUD_BUTTON_HOVER
-                        )}
-                      >
-                        <ChatGptMark />
-                        {t('setup:cloudStep.subscriptionTrigger')}
-                      </Button>
-                    )}
+                {/* Peers of the model list: a card of the same weight, with
+                    rows laid out like its rows. Connecting a cloud provider
+                    during onboarding is the single strongest activation signal
+                    we have, and it had happened on seven devices in the
+                    product's history while it lived as small print under the
+                    list. The "or" now heads an equal card, not a footnote. */}
+                {(subscriptionProvider || hasCloudProviders) && (
+                  <div className="relative z-60 flex shrink-0 flex-col gap-2">
+                    <span className="shrink-0 text-left text-xs font-medium text-muted-foreground">
+                      {t('setup:cloudStep.sectionTitle')}
+                    </span>
+                    {/* The list's box, gutter included, so these buttons land
+                        in the same column as the Download buttons above. */}
+                    <div className="w-full shrink-0 overflow-hidden rounded-lg border bg-secondary/50 px-3 py-2 [scrollbar-gutter:stable]">
+                      <div className="flex flex-col divide-y divide-border/60">
+                        {subscriptionProvider &&
+                          renderCloudRow({
+                            icon: <ChatGptMark />,
+                            title: t('setup:cloudStep.subscriptionTitle'),
+                            hint: t('setup:cloudStep.subscriptionHint'),
+                            action: t('setup:cloudStep.connect'),
+                            label: t('setup:cloudStep.subscriptionTrigger'),
+                            onClick: openSubscription,
+                          })}
+                        {hasCloudProviders &&
+                          renderCloudRow({
+                            icon: <Cloud />,
+                            title: t('setup:cloudStep.providerTitle'),
+                            hint: t('setup:cloudStep.providerHint'),
+                            action: t('setup:cloudStep.add'),
+                            label: t('setup:cloudStep.trigger'),
+                            onClick: openCloudGallery,
+                          })}
+                      </div>
+                    </div>
                   </div>
                 )}
 

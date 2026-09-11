@@ -839,13 +839,14 @@ describe('SetupScreen', () => {
 
       expect(screen.getByText(/Qwen3\.5 4B/)).toBeInTheDocument()
       // One heading over one list; one badge, on the offer; the offer's
-      // button is the only primary one and a size up from the rest.
+      // button is the only primary one, but no taller than the rest — a
+      // bigger pill broke the column of buttons it sits in.
       expect(screen.getAllByText('setup:recommend.title')).toHaveLength(1)
       expect(screen.getAllByText('setup:recommend.badge')).toHaveLength(1)
       const buttons = downloadButtons()
       expect(buttons).toHaveLength(3)
       expect(buttons[0]).toHaveAttribute('data-variant', 'default')
-      expect(buttons[0]).toHaveAttribute('data-size', 'default')
+      expect(buttons[0]).toHaveAttribute('data-size', 'sm')
 
       // The picks read as the Hub shows them: its title and its summary.
       expect(screen.getByText('Gemma 4 12B')).toBeInTheDocument()
@@ -1091,15 +1092,19 @@ describe('SetupScreen', () => {
     })
 
     it('says why this model, in terms of the memory it will live in', async () => {
-      // "Recommended" on its own is not a reason. The line names the pool the
-      // weights go into, because 8 GB of VRAM and 8 GB of unified memory are
-      // not the same 8 GB.
+      // "Recommended" on its own is not a reason. The badge's tooltip names
+      // the pool the weights go into, because 8 GB of VRAM and 8 GB of unified
+      // memory are not the same 8 GB. It is not a line under the name: the
+      // offer's row carries the badge there instead.
       const { unmount } = await renderPicker()
 
       // 2.52 GB against an 8 GiB card is under half the budget.
       expect(
-        screen.getByText(/setup:recommend\.whyComfortable/)
-      ).toBeInTheDocument()
+        screen.getByTitle(/setup:recommend\.whyComfortable/)
+      ).toHaveTextContent('setup:recommend.badge')
+      expect(
+        screen.queryByText(/setup:recommend\.whyComfortable/)
+      ).not.toBeInTheDocument()
       unmount()
     })
 
@@ -1117,7 +1122,9 @@ describe('SetupScreen', () => {
       }
       const { unmount } = await renderPicker()
 
-      expect(screen.getByText(/setup:recommend\.whySpills/)).toBeInTheDocument()
+      expect(
+        screen.getByTitle(/setup:recommend\.whySpills/)
+      ).toBeInTheDocument()
       expect(downloadButtons()[0]).toBeEnabled()
       unmount()
     })
@@ -1138,12 +1145,12 @@ describe('SetupScreen', () => {
       const { unmount } = await renderPicker()
 
       expect(
-        screen.getByText(/setup:recommend\.whyCpuOnly/)
+        screen.getByTitle(/setup:recommend\.whyCpuOnly/)
       ).toBeInTheDocument()
       unmount()
     })
 
-    it('offers the subscription as its own button, wearing the ChatGPT mark', async () => {
+    it('offers the subscription as its own row, wearing the ChatGPT mark', async () => {
       // Signing in is not a key you paste. Of 153 users who connected any
       // cloud provider, 144 activated — and `during_onboarding = true` had
       // fired for seven devices in the product's history, because this route
@@ -1164,7 +1171,9 @@ describe('SetupScreen', () => {
         name: /setup:cloudStep\.subscriptionTrigger/,
       })
       // The brand mark is what makes the named route recognisable at a glance.
-      expect(trigger.querySelector('svg')).not.toBeNull()
+      // It leads the row, as a model's logo does; the button only says what
+      // pressing it does.
+      expect(trigger.parentElement?.querySelector('svg')).not.toBeNull()
 
       fireEvent.click(trigger)
 

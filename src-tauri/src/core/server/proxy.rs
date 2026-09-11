@@ -3887,6 +3887,30 @@ fn add_cors_headers_with_host_and_origin(
     builder
 }
 
+/// What a `start_server` call found.
+///
+/// Starting is idempotent: the handle is checked under its mutex, so a caller
+/// that loses the race to stand the proxy up gets the running port back rather
+/// than an error. The message send, the model switch, the startup autostart
+/// and the agent settings all raise the proxy without coordinating, and the
+/// loser used to surface as "Failed to create model: Server is already
+/// running" on the first message after connecting a subscription (ATO-524).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServerStart {
+    /// This call bound the listener, on this port.
+    Started(u16),
+    /// A server was already up on this port; nothing was changed.
+    AlreadyRunning(u16),
+}
+
+impl ServerStart {
+    pub fn port(self) -> u16 {
+        match self {
+            Self::Started(port) | Self::AlreadyRunning(port) => port,
+        }
+    }
+}
+
 pub async fn is_server_running(server_handle: Arc<Mutex<Option<ServerHandle>>>) -> bool {
     let handle_guard = server_handle.lock().await;
     handle_guard.is_some()
@@ -3908,7 +3932,7 @@ pub async fn start_server<R: Runtime>(
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
     auto_increase_state: Arc<AutoIncreaseState>,
     api_request_inspector: Arc<RequestInspector>,
-) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<ServerStart, Box<dyn std::error::Error + Send + Sync>> {
     start_server_internal(
         app_handle,
         server_handle,
@@ -3944,10 +3968,17 @@ async fn start_server_internal<R: Runtime>(
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
     auto_increase_state: Arc<AutoIncreaseState>,
     api_request_inspector: Arc<RequestInspector>,
-) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<ServerStart, Box<dyn std::error::Error + Send + Sync>> {
     let mut handle_guard = server_handle.lock().await;
-    if handle_guard.is_some() {
-        return Err("Server is already running".into());
+    if let Some(running) = handle_guard.as_ref() {
+        // Logged because a refused start used to leave no trace in app.log,
+        // which left ATO-524 unreadable without the Web Inspector.
+        log::debug!(
+            "start_server: Local API Server already running on port {}; \
+             reusing it (this call asked for {host}:{port})",
+            running.port
+        );
+        return Ok(ServerStart::AlreadyRunning(running.port));
     }
 
     let requested_addr: SocketAddr = format!("{host}:{port}")
@@ -4111,12 +4142,13 @@ async fn start_server_internal<R: Runtime>(
     });
 
     *handle_guard = Some(ServerHandle {
+        port: actual_port,
         server_task,
         analytics_task,
         analytics_shutdown,
     });
     log::info!("Atomic Chat API server started successfully on port {actual_port}");
-    Ok(actual_port)
+    Ok(ServerStart::Started(actual_port))
 }
 
 pub async fn stop_server(
@@ -4132,7 +4164,7 @@ pub async fn stop_server(
         handle.server_task.abort();
         log::info!("Atomic Chat API server stopped");
     } else {
-        log::debug!("Server was not running");
+        log::debug!("stop_server: Local API Server was not running; nothing to stop");
     }
 
     Ok(())

@@ -54,7 +54,14 @@
     "saveKey": "Сохранить ключ",
     "saveFailed": "Не удалось сохранить API-ключ",
     "saved": "{{provider}} подключён",
-    "subscriptionTrigger": "Подключить подписку ChatGPT"
+    "subscriptionTrigger": "Подключить подписку ChatGPT",
+    "sectionTitle": "Или подключите облачную модель",
+    "subscriptionTitle": "Подписка ChatGPT",
+    "subscriptionHint": "Вход через аккаунт, без API-ключа",
+    "providerTitle": "Облачный провайдер",
+    "providerHint": "Со своим API-ключом",
+    "connect": "Подключить",
+    "add": "Добавить"
   },
   "recommend": {
     "title": "Рекомендуемые модели",

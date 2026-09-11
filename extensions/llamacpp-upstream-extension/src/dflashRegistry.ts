@@ -310,6 +310,15 @@ const REGISTRY: readonly DflashRegistryEntry[] = [
   },
 ]
 
+/**
+ * Every draft this registry downloads — the files the app itself puts on disk
+ * next to a target. The web app's model-file filter is tested against them so
+ * a local scan never offers one back as a model (ATO-523).
+ */
+export const DFLASH_DRAFT_FILENAMES: readonly string[] = REGISTRY.flatMap(
+  (entry) => entry.drafts.map((draft) => draft.draftFilename)
+)
+
 export const DEFAULT_DFLASH_DRAFT_QUANT = 'Q8_0'
 
 function normalizeId(modelId: string): string {

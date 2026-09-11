@@ -16,6 +16,8 @@ import {
 } from '../models'
 import { ModelCapabilities } from '@/types/models'
 import type { CatalogModel } from '@/services/models/types'
+import { GEMMA_MTP_DRAFT_FILENAMES } from '../../../../extensions/llamacpp-upstream-extension/src/gemmaMtpRegistry'
+import { DFLASH_DRAFT_FILENAMES } from '../../../../extensions/llamacpp-upstream-extension/src/dflashRegistry'
 
 // Mock the token.js module
 vi.mock('token.js', () => ({
@@ -188,6 +190,13 @@ describe('isNonWeightGgufFile', () => {
     'tokenizer-LFM2.5-Audio-1.5B-Q8_0.gguf',
     'vocoder-LFM2.5-Audio-1.5B-f16.gguf',
     'audiodecoder-LFM2-Audio-1.5B-q8_0.gguf',
+    // ATO-523: speculative-decoding heads a local scan offered as models. The
+    // first sat next to its target in the reporter's HF cache.
+    'mtp-gemma-4-E2B-it.gguf',
+    'gemma-4-26B-A4B-it-assistant.Q8_0.gguf',
+    'Qwen3.5-9B-DFlash.Q8_0.gguf',
+    'qwen3.5-9b-dflash-Q4_K_M.gguf',
+    'Qwen3.6-35B-A3B-DFlash-IQ4_XS.gguf',
   ])('drops %s', (file) => {
     expect(isNonWeightGgufFile(file)).toBe(true)
   })
@@ -198,7 +207,10 @@ describe('isNonWeightGgufFile', () => {
     // quant produced *with* an importance matrix — both are real weights.
     'Qwen3.5-9B-The-Defiant-Fable-NEO-IMATRIX-MAX-MTP.Q4_K_M.gguf',
     'mistral-7b-v0.2-iq3_s-imat.gguf',
-    'Qwen3.5-9B-DFlash.Q8_0.gguf',
+    // The target the MTP head above belongs to, and weights with the MTP
+    // layers baked in.
+    'gemma-4-E2B-it-UD-Q4_K_XL.gguf',
+    'Qwen3.6-27B-UDT-Q6_K_MTP.gguf',
     'wavtokenizer-large-75-f16.gguf',
     'UD-IQ1_M/Kimi-K3-UD-IQ1_M-00001-of-00003.gguf',
   ])('keeps %s', (file) => {
@@ -220,6 +232,22 @@ describe('isMtpCompanionFile', () => {
       false
     )
   })
+})
+
+// ATO-523: the MTP/DFlash toggles download these next to a target, so they are
+// exactly what a local scan finds on disk. None of them is a model.
+describe('the speculative-decoding heads the app downloads itself', () => {
+  it('reads both registries', () => {
+    expect(GEMMA_MTP_DRAFT_FILENAMES.length).toBeGreaterThan(0)
+    expect(DFLASH_DRAFT_FILENAMES.length).toBeGreaterThan(0)
+  })
+
+  it.each([...GEMMA_MTP_DRAFT_FILENAMES, ...DFLASH_DRAFT_FILENAMES])(
+    '%s is not offered as a model',
+    (file) => {
+      expect(isNonWeightGgufFile(file)).toBe(true)
+    }
+  )
 })
 
 describe('stripNonWeightQuants', () => {

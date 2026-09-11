@@ -70,6 +70,15 @@ const REGISTRY: readonly GemmaMtpRegistryEntry[] = [
   },
 ]
 
+/**
+ * Every head this registry downloads — the files the app itself puts on disk
+ * next to a target. The web app's model-file filter is tested against them so
+ * a local scan never offers one back as a model (ATO-523).
+ */
+export const GEMMA_MTP_DRAFT_FILENAMES: readonly string[] = REGISTRY.map(
+  (entry) => entry.draftFilename
+)
+
 function normalizeId(modelId: string): string {
   return modelId.toLowerCase()
 }

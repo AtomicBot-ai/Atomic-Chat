@@ -157,7 +157,8 @@ impl Harness {
             inspector,
         )
         .await
-        .expect("proxy should bind");
+        .expect("proxy should bind")
+        .port();
 
         Self {
             proxy_port,
@@ -215,6 +216,47 @@ impl Harness {
     async fn stop(self) {
         let _ = proxy::stop_server(self.server_handle).await;
     }
+}
+
+/// ATO-524: a start that arrives while the proxy is up — another frontend path
+/// that lost the race — gets the running server's port back instead of
+/// "Server is already running", and leaves that server serving.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_second_start_reuses_the_running_server() {
+    let harness = Harness::start("test-model", false).await;
+
+    let second = proxy::start_server(
+        tauri::test::mock_app().handle().clone(),
+        harness.server_handle.clone(),
+        Arc::new(Mutex::new(HashMap::new())),
+        Arc::new(Mutex::new(HashMap::new())),
+        Arc::new(Mutex::new(HashMap::new())),
+        "127.0.0.1".to_string(),
+        0,
+        "/v1".to_string(),
+        String::new(),
+        vec![vec![]],
+        30,
+        Arc::new(Mutex::new(HashMap::new())),
+        Arc::new(AutoIncreaseState::default()),
+        Arc::new(RequestInspector::new()),
+    )
+    .await
+    .expect("a start behind a running server must not fail");
+
+    assert_eq!(
+        second,
+        proxy::ServerStart::AlreadyRunning(harness.proxy_port)
+    );
+    harness
+        .post_chat(serde_json::json!({
+            "model": "test-model",
+            "stream": true,
+            "messages": [{"role": "user", "content": "still there?"}]
+        }))
+        .await;
+
+    harness.stop().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

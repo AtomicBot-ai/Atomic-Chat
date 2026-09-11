@@ -71,7 +71,14 @@
     "saveKey": "Save key",
     "saveFailed": "Couldn't save the API key",
     "saved": "{{provider}} connected",
-    "subscriptionTrigger": "Connect ChatGPT subscription"
+    "subscriptionTrigger": "Connect ChatGPT subscription",
+    "sectionTitle": "Or connect a cloud model",
+    "subscriptionTitle": "ChatGPT subscription",
+    "subscriptionHint": "Sign in, no API key needed",
+    "providerTitle": "Cloud provider",
+    "providerHint": "Use your own API key",
+    "connect": "Connect",
+    "add": "Add"
   },
   "recommend": {
     "title": "Recommended models",
