@@ -89,6 +89,12 @@ const SettingsMenu = () => {
       isEnabled: PlatformFeatures[PlatformFeature.VOICE_INPUT],
     },
     {
+      title: 'common:media',
+      route: route.settings.media,
+      hasSubMenu: false,
+      isEnabled: PlatformFeatures[PlatformFeature.MEDIA_GENERATION],
+    },
+    {
       title: 'common:interface',
       route: route.settings.interface,
       hasSubMenu: false,

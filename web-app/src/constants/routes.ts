@@ -11,6 +11,7 @@ export const route = {
     general: '/settings/general',
     attachments: '/settings/attachments',
     voice: '/settings/voice',
+    media: '/settings/media',
     interface: '/settings/interface',
     privacy: '/settings/privacy',
     shortcuts: '/settings/shortcuts',
@@ -29,6 +30,9 @@ export const route = {
   hub: {
     index: '/hub/',
     model: '/hub/$modelId',
+  },
+  images: {
+    index: '/images/',
   },
   launch: {
     index: '/launch/',

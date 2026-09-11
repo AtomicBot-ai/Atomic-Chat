@@ -3,6 +3,7 @@ pub(crate) mod chat_to_responses_shim;
 pub(crate) mod chatgpt_route;
 pub mod commands;
 pub(crate) mod context_expansion;
+pub(crate) mod images_route;
 #[cfg(test)]
 pub mod integration_tests;
 pub mod proxy;

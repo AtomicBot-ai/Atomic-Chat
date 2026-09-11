@@ -264,9 +264,10 @@ fn sse_chunk_has_visible_content(chunk: &[u8]) -> bool {
 
 /// Normalises the already prefix-stripped destination path into a closed set
 /// of endpoint labels safe for analytics (never the raw path).
-fn endpoint_from_path(path: &str) -> &'static str {
+pub(crate) fn endpoint_from_path(path: &str) -> &'static str {
     match path {
         "/chat/completions" => "chat/completions",
+        "/images/generations" => "images/generations",
         "/responses" => "responses",
         "/messages" => "messages",
         "/completions" => "completions",
@@ -726,7 +727,8 @@ pub fn allowed_methods_for_path(path: &str) -> Option<&'static [&'static str]> {
         | "/responses"
         | "/completions"
         | "/embeddings"
-        | "/messages/count_tokens" => Some(&["POST"]),
+        | "/messages/count_tokens"
+        | "/images/generations" => Some(&["POST"]),
         _ => None,
     }
 }
@@ -2236,6 +2238,25 @@ async fn inner_proxy_request<R: Runtime>(
             &provider_configs,
         )
         .await;
+    }
+
+    // Local image generation. Served entirely by the diffusion plugin's job
+    // runner (the same one the Images page uses), so it never touches the
+    // chat-model session maps or the forwarder below.
+    if method == hyper::Method::POST && path == "/images/generations" {
+        state.endpoint = Some("images/generations");
+        state.backend = "atomic-diffusion";
+        let outcome = super::images_route::handle_images_generations(
+            body,
+            &host_header,
+            &origin_header,
+            &config,
+            &app_handle,
+        )
+        .await?;
+        state.model_id = outcome.model_id;
+        state.error_kind = outcome.error_kind;
+        return Ok(outcome.response);
     }
 
     // A model served by the connected ChatGPT subscription cannot go through
@@ -3850,7 +3871,7 @@ async fn inner_proxy_request<R: Runtime>(
     }
 }
 
-fn add_cors_headers_with_host_and_origin(
+pub(crate) fn add_cors_headers_with_host_and_origin(
     builder: hyper::http::response::Builder,
     _host: &str,
     origin: &str,

@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-235 records, 2026-05-19 → 2026-09-09.
+242 records, 2026-05-19 → 2026-09-10.
 
 ---
 
@@ -32,6 +32,16 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-09** — [Default the macOS local llama.cpp engine to `llamacpp-upstream` so the Recommended Gemma 4 vision model loads out of the box (ATO-116)](2026-06-09-default-the-macos-local-llama-cpp-engine-to-llamacpp-upstream.md)
 
 ---
+
+## Local image & video generation (7)
+
+- **2026-09-10** — [Generate images locally with stable-diffusion.cpp in its own Tauri plugin](2026-09-10-generate-images-locally-with-stable-diffusion-cpp-in-its-own-plugin.md)
+- **2026-09-10** — [Mirror, pin and verify stable-diffusion.cpp prebuilts in atomic-chat-conf](2026-09-10-mirror-pin-and-verify-stable-diffusion-cpp-prebuilts-in-atomic-chat-conf.md)
+- **2026-09-10** — [Arbitrate the GPU between chat and diffusion in the web app](2026-09-10-arbitrate-the-gpu-between-chat-and-diffusion-in-the-web-app.md)
+- **2026-09-10** — [Store generated media under the data folder with recipes in PNG chunks](2026-09-10-store-generated-media-under-the-data-folder-with-recipes-in-png-chunks.md)
+- **2026-09-10** — [Serve `/v1/images/generations` from the local API server, b64 only, hidden from `/v1/models`](2026-09-10-serve-openai-images-generations-from-the-local-api-server.md)
+- **2026-09-10** — [Pin the text encoder to CPU under Metal, and restart on the CPU backend after a ggml abort](2026-09-10-pin-the-text-encoder-to-cpu-under-metal-and-restart-on-cpu-after-a-ggml-abort.md)
+- **2026-09-10** — [Curate the diffusion model catalog in atomic-chat-conf](2026-09-10-curate-the-diffusion-model-catalog-in-atomic-chat-conf.md)
 
 ## Launch page & external coding agents (18)
 

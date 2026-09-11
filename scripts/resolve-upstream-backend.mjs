@@ -26,13 +26,25 @@
 //   node scripts/resolve-upstream-backend.mjs --backend macos-arm64
 //   node scripts/resolve-upstream-backend.mjs --backend win-cuda-13-x64
 //   node scripts/resolve-upstream-backend.mjs --backend linux-cpu-x64 --tag b10344
+//
+// `--engine sdcpp` resolves a stable-diffusion.cpp prebuilt instead, from
+// backends/sdcpp-manifest.json. That manifest names every asset explicitly
+// (upstream file names embed the CI runner's OS version), so the asset is
+// looked up by its `backend` id, never constructed, and it prints the extra
+// COMPANION/COMPANION_URL lines for builds that need a runtime archive:
+//   node scripts/resolve-upstream-backend.mjs --engine sdcpp --backend win-cuda12-x64
 
 import { pathToFileURL } from 'node:url'
 
 const MANIFEST_URL =
   'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/manifest.json'
+const SDCPP_MANIFEST_URL =
+  'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/sdcpp-manifest.json'
 const GGML_ORG_DOWNLOAD_BASE =
   'https://github.com/ggml-org/llama.cpp/releases/download'
+const SDCPP_UPSTREAM_REPO = 'leejet/stable-diffusion.cpp'
+/** leejet tag, optionally with the `-a<sha>` suffix of an Atomic-built variant. */
+const SDCPP_TAG_RE = /^master-\d+-[0-9a-f]{7}(-a[0-9a-f]{7})?$/
 
 // Upstream names its Linux builds `ubuntu-*`; the app's backend ids say
 // `linux-*`. Keep this in step with LINUX_UPSTREAM_ASSET_BY_BACKEND in
@@ -109,23 +121,99 @@ export function pickSource(manifest, tag, asset) {
   }
 }
 
-async function fetchManifest() {
-  const resp = await fetch(MANIFEST_URL, {
+async function fetchManifest(url = MANIFEST_URL) {
+  const resp = await fetch(url, {
     headers: { 'User-Agent': 'atomic-chat-ci', 'Accept': 'application/json' },
   })
   if (!resp.ok) {
-    die(`backend manifest returned HTTP ${resp.status} from ${MANIFEST_URL}`)
+    die(`backend manifest returned HTTP ${resp.status} from ${url}`)
   }
   let manifest
   try {
     manifest = await resp.json()
   } catch {
-    die(`backend manifest at ${MANIFEST_URL} is not valid JSON`)
+    die(`backend manifest at ${url} is not valid JSON`)
   }
   if (typeof manifest.tag_name !== 'string' || !manifest.tag_name) {
-    die(`backend manifest at ${MANIFEST_URL} has no tag_name`)
+    die(`backend manifest at ${url} has no tag_name`)
   }
   return manifest
+}
+
+// --- stable-diffusion.cpp ----------------------------------------------------
+
+/** `master-849-d04e895-a1b2c3d` → `master-849-d04e895`; upstream tags pass through. */
+export function stripSdcppTagSuffix(tag) {
+  return tag.replace(/-a[0-9a-f]{7}$/, '')
+}
+
+/** The manifest entry for a backend id, or null. Names are never constructed. */
+export function sdcppAssetFor(manifest, backend) {
+  return (manifest?.assets ?? []).find((a) => a.backend === backend) ?? null
+}
+
+/**
+ * Where an sd.cpp asset comes from. The mirror when the manifest names one;
+ * otherwise the upstream GitHub release, whose tag never carries the Atomic
+ * variant suffix. The hash travels either way — the manifest records the
+ * GitHub digest even before the tag is mirrored — but, as for llama.cpp, a
+ * hash without a size is not trusted.
+ */
+export function pickSdcppSource(manifest, asset) {
+  const tag = manifest.tag_name
+  const url = manifest.download_base
+    ? `${manifest.download_base}/${tag}/${asset.name}`
+    : `https://github.com/${manifest.upstream_repo ?? SDCPP_UPSTREAM_REPO}/releases/download/${stripSdcppTagSuffix(tag)}/${asset.name}`
+  if (!asset.sha256 || !asset.size) return { url }
+  return { url, sha256: asset.sha256, size: asset.size }
+}
+
+async function resolveSdcpp(args) {
+  const backend = args.backend
+  const pinned = args.tag
+  if (pinned && !SDCPP_TAG_RE.test(pinned)) {
+    die(`--tag must look like a leejet release tag (got "${pinned}")`)
+  }
+  process.stderr.write(
+    'Resolving sd.cpp backend from the atomic-chat-conf manifest...\n'
+  )
+  const manifest = await fetchManifest(SDCPP_MANIFEST_URL)
+  if (pinned && manifest.tag_name !== pinned) {
+    // Asset names come from the manifest, so an unmirrored tag has no answer.
+    die(
+      `manifest is at ${manifest.tag_name}, not ${pinned}; sd.cpp assets can only be resolved for the manifest tag`
+    )
+  }
+  const asset = sdcppAssetFor(manifest, backend)
+  if (!asset || asset.companion) {
+    die(
+      `manifest tag ${manifest.tag_name} lists no backend "${backend}" (update atomic-chat-conf/backends/sdcpp-manifest.json)`
+    )
+  }
+  const source = pickSdcppSource(manifest, asset)
+  if (source.sha256) {
+    process.stderr.write('sha256 will be verified\n')
+  } else {
+    process.stderr.write('No hash in the manifest; downloading unverified\n')
+  }
+
+  // Only the Windows CUDA build needs a runtime archive beside it.
+  const companion =
+    backend === 'win-cuda12-x64' ? sdcppAssetFor(manifest, 'win-cudart-cu12') : null
+
+  process.stdout.write(
+    [
+      `TAG=${manifest.tag_name}`,
+      `BACKEND=${backend}`,
+      `ASSET=${asset.name}`,
+      `URL=${source.url}`,
+      `SHA256=${source.sha256 ?? ''}`,
+      `SIZE=${source.size ?? ''}`,
+      `COMPANION=${companion?.name ?? ''}`,
+      `COMPANION_URL=${companion ? pickSdcppSource(manifest, companion).url : ''}`,
+      '',
+    ].join('\n')
+  )
 }
 
 async function main() {
@@ -133,9 +221,18 @@ async function main() {
   const backend = args.backend
   if (!backend) {
     process.stderr.write(
-      'usage: resolve-upstream-backend.mjs --backend <id> [--tag <pin>]\n'
+      'usage: resolve-upstream-backend.mjs [--engine llama|sdcpp] --backend <id> [--tag <pin>]\n'
     )
     process.exit(2)
+  }
+
+  const engine = args.engine ?? 'llama'
+  if (engine === 'sdcpp') {
+    await resolveSdcpp(args)
+    return
+  }
+  if (engine !== 'llama') {
+    die(`--engine must be llama or sdcpp (got "${engine}")`)
   }
 
   const pinned = args.tag

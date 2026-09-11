@@ -28,7 +28,13 @@ export function getAnalyticsPlatform(): string {
 
 export type DownloadStatus = 'started' | 'completed' | 'failed' | 'cancelled'
 
-export type DownloadKind = 'model' | 'gpu_backend' | 'companion_artifact'
+export type DownloadKind =
+  | 'model'
+  | 'gpu_backend'
+  | 'companion_artifact'
+  // A diffusion checkpoint or one of its side files (VAE, text encoder),
+  // fetched by `lib/diffusion/models.ts` through the same download pipeline.
+  | 'diffusion_model'
 
 export type DownloadFailureReason =
   | 'http_404'
@@ -177,6 +183,10 @@ export function downloadKind(
 ): DownloadKind {
   const id = (idOrTask ?? '').toLowerCase()
   if (id.includes('cudart')) return 'companion_artifact'
+  // The sd.cpp binary is a GPU build like the llama.cpp ones; its checkpoints
+  // are not chat models and must not be counted as such.
+  if (id.startsWith('diffusion-backend')) return 'gpu_backend'
+  if (id.startsWith('diffusion')) return 'diffusion_model'
   if (downloadType === 'Backend' || id.includes('llamacpp-backend'))
     return 'gpu_backend'
   return 'model'

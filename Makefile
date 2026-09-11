@@ -389,6 +389,7 @@ test-rust: export TAURI_CONFIG := {"bundle":{"icon":["icons/icon.png"]}}
 test-rust: stub-resources
 	cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-atomic-audio/Cargo.toml
+	cargo test --manifest-path src-tauri/plugins/tauri-plugin-atomic-diffusion/Cargo.toml
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp-upstream/Cargo.toml -- --test-threads=1
@@ -469,6 +470,7 @@ gen-amd-rocm-pci-ids:
 # mandatory. These targets are intentionally excluded from verify/verify-fast.
 test-live:
 	python3 scripts/test-local-sidecars.py $(if $(filter 1,$(REQUIRE)),--require,)
+	python3 scripts/test-local-diffusion.py $(if $(filter 1,$(REQUIRE)),--require,)
 	ATOMIC_TEST_LIVE_REGISTRIES=1 yarn workspace @janhq/web-app vitest --run \
 		src/services/__tests__/external-contracts.test.ts
 

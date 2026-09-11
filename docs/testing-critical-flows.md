@@ -246,6 +246,52 @@ There are focused process, unload, and error-path tests, but no deterministic
 scenario proves start, readiness, routing, cancellation, unload, and orphan
 cleanup as one lifecycle.
 
+### Local image generation — partial, P1
+
+Production entrypoints:
+
+- `web-app/src/stores/image-generation-store.ts` — binds to the native
+  diffusion plugin, adopts a running job, runs the multi-run loop
+  (`seed = base + run × batchSize`), stops, and lands outputs in the gallery.
+- `web-app/src/containers/images/*`, `containers/dialogs/ImageSetupDialog.tsx`,
+  `routes/settings/media.tsx` — the Images page, the first-run wizard and the
+  Media settings page.
+- `web-app/src/lib/diffusion/{size,recipe,generation-stop,errors,telemetry}.ts`
+  — pure helpers: size snapping, recipe restore and export naming, the
+  stop/report decisions, the error-code routing table, PostHog props.
+
+Existing evidence:
+
+- `image-generation-store.test.ts` drives the loop against a fake
+  `DiffusionService` and asserts the seeds handed to `generate`, the gallery
+  order after three runs, that Stop ends the loop without a toast, that a
+  failure stops it with the code surfaced, the 2 s `getJob` fallback when the
+  terminal event never arrives, adoption of `getStatus().activeJob`, and that
+  the telemetry payload carries neither prompt nor seed.
+- `size.test.ts`, `recipe.test.ts`, `generation-stop.test.ts`, `errors.test.ts`
+  cover the pure helpers as tables; `errors.test.ts` walks every code in the
+  contract and checks each has English copy.
+- `useImageArtifact.test.ts` derives installed/downloading/loaded from the
+  real `listInstalledArtifacts` and the download store.
+- `ImagePromptForm.test.tsx`, `ImageJobProgress.test.tsx`,
+  `ImageModelSelector.test.tsx`, `ImageViewer.test.tsx`,
+  `ImageSetupDialog.test.tsx`, `media.test.tsx` render the production
+  components against the fake service and assert what the user sees: the
+  Ctrl+Enter submit, the Generate/Stop swap, capability-gated controls, the
+  download plan's present/missing rows, Restore filling the form with the batch
+  seed, the export filename handed to the save dialog, delete removing the
+  tile, the wizard's Done gate, and the output-folder change.
+- `NavMain.test.tsx` checks the Images row sits after Models and disappears
+  without the media-generation feature.
+
+Gap:
+
+- Nothing exercises the real `TauriDiffusionService` against `mockIPC` from the
+  UI side; the store's event handling is proved only through the fake.
+- The full-page composition (`ImageGenerationPage`) and the deep-link
+  `?model=&quant=` preselect have no test.
+- OS notification on completion and the GPU arbiter hand-off are mocked.
+
 ## Coverage snapshot
 
 Commands run on 2026-07-29:
@@ -340,6 +386,8 @@ now regression-tested rather than retroactively rewriting the score.
 3. Sidecar orphan cleanup is tested as matching logic, not as a lifecycle.
 4. ServiceHub construction is smoke evidence; adapter behavior belongs to the
    dedicated `mockIPC` suites.
+5. Local image generation is proved through a fake `DiffusionService`; the
+   page composition and the deep-link preselect are untested.
 
 ### P2 — cleanup
 

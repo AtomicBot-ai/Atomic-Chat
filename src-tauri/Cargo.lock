@@ -57,6 +57,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-atomic-audio",
+ "tauri-plugin-atomic-diffusion",
  "tauri-plugin-autostart",
  "tauri-plugin-deep-link",
  "tauri-plugin-dialog",
@@ -7689,6 +7690,27 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "winreg 0.52.0",
+]
+
+[[package]]
+name = "tauri-plugin-atomic-diffusion"
+version = "0.6.599"
+dependencies = [
+ "base64 0.22.1",
+ "crc32fast",
+ "image",
+ "jan-utils",
+ "log",
+ "nix 0.30.1",
+ "rand 0.8.5",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.18",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

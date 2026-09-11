@@ -67,6 +67,21 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
 
+// Media generation is desktop-only; the flag is flipped per test so both the
+// gated and the ungated sidebar can be checked from one file.
+const platform = vi.hoisted(() => ({ mediaGeneration: true }))
+vi.mock('@/lib/platform/const', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/platform/const')>()
+  return {
+    PlatformFeatures: new Proxy(actual.PlatformFeatures, {
+      get: (target, key) =>
+        key === 'mediaGeneration'
+          ? platform.mediaGeneration
+          : target[key as keyof typeof target],
+    }),
+  }
+})
+
 vi.mock('@/hooks/useGeneralSetting', () => ({
   useGeneralSetting: () => true,
 }))
@@ -89,6 +104,40 @@ describe('NavMain', () => {
   beforeEach(() => {
     vi.mocked(useLocation).mockReturnValue({ pathname: '/' } as never)
     useLeftPanel.setState({ pluginsExpanded: false })
+    platform.mediaGeneration = true
+  })
+
+  it('puts Images right after Models on desktop', () => {
+    render(<NavMain />)
+
+    const labels = screen
+      .getAllByRole('listitem')
+      .map((item) => item.textContent?.trim())
+    const models = labels.indexOf('common:models')
+    expect(models).toBeGreaterThanOrEqual(0)
+    expect(labels[models + 1]).toBe('common:images')
+    expect(screen.getByText('common:images').closest('a')).toHaveAttribute(
+      'href',
+      '/images/'
+    )
+  })
+
+  it('hides Images where the platform has no media generation', () => {
+    platform.mediaGeneration = false
+    render(<NavMain />)
+
+    expect(screen.queryByText('common:images')).not.toBeInTheDocument()
+    expect(screen.getByText('common:models')).toBeInTheDocument()
+  })
+
+  it('highlights Images on the images route', () => {
+    vi.mocked(useLocation).mockReturnValue({ pathname: '/images/' } as never)
+
+    render(<NavMain />)
+
+    expect(
+      screen.getByText('common:images').closest('[data-active]')
+    ).toHaveAttribute('data-active', 'true')
   })
 
   it('shows every section on the unified sidebar', () => {

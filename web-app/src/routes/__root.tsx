@@ -24,6 +24,8 @@ import ToolApproval from '@/containers/dialogs/ToolApproval'
 import AgentApprovalDialog from '@/containers/dialogs/AgentApprovalDialog'
 import AgentFolderAccessDialog from '@/containers/dialogs/AgentFolderAccessDialog'
 import VoiceSetupDialog from '@/containers/dialogs/VoiceSetupDialog'
+import ImageSetupDialog from '@/containers/dialogs/ImageSetupDialog'
+import { ImageGenerationProvider } from '@/providers/ImageGenerationProvider'
 import { TranslationProvider } from '@/i18n/TranslationContext'
 import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionDialog'
 import WhatsNewDialog from '@/containers/dialogs/WhatsNewDialog'
@@ -93,6 +95,10 @@ const AppLayout = () => {
             the component that registers the download event listeners, so a
             single mount keeps them registered exactly once. */}
         <DownloadManagement />
+        {/* Binds the image-generation store to the native plugin for the life
+            of the app: a job lives in the plugin, so the run loop and the
+            event subscription must outlive the Images page. */}
+        <ImageGenerationProvider />
       </SidebarProvider>
     </div>
   )
@@ -168,6 +174,7 @@ function RootLayout() {
           <AgentApprovalDialog />
           <AgentFolderAccessDialog />
           <VoiceSetupDialog />
+          <ImageSetupDialog />
           <AttachmentIngestionDialog />
         </TranslationProvider>
       </ServiceHubProvider>

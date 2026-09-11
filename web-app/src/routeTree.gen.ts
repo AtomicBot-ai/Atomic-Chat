@@ -14,6 +14,7 @@ import { Route as LogsRouteImport } from './routes/logs'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SkillsIndexRouteImport } from './routes/skills/index'
 import { Route as LaunchIndexRouteImport } from './routes/launch/index'
+import { Route as ImagesIndexRouteImport } from './routes/images/index'
 import { Route as HubIndexRouteImport } from './routes/hub/index'
 import { Route as ConnectorsIndexRouteImport } from './routes/connectors/index'
 import { Route as CloudIndexRouteImport } from './routes/cloud/index'
@@ -22,6 +23,7 @@ import { Route as ThreadsThreadIdRouteImport } from './routes/threads/$threadId'
 import { Route as SettingsVoiceRouteImport } from './routes/settings/voice'
 import { Route as SettingsShortcutsRouteImport } from './routes/settings/shortcuts'
 import { Route as SettingsPrivacyRouteImport } from './routes/settings/privacy'
+import { Route as SettingsMediaRouteImport } from './routes/settings/media'
 import { Route as SettingsMcpServersRouteImport } from './routes/settings/mcp-servers'
 import { Route as SettingsLocalApiServerRouteImport } from './routes/settings/local-api-server'
 import { Route as SettingsInterfaceRouteImport } from './routes/settings/interface'
@@ -64,6 +66,11 @@ const LaunchIndexRoute = LaunchIndexRouteImport.update({
   path: '/launch/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ImagesIndexRoute = ImagesIndexRouteImport.update({
+  id: '/images/',
+  path: '/images/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HubIndexRoute = HubIndexRouteImport.update({
   id: '/hub/',
   path: '/hub/',
@@ -102,6 +109,11 @@ const SettingsShortcutsRoute = SettingsShortcutsRouteImport.update({
 const SettingsPrivacyRoute = SettingsPrivacyRouteImport.update({
   id: '/settings/privacy',
   path: '/settings/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsMediaRoute = SettingsMediaRouteImport.update({
+  id: '/settings/media',
+  path: '/settings/media',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsMcpServersRoute = SettingsMcpServersRouteImport.update({
@@ -204,6 +216,7 @@ export interface FileRoutesByFullPath {
   '/settings/interface': typeof SettingsInterfaceRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
+  '/settings/media': typeof SettingsMediaRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/settings/voice': typeof SettingsVoiceRoute
@@ -212,6 +225,7 @@ export interface FileRoutesByFullPath {
   '/cloud/': typeof CloudIndexRoute
   '/connectors/': typeof ConnectorsIndexRoute
   '/hub/': typeof HubIndexRoute
+  '/images/': typeof ImagesIndexRoute
   '/launch/': typeof LaunchIndexRoute
   '/skills/': typeof SkillsIndexRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
@@ -235,6 +249,7 @@ export interface FileRoutesByTo {
   '/settings/interface': typeof SettingsInterfaceRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
+  '/settings/media': typeof SettingsMediaRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/settings/voice': typeof SettingsVoiceRoute
@@ -243,6 +258,7 @@ export interface FileRoutesByTo {
   '/cloud': typeof CloudIndexRoute
   '/connectors': typeof ConnectorsIndexRoute
   '/hub': typeof HubIndexRoute
+  '/images': typeof ImagesIndexRoute
   '/launch': typeof LaunchIndexRoute
   '/skills': typeof SkillsIndexRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
@@ -267,6 +283,7 @@ export interface FileRoutesById {
   '/settings/interface': typeof SettingsInterfaceRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
+  '/settings/media': typeof SettingsMediaRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/settings/voice': typeof SettingsVoiceRoute
@@ -275,6 +292,7 @@ export interface FileRoutesById {
   '/cloud/': typeof CloudIndexRoute
   '/connectors/': typeof ConnectorsIndexRoute
   '/hub/': typeof HubIndexRoute
+  '/images/': typeof ImagesIndexRoute
   '/launch/': typeof LaunchIndexRoute
   '/skills/': typeof SkillsIndexRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
@@ -300,6 +318,7 @@ export interface FileRouteTypes {
     | '/settings/interface'
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
+    | '/settings/media'
     | '/settings/privacy'
     | '/settings/shortcuts'
     | '/settings/voice'
@@ -308,6 +327,7 @@ export interface FileRouteTypes {
     | '/cloud/'
     | '/connectors/'
     | '/hub/'
+    | '/images/'
     | '/launch/'
     | '/skills/'
     | '/settings/providers/$providerName'
@@ -331,6 +351,7 @@ export interface FileRouteTypes {
     | '/settings/interface'
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
+    | '/settings/media'
     | '/settings/privacy'
     | '/settings/shortcuts'
     | '/settings/voice'
@@ -339,6 +360,7 @@ export interface FileRouteTypes {
     | '/cloud'
     | '/connectors'
     | '/hub'
+    | '/images'
     | '/launch'
     | '/skills'
     | '/settings/providers/$providerName'
@@ -362,6 +384,7 @@ export interface FileRouteTypes {
     | '/settings/interface'
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
+    | '/settings/media'
     | '/settings/privacy'
     | '/settings/shortcuts'
     | '/settings/voice'
@@ -370,6 +393,7 @@ export interface FileRouteTypes {
     | '/cloud/'
     | '/connectors/'
     | '/hub/'
+    | '/images/'
     | '/launch/'
     | '/skills/'
     | '/settings/providers/$providerName'
@@ -394,6 +418,7 @@ export interface RootRouteChildren {
   SettingsInterfaceRoute: typeof SettingsInterfaceRoute
   SettingsLocalApiServerRoute: typeof SettingsLocalApiServerRoute
   SettingsMcpServersRoute: typeof SettingsMcpServersRoute
+  SettingsMediaRoute: typeof SettingsMediaRoute
   SettingsPrivacyRoute: typeof SettingsPrivacyRoute
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
   SettingsVoiceRoute: typeof SettingsVoiceRoute
@@ -402,6 +427,7 @@ export interface RootRouteChildren {
   CloudIndexRoute: typeof CloudIndexRoute
   ConnectorsIndexRoute: typeof ConnectorsIndexRoute
   HubIndexRoute: typeof HubIndexRoute
+  ImagesIndexRoute: typeof ImagesIndexRoute
   LaunchIndexRoute: typeof LaunchIndexRoute
   SkillsIndexRoute: typeof SkillsIndexRoute
   SettingsProvidersProviderNameRoute: typeof SettingsProvidersProviderNameRoute
@@ -443,6 +469,13 @@ declare module '@tanstack/react-router' {
       path: '/launch'
       fullPath: '/launch/'
       preLoaderRoute: typeof LaunchIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/images/': {
+      id: '/images/'
+      path: '/images'
+      fullPath: '/images/'
+      preLoaderRoute: typeof ImagesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hub/': {
@@ -499,6 +532,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/privacy'
       fullPath: '/settings/privacy'
       preLoaderRoute: typeof SettingsPrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/media': {
+      id: '/settings/media'
+      path: '/settings/media'
+      fullPath: '/settings/media'
+      preLoaderRoute: typeof SettingsMediaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings/mcp-servers': {
@@ -634,6 +674,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsInterfaceRoute: SettingsInterfaceRoute,
   SettingsLocalApiServerRoute: SettingsLocalApiServerRoute,
   SettingsMcpServersRoute: SettingsMcpServersRoute,
+  SettingsMediaRoute: SettingsMediaRoute,
   SettingsPrivacyRoute: SettingsPrivacyRoute,
   SettingsShortcutsRoute: SettingsShortcutsRoute,
   SettingsVoiceRoute: SettingsVoiceRoute,
@@ -642,6 +683,7 @@ const rootRouteChildren: RootRouteChildren = {
   CloudIndexRoute: CloudIndexRoute,
   ConnectorsIndexRoute: ConnectorsIndexRoute,
   HubIndexRoute: HubIndexRoute,
+  ImagesIndexRoute: ImagesIndexRoute,
   LaunchIndexRoute: LaunchIndexRoute,
   SkillsIndexRoute: SkillsIndexRoute,
   SettingsProvidersProviderNameRoute: SettingsProvidersProviderNameRoute,

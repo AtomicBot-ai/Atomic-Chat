@@ -31,6 +31,10 @@ import {
   RadioTowerIcon,
   type RadioTowerIconHandle,
 } from '@/components/animated-icon/radio-tower'
+import {
+  SparklesIcon,
+  type SparklesIconHandle,
+} from '@/components/animated-icon/sparkles'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { SearchDialog } from '@/containers/dialogs/SearchDialog'
 import { route } from '@/constants/routes'
@@ -40,6 +44,8 @@ import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useProjectDialog } from '@/hooks/useProjectDialog'
 import { useSearchDialog } from '@/hooks/useSearchDialog'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 import { cn } from '@/lib/utils'
 
 type AnimatedIconHandle = {
@@ -58,6 +64,7 @@ export function NavMain() {
   const projectIconRef = useRef<AnimatedIconHandle>(null)
   const integrationsIconRef = useRef<PlugIconHandle>(null)
   const apiIconRef = useRef<RadioTowerIconHandle>(null)
+  const imagesIconRef = useRef<SparklesIconHandle>(null)
   const integrationsBadgeSeen = useGeneralSetting(
     (state) => state.integrationsBadgeSeen
   )
@@ -129,6 +136,29 @@ export function NavMain() {
             </Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
+        {/* Local image generation. Desktop only: it needs the native plugin
+            that supervises sd-server, so the row is gated the same way voice
+            input is rather than shown and then refused. */}
+        {PlatformFeatures[PlatformFeature.MEDIA_GENERATION] && (
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              isActive={pathname.startsWith('/images')}
+              className="data-[active=true]:bg-sidebar-foreground/15"
+              onMouseEnter={() => imagesIconRef.current?.startAnimation()}
+              onMouseLeave={() => imagesIconRef.current?.stopAnimation()}
+            >
+              <Link to={route.images.index}>
+                <SparklesIcon
+                  ref={imagesIconRef}
+                  className="text-foreground/70"
+                  size={16}
+                />
+                <span>{t('common:images')}</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        )}
         {/* Cloud is offered in both modes: agent mode is what a user with no
             local engine is most likely to be blocked on, and connecting a
             provider is the fix. */}

@@ -98,6 +98,13 @@ pub fn run() {
         app_builder = app_builder.plugin(tauri_plugin_atomic_audio::init());
     }
 
+    // Local image generation. Desktop only: it supervises a native
+    // stable-diffusion.cpp server process.
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        app_builder = app_builder.plugin(tauri_plugin_atomic_diffusion::init());
+    }
+
     // Desktop: include updater commands
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let app_builder = app_builder.invoke_handler(tauri::generate_handler![
