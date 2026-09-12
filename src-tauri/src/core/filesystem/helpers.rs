@@ -12,7 +12,8 @@ pub fn resolve_path<R: Runtime>(app_handle: tauri::AppHandle<R>, path: &str) -> 
             .trim_start_matches('\\');
         get_jan_data_folder_path(app_handle).join(relative_normalized)
     } else {
-        PathBuf::from(path)
+        let normalized = normalize_file_path(path);
+        PathBuf::from(normalized)
     };
 
     if path.starts_with("http://") || path.starts_with("https://") {

@@ -136,9 +136,41 @@ pub fn canonicalize_existing_prefix(path: &Path) -> PathBuf {
     }
 }
 
-/// Removes file:/ and file:\ prefixes from file paths
+/// Strips a leading slash from a Windows drive-letter path (e.g. `/C:/...` -> `C:/...` or `\C:\...` -> `C:\...`).
+/// Safe to run on any platform; only modifies paths starting with `/` or `\` followed by an ASCII letter and `:`.
+pub(crate) fn strip_windows_drive_slash(path: &str) -> &str {
+    let bytes = path.as_bytes();
+    if bytes.len() >= 3
+        && (bytes[0] == b'/' || bytes[0] == b'\\')
+        && bytes[1].is_ascii_alphabetic()
+        && bytes[2] == b':'
+    {
+        &path[1..]
+    } else {
+        path
+    }
+}
+
+/// Removes file://, file:/ and file:\ prefixes from file paths, and normalizes Windows drive letters.
 pub fn normalize_file_path(path: &str) -> String {
-    path.replace("file:/", "").replace("file:\\", "")
+    // Strip file:// scheme (preserving leading slash for POSIX absolute paths like file:///etc/hosts -> /etc/hosts)
+    // For file:/ and file:\, keep the separator so single-slash and three-slash forms agree.
+    let stripped = if let Some(rest) = path.strip_prefix("file://") {
+        rest
+    } else if path.starts_with("file:/") || path.starts_with("file:\\") {
+        &path["file:".len()..]
+    } else {
+        path
+    };
+
+    #[cfg(windows)]
+    {
+        strip_windows_drive_slash(stripped).to_string()
+    }
+    #[cfg(not(windows))]
+    {
+        stripped.to_string()
+    }
 }
 
 /// Removes prefix from path string with proper formatting
@@ -281,6 +313,55 @@ mod tests {
             // Should return some short path or None (both are valid)
             // We can't assert the exact value as it depends on the system
             println!("Short path result: {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_strip_windows_drive_slash() {
+        assert_eq!(strip_windows_drive_slash("/C:/Users/test"), "C:/Users/test");
+        assert_eq!(
+            strip_windows_drive_slash(r"\C:\Users\test"),
+            r"C:\Users\test"
+        );
+        assert_eq!(strip_windows_drive_slash("/c:/path"), "c:/path");
+        assert_eq!(strip_windows_drive_slash("/etc/hosts"), "/etc/hosts");
+        assert_eq!(strip_windows_drive_slash("/c:notes"), "c:notes");
+        assert_eq!(strip_windows_drive_slash("C:/Users/test"), "C:/Users/test");
+        assert_eq!(strip_windows_drive_slash("/"), "/");
+        assert_eq!(strip_windows_drive_slash(""), "");
+    }
+
+    #[test]
+    fn test_normalize_file_path_edge_cases() {
+        assert_eq!(
+            normalize_file_path("/tmp/a/file:/b.md"),
+            "/tmp/a/file:/b.md"
+        );
+        assert_eq!(normalize_file_path("file:///etc/hosts"), "/etc/hosts");
+        assert_eq!(normalize_file_path("file:/etc/hosts"), "/etc/hosts");
+
+        #[cfg(windows)]
+        {
+            assert_eq!(
+                normalize_file_path("file:///C:/Users/test"),
+                "C:/Users/test"
+            );
+            assert_eq!(
+                normalize_file_path("file:/C:/Users/test"),
+                "C:/Users/test"
+            );
+            assert_eq!(
+                normalize_file_path("/C:/Users/test"),
+                "C:/Users/test"
+            );
+        }
+
+        #[cfg(not(windows))]
+        {
+            assert_eq!(
+                normalize_file_path("file:/C:/Users/test"),
+                "/C:/Users/test"
+            );
         }
     }
 }
