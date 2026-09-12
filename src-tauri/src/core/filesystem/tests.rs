@@ -1,4 +1,5 @@
 use super::commands::*;
+use super::helpers::resolve_path;
 use crate::core::app::commands::get_jan_data_folder_path;
 use std::fs::{self, File};
 use std::io::Write;
@@ -87,4 +88,25 @@ fn test_readdir_sync() {
     assert_eq!(result.len(), 2);
 
     let _ = fs::remove_dir_all(dir_path);
+}
+
+#[test]
+fn test_resolve_path() {
+    let app = mock_app();
+
+    // A non-file: path is passed through untouched, including an embedded "file:/"
+    #[cfg(unix)]
+    {
+        let weird = resolve_path(app.handle().clone(), "/tmp/a/file:/b.md");
+        assert_eq!(weird, std::path::PathBuf::from("/tmp/a/file:/b.md"));
+    }
+
+    #[cfg(windows)]
+    {
+        let drive = resolve_path(app.handle().clone(), "/C:/nonexistent/test/path.md");
+        assert_eq!(
+            drive,
+            std::path::PathBuf::from(r"C:\nonexistent\test\path.md")
+        );
+    }
 }
