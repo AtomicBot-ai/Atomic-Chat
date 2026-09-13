@@ -280,3 +280,32 @@
     border: 0 !important;
   }
 }
+
+/*
+ * Windows title bar (components/WindowFrame.tsx). The main window has no native
+ * title bar, so the app draws a 2.5rem bar with Minimize, Maximize and Close.
+ * Layouts across the app size themselves to the whole viewport (h-svh,
+ * min-h-svh, the fixed sidebar), so inside the frame they are shortened by the
+ * bar's height and the sidebar starts below it - otherwise the bottom of every
+ * page would be cut off. Unlayered on purpose, so it wins over Tailwind's
+ * utilities layer. tests/window-controls.test.mjs keeps these rules in place.
+ */
+[data-window-chrome] {
+  --window-chrome-height: 2.5rem;
+}
+
+[data-window-chrome] .h-svh {
+  height: calc(100svh - var(--window-chrome-height));
+}
+
+[data-window-chrome] .min-h-svh {
+  min-height: calc(100svh - var(--window-chrome-height));
+}
+
+[data-window-chrome] .fixed.inset-y-0 {
+  top: var(--window-chrome-height);
+}
+
+[data-window-chrome] [class*='h-[calc(100dvh'] {
+  height: calc(100dvh - var(--window-chrome-height));
+}

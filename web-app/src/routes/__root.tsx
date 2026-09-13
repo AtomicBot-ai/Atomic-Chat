@@ -36,6 +36,7 @@ import { StartupBackendCoordinator } from '@/providers/StartupBackendCoordinator
 import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { LeftSidebar } from '@/components/left-sidebar'
+import { WindowFrame } from '@/components/WindowFrame'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -59,42 +60,46 @@ const AppLayout = () => {
   useTrayStatusSync()
   const isSetupCompleted = useSetupCompleted()
 
+  // WindowFrame draws Minimize, Maximize and Close where the window has no
+  // native title bar (Windows). tests/window-controls.test.mjs keeps it here.
   return (
-    <div className="bg-neutral-50 dark:bg-background size-full relative">
-      <SidebarProvider
-        open={isLeftPanelOpen}
-        onOpenChange={setLeftPanel}
-        defaultWidth={sidebarWidth}
-        onWidthChange={setLeftPanelWidth}
-      >
-        <AnalyticProvider />
-        <KeyboardShortcutsProvider />
-        <DialogAppUpdater />
-        {isSetupCompleted && <BackendUpdater />}
-        {/* Unlike the recommendation dialogs above, this dialog only opens
+    <WindowFrame>
+      <div className="bg-neutral-50 dark:bg-background size-full relative">
+        <SidebarProvider
+          open={isLeftPanelOpen}
+          onOpenChange={setLeftPanel}
+          defaultWidth={sidebarWidth}
+          onWidthChange={setLeftPanelWidth}
+        >
+          <AnalyticProvider />
+          <KeyboardShortcutsProvider />
+          <DialogAppUpdater />
+          {isSetupCompleted && <BackendUpdater />}
+          {/* Unlike the recommendation dialogs above, this dialog only opens
             after ChatInput dispatches a mismatch prompt. Keep it mounted for
             upgraded/legacy users whose setup-completed flag is absent. */}
-        <SuboptimalBackendDialog />
-        <WhatsNewDialog />
-        <LeftSidebar />
-        <SidebarInset>
-          <div className="bg-neutral-50 dark:bg-background size-full">
-            <Outlet />
-          </div>
-        </SidebarInset>
+          <SuboptimalBackendDialog />
+          <WhatsNewDialog />
+          <LeftSidebar />
+          <SidebarInset>
+            <div className="bg-neutral-50 dark:bg-background size-full">
+              <Outlet />
+            </div>
+          </SidebarInset>
 
-        {/* Попап согласия на аналитику отключён; настройки → Privacy по-прежнему доступны */}
-        {/* {productAnalyticPrompt && <PromptAnalytic />} */}
-        {showOnboardingModelReminder && <PromptOnboardingModel />}
-        {/* ATO-462: mounted once at the root, not inside the sidebar or the
+          {/* Попап согласия на аналитику отключён; настройки → Privacy по-прежнему доступны */}
+          {/* {productAnalyticPrompt && <PromptAnalytic />} */}
+          {showOnboardingModelReminder && <PromptOnboardingModel />}
+          {/* ATO-462: mounted once at the root, not inside the sidebar or the
             header. It used to render in one of two places depending on whether
             the left panel was open, so a download's progress moved around the
             screen — or vanished — as the user toggled the sidebar. This is also
             the component that registers the download event listeners, so a
             single mount keeps them registered exactly once. */}
-        <DownloadManagement />
-      </SidebarProvider>
-    </div>
+          <DownloadManagement />
+        </SidebarProvider>
+      </div>
+    </WindowFrame>
   )
 }
 
