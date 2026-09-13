@@ -69,22 +69,89 @@ pub enum SkipReason {
     ConfigWriteFailed(String),
 }
 
+/// What happened to one old default folder that was not the one moved.
+#[derive(Debug, PartialEq, Eq)]
+pub enum StrayFolder {
+    /// It held nothing (empty dirs and 0-byte files) and was deleted.
+    Removed(PathBuf),
+    /// It holds data, so it was kept. Worth a user's attention.
+    HoldsData(PathBuf),
+    /// It held nothing but could not be deleted; retried on the next launch.
+    Failed(PathBuf, String),
+}
+
+/// The migration's outcome plus what happened to any stray old folders.
+#[derive(Debug, PartialEq, Eq)]
+pub struct MigrationReport {
+    pub outcome: MigrationOutcome,
+    pub strays: Vec<StrayFolder>,
+}
+
 /// Move an old default data folder to the current default, if this install
-/// still uses it. Called once from `setup`, before the logger opens `logs/`.
-pub fn migrate_default_data_folder<R: Runtime>(app: &AppHandle<R>) -> MigrationOutcome {
+/// still uses it, and tidy up empty old folders. Called from `setup` on every
+/// launch, before the logger opens `logs/`.
+pub fn migrate_default_data_folder<R: Runtime>(app: &AppHandle<R>) -> MigrationReport {
+    let skipped = |reason| MigrationReport {
+        outcome: MigrationOutcome::Skipped(reason),
+        strays: Vec::new(),
+    };
     if cfg!(test) || std::env::var("CI").unwrap_or_default() == "e2e" {
-        return MigrationOutcome::Skipped(SkipReason::Disabled);
+        return skipped(SkipReason::Disabled);
     }
     let data_dir = match app.path().data_dir() {
         Ok(dir) => dir,
-        Err(err) => return MigrationOutcome::Skipped(SkipReason::NoDataDir(err.to_string())),
+        Err(err) => return skipped(SkipReason::NoDataDir(err.to_string())),
     };
     let candidates: Vec<PathBuf> = LEGACY_DATA_FOLDER_NAMES
         .iter()
         .map(|name| build_default_data_folder(&data_dir, name))
         .collect();
     let target = PathBuf::from(default_data_folder_path(app.clone()));
-    migrate(&existing_config_files(app), &candidates, &target)
+    migrate_and_clean(&existing_config_files(app), &candidates, &target)
+}
+
+/// `migrate`, then - whenever the data lives at `target`, whether it moved on
+/// this launch or an earlier one - delete every other old default folder that
+/// holds nothing. Cleanup is repeated on later launches because on the real
+/// install test (tracker T21-S14) the move succeeded but the empty Radium Chat
+/// folder survived with no record of why; every result is now reported.
+pub fn migrate_and_clean(
+    config_files: &[PathBuf],
+    candidates: &[PathBuf],
+    target: &Path,
+) -> MigrationReport {
+    let outcome = migrate(config_files, candidates, target);
+    let data_is_at_target = matches!(
+        outcome,
+        MigrationOutcome::Moved { .. } | MigrationOutcome::Skipped(SkipReason::AlreadyMigrated)
+    );
+    let strays = if data_is_at_target {
+        clean_up_stray_folders(candidates, target)
+    } else {
+        Vec::new()
+    };
+    MigrationReport { outcome, strays }
+}
+
+fn clean_up_stray_folders(candidates: &[PathBuf], target: &Path) -> Vec<StrayFolder> {
+    candidates
+        .iter()
+        .filter(|candidate| !same_path(candidate, target) && candidate.exists())
+        .map(|candidate| match holds_no_data(candidate) {
+            Ok(false) => StrayFolder::HoldsData(candidate.clone()),
+            Err(err) => StrayFolder::Failed(candidate.clone(), format!("could not inspect it: {err}")),
+            Ok(true) => match fs::remove_dir_all(candidate) {
+                Ok(()) => {
+                    // The product folder above `data`, if nothing else lives there.
+                    if let Some(parent) = candidate.parent() {
+                        let _ = fs::remove_dir(parent);
+                    }
+                    StrayFolder::Removed(candidate.clone())
+                }
+                Err(err) => StrayFolder::Failed(candidate.clone(), err.to_string()),
+            },
+        })
+        .collect()
 }
 
 /// The `settings.json` files that exist, in the order the app reads them: the
@@ -136,19 +203,8 @@ pub fn migrate(config_files: &[PathBuf], candidates: &[PathBuf], target: &Path) 
             if let Some(parent) = legacy.parent() {
                 let _ = fs::remove_dir(parent);
             }
-            // Any other old default that holds nothing is the stray folder
-            // `jan-cli` leaves behind. One that holds data is kept.
-            for other in candidates
-                .iter()
-                .filter(|c| !same_path(c, &legacy) && !same_path(c, target))
-            {
-                if other.exists() && matches!(holds_no_data(other), Ok(true)) {
-                    let _ = fs::remove_dir_all(other);
-                    if let Some(parent) = other.parent() {
-                        let _ = fs::remove_dir(parent);
-                    }
-                }
-            }
+            // Other old default folders are tidied by `migrate_and_clean`,
+            // which also reports what it could not remove.
             MigrationOutcome::Moved {
                 from: legacy,
                 to: target.to_path_buf(),
@@ -411,10 +467,11 @@ mod tests {
         write(&l.stray.join("db/__status__.db"), "");
         settings(&l.current_cfg, &l.legacy);
 
-        assert!(matches!(
-            migrate(std::slice::from_ref(&l.current_cfg), &l.candidates(), &l.target),
-            MigrationOutcome::Moved { .. }
-        ));
+        let report =
+            migrate_and_clean(std::slice::from_ref(&l.current_cfg), &l.candidates(), &l.target);
+
+        assert!(matches!(report.outcome, MigrationOutcome::Moved { .. }));
+        assert_eq!(report.strays, vec![StrayFolder::Removed(l.stray.clone())]);
         assert!(!l.stray.exists());
         assert!(
             !l.stray.parent().unwrap().exists(),
@@ -429,14 +486,62 @@ mod tests {
         write(&l.stray.join("threads/x/thread.json"), r#"{"id":"x"}"#);
         settings(&l.current_cfg, &l.legacy);
 
-        assert!(matches!(
-            migrate(std::slice::from_ref(&l.current_cfg), &l.candidates(), &l.target),
-            MigrationOutcome::Moved { .. }
-        ));
+        let report =
+            migrate_and_clean(std::slice::from_ref(&l.current_cfg), &l.candidates(), &l.target);
+
+        assert!(matches!(report.outcome, MigrationOutcome::Moved { .. }));
+        assert_eq!(report.strays, vec![StrayFolder::HoldsData(l.stray.clone())]);
         assert_eq!(
             fs::read_to_string(l.stray.join("threads/x/thread.json")).unwrap(),
             r#"{"id":"x"}"#
         );
+    }
+
+    /// T21-S14: on the real install test the move succeeded but the empty
+    /// Radium Chat folder survived, and nothing said why. Cleanup therefore runs
+    /// on every launch once the data lives at the new default, not only on the
+    /// launch that moved it.
+    #[test]
+    fn removes_the_empty_stray_folder_on_a_later_launch() {
+        let l = layout();
+        write(&l.target.join("store.json"), "{}");
+        write(&l.stray.join("db/__status__.db"), "");
+        settings(&l.current_cfg, &l.target);
+
+        let report =
+            migrate_and_clean(std::slice::from_ref(&l.current_cfg), &l.candidates(), &l.target);
+
+        assert_eq!(report.outcome, MigrationOutcome::Skipped(SkipReason::AlreadyMigrated));
+        assert_eq!(report.strays, vec![StrayFolder::Removed(l.stray.clone())]);
+        assert!(!l.stray.parent().unwrap().exists());
+        assert!(l.target.join("store.json").is_file());
+    }
+
+    #[test]
+    fn leaves_old_folders_alone_while_the_data_lives_somewhere_else() {
+        let l = layout();
+        let custom = l.root.path().join("elsewhere/models");
+        write(&custom.join("store.json"), "{}");
+        write(&l.stray.join("db/__status__.db"), "");
+        settings(&l.current_cfg, &custom);
+
+        let report =
+            migrate_and_clean(std::slice::from_ref(&l.current_cfg), &l.candidates(), &l.target);
+
+        assert!(report.strays.is_empty());
+        assert!(l.stray.join("db/__status__.db").is_file());
+    }
+
+    #[test]
+    fn a_clean_launch_reports_nothing_to_clean() {
+        let l = layout();
+        write(&l.target.join("store.json"), "{}");
+        settings(&l.current_cfg, &l.target);
+
+        let report =
+            migrate_and_clean(std::slice::from_ref(&l.current_cfg), &l.candidates(), &l.target);
+
+        assert!(report.strays.is_empty());
     }
 
     #[test]

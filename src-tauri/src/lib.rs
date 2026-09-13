@@ -501,8 +501,23 @@ pub fn run() {
             // Reported only now that the logger exists; the move itself had to
             // happen before the logger opened `logs/`.
             {
-                use crate::core::app::data_migration::{MigrationOutcome, SkipReason};
-                match &data_folder_migration {
+                use crate::core::app::data_migration::{MigrationOutcome, SkipReason, StrayFolder};
+                for stray in &data_folder_migration.strays {
+                    match stray {
+                        StrayFolder::Removed(path) => {
+                            log::info!("Removed the empty old data folder {}", path.display())
+                        }
+                        StrayFolder::HoldsData(path) => log::warn!(
+                            "Kept the old data folder {} because it still holds data",
+                            path.display()
+                        ),
+                        StrayFolder::Failed(path, err) => log::warn!(
+                            "Could not remove the empty old data folder {} (will retry next launch): {err}",
+                            path.display()
+                        ),
+                    }
+                }
+                match &data_folder_migration.outcome {
                     MigrationOutcome::Moved {
                         from,
                         to,
