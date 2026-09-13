@@ -1,7 +1,7 @@
 {
   "$schema": "./schema.json",
   "schema_version": 1,
-  "updated_at": "2026-09-08T12:00:00Z",
+  "updated_at": "2026-09-11T00:00:00Z",
   "recommendations": [
     {
       "model_name": "AtomicChat/Qwen3.5-4B-GGUF",
@@ -72,17 +72,45 @@
     ],
     "vram_16": [
       {
-        "model_name": "AtomicChat/Qwen3.5-9B-GGUF",
-        "description_key": "hub:recEverydayUse",
-        "quant": "Q4_K_M"
-      }
-    ],
-    "vram_16_plus": [
-      {
         "model_name": "unsloth/gemma-4-12B-it-qat-GGUF",
         "description_key": "hub:recVisionKnowledge",
         "quant": "Q4_K_XL",
         "mmproj_quant": "F16"
+      }
+    ],
+    "vram_24": [
+      {
+        "model_name": "AtomicChat/Qwen3.6-27B-GGUF",
+        "description_key": "hub:recCoding",
+        "quant": "Q4_K_M"
+      }
+    ],
+    "vram_32": [
+      {
+        "model_name": "AtomicChat/Qwen3.6-35B-A3B-GGUF",
+        "description_key": "hub:recMathReasoning",
+        "quant": "Q4_K_M"
+      }
+    ],
+    "vram_48": [
+      {
+        "model_name": "AtomicChat/Qwen3.6-35B-A3B-GGUF",
+        "description_key": "hub:recMathReasoning",
+        "quant": "Q4_K_M"
+      }
+    ],
+    "vram_64": [
+      {
+        "model_name": "AtomicChat/Qwen3.6-35B-A3B-GGUF",
+        "description_key": "hub:recMathReasoning",
+        "quant": "Q4_K_M"
+      }
+    ],
+    "vram_64_plus": [
+      {
+        "model_name": "AtomicChat/Qwen3.6-35B-A3B-GGUF",
+        "description_key": "hub:recMathReasoning",
+        "quant": "Q4_K_M"
       }
     ],
     "unified_8": [
@@ -94,25 +122,45 @@
     ],
     "unified_16": [
       {
-        "model_name": "AtomicChat/Qwen3.5-4B-GGUF",
-        "description_key": "hub:recEverydayUse",
+        "model_name": "unsloth/gemma-4-12B-it-qat-GGUF",
+        "description_key": "hub:recVisionKnowledge",
+        "quant": "Q4_K_XL",
+        "mmproj_quant": "F16"
+      }
+    ],
+    "unified_24": [
+      {
+        "model_name": "AtomicChat/Qwen3.6-27B-GGUF",
+        "description_key": "hub:recCoding",
         "quant": "Q4_K_M"
       }
     ],
     "unified_32": [
       {
-        "model_name": "AtomicChat/gemma-4-E4B-it-GGUF",
-        "description_key": "hub:recVisionKnowledge",
-        "quant": "Q4_K_M",
-        "mmproj_quant": "F16"
+        "model_name": "AtomicChat/Qwen3.6-35B-A3B-GGUF",
+        "description_key": "hub:recMathReasoning",
+        "quant": "Q4_K_M"
       }
     ],
-    "unified_32_plus": [
+    "unified_48": [
       {
-        "model_name": "unsloth/gemma-4-12B-it-qat-GGUF",
-        "description_key": "hub:recVisionKnowledge",
-        "quant": "Q4_K_XL",
-        "mmproj_quant": "F16"
+        "model_name": "AtomicChat/Qwen3.6-35B-A3B-GGUF",
+        "description_key": "hub:recMathReasoning",
+        "quant": "Q4_K_M"
+      }
+    ],
+    "unified_64": [
+      {
+        "model_name": "AtomicChat/Qwen3.6-35B-A3B-GGUF",
+        "description_key": "hub:recMathReasoning",
+        "quant": "Q4_K_M"
+      }
+    ],
+    "unified_64_plus": [
+      {
+        "model_name": "AtomicChat/Qwen3.6-35B-A3B-GGUF",
+        "description_key": "hub:recMathReasoning",
+        "quant": "Q4_K_M"
       }
     ]
   }

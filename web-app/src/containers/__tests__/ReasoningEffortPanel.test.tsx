@@ -9,7 +9,7 @@ import {
 import type { ReasoningControls } from '@janhq/core'
 
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
-import ReasoningToggle from '../ReasoningToggle'
+import ReasoningEffortPanel from '../ReasoningEffortPanel'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
@@ -60,7 +60,7 @@ class MockResizeObserver {
   disconnect() {}
 }
 
-describe('ReasoningToggle', () => {
+describe('ReasoningEffortPanel', () => {
   beforeAll(() => {
     global.ResizeObserver = MockResizeObserver
     // jsdom ships none of the pointer-capture API, and both Radix and the
@@ -86,74 +86,55 @@ describe('ReasoningToggle', () => {
     })
   })
 
-  it('offers no effort picker for a model without a thinking phase', () => {
+  it('renders nothing for a model without a thinking phase', () => {
     selectedModel.current = {
       id: 'llama3',
       reasoning: { supportsThinking: false },
     }
 
-    render(<ReasoningToggle />)
+    const { container } = render(<ReasoningEffortPanel />)
 
-    expect(
-      screen.getByRole('button', { name: 'common:reasoningToggleEnabled' })
-    ).toBeInTheDocument()
-    expect(screen.getAllByRole('button')).toHaveLength(1)
+    expect(container).toBeEmptyDOMElement()
   })
 
-  it('keeps the chosen level on offer while no model is selected', () => {
-    // Cold launch: nothing to clamp against yet, and an effort pill that
-    // disappears until a model is picked reads as a lost setting.
-    selectedModel.current = undefined
-
-    render(<ReasoningToggle />)
-
-    expect(
-      screen.getByRole('button', { name: /reasoningEffort\.ariaLabel/ })
-    ).toHaveTextContent('common:reasoningEffort.medium')
-  })
-
-  it('hides the effort picker while reasoning is off', () => {
+  it('sits on its first stop, Off, while reasoning is off', () => {
     selectedModel.current = BUDGET_MODEL
     useGeneralSetting.setState({ disableReasoning: true })
 
-    render(<ReasoningToggle />)
+    render(<ReasoningEffortPanel />)
 
-    expect(
-      screen.getByRole('button', { name: 'common:reasoningToggleDisabled' })
-    ).toBeInTheDocument()
-    expect(screen.getAllByRole('button')).toHaveLength(1)
+    expect(shownLevel()).toHaveTextContent('common:reasoningEffort.off')
+    const slider = screen.getByRole('slider')
+    expect(slider).toHaveAttribute('aria-valuenow', '0')
+    expect(slider).toHaveAttribute('aria-valuemax', '5')
   })
 
-  it('shows the effort picker beside the bulb for a thinking model', () => {
+  it('turns reasoning off at the first stop and back on past it', () => {
     selectedModel.current = BUDGET_MODEL
 
-    render(<ReasoningToggle />)
+    render(<ReasoningEffortPanel />)
+    const slider = screen.getByRole('slider')
+    fireEvent.keyDown(slider, { key: 'Home' })
 
-    expect(
-      screen.getByRole('button', { name: 'common:reasoningToggleEnabled' })
-    ).toBeInTheDocument()
-    // The trigger carries the level alone; "thinking" only lives in its aria-label.
-    expect(
-      screen.getByRole('button', { name: /reasoningEffort\.ariaLabel/ })
-    ).toHaveTextContent('common:reasoningEffort.medium')
-  })
-
-  it('leaves switching reasoning on and off to the bulb alone', () => {
-    selectedModel.current = BUDGET_MODEL
-
-    render(<ReasoningToggle />)
-    const bulb = screen.getByRole('button', {
-      name: 'common:reasoningToggleEnabled',
-    })
-    expect(bulb).toHaveAttribute('aria-pressed', 'true')
-    // fireEvent, not userEvent: the bulb sits inside a Radix tooltip trigger,
-    // and the hover choreography userEvent performs first swallows the click
-    // in jsdom often enough to make the test flaky.
-    fireEvent.click(bulb)
-
+    // Off is the bulb's switch: the stored level is left for the way back.
     expect(useGeneralSetting.getState().disableReasoning).toBe(true)
-    // The level survives the round trip, so re-enabling restores it.
     expect(useGeneralSetting.getState().reasoningBudget).toBe('medium')
+    expect(shownLevel()).toHaveTextContent('common:reasoningEffort.off')
+
+    fireEvent.keyDown(slider, { key: 'ArrowRight' })
+
+    expect(useGeneralSetting.getState().disableReasoning).toBe(false)
+    expect(useGeneralSetting.getState().reasoningBudget).toBe('low')
+    expect(shownLevel()).toHaveTextContent('common:reasoningEffort.low')
+  })
+
+  it('renders nothing while no model is selected', () => {
+    // Nothing to think with yet, so no level to set either.
+    selectedModel.current = undefined
+
+    const { container } = render(<ReasoningEffortPanel />)
+
+    expect(container).toBeEmptyDOMElement()
   })
 
   it('clamps the shown level to what the model offers', () => {
@@ -166,20 +147,17 @@ describe('ReasoningToggle', () => {
       },
     }
 
-    render(<ReasoningToggle />)
+    render(<ReasoningEffortPanel />)
 
-    expect(
-      screen.getByRole('button', { name: /reasoningEffort\.ariaLabel/ })
-    ).toHaveTextContent('common:reasoningEffort.low')
+    expect(shownLevel()).toHaveTextContent('common:reasoningEffort.low')
+    // Off, then the two levels the template declared.
+    expect(screen.getByRole('slider')).toHaveAttribute('aria-valuemax', '2')
   })
 
   it('presents the effort scale as a slider under an Effort heading', () => {
     selectedModel.current = BUDGET_MODEL
 
-    render(<ReasoningToggle />)
-    fireEvent.click(
-      screen.getByRole('button', { name: /reasoningEffort\.ariaLabel/ })
-    )
+    render(<ReasoningEffortPanel />)
 
     // The heading repeats the current level and the scale is framed by the
     // faster/smarter endpoints. Every level name is in the DOM for the
@@ -194,11 +172,12 @@ describe('ReasoningToggle', () => {
     expect(
       screen.getByText('common:reasoningEffort.smarter')
     ).toBeInTheDocument()
-    // The scale spans every level, and the thumb announces the level, not its index.
+    // The scale spans Off and every level, and the thumb announces the level,
+    // not its index.
     const slider = screen.getByRole('slider')
     expect(slider).toHaveAttribute('aria-valuemin', '0')
-    expect(slider).toHaveAttribute('aria-valuemax', '4')
-    expect(slider).toHaveAttribute('aria-valuenow', '1')
+    expect(slider).toHaveAttribute('aria-valuemax', '5')
+    expect(slider).toHaveAttribute('aria-valuenow', '2')
     expect(slider).toHaveAttribute(
       'aria-valuetext',
       'common:reasoningEffort.medium'
@@ -209,10 +188,7 @@ describe('ReasoningToggle', () => {
     selectedModel.current = BUDGET_MODEL
     useGeneralSetting.setState({ reasoningBudget: 'max' })
 
-    render(<ReasoningToggle />)
-    fireEvent.click(
-      screen.getByRole('button', { name: /reasoningEffort\.ariaLabel/ })
-    )
+    render(<ReasoningEffortPanel />)
 
     expect(shownLevel()).toHaveTextContent('common:reasoningEffort.max')
     expect(shownLevel()).toHaveClass('text-blue-500')
@@ -223,15 +199,12 @@ describe('ReasoningToggle', () => {
     // which would otherwise turn an arrow press into an invisible nudge.
     selectedModel.current = BUDGET_MODEL
 
-    render(<ReasoningToggle />)
-    fireEvent.click(
-      screen.getByRole('button', { name: /reasoningEffort\.ariaLabel/ })
-    )
+    render(<ReasoningEffortPanel />)
     const slider = screen.getByRole('slider')
     fireEvent.keyDown(slider, { key: 'ArrowRight' })
 
     expect(useGeneralSetting.getState().reasoningBudget).toBe('high')
-    expect(slider).toHaveAttribute('aria-valuenow', '2')
+    expect(slider).toHaveAttribute('aria-valuenow', '3')
     expect(slider).toHaveAttribute(
       'aria-valuetext',
       'common:reasoningEffort.high'
@@ -241,11 +214,11 @@ describe('ReasoningToggle', () => {
     expect(useGeneralSetting.getState().reasoningBudget).toBe('medium')
 
     fireEvent.keyDown(slider, { key: 'Home' })
-    expect(useGeneralSetting.getState().reasoningBudget).toBe('low')
+    expect(useGeneralSetting.getState().disableReasoning).toBe(true)
     // Already at the bottom: the scale clamps instead of wrapping round.
     fireEvent.keyDown(slider, { key: 'ArrowLeft' })
-    expect(useGeneralSetting.getState().reasoningBudget).toBe('low')
-    expect(shownLevel()).toHaveTextContent('common:reasoningEffort.low')
+    expect(useGeneralSetting.getState().disableReasoning).toBe(true)
+    expect(shownLevel()).toHaveTextContent('common:reasoningEffort.off')
   })
 
   it('keeps the blue wash for the top tier alone', () => {
@@ -254,10 +227,7 @@ describe('ReasoningToggle', () => {
     // being the top tier, so it must not inherit a level from anywhere else.
     useGeneralSetting.setState({ reasoningBudget: 'medium' })
 
-    render(<ReasoningToggle />)
-    fireEvent.click(
-      screen.getByRole('button', { name: /reasoningEffort\.ariaLabel/ })
-    )
+    render(<ReasoningEffortPanel />)
     expect(accentWash()).toHaveClass('opacity-0')
     expect(shownLevel()).not.toHaveClass('text-blue-500')
 
@@ -271,14 +241,11 @@ describe('ReasoningToggle', () => {
     selectedModel.current = BUDGET_MODEL
     useGeneralSetting.setState({ reasoningBudget: 'medium' })
 
-    render(<ReasoningToggle />)
-    fireEvent.click(
-      screen.getByRole('button', { name: /reasoningEffort\.ariaLabel/ })
-    )
+    render(<ReasoningEffortPanel />)
     const root = screen
       .getByRole('slider')
       .closest('span[class*="touch-none"]') as HTMLElement
-    // The glide is armed a frame after the panel opens, not on mount: Radix
+    // The glide is armed a frame after the panel mounts, not at once: Radix
     // corrects the thumb by half its width once it has measured it, and that
     // correction must not play as a slide.
     expect(root).not.toHaveClass(GLIDE_CLASS)
@@ -288,9 +255,9 @@ describe('ReasoningToggle', () => {
     fireEvent.pointerMove(root, { pointerId: 1 })
 
     // Under the pointer the thumb is placed, not animated — jsdom has no
-    // layout, so Radix reads a zero-width track and lands on the first level.
+    // layout, so Radix reads a zero-width track and lands on the first stop.
     expect(root).not.toHaveClass(GLIDE_CLASS)
-    expect(useGeneralSetting.getState().reasoningBudget).toBe('low')
+    expect(useGeneralSetting.getState().disableReasoning).toBe(true)
 
     fireEvent.pointerUp(root, { pointerId: 1 })
 
@@ -298,72 +265,27 @@ describe('ReasoningToggle', () => {
     expect(screen.getByRole('slider')).toHaveAttribute('aria-valuenow', '0')
   })
 
-  it('does not strand a drag that the closing panel cuts short', async () => {
+  it('starts a fresh mount settled, whatever a torn-down drag left behind', async () => {
     selectedModel.current = BUDGET_MODEL
     useGeneralSetting.setState({ reasoningBudget: 'medium' })
 
-    render(<ReasoningToggle />)
-    const trigger = screen.getByRole('button', {
-      name: /reasoningEffort\.ariaLabel/,
-    })
-    fireEvent.click(trigger)
+    // The panel lives inside a popover: Escape unmounts it with the pointer
+    // still down, so no pointer-up ever reaches the slider. Nothing carries
+    // over — the next mount arms its glide from scratch.
+    const first = render(<ReasoningEffortPanel />)
     const root = screen
       .getByRole('slider')
       .closest('span[class*="touch-none"]') as HTMLElement
     await waitFor(() => expect(root).toHaveClass(GLIDE_CLASS))
-
     fireEvent.pointerDown(root, { pointerId: 1 })
     fireEvent.pointerMove(root, { pointerId: 1 })
     expect(root).not.toHaveClass(GLIDE_CLASS)
+    first.unmount()
 
-    // Escape tears the slider out of the DOM with the pointer still down: no
-    // pointer-up ever arrives, and the browser aims `lostpointercapture` at the
-    // document, where no React handler can see it. Nothing on the slider can
-    // clear the flag, so closing the panel has to.
-    fireEvent.keyDown(document, { key: 'Escape' })
-    await waitFor(() => expect(screen.queryByRole('slider')).toBeNull())
-
-    fireEvent.click(trigger)
+    render(<ReasoningEffortPanel />)
     const reopened = screen
       .getByRole('slider')
       .closest('span[class*="touch-none"]') as HTMLElement
     await waitFor(() => expect(reopened).toHaveClass(GLIDE_CLASS))
-  })
-
-  it('relabels the trigger only once the picker closes', () => {
-    selectedModel.current = BUDGET_MODEL
-
-    render(<ReasoningToggle />)
-    const trigger = screen.getByRole('button', {
-      name: /reasoningEffort\.ariaLabel/,
-    })
-    fireEvent.click(trigger)
-    const slider = screen.getByRole('slider')
-    fireEvent.keyDown(slider, { key: 'End' })
-    fireEvent.keyUp(slider, { key: 'End' })
-
-    // The trigger sizes the whole toolbar row, so it holds still while the
-    // panel is open; the panel heading is what tracks the drag.
-    expect(trigger).toHaveTextContent('common:reasoningEffort.medium')
-    expect(shownLevel()).toHaveTextContent('common:reasoningEffort.max')
-
-    fireEvent.click(trigger)
-
-    expect(trigger).toHaveTextContent('common:reasoningEffort.max')
-  })
-
-  it('changes the level from the slider', () => {
-    selectedModel.current = BUDGET_MODEL
-
-    render(<ReasoningToggle />)
-    fireEvent.click(
-      screen.getByRole('button', { name: /reasoningEffort\.ariaLabel/ })
-    )
-    const slider = screen.getByRole('slider')
-    fireEvent.keyDown(slider, { key: 'End' })
-    fireEvent.keyUp(slider, { key: 'End' })
-
-    expect(useGeneralSetting.getState().reasoningBudget).toBe('max')
-    expect(useGeneralSetting.getState().disableReasoning).toBe(false)
   })
 })

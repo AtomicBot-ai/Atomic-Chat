@@ -6,6 +6,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
 import { DeleteModelAction } from '@/containers/hub/DeleteModelAction'
+import { LargeModelWarningDialog } from '@/containers/hub/LargeModelWarningDialog'
 import { markDownloadCancellationRequested } from '@/lib/downloadCancellation'
 import {
   findInstalledLocalModel,
@@ -25,10 +26,14 @@ export const MlxModelDownloadAction = memo(
   ({
     model,
     deletable = false,
+    warnTooLarge = false,
   }: {
     model: CatalogModel
     // Offer a trash button next to "New chat" once the repo is on disk.
     deletable?: boolean
+    // The hardware-fit estimate calls this repo too large for the device:
+    // Download asks first instead of starting (see LargeModelWarningDialog).
+    warnTooLarge?: boolean
   }) => {
     const serviceHub = useServiceHub()
     const { t } = useTranslation()
@@ -41,6 +46,7 @@ export const MlxModelDownloadAction = memo(
     // `justDownloaded` is set by the download-success event: the provider list
     // is only re-listed a moment later, and the button must flip immediately.
     const [justDownloaded, setDownloaded] = useState(false)
+    const [warningOpen, setWarningOpen] = useState(false)
 
     const {
       downloads,
@@ -207,6 +213,14 @@ export const MlxModelDownloadAction = memo(
       modelName,
     ])
 
+    const requestDownload = useCallback(() => {
+      if (warnTooLarge) {
+        setWarningOpen(true)
+        return
+      }
+      void handleDownloadMlxModel()
+    }, [warnTooLarge, handleDownloadMlxModel])
+
     const handleCancelDownload = useCallback(() => {
       markResumableDownload(modelId)
       markDownloadCancellationRequested(modelId)
@@ -259,14 +273,22 @@ export const MlxModelDownloadAction = memo(
         ) : (
           <Button
             data-test-id={`hub-model-${modelId}`}
-            variant="outline"
+            variant="default"
             size="sm"
-            onClick={handleDownloadMlxModel}
-            className={cn('font-semibold', isDownloading && 'hidden')}
+            onClick={requestDownload}
+            className={cn(isDownloading && 'hidden')}
           >
             {t('hub:download')}
           </Button>
         )}
+        <LargeModelWarningDialog
+          open={warningOpen}
+          onOpenChange={setWarningOpen}
+          onConfirm={() => {
+            setWarningOpen(false)
+            void handleDownloadMlxModel()
+          }}
+        />
       </div>
     )
   }

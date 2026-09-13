@@ -5,6 +5,7 @@ import {
   formatBytes,
   LOCAL_LLAMACPP_PROVIDER,
   isLlamacppProvider,
+  getModelDisplayName,
 } from '@/lib/utils'
 import { useMessageExecutionRoute } from '@/hooks/useMessageExecutionRoute'
 import { useAgentProvider } from '@/hooks/useAgentProvider'
@@ -52,7 +53,8 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { captureChatSendBlocked } from '@/lib/chat-telemetry'
 import { describeProviderState } from '@/lib/onboarding'
 
-import { useAppState } from '@/hooks/useAppState'
+import { modelStopKey, useAppState } from '@/hooks/useAppState'
+import { switchToModel } from '@/utils/switchModel'
 import {
   ReplyModelGate,
   type ReplyModelGateResolution,
@@ -132,7 +134,7 @@ import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
-import ReasoningToggle from '@/containers/ReasoningToggle'
+import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import WebSearchToggle from '@/containers/WebSearchToggle'
 import VoiceInputToggle from '@/containers/VoiceInputToggle'
 import VoiceRecordingBar from '@/containers/chatInput/VoiceRecordingBar'
@@ -400,8 +402,14 @@ const ChatInput = memo(function ChatInput({
    * can actually answer. Survives the widget closing: a download is minutes
    * long, and holding a modal open for it would be worse than useless.
    */
-  const [queuedSend, setQueuedSend] =
-    useState<ReplyModelGateResolution | null>(null)
+  const [queuedSend, setQueuedSend] = useState<
+    | (ReplyModelGateResolution & {
+        /** Armed by a Send to a model the user had stopped — not the reply
+         *  gate, so it is left out of the gate's funnel. */
+        resumesStoppedModel?: boolean
+      })
+    | null
+  >(null)
   const { tryAutoStart } = useReplyModelAutoStart()
   const [isPreparingDocumentAttachments, setIsPreparingDocumentAttachments] =
     useState(false)
@@ -563,8 +571,22 @@ const ChatInput = memo(function ChatInput({
     !!modelLoadError &&
     modelLoadErrorModelId === selectedModel?.id
 
+  // The user stopped this model by hand (Settings → Stop). Auto-start leaves it
+  // down, so Send is what brings it back — it must not wait on a load that
+  // nothing is going to start.
+  const selectedModelStoppedByUser = useAppState(
+    (state) =>
+      !!selectedModel?.id &&
+      state.userStoppedModels.includes(
+        modelStopKey(selectedProvider, selectedModel.id)
+      )
+  )
+  const resumesStoppedModel =
+    isLocalModelNotReady && selectedModelStoppedByUser && !loadingModel
+
   const blockSendUntilModelReady =
-    (isLocalModelNotReady && !!onSubmit) || selectedModelLoadFailed
+    (isLocalModelNotReady && !!onSubmit && !resumesStoppedModel) ||
+    selectedModelLoadFailed
 
   /**
    * Nothing is selected, so there is nothing to send with.
@@ -917,6 +939,27 @@ const ChatInput = memo(function ChatInput({
       })
       return
     }
+    if (resumesStoppedModel) {
+      // Sending is the ask to bring a stopped model back: start it the way a
+      // pick in the dropdown would, and hold the message until it can answer.
+      setPrompt(prompt)
+      void switchToModel({
+        modelId: selectedModel.id,
+        providerName: selectedProvider,
+        serviceHub,
+      }).catch((error) => {
+        console.error('[ChatInput] failed to start the stopped model', error)
+      })
+      setQueuedSend({
+        outcome: 'auto_start',
+        branch: 'auto_start',
+        decidedInMs: 0,
+        openedAtMs: Date.now(),
+        modelLabel: getModelDisplayName(selectedModel),
+        resumesStoppedModel: true,
+      })
+      return
+    }
     if (isAttachmentPipelineBusy) {
       toast.info('Please wait for attachments to finish processing')
       return
@@ -1209,13 +1252,15 @@ const ChatInput = memo(function ChatInput({
     // Whatever is in it now is what they meant; an empty field means they
     // changed their mind, and re-sending the old text would put words in.
     const pending = usePrompt.getState().prompt
-    captureReplyGateReady({
-      branch: queuedSend.branch,
-      outcome: queuedSend.outcome,
-      readyInMs: Date.now() - queuedSend.openedAtMs,
-      queuedMessageSent: pending.trim().length > 0,
-      resolution: queuedSend.resolution,
-    })
+    if (!queuedSend.resumesStoppedModel) {
+      captureReplyGateReady({
+        branch: queuedSend.branch,
+        outcome: queuedSend.outcome,
+        readyInMs: Date.now() - queuedSend.openedAtMs,
+        queuedMessageSent: pending.trim().length > 0,
+        resolution: queuedSend.resolution,
+      })
+    }
     if (!pending.trim()) return
     void sendMessageRef.current(pending)
   }, [queuedSend, canSendToSelectedModel])
@@ -3145,14 +3190,6 @@ const ChatInput = memo(function ChatInput({
                     skipLabel={t('chat:agentApprovals.skip')}
                     skipDescription={t('chat:agentApprovals.skipDescription')}
                   />
-                  {/* {model?.provider === 'llamacpp' && loadingModel ? (
-                  <ModelLoader />
-                ) : (
-                  <DropdownModelProvider
-                    model={model}
-                    useLastUsedModel={initialMessage}
-                  />
-                )} */}
                   {/* //! Кнопка Browse (Chrome) — временно скрыта
                 {!agentRouteActive && hasJanBrowserMCPConfig && modelSupportsBrowser && (
                   <Tooltip>
@@ -3352,11 +3389,13 @@ const ChatInput = memo(function ChatInput({
               </div>
 
               <div className="flex items-center gap-2">
-                {/* Reasoning rides with the microphone rather than the
+                {/* The model rides with the microphone rather than the
                     attachment cluster: both change how the next message is
-                    produced, and the context gauge that used to sit here now
-                    lives in the page header. */}
-                <ReasoningToggle className="mb-1" />
+                    produced. The pill names the model and, while thinking is
+                    on, how hard it thinks — its panel holds the effort slider,
+                    whose first stop switches thinking off, and leads into the
+                    model list. */}
+                <DropdownModelProvider className="mb-1" />
 
                 {/* Beside Send, which is where users expect a microphone.
                     Note this cluster has no streaming guard of its own (the
@@ -3447,18 +3486,19 @@ const ChatInput = memo(function ChatInput({
       )}
 
       {/* The promise the widget made, kept visible after it closes: the message
-          in the field is not lost, and nobody has to sit and watch a modal. */}
+          in the field is not lost, and nobody has to sit and watch a modal.
+          Out of the flow on purpose: the composer is pinned to the bottom of
+          the page, so a line added under it would lift the whole input. It
+          names no model either — the pill already does. */}
       {queuedSend && (
         <div
-          className="-mt-0.5 mx-2 pb-2 px-3 pt-1.5 rounded-b-lg text-xs text-muted-foreground flex items-center gap-1.5"
+          className="pointer-events-none absolute inset-x-0 top-full flex items-center gap-1.5 px-5 pt-0.5 text-[11px] leading-3.5 text-muted-foreground"
           data-testid="reply-gate-queued-notice"
           aria-live="polite"
         >
           <IconLoader2 className="size-3 shrink-0 animate-spin" />
           {queuedSend.modelLabel
-            ? t('chat:replyGate.startingNotice', {
-                name: queuedSend.modelLabel,
-              })
+            ? t('chat:replyGate.startingNotice')
             : t('chat:replyGate.queuedNotice')}
         </div>
       )}

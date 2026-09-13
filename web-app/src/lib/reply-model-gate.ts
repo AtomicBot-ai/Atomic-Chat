@@ -5,7 +5,7 @@
  * chatting") that named the problem and offered no way out of it. This module
  * is the data half of the widget that replaced it: it turns the provider store
  * into the set of things the user could actually send a message with right
- * now, and classifies that set into the one of three shapes the widget renders.
+ * now, and classifies that set into the shape the widget renders.
  *
  * Pure on purpose — every branch of the widget is decided here, so the
  * component only has to render, and the branch logic can be tested without a
@@ -36,16 +36,17 @@ export type ReplyModelOption = {
 }
 
 /**
- * Which of the three shapes the widget takes.
+ * Which of the two shapes the widget takes.
  *
- *  - `auto_start` — exactly one thing to answer with. Start it and say so;
- *    asking a question with one possible answer is not a question.
- *  - `pick` — several. Offer them, last used first.
+ *  - `auto_start` — something to answer with. Start the model
+ *    {@link resolveReplyModel} picks and say so. There is no pick list: the
+ *    user already said what they want by pressing Send, and the most compact
+ *    model is the one that comes up fastest.
  *  - `none` — nothing on this device. Recommend a download.
  *
- * Cloud alternatives are offered in all three, so they are not part of this.
+ * Cloud alternatives are offered in both, so they are not part of this.
  */
-export type ReplyGateBranch = 'auto_start' | 'pick' | 'none'
+export type ReplyGateBranch = 'auto_start' | 'none'
 
 /** The last-used pointer as `localStorage` stores it. */
 export type LastUsedModel = { provider: string; model: string } | null
@@ -167,9 +168,7 @@ export function collectReplyModels(
 export function replyGateBranch(
   options: readonly ReplyModelOption[]
 ): ReplyGateBranch {
-  if (options.length === 0) return 'none'
-  if (options.length === 1) return 'auto_start'
-  return 'pick'
+  return options.length === 0 ? 'none' : 'auto_start'
 }
 
 /**
@@ -206,8 +205,8 @@ export function replyGateContext(providers: ModelProvider[]): {
  *    cloud model this is session restore; for a local one, start on demand.
  *  - `cloud` — a connected cloud provider: costs no memory, answers at once.
  *  - `single_local` — the only model on the device.
- *  - `smallest_local` — several local models, no history: the lightest loads
- *    fastest.
+ *  - `smallest_local` — several local models, no history: the most compact
+ *    one, on a default engine when there is one. It loads fastest.
  */
 export type ReplyResolution =
   | 'last_used'
@@ -220,16 +219,58 @@ export type ReplyResolution =
  *
  * `Qwen3.5-4B-Q4_K_M` → 4, `LFM2.5-1.2B` → 1.2, `gemma-4-E4B-it` → 4 (the
  * MatFormer "effective" prefix is dropped: it still says which of two builds
- * is lighter). The provider store carries no file size, and a stat per model
- * on every send is not worth what it would tell us; the name is the one size
- * signal that is always there.
+ * is lighter). Downloaded GGUFs are registered under a sanitized id that
+ * spells the decimal point `_`, so `LFM2_5-2_6B` reads as 2.6, not 6. The
+ * provider store carries no file size, and a stat per model on every send is
+ * not worth what it would tell us; the name is the one size signal that is
+ * always there.
  */
 export function estimateParamsB(modelId: string): number | undefined {
   const seg = modelId.split('/').pop() ?? modelId
-  const match = seg.match(/(?:^|[-_.\s])E?(\d+(?:\.\d+)?)[bB](?=$|[-_.\s])/)
+  const match = seg.match(/(?:^|[-_.\s])E?(\d+(?:[._]\d+)?)[bB](?=$|[-_.\s])/)
   if (!match) return undefined
-  const value = Number(match[1])
+  const value = Number(match[1].replace('_', '.'))
   return Number.isFinite(value) && value > 0 ? value : undefined
+}
+
+/**
+ * Bits per weight named by the quant in a model id, or `undefined`:
+ * `Q4_K_M` → 4, `IQ2_XXS` → 2, `8bit` → 8, `BF16` → 16.
+ */
+export function estimateQuantBits(modelId: string): number | undefined {
+  const bits = Number(detectQuant(modelId)?.match(/\d+/)?.[0])
+  return Number.isFinite(bits) && bits > 0 ? bits : undefined
+}
+
+/**
+ * The engines a model is started on when the user did not name one, in order
+ * of preference: upstream llama.cpp, then MLX. A send with nothing selected
+ * starts on llama.cpp whenever it holds a model; MLX is taken only when it
+ * does not. Both llama.cpp providers read the shared models dir, so one GGUF
+ * is also listed under the TurboQuant fork — an opt-in, off on fresh installs,
+ * and not something to choose for the user. The fork is still used when it is
+ * the only engine holding a model.
+ */
+const DEFAULT_LOCAL_ENGINES: readonly string[] = ['llamacpp-upstream', 'mlx']
+
+/**
+ * The option that should load fastest and in the least memory: fewest
+ * parameters, then fewest bits per weight. Names with no size rank last, and
+ * on a full tie the earlier option wins, so `collectReplyModels`' order
+ * decides. `options` must not be empty.
+ */
+function mostCompact(options: readonly ReplyModelOption[]): ReplyModelOption {
+  const rank = (option: ReplyModelOption): [number, number] => [
+    estimateParamsB(option.modelId) ?? Infinity,
+    estimateQuantBits(option.modelId) ?? Infinity,
+  ]
+  return options.reduce((best, option) => {
+    const [bestParams, bestBits] = rank(best)
+    const [params, bits] = rank(option)
+    return params < bestParams || (params === bestParams && bits < bestBits)
+      ? option
+      : best
+  })
 }
 
 /**
@@ -238,12 +279,13 @@ export function estimateParamsB(modelId: string): number | undefined {
  *
  *   1. the last used model, if it is still there;
  *   2. otherwise a connected cloud provider — no memory, instant;
- *   3. otherwise the only local model;
- *   4. otherwise the lightest of several, by the size in its name.
+ *   3. otherwise the most compact local model on upstream llama.cpp, or on
+ *      MLX when llama.cpp holds none (see {@link mostCompact}).
  *
- * `null` means the widget has to ask: nothing at all on the device, or
- * several local models whose names give no size to rank by — starting one at
- * random would be a guess made on the user's behalf.
+ * `null` means there is nothing on the device at all. Several local models
+ * with no size in their names used to return `null` as well, which put a pick
+ * list in front of the user; they now resolve to the first one — the message
+ * the user typed going out beats a question about which build should send it.
  *
  * `options` is {@link collectReplyModels}' output, which already puts the
  * last used model first.
@@ -263,18 +305,14 @@ export function resolveReplyModel(
   const cloud = options.find((option) => option.kind === 'cloud')
   if (cloud) return { option: cloud, resolution: 'cloud' }
 
-  const locals = options.filter((option) => option.kind === 'local')
-  if (locals.length === 1) {
-    return { option: locals[0], resolution: 'single_local' }
+  // No cloud row, so every option left is local. The first default engine
+  // holding a model is the one to start on; the fork only when none does.
+  const onPreferredEngine =
+    DEFAULT_LOCAL_ENGINES.map((engine) =>
+      options.filter((option) => option.providerName === engine)
+    ).find((onEngine) => onEngine.length > 0) ?? options
+  return {
+    option: mostCompact(onPreferredEngine),
+    resolution: options.length === 1 ? 'single_local' : 'smallest_local',
   }
-
-  let smallest: { option: ReplyModelOption; params: number } | null = null
-  for (const option of locals) {
-    const params = estimateParamsB(option.modelId)
-    if (params === undefined) continue
-    if (!smallest || params < smallest.params) smallest = { option, params }
-  }
-  return smallest
-    ? { option: smallest.option, resolution: 'smallest_local' }
-    : null
 }

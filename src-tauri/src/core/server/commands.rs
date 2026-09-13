@@ -3,7 +3,7 @@ use tauri_plugin_llamacpp::state::LlamacppState;
 use tauri_plugin_llamacpp_upstream::state::LlamacppState as LlamacppUpstreamState;
 use tauri_plugin_mlx::state::MlxState;
 
-use crate::core::server::proxy;
+use crate::core::server::proxy::{self, ServerStart};
 use crate::core::server::request_inspector::ApiRequestLogSnapshot;
 use crate::core::server::state_file;
 use crate::core::state::{AppState, LocalServerEndpoint};
@@ -51,7 +51,7 @@ pub async fn start_server<R: Runtime>(
     // the inspector and an `AppHandle` exist together. Idempotent.
     state.api_request_inspector.attach(app_handle.clone());
 
-    let actual_port = proxy::start_server(
+    let started = proxy::start_server(
         app_handle.clone(),
         server_handle,
         sessions,
@@ -69,6 +69,12 @@ pub async fn start_server<R: Runtime>(
     )
     .await
     .map_err(|e| e.to_string())?;
+    let actual_port = match started {
+        // The endpoint and the status file already describe the server that is
+        // up; this caller's config did not take effect, so leave them be.
+        ServerStart::AlreadyRunning(port) => return Ok(port),
+        ServerStart::Started(port) => port,
+    };
     // Publish the effective endpoint so in-process callers (the agent's cloud
     // path) can reach the proxy. `actual_port` matters: a requested port of 0
     // is auto-assigned.

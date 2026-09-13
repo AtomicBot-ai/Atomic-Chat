@@ -27,6 +27,8 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   applyHubFilters,
   hasLikeData,
+  huggingFaceQueries,
+  isUncensoredModel,
   readHubFilters,
   sortModels,
   writeHubFilters,
@@ -158,6 +160,7 @@ function HubContent() {
   const [filters, setFilters] = useState<HubFilterState>(() => readHubFilters())
   const [showOnlyDownloaded, setShowOnlyDownloaded] = useState(false)
   const [isSearching, setIsSearching] = useState(false)
+  const [hfSearching, setHfSearching] = useState(false)
   const [huggingFaceRepo, setHuggingFaceRepo] = useState<CatalogModel | null>(
     null
   )
@@ -220,7 +223,10 @@ function HubContent() {
       : 'gguf'
   const staffPickItems = useStaffPicks(sources, picksFormat)
 
-  const isSearchMode = debouncedSearchValue.length > 0 || showOnlyDownloaded
+  // Uncensored builds are a search of their own: the curated picks carry none,
+  // so the filter opens the whole catalog plus Hugging Face even with no query.
+  const isSearchMode =
+    debouncedSearchValue.length > 0 || showOnlyDownloaded || filters.uncensored
 
   // ---- Staff picks mode -------------------------------------------------
 
@@ -312,6 +318,8 @@ function HubContent() {
 
   // Long-tail Hugging Face fallback (Path B): fan out to HF's public search
   // when the curated catalog returns sparse hits for a non-trivial query.
+  // Uncensored builds are almost all long tail, so with that filter on HF is
+  // always asked, the filter's terms appended out of sight.
   useEffect(() => {
     if (showOnlyDownloaded) {
       setHfCandidates([])
@@ -319,36 +327,60 @@ function HubContent() {
       return
     }
     const query = debouncedSearchValue.trim()
-    if (query.length < 3 || catalogResults.length >= 5) {
+    if (
+      !filters.uncensored &&
+      (query.length < 3 || catalogResults.length >= 5)
+    ) {
       if (catalogResults.length >= 5) setHfCandidates([])
       return
     }
-    const cacheKey = query.toLowerCase()
+    const queries = huggingFaceQueries(query, filters.uncensored)
+    const cacheKey = queries.join('\n').toLowerCase()
     if (hfCandidatesFetchedForRef.current === cacheKey) return
     hfCandidatesFetchedForRef.current = cacheKey
 
+    const limit = filters.uncensored ? 20 : 10
     let cancelled = false
-    serviceHub
-      .models()
-      .searchHuggingFaceCandidates(query, huggingfaceToken, 10)
-      .then((candidates) => {
+    let settled = false
+    setHfSearching(true)
+    Promise.all(
+      queries.map((q) =>
+        serviceHub
+          .models()
+          .searchHuggingFaceCandidates(q, huggingfaceToken, limit)
+      )
+    )
+      .then((batches) => {
         if (cancelled) return
         const seen = new Set(catalogResults.map((m) => m.model_name))
         if (huggingFaceRepo) seen.add(huggingFaceRepo.model_name)
-        setHfCandidates(
-          candidates.filter((c) => c.model_name && !seen.has(c.model_name))
-        )
+        const merged: CatalogModel[] = []
+        for (const candidate of batches.flat()) {
+          if (!candidate.model_name || seen.has(candidate.model_name)) continue
+          seen.add(candidate.model_name)
+          merged.push(candidate)
+        }
+        setHfCandidates(merged)
       })
       .catch(() => {
         if (!cancelled) setHfCandidates([])
       })
+      .finally(() => {
+        settled = true
+        if (!cancelled) setHfSearching(false)
+      })
     return () => {
       cancelled = true
+      setHfSearching(false)
+      // A run superseded mid-flight (the catalog finished loading, say) drops
+      // its answer, so let the next run ask again instead of hitting the cache.
+      if (!settled) hfCandidatesFetchedForRef.current = ''
     }
   }, [
     debouncedSearchValue,
     catalogResults,
     showOnlyDownloaded,
+    filters.uncensored,
     serviceHub,
     huggingfaceToken,
     huggingFaceRepo,
@@ -360,7 +392,11 @@ function HubContent() {
     if (showOnlyDownloaded) {
       // The format and fit filters describe what to look for in the catalog;
       // applied here they would hide models the user already has on disk.
-      return sortModels(installedResults, filters.sort).map((model) => ({
+      // Uncensored is about the model itself, so it still narrows the list.
+      const installed = filters.uncensored
+        ? installedResults.filter(isUncensoredModel)
+        : installedResults
+      return sortModels(installed, filters.sort).map((model) => ({
         model,
         pick: pickByRepo.get(model.model_name),
       }))
@@ -574,7 +610,7 @@ function HubContent() {
   }, [listItems.length, querySearchParam])
 
   const isEmpty = listItems.length === 0
-  const showSkeleton = loading && isEmpty && !isSearchMode
+  const showSkeleton = isEmpty && ((loading && !isSearchMode) || hfSearching)
 
   return (
     <div className="grid h-svh w-full grid-cols-[minmax(320px,420px)_1fr] grid-rows-[auto_minmax(0,1fr)]">
@@ -588,7 +624,7 @@ function HubContent() {
             ? { 'data-tauri-drag-region': true }
             : {})}
         >
-          {isSearching ? (
+          {isSearching || hfSearching ? (
             <Loader className="size-4 shrink-0 animate-spin text-muted-foreground" />
           ) : (
             <IconSearch className="shrink-0 text-muted-foreground" size={14} />
