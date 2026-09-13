@@ -55,7 +55,7 @@ export function MediaPreview({ asset }: MediaPreviewProps) {
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
             {t('media:preview.description', {
               defaultValue:
-                'Your finished image or video will appear here without leaving Radium Chat.',
+                'Your finished image or video will appear here without leaving Radium.',
             })}
           </p>
         </div>

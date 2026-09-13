@@ -38,8 +38,6 @@ test('no translation still calls the product Radium Chat or Atomic Chat', () => 
   const offenders = []
   for (const locale of readdirSync(localesDir)) {
     for (const file of readdirSync(path.join(localesDir, locale))) {
-      // Media is left exactly as it is (decision D25), wording included.
-      if (file === 'media.json') continue
       const text = read(`web-app/src/locales/${locale}/${file}`)
       for (const old of ['Radium Chat', 'Atomic Chat']) {
         if (text.includes(old)) offenders.push(`${locale}/${file}: "${old}"`)
