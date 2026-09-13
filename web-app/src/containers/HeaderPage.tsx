@@ -30,8 +30,8 @@ const HeaderPage = memo(function HeaderPage({
       // always at its natural z-level and can receive mousedown events.
       // Tauri's drag handler excludes clicks on <button>, <input>, <a>,
       // <select>, and <textarea> elements automatically, so interactive
-      // children remain clickable. For div-based triggers (like the model
-      // selector) we suppress mousedown propagation on those elements directly.
+      // children remain clickable. A div-based trigger placed here would have
+      // to stop mousedown propagation itself.
       {...(IS_MACOS ? { 'data-tauri-drag-region': true } : {})}
     >
       <div

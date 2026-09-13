@@ -115,7 +115,6 @@ import { LinkifiedText } from '@/components/LinkifiedText'
 import { IconAlertCircle, IconRefresh } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { resolveMcpAutoApprove } from '@/lib/mcp-approval'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { buildAgentRagRequest } from '@/lib/agent-rag-request'
@@ -1949,12 +1948,10 @@ function ThreadDetail() {
     >
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
         <HeaderPage>
-          <div className="flex items-center justify-between w-full pr-2">
-            <DropdownModelProvider />
-            <div className="shrink-0">
-              {/* The context gauge appears once the conversation has begun. */}
-              {chatMessages.length > 0 && <HeaderContextSize />}
-            </div>
+          <div className="flex items-center justify-end w-full pr-2">
+            {/* The model is picked from the composer; the header keeps the
+                context gauge, which appears once the conversation has begun. */}
+            {chatMessages.length > 0 && <HeaderContextSize />}
           </div>
         </HeaderPage>
         <div className="flex flex-1 overflow-hidden">

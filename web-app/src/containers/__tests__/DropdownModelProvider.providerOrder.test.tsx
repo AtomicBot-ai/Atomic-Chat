@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import DropdownModelProvider from '../DropdownModelProvider'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -86,6 +86,18 @@ const providerHeaderOrder = () =>
       .querySelectorAll('[data-testid^="provider-avatar-"]')
   ).map((el) => el.getAttribute('data-testid')?.replace('provider-avatar-', ''))
 
+/**
+ * Renders the picker and steps from the model row into the list. The panel
+ * opens on the row whenever a model is selected — the list is one click in —
+ * and the list is what these tests are about.
+ */
+const renderPicker = () => {
+  const result = render(<DropdownModelProvider />)
+  const row = screen.queryByRole('button', { name: 'common:changeModel' })
+  if (row) fireEvent.click(row)
+  return result
+}
+
 describe('DropdownModelProvider - provider ordering', () => {
   const mockProviders = [
     {
@@ -147,7 +159,41 @@ describe('DropdownModelProvider - provider ordering', () => {
   })
 
   it('renders turboquant last, below the remote providers', () => {
-    render(<DropdownModelProvider />)
+    renderPicker()
+
+    expect(providerHeaderOrder()).toEqual([
+      'llamacpp-upstream',
+      'openai',
+      'llamacpp',
+    ])
+  })
+
+  it('leaves out an engine with no models, so the ones with models lead', () => {
+    // The reported picker: MLX had nothing downloaded, yet its bare header
+    // sat between llama.cpp and the cloud provider the user actually uses.
+    const providers = [
+      ...mockProviders,
+      {
+        provider: 'mlx',
+        active: true,
+        api_key: '',
+        models: [],
+        settings: [],
+      },
+    ]
+    mockModelProvider({
+      providers,
+      selectedProvider: 'llamacpp-upstream',
+      selectedModel: mockProviders[1].models[0],
+      getProviderByName: vi.fn((name: string) =>
+        providers.find((p) => p.provider === name)
+      ),
+      selectModelProvider: vi.fn(),
+      getModelBy: vi.fn(),
+      updateProvider: vi.fn(),
+    })
+
+    renderPicker()
 
     expect(providerHeaderOrder()).toEqual([
       'llamacpp-upstream',
@@ -157,7 +203,7 @@ describe('DropdownModelProvider - provider ordering', () => {
   })
 
   it('keeps upstream and turboquant apart', () => {
-    render(<DropdownModelProvider />)
+    renderPicker()
 
     const order = providerHeaderOrder()
     expect(

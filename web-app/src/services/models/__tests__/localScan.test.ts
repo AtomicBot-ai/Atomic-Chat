@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 
 // Build-time globals read at module scope by localScan (path separator, MLX
 // gating) must exist before the module loads.
@@ -10,6 +10,58 @@ vi.hoisted(() => {
   g.IS_LINUX = false
 })
 
+// An in-memory disk behind the Tauri commands the scanner calls. A path is a
+// directory when some file lives under it; `arch` is the GGUF header's
+// `general.architecture`, absent when the header can't be read.
+const disk = vi.hoisted(() => {
+  const files = new Map<string, { size: number; arch?: string }>()
+  const isDir = (path: string) =>
+    [...files.keys()].some((file) => file.startsWith(`${path}/`))
+  const children = (path: string) => {
+    const prefix = `${path}/`
+    const names = [...files.keys()]
+      .filter((file) => file.startsWith(prefix))
+      .map((file) => file.slice(prefix.length).split('/')[0])
+    return [...new Set(names)].map((name) => prefix + name)
+  }
+  const invoke = async (
+    command: string,
+    payload?: { args?: unknown; path?: string }
+  ) => {
+    const arg = String(
+      Array.isArray(payload?.args) ? payload.args[0] : payload?.args
+    )
+    switch (command) {
+      case 'get_os_home_dir':
+        return '/home/me'
+      case 'get_env_vars':
+        return {}
+      case 'exists_sync':
+        return files.has(arg) || isDir(arg)
+      case 'readdir_sync':
+        return children(arg)
+      case 'file_stat': {
+        const file = files.get(arg)
+        if (file) return { isDirectory: false, size: file.size }
+        if (isDir(arg)) return { isDirectory: true, size: 0 }
+        throw new Error(`ENOENT: ${arg}`)
+      }
+      case 'plugin:llamacpp|read_gguf_metadata': {
+        const arch = files.get(payload?.path ?? '')?.arch
+        return { metadata: arch ? { 'general.architecture': arch } : {} }
+      }
+      default:
+        // read_file_sync (HF refs, LM Studio settings), create_symlink.
+        throw new Error(`ENOENT: ${command} ${arg}`)
+    }
+  }
+  return { files, invoke }
+})
+
+vi.mock('@/hooks/useServiceHub', () => ({
+  getServiceHub: () => ({ core: () => ({ invoke: disk.invoke }) }),
+}))
+
 import {
   gpt4allRoots,
   hfCacheRoots,
@@ -19,6 +71,7 @@ import {
   llamaCppCacheRoots,
   mstyRoots,
   ollamaRoot,
+  scanLocalModels,
   unslothRoot,
 } from '../localScan'
 
@@ -208,5 +261,52 @@ describe('where each app keeps its models', () => {
     expect(llamaCppCacheRoots('C:/Users/me', env, 'windows')).toEqual([
       'C:/Users/me/AppData/Local/llama.cpp',
     ])
+  })
+})
+
+// ATO-523: the reporter's HF cache held a quant, its projector and a 97 MB MTP
+// head side by side, and the scan offered the head as a model of its own.
+describe('scanLocalModels offers only runnable weights', () => {
+  const repo = '/home/me/.cache/huggingface/hub/models--unsloth--gemma-4-E2B-it-GGUF'
+  const snapshot = `${repo}/snapshots/0a1b2c`
+
+  beforeEach(() => {
+    disk.files.clear()
+  })
+
+  it('lists the quant with its projector and leaves the MTP head out', async () => {
+    disk.files.set(`${snapshot}/gemma-4-E2B-it-UD-Q4_K_XL.gguf`, {
+      size: 3_200_000_000,
+      arch: 'gemma4',
+    })
+    disk.files.set(`${snapshot}/mmproj-F16.gguf`, { size: 985_000_000 })
+    // No readable metadata, so only the file name can give the head away.
+    disk.files.set(`${snapshot}/mtp-gemma-4-E2B-it.gguf`, { size: 97_817_664 })
+
+    const found = await scanLocalModels()
+
+    expect(found.map(({ id, mmprojPath }) => ({ id, mmprojPath }))).toEqual([
+      {
+        id: 'unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-UD-Q4_K_XL',
+        mmprojPath: `${snapshot}/mmproj-F16.gguf`,
+      },
+    ])
+  })
+
+  it('leaves out a head whose name gives nothing away, by its architecture', async () => {
+    const cache = '/home/me/.cache/llama.cpp'
+    disk.files.set(`${cache}/Qwen3-8B-Q4_K_M.gguf`, {
+      size: 5_000_000_000,
+      arch: 'qwen3',
+    })
+    disk.files.set(`${cache}/head-q8_0.gguf`, {
+      size: 97_817_664,
+      arch: 'gemma4-assistant',
+    })
+    disk.files.set(`${cache}/spec-q8_0.gguf`, { size: 1_000_000_000, arch: 'dflash' })
+
+    const found = await scanLocalModels()
+
+    expect(found.map((cand) => cand.displayName)).toEqual(['Qwen3-8B-Q4_K_M'])
   })
 })

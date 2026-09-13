@@ -1,5 +1,5 @@
 import { toast } from 'sonner'
-import { useAppState } from '@/hooks/useAppState'
+import { modelStopKey, useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -364,10 +364,52 @@ export function shouldAttemptAutoStart(
   modelId: string
 ): boolean {
   if (isExplicitSwitchPending(providerName, modelId)) return false
+  // Stopped by hand: stays down until the user asks for it again.
+  if (isStoppedByUser(providerName, modelId)) return false
   const prev = autoStartFailures.get(autoStartKey(providerName, modelId))
   if (!prev) return true
   if (prev.terminal) return false
   return Date.now() - prev.ts >= AUTO_START_BACKOFF_MS
+}
+
+function isStoppedByUser(providerName: string, modelId: string): boolean {
+  return useAppState
+    .getState()
+    .userStoppedModels.includes(modelStopKey(providerName, modelId))
+}
+
+function clearUserStop(providerName: string, modelId: string): void {
+  const { userStoppedModels, setUserStoppedModels } = useAppState.getState()
+  const key = modelStopKey(providerName, modelId)
+  if (userStoppedModels.includes(key)) {
+    setUserStoppedModels(userStoppedModels.filter((k) => k !== key))
+  }
+}
+
+/**
+ * Stop every local model because the user asked to (the Stop button), and
+ * remember which ones so {@link shouldAttemptAutoStart} leaves them down.
+ * Without the record, ChatInput's auto-start loaded the model straight back
+ * the moment a chat was on screen, and Stop looked like it did nothing. An
+ * explicit switch — a pick in the dropdown, a Start, or a Send — clears it.
+ */
+export async function stopAllLocalModelsByUser(
+  serviceHub: ServiceHub
+): Promise<void> {
+  const loaded = await Promise.all(
+    LOCAL_PROVIDERS.map(async (provider) => {
+      const models = await serviceHub
+        .models()
+        .getActiveModels(provider)
+        .catch(() => [] as string[])
+      return models.map((modelId) => modelStopKey(provider, modelId))
+    })
+  )
+  // Recorded before the unload: an auto-start that fires while it runs must
+  // already see the model as stopped.
+  const { userStoppedModels, setUserStoppedModels } = useAppState.getState()
+  setUserStoppedModels([...new Set([...userStoppedModels, ...loaded.flat()])])
+  await serviceHub.models().stopAllModels()
 }
 
 /**
@@ -477,6 +519,8 @@ export async function switchToModel(params: {
   const explicitKey = autoStartKey(params.providerName, params.modelId)
   if (isExplicit) {
     pendingExplicitSwitch = explicitKey
+    // Asking for the model again is what lifts a hand Stop.
+    clearUserStop(params.providerName, params.modelId)
   }
 
   const run = async (): Promise<void> => {

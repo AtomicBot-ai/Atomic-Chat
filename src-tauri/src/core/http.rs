@@ -1,5 +1,6 @@
 use futures_util::StreamExt;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use tauri::ipc::Channel;
@@ -138,6 +139,42 @@ pub async fn get_local_http(
     Ok(text)
 }
 
+/// Streams currently waiting on or reading a local response. A local server
+/// answers as many requests as it has slots and queues the rest, so a count
+/// well above one when a stream stalls means the wait was spent behind other
+/// requests rather than on a slow model.
+static STREAMS_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
+
+/// Counts one stream for as long as it is alive.
+struct StreamInFlight;
+
+impl StreamInFlight {
+    fn enter() -> Self {
+        STREAMS_IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
+        Self
+    }
+}
+
+impl Drop for StreamInFlight {
+    fn drop(&mut self) {
+        STREAMS_IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// A stream that stays silent for the whole inactivity budget leaves the user
+/// with a turn that just stops, and was reported nowhere: the error only
+/// travelled back to the webview as a string. `log::error!` makes it a Sentry
+/// event carrying the app log tail; the message stays fixed so every stall
+/// groups into one issue, and the in-flight count goes out just before it as a
+/// breadcrumb.
+fn report_stalled_stream(message: &str) {
+    log::warn!(
+        "[stream] {} local streams in flight (this one included) when it stalled",
+        STREAMS_IN_FLIGHT.load(Ordering::SeqCst)
+    );
+    log::error!("{message}");
+}
+
 /// Streams an HTTP POST response back to the frontend via a Tauri IPC Channel.
 /// Bypasses tauri_plugin_http's fetch interception, which may not properly
 /// bridge ReadableStream for SSE responses in the webview.
@@ -155,6 +192,7 @@ pub async fn stream_local_http(
     timeout_secs: u64,
     on_chunk: Channel<HttpStreamChunk>,
 ) -> Result<u16, String> {
+    let _in_flight = StreamInFlight::enter();
     let configured_secs = timeout_secs;
     let timeout_secs = stream_idle_timeout_secs(timeout_secs);
     // The Settings UI shows the raw configured value, so log both — otherwise
@@ -171,10 +209,14 @@ pub async fn stream_local_http(
     }
     req = req.body(body);
 
-    let response = tokio::time::timeout(idle_timeout, req.send())
-        .await
-        .map_err(|_| format!("Request failed: no response headers within {timeout_secs}s"))?
-        .map_err(|e| format!("Request failed: {e}"))?;
+    let response = match tokio::time::timeout(idle_timeout, req.send()).await {
+        Ok(sent) => sent.map_err(|e| format!("Request failed: {e}"))?,
+        Err(_) => {
+            let message = format!("Request failed: no response headers within {timeout_secs}s");
+            report_stalled_stream(&message);
+            return Err(message);
+        }
+    };
     let status = response.status().as_u16();
 
     if !response.status().is_success() {
@@ -187,9 +229,9 @@ pub async fn stream_local_http(
         let next = match tokio::time::timeout(idle_timeout, stream.next()).await {
             Ok(next) => next,
             Err(_) => {
-                return Err(format!(
-                    "Stream error: no data received for {timeout_secs}s"
-                ));
+                let message = format!("Stream error: no data received for {timeout_secs}s");
+                report_stalled_stream(&message);
+                return Err(message);
             }
         };
         let Some(chunk_result) = next else { break };
@@ -234,5 +276,18 @@ mod tests {
     #[test]
     fn stream_idle_timeout_treats_zero_as_unset() {
         assert_eq!(stream_idle_timeout_secs(0), STREAM_IDLE_TIMEOUT_FLOOR_SECS);
+    }
+
+    #[test]
+    fn a_stream_is_counted_only_while_it_is_alive() {
+        // The count is what tells a stall behind a queue of requests apart
+        // from a slow model, so a stream that ends must stop being counted.
+        let before = STREAMS_IN_FLIGHT.load(Ordering::SeqCst);
+        let first = StreamInFlight::enter();
+        let second = StreamInFlight::enter();
+        assert_eq!(STREAMS_IN_FLIGHT.load(Ordering::SeqCst), before + 2);
+        drop(first);
+        drop(second);
+        assert_eq!(STREAMS_IN_FLIGHT.load(Ordering::SeqCst), before);
     }
 }

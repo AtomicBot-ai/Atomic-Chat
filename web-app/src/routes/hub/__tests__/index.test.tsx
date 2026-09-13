@@ -194,6 +194,7 @@ describe('/hub route', () => {
     ]
     mocks.requestedPickFormats = []
     mocks.search_.mockReturnValue([])
+    mocks.searchHuggingFaceCandidates.mockImplementation(async () => [])
   })
 
   it('opens on staff picks with an empty query', () => {
@@ -335,6 +336,7 @@ describe('/hub route', () => {
         formats: ['mlx'],
         sort: 'recommended',
         onlyFitting: false,
+        uncensored: false,
       })
     )
 
@@ -361,5 +363,48 @@ describe('/hub route', () => {
       'tiny-lab/experimental-3b',
       ''
     )
+  })
+
+  it('lists only uncensored builds, asking Hugging Face with the hidden terms', async () => {
+    localStorage.setItem(
+      HUB_FILTERS_STORAGE_KEY,
+      serializeHubFilters({
+        formats: ['gguf'],
+        sort: 'recommended',
+        onlyFitting: true,
+        uncensored: true,
+      })
+    )
+    mocks.sources = [
+      model('test/plain-GGUF'),
+      model('test/qwen-abliterated-GGUF'),
+    ]
+    mocks.searchHuggingFaceCandidates.mockImplementation(
+      async (...args: unknown[]) =>
+        args[0] === 'uncensored' ? [model('hf/gemma-uncensored-GGUF')] : []
+    )
+    render(<HubPage />)
+
+    await waitFor(() =>
+      expect(screen.getByText('gemma-uncensored-GGUF')).toBeInTheDocument()
+    )
+    expect(screen.getByText('qwen-abliterated-GGUF')).toBeInTheDocument()
+    expect(screen.queryByText('plain-GGUF')).not.toBeInTheDocument()
+    // The curated picks carry no uncensored builds, so they are not shown.
+    expect(screen.queryByText('Qwen3.5 4B')).not.toBeInTheDocument()
+    expect(mocks.searchHuggingFaceCandidates).toHaveBeenCalledWith(
+      'uncensored',
+      '',
+      20
+    )
+    expect(mocks.searchHuggingFaceCandidates).toHaveBeenCalledWith(
+      'abliterated',
+      '',
+      20
+    )
+    // The terms ride along out of sight: the search box stays as typed.
+    expect(
+      screen.getByRole('textbox', { name: 'hub:searchPlaceholder' })
+    ).toHaveValue('')
   })
 })

@@ -221,7 +221,7 @@ describe('PromptOnboardingModel hardware tiers', () => {
   })
 
   it('downloads the pinned quant and its matching projector', async () => {
-    mocks.hardwareTier.tier = 'unified_32_plus'
+    mocks.hardwareTier.tier = 'unified_16'
     mocks.fetchHuggingFaceRepo.mockResolvedValue({ id: QAT_REPO })
     mocks.convertHfRepoToCatalogModel.mockReturnValue(qatModel)
 

@@ -45,5 +45,8 @@
   "context": "Contexto",
   "capabilities": "Capacidades",
   "readme": "README",
-  "readmeUnavailable": "README indisponível para este modelo."
+  "readmeUnavailable": "README indisponível para este modelo.",
+  "tooLargeTitle": "Este modelo pode não funcionar neste dispositivo",
+  "tooLargeDescription": "Ele precisa de mais memória do que este dispositivo tem, então pode não carregar ou ficar lento.",
+  "downloadAnyway": "Baixar mesmo assim"
 }
