@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Atomic Chat",
+  "productName": "Radium",
   "version": "2.0.37",
   "identifier": "chat.atomic.app",
   "build": {

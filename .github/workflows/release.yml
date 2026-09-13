@@ -47,7 +47,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
-          name: "Radium Chat v${{ steps.get_version.outputs.version }}"
+          name: "Radium v${{ steps.get_version.outputs.version }}"
           draft: true
           prerelease: ${{ github.event_name == 'workflow_dispatch' }}
           generate_release_notes: true
@@ -325,11 +325,11 @@ jobs:
         run: |
           cd src-tauri/target/universal-apple-darwin/release/bundle/macos
 
-          zip -r "atomic-chat-mac-universal-${VERSION}.zip" "Atomic Chat.app"
+          zip -r "radium-mac-universal-${VERSION}.zip" "Radium.app"
 
-          MAC_SIG=$(cat "Atomic Chat.app.tar.gz.sig")
-          TAR_NAME="Atomic Chat.app.tar.gz"
-          ZIP_NAME="atomic-chat-mac-universal-${VERSION}.zip"
+          MAC_SIG=$(cat "Radium.app.tar.gz.sig")
+          TAR_NAME="Radium.app.tar.gz"
+          ZIP_NAME="radium-mac-universal-${VERSION}.zip"
 
           echo "mac_sig=${MAC_SIG}" >> "$GITHUB_OUTPUT"
           echo "tar_name=${TAR_NAME}" >> "$GITHUB_OUTPUT"

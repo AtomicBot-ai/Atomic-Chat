@@ -13,10 +13,10 @@
  * are deliberately excluded.
  *
  * Draft files were verified against the live Hugging Face API (sha256 + size
- * pinned so the downloader validates them). Radium Chat's verified Q8_0
+ * pinned so the downloader validates them). AtomicChat's verified Q8_0
  * conversions are the default for every target-model quantization when
  * available; compatible community conversions provide the remaining draft
- * choices and cover families without an Radium Chat conversion.
+ * choices and cover families without an AtomicChat conversion.
  */
 
 export interface DflashDraft {

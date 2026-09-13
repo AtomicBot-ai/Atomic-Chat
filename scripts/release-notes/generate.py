@@ -35,7 +35,7 @@ logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
 logger = logging.getLogger("release-notes")
 
 
-SYSTEM_PROMPT = """You are a release notes editor for a desktop AI app (Radium Chat).
+SYSTEM_PROMPT = """You are a release notes editor for a desktop AI app (Radium).
 You receive (1) optional REAL examples of our previously published release
 notes and (2) the git commits (subject + body) between two tags. Produce
 concise, polished, user-facing release notes for end users.
@@ -71,7 +71,7 @@ OUTPUT RULES:
 FALLBACK EXAMPLE (only when no real examples are provided):
 ## 🚀 New Features
 
-- Windows support — Radium Chat is now available on Windows
+- Windows support — Radium is now available on Windows
 
 ## 🔧 Improvements & Fixes
 

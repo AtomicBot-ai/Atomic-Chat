@@ -298,7 +298,7 @@ pub fn setup_jan_cli<R: Runtime>(app_handle: tauri::AppHandle<R>, version_change
                 cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
             }
             if cmd.output().map(|o| o.status.success()).unwrap_or(false) {
-                log::debug!("Radium Chat CLI already on PATH — skipping reinstall");
+                log::debug!("Radium CLI already on PATH — skipping reinstall");
                 return;
             }
         }
@@ -306,7 +306,7 @@ pub fn setup_jan_cli<R: Runtime>(app_handle: tauri::AppHandle<R>, version_change
         match crate::core::system::commands::install_jan_cli_sync(&app_handle) {
             Ok(status) => {
                 log::info!(
-                    "Radium Chat CLI {} to {}",
+                    "Radium CLI {} to {}",
                     if version_changed {
                         "updated"
                     } else {
@@ -316,7 +316,7 @@ pub fn setup_jan_cli<R: Runtime>(app_handle: tauri::AppHandle<R>, version_change
                 );
             }
             Err(e) => {
-                log::warn!("Radium Chat CLI auto-install skipped: {e}");
+                log::warn!("Radium CLI auto-install skipped: {e}");
             }
         }
     });
@@ -424,7 +424,7 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
         None::<&str>,
     )?;
 
-    let show_i = MenuItem::with_id(app.handle(), "open", "Open Radium Chat", true, None::<&str>)?;
+    let show_i = MenuItem::with_id(app.handle(), "open", "Open Radium", true, None::<&str>)?;
     let quit_i = MenuItem::with_id(app.handle(), "quit", "Quit", true, None::<&str>)?;
 
     //* Three separators carve the menu into Pico-style sections so the rows

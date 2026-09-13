@@ -81,7 +81,7 @@
     "choose": "Выбрать workspace",
     "change": "Изменить workspace агента",
     "default": "Workspace по умолчанию",
-    "defaultDescription": "Используется папка agent-workspace внутри папки данных Radium Chat.",
+    "defaultDescription": "Используется папка agent-workspace внутри папки данных Radium.",
     "projectFiles": "Project Files",
     "external": "External",
     "canEdit": "CAN EDIT",

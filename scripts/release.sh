@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Bump the Radium Chat version, commit, and create a git tag.
+# Bump the Radium version, commit, and create a git tag.
 #
 # Usage:
 #   ./scripts/release.sh patch        # 0.6.599 → 0.6.600
@@ -109,7 +109,7 @@ fi
 
 git add "$TAURI_CONF" "$CARGO_TOML" "$WEB_PKG"
 git commit -m "release: $TAG"
-git tag -a "$TAG" -m "Radium Chat $TAG"
+git tag -a "$TAG" -m "Radium $TAG"
 
 echo ""
 echo "Done! Created commit and tag $TAG."

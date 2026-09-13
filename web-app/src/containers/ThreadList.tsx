@@ -178,7 +178,7 @@ const ThreadItem = memo(
         .openWindow({
           url: `/threads/${thread.id}`,
           label: `thread-${thread.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`,
-          title: thread.title || 'Atomic Chat',
+          title: thread.title || 'Radium',
           width: 1000,
           height: 800,
           resizable: true,

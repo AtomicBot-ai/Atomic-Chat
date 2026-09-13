@@ -152,15 +152,15 @@ mod tests {
     #[test]
     fn rejects_unrelated_names() {
         assert!(!is_backend_name("server"));
-        assert!(!is_backend_name("Radium Chat"));
+        assert!(!is_backend_name("Radium"));
         assert!(!is_backend_name("node"));
         assert!(!is_backend_name("my-llama-server")); // prefix must be at the start
     }
 
     #[test]
     fn exe_must_live_under_an_owned_root() {
-        let data = PathBuf::from("/Users/x/Library/Application Support/Atomic Chat/data");
-        let resource = PathBuf::from("/Applications/Atomic Chat.app/Contents/Resources");
+        let data = PathBuf::from("/Users/x/Library/Application Support/Radium/data");
+        let resource = PathBuf::from("/Applications/Radium.app/Contents/Resources");
         let roots = vec![data.clone(), resource.clone()];
 
         // llama-server downloaded under the data folder → owned.

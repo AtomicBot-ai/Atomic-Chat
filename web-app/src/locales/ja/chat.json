@@ -81,7 +81,7 @@
     "choose": "ワークスペースを選択",
     "change": "エージェントのワークスペースを変更",
     "default": "デフォルト",
-    "defaultDescription": "Radium Chat データフォルダ内の agent-workspace フォルダを使用します。",
+    "defaultDescription": "Radium データフォルダ内の agent-workspace フォルダを使用します。",
     "projectFiles": "プロジェクトファイル",
     "external": "外部",
     "canEdit": "編集可能",

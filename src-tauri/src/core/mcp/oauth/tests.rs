@@ -178,7 +178,7 @@ async fn the_callback_listener_returns_the_code_and_state_pair() {
         .text()
         .await
         .expect("callback page");
-    assert!(body.contains("Atomic Chat"), "static page served");
+    assert!(body.contains("Radium"), "static page served");
 
     let outcome = wait.await.expect("join");
     assert_eq!(outcome, Ok(("abc123".to_string(), "xyz789".to_string())));

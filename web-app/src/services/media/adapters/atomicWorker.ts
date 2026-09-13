@@ -176,7 +176,7 @@ export function createAtomicWorkerAdapter(
         throw new AtomicMediaClientError(
           `Provider "${descriptor.label}" speaks media contract v${version}; ` +
             `this build understands up to v${MEDIA_CONTRACT_MAX_SUPPORTED}. ` +
-            'A newer Radium Chat is needed.',
+            'A newer Radium is needed.',
           'invalid_response',
           { details: { contract_version: version } }
         )

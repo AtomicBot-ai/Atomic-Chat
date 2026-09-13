@@ -59,7 +59,7 @@ describe('useAssistant', () => {
 
     const updatedAssistant = {
       ...defaultAssistant,
-      name: 'Updated Radium Chat',
+      name: 'Updated Radium',
       description: 'Updated description',
     }
 
@@ -67,7 +67,7 @@ describe('useAssistant', () => {
       result.current.updateAssistant(updatedAssistant)
     })
 
-    expect(result.current.assistants[0].name).toBe('Updated Radium Chat')
+    expect(result.current.assistants[0].name).toBe('Updated Radium')
     expect(result.current.assistants[0].description).toBe('Updated description')
   })
 
@@ -154,7 +154,7 @@ describe('useAssistant', () => {
     const { result } = renderHook(() => useAssistant())
 
     expect(result.current.currentAssistant.id).toBe('jan')
-    expect(result.current.currentAssistant.name).toBe('Atomic Chat')
+    expect(result.current.currentAssistant.name).toBe('Radium')
     expect(result.current.currentAssistant.avatar).toBe(
       '/images/transparent-logo.png'
     )
@@ -180,7 +180,7 @@ describe('useAssistant', () => {
 
     const updatedDefaultAssistant = {
       ...defaultAssistant,
-      name: 'Updated Radium Chat Name',
+      name: 'Updated Radium Name',
     }
 
     act(() => {
@@ -188,7 +188,7 @@ describe('useAssistant', () => {
     })
 
     expect(result.current.currentAssistant.name).toBe(
-      'Updated Radium Chat Name'
+      'Updated Radium Name'
     )
   })
 

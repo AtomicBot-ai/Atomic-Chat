@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 # scripts/setup-windows.ps1
-# Radium Chat - Windows Development Environment Setup
+# Radium - Windows Development Environment Setup
 # Installs: Rust, nvm-windows, Node.js 20, uv, Python 3.12, jq, Pillow, Yarn
 #
 # Usage:

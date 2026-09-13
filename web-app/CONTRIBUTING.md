@@ -1,4 +1,4 @@
-# Contributing to Radium Chat Web App
+# Contributing to Radium Web App
 
 [← Back to Main Contributing Guide](../CONTRIBUTING.md)
 

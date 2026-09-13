@@ -40,7 +40,7 @@ export function LeftSidebar() {
           sidebar toggle) is right-aligned, so it sits well clear of the
           left-edge traffic-light cluster and can share the same Y-coord
           with the system buttons. We therefore keep that row at the top
-          and instead push only the left-aligned Atomic Chat logo row
+          and instead push only the left-aligned Radium logo row
           below the traffic-light band, so it doesn't collide.
         */}
         <SidebarHeader className="flex flex-col gap-1 px-1 pb-0">

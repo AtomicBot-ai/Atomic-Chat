@@ -1,6 +1,6 @@
 {
   "title": "外部連携",
-  "subtitle": "外部のコーディングエージェントやアシスタントをインストールし、ワンクリックでローカルの Radium Chat モデルに接続できます。",
+  "subtitle": "外部のコーディングエージェントやアシスタントをインストールし、ワンクリックでローカルの Radium モデルに接続できます。",
   "serverSection": "ローカル API サーバー",
   "serverSectionDesc": "ローカルモデル用の OpenAI 互換サーバーを実行し、以下のエージェントを接続します。",
   "codingAgents": "コーディングエージェント",
@@ -40,7 +40,7 @@
   "experimental": "試験的機能",
   "toast": {
     "serverStarting": "ローカルサーバーを起動中...",
-    "serverStartingDesc": "{{name}} 用に Radium Chat サーバーを準備しています",
+    "serverStartingDesc": "{{name}} 用に Radium サーバーを準備しています",
     "installSuccess": "{{name}} をインストールしました",
     "installSuccessDesc": "{{name}} のインストールが正常に完了しました。",
     "installFailed": "{{name}} のインストールに失敗しました",

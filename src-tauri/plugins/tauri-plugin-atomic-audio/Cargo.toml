@@ -1,7 +1,7 @@
 [package]
 name = "tauri-plugin-atomic-audio"
 version = "0.6.599"
-authors = ["Atomic Chat <service@atomic.chat>"]
+authors = ["Radium <service@atomic.chat>"]
 description = "Tauri plugin for microphone capture and on-device speech transcription"
 license = "MIT"
 repository = "https://github.com/AtomicBot-ai/Atomic-Chat"

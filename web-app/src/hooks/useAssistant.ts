@@ -56,7 +56,7 @@ const setLastUsedAssistantId = (assistantId: string) => {
 
 export const defaultAssistant: Assistant = {
   id: 'jan',
-  name: 'Atomic Chat',
+  name: 'Radium',
   created_at: 1747029866.542,
   parameters: {
     temperature: 0.7,
@@ -66,7 +66,7 @@ export const defaultAssistant: Assistant = {
   },
   avatar: '/images/transparent-logo.png',
   description:
-    "Radium Chat is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user's behalf.",
+    "Radium is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user's behalf.",
   instructions: 'Current date: {{current_date}}',
 }
 

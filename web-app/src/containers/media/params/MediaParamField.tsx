@@ -83,7 +83,7 @@ export function MediaParamField({
         <>
           <input {...shared} className={fieldClass} type="text" readOnly value="" />
           <p className="mt-1 text-xs text-muted-foreground">
-            This parameter is not supported by this version of Radium Chat.
+            This parameter is not supported by this version of Radium.
           </p>
         </>
       ) : spec.type === 'text' ? (

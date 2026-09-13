@@ -84,7 +84,7 @@
   },
   "preview": {
     "title": "Generation preview",
-    "description": "Your finished image or video will appear here without leaving Radium Chat.",
+    "description": "Your finished image or video will appear here without leaving Radium.",
     "alt": "Generated media"
   },
   "form": {

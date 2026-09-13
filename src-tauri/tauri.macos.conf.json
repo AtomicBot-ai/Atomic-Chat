@@ -6,7 +6,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Radium Chat",
+        "title": "Radium",
         "devtools": true,
         "width": 1200,
         "minWidth": 1024,

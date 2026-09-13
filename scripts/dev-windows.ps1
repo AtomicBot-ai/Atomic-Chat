@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 # scripts/dev-windows.ps1
-# Radium Chat - Windows development launcher
+# Radium - Windows development launcher
 # Mirrors CI pipeline: install deps, download backend, build CLI, run dev
 #
 # Usage:

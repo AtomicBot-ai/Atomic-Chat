@@ -1,4 +1,4 @@
-//! Atomic Chat audio capture and on-device transcription.
+//! Radium audio capture and on-device transcription.
 //!
 //! Records from the microphone in Rust rather than through `getUserMedia`. That
 //! buys three things: raw 16 kHz mono PCM without resampling in JavaScript, a
