@@ -1,5 +1,5 @@
 /**
- * ATO-113: Sentry frontend integration for Radium Chat.
+ * ATO-113: Sentry frontend integration for Radium.
  *
  * - Initialised once, early in `main.tsx`, before the router so the React
  *   `ErrorBoundary` and the global `window.onerror` / `unhandledrejection`

@@ -64,7 +64,7 @@ export function LlamacppDflashDraftDialog({
           <DialogDescription>
             {t('settings:llamacppDflashDraftDesc', {
               defaultValue:
-                'Select the additional draft GGUF to pair with {{modelId}}. Radium Chat Q8_0 is selected by default when available.',
+                'Select the additional draft GGUF to pair with {{modelId}}. AtomicChat Q8_0 is selected by default when available.',
               modelId,
             })}
           </DialogDescription>

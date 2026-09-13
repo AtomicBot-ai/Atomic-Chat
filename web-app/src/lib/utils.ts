@@ -179,7 +179,7 @@ export const isLlamacppProvider = (provider: string) =>
 export const getProviderTitle = (provider: string) => {
   switch (provider) {
     case 'jan':
-      return 'Atomic Chat'
+      return 'Radium'
     case 'llamacpp':
       // TurboQuant now ships on Windows and Linux as a second provider
       // side-by-side with `llamacpp-upstream` (which stays the default),

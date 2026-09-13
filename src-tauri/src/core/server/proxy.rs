@@ -834,7 +834,7 @@ fn muse_catalog_entry(model_id: &str, owned_by: &str) -> serde_json::Value {
                     "top_p": 0.9,
                 },
                 "variants": {},
-                "description": format!("{model_id} via Atomic Chat"),
+                "description": format!("{model_id} via Radium"),
                 "cost": {
                     "input": "0",
                     "output": "0",
@@ -4104,7 +4104,7 @@ async fn start_server_internal<R: Runtime>(
             return Err(Box::new(e));
         }
     };
-    log::info!("Radium Chat API server started on http://{bound_addr}");
+    log::info!("Radium API server started on http://{bound_addr}");
 
     let server_task = tokio::spawn(async move {
         if let Err(e) = server.await {
@@ -4145,7 +4145,7 @@ async fn start_server_internal<R: Runtime>(
         analytics_task,
         analytics_shutdown,
     });
-    log::info!("Radium Chat API server started successfully on port {actual_port}");
+    log::info!("Radium API server started successfully on port {actual_port}");
     Ok(ServerStart::Started(actual_port))
 }
 
@@ -4160,7 +4160,7 @@ pub async fn stop_server(
             log::warn!("Local API Server analytics flush task failed: {e}");
         }
         handle.server_task.abort();
-        log::info!("Radium Chat API server stopped");
+        log::info!("Radium API server stopped");
     } else {
         log::debug!("stop_server: Local API Server was not running; nothing to stop");
     }

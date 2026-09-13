@@ -56,3 +56,27 @@ export async function setLaunchAtStartup(
   await appService.setAutostartPreference(preferenceForState(actualState))
   return actualState
 }
+
+/**
+ * Carry launch-at-startup across the product rename (ADR 2026-09-13).
+ *
+ * The OS entry is named after the product, so one registered as "Atomic Chat"
+ * reads as "off" once the app is "Radium". Left alone, the next
+ * reconciliation would then save the preference as disabled. `removeLegacyEntry`
+ * deletes the old entry and reports whether it existed. The old uninstaller
+ * may already have removed it, so a saved "enabled" preference counts too.
+ *
+ * Returns whether autostart was re-enabled under the new name.
+ */
+export async function carryLaunchAtStartupAcrossRename(
+  appService: AutostartPreferenceStore,
+  removeLegacyEntry: () => Promise<boolean>
+): Promise<boolean> {
+  const hadLegacyEntry = await removeLegacyEntry()
+  const preference = await appService.getAutostartPreference()
+  if (!hadLegacyEntry && preference !== 'enabled') return false
+  if (await isAutostartEnabled()) return false
+
+  await enableAutostart()
+  return true
+}

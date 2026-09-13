@@ -1,6 +1,6 @@
 ---
 name: skill-creator
-description: Author or edit Radium Chat Agent skills (SKILL.md + YAML). Use when creating, renaming, or tightening skills and their install layout.
+description: Author or edit Radium Agent skills (SKILL.md + YAML). Use when creating, renaming, or tightening skills and their install layout.
 version: 1.3.1
 requires_tools:
   - os.fs.read
@@ -39,7 +39,7 @@ platforms:
 
 # my-skill-name
 
-Body here. Use real Radium Chat Agent tool names such as `skill.view`,
+Body here. Use real Radium Agent tool names such as `skill.view`,
 `os.http.request`, and `os.web.search`.
 ```
 
@@ -58,9 +58,9 @@ Rules:
 
 | Scope | Path |
 |-------|------|
-| Global | `<Radium Chat data folder>/agent-skills/<name>/SKILL.md` |
+| Global | `<Radium data folder>/agent-skills/<name>/SKILL.md` |
 
-Radium Chat currently loads only this global root. One folder per skill;
+Radium currently loads only this global root. One folder per skill;
 single `SKILL.md` at folder root.
 
 ## Workflow

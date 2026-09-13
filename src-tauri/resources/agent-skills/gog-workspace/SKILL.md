@@ -65,7 +65,7 @@ Never run `setup-gog.sh` or `setup-gog.ps1` through tools. OAuth, keyring prompt
 macOS / Linux:
 
 ```bash
-bash "<Radium Chat data folder>/agent-skills/gog-workspace/scripts/setup-gog.sh"
+bash "<Radium data folder>/agent-skills/gog-workspace/scripts/setup-gog.sh"
 ```
 
 The user needs a Desktop OAuth client JSON from Google Cloud Console. The setup script stores it with `gog auth credentials ...`, then runs `gog auth add ...`.

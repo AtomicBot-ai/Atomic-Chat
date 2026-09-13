@@ -13,7 +13,7 @@
   "localModel": "Set up local model",
   "remoteProvider": "Set up remote provider",
   "turboQuantTagline": "Local AI models on your device — blazing fast on average hardware.",
-  "welcomeTitle": "Welcome to Radium Chat!",
+  "welcomeTitle": "Welcome to Radium!",
   "skip": "Skip",
   "modelUnavailable": "Not in catalog yet — open Hub after connection.",
   "localStep": {
@@ -44,7 +44,7 @@
     "switchingTitle": "Switching backend",
     "switchingDesc": "Activating {{backend}} without a restart…",
     "restartTitle": "Backend ready",
-    "restartDesc": "The optimal backend has been downloaded. It will activate the next time you start Radium Chat.",
+    "restartDesc": "The optimal backend has been downloaded. It will activate the next time you start Radium.",
     "restartLater": "Continue setup",
     "restartNow": "Restart now"
   },

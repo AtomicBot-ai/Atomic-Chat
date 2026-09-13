@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 # scripts/download-llamacpp-cudart-windows.ps1
-# Radium Chat — merge CUDA Toolkit runtime DLLs into a Windows llama.cpp
+# Radium — merge CUDA Toolkit runtime DLLs into a Windows llama.cpp
 # backend bundle.
 #
 # For the default upstream provider, Windows

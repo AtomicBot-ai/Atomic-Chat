@@ -9,7 +9,7 @@ the bundled `tokenizer_config.json` / `chat_template.jinja` in the model directo
 ## Fix
 
 1. Open the model folder under Jan data, e.g.  
-   `~/Library/Application Support/Atomic Chat/data/llamacpp/models/<model-id>/`
+   `~/Library/Application Support/Radium/data/llamacpp/models/<model-id>/`
 2. Copy fresh `tokenizer_config.json` and `chat_template.jinja` from the upstream Hugging Face model card for that quant.
 3. Restart the llama.cpp session.
 

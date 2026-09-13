@@ -114,7 +114,7 @@ test('TurboQuant manifest covers the full Linux backend matrix', () => {
 
 // The release index is what removed every hardcoded tag from the app: it is
 // published as an asset of each fork release and read at runtime, so a new
-// engine reaches users without an Radium Chat release. The app must be able to
+// engine reaches users without a Radium release. The app must be able to
 // tell stable releases from prereleases and to refuse a build that needs a
 // newer app, all from this document alone.
 test('TurboQuant release index describes stable releases the app can install', () => {

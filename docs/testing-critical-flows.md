@@ -1,6 +1,6 @@
 # Critical-flow test evidence
 
-This document records what the local test system proves about Radium Chat. It
+This document records what the local test system proves about Radium. It
 is an evidence map, not a test-count dashboard. Update it when a production
 entrypoint, backend contract, or owning test changes.
 

@@ -19,7 +19,7 @@ import {
 // from `index.json`, published as an asset of every release. `releases/latest`
 // is GitHub's own pointer at the newest non-prerelease release, so no release
 // tag is ever hardcoded in the app and a new fork release reaches users
-// without shipping a new Radium Chat build.
+// without shipping a new Radium build.
 //
 // Only stable releases of the unified `b<upstream-build>-<fork-semver>` scheme
 // are installable. `dev-latest` and the legacy per-variant
@@ -136,7 +136,7 @@ export interface TurboquantRelease {
   published_at?: string
   commit?: string
   prerelease?: boolean
-  /** Minimum Radium Chat version that can run this build; absent = any. */
+  /** Minimum Radium version that can run this build; absent = any. */
   min_app_version?: string
   title?: string
   highlights?: string[]

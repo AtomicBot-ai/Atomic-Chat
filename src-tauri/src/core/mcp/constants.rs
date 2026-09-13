@@ -22,7 +22,7 @@ const FILESYSTEM_DIR_PLACEHOLDER: &str = "__JAN_DEFAULT_FS_DIR__";
 /// `FILESYSTEM_MCP_PINNED_VERSION`).
 const FILESYSTEM_SPEC_PLACEHOLDER: &str = "__JAN_FS_MCP_SPEC__";
 
-/// Literal placeholder path shipped in older versions of Radium Chat. Existing
+/// Literal placeholder path shipped in older versions of Radium. Existing
 /// `mcp_config.json` files on disk may still contain this value; the runtime
 /// migrates it to a real per-user sandbox path on next config read.
 pub const LEGACY_FILESYSTEM_PLACEHOLDER: &str = "/path/to/other/allowed/dir";

@@ -55,7 +55,7 @@ if [[ -z "$VERSION" || "$VERSION" == "null" ]]; then
   exit 1
 fi
 
-PRODUCT_NAME="Radium Chat"
+PRODUCT_NAME="Radium"
 NEW_VOLNAME="${PRODUCT_NAME} v${VERSION}"
 
 echo "=== DMG volume rename ==="

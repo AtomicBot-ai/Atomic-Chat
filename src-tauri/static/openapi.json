@@ -1,14 +1,14 @@
 {
   "openapi": "3.0.0",
   "info": {
-    "title": "Radium Chat API Server Endpoints",
-    "description": "Radium Chat API server provides a REST API interface for seamless interaction with large language models (LLMs) for third party apps. Compatible with the OpenAI API spec, it enables straightforward API access of models available in Radium Chat.",
+    "title": "Radium API Server Endpoints",
+    "description": "Radium API server provides a REST API interface for seamless interaction with large language models (LLMs) for third party apps. Compatible with the OpenAI API spec, it enables straightforward API access of models available in Radium.",
     "version": "1.0"
   },
   "servers": [
     {
       "url": "http://localhost:1337/v1",
-      "description": "Radium Chat API server"
+      "description": "Radium API server"
     }
   ],
   "tags": [

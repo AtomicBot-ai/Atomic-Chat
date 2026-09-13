@@ -38,9 +38,9 @@ pub(crate) fn dcr_was_rejected(client_id: &str) -> bool {
 /// reflected back into it.
 const CALLBACK_PAGE: &str = concat!(
     "<!doctype html><html><head><meta charset=\"utf-8\">",
-    "<title>Atomic Chat</title></head><body style=\"font-family:system-ui;",
+    "<title>Radium</title></head><body style=\"font-family:system-ui;",
     "display:flex;align-items:center;justify-content:center;height:100vh;margin:0\">",
-    "<p>You can close this tab and return to Atomic Chat.</p></body></html>"
+    "<p>You can close this tab and return to Radium.</p></body></html>"
 );
 
 /// Fresh token lifetime as absolute unix seconds. Defaults to an hour when the
@@ -176,7 +176,7 @@ pub(crate) async fn run_login(
         .map_err(|e| format!("{name}: authorization discovery failed: {e}"))?;
     // Empty scopes: the provider's defaults. Discovery + DCR happen here.
     oauth
-        .start_authorization(&[], &redirect_uri, Some("Atomic Chat"))
+        .start_authorization(&[], &redirect_uri, Some("Radium"))
         .await
         .map_err(|e| format!("{name}: cannot start the browser sign-in: {e}"))?;
 

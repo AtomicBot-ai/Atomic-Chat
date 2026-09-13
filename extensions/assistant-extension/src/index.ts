@@ -1,8 +1,11 @@
 import { Assistant, AssistantExtension, fs, joinPath } from '@janhq/core'
 
-/** The product name before the 2026-09-10 rebrand, and after it. */
-const FORMER_PRODUCT_NAME = 'Atomic Chat'
-const PRODUCT_NAME = 'Radium Chat'
+/**
+ * The product's earlier names - "Atomic Chat", then "Radium Chat" after the
+ * 2026-09-10 rebrand - and its name since 2026-09-13.
+ */
+const FORMER_PRODUCT_NAMES = ['Atomic Chat', 'Radium Chat']
+const PRODUCT_NAME = 'Radium'
 
 /**
  * Rewrite the product name inside an assistant's instructions.
@@ -21,10 +24,29 @@ const PRODUCT_NAME = 'Radium Chat'
 export function renameProductInInstructions(
   instructions: string | undefined
 ): string | undefined {
-  if (!instructions || !instructions.includes(FORMER_PRODUCT_NAME)) {
+  if (
+    !instructions ||
+    !FORMER_PRODUCT_NAMES.some((former) => instructions.includes(former))
+  ) {
     return instructions
   }
-  return instructions.split(FORMER_PRODUCT_NAME).join(PRODUCT_NAME)
+  return FORMER_PRODUCT_NAMES.reduce(
+    (text, former) => text.split(former).join(PRODUCT_NAME),
+    instructions
+  )
+}
+
+/**
+ * Rename an assistant whose NAME is exactly one of the product's former names
+ * - the shipped default assistant. Any other name is the user's own and is
+ * returned untouched.
+ */
+export function renameProductInAssistantName(
+  name: string | undefined
+): string | undefined {
+  return name !== undefined && FORMER_PRODUCT_NAMES.includes(name)
+    ? PRODUCT_NAME
+    : name
 }
 
 /**
@@ -32,7 +54,7 @@ export function renameProductInInstructions(
  * functionality for managing assistants.
  */
 export default class JanAssistantExtension extends AssistantExtension {
-  private readonly CURRENT_MIGRATION_VERSION = 3
+  private readonly CURRENT_MIGRATION_VERSION = 4
   private readonly MIGRATION_FILE = 'file://assistants/.migration_version'
 
   /**
@@ -102,7 +124,7 @@ export default class JanAssistantExtension extends AssistantExtension {
     }
 
     if (currentVersion < 2) {
-      console.log('Running migration v2: Update to Radium Chat instructions')
+      console.log('Running migration v2: Update to Radium instructions')
       await this.migrateToAtomicChatInstructions()
       await this.saveMigrationVersion(2)
     }
@@ -111,6 +133,15 @@ export default class JanAssistantExtension extends AssistantExtension {
       console.log(`Running migration v3: rename the product to ${PRODUCT_NAME}`)
       await this.migrateProductName()
       await this.saveMigrationVersion(3)
+    }
+
+    if (currentVersion < 4) {
+      // The product became "Radium" on 2026-09-13. Installs that already ran v3
+      // were renamed to "Radium Chat", so the same targeted rename runs again,
+      // now covering both former names and the default assistant's name.
+      console.log(`Running migration v4: rename the product to ${PRODUCT_NAME}`)
+      await this.migrateProductName()
+      await this.saveMigrationVersion(4)
     }
 
     console.log(
@@ -123,7 +154,7 @@ export default class JanAssistantExtension extends AssistantExtension {
    */
   private async migrateAssistantInstructions(): Promise<void> {
     const OLD_INSTRUCTION = 'You are a helpful AI assistant.'
-    const NEW_INSTRUCTION = 'You are Radium Chat, a helpful AI assistant.'
+    const NEW_INSTRUCTION = 'You are Radium, a helpful AI assistant.'
 
     if (!(await fs.existsSync('file://assistants'))) {
       return
@@ -161,14 +192,17 @@ export default class JanAssistantExtension extends AssistantExtension {
   }
 
   /**
-   * Migration v3: the product was renamed from "Atomic Chat" to "Radium Chat".
+   * Migrations v3 and v4: the product was renamed, first from "Atomic Chat" to
+   * "Radium Chat" and then to "Radium".
    *
    * Migrations v1 and v2 rewrote the whole instruction field, which was safe
    * when the text was still the shipped default. It is not safe now, so this
    * one substitutes only the brand name and leaves any customisation intact.
+   * An assistant is renamed only when its name is exactly a former product
+   * name, which is the shipped default; a name the user chose is kept.
    *
-   * An assistant whose instructions never mentioned the old name is skipped
-   * without a write, so a user who replaced the default entirely is untouched.
+   * An assistant that mentions no former name is skipped without a write, so a
+   * user who replaced the default entirely is untouched.
    */
   private async migrateProductName(): Promise<void> {
     if (!(await fs.existsSync('file://assistants'))) {
@@ -177,7 +211,10 @@ export default class JanAssistantExtension extends AssistantExtension {
 
     for (const assistant of await this.getAssistants()) {
       const instructions = renameProductInInstructions(assistant.instructions)
-      if (instructions === assistant.instructions) continue
+      const name = renameProductInAssistantName(assistant.name)
+      if (instructions === assistant.instructions && name === assistant.name) {
+        continue
+      }
 
       const assistantPath = await joinPath([
         'file://assistants',
@@ -188,7 +225,7 @@ export default class JanAssistantExtension extends AssistantExtension {
       try {
         await fs.writeFileSync(
           assistantPath,
-          JSON.stringify({ ...assistant, instructions }, null, 2)
+          JSON.stringify({ ...assistant, name, instructions }, null, 2)
         )
         console.log(`Renamed the product for assistant: ${assistant.id}`)
       } catch (error) {
@@ -200,11 +237,11 @@ export default class JanAssistantExtension extends AssistantExtension {
   }
 
   /**
-   * Migration v2: Update assistant instructions to Radium Chat format and set default parameters
+   * Migration v2: Update assistant instructions to Radium format and set default parameters
    */
   private async migrateToAtomicChatInstructions(): Promise<void> {
     const OLD_INSTRUCTION_PREFIX = 'You are Jan, a helpful AI assistant.'
-    const NEW_INSTRUCTION = `You are Radium Chat, a helpful AI assistant who assists users with their requests. Radium Chat is trained by Radium Chat (https://atomic.chat).
+    const NEW_INSTRUCTION = `You are Radium, a helpful AI assistant who assists users with their requests. Radium is trained by Radium (https://atomic.chat).
 
 You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.
 
@@ -329,11 +366,11 @@ Current date: {{current_date}}`
     id: 'jan',
     object: 'assistant',
     created_at: Date.now() / 1000,
-    name: 'Atomic Chat',
+    name: PRODUCT_NAME,
     description:
-      'Radium Chat is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user’s behalf.',
+      'Radium is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user’s behalf.',
     model: '*',
-    instructions: `You are Radium Chat, a helpful AI assistant who assists users with their requests. Radium Chat is trained by Radium Chat (https://atomic.chat).
+    instructions: `You are Radium, a helpful AI assistant who assists users with their requests. Radium is trained by Radium (https://atomic.chat).
 
 You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.
 

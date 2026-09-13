@@ -1,8 +1,8 @@
-# Стабильный запуск и доработка Radium Chat
+# Стабильный запуск и доработка Radium
 
 ## Что произошло в логе
 
-1. **Ошибки Vite/esbuild** (`The service was stopped` / `The service is no longer running`) появились **после того, как ты закрыл окно Radium Chat**. При закрытии приложения завершается процесс `cargo run` → завершается весь `yarn dev` → останавливается дочерний Vite. В момент остановки Vite ещё успевает попытаться обработать запросы (HMR и т.д.) и пишет, что сервис уже не запущен. Это не баг кода, а следствие остановки dev-процесса.
+1. **Ошибки Vite/esbuild** (`The service was stopped` / `The service is no longer running`) появились **после того, как ты закрыл окно Radium**. При закрытии приложения завершается процесс `cargo run` → завершается весь `yarn dev` → останавливается дочерний Vite. В момент остановки Vite ещё успевает попытаться обработать запросы (HMR и т.д.) и пишет, что сервис уже не запущен. Это не баг кода, а следствие остановки dev-процесса.
 
 2. **Иконки генерируются при каждом запуске** — скрипт `dev:tauri` каждый раз вызывает `yarn build:icon`. Так задумано в проекте, добавляет несколько секунд к старту.
 
@@ -19,12 +19,12 @@ cd /Users/max/Desktop/desc-app/jan
 yarn dev
 ```
 
-- Дождись в логе: `Running target/debug/Atomic Chat` и появления окна Radium Chat.
-- **Не закрывай этот терминал** и по возможности **не закрывай окно Radium Chat** во время разработки.
+- Дождись в логе: `Running target/debug/Atomic Chat` и появления окна Radium.
+- **Не закрывай этот терминал** и по возможности **не закрывай окно Radium** во время разработки.
 - Редактируй код в `web-app/` — Vite подхватит изменения (hot reload), перезапуск не нужен.
 - Редактируешь Rust в `src-tauri/` — после сохранения Tauri сам пересоберёт и перезапустит приложение.
 
-**Когда закончил работу:** закрой окно Radium Chat, затем в терминале нажми **Ctrl+C** один раз. Так и Vite, и Tauri завершатся предсказуемо, без лишних сообщений об остановленном сервисе.
+**Когда закончил работу:** закрой окно Radium, затем в терминале нажми **Ctrl+C** один раз. Так и Vite, и Tauri завершатся предсказуемо, без лишних сообщений об остановленном сервисе.
 
 ---
 
@@ -33,9 +33,9 @@ yarn dev
 1. Открыть терминал.
 2. `cd /Users/max/Desktop/desc-app/jan`
 3. `yarn dev`
-4. Дождаться открытия окна Radium Chat.
+4. Дождаться открытия окна Radium.
 5. Дорабатывать фронт в `web-app/` или бэкенд в `src-tauri/`.
-6. В конце: закрыть окно Radium Chat → в терминале **Ctrl+C**.
+6. В конце: закрыть окно Radium → в терминале **Ctrl+C**.
 
 Повторный запуск — снова только `yarn dev` (без `make dev`), если не менял зависимости и не делал `make clean`.
 
@@ -61,28 +61,29 @@ yarn dev
 
 ---
 
-## Where Radium Chat stores data on Windows
+## Where Radium stores data on Windows
 
-Dev (`make dev-windows-cpu` / `yarn dev`) and the installed `Atomic Chat.exe` **share the same data folders** — there is no separate dev profile. Anything you delete from these paths affects both.
+Dev (`make dev-windows-cpu` / `yarn dev`) and the installed Radium app (`Atomic-Chat.exe`) **share the same data folders** — there is no separate dev profile. Anything you delete from these paths affects both.
 
 | Path | Contents | Cleared by |
 |---|---|---|
-| `%APPDATA%\Atomic Chat\data\llamacpp-upstream\backends\` | Downloaded llama.cpp backend builds (CPU / CUDA 12.4 / CUDA 13.1 / Vulkan), sourced from `ggml-org/llama.cpp`. Active path on Windows since ADR 2026-05-22 *Windows ships only `llamacpp-upstream`*. | `make dev-windows-cpu`, `make clean-windows-all`, uninstaller (Delete app data) |
-| `%APPDATA%\Atomic Chat\data\llamacpp\backends\` | **Legacy** (pre-2026-05-22) turboquant `llamacpp` backends. Left orphaned on existing installs and ignored by the Windows app; safe to delete manually. Models under `data\llamacpp\models\` are still active (shared root). | manual delete, `make clean-windows-all`, uninstaller |
-| `%APPDATA%\Atomic Chat\data\models\` | Downloaded GGUF / MLX models | factory reset (UI), `make clean-windows-all`, uninstaller |
-| `%APPDATA%\Atomic Chat\data\threads\` | Chat history | factory reset, `make clean-windows-all`, uninstaller |
-| `%APPDATA%\Atomic Chat\data\extensions\` | Installed extensions (`@janhq/*`, `llamacpp-extension`, …) | factory reset, `make clean-windows-all`, uninstaller |
-| `%APPDATA%\Atomic Chat\data\media\` | Radium Media output: generated images and video under `outputs\`, thumbnails under `thumbs\`, and `index.json` - the only durable record that a generation happened, including its provenance (provider, model, parameters, resolved seed). Deleting an asset in the library removes the file as well as the index entry. Files a provider wrote elsewhere are *adopted in place* and therefore live outside this folder. | factory reset, `make clean-windows-all`, uninstaller |
-| `%APPDATA%\Atomic Chat\data\logs\app.log` | Application logs (`tauri_plugin_log`) | factory reset, `make clean-windows-all`, uninstaller |
-| `%APPDATA%\Atomic Chat\data\store.json` | Migration / version store | factory reset, `make clean-windows-all`, uninstaller |
-| `%APPDATA%\Atomic Chat\data\mcp_config.json` | MCP servers config | factory reset, `make clean-windows-all`, uninstaller |
+| `%APPDATA%\Radium\data\llamacpp-upstream\backends\` | Downloaded llama.cpp backend builds (CPU / CUDA 12.4 / CUDA 13.1 / Vulkan), sourced from `ggml-org/llama.cpp`. Active path on Windows since ADR 2026-05-22 *Windows ships only `llamacpp-upstream`*. | `make dev-windows-cpu`, `make clean-windows-all`, uninstaller (Delete app data) |
+| `%APPDATA%\Radium\data\llamacpp\backends\` | **Legacy** (pre-2026-05-22) turboquant `llamacpp` backends. Left orphaned on existing installs and ignored by the Windows app; safe to delete manually. Models under `data\llamacpp\models\` are still active (shared root). | manual delete, `make clean-windows-all`, uninstaller |
+| `%APPDATA%\Radium\data\models\` | Downloaded GGUF / MLX models | factory reset (UI), `make clean-windows-all`, uninstaller |
+| `%APPDATA%\Radium\data\threads\` | Chat history | factory reset, `make clean-windows-all`, uninstaller |
+| `%APPDATA%\Radium\data\extensions\` | Installed extensions (`@janhq/*`, `llamacpp-extension`, …) | factory reset, `make clean-windows-all`, uninstaller |
+| `%APPDATA%\Radium\data\media\` | Radium Media output: generated images and video under `outputs\`, thumbnails under `thumbs\`, and `index.json` - the only durable record that a generation happened, including its provenance (provider, model, parameters, resolved seed). Deleting an asset in the library removes the file as well as the index entry. Files a provider wrote elsewhere are *adopted in place* and therefore live outside this folder. | factory reset, `make clean-windows-all`, uninstaller |
+| `%APPDATA%\Radium\data\logs\app.log` | Application logs (`tauri_plugin_log`) | factory reset, `make clean-windows-all`, uninstaller |
+| `%APPDATA%\Radium\data\store.json` | Migration / version store | factory reset, `make clean-windows-all`, uninstaller |
+| `%APPDATA%\Radium\data\mcp_config.json` | MCP servers config | factory reset, `make clean-windows-all`, uninstaller |
 | `%APPDATA%\chat.atomic.app\settings.json` | Current `AppConfiguration` (`{ data_folder: ... }`) — new installs | `make clean-windows-all`, uninstaller (Tauri default) |
 | `%APPDATA%\Atomic-Chat\settings.json` | Legacy `settings.json` (only present on older installs) | `make clean-windows-all`, uninstaller |
+| `%APPDATA%\Atomic Chat\` (before ADR 2026-09-13) | The same data folder under the product name used before the rename. The app moves `data\` to `Radium\data\` on first launch and repoints `settings.json`. It stays here only when the move could not happen, and `app.log` says why. | `make clean-windows-all`, uninstaller |
 | `%LOCALAPPDATA%\chat.atomic.app\EBWebView\` | WebView2 storage incl. `localStorage` (`setupCompleted`, `llama_cpp_pending_backend`, `llama_cpp_better_backend_recommendation`, …) | `make dev-windows-cpu` (Local Storage only), `make clean-windows-all`, uninstaller |
 
-### Why three different APPDATA folders
+### Why several APPDATA folders
 
-`[Cargo.toml].name = "Atomic-Chat"` ≠ `productName = "Atomic Chat"` ≠ `identifier = "chat.atomic.app"`. This is intentional historical layout; renaming any of them would break user-data migrations. Just be aware that the same product writes into three sibling APPDATA directories.
+`[Cargo.toml].name = "Atomic-Chat"` ≠ `productName = "Radium"` ≠ `identifier = "chat.atomic.app"`. This is historical layout, so the same product writes into several sibling APPDATA directories. `productName` was "Atomic Chat" until ADR 2026-09-13, which renamed it together with a startup migration that moves the old data folder (`src-tauri/src/core/app/data_migration.rs`). The Cargo name and the identifier keep the old names on purpose: the legacy `settings.json` and WebView2 storage live under them, so renaming either would need a migration of its own.
 
 ### How to reset for testing
 
@@ -105,4 +106,4 @@ the provider), or from Windows' own Credential Manager. See ADR
 
 ### Custom data folder
 
-If a user has relocated the data folder via `Settings → Advanced → Change data folder location` (`change_app_data_folder`), the uninstaller and `make clean-windows-all` **do not** delete that custom path — only the default `%APPDATA%\Atomic Chat\` is cleaned. Removing a custom data folder is the user's responsibility.
+If a user has relocated the data folder via `Settings → Advanced → Change data folder location` (`change_app_data_folder`), the uninstaller and `make clean-windows-all` **do not** delete that custom path — only the default `%APPDATA%\Radium\` (and the pre-rename `%APPDATA%\Atomic Chat\`) is cleaned. Removing a custom data folder is the user's responsibility.

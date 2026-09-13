@@ -24,7 +24,7 @@ use crate::core::server::responses_shim::flatten_content_to_text;
 /// Prepended to every request's `instructions`. The endpoint is Codex's, and
 /// its models otherwise assume a coding-agent harness that is not us.
 pub const COMPATIBILITY_INSTRUCTIONS: &str = concat!(
-    "You are operating inside Atomic Chat. Follow the user's instructions, ",
+    "You are operating inside Radium. Follow the user's instructions, ",
     "use only tools supplied in this request, and return concise, accurate results."
 );
 

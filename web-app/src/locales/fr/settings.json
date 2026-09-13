@@ -42,7 +42,7 @@
   "reportAnIssueDesc": "Vous avez trouvé un bug ? Aidez-nous en signalant un problème sur GitHub.",
   "reportIssue": "Signaler un problème",
   "credits": "Crédits",
-  "creditsDesc1": "👋 Atomic Bot est construit avec ❤️ par l'équipe de Radium Chat.",
+  "creditsDesc1": "👋 Atomic Bot est construit avec ❤️ par l'équipe de Radium.",
   "creditsDesc2": "Remerciements spéciaux à nos dépendances open-source, en particulier llama.cpp et Tauri, ainsi qu'à notre incroyable communauté IA.",
   "appVersion": "Version de l'application",
   "dataFolder": {
@@ -269,7 +269,7 @@
     "reportAnIssueDesc": "Vous avez trouvé un bug ? Aidez-nous en signalant un problème sur GitHub.",
     "reportIssue": "Signaler un problème",
     "credits": "Crédits",
-    "creditsDesc1": "👋 Atomic Bot est construit avec ❤️ par l'équipe de Radium Chat.",
+    "creditsDesc1": "👋 Atomic Bot est construit avec ❤️ par l'équipe de Radium.",
     "creditsDesc2": "Remerciements spéciaux à nos dépendances open-source, en particulier llama.cpp et Tauri, ainsi qu'à notre incroyable communauté IA."
   },
   "extensions": {

@@ -1,4 +1,4 @@
-# Подпись Radium Chat (Jan / Tauri) для macOS
+# Подпись Radium (Jan / Tauri) для macOS
 
 По [официальной схеме Tauri](https://v2.tauri.app/distribute/sign/macos/): переменные окружения + `yarn build`. Ручной `codesign` по всему `.app` не нужен — его выполняет CLI Tauri при сборке.
 
@@ -39,14 +39,14 @@ CI=false yarn build
 
 Готовый **universal** DMG (Intel + Apple Silicon):
 
-`src-tauri/target/universal-apple-darwin/release/bundle/dmg/Radium Chat_*.dmg`
+`src-tauri/target/universal-apple-darwin/release/bundle/dmg/Radium_*.dmg`
 
 (имя берётся из `productName` в `tauri.conf.json`.)
 
 Проверка подписи приложения:
 
 ```bash
-codesign -dv --verbose=2 "src-tauri/target/universal-apple-darwin/release/bundle/macos/Atomic Chat.app" 2>&1 | grep -E "Authority|Timestamp|runtime"
+codesign -dv --verbose=2 "src-tauri/target/universal-apple-darwin/release/bundle/macos/Radium.app" 2>&1 | grep -E "Authority|Timestamp|runtime"
 ```
 
 Должны быть цепочка **Developer ID** → **Developer ID Certification Authority** → **Apple Root CA**, **Timestamp**, у основного бинарника — **flags** с runtime (Hardened Runtime задаёт Tauri при подписи).
@@ -101,7 +101,7 @@ Tauri отправит билд на нотаризацию после сбор�
 CI=false APPLE_SIGNING_IDENTITY="…" yarn build:web && yarn build:icon && yarn copy:assets:tauri && CI=false APPLE_SIGNING_IDENTITY="…" yarn build:tauri:darwin:native
 ```
 
-DMG: `src-tauri/target/release/bundle/dmg/Radium Chat_*_aarch64.dmg` (на Apple Silicon).
+DMG: `src-tauri/target/release/bundle/dmg/Radium_*_aarch64.dmg` (на Apple Silicon).
 
 ---
 
@@ -110,5 +110,5 @@ DMG: `src-tauri/target/release/bundle/dmg/Radium Chat_*_aarch64.dmg` (на Apple
 Распространять подписанный билд «для всех» нельзя. Локально можно открыть неподписанное приложение: правый клик → **Открыть**, или:
 
 ```bash
-xattr -cr "/Applications/Atomic Chat.app"
+xattr -cr "/Applications/Radium.app"
 ```

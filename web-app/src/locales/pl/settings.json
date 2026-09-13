@@ -263,7 +263,7 @@
     "reportAnIssueDesc": "Znalazłeś/-aś błąd? Pomóż nam, zgłaszając go na GitHubie.",
     "reportIssue": "Zgłoś Problem",
     "credits": "Podziękowania",
-    "creditsDesc1": "Aplikacja 👋 Atomic Bot jest rozwijana z ❤️ przez zespół Radium Chat.",
+    "creditsDesc1": "Aplikacja 👋 Atomic Bot jest rozwijana z ❤️ przez zespół Radium.",
     "creditsDesc2": "Szczególne podziękowania dla naszych otwartoźródłowych zależności - zwłaszcza llama.cpp i Tauri - oraz dla naszej wspaniałej społeczności SI."
   },
   "extensions": {

@@ -3,7 +3,7 @@
  * Prebuild step: download the latest curated model catalog snapshot from
  * `atomic-chat-model-catalog/dist/` on raw.githubusercontent.com and place
  * the gzipped files in `web-app/public/` so Vite bundles them as static
- * assets. The Radium Chat client reads them at first launch to render a
+ * assets. The Radium client reads them at first launch to render a
  * full catalog instantly (offline, behind corporate proxies, on slow
  * networks, before the live raw.githubusercontent.com fetch resolves).
  *

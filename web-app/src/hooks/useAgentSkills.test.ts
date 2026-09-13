@@ -170,7 +170,7 @@ describe('useAgentSkills', () => {
     expect(exported).toBe(true)
     expect(saveDialog).toHaveBeenCalledWith({
       defaultPath: 'custom-skill.skill',
-      filters: [{ name: 'Radium Chat Skill', extensions: ['skill'] }],
+      filters: [{ name: 'Radium Skill', extensions: ['skill'] }],
     })
     expect(exportAgentSkill).toHaveBeenCalledWith(
       skill.name,

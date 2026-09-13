@@ -50,6 +50,9 @@ export const localStorageKey = {
   // legacy LaunchAgent plist to a real AppleScript Login Item. Preserves prior
   // state — users who had autostart ON keep it; those who had it off stay off.
   autostartAppleScriptMigrated: 'autostart-applescript-migrated',
+  // Marks the one-time move of launch-at-startup from the "Atomic Chat" entry
+  // to "Radium" after the product rename (ADR 2026-09-13).
+  autostartProductRenameMigrated: 'autostart-product-rename-migrated',
   // Per-integration manual binary-path overrides for the Launch page. Lets a
   // user fix a wrong "Not installed" status for agents installed in a
   // non-standard location that PATH/WSL detection misses.

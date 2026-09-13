@@ -1,6 +1,6 @@
-<img src="https://github.com/AtomicBot-ai/Atomic-Chat/raw/main/assets/logo.png" width="80" alt="Radium Chat" />
+<img src="https://github.com/AtomicBot-ai/Atomic-Chat/raw/main/assets/logo.png" width="80" alt="Radium" />
 
-# Radium Chat
+# Radium
 
 Local AI app and inference engine for agents. Run open-weight LLMs locally — private, on your machine.
 
@@ -14,7 +14,7 @@ Local AI app and inference engine for agents. Run open-weight LLMs locally — p
 [Getting Started](https://atomic.chat/) · [Hugging Face](https://huggingface.co/AtomicChat) · [Discord](https://discord.com/invite/8wGSsvmg4V) · [X / Twitter](https://x.com/atomic_chat_hq) · [Bug Reports](https://github.com/AtomicBot-ai/Atomic-Chat/issues)
 
 <p align="center">
-  <img src="https://github.com/AtomicBot-ai/.github/raw/main/assets/0529_final.gif" width="100%" alt="Radium Chat — local AI chat in action" />
+  <img src="https://github.com/AtomicBot-ai/.github/raw/main/assets/0529_final.gif" width="100%" alt="Radium — local AI chat in action" />
 </p>
 
 ---
@@ -37,7 +37,7 @@ Local AI app and inference engine for agents. Run open-weight LLMs locally — p
 
 ### 🔌 Use It as an API
 
-Radium Chat runs an **OpenAI-compatible server at `http://localhost:1337/v1`** — a drop-in replacement for the OpenAI SDK. Load a model in the app, then point any client at it:
+Radium runs an **OpenAI-compatible server at `http://localhost:1337/v1`** — a drop-in replacement for the OpenAI SDK. Load a model in the app, then point any client at it:
 
 ```bash
 curl http://localhost:1337/v1/chat/completions \
@@ -51,7 +51,7 @@ curl http://localhost:1337/v1/chat/completions \
 ```python
 from openai import OpenAI
 
-# Radium Chat is OpenAI API-compatible — only the base_url changes.
+# Radium is OpenAI API-compatible — only the base_url changes.
 client = OpenAI(base_url="http://localhost:1337/v1", api_key="not-needed")
 
 resp = client.chat.completions.create(
@@ -126,22 +126,22 @@ Tools talking to `http://localhost:1337/v1` don't need to know which backend is 
 
 ### 🚀 Launch With
 
-Radium Chat runs an OpenAI-compatible server at `http://localhost:1337/v1`, so **any agent, CLI, IDE plugin, or app that speaks the OpenAI API can run on top of your local models** — no extra glue needed. Just point its base URL at Radium Chat and you're done.
+Radium runs an OpenAI-compatible server at `http://localhost:1337/v1`, so **any agent, CLI, IDE plugin, or app that speaks the OpenAI API can run on top of your local models** — no extra glue needed. Just point its base URL at Radium and you're done.
 
 A few projects already ship first-class support with their own setup docs:
 
 | Tool | What it is | Setup |
 | --- | --- | --- |
-| **[OpenCode](https://opencode.ai/)** | Open-source TUI coding agent. Add Radium Chat as a local provider in `opencode.json`. | [Setup&nbsp;guide&nbsp;→](https://opencode.ai/docs/providers/#atomic-chat) |
+| **[OpenCode](https://opencode.ai/)** | Open-source TUI coding agent. Add Radium as a local provider in `opencode.json`. | [Setup&nbsp;guide&nbsp;→](https://opencode.ai/docs/providers/#atomic-chat) |
 | **[Goose](https://github.com/block/goose)** | Open-source extensible AI agent (CLI, desktop, API). | [Setup&nbsp;guide&nbsp;→](https://goose-docs.ai/docs/getting-started/providers/#local-llms) |
 | **[nanobot](https://github.com/HKUDS/nanobot)** | Ultra-lightweight personal AI agent with chat channels, MCP, and WebUI. | [Repo&nbsp;→](https://github.com/HKUDS/nanobot) |
-| **[nanoclaw](https://github.com/qwibitai/nanoclaw)** | Containerized agent runtime that calls Radium Chat as an MCP tool. | [Skill&nbsp;guide&nbsp;→](https://github.com/qwibitai/nanoclaw/blob/main/.claude/skills/add-atomic-chat-tool/SKILL.md) |
-| **[OpenClaude](https://github.com/Gitlawb/openclaude)** | Open-source coding-agent CLI for cloud and local models. Lists Radium Chat as a supported provider. | [Providers&nbsp;list&nbsp;→](https://github.com/Gitlawb/openclaude#supported-providers) |
-| **[Kilo Code](https://kilo.ai/)** | Open-source AI coding agent for VS Code, JetBrains, and CLI. Ships with first-class Radium Chat provider support and auto-discovery. | [Setup&nbsp;guide&nbsp;→](https://kilo.ai/docs/ai-providers/atomic-chat) |
-| **[Hermes Desktop](https://github.com/fathah/hermes-desktop)** | Native desktop companion for Hermes Agent. Includes an Radium Chat local preset at `http://localhost:1337/v1`. | [Repo&nbsp;→](https://github.com/fathah/hermes-desktop) |
-| **[Hermes Workspace](https://github.com/outsourc-e/hermes-workspace)** | Local-first agent workspace built on Nous Research's Hermes. Uses Radium Chat as its inference backend. | [Repo&nbsp;→](https://github.com/outsourc-e/hermes-workspace) |
+| **[nanoclaw](https://github.com/qwibitai/nanoclaw)** | Containerized agent runtime that calls Radium as an MCP tool. | [Skill&nbsp;guide&nbsp;→](https://github.com/qwibitai/nanoclaw/blob/main/.claude/skills/add-atomic-chat-tool/SKILL.md) |
+| **[OpenClaude](https://github.com/Gitlawb/openclaude)** | Open-source coding-agent CLI for cloud and local models. Lists Radium as a supported provider. | [Providers&nbsp;list&nbsp;→](https://github.com/Gitlawb/openclaude#supported-providers) |
+| **[Kilo Code](https://kilo.ai/)** | Open-source AI coding agent for VS Code, JetBrains, and CLI. Ships with first-class Radium provider support and auto-discovery. | [Setup&nbsp;guide&nbsp;→](https://kilo.ai/docs/ai-providers/atomic-chat) |
+| **[Hermes Desktop](https://github.com/fathah/hermes-desktop)** | Native desktop companion for Hermes Agent. Includes a Radium local preset at `http://localhost:1337/v1`. | [Repo&nbsp;→](https://github.com/fathah/hermes-desktop) |
+| **[Hermes Workspace](https://github.com/outsourc-e/hermes-workspace)** | Local-first agent workspace built on Nous Research's Hermes. Uses Radium as its inference backend. | [Repo&nbsp;→](https://github.com/outsourc-e/hermes-workspace) |
 
-> Built something that runs on Radium Chat? [Open a PR](https://github.com/AtomicBot-ai/Atomic-Chat/pulls) and we'll add it here.
+> Built something that runs on Radium? [Open a PR](https://github.com/AtomicBot-ai/Atomic-Chat/pulls) and we'll add it here.
 
 ---
 
@@ -196,7 +196,7 @@ yarn dev
 
 ### 🐧 Running on Linux
 
-Radium Chat ships as a single self-contained `.AppImage` — no installer, no root:
+Radium ships as a single self-contained `.AppImage` — no installer, no root:
 
 ```bash
 chmod +x Atomic.Chat_*_amd64.AppImage
@@ -219,7 +219,7 @@ If something isn't working:
 
 ### 👥 Contributors
 
-Radium Chat is built by a small core team and **140+ contributors** — including everyone who shaped the project from its earliest days. Pull requests welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for how to get started.
+Radium is built by a small core team and **140+ contributors** — including everyone who shaped the project from its earliest days. Pull requests welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for how to get started.
 
 <a href="https://github.com/Vect0rM"><img src="https://images.weserv.nl/?url=https://github.com/Vect0rM.png&w=110&h=110&fit=cover&mask=circle" width="48" height="48" alt="Vect0rM" /></a>
 <a href="https://github.com/dtorey-d"><img src="https://images.weserv.nl/?url=https://github.com/dtorey-d.png&w=110&h=110&fit=cover&mask=circle" width="48" height="48" alt="dtorey-d" /></a>
@@ -390,10 +390,10 @@ Built on the shoulders of giants:
 
 ### 🌱 Heritage
 
-Radium Chat began as a fork of [**Jan**](https://github.com/menloresearch/jan) by [Menlo Research](https://menlo.ai/) — an excellent open-source local-AI app. We're grateful to the Jan team and its contributors for the foundation they built. Radium Chat has since grown its own direction, engines, and roadmap, but we tip our hat to where it started. 🙏
+Radium began as a fork of [**Jan**](https://github.com/menloresearch/jan) by [Menlo Research](https://menlo.ai/) — an excellent open-source local-AI app. We're grateful to the Jan team and its contributors for the foundation they built. Radium has since grown its own direction, engines, and roadmap, but we tip our hat to where it started. 🙏
 
 ---
 
 <p align="center">
-  <sub>© 2026 Radium Chat · Built with ❤️ · <a href="https://atomic.chat">atomic.chat</a></sub>
+  <sub>© 2026 Radium · Built with ❤️ · <a href="https://atomic.chat">atomic.chat</a></sub>
 </p>

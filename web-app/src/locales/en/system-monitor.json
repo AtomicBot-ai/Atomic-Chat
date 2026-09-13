@@ -28,7 +28,7 @@
   "refresh": "Refresh",
   "driverOutdated": {
     "title": "NVIDIA driver too old for GPU acceleration",
-    "description": "Detected {{gpu}} with driver {{driver}}. Radium Chat requires driver {{minDriver}}+ for CUDA acceleration; until you update, models will run on CPU.",
+    "description": "Detected {{gpu}} with driver {{driver}}. Radium requires driver {{minDriver}}+ for CUDA acceleration; until you update, models will run on CPU.",
     "updateAction": "Update NVIDIA driver"
   }
 }

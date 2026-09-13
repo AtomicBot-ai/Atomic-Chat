@@ -1,6 +1,6 @@
 /**
  * Local model scanner: detects models already downloaded by other apps so the
- * user can run them in Atomic Chat WITHOUT re-downloading. The engine
+ * user can run them in Radium WITHOUT re-downloading. The engine
  * `import()` already accepts an absolute path and skips the download (it
  * writes a `model.yml` pointing at the existing file); this module only finds
  * the candidates.

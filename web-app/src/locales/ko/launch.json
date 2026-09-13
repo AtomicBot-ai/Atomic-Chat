@@ -1,6 +1,6 @@
 {
   "title": "연동",
-  "subtitle": "외부 코딩 에이전트와 어시스턴트를 설치한 다음, 클릭 한 번으로 로컬 Radium Chat 모델에 연결하세요.",
+  "subtitle": "외부 코딩 에이전트와 어시스턴트를 설치한 다음, 클릭 한 번으로 로컬 Radium 모델에 연결하세요.",
   "serverSection": "로컬 API 서버",
   "serverSectionDesc": "로컬 모델을 위한 OpenAI 호환 서버를 실행한 다음, 아래 에이전트를 거기에 연결하세요.",
   "codingAgents": "코딩 에이전트",
@@ -34,7 +34,7 @@
   "experimental": "실험적 기능",
   "toast": {
     "serverStarting": "로컬 서버 시작 중...",
-    "serverStartingDesc": "{{name}}을(를) 위한 Radium Chat 서버를 준비하는 중",
+    "serverStartingDesc": "{{name}}을(를) 위한 Radium 서버를 준비하는 중",
     "installSuccess": "{{name}} 설치됨",
     "installSuccessDesc": "{{name}}이(가) 성공적으로 설치되었습니다.",
     "installFailed": "{{name}} 설치에 실패했습니다",

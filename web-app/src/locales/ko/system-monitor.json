@@ -28,7 +28,7 @@
   "refresh": "새로고침",
   "driverOutdated": {
     "title": "NVIDIA 드라이버가 너무 오래되어 GPU 가속을 사용할 수 없습니다",
-    "description": "드라이버 {{driver}}이(가) 설치된 {{gpu}}을(를) 감지했습니다. Radium Chat은 CUDA 가속을 위해 드라이버 {{minDriver}} 이상이 필요합니다. 업데이트하기 전까지 모델은 CPU에서 실행됩니다.",
+    "description": "드라이버 {{driver}}이(가) 설치된 {{gpu}}을(를) 감지했습니다. Radium은 CUDA 가속을 위해 드라이버 {{minDriver}} 이상이 필요합니다. 업데이트하기 전까지 모델은 CPU에서 실행됩니다.",
     "updateAction": "NVIDIA 드라이버 업데이트"
   }
 }

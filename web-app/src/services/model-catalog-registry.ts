@@ -1,5 +1,5 @@
 /**
- * Model catalog registry -- remote loader for the curated Radium Chat
+ * Model catalog registry -- remote loader for the curated Radium
  * model catalog and its pre-built MiniSearch index.
  *
  * Mirrors the architecture of `provider-registry.ts` and
@@ -582,7 +582,7 @@ export const getCatalogOrFallback = async (
     if (manifest.schema_version > SUPPORTED_SCHEMA_VERSION) {
       throw new Error(
         `Catalog schema_version ${manifest.schema_version} is newer than supported ` +
-          `(${SUPPORTED_SCHEMA_VERSION}). Update Radium Chat to read it.`
+          `(${SUPPORTED_SCHEMA_VERSION}). Update Radium to read it.`
       )
     }
     const fetchedAt = Date.now()

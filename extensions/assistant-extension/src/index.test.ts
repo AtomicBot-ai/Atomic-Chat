@@ -1,5 +1,5 @@
 /**
- * Migration v3 - renaming the product inside saved assistant instructions.
+ * Migrations v3 and v4 - renaming the product inside saved assistants.
  *
  * This runs against a user's real assistant files, so the behaviour that
  * matters is not "does it rename" but what it leaves ALONE. Migrations v1 and
@@ -9,25 +9,44 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { renameProductInInstructions } from './index'
+import {
+  renameProductInAssistantName,
+  renameProductInInstructions,
+} from './index'
 
 describe('renameProductInInstructions', () => {
   it('renames the product where it appears', () => {
     expect(
-      renameProductInInstructions('You are Atomic Chat, a helpful AI assistant.')
-    ).toBe('You are Radium Chat, a helpful AI assistant.')
+      renameProductInInstructions(
+        'You are Atomic Chat, a helpful AI assistant.'
+      )
+    ).toBe('You are Radium, a helpful AI assistant.')
+  })
+
+  it('renames the interim name too, for installs that already ran v3', () => {
+    expect(
+      renameProductInInstructions(
+        'You are Radium Chat, a helpful AI assistant.'
+      )
+    ).toBe('You are Radium, a helpful AI assistant.')
+  })
+
+  it('renames both former names when one text carries each', () => {
+    expect(
+      renameProductInInstructions('Atomic Chat, now called Radium Chat.')
+    ).toBe('Radium, now called Radium.')
   })
 
   it('renames every occurrence, not just the first', () => {
     const before =
       'You are Atomic Chat. Atomic Chat is trained by Atomic Chat (https://atomic.chat).'
     const after =
-      'You are Radium Chat. Radium Chat is trained by Radium Chat (https://atomic.chat).'
+      'You are Radium. Radium is trained by Radium (https://atomic.chat).'
 
     expect(renameProductInInstructions(before)).toBe(after)
   })
 
-  it('preserves the user\'s own wording around the name', () => {
+  it("preserves the user's own wording around the name", () => {
     const before = [
       'Always answer in French.',
       'You are Atomic Chat, my personal assistant.',
@@ -36,8 +55,8 @@ describe('renameProductInInstructions', () => {
 
     const result = renameProductInInstructions(before) as string
 
-    // Only the eleven characters of the name may differ.
-    expect(result).toBe(before.replace('Atomic Chat', 'Radium Chat'))
+    // Only the name itself may differ.
+    expect(result).toBe(before.replace('Atomic Chat', 'Radium'))
     expect(result).toContain('Always answer in French.')
     expect(result).toContain('Never use bullet points. Signed, Warwick.')
     expect(result.split('\n')).toHaveLength(3)
@@ -48,7 +67,7 @@ describe('renameProductInInstructions', () => {
       'Atomic Chat lives at https://atomic.chat'
     )
 
-    expect(result).toBe('Radium Chat lives at https://atomic.chat')
+    expect(result).toBe('Radium lives at https://atomic.chat')
   })
 
   it('returns instructions with no mention completely untouched', () => {
@@ -60,6 +79,9 @@ describe('renameProductInInstructions', () => {
     // is not a thing JS strings have, and a mutation dropping the early-return
     // guard is genuinely equivalent rather than a bug this could catch.)
     expect(renameProductInInstructions(custom)).toBe(custom)
+    expect(renameProductInInstructions('You are Radium.')).toBe(
+      'You are Radium.'
+    )
   })
 
   it('handles an assistant with no instructions at all', () => {
@@ -67,11 +89,31 @@ describe('renameProductInInstructions', () => {
     expect(renameProductInInstructions('')).toBe('')
   })
 
-  it('does not touch the old name embedded in a longer word', () => {
-    // "Atomic Chatbot" is not the product; only the exact name is replaced,
-    // and the trailing text must survive.
+  it('renames the name even where it starts a longer word', () => {
+    // A plain substring swap, as it has been since v3: "Atomic Chatbot" was
+    // never a real phrase in any shipped instruction, so this pins the
+    // behaviour rather than defending it.
     expect(renameProductInInstructions('Use the Atomic Chatbot API')).toBe(
-      'Use the Radium Chatbot API'
+      'Use the Radiumbot API'
     )
+  })
+})
+
+describe('renameProductInAssistantName', () => {
+  it('renames the shipped default assistant under either former name', () => {
+    expect(renameProductInAssistantName('Atomic Chat')).toBe('Radium')
+    expect(renameProductInAssistantName('Radium Chat')).toBe('Radium')
+  })
+
+  it('keeps any name the user chose, even one that mentions the product', () => {
+    expect(renameProductInAssistantName('Writer')).toBe('Writer')
+    expect(renameProductInAssistantName('My Atomic Chat helper')).toBe(
+      'My Atomic Chat helper'
+    )
+    expect(renameProductInAssistantName('Radium')).toBe('Radium')
+  })
+
+  it('handles an assistant with no name', () => {
+    expect(renameProductInAssistantName(undefined)).toBeUndefined()
   })
 })

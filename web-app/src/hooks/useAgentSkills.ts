@@ -127,7 +127,7 @@ export function useAgentSkills(enabled = true) {
       .dialog()
       .save({
         defaultPath: `${name}.skill`,
-        filters: [{ name: 'Radium Chat Skill', extensions: ['skill'] }],
+        filters: [{ name: 'Radium Skill', extensions: ['skill'] }],
       })
     if (!targetPath) return false
     await exportAgentSkill(name, targetPath)

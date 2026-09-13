@@ -120,7 +120,7 @@ pub fn list_chat_models_in(data_folder: &Path) -> Vec<ModelEntry> {
 ///
 /// `model_path` in the YAML can be:
 ///   - absolute (`/…` or `C:\…`) — used verbatim
-///   - relative — joined with the Radium Chat data folder
+///   - relative — joined with the Radium data folder
 pub fn resolve_model_by_id(model_id: &str) -> Result<(PathBuf, Option<PathBuf>), String> {
     resolve_model_by_id_in(&resolve_jan_data_folder(), model_id)
 }
@@ -182,7 +182,7 @@ fn parse_build_number(version: &str) -> Option<u32> {
     version.strip_prefix('b')?.split('-').next()?.parse().ok()
 }
 
-/// Find the llama-server binary inside the Radium Chat data folder.
+/// Find the llama-server binary inside the Radium data folder.
 ///
 /// Walks `<data_folder>/llamacpp-upstream/backends/<version>/<backend>/` and
 /// checks two locations per backend (same logic as the llamacpp extension):
@@ -464,7 +464,7 @@ pub async fn download_hf_model(
         .map_err(|e| e.to_string())?;
 
     // ── Write model.yml ───────────────────────────────────────────────────
-    // model_path is relative to the Radium Chat data folder
+    // model_path is relative to the Radium data folder
     let rel_path = format!("{MODELS_ROOT}/models/{repo_id}/{}", file.filename);
     let display_name = repo_id.rsplit('/').next().unwrap_or(repo_id);
 

@@ -28,7 +28,7 @@
   "refresh": "Обновить",
   "driverOutdated": {
     "title": "Драйвер NVIDIA слишком старый для GPU-ускорения",
-    "description": "Обнаружена {{gpu}} с драйвером {{driver}}. Radium Chat требует драйвер {{minDriver}}+ для CUDA-ускорения; до обновления модели будут работать на CPU.",
+    "description": "Обнаружена {{gpu}} с драйвером {{driver}}. Radium требует драйвер {{minDriver}}+ для CUDA-ускорения; до обновления модели будут работать на CPU.",
     "updateAction": "Обновить драйвер NVIDIA"
   }
 }

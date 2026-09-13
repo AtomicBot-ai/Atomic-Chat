@@ -305,7 +305,7 @@ it as a separate concern.
 1. Open `models/recommended.json` in `AtomicBot-ai/atomic-chat-conf` on
    GitHub, click **Edit**, append (or modify) an entry, bump `updated_at`.
 2. CI runs `ajv validate` and a duplicate-entry check; both must be green.
-3. After merge, every Radium Chat client picks up the change within an
+3. After merge, every Radium client picks up the change within an
    hour, or immediately on next launch.
 
 ### For developers (only when the entry shape changes)
@@ -558,7 +558,7 @@ Two independent version dials:
    or modify an entry, bump `updated_at`. CI runs `ajv validate` plus
    integrity checks; both must be green.
 2. After merge, the next 12-hour cron run (or a manual
-   `workflow_dispatch`) refreshes the catalog Release. Radium Chat
+   `workflow_dispatch`) refreshes the catalog Release. Radium
    clients pick up the change within an hour, or immediately on next
    launch.
 

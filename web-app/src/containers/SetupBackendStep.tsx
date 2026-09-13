@@ -330,7 +330,7 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
                     draggable={false}
                   />
                 </div>
-                <span>Radium Chat</span>
+                <span>Radium</span>
               </div>
               <div className="mb-2 min-w-0">
                 <span className="inline-block text-lg font-bold leading-snug sm:text-xl md:text-2xl">

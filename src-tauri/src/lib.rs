@@ -148,6 +148,7 @@ pub fn run() {
         core::system::commands::install_jan_cli,
         core::system::commands::uninstall_jan_cli,
         core::system::commands::migrate_macos_autostart_launchagent,
+        core::system::commands::migrate_legacy_autostart_entry,
         core::system::commands::clear_claude_code_env,
         core::system::commands::configure_hermes_agent,
         core::system::commands::clear_hermes_agent_config,
@@ -316,6 +317,7 @@ pub fn run() {
         core::system::commands::install_jan_cli,
         core::system::commands::uninstall_jan_cli,
         core::system::commands::migrate_macos_autostart_launchagent,
+        core::system::commands::migrate_legacy_autostart_entry,
         core::system::commands::clear_claude_code_env,
         core::system::commands::configure_hermes_agent,
         core::system::commands::clear_hermes_agent_config,
@@ -443,6 +445,10 @@ pub fn run() {
             tray_handles: Arc::new(std::sync::Mutex::new(None)),
         })
         .setup(|app| {
+            // Must run before anything resolves the data folder: the logger
+            // opens `logs/` inside it on the next line (ADR 2026-09-13).
+            let data_folder_migration =
+                crate::core::app::data_migration::migrate_default_data_folder(app.handle());
             let log_dir = get_jan_data_folder_path(app.handle().clone()).join("logs");
             // The plugin's defaults are 40 KB per file with
             // `RotationStrategy::KeepOne`, and `KeepOne` does not archive
@@ -492,6 +498,32 @@ pub fn run() {
             #[cfg(any(target_os = "ios", target_os = "android"))]
             app.handle().plugin(log_builder.build())?;
 
+            // Reported only now that the logger exists; the move itself had to
+            // happen before the logger opened `logs/`.
+            {
+                use crate::core::app::data_migration::{MigrationOutcome, SkipReason};
+                match &data_folder_migration {
+                    MigrationOutcome::Moved {
+                        from,
+                        to,
+                        configs_updated,
+                    } => log::info!(
+                        "Moved the data folder from {} to {} ({configs_updated} settings file(s) updated)",
+                        from.display(),
+                        to.display()
+                    ),
+                    MigrationOutcome::Skipped(
+                        reason @ (SkipReason::TargetNotEmpty(_)
+                        | SkipReason::RenameFailed(_)
+                        | SkipReason::ConfigWriteFailed(_)
+                        | SkipReason::NoDataDir(_)),
+                    ) => log::warn!("Data folder not moved to the new product name: {reason:?}"),
+                    MigrationOutcome::Skipped(reason) => {
+                        log::debug!("Data folder migration not needed: {reason:?}")
+                    }
+                }
+            }
+
             // Reap backend processes orphaned by a previous *abnormal* exit
             // (crash / OOM / Force Quit / SIGKILL — none of which run our
             // RunEvent::Exit cleanup) before any engine spawns. Single-instance
@@ -515,7 +547,7 @@ pub fn run() {
             {
                 if let Err(e) = crate::core::notifications::ensure_aumid_registered(
                     "chat.atomic.app",
-                    "Radium Chat",
+                    "Radium",
                 ) {
                     log::warn!("Failed to register AUMID for toast notifications: {e}");
                 }

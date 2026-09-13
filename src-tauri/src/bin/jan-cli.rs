@@ -1,10 +1,10 @@
-//! atomic-chat-cli — headless CLI for Radium Chat.
+//! atomic-chat-cli — headless CLI for Radium.
 //!
 //! Four things, all local: see which llama.cpp chat models are installed, serve
 //! one over an OpenAI-compatible API, wire a coding agent to it, and check
 //! whether the desktop app's Local API Server is up.
 //!
-//! Shares all core logic with the Radium Chat desktop app.
+//! Shares all core logic with the Radium desktop app.
 //! Build with: cargo build --features cli --bin jan-cli
 
 use std::collections::HashMap;
@@ -33,10 +33,10 @@ use integrations::{Agent, RunMode};
 #[command(
     name = "atomic-chat-cli",
     about = "Run local llama.cpp chat models and wire coding agents to them",
-    long_about = "Radium Chat runs llama.cpp chat models on your own hardware and exposes\n\
+    long_about = "Radium runs llama.cpp chat models on your own hardware and exposes\n\
 them through an OpenAI-compatible API, then points coding agents like\n\
 Claude Code or Codex at that endpoint — no cloud account, no usage fees.\n\n\
-Models downloaded in the Radium Chat desktop app are available here\n\
+Models downloaded in the Radium desktop app are available here\n\
 automatically; both read the same folder.",
     after_help = "Examples:\n\
 \x20 # Show the chat models you have installed\n\
@@ -69,7 +69,7 @@ enum Commands {
         #[command(flatten)]
         args: LaunchArgs,
     },
-    /// List the chat models installed in the Radium Chat data folder
+    /// List the chat models installed in the Radium data folder
     #[command(display_order = 10)]
     Models {
         #[command(subcommand)]
@@ -92,7 +92,7 @@ struct ServeArgs {
     /// Path to the GGUF file (auto-resolved from model.yml when omitted)
     #[arg(long)]
     model_path: Option<String>,
-    /// Path to the llama-server binary (auto-discovered from the Radium Chat data folder when omitted)
+    /// Path to the llama-server binary (auto-discovered from the Radium data folder when omitted)
     #[arg(long)]
     bin: Option<String>,
     /// Port the model server listens on (0 = pick a random free port)
@@ -252,7 +252,7 @@ fn make_logo() -> String {
     out.push(format!(
         "{}{}",
         indent,
-        subtle.apply_to("Radium Chat · local models, no cloud")
+        subtle.apply_to("Radium · local models, no cloud")
     ));
 
     out.join("\n")
@@ -342,7 +342,7 @@ fn handle_models(cmd: ModelsCommands) {
             if models.is_empty() {
                 eprintln!("No chat models installed.");
                 eprintln!();
-                eprintln!("  Download one in the Radium Chat desktop app, or serve a");
+                eprintln!("  Download one in the Radium desktop app, or serve a");
                 eprintln!("  HuggingFace GGUF repo directly:");
                 eprintln!();
                 eprintln!("    atomic-chat-cli serve <owner>/<repo>");
@@ -533,7 +533,7 @@ fn print_server_status(
         );
         println!("  {}  {}", dim.apply_to("Expected"), state.api_url());
         println!();
-        println!("  Start it from the Radium Chat desktop app:");
+        println!("  Start it from the Radium desktop app:");
         println!("  Settings → Local API Server.");
     }
     println!();
@@ -684,7 +684,7 @@ async fn auto_download_hf_model(repo_id: &str, select_quantization: bool) -> Str
     };
 
     dl_pb.finish_and_clear();
-    eprintln!("  ✓ Saved to the Radium Chat data folder\n");
+    eprintln!("  ✓ Saved to the Radium data folder\n");
 
     model_id
 }
@@ -738,7 +738,7 @@ async fn select_model_interactively() -> String {
     if models.is_empty() {
         eprintln!("No chat models installed.");
         eprintln!();
-        eprintln!("  Download one in the Radium Chat desktop app, or name a");
+        eprintln!("  Download one in the Radium desktop app, or name a");
         eprintln!("  HuggingFace GGUF repo and it will be fetched:");
         eprintln!();
         eprintln!("    atomic-chat-cli serve <owner>/<repo>");
@@ -818,7 +818,7 @@ fn resolve_backend(bin: Option<String>) -> BackendBinary {
         None => discover_llamacpp_binary().unwrap_or_else(|| {
             eprintln!("Error: llama-server binary not found.");
             eprintln!();
-            eprintln!("  Install a backend in the Radium Chat desktop app");
+            eprintln!("  Install a backend in the Radium desktop app");
             eprintln!("  (Settings → Model Providers), or pass --bin <path>.");
             std::process::exit(1);
         }),
@@ -1162,14 +1162,14 @@ async fn handle_launch(args: LaunchArgs) {
         eprintln!("  `/muse-code/models` catalogue Muse requires at startup. `launch` runs a");
         eprintln!("  bare llama-server, which does not.");
         eprintln!();
-        eprintln!("  Start the server in Atomic Chat, then use Integrations \u{2192} Muse Code.");
+        eprintln!("  Start the server in Radium, then use Integrations \u{2192} Muse Code.");
         std::process::exit(1);
     }
 
     if !is_command_installed(agent.detect_bin) {
         eprintln!("Error: {} is not installed.", agent.name);
         eprintln!();
-        eprintln!("  Install it first — the Radium Chat desktop app can do this");
+        eprintln!("  Install it first — the Radium desktop app can do this");
         eprintln!("  for you from the Launch page, or see:");
         eprintln!();
         eprintln!("    {}", agent.docs_url);

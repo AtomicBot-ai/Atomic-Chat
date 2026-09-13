@@ -7,18 +7,18 @@ This directory contains platform-specific scripts used by the AutoQA GitHub Acti
 ```text
 autoqa/scripts/
 ├── setup_permissions.sh        # Setup executable permissions for all scripts
-├── windows_cleanup.ps1          # Windows: Clean existing Radium Chat installations
-├── windows_download.ps1         # Windows: Download Radium Chat app installer
-├── windows_install.ps1          # Windows: Install Radium Chat app
+├── windows_cleanup.ps1          # Windows: Clean existing Radium installations
+├── windows_download.ps1         # Windows: Download Radium app installer
+├── windows_install.ps1          # Windows: Install Radium app
 ├── windows_post_cleanup.ps1     # Windows: Post-test cleanup
 ├── run_tests.ps1               # Windows: Run AutoQA tests
-├── ubuntu_cleanup.sh           # Ubuntu: Clean existing Radium Chat installations
-├── ubuntu_download.sh          # Ubuntu: Download Radium Chat app (.deb)
-├── ubuntu_install.sh           # Ubuntu: Install Radium Chat app
+├── ubuntu_cleanup.sh           # Ubuntu: Clean existing Radium installations
+├── ubuntu_download.sh          # Ubuntu: Download Radium app (.deb)
+├── ubuntu_install.sh           # Ubuntu: Install Radium app
 ├── ubuntu_post_cleanup.sh      # Ubuntu: Post-test cleanup
-├── macos_cleanup.sh            # macOS: Clean existing Radium Chat installations
-├── macos_download.sh           # macOS: Download Radium Chat app (.dmg)
-├── macos_install.sh            # macOS: Install Radium Chat app
+├── macos_cleanup.sh            # macOS: Clean existing Radium installations
+├── macos_download.sh           # macOS: Download Radium app (.dmg)
+├── macos_install.sh            # macOS: Install Radium app
 ├── macos_post_cleanup.sh       # macOS: Post-test cleanup
 ├── run_tests.sh                # Unix: Run AutoQA tests (Ubuntu/macOS)
 ├── README.md                   # This file
@@ -29,23 +29,23 @@ autoqa/scripts/
 
 ### Windows Scripts (.ps1)
 
-- **windows_cleanup.ps1**: Removes existing Radium Chat installations and kills running processes
-- **windows_download.ps1**: Downloads Radium Chat installer with priority-based URL selection
-- **windows_install.ps1**: Installs the Radium Chat app and sets environment variables
+- **windows_cleanup.ps1**: Removes existing Radium installations and kills running processes
+- **windows_download.ps1**: Downloads Radium installer with priority-based URL selection
+- **windows_install.ps1**: Installs the Radium app and sets environment variables
 - **windows_post_cleanup.ps1**: Comprehensive cleanup after tests including uninstallation
 - **run_tests.ps1**: Runs the AutoQA Python tests with proper arguments
 
 ### Ubuntu Scripts (.sh)
 
-- **ubuntu_cleanup.sh**: Removes existing Radium Chat installations and kills running processes
-- **ubuntu_download.sh**: Downloads Radium Chat .deb package with priority-based URL selection
-- **ubuntu_install.sh**: Installs Radium Chat .deb package and sets environment variables
+- **ubuntu_cleanup.sh**: Removes existing Radium installations and kills running processes
+- **ubuntu_download.sh**: Downloads Radium .deb package with priority-based URL selection
+- **ubuntu_install.sh**: Installs Radium .deb package and sets environment variables
 - **ubuntu_post_cleanup.sh**: Comprehensive cleanup after tests including package removal
 
 ### macOS Scripts (.sh)
 
-- **macos_cleanup.sh**: Removes existing Radium Chat installations and kills running processes
-- **macos_download.sh**: Downloads Radium Chat .dmg package with priority-based URL selection
+- **macos_cleanup.sh**: Removes existing Radium installations and kills running processes
+- **macos_download.sh**: Downloads Radium .dmg package with priority-based URL selection
 - **macos_install.sh**: Mounts DMG, extracts .app, and installs to Applications
 - **macos_post_cleanup.sh**: Comprehensive cleanup after tests
 
