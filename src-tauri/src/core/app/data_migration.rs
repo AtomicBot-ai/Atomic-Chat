@@ -139,7 +139,9 @@ fn clean_up_stray_folders(candidates: &[PathBuf], target: &Path) -> Vec<StrayFol
         .filter(|candidate| !same_path(candidate, target) && candidate.exists())
         .map(|candidate| match holds_no_data(candidate) {
             Ok(false) => StrayFolder::HoldsData(candidate.clone()),
-            Err(err) => StrayFolder::Failed(candidate.clone(), format!("could not inspect it: {err}")),
+            Err(err) => {
+                StrayFolder::Failed(candidate.clone(), format!("could not inspect it: {err}"))
+            }
             Ok(true) => match fs::remove_dir_all(candidate) {
                 Ok(()) => {
                     // The product folder above `data`, if nothing else lives there.
@@ -169,7 +171,11 @@ fn existing_config_files<R: Runtime>(app: &AppHandle<R>) -> Vec<PathBuf> {
 /// Move the old default the configuration in effect still names (one of
 /// `candidates`) to `target`, and repoint `config_files` (existing files, in
 /// read order) at it.
-pub fn migrate(config_files: &[PathBuf], candidates: &[PathBuf], target: &Path) -> MigrationOutcome {
+pub fn migrate(
+    config_files: &[PathBuf],
+    candidates: &[PathBuf],
+    target: &Path,
+) -> MigrationOutcome {
     let legacy = match plan(config_files, candidates, target) {
         Ok(legacy) => legacy,
         Err(reason) => return MigrationOutcome::Skipped(reason),
@@ -226,13 +232,23 @@ pub fn migrate(config_files: &[PathBuf], candidates: &[PathBuf], target: &Path) 
 }
 
 /// Decide, without touching anything, which old default folder to move.
-fn plan(config_files: &[PathBuf], candidates: &[PathBuf], target: &Path) -> Result<PathBuf, SkipReason> {
-    let candidates: Vec<&PathBuf> = candidates.iter().filter(|c| !same_path(c, target)).collect();
+fn plan(
+    config_files: &[PathBuf],
+    candidates: &[PathBuf],
+    target: &Path,
+) -> Result<PathBuf, SkipReason> {
+    let candidates: Vec<&PathBuf> = candidates
+        .iter()
+        .filter(|c| !same_path(c, target))
+        .collect();
     if candidates.is_empty() {
         return Err(SkipReason::SameFolder);
     }
 
-    let legacy = match config_files.first().and_then(|file| configured_data_folder(file)) {
+    let legacy = match config_files
+        .first()
+        .and_then(|file| configured_data_folder(file))
+    {
         Some(configured) => {
             if same_path(&configured, target) {
                 return Err(SkipReason::AlreadyMigrated);
@@ -276,7 +292,11 @@ fn configured_data_folder(config_file: &Path) -> Option<PathBuf> {
 
 /// Point every settings file that names `legacy` at `target`, keeping every
 /// other field. A failed write restores the files already written.
-fn repoint_configs(config_files: &[PathBuf], legacy: &Path, target: &Path) -> Result<usize, String> {
+fn repoint_configs(
+    config_files: &[PathBuf],
+    legacy: &Path,
+    target: &Path,
+) -> Result<usize, String> {
     let mut written: Vec<(&PathBuf, String)> = Vec::new();
     let restore = |written: &[(&PathBuf, String)]| {
         for (file, original) in written {
@@ -382,7 +402,9 @@ mod tests {
             legacy: build_default_data_folder(&data_dir, LEGACY_PRODUCT_NAME),
             stray: build_default_data_folder(&data_dir, "Radium Chat"),
             target: build_default_data_folder(&data_dir, "Radium"),
-            current_cfg: data_dir.join("chat.atomic.app").join(CONFIGURATION_FILE_NAME),
+            current_cfg: data_dir
+                .join("chat.atomic.app")
+                .join(CONFIGURATION_FILE_NAME),
             legacy_cfg: data_dir.join("Atomic-Chat").join(CONFIGURATION_FILE_NAME),
             root,
         }
@@ -467,8 +489,11 @@ mod tests {
         write(&l.stray.join("db/__status__.db"), "");
         settings(&l.current_cfg, &l.legacy);
 
-        let report =
-            migrate_and_clean(std::slice::from_ref(&l.current_cfg), &l.candidates(), &l.target);
+        let report = migrate_and_clean(
+            std::slice::from_ref(&l.current_cfg),
+            &l.candidates(),
+            &l.target,
+        );
 
         assert!(matches!(report.outcome, MigrationOutcome::Moved { .. }));
         assert_eq!(report.strays, vec![StrayFolder::Removed(l.stray.clone())]);
@@ -486,8 +511,11 @@ mod tests {
         write(&l.stray.join("threads/x/thread.json"), r#"{"id":"x"}"#);
         settings(&l.current_cfg, &l.legacy);
 
-        let report =
-            migrate_and_clean(std::slice::from_ref(&l.current_cfg), &l.candidates(), &l.target);
+        let report = migrate_and_clean(
+            std::slice::from_ref(&l.current_cfg),
+            &l.candidates(),
+            &l.target,
+        );
 
         assert!(matches!(report.outcome, MigrationOutcome::Moved { .. }));
         assert_eq!(report.strays, vec![StrayFolder::HoldsData(l.stray.clone())]);
@@ -508,10 +536,16 @@ mod tests {
         write(&l.stray.join("db/__status__.db"), "");
         settings(&l.current_cfg, &l.target);
 
-        let report =
-            migrate_and_clean(std::slice::from_ref(&l.current_cfg), &l.candidates(), &l.target);
+        let report = migrate_and_clean(
+            std::slice::from_ref(&l.current_cfg),
+            &l.candidates(),
+            &l.target,
+        );
 
-        assert_eq!(report.outcome, MigrationOutcome::Skipped(SkipReason::AlreadyMigrated));
+        assert_eq!(
+            report.outcome,
+            MigrationOutcome::Skipped(SkipReason::AlreadyMigrated)
+        );
         assert_eq!(report.strays, vec![StrayFolder::Removed(l.stray.clone())]);
         assert!(!l.stray.parent().unwrap().exists());
         assert!(l.target.join("store.json").is_file());
@@ -525,8 +559,11 @@ mod tests {
         write(&l.stray.join("db/__status__.db"), "");
         settings(&l.current_cfg, &custom);
 
-        let report =
-            migrate_and_clean(std::slice::from_ref(&l.current_cfg), &l.candidates(), &l.target);
+        let report = migrate_and_clean(
+            std::slice::from_ref(&l.current_cfg),
+            &l.candidates(),
+            &l.target,
+        );
 
         assert!(report.strays.is_empty());
         assert!(l.stray.join("db/__status__.db").is_file());
@@ -538,8 +575,11 @@ mod tests {
         write(&l.target.join("store.json"), "{}");
         settings(&l.current_cfg, &l.target);
 
-        let report =
-            migrate_and_clean(std::slice::from_ref(&l.current_cfg), &l.candidates(), &l.target);
+        let report = migrate_and_clean(
+            std::slice::from_ref(&l.current_cfg),
+            &l.candidates(),
+            &l.target,
+        );
 
         assert!(report.strays.is_empty());
     }
@@ -551,7 +591,11 @@ mod tests {
         settings(&l.current_cfg, &l.stray);
 
         assert_eq!(
-            migrate(std::slice::from_ref(&l.current_cfg), &l.candidates(), &l.target),
+            migrate(
+                std::slice::from_ref(&l.current_cfg),
+                &l.candidates(),
+                &l.target
+            ),
             MigrationOutcome::Moved {
                 from: l.stray.clone(),
                 to: l.target.clone(),
@@ -569,8 +613,15 @@ mod tests {
         settings(&l.current_cfg, &l.legacy);
 
         assert!(matches!(
-            migrate(std::slice::from_ref(&l.current_cfg), &l.candidates(), &l.target),
-            MigrationOutcome::Moved { configs_updated: 1, .. }
+            migrate(
+                std::slice::from_ref(&l.current_cfg),
+                &l.candidates(),
+                &l.target
+            ),
+            MigrationOutcome::Moved {
+                configs_updated: 1,
+                ..
+            }
         ));
         assert!(l.target.join("store.json").is_file());
         assert!(!l.target.join("db").exists());
@@ -584,7 +635,11 @@ mod tests {
         settings(&l.current_cfg, &l.legacy);
 
         assert_eq!(
-            migrate(std::slice::from_ref(&l.current_cfg), &l.candidates(), &l.target),
+            migrate(
+                std::slice::from_ref(&l.current_cfg),
+                &l.candidates(),
+                &l.target
+            ),
             MigrationOutcome::Skipped(SkipReason::TargetNotEmpty(l.target.clone()))
         );
         assert!(l.legacy.join("store.json").is_file());
@@ -607,7 +662,11 @@ mod tests {
         settings(&l.current_cfg, &custom);
 
         assert_eq!(
-            migrate(std::slice::from_ref(&l.current_cfg), &l.candidates(), &l.target),
+            migrate(
+                std::slice::from_ref(&l.current_cfg),
+                &l.candidates(),
+                &l.target
+            ),
             MigrationOutcome::Skipped(SkipReason::CustomDataFolder(custom.clone()))
         );
         assert!(custom.join("store.json").is_file());
@@ -643,7 +702,10 @@ mod tests {
 
         assert!(matches!(
             migrate(&[], &l.candidates(), &l.target),
-            MigrationOutcome::Moved { configs_updated: 0, .. }
+            MigrationOutcome::Moved {
+                configs_updated: 0,
+                ..
+            }
         ));
         assert!(l.target.join("store.json").is_file());
     }
@@ -672,7 +734,11 @@ mod tests {
         settings(&l.current_cfg, &l.legacy);
 
         assert_eq!(
-            migrate(std::slice::from_ref(&l.current_cfg), &l.candidates(), &l.target),
+            migrate(
+                std::slice::from_ref(&l.current_cfg),
+                &l.candidates(),
+                &l.target
+            ),
             MigrationOutcome::Skipped(SkipReason::LegacyFolderMissing(l.legacy.clone()))
         );
         assert!(!l.target.exists());
@@ -700,7 +766,11 @@ mod tests {
         let mut permissions = fs::metadata(&l.current_cfg).unwrap().permissions();
         permissions.set_readonly(true);
         fs::set_permissions(&l.current_cfg, permissions.clone()).unwrap();
-        if fs::OpenOptions::new().write(true).open(&l.current_cfg).is_ok() {
+        if fs::OpenOptions::new()
+            .write(true)
+            .open(&l.current_cfg)
+            .is_ok()
+        {
             // Running with privileges that ignore read-only files; nothing to prove.
             return;
         }
@@ -732,14 +802,20 @@ mod tests {
     fn compares_windows_paths_without_regard_to_case_or_separators() {
         let l = layout();
         write(&l.legacy.join("store.json"), "{}");
-        let shouting = PathBuf::from(
-            l.legacy.to_string_lossy().to_uppercase().replace('\\', "/") + "/",
-        );
+        let shouting =
+            PathBuf::from(l.legacy.to_string_lossy().to_uppercase().replace('\\', "/") + "/");
         settings(&l.current_cfg, &shouting);
 
         assert!(matches!(
-            migrate(std::slice::from_ref(&l.current_cfg), &l.candidates(), &l.target),
-            MigrationOutcome::Moved { configs_updated: 1, .. }
+            migrate(
+                std::slice::from_ref(&l.current_cfg),
+                &l.candidates(),
+                &l.target
+            ),
+            MigrationOutcome::Moved {
+                configs_updated: 1,
+                ..
+            }
         ));
     }
 }
