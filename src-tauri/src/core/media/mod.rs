@@ -4,6 +4,7 @@
 //! the web app; what cannot live there is a secret, because anything the
 //! webview can read is readable by anything that can run script in the webview.
 
+pub mod engine;
 pub mod secrets;
 
 /// Desktop only: the commands wrap the OS credential store, which mobile does
