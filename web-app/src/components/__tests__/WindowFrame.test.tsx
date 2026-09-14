@@ -1,7 +1,6 @@
-import { act, render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { useHeaderOverlay } from '@/stores/header-overlay-store'
 import { WindowFrame } from '../WindowFrame'
 
 const chrome = vi.hoisted(() => ({ hasCustomWindowChrome: vi.fn() }))
@@ -14,6 +13,7 @@ vi.mock('@tauri-apps/api/webviewWindow', () => ({
     close: vi.fn(),
     isMaximized: vi.fn().mockResolvedValue(false),
     onResized: vi.fn().mockResolvedValue(vi.fn()),
+    title: vi.fn().mockResolvedValue('Radium'),
   }),
 }))
 
@@ -23,54 +23,72 @@ vi.mock('@/lib/tauriEvent', () => ({
   },
 }))
 
-const renderFrame = () =>
-  render(
-    <WindowFrame>
-      <p>app content</p>
-    </WindowFrame>
-  )
-
 describe('WindowFrame', () => {
   beforeEach(() => {
     chrome.hasCustomWindowChrome.mockReset()
-    useHeaderOverlay.getState().setRightOverlayButtons(0)
   })
 
-  it('puts Minimize, Maximize and Close over the page, with no bar of its own', () => {
+  it('shows Minimize, Maximize and Close when the window has no native title bar', async () => {
     chrome.hasCustomWindowChrome.mockReturnValue(true)
 
-    const { container } = renderFrame()
+    render(
+      <WindowFrame>
+        <p>app content</p>
+      </WindowFrame>
+    )
 
-    const controls = screen.getByRole('group', { name: 'Window controls' })
-    for (const name of ['Minimize', 'Maximize', 'Close']) {
-      expect(controls).toContainElement(screen.getByRole('button', { name }))
-    }
+    expect(screen.getByRole('button', { name: 'Minimize' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Maximize' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument()
     expect(screen.getByText('app content')).toBeInTheDocument()
-    // No title strip: the page's own header is what moves the window.
-    expect(screen.queryByText('Radium')).not.toBeInTheDocument()
-    expect(container.querySelector('[data-window-chrome]')).toBeNull()
-    expect(container.querySelector('[data-tauri-drag-region]')).toBeNull()
+    // The title comes from the window itself, so it follows the product name.
+    await waitFor(() => expect(screen.getByText('Radium')).toBeInTheDocument())
   })
 
-  it("sits just left of the chat's corner buttons, following how many there are", () => {
+  it('leaves the bar a drag region, so the window can still be moved', () => {
     chrome.hasCustomWindowChrome.mockReturnValue(true)
 
-    renderFrame()
-    const controls = screen.getByRole('group', { name: 'Window controls' })
-    expect(controls).toHaveStyle({ right: '12px' })
+    const { container } = render(
+      <WindowFrame>
+        <p>app content</p>
+      </WindowFrame>
+    )
 
-    act(() => useHeaderOverlay.getState().setRightOverlayButtons(2))
-    expect(controls).toHaveStyle({ right: '92px' })
+    expect(container.querySelector('[data-tauri-drag-region]')).not.toBeNull()
+    // Marks the scope of the index.css rules that make room for the bar.
+    expect(container.querySelector('[data-window-chrome]')).not.toBeNull()
+  })
+
+  it('keeps the strip slim, with no line under it', () => {
+    chrome.hasCustomWindowChrome.mockReturnValue(true)
+
+    const { container } = render(
+      <WindowFrame>
+        <p>app content</p>
+      </WindowFrame>
+    )
+
+    const strip = container.querySelector('[data-window-chrome] > div')
+    expect(strip).toHaveClass('h-8')
+    expect(strip).not.toHaveClass('border-b')
+    // The app starts right under the strip.
+    expect(screen.getByText('app content').parentElement).toHaveClass('pt-8')
   })
 
   it('adds nothing where the platform draws its own title bar', () => {
     chrome.hasCustomWindowChrome.mockReturnValue(false)
 
-    renderFrame()
+    const { container } = render(
+      <WindowFrame>
+        <p>app content</p>
+      </WindowFrame>
+    )
 
     expect(screen.getByText('app content')).toBeInTheDocument()
     expect(
-      screen.queryByRole('group', { name: 'Window controls' })
+      screen.queryByRole('button', { name: 'Close' })
     ).not.toBeInTheDocument()
+    expect(container.querySelector('[data-tauri-drag-region]')).toBeNull()
+    expect(container.querySelector('[data-window-chrome]')).toBeNull()
   })
 })
