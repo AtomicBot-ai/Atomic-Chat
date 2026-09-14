@@ -340,5 +340,83 @@
     ],
     "decision": "Tracker D34, Task 27 (PR #17)",
     "status": "pending"
+  },
+  {
+    "id": "review-before-use",
+    "feature": "Review before use for every skill and connector",
+    "forUsers": "No skill or MCP connector is used until you have seen what it can do and chosen Allow (with Preview and Cancel); it asks again when it changes, and every skill starts switched off (tracker D36, D38).",
+    "paths": [
+      "src-tauri/src/core/mcp/review.rs",
+      "src-tauri/src/core/mcp/helpers.rs",
+      "src-tauri/src/core/agent/skills/registry.rs",
+      "src-tauri/src/core/agent/skills/commands.rs",
+      "web-app/src/lib/review-before-use.ts",
+      "web-app/src/containers/SkillReviewDialog.tsx",
+      "web-app/src/containers/ConnectorReviewDialog.tsx",
+      "web-app/src/containers/dialogs/ConnectorReviewHost.tsx",
+      "web-app/src/hooks/useConnectorReview.ts",
+      "web-app/src/routes/connectors/index.tsx",
+      "web-app/src/routes/skills/index.tsx",
+      "web-app/src/locales/en/review.json"
+    ],
+    "checks": [
+      {
+        "run": "cargo test --no-default-features --features test-tauri --lib -- core::mcp core::agent::skills",
+        "files": [
+          "src-tauri/src/core/mcp/review.rs",
+          "src-tauri/src/core/mcp/tests.rs",
+          "src-tauri/src/core/agent/skills/registry.rs"
+        ]
+      },
+      {
+        "run": "npx vitest run src/lib/__tests__/review-before-use.test.ts src/containers/__tests__/SkillReviewDialog.test.tsx src/containers/__tests__/ConnectorReviewDialog.test.tsx src/containers/dialogs/__tests__/ConnectorReviewHost.test.tsx src/hooks/__tests__/useConnectorReview.test.ts src/routes/skills/__tests__/SkillsPage.review.test.tsx src/routes/connectors/__tests__/index.test.tsx",
+        "files": [
+          "web-app/src/lib/__tests__/review-before-use.test.ts",
+          "web-app/src/containers/__tests__/SkillReviewDialog.test.tsx",
+          "web-app/src/containers/__tests__/ConnectorReviewDialog.test.tsx",
+          "web-app/src/containers/dialogs/__tests__/ConnectorReviewHost.test.tsx",
+          "web-app/src/hooks/__tests__/useConnectorReview.test.ts",
+          "web-app/src/routes/skills/__tests__/SkillsPage.review.test.tsx",
+          "web-app/src/routes/connectors/__tests__/index.test.tsx"
+        ]
+      }
+    ],
+    "decision": "Tracker D36, D38, Task 28 (PR #18)",
+    "status": "pending"
+  },
+  {
+    "id": "radium-logo",
+    "feature": "The Radium logo",
+    "forUsers": "The Radium 'R' logo is the app and installer icon and appears in the sidebar, setup and loading screens and chat avatars, shown in full colour (tracker D37).",
+    "paths": [
+      "src-tauri/icons/icon.png",
+      "web-app/public/images/transparent-logo.png",
+      "web-app/public/images/atomic-chat-logo.png",
+      "web-app/public/images/logo.png",
+      "web-app/public/images/logo-app.png",
+      "web-app/src/components/AppLogo.tsx",
+      "web-app/src/containers/SetupBackendStep.tsx",
+      "web-app/src/containers/AvatarEmoji.tsx",
+      "web-app/src/components/MermaidError.tsx",
+      "web-app/src/containers/PromptVisionModel.tsx",
+      "web-app/src/loader.css",
+      "web-app/index.html"
+    ],
+    "checks": [
+      {
+        "run": "node --test tests/radium-logo.test.mjs",
+        "files": [
+          "tests/radium-logo.test.mjs"
+        ]
+      },
+      {
+        "run": "npx vitest run src/components/__tests__/AppLogo.test.tsx",
+        "files": [
+          "web-app/src/components/__tests__/AppLogo.test.tsx"
+        ]
+      }
+    ],
+    "decision": "Tracker D37, Task 29 (PR #19)",
+    "status": "pending"
   }
 ]
