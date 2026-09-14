@@ -101,7 +101,7 @@ import { restartLocalModel } from '@/utils/restartLocalModel'
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
   /**
-   * Cloud providers are configured on `/cloud` now. The route stays alive
+   * Cloud providers are configured in Settings > Cloud now. The route stays alive
    * because bookmarks, the model picker's gear and `DeleteProvider` all point
    * at it; it just forwards.
    *
@@ -116,7 +116,7 @@ export const Route = createFileRoute('/settings/providers/$providerName')({
       .getProviderByName(params.providerName)
     if (provider && !isLocalEngineProvider(provider)) {
       throw redirect({
-        to: route.cloud.index,
+        to: route.settings.cloud,
         search: { provider: params.providerName },
       })
     }

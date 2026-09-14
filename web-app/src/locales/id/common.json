@@ -1,6 +1,7 @@
 {
   "api": "API",
   "cloud": "Cloud",
+  "chat": "Obrolan",
   "assistants": "Asisten",
   "hardware": "Perangkat Keras",
   "mcp-servers": "Server MCP",

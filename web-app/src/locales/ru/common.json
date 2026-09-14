@@ -32,6 +32,7 @@
   "models": "Модели",
   "skills": "Навыки",
   "cloud": "Cloud",
+  "chat": "Чат",
   "agentSkill": {
     "selected": "Навык: {{name}}",
     "remove": "Убрать выбранный навык",

@@ -41,6 +41,7 @@
   "api": "API",
   "skills": "Skills",
   "cloud": "Cloud",
+  "chat": "Chat",
   "agentSkill": {
     "selected": "Skill: {{name}}",
     "remove": "Remove selected skill",

@@ -96,12 +96,17 @@ describe('NavMain', () => {
 
     expect(screen.getByText('common:newChat')).toBeInTheDocument()
     expect(screen.getByText('common:models')).toBeInTheDocument()
-    expect(screen.getByText('common:cloud')).toBeInTheDocument()
     expect(screen.getByText('common:plugins')).toBeInTheDocument()
     expect(screen.getByText('common:projects.new')).toBeInTheDocument()
     expect(screen.getByText('common:launch')).toBeInTheDocument()
-    expect(screen.getByText('common:api')).toBeInTheDocument()
     expect(screen.queryByText('common:newTask')).not.toBeInTheDocument()
+  })
+
+  it('leaves Cloud and API to Settings', () => {
+    render(<NavMain />)
+
+    expect(screen.queryByText('common:cloud')).not.toBeInTheDocument()
+    expect(screen.queryByText('common:api')).not.toBeInTheDocument()
   })
 
   it('keeps Connectors and Skills tucked inside the collapsed Plugins group', () => {
@@ -143,16 +148,6 @@ describe('NavMain', () => {
 
     expect(
       screen.getByText('common:plugins').closest('[data-active]')
-    ).toHaveAttribute('data-active', 'true')
-  })
-
-  it('highlights Cloud on the cloud route', () => {
-    vi.mocked(useLocation).mockReturnValue({ pathname: '/cloud/' } as never)
-
-    render(<NavMain />)
-
-    expect(
-      screen.getByText('common:cloud').closest('[data-active]')
     ).toHaveAttribute('data-active', 'true')
   })
 

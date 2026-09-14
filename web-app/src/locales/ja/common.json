@@ -450,6 +450,7 @@
   "api": "API",
   "skills": "スキル",
   "cloud": "Cloud",
+  "chat": "チャット",
   "agentSkill": {
     "selected": "スキル: {{name}}",
     "remove": "選択したスキルを解除",

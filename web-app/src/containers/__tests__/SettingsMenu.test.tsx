@@ -108,6 +108,23 @@ describe('SettingsMenu', () => {
     expect(screen.queryByText('common:mcp-servers')).not.toBeInTheDocument()
   })
 
+  it('holds the chat settings, Cloud and API pages', () => {
+    render(<SettingsMenu />)
+
+    expect(screen.getByText('common:chat').closest('a')).toHaveAttribute(
+      'href',
+      '/settings/chat'
+    )
+    expect(screen.getByText('common:cloud').closest('a')).toHaveAttribute(
+      'href',
+      '/settings/cloud'
+    )
+    expect(screen.getByText('common:api').closest('a')).toHaveAttribute(
+      'href',
+      '/settings/api'
+    )
+  })
+
   it('shows the expansion chevron only when a provider is disabled', () => {
     // No disabled provider: nothing to expand, and no other button in the
     // section since the add-provider `+` moved to `/cloud`.
