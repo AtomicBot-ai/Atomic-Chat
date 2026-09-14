@@ -278,3 +278,33 @@ describe('describeConnector', () => {
     )
   })
 })
+
+describe('review screen wording', () => {
+  it('has English text for every permission, risk and warning it can show', async () => {
+    const { PERMISSION_IDS, WARNING_IDS } = await import('../review-before-use')
+    const english = JSON.parse(
+      readFileSync(
+        path.resolve(
+          path.dirname(fileURLToPath(import.meta.url)),
+          '../../locales/en/review.json'
+        ),
+        'utf8'
+      )
+    )
+
+    const missing = [
+      ...PERMISSION_IDS.filter((id) => !english.permission?.[id]).map(
+        (id) => `permission.${id}`
+      ),
+      ...PERMISSION_IDS.filter((id) => !english.risk?.[id]).map(
+        (id) => `risk.${id}`
+      ),
+      ...WARNING_IDS.filter((id) => !english.warning?.[id]).map(
+        (id) => `warning.${id}`
+      ),
+    ]
+    expect(missing).toEqual([])
+    expect(PERMISSION_IDS).toContain('runCommands')
+    expect(WARNING_IDS).toContain('downloadAndRun')
+  })
+})

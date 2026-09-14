@@ -10,6 +10,43 @@
  * not prove anything is safe; it only means none of these patterns matched.
  */
 
+/** Every permission id the review screen can show, for wording coverage. */
+export const PERMISSION_IDS = [
+  'markedDangerous',
+  'unknownTool',
+  'runCommands',
+  'runScripts',
+  'controlPrograms',
+  'sendWebRequests',
+  'changeFiles',
+  'trashFiles',
+  'changeClipboard',
+  'showNotifications',
+  'readFiles',
+  'readGit',
+  'seePrograms',
+  'browseWeb',
+  'searchDocuments',
+  'transcribeMedia',
+  'readClipboard',
+  'lookAtImages',
+  'instructionsOnly',
+] as const
+
+/** Every warning id the review screen can show, for wording coverage. */
+export const WARNING_IDS = [
+  'downloadAndRun',
+  'deleteBroadly',
+  'readSecrets',
+  'sendData',
+  'hideFromUser',
+  'overrideInstructions',
+  'encodedBlob',
+  'unpinnedPackage',
+  'unencrypted',
+  'shellCommandLine',
+] as const
+
 export type PermissionLevel = 'risky' | 'changes' | 'reads'
 
 export type PermissionId =
