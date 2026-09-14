@@ -148,6 +148,99 @@ pub fn engine_assets(variant: EngineVariant) -> Vec<EngineAsset> {
         .collect()
 }
 
+/// Where the engine lives, relative to Radium's data folder.
+pub const ENGINE_DIR: &str = "media/engine";
+
+/// One archive to download for the engine, as the download manager takes it:
+/// `save_path` is relative to Radium's data folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct EngineDownload {
+    pub url: String,
+    pub save_path: String,
+    pub sha256: &'static str,
+    pub size: u64,
+}
+
+/// Everything needed to install the engine for one build, and whether it is
+/// already installed. Paths are relative to Radium's data folder and use `/`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct EngineInstallPlan {
+    pub release: &'static str,
+    pub variant: EngineVariant,
+    pub install_dir: String,
+    pub executable: String,
+    pub downloads: Vec<EngineDownload>,
+    pub installed: bool,
+}
+
+/// The folder name for a build.
+pub fn variant_dir_name(variant: EngineVariant) -> &'static str {
+    match variant {
+        EngineVariant::WindowsCuda12 => "windows_cuda12",
+        EngineVariant::WindowsVulkan => "windows_vulkan",
+        EngineVariant::WindowsCpu => "windows_cpu",
+        EngineVariant::LinuxVulkan => "linux_vulkan",
+        EngineVariant::LinuxCpu => "linux_cpu",
+        EngineVariant::MacosMetal => "macos_metal",
+    }
+}
+
+/// The install plan for a build under `data_dir`.
+pub fn engine_install_plan(
+    data_dir: &std::path::Path,
+    variant: EngineVariant,
+) -> EngineInstallPlan {
+    let release_dir = format!("{ENGINE_DIR}/{ENGINE_RELEASE}");
+    let install_dir = format!("{release_dir}/{}", variant_dir_name(variant));
+    let program = match variant {
+        EngineVariant::WindowsCuda12 | EngineVariant::WindowsVulkan | EngineVariant::WindowsCpu => {
+            "sd-cli.exe"
+        }
+        EngineVariant::LinuxVulkan | EngineVariant::LinuxCpu | EngineVariant::MacosMetal => {
+            "sd-cli"
+        }
+    };
+    let executable = format!("{install_dir}/{program}");
+    // Archives are saved apart from the unpacked engine, so unpacking one build
+    // never mixes with another's files.
+    let downloads = engine_assets(variant)
+        .into_iter()
+        .map(|asset| EngineDownload {
+            save_path: format!("{release_dir}/downloads/{}", asset.name),
+            url: asset.url,
+            sha256: asset.sha256,
+            size: asset.size,
+        })
+        .collect();
+    // The program itself must be there; a folder by that name is not an engine.
+    let installed = data_dir.join(&executable).is_file();
+    EngineInstallPlan {
+        release: ENGINE_RELEASE,
+        variant,
+        install_dir,
+        executable,
+        downloads,
+        installed,
+    }
+}
+
+/// This computer's system and chip, from Rust's target names
+/// (`std::env::consts::OS` and `ARCH`).
+pub fn host_platform(os: &str, arch: &str) -> (HostOs, HostArch) {
+    let os = match os {
+        "windows" => HostOs::Windows,
+        "linux" => HostOs::Linux,
+        "macos" => HostOs::Macos,
+        _ => HostOs::Other,
+    };
+    let arch = match arch {
+        "x86_64" => HostArch::X86_64,
+        "aarch64" => HostArch::Aarch64,
+        _ => HostArch::Other,
+    };
+    (os, arch)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -341,6 +434,118 @@ mod tests {
                 sha256: "d0355deb0d4b4b0e0b74f631b7b015db91b9a75a340f275c245d97571d77b689",
                 size: 39_092_706,
             }]
+        );
+    }
+    #[test]
+    fn the_install_plan_keeps_everything_in_the_media_engine_folder_for_this_release() {
+        let data = tempfile::TempDir::new().unwrap();
+
+        let plan = engine_install_plan(data.path(), EngineVariant::WindowsVulkan);
+
+        assert_eq!(plan.release, ENGINE_RELEASE);
+        assert_eq!(plan.variant, EngineVariant::WindowsVulkan);
+        assert_eq!(
+            plan.install_dir,
+            "media/engine/master-866-42d6c0a/windows_vulkan"
+        );
+        assert_eq!(
+            plan.executable,
+            "media/engine/master-866-42d6c0a/windows_vulkan/sd-cli.exe"
+        );
+        // Archives are saved apart from the unpacked engine, and each keeps the
+        // exact checksum and size it is pinned to.
+        assert_eq!(
+            plan.downloads,
+            [EngineDownload {
+                url: format!(
+                    "{RELEASE_BASE_URL}/{ENGINE_RELEASE}/sd-master-42d6c0a-bin-win-vulkan-x64.zip"
+                ),
+                save_path:
+                    "media/engine/master-866-42d6c0a/downloads/sd-master-42d6c0a-bin-win-vulkan-x64.zip"
+                        .to_string(),
+                sha256: "d0355deb0d4b4b0e0b74f631b7b015db91b9a75a340f275c245d97571d77b689",
+                size: 39_092_706,
+            }]
+        );
+        assert!(!plan.installed);
+    }
+
+    #[test]
+    fn the_engine_counts_as_installed_once_its_program_is_unpacked() {
+        let data = tempfile::TempDir::new().unwrap();
+        let plan = engine_install_plan(data.path(), EngineVariant::WindowsCpu);
+
+        // A folder where the program should be is not an installed engine.
+        std::fs::create_dir_all(data.path().join(&plan.executable)).unwrap();
+        assert!(!engine_install_plan(data.path(), EngineVariant::WindowsCpu).installed);
+        std::fs::remove_dir(data.path().join(&plan.executable)).unwrap();
+
+        std::fs::write(data.path().join(&plan.executable), b"program").unwrap();
+        assert!(engine_install_plan(data.path(), EngineVariant::WindowsCpu).installed);
+        // Installing one build says nothing about another.
+        assert!(!engine_install_plan(data.path(), EngineVariant::WindowsVulkan).installed);
+    }
+
+    #[test]
+    fn the_cuda_build_downloads_both_archives_for_one_install() {
+        let data = tempfile::TempDir::new().unwrap();
+
+        let plan = engine_install_plan(data.path(), EngineVariant::WindowsCuda12);
+
+        assert_eq!(
+            plan.install_dir,
+            "media/engine/master-866-42d6c0a/windows_cuda12"
+        );
+        let saved: Vec<&str> = plan
+            .downloads
+            .iter()
+            .map(|d| d.save_path.as_str())
+            .collect();
+        assert_eq!(
+            saved,
+            [
+                "media/engine/master-866-42d6c0a/downloads/sd-master-42d6c0a-bin-win-cuda12-x64.zip",
+                "media/engine/master-866-42d6c0a/downloads/cudart-sd-bin-win-cu12-x64.zip"
+            ]
+        );
+    }
+
+    #[test]
+    fn the_program_has_no_exe_suffix_outside_windows() {
+        let data = tempfile::TempDir::new().unwrap();
+
+        assert_eq!(
+            engine_install_plan(data.path(), EngineVariant::LinuxCpu).executable,
+            "media/engine/master-866-42d6c0a/linux_cpu/sd-cli"
+        );
+        assert_eq!(
+            engine_install_plan(data.path(), EngineVariant::MacosMetal).executable,
+            "media/engine/master-866-42d6c0a/macos_metal/sd-cli"
+        );
+        assert_eq!(variant_dir_name(EngineVariant::LinuxVulkan), "linux_vulkan");
+    }
+
+    #[test]
+    fn the_host_platform_comes_from_rust_target_names() {
+        assert_eq!(
+            host_platform("windows", "x86_64"),
+            (HostOs::Windows, HostArch::X86_64)
+        );
+        assert_eq!(
+            host_platform("linux", "x86_64"),
+            (HostOs::Linux, HostArch::X86_64)
+        );
+        assert_eq!(
+            host_platform("macos", "aarch64"),
+            (HostOs::Macos, HostArch::Aarch64)
+        );
+        assert_eq!(
+            host_platform("windows", "aarch64"),
+            (HostOs::Windows, HostArch::Aarch64)
+        );
+        assert_eq!(
+            host_platform("freebsd", "riscv64"),
+            (HostOs::Other, HostArch::Other)
         );
     }
 }
