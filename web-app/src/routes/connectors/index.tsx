@@ -202,7 +202,7 @@ function ConnectorsPage() {
         } catch (error) {
           editServer(serverKey, { ...config, active: false })
           setErrorMessage({
-            message: error,
+            message: error instanceof Error ? error.message : String(error),
             subtitle: t('mcp-servers:checkParams'),
           })
         } finally {
