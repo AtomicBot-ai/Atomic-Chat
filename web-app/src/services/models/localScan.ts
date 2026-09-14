@@ -1,6 +1,6 @@
 /**
  * Local model scanner: detects models already downloaded by other apps so the
- * user can run them in Atomic Chat WITHOUT re-downloading. The engine
+ * user can run them in Radium WITHOUT re-downloading. The engine
  * `import()` already accepts an absolute path and skips the download (it
  * writes a `model.yml` pointing at the existing file); this module only finds
  * the candidates.
@@ -221,8 +221,9 @@ async function collectGgufFiles(
       mmprojs.push(...nested.mmprojs)
     } else if (name.toLowerCase().endsWith('.gguf')) {
       if (looksLikeMmproj(name)) mmprojs.push(child)
-      // An imatrix or draft GGUF sitting in someone's LM Studio cache is not a
-      // model — listing it only offers a run that cannot start.
+      // An imatrix, MTP head or DFlash draft sitting in someone's cache is not
+      // a model — listing it only offers a run that cannot start. Same rule as
+      // the Hub listing (ATO-523).
       else if (!isNonWeightGgufFile(name)) models.push(child)
     }
   }
@@ -753,6 +754,13 @@ const NON_TEXT_GGUF_ARCHITECTURES = new Set([
   't5encoder',
   'clip',
   'wavtokenizer-dec',
+  // Speculative-decoding heads. They only run as `--model-draft` beside a
+  // target; alone, llama-server dies creating the context ("Gemma4Assistant
+  // requires ctx_other to be set"). The file name rule catches the published
+  // names — this catches a head whatever it was renamed to (ATO-523).
+  'gemma4-assistant',
+  'dflash',
+  'eagle3',
 ])
 
 /** Transformers heads that are classifiers, not decoders. */

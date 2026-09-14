@@ -150,12 +150,20 @@ export const useGeneralSetting = create<GeneralSettingState>()(
     {
       name: localStorageKey.settingGeneral,
       storage: createJSONStorage(() => localStorage),
-      version: 1,
+      version: 2,
       migrate: (persistedState: unknown, version: number) => {
         const state = (persistedState ?? {}) as Partial<GeneralSettingState>
         if (version < 1 && (state.reasoningBudget as string) === 'unlimited') {
           // v0 → v1: the uncapped level joined the effort scale as `max`.
           state.reasoningBudget = 'max'
+        }
+        if (version < 2) {
+          // v1 → v2: reasoning starts off. The default was `false` until
+          // 2026-04-29 and the store saves every field, so older installs
+          // carried reasoning on without anyone choosing it. Reset once, with
+          // the bulb's removal: the effort slider is now the only switch, and
+          // its first stop is Off. The chosen level is kept.
+          state.disableReasoning = true
         }
         return state as GeneralSettingState
       },

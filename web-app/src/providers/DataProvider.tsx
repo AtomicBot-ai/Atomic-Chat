@@ -54,7 +54,10 @@ import {
 } from '@/utils/registerRemoteProvider'
 import { hydrateActiveModelsForRunningServer } from '@/utils/activeModelsSync'
 import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
-import { reconcileLaunchAtStartup } from '@/lib/launchAtStartup'
+import {
+  carryLaunchAtStartupAcrossRename,
+  reconcileLaunchAtStartup,
+} from '@/lib/launchAtStartup'
 
 const safeRegisterRemoteProvider = async (provider: ModelProvider) => {
   try {
@@ -154,6 +157,28 @@ export function DataProvider() {
           )
         } catch (error) {
           console.error('Failed to migrate macOS autostart launcher:', error)
+        }
+      }
+
+      // Once: the OS entry was named "Atomic Chat" before the product became
+      // Radium, so carry it over before reconciling would record it as off.
+      if (
+        localStorage.getItem(localStorageKey.autostartProductRenameMigrated) !==
+        'true'
+      ) {
+        try {
+          await carryLaunchAtStartupAcrossRename(serviceHub.app(), () =>
+            invoke<boolean>('migrate_legacy_autostart_entry')
+          )
+          localStorage.setItem(
+            localStorageKey.autostartProductRenameMigrated,
+            'true'
+          )
+        } catch (error) {
+          console.error(
+            'Failed to carry launch at startup across the product rename:',
+            error
+          )
         }
       }
 

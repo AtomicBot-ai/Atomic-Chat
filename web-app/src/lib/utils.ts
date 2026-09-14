@@ -127,6 +127,10 @@ export function getProviderLogo(provider: string) {
     // `model-logo.ts`, so the provider row and its models read as one brand.
     case 'deepseek':
       return '/svg/deepseek-color.svg'
+    // The brand's own file, cropped to the hexagon: its wordmark is white and
+    // would vanish on the light theme.
+    case 'aimlapi':
+      return '/images/model-provider/aimlapi.svg'
     case 'ollama':
       return '/images/model-provider/ollama.svg'
     default:
@@ -175,7 +179,7 @@ export const isLlamacppProvider = (provider: string) =>
 export const getProviderTitle = (provider: string) => {
   switch (provider) {
     case 'jan':
-      return 'Atomic Chat'
+      return 'Radium'
     case 'llamacpp':
       // TurboQuant now ships on Windows and Linux as a second provider
       // side-by-side with `llamacpp-upstream` (which stays the default),
@@ -212,6 +216,8 @@ export const getProviderTitle = (provider: string) => {
       return 'Qwen'
     case 'deepseek':
       return 'DeepSeek'
+    case 'aimlapi':
+      return 'AI/ML API'
     case 'ollama':
       return 'Ollama'
     default:

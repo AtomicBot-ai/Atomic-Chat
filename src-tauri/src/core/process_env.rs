@@ -1,6 +1,6 @@
 //! Environment cleanup for host executables spawned by the packaged app.
 //!
-//! AppRun injects library and plugin paths so Atomic Chat can load files from
+//! AppRun injects library and plugin paths so Radium can load files from
 //! its AppImage. Those paths are correct for the app and inference sidecars
 //! deliberately launched inside its runtime, but not for host executables such
 //! as `curl`, terminal emulators, or MCP servers: they can otherwise combine

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  carryLaunchAtStartupAcrossRename,
   reconcileLaunchAtStartup,
   setLaunchAtStartup,
 } from '../launchAtStartup'
@@ -94,5 +95,57 @@ describe('launch at startup', () => {
       'Operating system did not apply launch-at-startup setting'
     )
     expect(store.setAutostartPreference).not.toHaveBeenCalled()
+  })
+})
+
+describe('launch at startup across the product rename', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('re-registers under the new name when the old entry existed', async () => {
+    const store = createPreferenceStore('unmanaged')
+    const removeLegacyEntry = vi.fn().mockResolvedValue(true)
+    autostart.isEnabled.mockResolvedValue(false)
+
+    await expect(
+      carryLaunchAtStartupAcrossRename(store, removeLegacyEntry)
+    ).resolves.toBe(true)
+
+    expect(removeLegacyEntry).toHaveBeenCalledOnce()
+    expect(autostart.enable).toHaveBeenCalledOnce()
+  })
+
+  it('re-registers when the old uninstaller already removed the entry but it was on', async () => {
+    const store = createPreferenceStore('enabled')
+    autostart.isEnabled.mockResolvedValue(false)
+
+    await expect(
+      carryLaunchAtStartupAcrossRename(store, vi.fn().mockResolvedValue(false))
+    ).resolves.toBe(true)
+
+    expect(autostart.enable).toHaveBeenCalledOnce()
+  })
+
+  it('leaves launch at startup off for a user who never turned it on', async () => {
+    const store = createPreferenceStore('disabled')
+    autostart.isEnabled.mockResolvedValue(false)
+
+    await expect(
+      carryLaunchAtStartupAcrossRename(store, vi.fn().mockResolvedValue(false))
+    ).resolves.toBe(false)
+
+    expect(autostart.enable).not.toHaveBeenCalled()
+  })
+
+  it('does not register twice when the new entry is already there', async () => {
+    const store = createPreferenceStore('enabled')
+    autostart.isEnabled.mockResolvedValue(true)
+
+    await expect(
+      carryLaunchAtStartupAcrossRename(store, vi.fn().mockResolvedValue(true))
+    ).resolves.toBe(false)
+
+    expect(autostart.enable).not.toHaveBeenCalled()
   })
 })

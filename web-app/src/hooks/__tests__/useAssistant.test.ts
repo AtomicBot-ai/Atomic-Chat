@@ -59,7 +59,7 @@ describe('useAssistant', () => {
 
     const updatedAssistant = {
       ...defaultAssistant,
-      name: 'Updated Radium Chat',
+      name: 'Updated Radium',
       description: 'Updated description',
     }
 
@@ -67,7 +67,7 @@ describe('useAssistant', () => {
       result.current.updateAssistant(updatedAssistant)
     })
 
-    expect(result.current.assistants[0].name).toBe('Updated Radium Chat')
+    expect(result.current.assistants[0].name).toBe('Updated Radium')
     expect(result.current.assistants[0].description).toBe('Updated description')
   })
 
@@ -154,7 +154,7 @@ describe('useAssistant', () => {
     const { result } = renderHook(() => useAssistant())
 
     expect(result.current.currentAssistant.id).toBe('jan')
-    expect(result.current.currentAssistant.name).toBe('Atomic Chat')
+    expect(result.current.currentAssistant.name).toBe('Radium')
     expect(result.current.currentAssistant.avatar).toBe(
       '/images/transparent-logo.png'
     )
@@ -180,7 +180,7 @@ describe('useAssistant', () => {
 
     const updatedDefaultAssistant = {
       ...defaultAssistant,
-      name: 'Updated Radium Chat Name',
+      name: 'Updated Radium Name',
     }
 
     act(() => {
@@ -188,7 +188,7 @@ describe('useAssistant', () => {
     })
 
     expect(result.current.currentAssistant.name).toBe(
-      'Updated Radium Chat Name'
+      'Updated Radium Name'
     )
   })
 
@@ -272,6 +272,66 @@ describe('useAssistant', () => {
 
       expect(createAssistant).not.toHaveBeenCalled()
       expect(result.current.assistants).toHaveLength(2)
+    })
+  })
+
+  describe('updateAssistantInstructions', () => {
+    const otherAssistant: Assistant = {
+      id: 'assistant-2',
+      name: 'Assistant 2',
+      instructions: 'Help the user',
+      created_at: 1,
+      parameters: { temperature: 0.2 },
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+      act(() => {
+        useAssistant.setState({
+          assistants: [defaultAssistant, otherAssistant],
+          currentAssistant: defaultAssistant,
+        })
+      })
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('rewrites only the targeted system prompt, leaving sampling alone', () => {
+      const { result } = renderHook(() => useAssistant())
+
+      act(() => {
+        result.current.setPendingAssistant(otherAssistant)
+        result.current.updateAssistantInstructions('assistant-2', 'Be terse')
+      })
+
+      const [first, second] = result.current.assistants
+      expect(second.instructions).toBe('Be terse')
+      expect(second.sampling_overridden).toBeUndefined()
+      expect(first.instructions).toBe(defaultAssistant.instructions)
+      expect(result.current.pendingAssistant?.instructions).toBe('Be terse')
+    })
+
+    it('persists once after the debounce, with the latest text', () => {
+      const { result } = renderHook(() => useAssistant())
+
+      act(() => {
+        result.current.updateAssistantInstructions('assistant-2', 'B')
+        result.current.updateAssistantInstructions('assistant-2', 'Be')
+        result.current.updateAssistantInstructions('assistant-2', 'Be terse')
+      })
+      expect(createAssistant).not.toHaveBeenCalled()
+
+      act(() => {
+        vi.runAllTimers()
+      })
+
+      expect(createAssistant).toHaveBeenCalledTimes(1)
+      expect(createAssistant.mock.calls[0][0]).toMatchObject({
+        id: 'assistant-2',
+        instructions: 'Be terse',
+      })
     })
   })
 })

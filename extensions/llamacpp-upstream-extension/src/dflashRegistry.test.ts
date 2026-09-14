@@ -6,7 +6,7 @@ import {
 } from './dflashRegistry'
 
 describe('DFlash registry', () => {
-  it('defaults to Radium Chat Q8_0 across target quantizations', () => {
+  it('defaults to AtomicChat Q8_0 across target quantizations', () => {
     const draft = resolveDflashDraft(
       'unsloth/Qwen3_5-9B-GGUF-Qwen3_5-9B-IQ4_XS'
     )
@@ -50,7 +50,7 @@ describe('DFlash registry', () => {
     expect(checkDflashSupport('Qwen3-Coder-Next-GGUF')).toBe(true)
   })
 
-  it('uses Radium Chat Q8_0 drafts when published', () => {
+  it('uses AtomicChat Q8_0 drafts when published', () => {
     const expectedRepos = new Map([
       ['Qwen3-4B-Instruct', 'AtomicChat/Qwen3-4B-DFlash-GGUF'],
       ['Qwen3-8B-Instruct', 'AtomicChat/Qwen3-8B-DFlash-GGUF'],

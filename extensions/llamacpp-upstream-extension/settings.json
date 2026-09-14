@@ -13,7 +13,7 @@
   {
     "key": "mtp",
     "title": "Enable MTP (Multi-Token Prediction)",
-    "description": "Speed up generation with a compatible MTP head. Radium Chat uses a built-in or matching downloaded head when available. Requires an MTP-capable llama.cpp backend and is mutually exclusive with DFlash.",
+    "description": "Speed up generation with a compatible MTP head. Radium uses a built-in or matching downloaded head when available. Requires an MTP-capable llama.cpp backend and is mutually exclusive with DFlash.",
     "controllerType": "checkbox",
     "controllerProps": {
       "value": false
@@ -22,7 +22,7 @@
   {
     "key": "dflash",
     "title": "Enable DFlash (multi-layer draft speculative decoding)",
-    "description": "Speed up generation with a compatible DFlash draft model. Radium Chat offers a matching draft download when available. Requires a DFlash-capable llama.cpp backend and is mutually exclusive with MTP. [Browse Radium Chat DFlash models](https://huggingface.co/collections/AtomicChat/dflash-speculative-drafts).",
+    "description": "Speed up generation with a compatible DFlash draft model. Radium offers a matching draft download when available. Requires a DFlash-capable llama.cpp backend and is mutually exclusive with MTP. [Browse Radium DFlash models](https://huggingface.co/collections/AtomicChat/dflash-speculative-drafts).",
     "controllerType": "checkbox",
     "controllerProps": {
       "value": false

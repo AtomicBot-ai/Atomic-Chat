@@ -31,6 +31,13 @@ type AppState = {
   errorMessage?: AppErrorMessage
   promptProgress?: PromptProgress
   activeModels: string[]
+  /**
+   * Local models the user stopped by hand, as {@link modelStopKey} keys. The
+   * composer's auto-start leaves these alone until the user asks for the model
+   * again — by sending, or by picking it — so a Stop is not undone the moment
+   * a chat is back on screen.
+   */
+  userStoppedModels: string[]
   cancelToolCall?: () => void
   setServerStatus: (value: 'running' | 'stopped' | 'pending') => void
   updateStreamingContent: (content: ThreadMessage | undefined) => void
@@ -51,6 +58,12 @@ type AppState = {
   setErrorMessage: (error: AppErrorMessage | undefined) => void
   updatePromptProgress: (progress: PromptProgress | undefined) => void
   setActiveModels: (models: string[]) => void
+  setUserStoppedModels: (keys: string[]) => void
+}
+
+/** Identity of a model on one engine, as `userStoppedModels` records it. */
+export function modelStopKey(providerName: string, modelId: string): string {
+  return `${providerName}::${modelId}`
 }
 
 export const useAppState = create<AppState>()((set) => ({
@@ -71,6 +84,7 @@ export const useAppState = create<AppState>()((set) => ({
   promptProgress: undefined,
   cancelToolCall: undefined,
   activeModels: [],
+  userStoppedModels: [],
   updateStreamingContent: (content: ThreadMessage | undefined) => {
     set(() => ({
       streamingContent: content
@@ -172,6 +186,11 @@ export const useAppState = create<AppState>()((set) => ({
   setActiveModels: (models: string[]) => {
     set(() => ({
       activeModels: models,
+    }))
+  },
+  setUserStoppedModels: (keys: string[]) => {
+    set(() => ({
+      userStoppedModels: keys,
     }))
   },
 }))

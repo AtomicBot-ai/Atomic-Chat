@@ -66,7 +66,7 @@ vi.mock('@/stores/recommended-models-registry-store', () => ({
     }),
 }))
 
-import type { HardwareProfile } from '@/lib/hardware-tier'
+import type { HardwareProfile, HardwareTier } from '@/lib/hardware-tier'
 import { useResolvedRecommendedModels } from '../useResolvedRecommendedModels'
 
 describe('useResolvedRecommendedModels', () => {
@@ -185,7 +185,7 @@ describe('useResolvedRecommendedModels memory ceiling', () => {
   }
 
   /** A catalog card for a rung's lead, with its pinned quant at `size`. */
-  const cardFor = (tier: 'unified_16' | 'unified_8', size: string) => {
+  const cardFor = (tier: HardwareTier, size: string) => {
     const lead = BASELINE_TIER_RECOMMENDATIONS[tier][0]
     const model: CatalogModel = {
       model_name: lead.model_name,
@@ -235,6 +235,48 @@ describe('useResolvedRecommendedModels memory ceiling', () => {
 
     expect(result.current[0].rec.modelName).toBe(
       BASELINE_TIER_RECOMMENDATIONS.unified_16[0].model_name
+    )
+  })
+
+  it('steps an 18 GB Mac from the 27B down to the 16 GiB rung', () => {
+    // 18 GB lands on unified_24, whose 27B at 15.4 GiB is 0.86 of the pool —
+    // just past the ceiling — so the offer is the 16 GiB rung's instead.
+    const mac18: HardwareProfile = {
+      ...mac16,
+      tier: 'unified_24',
+      budgetMib: 18 * GIB,
+      systemRamMib: 18 * GIB,
+    }
+    const { result } = renderHook(() =>
+      useResolvedRecommendedModels(
+        [cardFor('unified_24', '15.41 GB'), cardFor('unified_16', '6.42 GB')],
+        'unified_24',
+        mac18
+      )
+    )
+
+    expect(result.current[0].rec.modelName).toBe(
+      BASELINE_TIER_RECOMMENDATIONS.unified_16[0].model_name
+    )
+  })
+
+  it('keeps the 27B on a 24 GB Mac', () => {
+    const mac24: HardwareProfile = {
+      ...mac16,
+      tier: 'unified_24',
+      budgetMib: 24 * GIB,
+      systemRamMib: 24 * GIB,
+    }
+    const { result } = renderHook(() =>
+      useResolvedRecommendedModels(
+        [cardFor('unified_24', '15.41 GB')],
+        'unified_24',
+        mac24
+      )
+    )
+
+    expect(result.current[0].rec.modelName).toBe(
+      BASELINE_TIER_RECOMMENDATIONS.unified_24[0].model_name
     )
   })
 

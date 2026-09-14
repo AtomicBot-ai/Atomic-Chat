@@ -369,14 +369,19 @@ fn detect_windows_installer_type() -> String {
     use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
     use winreg::RegKey;
 
-    const PRODUCT: &str = "Radium Chat";
+    // Every name this app has installed under. NSIS keys its uninstall entry,
+    // and WiX its DisplayName, by product name, and builds before ADR
+    // 2026-09-13 installed as "Atomic Chat".
+    const PRODUCTS: [&str; 2] = ["Radium", "Atomic Chat"];
     const UNINSTALL: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
 
     // NSIS (setup.exe) writes its uninstall key named after the product.
-    for hive in [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE] {
-        let root = RegKey::predef(hive);
-        if root.open_subkey(format!("{UNINSTALL}\\{PRODUCT}")).is_ok() {
-            return "setup_exe".to_string();
+    for product in PRODUCTS {
+        for hive in [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE] {
+            let root = RegKey::predef(hive);
+            if root.open_subkey(format!("{UNINSTALL}\\{product}")).is_ok() {
+                return "setup_exe".to_string();
+            }
         }
     }
 
@@ -389,7 +394,12 @@ fn detect_windows_installer_type() -> String {
                 if let Ok(entry) = uninstall.open_subkey(&key_name) {
                     let name: Result<String, _> = entry.get_value("DisplayName");
                     if let Ok(name) = name {
-                        if name.starts_with(PRODUCT) {
+                        // Exact, or followed by a space ("Radium 2.0.37"), so that
+                        // "Radium" never claims some other "Radium ..." product.
+                        let is_ours = PRODUCTS.iter().any(|product| {
+                            name == *product || name.starts_with(&format!("{product} "))
+                        });
+                        if is_ours {
                             let is_msi: u32 = entry.get_value("WindowsInstaller").unwrap_or(0);
                             return if is_msi == 1 {
                                 "msi".to_string()
@@ -607,7 +617,7 @@ pub struct CliInstallStatus {
 /// Name of the CLI command as it is installed on the user's PATH.
 pub const CLI_COMMAND_NAME: &str = "atomic-chat-cli";
 
-/// Name the CLI shipped under before the Radium Chat rebrand. Older builds
+/// Name the CLI shipped under before the Radium rebrand. Older builds
 /// installed it as plain `jan`, which collides with the unrelated Jan.ai CLI.
 const LEGACY_CLI_COMMAND_NAME: &str = "jan";
 
@@ -661,13 +671,13 @@ fn remove_legacy_cli_binary(dir: &std::path::Path) {
     }
     if !is_our_cli_binary(&legacy) {
         log::info!(
-            "Leaving {} alone — not an Radium Chat binary",
+            "Leaving {} alone — not a Radium binary",
             legacy.display()
         );
         return;
     }
     match std::fs::remove_file(&legacy) {
-        Ok(()) => log::info!("Removed legacy Radium Chat CLI at {}", legacy.display()),
+        Ok(()) => log::info!("Removed legacy Radium CLI at {}", legacy.display()),
         Err(e) => log::warn!("Could not remove {}: {}", legacy.display(), e),
     }
 }
@@ -740,7 +750,7 @@ pub fn install_jan_cli_sync<R: Runtime>(
     let dest = resource_bin_dir.join(dest_bin_name);
 
     if !bundled.exists() && !dest.exists() {
-        return Err("Radium Chat CLI binary not bundled with this version of the app.".to_string());
+        return Err("Radium CLI binary not bundled with this version of the app.".to_string());
     }
 
     #[cfg(windows)]
@@ -820,7 +830,7 @@ pub fn uninstall_jan_cli() -> Result<(), String> {
         if dest.exists() {
             std::fs::remove_file(&dest).map_err(|e| {
                 format!(
-                    "Failed to remove the Radium Chat CLI from {}: {}",
+                    "Failed to remove the Radium CLI from {}: {}",
                     dest.display(),
                     e
                 )
@@ -970,7 +980,7 @@ fn jan_cli_bin_dir_windows() -> Result<PathBuf, String> {
         std::env::var("LOCALAPPDATA").map_err(|_| "Cannot determine LOCALAPPDATA".to_string())?;
     Ok(PathBuf::from(local_app_data)
         .join("Programs")
-        .join("Radium Chat")
+        .join("Radium")
         .join("resources")
         .join("bin"))
 }
@@ -1386,7 +1396,7 @@ custom_providers: []
 ///
 /// On Windows the native installer (`install.ps1`) sets `HERMES_HOME` via
 /// `[Environment]::SetEnvironmentVariable(..., "User")` -- a registry write
-/// that is invisible to Radium Chat's own already-running process (which only
+/// that is invisible to Radium's own already-running process (which only
 /// sees the environment block snapshotted at its own startup). So
 /// `std::env::var("HERMES_HOME")` can be stale within the same app session
 /// that just installed Hermes. Reading the registry value directly first
@@ -2704,7 +2714,7 @@ pub async fn install_agent<R: Runtime>(
             return Err(format!(
                 "'{}' is required to install this agent but was not found on PATH. \
                  Install it (Node.js from https://nodejs.org for npm-based agents), \
-                 then restart Radium Chat and try again: {}",
+                 then restart Radium and try again: {}",
                 prereq, docs
             ));
         }
@@ -2725,7 +2735,7 @@ pub async fn install_agent<R: Runtime>(
             return Err(format!(
                 "OpenClaw requires Node.js 22.22.3+, 24.15+ or 25.9+ (Node 23 is not supported), \
                  but v{}.{}.{} is on your PATH. Update Node from https://nodejs.org, \
-                 then restart Atomic Chat and try again: {}",
+                 then restart Radium and try again: {}",
                 version.0, version.1, version.2, docs
             ));
         }
@@ -2865,7 +2875,7 @@ pub fn configure_codex(
     block.push_str(ATOMIC_MANAGED_BEGIN);
     block.push('\n');
     block.push_str("[model_providers.atomic]\n");
-    block.push_str("name = \"Atomic Chat\"\n");
+    block.push_str("name = \"Radium\"\n");
     block.push_str(&format!(
         "base_url = \"{}\"\n",
         toml_basic_string_escape(&api_url)
@@ -2944,7 +2954,7 @@ pub fn configure_opencode(
         "atomic".to_string(),
         serde_json::json!({
             "npm": "@ai-sdk/openai-compatible",
-            "name": "Radium Chat",
+            "name": "Radium",
             "options": { "baseURL": api_url, "apiKey": key_val },
             "models": serde_json::Value::Object(models),
         }),
@@ -2976,7 +2986,7 @@ fn openclaude_global_config_path(home: &str) -> PathBuf {
 /// (`~/.openclaude/.openclaude-profile.json`). OpenClaude explicitly does not
 /// read `~/.claude` / `~/.claude.json` (see its README's "OpenClaude config
 /// cutover" section), so there is no legacy path to fall back to. OpenClaude
-/// routes atomic-chat through its OpenAI-compatible shim; local Radium Chat
+/// routes atomic-chat through its OpenAI-compatible shim; local Radium
 /// needs no API key.
 #[tauri::command]
 pub fn configure_openclaude(
@@ -3015,7 +3025,7 @@ pub fn configure_openclaude(
 
     let profile_entry = serde_json::json!({
         "id": OPENCLAUDE_ATOMIC_PROFILE_ID,
-        "name": "Radium Chat",
+        "name": "Radium",
         "provider": "atomic-chat",
         "baseUrl": api_url,
         "model": model,
@@ -3125,7 +3135,7 @@ pub fn configure_mimo(
         "atomic".to_string(),
         serde_json::json!({
             "npm": "@ai-sdk/openai-compatible",
-            "name": "Radium Chat",
+            "name": "Radium",
             "options": { "baseURL": api_url, "apiKey": key_val },
             "models": serde_json::Value::Object(models),
         }),
@@ -3502,7 +3512,7 @@ fn model_policy_allows(list: &[serde_json::Value], model_ref: &str) -> bool {
         })
 }
 
-/// Apply Atomic Chat's provider, primary model and policy edits to a parsed
+/// Apply Radium's provider, primary model and policy edits to a parsed
 /// `openclaw.json`, returning the updated document.
 ///
 /// Split out from [`configure_openclaw`] so the merge rules — which of the
@@ -3697,7 +3707,7 @@ pub fn configure_openclaw(
 }
 
 /// Configure Claude Code by upserting `~/.claude/settings.json` so it points at
-/// the local Radium Chat server and uses the active model. Values go into the
+/// the local Radium server and uses the active model. Values go into the
 /// `env` block — Claude reads it at startup regardless of how `claude` was
 /// launched, and `ANTHROPIC_MODEL` there overrides any stale top-level `model`.
 /// All other user settings are preserved.
@@ -3850,7 +3860,7 @@ pub fn copilot_env_vars(
     env_vars
 }
 
-/// Configure GitHub Copilot CLI to use the local Radium Chat server via its BYOK
+/// Configure GitHub Copilot CLI to use the local Radium server via its BYOK
 /// environment variables. Copilot has no provider config file — it reads these
 /// from the environment at launch — so we persist them to the user's shell rc
 /// (Windows: `setx`). The auto-opened terminal then sources them. `COPILOT_OFFLINE`
@@ -4071,7 +4081,7 @@ fn dsh_route_node(api_url: &str, model: &str, with_key: bool) -> serde_yaml::Val
     let mut route = Mapping::new();
     route.insert(
         ykey("displayName"),
-        Value::String("Radium Chat".to_string()),
+        Value::String("Radium".to_string()),
     );
     route.insert(ykey("api"), Value::String("openai-completions".to_string()));
     route.insert(ykey("baseURL"), Value::String(api_url.to_string()));
@@ -4397,7 +4407,7 @@ fn configure_dsh_at(
     Ok(())
 }
 
-/// Point DeepSeek Harness (`dsh`) at the local Radium Chat server by upserting
+/// Point DeepSeek Harness (`dsh`) at the local Radium server by upserting
 /// the `llm-pi-ai.providers.atomic` route in `$DSH_HOME/settings.yaml`
 /// (default `~/.dsh`). dsh re-reads that document live, so no restart is needed.
 ///
@@ -4614,7 +4624,7 @@ pub fn configure_kilo(
     provider.as_object_mut().unwrap().insert(
         "atomic".to_string(),
         serde_json::json!({
-            "name": "Radium Chat",
+            "name": "Radium",
             "npm": "@ai-sdk/openai-compatible",
             "options": { "baseURL": api_url, "apiKey": key_val },
             "models": serde_json::Value::Object(models),
@@ -4866,7 +4876,7 @@ const ATOMIC_AGENT_PROVIDER_ID: &str = "atomic-chat";
 /// `src/config/config-schema.ts`). `llm.activeEmbeddingProvider` must name an
 /// entry that exists in `llm.providers`, so this is both what we seed a new
 /// block with and the only target we ever repair a dangling one to — pointing
-/// embeddings at Atomic Chat instead would silently repoint the agent's memory
+/// embeddings at Radium instead would silently repoint the agent's memory
 /// recall, which is not what Run asked for.
 const ATOMIC_AGENT_LOCAL_PROVIDER_ID: &str = "local-llama";
 
@@ -4994,7 +5004,7 @@ fn atomic_agent_embedding_base_url(
         })
 }
 
-/// Upsert the Atomic Chat provider into an Atomic Agent `config.json` payload.
+/// Upsert the Radium provider into an Atomic Agent `config.json` payload.
 ///
 /// Split out from the command so the merge is unit-testable without touching a
 /// real state directory. Everything outside `llm` is left byte-for-byte alone;
@@ -5059,7 +5069,7 @@ fn atomic_agent_patch_config(
             .iter()
             .position(|p| p.get("id").and_then(|v| v.as_str()) == Some(ATOMIC_AGENT_PROVIDER_ID));
 
-        // Atomic Chat usually runs without auth, but the entry is stored as an
+        // Radium usually runs without auth, but the entry is stored as an
         // `openai-compatible` provider and most such clients reject an empty key.
         let key_val = api_key
             .map(str::trim)
@@ -5091,7 +5101,7 @@ fn atomic_agent_patch_config(
             .is_some_and(|id| atomic_agent_lists(providers, id));
         // The repair target is always `local-llama` — the agent's own default,
         // seeded here when the file does not carry it. Falling back to our own
-        // id would quietly hand memory recall to Atomic Chat, which is not what
+        // id would quietly hand memory recall to Radium, which is not what
         // Run asked for.
         if repair && !atomic_agent_lists(providers, ATOMIC_AGENT_LOCAL_PROVIDER_ID) {
             providers.push(local_llama);
@@ -5404,6 +5414,84 @@ pub fn migrate_macos_autostart_launchagent<R: Runtime>(
     }
 }
 
+/// One-time migration for the product rename from "Atomic Chat" to "Radium"
+/// (ADR 2026-09-13). The autostart plugin names its entry after
+/// `package_info().name`, so an entry registered before the rename is invisible
+/// to `isEnabled()` afterwards and would read as "off". This removes the entry
+/// under the old name, so it can't launch a stale or uninstalled binary, and
+/// returns `true` when one existed, so the caller re-registers it under the new
+/// name. Returns `false` when there was nothing to migrate.
+#[tauri::command]
+pub fn migrate_legacy_autostart_entry<R: Runtime>(
+    #[allow(unused_variables)] app: AppHandle<R>,
+) -> Result<bool, String> {
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+    const LEGACY_NAME: &str = crate::core::app::data_migration::LEGACY_PRODUCT_NAME;
+
+    #[cfg(target_os = "windows")]
+    {
+        use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_SET_VALUE};
+        use winreg::RegKey;
+
+        let Ok(run) = RegKey::predef(HKEY_CURRENT_USER).open_subkey_with_flags(
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            KEY_READ | KEY_SET_VALUE,
+        ) else {
+            return Ok(false);
+        };
+        if run.get_raw_value(LEGACY_NAME).is_err() {
+            return Ok(false);
+        }
+        run.delete_value(LEGACY_NAME)
+            .map_err(|e| format!("Failed to remove the legacy launch-at-startup entry: {e}"))?;
+        log::info!("Removed the legacy '{LEGACY_NAME}' launch-at-startup entry");
+        Ok(true)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // The AppleScript launcher registers a Login Item named after the app.
+        let script = format!(
+            "tell application \"System Events\"\n\
+             if exists login item \"{LEGACY_NAME}\" then\n\
+             delete login item \"{LEGACY_NAME}\"\n\
+             return \"removed\"\n\
+             end if\n\
+             end tell\n\
+             return \"absent\""
+        );
+        let output = std::process::Command::new("osascript")
+            .args(["-e", &script])
+            .output()
+            .map_err(|e| format!("Failed to query Login Items: {e}"))?;
+        let removed = String::from_utf8_lossy(&output.stdout).trim() == "removed";
+        if removed {
+            log::info!("Removed the legacy '{LEGACY_NAME}' Login Item");
+        }
+        Ok(removed)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // The XDG autostart entry is a desktop file named after the app.
+        let Some(entry) = dirs::config_dir()
+            .map(|dir| dir.join("autostart").join(format!("{LEGACY_NAME}.desktop")))
+        else {
+            return Ok(false);
+        };
+        if !entry.is_file() {
+            return Ok(false);
+        }
+        fs::remove_file(&entry)
+            .map_err(|e| format!("Failed to remove the legacy autostart entry: {e}"))?;
+        log::info!("Removed the legacy autostart entry {}", entry.display());
+        Ok(true)
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        let _ = &app;
+        Ok(false)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5574,7 +5662,7 @@ mod dsh_tests {
         let r = route(&root);
         assert_eq!(r.get("api").unwrap().as_str(), Some("openai-completions"));
         assert_eq!(r.get("baseURL").unwrap().as_str(), Some(URL));
-        assert_eq!(r.get("displayName").unwrap().as_str(), Some("Radium Chat"));
+        assert_eq!(r.get("displayName").unwrap().as_str(), Some("Radium"));
 
         // A hand-declared route is refused by dsh without a non-empty model list.
         let models = r.get("models").unwrap().as_sequence().unwrap();
@@ -5999,7 +6087,7 @@ mod atomic_agent_tests {
     /// reject the whole file, so it is repaired rather than carried forward —
     /// and the repair lands on the agent's own `local-llama` default, seeding
     /// that entry when the file does not already carry it. Repairing toward
-    /// `atomic-chat` would hand memory recall to Atomic Chat, which is exactly
+    /// `atomic-chat` would hand memory recall to Radium, which is exactly
     /// what this writer refuses to do.
     #[test]
     fn repairs_a_dangling_embedding_provider_to_local_llama() {

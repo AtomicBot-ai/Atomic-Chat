@@ -1,6 +1,6 @@
 {
   "title": "Integrations",
-  "subtitle": "Install external coding agents and assistants, then point them at your local Radium Chat models with one click.",
+  "subtitle": "Install external coding agents and assistants, then point them at your local Radium models with one click.",
   "serverSection": "Local API Server",
   "serverSectionDesc": "Run an OpenAI-compatible server for your local models, then point the agents below at it.",
   "codingAgents": "Coding Agents",
@@ -40,7 +40,7 @@
   "experimental": "Experimental",
   "toast": {
     "serverStarting": "Starting local server...",
-    "serverStartingDesc": "Preparing the Radium Chat server for {{name}}",
+    "serverStartingDesc": "Preparing the Radium server for {{name}}",
     "installSuccess": "{{name}} installed",
     "installSuccessDesc": "{{name}} was installed successfully.",
     "installFailed": "Failed to install {{name}}",
@@ -50,7 +50,7 @@
     "configuredDescEditor": "{{name}} now points at your local server — opening the editor.",
     "configuredDescOpenclaw": "{{name}} now points at your local server. Its Gateway reloads the config on its own — if a chat is still pinned to another model, run /model default in it.",
     "openclawAppReady": "Open OpenClaw Companion",
-    "openclawAppReadyDesc": "Your config is updated. Open OpenClaw Companion from the system tray or the Start menu to use the Atomic Chat model.",
+    "openclawAppReadyDesc": "Your config is updated. Open OpenClaw Companion from the system tray or the Start menu to use the Radium model.",
     "configureFailed": "Failed to configure {{name}}",
     "terminalFailed": "Couldn't open a terminal for {{name}}",
     "settingsCopied": "Connection settings copied",

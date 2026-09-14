@@ -1,10 +1,10 @@
-# Makefile for Radium Chat Electron App - Build, Lint, Test, and Clean
+# Makefile for Radium Electron App - Build, Lint, Test, and Clean
 
 REPORT_PORTAL_URL ?= ""
 REPORT_PORTAL_API_KEY ?= ""
 REPORT_PORTAL_PROJECT_NAME ?= ""
-	REPORT_PORTAL_LAUNCH_NAME ?= "Radium Chat App"
-REPORT_PORTAL_DESCRIPTION ?= "Radium Chat App report"
+	REPORT_PORTAL_LAUNCH_NAME ?= "Radium App"
+REPORT_PORTAL_DESCRIPTION ?= "Radium App report"
 
 # Default target, does nothing
 all:
@@ -111,8 +111,9 @@ FORCE_HARDWARE_TIER ?= vram_2
 # ступени лестницы на любом компьютере.
 #
 # Значение — любой id из `HardwareTier` (`web-app/src/lib/hardware-tier.ts`):
-# cpu_only, vram_2, vram_4, vram_8, vram_12, vram_16, vram_16_plus,
-# unified_8, unified_16, unified_32, unified_32_plus. Прежние `low` и
+# cpu_only, vram_2, vram_4, vram_8, vram_12, vram_16, vram_24, vram_32,
+# vram_48, vram_64, vram_64_plus, unified_8, unified_16, unified_24,
+# unified_32, unified_48, unified_64, unified_64_plus. Прежние `low` и
 # `standard` тоже принимаются и мапятся на ближайшую ступень.
 #
 # Манифест берём из локального чекаута conf, если он есть: ключа `tiers` в
@@ -167,7 +168,7 @@ else
 endif
 
 # Dev workflow with CPU-only backend to test runtime GPU auto-download.
-# Clears downloaded backends from the Radium Chat data folder
+# Clears downloaded backends from the Radium data folder
 # (data\llamacpp-upstream\backends), starts with the upstream `win-cpu-x64`
 # build, then the llamacpp-upstream extension detects the GPU and downloads
 # the optimal backend (CUDA 12.4 / 13.1 / Vulkan) in the background — and
@@ -176,8 +177,8 @@ dev-windows-cpu:
 ifeq ($(OS),Windows_NT)
 	powershell -ExecutionPolicy Bypass -Command "\
 		Get-Process llama-server -ErrorAction SilentlyContinue | Stop-Process -Force; \
-		Get-Process -Name 'Atomic Chat','atomic-chat' -ErrorAction SilentlyContinue | Stop-Process -Force; \
-		Get-Process -Name 'msedgewebview2' -ErrorAction SilentlyContinue | Where-Object { try { $$_.MainModule.FileName -like '*Atomic Chat*' } catch { $$false } } | Stop-Process -Force; \
+		Get-Process -Name 'Radium','Atomic Chat','atomic-chat' -ErrorAction SilentlyContinue | Stop-Process -Force; \
+		Get-Process -Name 'msedgewebview2' -ErrorAction SilentlyContinue | Where-Object { try { $$_.MainModule.FileName -like '*chat.atomic.app*' -or $$_.MainModule.FileName -like '*Radium*' -or $$_.MainModule.FileName -like '*Atomic Chat*' } catch { $$false } } | Stop-Process -Force; \
 		Start-Sleep -Seconds 2; \
 		$$settingsFile = Join-Path $$env:APPDATA 'chat.atomic.app\settings.json'; \
 		$$dataDir = $$null; \
@@ -185,7 +186,7 @@ ifeq ($(OS),Windows_NT)
 			$$s = Get-Content $$settingsFile -Raw | ConvertFrom-Json; \
 			$$dataDir = $$s.data_folder; \
 		}; \
-		if (-not $$dataDir) { $$dataDir = Join-Path $$env:APPDATA 'Atomic Chat\data' }; \
+		if (-not $$dataDir) { $$dataDir = Join-Path $$env:APPDATA 'Radium\data'; if (-not (Test-Path $$dataDir)) { $$dataDir = Join-Path $$env:APPDATA 'Atomic Chat\data' } }; \
 		$$backendsDir = Join-Path $$dataDir 'llamacpp-upstream\backends'; \
 		if (Test-Path $$backendsDir) { \
 			Write-Host ('Clearing downloaded backends from ' + $$backendsDir) -ForegroundColor Yellow; \
@@ -217,10 +218,10 @@ else
 	@echo "This target is for Windows only."
 endif
 
-# Full wipe of all Radium Chat data on Windows — used to simulate a true
-# first-launch as if the app had never been installed. Removes the four
-# default APPDATA / LOCALAPPDATA directories (see DEVELOP.md → "Where Atomic
-# Chat stores data on Windows"). Does NOT touch a custom data_folder if the
+# Full wipe of all Radium data on Windows — used to simulate a true
+# first-launch as if the app had never been installed. Removes the
+# default APPDATA / LOCALAPPDATA directories (see DEVELOP.md → "Where Radium
+# stores data on Windows"). Does NOT touch a custom data_folder if the
 # user relocated it via the in-app setting — that is the user's responsibility.
 #
 # Guarded by CONFIRM=1 so an accidental `make clean-windows-all` only prints
@@ -230,11 +231,13 @@ ifeq ($(OS),Windows_NT)
 ifeq ($(CONFIRM),1)
 	powershell -ExecutionPolicy Bypass -Command "\
 		Get-Process llama-server -ErrorAction SilentlyContinue | Stop-Process -Force; \
-		Get-Process -Name 'Atomic Chat','atomic-chat' -ErrorAction SilentlyContinue | Stop-Process -Force; \
-		Get-Process -Name 'msedgewebview2' -ErrorAction SilentlyContinue | Where-Object { try { $$_.MainModule.FileName -like '*chat.atomic.app*' -or $$_.MainModule.FileName -like '*Atomic Chat*' } catch { $$false } } | Stop-Process -Force; \
+		Get-Process -Name 'Radium','Atomic Chat','atomic-chat' -ErrorAction SilentlyContinue | Stop-Process -Force; \
+		Get-Process -Name 'msedgewebview2' -ErrorAction SilentlyContinue | Where-Object { try { $$_.MainModule.FileName -like '*chat.atomic.app*' -or $$_.MainModule.FileName -like '*Radium*' -or $$_.MainModule.FileName -like '*Atomic Chat*' } catch { $$false } } | Stop-Process -Force; \
 		Start-Sleep -Seconds 2; \
 		$$paths = @( \
+			(Join-Path $$env:APPDATA 'Radium'), \
 			(Join-Path $$env:APPDATA 'Atomic Chat'), \
+			(Join-Path $$env:APPDATA 'Radium Chat'), \
 			(Join-Path $$env:APPDATA 'Atomic-Chat'), \
 			(Join-Path $$env:APPDATA 'chat.atomic.app'), \
 			(Join-Path $$env:LOCALAPPDATA 'chat.atomic.app') \
@@ -248,14 +251,16 @@ ifeq ($(CONFIRM),1)
 				Write-Host ('Not present: ' + $$p) -ForegroundColor Gray; \
 			} \
 		}; \
-		Write-Host 'Radium Chat: full data wipe done.' -ForegroundColor Green; \
+		Write-Host 'Radium: full data wipe done.' -ForegroundColor Green; \
 	"
 else
 	@powershell -NoProfile -ExecutionPolicy Bypass -Command "\
 		Write-Host 'DRY RUN. Nothing was deleted.' -ForegroundColor Yellow; \
 		Write-Host 'These paths WOULD be removed when re-run with CONFIRM=1:' -ForegroundColor Yellow; \
 		$$paths = @( \
+			(Join-Path $$env:APPDATA 'Radium'), \
 			(Join-Path $$env:APPDATA 'Atomic Chat'), \
+			(Join-Path $$env:APPDATA 'Radium Chat'), \
 			(Join-Path $$env:APPDATA 'Atomic-Chat'), \
 			(Join-Path $$env:APPDATA 'chat.atomic.app'), \
 			(Join-Path $$env:LOCALAPPDATA 'chat.atomic.app') \
@@ -469,6 +474,7 @@ test-hardening-contracts:
 		tests/registry-contracts.test.mjs \
 		tests/hardware-profiles.test.mjs \
 		tests/no-auto-update.test.mjs \
+		tests/radium-product-name.test.mjs \
 		tests/window-controls.test.mjs \
 		tests/upstream-backend-resolver.test.mjs
 
@@ -1299,7 +1305,7 @@ build: install-and-build install-rust-targets
 #   1. yarn tauri build (universal-apple-darwin, macos-конфиг)
 #      — Tauri подписывает и нотаризует .app, создаёт и подписывает .dmg
 #   2. scripts/rename-dmg-volume.sh
-#      — переименовывает том DMG в "Radium Chat v<version>"
+#      — переименовывает том DMG в "Radium v<version>"
 #      — ломает только подпись DMG-контейнера; .app внутри остаётся нотаризованным
 #   3. scripts/notarize-dmg-macos.sh
 #      — восстанавливает подпись DMG + нотаризует + стейплит (если заданы APPLE_ID/PASSWORD/TEAM_ID)

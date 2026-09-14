@@ -5,9 +5,9 @@
   <key>CFBundleIdentifier</key>
   <string>chat.atomic.app</string>
   <key>NSLocalNetworkUsageDescription</key>
-  <string>Atomic Chat needs local network access to connect to model servers running on your local network (e.g. a vLLM, Ollama, or LM Studio endpoint on your LAN).</string>
+  <string>Radium needs local network access to connect to model servers running on your local network (e.g. a vLLM, Ollama, or LM Studio endpoint on your LAN).</string>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Atomic Chat uses your microphone to transcribe what you say into the chat box. Audio is processed entirely on this device and is never uploaded.</string>
+  <string>Radium uses your microphone to transcribe what you say into the chat box. Audio is processed entirely on this device and is never uploaded.</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>

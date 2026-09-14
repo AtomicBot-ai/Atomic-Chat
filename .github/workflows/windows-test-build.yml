@@ -197,7 +197,7 @@ jobs:
       - name: Upload Windows installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: atomic-chat-windows-test-${{ github.sha }}
+          name: radium-windows-test-${{ github.sha }}
           # NSIS only. Both installers embed the whole ~1.26GB offline backend
           # bundle, so shipping the MSI as well doubled the download for a file
           # nobody installs from when testing. The MSI is still built and still

@@ -127,7 +127,7 @@ describe('agent file links', () => {
     ).toBe('`summary.txt` [summary.txt](https://example.com)')
   })
 
-  it('decodes only Radium Chat file hrefs', () => {
+  it('decodes only Radium file hrefs', () => {
     const path = 'C:\\Users\\Misha\\summary.txt'
     const href = `https://atomic.local/open-file?path=${encodeURIComponent(path)}`
 

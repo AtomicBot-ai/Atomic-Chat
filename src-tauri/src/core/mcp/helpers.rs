@@ -266,9 +266,9 @@ async fn connect_remote_mcp<R: Runtime>(
             protocol_version: Default::default(),
             capabilities: ClientCapabilities::default(),
             client_info: Implementation {
-                name: "Radium Chat MCP Client".to_string(),
+                name: "Radium MCP Client".to_string(),
                 version: env!("CARGO_PKG_VERSION").to_string(),
-                title: Some("Radium Chat".to_string()),
+                title: Some("Radium".to_string()),
                 website_url: None,
                 icons: None,
             },

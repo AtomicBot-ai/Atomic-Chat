@@ -1,4 +1,4 @@
-# AGENTS.md — Radium Chat
+# AGENTS.md — Radium
 
 Operating instructions for AI coding agents in this repository.
 Everything here applies to **every** task. Anything that applies only sometimes
@@ -23,7 +23,7 @@ backends sit behind that one facade; callers never need to know which is serving
 Targets: macOS (Universal), Windows x64, Linux (AppImage), iOS, Android.
 Apple Silicon is first-class.
 
-**Product name is Radium Chat.** Hard fork of [Jan](https://github.com/janhq/jan);
+**Product name is Radium.** Hard fork of [Jan](https://github.com/janhq/jan);
 much of the tree still carries `jan*` / `@janhq/*` names — see §4.
 
 ---
@@ -115,10 +115,10 @@ opportunistically breaks existing user installs.
 | `Cargo.toml` repo URL    | `github.com/janhq/jan` | leave                       |
 | Tauri bundle id          | `chat.atomic.app`      | use this                    |
 | Cargo crate              | `Atomic-Chat`          | use this                    |
-| Product name             | `Radium Chat`          | use this                    |
+| Product name             | `Radium`          | use this                    |
 
 **All new** modules, packages, env vars, log prefixes, CLI subcommands,
-telemetry events, user-facing strings and docs use `atomic` / `Radium Chat`.
+telemetry events, user-facing strings and docs use `atomic` / `Radium`.
 Wiring new code into an existing `@janhq/*` package is fine; adding a new
 `jan*` identifier is not.
 

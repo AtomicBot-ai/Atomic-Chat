@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import DropdownModelProvider from '../DropdownModelProvider'
 import { getModelDisplayName } from '@/lib/utils'
@@ -110,6 +110,18 @@ vi.mock('../ModelSupportStatus', () => ({
   ModelSupportStatus: () => <div data-testid="model-support-status" />,
 }))
 
+/**
+ * Renders the picker and steps from the model row into the list. The panel
+ * opens on the row whenever a model is selected — the list is one click in —
+ * and the list is what these tests are about.
+ */
+const renderPicker = () => {
+  const result = render(<DropdownModelProvider />)
+  const row = screen.queryByRole('button', { name: 'common:changeModel' })
+  if (row) fireEvent.click(row)
+  return result
+}
+
 describe('DropdownModelProvider - Display Name Integration', () => {
   const mockProviders: ModelProvider[] = [
     {
@@ -181,7 +193,7 @@ describe('DropdownModelProvider - Display Name Integration', () => {
   })
 
   it('should display custom model name in the trigger button', () => {
-    render(<DropdownModelProvider />)
+    renderPicker()
 
     // Should show the display name in both trigger and dropdown
     expect(screen.getAllByText('Custom Model 1')).toHaveLength(2) // One in trigger, one in dropdown
@@ -204,13 +216,13 @@ describe('DropdownModelProvider - Display Name Integration', () => {
       updateProvider: vi.fn(),
     } as MockHookReturn)
 
-    render(<DropdownModelProvider />)
+    renderPicker()
 
     expect(screen.getAllByText('model3.gguf')).toHaveLength(2) // Trigger and dropdown
   })
 
   it('should show display names in the model list items', () => {
-    render(<DropdownModelProvider />)
+    renderPicker()
 
     // Check if the display names are shown in the options
     expect(screen.getAllByText('Custom Model 1')).toHaveLength(2) // Selected: Trigger + dropdown
@@ -264,7 +276,7 @@ describe('DropdownModelProvider - Display Name Integration', () => {
       updateProvider: vi.fn(),
     } as MockHookReturn)
 
-    render(<DropdownModelProvider />)
+    renderPicker()
 
     expect(screen.getAllByText('Shared Model')).toHaveLength(1)
     expect(screen.getAllByText('shared-model.gguf')).toHaveLength(1)
@@ -312,7 +324,7 @@ describe('DropdownModelProvider - Display Name Integration', () => {
       updateProvider: vi.fn(),
     } as MockHookReturn)
 
-    render(<DropdownModelProvider />)
+    renderPicker()
 
     // Verify that display name is shown in UI
     expect(screen.getAllByText('Custom Model 1')).toHaveLength(2) // Trigger + dropdown
@@ -339,7 +351,7 @@ describe('DropdownModelProvider - Display Name Integration', () => {
     } as MockHookReturn)
 
     // Render with model2 selected
-    render(<DropdownModelProvider />)
+    renderPicker()
 
     // Check trigger shows Short Name
     expect(

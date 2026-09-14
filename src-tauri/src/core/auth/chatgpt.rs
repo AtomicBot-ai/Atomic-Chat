@@ -170,9 +170,9 @@ pub fn parse_callback_query(query: &str) -> Result<CallbackParams, String> {
 /// reflected back into it.
 const CALLBACK_PAGE: &str = concat!(
     "<!doctype html><html><head><meta charset=\"utf-8\">",
-    "<title>Atomic Chat</title></head><body style=\"font-family:system-ui;",
+    "<title>Radium</title></head><body style=\"font-family:system-ui;",
     "display:flex;align-items:center;justify-content:center;height:100vh;margin:0\">",
-    "<p>You can close this tab and return to Atomic Chat.</p></body></html>"
+    "<p>You can close this tab and return to Radium.</p></body></html>"
 );
 
 /// Bind the loopback listener, wait for exactly one callback, shut down.

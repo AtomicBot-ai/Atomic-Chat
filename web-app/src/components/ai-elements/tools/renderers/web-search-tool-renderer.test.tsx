@@ -8,7 +8,7 @@ describe('WebSearchToolRenderer', () => {
       <WebSearchToolRenderer
         presentation={{
           kind: 'web_search_exa',
-          title: 'Searched: Radium Chat',
+          title: 'Searched: Radium',
           results: Array.from({ length: 6 }, (_, index) => ({
             title: `Result ${index + 1}`,
             url: `https://example.com/${index + 1}`,

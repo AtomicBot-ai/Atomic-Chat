@@ -42,7 +42,7 @@
   "reportAnIssueDesc": "Našli jste chybu? Pomozte nám nahlášením problému na GitHubu.",
   "reportIssue": "Nahlásit problém",
   "credits": "Poděkování",
-  "creditsDesc1": "👋 Atomic Bot je vytvořen s ❤️ týmem Radium Chat.",
+  "creditsDesc1": "👋 Atomic Bot je vytvořen s ❤️ týmem Radium.",
   "creditsDesc2": "Speciální poděkování našim open-source závislostem—zejména llama.cpp a Tauri—a naší úžasné AI komunitě.",
   "appVersion": "Verze aplikace",
   "dataFolder": {
@@ -269,7 +269,7 @@
     "reportAnIssueDesc": "Našli jste chybu? Pomozte nám nahlášením problému na GitHubu.",
     "reportIssue": "Nahlásit problém",
     "credits": "Poděkování",
-    "creditsDesc1": "👋 Atomic Bot je vytvořen s ❤️ týmem Radium Chat.",
+    "creditsDesc1": "👋 Atomic Bot je vytvořen s ❤️ týmem Radium.",
     "creditsDesc2": "Speciální poděkování našim open-source závislostem—zejména llama.cpp a Tauri—a naší úžasné AI komunitě."
   },
   "extensions": {

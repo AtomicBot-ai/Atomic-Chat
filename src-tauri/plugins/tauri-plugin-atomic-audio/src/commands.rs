@@ -199,7 +199,7 @@ pub async fn start_dictation<R: Runtime>(
     if permission == MicPermission::Denied {
         return Err(AudioError::new(
             AudioErrorCode::PermissionDenied,
-            "Atomic Chat can't use the microphone.",
+            "Radium can't use the microphone.",
         ));
     }
 

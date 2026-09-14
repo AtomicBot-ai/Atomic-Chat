@@ -13,6 +13,10 @@ use tokio::sync::{oneshot, Mutex, Notify};
 
 /// Handles owned by one Local API Server run.
 pub struct ServerHandle {
+    /// Port the listener actually bound, which a fallback can make differ from
+    /// the one requested. Handed back to a caller that asks to start a server
+    /// that is already up.
+    pub port: u16,
     pub server_task: tokio::task::JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>,
     pub analytics_task: tokio::task::JoinHandle<()>,
     pub analytics_shutdown: oneshot::Sender<()>,

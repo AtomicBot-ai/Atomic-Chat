@@ -10,7 +10,6 @@ import { getJanDataFolderPath, joinPath, fs } from '@janhq/core'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useAppState } from '@/hooks/useAppState'
 import { useModelLoad } from '@/hooks/useModelLoad'
-import { useShallow } from 'zustand/react/shallow'
 
 interface ModelSupportStatusProps {
   modelId: string | undefined
@@ -19,35 +18,42 @@ interface ModelSupportStatusProps {
   className?: string
 }
 
+type DeviceFit = 'RED' | 'YELLOW' | 'GREEN' | 'GREY' | null
+
+/**
+ * The dot next to the selected model: what its engine is doing right now.
+ *
+ * Green means running and nothing else. It used to double as the llama.cpp
+ * "fits in memory" estimate, so a stopped model that fit stayed green and a
+ * Stop looked like it had done nothing. The estimate still colours a model
+ * that is not running when it warns (yellow / red), and is spelled out in the
+ * tooltip otherwise.
+ */
 export const ModelSupportStatus = ({
   modelId,
   provider,
   contextSize,
   className,
 }: ModelSupportStatusProps) => {
-  const [modelSupportStatus, setModelSupportStatus] = useState<
-    'RED' | 'YELLOW' | 'GREEN' | 'LOADING' | null | 'GREY'
-  >(null)
   const serviceHub = useServiceHub()
-  const { activeModels, loadingModel } = useAppState(
-    useShallow((state) => ({
-      activeModels: state.activeModels,
-      loadingModel: state.loadingModel,
-    }))
+  const isModelRunning = useAppState(
+    (state) => !!modelId && state.activeModels.includes(modelId)
   )
+  const loadingModel = useAppState((state) => state.loadingModel)
   const modelLoadError = useModelLoad((state) => state.modelLoadError)
   const modelLoadErrorModelId = useModelLoad(
     (state) => state.modelLoadErrorModelId
   )
+  const [deviceFit, setDeviceFit] = useState<{
+    key: string
+    fit: DeviceFit
+  } | null>(null)
 
-  // A running model works on this device regardless of the static ctx-size
-  // estimate (the user may set ctx 16k but only ever reach 2k). Runtime
-  // context overflow is surfaced separately via an error, so never show the
-  // "doesn't work" red dot while the model is actually loaded.
-  const isModelRunning = !!modelId && activeModels.includes(modelId)
+  const isLlamacpp = provider === 'llamacpp' || provider === 'llamacpp-upstream'
+  const isLocalEngine = isLlamacpp || provider === 'mlx'
 
   // This model's load failed terminally — outranks the memory-fit estimate so
-  // a model that fits RAM but the backend can't parse isn't shown green.
+  // a model that fits RAM but the backend can't parse isn't shown as fine.
   const loadFailed =
     !!modelId &&
     modelLoadErrorModelId === modelId &&
@@ -57,10 +63,7 @@ export const ModelSupportStatus = ({
 
   // Helper function to check model support with proper path resolution
   const checkModelSupportWithPath = useCallback(
-    async (
-      id: string,
-      ctxSize: number
-    ): Promise<'RED' | 'YELLOW' | 'GREEN' | 'GREY' | null> => {
+    async (id: string, ctxSize: number): Promise<DeviceFit> => {
       try {
         const janDataFolder = await getJanDataFolderPath()
 
@@ -119,123 +122,75 @@ export const ModelSupportStatus = ({
     [serviceHub]
   )
 
-  // Helper function to get icon color based on model support status
-  const getStatusColor = (): string => {
-    switch (modelSupportStatus) {
-      case 'GREEN':
-        return 'bg-green-500'
-      case 'YELLOW':
-        return 'bg-yellow-500'
-      case 'RED':
-        return 'bg-red-500'
-      case 'LOADING':
-        return 'bg-secondary'
-      default:
-        return 'bg-secondary'
-    }
-  }
-
-  const getStatusTooltip = (): string => {
-    // Not a memory/ctx problem, so outrank the per-provider wording below.
-    if (loadFailed) return 'Model failed to load on this backend'
-    if (provider === 'mlx') {
-      switch (modelSupportStatus) {
-        case 'GREEN':
-          return 'Model is running'
-        case 'LOADING':
-          return 'Starting model…'
-        case 'GREY':
-          return 'Model is not running'
-        default:
-          return 'Unknown'
-      }
-    }
-    switch (modelSupportStatus) {
-      case 'GREEN':
-        return isModelRunning
-          ? 'Model is running'
-          : `Works Well on your device (ctx: ${contextSize})`
-      case 'YELLOW':
-        return `Might work on your device (ctx: ${contextSize})`
-      case 'RED':
-        return `Doesn't work on your device  (ctx: ${contextSize})`
-      case 'LOADING':
-        return 'Checking device compatibility...'
-      default:
-        return 'Unknown'
-    }
-  }
-
-  // Check model support when model changes (llama.cpp hardware compatibility).
-  // Both the TurboQuant fork ('llamacpp') and the upstream build
-  // ('llamacpp-upstream') consume the same GGUF tree under
-  // <jan>/llamacpp/models/ — see `getModelsRootPath()` in the
+  // llama.cpp hardware-compatibility estimate. Both the TurboQuant fork
+  // ('llamacpp') and the upstream build ('llamacpp-upstream') consume the same
+  // GGUF tree under <jan>/llamacpp/models/ — see `getModelsRootPath()` in the
   // llamacpp-upstream extension — so the same probe applies to both.
+  //
+  // Keyed on the running flag rather than the `activeModels` array: every
+  // engine re-sync writes a fresh array, and re-probing on each one flashed a
+  // spinner over a status that had not changed. A running model is not probed
+  // at all — its own weights occupy the memory the estimate would count.
   useEffect(() => {
-    const checkModelSupport = async () => {
-      if (
-        modelId &&
-        (provider === 'llamacpp' || provider === 'llamacpp-upstream')
-      ) {
-        // Running model → always green; skip the static ctx-size probe.
-        if (activeModels.includes(modelId)) {
-          setModelSupportStatus('GREEN')
-          return
-        }
-        if (loadFailed) {
-          setModelSupportStatus('RED')
-          return
-        }
-        setModelSupportStatus('LOADING')
-        try {
-          const supportStatus = await checkModelSupportWithPath(
-            modelId,
-            contextSize
-          )
-          setModelSupportStatus(supportStatus)
-        } catch (error) {
-          console.error('Error checking model support:', error)
-          setModelSupportStatus('RED')
-        }
-      } else if (provider !== 'mlx') {
-        setModelSupportStatus(null)
-      }
-    }
+    if (!isLlamacpp || !modelId || isModelRunning) return
 
-    checkModelSupport()
+    let cancelled = false
+    const key = `${modelId}:${contextSize}`
+    checkModelSupportWithPath(modelId, contextSize).then((fit) => {
+      if (!cancelled) setDeviceFit({ key, fit })
+    })
+    return () => {
+      cancelled = true
+    }
   }, [
+    isLlamacpp,
     modelId,
-    provider,
     contextSize,
+    isModelRunning,
     checkModelSupportWithPath,
-    activeModels,
-    loadFailed,
   ])
 
-  // Track MLX model running status (activeModels takes priority over loadingModel
-  // to avoid showing "Starting…" when the model has already finished loading)
-  useEffect(() => {
-    if (provider !== 'mlx' || !modelId) return
+  if (!modelId || !isLocalEngine) return null
 
-    if (activeModels.includes(modelId)) {
-      setModelSupportStatus('GREEN')
-    } else if (loadFailed) {
-      setModelSupportStatus('RED')
-    } else if (loadingModel) {
-      setModelSupportStatus('LOADING')
-    } else {
-      setModelSupportStatus('GREY')
-    }
-  }, [provider, modelId, loadingModel, activeModels, loadFailed])
+  // A result for another model or context size says nothing about this one.
+  const fit =
+    isLlamacpp && deviceFit?.key === `${modelId}:${contextSize}`
+      ? deviceFit.fit
+      : null
 
-  if (
-    !modelSupportStatus ||
-    (provider !== 'llamacpp' &&
-      provider !== 'llamacpp-upstream' &&
-      provider !== 'mlx')
-  ) {
-    return null
-  }
+  const status = isModelRunning
+    ? 'running'
+    : loadFailed
+      ? 'failed'
+      : loadingModel
+        ? 'starting'
+        : fit === 'RED'
+          ? 'wontFit'
+          : fit === 'YELLOW'
+            ? 'mightNotFit'
+            : 'stopped'
+
+  const tooltip = {
+    running: 'Model is running',
+    // Not a memory/ctx problem, so outrank the fit wording below.
+    failed: 'Model failed to load on this backend',
+    starting: 'Starting model…',
+    wontFit: `Model is not running — doesn't work on your device (ctx: ${contextSize})`,
+    mightNotFit: `Model is not running — might work on your device (ctx: ${contextSize})`,
+    stopped:
+      fit === 'GREEN'
+        ? `Model is not running — works well on your device (ctx: ${contextSize})`
+        : 'Model is not running',
+  }[status]
+
+  const indicator = {
+    running: 'bg-green-500',
+    failed: 'bg-red-500',
+    starting: 'size-2.5 border border-t-transparent animate-spin',
+    wontFit: 'bg-red-500',
+    mightNotFit: 'bg-yellow-500',
+    stopped: 'border border-muted-foreground',
+  }[status]
 
   return (
     <TooltipProvider>
@@ -244,15 +199,16 @@ export const ModelSupportStatus = ({
           <div
             className={cn(
               'size-2 flex items-center justify-center rounded-full',
-              modelSupportStatus === 'LOADING'
-                ? 'size-2.5 border border-t-transparent animate-spin'
-                : getStatusColor(),
+              indicator,
               className
             )}
+            data-testid="model-status-indicator"
+            data-status={status}
+            aria-label={tooltip}
           />
         </TooltipTrigger>
         <TooltipContent>
-          <p>{getStatusTooltip()}</p>
+          <p>{tooltip}</p>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

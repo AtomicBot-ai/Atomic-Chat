@@ -31,7 +31,7 @@ const UPSTREAM_PROVIDER = 'llamacpp-upstream'
 
 /**
  * One-shot signal consumed by `useBackendUpdater.ts` on first paint after
- * the user upgrades to this Radium Chat build. The hook auto-triggers
+ * the user upgrades to this Radium build. The hook auto-triggers
  * `recheckOptimalBackend()` once, then deletes this key. macOS / Linux
  * never write it.
  *
@@ -106,7 +106,7 @@ function rewriteProviderField(rawValue: string | null): string | null {
  *      upstream tree (`b9284/win-cuda-{12.4|13.1}-x64`).
  *
  *   2. Existing `llamacpp-upstream` users on the bundled CPU build —
- *      they upgraded between Radium Chat versions and may now have
+ *      they upgraded between Radium versions and may now have
  *      hardware whose optimal upstream variant differs from what they
  *      originally picked.
  *

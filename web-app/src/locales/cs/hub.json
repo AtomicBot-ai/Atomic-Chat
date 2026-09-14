@@ -45,5 +45,8 @@
   "context": "Kontext",
   "capabilities": "Schopnosti",
   "readme": "README",
-  "readmeUnavailable": "Pro tento model není README k dispozici."
+  "readmeUnavailable": "Pro tento model není README k dispozici.",
+  "tooLargeTitle": "Tento model nemusí na tomto zařízení běžet",
+  "tooLargeDescription": "Potřebuje více paměti, než má toto zařízení, takže se nemusí načíst nebo může běžet pomalu.",
+  "downloadAnyway": "Přesto stáhnout"
 }

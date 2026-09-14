@@ -10,7 +10,7 @@
   "llamacppDflashBackendUnsupported": "The selected Llama.cpp backend does not advertise DFlash support (--spec-type draft-dflash). Update or switch to a compatible backend before enabling DFlash.",
   "llamacppDflashNoActiveModel": "Start a Llama.cpp model before enabling DFlash.",
   "llamacppDflashDraftTitle": "Choose DFlash draft quantization",
-  "llamacppDflashDraftDesc": "Select the additional draft GGUF to pair with {{modelId}}. Radium Chat Q8_0 is selected by default when available.",
+  "llamacppDflashDraftDesc": "Select the additional draft GGUF to pair with {{modelId}}. AtomicChat Q8_0 is selected by default when available.",
   "llamacppDflashDraftQuantLabel": "Draft quantization",
   "llamacppDflashDraftDownload": "Download and enable",
   "llamacppDflashDownloadingDraft": "Downloading {{quant}} DFlash draft model…",
@@ -59,7 +59,7 @@
   "reportAnIssueDesc": "Found a bug? Help us out by filing an issue on GitHub.",
   "reportIssue": "Report Issue",
   "credits": "Credits",
-  "creditsDesc1": "👋 Atomic Bot is built with ❤️ by the Radium Chat team.",
+  "creditsDesc1": "👋 Atomic Bot is built with ❤️ by the Radium team.",
   "creditsDesc2": "Special thanks to our open-source dependencies—especially llama.cpp and Tauri—and to our amazing AI community.",
   "appVersion": "App Version",
   "dataFolder": {
@@ -296,17 +296,17 @@
     "reportAnIssueDesc": "Found a bug? Help us out by filing an issue on GitHub.",
     "reportIssue": "Report Issue",
     "credits": "Credits",
-    "creditsDesc1": "👋 Atomic Bot is built with ❤️ by the Radium Chat team.",
+    "creditsDesc1": "👋 Atomic Bot is built with ❤️ by the Radium team.",
     "creditsDesc2": "Special thanks to our open-source dependencies—especially llama.cpp and Tauri—and to our amazing AI community.",
     "atomicBotCliTitle": "Atomic Bot CLI",
     "atomicBotCliInstalled": "Installed at {{path}} — run atomic-chat-cli from your terminal to serve models.",
     "atomicBotCliNotInstalled": "Run atomic-chat-cli from your terminal to serve models without opening the app.",
     "atomicBotCliInstalledToast": "Atomic Bot CLI installed at {{path}}",
     "launchAtStartup": "Launch at startup",
-    "launchAtStartupDesc": "Automatically start Radium Chat when you log in to your computer.",
+    "launchAtStartupDesc": "Automatically start Radium when you log in to your computer.",
     "launchAtStartupError": "Failed to update the launch at startup setting.",
     "preloadModelOnStartup": "Preload last used model on startup",
-    "preloadModelOnStartupDesc": "Off by default so the app opens fast. Leave it off and Radium Chat loads a model only after you pick one in the model selector."
+    "preloadModelOnStartupDesc": "Off by default so the app opens fast. Leave it off and Radium loads a model only after you pick one in the model selector."
   },
   "extensions": {
     "title": "Extensions"
