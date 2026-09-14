@@ -93,6 +93,19 @@ function extractModelIds(rawText: string, providerLabel: string): string[] {
     // Alternative shape: { models: [...] }
     ids = (obj.models as unknown[]).map(idOf).filter(Boolean)
   } else {
+    // An error envelope served with a 2xx (some gateways do this for an
+    // invalid token) used to read as "this server has no models" (#293).
+    // Say what the server actually said instead.
+    const envelope = obj?.error
+    const message =
+      envelope && typeof envelope === 'object' && 'message' in envelope
+        ? String((envelope as { message?: unknown }).message ?? '')
+        : typeof envelope === 'string'
+          ? envelope
+          : ''
+    if (message) {
+      throw new Error(`${providerLabel} returned an error: ${message}`)
+    }
     console.warn('Unexpected response format from provider API:', data)
     return []
   }
@@ -354,8 +367,11 @@ export class TauriProvidersService extends DefaultProvidersService {
           )
 
           // HTTP status errors (404/401/403/5xx) are deterministic — retrying
-          // the same URL won't help, so stop the retry loop.
-          if (msg.startsWith('HTTP ')) break
+          // the same URL won't help, so stop the retry loop. So is an IPC
+          // command that does not exist on this platform: retrying that just
+          // burned ~0.9s before failing anyway (#293).
+          if (msg.startsWith('HTTP ') || /not found|not allowed/i.test(msg))
+            break
           // Transport errors (connection reset, stale pooled socket, body
           // read) are worth a quick retry with a fresh request.
           if (attempt < MAX_ATTEMPTS) {

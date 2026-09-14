@@ -14,6 +14,13 @@ import { IconPlayerPause, IconPlayerPlay, IconX } from '@tabler/icons-react'
 export const DOWNLOAD_PROGRESS_INDICATOR =
   'bg-emerald-400/50 dark:bg-emerald-400/45'
 
+/** Status while a transfer has no bytes to report — see `useDownloadStore`. */
+export type DownloadRowStage = {
+  kind: string
+  attempt: number
+  maxAttempts: number
+}
+
 export type DownloadRowProps = {
   /** Stable id, also the tooltip text: the full `org/repo` the user picked. */
   id: string
@@ -24,6 +31,12 @@ export type DownloadRowProps = {
   total: number
   /** Smoothed bytes/second, or 0 before the first usable sample. */
   bytesPerSecond?: number
+  /**
+   * ATO — #290: set while the downloader is inside a retry ladder. Without it
+   * a host that refuses connections is indistinguishable from a transfer that
+   * has simply not started, for the full ~60s the ladders take.
+   */
+  stage?: DownloadRowStage
   paused?: boolean
   /** Pause/resume is offered only for resumable (GGUF) transfers. */
   pausable?: boolean
@@ -48,6 +61,7 @@ export function DownloadProgressRow({
   current,
   total,
   bytesPerSecond,
+  stage,
   paused,
   pausable,
   onPause,
@@ -64,11 +78,21 @@ export function DownloadProgressRow({
 
   // Before the first byte the transfer has no meaningful numbers at all; saying
   // "0%" there reads as a stalled download rather than a starting one.
+  const preparingStatus =
+    stage?.kind === 'retrying'
+      ? t('common:downloadPanel.retrying', {
+          attempt: stage.attempt,
+          maxAttempts: stage.maxAttempts,
+        })
+      : stage?.kind === 'connecting'
+        ? t('common:downloadPanel.connecting')
+        : t('common:downloadPanel.preparing')
+
   const status = paused
     ? t('common:downloadPanel.paused')
     : known
       ? `${Math.round(progress * 100)}%`
-      : t('common:downloadPanel.preparing')
+      : preparingStatus
 
   return (
     <li className="rounded-lg bg-secondary p-2">

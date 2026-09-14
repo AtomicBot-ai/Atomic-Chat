@@ -3899,9 +3899,27 @@ export default class llamacpp_upstream_extension extends AIEngine {
         const onProgress = (transferred: number, total: number) => {
           events.emit(DownloadEvent.onFileDownloadUpdate, {
             modelId,
-            percent: transferred / total,
+            // Guard the divisor: when the preflight HEAD cannot reach the host
+            // the task reports total=0, and 0/0 = NaN travelled all the way to
+            // the progress bar, which then sat at 0% for the whole transfer
+            // (#290). Matches the guard the backend-archive paths already use.
+            percent: total > 0 ? transferred / total : 0,
             size: { transferred, total },
             downloadType: 'Model',
+          })
+        }
+        // Status while there are no bytes yet: without this, a host that
+        // refuses connections looks exactly like a download that has not
+        // started, for the ~60s the retry ladders take.
+        const onStage = (stage: {
+          kind: string
+          attempt: number
+          maxAttempts: number
+        }) => {
+          events.emit(DownloadEvent.onFileDownloadUpdate, {
+            modelId,
+            downloadType: 'Model',
+            stage,
           })
         }
         const downloadManager = window.core.extensionManager.getByName(
@@ -3911,7 +3929,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
           downloadItems,
           this.createDownloadTaskId(modelId),
           onProgress,
-          resumeDownload ?? false
+          resumeDownload ?? false,
+          onStage
         )
 
         // If we reach here, download completed successfully (including validation)
@@ -7052,23 +7071,49 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
   }
 
+  /**
+   * Download (if missing) and load the embedding model, at most once at a time.
+   *
+   * ATO — #289: RAG ingestion calls `embed` from several places, and two
+   * concurrent calls each started their own `import`. Both derive the same
+   * download task id (`createDownloadTaskId`), so the second one *superseded*
+   * the first — which then reported a cancellation rather than a failure, and
+   * the cycle repeated on every retry. With a refusing proxy in the way it
+   * never converged, and the caller's spinner never resolved into an error.
+   *
+   * The memo holds only while the bootstrap is in flight and is cleared on
+   * failure, so a later call retries instead of caching the error forever.
+   */
+  private embeddingBootstrap: Promise<SessionInfo> | null = null
+
+  private ensureEmbeddingSession(): Promise<SessionInfo> {
+    if (!this.embeddingBootstrap) {
+      this.embeddingBootstrap = (async () => {
+        const downloadedModelList = await this.list()
+        if (
+          !downloadedModelList.some(
+            (model) => model.id === 'sentence-transformer-mini'
+          )
+        ) {
+          await this.import('sentence-transformer-mini', {
+            modelPath:
+              'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true',
+          })
+        }
+        // Load specifically in embedding mode
+        return await this.load('sentence-transformer-mini', undefined, true)
+      })().finally(() => {
+        this.embeddingBootstrap = null
+      })
+    }
+    return this.embeddingBootstrap
+  }
+
   async embed(text: string[]): Promise<EmbeddingResponse> {
     // Ensure the sentence-transformer model is present
     let sInfo = await this.findSessionByModel('sentence-transformer-mini')
     if (!sInfo) {
-      const downloadedModelList = await this.list()
-      if (
-        !downloadedModelList.some(
-          (model) => model.id === 'sentence-transformer-mini'
-        )
-      ) {
-        await this.import('sentence-transformer-mini', {
-          modelPath:
-            'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true',
-        })
-      }
-      // Load specifically in embedding mode
-      sInfo = await this.load('sentence-transformer-mini', undefined, true)
+      sInfo = await this.ensureEmbeddingSession()
     }
 
     const ubatchSize =

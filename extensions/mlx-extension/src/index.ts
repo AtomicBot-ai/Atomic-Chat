@@ -1294,12 +1294,21 @@ export default class mlx_extension extends AIEngine {
         (transferred: number, total: number) => {
           events.emit(DownloadEvent.onFileDownloadUpdate, {
             modelId,
-            percent: transferred / total,
+            // See the same guard in the llama.cpp extensions (#290): a failed
+            // preflight reports total=0, and 0/0 reached the progress bar.
+            percent: total > 0 ? transferred / total : 0,
             size: { transferred, total },
             downloadType: 'Model',
           })
         },
-        resumeDownload ?? false
+        resumeDownload ?? false,
+        (stage: { kind: string; attempt: number; maxAttempts: number }) => {
+          events.emit(DownloadEvent.onFileDownloadUpdate, {
+            modelId,
+            downloadType: 'Model',
+            stage,
+          })
+        }
       )
 
       // Emit download success event so DownloadManagement clears the download state

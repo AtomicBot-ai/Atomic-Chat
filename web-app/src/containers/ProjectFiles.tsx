@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { FileText, Trash2, UploadIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,7 @@ import { createDocumentAttachment, type Attachment } from '@/types/attachment'
 import { useAttachments } from '@/hooks/useAttachments'
 import { ExtensionTypeEnum, FileStat, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
+import { formatAttachmentError } from '@/lib/attachmentProcessing'
 import { IconLoader2, IconPaperclip } from '@tabler/icons-react'
 
 type ProjectFilesProps = {
@@ -193,6 +194,13 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  // ATO — #289: ingesting a file downloads the embedding model on first use,
+  // which takes a while. Two ingests of the same file derive the same download
+  // task id, so the second one *supersedes* (cancels) the first — and with an
+  // unreachable host in the way the pair never converged, which is what the
+  // report describes as an endless spinner. `files` only lists what is already
+  // indexed, so it cannot deduplicate an upload still in flight; this can.
+  const inFlightPaths = useRef<Set<string>>(new Set())
 
   const loadProjectFiles = useCallback(async () => {
     setLoading(true)
@@ -274,13 +282,16 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
         )
       }
 
-      // Filter duplicates
+      // Filter duplicates: already indexed, or currently being ingested.
       const existingPaths = new Set(
         files.filter((f) => f.path).map((f) => f.path)
       )
       const duplicates: string[] = []
       const newAttachments = preparedAttachments.filter((att) => {
-        if (existingPaths.has(att.path)) {
+        if (
+          existingPaths.has(att.path) ||
+          (att.path && inFlightPaths.current.has(att.path))
+        ) {
           duplicates.push(att.name)
           return false
         }
@@ -298,6 +309,9 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
 
       if (newAttachments.length === 0) return
 
+      for (const att of newAttachments) {
+        if (att.path) inFlightPaths.current.add(att.path)
+      }
       setUploading(true)
       try {
         for (const att of newAttachments) {
@@ -317,11 +331,14 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
         toast.error(
           t('common:toast.uploadFailed.title') ?? 'Failed to upload file',
           {
-            description:
-              error instanceof Error ? error.message : JSON.stringify(error),
+            description: formatAttachmentError(error),
+            duration: 30000,
           }
         )
       } finally {
+        for (const att of newAttachments) {
+          if (att.path) inFlightPaths.current.delete(att.path)
+        }
         setUploading(false)
       }
     },
@@ -329,6 +346,11 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
   )
 
   const handleUpload = async () => {
+    // Only the Upload button used to be gated by `uploading`; the two dropzone
+    // click targets below were not, so a second click during an ingest started
+    // a concurrent one (#289).
+    if (uploading) return
+
     if (!attachmentsEnabled) {
       toast.info(
         t('common:toast.attachmentsDisabledInfo.title') ??
@@ -357,12 +379,10 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
       await processFilePaths(paths)
     } catch (error) {
       console.error('Failed to open file dialog:', error)
-      const desc =
-        error instanceof Error ? error.message : JSON.stringify(error)
       toast.error(
         t('common:toast.uploadFailed.title') ?? 'Failed to upload file',
         {
-          description: desc,
+          description: formatAttachmentError(error),
         }
       )
     }
@@ -384,6 +404,8 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
     e.preventDefault()
     e.stopPropagation()
     setIsDragging(false)
+
+    if (uploading) return
 
     if (!attachmentsEnabled) {
       toast.info(
@@ -441,8 +463,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
       toast.error(
         t('common:toast.deleteFailed.title') ?? 'Failed to delete file',
         {
-          description:
-            error instanceof Error ? error.message : JSON.stringify(error),
+          description: formatAttachmentError(error),
         }
       )
     }
@@ -465,7 +486,10 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
           ) : (
             <UploadIcon className="size-4" />
           )}
-          <span>Upload</span>
+          {/* The first upload in a fresh install also downloads the embedding
+              model, which is by far the longest part; a bare spinner labelled
+              "Upload" gave no hint that anything was happening (#289). */}
+          <span>{uploading ? t('common:projects.uploading') : 'Upload'}</span>
         </Button>
       </div>
 
@@ -476,11 +500,16 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
       ) : isEmpty ? (
         <div
           className={cn(
-            'flex flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed cursor-pointer transition-colors',
-            isDragging
-              ? 'bg-primary/10 border-primary'
-              : 'bg-secondary/30 border-border hover:bg-secondary/50'
+            'flex flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed transition-colors',
+            uploading
+              ? 'cursor-default opacity-60 bg-secondary/30 border-border'
+              : 'cursor-pointer',
+            !uploading &&
+              (isDragging
+                ? 'bg-primary/10 border-primary'
+                : 'bg-secondary/30 border-border hover:bg-secondary/50')
           )}
+          aria-disabled={uploading}
           onClick={handleUpload}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -488,7 +517,9 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
         >
           <FileText className="size-8 text-muted-foreground/50 mb-3" />
           <p className="text-sm text-muted-foreground text-center">
-            {t('common:projects.filesDescription')}
+            {uploading
+              ? t('common:projects.uploadingHint')
+              : t('common:projects.filesDescription')}
           </p>
         </div>
       ) : (
@@ -541,11 +572,16 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
 
           <div
           className={cn(
-            'flex mt-2 flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed cursor-pointer transition-colors',
-            isDragging
-              ? 'bg-primary/10 border-primary'
-              : 'bg-secondary/30 border-border hover:bg-secondary/50'
+            'flex mt-2 flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed transition-colors',
+            uploading
+              ? 'cursor-default opacity-60 bg-secondary/30 border-border'
+              : 'cursor-pointer',
+            !uploading &&
+              (isDragging
+                ? 'bg-primary/10 border-primary'
+                : 'bg-secondary/30 border-border hover:bg-secondary/50')
           )}
+          aria-disabled={uploading}
           onClick={handleUpload}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}

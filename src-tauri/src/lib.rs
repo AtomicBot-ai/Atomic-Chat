@@ -250,6 +250,7 @@ pub fn run() {
         // Download
         core::downloads::commands::download_files,
         core::downloads::commands::cancel_download_task,
+        core::downloads::commands::test_proxy_connection,
         // Custom updater commands (desktop only)
         core::updater::commands::check_for_app_updates,
         core::updater::commands::is_update_available,
@@ -408,6 +409,15 @@ pub fn run() {
         // Download
         core::downloads::commands::download_files,
         core::downloads::commands::cancel_download_task,
+        core::downloads::commands::test_proxy_connection,
+        // HTTP (bypasses tauri_plugin_http fetch interception).
+        // Registered on mobile too: `providers/tauri.ts` routes EVERY provider's
+        // model listing through `get_local_http`, with no platform branch, so
+        // leaving these desktop-only made custom cloud providers list nothing at
+        // all on iOS/Android (#293).
+        core::http::post_local_http,
+        core::http::get_local_http,
+        core::http::stream_local_http,
         // HTML artifact preview (served via the artifact:// protocol)
         core::artifact::set_artifact_html,
         core::artifact::clear_artifact_html,

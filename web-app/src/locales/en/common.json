@@ -442,6 +442,8 @@
     "noAssistantAssigned": "No assistant assigned to this project",
     "files": "Files",
     "filesDescription": "Add PDFs, documents, or other text to reference in this project.",
+    "uploading": "Indexing…",
+    "uploadingHint": "The first upload also downloads the embedding model. Progress is in the downloads panel.",
     "deleteProjectDialog": {
       "title": "Delete Project",
       "permanentDelete": "This will permanently delete all threads.",
@@ -592,6 +594,9 @@
       "title": "Upload Failed",
       "description": "Failed to upload file"
     },
+    "unsupportedFileType": {
+      "title": "Unsupported file type"
+    },
     "fileDeleted": {
       "title": "File Deleted",
       "description": "File has been removed from the project"
@@ -627,6 +632,15 @@
     "downloadDiskDeviceLost": {
       "title": "The drive is no longer available",
       "description": "The external or network drive holding the Jan data folder disconnected. Reconnect it and resume the download."
+    },
+    "downloadProxyUnreachable": {
+      "title": "Could not reach the server through your proxy",
+      "description": "The download never got a connection through {{proxyUrl}}. Check that the proxy address is correct and the proxy is running, or turn the proxy off in Settings.",
+      "action": "Proxy settings"
+    },
+    "downloadNetworkUnreachable": {
+      "title": "Could not reach the download server",
+      "description": "The connection never got through. Check your internet connection, VPN or firewall, then start the download again."
     }
   },
   "errors": {
@@ -684,6 +698,8 @@
     "collapse": "Collapse downloads",
     "expand": "Show downloads",
     "preparing": "Starting…",
+    "connecting": "Connecting…",
+    "retrying": "Connection failed, retrying ({{attempt}}/{{maxAttempts}})…",
     "paused": "Paused",
     "left": "{{eta}} left",
     "appUpdate": "App update"
