@@ -12,7 +12,7 @@
  * See tracker Task 23 and decisions D30 and D35 (a slim strip with no line under it).
  */
 import { strict as assert } from 'node:assert'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import test from 'node:test'
@@ -86,5 +86,48 @@ test('the title bar is slim and has no line under it', () => {
   assert.ok(
     !/border-b/.test(frame),
     'the title bar has a line under it again; the user asked for none (D35)'
+  )
+})
+
+/**
+ * The user (2026-09-14): Minimize, Maximize and Close "isnt working on some
+ * pages. It works fine on the main page but not every page." Anything drawn
+ * above the strip swallows clicks on those buttons: notifications sit at the
+ * top right (sonner's toaster uses z-index 999999999), and full-screen viewers
+ * and drop-downs use z-index 100 and 9999. The strip must sit above all of it.
+ */
+test('the window buttons sit above everything the app can draw over them', () => {
+  const frame = read('web-app/src/components/WindowFrame.tsx')
+  const strip = /className="[^"]*absolute inset-x-0 top-0 z-\[(\d+)\][^"]*h-8/.exec(frame)
+  assert.ok(strip, 'the strip has no explicit z-index')
+  const stripZ = Number(strip[1])
+
+  const SONNER_TOASTER_Z = 999999999
+  let highest = { z: SONNER_TOASTER_Z, where: 'sonner toaster' }
+  const walk = (dir) => {
+    for (const name of readdirSync(dir)) {
+      const path = `${dir}/${name}`
+      if (statSync(path).isDirectory()) {
+        if (name === '__tests__' || name === 'node_modules') continue
+        walk(path)
+      } else if (/\.(tsx?|css)$/.test(name) && !/\.test\./.test(name)) {
+        if (path.endsWith('components/WindowFrame.tsx')) continue
+        // Print-only rules are left out: while a document prints, the print
+        // region covers everything on purpose and nothing can be clicked.
+        const source = readFileSync(path, 'utf8').replace(
+          /[^{}]*body\.artifact-printing[^{}]*\{[^}]*\}/g,
+          ''
+        )
+        for (const m of source.matchAll(/\bz-\[?(\d+)\]?|z-index\s*:\s*(\d+)|zIndex\s*:\s*(\d+)/g)) {
+          const z = Number(m[1] ?? m[2] ?? m[3])
+          if (z > highest.z) highest = { z, where: path }
+        }
+      }
+    }
+  }
+  walk(path.join(repoRoot, 'web-app/src'))
+  assert.ok(
+    stripZ > highest.z,
+    `the strip (z-index ${stripZ}) is below ${highest.where} (z-index ${highest.z})`
   )
 })

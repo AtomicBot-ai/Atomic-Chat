@@ -43,7 +43,12 @@ export function WindowFrame({ children }: { children: ReactNode }) {
       data-window-chrome
       className="relative size-full overflow-hidden bg-neutral-50 dark:bg-background"
     >
-      <div className="absolute inset-x-0 top-0 z-[60] h-8 bg-background/95 backdrop-blur">
+      {/* Above everything the app can draw: notifications (z-index 999999999),
+          full-screen viewers and drop-downs. Anything on top of the strip
+          swallows clicks meant for Minimize, Maximize and Close - the user
+          found them dead on some pages (2026-09-14).
+          tests/window-controls.test.mjs keeps it the highest. */}
+      <div className="absolute inset-x-0 top-0 z-[2147483646] h-8 bg-background/95 backdrop-blur">
         <div
           className="absolute inset-0 right-[132px]"
           data-tauri-drag-region
