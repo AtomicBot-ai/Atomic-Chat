@@ -475,6 +475,7 @@ test-hardening-contracts:
 		tests/hardware-profiles.test.mjs \
 		tests/no-auto-update.test.mjs \
 		tests/radium-product-name.test.mjs \
+		tests/radium-logo.test.mjs \
 		tests/upstream-backend-resolver.test.mjs
 
 test-coverage-critical:

@@ -322,14 +322,12 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
           <div className="pointer-events-auto mx-auto my-auto flex w-full max-w-[640px] flex-col px-6 py-8 sm:px-10 sm:py-10">
             <div className="mb-5 shrink-0 text-center">
               <div className="mb-5 flex items-center justify-center gap-3 font-studio text-4xl font-semibold leading-none tracking-tight sm:text-5xl">
-                <div className="flex h-[1em] w-[1em] shrink-0 items-center justify-center rounded-lg bg-neutral-950 p-[3px] shadow-sm dark:bg-white dark:shadow-none">
-                  <img
-                    src="/images/transparent-logo.png"
-                    alt=""
-                    className="size-full min-h-0 min-w-0 object-contain invert dark:invert-0"
-                    draggable={false}
-                  />
-                </div>
+                <img
+                  src="/images/transparent-logo.png"
+                  alt=""
+                  className="h-[1em] w-[1em] shrink-0 rounded-lg object-contain"
+                  draggable={false}
+                />
                 <span>Radium</span>
               </div>
               <div className="mb-2 min-w-0">

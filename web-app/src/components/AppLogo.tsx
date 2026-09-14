@@ -20,16 +20,13 @@ type AppLogoProps = {
 export function AppLogo({ className, wordmarkClassName }: AppLogoProps) {
   return (
     <div className={cn('flex items-center gap-2', className)}>
-      <div
-        className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-neutral-950 p-[3px] shadow-sm dark:bg-white dark:shadow-none"
+      <img
+        src="/images/transparent-logo.png"
+        alt="Radium"
         title="Radium"
-      >
-        <img
-          src="/images/transparent-logo.png"
-          alt="Radium"
-          className="size-full min-h-0 min-w-0 object-contain invert dark:invert-0"
-        />
-      </div>
+        className="size-9 shrink-0 rounded-lg object-contain"
+        draggable={false}
+      />
       <span
         className={cn(
           'shrink-0 font-studio text-xl font-semibold leading-none tracking-tight',
