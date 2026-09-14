@@ -6,8 +6,10 @@
  * own, and no build since could be closed, minimised or maximised.
  *
  * These pin the wiring rather than the component: while decorations stay off,
- * the root layout has to wrap the app in WindowFrame, and WindowFrame has to
- * render WindowControls.
+ * the root layout has to wrap the app in WindowFrame, WindowFrame has to render
+ * WindowControls, and the page header - where the controls sit, since the user
+ * asked for no separate title bar (2026-09-14) - has to stay a drag region
+ * with room kept clear for them.
  *
  * See tracker Task 23 and decision D30.
  */
@@ -55,22 +57,25 @@ test('WindowFrame renders the window controls', () => {
   )
 })
 
-test('the layout makes room for the title bar, so pages are not cut off', () => {
+test('the page header can move the window and keeps room for the controls', () => {
+  if (mainWindow.decorations !== false) return
+  const header = read('web-app/src/containers/HeaderPage.tsx')
+  assert.ok(
+    header.includes('hasCustomWindowChrome'),
+    'HeaderPage no longer checks for the custom window chrome'
+  )
+  assert.ok(
+    header.includes('data-tauri-drag-region'),
+    'HeaderPage is no longer a drag region, so the window cannot be moved'
+  )
+})
+
+test('there is no separate title bar above the app', () => {
   if (mainWindow.decorations !== false) return
   const frame = read('web-app/src/components/WindowFrame.tsx')
   const css = read('web-app/src/index.css')
   assert.ok(
-    frame.includes('data-window-chrome'),
-    'WindowFrame no longer marks its scope with data-window-chrome'
+    !frame.includes('data-window-chrome') && !css.includes('[data-window-chrome]'),
+    'the separate title bar is back; the user asked for the controls in the page header instead'
   )
-  for (const rule of [
-    '[data-window-chrome] .h-svh',
-    '[data-window-chrome] .min-h-svh',
-    '[data-window-chrome] .fixed.inset-y-0',
-  ]) {
-    assert.ok(
-      css.includes(rule),
-      `index.css lost "${rule}" - full-height pages would lose their bottom 2.5rem under the title bar`
-    )
-  }
 })
