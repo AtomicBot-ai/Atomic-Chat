@@ -261,14 +261,14 @@
   {
     "id": "windows-title-bar",
     "feature": "Windows window controls",
-    "forUsers": "On Windows the Minimize, Maximize/Restore and Close buttons sit in the page header row (no separate title bar, D33), and the header row moves the window.",
+    "forUsers": "On Windows a slim 32px strip along the top of the window holds the window's title and the Minimize, Maximize/Restore and Close buttons, with no line under it (D35); the strip moves the window.",
     "paths": [
       "web-app/src/components/WindowFrame.tsx",
       "web-app/src/components/WindowControls.tsx",
       "web-app/src/lib/window-chrome.ts",
       "web-app/src/routes/__root.tsx",
-      "src-tauri/tauri.windows.conf.json",
-      "web-app/src/containers/HeaderPage.tsx"
+      "web-app/src/index.css",
+      "src-tauri/tauri.windows.conf.json"
     ],
     "checks": [
       {
@@ -278,15 +278,14 @@
         ]
       },
       {
-        "run": "npx vitest run src/components/__tests__/WindowFrame.test.tsx src/components/__tests__/WindowControls.test.tsx src/containers/__tests__/HeaderPage.test.tsx",
+        "run": "npx vitest run src/components/__tests__/WindowFrame.test.tsx src/components/__tests__/WindowControls.test.tsx",
         "cwd": "web-app",
         "files": [
-          "web-app/src/components/__tests__/WindowFrame.test.tsx",
-          "web-app/src/containers/__tests__/HeaderPage.test.tsx"
+          "web-app/src/components/__tests__/WindowFrame.test.tsx"
         ]
       }
     ],
-    "decision": "Task 23, D30 = A, D33 (PR #10). Lost once already in the v2.0.35 sync.",
+    "decision": "Task 23, D30 = A, D35 (supersedes D33) (PR #10). Lost once already in the v2.0.35 sync.",
     "status": "pending"
   },
   {
