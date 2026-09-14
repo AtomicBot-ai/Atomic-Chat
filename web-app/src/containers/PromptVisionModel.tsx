@@ -204,7 +204,7 @@ export function PromptVisionModel({
       <div className="flex items-center gap-2">
         <img
           src="/images/transparent-logo.png"
-          alt="Atomic Bot"
+          alt="Radium"
           className="size-5 dark:brightness-0 dark:invert"
         />
         <h2 className="font-medium">

@@ -1,8 +1,8 @@
 {
-  "welcome": "Vítejte v Atomic Bot",
-  "description": "Chcete-li začít, rychle spusťte Atomic Bot Model nebo si vyberte vlastního místního nebo vzdáleného poskytovatele",
+  "welcome": "Vítejte v Radium",
+  "description": "Chcete-li začít, rychle spusťte Radium Model nebo si vyberte vlastního místního nebo vzdáleného poskytovatele",
   "descriptionWeb": "Chcete-li začít, budete se muset připojit ke cloudovému modelu pomocí klíče API",
-  "quickStart": "Rychlý start s Atomic Bot Model",
+  "quickStart": "Rychlý start s Radium Model",
   "quickStartDescription": "Není potřeba žádné nastavení",
   "quickStartFailed": "Něco se pokazilo. Zkuste to prosím znovu.",
   "downloading": "Stahování…",

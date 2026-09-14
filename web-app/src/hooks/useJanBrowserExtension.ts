@@ -67,7 +67,7 @@ export function useJanBrowserExtension() {
   const handleConnectionSuccess = useCallback(() => {
     setDialogOpen(false)
     setDialogState('closed')
-    toast.success('Atomic Bot browser tools enabled')
+    toast.success('Radium browser tools enabled')
   }, [])
 
   /**
@@ -165,7 +165,7 @@ export function useJanBrowserExtension() {
       } else {
         // Deactivate the server
         await serviceHub.mcp().deactivateMCPServer(JAN_BROWSER_MCP_NAME)
-        toast.success('Atomic Bot browser tools disabled')
+        toast.success('Radium browser tools disabled')
 
         editServer(JAN_BROWSER_MCP_NAME, {
           ...janBrowserConfig,

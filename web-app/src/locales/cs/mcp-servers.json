@@ -6,8 +6,8 @@
       "checking": "Kontrola stavu rozšíření..."
     },
     "notInstalled": {
-      "title": "Atomic Bot dokončuje úkoly ve vašem prohlížeči",
-      "description": "Nainstalujte rozšíření pro přístup Atomic Bota k prohlížeči",
+      "title": "Radium dokončuje úkoly ve vašem prohlížeči",
+      "description": "Nainstalujte rozšíření pro přístup Radiuma k prohlížeči",
       "getExtension": "Získat rozšíření"
     }
   },
@@ -56,7 +56,7 @@
   "serverStatusInactive": "Server {{serverKey}} byl úspěšně deaktivován",
   "runtimeSettings": {
     "title": "Nastavení běhového prostředí",
-    "description": "Nakonfigurujte, jak Atomic Bot spravuje a opakuje pokusy se servery MCP.",
+    "description": "Nakonfigurujte, jak Radium spravuje a opakuje pokusy se servery MCP.",
     "toolCallTimeout": "Časový limit volání nástroje (sekundy)",
     "toolCallTimeoutDesc": "Maximální doba čekání na odpověď nástroje MCP před vypršením časového limitu."
   },
