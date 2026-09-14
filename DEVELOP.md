@@ -61,6 +61,26 @@ yarn dev
 
 ---
 
+## Every build gets a new version number
+
+A standing rule from the user (tracker D34, Task 27): every build of Radium that
+is committed, pushed and compiled carries a new version number, so no two
+different installers ever share one.
+
+1. **Bump before you build.** Run `make bump-version` (or
+   `node scripts/bump-version.mjs`). It adds one to the last number
+   (2.0.37 → 2.0.38) in `src-tauri/tauri.conf.json` and
+   `web-app/package.json` together. `VERSION=x.y.z make bump-version` sets a
+   number instead; it must be newer, because the Windows installer only
+   upgrades forwards.
+2. **Commit and push the bump**, then start the build.
+3. **The Windows test build enforces it.** It refuses to start when its
+   version was already built from a different commit, names the installer
+   `radium-windows-test-<version>-<sha>`, and tags the commit it built as
+   `test-build/v<version>`.
+
+Tell the user the new version number together with the download link.
+
 ## Where Radium stores data on Windows
 
 Dev (`make dev-windows-cpu` / `yarn dev`) and the installed Radium app (`Atomic-Chat.exe`) **share the same data folders** — there is no separate dev profile. Anything you delete from these paths affects both.
