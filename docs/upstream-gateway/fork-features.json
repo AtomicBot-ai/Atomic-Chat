@@ -318,5 +318,28 @@
     "checks": [],
     "decision": "d0f56745c, 72bd66144",
     "status": "no-check"
+  },
+  {
+    "id": "radium-version",
+    "feature": "Every build has its own version number",
+    "forUsers": "Each Radium installer carries a new version number, and a test build refuses to reuse one (tracker D34).",
+    "paths": [
+      "src-tauri/tauri.conf.json",
+      "web-app/package.json",
+      "scripts/bump-version.mjs",
+      "scripts/check-build-version.mjs",
+      ".github/workflows/windows-test-build.yml"
+    ],
+    "checks": [
+      {
+        "run": "node --test tests/app-version.test.mjs tests/build-version.test.mjs",
+        "files": [
+          "tests/app-version.test.mjs",
+          "tests/build-version.test.mjs"
+        ]
+      }
+    ],
+    "decision": "Tracker D34, Task 27 (PR #17)",
+    "status": "pending"
   }
 ]
