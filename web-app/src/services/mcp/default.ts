@@ -87,24 +87,27 @@ export class DefaultMCPService implements MCPService {
   }
 
   async connectorNeedsReview(
-    _name: string,
-    _config: MCPServerConfig
+    name: string,
+    config: MCPServerConfig
   ): Promise<boolean> {
+    console.log('connectorNeedsReview called:', { name, config })
     // Nothing starts outside the desktop app, so there is nothing to review.
     return false
   }
 
   async approveConnector(
-    _name: string,
-    _config: MCPServerConfig
+    name: string,
+    config: MCPServerConfig
   ): Promise<void> {
+    console.log('approveConnector called:', { name, config })
     // No-op - not implemented in default service
   }
 
   async previewConnectorTools(
-    _name: string,
-    _config: MCPServerConfig
+    name: string,
+    config: MCPServerConfig
   ): Promise<MCPPreviewTool[]> {
+    console.log('previewConnectorTools called:', { name, config })
     throw new Error('Preview requires the desktop app')
   }
 
