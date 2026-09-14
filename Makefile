@@ -476,7 +476,8 @@ test-hardening-contracts:
 		tests/no-auto-update.test.mjs \
 		tests/radium-product-name.test.mjs \
 		tests/window-controls.test.mjs \
-		tests/upstream-backend-resolver.test.mjs
+		tests/upstream-backend-resolver.test.mjs \
+		tests/scrollbar-arrows.test.mjs
 
 test-coverage-critical:
 	yarn test:coverage
