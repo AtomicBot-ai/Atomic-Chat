@@ -16,15 +16,23 @@
       {
         "run": "npx vitest run src/services/media src/services/atomicMedia src/containers/media",
         "cwd": "web-app",
-        "files": ["web-app/src/containers/media/MediaStudio.test.tsx", "web-app/src/services/media/__tests__/jobManager.test.ts"]
+        "files": [
+          "web-app/src/containers/media/MediaStudio.test.tsx",
+          "web-app/src/services/media/__tests__/jobManager.test.ts"
+        ]
       },
       {
         "run": "node --test tests/verify-selective-v2032.test.mjs",
-        "files": ["tests/verify-selective-v2032.test.mjs"]
+        "files": [
+          "tests/verify-selective-v2032.test.mjs"
+        ]
       },
       {
         "run": "node scripts/verify-selective-v2032.mjs",
-        "files": ["scripts/verify-selective-v2032.mjs", "scripts/selective-v2032-protected.json"]
+        "files": [
+          "scripts/verify-selective-v2032.mjs",
+          "scripts/selective-v2032-protected.json"
+        ]
       }
     ],
     "decision": "docs/decisions/2026-09-10-adopt-a-provider-adapter-architecture-for-radium-media.md",
@@ -34,12 +42,16 @@
     "id": "media-sidebar-entry",
     "feature": "Media in the sidebar",
     "forUsers": "A Media row in the left sidebar opens Radium Media. Upstream has no such row.",
-    "paths": ["web-app/src/components/left-sidebar/NavMain.tsx"],
+    "paths": [
+      "web-app/src/components/left-sidebar/NavMain.tsx"
+    ],
     "checks": [
       {
         "run": "npx vitest run src/components/left-sidebar/__tests__/NavMain.test.tsx",
         "cwd": "web-app",
-        "files": ["web-app/src/components/left-sidebar/__tests__/NavMain.test.tsx"]
+        "files": [
+          "web-app/src/components/left-sidebar/__tests__/NavMain.test.tsx"
+        ]
       }
     ],
     "decision": "Task 19 (v2.0.35 sync)",
@@ -59,7 +71,9 @@
     "checks": [
       {
         "run": "node scripts/verify-selective-v2032.mjs",
-        "files": ["scripts/verify-selective-v2032.mjs"]
+        "files": [
+          "scripts/verify-selective-v2032.mjs"
+        ]
       }
     ],
     "decision": "e0b537747 (PR #3)",
@@ -79,7 +93,9 @@
     "checks": [
       {
         "run": "node --test tests/radium-product-name.test.mjs",
-        "files": ["tests/radium-product-name.test.mjs"]
+        "files": [
+          "tests/radium-product-name.test.mjs"
+        ]
       }
     ],
     "decision": "docs/decisions/2026-09-13-rename-the-product-to-radium-and-move-the-data-folder.md",
@@ -89,27 +105,62 @@
     "id": "data-folder-migration",
     "feature": "Data folder moves to Radium on first launch",
     "forUsers": "Chats, models and settings saved under Atomic Chat move to %APPDATA%\\Radium\\data once, and empty old folders are tidied on later launches.",
-    "paths": ["src-tauri/src/core/app/data_migration.rs", "src-tauri/src/core/app/mod.rs", "src-tauri/src/lib.rs"],
+    "paths": [
+      "src-tauri/src/core/app/data_migration.rs",
+      "src-tauri/src/core/app/mod.rs",
+      "src-tauri/src/lib.rs"
+    ],
     "checks": [
       {
         "run": "cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri --lib data_migration -- --test-threads=1",
-        "env": { "TAURI_CONFIG": "{\"bundle\":{\"icon\":[\"icons/icon.png\"]}}" },
-        "files": ["src-tauri/src/core/app/data_migration.rs"]
+        "env": {
+          "TAURI_CONFIG": "{\"bundle\":{\"icon\":[\"icons/icon.png\"]}}"
+        },
+        "files": [
+          "src-tauri/src/core/app/data_migration.rs"
+        ]
       }
     ],
     "decision": "docs/decisions/2026-09-13-rename-the-product-to-radium-and-move-the-data-folder.md",
     "status": "checked"
   },
   {
+    "id": "extensions-follow-data-folder",
+    "feature": "Extensions load after the data folder moves",
+    "forUsers": "If extensions.json points at an old data folder, or is missing or unreadable, Radium reinstalls its bundled extensions instead of opening to a blank window.",
+    "paths": [
+      "src-tauri/src/core/setup.rs",
+      "src-tauri/src/core/extensions/**",
+      "src-tauri/src/lib.rs"
+    ],
+    "checks": [
+      {
+        "run": "cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri --lib extension_path_tests -- --test-threads=1",
+        "env": {
+          "TAURI_CONFIG": "{\"bundle\":{\"icon\":[\"icons/icon.png\"]}}"
+        },
+        "files": [
+          "src-tauri/src/core/setup.rs"
+        ]
+      }
+    ],
+    "decision": "Tracker T21-S16 (PR #15), found on this PC 2026-09-14",
+    "status": "pending"
+  },
+  {
     "id": "launch-at-startup-rename",
     "feature": "Launch at startup survives the rename",
     "forUsers": "If Atomic Chat was set to start with the computer, Radium keeps starting with it.",
-    "paths": ["web-app/src/lib/launchAtStartup.ts"],
+    "paths": [
+      "web-app/src/lib/launchAtStartup.ts"
+    ],
     "checks": [
       {
         "run": "npx vitest run src/lib/__tests__/launchAtStartup.test.ts",
         "cwd": "web-app",
-        "files": ["web-app/src/lib/__tests__/launchAtStartup.test.ts"]
+        "files": [
+          "web-app/src/lib/__tests__/launchAtStartup.test.ts"
+        ]
       }
     ],
     "decision": "docs/decisions/2026-09-13-rename-the-product-to-radium-and-move-the-data-folder.md",
@@ -119,12 +170,16 @@
     "id": "assistant-name-migration",
     "feature": "Saved assistants say Radium",
     "forUsers": "The default assistant's name and instructions that said Atomic Chat or Radium Chat are updated to Radium.",
-    "paths": ["extensions/assistant-extension/src/**"],
+    "paths": [
+      "extensions/assistant-extension/src/**"
+    ],
     "checks": [
       {
         "run": "npx vitest run src/index.test.ts",
         "cwd": "extensions/assistant-extension",
-        "files": ["extensions/assistant-extension/src/index.test.ts"]
+        "files": [
+          "extensions/assistant-extension/src/index.test.ts"
+        ]
       }
     ],
     "decision": "450100bda",
@@ -134,11 +189,19 @@
     "id": "no-auto-update",
     "feature": "Radium never auto-updates",
     "forUsers": "No update prompt can install upstream's Atomic Chat over Radium.",
-    "paths": ["src-tauri/tauri.conf.json", "src-tauri/tauri.*.conf.json", "src-tauri/Cargo.toml", "web-app/package.json", "web-app/src/**/*pdater*"],
+    "paths": [
+      "src-tauri/tauri.conf.json",
+      "src-tauri/tauri.*.conf.json",
+      "src-tauri/Cargo.toml",
+      "web-app/package.json",
+      "web-app/src/**/*pdater*"
+    ],
     "checks": [
       {
         "run": "node --test tests/no-auto-update.test.mjs",
-        "files": ["tests/no-auto-update.test.mjs"]
+        "files": [
+          "tests/no-auto-update.test.mjs"
+        ]
       }
     ],
     "decision": "docs/decisions/2026-09-12-radium-never-auto-updates.md",
@@ -157,7 +220,9 @@
     "checks": [
       {
         "run": "node --test tests/stage-windows-backends.test.mjs",
-        "files": ["tests/stage-windows-backends.test.mjs"]
+        "files": [
+          "tests/stage-windows-backends.test.mjs"
+        ]
       }
     ],
     "decision": "b0d716a95, 60bc3b914",
@@ -184,7 +249,10 @@
       {
         "run": "npx vitest run src/containers/__tests__/SettingsMenu.test.tsx src/components/left-sidebar/__tests__/NavMain.test.tsx src/routes/settings/__tests__/moved-pages-redirect.test.ts src/routes/api src/routes/cloud src/containers/AgentWorkspaceLayout.test.tsx src/containers/RunSettingsPanel.test.tsx",
         "cwd": "web-app",
-        "files": ["web-app/src/routes/settings/__tests__/moved-pages-redirect.test.ts", "web-app/src/containers/__tests__/SettingsMenu.test.tsx"]
+        "files": [
+          "web-app/src/routes/settings/__tests__/moved-pages-redirect.test.ts",
+          "web-app/src/containers/__tests__/SettingsMenu.test.tsx"
+        ]
       }
     ],
     "decision": "Task 22, D28 = B and D29 (PR #12)",
@@ -193,39 +261,48 @@
   {
     "id": "windows-title-bar",
     "feature": "Windows window controls",
-    "forUsers": "On Windows the app has its own title bar with Minimize, Maximize/Restore and Close, and can be dragged and resized.",
+    "forUsers": "On Windows the Minimize, Maximize/Restore and Close buttons sit in the page header row (no separate title bar, D33), and the header row moves the window.",
     "paths": [
       "web-app/src/components/WindowFrame.tsx",
       "web-app/src/components/WindowControls.tsx",
       "web-app/src/lib/window-chrome.ts",
       "web-app/src/routes/__root.tsx",
-      "web-app/src/index.css",
-      "src-tauri/tauri.windows.conf.json"
+      "src-tauri/tauri.windows.conf.json",
+      "web-app/src/containers/HeaderPage.tsx"
     ],
     "checks": [
       {
         "run": "node --test tests/window-controls.test.mjs",
-        "files": ["tests/window-controls.test.mjs"]
+        "files": [
+          "tests/window-controls.test.mjs"
+        ]
       },
       {
-        "run": "npx vitest run src/components/__tests__/WindowFrame.test.tsx src/components/__tests__/WindowControls.test.tsx",
+        "run": "npx vitest run src/components/__tests__/WindowFrame.test.tsx src/components/__tests__/WindowControls.test.tsx src/containers/__tests__/HeaderPage.test.tsx",
         "cwd": "web-app",
-        "files": ["web-app/src/components/__tests__/WindowFrame.test.tsx"]
+        "files": [
+          "web-app/src/components/__tests__/WindowFrame.test.tsx",
+          "web-app/src/containers/__tests__/HeaderPage.test.tsx"
+        ]
       }
     ],
-    "decision": "Task 23, D30 = A (PR #10). Lost once already in the v2.0.35 sync.",
+    "decision": "Task 23, D30 = A, D33 (PR #10). Lost once already in the v2.0.35 sync.",
     "status": "pending"
   },
   {
     "id": "hub-uncensored-in-filter-menu",
     "feature": "Uncensored filter in the Hub filter menu",
     "forUsers": "The Uncensored checkbox sits inside the Hub's sort and filter menu with the other filters.",
-    "paths": ["web-app/src/containers/hub/HubFilters.tsx"],
+    "paths": [
+      "web-app/src/containers/hub/HubFilters.tsx"
+    ],
     "checks": [
       {
         "run": "npx vitest run src/containers/hub/__tests__/HubFilters.test.tsx",
         "cwd": "web-app",
-        "files": ["web-app/src/containers/hub/__tests__/HubFilters.test.tsx"]
+        "files": [
+          "web-app/src/containers/hub/__tests__/HubFilters.test.tsx"
+        ]
       }
     ],
     "decision": "Task 24 (PR #11)",
@@ -235,7 +312,9 @@
     "id": "windows-test-build-ci",
     "feature": "Unsigned Windows test installer from GitHub Actions",
     "forUsers": "Every branch can produce a Windows installer to try on this PC before merging.",
-    "paths": [".github/workflows/windows-test-build.yml"],
+    "paths": [
+      ".github/workflows/windows-test-build.yml"
+    ],
     "checks": [],
     "decision": "d0f56745c, 72bd66144",
     "status": "no-check"
