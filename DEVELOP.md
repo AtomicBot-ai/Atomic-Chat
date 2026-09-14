@@ -107,3 +107,30 @@ the provider), or from Windows' own Credential Manager. See ADR
 ### Custom data folder
 
 If a user has relocated the data folder via `Settings → Advanced → Change data folder location` (`change_app_data_folder`), the uninstaller and `make clean-windows-all` **do not** delete that custom path — only the default `%APPDATA%\Radium\` (and the pre-rename `%APPDATA%\Atomic Chat\`) is cleaned. Removing a custom data folder is the user's responsibility.
+
+## Syncing with upstream (Atomic Chat)
+
+Upstream releases go through a gateway, so nothing Radium built is lost
+without anyone noticing. See ADR
+`docs/decisions/2026-09-13-gate-every-upstream-sync-on-a-fork-features-impact-report.md`.
+
+1. **Report.** Run `make upstream-impact`.
+   - It fetches `upstream` and trial-merges it in memory. No branch or file is
+     touched.
+   - It writes `docs/upstream-gateway/upstream-impact.md` and `.json`.
+   - The report covers every row of `docs/upstream-gateway/fork-features.json`:
+     whether upstream leaves the feature alone, edits it, deletes it or
+     conflicts with it, and what that means.
+2. **Decide.** Run `python scripts/upstream-gateway-tracker.py export`.
+   - This fills the tracker's *Fork features* and *Upstream impact* sheets.
+   - Fill the yellow *Your decision* column for every row: **keep ours**,
+     **take theirs** or **adapt**.
+   - Then run `python scripts/upstream-gateway-tracker.py import` to record the
+     decisions.
+3. **Gate.** Run `make upstream-gate`. It fails until every flagged row is
+   decided and the report matches the upstream about to be merged.
+4. **Merge and prove.** Merge on a branch, then run `make upstream-post-merge`.
+   It runs every feature's check and names any that fail.
+
+When you build a new fork feature, add its row to `fork-features.json` with a
+check that fails when the feature is removed.

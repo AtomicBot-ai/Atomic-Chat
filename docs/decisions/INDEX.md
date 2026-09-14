@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-251 records, 2026-05-19 → 2026-09-13.
+252 records, 2026-05-19 → 2026-09-13.
 
 <!-- Counted from the files on disk, not by arithmetic. Verified by counting *.md excluding INDEX and _TEMPLATE. -->
 
@@ -18,6 +18,7 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ## Load-bearing — read before touching platform / provider / agent code
 
+- **2026-09-13** — [Gate every upstream sync on a Fork features impact report](2026-09-13-gate-every-upstream-sync-on-a-fork-features-impact-report.md)
 - **2026-09-13** — [Rename the product to Radium and move the default data folder](2026-09-13-rename-the-product-to-radium-and-move-the-data-folder.md)
 - **2026-08-13** — [Mirror and sign upstream llama.cpp releases in atomic-chat-conf](2026-08-13-mirror-and-sign-upstream-llama-cpp-in-atomic-chat-conf.md)
 - **2026-08-13** — [Add Windows ROCm to the upstream backend matrix](2026-08-13-add-windows-rocm-to-the-upstream-backend-matrix.md)
@@ -312,8 +313,9 @@ library on disk, and how the frozen surface is allowed to change.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Other (10)
+## Other (11)
 
+- **2026-09-13** — [Gate every upstream sync on a Fork features impact report](2026-09-13-gate-every-upstream-sync-on-a-fork-features-impact-report.md)
 - **2026-08-21** — [Strip every non-image file part before the model converter](2026-08-21-strip-every-non-image-file-part-before-the-model-converter.md)
 - **2026-07-31** — [Surface MCP server runtime errors (ATO-385)](2026-07-31-surface-mcp-server-runtime-errors.md)
 - **2026-07-31** — [Fallback between HTTP-based MCP transports (ATO-384, ATO-385)](2026-07-31-fallback-between-http-based-mcp-transports.md)

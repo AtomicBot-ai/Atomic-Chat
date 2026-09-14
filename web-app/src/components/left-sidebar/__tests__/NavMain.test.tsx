@@ -102,6 +102,17 @@ describe('NavMain', () => {
     expect(screen.queryByText('common:newTask')).not.toBeInTheDocument()
   })
 
+  it('keeps Media as its own sidebar entry', () => {
+    // Radium Media's way in. Upstream has no such row, so a sync that takes
+    // upstream's sidebar would drop it without a word.
+    vi.mocked(useLocation).mockReturnValue({ pathname: '/media' } as never)
+    render(<NavMain />)
+
+    const media = screen.getByText('media:settings.title')
+    expect(media.closest('a')).toHaveAttribute('href', '/media')
+    expect(media.closest('[data-active]')).toHaveAttribute('data-active', 'true')
+  })
+
   it('leaves Cloud and API to Settings', () => {
     render(<NavMain />)
 

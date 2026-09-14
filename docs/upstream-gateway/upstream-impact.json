@@ -1,0 +1,323 @@
+{
+  "generatedAt": "2026-09-14T00:35:21.826Z",
+  "base": "HEAD",
+  "baseHead": "9a3aac704bd57089315dde05e4dc59a15fb23e69",
+  "upstream": "upstream/main",
+  "upstreamHead": "7eb04761f593ffa20570c4b1524014dc3d44f352",
+  "mergeBase": "7eb04761f593ffa20570c4b1524014dc3d44f352",
+  "upstreamCommitCount": 0,
+  "conflictCount": 0,
+  "unownedConflicts": [],
+  "rows": [
+    {
+      "id": "radium-media",
+      "feature": "Radium Media",
+      "forUsers": "Generate images and video from the Media page through a pluggable engine (Radium Media Worker, ComfyUI or a cloud images API), keep the results in a media library, and store provider keys in the OS keychain.",
+      "status": "checked",
+      "kind": "untouched",
+      "flagged": false,
+      "files": [],
+      "commits": [],
+      "checks": [
+        {
+          "run": "npx vitest run src/services/media src/services/atomicMedia src/containers/media",
+          "cwd": "web-app",
+          "files": [
+            "web-app/src/containers/media/MediaStudio.test.tsx",
+            "web-app/src/services/media/__tests__/jobManager.test.ts"
+          ]
+        },
+        {
+          "run": "node --test tests/verify-selective-v2032.test.mjs",
+          "files": [
+            "tests/verify-selective-v2032.test.mjs"
+          ]
+        },
+        {
+          "run": "node scripts/verify-selective-v2032.mjs",
+          "files": [
+            "scripts/verify-selective-v2032.mjs",
+            "scripts/selective-v2032-protected.json"
+          ]
+        }
+      ],
+      "consequence": "Upstream does not touch this feature's files.",
+      "recommendation": null,
+      "decision": null,
+      "decidedOn": null
+    },
+    {
+      "id": "media-sidebar-entry",
+      "feature": "Media in the sidebar",
+      "forUsers": "A Media row in the left sidebar opens Radium Media. Upstream has no such row.",
+      "status": "checked",
+      "kind": "untouched",
+      "flagged": false,
+      "files": [],
+      "commits": [],
+      "checks": [
+        {
+          "run": "npx vitest run src/components/left-sidebar/__tests__/NavMain.test.tsx",
+          "cwd": "web-app",
+          "files": [
+            "web-app/src/components/left-sidebar/__tests__/NavMain.test.tsx"
+          ]
+        }
+      ],
+      "consequence": "Upstream does not touch this feature's files.",
+      "recommendation": null,
+      "decision": null,
+      "decidedOn": null
+    },
+    {
+      "id": "atomic-code-removed",
+      "feature": "Atomic Code workspace stays removed",
+      "forUsers": "The unfinished Code workspace and its model router are gone and must not come back with an upstream update.",
+      "status": "checked",
+      "kind": "untouched",
+      "flagged": false,
+      "files": [],
+      "commits": [],
+      "checks": [
+        {
+          "run": "node scripts/verify-selective-v2032.mjs",
+          "files": [
+            "scripts/verify-selective-v2032.mjs"
+          ]
+        }
+      ],
+      "consequence": "Upstream does not touch this feature's files.",
+      "recommendation": null,
+      "decision": null,
+      "decidedOn": null
+    },
+    {
+      "id": "product-name-radium",
+      "feature": "The product is called Radium",
+      "forUsers": "The app, window titles, installer, Start menu entry and every visible string say Radium; the installer removes an old Atomic Chat install without touching its data.",
+      "status": "checked",
+      "kind": "untouched",
+      "flagged": false,
+      "files": [],
+      "commits": [],
+      "checks": [
+        {
+          "run": "node --test tests/radium-product-name.test.mjs",
+          "files": [
+            "tests/radium-product-name.test.mjs"
+          ]
+        }
+      ],
+      "consequence": "Upstream does not touch this feature's files.",
+      "recommendation": null,
+      "decision": null,
+      "decidedOn": null
+    },
+    {
+      "id": "data-folder-migration",
+      "feature": "Data folder moves to Radium on first launch",
+      "forUsers": "Chats, models and settings saved under Atomic Chat move to %APPDATA%\\Radium\\data once, and empty old folders are tidied on later launches.",
+      "status": "checked",
+      "kind": "untouched",
+      "flagged": false,
+      "files": [],
+      "commits": [],
+      "checks": [
+        {
+          "run": "cargo test --manifest-path src-tauri/Cargo.toml --lib data_migration",
+          "env": {
+            "TAURI_CONFIG": "{\"bundle\":{\"icon\":[\"icons/icon.png\"]}}"
+          },
+          "files": [
+            "src-tauri/src/core/app/data_migration.rs"
+          ]
+        }
+      ],
+      "consequence": "Upstream does not touch this feature's files.",
+      "recommendation": null,
+      "decision": null,
+      "decidedOn": null
+    },
+    {
+      "id": "launch-at-startup-rename",
+      "feature": "Launch at startup survives the rename",
+      "forUsers": "If Atomic Chat was set to start with the computer, Radium keeps starting with it.",
+      "status": "checked",
+      "kind": "untouched",
+      "flagged": false,
+      "files": [],
+      "commits": [],
+      "checks": [
+        {
+          "run": "npx vitest run src/lib/__tests__/launchAtStartup.test.ts",
+          "cwd": "web-app",
+          "files": [
+            "web-app/src/lib/__tests__/launchAtStartup.test.ts"
+          ]
+        }
+      ],
+      "consequence": "Upstream does not touch this feature's files.",
+      "recommendation": null,
+      "decision": null,
+      "decidedOn": null
+    },
+    {
+      "id": "assistant-name-migration",
+      "feature": "Saved assistants say Radium",
+      "forUsers": "The default assistant's name and instructions that said Atomic Chat or Radium Chat are updated to Radium.",
+      "status": "checked",
+      "kind": "untouched",
+      "flagged": false,
+      "files": [],
+      "commits": [],
+      "checks": [
+        {
+          "run": "npx vitest run src/index.test.ts",
+          "cwd": "extensions/assistant-extension",
+          "files": [
+            "extensions/assistant-extension/src/index.test.ts"
+          ]
+        }
+      ],
+      "consequence": "Upstream does not touch this feature's files.",
+      "recommendation": null,
+      "decision": null,
+      "decidedOn": null
+    },
+    {
+      "id": "no-auto-update",
+      "feature": "Radium never auto-updates",
+      "forUsers": "No update prompt can install upstream's Atomic Chat over Radium.",
+      "status": "checked",
+      "kind": "untouched",
+      "flagged": false,
+      "files": [],
+      "commits": [],
+      "checks": [
+        {
+          "run": "node --test tests/no-auto-update.test.mjs",
+          "files": [
+            "tests/no-auto-update.test.mjs"
+          ]
+        }
+      ],
+      "consequence": "Upstream does not touch this feature's files.",
+      "recommendation": null,
+      "decision": null,
+      "decidedOn": null
+    },
+    {
+      "id": "windows-offline-backends",
+      "feature": "Windows installers carry verified engine backends",
+      "forUsers": "A fresh Windows install can run local models without downloading an engine first.",
+      "status": "checked",
+      "kind": "untouched",
+      "flagged": false,
+      "files": [],
+      "commits": [],
+      "checks": [
+        {
+          "run": "node --test tests/stage-windows-backends.test.mjs",
+          "files": [
+            "tests/stage-windows-backends.test.mjs"
+          ]
+        }
+      ],
+      "consequence": "Upstream does not touch this feature's files.",
+      "recommendation": null,
+      "decision": null,
+      "decidedOn": null
+    },
+    {
+      "id": "settings-chat-cloud-api",
+      "feature": "Chat, Cloud and API live in Settings",
+      "forUsers": "Settings holds the chat's run settings, cloud providers and the local API server; the sidebar no longer lists Cloud or API, and old links still land on the right page.",
+      "status": "checked",
+      "kind": "untouched",
+      "flagged": false,
+      "files": [],
+      "commits": [],
+      "checks": [
+        {
+          "run": "npx vitest run src/containers/__tests__/SettingsMenu.test.tsx src/components/left-sidebar/__tests__/NavMain.test.tsx src/routes/settings/__tests__/moved-pages-redirect.test.ts src/routes/api src/routes/cloud src/containers/AgentWorkspaceLayout.test.tsx src/containers/RunSettingsPanel.test.tsx",
+          "cwd": "web-app",
+          "files": [
+            "web-app/src/routes/settings/__tests__/moved-pages-redirect.test.ts",
+            "web-app/src/containers/__tests__/SettingsMenu.test.tsx"
+          ]
+        }
+      ],
+      "consequence": "Upstream does not touch this feature's files.",
+      "recommendation": null,
+      "decision": null,
+      "decidedOn": null
+    },
+    {
+      "id": "windows-title-bar",
+      "feature": "Windows window controls",
+      "forUsers": "On Windows the app has its own title bar with Minimize, Maximize/Restore and Close, and can be dragged and resized.",
+      "status": "pending",
+      "kind": "untouched",
+      "flagged": false,
+      "files": [],
+      "commits": [],
+      "checks": [
+        {
+          "run": "node --test tests/window-controls.test.mjs",
+          "files": [
+            "tests/window-controls.test.mjs"
+          ]
+        },
+        {
+          "run": "npx vitest run src/components/__tests__/WindowFrame.test.tsx src/components/__tests__/WindowControls.test.tsx",
+          "cwd": "web-app",
+          "files": [
+            "web-app/src/components/__tests__/WindowFrame.test.tsx"
+          ]
+        }
+      ],
+      "consequence": "Upstream does not touch this feature's files.",
+      "recommendation": null,
+      "decision": null,
+      "decidedOn": null
+    },
+    {
+      "id": "hub-uncensored-in-filter-menu",
+      "feature": "Uncensored filter in the Hub filter menu",
+      "forUsers": "The Uncensored checkbox sits inside the Hub's sort and filter menu with the other filters.",
+      "status": "pending",
+      "kind": "untouched",
+      "flagged": false,
+      "files": [],
+      "commits": [],
+      "checks": [
+        {
+          "run": "npx vitest run src/containers/hub/__tests__/HubFilters.test.tsx",
+          "cwd": "web-app",
+          "files": [
+            "web-app/src/containers/hub/__tests__/HubFilters.test.tsx"
+          ]
+        }
+      ],
+      "consequence": "Upstream does not touch this feature's files.",
+      "recommendation": null,
+      "decision": null,
+      "decidedOn": null
+    },
+    {
+      "id": "windows-test-build-ci",
+      "feature": "Unsigned Windows test installer from GitHub Actions",
+      "forUsers": "Every branch can produce a Windows installer to try on this PC before merging.",
+      "status": "no-check",
+      "kind": "untouched",
+      "flagged": false,
+      "files": [],
+      "commits": [],
+      "checks": [],
+      "consequence": "Upstream does not touch this feature's files.",
+      "recommendation": null,
+      "decision": null,
+      "decidedOn": null
+    }
+  ]
+}
