@@ -87,6 +87,7 @@ import {
   loadChatSkillDetails,
   renderChatSkillsBlock,
 } from '@/lib/chat-skill-injection'
+import { agentSkillRevision } from '@/lib/agent-skill-revision'
 import type { AgentSkillDetail } from '@/services/agent/skills'
 import type { ServiceHub } from '@/services'
 import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
@@ -416,8 +417,13 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private toolsCacheKey = ''
   private toolsCacheValid = false
   // Invoked-skill bodies, memoized for the transport's (per-thread) lifetime;
-  // null marks a skill known to be unusable on the chat pipeline.
+  // null marks a skill that could not be fetched (deleted, or a failed IPC).
+  // Usability is NOT cached — see `loadChatSkillDetails`.
   private skillDetailCache = new Map<string, AgentSkillDetail | null>()
+  // Skill revision the cache above was filled at. The transport outlives every
+  // edit the user makes on the Skills page, so without this an edited SKILL.md
+  // only reached the model after an app restart.
+  private skillCacheRevision = agentSkillRevision()
 
   constructor(systemMessage?: string, threadId?: string) {
     this.systemMessage = systemMessage
@@ -466,6 +472,17 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
    */
   invalidateToolsCache() {
     this.toolsCacheValid = false
+  }
+
+  /**
+   * Drop memoized skill bodies so the next send re-reads them from disk.
+   * Called automatically when the skill revision moves (any create / import /
+   * update / enable / delete), which is what makes an edit visible inside an
+   * already-open thread.
+   */
+  invalidateSkillCache() {
+    this.skillDetailCache.clear()
+    this.skillCacheRevision = agentSkillRevision()
   }
 
   private buildToolsCacheKey(
@@ -1010,6 +1027,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // the agent's `skill.view` loading. Reading them off `options.messages`
     // makes send, regenerate, edit and app-restart replay uniform.
     const invokedSkillNames = collectSkillNamesFromMessages(options.messages)
+    if (this.skillCacheRevision !== agentSkillRevision()) {
+      this.invalidateSkillCache()
+    }
     const skillsBlock = renderChatSkillsBlock(
       await loadChatSkillDetails(
         invokedSkillNames,

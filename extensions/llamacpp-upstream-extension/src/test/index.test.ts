@@ -538,6 +538,88 @@ describe('llamacpp_extension', () => {
       })
     })
 
+    // ATO-464 lowered the GPU bar to 2 GiB on Linux only, leaving Windows on
+    // an inline 6 GiB that gated Vulkan and ROCm but never CUDA. A 4 GB
+    // Radeon was told "CPU is optimal" — and cached — while a 4 GB GeForce
+    // on the same path got CUDA.
+    it('offers Vulkan to a small Windows AMD card the 6 GiB bar used to exclude', async () => {
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'windows',
+        os_name: 'Windows',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [
+          {
+            name: 'AMD Radeon RX 6500 XT',
+            vendor: 'AMD',
+            total_memory: 4 * 1024,
+            uuid: 'dgpu-amd-small',
+            driver_version: 'fixture',
+            nvidia_info: undefined,
+            vulkan_info: { device_type: 'DiscreteGpu' },
+          },
+        ],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: false,
+        cuda12: false,
+        cuda13: false,
+        vulkan: true,
+      })
+      vi.mocked(listSupportedBackends).mockResolvedValue([
+        { version: 'b10205', backend: 'win-cpu-x64', order: 0 },
+        { version: 'b10205', backend: 'win-vulkan-x64', order: 0 },
+      ])
+      vi.spyOn(extension as any, 'tierEnumeratesDevices').mockResolvedValue(
+        'works'
+      )
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'gpu',
+        backend: 'win-vulkan-x64',
+      })
+    })
+
+    it('offers ROCm to a small Windows AMD card the table already covers', async () => {
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'windows',
+        os_name: 'Windows',
+        total_memory: 32 * 1024,
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [
+          {
+            name: 'AMD Radeon RX 7600',
+            vendor: 'AMD',
+            total_memory: 4 * 1024,
+            uuid: 'dgpu-amd-rocm',
+            driver_version: 'fixture',
+            nvidia_info: undefined,
+            vulkan_info: { device_type: 'DiscreteGpu', device_id: 0x7480 },
+          },
+        ],
+      } as any)
+      vi.mocked(getSupportedFeaturesFromRust).mockResolvedValue({
+        cuda11: false,
+        cuda12: false,
+        cuda13: false,
+        vulkan: true,
+        rocm: true,
+      })
+      vi.mocked(listSupportedBackends).mockResolvedValue([
+        { version: 'b10205', backend: 'win-cpu-x64', order: 0 },
+        { version: 'b10205', backend: 'win-rocm-7.14-x64', order: 0 },
+        { version: 'b10205', backend: 'win-vulkan-x64', order: 0 },
+      ])
+      vi.spyOn(extension as any, 'tierEnumeratesDevices').mockResolvedValue(
+        'works'
+      )
+
+      await expect(extension['detectIdealBackendType']()).resolves.toEqual({
+        kind: 'gpu',
+        backend: 'win-rocm-7.14-x64',
+      })
+    })
+
     it('reports detection failure when a Windows GPU tier has no release asset', async () => {
       vi.mocked(getSystemInfo).mockResolvedValue({
         os_type: 'windows',

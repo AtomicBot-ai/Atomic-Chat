@@ -76,6 +76,7 @@ vi.mock('@/components/ui/dropdrawer', () => {
 
 import DropdownPlugins from '../DropdownPlugins'
 import { useAppState } from '@/hooks/useAppState'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import type { AgentSkill } from '@/services/agent/skills'
@@ -128,6 +129,7 @@ describe('DropdownPlugins', () => {
     vi.clearAllMocks()
     useAppState.setState({ tools: [] })
     useMCPServers.setState({ mcpServers: {} })
+    useGeneralSetting.setState({ agentModeEnabled: false })
     useToolAvailable.setState({ disabledTools: {}, defaultDisabledTools: [] })
   })
 
@@ -171,6 +173,49 @@ describe('DropdownPlugins', () => {
 
     expect(screen.queryByRole('switch', { name: 'Jan Browser MCP' })).toBeNull()
     expect(screen.getByText('common:connectorsMenu.empty')).toBeInTheDocument()
+  })
+
+  // The system servers never ride a chat request and are filtered out of this
+  // menu, so a user who switched the filesystem server on saw nothing at all
+  // and concluded it had stopped working. Say why, and only while it is true.
+  it('explains that an active system server is agent-mode only', () => {
+    useGeneralSetting.setState({ agentModeEnabled: false })
+    useMCPServers.setState({
+      mcpServers: {
+        filesystem: { command: 'npx', args: [], env: {}, active: true },
+      },
+    })
+
+    renderDropdown()
+
+    expect(
+      screen.getByText('common:connectorsMenu.systemServersAgentOnly')
+    ).toBeInTheDocument()
+  })
+
+  it('drops the note once Agent mode is on, or when no system server is', () => {
+    useGeneralSetting.setState({ agentModeEnabled: true })
+    useMCPServers.setState({
+      mcpServers: {
+        filesystem: { command: 'npx', args: [], env: {}, active: true },
+      },
+    })
+    const { unmount } = renderDropdown()
+    expect(
+      screen.queryByText('common:connectorsMenu.systemServersAgentOnly')
+    ).toBeNull()
+    unmount()
+
+    useGeneralSetting.setState({ agentModeEnabled: false })
+    useMCPServers.setState({
+      mcpServers: {
+        filesystem: { command: 'npx', args: [], env: {}, active: false },
+      },
+    })
+    renderDropdown()
+    expect(
+      screen.queryByText('common:connectorsMenu.systemServersAgentOnly')
+    ).toBeNull()
   })
 
   it('connects a server and keeps its per-tool switches', async () => {

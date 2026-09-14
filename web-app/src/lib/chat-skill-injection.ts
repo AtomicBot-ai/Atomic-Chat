@@ -81,11 +81,21 @@ export function composeSystemMessage(
 }
 
 /**
- * Load skill bodies by name, memoized in `cache` (null = known-unusable).
+ * Load skill bodies by name, memoized in `cache` (null = the skill could not
+ * be fetched at all — deleted, or a failed IPC).
+ *
  * Skips — never throws — on IPC errors, disabled skills and skills the chat
  * pipeline can't serve (scripts / unavailable tools): a skill deleted or
  * disabled after it was invoked must not brick a regenerate. Softer than the
  * agent, which fails the turn on a broken selected skill.
+ *
+ * Only the *fetch* is memoized; usability is re-decided on every call. It
+ * depends on `availableToolNames`, which `useTools` fills in asynchronously
+ * after boot — baking the verdict into the cache meant a skill invoked before
+ * the MCP servers finished connecting was written off as unusable and stayed
+ * that way for the life of the transport, i.e. the session. Whoever owns the
+ * cache is responsible for clearing it when a skill is edited; see
+ * `agentSkillRevision`.
  */
 export async function loadChatSkillDetails(
   names: string[],
@@ -100,19 +110,19 @@ export async function loadChatSkillDetails(
         // Lazy import keeps the module graph free of `@tauri-apps/api` for
         // the web build and the vitest harness.
         const { getAgentSkill } = await import('@/services/agent/skills')
-        const detail = await getAgentSkill(name)
-        const usable =
-          detail.enabled &&
-          !detail.error &&
-          isChatCompatibleSkill(detail, availableToolNames)
-        cache.set(name, usable ? detail : null)
+        cache.set(name, await getAgentSkill(name))
       } catch (error) {
         console.warn(`Skipping chat skill "${name}":`, error)
         cache.set(name, null)
       }
     }
     const cached = cache.get(name)
-    if (cached) details.push(cached)
+    if (!cached) continue
+    const usable =
+      cached.enabled &&
+      !cached.error &&
+      isChatCompatibleSkill(cached, availableToolNames)
+    if (usable) details.push(cached)
   }
   return details
 }

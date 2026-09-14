@@ -13,6 +13,7 @@
     "type": "separator"
   },
   "agents": "Agents",
+  "skills": "Agent Skills",
   "projects": "Projects",
   "assistants": "Assistants",
   "file-upload": "File Upload",

@@ -12,6 +12,7 @@ import {
   resolveTokenSpeed,
 } from '../custom-chat-transport'
 import { loadChatSkillDetails } from '../chat-skill-injection'
+import { bumpAgentSkillRevision } from '../agent-skill-revision'
 import { ModelFactory } from '../model-factory'
 
 // The skill-body loader is Tauri-only (IS_TAURI is false under vitest), so it
@@ -344,6 +345,53 @@ describe('CustomChatTransport skill injection', () => {
     }>
     const system = prompt.find((message) => message.role === 'system')
     expect(system?.content).toBe('be brief')
+  })
+
+  // The transport lives for the session, so a memoized SKILL.md body used to
+  // outlive every edit the user made on the Skills page: they changed the
+  // instructions, sent another message in the same thread, and the model kept
+  // following the old ones until an app restart.
+  it('drops memoized skill bodies when a skill is edited', async () => {
+    // `mock.calls` accumulates across this file — no clearAllMocks in the
+    // shared beforeEach — so index from a clean slate.
+    vi.mocked(loadChatSkillDetails).mockClear()
+    const model = fakeStreamingModel(idleStream)
+    vi.spyOn(ModelFactory, 'createModel').mockResolvedValue(model)
+    const transport = new CustomChatTransport('be brief', 'thread-7')
+    const invoked = {
+      ...userMessage,
+      metadata: { agent_skill_name: 'style-guide' },
+    } as UIMessage
+
+    const send = async () =>
+      readChunks(
+        (await transport.sendMessages({
+          chatId: 'chat-1',
+          messages: [invoked],
+          abortSignal: undefined,
+          trigger: 'submit-message',
+          messageId: undefined,
+        })) as ReadableStream<Record<string, unknown>>
+      )
+
+    await send()
+    // Stand in for the real loader having memoized a body.
+    const firstCache = vi.mocked(loadChatSkillDetails).mock
+      .calls[0][1] as Map<string, unknown>
+    firstCache.set('style-guide', { name: 'style-guide', body: 'stale' })
+
+    await send()
+    expect(
+      (vi.mocked(loadChatSkillDetails).mock.calls[1][1] as Map<string, unknown>)
+        .size
+    ).toBe(1)
+
+    bumpAgentSkillRevision()
+    await send()
+    expect(
+      (vi.mocked(loadChatSkillDetails).mock.calls[2][1] as Map<string, unknown>)
+        .size
+    ).toBe(0)
   })
 })
 

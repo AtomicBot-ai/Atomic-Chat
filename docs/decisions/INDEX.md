@@ -54,8 +54,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Add a `/v1/responses` translation shim to the local proxy so Codex CLI works on llama.cpp models](2026-06-02-add-a-v1-responses-translation-shim-to-the-local-proxy-so-codex.md)
 - **2026-06-01** — [Add a "Launch" page to install + configure external coding agents / assistants against the local OpenAI-compatible API](2026-06-01-add-a-launch-page-to-install-configure-external-coding-agents.md)
 
-## Agent mode — autonomous loop, tools, skills, workspace (44)
+## Agent mode — autonomous loop, tools, skills, workspace (46)
 
+- **2026-09-14** — [Carry per-thread Agent mode onto the global toggle](2026-09-14-carry-per-thread-agent-mode-onto-the-global-toggle.md)
+- **2026-09-14** — [Re-read skill bodies when a skill changes](2026-09-14-re-read-skill-bodies-when-a-skill-changes.md)
 - **2026-08-27** — [Give the agent native RAG tools over the existing vector collections](2026-08-27-native-agent-rag-tools.md)
 - **2026-08-27** — [Unify chat and agent on the agent engine](2026-08-27-unify-chat-and-agent-on-the-agent-engine.md)
 - **2026-08-18** — [Let Agent turns think, and apply the same thinking level chat uses](2026-08-18-let-agent-turns-think-and-apply-the-thinking-level.md)
@@ -132,8 +134,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 - **2026-05-19** — [Use `AtomicBot-ai/mlx-vlm` as the MLX backend](2026-05-19-use-atomicbot-ai-mlx-vlm-as-the-mlx-backend.md)
 
-## llama.cpp providers & backend selection (51)
+## llama.cpp providers & backend selection (52)
 
+- **2026-09-14** — [One GPU VRAM floor for every OS](2026-09-14-one-gpu-vram-floor-for-every-os.md)
 - **2026-08-21** — [Gate CUDA 13 on NVIDIA compute capability, not the driver version alone](2026-08-21-gate-cuda-13-on-nvidia-compute-capability-not-driver-alone.md)
 - **2026-08-19** — [Disable the TurboQuant `llamacpp` provider by default on fresh installs](2026-08-19-disable-the-turboquant-provider-by-default-on-fresh-installs.md)
 - **2026-08-14** — [Keep the engine version out of the `latest/` sentinel trap](2026-08-14-keep-the-engine-version-out-of-the-latest-sentinel-trap.md)
@@ -293,8 +296,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Other (10)
+## Other (11)
 
+- **2026-09-14** — [Re-pin filesystem MCP specs the app wrote itself](2026-09-14-re-pin-filesystem-mcp-specs-the-app-wrote-itself.md)
 - **2026-08-21** — [Strip every non-image file part before the model converter](2026-08-21-strip-every-non-image-file-part-before-the-model-converter.md)
 - **2026-07-31** — [Surface MCP server runtime errors (ATO-385)](2026-07-31-surface-mcp-server-runtime-errors.md)
 - **2026-07-31** — [Fallback between HTTP-based MCP transports (ATO-384, ATO-385)](2026-07-31-fallback-between-http-based-mcp-transports.md)

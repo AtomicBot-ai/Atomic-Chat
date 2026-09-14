@@ -1,4 +1,9 @@
-use super::commands::{collect_mcp_server_statuses, is_extension_not_connected_error};
+use super::commands::{
+    collect_mcp_server_statuses, is_extension_not_connected_error, repin_filesystem_mcp_servers,
+};
+use super::constants::{
+    filesystem_mcp_pinned_spec, APP_WRITTEN_FILESYSTEM_MCP_VERSIONS, FILESYSTEM_MCP_PACKAGE,
+};
 use super::helpers::{
     add_server_config, add_server_config_with_path, append_bounded_stderr,
     ensure_mcp_config_exists, extract_command_args, format_mcp_start_error,
@@ -516,4 +521,63 @@ fn a_real_taskkill_failure_is_still_reported() {
          Reason: Access is denied."
     ));
     assert!(!is_process_already_gone(""));
+}
+
+/// The pin migration has to reach configs a previous release already rewrote.
+/// The first pin shipped `@2026.1.14` — published before the upstream fix it
+/// was chosen for merged — and the original bare-token-only match meant no
+/// later release could ever correct it.
+#[test]
+fn repin_rewrites_both_bare_and_app_written_filesystem_specs() {
+    let pinned = filesystem_mcp_pinned_spec();
+    let stale_spec = format!(
+        "{FILESYSTEM_MCP_PACKAGE}@{}",
+        APP_WRITTEN_FILESYSTEM_MCP_VERSIONS[0]
+    );
+
+    let mut servers = serde_json::json!({
+        "filesystem": {
+            "command": "npx",
+            "args": ["-y", stale_spec, "/home/u/Documents/Atomic_chat"],
+        },
+        "my-own-fs": {
+            "command": "npx",
+            "args": ["-y", FILESYSTEM_MCP_PACKAGE, "/srv/data"],
+        },
+    })
+    .as_object()
+    .expect("fixture is an object")
+    .clone();
+
+    assert!(repin_filesystem_mcp_servers(&mut servers));
+    assert_eq!(servers["filesystem"]["args"][1], pinned.as_str());
+    assert_eq!(servers["my-own-fs"]["args"][1], pinned.as_str());
+    // Allowed directories are never touched.
+    assert_eq!(
+        servers["filesystem"]["args"][2],
+        "/home/u/Documents/Atomic_chat"
+    );
+}
+
+/// A version the user pinned by hand is theirs; and once every arg is on the
+/// current spec the migration must report "nothing changed" so `get_mcp_configs`
+/// stops rewriting the file on every read.
+#[test]
+fn repin_leaves_user_pins_alone_and_is_idempotent() {
+    let pinned = filesystem_mcp_pinned_spec();
+    let user_pin = format!("{FILESYSTEM_MCP_PACKAGE}@2025.8.21");
+
+    let mut servers = serde_json::json!({
+        "filesystem": { "command": "npx", "args": ["-y", pinned, "/data"] },
+        "pinned-by-hand": { "command": "npx", "args": ["-y", user_pin, "/data"] },
+        "unrelated": { "command": "uvx", "args": ["mcp-server-fetch"] },
+        "remote": { "type": "http", "url": "https://mcp.exa.ai/mcp" },
+    })
+    .as_object()
+    .expect("fixture is an object")
+    .clone();
+
+    let before = servers.clone();
+    assert!(!repin_filesystem_mcp_servers(&mut servers));
+    assert_eq!(servers, before);
 }

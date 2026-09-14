@@ -124,8 +124,8 @@ you will need to wait for a response). Efficient management of tools and their o
 
 To illustrate how MCPs can be used within Jan, we will walk through an example using the [Browser MCP](https://browsermcp.io/).
 
-Before we begin, you will need to enable experimental features at `General` > `Advanced`. Next, go to `Settings` > `MCP Servers`, and toggle
-the `Allow All MCP Tool Permission` switch ON.
+Connectors live on the **Connectors** page (left sidebar). The composer's plugins button opens the same list
+for the chat you are in, with a switch per connector and a per-tool dialog behind it.
 
 ![Turn on the MCP Host](./_assets/mcp-on.png)
 
@@ -177,6 +177,66 @@ You can check and see if this was accurate below.
 
 ![Browser MCP Extension](./_assets/mcp-setup-10.png)
 
+
+## Built-in servers: Filesystem, Fetch and Sequential thinking
+
+Three servers are seeded into `mcp_config.json` on first launch and are **not** listed on the Connectors page:
+`filesystem`, `fetch` and `sequential-thinking`. They are engine tooling rather than connectors, and they behave
+differently from the ones you add yourself.
+
+<Callout type="warning">
+  **These three only run in Agent mode.** An ordinary chat never receives their tools, however they are
+  configured — so a model in a normal chat will correctly tell you it cannot read your files. Turn on **Agent
+  mode** in the composer's `+` menu and the model gets them. The plugins menu says so when one of them is
+  switched on and Agent mode is off.
+</Callout>
+
+### The filesystem sandbox
+
+The `filesystem` server is pinned to a version of
+[`@modelcontextprotocol/server-filesystem`](https://www.npmjs.com/package/@modelcontextprotocol/server-filesystem)
+and is given exactly one allowed directory, created for you on first launch:
+
+| Platform | Sandbox directory |
+| -------- | ----------------- |
+| macOS    | `~/Documents/Atomic_chat` |
+| Windows  | `%USERPROFILE%\Documents\Atomic_chat` |
+| Linux    | `~/Documents/Atomic_chat` (or your XDG documents directory) |
+
+Everything outside that directory is refused by the server itself with *"Access denied - path outside allowed
+directories"*. That is the server's own sandbox, not an app setting.
+
+To grant another directory, add it as a further argument. Open **Connectors → Import Config** — the JSON editor
+there shows every server including the hidden ones — and extend the `filesystem` entry's `args`:
+
+```json
+"filesystem": {
+  "command": "npx",
+  "args": [
+    "-y",
+    "@modelcontextprotocol/server-filesystem@2026.8.31",
+    "/Users/you/Documents/Atomic_chat",
+    "/Users/you/Projects/notes"
+  ],
+  "env": {},
+  "cwd": "/Users/you/Documents/Atomic_chat",
+  "active": true
+}
+```
+
+Every directory you list is readable *and writable* by the model. Grant the narrowest set you actually need.
+
+<Callout type="info">
+  The version in `args` is pinned deliberately and re-pinned on upgrade when the app itself wrote it — an
+  unpinned install lets the bundled runtime serve a stale cached build whose relative-path handling is broken.
+  If you pin a version yourself, the app leaves your choice alone and never corrects it.
+</Callout>
+
+### Agent skills are not reached through this server
+
+Skills live in the app data folder, not in the filesystem sandbox, so the model cannot list or edit them through
+`filesystem` no matter which directories you grant. Skills are managed on the **Skills** page and reach the model
+through the agent's own skill tooling — see [Agent skills](./skills).
 
 ## Troubleshooting
 

@@ -651,7 +651,9 @@
     "toolCountPartial": "{{enabled}} of {{count}} tools",
     "costPartial": "{{enabled}} of {{count}} tools · ≈{{tokens}} tokens",
     "costSharePartial": "{{enabled}} of {{count}} tools · ≈{{tokens}} tokens ({{share}}% of context)",
-    "configureTools": "Tools"
+    "configureTools": "Tools",
+    "systemServersAgentOnly": "Filesystem, Fetch and Sequential thinking only run in Agent mode",
+    "systemServersAgentOnlyHint": "Turn on Agent mode in the composer “+” menu to let the model use them."
   },
   "connectorTools": {
     "title": "{{name}} tools",

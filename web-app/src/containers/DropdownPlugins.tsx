@@ -32,6 +32,7 @@ import {
 } from '@/constants/mcp-connectors'
 import { route } from '@/constants/routes'
 import { useAppState } from '@/hooks/useAppState'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useMCPServerStatuses } from '@/hooks/useMCPServerStatuses'
 import { useMCPServerToggle } from '@/hooks/useMCPServerToggle'
 import { useMCPServers, type MCPServerConfig } from '@/hooks/useMCPServers'
@@ -254,6 +255,22 @@ export default memo(function DropdownPlugins({
       }))
     return [...configured, ...extra]
   }, [connectorByServerKey, mcpServers, toolsByServer])
+
+  // The system servers (filesystem, fetch, sequential-thinking) are filtered
+  // out of this menu and out of every chat request: they are agent-mode
+  // tooling. A user who switched one on has no way to tell that from here —
+  // it simply never shows up and the model reports it has no such tool. Say
+  // so, once, and only while it is actually true for this session.
+  const agentModeEnabled = useGeneralSetting((state) => state.agentModeEnabled)
+  const hasActiveSystemServer = useMemo(
+    () =>
+      Object.entries(mcpServers).some(
+        ([key, config]) =>
+          SYSTEM_SERVER_KEYS.includes(key) && Boolean(config?.active)
+      ),
+    [mcpServers]
+  )
+  const showSystemServerNote = hasActiveSystemServer && !agentModeEnabled
 
   const activeConnectors = entries.filter((entry) => entry.active).length
   // Connectors whose tools actually ride this chat's requests.
@@ -506,6 +523,14 @@ export default memo(function DropdownPlugins({
                     )
                   })}
                 </DropDrawerGroup>
+                {showSystemServerNote && (
+                  <div className="px-2 py-2 text-xs text-muted-foreground">
+                    <p>{t('common:connectorsMenu.systemServersAgentOnly')}</p>
+                    <p>
+                      {t('common:connectorsMenu.systemServersAgentOnlyHint')}
+                    </p>
+                  </div>
+                )}
                 <DropDrawerItem className="py-2" onSelect={goToConnectors}>
                   <div className="flex items-center gap-2">
                     <IconSettings size={16} className="text-muted-foreground" />

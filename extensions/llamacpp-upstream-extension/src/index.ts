@@ -506,10 +506,18 @@ export type OptimalBackendCacheRecord =
  */
 export const BACKEND_DETECTION_FAILED = 'BACKEND_DETECTION_FAILED'
 
-/// Smallest Vulkan device worth moving a Linux host off the CPU build for.
-/// Below this the KV cache of even the lightest recommended model does not
-/// fit beside the weights, and Vulkan would spill straight back to RAM.
-const LINUX_VULKAN_MIN_VRAM_MIB = 2 * 1024
+/// Smallest GPU worth moving a host off the CPU build for. Below this the
+/// KV cache of even the lightest recommended model does not fit beside the
+/// weights, and the GPU backend would spill straight back to RAM.
+///
+/// Platform-neutral on purpose. ATO-464 lowered this from 6 GiB to 2 GiB for
+/// Linux with reasoning that is a property of the backend, not of the OS
+/// ("Vulkan is a third of CUDA's throughput and radically more than the CPU
+/// fallback"), but left Windows on an inline `6 * 1024`. That asymmetry told
+/// a 4 GB Radeon owner "CPU is optimal" and cached the verdict, while a 4 GB
+/// GeForce on the same code path got CUDA — the CUDA tiers carry no VRAM
+/// gate at all.
+const GPU_BACKEND_MIN_VRAM_MIB = 2 * 1024
 
 export default class llamacpp_upstream_extension extends AIEngine {
   provider: string = 'llamacpp-upstream'
@@ -1747,7 +1755,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
     try {
       const sysInfo = await getSystemInfo()
       for (const gpuInfo of sysInfo.gpus) {
-        if (gpuInfo.total_memory >= 6 * 1024) {
+        if (gpuInfo.total_memory >= GPU_BACKEND_MIN_VRAM_MIB) {
           hasEnoughGpuMemory = true
           break
         }
@@ -1788,7 +1796,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
       let hasEnoughVram = false
       for (const gpuInfo of sysInfo.gpus) {
-        if (gpuInfo.total_memory >= 6 * 1024) {
+        if (gpuInfo.total_memory >= GPU_BACKEND_MIN_VRAM_MIB) {
           hasEnoughVram = true
           break
         }
@@ -1923,7 +1931,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
         // (ATO-464). Only a device the loader can actually see qualifies:
         // `features.vulkan` means libvulkan.so.1 loaded AND enumerated it.
         const anyVulkanDevice = sysInfo.gpus.some(
-          (g) => g.total_memory >= LINUX_VULKAN_MIN_VRAM_MIB
+          (g) => g.total_memory >= GPU_BACKEND_MIN_VRAM_MIB
         )
         if (features.vulkan && archSuffix === 'x64' && anyVulkanDevice) {
           return { kind: 'gpu', backend: 'linux-vulkan-x64' }
