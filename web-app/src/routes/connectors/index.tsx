@@ -29,6 +29,7 @@ import {
 } from '@/hooks/useMCPServers'
 import { useMCPServerStatuses } from '@/hooks/useMCPServerStatuses'
 import { useAppState } from '@/hooks/useAppState'
+import { ensureConnectorReviewed } from '@/hooks/useConnectorReview'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useToolApproval } from '@/hooks/useToolApproval'
@@ -177,25 +178,37 @@ function ConnectorsPage() {
     setBusy(serverKey, true)
     const config = getServerConfig(serverKey)
     if (active && config) {
-      serviceHub
-        .mcp()
-        .activateMCPServer(serverKey, { ...config, active })
-        .then(() => {
+      void (async () => {
+        try {
+          // Task 28 (decision D36): review before use. Cancel leaves it off.
+          if (
+            !(await ensureConnectorReviewed(
+              serviceHub.mcp(),
+              serverKey,
+              config
+            ))
+          ) {
+            editServer(serverKey, { ...config, active: false })
+            syncServers()
+            return
+          }
+          await serviceHub
+            .mcp()
+            .activateMCPServer(serverKey, { ...config, active })
           editServer(serverKey, { ...config, active })
           syncServers()
           toast.success(t('mcp-servers:serverStatusActive', { serverKey }))
           refresh()
-        })
-        .catch((error) => {
+        } catch (error) {
           editServer(serverKey, { ...config, active: false })
           setErrorMessage({
             message: error,
             subtitle: t('mcp-servers:checkParams'),
           })
-        })
-        .finally(() => {
+        } finally {
           setBusy(serverKey, false)
-        })
+        }
+      })()
     } else {
       editServer(serverKey, {
         ...(config ?? (mcpServers[serverKey] as MCPServerConfig)),
@@ -222,7 +235,12 @@ function ConnectorsPage() {
     setBusy(key, true)
     let config: MCPServerConfig | undefined
     try {
-      config = await buildConnectorConfig(connector, secretValue)
+      const built = await buildConnectorConfig(connector, secretValue)
+      // Task 28 (decision D36): review before use. Cancel installs nothing.
+      if (!(await ensureConnectorReviewed(serviceHub.mcp(), key, built))) {
+        return false
+      }
+      config = built
       addServer(key, { ...config, active: false })
       await serviceHub.mcp().activateMCPServer(key, { ...config, active: true })
       editServer(key, { ...config, active: true })
@@ -256,6 +274,11 @@ function ConnectorsPage() {
     setBusy(key, true)
     try {
       const config = await buildConnectorConfig(connector)
+      // Reviewed before the browser opens; installing afterwards finds the
+      // review already recorded and does not ask again.
+      if (!(await ensureConnectorReviewed(serviceHub.mcp(), key, config))) {
+        return
+      }
       await serviceHub.mcp().mcpOauthLogin(key, config.url ?? '')
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

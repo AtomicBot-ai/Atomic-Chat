@@ -284,6 +284,51 @@ export type ConnectorConfig = {
   headers?: Record<string, string>
 }
 
+export const COMMAND_MEANING_IDS = [
+  'launcherNpm',
+  'launcherPython',
+  'launcherNode',
+  'launcherPythonScript',
+  'launcherDocker',
+  'launcherShell',
+  'launcherProgram',
+  'autoYes',
+  'packagePinned',
+  'packageUnpinned',
+  'shellRunsNext',
+  'address',
+  'path',
+  'option',
+  'value',
+] as const
+
+export type CommandMeaningId = (typeof COMMAND_MEANING_IDS)[number]
+
+/** One part of a connector's command line and what it means. */
+export type CommandPart = {
+  text: string
+  meaning: CommandMeaningId
+  /** The fixed version, for a pinned package. */
+  version?: string
+}
+
+export const CONNECTOR_ISSUE_IDS = [
+  'runsAsYou',
+  'downloadsCode',
+  'shellRuns',
+  'getsSecrets',
+  'reachesPaths',
+  'sendsToService',
+] as const
+
+export type ConnectorIssueId = (typeof CONNECTOR_ISSUE_IDS)[number]
+
+/** Something that could go wrong, taken from the connector's settings. */
+export type ConnectorIssue = {
+  id: ConnectorIssueId
+  params?: Record<string, string>
+}
+
 export type ConnectorSummary = {
   kind: 'program' | 'website'
   /** The command line a local connector runs. */
@@ -293,6 +338,10 @@ export type ConnectorSummary = {
   /** Names only - never the values - of the secrets it is given. */
   secretNames: string[]
   warnings: ReviewWarning[]
+  /** Each part of a local connector's command, in plain words. */
+  explanation: CommandPart[]
+  /** What could go wrong, most basic first. */
+  issues: ConnectorIssue[]
 }
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]'])
@@ -326,6 +375,80 @@ function unpinnedPackage(command: string, args: string[]): string | null {
   return version && version !== 'latest' ? null : pkg
 }
 
+/** Launchers that download a package and run it. */
+const PACKAGE_LAUNCHERS: Record<
+  string,
+  { meaning: CommandMeaningId; source: string }
+> = {
+  npx: { meaning: 'launcherNpm', source: 'npm' },
+  bunx: { meaning: 'launcherNpm', source: 'npm' },
+  pnpx: { meaning: 'launcherNpm', source: 'npm' },
+  uvx: { meaning: 'launcherPython', source: 'PyPI' },
+}
+
+const OTHER_LAUNCHERS: Record<string, CommandMeaningId> = {
+  node: 'launcherNode',
+  python: 'launcherPythonScript',
+  python3: 'launcherPythonScript',
+  py: 'launcherPythonScript',
+  docker: 'launcherDocker',
+}
+
+function packageVersion(program: string, pkg: string): string | null {
+  if (program === 'uvx') {
+    return pkg.match(/(?:==|@)(\d\S*)$/)?.[1] ?? null
+  }
+  const at = pkg.lastIndexOf('@')
+  const version = at > 0 ? pkg.slice(at + 1) : ''
+  return version && version !== 'latest' ? version : null
+}
+
+function looksLikePath(arg: string): boolean {
+  return /^(?:[A-Za-z]:[\\/]|\\\\|\/|~(?:[\\/]|$)|\.{1,2}[\\/])/.test(arg)
+}
+
+function explainCommand(command: string, args: string[]): CommandPart[] {
+  const program = programName(command)
+  const packageLauncher = PACKAGE_LAUNCHERS[program]
+  const isShell = SHELLS.has(program)
+  const parts: CommandPart[] = [
+    {
+      text: command,
+      meaning:
+        packageLauncher?.meaning ??
+        OTHER_LAUNCHERS[program] ??
+        (isShell ? 'launcherShell' : 'launcherProgram'),
+    },
+  ]
+  let packageSeen = !packageLauncher
+  for (const arg of args) {
+    const lower = arg.toLowerCase()
+    if (!packageSeen && (lower === '-y' || lower === '--yes')) {
+      parts.push({ text: arg, meaning: 'autoYes' })
+    } else if (isShell && SHELL_COMMAND_FLAGS.has(lower)) {
+      parts.push({ text: arg, meaning: 'shellRunsNext' })
+    } else if (/^https?:\/\//i.test(arg)) {
+      parts.push({ text: arg, meaning: 'address' })
+    } else if (!packageSeen && !arg.startsWith('-')) {
+      packageSeen = true
+      const version = packageVersion(program, arg)
+      parts.push(
+        version
+          ? { text: arg, meaning: 'packagePinned', version }
+          : { text: arg, meaning: 'packageUnpinned' }
+      )
+    } else if (looksLikePath(arg)) {
+      parts.push({ text: arg, meaning: 'path' })
+    } else {
+      parts.push({
+        text: arg,
+        meaning: arg.startsWith('-') ? 'option' : 'value',
+      })
+    }
+  }
+  return parts
+}
+
 export function describeConnector(config: ConnectorConfig): ConnectorSummary {
   const isWebsite =
     config.type === 'http' ||
@@ -335,22 +458,36 @@ export function describeConnector(config: ConnectorConfig): ConnectorSummary {
   if (isWebsite) {
     const warnings: ReviewWarning[] = []
     const address = config.url ?? ''
+    let host = address
     try {
       const url = new URL(address)
+      host = url.hostname
       if (url.protocol === 'http:' && !LOCAL_HOSTS.has(url.hostname)) {
         warnings.push({ id: 'unencrypted', evidence: address })
       }
     } catch {
       // An address that does not parse is reported as-is; starting it fails anyway.
     }
+    const secretNames = [
+      ...Object.keys(config.headers ?? {}),
+      ...Object.keys(config.env ?? {}),
+    ]
+    const issues: ConnectorIssue[] = [
+      { id: 'sendsToService', params: { host } },
+    ]
+    if (secretNames.length > 0) {
+      issues.push({
+        id: 'getsSecrets',
+        params: { names: secretNames.join(', ') },
+      })
+    }
     return {
       kind: 'website',
       address,
-      secretNames: [
-        ...Object.keys(config.headers ?? {}),
-        ...Object.keys(config.env ?? {}),
-      ],
+      secretNames,
       warnings,
+      explanation: [],
+      issues,
     }
   }
 
@@ -369,10 +506,128 @@ export function describeConnector(config: ConnectorConfig): ConnectorSummary {
     if (!warnings.some((existing) => existing.id === warning.id))
       warnings.push(warning)
   }
+
+  const program = programName(config.command)
+  const explanation = explainCommand(config.command, args)
+  const secretNames = Object.keys(config.env ?? {})
+  const issues: ConnectorIssue[] = [{ id: 'runsAsYou' }]
+  const source =
+    PACKAGE_LAUNCHERS[program]?.source ??
+    (program === 'docker' ? 'Docker' : undefined)
+  if (source) issues.push({ id: 'downloadsCode', params: { source } })
+  if (SHELLS.has(program)) issues.push({ id: 'shellRuns' })
+  if (secretNames.length > 0) {
+    issues.push({
+      id: 'getsSecrets',
+      params: { names: secretNames.join(', ') },
+    })
+  }
+  const paths = explanation
+    .filter((part) => part.meaning === 'path')
+    .map((part) => part.text)
+  if (paths.length > 0) {
+    issues.push({ id: 'reachesPaths', params: { paths: paths.join(', ') } })
+  }
+
   return {
     kind: 'program',
     runs,
-    secretNames: Object.keys(config.env ?? {}),
+    secretNames,
     warnings,
+    explanation,
+    issues,
   }
+}
+
+export const TOOL_LABEL_IDS = [
+  'saysReadOnly',
+  'saysMayDelete',
+  'saysReachesOutside',
+] as const
+
+export type ToolLabelId = (typeof TOOL_LABEL_IDS)[number]
+
+export const TOOL_HINT_IDS = [
+  'deletes',
+  'changes',
+  'sends',
+  'runsCode',
+  'money',
+  'visitsWeb',
+] as const
+
+export type ToolHintId = (typeof TOOL_HINT_IDS)[number]
+
+/** A connector tool as its connector lists it. */
+export type DescribableTool = {
+  name: string
+  description?: string
+  readOnly?: boolean
+  destructive?: boolean
+  openWorld?: boolean
+  inputSchema?: Record<string, unknown>
+}
+
+export type ToolInput = {
+  name: string
+  type?: string
+  description?: string
+  required: boolean
+}
+
+export type ToolDetail = {
+  inputs: ToolInput[]
+  /** What the tool says about itself. */
+  labels: ToolLabelId[]
+  /** Clues from its name and description - not proof. */
+  hints: ToolHintId[]
+}
+
+const TOOL_HINT_RULES: Record<ToolHintId, RegExp> = {
+  deletes:
+    /\b(delete|deletes|deleting|remove|removes|removing|destroy|destroys|drop|purge|erase|wipe)\b/i,
+  changes:
+    /\b(write|writes|writing|create|creates|creating|update|updates|edit|edits|modify|modifies|insert|upload|uploads|save|saves|rename|move|moves)\b/i,
+  sends:
+    /\b(send|sends|post|posts|email|emails|mail|message|messages|publish|publishes|notify|reply|comment)\b/i,
+  runsCode:
+    /\b(exec|execute|executes|run|runs|shell|command|commands|eval|script|scripts|spawn|terminal)\b/i,
+  money:
+    /\b(pay|payment|payments|charge|charges|refund|refunds|invoice|invoices|transfer|transfers|purchase|checkout|subscription|billing)\b/i,
+  visitsWeb:
+    /\b(scrape|scrapes|scraping|crawl|crawls|fetch|fetches|browse|url|urls|webpage|webpages|website|websites|web|internet|download|downloads)\b/i,
+}
+
+export function describeTool(tool: DescribableTool): ToolDetail {
+  const schema = tool.inputSchema ?? {}
+  const properties =
+    schema.properties && typeof schema.properties === 'object'
+      ? (schema.properties as Record<string, Record<string, unknown>>)
+      : {}
+  const required = Array.isArray(schema.required)
+    ? (schema.required as unknown[])
+    : []
+  const inputs = Object.entries(properties).map(([name, property]) => {
+    const input: ToolInput = { name, required: required.includes(name) }
+    const type = Array.isArray(property?.type)
+      ? property.type.join(' or ')
+      : property?.type
+    if (typeof type === 'string') input.type = type
+    if (typeof property?.description === 'string') {
+      input.description = property.description
+    }
+    return input
+  })
+
+  const labels: ToolLabelId[] = []
+  if (tool.readOnly === true) labels.push('saysReadOnly')
+  else if (tool.destructive === true) labels.push('saysMayDelete')
+  if (tool.openWorld === true) labels.push('saysReachesOutside')
+
+  const words = `${tool.name
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_\-.]+/g, ' ')} ${tool.description ?? ''}`
+  const hints = TOOL_HINT_IDS.filter((id) => TOOL_HINT_RULES[id].test(words))
+
+  return { inputs, labels, hints }
 }

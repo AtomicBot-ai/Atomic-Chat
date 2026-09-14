@@ -397,7 +397,9 @@ mod tests {
             ),
         )
         .unwrap();
-        SkillRegistry::load(root, &BTreeSet::new(), &BTreeSet::new()).unwrap()
+        let mut registry = SkillRegistry::load(root, &BTreeSet::new(), &BTreeSet::new()).unwrap();
+        registry.trust_all();
+        registry
     }
 
     #[cfg(windows)]
@@ -459,7 +461,8 @@ mod tests {
         )
         .unwrap();
         let available_tools = BTreeSet::from(["os.shell.run".to_string()]);
-        let registry = SkillRegistry::load(root, &BTreeSet::new(), &available_tools).unwrap();
+        let mut registry = SkillRegistry::load(root, &BTreeSet::new(), &available_tools).unwrap();
+        registry.trust_all();
 
         let outcome = match prepare(
             &serde_json::json!({
@@ -746,7 +749,8 @@ mod tests {
             "---\nname: test-skill\ndescription: Test\nrequires_scripts: [escape.sh]\n---\nBody",
         )
         .unwrap();
-        let registry = SkillRegistry::load(root, &BTreeSet::new(), &BTreeSet::new()).unwrap();
+        let mut registry = SkillRegistry::load(root, &BTreeSet::new(), &BTreeSet::new()).unwrap();
+        registry.trust_all();
 
         assert!(prepare(
             &serde_json::json!({
@@ -777,7 +781,8 @@ mod tests {
             "---\nname: test-skill\ndescription: Test\nrequires_scripts: [escape.cmd]\n---\nBody",
         )
         .unwrap();
-        let registry = SkillRegistry::load(root, &BTreeSet::new(), &BTreeSet::new()).unwrap();
+        let mut registry = SkillRegistry::load(root, &BTreeSet::new(), &BTreeSet::new()).unwrap();
+        registry.trust_all();
 
         assert!(prepare(
             &serde_json::json!({
@@ -818,7 +823,8 @@ mod tests {
             "---\nname: test-skill\ndescription: Test\nrequires_scripts: [escape.cmd]\n---\nBody",
         )
         .unwrap();
-        let registry = SkillRegistry::load(root, &BTreeSet::new(), &BTreeSet::new()).unwrap();
+        let mut registry = SkillRegistry::load(root, &BTreeSet::new(), &BTreeSet::new()).unwrap();
+        registry.trust_all();
 
         assert!(prepare(
             &serde_json::json!({

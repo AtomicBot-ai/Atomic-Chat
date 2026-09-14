@@ -12,14 +12,13 @@ import {
 } from '@/components/ui/dialog'
 import type { MCPServerConfig } from '@/hooks/useMCPServers'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { describeConnector } from '@/lib/review-before-use'
+import {
+  describeConnector,
+  describeTool,
+  type DescribableTool,
+} from '@/lib/review-before-use'
 
-export type ConnectorTool = {
-  name: string
-  description?: string
-  /** What the connector says about the tool. It labels its own tools. */
-  readOnly?: boolean
-}
+export type ConnectorTool = DescribableTool
 
 type ConnectorReviewDialogProps = {
   open: boolean
@@ -27,8 +26,7 @@ type ConnectorReviewDialogProps = {
   config: MCPServerConfig
   /**
    * Lists the connector's tools without letting the AI use any of them. For a
-   * local program this has to start the program, so the dialog only calls it
-   * when the user asks.
+   * local program this starts the program for a moment; Preview says so.
    */
   onListTools: () => Promise<ConnectorTool[]>
   onAllow: () => void
@@ -73,15 +71,15 @@ export function ConnectorReviewDialog({
     }
   }
 
-  // A web service is only contacted to list its tools; a local program is
-  // never started without the user asking (see the button below).
+  // Opening Preview lists every tool straight away, as the user asked. A local
+  // program is started for a moment to answer, and Preview says so.
   useEffect(() => {
-    if (previewOpen && summary.kind === 'website' && tools.status === 'idle') {
+    if (previewOpen && tools.status === 'idle') {
       void listTools()
     }
     // listTools only reads props; running it once per open preview is the point.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewOpen, summary.kind, tools.status])
+  }, [previewOpen, tools.status])
 
   const target = summary.kind === 'program' ? summary.runs : summary.address
 
@@ -111,6 +109,31 @@ export function ConnectorReviewDialog({
           <code className="block whitespace-pre-wrap break-all rounded bg-secondary/40 p-2 text-xs">
             {target}
           </code>
+          {summary.explanation.length > 0 && (
+            <>
+              <h4 className="pt-1 text-xs font-medium">
+                {t('review:connector.commandMeaning')}
+              </h4>
+              <ul
+                aria-label={t('review:connector.commandMeaning')}
+                className="space-y-1"
+              >
+                {summary.explanation.map((part, index) => (
+                  <li key={`${index}-${part.text}`} className="text-xs">
+                    <code className="rounded bg-secondary/40 px-1 py-0.5 break-all">
+                      {part.text}
+                    </code>{' '}
+                    <span className="text-muted-foreground">
+                      {t(
+                        `review:command.${part.meaning}`,
+                        part.version ? { version: part.version } : undefined
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </section>
 
         <section className="space-y-1 text-sm">
@@ -131,6 +154,20 @@ export function ConnectorReviewDialog({
               {t('review:connector.noSecrets')}
             </p>
           )}
+        </section>
+
+        <section className="space-y-1 text-sm">
+          <h3 className="font-medium">{t('review:connector.issuesTitle')}</h3>
+          <ul
+            aria-label={t('review:connector.issuesTitle')}
+            className="list-disc space-y-1 pl-5 text-xs"
+          >
+            {summary.issues.map((issue) => (
+              <li key={issue.id}>
+                {t(`review:issue.${issue.id}`, issue.params)}
+              </li>
+            ))}
+          </ul>
         </section>
 
         <section className="space-y-2">
@@ -171,25 +208,9 @@ export function ConnectorReviewDialog({
           >
             <h3 className="font-medium">{t('review:previewTitle')}</h3>
             {summary.kind === 'program' && (
-              <>
-                <code className="block whitespace-pre-wrap break-all rounded bg-secondary/40 p-2 text-xs">
-                  {summary.runs}
-                </code>
-                {tools.status === 'idle' && (
-                  <div className="space-y-2">
-                    <p className="text-xs text-muted-foreground">
-                      {t('review:connector.listToolsRunsProgram')}
-                    </p>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void listTools()}
-                    >
-                      {t('review:connector.listTools')}
-                    </Button>
-                  </div>
-                )}
-              </>
+              <p className="text-xs text-muted-foreground">
+                {t('review:connector.previewStartsProgram')}
+              </p>
             )}
             {tools.status === 'loading' && (
               <p className="text-xs text-muted-foreground">
@@ -231,23 +252,13 @@ function ToolLists({ tools }: { tools: ConnectorTool[] }) {
   const renderList = (label: string, items: ConnectorTool[]) => (
     <div className="space-y-1">
       <h4 className="text-xs font-medium">{label}</h4>
-      <ul aria-label={label} className="space-y-1">
+      <ul aria-label={label} className="space-y-2">
         {items.length === 0 ? (
           <li className="text-xs text-muted-foreground">
             {t('review:connector.noTools')}
           </li>
         ) : (
-          items.map((tool) => (
-            <li key={tool.name} className="text-xs">
-              <span className="font-mono font-medium">{tool.name}</span>
-              {tool.description && (
-                <span className="text-muted-foreground">
-                  {' '}
-                  - {tool.description}
-                </span>
-              )}
-            </li>
-          ))
+          items.map((tool) => <ToolItem key={tool.name} tool={tool} />)
         )}
       </ul>
     </div>
@@ -261,5 +272,60 @@ function ToolLists({ tools }: { tools: ConnectorTool[] }) {
         {t('review:connector.toolsSelfLabelled')}
       </p>
     </div>
+  )
+}
+
+function ToolItem({ tool }: { tool: ConnectorTool }) {
+  const { t } = useTranslation()
+  const detail = describeTool(tool)
+
+  return (
+    <li className="space-y-1 text-xs">
+      <p>
+        <span className="font-mono font-medium">{tool.name}</span>
+        {tool.description && (
+          <span className="text-muted-foreground"> - {tool.description}</span>
+        )}
+      </p>
+      {detail.labels.length > 0 && (
+        <p className="text-muted-foreground">
+          {t('review:connector.toolSays')}:{' '}
+          {detail.labels.map((id) => t(`review:toolLabel.${id}`)).join('; ')}
+        </p>
+      )}
+      {detail.hints.length > 0 && (
+        <p className="text-muted-foreground">
+          {t('review:connector.hintsAreClues')}{' '}
+          {detail.hints.map((id) => t(`review:toolHint.${id}`)).join('; ')}
+        </p>
+      )}
+      {detail.inputs.length > 0 && (
+        <div className="pl-3">
+          <p className="font-medium">{t('review:connector.inputs')}</p>
+          <ul aria-label={t('review:connector.inputs')} className="space-y-0.5">
+            {detail.inputs.map((input) => (
+              <li key={input.name}>
+                <code className="font-mono">{input.name}</code>
+                <span className="text-muted-foreground">
+                  {' ('}
+                  {[
+                    input.type,
+                    t(
+                      input.required
+                        ? 'review:connector.inputRequired'
+                        : 'review:connector.inputOptional'
+                    ),
+                  ]
+                    .filter(Boolean)
+                    .join(', ')}
+                  {')'}
+                  {input.description && ` - ${input.description}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </li>
   )
 }

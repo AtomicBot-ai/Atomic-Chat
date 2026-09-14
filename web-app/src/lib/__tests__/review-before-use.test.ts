@@ -4,8 +4,13 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 import {
+  COMMAND_MEANING_IDS,
+  CONNECTOR_ISSUE_IDS,
+  TOOL_HINT_IDS,
+  TOOL_LABEL_IDS,
   describeConnector,
   describeSkillPermissions,
+  describeTool,
   scanForWarnings,
 } from '../review-before-use'
 
@@ -306,5 +311,208 @@ describe('review screen wording', () => {
     expect(missing).toEqual([])
     expect(PERMISSION_IDS).toContain('runCommands')
     expect(WARNING_IDS).toContain('downloadAndRun')
+  })
+})
+
+/**
+ * Task 28 (decision D36), as asked for by the user on 2026-09-14: the review
+ * goes into more detail about what a connector runs and what could go wrong.
+ * Everything here comes from the connector's own settings and its own tool
+ * list - no guessing about what the code does.
+ */
+describe('explaining a connector', () => {
+  it('explains each part of a local program command in plain words', () => {
+    const summary = describeConnector({
+      command: 'npx',
+      args: [
+        '-y',
+        'serper-search-scrape-mcp-server',
+        '--root',
+        'C:/Users/me/Documents',
+        'https://example.com/api',
+      ],
+      env: { SERPER_API_KEY: 'key-value' },
+    })
+
+    expect(summary.explanation).toEqual([
+      { text: 'npx', meaning: 'launcherNpm' },
+      { text: '-y', meaning: 'autoYes' },
+      { text: 'serper-search-scrape-mcp-server', meaning: 'packageUnpinned' },
+      { text: '--root', meaning: 'option' },
+      { text: 'C:/Users/me/Documents', meaning: 'path' },
+      { text: 'https://example.com/api', meaning: 'address' },
+    ])
+  })
+
+  it('names a pinned version, a shell and any other program', () => {
+    expect(
+      describeConnector({
+        command: 'uvx',
+        args: ['mcp-server-git==0.6.2'],
+        env: {},
+      }).explanation
+    ).toEqual([
+      { text: 'uvx', meaning: 'launcherPython' },
+      {
+        text: 'mcp-server-git==0.6.2',
+        meaning: 'packagePinned',
+        version: '0.6.2',
+      },
+    ])
+    expect(
+      describeConnector({ command: 'npx', args: ['@scope/pkg@1.2.3'], env: {} })
+        .explanation[1]
+    ).toEqual({
+      text: '@scope/pkg@1.2.3',
+      meaning: 'packagePinned',
+      version: '1.2.3',
+    })
+    const shell = describeConnector({
+      command: 'powershell',
+      args: ['-Command', 'Get-Date'],
+      env: {},
+    })
+    expect(shell.explanation).toEqual([
+      { text: 'powershell', meaning: 'launcherShell' },
+      { text: '-Command', meaning: 'shellRunsNext' },
+      { text: 'Get-Date', meaning: 'value' },
+    ])
+    expect(ids(shell.issues)).toEqual(['runsAsYou', 'shellRuns'])
+    expect(
+      describeConnector({ command: 'C:/Tools/my-mcp.exe', args: [], env: {} })
+        .explanation
+    ).toEqual([{ text: 'C:/Tools/my-mcp.exe', meaning: 'launcherProgram' }])
+  })
+
+  it('lists what could go wrong with a local program, from its settings', () => {
+    const summary = describeConnector({
+      command: 'npx',
+      args: [
+        '-y',
+        '@modelcontextprotocol/server-filesystem',
+        'C:/Users/me/Documents',
+      ],
+      env: { API_TOKEN: 'secret-value' },
+    })
+
+    expect(summary.issues).toEqual([
+      { id: 'runsAsYou' },
+      { id: 'downloadsCode', params: { source: 'npm' } },
+      { id: 'getsSecrets', params: { names: 'API_TOKEN' } },
+      { id: 'reachesPaths', params: { paths: 'C:/Users/me/Documents' } },
+    ])
+    expect(JSON.stringify(summary)).not.toContain('secret-value')
+  })
+
+  it('lists what could go wrong with an online service', () => {
+    const summary = describeConnector({
+      command: '',
+      args: [],
+      env: {},
+      type: 'http',
+      url: 'https://mcp.linear.app/mcp',
+      headers: { Authorization: 'Bearer abc' },
+    })
+
+    expect(summary.explanation).toEqual([])
+    expect(summary.issues).toEqual([
+      { id: 'sendsToService', params: { host: 'mcp.linear.app' } },
+      { id: 'getsSecrets', params: { names: 'Authorization' } },
+    ])
+  })
+})
+
+describe('describeTool', () => {
+  it('lists the inputs a tool asks for', () => {
+    expect(
+      describeTool({
+        name: 'google_search',
+        description: 'Search the web',
+        readOnly: false,
+        inputSchema: {
+          type: 'object',
+          properties: {
+            q: { type: 'string', description: 'What to search for' },
+            num: { type: 'number' },
+          },
+          required: ['q'],
+        },
+      }).inputs
+    ).toEqual([
+      {
+        name: 'q',
+        type: 'string',
+        description: 'What to search for',
+        required: true,
+      },
+      { name: 'num', type: 'number', required: false },
+    ])
+    expect(describeTool({ name: 'ping' }).inputs).toEqual([])
+  })
+
+  it('repeats what the tool says about itself', () => {
+    expect(describeTool({ name: 'a', readOnly: true }).labels).toEqual([
+      'saysReadOnly',
+    ])
+    expect(
+      describeTool({
+        name: 'a',
+        readOnly: false,
+        destructive: true,
+        openWorld: true,
+      }).labels
+    ).toEqual(['saysMayDelete', 'saysReachesOutside'])
+    expect(describeTool({ name: 'a' }).labels).toEqual([])
+  })
+
+  it('gives hints from its name and description', () => {
+    const hints = (name: string, description: string) =>
+      describeTool({ name, description }).hints
+
+    expect(hints('deleteIssue', 'Removes an issue for good')).toEqual([
+      'deletes',
+    ])
+    expect(
+      hints('scrape', 'Tool to scrape a webpage and retrieve the text')
+    ).toEqual(['visitsWeb'])
+    expect(hints('send_email', 'Send an email')).toEqual(['sends'])
+    expect(hints('run_command', 'Execute a shell command')).toEqual([
+      'runsCode',
+    ])
+    expect(hints('create_refund', 'Refund a payment')).toEqual([
+      'changes',
+      'money',
+    ])
+    expect(hints('list_issues', 'List issues')).toEqual([])
+  })
+
+  it('has English text for every command meaning, issue, tool label and hint', () => {
+    const english = JSON.parse(
+      readFileSync(
+        path.resolve(
+          path.dirname(fileURLToPath(import.meta.url)),
+          '../../locales/en/review.json'
+        ),
+        'utf8'
+      )
+    )
+
+    const missing = [
+      ...COMMAND_MEANING_IDS.filter((id) => !english.command?.[id]).map(
+        (id) => `command.${id}`
+      ),
+      ...CONNECTOR_ISSUE_IDS.filter((id) => !english.issue?.[id]).map(
+        (id) => `issue.${id}`
+      ),
+      ...TOOL_LABEL_IDS.filter((id) => !english.toolLabel?.[id]).map(
+        (id) => `toolLabel.${id}`
+      ),
+      ...TOOL_HINT_IDS.filter((id) => !english.toolHint?.[id]).map(
+        (id) => `toolHint.${id}`
+      ),
+    ]
+    expect(missing).toEqual([])
+    expect(COMMAND_MEANING_IDS).toContain('launcherNpm')
+    expect(CONNECTOR_ISSUE_IDS).toContain('runsAsYou')
   })
 })

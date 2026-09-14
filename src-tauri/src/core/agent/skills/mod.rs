@@ -11,6 +11,7 @@ use std::{
 };
 
 pub use manifest::{parse_skill_file, SkillManifest, SkillPlatform};
+pub(crate) use registry::atomic_replace;
 pub use registry::{SkillListEntry, SkillRecord, SkillRegistry};
 pub use seeding::{list_starter_skill_names, seed_starter_skills, SeedStarterSkillsResult};
 

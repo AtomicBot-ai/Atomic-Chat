@@ -124,34 +124,105 @@ describe('ConnectorReviewDialog', () => {
     expect(preview).toHaveTextContent('review:connector.toolsSelfLabelled')
   })
 
-  it('Preview of a local program shows what would run without running it', async () => {
+  it('Preview of a local program lists every tool straight away and says it started the program', async () => {
     const user = userEvent.setup()
     const { onListTools } = renderDialog({
       name: 'Files',
       config: localProgram,
     })
+    expect(onListTools).not.toHaveBeenCalled()
 
     await user.click(screen.getByRole('button', { name: 'review:preview' }))
 
     const preview = screen.getByRole('region', { name: 'review:previewTitle' })
-    expect(preview).toHaveTextContent(
-      'npx -y @modelcontextprotocol/server-filesystem C:/Users/me/Documents'
-    )
-    expect(preview).toHaveTextContent('review:connector.listToolsRunsProgram')
-    expect(onListTools).not.toHaveBeenCalled()
-
-    await user.click(
-      within(preview).getByRole('button', {
-        name: 'review:connector.listTools',
-      })
-    )
-
+    expect(preview).toHaveTextContent('review:connector.previewStartsProgram')
     expect(
       await within(preview).findByRole('list', {
         name: 'review:connector.toolsThatChange',
       })
     ).toHaveTextContent('create_issue')
+    expect(
+      within(preview).getByRole('list', {
+        name: 'review:connector.toolsThatRead',
+      })
+    ).toHaveTextContent('list_issues')
     expect(onListTools).toHaveBeenCalledTimes(1)
+  })
+
+  it('explains each part of the command in plain words', () => {
+    renderDialog({ name: 'Files', config: localProgram })
+
+    const parts = within(
+      screen.getByRole('list', { name: 'review:connector.commandMeaning' })
+    )
+      .getAllByRole('listitem')
+      .map((item) => item.textContent)
+    expect(parts).toEqual([
+      expect.stringContaining('review:command.launcherNpm'),
+      expect.stringContaining('review:command.autoYes'),
+      expect.stringContaining('review:command.packageUnpinned'),
+      expect.stringContaining('review:command.path'),
+    ])
+    expect(parts[0]).toContain('npx')
+    expect(parts[3]).toContain('C:/Users/me/Documents')
+  })
+
+  it('lists what could go wrong, taken from its settings', () => {
+    renderDialog({ name: 'Files', config: localProgram })
+
+    const issues = screen.getByRole('list', {
+      name: 'review:connector.issuesTitle',
+    })
+    expect(issues).toHaveTextContent('review:issue.runsAsYou')
+    expect(issues).toHaveTextContent(
+      'review:issue.downloadsCode:{"source":"npm"}'
+    )
+    expect(issues).toHaveTextContent(
+      'review:issue.getsSecrets:{"names":"API_TOKEN"}'
+    )
+    expect(issues).toHaveTextContent(
+      'review:issue.reachesPaths:{"paths":"C:/Users/me/Documents"}'
+    )
+    expect(document.body).not.toHaveTextContent('secret-value')
+  })
+
+  it('shows what each tool asks for, what it says about itself and hints from its name', async () => {
+    const user = userEvent.setup()
+    renderDialog({
+      onListTools: vi.fn(async () => [
+        {
+          name: 'delete_issue',
+          description: 'Delete an issue for good',
+          readOnly: false,
+          destructive: true,
+          openWorld: true,
+          inputSchema: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', description: 'The issue to delete' },
+            },
+            required: ['id'],
+          },
+        },
+      ]),
+    })
+
+    await user.click(screen.getByRole('button', { name: 'review:preview' }))
+
+    const changes = await screen.findByRole('list', {
+      name: 'review:connector.toolsThatChange',
+    })
+    expect(changes).toHaveTextContent('delete_issue')
+    expect(changes).toHaveTextContent('review:toolLabel.saysMayDelete')
+    expect(changes).toHaveTextContent('review:toolLabel.saysReachesOutside')
+    expect(changes).toHaveTextContent('review:toolHint.deletes')
+    const inputs = within(changes).getByRole('list', {
+      name: 'review:connector.inputs',
+    })
+    expect(inputs).toHaveTextContent('id')
+    expect(inputs).toHaveTextContent('The issue to delete')
+    expect(inputs).toHaveTextContent('review:connector.inputRequired')
+    expect(changes).toHaveTextContent('review:connector.hintsAreClues')
   })
 
   it('says so when the tools cannot be listed', async () => {

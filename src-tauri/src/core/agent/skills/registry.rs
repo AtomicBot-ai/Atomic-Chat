@@ -313,7 +313,9 @@ impl SkillRegistry {
                 requires_scripts: record.manifest.requires_scripts.clone(),
                 dangerous: record.manifest.dangerous,
                 platforms: record.manifest.platforms.clone(),
-                enabled: record.enabled,
+                // Every skill shows as off until the user has allowed it as it
+                // is now (the user's rule, 2026-09-14).
+                enabled: record.enabled && record.reviewed,
                 compatible: record.compatible,
                 reserved: record.reserved,
                 unavailable_reasons: record.unavailable_reasons.clone(),
@@ -534,7 +536,7 @@ fn write_disabled_state(root: &Path, disabled: &BTreeSet<String>) -> Result<(), 
 }
 
 #[cfg(windows)]
-fn atomic_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
+pub(crate) fn atomic_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
     use windows_sys::Win32::Storage::FileSystem::{
         MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
     };
@@ -564,7 +566,7 @@ fn atomic_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
 }
 
 #[cfg(not(windows))]
-fn atomic_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
+pub(crate) fn atomic_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
     fs::rename(source, destination)
 }
 
@@ -722,6 +724,45 @@ mod tests {
 
         registry.approve("starter").unwrap();
         assert!(registry.get_enabled("starter").is_some());
+    }
+
+    #[test]
+    fn every_skill_starts_switched_off_until_the_user_allows_it() {
+        // The user's rule (2026-09-14): every skill, bundled or added, is off by
+        // default and only shows as on once the user has allowed it.
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("skills");
+        write_reviewable_skill(&root, "starter", "Body");
+        write_reviewable_skill(&root, "added-skill", "Body");
+        let reserved = BTreeSet::from(["starter".to_string()]);
+        let shown_on = |registry: &SkillRegistry| -> Vec<String> {
+            registry
+                .list_all()
+                .into_iter()
+                .filter(|entry| entry.enabled)
+                .map(|entry| entry.name)
+                .collect()
+        };
+
+        let mut registry = SkillRegistry::load(&root, &reserved, &read_tool()).unwrap();
+        assert!(shown_on(&registry).is_empty());
+        assert_eq!(registry.enabled().count(), 0);
+
+        registry.approve("added-skill").unwrap();
+        registry.set_enabled("added-skill", true).unwrap();
+        assert_eq!(shown_on(&registry), ["added-skill"]);
+
+        let reloaded = SkillRegistry::load(&root, &reserved, &read_tool()).unwrap();
+        assert_eq!(shown_on(&reloaded), ["added-skill"]);
+
+        // A skill that changes after it was allowed shows as off again.
+        fs::write(root.join("added-skill").join("SKILL.md"), {
+            let original = fs::read_to_string(root.join("added-skill").join("SKILL.md")).unwrap();
+            format!("{original}\nChanged.")
+        })
+        .unwrap();
+        let changed = SkillRegistry::load(&root, &reserved, &read_tool()).unwrap();
+        assert!(shown_on(&changed).is_empty());
     }
 
     #[test]

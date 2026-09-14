@@ -17,14 +17,20 @@
     "address": "Where it connects",
     "secrets": "Keys and secrets it is given",
     "noSecrets": "None",
-    "listTools": "List its tools",
-    "listToolsRunsProgram": "Listing this connector's tools means starting the program above for a moment. The AI cannot use it while you look. Only do this if you trust where it came from.",
     "loadingTools": "Listing its tools…",
     "toolsUnavailable": "Could not list its tools: {{error}}",
     "toolsThatChange": "Tools that can change things",
     "toolsThatRead": "Tools that only read",
     "noTools": "None",
-    "toolsSelfLabelled": "The connector decides which of its tools say they only read. A harmful connector could label a tool wrongly."
+    "toolsSelfLabelled": "The connector decides which of its tools say they only read. A harmful connector could label a tool wrongly.",
+    "commandMeaning": "What each part means",
+    "issuesTitle": "What could go wrong",
+    "previewStartsProgram": "To list its tools, Preview starts the program above for a moment and stops it straight after. The AI cannot use it while you look.",
+    "inputs": "What it asks for",
+    "inputRequired": "required",
+    "inputOptional": "optional",
+    "toolSays": "It says it",
+    "hintsAreClues": "Clues from its name and description (not proof):"
   },
   "permission": {
     "markedDangerous": "Marked as dangerous by its author",
@@ -79,5 +85,43 @@
     "unpinnedPackage": "Runs a package without a fixed version, so it can change without you knowing",
     "unencrypted": "Talks to an address without encryption, so others on the network could read it",
     "shellCommandLine": "Hands a whole command line to a shell"
+  },
+  "command": {
+    "launcherNpm": "Downloads a JavaScript package from npm, the public package library, and runs it",
+    "launcherPython": "Downloads a Python package from PyPI, the public package library, and runs it",
+    "launcherNode": "Runs a JavaScript file with Node.js",
+    "launcherPythonScript": "Runs a Python file",
+    "launcherDocker": "Runs a container with Docker, downloading its image first if needed",
+    "launcherShell": "Starts a command shell, which can run any command",
+    "launcherProgram": "Runs this program on your computer",
+    "autoYes": "Installs the package without asking you first",
+    "packagePinned": "The package it downloads, fixed to version {{version}}",
+    "packageUnpinned": "The package it downloads. No version is fixed, so it fetches whatever is newest each time it starts",
+    "shellRunsNext": "Tells the shell to run the text after it as a command",
+    "address": "An internet address it is given",
+    "path": "A file or folder it is pointed at. It can usually read what is there, and often change it",
+    "option": "A setting for the program",
+    "value": "A value given to the program"
+  },
+  "issue": {
+    "runsAsYou": "It runs with the same access as you. Whatever its tools say, the program itself can read and change your files, start other programs and use the internet.",
+    "downloadsCode": "It downloads code from {{source}} when it starts. If the package's author, or someone who takes over their account, publishes a harmful version, that version runs on your computer.",
+    "shellRuns": "It runs through a command shell, so a small change to its settings could make it run a completely different command.",
+    "getsSecrets": "It is given {{names}}. It could use these for things you did not ask for, or send them somewhere else.",
+    "reachesPaths": "It is pointed at {{paths}}. It could read, change or delete what is there.",
+    "sendsToService": "What the AI sends to its tools goes to {{host}}, where that company's own rules about your data apply. The service can change what its tools do at any time."
+  },
+  "toolLabel": {
+    "saysReadOnly": "only reads",
+    "saysMayDelete": "may delete or overwrite things",
+    "saysReachesOutside": "reaches services outside this computer"
+  },
+  "toolHint": {
+    "deletes": "deletes things",
+    "changes": "creates or changes things",
+    "sends": "sends messages or posts",
+    "runsCode": "runs commands or code",
+    "money": "involves payments",
+    "visitsWeb": "visits websites"
   }
 }
