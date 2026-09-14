@@ -362,6 +362,7 @@
     "checks": [
       {
         "run": "cargo test --no-default-features --features test-tauri --lib -- core::mcp core::agent::skills",
+        "cwd": "src-tauri",
         "files": [
           "src-tauri/src/core/mcp/review.rs",
           "src-tauri/src/core/mcp/tests.rs",
@@ -370,6 +371,7 @@
       },
       {
         "run": "npx vitest run src/lib/__tests__/review-before-use.test.ts src/containers/__tests__/SkillReviewDialog.test.tsx src/containers/__tests__/ConnectorReviewDialog.test.tsx src/containers/dialogs/__tests__/ConnectorReviewHost.test.tsx src/hooks/__tests__/useConnectorReview.test.ts src/routes/skills/__tests__/SkillsPage.review.test.tsx src/routes/connectors/__tests__/index.test.tsx",
+        "cwd": "web-app",
         "files": [
           "web-app/src/lib/__tests__/review-before-use.test.ts",
           "web-app/src/containers/__tests__/SkillReviewDialog.test.tsx",
@@ -411,6 +413,7 @@
       },
       {
         "run": "npx vitest run src/components/__tests__/AppLogo.test.tsx",
+        "cwd": "web-app",
         "files": [
           "web-app/src/components/__tests__/AppLogo.test.tsx"
         ]
