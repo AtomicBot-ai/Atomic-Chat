@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-242 records, 2026-05-19 → 2026-09-10.
+248 records, 2026-05-19 → 2026-09-11.
 
 ---
 
@@ -196,8 +196,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-19** — [Use `AtomicBot-ai/atomic-llama-cpp-turboquant` as the LLM backend](2026-05-19-use-atomicbot-ai-atomic-llama-cpp-turboquant-as-the-llm-backend.md)
 - **2026-05-19** — [Ship upstream `ggml-org/llama.cpp` as a second macOS provider, no fork](2026-05-19-ship-upstream-ggml-org-llama-cpp-as-a-second-macos-provider-no.md)
 
-## Models, Hub & downloads (27)
+## Models, Hub & downloads (28)
 
+- **2026-09-11** — [One rule keeps speculative-decoding heads out of both model import paths (ATO-523)](2026-09-11-one-rule-keeps-speculative-heads-out-of-both-model-import-paths.md)
 - **2026-08-19** — [Do not preload a model on startup](2026-08-19-do-not-preload-a-model-on-startup.md)
 - **2026-08-19** — [Offer a low-spec model tier in onboarding](2026-08-19-offer-a-low-spec-model-tier-in-onboarding.md)
 - **2026-08-19** — [Delete only what a failed download wrote](2026-08-19-delete-only-what-a-failed-download-wrote.md)
@@ -226,8 +227,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-04** — [Recover from unsupported multimodal projector (`gemma4a`) by falling back to text-only instead of crashing the load (issue #44)](2026-06-04-recover-from-unsupported-multimodal-projector-gemma4a-by.md)
 - **2026-05-27** — [Replace `janhq/model-catalog` + Fuse.js with curated `AtomicBot-ai/atomic-chat-model-catalog` and a pre-built MiniSearch index](2026-05-27-replace-janhq-model-catalog-fuse-js-with-curated-atomicbot-ai.md)
 
-## Local API server & OpenAI compatibility (3)
+## Local API server & OpenAI compatibility (4)
 
+- **2026-09-11** — [Make starting the Local API Server idempotent (ATO-524)](2026-09-11-make-starting-the-local-api-server-idempotent.md)
 - **2026-07-27** — [Reconcile remote providers before proxy-routed requests](2026-07-27-reconcile-remote-providers-before-proxy-routed-requests.md)
 - **2026-07-15** — [Aggregate Local API Server request telemetry into three-minute summaries (ATO-297)](2026-07-15-aggregate-local-api-server-request-telemetry-into-three-minute.md)
 - **2026-06-09** — [Make the Local API Server "Invalid host header" rejection actionable + fix Trusted Hosts field copy (ATO-118, scope I+II)](2026-06-09-make-the-local-api-server-invalid-host-header-rejection.md)
@@ -259,8 +261,11 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (33)
+## UI / UX (36)
 
+- **2026-09-11** — [List the Hub picks under the onboarding offer](2026-09-11-list-the-hub-picks-under-the-onboarding-offer.md)
+- **2026-09-11** — [Pick the model and its reasoning effort from one composer pill](2026-09-11-pick-the-model-and-its-effort-from-one-composer-pill.md)
+- **2026-09-11** — [Show engine state in the model dot and let a Stop hold](2026-09-11-show-engine-state-in-the-model-dot-and-let-a-stop-hold.md)
 - **2026-09-09** — [Resolve the reply model on send instead of asking (ATO-461)](2026-09-09-resolve-the-reply-model-on-send-instead-of-asking.md)
 - **2026-09-07** — [Answer a blocked send with a widget, not a red line (ATO-453)](2026-09-07-answer-a-blocked-send-with-a-widget-not-a-red-line.md)
 - **2026-09-04** — [Do not estimate ChatGPT subscription token speed](2026-09-04-do-not-estimate-chatgpt-subscription-token-speed.md)

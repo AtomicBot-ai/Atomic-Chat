@@ -35,12 +35,15 @@ export type HubFilterState = {
   sort: HubSortKey
   /** Hide entries that cannot fit the detected memory budget. */
   onlyFitting: boolean
+  /** Keep only uncensored / abliterated builds (see `isUncensoredModel`). */
+  uncensored: boolean
 }
 
 export const DEFAULT_HUB_FILTERS: HubFilterState = {
   formats: ['gguf'],
   sort: 'recommended',
   onlyFitting: true,
+  uncensored: false,
 }
 
 export const HUB_FILTERS_STORAGE_KEY = 'atomic_hub_filters_v1'
@@ -68,6 +71,10 @@ export function normalizeHubFilters(raw: unknown): HubFilterState {
       typeof value.onlyFitting === 'boolean'
         ? value.onlyFitting
         : DEFAULT_HUB_FILTERS.onlyFitting,
+    uncensored:
+      typeof value.uncensored === 'boolean'
+        ? value.uncensored
+        : DEFAULT_HUB_FILTERS.uncensored,
   }
 }
 
@@ -76,6 +83,7 @@ export function serializeHubFilters(state: HubFilterState): string {
     formats: state.formats,
     sort: state.sort,
     onlyFitting: state.onlyFitting,
+    uncensored: state.uncensored,
   })
 }
 
@@ -184,6 +192,35 @@ export function sortModels(
   }
 }
 
+/**
+ * Words Hugging Face repos use for builds with the refusals trained or ablated
+ * out. Both are needed: abliterated repos rarely also say "uncensored".
+ */
+export const UNCENSORED_TERMS = ['uncensored', 'abliterated'] as const
+
+const UNCENSORED_PATTERN = new RegExp(UNCENSORED_TERMS.join('|'), 'i')
+
+/** Judged on the repo id, the one place these builds reliably say so. */
+export function isUncensoredModel(model: CatalogModel): boolean {
+  return UNCENSORED_PATTERN.test(model.model_name)
+}
+
+/**
+ * Hugging Face queries for the long-tail fallback. With the uncensored filter
+ * on, each term is appended to the user's query out of sight, one request per
+ * term — so even an empty search box finds uncensored builds.
+ */
+export function huggingFaceQueries(
+  query: string,
+  uncensored: boolean
+): string[] {
+  const trimmed = query.trim()
+  if (!uncensored) return trimmed ? [trimmed] : []
+  // HF matches every word, so stacking a second term would only narrow it.
+  if (UNCENSORED_PATTERN.test(trimmed)) return [trimmed]
+  return UNCENSORED_TERMS.map((term) => `${trimmed} ${term}`.trim())
+}
+
 /** Are there any like counts at all? Drives whether the sort option shows. */
 export function hasLikeData(models: readonly CatalogModel[]): boolean {
   return models.some((model) => (model.likes ?? 0) > 0)
@@ -196,7 +233,7 @@ export type ApplyHubFiltersOptions = {
   applyFitFilter?: boolean
 }
 
-/** Full pipeline: format filter, optional fit filter, then sort. */
+/** Full pipeline: format, uncensored and optional fit filters, then sort. */
 export function applyHubFilters(
   models: readonly CatalogModel[],
   state: HubFilterState,
@@ -205,6 +242,10 @@ export function applyHubFilters(
   const { budgetBytes = 0, applyFitFilter = true } = options
 
   let result = filterByFormats(models, state.formats)
+
+  if (state.uncensored) {
+    result = result.filter(isUncensoredModel)
+  }
 
   if (applyFitFilter && state.onlyFitting && budgetBytes > 0) {
     result = result.filter((model) => modelFitsBudget(model, budgetBytes))

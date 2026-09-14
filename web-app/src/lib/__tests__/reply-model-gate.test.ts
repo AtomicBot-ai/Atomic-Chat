@@ -4,6 +4,7 @@ import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import {
   collectReplyModels,
   estimateParamsB,
+  estimateQuantBits,
   replyGateBranch,
   replyGateContext,
   resolveReplyModel,
@@ -166,10 +167,10 @@ describe('replyGateBranch', () => {
     )
   })
 
-  it('asks when there is a real choice', () => {
+  it('starts one even when there are several, instead of asking', () => {
     expect(
       replyGateBranch(collectReplyModels([local([model('a'), model('b')])]))
-    ).toBe('pick')
+    ).toBe('auto_start')
   })
 })
 
@@ -204,12 +205,27 @@ describe('estimateParamsB', () => {
     expect(estimateParamsB('LFM2.5-1.2B-Instruct-Q4_K_M.gguf')).toBe(1.2)
     expect(estimateParamsB('gemma-4-E4B-it-Q4_K_M')).toBe(4)
     expect(estimateParamsB('qwen3_8-27b-q8_0')).toBe(27)
+    // Registered ids spell the decimal point `_`: 2.6, not the trailing 6.
+    expect(estimateParamsB('LFM2_5-2_6B-Q4_K_M')).toBe(2.6)
   })
 
   it('does not mistake a quant or a version for a size', () => {
     expect(estimateParamsB('some-model-Q8_0')).toBeUndefined()
     expect(estimateParamsB('mistral-v0.3')).toBeUndefined()
     expect(estimateParamsB('plain-model')).toBeUndefined()
+  })
+})
+
+describe('estimateQuantBits', () => {
+  it('reads bits per weight out of the quant', () => {
+    expect(estimateQuantBits('Qwen3.5-4B-Q4_K_M')).toBe(4)
+    expect(estimateQuantBits('Qwen3.5-4B-IQ2_XXS')).toBe(2)
+    expect(estimateQuantBits('Qwen3-4B-MLX-8bit')).toBe(8)
+    expect(estimateQuantBits('gemma-4-E4B-it-BF16')).toBe(16)
+  })
+
+  it('has nothing to say about an id without a quant', () => {
+    expect(estimateQuantBits('plain-model')).toBeUndefined()
   })
 })
 
@@ -269,10 +285,76 @@ describe('resolveReplyModel', () => {
     })
   })
 
-  it('asks rather than guess when several models give no size to rank by', () => {
+  it('starts one even when no name gives a size, rather than asking', () => {
     const options = collectReplyModels([local([model('alpha'), model('beta')])])
 
-    expect(resolveReplyModel(options)).toBeNull()
+    expect(resolveReplyModel(options)).toMatchObject({
+      resolution: 'smallest_local',
+      option: { modelId: 'alpha' },
+    })
+  })
+
+  it('runs a GGUF on upstream llama.cpp, not on the fork that lists it too', () => {
+    // Both llama.cpp providers read the shared models dir, so one download is
+    // two options. The fork comes first here: order must not decide.
+    const options = collectReplyModels([
+      provider('llamacpp', [model('LFM2_5-2_6B-Q4_K_M')]),
+      provider('llamacpp-upstream', [model('LFM2_5-2_6B-Q4_K_M')]),
+    ])
+
+    expect(resolveReplyModel(options)).toMatchObject({
+      resolution: 'smallest_local',
+      option: { providerName: 'llamacpp-upstream' },
+    })
+  })
+
+  it('stays on a default engine even when the fork holds something smaller', () => {
+    const options = collectReplyModels([
+      provider('llamacpp', [model('LFM2.5-1.2B-Q4_K_M')]),
+      provider('mlx', [model('Qwen3.5-4B-MLX-4bit')]),
+    ])
+
+    expect(resolveReplyModel(options)).toMatchObject({
+      option: { providerName: 'mlx', modelId: 'Qwen3.5-4B-MLX-4bit' },
+    })
+  })
+
+  it('starts on llama.cpp before MLX, even when MLX holds something smaller', () => {
+    const options = collectReplyModels([
+      provider('mlx', [model('Qwen3.5-0.8B-MLX-4bit')]),
+      provider('llamacpp-upstream', [model('Qwen3.5-9B-Q4_K_M')]),
+    ])
+
+    expect(resolveReplyModel(options)).toMatchObject({
+      resolution: 'smallest_local',
+      option: {
+        providerName: 'llamacpp-upstream',
+        modelId: 'Qwen3.5-9B-Q4_K_M',
+      },
+    })
+  })
+
+  it('uses the fork when it is the only engine holding a model', () => {
+    const options = collectReplyModels([
+      provider('llamacpp', [
+        model('Qwen3.5-9B-Q4_K_M'),
+        model('Qwen3.5-4B-Q4_K_M'),
+      ]),
+    ])
+
+    expect(resolveReplyModel(options)).toMatchObject({
+      option: { providerName: 'llamacpp', modelId: 'Qwen3.5-4B-Q4_K_M' },
+    })
+  })
+
+  it('breaks a size tie with the lighter quant', () => {
+    const options = collectReplyModels([
+      local([model('Qwen3.5-4B-Q8_0'), model('Qwen3.5-4B-Q4_K_M')]),
+    ])
+
+    expect(resolveReplyModel(options)).toMatchObject({
+      option: { modelId: 'Qwen3.5-4B-Q4_K_M' },
+    })
   })
 
   it('asks when there is nothing on the device', () => {

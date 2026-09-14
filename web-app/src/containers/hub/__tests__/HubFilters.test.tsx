@@ -219,4 +219,21 @@ describe('HubFilters', () => {
       screen.queryByRole('button', { name: 'hub:formats' })
     ).not.toBeInTheDocument()
   })
+
+  it('narrows to uncensored builds from the bar itself, off by default', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderFilters()
+
+    const box = screen.getByRole('checkbox', { name: 'hub:uncensored' })
+    expect(box).not.toBeChecked()
+
+    await user.click(box)
+
+    expect(
+      screen.getByRole('checkbox', { name: 'hub:uncensored' })
+    ).toBeChecked()
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ uncensored: true })
+    )
+  })
 })

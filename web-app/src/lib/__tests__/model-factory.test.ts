@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ModelFactory, createLocalStreamingFetch } from '../model-factory'
 import type { ProviderObject } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
+import { fetch as httpFetch } from '@tauri-apps/plugin-http'
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import type { ModelsService } from '@/services/models/types'
 import { seedServiceHub } from '@/test/service-hub'
 
@@ -148,6 +150,38 @@ describe('ModelFactory', () => {
       expect(model).toBeDefined()
       expect(model.type).toBe('openai-compatible')
     })
+
+    // A registry cloud has to be named in the factory's switch: the `default`
+    // branch is for user-added endpoints and forwards the local-only parameter
+    // bag (`top_k`, `repeat_penalty`, …), which strict upstreams reject.
+    it.each([
+      ['aimlapi', false],
+      ['custom', true],
+    ])(
+      'forwards local-only parameters to %s: %s',
+      async (providerName, forwarded) => {
+        const provider: ProviderObject = {
+          provider: providerName,
+          api_key: 'test-api-key',
+          base_url: 'https://api.example.com/v1',
+          models: [],
+          settings: [],
+          active: true,
+        }
+
+        await ModelFactory.createModel('some/model', provider, { top_k: 40 })
+
+        const { fetch } = vi.mocked(createOpenAICompatible).mock.calls.at(-1)![0]
+        await fetch!('https://api.example.com/v1/chat/completions', {
+          method: 'POST',
+          body: JSON.stringify({ model: 'some/model' }),
+        })
+        const sent = JSON.parse(
+          vi.mocked(httpFetch).mock.calls.at(-1)![1]!.body as string
+        )
+        expect('top_k' in sent).toBe(forwarded)
+      }
+    )
 
     it('should handle custom headers for OpenAI-compatible providers', async () => {
       const provider: ProviderObject = {

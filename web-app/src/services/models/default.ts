@@ -6,7 +6,6 @@ import { sanitizeModelId, LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import {
   ggufShardGroupKey,
   groupGgufShards,
-  isMtpCompanionFile,
   isNonWeightGgufFile,
 } from '@/lib/models'
 import {
@@ -330,7 +329,6 @@ export class DefaultModelsService implements ModelsService {
     const regularGgufFiles = ggufFiles.filter(
       (file) =>
         !file.rfilename.toLowerCase().includes('mmproj') &&
-        !isMtpCompanionFile(file.rfilename) &&
         !isNonWeightGgufFile(file.rfilename)
     )
 

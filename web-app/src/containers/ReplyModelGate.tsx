@@ -41,11 +41,11 @@ import {
   collectReplyModels,
   replyGateBranch,
   replyGateContext,
+  resolveReplyModel,
   type ReplyGateBranch,
   type ReplyModelOption,
   type ReplyResolution,
 } from '@/lib/reply-model-gate'
-import { cn } from '@/lib/utils'
 import {
   collectImportedModelPaths,
   scanLocalModels,
@@ -94,14 +94,15 @@ type ReplyModelGateProps = {
  * which named the problem, offered no way to solve it, and emitted no telemetry
  * because the early `return` that produced it sat in front of every capture.
  *
- * One component, three shapes, decided by what is actually on the device (see
+ * One component, two shapes, decided by what is actually on the device (see
  * `lib/reply-model-gate.ts`):
  *
- *   1. exactly one model — start it, say so, ask nothing;
- *   2. several — offer them, last used first;
- *   3. none — recommend the one that fits this hardware.
+ *   1. something to answer with — start the model `resolveReplyModel` picks,
+ *      say so, ask nothing. There is no list to choose from: the user already
+ *      said what they want by pressing Send;
+ *   2. nothing — recommend the one that fits this hardware.
  *
- * The cloud alternatives sit beside all three, not only the third. They are not
+ * The cloud alternatives sit beside both, not only the second. They are not
  * a lifeboat for the empty-handed: of 153 users who connected a cloud key, 144
  * activated, and day-2 return was 58.3 % against 36.7 % — so a user who already
  * owns local models is offered them too.
@@ -125,8 +126,8 @@ export function ReplyModelGate({
   // the user. Retaken on each opening.
   const openedAtRef = useRef(0)
   const [session, setSession] = useState<{
-    options: ReplyModelOption[]
     branch: ReplyGateBranch
+    target?: ReplyModelOption
   } | null>(null)
 
   const providers = useModelProvider((state) => state.providers)
@@ -144,13 +145,14 @@ export function ReplyModelGate({
     if (!open) return
 
     const snapshotProviders = useModelProvider.getState().providers
-    const options = collectReplyModels(snapshotProviders, getLastUsedModel())
+    const lastUsed = getLastUsedModel()
+    const options = collectReplyModels(snapshotProviders, lastUsed)
     const branch = replyGateBranch(options)
     const context = replyGateContext(snapshotProviders)
 
     openedAtRef.current = Date.now()
     resolvedRef.current = false
-    setSession({ options, branch })
+    setSession({ branch, target: resolveReplyModel(options, lastUsed)?.option })
     captureReplyGateShown({
       branch,
       localModelCount: context.localModelCount,
@@ -235,7 +237,7 @@ export function ReplyModelGate({
           {session && (
             <ReplyModelGateBody
               branch={session.branch}
-              options={session.options}
+              target={session.target}
               providers={providers}
               onResolve={resolve}
               onConnectCloud={() => openCloudDialog('gallery')}
@@ -267,14 +269,14 @@ export function ReplyModelGate({
  */
 function ReplyModelGateBody({
   branch,
-  options,
+  target,
   providers,
   onResolve,
   onConnectCloud,
   onConnectSubscription,
 }: {
   branch: ReplyGateBranch
-  options: ReplyModelOption[]
+  target?: ReplyModelOption
   providers: ModelProvider[]
   onResolve: (outcome: ReplyGateOutcome) => void
   onConnectCloud: () => void
@@ -305,8 +307,10 @@ function ReplyModelGateBody({
     [onResolve, selectModelProvider, serviceHub]
   )
 
-  // Branch 1: one model, one possible answer. Asking would be theatre.
-  const autoStartTarget = branch === 'auto_start' ? options[0] : undefined
+  // Branch 1: something to answer with. The composer resolves the same way
+  // before it opens the widget, so asking here would only put back a question
+  // it has already answered.
+  const autoStartTarget = branch === 'auto_start' ? target : undefined
   const autoStartedRef = useRef(false)
   useEffect(() => {
     if (!autoStartTarget || autoStartedRef.current) return
@@ -319,16 +323,12 @@ function ReplyModelGateBody({
       ? t('chat:replyGate.startingTitle', {
           name: autoStartTarget?.label ?? '',
         })
-      : branch === 'pick'
-        ? t('chat:replyGate.pickTitle')
-        : t('chat:replyGate.emptyTitle')
+      : t('chat:replyGate.emptyTitle')
 
   const description =
     branch === 'auto_start'
       ? t('chat:replyGate.startingDescription')
-      : branch === 'pick'
-        ? t('chat:replyGate.pickDescription')
-        : t('chat:replyGate.emptyDescription')
+      : t('chat:replyGate.emptyDescription')
 
   return (
     <>
@@ -343,24 +343,6 @@ function ReplyModelGateBody({
           <span className="truncate text-sm font-medium">
             {autoStartTarget?.label}
           </span>
-        </div>
-      )}
-
-      {branch === 'pick' && (
-        <div
-          className="flex max-h-64 flex-col gap-2 overflow-y-auto"
-          data-testid="reply-gate-options"
-        >
-          {options.map((option) => (
-            <ReplyModelRow
-              key={option.key}
-              option={option}
-              providers={providers}
-              starting={startingKey === option.key}
-              disabled={startingKey !== null}
-              onSelect={() => start(option, 'picked')}
-            />
-          ))}
         </div>
       )}
 
@@ -383,65 +365,8 @@ function ReplyModelGateBody({
   )
 }
 
-/** One thing to answer with, as a row. */
-function ReplyModelRow({
-  option,
-  providers,
-  starting,
-  disabled,
-  onSelect,
-}: {
-  option: ReplyModelOption
-  providers: ModelProvider[]
-  starting: boolean
-  disabled: boolean
-  onSelect: () => void
-}) {
-  const provider = providers.find((p) => p.provider === option.providerName)
-
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onSelect}
-      data-testid="reply-gate-option"
-      className={cn(
-        'flex items-center gap-3 rounded-lg border bg-secondary/50 p-3 text-left',
-        'hover:bg-secondary focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none',
-        disabled && !starting && 'opacity-50'
-      )}
-    >
-      {/* The mark has to match the line beside it. A local row is named after
-          the model, so a Qwen GGUF ran under llama.cpp put a llama next to the
-          word "Qwen" — and the engine is already spelled out in the sublabel.
-          A cloud row is named after the provider, where the provider mark is
-          the brand. */}
-      {option.kind === 'local' ? (
-        <ModelLogo name={option.modelId} className="size-8 rounded-lg" />
-      ) : provider ? (
-        <ProvidersAvatar provider={provider} className="size-8 shrink-0" />
-      ) : (
-        <span className="size-8 shrink-0" />
-      )}
-      <div className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium leading-tight">
-          {option.label}
-        </span>
-        {option.sublabel && (
-          <span className="text-muted-foreground block truncate text-xs">
-            {option.sublabel}
-          </span>
-        )}
-      </div>
-      {starting && (
-        <Loader2 className="text-muted-foreground size-4 shrink-0 animate-spin" />
-      )}
-    </button>
-  )
-}
-
 /**
- * Branch 3: nothing on the device. The recommendation is the same one
+ * Branch 2: nothing on the device. The recommendation is the same one
  * onboarding's reminder makes — see `useRecommendedLocalModel` — so the user is
  * never offered two different "recommended" models by the same app.
  */

@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Hand, ShieldOff } from 'lucide-react'
+import { Check, Hand, ShieldOff } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,7 +37,10 @@ export function AgentApprovalModeSelect({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-0.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className={cn(
+            'flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-0.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            mode === 'skip' && 'text-destructive hover:text-destructive'
+          )}
           aria-label={selectedLabel}
         >
           {mode === 'manual' ? (
@@ -46,10 +49,9 @@ export function AgentApprovalModeSelect({
             <ShieldOff className="size-4" />
           )}
           <span>{selectedLabel}</span>
-          <ChevronDown className="size-3.5" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64 p-1">
+      <DropdownMenuContent align="start" className="w-80 p-1">
         <DropdownMenuItem
           onSelect={() => onChange('manual')}
           className="items-start gap-2 px-2 py-2"
@@ -69,13 +71,14 @@ export function AgentApprovalModeSelect({
           />
         </DropdownMenuItem>
         <DropdownMenuItem
+          variant="destructive"
           onSelect={() => onChange('skip')}
           className="items-start gap-2 px-2 py-2"
         >
-          <ShieldOff className="mt-0.5 size-4" />
+          <ShieldOff className="mt-0.5 size-4 text-destructive" />
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-medium">{skipLabel}</span>
-            <span className="block text-xs leading-4 text-muted-foreground">
+            <span className="block text-xs leading-4 text-destructive/80">
               {skipDescription}
             </span>
           </span>
