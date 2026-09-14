@@ -26,15 +26,19 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '20'
+          # v5 would otherwise cache Yarn from package.json's packageManager
+          # before corepack has activated Yarn 4 below; the Cache Yarn step
+          # already does this.
+          package-manager-cache: false
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -47,7 +51,7 @@ jobs:
           workspaces: src-tauri
 
       - name: Cache Yarn
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .yarn/cache
           key: yarn-windows-test-${{ hashFiles('yarn.lock') }}
@@ -151,7 +155,7 @@ jobs:
       # and sha256s, so a test installer offers the same offline backends a real
       # one does rather than a second set nobody checks.
       - name: Restore verified Windows backend archive cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}\atomic-backend-cache
           key: windows-backend-bundle-${{ hashFiles('scripts/windows-backend-bundle.json') }}
@@ -195,7 +199,7 @@ jobs:
           }
 
       - name: Upload Windows installer artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: radium-windows-test-${{ github.sha }}
           # NSIS only. Both installers embed the whole ~1.26GB offline backend
