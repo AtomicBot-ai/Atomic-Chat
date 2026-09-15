@@ -475,12 +475,25 @@ test-hardening-contracts:
 		tests/hardware-profiles.test.mjs \
 		tests/no-auto-update.test.mjs \
 		tests/radium-product-name.test.mjs \
+		tests/upstream-gateway.test.mjs \
+		tests/fork-features-register.test.mjs \
 		tests/hover-glow.test.mjs \
 		tests/models-folder.test.mjs \
 		tests/window-controls.test.mjs \
 		tests/scrollbar-arrows.test.mjs \
 		tests/radium-logo.test.mjs \
 		tests/upstream-backend-resolver.test.mjs
+
+# Upstream update gateway (ADR 2026-09-13-gate-every-upstream-sync-on-a-fork-features-impact-report).
+upstream-impact:
+	git fetch upstream --tags
+	node scripts/upstream-gateway.mjs impact
+
+upstream-gate:
+	node scripts/upstream-gateway.mjs gate
+
+upstream-post-merge:
+	node scripts/upstream-gateway.mjs post-merge
 
 test-coverage-critical:
 	yarn test:coverage
