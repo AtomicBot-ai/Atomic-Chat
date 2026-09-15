@@ -547,4 +547,106 @@ mod tests {
         let plan = engine_install_plan(tmp.path(), EngineVariant::WindowsVulkan);
         assert!(plan.executable.ends_with("sd-server.exe"));
     }
+
+    /// The real engine makes one image through Radium's own start path: the
+    /// install layout, `start_command` (model files and scan folders),
+    /// `start_server` and its ready check, then a job on the server's API.
+    ///
+    /// Needs an unpacked engine build and the SD 1.5 file on this computer:
+    /// `RADIUM_SD_ENGINE_DIR=<folder with sd-server> RADIUM_SD_MODEL=<gguf>
+    /// cargo test ... -- --ignored the_real_engine`.
+    #[tokio::test]
+    #[ignore = "needs the real engine and a 1.7 GB model on this computer"]
+    async fn the_real_engine_makes_an_image_through_radiums_start_path() {
+        use tauri_plugin_http::reqwest;
+
+        let engine_dir = std::env::var("RADIUM_SD_ENGINE_DIR").expect("set RADIUM_SD_ENGINE_DIR");
+        let model_file = std::env::var("RADIUM_SD_MODEL").expect("set RADIUM_SD_MODEL");
+        let tmp = tempdir().unwrap();
+        let data = tmp.path();
+        let variant = if cfg!(windows) {
+            EngineVariant::WindowsVulkan
+        } else {
+            EngineVariant::LinuxVulkan
+        };
+
+        // Lay the engine and the model out exactly where an install puts them.
+        let plan = engine_install_plan(data, variant);
+        let install_dir = under(data, &plan.install_dir);
+        fs::create_dir_all(&install_dir).unwrap();
+        for entry in fs::read_dir(&engine_dir).unwrap() {
+            let entry = entry.unwrap();
+            if entry.path().is_file() {
+                fs::copy(entry.path(), install_dir.join(entry.file_name())).unwrap();
+            }
+        }
+        let model = find_model("sd-1.5").unwrap();
+        let target = under(
+            data,
+            &model_install_plan(data, model).downloads[0].save_path,
+        );
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        if fs::hard_link(&model_file, &target).is_err() {
+            fs::copy(&model_file, &target).unwrap();
+        }
+
+        let port = pick_free_port().unwrap();
+        let (program, args) = start_command(data, variant, "sd-1.5", port).unwrap();
+        let base = server_base_url(port);
+        let mut child = start_server(
+            &program,
+            &args,
+            &format!("{base}{READY_PATH}"),
+            START_TIMEOUT,
+        )
+        .await
+        .unwrap();
+
+        let client = reqwest::Client::new();
+        let body = serde_json::json!({
+            "prompt": "a red apple on a wooden table",
+            "width": 256,
+            "height": 256,
+            "sample_params": { "sample_steps": 6, "guidance": { "txt_cfg": 7.0 } },
+            "seed": 42,
+            "batch_count": 1
+        });
+        let submitted: serde_json::Value = client
+            .post(format!("{base}/sdcpp/v1/img_gen"))
+            .header("content-type", "application/json")
+            .body(body.to_string())
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let id = submitted["id"].as_str().expect("a job id").to_string();
+
+        let mut job = serde_json::Value::Null;
+        for _ in 0..600 {
+            job = client
+                .get(format!("{base}/sdcpp/v1/jobs/{id}"))
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            if matches!(
+                job["status"].as_str(),
+                Some("completed" | "failed" | "cancelled")
+            ) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+        stop_server(&mut child).await.unwrap();
+
+        assert_eq!(job["status"], "completed", "the job ended as: {job}");
+        let image = job["result"]["images"][0]["b64_json"]
+            .as_str()
+            .unwrap_or("");
+        assert!(image.len() > 1000, "no image came back");
+    }
 }

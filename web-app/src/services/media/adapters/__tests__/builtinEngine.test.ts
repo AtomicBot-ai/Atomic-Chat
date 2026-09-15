@@ -14,6 +14,7 @@ import type { MediaJobState, MediaProviderDescriptor } from '../../contract'
 import {
   createBuiltinEngineAdapter,
   engineRequestBody,
+  framesFor,
   outputsOf,
   type BuiltinEngineTransport,
   type EngineStatus,
@@ -233,9 +234,12 @@ describe('built-in engine specifics', () => {
     const ids = (specs: { id: string }[]) => specs.map((s) => s.id)
 
     expect(ids(video.params.text_to_video)).toEqual(
-      expect.arrayContaining(['num_frames', 'fps'])
+      expect.arrayContaining(['length_seconds', 'fps', 'init_image', 'end_image'])
     )
-    expect(ids(image.params.text_to_image)).not.toContain('num_frames')
+    expect(ids(image.params.text_to_image)).not.toContain('length_seconds')
+    expect(ids(image.params.text_to_image)).toEqual(
+      expect.arrayContaining(['init_image', 'strength'])
+    )
   })
 
   it('starts the model the job needs, then sends the job to the engine', async () => {
@@ -372,6 +376,72 @@ describe('built-in engine: what the real server does', () => {
         params: { prompt: 'waves' },
       })
     ).rejects.toThrow('loaded model does not support vid_gen')
+  })
+})
+
+describe('starting images and video length (the user, 2026-09-15)', () => {
+  const DATA_URL = 'data:image/png;base64,iVBORw0KGgo='
+
+  it('sends a starting image and how much to change it', () => {
+    const body = engineRequestBody({
+      client_job_id: 'i',
+      provider_id: 'builtin-engine',
+      model_id: 'builtin-engine:sd-1.5',
+      task: 'text_to_image',
+      params: { prompt: 'a cat as a painting', init_image: DATA_URL, strength: 0.4 },
+    })
+    expect(body).toMatchObject({ init_image: DATA_URL, strength: 0.4 })
+  })
+
+  it('leaves strength out when there is no starting image', () => {
+    const body = engineRequestBody({
+      client_job_id: 'j',
+      provider_id: 'builtin-engine',
+      model_id: 'builtin-engine:sd-1.5',
+      task: 'text_to_image',
+      params: { prompt: 'a cat', strength: 0.4 },
+    })
+    expect(body).not.toHaveProperty('strength')
+    expect(body).not.toHaveProperty('init_image')
+  })
+
+  it('only shows strength once a starting image is attached', async () => {
+    const image = (await createBuiltinEngineAdapter(descriptor, transport).capabilities())
+      .models[0]
+    const strength = image.params.text_to_image.find((spec) => spec.id === 'strength')
+    expect(strength?.depends_on).toEqual([{ param: 'init_image', truthy: true }])
+  })
+
+  it('turns a video length in seconds into frames the model takes', () => {
+    const body = engineRequestBody({
+      client_job_id: 'v2',
+      provider_id: 'builtin-engine',
+      model_id: 'builtin-engine:wan',
+      task: 'text_to_video',
+      params: {
+        prompt: 'waves',
+        length_seconds: 2,
+        fps: 16,
+        init_image: DATA_URL,
+        end_image: DATA_URL,
+      },
+    })
+    expect(body).toMatchObject({
+      video_frames: 33,
+      fps: 16,
+      init_image: DATA_URL,
+      end_image: DATA_URL,
+    })
+    expect(body).not.toHaveProperty('strength')
+  })
+
+  it('always gives 4k + 1 frames, and at least 5', () => {
+    expect(framesFor(1, 16)).toBe(17)
+    expect(framesFor(5, 24)).toBe(121)
+    expect(framesFor(0.1, 8)).toBe(5)
+    for (const [seconds, fps] of [[1, 16], [3, 12], [8, 30]]) {
+      expect(framesFor(seconds, fps) % 4).toBe(1)
+    }
   })
 })
 

@@ -144,6 +144,24 @@ const MIME: Record<string, string> = {
   avi: 'video/x-msvideo',
 }
 
+/** Pictures the engine takes as a starting image or a frame. */
+const IMAGE_ACCEPT = ['image/png', 'image/jpeg', 'image/webp', 'image/bmp']
+
+/** Video length choices, in seconds (the user, 2026-09-15: "length etc"). */
+const LENGTH_SECONDS = [1, 2, 3, 4, 5, 8]
+
+/**
+ * Frames for a video of `seconds` at `fps`. Wan wants 4k + 1 frames, so the
+ * count is rounded to the nearest such number, and never below 5.
+ */
+export function framesFor(seconds: number, fps: number): number {
+  const k = Math.max(1, Math.round((seconds * fps - 1) / 4))
+  return 4 * k + 1
+}
+
+const isDataUrl = (value: unknown): value is string =>
+  typeof value === 'string' && value.startsWith('data:')
+
 /** Extra sizes offered per model family, after the model's own default. */
 const FAMILY_SIZES: Record<string, Array<[number, number]>> = {
   sd1: [
@@ -224,6 +242,24 @@ function paramsFor(model: EngineModelStatus, task: EngineModelTask): MediaParamS
   const specs: MediaParamSpec[] = [
     { id: 'prompt', type: 'text', group: 'core', label: 'Prompt', required: true },
     { id: 'negative_prompt', type: 'text', group: 'core', label: 'Negative prompt' },
+    // Added beside the prompt (Add file); the engine takes it as a data URL.
+    task === 'text_to_video'
+      ? {
+          id: 'init_image',
+          type: 'image_ref',
+          group: 'core',
+          label: 'First frame',
+          accept: IMAGE_ACCEPT,
+          help: 'Optional: the picture the video starts from.',
+        }
+      : {
+          id: 'init_image',
+          type: 'image_ref',
+          group: 'core',
+          label: 'Starting image',
+          accept: IMAGE_ACCEPT,
+          help: 'Optional: a picture to change so it matches the prompt.',
+        },
     resolutionSpec(model),
     {
       id: 'steps',
@@ -245,18 +281,41 @@ function paramsFor(model: EngineModelStatus, task: EngineModelTask): MediaParamS
       default: model.defaults.cfg_scale,
     },
   ]
+  if (task === 'text_to_image') {
+    specs.push({
+      id: 'strength',
+      type: 'float',
+      group: 'core',
+      label: 'How much to change it',
+      help: 'Low keeps the starting image; high follows the prompt more.',
+      min: 0.05,
+      max: 1,
+      step: 0.05,
+      default: 0.75,
+      widget: 'slider',
+      depends_on: [{ param: 'init_image', truthy: true }],
+    })
+  }
   if (task === 'text_to_video') {
     specs.push(
       {
-        id: 'num_frames',
-        type: 'int',
+        id: 'end_image',
+        type: 'image_ref',
+        group: 'core',
+        label: 'Last frame',
+        accept: IMAGE_ACCEPT,
+        help: 'Optional: the picture the video ends on.',
+      },
+      {
+        id: 'length_seconds',
+        type: 'enum',
         group: 'motion',
-        label: 'Frames',
-        min: 5,
-        max: 121,
-        // Wan wants 4k + 1 frames.
-        modulus: { modulus: 4, offset: 1 },
-        default: 33,
+        label: 'Length',
+        options: LENGTH_SECONDS.map((seconds) => ({
+          value: seconds,
+          label: seconds === 1 ? '1 second' : `${seconds} seconds`,
+        })),
+        default: 2,
       },
       { id: 'fps', type: 'int', group: 'motion', label: 'FPS', min: 1, max: 30, default: 16 }
     )
@@ -322,9 +381,22 @@ export function engineRequestBody(req: NormalizedMediaRequest): Record<string, u
   if (Object.keys(sampleParams).length > 0) body.sample_params = sampleParams
   // An empty seed means "surprise me", which the engine spells -1.
   body.seed = typeof params.seed === 'number' ? params.seed : -1
+  if (isDataUrl(params.init_image)) {
+    body.init_image = params.init_image
+    if (req.task !== MEDIA_TASK.TEXT_TO_VIDEO && typeof params.strength === 'number') {
+      body.strength = params.strength
+    }
+  }
   if (req.task === MEDIA_TASK.TEXT_TO_VIDEO) {
-    if (typeof params.num_frames === 'number') body.video_frames = params.num_frames
-    if (typeof params.fps === 'number') body.fps = params.fps
+    if (isDataUrl(params.end_image)) body.end_image = params.end_image
+    const fps = typeof params.fps === 'number' ? params.fps : 16
+    body.fps = fps
+    const seconds = Number(params.length_seconds)
+    if (Number.isFinite(seconds) && seconds > 0) {
+      body.video_frames = framesFor(seconds, fps)
+    } else if (typeof params.num_frames === 'number') {
+      body.video_frames = params.num_frames
+    }
   }
   return body
 }

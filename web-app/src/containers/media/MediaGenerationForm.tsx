@@ -45,6 +45,7 @@ import { useMediaParamState } from './params/useMediaParamState'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { fieldClass, labelClass } from './params/paramIdentity'
 import { formatDownloadSize } from './downloadSize'
+import { ImageFileInput } from './params/ImageFileInput'
 
 /** The one parameter drawn outside the grid. See D10. */
 const PROMPT_PARAM = 'prompt'
@@ -163,9 +164,21 @@ export function MediaGenerationForm({
     () => (activeModel ? (activeModel.params[task] ?? []) : []),
     [activeModel, task]
   )
-  const gridSpecs = useMemo(
-    () => specs.filter((spec) => spec.id !== PROMPT_PARAM),
+  // The model's first image parameter (a starting image, or a video's first
+  // frame) is attached beside the prompt, like a file in a chat message
+  // (the user, 2026-09-15: "text prompt with add file option").
+  const attachSpec = useMemo(
+    () =>
+      specs.find((spec) => spec.type === 'image_ref' && spec.accept?.length) ??
+      null,
     [specs]
+  )
+  const gridSpecs = useMemo(
+    () =>
+      specs.filter(
+        (spec) => spec.id !== PROMPT_PARAM && spec.id !== attachSpec?.id
+      ),
+    [specs, attachSpec]
   )
 
   const { t } = useTranslation()
@@ -380,7 +393,18 @@ export function MediaGenerationForm({
           </p>
         )}
         <div className="mt-2 flex items-center justify-between gap-3">
-          <div className="text-xs text-muted-foreground" data-testid="media-form-status">
+          {attachSpec ? (
+            <ImageFileInput
+              compact
+              id="media-attach-file"
+              label={attachSpec.label ?? 'Image'}
+              accept={attachSpec.accept}
+              value={values[attachSpec.id]}
+              disabled={formDisabled || mustDownload}
+              onChange={(next) => setValue(attachSpec.id, next)}
+            />
+          ) : null}
+          <div className="min-w-0 flex-1 text-xs text-muted-foreground" data-testid="media-form-status">
             {downloading
               ? install.phase === 'downloading' && install.percent !== null
                 ? t('media:form.downloadingPercent', {
