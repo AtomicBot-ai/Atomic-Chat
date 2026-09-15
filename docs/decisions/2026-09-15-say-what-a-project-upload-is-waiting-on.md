@@ -13,19 +13,20 @@ title: "Say what a project file upload is waiting on, and never hide a failed li
   upload "looping". Separately, a failed `listAttachmentsForProject` was
   swallowed and rendered the empty state, so a project with files (or a
   just-finished upload) looked empty.
-- **Decision:** While an upload runs, render a status line under the header:
-  the embedding-model download with its percentage when the global download
-  store has an entry for `EMBEDDING_MODEL_ID`, otherwise a generic "indexing"
-  note that says the first upload also fetches the index model. When the
-  listing fails, render an error state with the message and a Retry button
-  instead of the empty state. Read the download progress from the existing
-  `useDownloadStore` rather than adding a second event subscription.
+- **Decision:** While an upload runs, render a live status line under the
+  header with the embedding-model download and its percentage whenever the
+  global download store has an entry for `EMBEDDING_MODEL_ID`; the
+  "Indexing…" button label and the dropzone hint from the #289 re-entry fix
+  cover the rest of the wait. When the listing fails, render an error state
+  with the message and a Retry button instead of the empty state. Read the
+  download progress from the existing `useDownloadStore` rather than adding
+  a second event subscription.
 - **Consequences:** The wait is explained, not removed: the download and
   model load still run inside the ingest promise, and the 30-minute
   model-load readiness ceiling (2026-06-16) still applies. Whether the
-  reported hang was this first-use path or a genuinely stuck load could not
-  be told from the report; the status line makes the two distinguishable in
-  the next one. Two follow-ups stay open: `ingestFileForProject` embeds every
+  reported hang was this first-use path, the #289 re-entry race, or a
+  genuinely stuck load could not be told from the report; the status line
+  makes them distinguishable in the next one. Two follow-ups stay open: `ingestFileForProject` embeds every
   chunk twice (vector-db extension, no test harness yet), and `load()` waits
   on `configureBackendsPromise` without the 20 s bound its sibling uses.
 - **Owner:** @danyurkin.
