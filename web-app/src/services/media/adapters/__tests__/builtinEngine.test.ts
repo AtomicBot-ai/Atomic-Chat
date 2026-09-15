@@ -311,8 +311,11 @@ describe('built-in engine specifics', () => {
 
     expect(fake.invoked.find((c) => c.command === 'media_engine_install')?.args).toEqual({
       modelId: 'sd-1.5',
-      taskId: 'media-engine-sd-1.5',
+      taskId: 'media-engine-sd-1_5',
     })
+    // Tauri rejects any other character in an event name.
+    const taskId = String(fake.invoked.find((c) => c.command === 'media_engine_install')?.args?.taskId)
+    expect(`download-${taskId}`).toMatch(/^[A-Za-z0-9_\-/:]+$/)
     expect(onProgress).toHaveBeenCalledWith({ received: 512, total: 1024 })
     // The progress listener is let go afterwards.
     expect(fake.listeners.size).toBe(0)

@@ -610,7 +610,10 @@ export function createBuiltinEngineAdapter(
 
     async install(modelId, onProgress, signal) {
       const localId = localIdOf(modelId, providerId)
-      const taskId = `media-engine-${localId}`
+      // Tauri event names allow only letters, digits, `-`, `/`, `:` and `_`.
+      // "sd-1.5" put a dot in `download-<task id>`, so listening threw at once
+      // and the download never started (found 2026-09-15).
+      const taskId = `media-engine-${localId.replace(/[^A-Za-z0-9_-]/g, '_')}`
       const unlisten = await transport.listen<{ transferred: number; total: number }>(
         `download-${taskId}`,
         (progress) => onProgress({ received: progress.transferred, total: progress.total })

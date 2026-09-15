@@ -351,7 +351,12 @@ export function MediaGenerationForm({
                           defaultValue: 'Downloading the model… {{percent}}%',
                         })
                       : t('media:form.downloading', { defaultValue: 'Downloading the model…' })
-                    : t('media:form.notDownloadedYet', {
+                    : install.phase === 'failed' && install.modelId === activeModel.id
+                      ? t('media:form.downloadFailedShort', {
+                          detail: install.detail,
+                          defaultValue: 'Download failed: {{detail}}',
+                        })
+                      : t('media:form.notDownloadedYet', {
                         model: activeModel.label,
                         defaultValue: '{{model}} is not downloaded yet',
                       })}
