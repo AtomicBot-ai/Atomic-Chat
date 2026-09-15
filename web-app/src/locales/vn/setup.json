@@ -1,8 +1,8 @@
 {
-  "welcome": "Chào mừng đến với Atomic Bot",
-  "description": "Để bắt đầu, khởi chạy nhanh với Atomic Bot Model hoặc chọn nhà cung cấp cục bộ hoặc từ xa của riêng bạn",
+  "welcome": "Chào mừng đến với Radium",
+  "description": "Để bắt đầu, khởi chạy nhanh với Radium Model hoặc chọn nhà cung cấp cục bộ hoặc từ xa của riêng bạn",
   "descriptionWeb": "Để bắt đầu, bạn cần kết nối với mô hình đám mây bằng khóa API",
-  "quickStart": "Khởi động nhanh với Atomic Bot Model",
+  "quickStart": "Khởi động nhanh với Radium Model",
   "quickStartDescription": "Không cần thiết lập",
   "quickStartFailed": "Đã xảy ra lỗi. Vui lòng thử lại.",
   "downloading": "Đang tải…",

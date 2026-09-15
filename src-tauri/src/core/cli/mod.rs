@@ -15,7 +15,9 @@ pub mod integrations;
 
 use std::path::{Path, PathBuf};
 
-use crate::core::app::commands::resolve_jan_data_folder;
+use crate::core::app::commands::{resolve_config_file_path, resolve_jan_data_folder};
+use crate::core::app::models::AppConfiguration;
+use crate::core::app::models_folder::{effective_models_folder, redirect_into_models_folder};
 use tauri_plugin_llamacpp_upstream::state::LlamacppState as LlamacppUpstreamState;
 
 // Re-export impl functions and config types so the binary can call them directly.
@@ -65,14 +67,33 @@ pub type ModelEntry = (String, ModelYml);
 /// Embedding models are excluded: they cannot serve `/v1/chat/completions`, so
 /// offering them anywhere the CLI leads is a dead end.
 pub fn list_chat_models() -> Vec<ModelEntry> {
-    list_chat_models_in(&resolve_jan_data_folder())
+    let data_folder = resolve_jan_data_folder();
+    list_chat_models_under(&effective_models_folder(
+        &data_folder,
+        cli_chosen_models_folder().as_deref(),
+    ))
+}
+
+/// The models folder the user chose on the Models page, if any.
+pub fn cli_chosen_models_folder() -> Option<PathBuf> {
+    std::fs::read_to_string(resolve_config_file_path())
+        .ok()
+        .and_then(|content| serde_json::from_str::<AppConfiguration>(&content).ok())
+        .and_then(|config| config.models_folder)
+        .filter(|folder| !folder.trim().is_empty())
+        .map(PathBuf::from)
 }
 
 /// Same as [`list_chat_models`], against an explicit data folder.
 pub fn list_chat_models_in(data_folder: &Path) -> Vec<ModelEntry> {
+    list_chat_models_under(&data_folder.join(MODELS_ROOT).join("models"))
+}
+
+/// Same as [`list_chat_models`], against an explicit models folder.
+pub fn list_chat_models_under(models_root: &Path) -> Vec<ModelEntry> {
     use std::fs;
 
-    let models_root = data_folder.join(MODELS_ROOT).join("models");
+    let models_root = models_root.to_path_buf();
 
     if !models_root.exists() {
         return Vec::new();
@@ -122,7 +143,11 @@ pub fn list_chat_models_in(data_folder: &Path) -> Vec<ModelEntry> {
 ///   - absolute (`/…` or `C:\…`) — used verbatim
 ///   - relative — joined with the Radium data folder
 pub fn resolve_model_by_id(model_id: &str) -> Result<(PathBuf, Option<PathBuf>), String> {
-    resolve_model_by_id_in(&resolve_jan_data_folder(), model_id)
+    resolve_model_by_id_with(
+        &resolve_jan_data_folder(),
+        cli_chosen_models_folder().as_deref(),
+        model_id,
+    )
 }
 
 /// Same as [`resolve_model_by_id`], against an explicit data folder.
@@ -130,9 +155,17 @@ pub fn resolve_model_by_id_in(
     data_folder: &Path,
     model_id: &str,
 ) -> Result<(PathBuf, Option<PathBuf>), String> {
-    let yml_path = data_folder
-        .join(MODELS_ROOT)
-        .join("models")
+    resolve_model_by_id_with(data_folder, None, model_id)
+}
+
+/// Same as [`resolve_model_by_id_in`], with the models folder the user chose.
+/// Relative `llamacpp/models/...` paths in `model.yml` follow that folder.
+pub fn resolve_model_by_id_with(
+    data_folder: &Path,
+    chosen_models_folder: Option<&Path>,
+    model_id: &str,
+) -> Result<(PathBuf, Option<PathBuf>), String> {
+    let yml_path = effective_models_folder(data_folder, chosen_models_folder)
         .join(model_id)
         .join("model.yml");
 
@@ -151,7 +184,7 @@ pub fn resolve_model_by_id_in(
         if pb.is_absolute() {
             pb
         } else {
-            data_folder.join(p)
+            redirect_into_models_folder(&data_folder.join(p), data_folder, chosen_models_folder)
         }
     };
 
@@ -410,7 +443,8 @@ pub async fn download_hf_model(
     use tokio::io::AsyncWriteExt;
 
     let data_folder = resolve_jan_data_folder();
-    let model_dir = data_folder.join(MODELS_ROOT).join("models").join(repo_id);
+    let model_dir =
+        effective_models_folder(&data_folder, cli_chosen_models_folder().as_deref()).join(repo_id);
     tokio::fs::create_dir_all(&model_dir)
         .await
         .map_err(|e| e.to_string())?;
@@ -464,7 +498,8 @@ pub async fn download_hf_model(
         .map_err(|e| e.to_string())?;
 
     // ── Write model.yml ───────────────────────────────────────────────────
-    // model_path is relative to the Radium data folder
+    // model_path is relative to the Radium data folder; a chosen models
+    // folder takes the place of `llamacpp/models` when it is read back.
     let rel_path = format!("{MODELS_ROOT}/models/{repo_id}/{}", file.filename);
     let display_name = repo_id.rsplit('/').next().unwrap_or(repo_id);
 
@@ -504,6 +539,29 @@ mod tests {
         let dir = data_folder.join(MODELS_ROOT).join("models").join(model_id);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("model.yml"), yml).unwrap();
+    }
+
+    #[test]
+    fn models_in_a_chosen_folder_are_found_and_resolved() {
+        let data = temp_data_folder("chosen-models-data");
+        let chosen = temp_data_folder("chosen-models-folder");
+        let dir = chosen.join("org/qwen");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("model.yml"),
+            "model_path: llamacpp/models/org/qwen/model.gguf\nembedding: false\n",
+        )
+        .unwrap();
+
+        let models = list_chat_models_under(&chosen);
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].0, "org/qwen");
+
+        let (model_path, _) = resolve_model_by_id_with(&data, Some(&chosen), "org/qwen").unwrap();
+        assert_eq!(
+            model_path,
+            jan_utils::normalize_path(&chosen.join("org").join("qwen").join("model.gguf"))
+        );
     }
 
     #[test]

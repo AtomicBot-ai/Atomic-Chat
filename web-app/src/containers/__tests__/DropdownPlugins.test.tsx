@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom'
+import { useConnectorReview } from '@/hooks/useConnectorReview'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -10,7 +11,15 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 const activateMCPServer = vi.hoisted(() => vi.fn(async () => {}))
 const deactivateMCPServer = vi.hoisted(() => vi.fn(async () => {}))
 const updateMCPConfig = vi.hoisted(() => vi.fn(async () => {}))
-const mcp = () => ({ activateMCPServer, deactivateMCPServer, updateMCPConfig })
+const connectorNeedsReview = vi.hoisted(() => vi.fn(async () => false))
+const approveConnector = vi.hoisted(() => vi.fn(async () => {}))
+const mcp = () => ({
+  activateMCPServer,
+  deactivateMCPServer,
+  updateMCPConfig,
+  connectorNeedsReview,
+  approveConnector,
+})
 
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({ mcp }),
@@ -211,6 +220,58 @@ describe('DropdownPlugins', () => {
       expect(deactivateMCPServer).toHaveBeenCalledWith('exa')
     )
     expect(useMCPServers.getState().mcpServers.exa.active).toBe(false)
+  })
+
+  it('asks for a review before connecting, and stays off on Cancel', async () => {
+    useConnectorReview.setState({ pending: [] })
+    connectorNeedsReview.mockResolvedValueOnce(true)
+    const config = { command: 'npx', args: ['x'], env: {}, active: false }
+    useMCPServers.setState({ mcpServers: { serper: config } })
+
+    renderDropdown()
+    await userEvent.click(screen.getByRole('switch', { name: 'Serper' }))
+
+    await waitFor(() =>
+      expect(
+        useConnectorReview.getState().pending.map((request) => request.name)
+      ).toEqual(['serper'])
+    )
+    act(() => {
+      const [request] = useConnectorReview.getState().pending
+      useConnectorReview.getState().settle(request.id, false)
+    })
+
+    await waitFor(() =>
+      expect(useConnectorReview.getState().pending).toEqual([])
+    )
+    expect(activateMCPServer).not.toHaveBeenCalled()
+    expect(approveConnector).not.toHaveBeenCalled()
+    expect(useMCPServers.getState().mcpServers.serper.active).toBe(false)
+  })
+
+  it('connects once the review is allowed', async () => {
+    useConnectorReview.setState({ pending: [] })
+    connectorNeedsReview.mockResolvedValueOnce(true)
+    const config = { command: 'npx', args: ['x'], env: {}, active: false }
+    useMCPServers.setState({ mcpServers: { serper: config } })
+
+    renderDropdown()
+    await userEvent.click(screen.getByRole('switch', { name: 'Serper' }))
+    await waitFor(() =>
+      expect(useConnectorReview.getState().pending).toHaveLength(1)
+    )
+    act(() => {
+      const [request] = useConnectorReview.getState().pending
+      useConnectorReview.getState().settle(request.id, true)
+    })
+
+    await waitFor(() =>
+      expect(useMCPServers.getState().mcpServers.serper.active).toBe(true)
+    )
+    expect(approveConnector).toHaveBeenCalledWith('serper', config)
+    expect(approveConnector.mock.invocationCallOrder[0]).toBeLessThan(
+      activateMCPServer.mock.invocationCallOrder[0]
+    )
   })
 
   it('leaves the stored config off when the server fails to start', async () => {

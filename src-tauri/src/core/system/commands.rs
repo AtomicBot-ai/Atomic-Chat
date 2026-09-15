@@ -201,6 +201,7 @@ pub async fn factory_reset<R: Runtime>(
     let default_config = AppConfiguration {
         data_folder: default_data_folder_path(app_handle.clone()),
         autostart_preference,
+        models_folder: None,
     };
     let _ = update_app_configuration(app_handle.clone(), default_config);
 
@@ -670,10 +671,7 @@ fn remove_legacy_cli_binary(dir: &std::path::Path) {
         return;
     }
     if !is_our_cli_binary(&legacy) {
-        log::info!(
-            "Leaving {} alone — not a Radium binary",
-            legacy.display()
-        );
+        log::info!("Leaving {} alone — not a Radium binary", legacy.display());
         return;
     }
     match std::fs::remove_file(&legacy) {
@@ -703,7 +701,8 @@ pub async fn check_jan_cli_installed() -> CliInstallStatus {
                 // `where` returns one path per line; pick the first that isn't a
                 // dev-build artifact (i.e. skip paths containing \target\)
                 raw.lines()
-                    .map(str::trim).find(|p| !p.is_empty() && !p.to_ascii_lowercase().contains("\\target\\"))
+                    .map(str::trim)
+                    .find(|p| !p.is_empty() && !p.to_ascii_lowercase().contains("\\target\\"))
                     .map(str::to_string)
                     // fall back to the raw first line if every path looks like a build dir
                     .or_else(|| {
@@ -1508,10 +1507,9 @@ fn split_custom_providers(content: &str) -> (Vec<String>, Vec<Vec<String>>, Vec<
     let mut current: Vec<String> = Vec::new();
 
     for line in &block_lines {
-        if line.starts_with("- ")
-            && !current.is_empty() {
-                entries.push(std::mem::take(&mut current));
-            }
+        if line.starts_with("- ") && !current.is_empty() {
+            entries.push(std::mem::take(&mut current));
+        }
         if !line.trim().is_empty() {
             current.push(line.clone());
         }
@@ -3529,9 +3527,7 @@ fn openclaw_patch_config(
         .ok_or_else(|| "openclaw.json is not a JSON object".to_string())?;
 
     let model_ref = format!("{}/{}", OPENCLAW_PROVIDER_ID, model);
-    let key_val = api_key
-        .filter(|k| !k.is_empty())
-        .unwrap_or("atomic");
+    let key_val = api_key.filter(|k| !k.is_empty()).unwrap_or("atomic");
 
     let models = obj.entry("models").or_insert_with(|| serde_json::json!({}));
     let models_obj = models
@@ -4079,10 +4075,7 @@ fn dsh_route_node(api_url: &str, model: &str, with_key: bool) -> serde_yaml::Val
     model_entry.insert(ykey("maxTokens"), Value::from(DSH_MAX_TOKENS));
 
     let mut route = Mapping::new();
-    route.insert(
-        ykey("displayName"),
-        Value::String("Radium".to_string()),
-    );
+    route.insert(ykey("displayName"), Value::String("Radium".to_string()));
     route.insert(ykey("api"), Value::String("openai-completions".to_string()));
     route.insert(ykey("baseURL"), Value::String(api_url.to_string()));
     if with_key {

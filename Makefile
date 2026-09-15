@@ -477,6 +477,11 @@ test-hardening-contracts:
 		tests/radium-product-name.test.mjs \
 		tests/upstream-gateway.test.mjs \
 		tests/fork-features-register.test.mjs \
+		tests/hover-glow.test.mjs \
+		tests/models-folder.test.mjs \
+		tests/window-controls.test.mjs \
+		tests/scrollbar-arrows.test.mjs \
+		tests/radium-logo.test.mjs \
 		tests/upstream-backend-resolver.test.mjs
 
 # Upstream update gateway (ADR 2026-09-13-gate-every-upstream-sync-on-a-fork-features-impact-report).

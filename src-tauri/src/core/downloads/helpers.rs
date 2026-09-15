@@ -3,6 +3,7 @@ use super::disk::{
 };
 use super::models::{DownloadEvent, DownloadItem, ProgressTracker, ProxyConfig};
 use crate::core::app::commands::get_jan_data_folder_path;
+use crate::core::app::models_folder::{chosen_models_folder, redirect_into_models_folder};
 use futures_util::StreamExt;
 use jan_utils::{canonicalize_existing_prefix, normalize_path};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, CONTENT_RANGE, RANGE};
@@ -557,6 +558,15 @@ pub async fn _download_files_internal(
 
     // save file under Jan data folder
     let jan_data_folder = get_jan_data_folder_path(app.clone());
+    // Model files go to the models folder the user chose, when there is one.
+    let models_folder = chosen_models_folder(&app);
+    let target_path = |item: &DownloadItem| {
+        redirect_into_models_folder(
+            &normalize_path(&jan_data_folder.join(&item.save_path)),
+            &jan_data_folder,
+            models_folder.as_deref(),
+        )
+    };
 
     // ATO-467: `disk_io` is the largest failure cause, and two of its subcauses
     // are knowable before the first byte is fetched — the volume cannot hold
@@ -565,14 +575,19 @@ pub async fn _download_files_internal(
     // message that names the actual problem.
     let mut partial_paths = Vec::new();
     for item in items.iter() {
-        let save_path = normalize_path(&jan_data_folder.join(&item.save_path));
+        let save_path = target_path(item);
         ensure_path_within_limit(&save_path)?;
         if resume {
             partial_paths.push(sidecar_path(&save_path, "tmp"));
         }
     }
+    // The drive that receives the files is the one that has to have room.
+    let receiving_folder = match (&models_folder, items.first()) {
+        (Some(folder), Some(item)) if target_path(item).starts_with(folder) => folder.clone(),
+        _ => jan_data_folder.clone(),
+    };
     ensure_free_space(
-        &jan_data_folder,
+        &receiving_folder,
         remaining_bytes(total_size, &partial_paths),
     )?;
 
@@ -580,8 +595,7 @@ pub async fn _download_files_internal(
     let mut download_tasks = Vec::new();
 
     for (index, item) in items.iter().enumerate() {
-        let save_path = jan_data_folder.join(&item.save_path);
-        let save_path = normalize_path(&save_path);
+        let save_path = target_path(item);
 
         // Compare the paths as the filesystem sees them, not as they were
         // spelled. On atomic Fedora variants `/home` is a symlink to
@@ -589,8 +603,13 @@ pub async fn _download_files_internal(
         // other name looked like an escape attempt and blocked the download.
         let resolved_save_path = canonicalize_existing_prefix(&save_path);
         let resolved_data_folder = canonicalize_existing_prefix(&jan_data_folder);
+        let resolved_models_folder = models_folder.as_deref().map(canonicalize_existing_prefix);
 
-        if !resolved_save_path.starts_with(&resolved_data_folder) {
+        if !resolved_save_path.starts_with(&resolved_data_folder)
+            && !resolved_models_folder
+                .as_ref()
+                .is_some_and(|folder| resolved_save_path.starts_with(folder))
+        {
             return Err(format!(
                 "Path {} is outside of Jan data folder {}",
                 save_path.display(),
