@@ -17,8 +17,6 @@
     "download": "ダウンロード",
     "downloading": "ダウンロード中…",
     "downloadingPercent": "ダウンロード中… {{percent}}%",
-    "connectCloud": "クラウドプロバイダーを接続",
-    "connectSubscription": "ChatGPT サブスクリプションを接続",
     "queuedNotice": "モデルの準備ができ次第、メッセージを送信します。",
     "startingNotice": "起動中",
     "addFolder": "モデルのフォルダを追加",

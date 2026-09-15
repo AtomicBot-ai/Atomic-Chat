@@ -1926,7 +1926,11 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                       {renderCloudRow({
                         icon: <img src={HUGGINGFACE_LOGO_SRC} alt="" />,
                         title: t('setup:cloudStep.huggingFaceTitle'),
-                        hint: t('setup:cloudStep.huggingFaceHint'),
+                        hint: t(
+                          IS_MACOS
+                            ? 'setup:cloudStep.huggingFaceHint'
+                            : 'setup:cloudStep.huggingFaceHintGguf'
+                        ),
                         action: t('setup:cloudStep.browse'),
                         label: t('setup:cloudStep.huggingFaceTrigger'),
                         onClick: () => leaveWithoutModel('hub'),

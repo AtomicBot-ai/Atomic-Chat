@@ -521,6 +521,8 @@ function HubContent() {
     sources,
     feed.models,
     feed.details,
+    // The details map keeps its identity; its version is what changes.
+    feed.detailsVersion,
     t,
   ])
 

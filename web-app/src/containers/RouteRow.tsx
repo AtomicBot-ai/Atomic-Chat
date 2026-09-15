@@ -26,8 +26,6 @@ type RouteRowProps = {
   'disabled'?: boolean
   /** The row the screen leads with: filled button instead of a secondary. */
   'primary'?: boolean
-  /** Reserved for a badge or a second line under the title. */
-  'children'?: ReactNode
   'data-testid'?: string
 }
 
@@ -36,6 +34,10 @@ type RouteRowProps = {
  * button — so a list of routes reads as one list, whatever the route is:
  * onboarding's cloud rows, the composer's "what do I reply with?" widget, or
  * a recommended download beside them.
+ *
+ * The title is not a heading: these rows sit under a dialog's own title or
+ * an onboarding section label, and a list of h2s reads as an outline to a
+ * screen reader.
  */
 export function RouteRow({
   icon,
@@ -46,7 +48,6 @@ export function RouteRow({
   onClick,
   disabled = false,
   primary = false,
-  children,
   'data-testid': testId,
 }: RouteRowProps) {
   return (
@@ -55,22 +56,21 @@ export function RouteRow({
       data-testid={testId}
     >
       <div className="flex min-w-0 flex-1 items-center gap-3">
+        {/* Direct children only: a `ModelLogo` in this slot sizes its own
+            image, and an inherited 16 px would shrink its mark to a dot. */}
         <span
           aria-hidden="true"
-          className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-foreground [&_svg]:size-4 [&_img]:size-4"
+          className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-foreground [&>svg]:size-4 [&>img]:size-4"
         >
           {icon}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <h2 className="truncate text-sm font-medium leading-tight">
-              {title}
-            </h2>
-            {children}
-          </div>
-          <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
+          <span className="block truncate text-sm font-medium leading-tight">
+            {title}
+          </span>
+          <span className="mt-0.5 line-clamp-1 block text-xs text-muted-foreground">
             {hint}
-          </p>
+          </span>
         </div>
       </div>
       <Button

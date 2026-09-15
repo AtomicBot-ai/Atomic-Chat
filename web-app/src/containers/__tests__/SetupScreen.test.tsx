@@ -911,8 +911,6 @@ describe('SetupScreen', () => {
       const names = screen
         .getAllByRole('heading', { level: 2 })
         .map((heading) => heading.textContent?.replace(/ ·.*$/, '').trim())
-        // The "other ways" rows under the list are routes, not picks.
-        .filter((name) => !name?.startsWith('setup:'))
       expect(names).toEqual([
         'Qwen3.5 4B',
         'Gemma 4 12B',

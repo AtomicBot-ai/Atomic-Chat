@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-261 records, 2026-05-19 → 2026-09-15.
+263 records, 2026-05-19 → 2026-09-15.
 
 ---
 
@@ -202,8 +202,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-19** — [Use `AtomicBot-ai/atomic-llama-cpp-turboquant` as the LLM backend](2026-05-19-use-atomicbot-ai-atomic-llama-cpp-turboquant-as-the-llm-backend.md)
 - **2026-05-19** — [Ship upstream `ggml-org/llama.cpp` as a second macOS provider, no fork](2026-05-19-ship-upstream-ggml-org-llama-cpp-as-a-second-macos-provider-no.md)
 
-## Models, Hub & downloads (28)
+## Models, Hub & downloads (29)
 
+- **2026-09-15** — [List the rest of Hugging Face under the picks, in its trending order, a page at a time](2026-09-15-list-the-rest-of-hugging-face-under-the-picks.md)
 - **2026-09-11** — [One rule keeps speculative-decoding heads out of both model import paths (ATO-523)](2026-09-11-one-rule-keeps-speculative-heads-out-of-both-model-import-paths.md)
 - **2026-08-19** — [Do not preload a model on startup](2026-08-19-do-not-preload-a-model-on-startup.md)
 - **2026-08-19** — [Offer a low-spec model tier in onboarding](2026-08-19-offer-a-low-spec-model-tier-in-onboarding.md)
@@ -268,8 +269,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (41)
+## UI / UX (43)
 
+- **2026-09-15** — [Ask for a model with the same rows and the same list as onboarding, and open the Hub from both](2026-09-15-ask-for-a-model-with-the-same-rows-and-list-as-onboarding.md)
 - **2026-09-15** — [Say what a project file upload is waiting on, and never hide a failed listing](2026-09-15-say-what-a-project-upload-is-waiting-on.md)
 - **2026-09-15** — [Say what a model load is waiting on, and let it be cancelled](2026-09-15-say-what-a-model-load-is-waiting-on-and-let-it-be-cancelled.md)
 - **2026-09-15** — [Show every tool call as its own line in the message](2026-09-15-show-every-tool-call-as-its-own-line.md)

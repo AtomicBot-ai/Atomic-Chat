@@ -61,6 +61,9 @@ import { switchToModel } from '@/utils/switchModel'
 /** The subscription this widget offers by name, beside the API-key route. */
 const SUBSCRIPTION_PROVIDER = 'chatgpt'
 
+/** How long the recommendation may take to resolve before the widget stops waiting. */
+const RECOMMENDATION_WAIT_MS = 8_000
+
 export type ReplyModelGateResolution = {
   outcome: ReplyGateOutcome
   branch: ReplyGateBranch
@@ -404,6 +407,14 @@ function RecommendedDownloads({ onStarted }: { onStarted: () => void }) {
   const { t } = useTranslation()
   const { items, isLoading } = useRecommendedDownloads()
   const downloads = useDownloadStore((state) => state.downloads)
+  // The card lookup has no failure state of its own; past this the routes
+  // below are the offer, and a spinner with nothing behind it comes down.
+  const [gaveUp, setGaveUp] = useState(false)
+  useEffect(() => {
+    if (!isLoading || gaveUp) return
+    const timer = setTimeout(() => setGaveUp(true), RECOMMENDATION_WAIT_MS)
+    return () => clearTimeout(timer)
+  }, [isLoading, gaveUp])
 
   const progressFor = (modelId: string | undefined) => {
     if (!modelId) return null
@@ -413,7 +424,7 @@ function RecommendedDownloads({ onStarted }: { onStarted: () => void }) {
   }
 
   if (items.length === 0) {
-    if (!isLoading) return null
+    if (!isLoading || gaveUp) return null
     return (
       <div
         className="flex items-center gap-3 rounded-lg border bg-secondary/50 p-3"
@@ -606,7 +617,11 @@ function ModelRoutes({
         <RouteRow
           icon={<img src={HUGGINGFACE_LOGO_SRC} alt="" />}
           title={t('setup:cloudStep.huggingFaceTitle')}
-          hint={t('setup:cloudStep.huggingFaceHint')}
+          hint={t(
+            IS_MACOS
+              ? 'setup:cloudStep.huggingFaceHint'
+              : 'setup:cloudStep.huggingFaceHintGguf'
+          )}
           action={t('setup:cloudStep.browse')}
           label={t('setup:cloudStep.huggingFaceTrigger')}
           onClick={onBrowseHub}

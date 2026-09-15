@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CatalogModel } from '@/services/models/types'
+import type { CatalogModel, HuggingFaceRepo } from '@/services/models/types'
 import type { ResolvedStaffPick } from '@/hooks/useStaffPicks'
 
 const mocks = vi.hoisted(() => ({
@@ -201,6 +201,38 @@ describe('/hub route', () => {
       nextCursor: null,
     }))
     resetHuggingFaceFeedForTest()
+  })
+
+  it('drops a feed row from a fitting-only list once its size arrives and is too big', async () => {
+    // The list endpoint carries no sizes, so a row cannot fail the fit filter
+    // until its card has been fetched; the test host has 64 GB.
+    mocks.listHuggingFaceFeed.mockResolvedValueOnce({
+      models: [model('bartowski/Kimi-K3-GGUF', { quants: [], num_quants: 0 })],
+      nextCursor: null,
+    })
+    mocks.fetchHuggingFaceRepo.mockImplementation(async (repoId: string) =>
+      repoId === 'bartowski/Kimi-K3-GGUF'
+        ? (model(repoId, {
+            quants: [
+              {
+                model_id: 'bartowski/Kimi-K3-Q4_K_M',
+                path: 'q4.gguf',
+                file_size: '500.00 GB',
+              },
+            ],
+          }) as unknown as HuggingFaceRepo)
+        : null
+    )
+    render(<HubPage />)
+
+    await waitFor(() =>
+      expect(screen.getByText('Kimi-K3-GGUF')).toBeInTheDocument()
+    )
+    await waitFor(() =>
+      expect(screen.queryByText('Kimi-K3-GGUF')).not.toBeInTheDocument()
+    )
+    // The picks are still there; only the oversized row went.
+    expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
   })
 
   it('lists the rest of Hugging Face under the picks and asks for the next page at the end', async () => {

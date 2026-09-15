@@ -41,6 +41,11 @@ export type HuggingFaceFeed = {
   models: CatalogModel[]
   /** Cards resolved for rows that came on screen, keyed by repo id. */
   details: ReadonlyMap<string, CatalogModel>
+  /**
+   * Bumps whenever `details` gains a card. The map keeps its identity, so a
+   * consumer that memoizes on it must key on this instead.
+   */
+  detailsVersion: number
   hasMore: boolean
   loading: boolean
   error: string | null
@@ -68,7 +73,7 @@ export function useHuggingFaceFeed(
   const serviceHub = useServiceHub()
   const huggingfaceToken = useGeneralSetting((s) => s.huggingfaceToken)
   const key: FeedKey = `${format}:${sort}`
-  const [, bump] = useState(0)
+  const [version, bump] = useState(0)
   const rerender = useCallback(() => bump((n) => n + 1), [])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -180,12 +185,13 @@ export function useHuggingFaceFeed(
     () => ({
       models: state?.models ?? [],
       details,
+      detailsVersion: version,
       hasMore: !!state?.nextCursor,
       loading,
       error,
       loadMore,
       ensureDetails,
     }),
-    [state, loading, error, loadMore, ensureDetails]
+    [state, version, loading, error, loadMore, ensureDetails]
   )
 }

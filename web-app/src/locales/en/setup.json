@@ -79,6 +79,7 @@
     "providerHint": "OpenAI, Anthropic, Gemini and more",
     "huggingFaceTitle": "Any model from Hugging Face",
     "huggingFaceHint": "Browse GGUF and MLX builds in Models",
+    "huggingFaceHintGguf": "Browse GGUF builds in Models",
     "huggingFaceTrigger": "Browse models on Hugging Face",
     "browse": "Browse",
     "connect": "Connect",

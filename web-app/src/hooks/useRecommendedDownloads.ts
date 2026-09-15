@@ -7,7 +7,8 @@ import { useHardwareTier } from '@/hooks/useHardwareTier'
 import { useModelSources } from '@/hooks/useModelSources'
 import { useResolvedRecommendedModels } from '@/hooks/useResolvedRecommendedModels'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { findPinnedQuant } from '@/lib/model-card'
+import { judgeMemoryFit } from '@/lib/hardware-tier'
+import { findPinnedQuant, parseFileSizeToBytes } from '@/lib/model-card'
 import { prettyModelName } from '@/lib/model-display-name'
 import { getPreferredMmprojModel } from '@/lib/models'
 import type { CatalogModel, ModelQuant } from '@/services/models/types'
@@ -73,15 +74,26 @@ export function useRecommendedDownloads(limit = 3): {
 
   // Only rows whose card has resolved: a row that cannot be downloaded yet is
   // a spinner with a disabled button, and two of those in a row read as a
-  // broken list. Order is kept, so the lead stays the lead once it resolves.
+  // broken list. The lead is waited for rather than skipped, so a later row
+  // never wears "best fit" while the real one is still on its way. The rest
+  // are dropped when they would not load here: the base hook steps the lead
+  // down the ladder, but not the flat list it appends after it.
   const items = useMemo<RecommendedDownload[]>(() => {
     const out: RecommendedDownload[] = []
     const seen = new Set<string>()
+    if (resolved.length > 0 && !resolved[0].model) return out
     for (const { rec, model } of resolved) {
       if (out.length >= limit) break
       if (!model || model.is_mlx) continue
       const variant = pickVariant(model, rec.quant)
       if (!variant) continue
+      if (
+        out.length > 0 &&
+        judgeMemoryFit(parseFileSizeToBytes(variant.file_size), profile) ===
+          'wont_load'
+      ) {
+        continue
+      }
       const key = variant.model_id.toLowerCase()
       if (seen.has(key)) continue
       seen.add(key)
@@ -118,6 +130,7 @@ export function useRecommendedDownloads(limit = 3): {
     return out
   }, [
     resolved,
+    profile,
     limit,
     pickVariant,
     localDownloadingModels,

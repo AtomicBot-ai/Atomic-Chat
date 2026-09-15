@@ -17,8 +17,6 @@
     "download": "Скачать",
     "downloading": "Скачиваю…",
     "downloadingPercent": "Скачиваю… {{percent}}%",
-    "connectCloud": "Подключить облачного провайдера",
-    "connectSubscription": "Подключить подписку ChatGPT",
     "queuedNotice": "Сообщение уйдёт, как только модель будет готова.",
     "startingNotice": "Запуск",
     "addFolder": "Указать папку с моделями",

@@ -9,7 +9,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ONBOARDING_REMINDER_MODEL_HF_REPO } from '@/constants/models'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { useRecommendedModelsRegistryStore } from '@/stores/recommended-models-registry-store'
 import { seedServiceHub } from '@/test/service-hub'
 import type { CatalogModel } from '@/services/models/types'
 
@@ -27,6 +26,16 @@ const mocks = vi.hoisted(() => ({
 
 const sourcesMock = vi.hoisted(() => ({
   sources: [] as CatalogModel[],
+  // What the manifest resolves to for this machine, lead first — the real
+  // hook is covered in its own tests, and its store fetches at import time.
+  recommended: [] as Array<{
+    rec: { modelName: string; descriptionKey: string; quant?: string }
+    model: CatalogModel | null
+  }>,
+}))
+
+vi.mock('@/hooks/useResolvedRecommendedModels', () => ({
+  useResolvedRecommendedModels: () => sourcesMock.recommended,
 }))
 
 const folderMocks = vi.hoisted(() => ({
@@ -201,12 +210,16 @@ describe('ReplyModelGate', () => {
     localStorage.clear()
     mocks.chatgptSubscriptionAvailable = true
     sourcesMock.sources = [catalogModel]
-    useRecommendedModelsRegistryStore.setState({ tiers: {} })
-    // Only the tier's lead has a card; the flat "other options" the registry
-    // appends stay unresolved and therefore unlisted.
-    mocks.fetchHuggingFaceRepo.mockImplementation(async (repo: string) =>
-      repo === ONBOARDING_REMINDER_MODEL_HF_REPO ? { id: 'repo' } : null
-    )
+    sourcesMock.recommended = [
+      {
+        rec: {
+          modelName: catalogModel.model_name,
+          descriptionKey: 'hub:recEverydayUse',
+        },
+        model: catalogModel,
+      },
+    ]
+    mocks.fetchHuggingFaceRepo.mockResolvedValue({ id: 'repo' })
     mocks.convertHfRepoToCatalogModel.mockReturnValue(catalogModel)
     seedServiceHub({
       models: {
@@ -410,18 +423,19 @@ describe('ReplyModelGate', () => {
       ],
     } as CatalogModel
     sourcesMock.sources = [catalogModel, other]
-    useRecommendedModelsRegistryStore.setState({
-      recommendations: [],
-      tiers: {
-        vram_8: [
-          {
-            model_name: catalogModel.model_name,
-            description_key: 'hub:recEverydayUse',
-          },
-          { model_name: other.model_name, description_key: 'hub:recCompact' },
-        ],
+    sourcesMock.recommended = [
+      {
+        rec: {
+          modelName: catalogModel.model_name,
+          descriptionKey: 'hub:recEverydayUse',
+        },
+        model: catalogModel,
       },
-    })
+      {
+        rec: { modelName: other.model_name, descriptionKey: 'hub:recCompact' },
+        model: other,
+      },
+    ]
 
     renderGate([unconnectedCloud()])
 
