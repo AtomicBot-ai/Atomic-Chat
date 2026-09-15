@@ -17,7 +17,7 @@ function MermaidErrorComponent({ error }: MermaidErrorComponentProps) {
       <img
         src="/images/transparent-logo.png"
         alt="Radium"
-        className="h-12 w-12 dark:brightness-0 dark:invert"
+        className="h-12 w-12 rounded-lg"
       />
       <p className="text-sm text-muted-foreground text-center">
         Diagram error detected

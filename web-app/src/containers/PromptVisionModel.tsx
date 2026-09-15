@@ -205,7 +205,7 @@ export function PromptVisionModel({
         <img
           src="/images/transparent-logo.png"
           alt="Radium"
-          className="size-5 dark:brightness-0 dark:invert"
+          className="size-5 rounded"
         />
         <h2 className="font-medium">
           Atomic Bot V2 VL Model

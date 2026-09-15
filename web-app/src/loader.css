@@ -25,10 +25,6 @@
   #initial-loader {
     background: rgb(25, 25, 25);
   }
-
-  #initial-loader .loader-logo-spin img {
-    filter: invert(1);
-  }
 }
 
 /* Вращение логотипа (без «помахивания»); инверсия только на img внутри */
