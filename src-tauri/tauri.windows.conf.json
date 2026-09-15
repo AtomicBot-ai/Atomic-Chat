@@ -33,6 +33,7 @@
         "upgradeCode": "b75dd42f-800c-57cb-8c5c-ed7fcbef13a0"
       },
       "nsis": {
+        "installerIcon": "icons/icon.ico",
         "installerHooks": "./windows/hooks.nsh"
       },
       "webviewInstallMode": {

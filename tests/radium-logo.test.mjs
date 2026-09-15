@@ -70,3 +70,26 @@ test('no screen inverts or tints the logo', () => {
     'the loading screen inverts the logo'
   )
 })
+
+/**
+ * The user (2026-09-14, T29-S05) circled the title-bar icon and the header icon
+ * of the Radium Uninstall window. Both showed NSIS's own default icon, on the
+ * installer too, because no installer icon was set. They must be the Radium
+ * icon the build generates from src-tauri/icons/icon.png.
+ */
+test('the installer and uninstaller use the Radium icon', () => {
+  for (const file of ['src-tauri/tauri.conf.json', 'src-tauri/tauri.windows.conf.json']) {
+    const config = JSON.parse(read(file).toString('utf8'))
+    assert.equal(
+      config.bundle?.windows?.nsis?.installerIcon,
+      'icons/icon.ico',
+      `${file} does not give the installer the Radium icon`
+    )
+    if (config.bundle?.icon) {
+      assert.ok(
+        config.bundle.icon.includes('icons/icon.ico'),
+        `${file}: icons/icon.ico is not one of the icons the build generates`
+      )
+    }
+  }
+})
