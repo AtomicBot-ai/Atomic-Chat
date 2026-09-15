@@ -131,3 +131,19 @@ test('the window buttons sit above everything the app can draw over them', () =>
     `the strip (z-index ${stripZ}) is below ${highest.where} (z-index ${highest.z})`
   )
 })
+
+/**
+ * The same report, second cause: an open pop-up or drop-down menu sets
+ * `pointer-events: none` on <body> (Radix modal layers), and the strip inherits
+ * it. The strip has to switch clicks back on for itself.
+ * web-app/src/components/__tests__/WindowFrame.test.tsx clicks the buttons
+ * with a pop-up open.
+ */
+test('the window buttons still take clicks while a pop-up or menu is open', () => {
+  const frame = read('web-app/src/components/WindowFrame.tsx')
+  assert.match(
+    frame,
+    /z-\[\d+\] h-8[^"]*"\s*style=\{\{\s*pointerEvents:\s*'auto'\s*\}\}/,
+    'the window strip no longer sets pointer-events: auto for itself'
+  )
+})

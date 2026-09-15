@@ -1,16 +1,28 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { WindowFrame } from '../WindowFrame'
 
 const chrome = vi.hoisted(() => ({ hasCustomWindowChrome: vi.fn() }))
 vi.mock('@/lib/window-chrome', () => chrome)
 
+const appWindow = vi.hoisted(() => ({
+  minimize: vi.fn(),
+  toggleMaximize: vi.fn(),
+  close: vi.fn(),
+}))
+
 vi.mock('@tauri-apps/api/webviewWindow', () => ({
   getCurrentWebviewWindow: () => ({
-    minimize: vi.fn(),
-    toggleMaximize: vi.fn(),
-    close: vi.fn(),
+    ...appWindow,
     isMaximized: vi.fn().mockResolvedValue(false),
     onResized: vi.fn().mockResolvedValue(vi.fn()),
     title: vi.fn().mockResolvedValue('Radium'),
@@ -26,6 +38,66 @@ vi.mock('@/lib/tauriEvent', () => ({
 describe('WindowFrame', () => {
   beforeEach(() => {
     chrome.hasCustomWindowChrome.mockReset()
+    appWindow.minimize.mockReset()
+    appWindow.toggleMaximize.mockReset()
+    appWindow.close.mockReset()
+  })
+
+  // Pop-up windows and drop-down menus switch off clicks on the whole page
+  // (`pointer-events: none` on <body>) while they are open. The strip lives in
+  // the page, so Minimize, Maximize and Close went dead with them - on every
+  // page that had a menu or a pop-up open (2026-09-14).
+  it('keeps Minimize, Maximize and Close working while a pop-up is open', async () => {
+    chrome.hasCustomWindowChrome.mockReturnValue(true)
+    const user = userEvent.setup()
+
+    const { container } = render(
+      <WindowFrame>
+        <Dialog open>
+          <DialogContent>
+            <DialogTitle>Settings pop-up</DialogTitle>
+          </DialogContent>
+        </Dialog>
+      </WindowFrame>
+    )
+
+    await waitFor(() =>
+      expect(document.body.style.pointerEvents).toBe('none')
+    )
+    // The pop-up has a Close button of its own; these are the window's.
+    const strip = within(
+      container.querySelector('[data-window-chrome] > div') as HTMLElement
+    )
+    await user.click(strip.getByRole('button', { name: 'Minimize', hidden: true }))
+    await user.click(strip.getByRole('button', { name: 'Maximize', hidden: true }))
+    await user.click(strip.getByRole('button', { name: 'Close', hidden: true }))
+
+    expect(appWindow.minimize).toHaveBeenCalledTimes(1)
+    expect(appWindow.toggleMaximize).toHaveBeenCalledTimes(1)
+    expect(appWindow.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the window buttons working while a drop-down menu is open', async () => {
+    chrome.hasCustomWindowChrome.mockReturnValue(true)
+    const user = userEvent.setup()
+
+    render(
+      <WindowFrame>
+        <DropdownMenu defaultOpen>
+          <DropdownMenuTrigger>Options</DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem>Rename</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </WindowFrame>
+    )
+
+    await waitFor(() =>
+      expect(document.body.style.pointerEvents).toBe('none')
+    )
+    await user.click(screen.getByRole('button', { name: 'Minimize', hidden: true }))
+
+    expect(appWindow.minimize).toHaveBeenCalledTimes(1)
   })
 
   it('shows Minimize, Maximize and Close when the window has no native title bar', async () => {

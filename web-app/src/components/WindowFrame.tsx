@@ -47,8 +47,14 @@ export function WindowFrame({ children }: { children: ReactNode }) {
           full-screen viewers and drop-downs. Anything on top of the strip
           swallows clicks meant for Minimize, Maximize and Close - the user
           found them dead on some pages (2026-09-14).
-          tests/window-controls.test.mjs keeps it the highest. */}
-      <div className="absolute inset-x-0 top-0 z-[2147483646] h-8 bg-background/95 backdrop-blur">
+          tests/window-controls.test.mjs keeps it the highest.
+          Open pop-ups and drop-down menus also switch off clicks on the whole
+          page (`pointer-events: none` on <body>), which took these buttons
+          with them; the inline style switches them back on for the strip. */}
+      <div
+        className="absolute inset-x-0 top-0 z-[2147483646] h-8 bg-background/95 backdrop-blur"
+        style={{ pointerEvents: 'auto' }}
+      >
         <div
           className="absolute inset-0 right-[132px]"
           data-tauri-drag-region
