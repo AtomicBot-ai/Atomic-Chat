@@ -580,10 +580,21 @@ pub fn run() {
                 .and_then(|v| v.as_str().map(String::from))
                 .unwrap_or_default();
             let app_version = app.config().version.clone().unwrap_or_default();
-            // Migrate extensions
-            if let Err(e) =
-                setup::install_extensions(app.handle().clone(), stored_version != app_version)
-            {
+            // Migrate extensions. Also reinstall them when extensions.json can
+            // no longer be trusted - after the data folder moved it still names
+            // the old folder, and the app would load no extension at all.
+            let extensions_stale = setup::extensions_point_elsewhere(
+                &core::extensions::commands::get_jan_extensions_path(app.handle().clone()),
+            );
+            if extensions_stale {
+                log::warn!(
+                    "extensions.json points outside the current data folder or cannot be read; reinstalling the bundled extensions"
+                );
+            }
+            if let Err(e) = setup::install_extensions(
+                app.handle().clone(),
+                stored_version != app_version || extensions_stale,
+            ) {
                 log::error!("Failed to install extensions: {e}");
             }
 
