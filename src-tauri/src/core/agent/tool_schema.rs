@@ -135,7 +135,8 @@ mod tests {
             )
             .unwrap();
         }
-        let registry = SkillRegistry::load(&root, &BTreeSet::new(), &BTreeSet::new()).unwrap();
+        let mut registry = SkillRegistry::load(&root, &BTreeSet::new(), &BTreeSet::new()).unwrap();
+        registry.trust_all();
         (temp, registry)
     }
 

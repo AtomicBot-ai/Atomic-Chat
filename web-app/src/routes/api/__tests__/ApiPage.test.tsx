@@ -24,7 +24,9 @@ const { control, clearFeed, hydrateFeed, appState } = vi.hoisted(() => ({
 }))
 
 vi.mock('@tanstack/react-router', () => ({
-  createFileRoute: () => () => ({}),
+  createFileRoute: () => (config: unknown) => config,
+  redirect: (options: Record<string, unknown>) =>
+    Object.assign(new Error('redirect'), { redirect: options }),
   Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
 }))
 
@@ -66,6 +68,10 @@ vi.mock('@/containers/api/ApiSettingsPopover', () => ({
   ApiSettingsPopover: () => <button>api:actions.settings</button>,
 }))
 
+vi.mock('@/containers/SettingsMenu', () => ({
+  default: () => <nav aria-label="settings-menu" />,
+}))
+
 vi.mock('@/containers/HeaderPage', () => ({
   default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }))
@@ -86,7 +92,7 @@ vi.mock('@tanstack/react-virtual', () => ({
 
 import { resetFeedBuffers } from '@/hooks/useApiServerLogFeed'
 
-import { ApiPage } from '../index'
+import { ApiPage, Route } from '../index'
 
 function request(id: string, overrides: Partial<ApiRequestEntry> = {}): ApiRequestEntry {
   return {
@@ -112,6 +118,27 @@ describe('ApiPage', () => {
     resetFeedBuffers()
     store().reset()
     store().hydrate([])
+  })
+
+  it('lives inside Settings, beside the settings menu', () => {
+    render(<ApiPage />)
+
+    expect(
+      screen.getByRole('navigation', { name: 'settings-menu' })
+    ).toBeInTheDocument()
+    expect(screen.getByText('api:title')).toBeInTheDocument()
+  })
+
+  it('forwards the old /api address to Settings', () => {
+    const route = Route as unknown as { beforeLoad: () => void }
+    let payload: { to: string } | undefined
+    try {
+      route.beforeLoad()
+    } catch (error) {
+      payload = (error as { redirect: typeof payload }).redirect
+    }
+
+    expect(payload).toEqual({ to: '/settings/api' })
   })
 
   it('renders the header, the strip and the six stat tiles', () => {

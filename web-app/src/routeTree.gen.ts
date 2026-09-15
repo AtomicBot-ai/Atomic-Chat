@@ -31,9 +31,12 @@ import { Route as SettingsHermesAgentRouteImport } from './routes/settings/herme
 import { Route as SettingsHardwareRouteImport } from './routes/settings/hardware'
 import { Route as SettingsGeneralRouteImport } from './routes/settings/general'
 import { Route as SettingsExtensionsRouteImport } from './routes/settings/extensions'
+import { Route as SettingsCloudRouteImport } from './routes/settings/cloud'
 import { Route as SettingsClaudeCodeRouteImport } from './routes/settings/claude-code'
+import { Route as SettingsChatRouteImport } from './routes/settings/chat'
 import { Route as SettingsAttachmentsRouteImport } from './routes/settings/attachments'
 import { Route as SettingsAssistantRouteImport } from './routes/settings/assistant'
+import { Route as SettingsApiRouteImport } from './routes/settings/api'
 import { Route as ProjectProjectIdRouteImport } from './routes/project/$projectId'
 import { Route as MediaLibraryRouteImport } from './routes/media_.library'
 import { Route as LocalApiServerLogsRouteImport } from './routes/local-api-server/logs'
@@ -152,9 +155,19 @@ const SettingsExtensionsRoute = SettingsExtensionsRouteImport.update({
   path: '/settings/extensions',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsCloudRoute = SettingsCloudRouteImport.update({
+  id: '/settings/cloud',
+  path: '/settings/cloud',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsClaudeCodeRoute = SettingsClaudeCodeRouteImport.update({
   id: '/settings/claude-code',
   path: '/settings/claude-code',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsChatRoute = SettingsChatRouteImport.update({
+  id: '/settings/chat',
+  path: '/settings/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsAttachmentsRoute = SettingsAttachmentsRouteImport.update({
@@ -165,6 +178,11 @@ const SettingsAttachmentsRoute = SettingsAttachmentsRouteImport.update({
 const SettingsAssistantRoute = SettingsAssistantRouteImport.update({
   id: '/settings/assistant',
   path: '/settings/assistant',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsApiRoute = SettingsApiRouteImport.update({
+  id: '/settings/api',
+  path: '/settings/api',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectProjectIdRoute = ProjectProjectIdRouteImport.update({
@@ -213,9 +231,12 @@ export interface FileRoutesByFullPath {
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/media/library': typeof MediaLibraryRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
+  '/settings/api': typeof SettingsApiRoute
   '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
+  '/settings/chat': typeof SettingsChatRoute
   '/settings/claude-code': typeof SettingsClaudeCodeRoute
+  '/settings/cloud': typeof SettingsCloudRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
@@ -247,9 +268,12 @@ export interface FileRoutesByTo {
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/media/library': typeof MediaLibraryRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
+  '/settings/api': typeof SettingsApiRoute
   '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
+  '/settings/chat': typeof SettingsChatRoute
   '/settings/claude-code': typeof SettingsClaudeCodeRoute
+  '/settings/cloud': typeof SettingsCloudRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
@@ -282,9 +306,12 @@ export interface FileRoutesById {
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/media_/library': typeof MediaLibraryRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
+  '/settings/api': typeof SettingsApiRoute
   '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
+  '/settings/chat': typeof SettingsChatRoute
   '/settings/claude-code': typeof SettingsClaudeCodeRoute
+  '/settings/cloud': typeof SettingsCloudRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
@@ -318,9 +345,12 @@ export interface FileRouteTypes {
     | '/local-api-server/logs'
     | '/media/library'
     | '/project/$projectId'
+    | '/settings/api'
     | '/settings/assistant'
     | '/settings/attachments'
+    | '/settings/chat'
     | '/settings/claude-code'
+    | '/settings/cloud'
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
@@ -352,9 +382,12 @@ export interface FileRouteTypes {
     | '/local-api-server/logs'
     | '/media/library'
     | '/project/$projectId'
+    | '/settings/api'
     | '/settings/assistant'
     | '/settings/attachments'
+    | '/settings/chat'
     | '/settings/claude-code'
+    | '/settings/cloud'
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
@@ -386,9 +419,12 @@ export interface FileRouteTypes {
     | '/local-api-server/logs'
     | '/media_/library'
     | '/project/$projectId'
+    | '/settings/api'
     | '/settings/assistant'
     | '/settings/attachments'
+    | '/settings/chat'
     | '/settings/claude-code'
+    | '/settings/cloud'
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
@@ -421,9 +457,12 @@ export interface RootRouteChildren {
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
   MediaLibraryRoute: typeof MediaLibraryRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRoute
+  SettingsApiRoute: typeof SettingsApiRoute
   SettingsAssistantRoute: typeof SettingsAssistantRoute
   SettingsAttachmentsRoute: typeof SettingsAttachmentsRoute
+  SettingsChatRoute: typeof SettingsChatRoute
   SettingsClaudeCodeRoute: typeof SettingsClaudeCodeRoute
+  SettingsCloudRoute: typeof SettingsCloudRoute
   SettingsExtensionsRoute: typeof SettingsExtensionsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsHardwareRoute: typeof SettingsHardwareRoute
@@ -603,11 +642,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsExtensionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings/cloud': {
+      id: '/settings/cloud'
+      path: '/settings/cloud'
+      fullPath: '/settings/cloud'
+      preLoaderRoute: typeof SettingsCloudRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings/claude-code': {
       id: '/settings/claude-code'
       path: '/settings/claude-code'
       fullPath: '/settings/claude-code'
       preLoaderRoute: typeof SettingsClaudeCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/chat': {
+      id: '/settings/chat'
+      path: '/settings/chat'
+      fullPath: '/settings/chat'
+      preLoaderRoute: typeof SettingsChatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings/attachments': {
@@ -622,6 +675,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/assistant'
       fullPath: '/settings/assistant'
       preLoaderRoute: typeof SettingsAssistantRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/api': {
+      id: '/settings/api'
+      path: '/settings/api'
+      fullPath: '/settings/api'
+      preLoaderRoute: typeof SettingsApiRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/project/$projectId': {
@@ -685,9 +745,12 @@ const rootRouteChildren: RootRouteChildren = {
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,
   MediaLibraryRoute: MediaLibraryRoute,
   ProjectProjectIdRoute: ProjectProjectIdRoute,
+  SettingsApiRoute: SettingsApiRoute,
   SettingsAssistantRoute: SettingsAssistantRoute,
   SettingsAttachmentsRoute: SettingsAttachmentsRoute,
+  SettingsChatRoute: SettingsChatRoute,
   SettingsClaudeCodeRoute: SettingsClaudeCodeRoute,
+  SettingsCloudRoute: SettingsCloudRoute,
   SettingsExtensionsRoute: SettingsExtensionsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsHardwareRoute: SettingsHardwareRoute,

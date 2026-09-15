@@ -23,6 +23,7 @@ import { useTrayStatusSync } from '@/hooks/useTrayStatusSync'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
 import AgentApprovalDialog from '@/containers/dialogs/AgentApprovalDialog'
 import AgentFolderAccessDialog from '@/containers/dialogs/AgentFolderAccessDialog'
+import ConnectorReviewHost from '@/containers/dialogs/ConnectorReviewHost'
 import VoiceSetupDialog from '@/containers/dialogs/VoiceSetupDialog'
 import { TranslationProvider } from '@/i18n/TranslationContext'
 import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionDialog'
@@ -172,6 +173,7 @@ function RootLayout() {
           <ToolApproval />
           <AgentApprovalDialog />
           <AgentFolderAccessDialog />
+          <ConnectorReviewHost />
           <VoiceSetupDialog />
           <AttachmentIngestionDialog />
         </TranslationProvider>

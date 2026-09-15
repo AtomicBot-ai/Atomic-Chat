@@ -1,8 +1,8 @@
 {
-  "welcome": "Welcome to Atomic Bot",
-  "description": "To get started, quickly launch with Atomic Bot Model or choose to set up your own local or remote provider",
+  "welcome": "Welcome to Radium",
+  "description": "To get started, quickly launch with Radium Model or choose to set up your own local or remote provider",
   "descriptionWeb": "To get started, you'll need to connect to a cloud model using an API key",
-  "quickStart": "Quick start with Atomic Bot Model",
+  "quickStart": "Quick start with Radium Model",
   "quickStartDescription": "No setup needed",
   "quickStartFailed": "Something went wrong. Please try again.",
   "downloading": "Downloading…",

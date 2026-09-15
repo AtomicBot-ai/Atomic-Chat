@@ -16,10 +16,6 @@ import {
   SidebarMenuSubItem,
 } from '@/components/ui/sidebar'
 import { BlocksIcon } from '@/components/animated-icon/blocks'
-import {
-  CloudIcon,
-  type CloudIconHandle,
-} from '@/components/animated-icon/cloud'
 import { FolderPlusIcon } from '@/components/animated-icon/folder-plus'
 import { MessageCircleIcon } from '@/components/animated-icon/message-circle'
 import { PlugIcon, type PlugIconHandle } from '@/components/animated-icon/plug'
@@ -27,10 +23,6 @@ import {
   PuzzleIcon,
   type PuzzleIconHandle,
 } from '@/components/animated-icon/puzzle'
-import {
-  RadioTowerIcon,
-  type RadioTowerIconHandle,
-} from '@/components/animated-icon/radio-tower'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { SearchDialog } from '@/containers/dialogs/SearchDialog'
 import { route } from '@/constants/routes'
@@ -54,10 +46,8 @@ export function NavMain() {
   const newChatIconRef = useRef<AnimatedIconHandle>(null)
   const modelsIconRef = useRef<AnimatedIconHandle>(null)
   const pluginsIconRef = useRef<PuzzleIconHandle>(null)
-  const cloudIconRef = useRef<CloudIconHandle>(null)
   const projectIconRef = useRef<AnimatedIconHandle>(null)
   const integrationsIconRef = useRef<PlugIconHandle>(null)
-  const apiIconRef = useRef<RadioTowerIconHandle>(null)
   const integrationsBadgeSeen = useGeneralSetting(
     (state) => state.integrationsBadgeSeen
   )
@@ -144,27 +134,6 @@ export function NavMain() {
             <Link to={route.media}>
               <BlocksIcon className="text-foreground/70" size={16} />
               <span>{t('media:settings.title', { defaultValue: 'Media' })}</span>
-            </Link>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-        {/* Cloud is offered in both modes: agent mode is what a user with no
-            local engine is most likely to be blocked on, and connecting a
-            provider is the fix. */}
-        <SidebarMenuItem>
-          <SidebarMenuButton
-            asChild
-            isActive={pathname.startsWith('/cloud')}
-            className="data-[active=true]:bg-sidebar-foreground/15"
-            onMouseEnter={() => cloudIconRef.current?.startAnimation()}
-            onMouseLeave={() => cloudIconRef.current?.stopAnimation()}
-          >
-            <Link to={route.cloud.index}>
-              <CloudIcon
-                ref={cloudIconRef}
-                className="text-foreground/70"
-                size={16}
-              />
-              <span>{t('common:cloud')}</span>
             </Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
@@ -279,24 +248,6 @@ export function NavMain() {
                       {t('common:newBadge')}
                     </span>
                   )}
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                isActive={pathname.startsWith('/api')}
-                className="data-[active=true]:bg-sidebar-foreground/15"
-                onMouseEnter={() => apiIconRef.current?.startAnimation()}
-                onMouseLeave={() => apiIconRef.current?.stopAnimation()}
-              >
-                <Link to={route.api.index}>
-                  <RadioTowerIcon
-                    ref={apiIconRef}
-                    className="text-foreground/70"
-                    size={16}
-                  />
-                  <span>{t('common:api')}</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

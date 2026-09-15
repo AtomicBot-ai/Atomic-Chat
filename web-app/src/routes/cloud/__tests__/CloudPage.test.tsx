@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { CloudPage } from '../index'
+import { CloudPage, Route } from '../index'
 import { useModelProvider } from '@/hooks/useModelProvider'
 
 const {
@@ -26,6 +26,8 @@ const {
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: unknown) => config,
+  redirect: (options: Record<string, unknown>) =>
+    Object.assign(new Error('redirect'), { redirect: options }),
   useNavigate: () => navigate,
   useSearch: () => searchState.current,
 }))
@@ -41,6 +43,10 @@ vi.mock('@/containers/HeaderPage', () => ({
   default: ({ children }: { children?: React.ReactNode }) => (
     <div>{children}</div>
   ),
+}))
+
+vi.mock('@/containers/SettingsMenu', () => ({
+  default: () => <nav aria-label="settings-menu" />,
 }))
 
 vi.mock('@/containers/ProvidersAvatar', () => ({
@@ -381,5 +387,24 @@ describe('CloudPage', () => {
     )
 
     expect(screen.getByText('cloud:models.noResults')).toBeInTheDocument()
+  })
+})
+
+describe('/cloud', () => {
+  it('forwards to the Cloud page inside Settings, keeping the provider', () => {
+    const route = Route as unknown as {
+      beforeLoad: (ctx: { search: { provider?: string } }) => void
+    }
+    let payload: { to: string; search: unknown } | undefined
+    try {
+      route.beforeLoad({ search: { provider: 'openai' } })
+    } catch (error) {
+      payload = (error as { redirect: typeof payload }).redirect
+    }
+
+    expect(payload).toEqual({
+      to: '/settings/cloud',
+      search: { provider: 'openai' },
+    })
   })
 })

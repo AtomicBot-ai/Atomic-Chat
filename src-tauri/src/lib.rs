@@ -213,6 +213,7 @@ pub fn run() {
         core::agent::skills::commands::agent_list_skills,
         core::agent::skills::commands::agent_get_skill,
         core::agent::skills::commands::agent_set_skill_enabled,
+        core::agent::skills::commands::agent_approve_skill,
         core::agent::skills::commands::agent_create_skill,
         core::agent::skills::commands::agent_import_skill,
         core::agent::skills::commands::agent_update_skill,
@@ -224,6 +225,9 @@ pub fn run() {
         core::mcp::commands::save_mcp_configs,
         core::mcp::commands::get_mcp_configs,
         core::mcp::commands::activate_mcp_server,
+        core::mcp::review::mcp_connector_needs_review,
+        core::mcp::review::approve_mcp_connector,
+        core::mcp::review::preview_mcp_connector_tools,
         core::mcp::commands::deactivate_mcp_server,
         core::mcp::commands::check_jan_browser_extension_connected,
         core::mcp::oauth::mcp_oauth_login,
@@ -377,6 +381,7 @@ pub fn run() {
         core::agent::skills::commands::agent_list_skills,
         core::agent::skills::commands::agent_get_skill,
         core::agent::skills::commands::agent_set_skill_enabled,
+        core::agent::skills::commands::agent_approve_skill,
         core::agent::skills::commands::agent_create_skill,
         core::agent::skills::commands::agent_import_skill,
         core::agent::skills::commands::agent_update_skill,
@@ -388,6 +393,9 @@ pub fn run() {
         core::mcp::commands::save_mcp_configs,
         core::mcp::commands::get_mcp_configs,
         core::mcp::commands::activate_mcp_server,
+        core::mcp::review::mcp_connector_needs_review,
+        core::mcp::review::approve_mcp_connector,
+        core::mcp::review::preview_mcp_connector_tools,
         core::mcp::commands::deactivate_mcp_server,
         core::mcp::commands::check_jan_browser_extension_connected,
         core::mcp::oauth::mcp_oauth_login,
@@ -580,10 +588,21 @@ pub fn run() {
                 .and_then(|v| v.as_str().map(String::from))
                 .unwrap_or_default();
             let app_version = app.config().version.clone().unwrap_or_default();
-            // Migrate extensions
-            if let Err(e) =
-                setup::install_extensions(app.handle().clone(), stored_version != app_version)
-            {
+            // Migrate extensions. Also reinstall them when extensions.json can
+            // no longer be trusted - after the data folder moved it still names
+            // the old folder, and the app would load no extension at all.
+            let extensions_stale = setup::extensions_point_elsewhere(
+                &core::extensions::commands::get_jan_extensions_path(app.handle().clone()),
+            );
+            if extensions_stale {
+                log::warn!(
+                    "extensions.json points outside the current data folder or cannot be read; reinstalling the bundled extensions"
+                );
+            }
+            if let Err(e) = setup::install_extensions(
+                app.handle().clone(),
+                stored_version != app_version || extensions_stale,
+            ) {
                 log::error!("Failed to install extensions: {e}");
             }
 
