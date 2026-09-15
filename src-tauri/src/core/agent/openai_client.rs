@@ -42,7 +42,7 @@ use crate::core::server::request_inspector::extract_reasoning;
 use super::llm_client::{
     drain_sse_events, extract_error_detail, model_ids_match, parse_sse_event,
     AgentClientCapabilities, AgentLlmClient, AgentPrompt, AuthErrorSource, CompletionReasoning,
-    CompletionRequest, CompletionResult, CompletionTiming, LlmClientError, StreamChunk,
+    CompletionRequest, CompletionResult, CompletionTiming, LlmClientError, StopReason, StreamChunk,
 };
 use super::model_profile::AgentModelProfile;
 
@@ -989,7 +989,8 @@ pub(crate) fn parse_chat_response(value: &Value) -> Result<CompletionResult, Llm
         content,
         reasoning_content,
         stop: finish_reason == "stop",
-        truncated: finish_reason == "length",
+        stop_reason: StopReason::from_chat_finish_reason(finish_reason),
+        prompt_truncated: false,
         timing: CompletionTiming {
             // Chat completions report token counts but no wall-clock split.
             prompt_ms: 0.0,
@@ -1580,7 +1581,7 @@ mod tests {
 
         assert_eq!(result.content, "[{\"tool\":\"reply\",\"args\":{}}]");
         assert!(result.stop);
-        assert!(!result.truncated);
+        assert_ne!(result.stop_reason, StopReason::Limit);
         // Normalized to llama.cpp semantics: `prompt_tokens` excludes the
         // cached subset so the two may be summed.
         assert_eq!(result.timing.prompt_tokens, 56.0);
@@ -1615,7 +1616,7 @@ mod tests {
             "choices": [{"message": {"content": "partial"}, "finish_reason": "length"}]
         });
         let result = parse_chat_response(&value).unwrap();
-        assert!(result.truncated);
+        assert_eq!(result.stop_reason, StopReason::Limit);
         assert!(!result.stop);
     }
 
@@ -1825,7 +1826,7 @@ mod tests {
         let result = accumulator.into_result().expect("stream result");
         assert_eq!(result.content, "hello");
         assert!(result.stop);
-        assert!(!result.truncated);
+        assert_ne!(result.stop_reason, StopReason::Limit);
         // Cached-token normalization flows through `parse_chat_response`.
         assert_eq!(result.timing.prompt_tokens, 40.0);
         assert_eq!(result.cache_hit_tokens, 60.0);
@@ -1866,7 +1867,7 @@ mod tests {
             }))
             .is_none());
         let result = accumulator.into_result().expect("stream result");
-        assert!(result.truncated);
+        assert_eq!(result.stop_reason, StopReason::Limit);
         assert_eq!(result.timing.prompt_ms, 12.5);
         // 40 tokens at 80 tok/s = 500ms, recovered for tps parity.
         assert_eq!(result.timing.predicted_ms, 500.0);

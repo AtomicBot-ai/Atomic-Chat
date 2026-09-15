@@ -1154,7 +1154,9 @@ async fn malformed_completion_is_repaired_once() {
     );
     assert_eq!(run.requests.len(), 2);
     assert_eq!(run.requests[0]["n_predict"], 8192);
-    assert_eq!(run.requests[1]["n_predict"], 1024);
+    // The repair inherits the step's budget less the repair block it appends.
+    let repair_budget = run.requests[1]["n_predict"].as_u64().unwrap();
+    assert!((1024..8192).contains(&repair_budget), "{repair_budget}");
     assert!(run.requests[1]["prompt"]
         .as_str()
         .is_some_and(|prompt| prompt.contains("### tool-call-repair")));
@@ -1234,6 +1236,164 @@ async fn repeated_repair_failure_finishes_as_grammar_failure() {
     )));
     assert_eq!(finished_reason(&run.events), Some(("failed", 1)));
     assert_eq!(run.requests.len(), 2);
+}
+
+#[tokio::test]
+async fn a_step_cut_off_at_the_token_limit_is_repaired_with_the_step_budget() {
+    let workspace = TestWorkspace::new();
+    let run = run_script(
+        &workspace,
+        vec![
+            ScriptedResponse::completion_cut_by_limit(
+                r#"<think>plan the reply carefully</think>[{"tool":"reply","args":{"text":"the model ran out of"#,
+            ),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"done"}}]"#),
+        ],
+        &RecordingApproval::deny(),
+        &CancellationToken::new(),
+        2,
+    )
+    .await;
+
+    assert!(run.result.is_ok(), "{:?}", run.result);
+    assert_eq!(finished_reason(&run.events), Some(("reply", 1)));
+    assert_eq!(run.requests.len(), 2);
+    let step_budget = run.requests[0]["n_predict"].as_u64().unwrap();
+    let repair_budget = run.requests[1]["n_predict"].as_u64().unwrap();
+    assert!(
+        repair_budget > 1024 && repair_budget <= step_budget,
+        "repair budget {repair_budget} should follow the step budget {step_budget}"
+    );
+    // The echo shows the batch to fix, not the thinking that came before it.
+    let repair_prompt = run.requests[1]["prompt"].as_str().unwrap();
+    assert!(repair_prompt.contains(r#"[{"tool":"reply","args":{"text":"the model ran out of"#));
+    assert!(!repair_prompt.contains("plan the reply carefully"));
+}
+
+#[tokio::test]
+async fn a_repair_cut_off_at_the_token_limit_reports_budget_not_grammar() {
+    let workspace = TestWorkspace::new();
+    let run = run_script(
+        &workspace,
+        vec![
+            ScriptedResponse::completion("not-json"),
+            ScriptedResponse::completion_cut_by_limit(
+                r#"[{"tool":"reply","args":{"text":"the repair ran out of"#,
+            ),
+        ],
+        &RecordingApproval::deny(),
+        &CancellationToken::new(),
+        2,
+    )
+    .await;
+
+    assert!(run.result.is_err());
+    let categories = run
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            AgentEvent::StepError { category, .. } => Some(category.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(categories, ["budget"]);
+    assert_eq!(finished_reason(&run.events), Some(("failed", 1)));
+    assert_eq!(run.requests.len(), 2);
+}
+
+#[tokio::test]
+async fn a_repair_that_filled_the_context_reports_context_not_budget() {
+    let workspace = TestWorkspace::new();
+    let run = run_script(
+        &workspace,
+        vec![
+            ScriptedResponse::completion("not-json"),
+            ScriptedResponse::completion_cut_by_context(
+                r#"[{"tool":"reply","args":{"text":"no room left in the"#,
+            ),
+        ],
+        &RecordingApproval::deny(),
+        &CancellationToken::new(),
+        2,
+    )
+    .await;
+
+    assert!(run.result.is_err());
+    let categories = run
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            AgentEvent::StepError { category, .. } => Some(category.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(categories, ["context"]);
+    assert_eq!(finished_reason(&run.events), Some(("failed", 1)));
+}
+
+#[tokio::test]
+async fn a_chat_transport_repair_cut_by_max_tokens_reports_budget() {
+    let workspace = TestWorkspace::new();
+    let run = run_chat_script(
+        &workspace,
+        vec![
+            ScriptedResponse::chat_completion("not a tool call at all"),
+            ScriptedResponse::chat_completion_cut_by_limit(
+                r#"[{"tool":"reply","args":{"text":"the repair ran out of"#,
+            ),
+        ],
+        &RecordingApproval::deny(),
+        &CancellationToken::new(),
+        2,
+        false,
+    )
+    .await;
+
+    assert!(run.result.is_err());
+    let categories = run
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            AgentEvent::StepError { category, .. } => Some(category.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(categories, ["budget"]);
+    assert_eq!(run.requests.len(), 2);
+}
+
+#[tokio::test]
+async fn a_long_invalid_batch_widens_the_repair_budget_to_fit_it() {
+    let workspace = TestWorkspace::new();
+    let long_invalid = format!(
+        r#"[{{"tool":"os.fs.write","args":{{"path":"notes.md","content":"{}"#,
+        "word ".repeat(2_000)
+    );
+    let run = run_script(
+        &workspace,
+        vec![
+            ScriptedResponse::completion(long_invalid.clone()),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"done"}}]"#),
+        ],
+        &RecordingApproval::deny(),
+        &CancellationToken::new(),
+        2,
+    )
+    .await;
+
+    assert!(run.result.is_ok(), "{:?}", run.result);
+    assert_eq!(run.requests.len(), 2);
+    let step_budget = run.requests[0]["n_predict"].as_u64().unwrap();
+    let repair_budget = run.requests[1]["n_predict"].as_u64().unwrap();
+    let needed = super::token_budget::estimate_tokens(&long_invalid) as u64;
+    assert!(
+        repair_budget >= needed,
+        "repair budget {repair_budget} must fit the {needed}-token output it re-emits"
+    );
+    assert!(
+        repair_budget <= step_budget,
+        "repair budget {repair_budget} must not exceed the step budget {step_budget}"
+    );
 }
 
 #[tokio::test]
@@ -2101,7 +2261,8 @@ async fn chat_transport_repair_appends_to_the_user_message() {
     assert!(messages[1]["content"]
         .as_str()
         .is_some_and(|value| value.contains("### tool-call-repair")));
-    assert_eq!(repair["max_tokens"], 1024);
+    let repair_budget = repair["max_tokens"].as_u64().unwrap();
+    assert!((1024..8192).contains(&repair_budget), "{repair_budget}");
     // Repair completions stay non-streaming.
     assert_eq!(repair["stream"], false);
     assert!(repair.get("stream_options").is_none());

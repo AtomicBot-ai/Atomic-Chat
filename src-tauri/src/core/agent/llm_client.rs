@@ -340,12 +340,51 @@ pub struct CompletionTiming {
     pub predicted_tokens: f64,
 }
 
+/// Why the server stopped generating, normalized across transports.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum StopReason {
+    /// The server did not say (no stop event, or an unrecognized reason).
+    #[default]
+    Unknown,
+    /// The model emitted end-of-sequence.
+    Eos,
+    /// A configured stop word was hit.
+    Word,
+    /// The completion's token budget (`n_predict` / `max_tokens`) ran out, so
+    /// `content` is a prefix of what the model wanted to emit.
+    Limit,
+}
+
+impl StopReason {
+    fn from_llama_stop_type(stop_type: Option<&str>) -> Self {
+        match stop_type {
+            Some("eos") => Self::Eos,
+            Some("word") => Self::Word,
+            Some("limit") => Self::Limit,
+            _ => Self::Unknown,
+        }
+    }
+
+    pub(crate) fn from_chat_finish_reason(finish_reason: &str) -> Self {
+        match finish_reason {
+            "stop" => Self::Eos,
+            "length" => Self::Limit,
+            _ => Self::Unknown,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CompletionResult {
     pub content: String,
     pub reasoning_content: String,
     pub stop: bool,
-    pub truncated: bool,
+    pub stop_reason: StopReason,
+    /// llama-server dropped part of the prompt to fit the context window
+    /// (its `truncated` flag). Together with `StopReason::Limit` it means the
+    /// context filled up, not that `n_predict` ran out. Chat transports carry
+    /// no such signal and leave it `false`.
+    pub prompt_truncated: bool,
     pub timing: CompletionTiming,
     pub cache_hit_tokens: f64,
     pub slot_id: i32,
@@ -410,6 +449,12 @@ pub enum LlmClientError {
     InvalidResponse(String),
     #[error("invalid tool-call completion: {0}")]
     ToolCallParse(String),
+    #[error(
+        "the model's tool call was cut off at the {max_tokens}-token output limit before it \
+         finished; ask for a smaller step (for example a file written in parts), or lower the \
+         reasoning level"
+    )]
+    OutputTruncated { max_tokens: u32 },
     #[error("stream consumer failed: {0}")]
     StreamConsumer(String),
 }
@@ -466,6 +511,8 @@ struct CompletionEnvelope {
     stop: bool,
     #[serde(default)]
     truncated: bool,
+    #[serde(default)]
+    stop_type: Option<String>,
     #[serde(default)]
     timings: Value,
     #[serde(default)]
@@ -1027,6 +1074,19 @@ fn read_context_window(props: &Value) -> Option<usize> {
         .filter(|value| *value > 0)
 }
 
+/// Split a raw completion into its reasoning prelude and the body after it,
+/// using the profile's native channel tags where it has them and the generic
+/// `<think>` pair otherwise.
+pub(crate) fn split_reasoning_for_profile(
+    raw: &str,
+    profile: AgentModelProfile,
+) -> (String, String) {
+    match (profile.reasoning_open_tag(), profile.reasoning_close_tag()) {
+        (Some(open), Some(close)) => extract_tagged_reasoning(raw, open, close),
+        _ => extract_reasoning(raw),
+    }
+}
+
 pub fn parse_tool_calls(raw: &str) -> Result<ParsedToolCalls, LlmClientError> {
     parse_tool_calls_for_profile(raw, AgentModelProfile::Plain)
 }
@@ -1035,10 +1095,7 @@ pub fn parse_tool_calls_for_profile(
     raw: &str,
     profile: AgentModelProfile,
 ) -> Result<ParsedToolCalls, LlmClientError> {
-    let (reasoning, body) = match (profile.reasoning_open_tag(), profile.reasoning_close_tag()) {
-        (Some(open), Some(close)) => extract_tagged_reasoning(raw, open, close),
-        _ => extract_reasoning(raw),
-    };
+    let (reasoning, body) = split_reasoning_for_profile(raw, profile);
     let json_text = extract_json_root(&body)?;
     let parsed: Value = serde_json::from_str(json_text)
         .map_err(|error| LlmClientError::ToolCallParse(error.to_string()))?;
@@ -1253,7 +1310,8 @@ fn normalize_completion(payload: CompletionEnvelope) -> CompletionResult {
         content: payload.content,
         reasoning_content: payload.reasoning_content,
         stop: payload.stop,
-        truncated: payload.truncated,
+        stop_reason: StopReason::from_llama_stop_type(payload.stop_type.as_deref()),
+        prompt_truncated: payload.truncated,
         timing: CompletionTiming {
             prompt_ms: number(timings.and_then(|value| value.get("prompt_ms"))),
             predicted_ms: number(timings.and_then(|value| value.get("predicted_ms"))),
@@ -1552,6 +1610,40 @@ mod tests {
         assert!(error.to_string().contains("different model or backend"));
         assert_eq!(client.target().backend, LlamaBackend::Llamacpp);
         assert_eq!(server.requests().len(), 1);
+    }
+
+    #[test]
+    fn a_limit_stop_is_told_apart_from_a_full_context() {
+        let envelope = |value: serde_json::Value| {
+            normalize_completion(serde_json::from_value::<CompletionEnvelope>(value).unwrap())
+        };
+
+        let cut = envelope(serde_json::json!({
+            "content": "[{\"tool\":\"reply\"",
+            "stop": true,
+            "stop_type": "limit"
+        }));
+        assert_eq!(cut.stop_reason, StopReason::Limit);
+        assert!(!cut.prompt_truncated);
+
+        let full_context = envelope(serde_json::json!({
+            "content": "[{\"tool\":\"reply\"",
+            "stop": true,
+            "stop_type": "limit",
+            "truncated": true
+        }));
+        assert_eq!(full_context.stop_reason, StopReason::Limit);
+        assert!(full_context.prompt_truncated);
+
+        let finished = envelope(serde_json::json!({
+            "content": "[{\"tool\":\"reply\",\"args\":{\"text\":\"done\"}}]",
+            "stop": true,
+            "stop_type": "eos"
+        }));
+        assert_eq!(finished.stop_reason, StopReason::Eos);
+
+        let silent = envelope(serde_json::json!({"content": "", "stop": true}));
+        assert_eq!(silent.stop_reason, StopReason::Unknown);
     }
 
     #[test]
