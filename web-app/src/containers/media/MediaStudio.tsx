@@ -200,8 +200,15 @@ export function MediaStudio({ libraryLink }: MediaStudioProps = {}) {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-5">
-        <div className="mx-auto grid w-full max-w-[1500px] gap-4 lg:grid-cols-[minmax(320px,0.82fr)_minmax(440px,1.45fr)]">
+      {/* On a wide window each column scrolls on its own, so the settings get
+          their own scroll bar (with arrows) beside the preview instead of
+          being cut off (the user, 2026-09-15). Narrow windows scroll as one. */}
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:overflow-hidden lg:p-5">
+        <div className="mx-auto grid w-full max-w-[1500px] gap-4 lg:h-full lg:grid-cols-[minmax(320px,0.82fr)_minmax(440px,1.45fr)]">
+          <div
+            className="lg:min-h-0 lg:overflow-y-auto lg:pr-2"
+            data-testid="media-settings-column"
+          >
           <MediaGenerationForm
             // Remounted when a re-run arrives, so the handed-over values
             // replace the model's defaults instead of losing to them.
@@ -219,8 +226,9 @@ export function MediaStudio({ libraryLink }: MediaStudioProps = {}) {
             onSubmit={submit}
             onInstallModel={installModel}
           />
+          </div>
 
-          <div className="flex min-h-0 flex-col gap-3">
+          <div className="flex min-h-0 flex-col gap-3 lg:overflow-y-auto">
             <MediaPreview asset={asset} />
             <MediaJobStatus
               job={latest ?? null}
