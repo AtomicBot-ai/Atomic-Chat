@@ -12,6 +12,8 @@ import { toast } from 'sonner'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { createDocumentAttachment, type Attachment } from '@/types/attachment'
 import { useAttachments } from '@/hooks/useAttachments'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { ExtensionTypeEnum, FileStat, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { IconLoader2, IconPaperclip } from '@tabler/icons-react'
@@ -191,8 +193,16 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
 
   const [files, setFiles] = useState<ProjectFile[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  // The first upload in an install downloads the embedding model before any
+  // file is indexed. That download reports through the global download store
+  // under the model id, so the Files section can say what it is waiting on
+  // instead of spinning silently for minutes.
+  const indexModelDownload = useDownloadStore(
+    (s) => s.downloads[EMBEDDING_MODEL_ID]
+  )
 
   const loadProjectFiles = useCallback(async () => {
     setLoading(true)
@@ -206,8 +216,13 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
       } else {
         setFiles([])
       }
-    } catch {
+      setLoadError(null)
+    } catch (error) {
+      // A listing that fails must not look like a project with no files:
+      // the upload the user just made may well be in there.
+      console.error('Failed to load project files:', error)
       setFiles([])
+      setLoadError(error instanceof Error ? error.message : String(error))
     } finally {
       setLoading(false)
     }
@@ -448,7 +463,21 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
     }
   }
 
-  const isEmpty = !loading && files.length === 0
+  const isEmpty = !loading && !loadError && files.length === 0
+  // Progress is a 0..1 ratio like every other download consumer renders it.
+  // A download without a content-length reports a non-finite ratio, and no
+  // percentage beats a wrong one.
+  const indexModelPercent =
+    indexModelDownload && Number.isFinite(indexModelDownload.progress)
+      ? Math.round(Math.min(100, indexModelDownload.progress * 100))
+      : null
+  const uploadStatus = !uploading
+    ? ''
+    : indexModelDownload
+      ? indexModelPercent !== null
+        ? `${t('common:projects.preparingIndexModel')} ${indexModelPercent}%`
+        : t('common:projects.preparingIndexModel')
+      : t('common:projects.indexingFiles')
 
   return (
     <div className="p-4">
@@ -469,9 +498,30 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
         </Button>
       </div>
 
+      {/* Always mounted: a live region announces changes to an element that
+          is already in the tree, not one inserted with its text. */}
+      <p
+        role="status"
+        className={cn('text-xs text-muted-foreground', uploading && 'mb-3')}
+      >
+        {uploadStatus}
+      </p>
+
       {loading ? (
         <div className="flex items-center justify-center py-8">
           <IconLoader2 className="size-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : loadError ? (
+        <div
+          role="alert"
+          className="flex flex-col items-center justify-center gap-2 py-6 px-4 rounded-lg border border-dashed border-destructive/40 bg-destructive/5"
+        >
+          <p className="text-sm text-muted-foreground text-center">
+            {t('common:projects.filesLoadFailed')}: {loadError}
+          </p>
+          <Button variant="outline" size="sm" onClick={loadProjectFiles}>
+            {t('common:retry')}
+          </Button>
         </div>
       ) : isEmpty ? (
         <div
@@ -540,22 +590,22 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
           ))}
 
           <div
-          className={cn(
-            'flex mt-2 flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed cursor-pointer transition-colors',
-            isDragging
-              ? 'bg-primary/10 border-primary'
-              : 'bg-secondary/30 border-border hover:bg-secondary/50'
-          )}
-          onClick={handleUpload}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          <FileText className="size-8 text-muted-foreground/50 mb-3" />
-          <p className="text-sm text-muted-foreground text-center">
-            {t('common:projects.filesDescription')}
-          </p>
-        </div>
+            className={cn(
+              'flex mt-2 flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed cursor-pointer transition-colors',
+              isDragging
+                ? 'bg-primary/10 border-primary'
+                : 'bg-secondary/30 border-border hover:bg-secondary/50'
+            )}
+            onClick={handleUpload}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <FileText className="size-8 text-muted-foreground/50 mb-3" />
+            <p className="text-sm text-muted-foreground text-center">
+              {t('common:projects.filesDescription')}
+            </p>
+          </div>
         </div>
       )}
     </div>

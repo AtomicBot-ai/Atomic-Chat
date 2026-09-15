@@ -440,6 +440,9 @@
     "noAssistantAssigned": "No assistant assigned to this project",
     "files": "Files",
     "filesDescription": "Add PDFs, documents, or other text to reference in this project.",
+    "indexingFiles": "Indexing files. The first upload also downloads the document index model, which can take a few minutes.",
+    "preparingIndexModel": "Downloading the document index model",
+    "filesLoadFailed": "Couldn't load the project's files",
     "deleteProjectDialog": {
       "title": "Delete Project",
       "permanentDelete": "This will permanently delete all threads.",
