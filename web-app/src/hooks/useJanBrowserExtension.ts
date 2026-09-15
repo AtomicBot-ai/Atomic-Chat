@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useMCPServers } from '@/hooks/useMCPServers'
+import { ensureConnectorReviewed } from '@/hooks/useConnectorReview'
 import { toast } from 'sonner'
 import type { JanBrowserExtensionDialogState } from '@/containers/dialogs/JanBrowserExtensionDialog'
 
@@ -67,7 +68,7 @@ export function useJanBrowserExtension() {
   const handleConnectionSuccess = useCallback(() => {
     setDialogOpen(false)
     setDialogState('closed')
-    toast.success('Atomic Bot browser tools enabled')
+    toast.success('Radium browser tools enabled')
   }, [])
 
   /**
@@ -127,6 +128,19 @@ export function useJanBrowserExtension() {
       const newActiveState = !isActive
       cancelledRef.current = false
 
+      // Task 28 (decision D36): the browser connector is reviewed like any
+      // other before it starts. Cancel leaves it off.
+      if (
+        newActiveState &&
+        !(await ensureConnectorReviewed(
+          serviceHub.mcp(),
+          JAN_BROWSER_MCP_NAME,
+          janBrowserConfig
+        ))
+      ) {
+        return
+      }
+
       setIsLoading(true)
       if (newActiveState) {
         // Activate the server
@@ -165,7 +179,7 @@ export function useJanBrowserExtension() {
       } else {
         // Deactivate the server
         await serviceHub.mcp().deactivateMCPServer(JAN_BROWSER_MCP_NAME)
-        toast.success('Atomic Bot browser tools disabled')
+        toast.success('Radium browser tools disabled')
 
         editServer(JAN_BROWSER_MCP_NAME, {
           ...janBrowserConfig,

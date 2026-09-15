@@ -660,12 +660,16 @@ impl TaskCapture {
     }
 }
 
+/// The harness runs its own fixture skills, so it trusts them explicitly;
+/// the app never does (Task 28).
 fn load_skills(skills_root: &Path) -> Result<SkillRegistry, String> {
-    SkillRegistry::load(
+    let mut registry = SkillRegistry::load(
         skills_root.to_path_buf(),
         &BTreeSet::new(),
         &available_tool_names(),
-    )
+    )?;
+    registry.trust_all();
+    Ok(registry)
 }
 
 fn task_error(mut result: GaiaTaskResult, error: String) -> GaiaTaskResult {

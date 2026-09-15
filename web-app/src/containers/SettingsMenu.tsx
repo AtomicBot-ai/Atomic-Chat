@@ -76,6 +76,14 @@ const SettingsMenu = () => {
       hasSubMenu: false,
       isEnabled: true,
     },
+    // The chat's run settings, Cloud and API used to live in the chat and the
+    // sidebar; Settings is their one home now (Task 22, D28/D29).
+    {
+      title: 'common:chat',
+      route: route.settings.chat,
+      hasSubMenu: false,
+      isEnabled: true,
+    },
     {
       title: 'common:attachments',
       route: route.settings.attachments,
@@ -122,6 +130,18 @@ const SettingsMenu = () => {
     {
       title: 'common:media',
       route: route.settings.media,
+      hasSubMenu: false,
+      isEnabled: true,
+    },
+    {
+      title: 'common:cloud',
+      route: route.settings.cloud,
+      hasSubMenu: false,
+      isEnabled: true,
+    },
+    {
+      title: 'common:api',
+      route: route.settings.api,
       hasSubMenu: false,
       isEnabled: true,
     },

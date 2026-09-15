@@ -13,6 +13,7 @@ import { useMCPServers } from '@/hooks/useMCPServers'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useThreads } from '@/hooks/useThreads'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
+import { ensureConnectorReviewed } from '@/hooks/useConnectorReview'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { findWebSearchServer } from '@/lib/web-search'
 import { cn } from '@/lib/utils'
@@ -84,6 +85,10 @@ const WebSearchToggle = memo(function WebSearchToggle({
         await syncServers()
         await serviceHub.mcp().deactivateMCPServer(key)
       } else {
+        // Task 28 (decision D36): review before use. Cancel leaves it off.
+        if (!(await ensureConnectorReviewed(serviceHub.mcp(), key, config))) {
+          return
+        }
         await serviceHub.mcp().activateMCPServer(key, { ...config, active: true })
         editServer(key, { ...config, active: true })
         enableServerTools(key)

@@ -172,6 +172,39 @@ describe('TauriMCPService', () => {
     ])
   })
 
+  it('invokes the connector review commands', async () => {
+    const tools = [
+      { name: 'list_issues', description: 'List issues', readOnly: true },
+      { name: 'create_issue', readOnly: false },
+    ]
+    ipcHandler.mockImplementation((command: string) => {
+      if (command === 'mcp_connector_needs_review') return true
+      if (command === 'preview_mcp_connector_tools') return tools
+      return undefined
+    })
+    const config = {
+      command: '',
+      args: [],
+      env: {},
+      type: 'http' as const,
+      url: 'https://mcp.linear.app/mcp',
+    }
+
+    await expect(
+      mcpService.connectorNeedsReview('linear', config)
+    ).resolves.toBe(true)
+    await mcpService.approveConnector('linear', config)
+    await expect(
+      mcpService.previewConnectorTools('linear', config)
+    ).resolves.toEqual(tools)
+
+    expect(ipcHandler.mock.calls).toEqual([
+      ['mcp_connector_needs_review', { name: 'linear', config }],
+      ['approve_mcp_connector', { name: 'linear', config }],
+      ['preview_mcp_connector_tools', { name: 'linear', config }],
+    ])
+  })
+
   it('invokes the MCP OAuth commands', async () => {
     await mcpService.mcpOauthLogin('linear', 'https://mcp.linear.app/mcp')
     await mcpService.mcpOauthCancel()

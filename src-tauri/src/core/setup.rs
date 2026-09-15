@@ -2,7 +2,7 @@ use flate2::read::GzDecoder;
 use std::{
     fs::{self, File},
     io::Read,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 use tar::Archive;
@@ -21,6 +21,49 @@ use crate::core::mcp::helpers::{add_server_config, ensure_mcp_config_exists};
 use super::{
     extensions::commands::get_jan_extensions_path, mcp::helpers::run_mcp_commands, state::AppState,
 };
+
+/// Whether the bundled extensions have to be reinstalled because
+/// `extensions.json` cannot be trusted: it names files outside
+/// `extensions_path`, or it is missing or unreadable while the folder exists.
+/// Either way the frontend loads no extension and the window stays blank.
+///
+/// `extensions.json` stores absolute paths, so moving the data folder (ADR
+/// 2026-09-13) leaves every entry pointing at the old folder; a reinstall was
+/// otherwise only triggered by a version change.
+pub fn extensions_point_elsewhere(extensions_path: &Path) -> bool {
+    if !extensions_path.exists() {
+        // `install_extensions` creates and fills it regardless.
+        return false;
+    }
+    let Ok(text) = fs::read_to_string(extensions_path.join("extensions.json")) else {
+        return true;
+    };
+    let Ok(entries) = serde_json::from_str::<Vec<serde_json::Value>>(&text) else {
+        return true;
+    };
+    let base = comparable_path(extensions_path);
+    let inside = |path: &str| {
+        let path = comparable_path(Path::new(path));
+        path == base || path.starts_with(&format!("{base}\\"))
+    };
+    entries.iter().any(|entry| {
+        ["url", "origin"]
+            .iter()
+            .any(|key| entry[*key].as_str().is_some_and(|path| !inside(path)))
+    })
+}
+
+/// Separators unified, and case-insensitive where the file system is.
+fn comparable_path(path: &Path) -> String {
+    let mut text = path.to_string_lossy().replace('/', "\\");
+    if cfg!(windows) {
+        text = text.to_lowercase();
+    }
+    while text.len() > 1 && text.ends_with('\\') {
+        text.pop();
+    }
+    text
+}
 
 pub fn install_extensions<R: Runtime>(app: tauri::AppHandle<R>, force: bool) -> Result<(), String> {
     // Skip extension installation on mobile platforms
@@ -694,4 +737,74 @@ fn setup_window_theme_listener<R: Runtime>(
         }
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod extension_path_tests {
+    use super::extensions_point_elsewhere;
+    use std::fs;
+    use std::path::Path;
+    use tempfile::tempdir;
+
+    fn write_extensions_json(dir: &Path, base: &Path) {
+        fs::create_dir_all(dir).unwrap();
+        let ext = base.join("@janhq").join("assistant-extension");
+        let entries = serde_json::json!([{
+            "name": "@janhq/assistant-extension",
+            "origin": ext.to_string_lossy(),
+            "url": ext.join("dist").join("index.js").to_string_lossy(),
+            "active": true
+        }]);
+        fs::write(dir.join("extensions.json"), entries.to_string()).unwrap();
+    }
+
+    /// The 2026-09-14 blank screen: the data folder moved from `Atomic Chat`
+    /// to `Radium`, but extensions.json still named files in the old folder,
+    /// the version had not changed, so nothing reinstalled and no extension
+    /// loaded.
+    #[test]
+    fn a_moved_data_folder_leaves_extensions_pointing_elsewhere() {
+        let root = tempdir().unwrap();
+        let old = root
+            .path()
+            .join("Atomic Chat")
+            .join("data")
+            .join("extensions");
+        let current = root.path().join("Radium").join("data").join("extensions");
+        write_extensions_json(&current, &old);
+
+        assert!(extensions_point_elsewhere(&current));
+    }
+
+    #[test]
+    fn extensions_inside_the_current_folder_are_left_alone() {
+        let root = tempdir().unwrap();
+        let current = root.path().join("Radium").join("data").join("extensions");
+        write_extensions_json(&current, &current);
+
+        assert!(!extensions_point_elsewhere(&current));
+    }
+
+    #[test]
+    fn a_folder_without_a_readable_extensions_json_needs_reinstalling() {
+        let root = tempdir().unwrap();
+        let current = root.path().join("extensions");
+        fs::create_dir_all(&current).unwrap();
+        assert!(
+            extensions_point_elsewhere(&current),
+            "missing extensions.json"
+        );
+
+        fs::write(current.join("extensions.json"), "not json").unwrap();
+        assert!(
+            extensions_point_elsewhere(&current),
+            "unreadable extensions.json"
+        );
+    }
+
+    #[test]
+    fn no_extensions_folder_is_not_stale_because_install_runs_anyway() {
+        let root = tempdir().unwrap();
+        assert!(!extensions_point_elsewhere(&root.path().join("extensions")));
+    }
 }

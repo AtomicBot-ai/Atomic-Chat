@@ -61,5 +61,27 @@
   "readmeUnavailable": "README is not available for this model.",
   "tooLargeTitle": "This model may not run on this device",
   "tooLargeDescription": "It needs more memory than this device has, so it may fail to load or run slowly.",
-  "downloadAnyway": "Download anyway"
+  "downloadAnyway": "Download anyway",
+  "modelsFolder": {
+    "button": "Models folder",
+    "title": "Models folder",
+    "description": "Radium saves the models you download here, and loads your models from here.",
+    "current": "Current folder",
+    "new": "New folder",
+    "default": "Default",
+    "choose": "Choose folder…",
+    "useDefault": "Use the default folder",
+    "moveExisting": "Move the models I already have",
+    "moveExistingHint": "Models already downloaded are moved into the new folder. Any loaded model is stopped first.",
+    "leaveExistingHint": "Models already downloaded stay where they are and won't show in Radium until you switch back.",
+    "cancel": "Cancel",
+    "apply": "Use this folder",
+    "working": "Moving models…",
+    "changed": "Models folder changed",
+    "movedCount_one": "Models folder changed. Moved {{count}} model.",
+    "movedCount_other": "Models folder changed. Moved {{count}} models.",
+    "someSkipped": "Models folder changed. Some models were left where they were, because the new folder already has one with the same name.",
+    "someNotMoved": "Models folder changed, but some models couldn't be moved",
+    "failed": "Couldn't change the models folder"
+  }
 }
