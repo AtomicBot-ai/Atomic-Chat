@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { IconFolder } from '@tabler/icons-react'
+import { IconSettings } from '@tabler/icons-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
+import LocalModelLocationsCard from '@/containers/LocalModelLocationsCard'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -113,12 +114,12 @@ export function ModelsFolderDialog() {
         className="w-full justify-start gap-2"
         onClick={() => setOpen(true)}
       >
-        <IconFolder size={14} />
+        <IconSettings size={14} />
         {t('hub:modelsFolder.button')}
       </Button>
 
       <Dialog open={open} onOpenChange={(next) => !busy && setOpen(next)}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{t('hub:modelsFolder.title')}</DialogTitle>
             <DialogDescription>
@@ -202,6 +203,10 @@ export function ModelsFolderDialog() {
                 : t('hub:modelsFolder.apply')}
             </Button>
           </DialogFooter>
+
+          {/* Moved here from Settings -> General (the user, 2026-09-15): model
+              settings belong on the Models page. Desktop only, as before. */}
+          {IS_TAURI && <LocalModelLocationsCard />}
         </DialogContent>
       </Dialog>
     </>
