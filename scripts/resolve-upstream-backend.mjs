@@ -44,6 +44,10 @@ const LINUX_ASSET_INFIX = {
 
 const WIN_CUDA_FAMILY_RE = /^win-cuda-(\d+)-x64$/
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 function parseArgs(argv) {
   const out = {}
   for (let i = 0; i < argv.length; i++) {
@@ -75,8 +79,10 @@ export function resolveCudaFamily(backend, tag, assetNames) {
   const family = WIN_CUDA_FAMILY_RE.exec(backend)
   if (!family) return backend
   const major = family[1]
+  const safeTag = escapeRegExp(tag)
+  const safeMajor = escapeRegExp(major)
   const re = new RegExp(
-    `^llama-${tag}-bin-win-cuda-${major}\\.(\\d+)-x64\\.zip$`
+    `^llama-${safeTag}-bin-win-cuda-${safeMajor}\\.(\\d+)-x64\\.zip$`
   )
   let best = null
   for (const name of assetNames) {
