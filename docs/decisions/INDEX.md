@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-241 records, 2026-05-19 → 2026-09-11.
+242 records, 2026-05-19 → 2026-09-15.
 
 ---
 
@@ -54,8 +54,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Add a `/v1/responses` translation shim to the local proxy so Codex CLI works on llama.cpp models](2026-06-02-add-a-v1-responses-translation-shim-to-the-local-proxy-so-codex.md)
 - **2026-06-01** — [Add a "Launch" page to install + configure external coding agents / assistants against the local OpenAI-compatible API](2026-06-01-add-a-launch-page-to-install-configure-external-coding-agents.md)
 
-## Agent mode — autonomous loop, tools, skills, workspace (46)
+## Agent mode — autonomous loop, tools, skills, workspace (47)
 
+- **2026-09-15** — [Restore loaded skills from disk, not from the session copy](2026-09-15-restore-loaded-skills-from-disk-not-from-the-session.md)
 - **2026-09-14** — [Carry per-thread Agent mode onto the global toggle](2026-09-14-carry-per-thread-agent-mode-onto-the-global-toggle.md)
 - **2026-09-14** — [Re-read skill bodies when a skill changes](2026-09-14-re-read-skill-bodies-when-a-skill-changes.md)
 - **2026-08-27** — [Give the agent native RAG tools over the existing vector collections](2026-08-27-native-agent-rag-tools.md)
