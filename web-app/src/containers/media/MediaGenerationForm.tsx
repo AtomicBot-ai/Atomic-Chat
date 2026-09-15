@@ -336,6 +336,44 @@ export function MediaGenerationForm({
               </select>
             </div>
 
+            {/* The download right under the model picker, so it is found without
+                scrolling to Generate (the user, 2026-09-15). */}
+            {mustDownload && activeModel ? (
+              <div
+                className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-border/70 px-3 py-2 sm:col-span-2"
+                data-testid="media-model-download"
+              >
+                <span className="text-xs text-muted-foreground">
+                  {downloading
+                    ? install.phase === 'downloading' && install.percent !== null
+                      ? t('media:form.downloadingPercent', {
+                          percent: install.percent,
+                          defaultValue: 'Downloading the model… {{percent}}%',
+                        })
+                      : t('media:form.downloading', { defaultValue: 'Downloading the model…' })
+                    : t('media:form.notDownloadedYet', {
+                        model: activeModel.label,
+                        defaultValue: '{{model}} is not downloaded yet',
+                      })}
+                </span>
+                {!downloading && (
+                  <button
+                    type="button"
+                    onClick={() => void download()}
+                    disabled={disabled}
+                    className="shrink-0 rounded-full bg-foreground px-3 py-1.5 text-xs font-semibold text-background transition hover:opacity-90 disabled:opacity-40"
+                  >
+                    {downloadSize
+                      ? t('media:form.downloadShort', {
+                          size: downloadSize,
+                          defaultValue: 'Download ({{size}})',
+                        })
+                      : t('media:form.downloadModel', { defaultValue: 'Download model' })}
+                  </button>
+                )}
+              </div>
+            ) : null}
+
             {devices.length ? (
               <div>
                 <label htmlFor="media-device" className={labelClass}>

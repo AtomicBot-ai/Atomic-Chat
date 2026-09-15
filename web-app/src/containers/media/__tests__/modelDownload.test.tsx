@@ -127,6 +127,22 @@ describe('downloading a model from the Media page', () => {
     expect(screen.queryByRole('button', { name: /Download model/ })).not.toBeInTheDocument()
   })
 
+  it('also offers the download right under the model picker', async () => {
+    const user = userEvent.setup()
+    const onInstall = vi.fn(async () => {})
+    render(<Harness onInstall={onInstall} />)
+
+    expect(screen.getByTestId('media-model-download')).toHaveTextContent(
+      'Stable Diffusion 1.5 is not downloaded yet'
+    )
+    await user.click(screen.getByRole('button', { name: 'Download (1.6 GB)' }))
+
+    expect(onInstall).toHaveBeenCalledTimes(1)
+    await waitFor(() =>
+      expect(screen.queryByTestId('media-model-download')).not.toBeInTheDocument()
+    )
+  })
+
   it('says why a download failed and offers it again', async () => {
     const user = userEvent.setup()
     render(
