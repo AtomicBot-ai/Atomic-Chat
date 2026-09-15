@@ -662,12 +662,14 @@ mod tests {
     }
 
     fn test_skill_registry(root: &Path) -> SkillRegistry {
-        SkillRegistry::load(
+        let mut registry = SkillRegistry::load(
             root.join(".agent-skills"),
             &std::collections::BTreeSet::new(),
             &std::collections::BTreeSet::new(),
         )
-        .unwrap()
+        .unwrap();
+        registry.trust_all();
+        registry
     }
 
     fn test_script_skill_registry(root: &Path) -> SkillRegistry {
@@ -680,12 +682,14 @@ mod tests {
             "---\nname: test-skill\ndescription: Test\nrequires_scripts: [inspect.sh]\n---\nBody",
         )
         .unwrap();
-        SkillRegistry::load(
+        let mut registry = SkillRegistry::load(
             skills_root,
             &std::collections::BTreeSet::new(),
             &std::collections::BTreeSet::new(),
         )
-        .unwrap()
+        .unwrap();
+        registry.trust_all();
+        registry
     }
 
     #[async_trait]

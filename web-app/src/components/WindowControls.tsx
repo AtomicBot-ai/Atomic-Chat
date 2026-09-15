@@ -53,7 +53,7 @@ export const WindowControls = () => {
   }
 
   return (
-    <div className="absolute right-0 top-0 z-50 h-10">
+    <div className="absolute right-0 top-0 z-50 h-8">
       <div className="flex h-full items-stretch">
         <Button
           onClick={handleMinimize}

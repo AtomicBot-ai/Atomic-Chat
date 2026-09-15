@@ -109,6 +109,15 @@ describe('RunSettingsPanel', () => {
     })
   })
 
+  it('leaves out the close button when shown as a Settings page', () => {
+    render(<RunSettingsPanel />)
+
+    expect(screen.getByText('chat:runSettings.title')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'chat:runSettings.close' })
+    ).not.toBeInTheDocument()
+  })
+
   it('shows the active assistant and edits its sampling in place', () => {
     seedModel('llamacpp')
     render(<RunSettingsPanel onClose={onClose} />)

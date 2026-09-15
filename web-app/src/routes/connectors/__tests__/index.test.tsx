@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Route as ConnectorsRoute } from '../index'
 import { useMCPServers, type MCPServerConfig } from '@/hooks/useMCPServers'
 import { MCP_CONNECTORS } from '@/constants/mcp-connectors'
+import ConnectorReviewHost from '@/containers/dialogs/ConnectorReviewHost'
+import { useConnectorReview } from '@/hooks/useConnectorReview'
 
 const activateMCPServer = vi.fn()
 const deactivateMCPServer = vi.fn()
@@ -12,6 +14,9 @@ const updateMCPConfig = vi.fn()
 const mcpOauthLogin = vi.fn()
 const mcpOauthCancel = vi.fn()
 const mcpOauthLogout = vi.fn()
+const connectorNeedsReview = vi.fn()
+const approveConnector = vi.fn()
+const previewConnectorTools = vi.fn()
 
 const toastError = vi.hoisted(() => vi.fn())
 vi.mock('sonner', async (importOriginal) => {
@@ -66,6 +71,9 @@ const serviceHubMock = {
     mcpOauthLogin,
     mcpOauthCancel,
     mcpOauthLogout,
+    connectorNeedsReview,
+    approveConnector,
+    previewConnectorTools,
   }),
 }
 
@@ -102,6 +110,10 @@ describe('ConnectorsPage', () => {
     mcpOauthLogin.mockResolvedValue(undefined)
     mcpOauthCancel.mockResolvedValue(undefined)
     mcpOauthLogout.mockResolvedValue(undefined)
+    connectorNeedsReview.mockResolvedValue(false)
+    approveConnector.mockResolvedValue(undefined)
+    previewConnectorTools.mockResolvedValue([])
+    useConnectorReview.setState({ pending: [] })
     seedServers({})
   })
 
@@ -358,6 +370,137 @@ describe('ConnectorsPage', () => {
         })
       )
     )
+  })
+
+  /**
+   * Task 28 (decision D36): every connector - built in, from the catalog,
+   * added by hand or imported - is reviewed with Allow / Preview / Cancel
+   * before Radium connects to it.
+   */
+  describe('review before use', () => {
+    const exaInstalled: MCPServerConfig = {
+      command: '',
+      args: [],
+      env: {},
+      type: 'http',
+      url: 'https://mcp.exa.ai/mcp',
+      active: false,
+    }
+
+    const renderWithReview = () =>
+      render(
+        <>
+          <ConnectorsPage />
+          <ConnectorReviewHost />
+        </>
+      )
+
+    const cardFor = (name: string) =>
+      screen.getByText(name).closest('div.bg-card') as HTMLElement
+
+    it('asks before switching on an installed connector, and leaves it off on Cancel', async () => {
+      const user = userEvent.setup()
+      connectorNeedsReview.mockResolvedValue(true)
+      seedServers({ exa: exaInstalled })
+      renderWithReview()
+
+      await user.click(within(cardFor('Exa')).getByRole('switch'))
+
+      expect(
+        await screen.findByText('review:connectorTitle:exa')
+      ).toBeInTheDocument()
+      expect(activateMCPServer).not.toHaveBeenCalled()
+
+      await user.click(screen.getByRole('button', { name: 'review:cancel' }))
+
+      await waitFor(() =>
+        expect(
+          screen.queryByText('review:connectorTitle:exa')
+        ).not.toBeInTheDocument()
+      )
+      expect(activateMCPServer).not.toHaveBeenCalled()
+      expect(approveConnector).not.toHaveBeenCalled()
+      expect(useMCPServers.getState().mcpServers.exa.active).toBe(false)
+    })
+
+    it('records the review, then connects, when Allow is chosen', async () => {
+      const user = userEvent.setup()
+      connectorNeedsReview.mockResolvedValue(true)
+      seedServers({ exa: exaInstalled })
+      renderWithReview()
+
+      await user.click(within(cardFor('Exa')).getByRole('switch'))
+      await user.click(
+        await screen.findByRole('button', { name: 'review:allow' })
+      )
+
+      await waitFor(() =>
+        expect(useMCPServers.getState().mcpServers.exa.active).toBe(true)
+      )
+      expect(approveConnector).toHaveBeenCalledWith(
+        'exa',
+        expect.objectContaining({ url: 'https://mcp.exa.ai/mcp' })
+      )
+      expect(approveConnector.mock.invocationCallOrder[0]).toBeLessThan(
+        activateMCPServer.mock.invocationCallOrder[0]
+      )
+    })
+
+    it('Cancel on a catalog connector installs nothing', async () => {
+      const user = userEvent.setup()
+      connectorNeedsReview.mockResolvedValue(true)
+      renderWithReview()
+
+      await user.click(
+        within(cardFor('Exa')).getByRole('button', {
+          name: 'mcp-connectors:setUp',
+        })
+      )
+      await user.click(
+        await screen.findByRole('button', { name: 'review:cancel' })
+      )
+
+      await waitFor(() =>
+        expect(useConnectorReview.getState().pending).toEqual([])
+      )
+      expect(activateMCPServer).not.toHaveBeenCalled()
+      expect(useMCPServers.getState().mcpServers.exa).toBeUndefined()
+    })
+
+    it('reviews a sign-in connector before opening the browser', async () => {
+      const user = userEvent.setup()
+      // Needs review until the user allows it.
+      connectorNeedsReview.mockImplementation(
+        async () => approveConnector.mock.calls.length === 0
+      )
+      renderWithReview()
+
+      await user.click(
+        within(cardFor('Linear')).getByRole('button', {
+          name: 'mcp-connectors:oauth.signIn',
+        })
+      )
+
+      expect(
+        await screen.findByText('review:connectorTitle:linear')
+      ).toBeInTheDocument()
+      expect(mcpOauthLogin).not.toHaveBeenCalled()
+
+      await user.click(screen.getByRole('button', { name: 'review:allow' }))
+
+      await waitFor(() =>
+        expect(activateMCPServer).toHaveBeenCalledWith(
+          'linear',
+          expect.objectContaining({ type: 'http', active: true })
+        )
+      )
+      expect(mcpOauthLogin).toHaveBeenCalledWith(
+        'linear',
+        'https://mcp.linear.app/mcp'
+      )
+      // One review is enough: installing after sign-in does not ask again.
+      expect(approveConnector).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('opens the custom MCP dialog from the header action', async () => {

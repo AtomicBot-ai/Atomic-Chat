@@ -13,10 +13,11 @@ import {
 } from 'react-resizable-panels'
 import { AnimatePresence, motion } from 'motion/react'
 import { PanelRight, SlidersHorizontal } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 import { AgentWorkspaceFiles } from './AgentWorkspaceFiles'
 import { AgentWorkspacePreview } from './AgentWorkspacePreview'
 import { ArtifactPanel } from './ArtifactPanel'
-import { RunSettingsPanel } from './RunSettingsPanel'
+import { route } from '@/constants/routes'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useDesktopScreen } from '@/hooks/useMediaQuery'
@@ -24,7 +25,6 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useWorkspacePreviewStore } from '@/stores/workspace-preview-store'
 import { useHeaderOverlay } from '@/stores/header-overlay-store'
-import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
 import type { AgentWorkspace } from '@/hooks/useAgentMode'
 
 type AgentWorkspaceLayoutProps = {
@@ -37,7 +37,7 @@ type AgentWorkspaceLayoutProps = {
   /**
    * Whether the files sidebar (and its corner toggle) may be offered at all.
    * The home composer has no thread, hence no workspace to browse, and shows
-   * only the run settings in its right column. Even where allowed, the files
+   * only the run settings button. Even where allowed, the files
    * sidebar only appears while agent mode is on — a plain chat has no agent
    * workspace to look at.
    */
@@ -97,9 +97,7 @@ export function AgentWorkspaceLayout({
   const [filesOpen, setFilesOpen] = useState(false)
   const agentModeEnabled = useGeneralSetting((state) => state.agentModeEnabled)
   const filesAvailable = filesEnabled && agentModeEnabled
-  const settingsOpen = useRunSettingsPanel((state) => state.isOpen)
-  const openSettings = useRunSettingsPanel((state) => state.open)
-  const closeSettings = useRunSettingsPanel((state) => state.close)
+  const navigate = useNavigate()
   const panelGroupRef = useRef<ImperativePanelGroupHandle>(null)
   const workspaceRef = useRef<HTMLElement>(null)
   const sidebarWidth = useRef(useLeftPanel.getState().width)
@@ -141,12 +139,11 @@ export function AgentWorkspaceLayout({
     }
     if (externalCount > externalRootCountRef.current) {
       externalRootCountRef.current = externalCount
-      closeSettings()
       setFilesOpen(true)
       return
     }
     externalRootCountRef.current = externalCount
-  }, [threadId, workspace.externalRoots, workspace.primaryRoot, closeSettings])
+  }, [threadId, workspace.externalRoots, workspace.primaryRoot])
 
   useEffect(
     () => () => {
@@ -157,24 +154,13 @@ export function AgentWorkspaceLayout({
   )
 
   const hasPreview = tabs.length > 0
-  // Files and run settings share one right column: opening one closes the
-  // other. Files win the slot while open (a thread switch, or turning agent
-  // mode off, drops them, which then reveals run settings again if those were
-  // left open).
+  // The right column holds only the files now (a thread switch, or turning
+  // agent mode off, drops them). Run settings moved to Settings > Chat, and
+  // their button takes you there (Task 22, D29).
   const filesVisible = filesAvailable && filesOpen
-  const rightPanel: 'files' | 'settings' | null = filesVisible
-    ? 'files'
-    : settingsOpen
-      ? 'settings'
-      : null
-  const showFiles = () => {
-    closeSettings()
-    setFilesOpen(true)
-  }
-  const showSettings = () => {
-    setFilesOpen(false)
-    openSettings()
-  }
+  const rightPanel: 'files' | null = filesVisible ? 'files' : null
+  const showFiles = () => setFilesOpen(true)
+  const showSettings = () => navigate({ to: route.settings.chat })
 
   // The corner buttons below float against the window's right edge instead of
   // living in the header, so the header's own right-aligned controls have to be
@@ -211,14 +197,11 @@ export function AgentWorkspaceLayout({
       workspaceWidth && sidebarWidthPx
         ? (sidebarWidthPx / workspaceWidth) * 100
         : 24
-    // Files follow the left sidebar's width; run settings need room for
-    // their sliders, so they never go below a fifth of the workspace.
+    // Files follow the left sidebar's width.
     const sidebarSize =
       rightPanel === 'files'
         ? Math.min(40, Math.max(8, matchingSidebarSize))
-        : rightPanel === 'settings'
-          ? Math.min(40, Math.max(20, matchingSidebarSize))
-          : 0
+        : 0
     panelGroupRef.current?.setLayout([
       100 - previewSize - sidebarSize,
       previewSize,
@@ -335,18 +318,6 @@ export function AgentWorkspaceLayout({
                   onClose={() => setFilesOpen(false)}
                   onAddExternal={onAddExternal}
                 />
-              </motion.div>
-            )}
-            {rightPanel === 'settings' && (
-              <motion.div
-                key="run-settings"
-                className="h-full"
-                initial={{ x: '100%' }}
-                animate={{ x: 0 }}
-                exit={{ x: '100%' }}
-                transition={RIGHT_PANEL_TRANSITION}
-              >
-                <RunSettingsPanel onClose={closeSettings} />
               </motion.div>
             )}
           </AnimatePresence>

@@ -5,6 +5,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use super::manifest::{parse_skill_file, SkillManifest, SkillPlatform};
 
@@ -12,6 +13,8 @@ use super::manifest::{parse_skill_file, SkillManifest, SkillPlatform};
 use std::os::windows::ffi::OsStrExt;
 
 pub const DISABLED_SKILLS_FILE: &str = ".disabled.json";
+/// Fingerprints of skills the user has reviewed and allowed (Task 28, D36).
+pub const REVIEWED_SKILLS_FILE: &str = ".reviewed.json";
 
 #[derive(Debug, Clone)]
 pub struct SkillRecord {
@@ -22,6 +25,11 @@ pub struct SkillRecord {
     pub compatible: bool,
     pub reserved: bool,
     pub unavailable_reasons: Vec<String>,
+    /// SHA-256 over every file in the skill's folder, as loaded.
+    pub fingerprint: String,
+    /// Allowed by the user at exactly this fingerprint. Only a reviewed skill
+    /// is offered to the AI, whether or not it is bundled.
+    pub reviewed: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -38,6 +46,8 @@ pub struct SkillListEntry {
     pub compatible: bool,
     pub reserved: bool,
     pub unavailable_reasons: Vec<String>,
+    /// Added or changed since the user last allowed it; not offered to the AI.
+    pub needs_review: bool,
     pub error: Option<String>,
 }
 
@@ -54,12 +64,19 @@ pub struct SkillRegistry {
     records: BTreeMap<String, SkillRecord>,
     diagnostics: Vec<SkillDiagnostic>,
     disabled: BTreeSet<String>,
+    reviewed: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct DisabledSkillsState {
     #[serde(default)]
     disabled: BTreeSet<String>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct ReviewedSkillsState {
+    #[serde(default)]
+    reviewed: BTreeMap<String, String>,
 }
 
 impl SkillRegistry {
@@ -75,6 +92,7 @@ impl SkillRegistry {
             .canonicalize()
             .map_err(|error| format!("Failed to resolve agent skills directory: {error}"))?;
         let disabled = read_disabled_state(&root)?;
+        let reviewed = read_reviewed_state(&root);
         let mut entries = fs::read_dir(&root)
             .map_err(|error| format!("Failed to scan agent skills directory: {error}"))?
             .filter_map(Result::ok)
@@ -222,6 +240,21 @@ impl SkillRegistry {
                 .map(|tool| format!("Required tool `{tool}` is unavailable"))
                 .collect();
             let name = parsed.manifest.name.clone();
+            let fingerprint = match skill_fingerprint(&canonical_skill_root) {
+                Ok(fingerprint) => fingerprint,
+                Err(error) => {
+                    diagnostics.push(SkillDiagnostic {
+                        name,
+                        error,
+                        reserved,
+                    });
+                    continue;
+                }
+            };
+            // Every skill - bundled, from Anthropic, written in Radium or
+            // uploaded - must have been allowed by the user exactly as it is
+            // now (the user's rule, 2026-09-14; Task 28, D36).
+            let is_reviewed = reviewed.get(&name) == Some(&fingerprint);
             records.insert(
                 name.clone(),
                 SkillRecord {
@@ -232,6 +265,8 @@ impl SkillRegistry {
                     compatible,
                     reserved,
                     unavailable_reasons,
+                    fingerprint,
+                    reviewed: is_reviewed,
                 },
             );
         }
@@ -240,18 +275,25 @@ impl SkillRegistry {
             records,
             diagnostics,
             disabled,
+            reviewed,
         })
     }
 
     pub fn enabled(&self) -> impl Iterator<Item = &SkillRecord> {
         self.records.values().filter(|record| {
-            record.enabled && record.compatible && record.unavailable_reasons.is_empty()
+            record.enabled
+                && record.reviewed
+                && record.compatible
+                && record.unavailable_reasons.is_empty()
         })
     }
 
     pub fn get_enabled(&self, name: &str) -> Option<&SkillRecord> {
         self.records.get(name).filter(|record| {
-            record.enabled && record.compatible && record.unavailable_reasons.is_empty()
+            record.enabled
+                && record.reviewed
+                && record.compatible
+                && record.unavailable_reasons.is_empty()
         })
     }
 
@@ -271,10 +313,13 @@ impl SkillRegistry {
                 requires_scripts: record.manifest.requires_scripts.clone(),
                 dangerous: record.manifest.dangerous,
                 platforms: record.manifest.platforms.clone(),
-                enabled: record.enabled,
+                // Every skill shows as off until the user has allowed it as it
+                // is now (the user's rule, 2026-09-14).
+                enabled: record.enabled && record.reviewed,
                 compatible: record.compatible,
                 reserved: record.reserved,
                 unavailable_reasons: record.unavailable_reasons.clone(),
+                needs_review: !record.reviewed,
                 error: None,
             })
             .collect::<Vec<_>>();
@@ -290,6 +335,7 @@ impl SkillRegistry {
             compatible: false,
             reserved: diagnostic.reserved,
             unavailable_reasons: Vec::new(),
+            needs_review: false,
             error: Some(diagnostic.error.clone()),
         }));
         entries.sort_by(|left, right| left.name.cmp(&right.name));
@@ -299,6 +345,11 @@ impl SkillRegistry {
     pub fn set_enabled(&mut self, name: &str, enabled: bool) -> Result<(), String> {
         if !self.records.contains_key(name) {
             return Err(format!("Skill `{name}` was not found"));
+        }
+        if enabled && !self.records[name].reviewed {
+            return Err(format!(
+                "Skill `{name}` needs review before it can be switched on"
+            ));
         }
         if enabled {
             self.disabled.remove(name);
@@ -311,15 +362,137 @@ impl SkillRegistry {
         }
         Ok(())
     }
+
+    /// Record that the user reviewed this skill as it is now (Task 28, D36).
+    /// It stays offered to the AI only while its files still match.
+    pub fn approve(&mut self, name: &str) -> Result<(), String> {
+        let fingerprint = self
+            .records
+            .get(name)
+            .map(|record| record.fingerprint.clone())
+            .ok_or_else(|| format!("Skill `{name}` was not found"))?;
+        self.reviewed.insert(name.to_string(), fingerprint);
+        write_reviewed_state(&self.root, &self.reviewed)?;
+        if let Some(record) = self.records.get_mut(name) {
+            record.reviewed = true;
+        }
+        Ok(())
+    }
+
+    /// Treat every loaded skill as reviewed. Only for the evaluation harness and
+    /// tests, which load their own fixture skills; the app never calls this.
+    pub fn trust_all(&mut self) {
+        for record in self.records.values_mut() {
+            record.reviewed = true;
+        }
+    }
+}
+
+/// SHA-256 over every file in a skill's folder - its relative path and its
+/// contents, in a fixed order - so any change to the instructions or to a
+/// bundled script shows up. A symbolic link counts by where it points.
+fn skill_fingerprint(skill_root: &Path) -> Result<String, String> {
+    let mut files = Vec::new();
+    collect_relative_files(skill_root, skill_root, &mut files)?;
+    files.sort();
+    let mut hasher = Sha256::new();
+    for relative in files {
+        let path = skill_root.join(&relative);
+        let metadata = fs::symlink_metadata(&path)
+            .map_err(|error| format!("Failed to inspect skill file for review: {error}"))?;
+        hasher.update(relative.as_bytes());
+        hasher.update([0u8]);
+        if metadata.file_type().is_symlink() {
+            let target = fs::read_link(&path)
+                .map_err(|error| format!("Failed to read skill link for review: {error}"))?;
+            hasher.update(b"symlink:");
+            hasher.update(target.to_string_lossy().as_bytes());
+        } else {
+            let content = fs::read(&path)
+                .map_err(|error| format!("Failed to read skill file for review: {error}"))?;
+            hasher.update((content.len() as u64).to_le_bytes());
+            hasher.update(&content);
+        }
+        hasher.update([0u8]);
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
+fn collect_relative_files(
+    root: &Path,
+    directory: &Path,
+    files: &mut Vec<String>,
+) -> Result<(), String> {
+    let entries = fs::read_dir(directory)
+        .map_err(|error| format!("Failed to scan skill directory for review: {error}"))?;
+    for entry in entries {
+        let entry =
+            entry.map_err(|error| format!("Failed to scan skill directory for review: {error}"))?;
+        let file_type = entry
+            .file_type()
+            .map_err(|error| format!("Failed to inspect skill file for review: {error}"))?;
+        let path = entry.path();
+        if file_type.is_dir() {
+            collect_relative_files(root, &path, files)?;
+        } else {
+            let relative = path
+                .strip_prefix(root)
+                .map_err(|error| format!("Skill file is outside its folder: {error}"))?;
+            files.push(
+                relative
+                    .components()
+                    .map(|component| component.as_os_str().to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+                    .join("/"),
+            );
+        }
+    }
+    Ok(())
+}
+
+/// A missing or unreadable file means nothing has been reviewed yet: every
+/// added skill then asks again, which is the safe direction.
+fn read_reviewed_state(root: &Path) -> BTreeMap<String, String> {
+    let path = root.join(REVIEWED_SKILLS_FILE);
+    let Ok(content) = fs::read_to_string(&path) else {
+        return BTreeMap::new();
+    };
+    match serde_json::from_str::<ReviewedSkillsState>(&content) {
+        Ok(state) => state.reviewed,
+        Err(error) => {
+            log::warn!("Ignoring invalid reviewed skills state: {error}");
+            BTreeMap::new()
+        }
+    }
+}
+
+fn write_reviewed_state(root: &Path, reviewed: &BTreeMap<String, String>) -> Result<(), String> {
+    let content = serde_json::to_vec_pretty(&ReviewedSkillsState {
+        reviewed: reviewed.clone(),
+    })
+    .map_err(|error| format!("Failed to serialize reviewed skills state: {error}"))?;
+    let path = root.join(REVIEWED_SKILLS_FILE);
+    let temporary = root.join(format!(
+        "{REVIEWED_SKILLS_FILE}.{}.tmp",
+        uuid::Uuid::new_v4()
+    ));
+    let result = fs::write(&temporary, &content)
+        .map_err(|error| format!("Failed to write reviewed skills state: {error}"))
+        .and_then(|()| {
+            atomic_replace(&temporary, &path)
+                .map_err(|error| format!("Failed to commit reviewed skills state: {error}"))
+        });
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
 }
 
 fn is_platform_compatible(
     supported: Option<&[SkillPlatform]>,
     current: Option<&SkillPlatform>,
 ) -> bool {
-    supported.is_none_or(|platforms| {
-        current.is_some_and(|platform| platforms.contains(platform))
-    })
+    supported.is_none_or(|platforms| current.is_some_and(|platform| platforms.contains(platform)))
 }
 
 fn read_disabled_state(root: &Path) -> Result<BTreeSet<String>, String> {
@@ -363,7 +536,7 @@ fn write_disabled_state(root: &Path, disabled: &BTreeSet<String>) -> Result<(), 
 }
 
 #[cfg(windows)]
-fn atomic_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
+pub(crate) fn atomic_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
     use windows_sys::Win32::Storage::FileSystem::{
         MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
     };
@@ -393,7 +566,7 @@ fn atomic_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
 }
 
 #[cfg(not(windows))]
-fn atomic_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
+pub(crate) fn atomic_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
     fs::rename(source, destination)
 }
 
@@ -445,11 +618,163 @@ mod tests {
         .unwrap();
         let tools = BTreeSet::from(["os.fs.read".to_string()]);
         let mut registry = SkillRegistry::load(&root, &BTreeSet::new(), &tools).unwrap();
+        // Task 28: a skill the user added is only offered once it is reviewed.
+        registry.approve("test-skill").unwrap();
         assert!(registry.get_enabled("test-skill").is_some());
         registry.set_enabled("test-skill", false).unwrap();
         let registry = SkillRegistry::load(&root, &BTreeSet::new(), &tools).unwrap();
         assert!(registry.get_enabled("test-skill").is_none());
         assert!(!registry.get("test-skill").unwrap().enabled);
+    }
+
+    fn write_reviewable_skill(root: &Path, name: &str, body: &str) -> PathBuf {
+        let skill = root.join(name);
+        fs::create_dir_all(&skill).unwrap();
+        fs::write(
+            skill.join("SKILL.md"),
+            format!(
+                "---\nname: {name}\ndescription: Test\nrequires_tools: [os.fs.read]\n---\n{body}"
+            ),
+        )
+        .unwrap();
+        skill
+    }
+
+    fn read_tool() -> BTreeSet<String> {
+        BTreeSet::from(["os.fs.read".to_string()])
+    }
+
+    fn needs_review(registry: &SkillRegistry, name: &str) -> bool {
+        registry
+            .list_all()
+            .into_iter()
+            .find(|entry| entry.name == name)
+            .expect("skill is listed")
+            .needs_review
+    }
+
+    #[test]
+    fn a_skill_nobody_has_reviewed_is_listed_but_never_offered() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("skills");
+        write_reviewable_skill(&root, "added-skill", "Body");
+
+        let registry = SkillRegistry::load(&root, &BTreeSet::new(), &read_tool()).unwrap();
+
+        assert!(registry.get_enabled("added-skill").is_none());
+        assert_eq!(registry.enabled().count(), 0);
+        assert!(needs_review(&registry, "added-skill"));
+    }
+
+    #[test]
+    fn approving_a_skill_offers_it_and_the_approval_survives_a_reload() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("skills");
+        write_reviewable_skill(&root, "added-skill", "Body");
+
+        let mut registry = SkillRegistry::load(&root, &BTreeSet::new(), &read_tool()).unwrap();
+        registry.approve("added-skill").unwrap();
+        assert!(registry.get_enabled("added-skill").is_some());
+
+        let registry = SkillRegistry::load(&root, &BTreeSet::new(), &read_tool()).unwrap();
+        assert!(registry.get_enabled("added-skill").is_some());
+        assert!(!needs_review(&registry, "added-skill"));
+    }
+
+    #[test]
+    fn changing_an_approved_skill_hides_it_until_it_is_reviewed_again() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("skills");
+        let skill = write_reviewable_skill(&root, "added-skill", "Body");
+        let mut registry = SkillRegistry::load(&root, &BTreeSet::new(), &read_tool()).unwrap();
+        registry.approve("added-skill").unwrap();
+
+        // Different instructions.
+        fs::write(
+            skill.join("SKILL.md"),
+            "---\nname: added-skill\ndescription: Test\nrequires_tools: [os.fs.read]\n---\nNow do something else",
+        )
+        .unwrap();
+        let mut registry = SkillRegistry::load(&root, &BTreeSet::new(), &read_tool()).unwrap();
+        assert!(registry.get_enabled("added-skill").is_none());
+        assert!(needs_review(&registry, "added-skill"));
+
+        // A script added next to approved instructions counts as a change too.
+        registry.approve("added-skill").unwrap();
+        fs::create_dir_all(skill.join("scripts")).unwrap();
+        fs::write(skill.join("scripts").join("run.sh"), "echo hello").unwrap();
+        let registry = SkillRegistry::load(&root, &BTreeSet::new(), &read_tool()).unwrap();
+        assert!(registry.get_enabled("added-skill").is_none());
+        assert!(needs_review(&registry, "added-skill"));
+    }
+
+    #[test]
+    fn bundled_skills_need_review_too() {
+        // The user's rule (2026-09-14): every skill goes through Allow / Preview /
+        // Cancel, whether it ships with Radium, comes from Anthropic or is
+        // written by the user.
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("skills");
+        write_reviewable_skill(&root, "starter", "Body");
+        let reserved = BTreeSet::from(["starter".to_string()]);
+
+        let mut registry = SkillRegistry::load(&root, &reserved, &read_tool()).unwrap();
+        assert!(registry.get_enabled("starter").is_none());
+        assert!(needs_review(&registry, "starter"));
+
+        registry.approve("starter").unwrap();
+        assert!(registry.get_enabled("starter").is_some());
+    }
+
+    #[test]
+    fn every_skill_starts_switched_off_until_the_user_allows_it() {
+        // The user's rule (2026-09-14): every skill, bundled or added, is off by
+        // default and only shows as on once the user has allowed it.
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("skills");
+        write_reviewable_skill(&root, "starter", "Body");
+        write_reviewable_skill(&root, "added-skill", "Body");
+        let reserved = BTreeSet::from(["starter".to_string()]);
+        let shown_on = |registry: &SkillRegistry| -> Vec<String> {
+            registry
+                .list_all()
+                .into_iter()
+                .filter(|entry| entry.enabled)
+                .map(|entry| entry.name)
+                .collect()
+        };
+
+        let mut registry = SkillRegistry::load(&root, &reserved, &read_tool()).unwrap();
+        assert!(shown_on(&registry).is_empty());
+        assert_eq!(registry.enabled().count(), 0);
+
+        registry.approve("added-skill").unwrap();
+        registry.set_enabled("added-skill", true).unwrap();
+        assert_eq!(shown_on(&registry), ["added-skill"]);
+
+        let reloaded = SkillRegistry::load(&root, &reserved, &read_tool()).unwrap();
+        assert_eq!(shown_on(&reloaded), ["added-skill"]);
+
+        // A skill that changes after it was allowed shows as off again.
+        fs::write(root.join("added-skill").join("SKILL.md"), {
+            let original = fs::read_to_string(root.join("added-skill").join("SKILL.md")).unwrap();
+            format!("{original}\nChanged.")
+        })
+        .unwrap();
+        let changed = SkillRegistry::load(&root, &reserved, &read_tool()).unwrap();
+        assert!(shown_on(&changed).is_empty());
+    }
+
+    #[test]
+    fn switching_on_an_unreviewed_skill_is_refused_but_switching_off_is_not() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("skills");
+        write_reviewable_skill(&root, "added-skill", "Body");
+        let mut registry = SkillRegistry::load(&root, &BTreeSet::new(), &read_tool()).unwrap();
+
+        let error = registry.set_enabled("added-skill", true).unwrap_err();
+        assert!(error.contains("review"), "{error}");
+        registry.set_enabled("added-skill", false).unwrap();
     }
 
     #[test]
