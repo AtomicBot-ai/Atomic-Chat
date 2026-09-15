@@ -2,6 +2,9 @@
 // It's added to ensure the legacy implementation from frontend still functions before removal.
 use super::helpers::resolve_path;
 use super::models::{DialogOpenOptions, FileStat};
+use crate::core::app::models_folder::{
+    chosen_models_folder, is_within_app_folders, redirect_for_app,
+};
 use rfd::AsyncFileDialog;
 use std::fs;
 use tauri::Runtime;
@@ -13,10 +16,16 @@ pub fn rm<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> Res
     }
 
     let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app_handle.clone());
+    let models_folder = chosen_models_folder(&app_handle);
     let path = resolve_path(app_handle, &args[0]);
     let canonical_data = jan_data_folder.canonicalize().unwrap_or(jan_data_folder);
+    let canonical_models = models_folder.map(|f| f.canonicalize().unwrap_or(f));
     let canonical_path = path.canonicalize().unwrap_or_else(|_| path.clone());
-    if !canonical_path.starts_with(&canonical_data) {
+    if !is_within_app_folders(
+        &canonical_path,
+        &canonical_data,
+        canonical_models.as_deref(),
+    ) {
         return Err(format!(
             "rm error: path {} is not under jan data folder {}",
             canonical_path.display(),
@@ -75,8 +84,10 @@ pub fn join_path<R: Runtime>(
         return Err("join_path error: Invalid argument".to_string());
     }
 
-    let path = resolve_path(app_handle, &args[0]);
+    let path = resolve_path(app_handle.clone(), &args[0]);
     let joined_path = args[1..].iter().fold(path, |acc, part| acc.join(part));
+    // `[data folder, "llamacpp", "models"]` only becomes a models path once joined.
+    let joined_path = redirect_for_app(&app_handle, &jan_utils::normalize_path(&joined_path));
     Ok(joined_path.to_string_lossy().to_string())
 }
 
@@ -297,8 +308,15 @@ pub fn write_yaml(
 ) -> Result<(), String> {
     // TODO: have an internal function to check scope
     let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
-    let save_path = jan_utils::normalize_path(&jan_data_folder.join(save_path));
-    if !jan_utils::is_within(&save_path, &jan_data_folder) {
+    let save_path = redirect_for_app(
+        &app,
+        &jan_utils::normalize_path(&jan_data_folder.join(save_path)),
+    );
+    if !is_within_app_folders(
+        &save_path,
+        &jan_data_folder,
+        chosen_models_folder(&app).as_deref(),
+    ) {
         return Err(format!(
             "Error: save path {} is not under jan_data_folder {}",
             save_path.to_string_lossy(),
@@ -317,8 +335,15 @@ pub fn read_yaml<R: Runtime>(
     path: &str,
 ) -> Result<serde_json::Value, String> {
     let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
-    let path = jan_utils::normalize_path(&jan_data_folder.join(path));
-    if !jan_utils::is_within(&path, &jan_data_folder) {
+    let path = redirect_for_app(
+        &app,
+        &jan_utils::normalize_path(&jan_data_folder.join(path)),
+    );
+    if !is_within_app_folders(
+        &path,
+        &jan_data_folder,
+        chosen_models_folder(&app).as_deref(),
+    ) {
         return Err(format!(
             "Error: path {} is not under jan_data_folder {}",
             path.to_string_lossy(),
