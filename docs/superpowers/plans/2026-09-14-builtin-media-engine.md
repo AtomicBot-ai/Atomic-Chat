@@ -56,7 +56,7 @@ The user's requirements (2026-09-14):
 | S02 | Engine variants: choose CUDA / Vulkan / CPU from detected GPUs; pinned release manifest with SHA-256 | Laptop |
 | S03 | Engine install: download, verify, unpack into `<data>/media/engine/<release>/<variant>`, refuse a bad checksum | Laptop |
 | S04 | Model catalog and model install with progress, cancel and checksum | Laptop |
-| S05 | Job runner: argument building from the contract's params, progress parsing, cancel, output into the media folder | Laptop |
+| S05 | Engine server: run the engine's `sd-server` privately on 127.0.0.1 for the chosen model (start options from the model's files, video memory-saving options, a free port; refuse a model not fully downloaded), supervise the process (ready check, stop on switch and on exit, startup reaper), and read step progress from its output. Jobs go to its native async API (`/sdcpp/v1/img_gen`, `/vid_gen`, `/jobs/{id}`, `/jobs/{id}/cancel`); results come back as base64 images. Chosen over one engine run per image because the model stays loaded and the API already gives queue, status and cancel. | Laptop |
 | S06 | `builtin-engine` adapter + conformance suite; baseline provider for new users | Laptop |
 | S07 | Image provider drop-down on the Media page; Settings lists the built-in provider first | Laptop |
 | S08 | First image from the Media page on this PC (end to end) | This PC |
