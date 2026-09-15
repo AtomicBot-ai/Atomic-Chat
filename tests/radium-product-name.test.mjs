@@ -33,17 +33,55 @@ test('the main window is titled Radium', () => {
   assert.equal(windows.app?.windows?.[0]?.title, 'Radium')
 })
 
-test('no translation still calls the product Radium Chat or Atomic Chat', () => {
+// Every name the product has been shown under. "Atomic Bot" was the in-app
+// name before this fork; the first pass of the rename only looked for the
+// other two, and the sidebar and about 270 translations kept saying it.
+const OLD_NAMES = ['Radium Chat', 'Atomic Chat', 'Atomic Bot']
+
+test('no translation still calls the product by an old name', () => {
   const localesDir = path.join(repoRoot, 'web-app/src/locales')
   const offenders = []
   for (const locale of readdirSync(localesDir)) {
     for (const file of readdirSync(path.join(localesDir, locale))) {
       const text = read(`web-app/src/locales/${locale}/${file}`)
-      for (const old of ['Radium Chat', 'Atomic Chat']) {
+      for (const old of OLD_NAMES) {
         if (text.includes(old)) offenders.push(`${locale}/${file}: "${old}"`)
       }
     }
   }
+  assert.deepEqual(offenders, [], 'rename these strings to "Radium"')
+})
+
+test('no text written into the app code calls the product by an old name', () => {
+  // Kept on purpose, never shown as the product's name:
+  // - "Atomic Bot V2 VL" names a real model on Hugging Face (decision D24);
+  // - "What is Atomic Bot?" is the title earlier versions saved on the welcome
+  //   thread, which ThreadList.tsx still has to recognise in existing data.
+  // Comments about the migration are not shown to users either.
+  const KEPT = ['Atomic Bot V2 VL', 'What is Atomic Bot?']
+  const offenders = []
+  const walk = (dir) => {
+    for (const entry of readdirSync(path.join(repoRoot, dir), {
+      withFileTypes: true,
+    })) {
+      const rel = `${dir}/${entry.name}`
+      if (entry.isDirectory()) {
+        if (entry.name !== 'locales' && entry.name !== '__tests__') walk(rel)
+      } else if (/\.(ts|tsx)$/.test(entry.name) && !/\.test\./.test(entry.name)) {
+        read(rel)
+          .split('\n')
+          .forEach((line, index) => {
+            const code = line.trim()
+            if (/^(\/\/|\*|\/\*)/.test(code)) return
+            const shown = KEPT.reduce((text, kept) => text.replaceAll(kept, ''), code)
+            for (const old of OLD_NAMES) {
+              if (shown.includes(old)) offenders.push(`${rel}:${index + 1}: "${old}"`)
+            }
+          })
+      }
+    }
+  }
+  walk('web-app/src')
   assert.deepEqual(offenders, [], 'rename these strings to "Radium"')
 })
 

@@ -18,6 +18,10 @@ pub struct AppConfiguration {
     pub data_folder: String,
     #[serde(default = "existing_install_autostart_preference")]
     pub autostart_preference: AutostartPreference,
+    /// The folder models are saved to and read from, when the user chose one
+    /// on the Models page. Absent means `<data_folder>/llamacpp/models`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub models_folder: Option<String>,
     // Add other fields as needed
 }
 
@@ -26,6 +30,7 @@ impl Default for AppConfiguration {
         Self {
             data_folder: String::from("./data"), // Set a default value for the data_folder
             autostart_preference: AutostartPreference::Unmanaged,
+            models_folder: None,
             // Add other fields with default values as needed
         }
     }

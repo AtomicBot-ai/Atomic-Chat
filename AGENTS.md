@@ -175,6 +175,8 @@ defaults on conflict.
    user's call, never yours; changing a guard-protected file needs their
    authorisation and its own isolated re-baseline commit. Starting cold?
    Use [the kickoff prompt](docs/superpowers/plans/2026-09-08-media-platform-agent-prompt.md).
+10. **Syncing upstream?** `make upstream-impact` → user decides each flagged row → merge on a green `make upstream-gate` →
+    `make upstream-post-merge`. Every new fork feature gets a row + check in `docs/upstream-gateway/fork-features.json`.
 
 ---
 

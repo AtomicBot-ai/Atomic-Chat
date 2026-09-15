@@ -475,7 +475,28 @@ test-hardening-contracts:
 		tests/hardware-profiles.test.mjs \
 		tests/no-auto-update.test.mjs \
 		tests/radium-product-name.test.mjs \
+		tests/app-version.test.mjs \
+		tests/build-version.test.mjs \
+		tests/upstream-gateway.test.mjs \
+		tests/fork-features-register.test.mjs \
+		tests/hover-glow.test.mjs \
+		tests/models-folder.test.mjs \
+		tests/window-controls.test.mjs \
+		tests/scrollbar-arrows.test.mjs \
+		tests/radium-logo.test.mjs \
 		tests/upstream-backend-resolver.test.mjs
+
+# Every build gets a new version number (tracker D34). VERSION=x.y.z sets one.
+bump-version:
+	node scripts/bump-version.mjs $(if $(VERSION),--to $(VERSION),)
+# Upstream update gateway (ADR 2026-09-13-gate-every-upstream-sync-on-a-fork-features-impact-report).
+upstream-impact:
+	git fetch upstream --tags
+	node scripts/upstream-gateway.mjs impact
+upstream-gate:
+	node scripts/upstream-gateway.mjs gate
+upstream-post-merge:
+	node scripts/upstream-gateway.mjs post-merge
 
 test-coverage-critical:
 	yarn test:coverage

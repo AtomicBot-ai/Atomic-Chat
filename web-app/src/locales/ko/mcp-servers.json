@@ -6,8 +6,8 @@
       "checking": "확장 프로그램 상태 확인 중..."
     },
     "notInstalled": {
-      "title": "Atomic Bot이 브라우저에서 작업을 완료합니다",
-      "description": "확장 프로그램을 설치하여 Atomic Bot에 브라우저 접근 권한을 부여하세요",
+      "title": "Radium이 브라우저에서 작업을 완료합니다",
+      "description": "확장 프로그램을 설치하여 Radium에 브라우저 접근 권한을 부여하세요",
       "getExtension": "확장 프로그램 받기"
     }
   },
@@ -56,7 +56,7 @@
   "serverStatusInactive": "서버 {{serverKey}}이(가) 성공적으로 비활성화되었습니다",
   "runtimeSettings": {
     "title": "런타임 설정",
-    "description": "Atomic Bot이 MCP 서버를 관리하고 재시도하는 방식을 구성합니다.",
+    "description": "Radium이 MCP 서버를 관리하고 재시도하는 방식을 구성합니다.",
     "toolCallTimeout": "도구 호출 시간 제한 (초)",
     "toolCallTimeoutDesc": "시간 초과 전 MCP 도구 응답을 기다리는 최대 시간입니다."
   },

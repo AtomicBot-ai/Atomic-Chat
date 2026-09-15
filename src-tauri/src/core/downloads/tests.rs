@@ -866,3 +866,51 @@ fn a_plain_cancellation_is_not_a_supersede() {
     assert!(task.cancel_token.is_cancelled());
     assert!(!task.was_superseded());
 }
+
+/// A model download names its file under `llamacpp/models`, like every other;
+/// with a models folder chosen on the Models page, that is where it lands.
+#[tokio::test]
+async fn a_model_download_lands_in_the_chosen_models_folder() {
+    use crate::core::app::models_folder::TestModelsFolder;
+    use crate::test_support::TestDataRoot;
+    use tauri::test::{mock_builder, mock_context, noop_assets};
+
+    let (url, server) = spawn_model_contract_server().await;
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path().join("data");
+    let chosen = tmp.path().join("Chosen Models");
+    std::fs::create_dir_all(&data).unwrap();
+    let app = mock_builder()
+        .manage(TestDataRoot(data.clone()))
+        .manage(TestModelsFolder(chosen.clone()))
+        .build(mock_context(noop_assets()))
+        .unwrap();
+    let item = DownloadItem {
+        url,
+        save_path: "llamacpp/models/fixture/tiny-model/model.gguf".to_string(),
+        proxy: None,
+        sha256: None,
+        size: Some(6),
+        model_id: Some("fixture/tiny-model".to_string()),
+    };
+
+    _download_files_internal(
+        app.handle().clone(),
+        std::slice::from_ref(&item),
+        &HashMap::new(),
+        "chosen-models-folder-test",
+        false,
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        tokio::fs::read(chosen.join("fixture/tiny-model/model.gguf"))
+            .await
+            .unwrap(),
+        b"abcdef"
+    );
+    assert!(!data.join("llamacpp/models/fixture").exists());
+    server.abort();
+}

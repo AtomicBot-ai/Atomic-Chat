@@ -1,8 +1,8 @@
 {
-  "welcome": "Atomic Botへようこそ",
-  "description": "開始するには、Atomic Bot Modelで素早く起動するか、独自のローカルまたはリモートプロバイダーを選択してください",
+  "welcome": "Radiumへようこそ",
+  "description": "開始するには、Radium Modelで素早く起動するか、独自のローカルまたはリモートプロバイダーを選択してください",
   "descriptionWeb": "開始するには、APIキーを使用してクラウドモデルに接続する必要があります",
-  "quickStart": "Atomic Bot Modelでクイックスタート",
+  "quickStart": "Radium Modelでクイックスタート",
   "quickStartDescription": "セットアップ不要",
   "quickStartFailed": "エラーが発生しました。もう一度お試しください。",
   "downloading": "ダウンロード中…",

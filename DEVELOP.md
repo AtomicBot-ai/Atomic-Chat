@@ -61,6 +61,26 @@ yarn dev
 
 ---
 
+## Every build gets a new version number
+
+A standing rule from the user (tracker D34, Task 27): every build of Radium that
+is committed, pushed and compiled carries a new version number, so no two
+different installers ever share one.
+
+1. **Bump before you build.** Run `make bump-version` (or
+   `node scripts/bump-version.mjs`). It adds one to the last number
+   (2.0.37 → 2.0.38) in `src-tauri/tauri.conf.json` and
+   `web-app/package.json` together. `VERSION=x.y.z make bump-version` sets a
+   number instead; it must be newer, because the Windows installer only
+   upgrades forwards.
+2. **Commit and push the bump**, then start the build.
+3. **The Windows test build enforces it.** It refuses to start when its
+   version was already built from a different commit, names the installer
+   `radium-windows-test-<version>-<sha>`, and tags the commit it built as
+   `test-build/v<version>`.
+
+Tell the user the new version number together with the download link.
+
 ## Where Radium stores data on Windows
 
 Dev (`make dev-windows-cpu` / `yarn dev`) and the installed Radium app (`Atomic-Chat.exe`) **share the same data folders** — there is no separate dev profile. Anything you delete from these paths affects both.
@@ -107,3 +127,30 @@ the provider), or from Windows' own Credential Manager. See ADR
 ### Custom data folder
 
 If a user has relocated the data folder via `Settings → Advanced → Change data folder location` (`change_app_data_folder`), the uninstaller and `make clean-windows-all` **do not** delete that custom path — only the default `%APPDATA%\Radium\` (and the pre-rename `%APPDATA%\Atomic Chat\`) is cleaned. Removing a custom data folder is the user's responsibility.
+
+## Syncing with upstream (Atomic Chat)
+
+Upstream releases go through a gateway, so nothing Radium built is lost
+without anyone noticing. See ADR
+`docs/decisions/2026-09-13-gate-every-upstream-sync-on-a-fork-features-impact-report.md`.
+
+1. **Report.** Run `make upstream-impact`.
+   - It fetches `upstream` and trial-merges it in memory. No branch or file is
+     touched.
+   - It writes `docs/upstream-gateway/upstream-impact.md` and `.json`.
+   - The report covers every row of `docs/upstream-gateway/fork-features.json`:
+     whether upstream leaves the feature alone, edits it, deletes it or
+     conflicts with it, and what that means.
+2. **Decide.** Run `python scripts/upstream-gateway-tracker.py export`.
+   - This fills the tracker's *Fork features* and *Upstream impact* sheets.
+   - Fill the yellow *Your decision* column for every row: **keep ours**,
+     **take theirs** or **adapt**.
+   - Then run `python scripts/upstream-gateway-tracker.py import` to record the
+     decisions.
+3. **Gate.** Run `make upstream-gate`. It fails until every flagged row is
+   decided and the report matches the upstream about to be merged.
+4. **Merge and prove.** Merge on a branch, then run `make upstream-post-merge`.
+   It runs every feature's check and names any that fail.
+
+When you build a new fork feature, add its row to `fork-features.json` with a
+check that fails when the feature is removed.

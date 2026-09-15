@@ -3,6 +3,7 @@ import {
   createAgentSkill,
   deleteAgentSkill,
   exportAgentSkill,
+  approveAgentSkill,
   getAgentSkill,
   importAgentSkill,
   listAgentSkills,
@@ -78,12 +79,24 @@ export function useAgentSkills(enabled = true) {
     [load, select, selected?.name]
   )
 
+  const approve = useCallback(
+    async (name: string) => {
+      await approveAgentSkill(name)
+      await load()
+      if (selectedNameRef.current === name) {
+        await select(name)
+      }
+    },
+    [load, select]
+  )
+
   const addCreated = useCallback(
     async (request: CreateAgentSkillRequest) => {
       const detail = await createAgentSkill(request)
       selectedNameRef.current = detail.name
       setSelected(detail)
       await load()
+      return detail
     },
     [load]
   )
@@ -94,6 +107,7 @@ export function useAgentSkills(enabled = true) {
       selectedNameRef.current = detail.name
       setSelected(detail)
       await load()
+      return detail
     },
     [load]
   )
@@ -142,6 +156,7 @@ export function useAgentSkills(enabled = true) {
     load,
     select,
     setEnabled,
+    approve,
     addCreated,
     addImported,
     remove,

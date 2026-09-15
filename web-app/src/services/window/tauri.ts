@@ -131,7 +131,7 @@ export class TauriWindowService extends DefaultWindowService {
       await this.openWindow({
         url: '/logs',
         label: 'logs-app-window',
-        title: 'App Logs - Atomic Bot',
+        title: 'App Logs - Radium',
         width: 800,
         height: 600,
         resizable: true,
@@ -148,7 +148,7 @@ export class TauriWindowService extends DefaultWindowService {
       await this.openWindow({
         url: '/system-monitor',
         label: 'system-monitor-window',
-        title: 'System Monitor - Atomic Bot',
+        title: 'System Monitor - Radium',
         width: 1000,
         height: 700,
         resizable: true,
@@ -165,7 +165,7 @@ export class TauriWindowService extends DefaultWindowService {
       await this.openWindow({
         url: '/local-api-server/logs',
         label: 'logs-window-local-api-server',
-        title: 'Local API Server Logs - Atomic Bot',
+        title: 'Local API Server Logs - Radium',
         width: 800,
         height: 600,
         resizable: true,

@@ -17,7 +17,9 @@ on:
       - 'yarn.lock'
 
 permissions:
-  contents: read
+  # write: a successful build tags the commit it built as test-build/v<version>
+  # (tracker D34), so a later build can refuse to reuse that number.
+  contents: write
 
 jobs:
   build-windows-test:
@@ -26,15 +28,30 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      # Every build gets a new version number (the user's rule, tracker D34):
+      # refuse to build when this version was already built from another commit.
+      - name: Check this build has a new version number
+        id: version
+        shell: bash
+        run: |
+          git fetch --tags --force origin
+          version=$(node scripts/check-build-version.mjs --prefix test-build/v)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building Radium $version"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '20'
+          # v5 would otherwise cache Yarn from package.json's packageManager
+          # before corepack has activated Yarn 4 below; the Cache Yarn step
+          # already does this.
+          package-manager-cache: false
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -47,7 +64,7 @@ jobs:
           workspaces: src-tauri
 
       - name: Cache Yarn
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .yarn/cache
           key: yarn-windows-test-${{ hashFiles('yarn.lock') }}
@@ -151,7 +168,7 @@ jobs:
       # and sha256s, so a test installer offers the same offline backends a real
       # one does rather than a second set nobody checks.
       - name: Restore verified Windows backend archive cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}\atomic-backend-cache
           key: windows-backend-bundle-${{ hashFiles('scripts/windows-backend-bundle.json') }}
@@ -195,9 +212,9 @@ jobs:
           }
 
       - name: Upload Windows installer artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
-          name: radium-windows-test-${{ github.sha }}
+          name: radium-windows-test-${{ steps.version.outputs.version }}-${{ github.sha }}
           # NSIS only. Both installers embed the whole ~1.26GB offline backend
           # bundle, so shipping the MSI as well doubled the download for a file
           # nobody installs from when testing. The MSI is still built and still
@@ -205,3 +222,14 @@ jobs:
           path: src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
           retention-days: 14
+
+      - name: Record the version this commit was built as
+        shell: bash
+        run: |
+          tag="test-build/v${{ steps.version.outputs.version }}"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "$tag already marks this commit"
+          else
+            git tag "$tag" "$GITHUB_SHA"
+            git push origin "refs/tags/$tag"
+          fi

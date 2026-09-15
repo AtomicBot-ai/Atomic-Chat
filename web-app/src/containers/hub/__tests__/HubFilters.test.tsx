@@ -220,20 +220,36 @@ describe('HubFilters', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('narrows to uncensored builds from the bar itself, off by default', async () => {
+  it('carries the uncensored filter inside the sort menu, off by default', async () => {
+    const user = userEvent.setup()
+    renderFilters()
+
+    // Tracker Task 24: it lives with the other filters, not beside the menu.
+    expect(
+      screen.queryByRole('checkbox', { name: 'hub:uncensored' })
+    ).not.toBeInTheDocument()
+
+    await openSortMenu(user)
+
+    const item = screen.getByRole('menuitemcheckbox', { name: 'hub:uncensored' })
+    expect(item).not.toBeChecked()
+    expect(item).toHaveAttribute('title', 'hub:uncensoredHint')
+  })
+
+  it('narrows to uncensored builds and keeps the menu open', async () => {
     const user = userEvent.setup()
     const { onChange } = renderFilters()
 
-    const box = screen.getByRole('checkbox', { name: 'hub:uncensored' })
-    expect(box).not.toBeChecked()
+    await openSortMenu(user)
+    await user.click(
+      screen.getByRole('menuitemcheckbox', { name: 'hub:uncensored' })
+    )
 
-    await user.click(box)
-
-    expect(
-      screen.getByRole('checkbox', { name: 'hub:uncensored' })
-    ).toBeChecked()
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ uncensored: true })
     )
+    expect(
+      screen.getByRole('menuitemcheckbox', { name: 'hub:uncensored' })
+    ).toBeChecked()
   })
 })

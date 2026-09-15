@@ -44,8 +44,6 @@ import { getLastUsedModel } from '@/utils/getModelToStart'
 import { isLocalProvider } from '@/utils/registerRemoteProvider'
 import { switchToModel } from '@/utils/switchModel'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
-import { useLeftPanel } from '@/hooks/useLeftPanel'
-import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
 
 /**
  * Which providers may list models in the picker.
@@ -137,14 +135,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   useEffect(() => {
     if (!open) setSettledEffortLabel(effortLabel)
   }, [open, effortLabel])
-
-  // With the sidebar and run settings both open the composer is at its
-  // narrowest, so the pill folds down to the model's mark; the name stays on
-  // hover and in the panel. With nothing selected there is no mark to fold
-  // down to, so "Select a model" stays.
-  const leftBarOpen = useLeftPanel((state) => state.open)
-  const rightBarOpen = useRunSettingsPanel((state) => state.isOpen)
-  const compact = leftBarOpen && rightBarOpen && !!selectedModel?.id
 
   // Helper function to check if a model exists in providers
   // The persisted cloud selection is usable when its provider is on, still
@@ -664,7 +654,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         <button
           type="button"
           title={selectedModel?.id ?? displayModel}
-          aria-label={compact ? displayModel : undefined}
           data-test-id="model-picker-trigger"
           className={cn(
             'inline-flex h-7 max-w-64 shrink items-center gap-1.5 rounded-full border bg-secondary/40 pr-2 pl-1.5 text-xs transition-colors duration-200 hover:bg-secondary/70',
@@ -676,16 +665,14 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               <ProvidersAvatar provider={provider} className="size-4" />
             </div>
           )}
-          {!compact && (
-            <span
-              className={cn(
-                'truncate font-medium',
-                !selectedModel?.id && 'text-muted-foreground'
-              )}
-            >
-              {displayModel}
-            </span>
-          )}
+          <span
+            className={cn(
+              'truncate font-medium',
+              !selectedModel?.id && 'text-muted-foreground'
+            )}
+          >
+            {displayModel}
+          </span>
           {settledEffortLabel && (
             <span className="text-muted-foreground shrink-0">
               {settledEffortLabel}
@@ -877,11 +864,11 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                             className="size-6 cursor-pointer flex items-center justify-center rounded-sm bg-secondary-foreground/8 transition-all duration-200 ease-in-out"
                             onClick={(e) => {
                               e.stopPropagation()
-                              // Cloud providers are set up on `/cloud`; local
+                              // Cloud providers are set up in Settings > Cloud; local
                               // engines keep their Settings detail page.
                               if (isCloudProvider(providerInfo)) {
                                 navigate({
-                                  to: route.cloud.index,
+                                  to: route.settings.cloud,
                                   search: { provider: providerInfo.provider },
                                 })
                               } else {

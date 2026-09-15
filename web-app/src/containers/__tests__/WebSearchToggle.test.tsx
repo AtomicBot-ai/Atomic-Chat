@@ -10,7 +10,15 @@ const activateMCPServer = vi.hoisted(() => vi.fn(async () => {}))
 const deactivateMCPServer = vi.hoisted(() => vi.fn(async () => {}))
 const updateMCPConfig = vi.hoisted(() => vi.fn(async () => {}))
 
-const mcp = () => ({ activateMCPServer, deactivateMCPServer, updateMCPConfig })
+const connectorNeedsReview = vi.hoisted(() => vi.fn(async () => false))
+const approveConnector = vi.hoisted(() => vi.fn(async () => {}))
+const mcp = () => ({
+  activateMCPServer,
+  deactivateMCPServer,
+  updateMCPConfig,
+  connectorNeedsReview,
+  approveConnector,
+})
 
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({ mcp }),
@@ -29,6 +37,7 @@ vi.mock('@/hooks/useThreads', () => ({
 import WebSearchToggle from '../WebSearchToggle'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
+import { useConnectorReview } from '@/hooks/useConnectorReview'
 
 const EXA = {
   command: '',
@@ -104,6 +113,62 @@ describe('WebSearchToggle', () => {
     await waitFor(() => expect(deactivateMCPServer).toHaveBeenCalledWith('exa'))
     expect(activateMCPServer).not.toHaveBeenCalled()
     expect(useMCPServers.getState().mcpServers.exa?.active).toBe(false)
+  })
+
+  it('asks for a review before switching on, and stays off on Cancel', async () => {
+    useConnectorReview.setState({ pending: [] })
+    connectorNeedsReview.mockResolvedValueOnce(true)
+    useMCPServers.setState({ mcpServers: { exa: { ...EXA, active: false } } })
+
+    render(<WebSearchToggle />)
+    await userEvent.click(
+      screen.getByRole('button', { name: 'common:webSearchToggleDisabled' })
+    )
+
+    await waitFor(() =>
+      expect(
+        useConnectorReview.getState().pending.map((request) => request.name)
+      ).toEqual(['exa'])
+    )
+    expect(activateMCPServer).not.toHaveBeenCalled()
+
+    act(() => {
+      const [request] = useConnectorReview.getState().pending
+      useConnectorReview.getState().settle(request.id, false)
+    })
+
+    await screen.findByRole('button', { name: 'common:webSearchToggleDisabled' })
+    expect(useConnectorReview.getState().pending).toEqual([])
+    expect(activateMCPServer).not.toHaveBeenCalled()
+    expect(approveConnector).not.toHaveBeenCalled()
+    expect(useMCPServers.getState().mcpServers.exa?.active).toBe(false)
+  })
+
+  it('connects once the review is allowed', async () => {
+    useConnectorReview.setState({ pending: [] })
+    connectorNeedsReview.mockResolvedValueOnce(true)
+    useMCPServers.setState({ mcpServers: { exa: { ...EXA, active: false } } })
+
+    render(<WebSearchToggle />)
+    await userEvent.click(
+      screen.getByRole('button', { name: 'common:webSearchToggleDisabled' })
+    )
+    await waitFor(() =>
+      expect(useConnectorReview.getState().pending).toHaveLength(1)
+    )
+    act(() => {
+      const [request] = useConnectorReview.getState().pending
+      useConnectorReview.getState().settle(request.id, true)
+    })
+
+    await waitFor(() =>
+      expect(useMCPServers.getState().mcpServers.exa?.active).toBe(true)
+    )
+    expect(approveConnector).toHaveBeenCalledWith('exa', { ...EXA, active: false })
+    // The review is recorded before the connector is started.
+    expect(approveConnector.mock.invocationCallOrder[0]).toBeLessThan(
+      activateMCPServer.mock.invocationCallOrder[0]
+    )
   })
 
   it('keeps the server off when activation fails', async () => {

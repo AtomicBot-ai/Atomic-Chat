@@ -31,6 +31,7 @@ use crate::core::{
     mcp::{
         constants::{default_mcp_config, DEFAULT_MCP_HANDSHAKE_TIMEOUT_SECS},
         models::{McpServerConfig, McpSettings},
+        review::{is_connector_reviewed, needs_review_error},
     },
     process_env::sanitize_tokio_command,
     state::{AppState, RunningServiceEnum, SharedMcpServers},
@@ -186,6 +187,22 @@ pub async fn start_mcp_server<R: Runtime>(
     config: Value,
 ) -> Result<(), String> {
     let app_state = app.state::<AppState>();
+
+    // Task 28 (decision D36): nothing starts that the user has not allowed as it
+    // is now. Checked before anything is launched or remembered for restarts.
+    let data_dir = get_jan_data_folder_path(app.clone());
+    if !is_connector_reviewed(&data_dir, &name, &config) {
+        let error = needs_review_error(&name);
+        log::warn!("Not starting MCP server {name}: it has not been reviewed as it is now");
+        app_state
+            .mcp_server_errors
+            .lock()
+            .await
+            .insert(name.clone(), error.clone());
+        emit_mcp_status_update_event(&app, &name);
+        return Err(error);
+    }
+
     let active_servers_state = app_state.mcp_active_servers.clone();
     let shutdown_in_progress = app_state.mcp_shutdown_in_progress.lock().await;
     if *shutdown_in_progress {
@@ -245,11 +262,14 @@ pub async fn start_mcp_server<R: Runtime>(
     }
 }
 
-async fn connect_remote_mcp<R: Runtime>(
+/// `use_sign_in` is false for Preview, which must not use or disturb a stored
+/// browser sign-in.
+pub(crate) async fn connect_remote_mcp<R: Runtime>(
     app: &AppHandle<R>,
     name: &str,
     config: &McpServerConfig,
     transport_type: &str,
+    use_sign_in: bool,
 ) -> Result<RunningService<RoleClient, InitializeRequestParam>, String> {
     let url = config
         .url
@@ -277,7 +297,9 @@ async fn connect_remote_mcp<R: Runtime>(
         // A server the user signed into gets its session restored (refreshed
         // first when close to expiry) and wrapped around the base client. The
         // restore does its own discovery round trip — bounded by this timeout.
-        let oauth_manager = {
+        let oauth_manager = if !use_sign_in {
+            None
+        } else {
             let state = app.state::<AppState>();
             let data_dir = get_jan_data_folder_path(app.clone());
             state
@@ -468,12 +490,6 @@ async fn schedule_mcp_start_task<R: Runtime>(
     start_generation: u64,
 ) -> Result<(), String> {
     let app_path = get_jan_data_folder_path(app.clone());
-    let exe_path = env::current_exe().expect("Failed to get current exe path");
-    let exe_parent_path = exe_path
-        .parent()
-        .expect("Executable must have a parent directory");
-    let bin_path = exe_parent_path.to_path_buf();
-
     let config_params = extract_command_args(&config)
         .ok_or_else(|| format!("Failed to extract command args from config for {name}"))?;
 
@@ -493,7 +509,8 @@ async fn schedule_mcp_start_task<R: Runtime>(
             state.mcp_oauth.has_entry(&app_path, &name).await
         };
 
-        let client = match connect_remote_mcp(&app, &name, &config_params, primary_transport).await
+        let client = match connect_remote_mcp(&app, &name, &config_params, primary_transport, true)
+            .await
         {
             Ok(client) => {
                 log::info!("MCP server {name} connected using {primary_transport} transport");
@@ -513,7 +530,8 @@ async fn schedule_mcp_start_task<R: Runtime>(
                     .mcp_oauth
                     .refresh_if_stale(&app_path, &name, true)
                     .await?;
-                match connect_remote_mcp(&app, &name, &config_params, primary_transport).await {
+                match connect_remote_mcp(&app, &name, &config_params, primary_transport, true).await
+                {
                     Ok(client) => {
                         log::info!(
                             "MCP server {name} connected using {primary_transport} after refresh"
@@ -533,7 +551,9 @@ async fn schedule_mcp_start_task<R: Runtime>(
                     "MCP server {name} failed using {primary_transport} transport: \
                      {primary_error}; retrying with {fallback_transport}"
                 );
-                match connect_remote_mcp(&app, &name, &config_params, fallback_transport).await {
+                match connect_remote_mcp(&app, &name, &config_params, fallback_transport, true)
+                    .await
+                {
                     Ok(client) => {
                         log::info!(
                             "MCP server {name} connected using fallback \
@@ -604,79 +624,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
             }
         }
 
-        let mut cmd = Command::new(config_params.command.clone());
-        let bun_x_path = if cfg!(windows) {
-            bin_path.join("bun.exe")
-        } else {
-            bin_path.join("bun")
-        };
-        if config_params.command.clone() == "npx"
-            && can_override_npx(bun_x_path.display().to_string())
-        {
-            let mut cache_dir = app_path.clone();
-            cache_dir.push(".npx");
-            cmd = Command::new(bun_x_path.display().to_string());
-            cmd.arg("x");
-            cmd.env("BUN_INSTALL", cache_dir.to_str().unwrap());
-        }
-
-        let uv_path = if cfg!(windows) {
-            bin_path.join("uv.exe")
-        } else {
-            bin_path.join("uv")
-        };
-        if config_params.command.clone() == "uvx" && can_override_uvx(uv_path.display().to_string())
-        {
-            let mut cache_dir = app_path.clone();
-            cache_dir.push(".uvx");
-            cmd = Command::new(uv_path);
-            cmd.arg("tool");
-            cmd.arg("run");
-            cmd.env("UV_CACHE_DIR", cache_dir.to_str().unwrap());
-        }
-        #[cfg(windows)]
-        {
-            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW: prevents shell window on Windows
-        }
-        #[cfg(unix)]
-        cmd.process_group(0);
-
-        sanitize_tokio_command(&mut cmd);
-        cmd.kill_on_drop(true);
-
-        // ATO-164 (defense-in-depth): launch the stdio server in its configured
-        // working directory so relative paths resolve there rather than the
-        // app's data dir. No-op when `cwd` is unset (inherits the app CWD).
-        //
-        // The directory has to exist: CreateProcess fails with ERROR_DIRECTORY
-        // (os error 267, "The directory name is invalid") for a missing one,
-        // which took every stdio server down with it once the sandbox folder
-        // was moved or never created (#259). Fall back to the inherited CWD
-        // with a warning instead.
-        if let Some(cwd) = config_params.cwd.as_deref() {
-            let dir = std::path::Path::new(cwd);
-            if dir.is_dir() {
-                cmd.current_dir(dir);
-            } else {
-                log::warn!(
-                    "MCP server {name}: working directory {cwd:?} is not an existing \
-                     directory; starting from the app working directory instead"
-                );
-            }
-        }
-
-        config_params
-            .args
-            .iter()
-            .filter_map(Value::as_str)
-            .for_each(|arg| {
-                cmd.arg(arg);
-            });
-        config_params.envs.iter().for_each(|(k, v)| {
-            if let Some(v_str) = v.as_str() {
-                cmd.env(k, v_str);
-            }
-        });
+        let cmd = build_stdio_command(&app_path, &name, &config_params);
 
         let (process, stderr) = TokioChildProcess::builder(cmd)
             .stderr(Stdio::piped())
@@ -874,6 +822,96 @@ fn normalize_cwd(raw: &str) -> Option<String> {
         .unwrap_or(trimmed)
         .trim();
     (!unquoted.is_empty()).then(|| unquoted.to_string())
+}
+
+/// Builds the command that launches a local connector program: the bundled
+/// `bun x` / `uv tool run` stand-ins for `npx` / `uvx`, no console window, a
+/// cleaned environment, the configured working folder, arguments and keys.
+/// Shared by starting a connector and by Preview listing its tools.
+pub(crate) fn build_stdio_command(
+    app_path: &std::path::Path,
+    name: &str,
+    config_params: &McpServerConfig,
+) -> Command {
+    let exe_path = env::current_exe().expect("Failed to get current exe path");
+    let bin_path = exe_path
+        .parent()
+        .expect("Executable must have a parent directory")
+        .to_path_buf();
+
+    let mut cmd = Command::new(config_params.command.clone());
+    let bun_x_path = if cfg!(windows) {
+        bin_path.join("bun.exe")
+    } else {
+        bin_path.join("bun")
+    };
+    if config_params.command.clone() == "npx" && can_override_npx(bun_x_path.display().to_string())
+    {
+        let mut cache_dir = app_path.to_path_buf();
+        cache_dir.push(".npx");
+        cmd = Command::new(bun_x_path.display().to_string());
+        cmd.arg("x");
+        cmd.env("BUN_INSTALL", cache_dir.to_str().unwrap());
+    }
+
+    let uv_path = if cfg!(windows) {
+        bin_path.join("uv.exe")
+    } else {
+        bin_path.join("uv")
+    };
+    if config_params.command.clone() == "uvx" && can_override_uvx(uv_path.display().to_string()) {
+        let mut cache_dir = app_path.to_path_buf();
+        cache_dir.push(".uvx");
+        cmd = Command::new(uv_path);
+        cmd.arg("tool");
+        cmd.arg("run");
+        cmd.env("UV_CACHE_DIR", cache_dir.to_str().unwrap());
+    }
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW: prevents shell window on Windows
+    }
+    #[cfg(unix)]
+    cmd.process_group(0);
+
+    sanitize_tokio_command(&mut cmd);
+    cmd.kill_on_drop(true);
+
+    // ATO-164 (defense-in-depth): launch the stdio server in its configured
+    // working directory so relative paths resolve there rather than the
+    // app's data dir. No-op when `cwd` is unset (inherits the app CWD).
+    //
+    // The directory has to exist: CreateProcess fails with ERROR_DIRECTORY
+    // (os error 267, "The directory name is invalid") for a missing one,
+    // which took every stdio server down with it once the sandbox folder
+    // was moved or never created (#259). Fall back to the inherited CWD
+    // with a warning instead.
+    if let Some(cwd) = config_params.cwd.as_deref() {
+        let dir = std::path::Path::new(cwd);
+        if dir.is_dir() {
+            cmd.current_dir(dir);
+        } else {
+            log::warn!(
+                "MCP server {name}: working directory {cwd:?} is not an existing \
+                 directory; starting from the app working directory instead"
+            );
+        }
+    }
+
+    config_params
+        .args
+        .iter()
+        .filter_map(Value::as_str)
+        .for_each(|arg| {
+            cmd.arg(arg);
+        });
+    config_params.envs.iter().for_each(|(k, v)| {
+        if let Some(v_str) = v.as_str() {
+            cmd.env(k, v_str);
+        }
+    });
+
+    cmd
 }
 
 pub fn extract_command_args(config: &Value) -> Option<McpServerConfig> {

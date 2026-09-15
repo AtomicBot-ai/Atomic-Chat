@@ -1,0 +1,425 @@
+[
+  {
+    "id": "radium-media",
+    "feature": "Radium Media",
+    "forUsers": "Generate images and video from the Media page through a pluggable engine (Radium Media Worker, ComfyUI or a cloud images API), keep the results in a media library, and store provider keys in the OS keychain.",
+    "paths": [
+      "web-app/src/services/media/**",
+      "web-app/src/services/atomicMedia/**",
+      "web-app/src/containers/media/**",
+      "web-app/src/routes/media.tsx",
+      "web-app/src/routes/media_.library.tsx",
+      "web-app/src/services/media-registry.ts",
+      "web-app/src/locales/*/media.json"
+    ],
+    "checks": [
+      {
+        "run": "npx vitest run src/services/media src/services/atomicMedia src/containers/media",
+        "cwd": "web-app",
+        "files": [
+          "web-app/src/containers/media/MediaStudio.test.tsx",
+          "web-app/src/services/media/__tests__/jobManager.test.ts"
+        ]
+      },
+      {
+        "run": "node --test tests/verify-selective-v2032.test.mjs",
+        "files": [
+          "tests/verify-selective-v2032.test.mjs"
+        ]
+      },
+      {
+        "run": "node scripts/verify-selective-v2032.mjs",
+        "files": [
+          "scripts/verify-selective-v2032.mjs",
+          "scripts/selective-v2032-protected.json"
+        ]
+      }
+    ],
+    "decision": "docs/decisions/2026-09-10-adopt-a-provider-adapter-architecture-for-radium-media.md",
+    "status": "checked"
+  },
+  {
+    "id": "media-sidebar-entry",
+    "feature": "Media in the sidebar",
+    "forUsers": "A Media row in the left sidebar opens Radium Media. Upstream has no such row.",
+    "paths": [
+      "web-app/src/components/left-sidebar/NavMain.tsx"
+    ],
+    "checks": [
+      {
+        "run": "npx vitest run src/components/left-sidebar/__tests__/NavMain.test.tsx",
+        "cwd": "web-app",
+        "files": [
+          "web-app/src/components/left-sidebar/__tests__/NavMain.test.tsx"
+        ]
+      }
+    ],
+    "decision": "Task 19 (v2.0.35 sync)",
+    "status": "checked"
+  },
+  {
+    "id": "atomic-code-removed",
+    "feature": "Atomic Code workspace stays removed",
+    "forUsers": "The unfinished Code workspace and its model router are gone and must not come back with an upstream update.",
+    "paths": [
+      "web-app/src/containers/code/**",
+      "web-app/src/routes/code.tsx",
+      "web-app/src/services/model-router/**",
+      "web-app/src/hooks/useModelStrategy.ts"
+    ],
+    "expectAbsent": true,
+    "checks": [
+      {
+        "run": "node scripts/verify-selective-v2032.mjs",
+        "files": [
+          "scripts/verify-selective-v2032.mjs"
+        ]
+      }
+    ],
+    "decision": "e0b537747 (PR #3)",
+    "status": "checked"
+  },
+  {
+    "id": "product-name-radium",
+    "feature": "The product is called Radium",
+    "forUsers": "The app, window titles, installer, Start menu entry and every visible string say Radium; the installer removes an old Atomic Chat install without touching its data.",
+    "paths": [
+      "src-tauri/tauri.conf.json",
+      "src-tauri/tauri.*.conf.json",
+      "src-tauri/windows/hooks.nsh",
+      "web-app/index.html",
+      "web-app/src/locales/*/*.json"
+    ],
+    "checks": [
+      {
+        "run": "node --test tests/radium-product-name.test.mjs",
+        "files": [
+          "tests/radium-product-name.test.mjs"
+        ]
+      }
+    ],
+    "decision": "docs/decisions/2026-09-13-rename-the-product-to-radium-and-move-the-data-folder.md",
+    "status": "checked"
+  },
+  {
+    "id": "data-folder-migration",
+    "feature": "Data folder moves to Radium on first launch",
+    "forUsers": "Chats, models and settings saved under Atomic Chat move to %APPDATA%\\Radium\\data once, and empty old folders are tidied on later launches.",
+    "paths": [
+      "src-tauri/src/core/app/data_migration.rs",
+      "src-tauri/src/core/app/mod.rs",
+      "src-tauri/src/lib.rs"
+    ],
+    "checks": [
+      {
+        "run": "cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri --lib data_migration -- --test-threads=1",
+        "env": {
+          "TAURI_CONFIG": "{\"bundle\":{\"icon\":[\"icons/icon.png\"]}}"
+        },
+        "files": [
+          "src-tauri/src/core/app/data_migration.rs"
+        ]
+      }
+    ],
+    "decision": "docs/decisions/2026-09-13-rename-the-product-to-radium-and-move-the-data-folder.md",
+    "status": "checked"
+  },
+  {
+    "id": "extensions-follow-data-folder",
+    "feature": "Extensions load after the data folder moves",
+    "forUsers": "If extensions.json points at an old data folder, or is missing or unreadable, Radium reinstalls its bundled extensions instead of opening to a blank window.",
+    "paths": [
+      "src-tauri/src/core/setup.rs",
+      "src-tauri/src/core/extensions/**",
+      "src-tauri/src/lib.rs"
+    ],
+    "checks": [
+      {
+        "run": "cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri --lib extension_path_tests -- --test-threads=1",
+        "env": {
+          "TAURI_CONFIG": "{\"bundle\":{\"icon\":[\"icons/icon.png\"]}}"
+        },
+        "files": [
+          "src-tauri/src/core/setup.rs"
+        ]
+      }
+    ],
+    "decision": "Tracker T21-S16 (PR #15), found on this PC 2026-09-14",
+    "status": "pending"
+  },
+  {
+    "id": "launch-at-startup-rename",
+    "feature": "Launch at startup survives the rename",
+    "forUsers": "If Atomic Chat was set to start with the computer, Radium keeps starting with it.",
+    "paths": [
+      "web-app/src/lib/launchAtStartup.ts"
+    ],
+    "checks": [
+      {
+        "run": "npx vitest run src/lib/__tests__/launchAtStartup.test.ts",
+        "cwd": "web-app",
+        "files": [
+          "web-app/src/lib/__tests__/launchAtStartup.test.ts"
+        ]
+      }
+    ],
+    "decision": "docs/decisions/2026-09-13-rename-the-product-to-radium-and-move-the-data-folder.md",
+    "status": "checked"
+  },
+  {
+    "id": "assistant-name-migration",
+    "feature": "Saved assistants say Radium",
+    "forUsers": "The default assistant's name and instructions that said Atomic Chat or Radium Chat are updated to Radium.",
+    "paths": [
+      "extensions/assistant-extension/src/**"
+    ],
+    "checks": [
+      {
+        "run": "npx vitest run src/index.test.ts",
+        "cwd": "extensions/assistant-extension",
+        "files": [
+          "extensions/assistant-extension/src/index.test.ts"
+        ]
+      }
+    ],
+    "decision": "450100bda",
+    "status": "checked"
+  },
+  {
+    "id": "no-auto-update",
+    "feature": "Radium never auto-updates",
+    "forUsers": "No update prompt can install upstream's Atomic Chat over Radium.",
+    "paths": [
+      "src-tauri/tauri.conf.json",
+      "src-tauri/tauri.*.conf.json",
+      "src-tauri/Cargo.toml",
+      "web-app/package.json",
+      "web-app/src/**/*pdater*"
+    ],
+    "checks": [
+      {
+        "run": "node --test tests/no-auto-update.test.mjs",
+        "files": [
+          "tests/no-auto-update.test.mjs"
+        ]
+      }
+    ],
+    "decision": "docs/decisions/2026-09-12-radium-never-auto-updates.md",
+    "status": "checked"
+  },
+  {
+    "id": "windows-offline-backends",
+    "feature": "Windows installers carry verified engine backends",
+    "forUsers": "A fresh Windows install can run local models without downloading an engine first.",
+    "paths": [
+      "scripts/stage-windows-backends.mjs",
+      "scripts/windows-backend-bundle.json",
+      ".github/workflows/windows-test-build.yml",
+      "src-tauri/resources/backend-packages/**"
+    ],
+    "checks": [
+      {
+        "run": "node --test tests/stage-windows-backends.test.mjs",
+        "files": [
+          "tests/stage-windows-backends.test.mjs"
+        ]
+      }
+    ],
+    "decision": "b0d716a95, 60bc3b914",
+    "status": "checked"
+  },
+  {
+    "id": "settings-chat-cloud-api",
+    "feature": "Chat, Cloud and API live in Settings",
+    "forUsers": "Settings holds the chat's run settings, cloud providers and the local API server; the sidebar no longer lists Cloud or API, and old links still land on the right page.",
+    "paths": [
+      "web-app/src/containers/SettingsMenu.tsx",
+      "web-app/src/containers/SettingsPageLayout.tsx",
+      "web-app/src/containers/AgentWorkspaceLayout.tsx",
+      "web-app/src/containers/RunSettingsPanel.tsx",
+      "web-app/src/routes/settings/chat.tsx",
+      "web-app/src/routes/settings/cloud.tsx",
+      "web-app/src/routes/settings/api.tsx",
+      "web-app/src/routes/api/index.tsx",
+      "web-app/src/routes/cloud/index.tsx",
+      "web-app/src/components/left-sidebar/NavMain.tsx",
+      "web-app/src/constants/routes.ts"
+    ],
+    "checks": [
+      {
+        "run": "npx vitest run src/containers/__tests__/SettingsMenu.test.tsx src/components/left-sidebar/__tests__/NavMain.test.tsx src/routes/settings/__tests__/moved-pages-redirect.test.ts src/routes/api src/routes/cloud src/containers/AgentWorkspaceLayout.test.tsx src/containers/RunSettingsPanel.test.tsx",
+        "cwd": "web-app",
+        "files": [
+          "web-app/src/routes/settings/__tests__/moved-pages-redirect.test.ts",
+          "web-app/src/containers/__tests__/SettingsMenu.test.tsx"
+        ]
+      }
+    ],
+    "decision": "Task 22, D28 = B and D29 (PR #12)",
+    "status": "checked"
+  },
+  {
+    "id": "windows-title-bar",
+    "feature": "Windows window controls",
+    "forUsers": "On Windows a slim 32px strip along the top of the window holds the window's title and the Minimize, Maximize/Restore and Close buttons, with no line under it (D35); the strip moves the window.",
+    "paths": [
+      "web-app/src/components/WindowFrame.tsx",
+      "web-app/src/components/WindowControls.tsx",
+      "web-app/src/lib/window-chrome.ts",
+      "web-app/src/routes/__root.tsx",
+      "web-app/src/index.css",
+      "src-tauri/tauri.windows.conf.json"
+    ],
+    "checks": [
+      {
+        "run": "node --test tests/window-controls.test.mjs",
+        "files": [
+          "tests/window-controls.test.mjs"
+        ]
+      },
+      {
+        "run": "npx vitest run src/components/__tests__/WindowFrame.test.tsx src/components/__tests__/WindowControls.test.tsx",
+        "cwd": "web-app",
+        "files": [
+          "web-app/src/components/__tests__/WindowFrame.test.tsx"
+        ]
+      }
+    ],
+    "decision": "Task 23, D30 = A, D35 (supersedes D33) (PR #10). Lost once already in the v2.0.35 sync.",
+    "status": "pending"
+  },
+  {
+    "id": "hub-uncensored-in-filter-menu",
+    "feature": "Uncensored filter in the Hub filter menu",
+    "forUsers": "The Uncensored checkbox sits inside the Hub's sort and filter menu with the other filters.",
+    "paths": [
+      "web-app/src/containers/hub/HubFilters.tsx"
+    ],
+    "checks": [
+      {
+        "run": "npx vitest run src/containers/hub/__tests__/HubFilters.test.tsx",
+        "cwd": "web-app",
+        "files": [
+          "web-app/src/containers/hub/__tests__/HubFilters.test.tsx"
+        ]
+      }
+    ],
+    "decision": "Task 24 (PR #11)",
+    "status": "pending"
+  },
+  {
+    "id": "windows-test-build-ci",
+    "feature": "Unsigned Windows test installer from GitHub Actions",
+    "forUsers": "Every branch can produce a Windows installer to try on this PC before merging.",
+    "paths": [
+      ".github/workflows/windows-test-build.yml"
+    ],
+    "checks": [],
+    "decision": "d0f56745c, 72bd66144",
+    "status": "no-check"
+  },
+  {
+    "id": "radium-version",
+    "feature": "Every build has its own version number",
+    "forUsers": "Each Radium installer carries a new version number, and a test build refuses to reuse one (tracker D34).",
+    "paths": [
+      "src-tauri/tauri.conf.json",
+      "web-app/package.json",
+      "scripts/bump-version.mjs",
+      "scripts/check-build-version.mjs",
+      ".github/workflows/windows-test-build.yml"
+    ],
+    "checks": [
+      {
+        "run": "node --test tests/app-version.test.mjs tests/build-version.test.mjs",
+        "files": [
+          "tests/app-version.test.mjs",
+          "tests/build-version.test.mjs"
+        ]
+      }
+    ],
+    "decision": "Tracker D34, Task 27 (PR #17)",
+    "status": "pending"
+  },
+  {
+    "id": "review-before-use",
+    "feature": "Review before use for every skill and connector",
+    "forUsers": "No skill or MCP connector is used until you have seen what it can do and chosen Allow (with Preview and Cancel); it asks again when it changes, and every skill starts switched off (tracker D36, D38).",
+    "paths": [
+      "src-tauri/src/core/mcp/review.rs",
+      "src-tauri/src/core/mcp/helpers.rs",
+      "src-tauri/src/core/agent/skills/registry.rs",
+      "src-tauri/src/core/agent/skills/commands.rs",
+      "web-app/src/lib/review-before-use.ts",
+      "web-app/src/containers/SkillReviewDialog.tsx",
+      "web-app/src/containers/ConnectorReviewDialog.tsx",
+      "web-app/src/containers/dialogs/ConnectorReviewHost.tsx",
+      "web-app/src/hooks/useConnectorReview.ts",
+      "web-app/src/routes/connectors/index.tsx",
+      "web-app/src/routes/skills/index.tsx",
+      "web-app/src/locales/en/review.json"
+    ],
+    "checks": [
+      {
+        "run": "cargo test --no-default-features --features test-tauri --lib -- core::mcp core::agent::skills",
+        "cwd": "src-tauri",
+        "files": [
+          "src-tauri/src/core/mcp/review.rs",
+          "src-tauri/src/core/mcp/tests.rs",
+          "src-tauri/src/core/agent/skills/registry.rs"
+        ]
+      },
+      {
+        "run": "npx vitest run src/lib/__tests__/review-before-use.test.ts src/containers/__tests__/SkillReviewDialog.test.tsx src/containers/__tests__/ConnectorReviewDialog.test.tsx src/containers/dialogs/__tests__/ConnectorReviewHost.test.tsx src/hooks/__tests__/useConnectorReview.test.ts src/routes/skills/__tests__/SkillsPage.review.test.tsx src/routes/connectors/__tests__/index.test.tsx",
+        "cwd": "web-app",
+        "files": [
+          "web-app/src/lib/__tests__/review-before-use.test.ts",
+          "web-app/src/containers/__tests__/SkillReviewDialog.test.tsx",
+          "web-app/src/containers/__tests__/ConnectorReviewDialog.test.tsx",
+          "web-app/src/containers/dialogs/__tests__/ConnectorReviewHost.test.tsx",
+          "web-app/src/hooks/__tests__/useConnectorReview.test.ts",
+          "web-app/src/routes/skills/__tests__/SkillsPage.review.test.tsx",
+          "web-app/src/routes/connectors/__tests__/index.test.tsx"
+        ]
+      }
+    ],
+    "decision": "Tracker D36, D38, Task 28 (PR #18)",
+    "status": "pending"
+  },
+  {
+    "id": "radium-logo",
+    "feature": "The Radium logo",
+    "forUsers": "The Radium 'R' logo is the app and installer icon and appears in the sidebar, setup and loading screens and chat avatars, shown in full colour (tracker D37).",
+    "paths": [
+      "src-tauri/icons/icon.png",
+      "web-app/public/images/transparent-logo.png",
+      "web-app/public/images/atomic-chat-logo.png",
+      "web-app/public/images/logo.png",
+      "web-app/public/images/logo-app.png",
+      "web-app/src/components/AppLogo.tsx",
+      "web-app/src/containers/SetupBackendStep.tsx",
+      "web-app/src/containers/AvatarEmoji.tsx",
+      "web-app/src/components/MermaidError.tsx",
+      "web-app/src/containers/PromptVisionModel.tsx",
+      "web-app/src/loader.css",
+      "web-app/index.html"
+    ],
+    "checks": [
+      {
+        "run": "node --test tests/radium-logo.test.mjs",
+        "files": [
+          "tests/radium-logo.test.mjs"
+        ]
+      },
+      {
+        "run": "npx vitest run src/components/__tests__/AppLogo.test.tsx",
+        "cwd": "web-app",
+        "files": [
+          "web-app/src/components/__tests__/AppLogo.test.tsx"
+        ]
+      }
+    ],
+    "decision": "Tracker D37, Task 29 (PR #19)",
+    "status": "pending"
+  }
+]

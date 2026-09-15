@@ -11,7 +11,28 @@ export interface LogEntry {
   message: string
 }
 
+/** Where local models are saved to and read from. */
+export interface ModelsFolderInfo {
+  path: string
+  default_path: string
+  is_default: boolean
+}
+
+/** What happened to the models already downloaded when the folder changed. */
+export interface ModelsFolderMoveReport {
+  moved: string[]
+  /** Left behind because the new folder already has one by that name. */
+  skipped: string[]
+  failed: [string, string][]
+}
+
 export interface AppService {
+  getModelsFolder(): Promise<ModelsFolderInfo | undefined>
+  /** `null` goes back to the default folder inside the data folder. */
+  setModelsFolder(
+    path: string | null,
+    moveExisting: boolean
+  ): Promise<ModelsFolderMoveReport>
   factoryReset(): Promise<void>
   readLogs(): Promise<LogEntry[]>
   parseLogLine(line: string): LogEntry

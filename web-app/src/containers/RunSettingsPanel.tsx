@@ -45,7 +45,8 @@ import { cn } from '@/lib/utils'
 import { restartLocalModel } from '@/utils/restartLocalModel'
 
 type RunSettingsPanelProps = {
-  onClose: () => void
+  /** Shown as a close button; Settings > Chat has nothing to close to. */
+  onClose?: () => void
 }
 
 const HEADER_ICON_BUTTON =
@@ -213,15 +214,17 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
               <h2 className="min-w-0 truncate text-sm font-medium">
                 {t('chat:runSettings.title')}
               </h2>
-              <button
-                type="button"
-                className={HEADER_ICON_BUTTON}
-                aria-label={closeLabel}
-                title={closeLabel}
-                onClick={onClose}
-              >
-                <PanelRight className="size-4" />
-              </button>
+              {onClose && (
+                <button
+                  type="button"
+                  className={HEADER_ICON_BUTTON}
+                  aria-label={closeLabel}
+                  title={closeLabel}
+                  onClick={onClose}
+                >
+                  <PanelRight className="size-4" />
+                </button>
+              )}
             </div>
             {/* In words, and on its own row: a circular-arrow icon here read
                 as "refresh", and the label does not fit beside the title. */}
