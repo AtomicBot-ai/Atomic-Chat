@@ -1,6 +1,7 @@
 {
   "api": "API",
   "cloud": "Cloud",
+  "chat": "聊天",
   "assistants": "助理",
   "hardware": "硬體",
   "mcp-servers": "MCP 伺服器",

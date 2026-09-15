@@ -1,6 +1,7 @@
 {
   "api": "API",
   "cloud": "Cloud",
+  "chat": "Chat",
   "assistants": "Assistenten",
   "hardware": "Hardware",
   "mcp-servers": "Mcp Server",

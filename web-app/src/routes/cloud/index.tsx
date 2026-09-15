@@ -1,12 +1,17 @@
 import { useCallback, useMemo, useState } from 'react'
-import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
+import {
+  createFileRoute,
+  redirect,
+  useNavigate,
+  useSearch,
+} from '@tanstack/react-router'
 import { IconRefresh } from '@tabler/icons-react'
 import cloneDeep from 'lodash/cloneDeep'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { route } from '@/constants/routes'
 import { openAIProviderSettings } from '@/constants/providers'
-import HeaderPage from '@/containers/HeaderPage'
+import { SettingsPageLayout } from '@/containers/SettingsPageLayout'
 import { CloudConnectionCard } from '@/containers/cloud/CloudConnectionCard'
 import { CloudModelsCard } from '@/containers/cloud/CloudModelsCard'
 import { CloudSubscriptionCard } from '@/containers/cloud/CloudSubscriptionCard'
@@ -21,19 +26,20 @@ import {
   isSubscriptionProvider,
 } from '@/lib/cloud-providers'
 import { refreshProviderModels } from '@/lib/refresh-provider-models'
+import { validateCloudSearch } from '@/lib/cloud-search'
 import { cn } from '@/lib/utils'
 import { useProviderRegistryStore } from '@/stores/provider-registry-store'
 
+/**
+ * The page lives at Settings > Cloud (`/settings/cloud` renders `CloudPage`).
+ * This address stays so older links and bookmarks still land there, with the
+ * selected provider carried across.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.cloud.index as any)({
-  component: CloudPage,
-  validateSearch: (search: Record<string, unknown>): { provider?: string } => {
-    // Absent must stay absent — `String(undefined)` would put the literal
-    // "undefined" in the URL and then fail to match any provider.
-    const provider = search?.provider
-    return typeof provider === 'string' && provider.length > 0
-      ? { provider }
-      : {}
+  validateSearch: validateCloudSearch,
+  beforeLoad: ({ search }: { search: { provider?: string } }) => {
+    throw redirect({ to: route.settings.cloud, search })
   },
 })
 
@@ -49,7 +55,7 @@ export function CloudPage() {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const navigate = useNavigate()
-  const search = useSearch({ from: Route.id }) as { provider?: string }
+  const search = useSearch({ strict: false }) as { provider?: string }
   const { providers, addProvider, updateProvider, setProviders } =
     useModelProvider()
 
@@ -81,7 +87,7 @@ export function CloudPage() {
   const selectProvider = useCallback(
     (providerName: string) => {
       navigate({
-        to: route.cloud.index,
+        to: route.settings.cloud,
         search: { provider: providerName },
         replace: true,
       })
@@ -90,7 +96,7 @@ export function CloudPage() {
   )
 
   const clearSelection = useCallback(() => {
-    navigate({ to: route.cloud.index, search: {}, replace: true })
+    navigate({ to: route.settings.cloud, search: {}, replace: true })
   }, [navigate])
 
   const createProvider = useCallback(
@@ -160,45 +166,37 @@ export function CloudPage() {
   }, [selected, serviceHub, setProviders, updateProvider, t])
 
   return (
-    <div className="flex h-svh w-full flex-col">
-      <HeaderPage>
-        <div
-          className={cn(
-            'flex items-center justify-between w-full mr-2 pr-3',
-            !IS_MACOS && 'pr-30'
-          )}
-        >
-          <span className="font-medium text-base font-studio">
-            {t('cloud:title')}
-          </span>
-          <div className="relative z-50 flex shrink-0 items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRefreshCatalog}
-              disabled={registryLoading}
-              title={
-                registryFetchedAt
-                  ? t('providers:registry.lastUpdated', {
-                      when: new Date(registryFetchedAt).toLocaleString(),
-                    })
-                  : t('providers:registry.neverUpdated')
-              }
-            >
-              <IconRefresh
-                size={16}
-                className={cn(registryLoading && 'animate-spin')}
-              />
-              <span>
-                {registryLoading
-                  ? t('providers:registry.refreshing')
-                  : t('providers:registry.refresh')}
-              </span>
-            </Button>
-          </div>
+    <SettingsPageLayout
+      title={t('cloud:title')}
+      actions={
+        <div className="relative z-50 flex shrink-0 items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefreshCatalog}
+            disabled={registryLoading}
+            title={
+              registryFetchedAt
+                ? t('providers:registry.lastUpdated', {
+                    when: new Date(registryFetchedAt).toLocaleString(),
+                  })
+                : t('providers:registry.neverUpdated')
+            }
+          >
+            <IconRefresh
+              size={16}
+              className={cn(registryLoading && 'animate-spin')}
+            />
+            <span>
+              {registryLoading
+                ? t('providers:registry.refreshing')
+                : t('providers:registry.refresh')}
+            </span>
+          </Button>
         </div>
-      </HeaderPage>
-      <div className="h-[calc(100%-60px)] overflow-y-auto p-4 pt-0">
+      }
+    >
+      <div>
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
           <CloudConnectionCard
             providers={providers}
@@ -238,6 +236,6 @@ export function CloudPage() {
         onOpenChange={setCustomOpen}
         onCreateProvider={createProvider}
       />
-    </div>
+    </SettingsPageLayout>
   )
 }
