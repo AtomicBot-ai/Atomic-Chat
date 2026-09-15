@@ -21,6 +21,10 @@
  *    The schema still owns it - it is validated and submitted like any other
  *    param - it is only DRAWN somewhere else, so the primary input and its
  *    button do not end up at opposite ends of the panel. See decision D10.
+ *
+ * A model its provider can download but has not yet (the built-in engine,
+ * Task 30) offers "Download model" in place of Generate, with progress, so the
+ * Media page works on its own without a trip to Settings.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { ulid } from 'ulidx'
@@ -40,9 +44,12 @@ import { MediaParamGroups } from './params/MediaParamGroup'
 import { useMediaParamState } from './params/useMediaParamState'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { fieldClass, labelClass } from './params/paramIdentity'
+import { formatDownloadSize } from './downloadSize'
 
 /** The one parameter drawn outside the grid. See D10. */
 const PROMPT_PARAM = 'prompt'
+
+export type MediaInstallProgress = { received: number; total?: number }
 
 export type MediaGenerationFormProps = {
   /** Every task the enabled providers expose, for the tabs. */
@@ -67,7 +74,20 @@ export type MediaGenerationFormProps = {
    */
   initialParams?: Record<string, unknown>
   onSubmit: (request: NormalizedMediaRequest) => void | Promise<unknown>
+  /**
+   * Download a model its provider can install. Resolves once it is installed;
+   * the caller refreshes the provider so the model reads as installed.
+   */
+  onInstallModel?: (
+    model: MediaModelDescriptor,
+    onProgress: (progress: MediaInstallProgress) => void
+  ) => Promise<void>
 }
+
+type InstallState =
+  | { phase: 'idle' }
+  | { phase: 'downloading'; modelId: string; percent: number | null }
+  | { phase: 'failed'; modelId: string; detail: string }
 
 /** Presentation label, falling back to the id so an unknown task still shows. */
 function taskLabel(task: MediaTaskPresentation): string {
@@ -76,6 +96,10 @@ function taskLabel(task: MediaTaskPresentation): string {
 
 function byOrder<T extends { order?: number }>(a: T, b: T): number {
   return (a.order ?? 0) - (b.order ?? 0)
+}
+
+function needsDownload(model: MediaModelDescriptor | null): boolean {
+  return Boolean(model?.install && !model.install.installed && model.install.installable)
 }
 
 export function MediaGenerationForm({
@@ -90,11 +114,13 @@ export function MediaGenerationForm({
   disabled = false,
   initialParams,
   onSubmit,
+  onInstallModel,
 }: MediaGenerationFormProps) {
   // Which provider's models the model select is showing. Null means "follow
   // the selected model", so the two stay in step until the user says otherwise.
   const [providerOverride, setProviderOverride] = useState<string | null>(null)
   const [device, setDevice] = useState('')
+  const [install, setInstall] = useState<InstallState>({ phase: 'idle' })
 
   const orderedTasks = useMemo(() => [...tasks].sort(byOrder), [tasks])
 
@@ -156,9 +182,14 @@ export function MediaGenerationForm({
     setDevice(requiredDevice ?? firstDevice ?? '')
   }, [requiredDevice, firstDevice])
 
+  const mustDownload = needsDownload(activeModel) && Boolean(onInstallModel)
+  const downloading =
+    install.phase === 'downloading' && install.modelId === activeModel?.id
+  const downloadSize = formatDownloadSize(activeModel?.install?.size_bytes)
+
   const prompt = String(values[PROMPT_PARAM] ?? '')
   const formDisabled = disabled || !activeModel
-  const canGenerate = !formDisabled && prompt.trim().length > 0
+  const canGenerate = !formDisabled && !mustDownload && prompt.trim().length > 0
 
   const handleProviderChange = (providerId: string) => {
     setProviderOverride(providerId)
@@ -183,6 +214,36 @@ export function MediaGenerationForm({
       ...(device ? { device } : {}),
     })
   }
+
+  const download = async () => {
+    if (!activeModel || !onInstallModel) return
+    const modelId = activeModel.id
+    setInstall({ phase: 'downloading', modelId, percent: null })
+    try {
+      await onInstallModel(activeModel, ({ received, total }) => {
+        setInstall({
+          phase: 'downloading',
+          modelId,
+          percent: total && total > 0 ? Math.min(100, Math.round((received / total) * 100)) : null,
+        })
+      })
+      setInstall({ phase: 'idle' })
+    } catch (error) {
+      setInstall({
+        phase: 'failed',
+        modelId,
+        detail: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  const modelOptionLabel = (model: MediaModelDescriptor) =>
+    needsDownload(model)
+      ? t('media:form.notDownloaded', {
+          model: model.label,
+          defaultValue: '{{model}} (not downloaded)',
+        })
+      : model.label
 
   return (
     <div className="flex min-h-0 flex-col gap-3">
@@ -232,7 +293,7 @@ export function MediaGenerationForm({
                 className={fieldClass}
                 value={activeProviderId}
                 onChange={(event) => handleProviderChange(event.target.value)}
-                disabled={disabled}
+                disabled={disabled || downloading}
               >
                 {offeringProviders.map((provider) => (
                   <option key={provider.id} value={provider.id}>
@@ -252,11 +313,11 @@ export function MediaGenerationForm({
                 className={fieldClass}
                 value={shownModelId}
                 onChange={(event) => onSelectModel(event.target.value)}
-                disabled={disabled}
+                disabled={disabled || downloading}
               >
                 {providerModels.map((model) => (
                   <option key={model.id} value={model.id}>
-                    {model.label}
+                    {modelOptionLabel(model)}
                   </option>
                 ))}
               </select>
@@ -310,25 +371,63 @@ export function MediaGenerationForm({
           onChange={(event) => setValue(PROMPT_PARAM, event.target.value)}
           disabled={formDisabled}
         />
+        {install.phase === 'failed' && install.modelId === activeModel?.id && (
+          <p role="alert" className="mt-2 text-xs text-destructive">
+            {t('media:form.downloadFailed', {
+              detail: install.detail,
+              defaultValue: 'The download did not finish: {{detail}}',
+            })}
+          </p>
+        )}
         <div className="mt-2 flex items-center justify-between gap-3">
-          <div className="text-xs text-muted-foreground">
-            {activeModel
-              ? t('media:form.generatingWith', {
-                  model: activeModel.label,
-                  defaultValue: 'Generating with {{model}}',
-                })
-              : t('media:form.selectModel', {
-                  defaultValue: 'Select a model to begin',
-                })}
+          <div className="text-xs text-muted-foreground" data-testid="media-form-status">
+            {downloading
+              ? install.phase === 'downloading' && install.percent !== null
+                ? t('media:form.downloadingPercent', {
+                    percent: install.percent,
+                    defaultValue: 'Downloading the model… {{percent}}%',
+                  })
+                : t('media:form.downloading', { defaultValue: 'Downloading the model…' })
+              : mustDownload && activeModel
+                ? t('media:form.downloadFirst', {
+                    model: activeModel.label,
+                    defaultValue: 'Download {{model}} to start making images with it',
+                  })
+                : activeModel
+                  ? t('media:form.generatingWith', {
+                      model: activeModel.label,
+                      defaultValue: 'Generating with {{model}}',
+                    })
+                  : t('media:form.selectModel', {
+                      defaultValue: 'Select a model to begin',
+                    })}
           </div>
-          <button
-            type="button"
-            onClick={submit}
-            disabled={!canGenerate}
-            className="rounded-full bg-foreground px-4 py-2 text-xs font-semibold text-background transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Generate
-          </button>
+          {mustDownload ? (
+            <button
+              type="button"
+              onClick={() => void download()}
+              disabled={disabled || downloading}
+              className="rounded-full bg-foreground px-4 py-2 text-xs font-semibold text-background transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {downloading
+                ? t('media:form.downloadingButton', { defaultValue: 'Downloading…' })
+                : downloadSize
+                  ? t('media:form.downloadModelSized', {
+                      size: downloadSize,
+                      defaultValue: 'Download model ({{size}})',
+                    })
+                  : t('media:form.downloadModel', { defaultValue: 'Download model' })}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={submit}
+              disabled={!canGenerate}
+              className="rounded-full bg-foreground px-4 py-2 text-xs font-semibold text-background transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Generate
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -13,7 +13,10 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
-import { MediaGenerationForm } from './MediaGenerationForm'
+import {
+  MediaGenerationForm,
+  type MediaInstallProgress,
+} from './MediaGenerationForm'
 import { MediaJobStatus } from './MediaJobStatus'
 import { MediaPreview } from './MediaPreview'
 import { useMediaGeneration } from '@/hooks/useMediaGeneration'
@@ -21,12 +24,14 @@ import { useMediaJobAsset } from '@/hooks/useMediaJobAsset'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useMediaProviderStore } from '@/stores/media-provider-store'
 import { isTerminalMediaJobState } from '@/services/media/jobManager'
+import { createMediaAdapter } from '@/services/media/providerFactory'
 import {
   takePendingMediaReRun,
   type PendingMediaReRun,
 } from '@/services/media/rerun'
 import type {
   MediaDeviceDescriptor,
+  MediaModelDescriptor,
   MediaTaskId,
   MediaTaskPresentation,
 } from '@/services/media/contract'
@@ -148,6 +153,22 @@ export function MediaStudio({ libraryLink }: MediaStudioProps = {}) {
   )
 
   const busy = latest ? !isTerminalMediaJobState(latest.state) : false
+
+  // Download a model in place (the built-in engine), then ask its provider
+  // again so the model reads as installed and Generate appears.
+  const installModel = async (
+    model: MediaModelDescriptor,
+    onProgress: (progress: MediaInstallProgress) => void
+  ) => {
+    const provider = providers.find((entry) => entry.id === model.provider_id)
+    if (!provider) throw new Error(`No provider "${model.provider_id}" is set up.`)
+    const adapter = createMediaAdapter(provider)
+    if (!adapter.install) {
+      throw new Error(`${provider.label} cannot download models.`)
+    }
+    await adapter.install(model.id, onProgress)
+    await refresh({ providerId: provider.id })
+  }
   const asset = useMediaJobAsset(latest, selectedModel?.label ?? '')
 
   const headerLabel = selectedProvider
@@ -196,6 +217,7 @@ export function MediaStudio({ libraryLink }: MediaStudioProps = {}) {
             onSelectModel={setSelectedModel}
             disabled={busy}
             onSubmit={submit}
+            onInstallModel={installModel}
           />
 
           <div className="flex min-h-0 flex-col gap-3">

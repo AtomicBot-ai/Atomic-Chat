@@ -99,9 +99,8 @@ fn detected_gpus() -> Vec<GpuSummary> {
 /// The engine build for this computer, or why there is none.
 fn this_computers_variant() -> Result<EngineVariant, String> {
     let (os, arch) = host_platform(std::env::consts::OS, std::env::consts::ARCH);
-    choose_engine_variant(os, arch, &detected_gpus()).ok_or_else(|| {
-        "The built-in media engine has no build for this computer.".to_string()
-    })
+    choose_engine_variant(os, arch, &detected_gpus())
+        .ok_or_else(|| "The built-in media engine has no build for this computer.".to_string())
 }
 
 /// A path relative to the data folder, written with `/`, on this system.
@@ -271,9 +270,8 @@ pub fn start_command(
         .ok_or_else(|| format!("The built-in engine has no model called \"{model_id}\"."))?;
     let args = server_args(data_dir, model, port)?;
     for (_, relative) in super::server::SCAN_DIRS {
-        fs::create_dir_all(under(data_dir, relative)).map_err(|error| {
-            format!("Could not create the media folder {relative}: {error}")
-        })?;
+        fs::create_dir_all(under(data_dir, relative))
+            .map_err(|error| format!("Could not create the media folder {relative}: {error}"))?;
     }
     Ok((under(data_dir, &engine.executable), args))
 }
@@ -299,7 +297,9 @@ pub async fn media_engine_status<R: Runtime>(
         engine_size_bytes: plan.downloads.iter().map(|download| download.size).sum(),
         models: model_statuses(&data_dir),
         running_model: running.as_ref().map(|current| current.model_id.clone()),
-        base_url: running.as_ref().map(|current| server_base_url(current.port)),
+        base_url: running
+            .as_ref()
+            .map(|current| server_base_url(current.port)),
     })
 }
 
@@ -412,7 +412,9 @@ mod tests {
         let tmp = tempdir().unwrap();
         let statuses = model_statuses(tmp.path());
         assert_eq!(statuses.len(), catalog().len());
-        assert!(statuses.iter().all(|model| !model.installed && model.size_bytes > 0));
+        assert!(statuses
+            .iter()
+            .all(|model| !model.installed && model.size_bytes > 0));
         assert!(statuses.iter().any(|model| model.id == "sd-1.5"));
     }
 
@@ -420,10 +422,16 @@ mod tests {
     fn a_first_install_downloads_the_engine_and_the_model_together() {
         let tmp = tempdir().unwrap();
         let items = downloads_needed(tmp.path(), EngineVariant::WindowsVulkan, "sd-1.5").unwrap();
-        assert!(items.iter().any(|item| item.save_path.starts_with("media/engine/")));
-        assert!(items.iter().any(|item| item.save_path.starts_with("media/models/sd-1.5/")));
+        assert!(items
+            .iter()
+            .any(|item| item.save_path.starts_with("media/engine/")));
+        assert!(items
+            .iter()
+            .any(|item| item.save_path.starts_with("media/models/sd-1.5/")));
         // Every file is checked by size and checksum before it is kept.
-        assert!(items.iter().all(|item| item.sha256.is_some() && item.size.is_some()));
+        assert!(items
+            .iter()
+            .all(|item| item.sha256.is_some() && item.size.is_some()));
     }
 
     #[test]
@@ -437,7 +445,9 @@ mod tests {
 
         let items = downloads_needed(tmp.path(), variant, "sd-1.5").unwrap();
 
-        assert!(items.iter().all(|item| !item.save_path.starts_with("media/engine/")));
+        assert!(items
+            .iter()
+            .all(|item| !item.save_path.starts_with("media/engine/")));
         assert_eq!(items.len(), find_model("sd-1.5").unwrap().files.len());
     }
 
@@ -468,13 +478,19 @@ mod tests {
         for download in &plan.downloads {
             let archive = under(tmp.path(), &download.save_path);
             fs::create_dir_all(archive.parent().unwrap()).unwrap();
-            zip_with(&archive, &[(&program_name, b"engine"), ("lib/helper.dll", b"dll")]);
+            zip_with(
+                &archive,
+                &[(&program_name, b"engine"), ("lib/helper.dll", b"dll")],
+            );
         }
 
         finish_engine_install(tmp.path(), &plan).unwrap();
 
         assert!(under(tmp.path(), &plan.executable).is_file());
-        assert!(under(tmp.path(), &plan.install_dir).join("lib").join("helper.dll").is_file());
+        assert!(under(tmp.path(), &plan.install_dir)
+            .join("lib")
+            .join("helper.dll")
+            .is_file());
         assert!(plan
             .downloads
             .iter()
@@ -506,7 +522,8 @@ mod tests {
     #[test]
     fn the_engine_does_not_start_before_it_is_installed() {
         let tmp = tempdir().unwrap();
-        let error = start_command(tmp.path(), EngineVariant::WindowsCpu, "sd-1.5", 5000).unwrap_err();
+        let error =
+            start_command(tmp.path(), EngineVariant::WindowsCpu, "sd-1.5", 5000).unwrap_err();
         assert!(error.contains("not installed"));
     }
 
